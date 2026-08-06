@@ -9,6 +9,8 @@ import os
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 from ci.praktika.result import Result
@@ -328,3 +330,61 @@ def test_get_pr_state_by_branch_fails_closed(monkeypatch):
         assert False, "should have raised on a failed lookup"
     except RuntimeError as e:
         assert "refusing to treat a failed lookup as 'no PR'" in str(e)
+
+
+def test_request_team_reviews_adds_only_missing_teams(monkeypatch):
+    requests = []
+
+    def fake_get(command, verbose=False):
+        assert "pulls/42/requested_reviewers" in command
+        return '["clickpipes", "unmanaged-team"]'
+
+    def fake_submit(team_slugs, pr, repo):
+        requests.append((team_slugs, pr, repo))
+
+    monkeypatch.setattr(GH, "get_output_with_retries", staticmethod(fake_get))
+    monkeypatch.setattr(GH, "_submit_team_review_requests", staticmethod(fake_submit))
+
+    assert GH.request_team_reviews(
+        team_slugs=["docs", "clickpipes", "integrations-ecosystem"],
+        pr=42,
+        repo="ClickHouse/ClickHouse",
+    )
+    assert requests == [
+        (["docs", "integrations-ecosystem"], 42, "ClickHouse/ClickHouse")
+    ]
+
+
+def test_request_team_reviews_does_nothing_without_teams(monkeypatch):
+    monkeypatch.setattr(
+        GH,
+        "get_output_with_retries",
+        staticmethod(lambda *_args, **_kwargs: pytest.fail("unexpected lookup")),
+    )
+    monkeypatch.setattr(
+        GH,
+        "_submit_team_review_requests",
+        staticmethod(lambda *_args, **_kwargs: pytest.fail("unexpected request")),
+    )
+
+    assert GH.request_team_reviews(
+        team_slugs=[],
+        pr=42,
+        repo="ClickHouse/ClickHouse",
+    )
+
+
+def test_request_team_reviews_fails_when_lookup_fails(monkeypatch):
+    monkeypatch.setattr(
+        GH, "get_output_with_retries", staticmethod(lambda *_args, **_kwargs: "")
+    )
+
+    try:
+        GH.request_team_reviews(
+            team_slugs=["docs"],
+            pr=42,
+            repo="ClickHouse/ClickHouse",
+        )
+        assert False, "Should have raised when requested reviewers are unavailable"
+    except RuntimeError as e:
+        assert "Failed to retrieve team review requests" in str(e)
