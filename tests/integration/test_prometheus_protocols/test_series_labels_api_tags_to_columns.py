@@ -114,6 +114,19 @@ def test_tags_to_columns_series_includes_column_tags():
     assert hosts == {"server1", "server2"}
 
 
+def test_selector_matcher_on_column_tag():
+    """A `match[]` label matcher on a tag moved into a dedicated column filters through that column,
+    and a matcher on a tag that stays in the `tags` map filters through the map."""
+    data = get_json_from_api('/api/v1/series?match[]=cpu_usage{datacenter="us-west"}')
+    assert len(data) == 1 and data[0]["host"] == "server2", f"Unexpected series: {data}"
+
+    data = get_json_from_api('/api/v1/series?match[]={method="GET"}')
+    assert len(data) == 1 and data[0]["__name__"] == "http_requests_total", f"Unexpected series: {data}"
+
+    data = get_json_from_api('/api/v1/label/host/values?match[]={datacenter=~"us-.*"}')
+    assert set(data) == {"server1", "server2"}, f"Unexpected values: {data}"
+
+
 def test_start_end_rejected_without_min_max_time():
     """When the table does not store min_time/max_time, a request specifying start/end must fail
     explicitly instead of silently ignoring the time range and returning incomplete data."""

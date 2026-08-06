@@ -1,13 +1,14 @@
-"""Tests for two Prometheus-compatibility behaviors of the metadata endpoints:
+"""Tests for Prometheus-compatibility behaviors of the metadata endpoints:
 
 1. `/api/v1/label/<name>/values` decodes Prometheus' label-name escaping, so tag names that are not
    legacy Prometheus names (dotted, slashed, ...) are queryable through their escaped `U__...` form.
-2. The `match[]` parameter is only supported as a bare metric name so far; a full series selector with
-   label matchers is rejected with a clear error instead of being treated as a literal metric name and
-   silently returning the wrong metadata.
-3. Prometheus allows `match[]` to be repeated; the result is the union over all the given metric names,
-   and a repeated value must not be silently dropped.
-4. An explicitly empty `match[]` value is rejected (Prometheus fails to parse an empty selector) instead
+2. The `match[]` parameter is a full Prometheus series selector: a bare metric name or an instant
+   selector with `=`, `!=`, `=~`, and `!~` label matchers, filtering the series set exactly like the
+   PromQL query endpoints do (Grafana emits the selector forms to narrow label names / label values).
+3. Prometheus allows `match[]` to be repeated; the result is the union of the series matched by each
+   selector, and a repeated value must not be silently dropped.
+4. An explicitly empty `match[]` value, an unparsable selector, a PromQL expression that is not an
+   instant selector, and the empty selector `{}` are rejected (Prometheus fails to parse them) instead
    of being silently dropped, which would fall back to unfiltered or partially filtered metadata.
 """
 
@@ -108,20 +109,59 @@ def test_label_values_legacy_name_unchanged():
     assert set(data) == {"server1", "server2"}, f"Unexpected values: {data}"
 
 
-def test_series_selector_with_matchers_rejected():
-    """A full series selector in `match[]` must be rejected with a clear error rather than being
-    treated as a metric literally named `cpu_usage{host="server1"}`."""
-    for path in (
-        '/api/v1/series?match[]=cpu_usage{host="server1"}',
-        '/api/v1/labels?match[]=cpu_usage{host="server1"}',
-        '/api/v1/label/host/values?match[]=cpu_usage{host="server1"}',
-    ):
-        url = f"http://{node.ip_address}:9093{path}"
-        response = requests.get(url)
-        assert response.status_code == 400, f"{path}: expected 400, got {response.status_code}: {response.text}"
-        data = response.json()
-        assert data["status"] == "error", f"{path}: expected error status, got: {data}"
-        assert "match[]" in data["error"], f"{path}: unexpected error message: {data}"
+def test_series_selector_with_label_matcher():
+    """A full series selector in `match[]` filters by both the metric name and the label matchers."""
+    data = get_json_from_api('/api/v1/series?match[]=cpu_usage{host="server1"}')
+    assert len(data) == 1, f"Expected 1 series, got: {data}"
+    assert data[0]["__name__"] == "cpu_usage" and data[0]["host"] == "server1", f"Unexpected series: {data}"
+
+
+def test_series_selector_without_metric_name():
+    """A selector with label matchers only (no metric name) matches series of any metric."""
+    data = get_json_from_api('/api/v1/series?match[]={host="server1"}')
+    names = sorted(series["__name__"] for series in data)
+    assert names == ["cpu_usage", "memory_usage"], f"Unexpected series: {data}"
+
+
+def test_series_selector_negative_and_regexp_matchers():
+    """The `!=`, `=~`, and `!~` matcher forms translate to the same filters as the query endpoints."""
+    data = get_json_from_api('/api/v1/series?match[]=cpu_usage{host!="server1"}')
+    assert len(data) == 1 and data[0]["host"] == "server2", f"Unexpected series: {data}"
+
+    data = get_json_from_api('/api/v1/series?match[]={host=~"server[12]"}')
+    assert len(data) == 3, f"Expected all 3 series, got: {data}"
+
+    data = get_json_from_api('/api/v1/series?match[]=cpu_usage{host!~"server1"}')
+    assert len(data) == 1 and data[0]["host"] == "server2", f"Unexpected series: {data}"
+
+    # Prometheus regexps are anchored on both sides: "server" must not match "server1".
+    data = get_json_from_api('/api/v1/series?match[]={host=~"server"}')
+    assert data == [], f"Expected no series for the anchored regexp, got: {data}"
+
+
+def test_series_selector_on_metric_name_matcher():
+    """The metric name is matchable as the `__name__` label, including with a regexp."""
+    data = get_json_from_api('/api/v1/series?match[]={__name__=~"cpu_.*"}')
+    assert len(data) == 2, f"Expected 2 cpu_usage series, got: {data}"
+
+
+def test_labels_narrowed_by_selector():
+    """`/api/v1/labels` reports only the label names of the series matched by the selector."""
+    data = get_json_from_api('/api/v1/labels?match[]={host="server1"}')
+    assert set(data) == {"__name__", "host", "http.status_code", "path/segment"}, f"Unexpected labels: {data}"
+
+    data = get_json_from_api("/api/v1/labels?match[]=memory_usage")
+    assert set(data) == {"__name__", "host"}, f"Unexpected labels: {data}"
+
+
+def test_label_values_narrowed_by_selector():
+    """`/api/v1/label/<name>/values` honors a selector with label matchers, including for an
+    escaped non-legacy label name in the path."""
+    data = get_json_from_api('/api/v1/label/host/values?match[]=cpu_usage{host!="server2"}')
+    assert data == ["server1"], f"Unexpected values: {data}"
+
+    data = get_json_from_api('/api/v1/label/U__http_2e_status__code/values?match[]={host="server2"}')
+    assert data == ["500"], f"Unexpected values: {data}"
 
 
 def test_bare_metric_name_match_still_works():
@@ -151,14 +191,34 @@ def test_repeated_match_returns_union_of_label_values():
     assert set(data) == {"server1", "server2"}, f"Unexpected values: {data}"
 
 
-def test_selector_anywhere_in_repeated_match_rejected():
-    """A full series selector must be rejected even when it is not the first `match[]` value."""
-    url = f'http://{node.ip_address}:9093/api/v1/series?match[]=cpu_usage&match[]=memory_usage{{host="server1"}}'
-    response = requests.get(url)
-    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
-    data = response.json()
-    assert data["status"] == "error", f"Expected error status, got: {data}"
-    assert "match[]" in data["error"], f"Unexpected error message: {data}"
+def test_repeated_match_with_selector_returns_union():
+    """The union semantics of a repeated `match[]` also applies to selector-shaped values."""
+    data = get_json_from_api(
+        '/api/v1/series?match[]=cpu_usage{host="server2"}&match[]=memory_usage'
+    )
+    names = sorted((series["__name__"], series["host"]) for series in data)
+    assert names == [("cpu_usage", "server2"), ("memory_usage", "server1")], f"Unexpected series: {data}"
+
+
+def test_invalid_selector_is_rejected():
+    """An unparsable selector, a PromQL expression that is not an instant selector, and the empty
+    selector `{}` are rejected with a clear error (fail closed), as in Prometheus, even when another
+    `match[]` value in the list is valid."""
+    for path in (
+        "/api/v1/series?match[]=cpu_usage{",
+        '/api/v1/labels?match[]=cpu_usage{host="server1"',
+        "/api/v1/label/host/values?match[]=cpu_usage{",
+        "/api/v1/series?match[]=cpu_usage[5m]",
+        "/api/v1/series?match[]=rate(cpu_usage[5m])",
+        "/api/v1/series?match[]={}",
+        "/api/v1/series?match[]=cpu_usage&match[]={}",
+    ):
+        url = f"http://{node.ip_address}:9093{path}"
+        response = requests.get(url)
+        assert response.status_code == 400, f"{path}: expected 400, got {response.status_code}: {response.text}"
+        data = response.json()
+        assert data["status"] == "error", f"{path}: expected error status, got: {data}"
+        assert "match[]" in data["error"], f"{path}: unexpected error message: {data}"
 
 
 def test_empty_match_value_is_rejected():

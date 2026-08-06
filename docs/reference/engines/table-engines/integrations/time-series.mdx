@@ -427,7 +427,7 @@ A `TimeSeries` table can be exposed through a Prometheus-compatible HTTP API con
 
 These endpoints read from the [tags](#tags-table) target table and deduplicate by series identity.
 
-The `match[]` parameter restricts the result by metric name, for example `/api/v1/series?match[]=cpu_usage`. The parameter can be repeated, in which case the result is the union over all the given metric names, for example `/api/v1/series?match[]=cpu_usage&match[]=memory_usage`. It is required on `/api/v1/series` (a request without at least one non-empty `match[]` is rejected, matching Prometheus, so the endpoint never runs an unbounded scan over the whole `tags` table), and optional on `/api/v1/labels` and `/api/v1/label/<name>/values`.
+The `match[]` parameter restricts the result by a Prometheus series selector: a bare metric name, for example `/api/v1/series?match[]=cpu_usage`, or a full instant selector with label matchers, for example `/api/v1/series?match[]=cpu_usage{host="server1"}` or `/api/v1/labels?match[]={host=~"server.*"}` (the `=`, `!=`, `=~`, and `!~` matchers are supported, and regexps are anchored on both sides, as in Prometheus). Label matchers are translated into the same filter over the [tags](#tags-table) table that the PromQL query endpoints use, so the metadata endpoints select exactly the series that `/api/v1/query` would read. The parameter can be repeated, in which case the result is the union of the series matched by each selector, for example `/api/v1/series?match[]=cpu_usage&match[]=memory_usage`. It is required on `/api/v1/series` (a request without at least one non-empty `match[]` is rejected, matching Prometheus, so the endpoint never runs an unbounded scan over the whole `tags` table), and optional on `/api/v1/labels` and `/api/v1/label/<name>/values`.
 
 The optional `limit` parameter caps the number of returned items, for example `/api/v1/labels?limit=10` (`0` means no limit, which is also the default). On the query endpoints (`/api/v1/query` and `/api/v1/query_range`), `limit` caps the number of returned series of a vector or matrix result; scalar and string results are not series and are never truncated. When a result is truncated, the response carries the standard Prometheus warning `results truncated due to limit`.
 
@@ -471,7 +471,7 @@ Each endpoint needs a handler of type `query_api`. Because the label-values endp
 ```
 
 <Note>
-Each `match[]` value currently supports a plain metric name only. A full series selector with label matchers (e.g. `cpu_usage{host="server1"}`) is not yet parsed and is rejected with an explicit error rather than being treated as a metric literally named `cpu_usage{host="server1"}`. An explicitly empty `match[]` value (e.g. `?match[]=`) is rejected as well, as in Prometheus, instead of being silently ignored.
+Each `match[]` value must be an instant series selector: a bare metric name or a selector with label matchers such as `cpu_usage{host="server1"}`. A range selector (e.g. `cpu_usage[5m]`) or any other PromQL expression is rejected, and so are the empty selector `{}` and an explicitly empty `match[]` value (e.g. `?match[]=`), as in Prometheus, instead of being silently ignored. One deliberate relaxation: a selector whose matchers all match the empty string (e.g. `{host=~".*"}`), which Prometheus rejects, is accepted and simply selects the series it matches.
 </Note>
 
 # Functions {#functions}

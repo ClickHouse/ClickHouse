@@ -13,9 +13,11 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/PrometheusQueryResultType.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
+#include <Parsers/makeASTForLogicalFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <Storages/TimeSeries/timeSeriesMatchersToAST.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -45,7 +47,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace TimeSeriesSetting
@@ -57,71 +58,67 @@ namespace TimeSeriesSetting
 namespace
 {
 
-/// A Prometheus metric name is a "bare" name when it matches `[a-zA-Z_:][a-zA-Z0-9_:]*`.
-bool isBareMetricName(const String & name)
+/// The `match[]` parameter of the metadata endpoints is a Prometheus series selector: a bare metric name
+/// (`go_info`) or a full instant selector with label matchers (`go_info{group="PROD"}`, `{job=~"prom.*"}`).
+/// Grafana emits the selector forms when it narrows label names / label values by filters. Each value is
+/// parsed with the same PromQL parser as `/api/v1/query`, and each label matcher is translated into the
+/// same condition over the `tags` table that the real query path builds in `StorageTimeSeriesSelector`
+/// (see `timeSeriesMatcherToAST`), so the metadata endpoints filter series exactly like the query
+/// endpoints do. Prometheus defines the result of a repeated `match[]` as the union of the series matched
+/// by each selector, hence the disjunction over the parameters. Returns an empty string when there is no
+/// filter to apply (no `match[]` values at all).
+///
+/// An explicitly empty `match[]` value (e.g. `?match[]=`), a value that is not an instant selector (e.g.
+/// a range selector `up[5m]` or a PromQL expression), and the empty selector `{}` are rejected (fail
+/// closed), as in Prometheus, instead of being silently dropped or treated as an unfiltered result. One
+/// deliberate relaxation: Prometheus additionally rejects a selector whose matchers all match the empty
+/// string (e.g. `{job=~".*"}`) to avoid scanning everything; here such a selector is accepted and simply
+/// selects the series it matches, consistent with a missing tag being stored as an empty value.
+String makeMatchCondition(const Strings & match_params, const std::unordered_map<String, String> & column_name_by_tag_name)
 {
-    if (name.empty())
-        return false;
-    if (!(isAlphaASCII(name[0]) || name[0] == '_' || name[0] == ':'))
-        return false;
-    for (size_t i = 1; i < name.size(); ++i)
-        if (!(isAlphaNumericASCII(name[i]) || name[i] == '_' || name[i] == ':'))
-            return false;
-    return true;
-}
-
-/// The `match[]` parameter of the metadata endpoints is, in general, a Prometheus series selector such
-/// as `go_info{group="PROD"}` (Grafana emits selectors to narrow label names / label values). These
-/// endpoints only support a bare metric name so far: they translate `match[]` into an exact
-/// `metric_name = '<match>'` predicate. Treating a full selector as a literal metric name would look up
-/// a metric literally named `go_info{group="PROD"}` and silently return the wrong metadata, so reject
-/// anything that is not a bare metric name with a clear `NOT_IMPLEMENTED` error (fail closed) instead.
-/// An explicitly empty `match[]` value (e.g. `?match[]=`) is not a valid series selector either:
-/// Prometheus rejects it with a parse error rather than silently dropping it, so it is rejected here
-/// too (fail closed) instead of falling back to an unfiltered or partially filtered result.
-void checkMatchParamIsSupported(const String & match_param)
-{
-    if (match_param.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Invalid empty value of the 'match[]' parameter: expected a series selector");
-    if (!isBareMetricName(match_param))
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "The Prometheus metadata endpoints currently support only a bare metric name in the 'match[]' "
-            "parameter, not a full series selector with label matchers (e.g. '{{group=\"PROD\"}}'). Got: '{}'",
-            match_param);
-}
-
-/// Prometheus allows the `match[]` parameter to be repeated, and the result is the union of the series
-/// matched by each selector. Within the bare-metric-name subset supported so far that union is an exact
-/// `metric_name IN (...)` predicate. Returns an empty string when there is no filter to apply (no
-/// `match[]` values at all). Each value is validated by `checkMatchParamIsSupported`, so an empty value
-/// or a full series selector anywhere in the list is rejected (fail closed) instead of being silently
-/// dropped.
-String makeMetricNameCondition(const Strings & match_params)
-{
-    Strings metric_names;
+    ASTs selector_conditions;
     for (const auto & match_param : match_params)
     {
-        checkMatchParamIsSupported(match_param);
-        metric_names.push_back(match_param);
+        if (match_param.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid empty value of the 'match[]' parameter: expected a series selector");
+
+        PrometheusQueryTree selector;
+        String error_message;
+        if (!selector.tryParse(match_param, /* timestamp_scale_ = */ 3, &error_message))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value {} of the 'match[]' parameter: cannot parse a series selector: {}",
+                quoteString(match_param), error_message);
+
+        const auto * root = selector.getRoot();
+        if (!root || root->node_type != PrometheusQueryTree::NodeType::InstantSelector)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value {} of the 'match[]' parameter: expected a series selector, not a PromQL expression",
+                quoteString(match_param));
+
+        const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*root).matchers;
+        if (matchers.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value {} of the 'match[]' parameter: the selector must contain at least one matcher",
+                quoteString(match_param));
+
+        ASTs matcher_asts;
+        matcher_asts.reserve(matchers.size());
+        for (const auto & matcher : matchers)
+            matcher_asts.push_back(timeSeriesMatcherToAST(matcher, column_name_by_tag_name));
+        selector_conditions.push_back(makeASTForLogicalAnd(std::move(matcher_asts)));
     }
 
-    if (metric_names.empty())
+    if (selector_conditions.empty())
         return {};
 
-    if (metric_names.size() == 1)
-        return fmt::format("{} = {}", TimeSeriesColumnNames::MetricName, quoteString(metric_names[0]));
-
-    String list;
-    for (const auto & metric_name : metric_names)
-    {
-        if (!list.empty())
-            list += ", ";
-        list += quoteString(metric_name);
-    }
-    return fmt::format("{} IN ({})", TimeSeriesColumnNames::MetricName, list);
+    /// The parenthesized form keeps the condition intact when the caller appends it to other
+    /// conditions with a plain textual " AND ".
+    return fmt::format("({})", makeASTForLogicalOr(std::move(selector_conditions))->formatWithSecretsOneLine());
 }
 
 /// Prometheus escapes label names that are not legacy names (`[a-zA-Z_][a-zA-Z0-9_]*`) using the "values"
@@ -651,7 +648,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
     /// `/labels` and `/label/<name>/values`, where it is optional). Without it the endpoint would run
     /// an unbounded `SELECT DISTINCT ... FROM <tags>` over the whole table and return a potentially
     /// huge response for a malformed or incomplete client call, so reject it (fail closed). An
-    /// explicitly empty `match[]` value is rejected by `makeMetricNameCondition` below.
+    /// explicitly empty `match[]` value is rejected by `makeMatchCondition` below.
     if (match_params.empty())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -676,10 +673,9 @@ void PrometheusHTTPProtocolAPI::getSeries(
     String query = fmt::format("SELECT DISTINCT {} FROM {}", select_columns, tags_table_id.getFullTableName());
 
     std::vector<String> conditions;
-    /// Only bare metric names are supported so far (a full series selector is rejected inside), so the
-    /// `match[]` parameters map directly to an exact metric name predicate (the union of the names).
-    if (String metric_name_condition = makeMetricNameCondition(match_params); !metric_name_condition.empty())
-        conditions.push_back(metric_name_condition);
+    std::unordered_map<String, String> column_name_by_tag_name(tag_columns.begin(), tag_columns.end());
+    if (String match_condition = makeMatchCondition(match_params, column_name_by_tag_name); !match_condition.empty())
+        conditions.push_back(match_condition);
     appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
 
     for (size_t i = 0; i < conditions.size(); ++i)
@@ -859,8 +855,9 @@ void PrometheusHTTPProtocolAPI::getLabels(
         "SELECT DISTINCT label_key FROM {} LEFT ARRAY JOIN {} AS label_key", tags_table_id.getFullTableName(), label_keys_expr);
 
     std::vector<String> conditions;
-    if (String metric_name_condition = makeMetricNameCondition(match_params); !metric_name_condition.empty())
-        conditions.push_back(metric_name_condition);
+    std::unordered_map<String, String> column_name_by_tag_name(tag_columns.begin(), tag_columns.end());
+    if (String match_condition = makeMatchCondition(match_params, column_name_by_tag_name); !match_condition.empty())
+        conditions.push_back(match_condition);
     appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
 
     for (size_t i = 0; i < conditions.size(); ++i)
@@ -980,6 +977,8 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     /// `tags_to_columns` or indexing the `tags` map, otherwise dotted/slashed tag names are unqueryable.
     const String label_name = unescapePrometheusLabelName(label_name_param);
 
+    auto tag_columns = getConfiguredTagColumns();
+
     String query;
     /// Collect WHERE conditions and join them, so the query stays valid regardless of which branch is taken.
     std::vector<String> conditions;
@@ -1000,7 +999,7 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
         /// If the label was moved into a dedicated column via `tags_to_columns`, read it from there;
         /// otherwise it lives in the `tags` Map.
         String column_name;
-        for (const auto & [tag_name, col_name] : getConfiguredTagColumns())
+        for (const auto & [tag_name, col_name] : tag_columns)
         {
             if (tag_name == label_name)
             {
@@ -1032,8 +1031,9 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
         }
     }
 
-    if (String metric_name_condition = makeMetricNameCondition(match_params); !metric_name_condition.empty())
-        conditions.push_back(metric_name_condition);
+    std::unordered_map<String, String> column_name_by_tag_name(tag_columns.begin(), tag_columns.end());
+    if (String match_condition = makeMatchCondition(match_params, column_name_by_tag_name); !match_condition.empty())
+        conditions.push_back(match_condition);
     appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
 
     for (size_t i = 0; i < conditions.size(); ++i)
