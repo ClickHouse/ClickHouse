@@ -499,7 +499,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         arguments->children[0]->format(ostr, settings, state, frame_nested);
         ostr << nl_or_nothing << indent1 << (settings.one_line ? " " : "")
              << "ELSE " << nl_or_nothing << indent2;
-        arguments->children[1]->format(ostr, settings, state, frame_nested);
+        /// The parser accepts only a function call after ELSE (it is a table function such as null('structure')),
+        /// so a function that would normally be formatted as an operator (e.g. `not`) must keep
+        /// the function-call form here, or the query could not be parsed back.
+        FormatStateStacked frame_else = frame_nested;
+        frame_else.allow_operators = false;
+        arguments->children[1]->format(ostr, settings, state, frame_else);
         ostr << nl_or_nothing << indent0 << ")";
         return;
     }
