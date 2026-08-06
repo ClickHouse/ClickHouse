@@ -146,6 +146,13 @@ $CLICKHOUSE_LOCAL -m -q "
 echo "-- Parquet skip_columns_with_unsupported_types, strict alone throws (control)"
 $CLICKHOUSE_LOCAL -q "DESC file('${T}_unsup_a.parquet', 'Parquet') FORMAT Null" \
     2>&1 | grep -c INCORRECT_DATA
+# Without this the arm above would also pass if nothing had been cached at all: the strict query
+# throws either way. This shows the permissive query really did leave an entry, keyed on its value.
+echo "-- Parquet skip_columns_with_unsupported_types, the permissive entry exists and is keyed"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_unsup_a.parquet', 'Parquet') SETTINGS input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference = 1 FORMAT Null;
+    SELECT count(), extract(additional_format_info, 'skip_columns_with_unsupported_types=\w+')
+    FROM system.schema_inference_cache WHERE format = 'Parquet' GROUP BY 2 ORDER BY 2;"
 
 # --- Template ----------------------------------------------------------------------------
 # The row format's own field rule (CSV here) must key the entry, not format_regexp_escaping_rule.

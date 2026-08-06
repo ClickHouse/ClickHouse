@@ -55,6 +55,8 @@ LineString
 1
 -- Parquet skip_columns_with_unsupported_types, strict alone throws (control)
 1
+-- Parquet skip_columns_with_unsupported_types, the permissive entry exists and is keyed
+1	skip_columns_with_unsupported_types=true
 -- Template exponent, exp=1 first
 Nullable(Float64)
 Nullable(String)
