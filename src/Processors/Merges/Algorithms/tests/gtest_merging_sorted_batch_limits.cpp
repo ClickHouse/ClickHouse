@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -35,6 +36,21 @@ Chunk makeChunk(UInt64 first_key, size_t rows = 100)
         keys.push_back(first_key + row);
 
     return makeChunk(keys);
+}
+
+Chunk makeLowCardinalityChunk(UInt64 first_key, size_t rows = 100)
+{
+    auto key = ColumnUInt64::create();
+    auto payload_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto payload = payload_type->createColumn();
+
+    for (size_t row = 0; row < rows; ++row)
+    {
+        key->insertValue(first_key + row);
+        payload->insert(Field(String("repeated value")));
+    }
+
+    return Chunk(Columns{std::move(key), std::move(payload)}, rows);
 }
 
 size_t getFirstChunkSize(SortingQueueStrategy strategy, size_t max_block_size_bytes, bool use_average_block_size)
@@ -84,6 +100,40 @@ size_t getFirstChunkSize(SortingQueueStrategy strategy, size_t max_block_size_by
     return status.chunk.getNumRows();
 }
 
+size_t getFirstLowCardinalityChunkSize(SortingQueueStrategy strategy, size_t max_block_size_bytes)
+{
+    auto payload_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto header = std::make_shared<const Block>(Block{
+        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "key"},
+        {payload_type->createColumn(), payload_type, "payload"},
+    });
+
+    SortDescription description;
+    description.emplace_back("key");
+
+    MergingSortedAlgorithm algorithm(
+        header,
+        2,
+        description,
+        1000,
+        max_block_size_bytes,
+        std::nullopt,
+        strategy,
+        0,
+        nullptr,
+        std::nullopt,
+        false);
+
+    IMergingAlgorithm::Inputs inputs(2);
+    inputs[0].chunk = makeLowCardinalityChunk(0);
+    inputs[1].chunk = makeLowCardinalityChunk(50);
+    algorithm.initialize(std::move(inputs));
+
+    auto status = algorithm.merge();
+    chassert(status.chunk);
+    return status.chunk.getNumRows();
+}
+
 }
 
 TEST(MergingSortedBatchLimits, MaxBlockSizeBytes)
@@ -98,4 +148,11 @@ TEST(MergingSortedBatchLimits, AverageBlockSize)
     EXPECT_EQ(
         getFirstChunkSize(SortingQueueStrategy::Default, 0, true),
         getFirstChunkSize(SortingQueueStrategy::Batch, 0, true));
+}
+
+TEST(MergingSortedBatchLimits, MaxBlockSizeBytesWithRepeatedLowCardinalityValues)
+{
+    EXPECT_EQ(
+        getFirstLowCardinalityChunkSize(SortingQueueStrategy::Default, 100),
+        getFirstLowCardinalityChunkSize(SortingQueueStrategy::Batch, 100));
 }
