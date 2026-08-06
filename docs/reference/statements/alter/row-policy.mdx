@@ -11,11 +11,16 @@ Changes row policy.
 Syntax:
 
 ```sql
--- Rename: exactly one fully qualified policy (one name on one target)
+-- Rename: exactly one fully qualified policy (one name on one target).
+-- RENAME TO may be combined with the same optional alteration clauses as below.
 ALTER [ROW] POLICY [IF EXISTS] name
     ON { [database.]table | database.* }
     RENAME TO new_name
     [ON CLUSTER cluster_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 
 -- Multiple names on one table target (no RENAME)
 ALTER [ROW] POLICY [IF EXISTS] name [, ...]
@@ -45,7 +50,7 @@ ALTER [ROW] POLICY [IF EXISTS]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
-`RENAME TO` is only accepted when the statement names **exactly one** policy on **one** table target. Packed multi-name or multi-table lists cannot include `RENAME TO` — rename those policies in separate statements.
+`RENAME TO` is only accepted when the statement names **exactly one** policy on **one** table target. Packed multi-name or multi-table lists cannot include `RENAME TO` — rename those policies in separate statements. On that single-policy form, `RENAME TO` can still be combined with other alterations such as `AS`, `USING`, and `TO` in the same statement.
 
 Without `RENAME TO`, packing matches `ParserRowPolicyNames`: multiple names on **one** target, one name on **multiple** targets, or mixed `name ON target` pairs. Multi-name × multi-table (`p1, p2 ON t1, t2`) is **not** accepted. Optional `ON CLUSTER` applies once to the whole statement; run separate `ALTER ROW POLICY` statements when different clusters are required.
 
@@ -54,6 +59,9 @@ Examples:
 ```sql
 -- Single-policy rename
 ALTER ROW POLICY p1 ON db.table RENAME TO p1_new;
+
+-- Rename plus other alterations on the same single policy
+ALTER POLICY old_name ON db.table RENAME TO new_name USING id > 10;
 
 -- Multiple names, one table
 ALTER POLICY p1, p2 ON db.table TO ALL;
