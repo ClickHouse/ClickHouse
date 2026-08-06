@@ -302,13 +302,6 @@ WHERE (_part, _part_offset) IN (
 
 Without this setting, the outer and inner queries may operate on different data snapshots, leading to incorrect results.
 
-<Note>
-Enabling this setting disables the optimization which removes unnecessary data parts from snapshots once the planning stage is complete.
-As a result, long-running queries may hold onto obsolete parts for their entire duration, delaying part cleanup and increasing storage pressure.
-
-This setting currently applies only to tables from the MergeTree family.
-</Note>
-
 Possible values:
 
 - 0 - Disabled
