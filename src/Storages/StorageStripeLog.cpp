@@ -44,6 +44,7 @@
 #include <Backups/RestorerFromBackup.h>
 
 #include <Disks/TemporaryFileOnDisk.h>
+#include <Disks/IDisk.h>
 #include <Disks/IDiskTransaction.h>
 
 #include <base/insertAtEnd.h>
@@ -373,7 +374,11 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
 {
     chassert(table_path != new_path_to_table_data);
     {
-        disk->createDirectories(new_path_to_table_data);
+        /// Create only the parent of the destination and let `moveDirectory` create the
+        /// destination itself: metadata storages of `DiskObjectStorage` reject a move onto an
+        /// already-existing directory (`rename` semantics), so pre-creating the destination
+        /// would make the move fail there.
+        disk->createDirectories(parentPath(new_path_to_table_data));
         disk->moveDirectory(table_path, new_path_to_table_data);
 
         table_path = new_path_to_table_data;

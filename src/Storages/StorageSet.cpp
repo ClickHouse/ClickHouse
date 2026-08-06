@@ -338,8 +338,10 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 
 void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    /// Rename directory with data.
-    disk->replaceFile(path, new_path_to_table_data);
+    /// Rename directory with data. Use a directory move rather than `replaceFile`: on
+    /// `DiskObjectStorage` `replaceFile` has file-only semantics and cannot rename a directory.
+    disk->createDirectories(parentPath(new_path_to_table_data));
+    disk->moveDirectory(path, new_path_to_table_data);
 
     path = new_path_to_table_data;
     renameInMemory(new_table_id);
