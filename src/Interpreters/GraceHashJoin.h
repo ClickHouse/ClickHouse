@@ -75,7 +75,7 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_ = false,
         size_t external_join_threshold_ = 0,
-        const InitialBucketsParams & initial_buckets_params_ = {});
+        const InitialBucketsParams & initial_buckets_params_ = {std::nullopt, 0, 0});
 
     ~GraceHashJoin() override;
 
