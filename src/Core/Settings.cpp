@@ -2560,7 +2560,7 @@ When the legacy behaviour is enabled:
 When the legacy behaviour is disabled:
 
 - Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations.
-- Results of `ANY INNER JOIN` operations contain one row per key from both the left and right tables.
+- Results of `ANY INNER JOIN` operations contain one row per key from both the left and right tables, except with the `partial_merge` join algorithm, which keeps the legacy behaviour described above. See [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm).
 
 Possible values:
 
