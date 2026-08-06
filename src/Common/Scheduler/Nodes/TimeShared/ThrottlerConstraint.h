@@ -109,8 +109,7 @@ public:
     /// Should be called from the scheduler thread because it could lead to activation
     void updateConstraints(double new_max_speed, double new_max_burst)
     {
-        event_queue.cancelPostponed(postponed);
-        postponed = EventQueue::not_postponed;
+        cancelPostponement();
         bool was_active = active();
         updateBucket(0, true); // To apply previous params for duration since `last_update`
         max_speed = new_max_speed;
@@ -179,6 +178,24 @@ private:
             throttling_duration += delay;
     }
 
+    /// Drops a postponement before it fires. The whole delay was counted up front, so give back the
+    /// part that never elapsed: the caller re-postpones and would otherwise count that part twice.
+    void cancelPostponement()
+    {
+        if (postponed != EventQueue::not_postponed)
+        {
+            /// A saturated total is a sentinel: less than the full delay went into it, so giving the
+            /// whole unelapsed part back would make the metric go down.
+            if (throttling_duration < max_duration)
+            {
+                auto remaining = std::max(postponed_until - event_queue.now(), EventQueue::Duration::zero());
+                throttling_duration -= std::min(std::chrono::nanoseconds(remaining), throttling_duration);
+            }
+            event_queue.cancelPostponed(postponed);
+            postponed = EventQueue::not_postponed;
+        }
+    }
+
     void onPostponed()
     {
         postponed = EventQueue::not_postponed;
@@ -203,8 +220,8 @@ private:
                 auto delay_ns = boundedDelay(-tokens / max_speed * 1e9, now);
                 if (postponed == EventQueue::not_postponed)
                 {
-                    postponed = event_queue.postpone(std::chrono::time_point_cast<EventQueue::Duration>(now + delay_ns),
-                        [this] { onPostponed(); });
+                    postponed_until = std::chrono::time_point_cast<EventQueue::Duration>(now + delay_ns);
+                    postponed = event_queue.postpone(postponed_until, [this] { onPostponed(); });
                     addThrottlingDuration(delay_ns);
                 }
             }
@@ -227,6 +244,7 @@ private:
 
     EventQueue::TimePoint last_update;
     UInt64 postponed = EventQueue::not_postponed;
+    EventQueue::TimePoint postponed_until; /// Valid iff `postponed != not_postponed`
     double tokens; /// in ResourceCost units
     bool child_active = false;
 

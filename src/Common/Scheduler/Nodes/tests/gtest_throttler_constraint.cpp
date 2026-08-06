@@ -239,8 +239,39 @@ TEST(SchedulerThrottlerConstraint, ThrottlingDurationSaturates)
     t.process(start + tiny_speed_delay);
     t.consumed("A", 1);
     EXPECT_EQ(throttler.getThrottlingDuration(), max_duration);
+
+    /// Cancelling the pending postponement must not undo the saturation: the total is a sentinel,
+    /// and less than that postponement's whole delay went into it. Dropping the limit altogether is
+    /// what makes a give-back observable, since then nothing re-postpones and re-adds it.
+    throttler.updateConstraints(/*max_speed=*/ 0.0, /*max_burst=*/ 0.0);
+    EXPECT_EQ(throttler.getThrottlingDuration(), max_duration);
 }
 
+/// Re-postponing an unelapsed delay must not count it twice. Unlike the cases above this needs no
+/// sanitizer and an ordinary speed: it is what makes `system.scheduler.throttling_us` report more
+/// throttling than the server has been up for.
+TEST(SchedulerThrottlerConstraint, ThrottlingDurationIsNotDoubleCounted)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start = EventQueue::Clock::now();
+    constexpr double max_speed = 0.001; // A cost-1 request parks for 1000 seconds
+    constexpr auto delay = std::chrono::seconds(1000);
+
+    auto & throttler = parkOneRequest(t, start, max_speed);
+    EXPECT_EQ(throttler.getThrottlingDuration(), delay);
+
+    /// Nothing has elapsed, so the whole delay is still pending and re-postponing it adds nothing.
+    for (int i = 0; i < 3; i++)
+    {
+        throttler.updateConstraints(max_speed, /*max_burst=*/ 0.0);
+        EXPECT_EQ(throttler.getThrottlingDuration(), delay);
+    }
+
+    /// Halfway through, half the delay has been served and only the other half is re-postponed.
+    t.process(start + delay / 2, 0);
+    throttler.updateConstraints(max_speed, /*max_burst=*/ 0.0);
+    EXPECT_EQ(throttler.getThrottlingDuration(), delay);
+}
 
 /// The two guards above must not be satisfied by suppressing the metric: an ordinary speed still
 /// has to accumulate the exact delay it postpones, once per postponement.
