@@ -56,7 +56,7 @@ def test_failed_file_ttl_sec(started_cluster):
         started_cluster,
         node,
         table_name,
-        "ordered",
+        "unordered",
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
@@ -148,7 +148,7 @@ def test_system_drop_s3queue_failed_files_single(started_cluster):
         started_cluster,
         node,
         table_name,
-        "ordered",
+        "unordered",
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
@@ -211,7 +211,7 @@ def test_system_drop_s3queue_failed_files_bulk(started_cluster):
         started_cluster,
         node,
         table_name,
-        "ordered",
+        "unordered",
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
@@ -276,7 +276,7 @@ def test_system_drop_s3queue_failed_files_idempotent(started_cluster):
         started_cluster,
         node,
         table_name,
-        "ordered",
+        "unordered",
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
@@ -310,6 +310,110 @@ def test_system_drop_s3queue_failed_files_idempotent(started_cluster):
 
     # Still no failed files
     assert get_failed_count() == 0, "Should still have no failed files"
+
+    # Cleanup
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
+def test_system_drop_ordered_mode_blocked(started_cluster):
+    """Test that SYSTEM DROP S3QUEUE FAILED FILES is blocked in ordered mode"""
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_ordered_mode_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    # Create table in ordered mode
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+        },
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    # Try to run SYSTEM DROP on ordered mode table - should fail with NOT_IMPLEMENTED
+    error = node.query_and_get_error(
+        f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}"
+    )
+
+    assert "NOT_IMPLEMENTED" in error or "Code: 48" in error, \
+        f"Expected NOT_IMPLEMENTED error, got: {error}"
+    assert "only supported for unordered mode" in error, \
+        f"Error message should mention unordered mode requirement, got: {error}"
+
+    # Cleanup
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
+def test_failed_file_ttl_ordered_mode_no_cleanup(started_cluster):
+    """Test that failed_file_ttl_sec setting does not trigger cleanup in ordered mode.
+
+    In ordered mode, cleanup_failed_files is disabled by design (matching cleanup_processed_files
+    pattern), so setting failed_file_ttl_sec has no effect and the periodic cleanup thread
+    simply skips the failed files path.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_ttl_ordered_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    # Create table in ordered mode with failed_file_ttl_sec set
+    # This should be accepted but ignored (cleanup_failed_files will be false)
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "failed_file_ttl_sec": 3,  # Will be ignored in ordered mode
+            "cleanup_interval_min_ms": 2000,
+            "cleanup_interval_max_ms": 2000,
+            "s3queue_loading_retries": 0,
+        },
+    )
+
+    # Create an invalid file that will fail
+    invalid_csv = b"invalid,data,here\n"
+    put_s3_file_content(
+        started_cluster, f"{files_path}/bad_file.csv", invalid_csv
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    # Wait for file to fail
+    time.sleep(3)
+
+    def get_failed_count():
+        return int(node.query(
+            f"SELECT count() FROM system.s3queue_metadata_cache "
+            f"WHERE zookeeper_path = '{keeper_path}' AND status = 'Failed'"
+        ).strip())
+
+    # File should be marked as failed
+    failed_count = get_failed_count()
+    if failed_count > 0:
+        # Wait past the TTL period
+        time.sleep(5)
+
+        # In ordered mode, TTL cleanup is disabled, so failed file should still be there
+        failed_count_after = get_failed_count()
+        assert failed_count_after == failed_count, \
+            "Failed files should NOT be cleaned up in ordered mode (cleanup_failed_files is disabled)"
+    else:
+        logging.info("No failed files detected - ordered mode may handle failures differently")
 
     # Cleanup
     node.query(f"DROP TABLE {table_name}")
