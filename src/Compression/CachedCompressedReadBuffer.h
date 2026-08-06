@@ -33,9 +33,6 @@ private:
 
     void initInput();
 
-    /// Drop our reference to the cached cell without crediting this query for it.
-    void releaseCell();
-
     bool nextImpl() override;
 
     void prefetch(Priority priority) override;
@@ -50,7 +47,6 @@ private:
 
 public:
     CachedCompressedReadBuffer(const std::string & path, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator, UncompressedCache * cache_, bool allow_different_codecs_ = false);
-    ~CachedCompressedReadBuffer() override;
 
     /// Seek is lazy. It doesn't move the position anywhere, just remember them and perform actual
     /// seek inside nextImpl.

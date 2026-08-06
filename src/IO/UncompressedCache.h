@@ -3,6 +3,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/JemallocCacheAllocator.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Common/CacheBase.h>
 
@@ -23,6 +24,15 @@ struct UncompressedCacheCell
     Memory<JemallocCacheAllocator> data;
     size_t compressed_size{};
     UInt32 additional_bytes{};
+
+    /// `data` is filled without charging the query that read it, see `CachedCompressedReadBuffer::nextImpl`, so
+    /// release it the same way: these bytes leave the server total, not the tracker of whichever query happens
+    /// to evict the cell or to hold its last reference.
+    ~UncompressedCacheCell()
+    {
+        MemoryTrackerBlockerInThread cached_bytes_not_charged_to_the_query;
+        data = {};
+    }
 };
 
 struct UncompressedSizeWeightFunction
