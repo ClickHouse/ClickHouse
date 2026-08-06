@@ -111,7 +111,7 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
             "SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm",
             R"(
 ┌──exactEdgeLengthKm─┐
-│ 195.44963163407317 │
+│ 195.4496316340728 │
 └────────────────────┘
             )"
         }
