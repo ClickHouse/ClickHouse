@@ -993,3 +993,90 @@ def test_find_projection_excludes_id(started_cluster):
 
     with pytest.raises(pymongo.errors.PyMongoError):
         list(collection.find({}, {"name": 1, "age": 0}))
+
+
+def test_insert_explicit_null(started_cluster):
+    """An explicit `null` is a real Mongo value, not an omitted field: it must survive the
+    round trip rather than be erased, both as the first value of its field - which fixes the
+    column type to `Dynamic` - and as the only field of the first document."""
+    client = make_client()
+    collection = client["db"]["nulls"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "note": None}, {"id": 2, "note": "set"}])
+
+    found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
+    assert found == [{"id": 1, "note": None}, {"id": 2, "note": "set"}]
+
+    only_null = client["db"]["only_null"]
+    only_null.drop()
+    only_null.insert_many([{"note": None}])
+    assert [doc for doc in only_null.find({})] == [{"note": None}]
+
+
+def test_find_limit_zero_means_no_limit(started_cluster):
+    """`limit: 0` means no limit in MongoDB, so it must return every matching document
+    rather than an empty cursor. A negative limit reads as its absolute value."""
+    client = make_client()
+    collection = client["db"]["limit_zero"]
+
+    collection.drop()
+    collection.insert_many([{"id": i} for i in range(1, 6)])
+
+    assert [doc["id"] for doc in collection.find({}).sort("id", 1).limit(0)] == [1, 2, 3, 4, 5]
+    assert [doc["id"] for doc in collection.find({"id": {"$gt": 2}}).sort("id", 1).limit(0)] == [3, 4, 5]
+    assert [doc["id"] for doc in collection.find({}).sort("id", 1).limit(-2)] == [1, 2]
+
+
+def test_current_date_forms(started_cluster):
+    """`$currentDate` accepts `true` and `{"$type": "date"}`. `{"$type": "timestamp"}` asks for
+    the BSON timestamp, which does not exist here, and `false` is an error in MongoDB as well -
+    neither may mutate the row."""
+    import datetime
+
+    client = make_client()
+    collection = client["db"]["current_date"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1, "seen": datetime.datetime(2000, 1, 1)}])
+
+    def seen(): return collection.find({})[0]["seen"]
+
+    collection.update_many({"id": 1}, {"$currentDate": {"seen": True}})
+    assert wait_for(lambda: seen() > datetime.datetime(2020, 1, 1))
+
+    collection.update_many({"id": 1}, {"$set": {"seen": datetime.datetime(2000, 1, 1)}})
+    wait_for(lambda: seen() == datetime.datetime(2000, 1, 1))
+    collection.update_many({"id": 1}, {"$currentDate": {"seen": {"$type": "date"}}})
+    assert wait_for(lambda: seen() > datetime.datetime(2020, 1, 1))
+
+    collection.update_many({"id": 1}, {"$set": {"seen": datetime.datetime(2000, 1, 1)}})
+    wait_for(lambda: seen() == datetime.datetime(2000, 1, 1))
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.update_many({"id": 1}, {"$currentDate": {"seen": False}})
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.update_many({"id": 1}, {"$currentDate": {"seen": {"$type": "timestamp"}}})
+    # The rejected forms did not mutate the row.
+    time.sleep(2)
+    assert seen() == datetime.datetime(2000, 1, 1)
+
+
+def test_oversized_result_is_an_error(started_cluster):
+    """The reply to a `find` is a single BSON document and the cursor id is always 0, so a
+    result that does not fit into the advertised `maxBsonObjectSize` must be a controlled
+    error rather than an oversized reply the driver would refuse to read."""
+    client = make_client()
+    collection = client["db"]["oversized"]
+
+    collection.drop()
+    # Five documents of ~4 MiB each: each fits comfortably, together they exceed the 16 MiB
+    # `maxBsonObjectSize` a single reply may hold.
+    for i in range(5):
+        collection.insert_many([{"id": i, "payload": "x" * (4 * 1024 * 1024)}])
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        list(collection.find({}))
+
+    # A bounded ask still works.
+    assert [doc["id"] for doc in collection.find({}, {"id": 1}).sort("id", 1)] == [0, 1, 2, 3, 4]
+    assert len(list(collection.find({}).limit(2))) == 2
