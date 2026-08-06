@@ -3622,7 +3622,13 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
 
     WriteBufferFromOwnString out;
-    TextIndexSerialization::serializeHeader(sparse_index, IPostingListCodec::Type::Bitpacking, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec), /*has_positions=*/ false, out);
+    TextIndexSerialization::serializeHeader(
+        sparse_index,
+        IPostingListCodec::Type::Bitpacking,
+        static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec),
+        /*has_positions=*/false,
+        /*has_field_ids=*/false,
+        out);
 
     ReadBufferFromString in(out.str());
     auto sparse_index_data = TextIndexSerialization::deserializeHeader(in);
@@ -3632,6 +3638,89 @@ TEST(PostingListCursorTest, TextIndexHeaderPersistsCodecType)
     EXPECT_EQ(sparse_index_data.sparse_index.size(), 1u);
     EXPECT_EQ(sparse_index_data.sparse_index.getToken(0), "alpha");
     EXPECT_EQ(sparse_index_data.sparse_index.getOffsetInFile(0), 42u);
+}
+
+TEST(PostingListCursorTest, TextIndexFieldTokenCodecRoundTrip)
+{
+    const std::vector<std::pair<String, UInt16>> cases = {
+        {String{}, 1},
+        {String{"a"}, 0x1234},
+        {String{"a\0b", 3}, std::numeric_limits<UInt16>::max()},
+    };
+
+    for (const auto & [token, field_id] : cases)
+    {
+        String encoded;
+        encodeTextIndexFieldToken(token, field_id, encoded);
+
+        ASSERT_EQ(encoded.size(), token.size() + TEXT_INDEX_FIELD_ID_SIZE);
+        EXPECT_EQ(static_cast<unsigned char>(encoded[encoded.size() - 2]), field_id & 0xFF);
+        EXPECT_EQ(static_cast<unsigned char>(encoded[encoded.size() - 1]), field_id >> 8);
+
+        const auto decoded = decodeTextIndexFieldToken(encoded);
+        ASSERT_TRUE(decoded);
+        EXPECT_EQ(decoded->token, std::string_view(token));
+        EXPECT_EQ(decoded->field_id, field_id);
+    }
+
+    EXPECT_FALSE(decodeTextIndexFieldToken(String{}));
+    EXPECT_FALSE(decodeTextIndexFieldToken(String{"x"}));
+}
+
+TEST(PostingListCursorTest, TextIndexFieldBindingResortsAndRehashes)
+{
+    TextSearchQuery max_id_query(
+        "hasAllTokens", TextSearchMode::All, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>{"a", "aa"});
+    const auto untagged_hash = max_id_query.getHash();
+
+    max_id_query.bindToField(std::numeric_limits<UInt16>::max());
+    ASSERT_EQ(max_id_query.getTokens().size(), 2);
+
+    /// With an all-ones suffix, `aa || id` sorts before `a || id`, unlike the logical tokens.
+    /// `bindToField` must restore physical dictionary order after appending the suffix.
+    const auto first = decodeTextIndexFieldToken(max_id_query.getTokens()[0]);
+    const auto second = decodeTextIndexFieldToken(max_id_query.getTokens()[1]);
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+    EXPECT_EQ(first->token, "aa");
+    EXPECT_EQ(second->token, "a");
+    EXPECT_NE(max_id_query.getHash(), untagged_hash);
+
+    TextSearchQuery min_id_query(
+        "hasAllTokens", TextSearchMode::All, TextIndexDirectReadMode::None, VectorWithMemoryTracking<String>{"a", "aa"});
+    min_id_query.bindToField(1);
+    EXPECT_NE(max_id_query.getHash(), min_id_query.getHash());
+}
+
+TEST(PostingListCursorTest, TextIndexHeaderPersistsFieldLayout)
+{
+    auto tokens = ColumnString::create();
+    tokens->insert("alpha");
+
+    auto offsets = ColumnUInt64::create();
+    offsets->insertValue(42);
+
+    DictionarySparseIndex sparse_index(tokens->getPtr(), offsets->getPtr());
+
+    for (const bool has_positions : {false, true})
+    {
+        WriteBufferFromOwnString out;
+        TextIndexSerialization::serializeHeader(
+            sparse_index,
+            IPostingListCodec::Type::Bitpacking,
+            static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithFieldIds),
+            has_positions,
+            /*has_field_ids=*/true,
+            out);
+
+        ReadBufferFromString in(out.str());
+        const auto header = TextIndexSerialization::deserializeHeader(in);
+
+        EXPECT_EQ(header.version, static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithFieldIds));
+        EXPECT_EQ(header.has_positions, has_positions);
+        EXPECT_TRUE(header.has_field_ids);
+        EXPECT_EQ(header.sparse_index.getToken(0), "alpha");
+    }
 }
 
 TEST(PostingListCursorTest, TextIndexHeaderInitialVersionDefaultsToNoneCodec)

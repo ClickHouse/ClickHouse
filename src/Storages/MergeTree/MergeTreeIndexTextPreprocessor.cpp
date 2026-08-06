@@ -38,13 +38,18 @@ constexpr char preprocessor_column_name[] = "__text_index_column";
 
 ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & expression_ast, bool replace_index_column)
 {
+    /// A null preprocessor expression means "no preprocessing" and needs no expression binding,
+    /// so return early before the single-column assertions. The constructor still receives the
+    /// real, non-empty `IndexDescription`, but a field-id-tagged index can now construct a no-op
+    /// `MergeTreeIndexTextPreprocessor` instead of leaving a null pointer that condition and
+    /// query-rewrite paths may dereference.
+    if (expression_ast == nullptr)
+        return nullptr;
+
     chassert(index.column_names.size() == 1);
     chassert(index.data_types.size() == 1);
     chassert(index.expression_list_ast != nullptr);
     chassert(index.expression_list_ast->children.size() == 1);
-
-    if (expression_ast == nullptr)
-        return nullptr;
 
     /// Transform a preprocessor AST like `lower(val)` into `arrayMap(x -> lower(x), val)`.
     /// This is done at the AST level so that ActionsVisitor can build the DAG naturally.
@@ -77,11 +82,13 @@ ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & e
 
 ASTPtr convertASTForConstant(const IndexDescription & index, const ASTPtr & expression_ast)
 {
-    chassert(index.column_names.size() == 1);
-    chassert(index.data_types.size() == 1);
-
+    /// See `convertASTForIndexColumn`: the no-op case is column-agnostic and must return before
+    /// validating the legacy single-column expression contract.
     if (expression_ast == nullptr)
         return nullptr;
+
+    chassert(index.column_names.size() == 1);
+    chassert(index.data_types.size() == 1);
 
     ASTPtr body = expression_ast->clone();
     replaceExpressionToIdentifier(body, index.column_names.front(), preprocessor_column_name);

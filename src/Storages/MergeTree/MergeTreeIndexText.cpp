@@ -43,6 +43,10 @@
 #include <base/types.h>
 #include <fmt/ranges.h>
 
+#include <Poco/Dynamic/Var.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
@@ -495,6 +499,15 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     }
 
     auto text_index_header = loadHeader(*index_stream, state);
+    /// Metadata supplies the field ownership table, while each part independently records its
+    /// physical key layout. Never reinterpret legacy token bytes as tagged keys (or vice versa)
+    /// after an index-definition change.
+    if (text_index_header->has_field_ids != condition_text.isFieldTagged())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Text index key layout does not match its definition: part has field ids {}, definition has field ids {}",
+            text_index_header->has_field_ids,
+            condition_text.isFieldTagged());
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
     auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
     serialization_version = text_index_header->version;
@@ -1118,7 +1131,13 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr)
+void TextIndexSerialization::serializeHeader(
+    const DictionarySparseIndex & sparse_index,
+    IPostingListCodec::Type posting_list_codec_type,
+    MergeTreeIndexVersion version,
+    bool has_positions,
+    bool has_field_ids,
+    WriteBuffer & ostr)
 {
     UInt64 codec_type = static_cast<UInt64>(posting_list_codec_type);
 
@@ -1127,6 +1146,9 @@ void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & spars
 
     if (version >= static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithPositions))
         writeVarUInt(static_cast<UInt64>(has_positions), ostr);
+
+    if (version >= static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithFieldIds))
+        writeVarUInt(static_cast<UInt64>(has_field_ids), ostr);
 
     /// Sparse indexes are created with raw columns and bit-packed only by optimize.
     /// The write path never calls optimize, so expect the raw columns here.
@@ -1147,7 +1169,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
     UInt64 version = 0;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithPositions))
+    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithFieldIds))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     TextIndexHeader header;
@@ -1169,6 +1191,15 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         UInt64 has_positions = 0;
         readVarUInt(has_positions, istr);
         header.has_positions = has_positions != 0;
+    }
+
+    if (version >= static_cast<UInt64>(TextIndexHeader::Version::WithFieldIds))
+    {
+        UInt64 has_field_ids = 0;
+        readVarUInt(has_field_ids, istr);
+        if (has_field_ids > 1)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid field-id flag in text index header: {}", has_field_ids);
+        header.has_field_ids = has_field_ids != 0;
     }
 
     return header;
@@ -1467,9 +1498,12 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         positions_stream = it->second;
     }
 
-    /// Positional parts need a WithPositions reader.
+    /// Version 3 extends the current header instead of overloading column count. It still writes
+    /// the version-2 positions flag first, so tagged indexes work with or without `.pos` data.
+    const bool has_field_ids = params.field_ids != nullptr;
     auto serialization_version = static_cast<MergeTreeIndexVersion>(
-        params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
+        has_field_ids ? TextIndexHeader::Version::WithFieldIds
+                      : (params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec));
 
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_type);
     PostingsSerialization postings_serialization(std::move(postings_codec), serialization_version);
@@ -1482,7 +1516,13 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         postings_serialization,
         positions_stream);
 
-    TextIndexSerialization::serializeHeader(sparse_index_block, posting_list_codec_type, serialization_version, params.positions, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(
+        sparse_index_block,
+        posting_list_codec_type,
+        serialization_version,
+        params.positions,
+        has_field_ids,
+        index_stream->compressed_hashing);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)
@@ -1562,7 +1602,7 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
     }
 }
 
-void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
+void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document, std::optional<UInt16> field_id)
 {
     UInt32 token_position = 0;
     forEachToken(
@@ -1571,16 +1611,25 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         document.size(),
         [&](const char * token_start, size_t token_length)
         {
-            addToken({token_start, token_length}, token_position);
+            addToken({token_start, token_length}, token_position, field_id);
             ++token_position;
             return false;
         });
 }
 
-void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
+void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position, std::optional<UInt16> field_id)
 {
     if (postprocessor_drop_filter && postprocessor_drop_filter->shouldDrop(token))
         return;
+
+    /// Apply the field suffix only after the inline postprocessor has inspected the logical token.
+    /// The scratch-backed view is safe for both map insertions: `ArenaKeyHolder` persists new key
+    /// bytes into `arena`, and an existing key is already owned by the map.
+    if (field_id)
+    {
+        encodeTextIndexFieldToken(token, *field_id, field_token_scratch);
+        token = field_token_scratch;
+    }
 
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it;
@@ -1663,6 +1712,8 @@ void MergeTreeIndexTextGranuleBuilder::reset()
     tokens_map = {};
     posting_lists.clear();
     arena = std::make_unique<Arena>();
+    /// Do not retain a one-off large token allocation after the granule has been finalized.
+    field_token_scratch = String{};
 
     if (params.positions)
         position_map = std::make_unique<TokenToPositionListMap>();
@@ -1671,13 +1722,13 @@ void MergeTreeIndexTextGranuleBuilder::reset()
 }
 
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
-    String index_column_name_,
+    Names index_column_names_,
     MergeTreeIndexTextParams params_,
     TokenizerPtr tokenizer_,
     const IPostingListCodec * posting_list_codec_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_)
-    : index_column_name(std::move(index_column_name_))
+    : index_column_names(std::move(index_column_names_))
     , params(std::move(params_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
@@ -1725,32 +1776,90 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (rows_read == 0)
         return;
 
-    const auto & index_column = block.getByName(index_column_name);
-    auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
+    if (!params.field_ids)
+    {
+        chassert(index_column_names.size() == 1);
+        const auto & column_name = index_column_names.front();
+        const auto & index_column = block.getByName(column_name);
+        auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-    if (postprocessor->hasActions() && !use_postprocessor_drop_fast_path)
-    {
-        ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
-        ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
-        addDocumentsFromArray<false>(postprocessed, 0, rows_read);
-    }
-    else if (isArray(index_column.type))
-    {
-        addDocumentsFromArray<true>(preprocessed_column, offset, rows_read);
-    }
-    else
-    {
-        const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
-
-        for (size_t i = offset; i < offset + rows_read; ++i)
+        if (postprocessor->hasActions() && !use_postprocessor_drop_fast_path)
         {
-            if (!column_is_nullable || !preprocessed_column->isNullAt(i))
-            {
-                const std::string_view ref = preprocessed_column->getDataAt(i);
-                granule_builder.addDocument(ref);
-            }
-            granule_builder.incrementCurrentRow();
+            ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
+            ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
+            addDocumentsFromArray<false>(postprocessed, 0, rows_read);
         }
+        else if (isArray(index_column.type))
+        {
+            addDocumentsFromArray<true>(preprocessed_column, offset, rows_read);
+        }
+        else
+        {
+            const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
+
+            for (size_t i = offset; i < offset + rows_read; ++i)
+            {
+                if (!column_is_nullable || !preprocessed_column->isNullAt(i))
+                    granule_builder.addDocument(preprocessed_column->getDataAt(i));
+                granule_builder.incrementCurrentRow();
+            }
+        }
+
+        *pos += rows_read;
+        return;
+    }
+
+    /// Every field-tagged index uses this path, including one with a single active column. The
+    /// initial field-tagged stage intentionally has no transform semantics; `field_ids`, rather
+    /// than active column count, is the physical-layout discriminator.
+    chassert(params.field_ids);
+    chassert(!preprocessor->hasActions());
+    chassert(!postprocessor->hasActions());
+
+    struct FieldColumn
+    {
+        const IColumn * column;
+        UInt16 field_id;
+    };
+
+    std::vector<FieldColumn> fields;
+    fields.reserve(index_column_names.size());
+    for (const auto & column_name : index_column_names)
+        fields.push_back({block.getByName(column_name).column.get(), params.field_ids->at(column_name)});
+
+    /// Add all fields of a source row before advancing the posting row id. Thus independently
+    /// queried fields use the same row-id space while their dictionary keys remain disjoint.
+    for (size_t row = *pos; row < *pos + rows_read; ++row)
+    {
+        for (const auto & field : fields)
+        {
+            const IColumn & column = *field.column;
+
+            if (const auto * column_array = typeid_cast<const ColumnArray *>(&column))
+            {
+                const IColumn & column_data = column_array->getData();
+                const auto & column_offsets = column_array->getOffsets();
+                const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(column_data);
+
+                for (size_t element = column_offsets[row - 1]; element < column_offsets[row]; ++element)
+                {
+                    if (data_is_nullable && column_data.isNullAt(element))
+                        continue;
+
+                    const std::string_view document = column_data.getDataAt(element);
+                    if (document.empty())
+                        continue;
+
+                    granule_builder.addDocument(document, field.field_id);
+                }
+            }
+            else if (!isColumnNullableOrLowCardinalityNullable(column) || !column.isNullAt(row))
+            {
+                granule_builder.addDocument(column.getDataAt(row), field.field_id);
+            }
+        }
+
+        granule_builder.incrementCurrentRow();
     }
 
     *pos += rows_read;
@@ -1799,6 +1908,10 @@ MergeTreeIndexText::MergeTreeIndexText(
     , params(std::move(params_))
     , tokenizer(std::move(tokenizer_))
     , posting_list_codec(std::move(posting_list_codec_))
+    /// A field-id-tagged index rejects preprocessing in this stage, but still owns a real no-op
+    /// object so existing condition and query-rewrite paths may dereference it unconditionally.
+    /// Pass the real, non-empty `index_`: with a null expression the AST conversion helpers return
+    /// before their single-column assertions and the constructor creates no actions.
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
     , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
 {
@@ -1835,7 +1948,9 @@ MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const IMergeTreeD
         {MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"}
     };
 
-    /// V2: positions file exists on disk.
+    /// `MergeTreeIndexFormat` V2 means that a positions substream exists. It is independent of
+    /// `TextIndexHeader::Version`; for example, a field-tagged header V3 with positions still
+    /// returns this stream-set format V2.
     if (indexFileExistsInChecksums(part.checksums, relative_path_prefix + ".pos", ".idx", part.getDataPartStoragePtr().get()))
     {
         substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
@@ -1852,12 +1967,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor, postprocessor);
+    return std::make_shared<MergeTreeIndexAggregatorText>(
+        index.column_names, params, tokenizer.get(), posting_list_codec.get(), preprocessor, postprocessor);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, tokenizer.get(), preprocessor, postprocessor, params.positions);
+    return std::make_shared<MergeTreeIndexConditionText>(
+        predicate, context, index.sample_block, tokenizer.get(), preprocessor, postprocessor, params.positions, params.field_ids);
 }
 
 DataTypePtr MergeTreeIndexText::getNestedDataType(const DataTypePtr & data_type)
@@ -1885,6 +2002,7 @@ static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "diction
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "support_phrase_search";
+static const String ARGUMENT_FIELD_IDS = "field_ids";
 
 namespace
 {
@@ -1967,6 +2085,134 @@ std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & a
     return options;
 }
 
+/// Multi-column indexes cannot derive ids from declaration order: the complete mapping is a
+/// user-visible persistence contract and must therefore be supplied explicitly.
+void validateFieldIdsPresence(const Names & column_names, const std::optional<String> & field_ids_json)
+{
+    if (column_names.size() > 1 && !field_ids_json)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A multi-column text index requires an explicit '{}' argument", ARGUMENT_FIELD_IDS);
+}
+
+/// The first field-tagged stage deliberately has no transform-template semantics. Keep legacy
+/// untagged single-column transforms unchanged and reject tagged definitions explicitly instead
+/// of accidentally binding an expression to only the first indexed field.
+void validateFieldTaggedTransforms(
+    const std::optional<String> & field_ids_json, const ASTPtr & preprocessor_ast, const ASTPtr & postprocessor_ast)
+{
+    if (!field_ids_json)
+        return;
+
+    if (preprocessor_ast)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Text index argument '{}' is not supported together with '{}'",
+            ARGUMENT_PREPROCESSOR,
+            ARGUMENT_FIELD_IDS);
+
+    if (postprocessor_ast)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Text index argument '{}' is not supported together with '{}'",
+            ARGUMENT_POSTPROCESSOR,
+            ARGUMENT_FIELD_IDS);
+}
+
+/// Build one snapshot of the user-maintained, append-only field ownership table.
+///
+/// Every active index column must be present, while extra names are permitted as inactive
+/// tombstones. Id uniqueness is checked across the complete JSON object so a newly activated
+/// field cannot reinterpret postings written for a removed historical field. This validates one
+/// metadata snapshot only; it does not establish that every existing part covers every active field.
+TextIndexFieldIdsMap buildTextIndexFieldIds(const Names & column_names, const std::optional<String> & field_ids_json)
+{
+    if (!field_ids_json)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is required", ARGUMENT_FIELD_IDS);
+
+    Poco::JSON::Object::Ptr object;
+    try
+    {
+        Poco::JSON::Parser parser;
+        object = parser.parse(*field_ids_json).extract<Poco::JSON::Object::Ptr>();
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Text index argument '{}' must be a JSON object mapping field names to ids: {}",
+            ARGUMENT_FIELD_IDS,
+            e.displayText());
+    }
+
+    if (!object)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be a JSON object mapping field names to ids", ARGUMENT_FIELD_IDS);
+
+    TextIndexFieldIdsMap field_ids;
+    for (const auto & field_name : object->getNames())
+    {
+        const auto id_value = object->get(field_name);
+        /// `Poco::Dynamic::Var` converts strings and floating-point values to integers on request.
+        /// Field ids are a persistent byte-level contract, so accept JSON integers only. Poco also
+        /// reports booleans as integers and therefore needs the explicit second check.
+        if (!id_value.isInteger() || id_value.isBoolean())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index argument '{}' must assign an integer id to field '{}'",
+                ARGUMENT_FIELD_IDS,
+                field_name);
+
+        Int64 id = 0;
+        try
+        {
+            id = object->getValue<Int64>(field_name);
+        }
+        catch (const Poco::Exception & e)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index argument '{}' has an invalid id for field '{}': {}",
+                ARGUMENT_FIELD_IDS,
+                field_name,
+                e.displayText());
+        }
+
+        if (id <= 0 || id > std::numeric_limits<UInt16>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index argument '{}' has out-of-range id {} for field '{}' (expected 1..65535)",
+                ARGUMENT_FIELD_IDS,
+                id,
+                field_name);
+
+        field_ids.emplace(field_name, static_cast<UInt16>(id));
+    }
+
+    std::unordered_map<UInt16, std::string_view> fields_by_id;
+    for (const auto & [field_name, field_id] : field_ids)
+    {
+        const auto [owner, inserted] = fields_by_id.emplace(field_id, field_name);
+        if (!inserted)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index argument '{}' assigns field id {} to both '{}' and '{}'",
+                ARGUMENT_FIELD_IDS,
+                field_id,
+                owner->second,
+                field_name);
+    }
+
+    for (const auto & column_name : column_names)
+    {
+        if (!field_ids.contains(column_name))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index argument '{}' is missing an id for indexed field '{}'",
+                ARGUMENT_FIELD_IDS,
+                column_name);
+    }
+
+    return field_ids;
+}
 }
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)
@@ -1991,13 +2237,25 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 
     UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
 
+    auto field_ids_json = extractFieldOption<String>(options, ARGUMENT_FIELD_IDS);
+    validateFieldIdsPresence(index.column_names, field_ids_json);
+    validateFieldTaggedTransforms(field_ids_json, preprocessor_ast, postprocessor_ast);
+
+    /// Supplying `field_ids` selects the tagged physical layout even for one active column. This
+    /// avoids rewriting the meaning of existing dictionary keys if the user later activates more
+    /// fields while preserving the same ownership table.
+    TextIndexFieldIdsMapPtr field_ids;
+    if (field_ids_json)
+        field_ids = std::make_shared<const TextIndexFieldIdsMap>(buildTextIndexFieldIds(index.column_names, field_ids_json));
+
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
         positions,
         std::move(preprocessor_ast),
-        std::move(postprocessor_ast)};
+        std::move(postprocessor_ast),
+        std::move(field_ids)};
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
@@ -2049,23 +2307,45 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
 
+    auto field_ids_json = extractFieldOption<String>(options, ARGUMENT_FIELD_IDS);
+
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
 
-    /// Check that the index is created on a single column
-    if (index.column_names.size() != 1 || index.data_types.size() != 1)
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
+    if (index.column_names.empty() || index.column_names.size() != index.data_types.size())
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on at least one column");
 
-    DataTypePtr index_data_type = index.data_types[0];
-    WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
+    validateFieldIdsPresence(index.column_names, field_ids_json);
+    validateFieldTaggedTransforms(field_ids_json, preprocessor_ast, postprocessor_ast);
 
-    if (!which_data_type.isString() && !which_data_type.isFixedString())
+    /// Tagged indexes bind ids directly to source-column names. Function expressions such as
+    /// `mapKeys(m)` and `JSONAllValues(j)` may cause one predicate to depend on multiple indexed
+    /// expressions and therefore remain available only to legacy untagged single-column indexes.
+    if (field_ids_json)
     {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Text index must be created on columns of type with base type of String or FixedString, got: {}",
-            index_data_type->getName());
+        chassert(index.expression_list_ast);
+        for (const auto & expression : index.expression_list_ast->children)
+        {
+            if (!expression->as<ASTIdentifier>())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "A field-id-tagged text index supports only plain column expressions; got '{}'",
+                    expression->formatForErrorMessage());
+        }
     }
+
+    for (const auto & index_data_type : index.data_types)
+    {
+        WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
+        if (!which_data_type.isString() && !which_data_type.isFixedString())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index must be created on columns of type with base type of String or FixedString, got: {}",
+                index_data_type->getName());
+    }
+
+    if (field_ids_json)
+        buildTextIndexFieldIds(index.column_names, field_ids_json);
 
     /// Create the preprocessor for validation.
     /// For very strict validation of the expression we fully parse it here.

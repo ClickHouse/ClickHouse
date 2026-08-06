@@ -33,6 +33,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int SUPPORT_IS_DISABLED;
@@ -237,19 +238,33 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
 
 static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex & index)
 {
-    const auto * codec = typeid_cast<const MergeTreeIndexText &>(index).getPostingListCodec();
+    const auto & text_index = typeid_cast<const MergeTreeIndexText &>(index);
+    const auto * codec = text_index.getPostingListCodec();
     auto codec_type = codec ? codec->getType() : IPostingListCodec::Type::None;
     auto codec_copy = PostingListCodecFactory::createPostingListCodec(codec_type);
+    const auto params = text_index.getParams();
+    const auto version = static_cast<MergeTreeIndexVersion>(
+        params.field_ids ? TextIndexHeader::Version::WithFieldIds
+                         : (params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec));
 
     /// The merged part is written in the current on-disk format.
-    return PostingsSerialization(std::move(codec_copy), static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
+    return PostingsSerialization(std::move(codec_copy), version);
 }
 
-static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
+static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream, bool expected_field_ids)
 {
     header_stream.seekToStart();
     /// Only the version and codec are needed here, so skip deserializing the sparse index.
     auto header = TextIndexSerialization::deserializeHeaderPrefix(*header_stream.getDataBuffer());
+    /// Equal-key k-way merge is valid only when every input uses the same key codec. The complete
+    /// name-to-id mapping remains the user's metadata contract; the part header independently
+    /// prevents legacy raw keys and tagged composite keys from being merged as one ordering.
+    if (header.has_field_ids != expected_field_ids)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Cannot merge text indexes with different key layouts: source has field ids {}, target has field ids {}",
+            header.has_field_ids,
+            expected_field_ids);
     return PostingsSerialization(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
 }
 
@@ -312,7 +327,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     for (size_t i = 0; i < segments.size(); ++i)
     {
         auto * stream = input_streams[i].at(MergeTreeIndexSubstream::Type::Regular);
-        source_postings_serializations.emplace_back(createSourcePostingsSerialization(*stream));
+        source_postings_serializations.emplace_back(createSourcePostingsSerialization(*stream, params.field_ids != nullptr));
     }
 }
 
@@ -594,9 +609,19 @@ void MergeTextIndexesTask::finalize()
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
 
+    /// Preserve the tagged layout even for a single active field. Composite keys themselves merge
+    /// unchanged; posting and position payload formats do not depend on the field id.
+    const bool has_field_ids = params.field_ids != nullptr;
     auto serialization_version = static_cast<MergeTreeIndexVersion>(
-        params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
-    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions, index_stream->compressed_hashing);
+        has_field_ids ? TextIndexHeader::Version::WithFieldIds
+                      : (params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec));
+    TextIndexSerialization::serializeHeader(
+        sparse_index,
+        postings_serialization.getPostingListCodec()->getType(),
+        serialization_version,
+        params.positions,
+        has_field_ids,
+        index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();

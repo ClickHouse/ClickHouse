@@ -1,0 +1,30 @@
+title_shared	[1,3]
+body_shared	[2,3]
+tags_shared	[1,3]
+nullable_shared	[3]
+fixed_shared	[2]
+field_isolation	[]
+direct_read_actions	2
+index_pruning
+Condition: true
+Parts: 2/2
+Granules: 5/5
+Name: idx
+Description: text GRANULARITY 100000000
+Condition: (mode: All; tokens: ["bodyonly"@42])
+Parts: 1/2
+Granules: 1/5
+cross_field_and	[1]
+same_token_and	[3]
+cross_field_or	[1,2]
+has_any	[1,2,3]
+has_all	[1]
+prepared_in	[2,3]
+phrase	[1]
+pattern_fallback	[1,3]
+direct_read_parity	1
+merged_title_shared	[1,3]
+merged_phrase	[1]
+tagged_single	[1]
+partially_materialized	[1,2]
+materialized	[1,2]

@@ -74,6 +74,27 @@ TextSearchQuery::TextSearchQuery(
     initializeHash();
 }
 
+void TextSearchQuery::bindToField(UInt16 field_id_)
+{
+    for (auto & token : tokens)
+    {
+        /// Empty tokens are prune-all sentinels produced by some predicate conversions. Leaving
+        /// them untagged preserves the invariant that they cannot match a dictionary entry.
+        if (!token.empty())
+            appendTextIndexFieldId(token, field_id_);
+    }
+    /// Appending a suffix can change the order of prefix-related tokens, for example `a` and `aa`.
+    std::sort(tokens.begin(), tokens.end());
+
+    for (auto & token : phrase_tokens)
+    {
+        if (!token.empty())
+            appendTextIndexFieldId(token, field_id_);
+    }
+
+    initializeHash();
+}
+
 void TextSearchQuery::initializeHash()
 {
     SipHash hash_state;
@@ -130,7 +151,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
-    bool has_positions_)
+    bool has_positions_,
+    TextIndexFieldIdsMapPtr field_ids_)
     : WithContext(context_)
     , header(index_sample_block)
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
@@ -139,6 +161,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , has_preprocessor(preprocessor && preprocessor->hasActions())
     , postprocessor(postprocessor_)
     , has_postprocessor(postprocessor && postprocessor->hasActions())
+    , field_ids(std::move(field_ids_))
     , has_positions(has_positions_)
 {
     if (!predicate)
@@ -582,7 +605,19 @@ std::string MergeTreeIndexConditionText::getDescription() const
             if (i > 0)
                 description += ", ";
 
-            description += fmt::format("\"{}\"", all_search_tokens[i]);
+            const auto & token = all_search_tokens[i];
+            if (field_ids && !token.empty())
+            {
+                /// Keep binary suffix bytes out of `EXPLAIN indexes` output while retaining the
+                /// selected-field identity that distinguishes otherwise equal logical tokens.
+                const auto decoded = decodeTextIndexFieldToken(token);
+                chassert(decoded);
+                description += fmt::format("\"{}\"@{}", decoded->token, decoded->field_id);
+            }
+            else
+            {
+                description += fmt::format("\"{}\"", token);
+            }
         }
     }
 
@@ -881,6 +916,46 @@ static void validateRegexpPatterns(const Array & patterns, const Settings & sett
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
+    const RPNBuilderFunctionTreeNode & function_node,
+    const RPNBuilderTreeNode & index_column_node,
+    DataTypePtr value_type,
+    Field value_field,
+    RPNElement & out) const
+{
+    if (!traverseFunctionNodeImpl(function_node, index_column_node, std::move(value_type), std::move(value_field), out))
+        return false;
+
+    if (!field_ids)
+        return true;
+
+    /// Pattern dictionary scans currently match the complete physical key. Until they decode the
+    /// suffix and filter by field id, a tagged index must not participate in this optimization.
+    for (const auto & query : out.text_search_queries)
+    {
+        if (!query->getPatterns().empty())
+        {
+            out.text_search_queries.clear();
+            return false;
+        }
+    }
+
+    /// Tagged indexes are restricted to plain source columns at DDL validation. Resolve that one
+    /// field here after all exact/phrase branches have produced their queries, so no producing
+    /// branch can forget to encode its physical dictionary keys.
+    const auto field = field_ids->find(index_column_node.getColumnName());
+    if (field == field_ids->end())
+    {
+        out.text_search_queries.clear();
+        return false;
+    }
+
+    for (auto & query : out.text_search_queries)
+        query->bindToField(field->second);
+
+    return true;
+}
+
+bool MergeTreeIndexConditionText::traverseFunctionNodeImpl(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
     DataTypePtr value_type,
@@ -1648,6 +1723,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     RPNElement & out) const
 {
     std::optional<size_t> set_key_position;
+    std::optional<String> indexed_column_name;
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
@@ -1667,18 +1743,23 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
             if (has_index(argument))
             {
-                /// Text index support only one index column.
+                /// One prepared-set predicate may use only one indexed tuple position. A shared
+                /// multi-column index still resolves exactly one source field for this query.
                 if (set_key_position.has_value())
                     return false;
 
                 set_key_position = i;
+                indexed_column_name = argument.getColumnName();
             }
         }
     }
     else
     {
         if (has_index(lhs))
+        {
             set_key_position = 0;
+            indexed_column_name = lhs.getColumnName();
+        }
     }
 
     if (!set_key_position.has_value())
@@ -1733,6 +1814,22 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         }
 
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
+    }
+
+    if (field_ids)
+    {
+        /// Prepared `IN` sets bypass `traverseFunctionNode`, so apply the same field binding here
+        /// before the queries are inserted into hash-keyed analyzer state.
+        chassert(indexed_column_name.has_value());
+        const auto field = field_ids->find(*indexed_column_name);
+        if (field == field_ids->end())
+        {
+            out.text_search_queries.clear();
+            return false;
+        }
+
+        for (auto & query : out.text_search_queries)
+            query->bindToField(field->second);
     }
 
     return true;

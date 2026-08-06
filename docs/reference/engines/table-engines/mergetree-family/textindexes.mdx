@@ -91,6 +91,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, field_ids = '{"str": 1}']
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -110,6 +111,34 @@ Text indexes can be defined on columns of these types:
 
 Columns of type [Nullable(T)](/reference/data-types/nullable) and [LowCardinality()](/reference/data-types/lowcardinality) are also supported, including `Array(Nullable(String or FixedString))`.
 
+### Multi-column text indexes {#multi-column-text-indexes}
+
+A single text index can index multiple plain columns. Queries still address each column separately and can combine predicates in SQL:
+
+```sql title="Query"
+CREATE TABLE documents
+(
+    id UInt64,
+    title String,
+    body String,
+    INDEX search_idx (title, body) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        field_ids = '{"title": 1, "body": 2}')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+SELECT id
+FROM documents
+WHERE hasToken(title, 'ClickHouse') AND hasToken(body, 'search');
+```
+
+The `field_ids` argument is a user-maintained JSON object that assigns each indexed column a stable integer ID from 1 through 65535. It is mandatory for a multi-column index. Every active column must have an entry, and IDs must be unique across both active columns and retained entries for removed columns. Do not change or reuse an existing assignment.
+
+Supplying `field_ids` also selects the field-tagged layout for a single-column index. Field-tagged indexes currently support only plain column expressions and cannot use `preprocessor` or `postprocessor`. The dictionary-scan optimization for pattern-only predicates is not supported for this layout yet, so affected predicates fall back to row-level evaluation. The `mergeTreeTextIndex` table function also does not support field-tagged indexes yet.
+
+Existing parts do not record which individual fields they contain. Treat any change to the active columns or their IDs as an index replacement: use `DROP INDEX`, `ADD INDEX`, and `MATERIALIZE INDEX`, and wait for materialization to finish before relying on predicates for the changed fields. Keep removed fields in `field_ids` as tombstones so that their IDs are never reused.
+
 Alternatively, to add a text index to an existing table:
 
 ```sql title="Query"
@@ -128,6 +157,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
+                                [, field_ids = '{"str": 1}']
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]

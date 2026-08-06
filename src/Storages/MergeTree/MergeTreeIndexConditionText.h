@@ -5,8 +5,18 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <optional>
+#include <unordered_map>
+
 namespace DB
 {
+
+/// Complete user-maintained ownership table for field-tagged text-index keys. It may contain
+/// hundreds of active fields and inactive tombstones, so it is shared rather than copied through
+/// `MergeTreeIndexTextParams` and per-query objects. A null pointer means only the legacy untagged
+/// single-column layout; an explicit map on one active column is still tagged.
+using TextIndexFieldIdsMap = std::unordered_map<String, UInt16>;
+using TextIndexFieldIdsMapPtr = std::shared_ptr<const TextIndexFieldIdsMap>;
 
 class TextIndexTokensCache;
 using TextIndexTokensCachePtr = std::shared_ptr<TextIndexTokensCache>;
@@ -59,10 +69,14 @@ struct TextSearchQuery
     const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
     UInt128 getHash() const { return hash; }
 
+    /// Encode a freshly constructed exact/phrase query before it is registered in condition maps.
+    /// The stable hash is recomputed after the physical keys are changed.
+    void bindToField(UInt16 field_id_);
+
 private:
     void initializeHash();
 
-    /// Fields are immutable after construction, otherwise the precomputed hash becomes stale.
+    /// Fields are immutable after optional field binding, otherwise the precomputed hash becomes stale.
     String function_name;
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
@@ -96,7 +110,8 @@ public:
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
-        bool has_positions_);
+        bool has_positions_,
+        TextIndexFieldIdsMapPtr field_ids_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -127,6 +142,7 @@ public:
     TokenizerPtr getTokenizer() const { return tokenizer; }
     MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
     MergeTreeIndexTextPostprocessorPtr getPostprocessor() const { return postprocessor; }
+    bool isFieldTagged() const { return field_ids != nullptr; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -161,6 +177,16 @@ private:
     bool traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const;
 
     bool traverseFunctionNode(
+        const RPNBuilderFunctionTreeNode & function_node,
+        const RPNBuilderTreeNode & index_column_node,
+        DataTypePtr value_type,
+        Field value_field,
+        RPNElement & out) const;
+
+    /// Predicate-specific matching logic. `traverseFunctionNode` wraps exact and phrase results
+    /// with the common field-binding step and rejects tagged pattern scans until they can decode
+    /// and filter composite dictionary keys.
+    bool traverseFunctionNodeImpl(
         const RPNBuilderFunctionTreeNode & function_node,
         const RPNBuilderTreeNode & index_column_node,
         DataTypePtr value_type,
@@ -215,6 +241,9 @@ private:
     /// Reference postprocessor expression
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     bool has_postprocessor;
+    /// Null for the legacy untagged single-column layout. Non-null is the tagged-layout
+    /// discriminator and also resolves a queried source column to its stable field id.
+    TextIndexFieldIdsMapPtr field_ids;
     /// Whether the index has position data for phrase queries.
     bool has_positions = false;
     /// Cache for tokens and their infos (cardinality, etc.)

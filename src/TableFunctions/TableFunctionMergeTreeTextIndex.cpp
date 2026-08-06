@@ -114,6 +114,12 @@ StoragePtr TableFunctionMergeTreeTextIndex::executeImpl(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table_ptr->getName());
 
     auto text_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_desc, *merge_tree->getSettings());
+    /// Dictionary keys of a field-id-tagged index contain a binary suffix. Until this table
+    /// function exposes the logical token and field id separately, fail explicitly instead of
+    /// returning binary `token` values or applying logical token filters to physical keys.
+    if (typeid_cast<const MergeTreeIndexText &>(*text_index).getParams().field_ids)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' does not support field-id-tagged text indexes yet", getName());
+
     auto columns = getActualTableStructure(context, is_insert_query);
     StorageID storage_id(getDatabaseName(), table_name);
 

@@ -18,6 +18,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
+#include <optional>
 #include <variant>
 #include <vector>
 
@@ -85,7 +86,68 @@ struct MergeTreeIndexTextParams
     size_t positions = 0;
     ASTPtr preprocessor;
     ASTPtr postprocessor;
+    /// Complete field ownership table supplied by the `field_ids` index argument.
+    /// Every active index column has an entry; additional entries are retained tombstones whose
+    /// ids cannot be reused. The caller owns the append-only stability contract across metadata
+    /// revisions. A null pointer is the legacy untagged single-column dictionary layout; a
+    /// non-null pointer selects the tagged layout even when only one column is currently active.
+    /// The initial tagged stage rejects `preprocessor` and `postprocessor`; those remain supported
+    /// without behavior changes on legacy untagged single-column indexes. Parts do not persist
+    /// per-field coverage in this stage, so changing the active fields or their ids is an index
+    /// replacement: complete the normal `DROP INDEX` / `ADD INDEX` and materialization lifecycle
+    /// before relying on predicates for the changed fields.
+    TextIndexFieldIdsMapPtr field_ids;
 };
+
+/// Field-tagged dictionary keys use one canonical physical layout:
+///
+///   [ logical token bytes ][ field id: 2-byte little-endian `UInt16` ]
+///
+/// The fixed-width suffix makes decoding unambiguous for arbitrary token bytes, while existing
+/// posting and position payload formats remain unchanged. Dictionary ordering is the byte order of
+/// the complete encoded key; it is not a logical tuple ordering for prefix-related token values.
+inline constexpr size_t TEXT_INDEX_FIELD_ID_SIZE = 2;
+static_assert(sizeof(UInt16) == TEXT_INDEX_FIELD_ID_SIZE);
+
+struct DecodedTextIndexFieldToken
+{
+    std::string_view token;
+    UInt16 field_id;
+};
+
+/// Append the canonical suffix in place. The query path uses this helper so it cannot diverge
+/// from the build-side encoding.
+inline void appendTextIndexFieldId(String & token, UInt16 field_id)
+{
+    token.push_back(static_cast<char>(field_id & 0xFF));
+    token.push_back(static_cast<char>((field_id >> 8) & 0xFF));
+}
+
+/// Encode a non-owning tokenizer result into caller-owned storage for dictionary insertion.
+inline void encodeTextIndexFieldToken(std::string_view token, UInt16 field_id, String & encoded)
+{
+    if (token.empty())
+        encoded.clear();
+    else
+        encoded.assign(token.data(), token.size());
+    appendTextIndexFieldId(encoded, field_id);
+}
+
+/// Decode without copying the logical token. `std::nullopt` means the key is too short to contain
+/// the fixed-width suffix, allowing callers with tagged index context to reject malformed keys.
+inline std::optional<DecodedTextIndexFieldToken> decodeTextIndexFieldToken(std::string_view encoded)
+{
+    if (encoded.size() < TEXT_INDEX_FIELD_ID_SIZE)
+        return std::nullopt;
+
+    const size_t token_size = encoded.size() - TEXT_INDEX_FIELD_ID_SIZE;
+    const auto low = static_cast<UInt16>(static_cast<unsigned char>(encoded[token_size]));
+    const auto high = static_cast<UInt16>(static_cast<unsigned char>(encoded[token_size + 1]));
+    return DecodedTextIndexFieldToken{
+        .token = encoded.substr(0, token_size),
+        .field_id = static_cast<UInt16>(low | (high << 8)),
+    };
+}
 
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
@@ -290,12 +352,16 @@ struct TextIndexHeader
         Initial = 0,
         WithCodec = 1,
         WithPositions = 2,
+        WithFieldIds = 3,
     };
 
     MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
-    /// Persisted for version >= WithPositions.
+    /// Persisted for version >= `WithPositions`.
     bool has_positions = false;
+    /// Persisted for version >= `WithFieldIds`; this distinguishes legacy token keys from
+    /// field-tagged keys independently of the current metadata definition.
+    bool has_field_ids = false;
     DictionarySparseIndex sparse_index;
 };
 
@@ -315,7 +381,13 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr);
+    static void serializeHeader(
+        const DictionarySparseIndex & sparse_index,
+        IPostingListCodec::Type posting_list_codec_type,
+        MergeTreeIndexVersion version,
+        bool has_positions,
+        bool has_field_ids,
+        WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the
@@ -455,10 +527,11 @@ struct MergeTreeIndexTextGranuleBuilder
         TokenizerPtr tokenizer_,
         const IPostingListCodec * posting_list_codec_);
 
-    /// Extracts tokens from the document and adds them to the granule.
-    void addDocument(std::string_view document);
-    // Adds a document to the granule. The document is inserted directly as a single token.
-    void addToken(std::string_view token, UInt32 token_position);
+    /// Extracts tokens from the document and adds them to the granule. `field_id` is set exactly
+    /// for the tagged physical layout; `std::nullopt` is reserved for legacy untagged indexes.
+    void addDocument(std::string_view document, std::optional<UInt16> field_id = std::nullopt);
+    /// Adds one already-tokenized value, preserving the supplied position for phrase search.
+    void addToken(std::string_view token, UInt32 token_position, std::optional<UInt16> field_id = std::nullopt);
 
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }
@@ -480,6 +553,9 @@ struct MergeTreeIndexTextGranuleBuilder
     std::list<PostingList> posting_lists;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
+    /// Reused scratch storage for one composite key. `ArenaKeyHolder` persists the key bytes into
+    /// `arena` during insertion, so dictionary entries never retain a view into this buffer.
+    String field_token_scratch;
     /// Position data for phrase query support.
     /// Only allocated when params.positions is true.
     std::unique_ptr<TokenToPositionListMap> position_map;
@@ -497,7 +573,7 @@ using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPos
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 {
     MergeTreeIndexAggregatorText(
-        String index_column_name_,
+        Names index_column_names_,
         MergeTreeIndexTextParams params_,
         TokenizerPtr tokenizer_,
         const IPostingListCodec * posting_list_codec_,
@@ -513,11 +589,13 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
 
 private:
-    /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
+    /// Legacy untagged single-column path.
     template <bool tokenize>
     void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read);
 
-    String index_column_name;
+    /// One or more active index columns in declaration order. `params.field_ids != nullptr` is the
+    /// sole runtime discriminator for the physical key layout, including tagged single-column indexes.
+    Names index_column_names;
     MergeTreeIndexTextParams params;
     /// A private clone of the index tokenizer when it is stateful (e.g. the Japanese or sparse-grams
     /// tokenizers), so concurrent aggregators do not share mutable parsing state; null otherwise.

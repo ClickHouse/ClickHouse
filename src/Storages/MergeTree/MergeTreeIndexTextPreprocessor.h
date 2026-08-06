@@ -12,6 +12,11 @@ struct IndexDescription;
 class MergeTreeIndexTextPreprocessor
 {
 public:
+    /// A null expression constructs an empty-actions object. This object must still exist because
+    /// condition and query-rewrite paths dereference it unconditionally. In that no-op case the
+    /// `IndexDescription` may contain multiple columns, but it must be the real, fully initialized
+    /// description with at least one column and a non-null index expression; non-empty expressions
+    /// retain the legacy single-column contract.
     MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description);
 
     /// Processes n_rows rows of input column, starting at start_row.

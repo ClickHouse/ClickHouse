@@ -1108,19 +1108,15 @@ void MergeTreeData::checkProperties(
 
             indices_names.insert(index.name);
 
-            /// Workaround for https://github.com/ClickHouse/ClickHouse/issues/82385 where functions hasAllTokens/hasAnyTokens don't work
-            /// on columns with more than one text index
+            /// Workaround for https://github.com/ClickHouse/ClickHouse/issues/82385 where functions `hasAllTokens` / `hasAnyTokens` don't work
+            /// on columns with more than one text index. For a multi-column text index, check every indexed column, not only the first one.
             if (index.type == TEXT_INDEX_NAME)
             {
-                const auto & column = index.column_names[0];
-
-                if (columns_with_text_indexes.contains(column))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Column {} must not have more than one text index",
-                        backQuote(index.column_names[0]));
-
-                columns_with_text_indexes.insert(column);
+                for (const auto & column : index.column_names)
+                {
+                    if (!columns_with_text_indexes.insert(column).second)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} must not have more than one text index", backQuote(column));
+                }
             }
         }
     }

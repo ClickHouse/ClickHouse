@@ -461,7 +461,13 @@ private:
             /// Take the first text index if there are multiple text indexes set for the same expression.
             /// It is ambiguous which index to use. However, we allow to use several indexes for different expressions.
             /// for example, we can use indexes both for mapKeys(m) and mapValues(m) in one function m['key'] = 'value'.
-            if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name))
+            ///
+            /// Multi-column text indexes are restricted at DDL validation to plain source columns,
+            /// so one predicate resolves at most one field in an index. `MergeTreeData::checkProperties`
+            /// also prevents any active column from belonging to two text indexes. Consequently the
+            /// first header column remains a stable per-index deduplication key here even though the
+            /// condition itself may match any header column.
+            if (used_index_columns.contains(index_header.begin()->name))
                 continue;
 
             auto search_query = text_index_condition.createTextSearchQuery(canonical_node);
