@@ -1,0 +1,269 @@
+import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+
+from .common import check_on_cluster
+
+cluster = ClickHouseCluster(__file__)
+
+nodes = {
+    "node0": cluster.add_instance(
+        "node0",
+        main_configs=["config/config_reload_discovery.xml"],
+        user_configs=["config/users.d/users_with_pwd.xml"],
+        stay_alive=True,
+        with_zookeeper=True,
+    ),
+    "node1": cluster.add_instance(
+        "node1",
+        main_configs=["config/config_reload_discovery.xml"],
+        user_configs=["config/users.d/users_with_pwd.xml"],
+        stay_alive=True,
+        with_zookeeper=True,
+    ),
+}
+
+CONFIG_PATH = "/etc/clickhouse-server/config.d/config_reload_discovery.xml"
+
+CONFIG_WITH_PWD = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_reload_cluster>
+            <discovery>
+                <path>/clickhouse/discovery/test_reload_cluster</path>
+                <user>user1</user>
+                <password>password123</password>
+            </discovery>
+        </test_reload_cluster>
+    </remote_servers>
+</clickhouse>
+"""
+
+CONFIG_WITH_WRONG_PWD = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_reload_cluster>
+            <discovery>
+                <path>/clickhouse/discovery/test_reload_cluster</path>
+                <user>user1</user>
+                <password>wrongpass1234</password>
+            </discovery>
+        </test_reload_cluster>
+    </remote_servers>
+</clickhouse>
+"""
+
+CONFIG_NO_DISCOVERY = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+    </remote_servers>
+</clickhouse>
+"""
+
+CONFIG_WITH_CLUSTER_B = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_reload_cluster_b>
+            <discovery>
+                <path>/clickhouse/discovery/test_reload_cluster_b</path>
+            </discovery>
+        </test_reload_cluster_b>
+    </remote_servers>
+</clickhouse>
+"""
+
+CONFIG_MULTICLUSTER_ROOT = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_reload_cluster>
+            <discovery>
+                <path>/clickhouse/discovery/test_reload_cluster</path>
+            </discovery>
+        </test_reload_cluster>
+        <dynamic_roots>
+            <discovery>
+                <observer/>
+                <multicluster_root_path>/clickhouse/discovery</multicluster_root_path>
+            </discovery>
+        </dynamic_roots>
+    </remote_servers>
+</clickhouse>
+"""
+
+CONFIG_NO_MULTICLUSTER_ROOT = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_reload_cluster>
+            <discovery>
+                <path>/clickhouse/discovery/test_reload_cluster</path>
+            </discovery>
+        </test_reload_cluster>
+    </remote_servers>
+</clickhouse>
+"""
+
+
+@pytest.fixture(scope="module")
+def start_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def wait_cluster_query(node, cluster_name, password="passwordAbc", should_succeed=True, retries=10):
+    query = (
+        f"SELECT sum(number) FROM clusterAllReplicas('{cluster_name}', numbers(3)) "
+        f"GROUP BY hostname()"
+    )
+    last_error = ""
+    for retry in range(retries):
+        if should_succeed:
+            try:
+                result = node.query(query, password=password)
+                if result.count("\n") >= 2:
+                    return result
+            except Exception as e:
+                last_error = str(e)
+        else:
+            try:
+                error = node.query_and_get_error(query, password=password)
+                if "Authentication failed" in error or error:
+                    return error
+            except Exception as e:
+                last_error = str(e)
+        time.sleep(1 + retry)
+    raise AssertionError(
+        f"wait_cluster_query failed (should_succeed={should_succeed}): {last_error}"
+    )
+
+
+def reload_config_on_all(config_body):
+    for node in nodes.values():
+        node.replace_config(CONFIG_PATH, config_body)
+        node.query("SYSTEM RELOAD CONFIG", password="passwordAbc")
+
+
+def test_reload_discovery_credentials(start_cluster):
+    reload_config_on_all(CONFIG_WITH_PWD)
+
+    check_on_cluster(
+        list(nodes.values()),
+        len(nodes),
+        cluster_name="test_reload_cluster",
+        what="count()",
+        msg="Wrong nodes count after credential config apply",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
+
+    wait_cluster_query(nodes["node0"], "test_reload_cluster", should_succeed=True)
+
+    reload_config_on_all(CONFIG_WITH_WRONG_PWD)
+    wait_cluster_query(nodes["node0"], "test_reload_cluster", should_succeed=False)
+
+    reload_config_on_all(CONFIG_WITH_PWD)
+    wait_cluster_query(nodes["node0"], "test_reload_cluster", should_succeed=True)
+
+
+def test_reload_add_remove_discovery_cluster(start_cluster):
+    reload_config_on_all(CONFIG_NO_DISCOVERY)
+    time.sleep(2)
+
+    for node in nodes.values():
+        count = int(
+            node.query(
+                "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster_b'",
+                password="passwordAbc",
+            )
+        )
+        assert count == 0
+
+    reload_config_on_all(CONFIG_WITH_CLUSTER_B)
+    check_on_cluster(
+        list(nodes.values()),
+        len(nodes),
+        cluster_name="test_reload_cluster_b",
+        what="count()",
+        msg="Cluster was not added after config reload",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
+
+    reload_config_on_all(CONFIG_NO_DISCOVERY)
+    for retry in range(10):
+        counts = [
+            int(
+                node.query(
+                    "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster_b'",
+                    password="passwordAbc",
+                )
+            )
+            for node in nodes.values()
+        ]
+        if all(c == 0 for c in counts):
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError(f"Cluster was not removed after config reload: {counts}")
+
+
+def test_reload_add_remove_multicluster_root(start_cluster):
+    reload_config_on_all(CONFIG_MULTICLUSTER_ROOT)
+
+    check_on_cluster(
+        list(nodes.values()),
+        len(nodes),
+        cluster_name="test_reload_cluster",
+        what="count()",
+        msg="Static discovery cluster missing",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
+
+    # Observer root should discover the static cluster under /clickhouse/discovery
+    for retry in range(15):
+        counts = [
+            int(
+                node.query(
+                    "SELECT count() FROM system.clusters WHERE cluster = 'test_reload_cluster'",
+                    password="passwordAbc",
+                )
+            )
+            for node in nodes.values()
+        ]
+        if all(c == len(nodes) for c in counts):
+            break
+        time.sleep(1)
+
+    reload_config_on_all(CONFIG_NO_MULTICLUSTER_ROOT)
+    # Static cluster must remain after multicluster root removal
+    check_on_cluster(
+        list(nodes.values()),
+        len(nodes),
+        cluster_name="test_reload_cluster",
+        what="count()",
+        msg="Static cluster disappeared after multicluster root removal",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
+
+    reload_config_on_all(CONFIG_MULTICLUSTER_ROOT)
+    check_on_cluster(
+        list(nodes.values()),
+        len(nodes),
+        cluster_name="test_reload_cluster",
+        what="count()",
+        msg="Static cluster missing after restoring multicluster root",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )

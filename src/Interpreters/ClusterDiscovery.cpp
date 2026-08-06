@@ -2,7 +2,9 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <map>
 #include <mutex>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -78,7 +80,7 @@ ClusterDiscovery::ClusterInfo::ClusterInfo(const String & name_,
     size_t shard_id,
     bool observer_mode,
     bool invisible,
-    size_t zk_root_index_
+    const String & multicluster_full_path_
     )
     : name(name_)
     , zk_name(zk_name_)
@@ -90,7 +92,7 @@ ClusterDiscovery::ClusterInfo::ClusterInfo(const String & name_,
     , username(username_)
     , password(password_)
     , cluster_secret(cluster_secret_)
-    , zk_root_index(zk_root_index_)
+    , multicluster_full_path(multicluster_full_path_)
 {
 }
 
@@ -103,6 +105,8 @@ template <typename T>
 class ClusterDiscovery::Flags
 {
 public:
+    Flags() = default;
+
     template <typename It>
     Flags(It begin, It end)
     {
@@ -167,17 +171,11 @@ private:
     bool stop_flag = false;
 };
 
-ClusterDiscovery::ClusterDiscovery(
+ClusterDiscovery::ParsedDiscoveryConfig ClusterDiscovery::parseDiscoveryConfig(
     const Poco::Util::AbstractConfiguration & config,
-    ContextPtr context_,
-    MultiVersion<Macros>::Version macros_,
-    const String & config_prefix)
-    : context(Context::createCopy(context_))
-    , current_node_name(toString(ServerUUID::get()))
-    , log(getLogger("ClusterDiscovery"))
-    , macros(macros_)
+    const String & config_prefix) const
 {
-    LOG_DEBUG(log, "Cluster discovery is enabled");
+    ParsedDiscoveryConfig result;
 
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_prefix, config_keys);
@@ -213,16 +211,14 @@ ClusterDiscovery::ClusterDiscovery(
             String zk_root = zkutil::extractZooKeeperPath(zk_multicluster_name_and_root, true);
             String zk_name = zkutil::extractZooKeeperName(zk_multicluster_name_and_root);
 
-            MulticlusterDiscovery mcd(
-                /* zk_name */ zk_name,
-                /* zk_path */ zk_root,
-                /* is_secure_connection */ config.getBool(cluster_config_prefix + ".secure", false),
-                /* username */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
-                /* password */ password,
-                /* cluster_secret */ cluster_secret
-            );
-
-            multicluster_discovery_paths.push_back(std::move(mcd));
+            result.multicluster_roots.push_back(ParsedMulticlusterDiscovery{
+                .zk_name = zk_name,
+                .zk_path = zk_root,
+                .is_secure_connection = config.getBool(cluster_config_prefix + ".secure", false),
+                .username = config.getString(cluster_config_prefix + ".user", context->getUserName()),
+                .password = password,
+                .cluster_secret = cluster_secret,
+            });
             continue;
         }
 
@@ -232,24 +228,44 @@ ClusterDiscovery::ClusterDiscovery(
         String zk_root = zkutil::extractZooKeeperPath(zk_name_and_root, true);
         String zk_name = zkutil::extractZooKeeperName(zk_name_and_root);
 
-        clusters_info.emplace(
-            key,
-            ClusterInfo(
-                /* name_= */ key,
-                /* zk_name_= */ zk_name,
-                /* zk_root_= */ zk_root,
-                /* host_name= */ config.getString(cluster_config_prefix + ".my_hostname", getFQDNOrHostName()),
-                /* username= */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
-                /* password= */ password,
-                /* cluster_secret= */ cluster_secret,
-                /* port= */ context->getTCPPort(),
-                /* secure= */ config.getBool(cluster_config_prefix + ".secure", false),
-                /* shard_id= */ config.getUInt(cluster_config_prefix + ".shard", 0),
-                /* observer_mode= */ is_observer,
-                /* invisible= */ ConfigHelper::getBool(config, cluster_config_prefix + ".invisible")
-            )
-        );
+        result.static_clusters.push_back(ParsedStaticDiscovery{
+            .name = key,
+            .zk_name = zk_name,
+            .zk_root = zk_root,
+            .host_name = config.getString(cluster_config_prefix + ".my_hostname", getFQDNOrHostName()),
+            .username = config.getString(cluster_config_prefix + ".user", context->getUserName()),
+            .password = password,
+            .cluster_secret = cluster_secret,
+            .secure = config.getBool(cluster_config_prefix + ".secure", false),
+            .shard_id = config.getUInt(cluster_config_prefix + ".shard", 0),
+            .observer = is_observer,
+            .invisible = ConfigHelper::getBool(config, cluster_config_prefix + ".invisible"),
+        });
     }
+
+    return result;
+}
+
+ClusterDiscovery::ClusterDiscovery(
+    const Poco::Util::AbstractConfiguration & config,
+    ContextPtr context_,
+    MultiVersion<Macros>::Version macros_,
+    const String & config_prefix)
+    : context(Context::createCopy(context_))
+    , current_node_name(toString(ServerUUID::get()))
+    , clusters_to_update(std::make_shared<UpdateFlags>())
+    , log(getLogger("ClusterDiscovery"))
+    , macros(macros_)
+{
+    LOG_DEBUG(log, "Cluster discovery is enabled");
+
+    auto parsed = parseDiscoveryConfig(config, config_prefix);
+
+    for (auto & static_cluster : parsed.static_clusters)
+        addStaticCluster(std::move(static_cluster));
+
+    for (auto & root : parsed.multicluster_roots)
+        addMulticlusterRoot(std::move(root));
 
     std::vector<String> clusters_info_names;
     clusters_info_names.reserve(clusters_info.size());
@@ -257,26 +273,312 @@ ClusterDiscovery::ClusterDiscovery(
         clusters_info_names.emplace_back(e.first);
 
     LOG_TRACE(log, "Clusters in discovery mode: {}", fmt::join(clusters_info_names, ", "));
-    clusters_to_update = std::make_shared<UpdateFlags>(clusters_info_names.begin(), clusters_info_names.end());
+}
 
-    /// Init get_nodes_callbacks after init clusters_to_update.
-    for (const auto & e : clusters_info)
-        get_nodes_callbacks[e.first] = std::make_shared<Coordination::WatchCallback>(
-            [cluster_name = e.first, my_clusters_to_update = clusters_to_update](auto)
-            {
-                my_clusters_to_update->set(cluster_name);
-            });
+void ClusterDiscovery::addStaticCluster(ParsedStaticDiscovery && parsed)
+{
+    const String name = parsed.name;
 
-    for (auto & path : multicluster_discovery_paths)
+    clusters_info.emplace(
+        name,
+        ClusterInfo(
+            /* name_= */ parsed.name,
+            /* zk_name_= */ parsed.zk_name,
+            /* zk_root_= */ parsed.zk_root,
+            /* host_name= */ parsed.host_name,
+            /* username= */ parsed.username,
+            /* password= */ parsed.password,
+            /* cluster_secret= */ parsed.cluster_secret,
+            /* port= */ context->getTCPPort(),
+            /* secure= */ parsed.secure,
+            /* shard_id= */ parsed.shard_id,
+            /* observer_mode= */ parsed.observer,
+            /* invisible= */ parsed.invisible));
+
+    get_nodes_callbacks[name] = std::make_shared<Coordination::WatchCallback>(
+        [cluster_name = name, my_clusters_to_update = clusters_to_update](auto)
+        {
+            my_clusters_to_update->set(cluster_name);
+        });
+
+    clusters_to_update->set(name);
+}
+
+void ClusterDiscovery::removeStaticCluster(const String & name)
+{
+    auto it = clusters_info.find(name);
+    if (it == clusters_info.end() || it->second.isDynamic())
+        return;
+
+    unregisterFromZk(it->second);
+
+    clusters_to_update->remove(name);
+    get_nodes_callbacks.erase(name);
+    clusters_info.erase(it);
+
     {
-        path.watch_callback = std::make_shared<Coordination::WatchCallback>(
-            [my_need_update = path.need_update, my_flag = clusters_to_update](auto)
-            {
-                my_need_update->store(true);
-                my_flag->set();
-            }
-        );
+        std::lock_guard lock(mutex);
+        cluster_impls.erase(name);
     }
+
+    LOG_DEBUG(log, "Static discovery cluster '{}' removed due to config change", name);
+}
+
+bool ClusterDiscovery::updateStaticClusterFields(ClusterInfo & info, const ParsedStaticDiscovery & parsed)
+{
+    bool identity_changed = info.zk_name != parsed.zk_name || info.zk_root != parsed.zk_root;
+    if (identity_changed)
+        return false;
+
+    bool credentials_changed
+        = info.username != parsed.username
+        || info.password != parsed.password
+        || info.cluster_secret != parsed.cluster_secret
+        || info.is_secure_connection != parsed.secure;
+
+    String expected_address = parsed.host_name + ":" + toString(context->getTCPPort());
+    bool registration_changed
+        = info.current_node_is_observer != parsed.observer
+        || info.current_node.shard_id != parsed.shard_id
+        || info.current_node.address != expected_address
+        || info.current_node.secure != parsed.secure;
+
+    bool invisible_changed = info.current_cluster_is_invisible != parsed.invisible;
+
+    if (!credentials_changed && !registration_changed && !invisible_changed)
+        return true;
+
+    info.username = parsed.username;
+    info.password = parsed.password;
+    info.cluster_secret = parsed.cluster_secret;
+    info.is_secure_connection = parsed.secure;
+    info.current_node_is_observer = parsed.observer;
+    info.current_cluster_is_invisible = parsed.invisible;
+    info.current_node = NodeInfo(expected_address, parsed.secure, parsed.shard_id);
+
+    if (registration_changed)
+        clusters_to_update->set(info.name);
+    else
+        rebuildClusterObject(info);
+
+    return true;
+}
+
+void ClusterDiscovery::addMulticlusterRoot(ParsedMulticlusterDiscovery && parsed)
+{
+    const String full_path = parsed.getFullPath();
+    if (multicluster_discovery_paths.contains(full_path))
+        return;
+
+    MulticlusterDiscovery mcd(
+        /* zk_name */ parsed.zk_name,
+        /* zk_path */ parsed.zk_path,
+        /* is_secure_connection */ parsed.is_secure_connection,
+        /* username */ parsed.username,
+        /* password */ parsed.password,
+        /* cluster_secret */ parsed.cluster_secret);
+
+    mcd.watch_callback = std::make_shared<Coordination::WatchCallback>(
+        [my_need_update = mcd.need_update, my_flag = clusters_to_update](auto)
+        {
+            my_need_update->store(true);
+            my_flag->set();
+        });
+
+    multicluster_discovery_paths.emplace(full_path, std::move(mcd));
+    clusters_to_update->set();
+
+    LOG_DEBUG(log, "Added multicluster discovery root '{}'", full_path);
+}
+
+void ClusterDiscovery::removeMulticlusterRoot(const String & full_path)
+{
+    if (!multicluster_discovery_paths.erase(full_path))
+        return;
+
+    std::vector<String> dynamic_clusters;
+    for (const auto & [name, info] : clusters_info)
+    {
+        if (info.multicluster_full_path == full_path)
+            dynamic_clusters.push_back(name);
+    }
+
+    for (const auto & name : dynamic_clusters)
+    {
+        removeCluster(name, /* is_dynamic */ true);
+        clusters_info.erase(name);
+    }
+
+    clusters_to_update->set();
+
+    LOG_DEBUG(log, "Removed multicluster discovery root '{}'", full_path);
+}
+
+bool ClusterDiscovery::updateMulticlusterRootFields(MulticlusterDiscovery & path, const ParsedMulticlusterDiscovery & parsed)
+{
+    bool credentials_changed
+        = path.username != parsed.username
+        || path.password != parsed.password
+        || path.cluster_secret != parsed.cluster_secret
+        || path.is_secure_connection != parsed.is_secure_connection;
+
+    if (!credentials_changed)
+        return true;
+
+    path.username = parsed.username;
+    path.password = parsed.password;
+    path.cluster_secret = parsed.cluster_secret;
+    path.is_secure_connection = parsed.is_secure_connection;
+
+    const String full_path = path.getFullPath();
+    for (auto & [_, info] : clusters_info)
+    {
+        if (info.multicluster_full_path != full_path)
+            continue;
+        info.username = parsed.username;
+        info.password = parsed.password;
+        info.cluster_secret = parsed.cluster_secret;
+        info.is_secure_connection = parsed.is_secure_connection;
+        info.current_node.secure = parsed.is_secure_connection;
+        rebuildClusterObject(info);
+    }
+
+    return true;
+}
+
+void ClusterDiscovery::rebuildClusterObject(const ClusterInfo & info)
+{
+    if (info.current_cluster_is_invisible || info.nodes_info.empty())
+    {
+        std::lock_guard lock(mutex);
+        cluster_impls.erase(info.name);
+        return;
+    }
+
+    auto cluster = makeCluster(info);
+    std::lock_guard lock(mutex);
+    cluster_impls[info.name] = std::move(cluster);
+}
+
+void ClusterDiscovery::applyParsedConfig(ParsedDiscoveryConfig && parsed)
+{
+    std::unordered_map<String, ParsedStaticDiscovery> desired_static;
+    for (auto & c : parsed.static_clusters)
+        desired_static.emplace(c.name, std::move(c));
+
+    std::unordered_map<String, ParsedMulticlusterDiscovery> desired_multi;
+    for (auto & r : parsed.multicluster_roots)
+        desired_multi.emplace(r.getFullPath(), std::move(r));
+
+    std::vector<String> static_to_remove;
+    std::vector<String> static_identity_replace;
+    std::vector<ParsedStaticDiscovery> static_to_add;
+    std::vector<String> multi_to_remove;
+    std::vector<ParsedMulticlusterDiscovery> multi_to_add;
+
+    for (auto & [name, info] : clusters_info)
+    {
+        if (info.isDynamic())
+            continue;
+
+        auto it = desired_static.find(name);
+        if (it == desired_static.end())
+        {
+            static_to_remove.push_back(name);
+            continue;
+        }
+
+        if (!updateStaticClusterFields(info, it->second))
+            static_identity_replace.push_back(name);
+        else
+            desired_static.erase(it);
+    }
+
+    for (auto & [full_path, path] : multicluster_discovery_paths)
+    {
+        auto it = desired_multi.find(full_path);
+        if (it == desired_multi.end())
+        {
+            multi_to_remove.push_back(full_path);
+            continue;
+        }
+
+        updateMulticlusterRootFields(path, it->second);
+        desired_multi.erase(it);
+    }
+
+    for (const auto & name : static_identity_replace)
+    {
+        auto it = desired_static.find(name);
+        if (it != desired_static.end())
+        {
+            static_to_add.push_back(std::move(it->second));
+            desired_static.erase(it);
+        }
+        static_to_remove.push_back(name);
+    }
+
+    for (auto & [_, c] : desired_static)
+        static_to_add.push_back(std::move(c));
+    for (auto & [_, r] : desired_multi)
+        multi_to_add.push_back(std::move(r));
+
+    for (const auto & name : static_to_remove)
+        removeStaticCluster(name);
+    for (auto & c : static_to_add)
+        addStaticCluster(std::move(c));
+
+    for (const auto & full_path : multi_to_remove)
+        removeMulticlusterRoot(full_path);
+    for (auto & r : multi_to_add)
+        addMulticlusterRoot(std::move(r));
+}
+
+void ClusterDiscovery::updateFromConfig(
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix)
+{
+    LOG_DEBUG(log, "Scheduling cluster discovery config update");
+    auto parsed = parseDiscoveryConfig(config, config_prefix);
+    {
+        std::lock_guard lock(pending_config_mutex);
+        pending_config_update = std::move(parsed);
+    }
+    ensureWorkerStarted();
+    clusters_to_update->set();
+}
+
+bool ClusterDiscovery::consumePendingConfigUpdate()
+{
+    std::optional<ParsedDiscoveryConfig> pending;
+    {
+        std::lock_guard lock(pending_config_mutex);
+        pending.swap(pending_config_update);
+    }
+    if (!pending)
+        return false;
+
+    LOG_DEBUG(log, "Applying pending cluster discovery config update");
+    applyParsedConfig(std::move(*pending));
+    return true;
+}
+
+void ClusterDiscovery::ensureWorkerStarted()
+{
+    if (main_thread.joinable())
+        return;
+
+    if (clusters_info.empty() && multicluster_discovery_paths.empty())
+    {
+        std::lock_guard lock(pending_config_mutex);
+        if (!pending_config_update)
+            return;
+        /// Pending update may add the first discovery path; apply it before start().
+    }
+
+    /// If worker is not running yet, apply pending config inline so start() sees new clusters.
+    consumePendingConfigUpdate();
+    start();
 }
 
 /// List node in zookeper for cluster
@@ -285,7 +587,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
                                        const String & cluster_name,
                                        int * version,
                                        bool set_callback,
-                                       size_t zk_root_index)
+                                       const String & multicluster_full_path)
 {
     Coordination::Stat stat;
     Strings nodes;
@@ -295,13 +597,22 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
         auto callback = get_nodes_callbacks.find(cluster_name);
         if (callback == get_nodes_callbacks.end())
         {
+            std::shared_ptr<std::atomic_bool> need_update;
+            if (!multicluster_full_path.empty())
+            {
+                auto path_it = multicluster_discovery_paths.find(multicluster_full_path);
+                if (path_it != multicluster_discovery_paths.end())
+                    need_update = path_it->second.need_update;
+            }
+
             auto watch_dynamic_callback = std::make_shared<Coordination::WatchCallback>([
                 cluster_name,
                 my_clusters_to_update = clusters_to_update,
-                my_discovery_paths_need_update = multicluster_discovery_paths[zk_root_index - 1].need_update
+                my_discovery_paths_need_update = need_update
                 ](auto)
                 {
-                    my_discovery_paths_need_update->store(true);
+                    if (my_discovery_paths_need_update)
+                        my_discovery_paths_need_update->store(true);
                     my_clusters_to_update->set(cluster_name);
                 });
             auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
@@ -430,15 +741,18 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
     LOG_DEBUG(log, "Updating cluster '{}'", cluster_info.name);
 
     auto zk = context->getDefaultOrAuxiliaryZooKeeper(cluster_info.zk_name);
+    registerInZk(zk, cluster_info);
 
     int start_version = 0;
-    Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false, cluster_info.zk_root_index);
+    Strings node_uuids = getNodeNames(
+        zk, cluster_info.zk_root, cluster_info.name, &start_version, false, cluster_info.multicluster_full_path);
     auto & nodes_info = cluster_info.nodes_info;
     auto on_exit = [this, start_version, &zk, &cluster_info, &nodes_info]()
     {
         /// in case of successful update we still need to check if configuration of cluster still valid and also set watch callback
         int current_version = 0;
-        getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true, cluster_info.zk_root_index);
+        getNodeNames(
+            zk, cluster_info.zk_root, cluster_info.name, &current_version, true, cluster_info.multicluster_full_path);
 
         if (current_version != start_version)
         {
@@ -466,6 +780,8 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
     if (!needUpdate(node_uuids, nodes_info))
     {
         LOG_DEBUG(log, "No update required for cluster '{}'", cluster_info.name);
+        /// Rebuild so credential-only config changes are reflected even when membership is unchanged.
+        rebuildClusterObject(cluster_info);
         return on_exit();
     }
 
@@ -478,14 +794,15 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 
     if (nodes_info.empty())
     {
-        removeCluster(cluster_info.name, /* is_dynamic_cluster */cluster_info.zk_root_index != 0);
+        String name = cluster_info.name;
+        bool is_dynamic = cluster_info.isDynamic();
+        removeCluster(name, is_dynamic);
+        if (is_dynamic)
+            clusters_info.erase(name);
         return true;
     }
 
-    auto cluster = makeCluster(cluster_info);
-    std::lock_guard lock(mutex);
-    cluster_impls[cluster_info.name] = cluster;
-
+    rebuildClusterObject(cluster_info);
     return true;
 }
 
@@ -524,6 +841,24 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
     LOG_DEBUG(log, "Current node {} registered in cluster {}", current_node_name, info.name);
 }
 
+void ClusterDiscovery::unregisterFromZk(const ClusterInfo & info)
+{
+    if (info.current_node_is_observer)
+        return;
+
+    try
+    {
+        auto zk = context->getDefaultOrAuxiliaryZooKeeper(info.zk_name);
+        String node_path = getShardsListPath(info.zk_root) / current_node_name;
+        zk->tryRemove(node_path);
+        LOG_DEBUG(log, "Current node {} unregistered from cluster {}", current_node_name, info.name);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Error while unregistering node from cluster '" + info.name + "'");
+    }
+}
+
 void ClusterDiscovery::initialUpdate()
 {
     LOG_DEBUG(log, "Initializing");
@@ -539,7 +874,7 @@ void ClusterDiscovery::initialUpdate()
             throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Failpoint cluster_discovery_faults is triggered");
     });
 
-    for (const auto & path : multicluster_discovery_paths)
+    for (const auto & [_, path] : multicluster_discovery_paths)
     {
         auto zk = context->getDefaultOrAuxiliaryZooKeeper(path.zk_name);
 
@@ -549,17 +884,27 @@ void ClusterDiscovery::initialUpdate()
 
     findDynamicClusters(clusters_info);
 
-    for (auto & [_, info] : clusters_info)
+    std::vector<String> cluster_names;
+    cluster_names.reserve(clusters_info.size());
+    for (const auto & [name, _] : clusters_info)
+        cluster_names.push_back(name);
+
+    for (const auto & name : cluster_names)
     {
+        auto it = clusters_info.find(name);
+        if (it == clusters_info.end())
+            continue;
+
+        auto & info = it->second;
         auto zk = context->getDefaultOrAuxiliaryZooKeeper(info.zk_name);
         registerInZk(zk, info);
         if (!upsertCluster(info))
         {
-            LOG_WARNING(log, "Error on initial cluster '{}' update, will retry in background", info.name);
-            clusters_to_update->set(info.name);
+            LOG_WARNING(log, "Error on initial cluster '{}' update, will retry in background", name);
+            clusters_to_update->set(name);
         }
-        else if (info.zk_root_index)
-            clusters_to_update->set(info.name, false);
+        else if (auto after = clusters_info.find(name); after != clusters_info.end() && after->second.isDynamic())
+            clusters_to_update->set(name, false);
     }
 
     LOG_DEBUG(log, "Initialized");
@@ -568,18 +913,14 @@ void ClusterDiscovery::initialUpdate()
 
 void ClusterDiscovery::findDynamicClusters(
     std::unordered_map<String, ClusterDiscovery::ClusterInfo> & info,
-    std::unordered_set<size_t> * unchanged_roots)
+    std::unordered_set<String> * unchanged_roots)
 {
     using namespace std::chrono_literals;
 
     constexpr auto force_update_interval = 2min;
 
-    size_t zk_root_index = 0;
-
-    for (const auto & path : multicluster_discovery_paths)
+    for (auto & [full_path, path] : multicluster_discovery_paths)
     {
-        ++zk_root_index;
-
         if (unchanged_roots)
         {
             if (!path.need_update->exchange(false))
@@ -588,13 +929,15 @@ void ClusterDiscovery::findDynamicClusters(
                 bool force_update = path.watch.elapsedSeconds() > std::chrono::seconds(force_update_interval).count();
                 if (!force_update)
                 {
-                    unchanged_roots->insert(zk_root_index);
+                    unchanged_roots->insert(full_path);
                     continue;
                 }
             }
         }
 
         auto zk = context->getDefaultOrAuxiliaryZooKeeper(path.zk_name);
+        zk->createAncestors(path.zk_path);
+        zk->createIfNotExists(path.zk_path, "");
 
         auto clusters = zk->getChildrenWatch(
             path.zk_path,
@@ -604,7 +947,7 @@ void ClusterDiscovery::findDynamicClusters(
         for (const auto & cluster : clusters)
         {
             auto p = clusters_info.find(cluster);
-            if (p != clusters_info.end() && !p->second.zk_root_index)
+            if (p != clusters_info.end() && !p->second.isDynamic())
             {
                 /// Not a warning - node can register itsefs in one cluster and discover other clusters
                 LOG_TRACE(log, "Found dynamic duplicate of cluster '{}' in config and Keeper, skipped", cluster);
@@ -634,7 +977,7 @@ void ClusterDiscovery::findDynamicClusters(
                     /* shard_id= */ 0,
                     /* observer_mode= */ true,
                     /* invisible= */ false,
-                    /* zk_root_index= */ zk_root_index
+                    /* multicluster_full_path_= */ full_path
                 )
             );
         }
@@ -645,6 +988,9 @@ void ClusterDiscovery::findDynamicClusters(
 
 void ClusterDiscovery::start()
 {
+    if (main_thread.joinable())
+        return;
+
     if (clusters_info.empty() && multicluster_discovery_paths.empty())
     {
         LOG_DEBUG(log, "No defined clusters for discovery");
@@ -713,8 +1059,10 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
         if (finished)
             break;
 
+        consumePendingConfigUpdate();
+
         std::unordered_map<String, ClusterInfo> new_dynamic_clusters_info;
-        std::unordered_set<size_t> unchanged_roots;
+        std::unordered_set<String> unchanged_roots;
         findDynamicClusters(new_dynamic_clusters_info, &unchanged_roots);
 
         std::unordered_set<String> clusters_to_insert;
@@ -723,10 +1071,10 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
         /// Remove clusters that are not found in new_dynamic_clusters_info
         for (const auto & [cluster_name, info] : clusters_info)
         {
-            if (!info.zk_root_index)
+            if (!info.isDynamic())
                 continue;
             if (!new_dynamic_clusters_info.erase(cluster_name)
-                && !unchanged_roots.contains(info.zk_root_index))
+                && !unchanged_roots.contains(info.multicluster_full_path))
                 clusters_to_remove.insert(cluster_name);
         }
         /// new_dynamic_clusters_info now contains only new clusters
@@ -734,7 +1082,10 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
             clusters_to_insert.insert(cluster_name);
 
         for (const auto & cluster_name : clusters_to_remove)
+        {
             removeCluster(cluster_name, /* is_dynamic_cluster */true);
+            clusters_info.erase(cluster_name);
+        }
 
         clusters_info.merge(new_dynamic_clusters_info);
 
@@ -756,17 +1107,20 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
                     continue;
             }
 
+            String name = cluster_name;
             if (upsertCluster(cluster_info))
             {
-                cluster_info.watch.restart();
-                LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
+                cluster_info_it = clusters_info.find(name);
+                if (cluster_info_it != clusters_info.end())
+                    cluster_info_it->second.watch.restart();
+                LOG_DEBUG(log, "Cluster '{}' updated successfully", name);
             }
             else
             {
                 all_up_to_date = false;
                 /// no need to trigger convar, will retry after timeout in `wait`
-                clusters_to_update->set(cluster_name);
-                LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
+                clusters_to_update->set(name);
+                LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", name);
             }
         }
 
@@ -779,17 +1133,20 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
                 continue;
             }
             auto & cluster_info = cluster_info_it->second;
+            String name = cluster_name;
             if (upsertCluster(cluster_info))
             {
-                cluster_info.watch.restart();
-                LOG_DEBUG(log, "Dynamic cluster '{}' inserted successfully", cluster_name);
+                cluster_info_it = clusters_info.find(name);
+                if (cluster_info_it != clusters_info.end())
+                    cluster_info_it->second.watch.restart();
+                LOG_DEBUG(log, "Dynamic cluster '{}' inserted successfully", name);
             }
             else
             {
                 all_up_to_date = false;
                 /// no need to trigger convar, will retry after timeout in `wait`
-                clusters_to_update->set(cluster_name);
-                LOG_WARNING(log, "Dynamic cluster '{}' wasn't inserted, will retry", cluster_name);
+                clusters_to_update->set(name);
+                LOG_WARNING(log, "Dynamic cluster '{}' wasn't inserted, will retry", name);
             }
         }
 
@@ -821,7 +1178,8 @@ std::unordered_map<String, ClusterPtr> ClusterDiscovery::getClusters() const
 void ClusterDiscovery::shutdown()
 {
     LOG_DEBUG(log, "Shutting down");
-    clusters_to_update->stop();
+    if (clusters_to_update)
+        clusters_to_update->stop();
 
     if (main_thread.joinable())
         main_thread.join();

@@ -6464,11 +6464,17 @@ void Context::startClusterDiscovery()
 /// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
 void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
+    ClusterDiscovery * discovery_to_update = nullptr;
     {
         std::lock_guard lock(shared->clusters_mutex);
-        if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
+        bool discovery_just_created = false;
+        if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery)
         {
-            shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
+            if (!shared->cluster_discovery)
+            {
+                shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
+                discovery_just_created = true;
+            }
         }
 
         /// Do not update clusters if this part of config wasn't changed.
@@ -6488,8 +6494,16 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
         else
             shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
 
+        if (shared->cluster_discovery && !discovery_just_created)
+            discovery_to_update = shared->cluster_discovery.get();
+
         ++shared->clusters_version;
     }
+
+    /// Apply discovery updates outside clusters_mutex: may start the worker and touch ZooKeeper.
+    if (discovery_to_update)
+        discovery_to_update->updateFromConfig(*config, config_name);
+
     {
         SharedLockGuard lock(shared->mutex);
         if (shared->ddl_worker)
