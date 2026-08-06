@@ -1,12 +1,12 @@
 -- literal IN ships as TupleValues
 3
--- IN (subquery) works via the forced join rewrite
+-- IN (subquery): built once at planning, values shipped to tasks
 50
--- the direct set path: built once at planning, values shipped to tasks
+-- the explicit rewrite executes IN as a distributed join
 50
 -- GLOBAL IN over local tables behaves as plain IN
 50
 -- GLOBAL JOIN executes as a distributed join (no external table under the analyzer)
 1000
--- value-producing IN works via the default rewrite
+-- value-producing IN needs the explicit rewrite until sets are built at execution start
 50
