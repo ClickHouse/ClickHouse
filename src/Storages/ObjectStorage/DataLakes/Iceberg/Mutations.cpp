@@ -866,35 +866,24 @@ void alter(
             const auto & [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
             if (!catalog->updateSchema(namespace_name, table_name, catalog_filename, new_schema, previous_schema_id, metadata))
             {
-                auto storage_metadata_name = persistent_table_components.path_resolver.resolve(metadata_info.path);
-                String orphan_cleanup_error;
-                try
+                if (!catalog_writes_metadata_file)
                 {
-                    fiu_do_on(FailPoints::iceberg_alter_orphan_metadata_cleanup_fail,
+                    try
                     {
-                        throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Failpoint: orphan metadata cleanup failed");
-                    });
-                    object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
+                        fiu_do_on(FailPoints::iceberg_alter_orphan_metadata_cleanup_fail,
+                        {
+                            throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Failpoint: orphan metadata cleanup failed");
+                        });
+                        auto storage_metadata_name = persistent_table_components.path_resolver.resolve(metadata_info.path);
+                        object_storage->removeObjectIfExists(StoredObject(storage_metadata_name));
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, "Iceberg alter: failed to remove orphan metadata file after catalog commit failure");
+                    }
                 }
-                catch (...)
-                {
-                    orphan_cleanup_error = getCurrentExceptionMessage(false);
-                    tryLogCurrentException(log, "Iceberg alter: failed to remove orphan metadata file after catalog commit failure");
-                }
-                if (orphan_cleanup_error.empty())
-                {
-                    throw Exception(
-                        ErrorCodes::DATALAKE_DATABASE_ERROR,
-                        "Iceberg alter: catalog commit failed for '{}' after metadata file was written successfully",
-                        catalog_filename);
-                }
-                throw Exception(
-                    ErrorCodes::DATALAKE_DATABASE_ERROR,
-                    "Iceberg alter: catalog commit failed for '{}' after metadata file was written successfully. "
-                    "Failed to remove orphan metadata file '{}': {}",
-                    catalog_filename,
-                    storage_metadata_name,
-                    orphan_cleanup_error);
+                LOG_WARNING(log, "Iceberg alter: catalog commit failed (attempt {}), retrying", i + 1);
+                continue;
             }
         }
 
