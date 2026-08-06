@@ -39,7 +39,7 @@ VersionMetadataOnDisk::VersionMetadataOnDisk(IMergeTreeDataPart * merge_tree_dat
     , can_write_metadata(merge_tree_data_part->storage.supportsTransactions() && !merge_tree_data_part->getDataPartStorage().isReadonly())
 {
     log = ::getLogger("VersionMetadataOnDisk");
-    /// The other intents read nothing from disk, and keep the member-initializer value (true).
+    /// A `CreateFresh` directory is clean, so it reads nothing and keeps the member default (true).
     if (intent == PartDirIntent::OpenExisting)
         is_persist_deferrable = !merge_tree_data_part->getDataPartStorage().existsFile(TXN_VERSION_METADATA_FILE_NAME);
     LOG_TEST(

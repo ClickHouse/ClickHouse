@@ -16,10 +16,6 @@ enum class PartDirIntent : uint8_t
     /// Directory is guaranteed clean by the claim (`MergeTreeData::claimTemporaryPartDirectory`):
     /// granularity comes from the settings, nothing is read from disk.
     CreateFresh,
-    /// Existing part whose metadata arrives out of band (e.g. from another replica) instead of being
-    /// probed. Reads nothing, so the part is not usable until the caller populates the storage and
-    /// part state from its own source; unlike `CreateFresh` the directory may exist.
-    OpenExistingWithoutProbing,
 };
 
 }
