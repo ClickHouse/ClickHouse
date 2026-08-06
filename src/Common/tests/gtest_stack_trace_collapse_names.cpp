@@ -63,6 +63,12 @@ TEST(StackTraceCollapseNames, KeepsOrdinaryStdFunctionMembers)
     /// it just resets the object, and its name is short and says exactly that, so it stays visible.
     EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::operator=(std::nullptr_t)"),
               "std::function<void ()>::operator=(std::nullptr_t)");
+    /// The same goes for construction of an empty `std::function`: the default constructor and the
+    /// `nullptr` one do not type-erase a callable, and their names are just as short and informative.
+    EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::function()"),
+              "std::function<void ()>::function()");
+    EXPECT_EQ(StackTrace::collapseDemangledNames(function_h, "std::__1::function<void ()>::function(std::nullptr_t)"),
+              "std::function<void ()>::function(std::nullptr_t)");
 }
 
 /// The file of a frame is the source line the faulting instruction maps to, and an ordinary function can

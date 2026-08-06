@@ -630,15 +630,17 @@ constexpr std::string_view std_function_plumbing[] = {
 /// The members of `std::function` itself that carry the noise: the type-erasing call operator, and the
 /// constructors, the assignment operators and the destructor, which copy, move and destroy the captured
 /// callable. Every other member (`swap`, `target`, `target_type`, `operator bool`, ...) does work of its
-/// own and is a normal frame, so it keeps its name. The constructor is spelled both as `function(` (the
-/// copy and move constructors) and as `function<` (the constructor taking a callable, which is a function
-/// template, so its own template arguments follow the name: `function<MyCallable, void>(MyCallable&&)`);
-/// the assignment operator likewise as `operator=(std::function<` (the copy and move assignment - spelled
-/// with the argument so that `operator=(std::nullptr_t)`, which merely resets the object and has a short,
-/// informative name, is not caught) and as `operator=<` (the callable-taking overload:
+/// own and is a normal frame, so it keeps its name. The constructor is spelled both as
+/// `function(std::function<` (the copy and move constructors - spelled with the argument so that the
+/// default constructor `function()` and `function(std::nullptr_t)`, which merely create an empty object
+/// and have short, informative names, are not caught) and as `function<` (the constructor taking a
+/// callable, which is a function template, so its own template arguments follow the name:
+/// `function<MyCallable, void>(MyCallable&&)`); the assignment operator likewise as
+/// `operator=(std::function<` (the copy and move assignment; `operator=(std::nullptr_t)` just resets the
+/// object and stays visible) and as `operator=<` (the callable-taking overload:
 /// `operator=<MyCallable, void>(MyCallable&&)`).
 constexpr std::string_view std_function_noisy_members[]
-    = {"operator()", "function(", "function<", "~function(", "operator=(std::function<", "operator=<"};
+    = {"operator()", "function(std::function<", "function<", "~function(", "operator=(std::function<", "operator=<"};
 
 static bool isStdFunctionPlumbing(const String & symbol_name)
 {
