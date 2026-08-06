@@ -86,11 +86,16 @@ def test_all_badge_components_link_to_cloud_compatibility():
         )
     )
     assert len(components) == 18
-    href = (
-        'href="https://clickhouse.com/docs/products/cloud/guides/cloud-compatibility'
-        '#clickhouse-cloud-architecture"'
-    )
     for component in components:
+        relative = component.relative_to(REPO_ROOT / "docs/snippets")
+        locale = (
+            relative.parts[0] if relative.parts[0] in generator.LOCALES else None
+        )
+        locale_prefix = f"/{locale}" if locale else ""
+        href = (
+            f'href="{locale_prefix}/products/cloud/guides/cloud-compatibility'
+            '#clickhouse-cloud-architecture"'
+        )
         assert href in component.read_text(encoding="utf-8")
 
 
