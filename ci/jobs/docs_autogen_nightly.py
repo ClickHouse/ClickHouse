@@ -1,5 +1,4 @@
 import shlex
-import sys
 
 from ci.defs.defs import BASE_BRANCH
 from praktika.git import Git
@@ -143,64 +142,11 @@ def open_or_refresh_pr():
     return Shell.check(f"gh pr edit {pr} --add-label {LABEL}", verbose=True)
 
 
-def on_current_base_branch():
-    """Refuse to run unless HEAD is the current tip of the base branch.
-
-    The workflow is SCHEDULE-triggered, but GitHub also generates a
-    `workflow_dispatch` trigger and reruns replay their original ref/sha. The
-    branch-name check rejects feature-branch dispatches; fetching the remote base
-    branch and comparing its tip with HEAD also rejects reruns of older `master`
-    commits. The check runs again after generation so a run cannot publish if
-    `master` advanced while it was working."""
-    branch = Info().git_branch
-    if branch != BASE_BRANCH:
-        print(
-            f"Refusing to run: this workflow force-pushes '{BRANCH}' and manages a"
-            f" pull request, so it must run against '{BASE_BRANCH}', not '{branch}'"
-            " (e.g. a manual workflow_dispatch or a rerun from another ref).",
-            file=sys.stderr,
-        )
-        return False
-
-    if not Shell.check(
-        f"git fetch --no-tags origin {shlex.quote(BASE_BRANCH)}", verbose=True
-    ):
-        print(
-            f"Refusing to run: could not fetch the current '{BASE_BRANCH}' tip.",
-            file=sys.stderr,
-        )
-        return False
-
-    head = Shell.get_output("git rev-parse HEAD").strip()
-    current_base = Shell.get_output("git rev-parse FETCH_HEAD").strip()
-    if not head or not current_base or head != current_base:
-        print(
-            f"Refusing to run: HEAD ({head or 'unknown'}) is not the current "
-            f"'{BASE_BRANCH}' tip ({current_base or 'unknown'}).",
-            file=sys.stderr,
-        )
-        return False
-    return True
-
-
 if __name__ == "__main__":
     results = [
-        Result.from_commands_run(
-            name="Run against current master", command=on_current_base_branch
-        )
+        Result.from_commands_run(name="Regenerate docs", command=regenerate)
     ]
-    # Fail closed: only regenerate / touch the pull request when the guard and
-    # each prior step succeeded.
-    if results[-1].is_ok():
-        results.append(
-            Result.from_commands_run(name="Regenerate docs", command=regenerate)
-        )
-    if results[-1].is_ok():
-        results.append(
-            Result.from_commands_run(
-                name="Master is still current", command=on_current_base_branch
-            )
-        )
+    # Fail closed: only touch the pull request when regeneration succeeded.
     if results[-1].is_ok():
         results.append(
             Result.from_commands_run(
