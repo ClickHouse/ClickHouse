@@ -425,12 +425,9 @@ void StorageBuffer::read(
             {
                 auto src_table_query_info = query_info;
 
-                /// Columns a previously built prefix already converted and kept as an output of its
-                /// filter. Forwarded filters become consecutive prewhere steps over one block that
-                /// carries each step's outputs forward, so such a column reaches the next prefix
-                /// already holding this table's type and must not be converted a second time. The
-                /// call order below must match the step order in the consumers building these steps
-                /// (`MergeTreeSelectProcessor::getPrewhereActions`, Parquet's `Reader::preparePrewhere`).
+                /// A column an earlier prefix converted and kept as a filter output reaches the next
+                /// prefix already holding this table's type, so it must not be converted again. The
+                /// calls below must follow the order the destination applies the filters in.
                 NameSet already_converted;
 
                 /// The prefix converts the whole sample block, but the filter runs inside the
