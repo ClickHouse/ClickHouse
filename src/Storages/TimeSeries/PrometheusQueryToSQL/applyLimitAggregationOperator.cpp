@@ -9,6 +9,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForAggregationOperator.h>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <unordered_map>
 
 
@@ -177,6 +178,12 @@ namespace
         /// Whether `timeSeriesGroupToSamplingKey(group)` should be used as `sampling_keys`
         /// to provide deterministic "pseudo-random" sampling for `limitk`.
         bool use_sampling_keys = false;
+
+        /// For `topk`/`bottomk`, whether the operator's own value-based selection order should be
+        /// propagated as a `sort_key` (true = descending value order, for `topk`; false = ascending,
+        /// for `bottomk`). Left unset (`std::nullopt`) for `limitk`: its selection is sampling-based,
+        /// not value-based, so it has no order of its own to propagate.
+        std::optional<bool> order_descending;
     };
 
     const ImplInfo * getImplInfo(std::string_view operator_name)
@@ -191,7 +198,8 @@ namespace
                       std::move(k),
                       makeASTForIndices(values->clone()));
               },
-              /*use_sampling_keys=*/ false}},
+              /*use_sampling_keys=*/ false,
+              /*order_descending=*/ true}},
 
             {"bottomk",
              {[](ASTPtr k, ASTPtr values, ASTPtr /* sampling_keys */) -> ASTPtr
@@ -202,7 +210,8 @@ namespace
                       std::move(k),
                       makeASTForIndices(values->clone()));
               },
-              /* use_sampling_keys= */ false}},
+              /* use_sampling_keys= */ false,
+              /* order_descending= */ false}},
 
             {"limitk",
              {[](ASTPtr k, ASTPtr values, ASTPtr sampling_keys) -> ASTPtr
@@ -256,7 +265,17 @@ SQLQueryPiece applyLimitAggregationOperator(
 
     auto res = vector_arg;
     res.node = operator_node;
-    res.has_sort_order = false;
+
+    /// `topk`/`bottomk` select series by value, and per PromQL semantics their output is ordered
+    /// by that same value; propagate it as a `sort_key` (see applySortFunction.cpp) so a later
+    /// `sort`/`sort_desc`/`or` sees a genuine order instead of treating the result as unordered.
+    /// This is only well-defined when the whole expression evaluates to a single instant
+    /// (`start_time == end_time`): only then is the top/bottom-k selection - and thus the value to
+    /// rank by - the same at every point of the time grid, i.e. a per-series property rather than a
+    /// per-time-step one (`topk`/`bottomk` re-select independently at each time step in general).
+    /// `limitk`'s selection is sampling-based, not value-based, so it never gets a sort order.
+    bool produce_sort_key = impl_info->order_descending.has_value() && (res.start_time == res.end_time);
+    res.has_sort_order = produce_sort_key;
 
     /// Step 1: collect all series within each aggregation group.
     ///
@@ -420,6 +439,27 @@ SQLQueryPiece applyLimitAggregationOperator(
 
         builder.select_list.push_back(makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("p"), make_intrusive<ASTLiteral>(2u)));
         builder.select_list.back()->setAlias(ColumnNames::Values);
+
+        if (produce_sort_key)
+        {
+            /// `values[1]` is the single (since `produce_sort_key` implies a true instant) value of
+            /// this series; series not selected by `topk`/`bottomk` never reach here because of the
+            /// `WHERE arrayExists(...)` below, so this is always non-NULL.
+            ASTPtr value = makeASTFunction("arrayElement",
+                makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("p"), make_intrusive<ASTLiteral>(2u)),
+                make_intrusive<ASTLiteral>(1u));
+
+            /// `topk` (descending) negates the value so that the ascending `ORDER BY sort_key`
+            /// applied in finalizeSQL.cpp yields descending value order; `bottomk` (ascending) uses
+            /// the value as-is. This mirrors the `sort_key` shape built by applySortFunction.cpp for
+            /// `sort`/`sort_desc` exactly, including pushing `NaN` after all numeric values.
+            ASTPtr normalized_value = *impl_info->order_descending ? makeASTFunction("negate", value->clone()) : value->clone();
+            builder.select_list.push_back(makeASTFunction(
+                "array",
+                makeASTFunction("toFloat64", makeASTFunction("isNaN", std::move(value))),
+                makeASTFunction("toFloat64", std::move(normalized_value))));
+            builder.select_list.back()->setAlias(ColumnNames::SortKey);
+        }
 
         builder.where = makeASTFunction("arrayExists",
             makeASTLambda({"x"}, makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x"))),
