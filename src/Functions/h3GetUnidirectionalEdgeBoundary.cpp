@@ -119,7 +119,7 @@ Returns the coordinates defining the unidirectional edge [H3](#h3-index).
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns an array of (latitude, longitude) pairs defining a unidirectional edge. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
-        {"Array(Float64, Float64)"}
+        {"Array(Tuple(Float64, Float64))"}
     };
     FunctionDocumentation::Examples examples = {
         {
