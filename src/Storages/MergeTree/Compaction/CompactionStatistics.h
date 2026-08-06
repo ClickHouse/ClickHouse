@@ -13,19 +13,17 @@ namespace CompactionStatistics
 {
 
 /** Per-stream multipart write buffer memory of a merge's destination disk, for the up-front merge memory
-  * reservation (see estimateNeededMemoryForMerge below). Both values come from the disk's own request
-  * settings, which a background writer uses instead of the query/session settings. Both are 0 for disks
-  * whose writer has no multipart upload buffers (a plain local disk, or a remote disk such as HDFS that
-  * writes through a normal buffer).
+  * reservation (see estimateNeededMemoryForMerge below). It comes from the disk's own request settings,
+  * which a background writer uses instead of the query/session settings, and is 0 for disks whose writer
+  * has no multipart upload buffers (a plain local disk, or a remote disk such as HDFS that writes through
+  * a normal buffer).
   */
 struct DiskWriteBufferMemory
 {
-    /// The first multipart upload buffer (MultipartUploadMemory::guaranteed): a writer stream allocates it
-    /// regardless of how little data ends up flowing through it, while every later buffer only ever holds
-    /// data already written.
-    UInt64 guaranteed = 0;
-    /// The most one stream's buffers can hold at once: the first buffer plus all in-flight upload parts, or
-    /// MultipartUploadMemory::UNLIMITED when the disk allows unlimited in-flight parts.
+    /// The most one stream's buffers can hold at once: the buffer being filled plus all in-flight upload
+    /// parts, or MultipartUploadMemory::UNLIMITED when the disk allows unlimited in-flight parts. This is a
+    /// ceiling only - a writer's buffer starts at the size its caller passes and grows toward it with the
+    /// data written into it, so the estimate caps the output side by the merge's data volume as well.
     UInt64 ceiling = 0;
 };
 

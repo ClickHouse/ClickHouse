@@ -352,22 +352,6 @@ UInt64 AzureObjectStorage::getWriteBufferMemoryCeiling() const
         .ceiling;
 }
 
-UInt64 AzureObjectStorage::getWriteBufferGuaranteedMemory() const
-{
-    /// See getWriteBufferMemoryCeiling above: the ADLS Gen2 endpoint writes through a single ordinary
-    /// buffer already covered by the local per-stream estimate, so it has no guaranteed multipart
-    /// allocation either.
-    if (isAdlsGen2Endpoint(connection_params.endpoint))
-        return 0;
-
-    /// The first multipart upload buffer of WriteBufferFromAzureBlobStorage: a stream allocates it
-    /// regardless of how little data flows through it, while every later buffer only ever holds data
-    /// already written.
-    const auto settings_ptr = settings.get();
-    return getMultipartUploadMemory(getUploadBufferAllocationSettings(*settings_ptr), settings_ptr->max_inflight_parts_for_one_file)
-        .guaranteed;
-}
-
 void AzureObjectStorage::removeObjectImpl(
     const StoredObject & object,
     const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,

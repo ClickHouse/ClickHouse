@@ -107,17 +107,9 @@ MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Set
     /// Mirror the two policies of create above. FixedSizeBufferAllocationPolicy hands out buffers of
     /// strict_size, the first one included; ExpBufferAllocationPolicy starts at max_single_size (raised to
     /// min_size when that is larger) and grows later buffers up to max_size.
-    UInt64 largest_buffer_size = 0;
-    if (settings.strict_size > 0)
-    {
-        result.guaranteed = settings.strict_size;
-        largest_buffer_size = settings.strict_size;
-    }
-    else
-    {
-        result.guaranteed = std::max(settings.max_single_size, settings.min_size);
-        largest_buffer_size = std::max<UInt64>(result.guaranteed, settings.max_size);
-    }
+    UInt64 largest_buffer_size = settings.strict_size;
+    if (settings.strict_size == 0)
+        largest_buffer_size = std::max<UInt64>({settings.max_single_size, settings.min_size, settings.max_size});
 
     if (max_inflight_parts_for_one_file == 0)
     {

@@ -1000,27 +1000,28 @@ UInt64 estimateNeededMemoryForMerge(
     /// disk is only one of them, so the max is a safe upper bound); pinning the first buffer to
     /// *_max_single_part_upload_size alone would underestimate it when *_min_upload_part_size is the larger
     /// of the two. This is only a ceiling: the output side is separately capped by the merge's data volume
-    /// below, because an upload buffer never holds more than the data written into it. The first upload
-    /// buffer (the guaranteed part of the ceiling) is carried alongside: a stream allocates it regardless
-    /// of how little data flows through it, so streams whose data volume the estimate cannot derive from
-    /// the source parts are priced at it (see remote_stream_remnant below), and it too must come from the
-    /// destination disk's own settings - Azure's default first buffer (100 MiB) is already larger than
-    /// S3's (32 MiB), and either back end's disk config can raise it further.
+    /// below, because an upload buffer never holds more than the data written into it. Not even the FIRST
+    /// upload buffer is allocated up front. WriteBufferFromS3 / WriteBufferFromAzureBlobStorage are
+    /// constructed with the buffer size their caller passes - S3ObjectStorage::writeObject hands them the
+    /// stream's own buf_size (max_compress_block_size, or adaptive_write_buffer_initial_size for an adaptive
+    /// stream) - keep that BufferWithOwnMemory allocation, and only grow it toward the allocation policy's
+    /// first-part size once it actually fills, doubling as it goes
+    /// (WriteBufferFromS3::reallocateFirstBuffer, reached from nextImpl on the available() == 0 path; the
+    /// same shape on Azure). So the memory a stream pins regardless of volume is its own initial buffer,
+    /// and everything above that is data that has already flowed through it - which is why a stream whose
+    /// data volume this estimate cannot derive from the source parts is priced at the writer's initial
+    /// buffers (see the unknowable-volume pricing below), not at any multipart size.
     UInt64 remote_write_buffer_size = 0;
-    UInt64 remote_write_buffer_guaranteed_size = 0;
     if (remote_write_buffer_memory.has_value())
-    {
         remote_write_buffer_size = remote_write_buffer_memory->ceiling;
-        remote_write_buffer_guaranteed_size = remote_write_buffer_memory->guaranteed;
-    }
     else if (output_on_remote_disk)
     {
         /// Model both back ends exactly as their writers do (getMultipartUploadMemory over the same
         /// allocation settings, so a strict_upload_part_size configuration and an unlimited
         /// *_max_inflight_parts_for_one_file are accounted for), and take the larger of the two: the disk
-        /// this merge will write to is one of them, so the maximum is a safe upper bound. The first buffer
-        /// is additionally never assumed smaller than the S3 default, because a disk config that this
-        /// pre-selection guess cannot see may raise it back to the default.
+        /// this merge will write to is one of them, so the maximum is a safe upper bound. The ceiling is
+        /// additionally never assumed smaller than the S3 default first part, because a disk config that
+        /// this pre-selection guess cannot see may raise the sizes back to the defaults.
         const auto & query_settings = context->getSettingsRef();
 
         BufferAllocationPolicy::Settings s3_allocation;
@@ -1039,9 +1040,8 @@ UInt64 estimateNeededMemoryForMerge(
         const auto azure_memory
             = getMultipartUploadMemory(azure_allocation, query_settings[Setting::azure_max_inflight_parts_for_one_file]);
 
-        remote_write_buffer_guaranteed_size = std::max<UInt64>(
-            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, s3_memory.guaranteed, azure_memory.guaranteed});
-        remote_write_buffer_size = std::max({remote_write_buffer_guaranteed_size, s3_memory.ceiling, azure_memory.ceiling});
+        remote_write_buffer_size = std::max<UInt64>(
+            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, s3_memory.ceiling, azure_memory.ceiling});
     }
 
     /// A merge that applies patch parts (lightweight updates, apply_patches_on_merge) opens a separate
@@ -1386,44 +1386,21 @@ UInt64 estimateNeededMemoryForMerge(
         return non_adaptive * non_adaptive_buffer_size + (counts.total - non_adaptive) * adaptive_eager_buffers_per_stream;
     };
 
-    /// A writer stream on multipart object storage allocates up to its first upload buffer
-    /// (MultipartUploadMemory::guaranteed) regardless of how little data ends up flowing through it, while
-    /// everything beyond that first buffer only ever holds data already written. The first buffer's size
-    /// comes from the destination disk's own settings (remote_write_buffer_guaranteed_size above): pinning
-    /// it to the S3 default would under-reserve such streams on Azure, whose default first buffer is
-    /// 100 MiB, and on any disk whose config raises *_max_single_part_upload_size, *_min_upload_part_size
-    /// or *_strict_upload_part_size. Where a stream's data
-    /// volume is not derivable from the sources, this per-stream remnant is what it is priced at - NOT
-    /// the full multipart ceiling
-    /// (~100 GiB with default S3 settings, and unbounded when in-flight parts are unlimited): pricing
-    /// unknowable-volume streams at the ceiling proved to be a starvation regression in CI - a TTL merge
-    /// of a 2-row table priced at 200.09 GiB (two ceiling-priced streams) was rejected by the admission
-    /// gate for the whole 300 s test window of 03365_column_ttl_should_rebuild_skp_idx_and_proj because
-    /// concurrent merges always held some reservation, so it never ran and the column TTL never took
-    /// effect. The growth of such a stream past its remnant is real data the reactive
-    /// background_memory_tracker sees as it materializes, so under-pricing here degrades to master's
-    /// purely reactive behavior for that stream instead of blocking all progress.
-    const auto non_adaptive_stream_remnant = [&](UInt64 non_adaptive_buffer_size)
-    {
-        return remote_write_buffer_size != 0
-            ? std::max<UInt64>(non_adaptive_buffer_size, remote_write_buffer_guaranteed_size)
-            : non_adaptive_buffer_size;
-    };
-    const UInt64 remote_stream_remnant = non_adaptive_stream_remnant(local_write_buffer_size);
-
-    /// The remnant of an ADAPTIVE stream is smaller: its compressor block and file buffer start at
-    /// adaptive_write_buffer_initial_size and only grow with real data (which the reactive
-    /// background_memory_tracker sees as it materializes - the same accounting as the remnant itself),
-    /// while the multipart first upload buffer is allocated regardless of the write buffer mode.
-    const UInt64 adaptive_stream_remnant = remote_write_buffer_size != 0
-        ? std::max<UInt64>(adaptive_eager_buffers_per_stream, remote_write_buffer_guaranteed_size)
-        : adaptive_eager_buffers_per_stream;
-    const auto stream_remnants = [&](const WriterStreamCounts & counts, size_t writer_columns, UInt64 non_adaptive_buffer_size) -> UInt64
-    {
-        const size_t non_adaptive = non_adaptive_stream_count(counts, writer_columns);
-        return non_adaptive * non_adaptive_stream_remnant(non_adaptive_buffer_size)
-            + (counts.total - non_adaptive) * adaptive_stream_remnant;
-    };
+    /// A stream whose data volume this estimate cannot derive from the source parts - a rebuilt projection,
+    /// a variable-size DEFAULT-filled column, a delayed vertical stream - is priced at the buffers its
+    /// writer allocates before any data flows through it, which is exactly eager_write_buffers above: the
+    /// compressor block and the file buffer, at the stream's own write buffer size. That holds on multipart
+    /// object storage too, because a stream's upload buffer STARTS at that same size and only grows with the
+    /// data written into it (see remote_write_buffer_size above): the writer pins neither the full multipart
+    /// ceiling (~100 GiB with default S3 settings, unbounded when in-flight parts are unlimited) nor even
+    /// the allocation policy's first-part size (32 MiB on S3, 100 MiB on Azure by default). Charging either
+    /// of them per stream is over-reservation, and over-reservation on unknowable-volume streams is a proven
+    /// CI starvation regression: priced at the ceiling, a TTL merge of a 2-row table came to 200.09 GiB
+    /// (two ceiling-priced streams) and was rejected by the admission gate for the whole 300 s window of
+    /// 03365_column_ttl_should_rebuild_skp_idx_and_proj - concurrent merges always held some reservation, so
+    /// it never ran and the column TTL never took effect. The growth of such a stream past its eager buffers
+    /// is real data the reactive background_memory_tracker sees as it materializes, so under-pricing it here
+    /// degrades to master's purely reactive behavior for that stream instead of blocking all progress.
 
     /// The input-volume bound holds only for data the merge actually READS. A column filled from its
     /// DEFAULT expression for the rows of parts that predate its ALTER ... ADD COLUMN
@@ -1433,8 +1410,8 @@ UInt64 estimateNeededMemoryForMerge(
     /// real footprint on object storage. Price the synthesized volume instead: a fixed-size type writes
     /// exactly rows * value size, so 3x that volume (the same in-flight allowance as the base bound) is
     /// sound for it; a variable-size type's default expression is arbitrary, so its streams are priced at
-    /// their per-stream remnant with the growth left to the reactive tracker (see remote_stream_remnant
-    /// above - the ceiling alternative is a proven starvation regression). A column present in only SOME
+    /// their eager write buffers with the growth left to the reactive tracker (see the unknowable-volume
+    /// pricing above - the multipart alternatives are a proven starvation regression). A column present in only SOME
     /// parts is synthesized for the OTHER parts' rows alone, so only those rows are priced here
     /// (countRowsMissingColumn): the rows of the parts that do store the column are read, and their written
     /// bytes are already inside sum_input_bytes_uncompressed. Outside the ADD COLUMN ... DEFAULT upgrade
@@ -1463,7 +1440,8 @@ UInt64 estimateNeededMemoryForMerge(
     /// The default-filled columns are written by the same horizontal writer as the rest of the output, so
     /// the count-based adaptive rule sees the full output column list.
     const UInt64 default_filled_term
-        = stream_remnants(default_filled_stream_counts, output_columns.size(), local_write_buffer_size) + 3 * default_filled_value_bytes;
+        = eager_write_buffers(default_filled_stream_counts, output_columns.size(), local_write_buffer_size)
+        + 3 * default_filled_value_bytes;
 
     const UInt64 output_data_bound = eager_write_buffers(output_stream_counts, output_columns.size(), local_write_buffer_size)
         + 3 * sum_input_bytes_uncompressed
@@ -1650,7 +1628,6 @@ UInt64 estimateNeededMemoryForMerge(
                     + max_gathering_column_eager_buffers
                     + delayed_streams * local_write_buffer_size
                     + 3 * (merging_uncompressed + max_gathering_column_uncompressed)
-                    + delayed_streams * remote_stream_remnant
                     + default_filled_term;
 
                 output_memory = std::min({output_memory, vertical_worst_case, vertical_data_bound});
@@ -1845,7 +1822,7 @@ UInt64 estimateNeededMemoryForMerge(
                 /// (rows of those parts alone, see countRowsMissingColumn) * value size, so add that - the
                 /// rows of the parts that do store it are already counted through their own projected column
                 /// bytes above; a variable-size default's volume is unknowable, so its
-                /// streams stay priced at the per-stream remnant below with the growth left to the reactive
+                /// streams stay priced at their eager write buffers below with the growth left to the reactive
                 /// tracker - the same accounting as the base path's default_filled_term.
                 UInt64 projection_uncompressed_bytes = 0;
                 UInt64 projection_rows = 0;
@@ -1887,7 +1864,7 @@ UInt64 estimateNeededMemoryForMerge(
                 /// The rebuild writes the projected rows twice (the temporary parts, then the read-back merge
                 /// into the final projection part), so its data-dependent buffers are bounded by twice the
                 /// projected volume with the same 3x in-flight allowance as the base output, plus the
-                /// per-stream remnant every multipart writer allocates regardless of volume. A projection
+                /// eager per-stream write buffers every writer allocates regardless of volume. A projection
                 /// expression is not size-monotone (repeat(...), JSON / array construction can expand the
                 /// bytes per row, an aggregate projection can materialize states larger than the raw input),
                 /// so the source-derived projected volume can undershoot for a data-expanding projection; that
@@ -1913,14 +1890,14 @@ UInt64 estimateNeededMemoryForMerge(
                 const UInt64 projection_worst_case = saturatingStreamsTimesBuffer(
                     projection_streams, worst_case_write_buffer_size(projection_local_write_buffer_size));
                 /// A Wide temp part is written by the same wide writer as the base output, so its
-                /// per-stream remnants follow the same per-stream adaptive split (the count-based rule
+                /// eager per-stream buffers follow the same per-stream adaptive split (the count-based rule
                 /// sees the temp-part writer's own columns list - the projection's columns); a Compact
                 /// temp part's single shared stream is non-adaptive.
-                const UInt64 projection_stream_remnants = temp_projection_is_compact
-                    ? non_adaptive_stream_remnant(projection_local_write_buffer_size)
-                    : stream_remnants(
+                const UInt64 projection_eager_write_buffers = temp_projection_is_compact
+                    ? projection_local_write_buffer_size
+                    : eager_write_buffers(
                           projection_wide_stream_counts, projection.sample_block.columns(), projection_local_write_buffer_size);
-                const UInt64 projection_data_bound = projection_stream_remnants
+                const UInt64 projection_data_bound = projection_eager_write_buffers
                     + 3 * 2 * projection_uncompressed_bytes;
                 projection_memory += std::min(projection_worst_case, projection_data_bound)
                     + MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_streams * projection_read_buffer_size;
@@ -1946,9 +1923,7 @@ DiskWriteBufferMemory getDiskWriteBufferMemory(const DiskPtr & disk)
         if (auto * object_storage_disk = dynamic_cast<DiskObjectStorage *>(current.get()))
         {
             const auto object_storage = object_storage_disk->getObjectStorage();
-            return DiskWriteBufferMemory{
-                .guaranteed = object_storage->getWriteBufferGuaranteedMemory(),
-                .ceiling = object_storage->getWriteBufferMemoryCeiling()};
+            return DiskWriteBufferMemory{.ceiling = object_storage->getWriteBufferMemoryCeiling()};
         }
     }
     return {};

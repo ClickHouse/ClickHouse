@@ -40,13 +40,15 @@ public:
 /// in its upload buffers at once, derived from the very settings the writer builds its
 /// BufferAllocationPolicy and its TaskTracker from. Callers that must know a writer's footprint before the
 /// writer exists - the up-front merge memory reservation - use this instead of reimplementing the policy.
+/// This is a CEILING, not an allocation the writer makes up front: even its first buffer starts at the size
+/// the caller passed to the writer's constructor and is only grown toward the policy's first-part size once
+/// it fills (WriteBufferFromS3::reallocateFirstBuffer), so every byte above that initial buffer is data that
+/// has already been written.
 struct MultipartUploadMemory
 {
     /// The number of in-flight parts is unbounded, so no finite ceiling exists.
     static constexpr UInt64 UNLIMITED = std::numeric_limits<UInt64>::max();
 
-    /// The first buffer: a writer allocates it however little data flows through it.
-    UInt64 guaranteed = 0;
     /// Every buffer that can be alive at once - the one being filled plus max_inflight_parts_for_one_file
     /// detached ones - or UNLIMITED. A detached buffer really does coexist with the buffer being filled:
     /// WriteBufferFromS3::nextImpl detaches the full buffer, keeps it in detached_part_data (it defers the

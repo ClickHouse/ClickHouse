@@ -75,6 +75,38 @@ UInt64 liveBuffersUpperBound(const BufferAllocationPolicy::Settings & settings, 
     return worst;
 }
 
+UInt64 firstPolicyBufferSize(const BufferAllocationPolicy::Settings & settings)
+{
+    auto policy = BufferAllocationPolicy::create(settings);
+    policy->nextBuffer();
+    return policy->getBufferSize();
+}
+
+/// The memory a writer holds while its FIRST buffer is being filled, after `written` bytes have gone through
+/// it. WriteBufferFromS3 does NOT allocate the allocation policy's first part up front: BufferWithOwnMemory is
+/// constructed with the size the caller passes (S3ObjectStorage::writeObject hands it the stream's own
+/// buf_size), allocateBuffer only shrinks it when it exceeds the policy size, and reallocateFirstBuffer
+/// doubles it - capped by the policy size - on the nextImpl path, that is only once it has actually filled up.
+UInt64 firstBufferMemoryAfterWriting(const BufferAllocationPolicy::Settings & settings, UInt64 initial_buffer_size, UInt64 written)
+{
+    const UInt64 max_first_buffer = firstPolicyBufferSize(settings);
+    UInt64 memory = std::min(initial_buffer_size, max_first_buffer);
+
+    UInt64 filled = 0;
+    while (filled < written)
+    {
+        filled += std::min(memory - filled, written - filled);
+        if (filled == written)
+            break;
+        /// The buffer is full and there is more to write: nextImpl grows the first buffer, or - once it is at
+        /// the policy size - detaches it and moves on to the multipart buffers priced by the ceiling.
+        if (memory == max_first_buffer)
+            break;
+        memory = std::min(memory * 2, max_first_buffer);
+    }
+    return memory;
+}
+
 }
 
 TEST(MultipartUploadMemory, ExponentialPolicyBoundsTheLiveBuffers)
@@ -86,8 +118,9 @@ TEST(MultipartUploadMemory, ExponentialPolicyBoundsTheLiveBuffers)
 
     const auto memory = getMultipartUploadMemory(settings, 4);
 
-    /// The first buffer, which a writer allocates however little data flows through it.
-    EXPECT_EQ(memory.guaranteed, 32 * 1024 * 1024);
+    /// The first buffer the policy hands out - which the writer grows into as data fills it, rather than
+    /// allocating it up front (see TheFirstBufferIsNotPinnedUpFront below).
+    EXPECT_EQ(firstPolicyBufferSize(settings), 32 * 1024 * 1024);
     /// Five live buffers (the one being filled plus four in flight), each of which the policy can have
     /// grown to max_size.
     EXPECT_EQ(memory.ceiling, 5 * 5ULL * 1024 * 1024 * 1024);
@@ -104,7 +137,7 @@ TEST(MultipartUploadMemory, ExponentialPolicyFirstBufferFollowsMinUploadPartSize
     const auto memory = getMultipartUploadMemory(settings, 1);
 
     /// ExpBufferAllocationPolicy raises the first buffer to min_size when that is the larger of the two.
-    EXPECT_EQ(memory.guaranteed, 64 * 1024 * 1024);
+    EXPECT_EQ(firstPolicyBufferSize(settings), 64 * 1024 * 1024);
     EXPECT_EQ(memory.ceiling, 2 * 1024ULL * 1024 * 1024);
     EXPECT_GE(memory.ceiling, liveBuffersUpperBound(settings, 1, 2000));
 }
@@ -122,7 +155,7 @@ TEST(MultipartUploadMemory, StrictUploadPartSizeUsesTheFixedSizePolicy)
 
     const auto memory = getMultipartUploadMemory(settings, 3);
 
-    EXPECT_EQ(memory.guaranteed, 512ULL * 1024 * 1024);
+    EXPECT_EQ(firstPolicyBufferSize(settings), 512ULL * 1024 * 1024);
     EXPECT_EQ(memory.ceiling, 4 * 512ULL * 1024 * 1024);
     /// Every buffer is strict_size, so max_size does not enter the ceiling at all.
     EXPECT_LT(memory.ceiling, settings.max_size);
@@ -130,7 +163,7 @@ TEST(MultipartUploadMemory, StrictUploadPartSizeUsesTheFixedSizePolicy)
 
     /// The exponential formula would have under-reported both, which is what makes an up-front reservation
     /// admit too many concurrent merges.
-    EXPECT_GT(memory.guaranteed, std::max(settings.max_single_size, settings.min_size));
+    EXPECT_GT(firstPolicyBufferSize(settings), std::max(settings.max_single_size, settings.min_size));
 }
 
 TEST(MultipartUploadMemory, ADetachedBufferCoexistsWithTheBufferBeingFilled)
@@ -148,7 +181,7 @@ TEST(MultipartUploadMemory, ADetachedBufferCoexistsWithTheBufferBeingFilled)
 
     const auto memory = getMultipartUploadMemory(settings, 1);
 
-    EXPECT_EQ(memory.guaranteed, 32ULL * 1024 * 1024);
+    EXPECT_EQ(firstPolicyBufferSize(settings), 32ULL * 1024 * 1024);
     EXPECT_EQ(memory.ceiling, 2 * 32ULL * 1024 * 1024);
 
     const UInt64 live = liveBuffersUpperBound(settings, 1, 2000);
@@ -168,13 +201,11 @@ TEST(MultipartUploadMemory, UnlimitedInflightPartsHaveNoCeiling)
 
     const auto memory = getMultipartUploadMemory(settings, 0);
 
-    EXPECT_EQ(memory.guaranteed, 32 * 1024 * 1024);
     EXPECT_EQ(memory.ceiling, MultipartUploadMemory::UNLIMITED);
 
     BufferAllocationPolicy::Settings strict_settings;
     strict_settings.strict_size = 64 * 1024 * 1024;
     const auto strict_memory = getMultipartUploadMemory(strict_settings, 0);
-    EXPECT_EQ(strict_memory.guaranteed, 64 * 1024 * 1024);
     EXPECT_EQ(strict_memory.ceiling, MultipartUploadMemory::UNLIMITED);
 }
 
@@ -188,4 +219,32 @@ TEST(MultipartUploadMemory, AbsurdInflightLimitSaturatesInsteadOfWrappingAround)
     const auto memory = getMultipartUploadMemory(settings, std::numeric_limits<UInt64>::max() / 1024);
 
     EXPECT_EQ(memory.ceiling, MultipartUploadMemory::UNLIMITED);
+}
+
+TEST(MultipartUploadMemory, TheFirstBufferIsNotPinnedUpFront)
+{
+    /// Default S3 sizing: the allocation policy's first part is 32 MiB, but a merge output stream hands the
+    /// writer a 1 MiB buffer (2 * max_compress_block_size, or adaptive_write_buffer_initial_size for an
+    /// adaptive stream), and that is all the writer holds until data actually fills it. An up-front merge
+    /// reservation that charged the policy's first part for every stream whose data volume it cannot derive
+    /// from the source parts - a rebuilt projection, a variable-size DEFAULT-filled column, a delayed
+    /// vertical stream - would over-reserve such a stream 32x and starve merge admission, which is why
+    /// CompactionStatistics::estimateNeededMemoryForMerge prices them at the writer's initial buffers.
+    BufferAllocationPolicy::Settings settings;
+    settings.max_single_size = 32 * 1024 * 1024;
+    settings.min_size = 16 * 1024 * 1024;
+    settings.max_size = 5ULL * 1024 * 1024 * 1024;
+
+    const UInt64 initial = 1024 * 1024;
+    EXPECT_EQ(firstPolicyBufferSize(settings), 32ULL * 1024 * 1024);
+    EXPECT_EQ(firstBufferMemoryAfterWriting(settings, initial, 0), initial);
+    EXPECT_EQ(firstBufferMemoryAfterWriting(settings, initial, 1024), initial);
+
+    /// It grows only with the data written into it - which the reactive background_memory_tracker sees as it
+    /// materializes - and never past the policy's first part.
+    EXPECT_LE(firstBufferMemoryAfterWriting(settings, initial, 20ULL * 1024 * 1024), 2 * 20ULL * 1024 * 1024);
+    EXPECT_EQ(firstBufferMemoryAfterWriting(settings, initial, 100ULL * 1024 * 1024), 32ULL * 1024 * 1024);
+
+    /// A caller that passes MORE than the policy's first part gets it shrunk down (allocateBuffer).
+    EXPECT_EQ(firstBufferMemoryAfterWriting(settings, 64ULL * 1024 * 1024, 0), 32ULL * 1024 * 1024);
 }

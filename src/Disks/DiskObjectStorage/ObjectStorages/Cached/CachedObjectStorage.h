@@ -114,7 +114,6 @@ public:
 
     UInt64 getWriteBufferMemoryCeiling() const override { return object_storage->getWriteBufferMemoryCeiling(); }
 
-    UInt64 getWriteBufferGuaranteedMemory() const override { return object_storage->getWriteBufferGuaranteedMemory(); }
 
     const FileCacheSettings & getCacheSettings() const { return cache_settings; }
 

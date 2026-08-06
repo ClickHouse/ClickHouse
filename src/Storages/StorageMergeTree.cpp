@@ -1769,7 +1769,6 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 const auto disk_write_buffer_memory = CompactionStatistics::getDiskWriteBufferMemory(disk);
                 if (!admission_write_buffer_memory)
                     admission_write_buffer_memory.emplace();
-                admission_write_buffer_memory->guaranteed = std::max(admission_write_buffer_memory->guaranteed, disk_write_buffer_memory.guaranteed);
                 admission_write_buffer_memory->ceiling = std::max(admission_write_buffer_memory->ceiling, disk_write_buffer_memory.ceiling);
             }
 
