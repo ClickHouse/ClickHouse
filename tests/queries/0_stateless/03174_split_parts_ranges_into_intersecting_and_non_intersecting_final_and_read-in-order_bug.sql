@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-msan, no-fasttest
+-- Tags: long, no-tsan, no-asan, no-msan, no-fasttest
 -- Test is slow
 -- Random settings limits: index_granularity=(8192, None); index_granularity_bytes=(229376, None); merge_max_block_size=(8192, None)
 -- A small granule size multiplies the mark count of this 1e7-row FINAL merge by orders of magnitude,
