@@ -702,6 +702,10 @@ Maximum estimated memory retained by a text index builder before flushing a temp
 Default posting list codec for text indexes.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0) \
+    DECLARE(Bool, allow_experimental_multi_column_text_index, false, R"(
+Allow creating text indexes with the experimental `field_ids` argument,
+which enables the field-tagged layout used by multi-column text indexes.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
 Allow creating text indexes with the experimental `support_phrase_search` argument
 which stores token positions to support exact phrase matching.

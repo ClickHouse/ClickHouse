@@ -13,6 +13,18 @@ SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injectio
 DROP TABLE IF EXISTS multi_text_exact;
 DROP TABLE IF EXISTS tagged_single;
 
+-- The field-tagged layout is experimental and must be explicitly enabled when it is created.
+CREATE TABLE multi_text_setting_disabled
+(
+    a String,
+    b String,
+    INDEX idx (a, b) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        field_ids = '{"a":1,"b":2}')
+)
+ENGINE = MergeTree
+ORDER BY tuple(); -- { serverError SUPPORT_IS_DISABLED }
+
 CREATE TABLE multi_text_exact
 (
     id UInt64,
@@ -30,6 +42,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     index_granularity = 1,
+    allow_experimental_multi_column_text_index = 1,
     allow_experimental_text_index_phrase_search = 1,
     max_bytes_to_merge_at_max_space_in_pool = 0;
 
@@ -183,7 +196,8 @@ CREATE TABLE tagged_single
         field_ids = '{"value":17,"retired":3}')
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS allow_experimental_multi_column_text_index = 1;
 
 INSERT INTO tagged_single VALUES (1, 'single tagged'), (2, 'other');
 SELECT 'tagged_single', groupArray(id) FROM
@@ -209,6 +223,10 @@ PARTITION BY id
 ORDER BY id;
 
 INSERT INTO multi_text_materialize VALUES (1, 'old title', 'oldbody');
+ALTER TABLE multi_text_materialize ADD INDEX idx (title, body) TYPE text(
+    tokenizer = 'splitByNonAlpha',
+    field_ids = '{"title":11,"body":12}'); -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE multi_text_materialize MODIFY SETTING allow_experimental_multi_column_text_index = 1;
 ALTER TABLE multi_text_materialize ADD INDEX idx (title, body) TYPE text(
     tokenizer = 'splitByNonAlpha',
     field_ids = '{"title":11,"body":12}');
@@ -240,7 +258,8 @@ CREATE TABLE multi_text_missing_map
     INDEX idx (a, b) TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple()
+SETTINGS allow_experimental_multi_column_text_index = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE multi_text_missing_field
 (
@@ -249,7 +268,8 @@ CREATE TABLE multi_text_missing_field
     INDEX idx (a, b) TYPE text(tokenizer = 'splitByNonAlpha', field_ids = '{"a":1}')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple()
+SETTINGS allow_experimental_multi_column_text_index = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE multi_text_duplicate_id
 (
@@ -258,7 +278,8 @@ CREATE TABLE multi_text_duplicate_id
     INDEX idx (a, b) TYPE text(tokenizer = 'splitByNonAlpha', field_ids = '{"a":1,"b":2,"retired":1}')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple()
+SETTINGS allow_experimental_multi_column_text_index = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE multi_text_invalid_id
 (
@@ -267,7 +288,8 @@ CREATE TABLE multi_text_invalid_id
     INDEX idx (a, b) TYPE text(tokenizer = 'splitByNonAlpha', field_ids = '{"a":0,"b":2}')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple()
+SETTINGS allow_experimental_multi_column_text_index = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE multi_text_non_integer_id
 (
@@ -276,7 +298,8 @@ CREATE TABLE multi_text_non_integer_id
     INDEX idx (a, b) TYPE text(tokenizer = 'splitByNonAlpha', field_ids = '{"a":"1","b":2}')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple()
+SETTINGS allow_experimental_multi_column_text_index = 1; -- { serverError BAD_ARGUMENTS }
 
 -- Transform templates are added in later stages; the first tagged stage rejects them explicitly.
 CREATE TABLE multi_text_preprocessor
@@ -289,7 +312,8 @@ CREATE TABLE multi_text_preprocessor
         field_ids = '{"a":1,"b":2}')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple()
+SETTINGS allow_experimental_multi_column_text_index = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE multi_text_postprocessor
 (
@@ -301,7 +325,8 @@ CREATE TABLE multi_text_postprocessor
         field_ids = '{"a":1,"b":2}')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple()
+SETTINGS allow_experimental_multi_column_text_index = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE tagged_single_preprocessor
 (
@@ -312,7 +337,8 @@ CREATE TABLE tagged_single_preprocessor
         field_ids = '{"a":1}')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple()
+SETTINGS allow_experimental_multi_column_text_index = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE multi_text_expression
 (
@@ -323,7 +349,8 @@ CREATE TABLE multi_text_expression
         field_ids = '{"a":1,"lower(b)":2}')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple()
+SETTINGS allow_experimental_multi_column_text_index = 1; -- { serverError BAD_ARGUMENTS }
 
 CREATE TABLE multi_text_overlap
 (
@@ -334,4 +361,5 @@ CREATE TABLE multi_text_overlap
     INDEX idx_bc (b, c) TYPE text(tokenizer = 'splitByNonAlpha', field_ids = '{"b":3,"c":4}')
 )
 ENGINE = MergeTree
-ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ORDER BY tuple()
+SETTINGS allow_experimental_multi_column_text_index = 1; -- { serverError BAD_ARGUMENTS }

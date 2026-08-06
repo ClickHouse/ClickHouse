@@ -91,7 +91,7 @@ CREATE TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
-                                [, field_ids = '{"str": 1}']
+                                [, field_ids = '{"str": 1}'] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
@@ -126,12 +126,15 @@ CREATE TABLE documents
         field_ids = '{"title": 1, "body": 2}')
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS allow_experimental_multi_column_text_index = 1;
 
 SELECT id
 FROM documents
 WHERE hasToken(title, 'ClickHouse') AND hasToken(body, 'search');
 ```
+
+Creating a field-tagged index currently requires the experimental MergeTree setting `allow_experimental_multi_column_text_index = 1`.
 
 The `field_ids` argument is a user-maintained JSON object that assigns each indexed column a stable integer ID from 1 through 65535. It is mandatory for a multi-column index. Every active column must have an entry, and IDs must be unique across both active columns and retained entries for removed columns. Do not change or reuse an existing assignment.
 
@@ -157,7 +160,7 @@ ALTER TABLE table
                                 [, preprocessor = expression(str)]
                                 [, postprocessor = expression(str)]
                                 [, support_phrase_search = 0 | 1 ] -- experimental
-                                [, field_ids = '{"str": 1}']
+                                [, field_ids = '{"str": 1}'] -- experimental
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]

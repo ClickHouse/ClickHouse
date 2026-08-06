@@ -75,6 +75,7 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_experimental_multi_column_text_index;
     extern const MergeTreeSettingsNonZeroUInt64 text_index_dictionary_block_size;
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
@@ -2267,7 +2268,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     return std::make_shared<MergeTreeIndexText>(std::move(metadata_snapshot), index, index_params, std::move(tokenizer), std::move(posting_list_codec));
 }
 
-void textIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & settings)
+void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)
 {
     auto options = convertArgumentsToOptionsMap(index.arguments);
 
@@ -2308,6 +2309,14 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
 
     auto field_ids_json = extractFieldOption<String>(options, ARGUMENT_FIELD_IDS);
+
+    /// Restrict new definitions only; existing metadata must remain attachable.
+    if (!attach && field_ids_json && !settings[MergeTreeSetting::allow_experimental_multi_column_text_index])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
+            "`allow_experimental_multi_column_text_index = 1`.",
+            ARGUMENT_FIELD_IDS);
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
