@@ -24,10 +24,6 @@ SHUTDOWN_BOUND_SEC = 30
 # coverage builds, so slow builds must ask for 180: at that value its `stop_wait_sec < 180`
 # guard is false, so no override can apply and both legs below enforce the same budget.
 SLOW_BUILD_SHUTDOWN_BOUND_SEC = 180
-# The bound is useful only while the merge outlives it. 2 * 1000 * 50ms = 100s would let an
-# unfixed server finish the merge inside a 180s bound and pass, so the slow-build fixture
-# needs more rows: 2 * 6000 * 50ms = 600s keeps the same ~3.3x margin the fast build has.
-SLOW_BUILD_ROWS = 6000
 
 
 @pytest.fixture(scope="module")
@@ -39,15 +35,15 @@ def start_cluster():
         cluster.shutdown()
 
 
-def create_table_and_parts(table, rows=ROWS):
+def create_table_and_parts(table):
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(
         f"""
         CREATE TABLE {table} (id UInt64, vec Array(Float32),
                               INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', {DIMENSIONS}))
         ENGINE = MergeTree ORDER BY id
-        SETTINGS index_granularity = {rows}, min_bytes_for_wide_part = 0,
-                 merge_max_block_size = {2 * rows}, merge_max_block_size_bytes = '100G',
+        SETTINGS index_granularity = {ROWS}, min_bytes_for_wide_part = 0,
+                 merge_max_block_size = {2 * ROWS}, merge_max_block_size_bytes = '100G',
                  min_age_to_force_merge_seconds = 1, min_age_to_force_merge_on_partition_only = 0,
                  enable_vertical_merge_algorithm = 0
         """,
@@ -63,10 +59,10 @@ def create_table_and_parts(table, rows=ROWS):
         # the ORDER BY ... LIMIT oracle below return an arbitrary subset.
         node.query(
             f"INSERT INTO {table} SELECT number + {offset} AS id, "
-            f"arrayMap(x -> toFloat32(id + x), range({DIMENSIONS})) FROM numbers({rows})",
+            f"arrayMap(x -> toFloat32(id + x), range({DIMENSIONS})) FROM numbers({ROWS})",
             settings={
-                "max_insert_block_size": rows,
-                "min_insert_block_size_rows": rows,
+                "max_insert_block_size": ROWS,
+                "min_insert_block_size_rows": ROWS,
             },
         )
     assert (
@@ -141,29 +137,44 @@ def assert_slow_index_build_is_still_in_flight(table):
 
 
 def test_shutdown_interrupts_vector_index_build(start_cluster):
-    # A slow build needs a larger bound, and stop_clickhouse enforces one regardless: it
-    # rewrites any graceful bound below 180s to 180s on LLVM coverage builds. Resolve the
-    # pair here and pass the same value to the helper and to the elapsed assertion,
-    # otherwise the two legs enforce different budgets - the helper would allow the whole
-    # uninterrupted merge while the assertion still demanded 30s. Raising the bound alone
-    # would make the arm vacuous, so the row count scales with it to keep the merge longer
-    # than the bound on every build.
+    # stop_clickhouse returning True only means the process is gone, by any means - not that
+    # shutdown ran to completion - so the oracle here is the log marker the server writes
+    # after the wait that stalls, and the bound is only a budget. 180 is the slow-build value
+    # because stop_clickhouse rewrites any smaller graceful bound to 180 on LLVM coverage
+    # builds; at 180 its `stop_wait_sec < 180` guard is false, so both legs share one budget.
     slow_build = node.is_built_with_sanitizer() or node.is_built_with_llvm_coverage()
     bound = SLOW_BUILD_SHUTDOWN_BOUND_SEC if slow_build else SHUTDOWN_BOUND_SEC
-    rows = SLOW_BUILD_ROWS if slow_build else ROWS
     try:
-        create_table_and_parts("vec_shutdown", rows=rows)
+        create_table_and_parts("vec_shutdown")
         node.query("SYSTEM ENABLE FAILPOINT vector_similarity_index_slow_add")
         start_background_merge_and_wait_until_running("vec_shutdown")
         time.sleep(3)
         assert_slow_index_build_is_still_in_flight("vec_shutdown")
+        # Start clean so only this shutdown's lines can satisfy the assertions below. After
+        # the precondition, so its own queries are not what gets truncated away.
+        node.exec_in_container(
+            ["bash", "-c", ": > /var/log/clickhouse-server/clickhouse-server.log"]
+        )
 
         started_at = time.time()
-        assert node.stop_clickhouse(stop_wait_sec=bound), (
-            f"server did not shut down within {bound}s while a background "
-            "merge was building a vector similarity index"
-        )
+        node.stop_clickhouse(stop_wait_sec=bound)
         elapsed = time.time() - started_at
+        # Server.cpp logs this after Context::shutdown returns, i.e. strictly after the
+        # merges-executor wait that stalls, so a wedged server can never emit it. from_host
+        # reads the bind-mounted copy, which survives even if the container dies;
+        # only_latest keeps the scan off the rotated files, which rotateOnOpen fills with
+        # earlier arms' shutdowns and which would satisfy both assertions on their own.
+        assert node.grep_in_log(
+            "Background threads finished", from_host=True, only_latest=True
+        ), (
+            "shutdown did not run to completion while a background merge was building a "
+            "vector similarity index"
+        )
+        assert node.grep_in_log(
+            "Cancelled building vector similarity index",
+            from_host=True,
+            only_latest=True,
+        ), "the index build was never interrupted, so this arm did not reach the fix"
         assert elapsed < bound, f"shutdown took {elapsed:.1f}s, bound {bound}s"
     finally:
         # The server is stopped on the success path and may be stopped on the failure
