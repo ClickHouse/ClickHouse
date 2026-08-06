@@ -93,6 +93,17 @@ static size_t getMaxSizeForIndex(const Settings & settings)
     return settings[Setting::make_distributed_plan] ? 0 : settings[Setting::use_index_for_in_with_subqueries_max_values];
 }
 
+/// The in-place build plan carries `CreatingSetStep` at its root, which cannot cross a
+/// distributed-plan fragment boundary, so the set subquery always runs locally on the
+/// initiator. (Distributing the subquery itself would require converting it below the
+/// set-filling step.)
+static QueryPlanOptimizationSettings makeInplaceBuildOptimizationSettings(const ContextPtr & context)
+{
+    QueryPlanOptimizationSettings optimization_settings(context);
+    optimization_settings.make_distributed_plan = false;
+    return optimization_settings;
+}
+
 static bool equals(const DataTypes & lhs, const DataTypes & rhs)
 {
     size_t size = lhs.size();
@@ -433,7 +444,7 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (!plan)
         return;
 
-    auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+    auto builder = plan->buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
@@ -601,7 +612,7 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// the destructive fallback `build` moved the resources into `plan`, which outlives this scope, so the
     /// ordering is safe there too.
     {
-        auto builder = plan->buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+        auto builder = plan->buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
