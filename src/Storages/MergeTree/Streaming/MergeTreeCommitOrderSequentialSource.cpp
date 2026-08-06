@@ -400,14 +400,13 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfigur
 {
     const auto result = handleReconfiguration();
 
-    if (result == Status::Async)
+    // Finish after the first completed snapshot, or once the first enrichment shows nothing (more) to read.
+    if (subscription->updatesCount() > 0 && (finished_snapshots > 0 || result == Status::Async))
     {
-        if (subscription->updatesCount() > 0)
-        {
-            outputs.front().finish();
-            return Status::Finished;
-        }
-        return Status::Async;
+        if (!current_sub_pipeline.empty())
+            return Status::UpdatePipeline;   // tear down the spent sub-pipeline first
+        outputs.front().finish();
+        return Status::Finished;
     }
 
     return result;
