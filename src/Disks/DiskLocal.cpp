@@ -430,11 +430,10 @@ void DiskLocal::prepareRead(
         settings,
         read_hint);
 
-    /// Use the same estimated size basis as `createReadBufferFromFileBase` receives when
-    /// `build` runs it with the stored object's size: read_hint first, then file_size,
-    /// and zero when the file could not be stat'd (the builder sees `UnknownSize` then).
-    /// A large file with a small read_hint won't trigger O_DIRECT, so page cache remains safe.
-    size_t estimated_size = read_hint.value_or(ec ? 0 : file_size);
+    /// Use the same estimated size basis as createReadBufferFromFileBase:
+    /// read_hint first, then file_size. A large file with a small read_hint
+    /// won't trigger O_DIRECT, so page cache remains safe.
+    size_t estimated_size = read_hint.value_or(file_size);
     bool direct_io = settings.local_fs_settings.direct_io_threshold
         && estimated_size >= settings.local_fs_settings.direct_io_threshold;
 
