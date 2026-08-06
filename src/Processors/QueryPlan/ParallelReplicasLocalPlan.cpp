@@ -272,7 +272,14 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     {
         auto * analyzed_merge_tree = typeid_cast<ReadFromMergeTree *>(analyzed_read_from_merge_tree.get());
         if (analyzed_merge_tree)
+        {
+            /// Best-effort bug catcher, not an invariant: the analysis is built by the caller from a
+            /// different plan, and a storage id cannot tell two occurrences of one table apart.
+            const auto * reused_by = typeid_cast<const ReadFromMergeTree *>(reading_nodes.front()->step.get());
+            chassert(reused_by && reused_by->getStorageID() == analyzed_merge_tree->getStorageID(),
+                     "pre-analyzed result belongs to a different table than the scan that reuses it");
             analyzed_result_ptr = analyzed_merge_tree->getAnalyzedResult();
+        }
     }
 
     for (auto * reading_node : reading_nodes)
