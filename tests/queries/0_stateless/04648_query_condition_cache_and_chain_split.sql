@@ -28,6 +28,10 @@ DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (a Int64, b Int64, c Int64) ENGINE = MergeTree ORDER BY a
 SETTINGS add_minmax_index_for_numeric_columns = 0;
 
+-- Query condition cache entries are keyed by part, so a background merge between the two runs would
+-- invalidate the primed entries and make the hit counts flaky.
+SYSTEM STOP MERGES tab;
+
 -- 1 mio rows sounds like a lot but the QCC doesn't cache anything for less data
 INSERT INTO tab SELECT number, number, 1_000_000 - number FROM numbers(1_000_000);
 
@@ -76,6 +80,8 @@ DROP TABLE IF EXISTS tab_str;
 
 CREATE TABLE tab_str (a Int64, b Int64, c Int64, s String) ENGINE = MergeTree ORDER BY a
 SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_string_columns = 0;
+
+SYSTEM STOP MERGES tab_str;
 
 INSERT INTO tab_str
 SELECT number, number, number, multiIf(number < 333_333, 'alpha', number < 666_666, 'beta', 'gamma')
