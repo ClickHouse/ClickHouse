@@ -20,6 +20,10 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
+/// Cancellation is polled every this many rows while skipping plain ranges (no hash table),
+/// so KILL QUERY can interrupt long equal-key runs instead of waiting for the whole chunk.
+constexpr size_t poll_interval = 4096;
+
 DistinctSortedStreamTransform::DistinctSortedStreamTransform(
     SharedHeader header_,
     const SizeLimits & output_size_limits_,
@@ -124,6 +128,25 @@ size_t DistinctSortedStreamTransform::buildFilterForRange(
     return count;
 }
 
+bool DistinctSortedStreamTransform::fillFilterRangeWithPolling(IColumnFilter & filter, const size_t begin, const size_t end)
+{
+    size_t pos = begin;
+    while (end - pos > poll_interval)
+    {
+        std::fill(filter.begin() + pos, filter.begin() + pos + poll_interval, 0);
+        pos += poll_interval;
+        FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
+        if (isCancelled())
+        {
+            std::fill(filter.begin() + pos, filter.end(), 0);
+            return false;
+        }
+    }
+
+    std::fill(filter.begin() + pos, filter.begin() + end, 0);
+    return true;
+}
+
 void DistinctSortedStreamTransform::saveLatestKey(const size_t row_pos)
 {
     prev_chunk_latest_key.clear();
@@ -167,7 +190,13 @@ std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(c
     const size_t range_end = getEqualRangeEndAssumeSorted(sorted_columns, sorted_columns_descr, 0, chunk_rows);
     if (other_columns.empty())
     {
-        std::fill(filter.begin(), filter.begin() + range_end, 0); /// skip rows already included in distinct on previous transform()
+        /// skip rows already included in distinct on previous transform(); poll cancellation
+        /// inside the carried-over prefix so a long all-same-key chunk can be interrupted
+        if (!fillFilterRangeWithPolling(filter, 0, range_end))
+        {
+            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during continuation from previous chunk");
+            return {range_end, output_rows};
+        }
         FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
         if (isCancelled())
         {
@@ -179,6 +208,12 @@ std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(c
     {
         constexpr bool clear_data = false;
         output_rows = ordinaryDistinctOnRange<clear_data>(filter, 0, range_end);
+        FailPointInjection::pauseFailPoint(FailPoints::distinct_sorted_stream_transform_pause);
+        if (isCancelled())
+        {
+            LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during continuation from previous chunk");
+            return {range_end, output_rows};
+        }
     }
 
     return {range_end, output_rows};
@@ -225,7 +260,11 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
         if (other_columns.empty())
         {
             filter[range_begin] = 1;
-            std::fill(filter.begin() + range_begin + 1, filter.begin() + range_end, 0);
+            if (!fillFilterRangeWithPolling(filter, range_begin + 1, range_end))
+            {
+                LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during row processing");
+                break;
+            }
             ++output_rows;
         }
         else

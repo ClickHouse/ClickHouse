@@ -137,12 +137,11 @@ def test_sorted_stream_kill_query_other_columns_multiple_runs(started_cluster):
         CREATE TABLE test_other_runs (k UInt32, v UInt32)
         ENGINE = MergeTree() ORDER BY k
     """)
-    # Runs of 3000: chunk boundary at row 9999 falls within k=3 (rows 9000-11999).
-    # Chunk 2 continuation sets range_begin=2000. The first post-continuation
-    # run (k=4, rows 12000-14999) crosses i=4096 inside buildFilterForRange.
-    # Without the fix, the outer throttled check does not fire
-    # (range_begin - last_checked_row = 3000 < 4096) and subsequent runs
-    # (k=5, k=6) process hash table work after cancellation.
+    # Runs of 3000 over the first 10k-row chunk (k=0..3). buildFilterForRange
+    # polls isCancelled() every 4096 rows and crosses i=4096 inside run k=1
+    # (rows 3000-6000), so the query is killed there. The bail-out right after
+    # ordinaryDistinctOnRange stops later runs (k=2, k=3) from doing hash table
+    # work after cancellation.
     node1.query("INSERT INTO test_other_runs SELECT intDiv(number, 3000), number FROM numbers(20000)")
     try:
         query = (
@@ -155,3 +154,29 @@ def test_sorted_stream_kill_query_other_columns_multiple_runs(started_cluster):
         run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
     finally:
         node1.query("DROP TABLE IF EXISTS test_other_runs")
+
+
+def test_sorted_stream_kill_query_other_columns_continuation(started_cluster):
+    node1.query("DROP TABLE IF EXISTS test_other_cont")
+    node1.query("""
+        CREATE TABLE test_other_cont (k UInt32, v UInt32)
+        ENGINE = MergeTree() ORDER BY k
+    """)
+    # Runs of 2000. Chunk 1 (3000 rows, below the first i=4096 poll) processes
+    # without triggering the failpoint, so chunk 2 genuinely reaches
+    # continueWithPrevRange: the chunk boundary at row 2999 splits run k=1, and
+    # chunk 2's continuation (range_end=2000) hits the pause in the
+    # other_columns branch. This proves the query reaches the second-chunk path
+    # the multiple-runs test intends to cover.
+    node1.query("INSERT INTO test_other_cont SELECT intDiv(number, 2000), number FROM numbers(6000)")
+    try:
+        query = (
+            "SELECT DISTINCT k, v "
+            "FROM test_other_cont "
+            "ORDER BY k "
+            "FORMAT Null "
+            "SETTINGS max_block_size=3000, max_threads=1, max_rows_to_read=0"
+        )
+        run_kill_query_failpoint_test(query, "distinct_sorted_stream_transform_pause")
+    finally:
+        node1.query("DROP TABLE IF EXISTS test_other_cont")
