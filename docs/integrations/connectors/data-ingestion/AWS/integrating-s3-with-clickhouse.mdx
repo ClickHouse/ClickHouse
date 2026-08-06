@@ -207,7 +207,7 @@ While useful for sampling data and executing ae-hoc, exploratory queries, readin
 The `clickhouse-local` program enables you to perform fast processing on local files without deploying and configuring the ClickHouse server. Any queries using the `s3` table function can be performed with this utility. For example:
 
 ```sql
-clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
 ### Inserting Data from S3 {#inserting-data-from-s3}
@@ -227,7 +227,7 @@ INSERT INTO trips
 If network security policies prevent your ClickHouse cluster from making outbound connections, you can potentially insert S3 data using `clickhouse-local`. In the example below, we read from an S3 bucket and insert into ClickHouse using the `remote` function:
 
 ```sql
-clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', 'TabSeparatedWithNames') LIMIT 10"
+clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'default.trips', 'username', 'password') (*) SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
 <Note>
@@ -300,7 +300,7 @@ The node which receives the query, known as the initiator, creates a connection 
 The `s3Cluster` function takes the same format as the single node variants, except that a target cluster is required to denote the worker nodes:
 
 ```sql
-s3Cluster(cluster_name, source, [access_key_id, secret_access_key,] format, structure)
+s3Cluster(cluster_name, source, [NOSIGN | access_key_id, secret_access_key,] format, structure)
 ```
 
 * `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
@@ -319,6 +319,7 @@ INSERT INTO default.trips_all
    FROM s3Cluster(
        'events',
        'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz',
+       NOSIGN,
        'TabSeparatedWithNames'
     )
 ```
