@@ -1,4 +1,5 @@
 #include <chrono>
+#include <limits>
 #include <gtest/gtest.h>
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
@@ -9,6 +10,30 @@
 using namespace DB;
 
 using ResourceTest = ResourceTestClass;
+
+namespace
+{
+
+constexpr auto max_duration = std::chrono::nanoseconds(std::numeric_limits<std::chrono::nanoseconds::rep>::max());
+
+/// A speed of 2^-33 tokens/s parks a cost-1 request for 2^33 seconds. That delay fits in `Int64`
+/// nanoseconds, but two of them do not, and neither does one added to a large enough time point.
+constexpr double tiny_speed = 1.0 / 8589934592.0;
+constexpr auto tiny_speed_delay = std::chrono::nanoseconds(8589934592000000000);
+
+/// Parks one cost-1 request on a throttler installed as the root node, and returns that root.
+ThrottlerConstraint & parkOneRequest(ResourceTest & t, EventQueue::TimePoint start, double max_speed)
+{
+    t.process(start, 0);
+    t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, max_speed, /*max_burst=*/ 0.0);
+    t.add<FifoQueue>("/A");
+    t.enqueue("/A", {1});
+    t.process(start);
+    t.consumed("A", 1);
+    return static_cast<ThrottlerConstraint &>(t.getRoot());
+}
+
+}
 
 TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
 {
@@ -175,5 +200,66 @@ TEST(SchedulerThrottlerConstraint, ThrottlerAndFairness)
         t.consumed("B", static_cast<ResourceCost>(arrival_curve * share_b - consumed_b), max_latency_b);
         consumed_a = arrival_curve * share_a;
         consumed_b = arrival_curve * share_b;
+    }
+}
+
+/// The three cases below are separate tests on purpose: the sanitizer builds are compiled with
+/// `-fno-sanitize-recover=all`, so the first unbounded statement aborts the process and would hide
+/// the other two.
+
+/// A speed small enough that the quotient itself is outside `Int64`. Narrowing it is undefined.
+TEST(SchedulerThrottlerConstraint, TinySpeedDelayNarrowingIsBounded)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start{std::chrono::seconds(1)};
+    auto & throttler = parkOneRequest(t, start, /*max_speed=*/ 1e-30);
+    EXPECT_EQ(throttler.getThrottlingDuration(), max_duration - start.time_since_epoch());
+}
+
+/// A representable quotient, but `now + delay` is not representable.
+TEST(SchedulerThrottlerConstraint, TinySpeedDeadlineIsBounded)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start{std::chrono::nanoseconds(Int64(1) << 62)};
+    auto & throttler = parkOneRequest(t, start, tiny_speed);
+    EXPECT_EQ(throttler.getThrottlingDuration(), max_duration - start.time_since_epoch());
+}
+
+/// Two delays that are each representable, but whose sum is not. `steady_clock`'s epoch is
+/// unspecified, and a negative one leaves room for a delay longer than the time already elapsed.
+TEST(SchedulerThrottlerConstraint, ThrottlingDurationSaturates)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start{std::chrono::seconds(-1)};
+    auto & throttler = parkOneRequest(t, start, tiny_speed);
+    EXPECT_EQ(throttler.getThrottlingDuration(), tiny_speed_delay);
+
+    /// Serve that postponement in full, then park a second request at the new time.
+    t.enqueue("/A", {1});
+    t.process(start + tiny_speed_delay);
+    t.consumed("A", 1);
+    EXPECT_EQ(throttler.getThrottlingDuration(), max_duration);
+}
+
+
+/// The two guards above must not be satisfied by suppressing the metric: an ordinary speed still
+/// has to accumulate the exact delay it postpones, once per postponement.
+TEST(SchedulerThrottlerConstraint, ThrottlingDurationIsAccumulated)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start = EventQueue::Clock::now();
+    constexpr double max_speed = 0.001;
+    constexpr auto delay = std::chrono::seconds(1000);
+
+    auto & throttler = parkOneRequest(t, start, max_speed);
+    EXPECT_EQ(throttler.getThrottlingDuration(), delay);
+
+    /// Each request is served exactly when its postponement elapses, so each adds a whole delay.
+    for (int i = 1; i < 4; i++)
+    {
+        t.enqueue("/A", {1});
+        t.process(start + delay * i);
+        t.consumed("A", 1);
+        EXPECT_EQ(throttler.getThrottlingDuration(), delay * (i + 1));
     }
 }

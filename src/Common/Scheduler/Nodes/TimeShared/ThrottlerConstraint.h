@@ -4,7 +4,9 @@
 #include <Common/Scheduler/EventQueue.h>
 #include <Common/Scheduler/Debug.h>
 
+#include <algorithm>
 #include <chrono>
+#include <limits>
 #include <utility>
 
 
@@ -151,6 +153,32 @@ public:
     }
 
 private:
+    /// The largest representable delay and throttling duration (~292 years).
+    static constexpr auto max_duration = std::chrono::nanoseconds(std::numeric_limits<std::chrono::nanoseconds::rep>::max());
+
+    /// Bounds a delay so that it survives both the narrowing to `Int64` and the addition to `now`.
+    /// The comparison must happen before the cast: casting an out-of-range `Float64` is the
+    /// undefined behavior being avoided here.
+    static std::chrono::nanoseconds boundedDelay(double delay_ns, EventQueue::TimePoint now)
+    {
+        /// `steady_clock`'s epoch is unspecified, so clamp the elapsed part before subtracting.
+        auto elapsed = std::max(std::chrono::nanoseconds(now.time_since_epoch()), std::chrono::nanoseconds::zero());
+        auto room = max_duration - elapsed;
+        if (delay_ns < static_cast<double>(room.count()))
+            return std::chrono::nanoseconds(static_cast<Int64>(delay_ns));
+        return room;
+    }
+
+    /// `throttling_duration` accumulates over the whole node lifetime, so no bound on a single delay
+    /// can keep the sum in range. Saturate rather than wrap.
+    void addThrottlingDuration(std::chrono::nanoseconds delay)
+    {
+        if (delay > max_duration - throttling_duration) /// Both operands are non-negative
+            throttling_duration = max_duration;
+        else
+            throttling_duration += delay;
+    }
+
     void onPostponed()
     {
         postponed = EventQueue::not_postponed;
@@ -172,12 +200,12 @@ private:
             // Postpone activation until there is positive amount of tokens
             if (!do_not_postpone && tokens < 0.0)
             {
-                auto delay_ns = std::chrono::nanoseconds(static_cast<Int64>(-tokens / max_speed * 1e9));
+                auto delay_ns = boundedDelay(-tokens / max_speed * 1e9, now);
                 if (postponed == EventQueue::not_postponed)
                 {
                     postponed = event_queue.postpone(std::chrono::time_point_cast<EventQueue::Duration>(now + delay_ns),
                         [this] { onPostponed(); });
-                    throttling_duration += delay_ns;
+                    addThrottlingDuration(delay_ns);
                 }
             }
         }
