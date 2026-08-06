@@ -57,13 +57,8 @@ enum class RemoteFSReadMethod : uint8_t
 
 /// The read method to use for a local file, given the requested one.
 ///
-/// 'pread_threadpool' pays for a thread pool hand-off on every read, and it pays off only because
-/// the data that is already in the page cache is read in the calling thread instead - see
-/// `preadNoWait`. When that is not possible, 'pread' is used instead: it reads the same data
-/// in the calling thread and never hands anything off.
-///
-/// Reads with O_DIRECT never look at the page cache, and are always performed in the thread pool,
-/// so they are not affected.
+/// When `preadNoWait` is unavailable, 'pread_threadpool' falls back to regular 'pread'.
+/// Reads with O_DIRECT are not affected.
 LocalFSReadMethod resolveLocalFSReadMethod(LocalFSReadMethod requested, bool pread_no_wait_supported, bool direct_io);
 
 /// The same resolution with the support probed on demand (see `getPreadNoWaitSupport`).
