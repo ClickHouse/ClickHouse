@@ -54,7 +54,7 @@ Make sure the **private load balancer** is turned on as a prerequisite.
 </Step>
 <Step title={<>Add the private endpoint <code>Resource ID</code> to ClickHouse service allow list</>} id="step-4-add-endpoint-id-to-services-allow-list">
 
-To obtain the private endpoint Resource ID, open the private endpoint created earlier in the Azure Portal and click **JSON View**, then copy the `id` field under properties:
+To obtain the private endpoint Resource ID, open the private endpoint created earlier in the Azure Portal and click **JSON View**, then copy the top-level `id` field (the **Resource ID** shown at the top of the view, in the form `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`). Don't use the nested `id` fields inside the `properties` object:
 
 <Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Private Endpoint Resource ID" border />
 
