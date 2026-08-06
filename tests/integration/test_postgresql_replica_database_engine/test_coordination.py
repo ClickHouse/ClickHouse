@@ -2948,3 +2948,75 @@ def test_failed_single_table_snapshot_releases_leadership(started_cluster):
         )
         instance.query("DROP TABLE IF EXISTS test_single_failed SYNC")
         instance2.query("DROP TABLE IF EXISTS test_single_failed SYNC")
+
+
+def test_failed_database_snapshot_releases_leadership(started_cluster):
+    # Same as test_failed_single_table_snapshot_releases_leadership, but for the coordinated
+    # database engine: a snapshot-load failure of any table must abort the whole startup attempt
+    # instead of building a consumer for the successfully loaded subset. Such a consumer would mark
+    # the missing tables as skipped and still advance the shared slot's confirmed_flush_lsn on every
+    # commit, silently discarding their WAL, and ATTACH TABLE (the usual repair path) is rejected in
+    # coordinated mode. The worker must also release the leadership, so a healthy peer can redo the
+    # full snapshot.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    release_line = "Released replication leadership after a failed startup attempt"
+
+    def wait_for_count(node, expected, timeout=120):
+        for _ in range(timeout):
+            try:
+                if (
+                    int(node.query("SELECT count() FROM test_database.test_table"))
+                    == expected
+                ):
+                    return
+            except Exception:
+                pass
+            time.sleep(1)
+        raise AssertionError(
+            f"test_database.test_table did not reach {expected} rows on {node.name}"
+        )
+
+    release_baseline = count_in_all_logs(instance, release_line)
+    instance.query(
+        "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_load_from_snapshot"
+    )
+    try:
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+
+        # Every snapshot attempt on the first replica fails; each one must abort before a consumer
+        # exists and give up the leadership instead of camping on it.
+        wait_for_new_log_occurrence(
+            instance, release_line, release_baseline, timeout=120
+        )
+
+        # No failed attempt may have published the snapshot-completion marker.
+        assert not marker_znode_exists(instance)
+
+        # A healthy peer wins the released leadership and completes the snapshot. Without the fix the
+        # first replica keeps the leadership with a consumer that applies nothing, this peer stays on
+        # standby forever, and no rows ever arrive.
+        pg_manager2.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        wait_for_count(instance2, 100)
+
+        # Rows written to PostgreSQL from now on prove the slot was not advanced past unapplied WAL;
+        # the first replica receives the same data through the shared replicated tree.
+        instance.query(
+            "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+        )
+        wait_for_count(instance2, 200)
+        wait_for_count(instance, 200)
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_load_from_snapshot"
+        )

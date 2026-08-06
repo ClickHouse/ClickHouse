@@ -1084,7 +1084,6 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             createReplicationSlot(tx, start_lsn, snapshot_name);
         }
 
-        bool all_tables_loaded = true;
         for (const auto & [table_name, storage] : materialized_storages)
         {
             /// Abort as soon as leadership is lost: once the Keeper session backing /leader expires,
@@ -1098,19 +1097,24 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             }
             catch (Exception & e)
             {
-                all_tables_loaded = false;
                 e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
                 tryLogCurrentException(log);
 
+                /// Without coordination the database engine tolerates a per-table failure: the remaining
+                /// tables still get a consumer and the failed one can be repaired later with `ATTACH TABLE`.
                 /// The single-table engine has exactly one table, so when its snapshot failed there is
-                /// nothing useful a consumer could do. Without coordination the initial setup is done
-                /// immediately and `throw_on_error` decides between failing the query and the startup-task
-                /// retry. In coordinated mode the retry is driven by `coordinationFunc` (`throw_on_error`
-                /// is false), but the failure must still abort this attempt: proceeding would construct a
-                /// consumer with an empty `nested_storages` map that keeps advancing the shared slot's
-                /// `confirmed_flush_lsn` while applying nothing, silently discarding WAL that a healthy
-                /// peer could have applied.
-                if ((throw_on_error || coordination_enabled) && !is_materialized_postgresql_database)
+                /// nothing useful a consumer could do, and `throw_on_error` decides between failing the
+                /// query and the startup-task retry.
+                ///
+                /// In coordinated mode any snapshot failure must abort the whole attempt for both engines:
+                /// proceeding would construct a consumer that marks the missing tables as skipped while
+                /// still advancing the shared slot's `confirmed_flush_lsn` on every commit, silently
+                /// discarding their WAL - and `ATTACH TABLE`, the usual repair path, is rejected in
+                /// coordinated mode, so nothing could heal the subset short of an unrelated failover. The
+                /// abort lets `coordinationFunc` (which drives the retry, with `throw_on_error` false)
+                /// release the leadership, so a healthy peer can redo the full snapshot before any WAL is
+                /// advanced past unapplied rows.
+                if (coordination_enabled || (throw_on_error && !is_materialized_postgresql_database))
                     throw;
             }
         }
@@ -1129,12 +1133,9 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
                 FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_marking_snapshot_completed);
             });
 
-            if (all_tables_loaded)
-                markInitialSnapshotCompleted(start_lsn);
-            else
-                LOG_WARNING(log,
-                    "Not marking the initial snapshot as completed because loading some tables failed. "
-                    "The next active worker will redo the snapshot");
+            /// Reaching this point means every table's snapshot loaded: in coordinated mode any per-table
+            /// failure above aborts the whole attempt.
+            markInitialSnapshotCompleted(start_lsn);
         }
     };
 
