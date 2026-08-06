@@ -150,6 +150,13 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     ReplaceAliasToExprVisitor::Data data{columns};
     ReplaceAliasToExprVisitor{data}.visit(expr_list);
 
+    /// The stored `definition_ast` keeps the matcher text, and `recalculateWithNewColumns`
+    /// rebuilds the index from it after a column-layout change, so a wildcard or a column
+    /// matcher would silently resolve to a different column set on `ALTER TABLE ... ADD COLUMN`
+    /// while existing parts keep index files built with the previous schema. Checked after
+    /// alias replacement, so a matcher hidden in an `ALIAS` column is rejected too.
+    checkExpressionDoesntContainMatchers(*expr_list);
+
     expression_list_ast = expr_list->clone();
 
     expression = analyzeExpressionToActions(
