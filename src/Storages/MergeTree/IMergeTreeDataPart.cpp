@@ -1504,6 +1504,15 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     {
         /// Nested projection directories have no claim (the cleaner cannot see inside part directories),
         /// so a retried materialization reclaims the leftover of an interrupted attempt here.
+        /// A fresh projection is only ever written into a temporary parent directory, or as a
+        /// `.tmp_proj`. Anything else is the payload of a committed part and must never be removed,
+        /// the same rule `MergeTreeData::reclaimStaleTemporaryPartDirectory` enforces for part names.
+        if (!is_temp_projection && !startsWith(getDataPartStorage().getPartDirectory(), "tmp"))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot reclaim projection directory {}: it belongs to a committed part",
+                projection_storage->getFullPath());
+
         LOG_WARNING(storage.log, "Removing stale temporary projection directory {}", projection_storage->getFullPath());
         projection_storage->removeRecursive();
     }
