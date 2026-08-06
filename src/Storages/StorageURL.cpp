@@ -107,6 +107,7 @@ namespace ErrorCodes
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 arguments: "
@@ -673,6 +674,16 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     {
         /// Do not go on probing the failover options if the query has been killed meanwhile.
         CurrentThread::checkIfNotCancelled();
+
+        /// The check above is a no-op for the cancellations which do not kill the query: the soft
+        /// `max_execution_time` timeout with the `break` overflow mode, a consumer which has enough
+        /// data, or a pipeline torn down without a reason - see cancel. Such a cancellation landing
+        /// between the options - after an empty file has been skipped, or after a failed probe -
+        /// finds no request in flight to interrupt, so check the flag itself before starting the
+        /// next option. The source discards this error or fails with it depending on the reason of
+        /// the cancellation, see generate.
+        if (cancellation && cancellation->isCancelled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The URL read has been cancelled while choosing the URI to read from");
 
         bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
         auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
