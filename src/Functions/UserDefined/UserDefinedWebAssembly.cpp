@@ -14,6 +14,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -781,6 +782,96 @@ public:
               getWasmModuleConfig(context, user_defined_function->getSettings().getFuelMode()),
               interrupt_source.get_token())
     {
+        if (dynamic_cast<const UserDefinedWebAssemblyFunctionColumnarV1 *>(user_defined_function.get()))
+        {
+            // COLUMNAR_V1 never goes through a serialization format: its wire is the
+            // COLUMNAR_V1 layout the estimators below model exactly.
+            wire_size_expansion_factor = 1;
+            wire_encodes_low_cardinality = true;
+        }
+        else
+        {
+            buffered_serialization_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>();
+            wire_size_expansion_factor = wireSizeExpansionFactor(buffered_serialization_format);
+            // Only the native-wire formats keep LowCardinality dictionary-encoded
+            // (dictionary + compact indexes); RowBinary, MsgPack and the text formats
+            // materialize the resolved value on every row.
+            wire_encodes_low_cardinality
+                = buffered_serialization_format == "ColumnBinary" || buffered_serialization_format == "Buffers";
+        }
+    }
+
+    /// The dynamic splitter prices batches with estimateTotalSerializedSize /
+    /// estimateRowSerializedSize below, which size values by their in-memory column
+    /// width. For text-like serialization formats a value's wire size can exceed that
+    /// width (CSV/TSV decimal rendering and quote doubling, JSON escaping, MsgPack's
+    /// per-scalar type byte), so the raw estimate must be scaled by a worst-case
+    /// expansion factor or the splitter can miss a needed split and the call would fail
+    /// later at guest-buffer allocation time even though splitting could have made it
+    /// succeed.
+    static size_t wireSizeExpansionFactor(const String & format)
+    {
+        /// These formats' wire size is bounded by the column metadata the estimators
+        /// already model: fixed widths are exact, and variable-length headers (RowBinary
+        /// varints, up to 9 bytes) never exceed the modelled uint64 offset entries.
+        if (format == "ColumnBinary" || format == "Buffers" || format == "RowBinary")
+            return 1;
+        /// MsgPack adds at most one type byte per fixed-width scalar (w + 1 <= 2w for
+        /// w >= 1); string headers (<= 5 bytes) are covered by the modelled 8-byte
+        /// offset entries.
+        if (format == "MsgPack")
+            return 2;
+        /// Text formats (CSV, TSV, TSVRaw, JSONEachRow): decimal renderings of
+        /// fixed-width values (a 2-byte Date prints as 10 characters, a 4-byte DateTime
+        /// as 19, an Int8 as up to 4), CSV/TSV quoting and escape doubling (<= 2x), and
+        /// JSON string escaping (<= 6 output bytes per input byte, plus quotes) are all
+        /// bounded by 8x the in-memory width.
+        return 8;
+    }
+
+    /// Fixed per-row structural bytes the buffered wire adds regardless of the values:
+    /// field delimiters and the row terminator for CSV/TSV, and per-row object keys for
+    /// JSONEachRow, which repeats every column name on every row — an auto-generated
+    /// argument name from a complex expression is a real per-row cost no value-based
+    /// estimate can see. Also charges top-level Enum arguments' worst-case name
+    /// rendering: text formats print the enum's string name, whose length is unrelated
+    /// to the enum's 1/2-byte in-memory width. (Enum nested inside Array/Tuple keeps
+    /// only the generic 8x bound — if a pathological nested enum name still leads to an
+    /// underestimate, the guest allocator's own size check in executeOnBlock fails the
+    /// call cleanly with WASM_ERROR, exactly as for any oversized single row.)
+    size_t perRowWireOverhead(const ColumnsWithTypeAndName & arguments) const
+    {
+        const String & format = buffered_serialization_format;
+        const bool is_json = format == "JSONEachRow";
+        const bool is_text = is_json || format == "CSV" || format == "TSV" || format == "TSVRaw";
+        if (!is_text)
+            return 0;
+        size_t overhead = is_json ? 4 : arguments.size() + 2;
+        const auto & declared_arguments = user_defined_function->getArguments();
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (is_json)
+            {
+                /// Same name-selection rule as getArgumentsBlock; 6x covers worst-case
+                /// JSON escaping of the key, +8 covers quotes, colon and comma.
+                const String & name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
+                overhead += 6 * name.size() + 8;
+            }
+            if (const auto * enum8 = typeid_cast<const DataTypeEnum8 *>(declared_arguments[i].get()))
+                overhead += 6 * maxEnumNameSize(*enum8) + 3;
+            else if (const auto * enum16 = typeid_cast<const DataTypeEnum16 *>(declared_arguments[i].get()))
+                overhead += 6 * maxEnumNameSize(*enum16) + 3;
+        }
+        return overhead;
+    }
+
+    template <typename EnumType>
+    static size_t maxEnumNameSize(const EnumType & type)
+    {
+        size_t max_size = 0;
+        for (const auto & value : type.getValues())
+            max_size = std::max(max_size, value.first.size());
+        return max_size;
     }
 
     String getName() const override { return function_name; }
@@ -1016,17 +1107,21 @@ private:
     /// (COL_IS_CONST / the Buffers format); for formats that materialize const columns
     /// (MsgPack, RowBinary, CSV, ...) a large constant broadcast batch_size times must
     /// count towards the estimate, or the splitter can miss a needed split.
-    /// Runs in O(1) — reads column metadata, no per-row scanning.
+    /// Runs in O(1) — reads column metadata, no per-row scanning (plus a one-time scan
+    /// of a LowCardinality dictionary on wires that materialize its values per row).
     ///
-    /// This estimate sizes values by their in-memory column width, not each
-    /// serialization_format's actual worst-case wire size (e.g. CSV/TSV escaping,
-    /// MsgPack's per-scalar type byte). That is a known, tracked gap: it can make the
-    /// splitter under-split for text formats. It is NOT a memory-safety issue, though —
-    /// the actual allocation later in executeOnBlock (allocateInWasmMemory) asks the WASM
-    /// guest's own allocator for the real serialized size and throws WASM_ERROR cleanly if
-    /// the guest can't satisfy it (bounded by webassembly_udf_max_memory), exactly as it
-    /// always has for oversized single blocks. Under-splitting here can only turn an
-    /// otherwise-successful split into a clean allocation failure, not a buffer overflow.
+    /// This estimate sizes values by their in-memory column width, which models the
+    /// binary wires (COLUMNAR_V1, ColumnBinary, Buffers, RowBinary) directly. For the
+    /// text-like formats the callers in execute() scale the result by
+    /// wire_size_expansion_factor (worst-case wire expansion of fixed-width values,
+    /// quoting/escaping — see wireSizeExpansionFactor above) and add perRowWireOverhead
+    /// (delimiters, JSONEachRow keys, Enum names), making the scaled figure an upper
+    /// bound for every supported serialization_format. It remains an estimate, not the
+    /// enforcement point: the actual allocation later in executeOnBlock
+    /// (allocateInWasmMemory) asks the WASM guest's own allocator for the real
+    /// serialized size and throws WASM_ERROR cleanly if the guest can't satisfy it
+    /// (bounded by webassembly_udf_max_memory), exactly as it always has for oversized
+    /// single blocks.
     size_t estimateTotalSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row_count, bool preserve_const) const
     {
         const auto & declared_arguments = user_defined_function->getArguments();
@@ -1067,8 +1162,9 @@ private:
                         // COL_IS_CONST reuses the normal COL_LOWCARD layout with 1 row (see
                         // "COL_IS_CONST sets data for 1 row" in ColumnarV1Wire.h), so it still
                         // carries the full header + a 1-entry dictionary + a 1-entry index —
-                        // not just the resolved value's own size.
-                        total += estimateLowCardTotalBytes(*const_lc, 1, false) + null_map_bytes;
+                        // not just the resolved value's own size. preserve_const is only ever
+                        // true on the dictionary-encoding wires, hence the literal true here.
+                        total += estimateLowCardTotalBytes(*const_lc, 1, false, /* wire_has_dictionary */ true) + null_map_bytes;
                     else if (const auto * const_var = typeid_cast<const ColumnVariant *>(data_col))
                         // Same reasoning: COL_IS_CONST reuses the normal COL_VARIANT layout
                         // with 1 row, so the alternatives' header is still present.
@@ -1129,7 +1225,7 @@ private:
                     ? ColumnarV1::complexDataSize(map_col->getNestedColumn(), 1) * row_count
                     : ColumnarV1::complexDataSize(map_col->getNestedColumn(), static_cast<uint32_t>(row_count)))) + null_map_bytes;
             else if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(col))
-                total += estimateLowCardTotalBytes(*lc_col, row_count, materialized_const) + null_map_bytes;
+                total += estimateLowCardTotalBytes(*lc_col, row_count, materialized_const, wire_encodes_low_cardinality) + null_map_bytes;
             else if (const auto * var_col = typeid_cast<const ColumnVariant *>(col))
                 total += estimateVariantTotalBytes(*var_col, row_count, materialized_const) + null_map_bytes;
             else
@@ -1204,7 +1300,9 @@ private:
         if (typeid_cast<const ColumnArray *>(&col) || typeid_cast<const ColumnTuple *>(&col))
             return ColumnarV1::complexDataSize(col, static_cast<uint32_t>(col.size()));
         if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(&col))
-            return estimateLowCardTotalBytes(*lc_col, col.size(), /* materialized_const */ false);
+            // A LowCardinality Variant alternative only exists on the COLUMNAR_V1 wire,
+            // which dictionary-encodes it.
+            return estimateLowCardTotalBytes(*lc_col, col.size(), /* materialized_const */ false, /* wire_has_dictionary */ true);
         if (col.valuesHaveFixedSize())
             return col.sizeOfValueIfFixed() * col.size();
         return 256 * col.size(); // conservative fallback
@@ -1213,8 +1311,28 @@ private:
     /// Top-level LowCardinality is directly wire-encoded (dictionary + compact index array,
     /// COL_LOWCARD), unlike nested LowCardinality which still materializes; this mirrors that
     /// exact layout in O(1) instead of falling back to a flat per-row guess.
-    static size_t estimateLowCardTotalBytes(const ColumnLowCardinality & lc, size_t row_count, bool materialized_const)
+    static size_t estimateLowCardTotalBytes(const ColumnLowCardinality & lc, size_t row_count, bool materialized_const, bool wire_has_dictionary)
     {
+        if (!wire_has_dictionary)
+        {
+            // RowBinary, MsgPack and the text wires have no dictionary encoding: every
+            // row carries its resolved value in full, and there is no fixed per-batch
+            // dictionary or header cost to reserve. (Charging the shared dictionary
+            // here, as the dictionary-wire branch below must, would turn a large
+            // dictionary into a spurious "constant arguments alone exceed the budget"
+            // failure on wires that never send it.)
+            if (row_count == 0)
+                return 0;
+            const IColumn & dict_col = *lc.getDictionary().getNestedColumn();
+            if (materialized_const)
+                return estimateComplexRowBytes(dict_col, lc.getIndexes().getUInt(0)) * row_count;
+            // Bound every row by the largest dictionary value: a one-time O(dictionary
+            // size) scan, which is bounded by the column's own data size.
+            size_t max_value_bytes = 0;
+            for (size_t j = 0; j < dict_col.size(); ++j)
+                max_value_bytes = std::max(max_value_bytes, estimateComplexRowBytes(dict_col, j));
+            return max_value_bytes * row_count;
+        }
         constexpr size_t header_bytes = 4 + 4 + 40; // dict_row_count + index_elem_width/pad + embedded ColDescriptor
         if (materialized_const)
         {
@@ -1275,7 +1393,9 @@ private:
             {
                 const IColumn & sub = var.getVariantByLocalDiscriminator(local);
                 if (const auto * lc_sub = typeid_cast<const ColumnLowCardinality *>(&sub); lc_sub && !sub.empty())
-                    fixed_sub_bytes += estimateLowCardTotalBytes(*lc_sub, 0, false);
+                    // Variant alternatives only exist on the COLUMNAR_V1 wire, which
+                    // dictionary-encodes LowCardinality.
+                    fixed_sub_bytes += estimateLowCardTotalBytes(*lc_sub, 0, false, /* wire_has_dictionary */ true);
             }
             return header_bytes + fixed_sub_bytes;
         }
@@ -1320,7 +1440,8 @@ private:
     /// Used for the cumulative flush pass below: a fixed stride derived from the average
     /// row size can still put an oversized row in the same batch as its neighbors and
     /// blow the input budget on a skewed block (e.g. one huge string among many tiny ones).
-    /// Same format-awareness caveat as estimateTotalSerializedSize above: not a memory-safety
+    /// Same wire-model contract as estimateTotalSerializedSize above (the execute()
+    /// callers apply wire_size_expansion_factor and perRowWireOverhead): not a memory-safety
     /// issue, see the comment there.
     size_t estimateRowSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row, bool preserve_const) const
     {
@@ -1362,10 +1483,12 @@ private:
                 total += estimateComplexRowBytes(*col, row_index) + null_map_bytes;
             else if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(col))
             {
-                if (materialized_const)
-                    // No dictionary/index concept on this wire (RowBinary/MsgPack/CSV/...):
-                    // the resolved value is broadcast in full on every row, matching what
-                    // estimateComplexRowBytes already computes for the nested-materialized case.
+                if (materialized_const || !wire_encodes_low_cardinality)
+                    // No dictionary/index concept applies: either the column is a
+                    // materialized constant, or the wire itself (RowBinary/MsgPack/CSV/...)
+                    // has no dictionary encoding — the resolved value is broadcast in full
+                    // on every row, matching what estimateComplexRowBytes already computes
+                    // for the nested-materialized case.
                     total += estimateComplexRowBytes(*lc_col, row_index) + null_map_bytes;
                 else
                     // Top-level direct COL_LOWCARD encoding: the dictionary's (potentially
@@ -1451,9 +1574,18 @@ private:
 
         if (input_budget > 0)
         {
+            // Worst-case wire expansion of the in-memory estimates for this
+            // serialization format, plus the per-row structural bytes (delimiters,
+            // JSONEachRow keys, Enum names) the value-based estimates cannot see; both
+            // are identity for the binary formats. See wireSizeExpansionFactor /
+            // perRowWireOverhead above.
+            const size_t expansion = wire_size_expansion_factor;
+            const size_t per_row_overhead = perRowWireOverhead(arguments);
+
             // O(1) block-level check: only scan per-row when splits are actually needed.
             // The common case (block fits in budget) pays zero per-row overhead.
-            size_t total_bytes = estimateTotalSerializedSize(arguments, input_rows_count, preserve_const);
+            size_t total_bytes = estimateTotalSerializedSize(arguments, input_rows_count, preserve_const) * expansion
+                + per_row_overhead * input_rows_count;
             if (total_bytes > input_budget)
             {
                 // Preserved ColumnConst arguments are charged once per batch (not per
@@ -1462,7 +1594,7 @@ private:
                 // Every batch this loop produces still has to pay it, so seed running_bytes
                 // with it (and fail up front if it alone can never fit), or a batch of many
                 // tiny rows could still exceed input_budget by the preserved const's size.
-                size_t const_reserved_bytes = estimateTotalSerializedSize(arguments, 0, preserve_const);
+                size_t const_reserved_bytes = estimateTotalSerializedSize(arguments, 0, preserve_const) * expansion;
                 if (const_reserved_bytes > input_budget)
                     throw Exception(ErrorCodes::WASM_ERROR,
                         "WASM UDF preserved constant arguments alone require an estimated {} bytes, "
@@ -1476,7 +1608,7 @@ private:
                 size_t running_bytes = const_reserved_bytes;
                 for (size_t row = 0; row < input_rows_count; ++row)
                 {
-                    size_t row_bytes = estimateRowSerializedSize(arguments, row, preserve_const);
+                    size_t row_bytes = estimateRowSerializedSize(arguments, row, preserve_const) * expansion + per_row_overhead;
                     if (const_reserved_bytes + row_bytes > input_budget)
                         throw Exception(ErrorCodes::WASM_ERROR,
                             "WASM UDF input row {} alone requires an estimated {} bytes, exceeding the "
@@ -1535,6 +1667,14 @@ private:
     Strings argument_names;
     ContextPtr context;
     bool preserve_const_columns;
+    /// Empty for COLUMNAR_V1 (its wire never goes through a serialization format).
+    String buffered_serialization_format;
+    /// Worst-case wire-size expansion of the in-memory estimate for this wire; see
+    /// wireSizeExpansionFactor above.
+    size_t wire_size_expansion_factor = 1;
+    /// Whether the wire keeps LowCardinality dictionary-encoded (dictionary + compact
+    /// indexes) rather than materializing the resolved value on every row.
+    bool wire_encodes_low_cardinality = true;
 
     mutable StopSource interrupt_source;
     mutable WasmCompartmentPool compartment_pool;
