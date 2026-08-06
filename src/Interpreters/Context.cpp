@@ -8017,6 +8017,13 @@ bool Context::isServerCompletelyStarted() const
     return shared->is_server_completely_started;
 }
 
+bool Context::isShutdownCalled() const
+{
+    /// No lock: ContextSharedPart::shutdown holds shared->mutex while doing its work, so a
+    /// locking accessor would block exactly when this flag needs to be observed.
+    return shared->shutdown_called.load(std::memory_order_relaxed);
+}
+
 void Context::setServerCompletelyStarted()
 {
     {
