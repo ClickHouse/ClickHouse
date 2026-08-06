@@ -34,9 +34,11 @@ SETTINGS disk = disk(
 );
 
 SET allow_deprecated_database_ordinary = 1;
-DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier}_ordinary;
-CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier}_ordinary ENGINE = Ordinary;
-USE {CLICKHOUSE_DATABASE:Identifier}_ordinary;
+-- Suppress the deprecation warning emitted for the Ordinary database engine.
+SET send_logs_level = 'fatal';
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 CREATE TABLE log_table (key UInt64, value String) ENGINE = Log SETTINGS disk = '04759_borrowed_disk';
 INSERT INTO log_table VALUES (1, 'log');
@@ -72,7 +74,7 @@ DROP TABLE tiny_log_table_renamed;
 DROP TABLE stripe_log_table_renamed;
 DROP TABLE set_table_renamed;
 DROP TABLE join_table_renamed;
-DROP DATABASE {CLICKHOUSE_DATABASE:Identifier}_ordinary;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 USE {CLICKHOUSE_DATABASE:Identifier};
 DROP TABLE tmp_disk_creator;
