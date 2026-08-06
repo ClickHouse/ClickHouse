@@ -51,6 +51,10 @@ Nullable(String)
 -- Parquet allow_geoparquet_parser, geo=0 first
 Nullable(String)
 LineString
+-- Parquet skip_columns_with_unsupported_types, skip=1 first then strict must throw
+1
+-- Parquet skip_columns_with_unsupported_types, strict alone throws (control)
+1
 -- Template exponent, exp=1 first
 Nullable(Float64)
 Nullable(String)
@@ -64,7 +68,7 @@ input_format_try_infer_exponent_floats=true	max_parser_depth=1000
 input_format_try_infer_exponent_floats=true
 -- Form key is no longer empty
 1
--- Parquet key carries max_parser_depth and both new Parquet fields
-max_parser_depth=1000	local_time_as_utc=true	allow_geoparquet_parser=true
+-- Parquet key carries max_parser_depth and all three new Parquet fields
+max_parser_depth=1000	local_time_as_utc=true	allow_geoparquet_parser=true	skip_columns_with_unsupported_types=false
 -- Template key follows the row format's rule, not format_regexp_escaping_rule
 1	0

@@ -130,6 +130,23 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_geo_b.parquet', 'Parquet') SETTINGS input_format_parquet_allow_geoparquet_parser = 0;
     DESC file('${T}_geo_b.parquet', 'Parquet') SETTINGS input_format_parquet_allow_geoparquet_parser = 1;" | awk -F'\t' '$1 == "geometry" {print $2}'
 
+# --- input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference ---------
+# Decides whether a column of an unsupported type is dropped or the file is rejected, so the
+# permissive query must not let a later strict query skip the exception. Only this direction is a
+# carrier: the strict query throws, and a throwing inference caches nothing.
+# The data file has one VARIANT-typed column `u`, which is a valid Parquet logical type that is not
+# implemented here, and one supported Int32 column `id`.
+cp "$CUR_DIR"/data_parquet/parquet_variant_logical_type.parquet "${T}_unsup_a.parquet"
+touch -d "$AGE" "${T}"_unsup_*.parquet
+echo "-- Parquet skip_columns_with_unsupported_types, skip=1 first then strict must throw"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_unsup_a.parquet', 'Parquet') SETTINGS input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference = 1 FORMAT Null;
+    DESC file('${T}_unsup_a.parquet', 'Parquet') FORMAT Null;" \
+    2>&1 | grep -c INCORRECT_DATA
+echo "-- Parquet skip_columns_with_unsupported_types, strict alone throws (control)"
+$CLICKHOUSE_LOCAL -q "DESC file('${T}_unsup_a.parquet', 'Parquet') FORMAT Null" \
+    2>&1 | grep -c INCORRECT_DATA
+
 # --- Template ----------------------------------------------------------------------------
 # The row format's own field rule (CSV here) must key the entry, not format_regexp_escaping_rule.
 # The field must be rule-specific: an Escaped field infers String at both exponent values.
@@ -161,10 +178,10 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_exp_a.form', 'Form') FORMAT Null;
     SELECT additional_format_info != '' FROM system.schema_inference_cache;"
 
-echo "-- Parquet key carries max_parser_depth and both new Parquet fields"
+echo "-- Parquet key carries max_parser_depth and all three new Parquet fields"
 $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_deep_a.parquet', 'Parquet') SETTINGS max_parser_depth = 1000 FORMAT Null;
-    SELECT extract(additional_format_info, 'max_parser_depth=\d+'), extract(additional_format_info, 'local_time_as_utc=\w+'), extract(additional_format_info, 'allow_geoparquet_parser=\w+')
+    SELECT extract(additional_format_info, 'max_parser_depth=\d+'), extract(additional_format_info, 'local_time_as_utc=\w+'), extract(additional_format_info, 'allow_geoparquet_parser=\w+'), extract(additional_format_info, 'skip_columns_with_unsupported_types=\w+')
     FROM system.schema_inference_cache;"
 
 echo "-- Template key follows the row format's rule, not format_regexp_escaping_rule"
