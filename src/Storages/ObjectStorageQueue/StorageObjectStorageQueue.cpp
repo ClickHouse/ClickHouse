@@ -2022,4 +2022,10 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     }
 }
 
+void StorageObjectStorageQueue::dropFailedFiles()
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::dropFailedFiles");
+    files_metadata->dropFailedFiles();
+}
+
 }

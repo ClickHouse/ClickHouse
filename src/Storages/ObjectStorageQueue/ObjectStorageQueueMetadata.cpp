@@ -1470,6 +1470,120 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         remove_nodes(/*node_limit=*/false);
 }
 
+void ObjectStorageQueueMetadata::dropFailedFiles()
+{
+    const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
+    const auto zk_client = getZooKeeper();
+
+    /// Acquire the same distributed lock used by the periodic cleanup sweep
+    /// to prevent concurrent modification of failed files.
+    auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), toString(getCurrentTime()));
+
+    if (!ephemeral_node)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Failed file cleanup is already in progress by another server. Please retry in a moment.");
+    }
+
+    const std::string failed_path = zookeeper_path / "failed";
+    auto zk_retries = getKeeperRetriesControl(log);
+
+    /// Get list of failed file nodes
+    Strings failed_nodes;
+    Coordination::Error code = {};
+    zk_retries.retryLoop([&]
+    {
+        code = getZooKeeper()->tryGetChildren(failed_path, failed_nodes);
+    });
+
+    if (code == Coordination::Error::ZNONODE)
+    {
+        /// No failed path exists yet - nothing to drop
+        LOG_TRACE(log, "Failed files path does not exist, nothing to drop");
+        return;
+    }
+
+    if (code != Coordination::Error::ZOK)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to list failed files: {}", magic_enum::enum_name(code));
+
+    if (failed_nodes.empty())
+    {
+        LOG_TRACE(log, "No failed files to drop");
+        return;
+    }
+
+    LOG_TRACE(log, "Dropping {} failed files", failed_nodes.size());
+
+    /// Read metadata for all failed nodes to get file paths for cache cleanup
+    std::vector<std::string> paths_to_read;
+    std::vector<std::string> file_paths;
+    paths_to_read.reserve(failed_nodes.size());
+    file_paths.reserve(failed_nodes.size());
+
+    std::filesystem::path failed_fs_path(failed_path);
+    for (const auto & node : failed_nodes)
+    {
+        paths_to_read.push_back(failed_fs_path / node);
+    }
+
+    /// Batch-read metadata using the same pattern as cleanupTrackedNodes
+    const size_t batch_size = keeper_multiread_batch_size;
+    for (size_t i = 0; i < paths_to_read.size(); i += batch_size)
+    {
+        size_t batch_end = std::min(i + batch_size, paths_to_read.size());
+        std::vector<std::string> batch_paths(paths_to_read.begin() + i, paths_to_read.begin() + batch_end);
+
+        zkutil::ZooKeeper::MultiTryGetResponse response;
+        zk_retries.resetFailures();
+        zk_retries.retryLoop([&]
+        {
+            response = getZooKeeper()->tryGet(batch_paths);
+        });
+
+        for (size_t j = 0; j < response.size(); ++j)
+        {
+            if (response[j].error == Coordination::Error::ZNONODE)
+            {
+                LOG_TEST(log, "Failed file node already deleted: {}", batch_paths[j]);
+                continue;
+            }
+
+            if (response[j].error != Coordination::Error::ZOK)
+            {
+                LOG_ERROR(log, "Failed to fetch metadata for {}: {}", batch_paths[j], magic_enum::enum_name(response[j].error));
+                continue;
+            }
+
+            auto metadata = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[j].data);
+            file_paths.push_back(metadata.file_path);
+            LOG_TEST(log, "Read metadata for failed file: {}", metadata.file_path);
+        }
+    }
+
+    /// Bulk delete all failed file nodes using removeChildren
+    try
+    {
+        getZooKeeper()->removeChildren(failed_path);
+        LOG_TRACE(log, "Deleted all failed file nodes from Keeper");
+    }
+    catch (...)
+    {
+        LOG_ERROR(log, "Failed to remove failed file nodes: {}", getCurrentExceptionMessage(true));
+        throw;
+    }
+
+    /// Clear cache entries for each failed file
+    for (const auto & file_path : file_paths)
+    {
+        auto cache_key = getMetadataCacheKey(file_path);
+        local_file_statuses.remove(cache_key);
+        LOG_TEST(log, "Removed cache entry for {}", file_path);
+    }
+
+    LOG_INFO(log, "Successfully dropped {} failed files", file_paths.size());
+}
+
 void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
 {
     for (const auto & change : changes)

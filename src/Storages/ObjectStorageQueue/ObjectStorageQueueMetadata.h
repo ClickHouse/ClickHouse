@@ -120,6 +120,11 @@ public:
     /// of all files stored in FileStatusesCache cache.
     const FileStatusesCache & getFileStatusesCache() const { return local_file_statuses; }
 
+    /// Drop all failed files from Keeper metadata.
+    /// Called by SYSTEM DROP S3QUEUE FAILED FILES.
+    /// Acquires the same cleanup_lock as the periodic cleanup sweep.
+    void dropFailedFiles();
+
     /// Get TableMetadata, which is the exact information we store in keeper.
     const ObjectStorageQueueTableMetadata & getTableMetadata() const { return table_metadata; }
     ObjectStorageQueueTableMetadata & getTableMetadata() { return table_metadata; }
