@@ -4,7 +4,7 @@
 -- same row could be scattered to different buckets before and after the spill round-trip through
 -- disk. https://github.com/ClickHouse/ClickHouse/issues/112867
 
-SET enable_json_type = 1, allow_experimental_correlated_subqueries = 1;
+SET enable_json_type = 1, allow_experimental_correlated_subqueries = 1, enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t_json_grace;
 CREATE TABLE t_json_grace (json JSON(a Array(UInt32), b Array(UInt32), c UInt32)) ENGINE = MergeTree ORDER BY tuple();
