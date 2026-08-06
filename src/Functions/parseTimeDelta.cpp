@@ -31,12 +31,16 @@ namespace
         Null
     };
 
+    /// Type imposed by PreformattedMessage::format_string_args.
+    using ParseTimeDeltaErrorArgs = std::vector<String>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
     struct ParseTimeDeltaError
     {
         int error_code;
         String error_message;
         /// Always a string literal, matching Exception::message_format_string's static lifetime.
         std::string_view error_pattern;
+        ParseTimeDeltaErrorArgs error_args;
     };
 
     using Float64OrError = std::expected<Float64, ParseTimeDeltaError>;
@@ -200,7 +204,10 @@ namespace
                 else if (error_handling == ParseTimeDeltaErrorHandling::Exception)
                 {
                     throw Exception(
-                        PreformattedMessage{result.error().error_message, result.error().error_pattern, {}},
+                        PreformattedMessage{
+                            std::move(result.error().error_message),
+                            result.error().error_pattern,
+                            std::move(result.error().error_args)},
                         result.error().error_code);
                 }
                 else
@@ -271,13 +278,19 @@ namespace
         const char * function_name;
         ParseTimeDeltaErrorHandling error_handling;
 
-/// Reports a parse failure. No Exception is constructed here, so the recovering variants pay no
-/// exception cost and add nothing to system.errors.
-/// The pattern is recorded unconditionally: it becomes Exception::message_format_string, which
-/// system.errors, system.text_log and query_log group failures by.
+/// Reports a parse failure without constructing an Exception, so recovering variants add nothing
+/// to system.errors. The pattern is always recorded (it becomes message_format_string); the message
+/// text and the formatted args only when throwing, so a recovered row allocates neither.
 #define PARSE_TIME_DELTA_ERROR(pattern, ...) \
-    return std::unexpected( \
-        ParseTimeDeltaError{ErrorCodes::BAD_ARGUMENTS, need_message ? fmt::format(pattern, __VA_ARGS__) : String{}, pattern})
+    do \
+    { \
+        if (!need_message) \
+            return std::unexpected(ParseTimeDeltaError{ErrorCodes::BAD_ARGUMENTS, String{}, pattern, {}}); \
+        ParseTimeDeltaErrorArgs error_args; \
+        String error_message = tryGetArgsAndFormat(error_args, pattern, __VA_ARGS__); \
+        return std::unexpected( \
+            ParseTimeDeltaError{ErrorCodes::BAD_ARGUMENTS, std::move(error_message), pattern, std::move(error_args)}); \
+    } while (false)
 
         Float64OrError parse(std::string_view str, bool need_message) const
         {

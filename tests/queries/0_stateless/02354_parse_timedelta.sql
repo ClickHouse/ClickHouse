@@ -53,3 +53,16 @@ SELECT parseTimeDeltaOrZero(d) FROM (SELECT materialize(CAST(42 AS Dynamic)) AS 
 -- the bare function is selected alongside so the "same as the bare function" claim is asserted
 SELECT parseTimeDelta(d), parseTimeDeltaOrNull(d) FROM (SELECT materialize(CAST(42 AS Dynamic)) AS d) SETTINGS dynamic_throw_on_type_mismatch = 0;
 SELECT parseTimeDelta(d), parseTimeDeltaOrZero(d) FROM (SELECT materialize(CAST(42 AS Dynamic)) AS d) SETTINGS dynamic_throw_on_type_mismatch = 0;
+
+-- A Variant column goes through a different adaptor than Dynamic, so it gets its own arms.
+-- A valid String alternative parses the same for the wrappers as for the bare function
+SELECT variantType(v), parseTimeDelta(v), parseTimeDeltaOrNull(v), parseTimeDeltaOrZero(v) FROM (SELECT materialize(CAST('1h 30m' AS Variant(String, UInt64))) AS v);
+-- an unparseable one is recovered, while the bare function on the same row throws
+SELECT variantType(v), parseTimeDeltaOrNull(v), parseTimeDeltaOrZero(v) FROM (SELECT materialize(CAST('junk' AS Variant(String, UInt64))) AS v);
+SELECT parseTimeDelta(v) FROM (SELECT materialize(CAST('junk' AS Variant(String, UInt64))) AS v); -- {serverError BAD_ARGUMENTS}
+-- ... and a non-String alternative is still a call error, as for Dynamic
+SELECT parseTimeDeltaOrNull(v) FROM (SELECT materialize(CAST(toUInt64(42) AS Variant(String, UInt64))) AS v) SETTINGS variant_throw_on_type_mismatch = 1; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT parseTimeDeltaOrZero(v) FROM (SELECT materialize(CAST(toUInt64(42) AS Variant(String, UInt64))) AS v) SETTINGS variant_throw_on_type_mismatch = 1; -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
+-- with variant_throw_on_type_mismatch = 0 that mismatch is recovered to NULL, same as the bare function
+SELECT parseTimeDelta(v), parseTimeDeltaOrNull(v) FROM (SELECT materialize(CAST(toUInt64(42) AS Variant(String, UInt64))) AS v) SETTINGS variant_throw_on_type_mismatch = 0;
+SELECT parseTimeDelta(v), parseTimeDeltaOrZero(v) FROM (SELECT materialize(CAST(toUInt64(42) AS Variant(String, UInt64))) AS v) SETTINGS variant_throw_on_type_mismatch = 0;
