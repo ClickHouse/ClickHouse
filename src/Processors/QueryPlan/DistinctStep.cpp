@@ -68,7 +68,7 @@ void DistinctStep::updateLimitHint(UInt64 hint)
         limit_hint = std::max(hint, limit_hint);
 }
 
-void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     /// The final distinct deduplicates across the whole input, so it needs all data in a single
     /// stream; the pre-distinct only reduces the data, deduplicating each stream independently.
@@ -89,7 +89,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             if (!distinct_sort_desc.empty())
                 return std::make_shared<DistinctSortedStreamTransform>(header, set_size_limits, limit_hint, distinct_sort_desc, columns);
 
-            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);
+            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns, settings.process_list_element);
         });
 }
 

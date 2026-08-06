@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/FailPoint.h>
+#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
@@ -40,10 +41,12 @@ DistinctTransform::DistinctTransform(
     SharedHeader header_,
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
-    const Names & columns_)
+    const Names & columns_,
+    QueryStatusPtr process_list_element_)
     : ISimpleTransform(header_, header_, true)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
+    , process_list_element(std::move(process_list_element_))
 {
     const size_t num_columns = columns_.empty() ? header_->columns() : columns_.size();
     key_columns_pos.reserve(num_columns);
@@ -63,7 +66,8 @@ void DistinctTransform::buildFilter(
     IColumn::Filter & filter,
     const size_t rows,
     SetVariants & variants,
-    const IColumn::Filter * mask) const
+    const IColumn::Filter * mask,
+    const size_t processed_prefix) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
 
@@ -75,7 +79,10 @@ void DistinctTransform::buildFilter(
             {
                 if (i > 0) [[unlikely]]
                     FailPointInjection::pauseFailPoint("distinct_transform_pause");
-                if (isCancelled())
+                /// Rows in [0, processed_prefix) are already committed work of a preceding
+                /// `buildLowCardinalityMask` call and must be hashed even if the soft timeout
+                /// already fired, so the processed prefix is preserved instead of dropped.
+                if (i >= processed_prefix && (isCancelled() || isSoftTimeout()))
                 {
                     std::fill(filter.begin() + i, filter.end(), 0);
                     return;
@@ -101,7 +108,7 @@ void DistinctTransform::buildFilter(
             {
                 if (i > 0) [[unlikely]]
                     FailPointInjection::pauseFailPoint("distinct_transform_pause");
-                if (isCancelled())
+                if (i >= processed_prefix && (isCancelled() || isSoftTimeout()))
                 {
                     std::fill(filter.begin() + i, filter.end(), 0);
                     return;
@@ -117,7 +124,7 @@ void DistinctTransform::buildFilter(
     }
 }
 
-std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows)
+LowCardinalityMaskResult DistinctTransform::buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows)
 {
     const auto & dictionary = column.getDictionary();
     const auto dict_size = dictionary.size();
@@ -141,7 +148,7 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
     /// If we've already seen all dictionary indices for this dictionary,
     /// then no row in this chunk (and also other chunks with the same dictionary) can produce a new distinct value.
     if (state.seen_count == dict_size)
-        return {{}, 0}; /// empty mask == no candidates
+        return {{}, 0, num_rows}; /// empty mask == no candidates
 
     const auto seen_count_before = state.seen_count;
     auto & seen = state.seen_indices;
@@ -177,8 +184,8 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isCancelled())
-                        return {std::move(mask), state.seen_count - seen_count_before};
+                    if (isCancelled() || isSoftTimeout())
+                        return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
             }
@@ -193,8 +200,8 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isCancelled())
-                        return {std::move(mask), state.seen_count - seen_count_before};
+                    if (isCancelled() || isSoftTimeout())
+                        return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
             }
@@ -209,8 +216,8 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isCancelled())
-                        return {std::move(mask), state.seen_count - seen_count_before};
+                    if (isCancelled() || isSoftTimeout())
+                        return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
             }
@@ -225,8 +232,8 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
                 {
                     if (row > 0) [[unlikely]]
                         FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-                    if (isCancelled())
-                        return {std::move(mask), state.seen_count - seen_count_before};
+                    if (isCancelled() || isSoftTimeout())
+                        return {std::move(mask), state.seen_count - seen_count_before, row};
                 }
                 handle_index(static_cast<size_t>(col[row]), row);
             }
@@ -236,7 +243,32 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for LowCardinality column in DistinctTransform");
     }
 
-    return {std::move(mask), state.seen_count - seen_count_before};
+    return {std::move(mask), state.seen_count - seen_count_before, num_rows};
+}
+
+bool DistinctTransform::isSoftTimeout() const
+{
+    if (time_limit_exceeded)
+        return true;
+
+    if (!process_list_element)
+        return false;
+
+    /// Hard cancellations (KILL QUERY, Ctrl+C, executor cancellation) are surfaced through
+    /// `isCancelled`. Do not treat them as soft timeouts, and do not call `checkTimeLimit`
+    /// for them either - it would throw the cancellation exception from the hot loop.
+    if (process_list_element->getCancelReason() != DB::CancelReason::UNDEFINED)
+        return false;
+
+    /// In `timeout_overflow_mode = 'throw'` this throws TIMEOUT_EXCEEDED; in `'break'` mode it
+    /// returns false, which we latch so every loop stops and the processed prefix is preserved.
+    if (!process_list_element->checkTimeLimit())
+    {
+        time_limit_exceeded = true;
+        return true;
+    }
+
+    return false;
 }
 
 void DistinctTransform::transform(Chunk & chunk)
@@ -275,12 +307,13 @@ void DistinctTransform::transform(Chunk & chunk)
         column_ptrs.emplace_back(columns[pos].get());
 
     std::optional<IColumn::Filter> lc_mask;
+    size_t processed_prefix = 0;
 
     if (lc_optimization_controller.isEnabled() && key_columns_pos.size() == 1)
     {
         if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(column_ptrs[0]))
         {
-            auto [mask, new_indices_count] = buildLowCardinalityMask(*lc, num_rows);
+            auto [mask, new_indices_count, processed_rows] = buildLowCardinalityMask(*lc, num_rows);
             lc_optimization_controller.update(num_rows, new_indices_count);
 
             if (isCancelled())
@@ -294,7 +327,16 @@ void DistinctTransform::transform(Chunk & chunk)
 
             /// Empty mask -> no candidate rows in this chunk, emit nothing.
             if (lc_mask->empty())
+            {
+                if (time_limit_exceeded)
+                    stopReading();
                 return;
+            }
+
+            /// On a soft timeout `buildLowCardinalityMask` returned a partial mask covering rows
+            /// [0, processed_rows); those rows are committed work and must be hashed even though the
+            /// time limit already fired, otherwise the processed prefix would be dropped.
+            processed_prefix = time_limit_exceeded ? processed_rows : 0;
         }
     }
 
@@ -310,7 +352,7 @@ void DistinctTransform::transform(Chunk & chunk)
             break;
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            buildFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr); \
+            buildFilter(*data.NAME, column_ptrs, filter, num_rows, data, lc_mask ? &*lc_mask : nullptr, processed_prefix); \
         break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M
@@ -322,6 +364,11 @@ void DistinctTransform::transform(Chunk & chunk)
         stopReading();
         return;
     }
+
+    /// Soft timeout (break mode): emit the already-processed prefix and stop reading, as if the
+    /// source ran out. Hard cancellation above keeps dropping the whole chunk.
+    if (time_limit_exceeded)
+        stopReading();
 
     const auto new_set_size = data.getTotalRowCount();
     const size_t num_selected = new_set_size - old_set_size;

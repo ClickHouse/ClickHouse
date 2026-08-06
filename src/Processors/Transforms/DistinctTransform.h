@@ -12,6 +12,9 @@
 namespace DB
 {
 
+class QueryStatus;
+using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
 /// The LowCardinality optimization in DistinctTransform tracks seen dictionary
 /// indices in a bitmap and skips hash table insertions for rows whose index was
 /// already seen. This helps when many rows share few dictionary entries, but
@@ -52,6 +55,17 @@ private:
     size_t new_indices_observed = 0;
 };
 
+/// Result of `buildLowCardinalityMask`. `mask` marks rows that are the first occurrence of their
+/// LC dictionary index; `new_indices_count` is the number of such rows; `processed_rows` is how
+/// many rows were handled before the call returned (num_rows normally, or the stop point when the
+/// call stopped early on a soft timeout).
+struct LowCardinalityMaskResult
+{
+    IColumn::Filter mask;
+    size_t new_indices_count;
+    size_t processed_rows;
+};
+
 class DistinctTransform final : public ISimpleTransform
 {
 public:
@@ -59,7 +73,8 @@ public:
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
-        const Names & columns_);
+        const Names & columns_,
+        QueryStatusPtr process_list_element_);
 
     String getName() const override { return "DistinctTransform"; }
 
@@ -74,6 +89,16 @@ private:
 
     /// Restrictions on the maximum size of the output data.
     SizeLimits set_size_limits;
+
+    /// Query status of the running query. Used to honor max_execution_time inside a single
+    /// transform() call (the executor only enforces it between work() calls).
+    QueryStatusPtr process_list_element;
+
+    /// In `timeout_overflow_mode = 'break'` the soft timeout is sticky: once `checkTimeLimit`
+    /// returns false it keeps returning false. Latch it so all loops stop immediately without
+    /// reading the clock again, and so `transform()` can distinguish a soft timeout (preserve the
+    /// already-processed prefix) from a hard cancellation (drop the chunk).
+    mutable bool time_limit_exceeded = false;
 
     using LCDictionaryKey = ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKey;
     using LCDictionaryKeyHash = ColumnsHashing::LowCardinalityDictionaryCache::DictionaryKeyHash;
@@ -96,6 +121,9 @@ private:
     LCOptimizationController lc_optimization_controller;
 
     /// mask[i] == 0 -> row i is known duplicate (by LC index) and is never inserted.
+    /// Rows in [0, processed_prefix) are already identified as candidates by a preceding
+    /// `buildLowCardinalityMask` call (its soft-timeout partial result) and must be hashed even
+    /// when the time limit already fired, so the processed prefix is preserved instead of dropped.
     template <typename Method>
     void buildFilter(
         Method & method,
@@ -103,13 +131,21 @@ private:
         IColumn::Filter & filter,
         size_t rows,
         SetVariants & variants,
-        const IColumn::Filter * mask) const;
+        const IColumn::Filter * mask,
+        size_t processed_prefix = 0) const;
 
     /// For a single LowCardinality key column, build a mask of rows that are
     /// the first occurrence of their LC dictionary index for this dictionary identity. Then, only those
     /// rows need to be checked for distinctness.
-    /// Returns {mask, new_indices_count}.
-    std::pair<IColumn::Filter, size_t> buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows);
+    /// Returns {mask, new_indices_count, processed_rows}, where processed_rows is the number of rows
+    /// handled when the call stopped (equals num_rows on normal completion, or the stop point on a soft timeout).
+    LowCardinalityMaskResult buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows);
+
+    /// Returns true when the query's max_execution_time was exceeded in `timeout_overflow_mode = 'break'`
+    /// (soft timeout). Hard cancellations (KILL QUERY, Ctrl+C, executor cancel) are surfaced through
+    /// `isCancelled()` and are deliberately not treated as soft timeouts, so `transform()` keeps dropping
+    /// the chunk in that case.
+    bool isSoftTimeout() const;
 };
 
 }
