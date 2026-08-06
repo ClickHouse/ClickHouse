@@ -58,3 +58,4 @@ BEYOND THRESHOLD distributed	199999	qqqq
 WITH TIES local	28572
 WITH TIES distributed	28572
 payload almost free	1
+local top-N in fragment with exact_rows_before_limit=1	0

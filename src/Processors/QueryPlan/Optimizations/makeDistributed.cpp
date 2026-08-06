@@ -70,7 +70,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryReplaceScatterGatherWithShuffle(QueryPlan::Node * node);
 void optimizeExchanges(QueryPlan::Node & root);
@@ -525,7 +525,19 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
 ///
 /// NOTE: GatherExchange step is aware of sort descripiton and merges multiple sorted streams into one sorted stream.
 /// The `LimitStep` restates the bound `SortingStep::serialize` drops, so the worker still sees a top-N read.
-void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+
+/// Find if the LimitStep must read till end (setting exact_rows_before_limit)
+static bool mustReadTillEnd(const Stack & stack)
+{
+    for (const auto & frame : stack)
+        if (const auto * limit = typeid_cast<const LimitStep *>(frame.node->step.get()))
+            if (limit->alwaysReadTillEnd())
+                return true;
+
+    return false;
+}
+
+void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a sorting step?
     auto * sorting_step = typeid_cast<SortingStep *>(node.step.get());
@@ -554,7 +566,7 @@ void tryMakeDistributedSorting(QueryPlan::Node & node, QueryPlan::Nodes & nodes,
 
     QueryPlan::Node * gather_input = &new_sorting_node;
 
-    if (const size_t local_limit = sorting_step->getLimit())
+    if (const size_t local_limit = mustReadTillEnd(stack) ? 0 : sorting_step->getLimit())
     {
         auto & limit_node = nodes.emplace_back();
         limit_node.step = std::make_unique<LimitStep>(new_sorting_node.step->getOutputHeader(), local_limit, 0);

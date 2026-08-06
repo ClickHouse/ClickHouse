@@ -102,4 +102,8 @@ FROM
     WHERE event_date >= yesterday() AND type = 'QueryFinish'
 );
 
+-- Optimization should not be shipped in distributed plan if exact_rows_before_limit is set
+SELECT 'local top-N in fragment with exact_rows_before_limit=1', countIf(explain LIKE '%Limit (local top-N)%') > 0
+FROM (EXPLAIN PLAN distributed = 1 SELECT a, payload FROM t_dist_lazy ORDER BY b, a LIMIT 5 SETTINGS make_distributed_plan = 1, exact_rows_before_limit = 1);
+
 DROP TABLE t_dist_lazy;
