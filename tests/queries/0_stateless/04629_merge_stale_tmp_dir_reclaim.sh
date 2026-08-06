@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# no-parallel -- enables a server-wide failpoint that fires for every claimed temporary part
-# directory of every table (including system log table flushes).
+# no-parallel -- the failpoint is server-wide and fires for every table, system logs included.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,13 +18,10 @@ function cleanup()
 }
 trap cleanup EXIT
 
-# The failpoint fires inside `reclaimStaleTemporaryPartDirectory` (called by the claim) and injects a pre-existing non-empty
-# `tmp_merge_<part>` directory under the claim, right before the removal probe, simulating a stale leftover of a previously
-# interrupted merge (the merge temporary directory name is deterministic). Previously this made the
-# merge fail with DIRECTORY_ALREADY_EXISTS until `temporary_directories_lifetime` expired; now the
-# stale directory is reclaimed with a warning and the merge proceeds. Enable, OPTIMIZE and disable
-# in a single client invocation so the server-wide failpoint is armed only for this one merge.
-# send_logs_level=error hides the expected "Removing stale temporary directory" warning from stderr.
+# The failpoint injects a non-empty `tmp_merge_<part>` directory inside the claim, as an interrupted
+# merge would leave behind. This used to fail the merge with `DIRECTORY_ALREADY_EXISTS` until
+# `temporary_directories_lifetime` expired; now it is reclaimed. Arm the server-wide failpoint for
+# this one query only; `send_logs_level=error` hides the expected reclaim warning.
 function run_case()
 {
     local table=$1

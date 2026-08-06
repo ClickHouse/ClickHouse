@@ -3813,9 +3813,8 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
                 {
                     ThreadFuzzer::maybeInjectSleep();
 
-                    /// Take a transient cleanup hold on the name, so a concurrent operation claiming it via
-                    /// `claimTemporaryPartDirectory` waits for the removal below to finish instead of recreating
-                    /// the directory under our feet.
+                    /// Hold the name, so a concurrent claim waits for the removal below instead of
+                    /// recreating the directory under our feet.
                     if (!temporary_parts.tryClaimForCleanup(basename))
                     {
                         /// Actually we don't rely on temporary_directories_lifetime when removing old temporary
@@ -3862,9 +3861,8 @@ scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_d
 
 void MergeTreeData::removeSharedTemporaryDirectory(const DiskPtr & disk, const String & relative_path) const
 {
-    /// Even a temporary part could be downloaded with zero-copy replication (e.g. this function is
-    /// executed as a callback). We don't control the amount of refs for temporary parts, so we cannot
-    /// decide whether the blobs can be removed or not, and we keep them.
+    /// A temporary part could be downloaded with zero-copy replication, and we don't control the amount
+    /// of refs for temporary parts, so we cannot decide whether the blobs can be removed. Keep them.
     bool keep_shared = false;
     if (disk->supportZeroCopyReplication() && (*getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && supportsReplication())
     {
@@ -3877,25 +3875,17 @@ void MergeTreeData::removeSharedTemporaryDirectory(const DiskPtr & disk, const S
 
 void MergeTreeData::reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name) const
 {
-    /// Only temporary names may be auto-reclaimed. For anything else (e.g. "detached/<dir>" during
-    /// ATTACH) the directory contents are the payload, and reclaiming would destroy user data.
+    /// Only temporary names may be auto-reclaimed. Elsewhere (e.g. "detached/<dir>" during ATTACH) the
+    /// directory contents are the payload, and reclaiming would destroy user data.
     if (!startsWith(part_dir_name, "tmp") || part_dir_name.find('/') != String::npos)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reclaim {}: not a temporary part directory name", part_dir_name);
 
-    /// The claim guarantees that no concurrent operation owns this name, so an existing directory can
-    /// only be a stale leftover of an operation that was interrupted (or rolled back) after creating the
-    /// directory and retried later with the same deterministic name. It must be removed BEFORE the part
-    /// storage is constructed, so packed storage does not seed its archive reader or snapshot the mark
-    /// layout (`index_granularity_info`) from the stale contents, and so `freeze`/`freezeRemote` (via
-    /// `Backup`) does not reject a non-empty destination.
+    /// The claim is what makes the removal safe: with the name owned, an existing directory can only be
+    /// a leftover of an earlier attempt that used the same deterministic name.
     if (!temporary_parts.contains(part_dir_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reclaim {}: the name is not claimed", part_dir_name);
 
-    /// For testing: simulate a stale leftover directory of a previously interrupted operation. The
-    /// dummy file makes the directory non-empty, so the removal below exercises reclaiming a
-    /// non-empty directory. Claims that declare the name collision-free are excluded automatically:
-    /// they never call the reclaim, so no leftover is injected for them (injecting one would simulate
-    /// an impossible state and leave the directory unreclaimed).
+    /// For testing: simulate such a leftover, non-empty so the removal below has something to do.
     fiu_do_on(FailPoints::claim_inject_stale_part_dir,
     {
         auto injected_part_dir = fs::path(relative_data_path) / part_dir_name;
@@ -10596,10 +10586,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
-    /// `freeze`/`freezeRemote` (via `Backup`) reject a non-empty destination, and packed storage must
-    /// not seed its archive reader from a stale leftover; reclaim it before freezing, see
-    /// `reclaimStaleTemporaryPartDirectory` for details. The claim was taken above, before the
-    /// destination disk was known.
+    /// `freeze` rejects a non-empty destination, so reclaim the leftover here, once the destination disk
+    /// is known (the claim itself was taken above).
     std::shared_ptr<IDataPartStorage> dst_part_storage{};
     if (on_same_disk)
     {
@@ -10654,8 +10642,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
               std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
 
-    /// The destination directory was just populated by the `freeze` above, so its contents are the
-    /// payload of the clone and must be probed like an existing part.
+    /// The `freeze` above already populated the destination, so probe it like an existing part.
     auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage, getReadSettings(), PartDirIntent::OpenExisting)
         .withPartFormatFromDisk()
         .build();
@@ -12223,10 +12210,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         data_part_volume = createVolumeFromReservation(reservation, volume);
     }
 
-    /// The directory may already exist as a stale leftover: a previous covering operation
-    /// (DROP/DETACH/MOVE/REPLACE PARTITION) that created this empty part can be interrupted after the
-    /// directory is created but before the part is renamed to its persistent name. Claim the name and
-    /// reclaim the leftover, see `claimTemporaryPartDirectory` for the rationale.
+    /// A leftover is possible here: the covering operation (DROP/DETACH/MOVE/REPLACE PARTITION) that
+    /// creates this empty part can be interrupted after the directory but before the rename.
     String tmp_part_dir_name = EMPTY_PART_TMP_PREFIX + new_part_name;
     auto tmp_dir_holder = claimTemporaryPartDirectory(data_part_volume->getDisk(), tmp_part_dir_name);
 

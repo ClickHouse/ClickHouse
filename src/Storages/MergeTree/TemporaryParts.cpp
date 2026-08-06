@@ -19,9 +19,8 @@ void TemporaryParts::add(const std::string & basename)
 {
     std::unique_lock lock(mutex);
 
-    /// If the background cleaner is deleting a leftover directory with this name, wait for it to
-    /// finish: the hold is transient (bounded by one directory removal), so a legitimate claim waits
-    /// it out instead of racing it and recreating the directory under the cleaner's feet.
+    /// Wait out a cleanup of the same name (bounded by one directory removal), so the claim cannot
+    /// recreate the directory under the cleaner's feet.
     cleanup_finished.wait(lock, [&] { return !being_cleaned.contains(basename); });
 
     bool inserted = parts.emplace(basename).second;

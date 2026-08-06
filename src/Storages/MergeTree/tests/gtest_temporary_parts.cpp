@@ -9,8 +9,7 @@
 namespace DB
 {
 
-/// The arbitration methods of TemporaryParts are private (only MergeTreeData uses them), so the test
-/// goes through this accessor, which is declared as a friend in TemporaryParts.h.
+/// The arbitration methods are private, so the test reaches them through this friend accessor.
 class TemporaryPartsTestAccessor
 {
 public:
@@ -96,10 +95,8 @@ TEST(TemporaryParts, OperationClaimWaitsForCleanup)
     while (!started)
         std::this_thread::yield();
 
-    /// Bounded non-occurrence observation for a blocking primitive (not a race "fix" via sleep):
-    /// while the cleanup hold is in place, `add` must not return. If the condition-variable wait in
-    /// `add` were removed, `finished` would flip almost immediately and the check below would fail.
-    /// The window is kept modest so the test stays fast.
+    /// Watch for `add` returning while the hold is in place, which is what would happen if the
+    /// condition-variable wait were removed. The sleep observes a non-occurrence, it does not hide a race.
     bool returned_while_held = false;
     for (size_t i = 0; i < 30 && !returned_while_held; ++i)
     {

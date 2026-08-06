@@ -9,12 +9,9 @@
 namespace DB
 {
 
-/// Arbitrates ownership of temporary part directory names between active operations
-/// (merge/mutation/INSERT claiming a name via `add`) and the background cleaner deleting unclaimed
-/// leftovers (via `tryClaimForCleanup`/`releaseCleanupClaim`). A name is owned by at most one side at
-/// a time: the cleaner skips names claimed by operations, and an operation claiming a name that the
-/// cleaner is currently deleting waits for the deletion to finish (a cleanup hold is transient,
-/// bounded by one directory removal).
+/// Arbitrates temporary part directory names between active operations (merge/mutation/INSERT, via
+/// `add`) and the background cleaner (via `tryClaimForCleanup`/`releaseCleanupClaim`). A name is owned
+/// by at most one side: the cleaner skips claimed names, and `add` waits out a cleanup in progress.
 class TemporaryParts : private boost::noncopyable
 {
 private:
@@ -33,8 +30,7 @@ private:
     void add(const std::string & basename);
     void remove(const std::string & basename);
 
-    /// Takes a transient cleanup hold on the name so the background cleaner can delete the directory
-    /// without racing a concurrent claim. Returns false if an operation owns the name or another
+    /// Takes a transient cleanup hold on the name. Returns false if an operation owns it or another
     /// cleanup hold is already in place.
     bool tryClaimForCleanup(const std::string & basename);
     void releaseCleanupClaim(const std::string & basename);

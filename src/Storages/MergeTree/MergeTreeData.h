@@ -1483,31 +1483,18 @@ public:
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
-    /// Removes a temporary part directory, keeping shared zero-copy blobs when they may still be
-    /// referenced by other replicas (same rule for the background cleaner and the claim-based reclaim).
+    /// Removes a temporary part directory, keeping shared zero-copy blobs that other replicas may
+    /// still reference (same rule for the background cleaner and for the reclaim below).
     void removeSharedTemporaryDirectory(const DiskPtr & disk, const String & relative_path) const;
 
-    /// Removes a stale leftover directory `relative_data_path / part_dir_name` on `disk`, if any.
-    /// Requires the name to be claimed in `temporary_parts` by the caller, which guarantees that no
-    /// concurrent operation owns it, so an existing directory can only be a stale leftover of an
-    /// interrupted operation. `part_dir_name` must be a temporary name: it has to start with "tmp"
-    /// and contain no '/'; this prevents misuse on names like "detached/<dir>" whose directory
-    /// contents are the payload and must never be auto-reclaimed. The leftover must be removed BEFORE
-    /// the part storage is constructed: otherwise packed storage would seed its archive reader and
-    /// snapshot the mark layout (`index_granularity_info`) from the stale contents at construction,
-    /// and `freeze`/`freezeRemote` (via `Backup`) would reject a non-empty destination. Removal uses
-    /// `removeSharedRecursive` with the same `keep_shared` rule as `clearOldTemporaryDirectories`, so
-    /// shared zero-copy blobs are preserved.
+    /// Removes a leftover of an interrupted operation at `relative_data_path / part_dir_name`, if any.
+    /// The name must be claimed, and temporary (starts with "tmp", no '/'), so payload directories such
+    /// as "detached/<dir>" can never be reclaimed by mistake. Runs before the part storage is built.
     void reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name) const;
 
-    /// Claims the temporary directory name (exclusive; throws a `LOGICAL_ERROR` exception if it is
-    /// already claimed) and, if `may_have_leftover`, reclaims a stale leftover directory on `disk` via
-    /// `reclaimStaleTemporaryPartDirectory`. Returns the guard that releases the claim.
-    /// Reclaimed names must be temporary, see `reclaimStaleTemporaryPartDirectory`. Callers that know
-    /// the name is collision-free (e.g. derived from a block number allocated by Keeper) may pass
-    /// `may_have_leftover = false` to avoid paying a disk probe (an object storage roundtrip) per
-    /// operation. A claim taken while the background cleaner is deleting the same name waits for the
-    /// deletion to finish, so the operation cannot recreate the directory under the cleaner's feet.
+    /// Claims the name (exclusive, throws a `LOGICAL_ERROR` exception if already claimed), reclaims a
+    /// leftover, and returns the guard releasing the claim. Callers that know the name is collision-free
+    /// (e.g. from a Keeper-allocated block number) pass `may_have_leftover = false` to skip the probe.
     scope_guard claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover = true) const;
 
     void waitForOutdatedPartsToBeLoaded() const;

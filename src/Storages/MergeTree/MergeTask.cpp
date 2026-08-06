@@ -582,10 +582,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// dedicated arena (same as `MergeTreeData::loadDataPart` / `DataPartsExchange`). The rest of
     /// `prepare` (storage snapshot, column extraction, pipeline/transform setup) is merge-lifetime
     /// scratch and is deliberately left in the default per-CPU arenas.
-    /// The temporary directory name is deterministic (`tmp_merge_<part>`), so an interrupted merge
-    /// can leave a stale leftover behind; claim the name and reclaim the leftover BEFORE the part
-    /// storage is constructed, see `MergeTreeData::claimTemporaryPartDirectory` for the rationale.
-    /// Projection merges write nested inside the parent's temporary directory, which has no claim.
+    /// The name is deterministic (`tmp_merge_<part>`), so claim it and reclaim a leftover of an
+    /// interrupted merge. Projection merges write nested inside the parent's directory, which has no claim.
     if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
 
@@ -595,8 +593,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         std::optional<MergeTreeDataPartBuilder> builder;
         if (global_ctx->parent_part)
         {
-            /// Take the non-initializing variant, so nothing is seeded from an existing directory; see
-            /// `IMergeTreeDataPart::getProjectionPartBuilder` for the rationale.
+            /// Non-initializing, so nothing is seeded from an existing directory.
             auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjectionNoInitialize(local_tmp_part_basename,  /* use parent transaction */ false);
             builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings(), PartDirIntent::CreateFresh);
             builder->withParentPart(global_ctx->parent_part);
@@ -615,11 +612,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
-    /// For top-level merges the claim above already reclaimed any stale leftover, and true concurrency
-    /// on the same name throws a `LOGICAL_ERROR` exception from `TemporaryParts::add`. For projection
-    /// merges the parent temporary directory is freshly created by this same operation, so an existing
-    /// nested directory means a logic bug; this check is the release-build backstop for the builder's
-    /// debug `chassert`.
+    /// Top-level merges are covered by the claim above. A projection merge writes into a directory this
+    /// same operation just created, so finding one means a logic bug.
     if (global_ctx->parent_part && data_part_storage->exists())
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
 

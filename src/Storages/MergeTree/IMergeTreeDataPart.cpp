@@ -551,8 +551,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 
     if (intent == PartDirIntent::OpenExisting)
     {
-        /// The mark type (and with it the granularity layout) is authoritative on disk and may differ
-        /// from the current settings (which the member initializer already applied).
+        /// The on-disk mark type wins over the current settings, which the member initializer applied.
         if (auto mrk_type = MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(getDataPartStorage()))
             index_granularity_info = MergeTreeIndexGranularityInfo(storage_settings, *mrk_type);
     }
@@ -1493,8 +1492,7 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
     /// The projection storage is stored on the resulting projection part for its lifetime, so create
     /// it in the dedicated arena (this is the part-lifetime projection-storage creation site).
-    /// With `CreateFresh` the storage must not seed the packed archive reader from a possible nested
-    /// leftover of a previously interrupted attempt, so take the non-initializing variant.
+    /// `CreateFresh` takes the non-initializing variant, so nothing is seeded from a nested leftover.
     MutableDataPartStoragePtr projection_storage;
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -1504,10 +1502,8 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     }
     if (intent == PartDirIntent::CreateFresh && projection_storage->exists())
     {
-        /// Nested projection directories have no temporary-directory claim (the background cleaner
-        /// cannot see inside part directories), so a retried materialization reclaims the leftover of
-        /// a previously interrupted attempt here; the non-initializing handle above guarantees that
-        /// nothing was seeded from it.
+        /// Nested projection directories have no claim (the cleaner cannot see inside part directories),
+        /// so a retried materialization reclaims the leftover of an interrupted attempt here.
         LOG_WARNING(storage.log, "Removing stale temporary projection directory {}", projection_storage->getFullPath());
         projection_storage->removeRecursive();
     }

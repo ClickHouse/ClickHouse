@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# no-parallel -- enables a server-wide failpoint that fires for every claimed temporary part
-# directory of every table (including system log table flushes).
+# no-parallel -- the failpoint is server-wide and fires for every table, system logs included.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,12 +20,9 @@ $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS $TABLE SYNC"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE $TABLE (a UInt64, v UInt64) ENGINE = MergeTree ORDER BY a"
 $CLICKHOUSE_CLIENT --query "INSERT INTO $TABLE SELECT number, number FROM numbers(100)"
 
-# The failpoint fires inside `reclaimStaleTemporaryPartDirectory` (called by the claim) and injects a pre-existing non-empty
-# `tmp_mut_<part>` directory under the claim, right before the removal probe, simulating a stale leftover of a previously
-# interrupted mutation. The claim must reclaim (remove) the stale directory and the mutation must
-# succeed. Enable, mutate and disable in a single client invocation so the server-wide failpoint
-# is armed only for this one mutation. send_logs_level=error hides the expected "Removing stale
-# temporary directory" warning from stderr.
+# The failpoint injects a non-empty `tmp_mut_<part>` directory inside the claim, as an interrupted
+# mutation would leave behind. The claim must remove it and the mutation must succeed. Arm the
+# server-wide failpoint for this one query only; `send_logs_level=error` hides the reclaim warning.
 $CLICKHOUSE_CLIENT --send_logs_level=error --mutations_sync=2 --multiquery --query "
 SYSTEM ENABLE FAILPOINT $FP;
 ALTER TABLE $TABLE UPDATE v = v + 1 WHERE 1;

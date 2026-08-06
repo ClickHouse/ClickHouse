@@ -3917,9 +3917,7 @@ bool MutateTask::prepare()
 
     String tmp_part_dir_name = TEMP_DIRECTORY_PREFIX + ctx->future_part->name;
 
-    /// The temporary directory name is deterministic, so an interrupted mutation can leave a stale
-    /// leftover behind; claim the name and reclaim the leftover, see
-    /// `MergeTreeData::claimTemporaryPartDirectory` for the rationale.
+    /// The name is deterministic, so claim it and reclaim a leftover of an interrupted mutation.
     ctx->temporary_directory_lock = ctx->data->claimTemporaryPartDirectory(ctx->disk, tmp_part_dir_name);
 
     auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings(), PartDirIntent::CreateFresh);

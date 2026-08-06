@@ -75,10 +75,8 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     if (!part_storage)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create part {}, because part storage is not set", name);
 
-    /// With `CreateFresh` the target directory must have been claimed and reclaimed first (top-level
-    /// paths, see `MergeTreeData::claimTemporaryPartDirectory`) or reclaimed as a nested projection
-    /// leftover (see `IMergeTreeDataPart::getProjectionPartBuilder`); any future path that forgets
-    /// fails loudly here in debug and sanitizer CI instead of silently writing into stale data.
+    /// `CreateFresh` requires the directory to have been reclaimed first, so a path that forgets fails
+    /// here instead of writing into stale data.
     chassert(intent != PartDirIntent::CreateFresh || !part_storage->exists());
 
     if (parent_part && data.format_version == MERGE_TREE_DATA_OLD_FORMAT_VERSION)

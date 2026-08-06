@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-object-storage, no-shared-merge-tree, no-encrypted-storage
-# no-object-storage, no-shared-merge-tree, no-encrypted-storage -- the test manipulates the
-# table's part directories directly on the local filesystem (via the `path` column of
-# `system.parts`), which requires plain local full/packed part storage.
+# The tags are needed because the test manipulates part directories directly on the local filesystem.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,17 +19,13 @@ $CLICKHOUSE_CLIENT --query "
     CREATE TABLE $TABLE (a UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
     SETTINGS min_bytes_for_full_part_storage = 1073741824"
 
-# Two deterministic parts (all_1_1_0, all_2_2_0) with clearly distinguishable contents, so any
-# contamination of the merge result by the stale directory would change the checked values.
+# Two deterministic parts with distinguishable contents, so contamination would change the values below.
 $CLICKHOUSE_CLIENT --query "SYSTEM STOP MERGES $TABLE"
 $CLICKHOUSE_CLIENT --query "INSERT INTO $TABLE SELECT number, number FROM numbers(50)"
 $CLICKHOUSE_CLIENT --query "INSERT INTO $TABLE SELECT number + 50, (number + 50) * 100 FROM numbers(50)"
 
-# Simulate a stale leftover of an interrupted merge: the merge target is all_1_2_1 and its
-# temporary directory name is deterministic (tmp_merge_all_1_2_1). Fill it with the REAL contents
-# of an existing packed part (a genuine data.packed with different data than the correct merge
-# result). The merge must reclaim the stale directory and must not seed or contaminate the merged
-# part with it.
+# Simulate a leftover of an interrupted merge in tmp_merge_all_1_2_1, filled with the real contents of
+# an existing packed part, so the merge would produce visibly wrong data if it seeded anything from it.
 part_path=$($CLICKHOUSE_CLIENT --query "
     SELECT path FROM system.parts
     WHERE database = currentDatabase() AND table = '$TABLE' AND name = 'all_1_1_0' AND active")
@@ -46,15 +40,13 @@ else
     ls "$stale_dir" 2>&1
 fi
 
-# send_logs_level=error hides the expected "Removing stale temporary directory" warning emitted
-# while reclaiming the stale directory.
+# send_logs_level=error hides the expected reclaim warning.
 $CLICKHOUSE_CLIENT --send_logs_level=error --multiquery --query "
 SYSTEM START MERGES $TABLE;
 OPTIMIZE TABLE $TABLE FINAL SETTINGS optimize_throw_if_noop = 1;
 "
 
-# The merge result contains exactly the inserted data (a stale-seeded result would differ),
-# in a single active packed part that passes consistency checks.
+# Exactly the inserted data, in one active packed part that passes the consistency check.
 $CLICKHOUSE_CLIENT --query "SELECT count(), sum(a), sum(v) FROM $TABLE"
 $CLICKHOUSE_CLIENT --query "SELECT a, v FROM $TABLE ORDER BY a LIMIT 2"
 $CLICKHOUSE_CLIENT --query "SELECT a, v FROM $TABLE ORDER BY a DESC LIMIT 2"

@@ -87,8 +87,7 @@ public:
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
-      * `may_have_leftover`: whether a stale leftover directory may need to be reclaimed, see
-      * `MergeTreeData::claimTemporaryPartDirectory`.
+      * `may_have_leftover`: see `MergeTreeData::claimTemporaryPartDirectory`.
       */
     MergeTreeTemporaryPartPtr writeTempPart(
         BlockWithPartition & block,

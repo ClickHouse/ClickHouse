@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# no-parallel -- enables a server-wide failpoint that fires for every claimed or reclaimed
-# temporary part directory of every table (including system log table flushes).
+# no-parallel -- the failpoint is server-wide and fires for every table, system logs included.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,14 +18,10 @@ function cleanup()
 }
 trap cleanup EXIT
 
-# The clone-based write paths (`cloneAndLoadDataPart`: REPLACE PARTITION, MOVE PARTITION TO TABLE)
-# call `reclaimStaleTemporaryPartDirectory` directly, per destination disk. The failpoint fires
-# inside the reclaim and injects a pre-existing non-empty `tmp_replace_from_<part>` /
-# `tmp_move_from_<part>` directory in the destination table, right before the removal probe,
-# simulating a stale leftover of a previously interrupted clone. The reclaim must remove the stale
-# directory and the operation must succeed. Enable, run the operation and disable in a single
-# client invocation so the server-wide failpoint is armed only for that one operation.
-# send_logs_level=error hides the expected "Removing stale temporary directory" warning from stderr.
+# The clone-based paths (REPLACE PARTITION, MOVE PARTITION TO TABLE) reclaim per destination disk. The
+# failpoint injects a non-empty `tmp_replace_from_<part>` / `tmp_move_from_<part>` directory in the
+# destination table, as an interrupted clone would leave behind. The reclaim must remove it and the
+# operation must succeed. Arm the server-wide failpoint for one operation at a time.
 function check_reclaim_warning()
 {
     local table=$1

@@ -897,8 +897,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         data_part_volume = createVolumeFromReservation(reservation, volume);
     }
 
-    /// The part directory name can be non-unique because of stale leftovers of previous runs; claim the
-    /// name and reclaim the leftover, see `MergeTreeData::claimTemporaryPartDirectory` for the rationale.
+    /// The part directory name can be non-unique because of leftovers of previous runs.
     temp_part->temporary_directory_lock = data.claimTemporaryPartDirectory(data_part_volume->getDisk(), part_dir, may_have_leftover);
 
     auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
