@@ -13,3 +13,7 @@ idx_txt	text	0
 i0	hypothesis	0
 idx_txt	text	1
 1
+-- Case 4: default TTL settings
+0
+1
+1

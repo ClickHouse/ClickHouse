@@ -9,9 +9,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # resulting empty part must still carry has to be handled there, because the builders that
 # normally produce them live inside the skipped pipeline.
 #
-# OPTIMIZE TABLE FINAL always assigns MergeType::Regular and so bypasses the short-circuit.
-# The cases below therefore drive a background TTL merge (merge_with_ttl_timeout = 0) and
-# wait for it, bounded by wall-clock time rather than a fixed iteration count.
+# Only the background selector assigns MergeType::TTLDrop; OPTIMIZE TABLE FINAL assigns
+# MergeType::Regular. Every case below therefore drives a background TTL merge and waits for
+# it, bounded by wall-clock time rather than a fixed iteration count.
 
 function wait_for_ttl_drop()
 {
@@ -185,3 +185,48 @@ ${CLICKHOUSE_CLIENT} -q "
 
 ${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ttl_drop_inert SETTINGS check_query_single_value_result = 1;"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_inert;"
+
+echo "-- Case 4: default TTL settings"
+
+# TTLDrop selection ignores merge_with_ttl_timeout: TTLPartDropMergeSelector passes a null
+# merge_due_times, and selectPartsToMerge schedules no next time for MergeType::TTLDrop. So
+# the short-circuit is reachable with every TTL setting left at its default, including
+# ttl_only_drop_parts = 0, which the cases above do not cover.
+#
+# No OPTIMIZE here: with one level-0 part it would select a MergeType::Regular merge of its
+# own and could empty the table through the normal pipeline before the background TTLDrop is
+# picked up. Only the background selector produces the merge type this case is about.
+${CLICKHOUSE_CLIENT} -q "
+    SET allow_experimental_full_text_index = 1;
+
+    CREATE TABLE t_ttl_drop_default
+    (
+        c0 UInt64,
+        c1 Date,
+        c2 String,
+        INDEX idx0 c2 TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
+    )
+    ENGINE = MergeTree()
+    ORDER BY c0
+    TTL c1 + INTERVAL 1 SECOND DELETE;
+
+    INSERT INTO t_ttl_drop_default SELECT number, toDate('2020-01-01'), 'w' || toString(number) FROM numbers(100);
+"
+
+wait_for_ttl_drop "t_ttl_drop_default"
+
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_ttl_drop_default;"
+
+# Emptying the table is not enough on its own: assert the merge that did it was a TTLDrop
+# that succeeded and read no rows. error = 0 excludes the failed-and-retried merge the
+# unfixed code produced, which MergePlainMergeTreeTask also logs under this merge_reason;
+# read_rows = 0 is what distinguishes the skipped pipeline from one that ran.
+${CLICKHOUSE_CLIENT} -q "
+    SYSTEM FLUSH LOGS part_log;
+    SELECT countIf(merge_reason = 'TTLDropMerge' AND error = 0 AND read_rows = 0) > 0
+    FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_ttl_drop_default' AND event_type = 'MergeParts';
+"
+
+${CLICKHOUSE_CLIENT} -q "CHECK TABLE t_ttl_drop_default SETTINGS check_query_single_value_result = 1;"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_default;"
