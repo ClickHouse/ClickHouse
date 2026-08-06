@@ -81,7 +81,8 @@ promql_client -q "vector(99) or sort_desc(up)"
 echo "-- topk's own value order (descending) is propagated as a sort order, so or preserves it as an ordered left prefix"
 promql_client -q "topk(2, up) or vector(99)"
 
-echo "-- topk with by(...) grouping is NOT given a flat cross-bucket sort_key (Prometheus only orders within a bucket), so it composes with or as unordered, but the grouping itself is preserved (all 3 singleton buckets pass through)"
+echo "-- topk with by(...) grouping carries a bucket-aware sort order (buckets consecutive in an unspecified hash-based order, values ordered within each bucket), so it composes with or as an ordered left prefix (all 3 singleton buckets pass through)"
+# `sort` normalizes away the hash-based bucket order; 04627_promql_topk_bottomk_grouped_order covers it.
 promql_client -q "topk(2, up) by (instance) or vector(99)" | LC_ALL=C sort
 
 echo "-- or breaks ties within an unsorted side using a content hash of each row's tags, not row order"

@@ -276,13 +276,10 @@ SQLQueryPiece applyLimitAggregationOperator(
     /// per-time-step one (`topk`/`bottomk` re-select independently at each time step in general).
     /// `limitk`'s selection is sampling-based, not value-based, so it never gets a sort order.
     ///
-    /// With `by`/`without` grouping, Prometheus only guarantees series are sorted by value *within*
-    /// each bucket, with no guarantee on the order buckets themselves appear in - not a single flat
-    /// value-sort across all buckets. A `sort_key` built purely from `value`, with no group/bucket
-    /// component, would assert exactly that unsupported flat order, so grouped `topk`/`bottomk`
-    /// don't get a `sort_key` either; producing a genuine per-bucket-consecutive order is deferred.
-    bool produce_sort_key = impl_info->order_descending.has_value() && (res.start_time == res.end_time)
-        && !(operator_node->by || operator_node->without);
+    /// With `by`/`without`, Prometheus sorts by value only *within* each bucket (bucket order is
+    /// unspecified); step 4 encodes that with a leading per-bucket `sort_key` component.
+    bool grouped = operator_node->by || operator_node->without;
+    bool produce_sort_key = impl_info->order_descending.has_value() && (res.start_time == res.end_time);
     res.has_sort_order = produce_sort_key;
 
     /// Step 1: collect all series within each aggregation group.
@@ -462,10 +459,28 @@ SQLQueryPiece applyLimitAggregationOperator(
             /// the value as-is. This mirrors the `sort_key` shape built by applySortFunction.cpp for
             /// `sort`/`sort_desc` exactly, including pushing `NaN` after all numeric values.
             ASTPtr normalized_value = *impl_info->order_descending ? makeASTFunction("negate", value->clone()) : value->clone();
-            builder.select_list.push_back(makeASTFunction(
-                "array",
-                makeASTFunction("toFloat64", makeASTFunction("isNaN", std::move(value))),
-                makeASTFunction("toFloat64", std::move(normalized_value))));
+            ASTPtr is_nan_component = makeASTFunction("toFloat64", makeASTFunction("isNaN", std::move(value)));
+            ASTPtr value_component = makeASTFunction("toFloat64", std::move(normalized_value));
+
+            ASTPtr sort_key;
+            if (grouped)
+            {
+                /// Per-bucket component (a content hash of the bucket's membership, deterministic
+                /// run to run - see applyBinaryOperatorOr.cpp) keeps each bucket's rows consecutive.
+                ASTPtr bucket_component = makeASTFunction("toFloat64",
+                    makeASTFunction("arrayMin",
+                        makeASTFunction("arrayMap",
+                            makeASTLambda({"g"}, makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>("g"))),
+                            make_intrusive<ASTIdentifier>(ColumnNames::Groups))));
+                sort_key = makeASTFunction(
+                    "array", std::move(bucket_component), std::move(is_nan_component), std::move(value_component));
+            }
+            else
+            {
+                sort_key = makeASTFunction("array", std::move(is_nan_component), std::move(value_component));
+            }
+
+            builder.select_list.push_back(std::move(sort_key));
             builder.select_list.back()->setAlias(ColumnNames::SortKey);
         }
 

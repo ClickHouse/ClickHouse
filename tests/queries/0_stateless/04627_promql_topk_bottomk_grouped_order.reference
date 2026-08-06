@@ -1,0 +1,25 @@
+-- topk by (job): descending within each bucket, buckets consecutive
+[('__name__','up'),('instance','i2'),('job','a')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','i1'),('job','a')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','i3'),('job','b')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','i4'),('job','b')]	2023-11-14 22:13:20.000	5
+-- bottomk by (job): ascending within each bucket, buckets consecutive
+[('__name__','up'),('instance','i1'),('job','a')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','i2'),('job','a')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','i4'),('job','b')]	2023-11-14 22:13:20.000	5
+[('__name__','up'),('instance','i3'),('job','b')]	2023-11-14 22:13:20.000	20
+-- topk without (instance): same buckets as by (job)
+[('__name__','up'),('instance','i2'),('job','a')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','i1'),('job','a')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','i3'),('job','b')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','i4'),('job','b')]	2023-11-14 22:13:20.000	5
+-- topk by (job) with k=1: only each bucket's winner survives
+[('__name__','up'),('instance','i2'),('job','a')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','i3'),('job','b')]	2023-11-14 22:13:20.000	20
+-- grouped topk's order propagates through or: sorted left prefix, bucket-ordered right suffix
+[('__name__','up'),('instance','i2'),('job','a')]	2023-11-14 22:13:20.000	30
+[('__name__','up'),('instance','i1'),('job','a')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','i3'),('job','b')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','i4'),('job','b')]	2023-11-14 22:13:20.000	5
+-- the order is deterministic regardless of max_threads
+OK: same row order regardless of max_threads

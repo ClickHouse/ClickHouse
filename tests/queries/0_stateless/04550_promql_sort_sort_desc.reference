@@ -59,7 +59,7 @@
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
 [('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
 []	2023-11-14 22:13:20.000	99
--- topk with by(...) grouping is NOT given a flat cross-bucket sort_key (Prometheus only orders within a bucket), so it composes with or as unordered, but the grouping itself is preserved (all 3 singleton buckets pass through)
+-- topk with by(...) grouping carries a bucket-aware sort order (buckets consecutive in an unspecified hash-based order, values ordered within each bucket), so it composes with or as an ordered left prefix (all 3 singleton buckets pass through)
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
 [('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
 [('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
