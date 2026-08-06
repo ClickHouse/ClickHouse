@@ -57,6 +57,8 @@ LineString
 1
 -- Parquet skip_columns_with_unsupported_types, the permissive entry exists and is keyed
 1	skip_columns_with_unsupported_types=true
+-- Parquet skip_columns_with_unsupported_types, a repeated query hits the cache
+1
 -- Parquet make_json_columns_nullable, nullable=1 first
 Nullable(JSON)
 JSON

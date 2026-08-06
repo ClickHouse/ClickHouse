@@ -153,6 +153,13 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_unsup_a.parquet', 'Parquet') SETTINGS input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference = 1 FORMAT Null;
     SELECT count(), extract(additional_format_info, 'skip_columns_with_unsupported_types=\w+')
     FROM system.schema_inference_cache WHERE format = 'Parquet' GROUP BY 2 ORDER BY 2;"
+# An entry being present still does not prove a later query read it: with cache reads bypassed every
+# query re-infers and rewrites the same entry. Repeating one query at unchanged settings must hit.
+echo "-- Parquet skip_columns_with_unsupported_types, a repeated query hits the cache"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_unsup_a.parquet', 'Parquet') SETTINGS input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference = 1 FORMAT Null;
+    DESC file('${T}_unsup_a.parquet', 'Parquet') SETTINGS input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference = 1 FORMAT Null;
+    SELECT value > 0 FROM system.events WHERE event = 'SchemaInferenceCacheSchemaHits';"
 
 # --- schema_inference_make_json_columns_nullable -------------------------------------------
 # Decides whether a required JSON column stays JSON or becomes Nullable(JSON), so each pair must
