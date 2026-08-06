@@ -238,9 +238,24 @@ void appendExpression(std::optional<ActionsDAG> & dag, const ActionsDAG & expres
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
 /// Additionally, build a set of fixed columns.
-void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
+///
+/// Returns whether the chain contains a step that decides which rows a `SQL SECURITY DEFINER` /
+/// `NONE` view exposes (see `IQueryPlanStep::isSecurityBarrier`). The sort description being
+/// matched belongs to the top of the chain, so unlike the primary-key walk the barrier step
+/// cannot simply be consumed here: dropping only the contributions above it would leave a DAG
+/// whose outputs no longer describe the columns the description names, and a name that survives
+/// a rename inside the view would match the wrong source column. When the walk crosses a
+/// barrier, the caller must skip the read-in-order analysis entirely — otherwise an
+/// invoker-supplied predicate or limit above a filtering view shapes how the source below the
+/// barrier reads, and `read_rows` / timing of the query tell the invoker about the rows the
+/// view hides. On `true` the DAG and the fixed columns are incomplete and must not be used.
+bool buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & dag, FixedColumns & fixed_columns, size_t & limit)
 {
     IQueryPlanStep * step = node.step.get();
+
+    if (step->isSecurityBarrier())
+        return true;
+
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         if (const auto prewhere_info = reading->getPrewhereInfo())
@@ -263,7 +278,7 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
                 appendFixedColumnsFromFilterExpression(*filter_expression, fixed_columns);
 
         }
-        return;
+        return false;
     }
 
     if (typeid_cast<const JoinStep *>(step) || typeid_cast<const FilledJoinStep *>(step))
@@ -272,9 +287,10 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
     }
 
     if (node.children.empty())
-        return;
+        return false;
 
-    buildSortingDAG(*node.children.front(), dag, fixed_columns, limit);
+    if (buildSortingDAG(*node.children.front(), dag, fixed_columns, limit))
+        return true;
 
     if (typeid_cast<const DistinctStep *>(step))
     {
@@ -317,6 +333,8 @@ void buildSortingDAG(const QueryPlan::Node & node, std::optional<ActionsDAG> & d
             dag->removeFromOutputs(NameSet(array_joined_columns.begin(), array_joined_columns.end()));
         }
     }
+
+    return false;
 }
 
 /// Add more functions to fixed columns.
@@ -967,7 +985,10 @@ SortingInputOrder buildInputOrderFromSortDescription(
 ///
 /// `matchTrees` itself looks through `materialize`/`identity` wrappers, so we do not need
 /// to mutate the DAG to strip them.
-void buildCombinedDAGForMergeChildPlan(
+///
+/// Returns whether the child plan contains a security barrier (see `buildSortingDAG`); the
+/// caller must then skip the read-in-order analysis for the whole `Merge` storage.
+bool buildCombinedDAGForMergeChildPlan(
     QueryPlan * child_plan,
     const std::optional<ActionsDAG> & outer_dag,
     const FixedColumns & outer_fixed_columns,
@@ -975,8 +996,9 @@ void buildCombinedDAGForMergeChildPlan(
     FixedColumns & combined_fixed_columns,
     size_t & limit)
 {
-    if (child_plan && child_plan->isInitialized())
-        buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit);
+    if (child_plan && child_plan->isInitialized()
+        && buildSortingDAG(*child_plan->getRootNode(), combined_dag, combined_fixed_columns, limit))
+        return true;
 
     if (outer_dag)
     {
@@ -1014,6 +1036,8 @@ void buildCombinedDAGForMergeChildPlan(
 
     if (combined_dag && !combined_fixed_columns.empty())
         enrichFixedColumns(*combined_dag, combined_fixed_columns);
+
+    return false;
 }
 
 SortingInputOrder buildInputOrderFromSortDescription(
@@ -1042,8 +1066,9 @@ SortingInputOrder buildInputOrderFromSortDescription(
         FixedColumns combined_fixed_columns;
         size_t combined_limit = outer_limit;
         QueryPlan * child_plan = (table_idx < child_plans.size()) ? child_plans[table_idx] : nullptr;
-        buildCombinedDAGForMergeChildPlan(
-            child_plan, outer_dag, outer_fixed_columns, combined_dag, combined_fixed_columns, combined_limit);
+        if (buildCombinedDAGForMergeChildPlan(
+                child_plan, outer_dag, outer_fixed_columns, combined_dag, combined_fixed_columns, combined_limit))
+            return {};
 
         auto table_order_info = buildInputOrderFromSortDescription(
             combined_fixed_columns,
@@ -1121,8 +1146,9 @@ InputOrder buildInputOrderFromUnorderedKeys(
         FixedColumns combined_fixed_columns;
         size_t unused_limit = 0;
         QueryPlan * child_plan = (table_idx < child_plans.size()) ? child_plans[table_idx] : nullptr;
-        buildCombinedDAGForMergeChildPlan(
-            child_plan, outer_dag, outer_fixed_columns, combined_dag, combined_fixed_columns, unused_limit);
+        if (buildCombinedDAGForMergeChildPlan(
+                child_plan, outer_dag, outer_fixed_columns, combined_dag, combined_fixed_columns, unused_limit))
+            return {};
 
         auto table_order_info = buildInputOrderFromUnorderedKeys(
             combined_fixed_columns,
@@ -1164,7 +1190,8 @@ InputOrderInfoPtr buildInputOrderInfo(
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    if (buildSortingDAG(node, dag, fixed_columns, limit))
+        return nullptr;
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1288,7 +1315,8 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    if (buildSortingDAG(node, dag, fixed_columns, limit))
+        return {};
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1409,7 +1437,8 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    if (buildSortingDAG(node, dag, fixed_columns, limit))
+        return {};
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1500,7 +1529,8 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
-    buildSortingDAG(node, dag, fixed_columns, limit);
+    if (buildSortingDAG(node, dag, fixed_columns, limit))
+        return {};
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
@@ -1579,7 +1609,8 @@ bool wouldReadInOrderBeUseful(
     std::optional<ActionsDAG> dag;
     FixedColumns fixed_columns;
     size_t limit = sorting.getLimit();
-    buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit);
+    if (buildSortingDAG(subtree_above_reading, dag, fixed_columns, limit))
+        return false;
 
     if (dag && !fixed_columns.empty())
         enrichFixedColumns(*dag, fixed_columns);
