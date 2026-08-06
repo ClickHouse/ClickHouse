@@ -5,7 +5,6 @@
 #include <Common/LRUCachePolicy.h>
 #include <Common/SLRUCachePolicy.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <base/UUID.h>
 #include <base/defines.h>
@@ -225,13 +224,8 @@ public:
         return cache_policy->dump();
     }
 
-    /// Entries are cached without charging the query that populated them (see
-    /// `CachedCompressedReadBuffer::nextImpl`), so releasing them must not credit whoever triggers it either -
-    /// that would push an unrelated user's tracker below what it actually holds. Eviction from `set` is already
-    /// covered, because it happens under the same blocker as the insertion.
     void clear()
     {
-        MemoryTrackerBlockerInThread not_credited_to_the_query;
         std::lock_guard lock(mutex);
         insert_tokens.clear();
         hits = 0;
@@ -241,14 +235,12 @@ public:
 
     void remove(const Key & key)
     {
-        MemoryTrackerBlockerInThread not_credited_to_the_query;
         std::lock_guard lock(mutex);
         cache_policy->remove(key);
     }
 
     void remove(std::function<bool(const Key&, const MappedPtr &)> predicate)
     {
-        MemoryTrackerBlockerInThread not_credited_to_the_query;
         std::lock_guard lock(mutex);
         cache_policy->remove(predicate);
     }
@@ -264,7 +256,6 @@ public:
     /// Callers reasoning about use_count should account for the extra ref.
     bool removeIfMatches(const Key & key, std::function<bool(const MappedPtr &)> predicate)
     {
-        MemoryTrackerBlockerInThread not_credited_to_the_query;
         std::lock_guard lock(mutex);
         auto value = cache_policy->get(key);
         if (!value || !predicate(value))
@@ -299,14 +290,12 @@ public:
 
     void setMaxCount(size_t max_count)
     {
-        MemoryTrackerBlockerInThread not_credited_to_the_query;
         std::lock_guard lock(mutex);
         cache_policy->setMaxCount(max_count);
     }
 
     void setMaxSizeInBytes(size_t max_size_in_bytes)
     {
-        MemoryTrackerBlockerInThread not_credited_to_the_query;
         std::lock_guard lock(mutex);
         cache_policy->setMaxSizeInBytes(max_size_in_bytes);
     }

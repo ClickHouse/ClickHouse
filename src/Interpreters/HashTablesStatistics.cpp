@@ -1,5 +1,4 @@
 #include <Interpreters/HashTablesStatistics.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -40,9 +39,6 @@ void HashTablesStatistics<Entry>::update(const Entry & new_entry, const Params &
     if (!hint || hint->shouldBeUpdated(new_entry))
     {
         LOG_TRACE(getLogger("HashTablesStatistics"), "Statistics updated for key={}: {}", params.key, new_entry.dump());
-        /// The entry outlives this query in a cache shared by all of them, and is freed by whichever query's
-        /// insertion evicts it, so do not charge it here; see `CachedCompressedReadBuffer::nextImpl`.
-        MemoryTrackerBlockerInThread not_charged_to_the_query;
         cache->set(params.key, std::make_shared<Entry>(new_entry));
     }
 }
