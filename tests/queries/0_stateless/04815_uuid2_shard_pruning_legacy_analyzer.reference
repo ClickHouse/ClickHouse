@@ -1,0 +1,10 @@
+UUID2 key, UUID constant, equality
+0	1
+0	1
+UUID key, UUID2 constant, equality
+0	1
+0	1
+UUID2 key, UUID constants, IN
+2	4
+UUID key, UUID2 constants, IN
+2	4

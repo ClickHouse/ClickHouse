@@ -9,12 +9,17 @@
 
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <Formats/FormatSettings.h>
 
 #include <Disks/IVolume.h>
 
@@ -352,6 +357,94 @@ const ActionsDAG::Node * tryFindShardingKeyOutput(const ActionsDAG & sharding_ke
     return result;
 }
 
+/// `UUID` and `UUID2` share the `Field` representation but store the two 64-bit halves in the opposite
+/// order, so once a constant is folded into an untyped literal, nothing downstream can tell in which
+/// layout its bytes are. Detect the types whose constants would lose that information.
+bool typeContainsUUIDFamily(const IDataType & type)
+{
+    WhichDataType which(type);
+    if (which.isUUID() || which.isUUID2())
+        return true;
+    if (which.isNullable())
+        return typeContainsUUIDFamily(*assert_cast<const DataTypeNullable &>(type).getNestedType());
+    if (which.isLowCardinality())
+        return typeContainsUUIDFamily(*assert_cast<const DataTypeLowCardinality &>(type).getDictionaryType());
+    if (which.isArray())
+        return typeContainsUUIDFamily(*assert_cast<const DataTypeArray &>(type).getNestedType());
+    if (which.isMap())
+    {
+        const auto & map_type = assert_cast<const DataTypeMap &>(type);
+        return typeContainsUUIDFamily(*map_type.getKeyType()) || typeContainsUUIDFamily(*map_type.getValueType());
+    }
+    if (which.isTuple())
+    {
+        for (const auto & element : assert_cast<const DataTypeTuple &>(type).getElements())
+            if (typeContainsUUIDFamily(*element))
+                return true;
+    }
+    return false;
+}
+
+/// Re-encode `UUID`/`UUID2` values inside a folded constant as their text form. The text form is
+/// self-describing: parsing it into the type of the column the constant is compared with produces the
+/// value in the layout of that type, while the raw binary `Field` would have been taken verbatim by
+/// `convertFieldToType` and could be in the layout of the other type of the family.
+Field encodeUUIDFamilyAsText(const Field & value, const IDataType & type)
+{
+    if (value.isNull())
+        return value;
+
+    WhichDataType which(type);
+    if (which.isUUID() || which.isUUID2())
+    {
+        auto column = type.createColumn();
+        column->insert(value);
+        WriteBufferFromOwnString out;
+        type.getDefaultSerialization()->serializeText(*column, 0, out, FormatSettings{});
+        return Field(out.str());
+    }
+    if (which.isNullable())
+        return encodeUUIDFamilyAsText(value, *assert_cast<const DataTypeNullable &>(type).getNestedType());
+    if (which.isLowCardinality())
+        return encodeUUIDFamilyAsText(value, *assert_cast<const DataTypeLowCardinality &>(type).getDictionaryType());
+    if (which.isArray() && value.getType() == Field::Types::Array)
+    {
+        const auto & nested_type = *assert_cast<const DataTypeArray &>(type).getNestedType();
+        const auto & src = value.safeGet<Array>();
+        Array res(src.size());
+        for (size_t i = 0; i < src.size(); ++i)
+            res[i] = encodeUUIDFamilyAsText(src[i], nested_type);
+        return Field(std::move(res));
+    }
+    if (which.isMap() && value.getType() == Field::Types::Map)
+    {
+        const auto & map_type = assert_cast<const DataTypeMap &>(type);
+        const auto & src = value.safeGet<Map>();
+        Map res(src.size());
+        for (size_t i = 0; i < src.size(); ++i)
+        {
+            const auto & entry = src[i].safeGet<Tuple>();
+            Tuple new_entry(2);
+            new_entry[0] = encodeUUIDFamilyAsText(entry[0], *map_type.getKeyType());
+            new_entry[1] = encodeUUIDFamilyAsText(entry[1], *map_type.getValueType());
+            res[i] = std::move(new_entry);
+        }
+        return Field(std::move(res));
+    }
+    if (which.isTuple() && value.getType() == Field::Types::Tuple)
+    {
+        const auto & elements = assert_cast<const DataTypeTuple &>(type).getElements();
+        const auto & src = value.safeGet<Tuple>();
+        if (elements.size() != src.size())
+            return value;
+        Tuple res(src.size());
+        for (size_t i = 0; i < src.size(); ++i)
+            res[i] = encodeUUIDFamilyAsText(src[i], *elements[i]);
+        return Field(std::move(res));
+    }
+    return value;
+}
+
 class ReplacingConstantExpressionsMatcher
 {
 public:
@@ -374,7 +467,16 @@ public:
             if (!isColumnConst(*result.column))
                 return;
 
-            node = make_intrusive<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
+            Field value = assert_cast<const ColumnConst &>(*result.column).getField();
+            /// An `ASTLiteral` carries no data type, and the value of a `UUID`-family constant is
+            /// ambiguous without one (`UUID` and `UUID2` differ by swapping the two 64-bit halves).
+            /// Re-encode such constants as text so that the later conversion to the compared column's
+            /// type (`analyzeEquals` in `evaluateExpressionOverConstantCondition`) restores the value
+            /// in the right layout.
+            if (result.type && typeContainsUUIDFamily(*result.type))
+                value = encodeUUIDFamilyAsText(value, *result.type);
+
+            node = make_intrusive<ASTLiteral>(std::move(value));
         }
     }
 };
