@@ -4,6 +4,10 @@
 -- `ARRAY JOIN`) short-circuits function resolution before the "at least 2 arguments" check runs.
 -- Found by AST fuzzer.
 
+-- `LogicalExpressionOptimizerPass` only runs with the analyzer; without it the query succeeds
+-- instead of throwing `NOT_IMPLEMENTED`, so enforce the analyzer to keep the test deterministic.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_04759;
 CREATE TABLE t_04759 (c0 Int32) ENGINE = MergeTree ORDER BY c0;
 INSERT INTO t_04759 VALUES (1), (2), (3);
