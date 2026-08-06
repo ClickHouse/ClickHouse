@@ -14,11 +14,11 @@ shuffled input with duplicates equals the baseline (all 1):
 duplicate timestamps keep the larger value (changes = [0] twice):
 [0]
 [0]
-NaN at a duplicate timestamp keeps the first arrival on the in-order path (delta [nan] [0], changes [1] [0]):
+NaN at a duplicate timestamp wins the dedup in either arrival order (delta [nan] [nan], changes [1] [1]):
 [nan]
-[0]
+[nan]
 [1]
-[0]
+[1]
 merging unsorted in-memory states equals the baseline (1):
 1
 single-threaded scan over interleaved parts equals the sorted part (all 1):

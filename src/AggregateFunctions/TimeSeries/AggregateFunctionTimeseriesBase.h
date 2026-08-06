@@ -422,10 +422,26 @@ private:
         std::is_trivially_copyable_v<Bucket> || requires { requires Bucket::is_position_independent; },
         "Bucket must be position independent (memmove-able) to be stored in a HashMap");
 
+    /// Buckets that buffer raw samples expose `seal()`, a hint that the in-order write cursor left the bucket, so it can trade its raw sample vector for a compact packed blob (see `AggregateFunctionTimeseriesSamples`).
+    static constexpr bool bucket_can_be_sealed = requires (Bucket & bucket) { bucket.seal(); };
+
+    /// Tracks the bucket that received the most recent add: when an add moves to a different bucket, the previous one is sealed. The hint, refreshed after every add, spares the transition the hash-map lookup when sealing the previous bucket would be a no-op (it is smaller than the pack threshold or already packed).
+    struct SealingCursor
+    {
+        UInt64 last_added_bucket_index = std::numeric_limits<UInt64>::max();
+        bool last_added_bucket_worth_sealing = false;
+    };
+
+    struct NoSealingCursor
+    {
+    };
+
     struct State
     {
         /// Maps bucket index to the set of all timestamps and values
         TimeSeriesBucketsMap<Bucket> buckets;
+        /// Present only for sealable buckets, so the other states do not pay for it.
+        [[no_unique_address]] std::conditional_t<bucket_can_be_sealed, SealingCursor, NoSealingCursor> sealing_cursor;
     };
 
     static DataTypePtr createResultType()
@@ -770,7 +786,25 @@ private:
         if (bucket_index == NO_BUCKET)
             return;  /// The sample can't contribute to any bucket.
 
-        auto & bucket = data(place)->buckets[bucket_index];
+        auto & state = *data(place);
+
+        /// Ascending timestamps map to non-decreasing bucket indices (buckets tile the timeline in index order), so on the common in-order stream each bucket is sealed exactly once, when the stream moves past it. A sealed bucket still accepts samples: late in-order samples append to its packed blob in O(1) and out-of-order ones unpack it (see `AggregateFunctionTimeseriesSamples::add`), so sealing is a memory optimization hint, never a correctness gate.
+        if constexpr (bucket_can_be_sealed)
+        {
+            if (state.sealing_cursor.last_added_bucket_index != bucket_index)
+            {
+                if (state.sealing_cursor.last_added_bucket_worth_sealing)
+                    if (auto * previous_bucket = state.buckets.find(state.sealing_cursor.last_added_bucket_index))
+                        previous_bucket->getMapped().seal();
+                state.sealing_cursor.last_added_bucket_index = bucket_index;
+            }
+            auto & bucket = state.buckets[bucket_index];
+            bucket.add(timestamp, value);
+            state.sealing_cursor.last_added_bucket_worth_sealing = bucket.worthSealing();
+            return;
+        }
+
+        auto & bucket = state.buckets[bucket_index];
         bucket.add(timestamp, value);
     }
 

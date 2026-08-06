@@ -41,8 +41,8 @@ SELECT 'duplicate timestamps keep the larger value (changes = [0] twice):';
 SELECT timeSeriesChangesToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 110, 120]), [5., 2, 5]);
 SELECT timeSeriesChangesToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 110, 120]), [2., 5, 5]);
 
--- NaN samples (Prometheus stale markers) at a duplicated timestamp: the in-order add path resolves the duplicate as max(stored, incoming), which keeps the first arrival against NaN, same as the previous implementation.
-SELECT 'NaN at a duplicate timestamp keeps the first arrival on the in-order path (delta [nan] [0], changes [1] [0]):';
+-- NaN samples (Prometheus stale markers) at a duplicated timestamp: the duplicate resolves to the larger value under the IEEE-754 total order, so a NaN with a clear sign bit survives regardless of arrival order (the old code kept an arrival-order-dependent survivor).
+SELECT 'NaN at a duplicate timestamp wins the dedup in either arrival order (delta [nan] [nan], changes [1] [1]):';
 SELECT timeSeriesDeltaToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 110, 120]), [nan, 5., 5.]);
 SELECT timeSeriesDeltaToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 110, 120]), [5., nan, 5.]);
 SELECT timeSeriesChangesToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 110, 120]), [nan, 5., 5.]);

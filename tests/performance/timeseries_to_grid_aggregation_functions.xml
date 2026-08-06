@@ -69,7 +69,7 @@
         FROM numbers_mt(400 * 1000)
     </fill_query>
 
-    <!-- Ingestion-heavy counterpart where the per-sample `Samples::add` and the per-bucket sample iteration dominate over the grid filling: 10000 series, one sample every 15s over [0, 75000) -> 5000 samples/series, 50M rows total, sawtooth counter values. -->
+    <!-- Ingestion-heavy counterpart where the per-sample `Samples::add` and the per-bucket sample iteration dominate over the grid filling: 10000 series, one sample every 15s over [0, 75000) -> 5000 samples/series, 50M rows total, sawtooth counter values. With step=60 each bucket holds ~4 samples, below the pack threshold, so this shape stays on the raw sample vectors and guards the sealing-cursor overhead of the add path. -->
     <fill_query>
         INSERT INTO ts_grid_ingest
         SELECT
@@ -77,6 +77,20 @@
             toDateTime64(intDiv(number, 10000) * 15, 3) AS timestamp,
             (intDiv(number, 10000) % 1000)::Float64 AS value
         FROM numbers_mt(10000 * 5000)
+    </fill_query>
+
+    <create_query>
+        CREATE TABLE ts_grid_packed (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)
+    </create_query>
+
+    <!-- Packing-heavy counterpart: 2000 series, one sample every second over [0, 25000) -> 25000 samples/series, 50M rows total, a jittered integer counter. With step=250 each bucket holds ~250 samples, well above the pack threshold, so the buckets are sealed into delta-encoded blobs during aggregation and decoded once at finalization; this shape guards the encode/decode cost and the packed-state memory footprint. -->
+    <fill_query>
+        INSERT INTO ts_grid_packed
+        SELECT
+            number % 2000 AS id,
+            toDateTime64(intDiv(number, 2000), 3) AS timestamp,
+            toFloat64(100 * intDiv(number, 2000) + intHash64(number) % 100) AS value
+        FROM numbers_mt(2000 * 25000)
     </fill_query>
 
     <!-- step = 10 over [0, 100000] -> 10001 grid points, ~1 populated bucket per step, window/10 buckets per window. -->
@@ -101,7 +115,12 @@
     <query>SELECT id, timeSeriesRateToGrid(0, 75000, 60, 300)(timestamp, value) FROM ts_grid_ingest GROUP BY id FORMAT Null</query>
     <query>SELECT id, timeSeriesDerivToGrid(0, 75000, 60, 300)(timestamp, value) FROM ts_grid_ingest GROUP BY id FORMAT Null</query>
 
+    <!-- Packing-heavy queries: step=250, window=500 over [0, 25000] -> 101 grid points/series, ~250 samples per bucket packed into blobs at the bucket transitions. -->
+    <query>SELECT id, timeSeriesRateToGrid(0, 25000, 250, 500)(timestamp, value) FROM ts_grid_packed GROUP BY id FORMAT Null</query>
+    <query>SELECT id, timeSeriesDerivToGrid(0, 25000, 250, 500)(timestamp, value) FROM ts_grid_packed GROUP BY id FORMAT Null</query>
+
     <drop_query>DROP TABLE IF EXISTS ts_grid</drop_query>
     <drop_query>DROP TABLE IF EXISTS ts_grid_sparse</drop_query>
     <drop_query>DROP TABLE IF EXISTS ts_grid_ingest</drop_query>
+    <drop_query>DROP TABLE IF EXISTS ts_grid_packed</drop_query>
 </test>

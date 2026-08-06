@@ -146,7 +146,7 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
         }
     };
 
-    /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
+    /// The bucket stores the samples (raw while hot, packed once sealed); the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
 };
 

@@ -1,0 +1,58 @@
+expected results on the sorted unique multiset (rate, increase, delta, changes, resets):
+Row 1:
+──────
+rate:     [NULL,0.6825000000000001,0.717948717948718,192.92499999999995,800369.51,769516.958974359,inf,inf,nan,NULL,NULL]
+increase: [NULL,136.5,143.5897435897436,38584.99999999999,160073902,153903391.79487178,inf,inf,nan,NULL,NULL]
+delta:    [NULL,136.5,143.5897435897436,20266.666666666664,56113.131313131315,-10256402.307692306,25.897435897435894,-39.48717948717948,1.0789473684210527,NULL,NULL]
+changes:  [NULL,19,20,22,40,38,32,32,19,NULL,NULL]
+resets:   [NULL,0,0,3,3,21,24,15,9,NULL,NULL]
+in-order build with late samples into packed buckets equals the expected multiset (all 1):
+1	1	1	1	1	1	1
+shuffled build equals the expected multiset (all 1):
+1	1	1	1
+canonical dedup of NaN and signed-zero duplicates, in-order build with late samples into packed buckets:
+Row 1:
+──────
+rate:    [NULL,0.135,0.23500000000000001,nan,0.18974358974358974,NULL]
+changes: [NULL,19,39,39,20,0]
+resets:  [NULL,1,1,0,0,0]
+shuffled one-pass dedup and split-state merge dedup pick the same survivors (all 1, twice):
+1	1
+1	1
+single-threaded scan over interleaved parts equals the sorted part (all 1):
+0	1	1	1
+1	1	1	1
+2	1	1	1
+3	1	1	1
+two-level parallel aggregation with tiny blocks equals the sorted part (all 1):
+0	1	1	1
+1	1	1	1
+2	1	1	1
+3	1	1	1
+serialized-state merge of fully overlapping shards equals the sorted part (all 1):
+0	1	1	1
+1	1	1	1
+2	1	1	1
+3	1	1	1
+AggregatingMergeTree roundtrip of half-packed states equals the direct result (all 1, twice):
+0	1
+1	1
+0	1
+1	1
+AggregatingMergeTree roundtrip of packed in-order states equals the direct result (all 1, twice):
+0	1
+1	1
+2	1
+3	1
+0	1
+1	1
+2	1
+3	1
+merge of interleaved packed states equals the direct union (1):
+1
+merge of two identical packed states equals one of them (1):
+1
+DateTime timestamps with Float32 values, shuffled equals sorted (1):
+1
+single-bucket self-pack at 1100 samples, shuffled equals sorted (1):
+1
