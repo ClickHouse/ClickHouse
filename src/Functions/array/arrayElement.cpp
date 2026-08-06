@@ -2263,6 +2263,7 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    /// A replicated column can arrive in either position.
     if (typeid_cast<const ColumnReplicated *>(arguments[0].column.get())
         || typeid_cast<const ColumnReplicated *>(arguments[1].column.get()))
         return executeReplicated(arguments, result_type, input_rows_count);
@@ -2356,15 +2357,39 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeReplicated(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    /// The index argument is a per-row number, materialize if it came replicated.
     ColumnsWithTypeAndName args = arguments;
+
+    const auto * replicated_array = typeid_cast<const ColumnReplicated *>(args[0].column.get());
+    const auto * replicated_index = typeid_cast<const ColumnReplicated *>(args[1].column.get());
+
+    /// When the array and the index are replicated by the same indexes column (they came from the same expansion,
+    /// e.g. one ARRAY JOIN), row i reads nested_array[idx[i]][nested_index[idx[i]]], so the result is the nested
+    /// computation replicated by the same indexes.
+    if (replicated_array && replicated_index
+        && replicated_array->getIndexesColumn().get() == replicated_index->getIndexesColumn().get()
+        && replicated_array->getNestedColumn()->size() == replicated_index->getNestedColumn()->size())
+    {
+        /// Compute on the compact nested columns and stay lazy. The nested size check makes the equal-length
+        /// precondition of `executeImpl` explicit
+        size_t nested_rows_count = replicated_array->getNestedColumn()->size();
+        ColumnsWithTypeAndName nested_args
+            = {{replicated_array->getNestedColumn(), args[0].type, args[0].name},
+               {replicated_index->getNestedColumn(), args[1].type, args[1].name}};
+        /// Recurse on the internal rows
+        auto nested_res = executeImpl(nested_args, result_type, nested_rows_count);
+        /// Wrap the result in a new ColumnReplicated sharing the original indexes column
+        return convertToFullColumnIfReplicationNotUseful(
+            ColumnReplicated::create(std::move(nested_res), replicated_array->getIndexesColumn()));
+    }
+
+    /// The index argument is a per-row number and when it is replicated independently of the array,
+    /// its repetition has no structure, so materialize it.
     args[1].column = args[1].column->convertToFullColumnIfReplicated();
 
-    const auto * replicated = typeid_cast<const ColumnReplicated *>(args[0].column.get());
-    if (!replicated)
+    if (!replicated_array)
         return executeImpl(args, result_type, input_rows_count);
 
-    const auto * col_array = typeid_cast<const ColumnArray *>(replicated->getNestedColumn().get());
+    const auto * col_array = typeid_cast<const ColumnArray *>(replicated_array->getNestedColumn().get());
 
     /// Fall back to materialization for the shapes the fast path does not cover:
     /// Replicated over Map, and LowCardinality elements (their handling is layered above this function
@@ -2380,14 +2405,16 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
     if (isColumnConst(*args[1].column))
     {
         /// A constant index gives one value per nested row: execute on the compact nested array and replicate the result lazily.
-        size_t nested_rows = col_array->size();
+        size_t nested_rows_count = col_array->size();
         ColumnsWithTypeAndName nested_args
-            = {{replicated->getNestedColumn(), args[0].type, args[0].name},
-               {args[1].column->cloneResized(nested_rows), args[1].type, args[1].name}};
+            = {{replicated_array->getNestedColumn(), args[0].type, args[0].name},
+               {args[1].column->cloneResized(nested_rows_count), args[1].type, args[1].name}};
 
-        auto nested_res = executeImpl(nested_args, result_type, nested_rows);
+        /// Recurse on the internal rows
+        auto nested_res = executeImpl(nested_args, result_type, nested_rows_count);
+        /// Wrap the result in a new ColumnReplicated sharing the original indexes column
         return convertToFullColumnIfReplicationNotUseful(
-            ColumnReplicated::create(std::move(nested_res), replicated->getIndexesColumn()));
+            ColumnReplicated::create(std::move(nested_res), replicated_array->getIndexesColumn()));
     }
 
     const auto & offsets = col_array->getOffsets();
@@ -2408,7 +2435,7 @@ ColumnPtr FunctionArrayElement<mode>::executeReplicated(
     auto result = data->cloneEmpty();
     result->reserve(input_rows_count);
 
-    const auto & replication_indexes = replicated->getIndexes();
+    const auto & replication_indexes = replicated_array->getIndexes();
     const auto & index_column = *args[1].column;
     /// Core loop to build result by dispatching based on the index type
     if (!(gatherReplicated<UInt8>(index_column, replication_indexes, offsets, *data, *result, builder)

@@ -136,5 +136,18 @@
 -- arrayElement with a lazily replicated Nullable index (AST fuzzer)
 45150	0	0
 45150	0	0
+-- array and index replicated by the same expansion
+1	1	[1,2]	1
+2	1	[1,2]	1
+5	1	[1,2]	1
+1	2	[2,3]	2
+2	2	[2,3]	2
+5	2	[2,3]	2
+1	1	[1,2]	1
+2	1	[1,2]	1
+5	1	[1,2]	1
+1	2	[2,3]	2
+2	2	[2,3]	2
+5	2	[2,3]	2
 -- large array is not materialized per joined row
 1

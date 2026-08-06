@@ -63,6 +63,16 @@ SELECT DISTINCT sum(big[2 + x]), quantileTDigestDistinct(notEmpty(arraySlice(big
 FROM (SELECT DISTINCT range(number, number + 2) AS big, range(2) AS r FROM numbers(300)) LEFT ARRAY JOIN r AS x
 SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1;
 {% endfor %}
+SELECT '-- array and index replicated by the same expansion';
+-- `big` and `idx` are both non-joined columns, so lazy ARRAY JOIN wraps them in ColumnReplicated
+-- sharing one indexes column: `big[idx]` takes the compute-on-nested fast path and stays lazy.
+-- `range(x + 3)[idx]` mixes a full array (built from the expanded column) with a replicated index,
+-- which pins the materialize fallback for an index replicated independently of the array.
+{% for i in range(2) -%}
+SELECT x, big[idx], arraySlice(big, idx, 2), range(x + 3)[idx]
+FROM (SELECT range(10 + number) AS big, number + 2 AS idx, [1, 2, 5] AS r FROM numbers(2)) ARRAY JOIN r AS x
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
 SELECT '-- large array is not materialized per joined row';
 {% for i in range(2) -%}
 SELECT sum(length(arraySlice(big, x, 2))) + sum(length(big[x]))

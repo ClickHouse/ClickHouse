@@ -16,9 +16,6 @@ struct NullableArraySource;
 template <typename Base>
 struct ConstSource;
 
-template <typename Base>
-struct ReplicatedSource;
-
 using NumericArraySources = TypeListMap<NumericArraySource, TypeListNumberWithUUID>;
 using BasicArraySources = TypeListAppend<GenericArraySource, NumericArraySources>;
 
