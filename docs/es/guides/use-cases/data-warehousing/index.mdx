@@ -16,7 +16,7 @@ ClickHouse se integra con formatos de tabla abiertos, incluidos [Apache Iceberg]
   ### Consultar datos existentes in situ
 </div>
 
-ClickHouse puede consultar formatos de tabla abiertos directamente en el almacenamiento de objetos sin duplicar los datos. Las organizaciones que han estandarizado en Iceberg, Delta Lake, Hudi o Paimon pueden indicar a ClickHouse las tablas existentes y usar de inmediato su dialecto SQL, sus funciones analíticas y su eficiente lector nativo de Parquet. Al mismo tiempo, herramientas como [clickhouse-local](/es/concepts/features/tools-and-utilities/clickhouse-local) y [chDB](/es/products/chdb/index) permiten realizar análisis exploratorios y ad hoc en más de 70 formatos de archivo en almacenamiento remoto, lo que permite a los usuarios explorar interactivamente conjuntos de datos de lagos de datos sin necesidad de configurar infraestructura.
+ClickHouse puede consultar formatos de tabla abiertos directamente en el almacenamiento de objetos sin duplicar los datos. Las organizaciones que han estandarizado en Iceberg, Delta Lake, Hudi o Paimon pueden indicar a ClickHouse las tablas existentes y usar de inmediato su dialecto SQL, sus funciones analíticas y su eficiente lector nativo de Parquet. Al mismo tiempo, herramientas como [clickhouse-local](/es/concepts/features/tools-and-utilities/clickhouse-local) y [chDB](/es/chdb/index) permiten realizar análisis exploratorios y ad hoc en más de 70 formatos de archivo en almacenamiento remoto, lo que permite a los usuarios explorar interactivamente conjuntos de datos de lagos de datos sin necesidad de configurar infraestructura.
 
 Los usuarios pueden lograrlo ya sea con lectura directa, mediante [funciones de tabla y motores de tabla](/es/guides/use-cases/data-warehousing/getting-started/querying-directly), o [conectándose a un catálogo de datos](/es/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
 
@@ -70,6 +70,12 @@ ClickHouse admite escribir datos en formatos de tabla abiertos, lo cual resulta 
 * **ETL inverso** - Los usuarios realizan transformaciones dentro de ClickHouse mediante vistas materializadas o consultas programadas y desean conservar los resultados en formatos de tabla abiertos para su consumo por otras herramientas del ecosistema de datos.
 
 Consulta la guía de primeros pasos para [escribir en lagos de datos](/es/guides/use-cases/data-warehousing/getting-started/writing-data).
+
+<div id="best-practices">
+  ### Buenas prácticas
+</div>
+
+Para cargas de trabajo de producción, consulta [Buenas prácticas para lagos de datos](/es/guides/use-cases/data-warehousing/getting-started/best-practices) para obtener orientación sobre cómo elegir funciones de tabla, motores de tabla o conexiones de catálogo, ajustar la configuración de rendimiento y depurar consultas del lago de datos.
 
 <div id="next-steps">
   ## Siguientes pasos

@@ -45,7 +45,7 @@ result	String
 -- Setting defaults
 ai_function_embedding_default_credentials	
 ai_function_embedding_max_batch_size	100
-ai_function_max_api_calls_per_query	0
+ai_function_max_api_calls_per_query	1000
 ai_function_max_input_tokens_per_query	1000000
 ai_function_max_output_tokens_per_query	500000
 ai_function_max_retries	0
@@ -100,6 +100,13 @@ aiEmbed
 -- aiEmbed: too many arguments
 -- aiEmbed: non-constant parameter map
 -- aiEmbed: wrong type for parameter argument (not a map)
+-- aiEmbed: wrong type for model argument (not a string)
+-- aiEmbed: non-constant model argument
+-- aiEmbed: model is a required positional argument
+-- aiEmbed: model in the parameter map is rejected
+-- aiEmbed: model in the named collection is rejected
+-- aiEmbed: model supplied as a positional argument resolves
+0
 -- aiEmbed: return type
 result	Array(Float32)
 -- aiEmbed: return type with dimensions

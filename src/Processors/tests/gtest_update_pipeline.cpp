@@ -131,6 +131,83 @@ private:
     std::vector<std::weak_ptr<IProcessor>> source_history;
 };
 
+class FinishingSource final : public IProcessor
+{
+public:
+    FinishingSource(SharedHeader header_, size_t fan_out)
+        : IProcessor({}, OutputPorts(fan_out, header_))
+    {
+    }
+
+    String getName() const override { return "FinishingSource"; }
+
+    Status prepare() override
+    {
+        for (auto & output : outputs)
+            output.finish();
+
+        return Status::Finished;
+    }
+};
+
+class MultiInputRemovingCoordinator final : public IProcessor
+{
+public:
+    explicit MultiInputRemovingCoordinator(SharedHeader header_)
+        : IProcessor({}, {Block(*header_)})
+        , header(std::move(header_))
+    {
+    }
+
+    String getName() const override { return "MultiInputRemovingCoordinator"; }
+
+    Status prepare() override
+    {
+        if (outputs.front().isFinished())
+            return Status::Finished;
+
+        if (!source_added)
+            return Status::UpdatePipeline;
+
+        if (std::ranges::all_of(inputs, [](const auto & input) { return input.isFinished(); }))
+            return Status::UpdatePipeline;
+
+        return Status::NeedData;
+    }
+
+    PipelineUpdate updatePipeline() override
+    {
+        PipelineUpdate update;
+
+        if (!source_added)
+        {
+            source = std::make_shared<FinishingSource>(header, 8);
+            for (auto & output : source->getOutputs())
+            {
+                auto & input = inputs.emplace_back(*header, this);
+                connect(output, input);
+                input.setNeeded();
+            }
+            update.to_add.push_back(source);
+            source_added = true;
+            return update;
+        }
+
+        for (auto & input : inputs)
+            disconnect(input.getOutputPort(), input);
+
+        update.to_remove.push_back(source);
+        source.reset();
+        outputs.front().finish();
+        return update;
+    }
+
+private:
+    const SharedHeader header;
+    ProcessorPtr source;
+    bool source_added = false;
+};
+
 }
 
 TEST(Processors, PortDisconnect)
@@ -270,4 +347,26 @@ TEST(Processors, UpdatePipelineMultipleCoordinatorsMultithreaded)
     /// Print statistics
     for (size_t i = 0; i < coordinators.size(); ++i)
         std::cout << "Coordinator #" << i << " Created Sources: " << coordinators.at(i)->totalSourcesCreated() << std::endl;
+}
+
+TEST(Processors, UpdatePipelineFanInRemovalNoUseAfterFree)
+{
+    auto header = makeHeader();
+
+    auto coordinator = std::make_shared<MultiInputRemovingCoordinator>(header);
+    Pipe pipe(coordinator);
+
+    QueryPipeline pipeline(std::move(pipe));
+    {
+        PullingPipelineExecutor executor(pipeline);
+
+        Chunk chunk;
+        /// Drain to completion. The point is that execution finishes without an ASAN report;
+        /// the exact number/content of chunks is not what we assert here.
+        while (executor.pull(chunk))
+        {
+        }
+    }
+
+    SUCCEED();
 }
