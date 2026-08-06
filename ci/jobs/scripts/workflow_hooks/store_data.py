@@ -26,6 +26,15 @@ def _settings_history_entry_signature(entry_body):
     return re.sub(r',\s*"(?:[^"\\]|\\.)*"\s*\},?\s*$', "", entry_body).strip()
 
 
+def _settings_history_entry_without_name(entry_body):
+    """The entry with only its setting NAME removed, so a pure rename can be recognized: the
+    same recorded values and the same reason under a new name. Everything else is kept, reason
+    text included, because a no-op record (`{"s", false, false, "New setting."}`) is the most
+    common shape there is - matching on the values alone would treat an unrelated deleted and
+    added record as a rename of one another."""
+    return re.sub(r'^\{\s*"[A-Za-z0-9_]+"\s*,', "{", entry_body.strip())
+
+
 def _settings_history_block_header_index(file_lines, lineno):
     """Index in `file_lines` of the `addSettingsChanges` header of the block that physically
     contains the given new-file line number, or None when the line is outside any block."""
@@ -79,6 +88,14 @@ def parse_settings_history_changes(patch, file_lines):
     version come from the block that physically contains the line (new-file line number), not
     from global name presence - names can exist in both histories.
 
+    A pure rename in place is reported under the NEW name only: when the removed and the added
+    entry of one block are identical apart from the setting name, the old name is dropped from
+    the result. Demanding the old name under the current version block would be unsatisfiable -
+    the setting no longer exists, and 03999_stateless_settings_history rejects a documented name
+    that is not in system.settings / system.merge_tree_settings, so there is no history file
+    that passes both guards. The rename still has to be honest, because the new name is reported
+    and the caller requires it under the current version block like any other added record.
+
     Matching on the block, not on the value signature alone, is what closes the "move instead
     of delete" variant of the escape hatch: re-adding an unchanged entry under an OLDER block
     keeps the newest recorded value intact, so 03999_stateless_settings_history still passes,
@@ -105,8 +122,8 @@ def parse_settings_history_changes(patch, file_lines):
     file changed. A change that edits only this file - fixing what a past release recorded -
     is a historical correction, not a default change made now, so it is allowed there; that is
     what keeps a phantom record deletable."""
-    added = []  # (new_line_number, name, signature)
-    removed = []  # (new_line_number, name, signature)
+    added = []  # (new_line_number, name, signature, body_without_name)
+    removed = []  # (new_line_number, name, signature, body_without_name)
     headers_added = []  # new_line_number of an added `addSettingsChanges` header
     headers_removed = []  # new_line_number a removed `addSettingsChanges` header sat at
     new_lineno = None
@@ -123,7 +140,14 @@ def parse_settings_history_changes(patch, file_lines):
             m = _SETTINGS_HISTORY_ENTRY_RE.match(line[1:])
             if m:
                 signature = _settings_history_entry_signature(line[1:])
-                added.append((new_lineno, m.group(1), signature))
+                added.append(
+                    (
+                        new_lineno,
+                        m.group(1),
+                        signature,
+                        _settings_history_entry_without_name(line[1:]),
+                    )
+                )
             new_lineno += 1
         elif line.startswith("-") and not line.startswith("---"):
             if _SETTINGS_HISTORY_BLOCK_RE.search(line[1:]):
@@ -135,26 +159,52 @@ def parse_settings_history_changes(patch, file_lines):
                 # its block from the preceding line; otherwise removing the last entry of a
                 # block whose successor header follows immediately would be attributed to the
                 # next block. Removing entries does not move the surrounding block headers.
-                removed.append((new_lineno - 1, m.group(1), signature))
+                removed.append(
+                    (
+                        new_lineno - 1,
+                        m.group(1),
+                        signature,
+                        _settings_history_entry_without_name(line[1:]),
+                    )
+                )
             # A removed line does not advance the new-file line counter.
         else:
             new_lineno += 1
 
     def with_blocks(entries):
-        """(namespace, version, name, signature) for every entry that resolves to a block."""
+        """(namespace, version, name, signature, body_without_name) for every entry that
+        resolves to a block."""
         resolved = []
-        for lineno, name, signature in entries:
+        for lineno, name, signature, bare in entries:
             namespace, version = _settings_history_block_at(file_lines, lineno)
             if namespace:
-                resolved.append((namespace, version, name, signature))
+                resolved.append((namespace, version, name, signature, bare))
         return resolved
 
     added = with_blocks(added)
     removed = with_blocks(removed)
     # The key includes the block: a matching pair inside one block is a reason-only edit, while
     # the same pair spread over two blocks is a move of the record to another release.
-    added_keys = {(ns, ver, sig) for ns, ver, _, sig in added}
-    removed_keys = {(ns, ver, sig) for ns, ver, _, sig in removed}
+    added_keys = {(ns, ver, sig) for ns, ver, _, sig, _ in added}
+    removed_keys = {(ns, ver, sig) for ns, ver, _, sig, _ in removed}
+
+    # A pure RENAME of a record inside one block: the removed and the added entry are identical
+    # apart from the setting name, so nothing about what the history records changed and no
+    # record moved to another release. The OLD name must not be demanded under the current
+    # version block, because a record naming it cannot exist at all: the setting is gone, and
+    # 03999_stateless_settings_history rejects a documented name that is not in system.settings
+    # / system.merge_tree_settings ("DOES NOT EXIST (typo/rename?)"). Aliases do not rescue it
+    # either - system.merge_tree_settings has no alias rows. Only the NEW name is reported, and
+    # the caller then requires it under the current version block like any other added record,
+    # which is what keeps the rename honest.
+    added_by_bare = {}
+    for ns, ver, name, _, bare in added:
+        added_by_bare.setdefault((ns, ver, bare), set()).add(name)
+    renamed_away = {
+        (ns, name)
+        for ns, ver, name, _, bare in removed
+        if added_by_bare.get((ns, ver, bare), set()) - {name}
+    }
 
     result = []
     seen = set()
@@ -187,11 +237,17 @@ def parse_settings_history_changes(patch, file_lines):
                 seen.add((namespace, name))
                 result.append({"namespace": namespace, "name": name})
 
-    for entries, other_keys in ((added, removed_keys), (removed, added_keys)):
-        for namespace, version, name, signature in entries:
+    for entries, other_keys, exempt in (
+        (added, removed_keys, set()),
+        (removed, added_keys, renamed_away),
+    ):
+        for namespace, version, name, signature, _ in entries:
             if (namespace, version, signature) in other_keys:
                 # A reason-only edit of an existing entry: the recorded values did not change
                 # and the record stayed in the block it was already in.
+                continue
+            if (namespace, name) in exempt:
+                # The old name of a record renamed in place - see `renamed_away` above.
                 continue
             if (namespace, name) not in seen:
                 seen.add((namespace, name))
