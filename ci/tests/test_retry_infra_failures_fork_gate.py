@@ -222,7 +222,7 @@ def test_selector_admits_gated_fork_runs():
     # candidates and the whole fix is inert.
     assert _jq_stages(listing_jq) == [
         ".[]",
-        r"select(.attempt <= 2 and .createdAt >= \"$cutoff\")",
+        r"select(.attempt <= 2 and .startedAt >= \"$cutoff\")",
         r"\"\(.databaseId):\(.attempt)\"",
     ], f"the listing filter must be exactly these three stages: {_jq_stages(listing_jq)}"
     # `.attempt` steers the guard, so the field must be requested. Without it jq yields
@@ -230,16 +230,27 @@ def test_selector_admits_gated_fork_runs():
     # a same-repo attempt-1 run is then skipped and a fork run aborts the step at
     # `$((run_attempt + 1))`.
     m = re.search(r"--json\s+([A-Za-z0-9_,]+)", listing_invocation)
-    assert m and "attempt" in m.group(1).split(","), listing_invocation
+    fields = m.group(1).split(",") if m else []
+    assert m and "attempt" in fields, listing_invocation
+    # The window field must be requested too: without it jq compares null against the
+    # cutoff, `null >= "..."` is false, and the listing silently yields nothing.
+    assert "startedAt" in fields, listing_invocation
+    # The list is ordered by createdAt descending while the window keys on startedAt, so a
+    # gated run's page position is set by its OLD createdAt: at --limit 50 the field swap
+    # rescues no additional gate-delayed run, because they sit below the page. The depth is
+    # therefore load-bearing, not a tuning knob, and is pinned to a lower bound (a larger
+    # value only widens the scan). ~13 PR-workflow failures/hour means covering a 6 hour
+    # startedAt window needs well over 6 hours of createdAt lookback.
+    limit = re.search(r"--limit\s+([0-9]+)", listing_invocation)
+    assert limit and int(limit.group(1)) >= 200, listing_invocation
     # The `<LISTING>` sentinel intentionally does not pin the invocation's flag SPELLING, but
     # the three flags below are semantics, not spelling: `--status success`, another
     # `--workflow`, or another `--repo` all leave the whole static test green while the job
     # retries the wrong runs. Asserted against the normalized invocation, so a re-wrap or a
-    # flag reorder is not a false refusal. `--limit` is deliberately not pinned: it is a
-    # tuning knob, and the 6 hour cutoff bounds the window independently. Matched
-    # token-bounded because substring membership is satisfied by any EXTENSION of the value:
-    # `pull_request.yml.bak` and `failurefoo` repoint the query while containing the
-    # expected text. The invocation is whitespace-normalized, so `\s` is an exact boundary.
+    # flag reorder is not a false refusal. Matched token-bounded because substring
+    # membership is satisfied by any EXTENSION of the value: `pull_request.yml.bak` and
+    # `failurefoo` repoint the query while containing the expected text. The invocation is
+    # whitespace-normalized, so `\s` is an exact boundary.
     for flag in ('--repo "$GH_REPO"', "--workflow pull_request.yml", "--status failure"):
         assert re.search(
             r"(?:^|\s)" + re.escape(flag) + r"(?=\s|$)", listing_invocation
@@ -399,21 +410,46 @@ def test_selector_admits_gated_fork_runs():
 
 
 def _run_step(
-    tmp_path, attempt, attempt1_conclusion, age_hours, jobs_json, attempt1_fail=False
+    tmp_path,
+    attempt,
+    attempt1_conclusion,
+    age_hours,
+    jobs_json,
+    attempt1_fail=False,
+    started_age_hours=None,
 ):
     """Run the real step over a one-row fixture. Returns (proc, rerun_log_text).
 
     ``attempt1_conclusion`` becomes the ``conclusion`` of a full attempt payload whose
     ``status`` is always ``completed`` (what the real API returns for a gated attempt), so a
     probe reading the wrong field gets ``completed`` rather than the expected value.
+
+    ``age_hours`` ages ``createdAt`` and ``started_age_hours`` ages ``startedAt``; both are
+    emitted always, so a predicate reading either field finds it. They default to equal,
+    which is what the API returns for an ungated run. Passing a SMALLER
+    ``started_age_hours`` models the approval gate: ``createdAt`` stays pinned to attempt 1
+    while the attempt that actually ran started later.
     """
-    created_at = (
-        datetime.datetime.now(datetime.timezone.utc)
-        - datetime.timedelta(hours=age_hours)
-    ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    def _stamp(hours):
+        return (
+            datetime.datetime.now(datetime.timezone.utc)
+            - datetime.timedelta(hours=hours)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    created_at = _stamp(age_hours)
+    started_at = _stamp(age_hours if started_age_hours is None else started_age_hours)
     fixture = tmp_path / "runs.json"
     fixture.write_text(
-        json.dumps([{"databaseId": RUN_ID, "attempt": attempt, "createdAt": created_at}])
+        json.dumps(
+            [
+                {
+                    "databaseId": RUN_ID,
+                    "attempt": attempt,
+                    "createdAt": created_at,
+                    "startedAt": started_at,
+                }
+            ]
+        )
     )
     rerun_log = tmp_path / "reruns.log"
     rerun_log.write_text("")
@@ -465,6 +501,51 @@ def _run_step(
 def test_eligibility(tmp_path, attempt, attempt1_conclusion, age_hours, selected):
     """Assert whether the step considers a run at all (selector coverage)."""
     proc, _ = _run_step(tmp_path, attempt, attempt1_conclusion, age_hours, NO_JOBS)
+    considered = f"actions/runs/{RUN_ID} " in proc.stdout
+    assert considered is selected, proc.stdout
+
+
+@pytest.mark.skipif(
+    not shutil.which("jq"),
+    reason="needs jq; absent from the CI Tests image, so CI relies on the static asserts",
+)
+@pytest.mark.parametrize(
+    "age_hours, started_age_hours, selected",
+    [
+        # The gate held the run 9 hours, so createdAt is outside the 6 hour window while the
+        # attempt that actually ran started inside it. Reading createdAt drops it.
+        (9, 1, True),
+        # Both stamps inside: admitted either way (this arm is the control that keeps the
+        # case above from passing merely because the selector admits everything).
+        (1, 1, True),
+        # Both stamps outside: still rejected, so widening the field did not disable the
+        # window. Without this arm "startedAt" and "always true" are indistinguishable.
+        (9, 9, False),
+        # startedAt outside but createdAt inside -- the inverse skew. A predicate reading
+        # createdAt admits it; one reading startedAt does not. The attempt that ran is stale,
+        # so rejecting is correct and this arm fails if the two fields are merely OR'd.
+        (1, 9, False),
+    ],
+)
+def test_window_keys_on_the_attempt_that_ran(
+    tmp_path, age_hours, started_age_hours, selected
+):
+    """The 6 hour window must be measured on startedAt, not createdAt.
+
+    GitHub pins ``createdAt`` to the approval-gated attempt 1 and advances ``startedAt`` on
+    the attempt that actually executed jobs (observed 22.98h apart at the extreme, 22% of
+    failed runs skewed by over a minute). Keying on ``createdAt`` makes a fork PR that sat in
+    the gate longer than the window invisible to the retry -- the class this workflow exists
+    to cover.
+    """
+    proc, _ = _run_step(
+        tmp_path,
+        2,
+        "action_required",
+        age_hours,
+        NO_JOBS,
+        started_age_hours=started_age_hours,
+    )
     considered = f"actions/runs/{RUN_ID} " in proc.stdout
     assert considered is selected, proc.stdout
 

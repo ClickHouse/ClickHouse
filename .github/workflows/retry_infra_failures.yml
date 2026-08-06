@@ -29,13 +29,15 @@ jobs:
 
           # Get recent failed runs for the PR workflow that have not been retried yet.
           # A fork PR's first attempt to run jobs is 2, so the loop below filters further.
+          # startedAt, not createdAt: a gated run's createdAt stays pinned to attempt 1.
+          # The list is ordered by createdAt, so such runs sit deep in it, hence the limit.
           run_entries=$(gh run list \
             --repo "$GH_REPO" \
             --workflow pull_request.yml \
             --status failure \
-            --limit 50 \
-            --json databaseId,attempt,createdAt \
-            --jq ".[] | select(.attempt <= 2 and .createdAt >= \"$cutoff\") | \"\(.databaseId):\(.attempt)\"")
+            --limit 200 \
+            --json databaseId,attempt,startedAt \
+            --jq ".[] | select(.attempt <= 2 and .startedAt >= \"$cutoff\") | \"\(.databaseId):\(.attempt)\"")
 
           if [ -z "$run_entries" ]; then
             echo "No recent failed runs found."
