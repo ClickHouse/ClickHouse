@@ -180,13 +180,14 @@ def test_backup_named_collection_does_not_inherit_server_role():
     )
     node_with_server_role.query("INSERT INTO t_backup SELECT 1")
 
-    # Control: the positional URL form inherits the global <s3> role_arn, a server-managed credential
-    # source, so the restriction rejects it. This also proves the role config is loaded and visible to
-    # backups.
+    # The positional URL form must not inherit the global <s3> role_arn: a server-configured role is not
+    # applied to user requests under the restriction, so the backup goes out unsigned and minio rejects the
+    # anonymous request (it is not an ACCESS_DENIED restriction rejection either).
     error = node_with_server_role.query_and_get_error(
         "BACKUP TABLE t_backup TO S3('http://minio1:9001/root/backup_positional/b1')"
     )
-    assert "server-managed credentials" in error, error
+    assert "server-managed credentials" not in error, error
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
 
     # A URL-only backup named collection is a full auth override: the global role_arn must not leak into
     # it, so the backup goes out unsigned and minio rejects the anonymous request instead.
@@ -220,33 +221,88 @@ def test_backup_named_collection_gcp_oauth_is_rejected():
 
 
 def test_named_collection_role_arn_override_does_not_use_collection_keys():
-    # A config collection carries operator-provisioned static keys. With named-collection overrides enabled
-    # (the default), a user must not be able to add `role_arn = ...` to assume an arbitrary role using those
-    # keys as the STS base. Under the restriction the injected role is dropped and the collection's keys are
-    # used directly (equivalent to s3(collection)).
+    # A config collection carries operator-provisioned static keys. A user may add `role_arn = ...` (STS
+    # assume-role stays allowed under the restriction), but the role must not be assumed with those keys as
+    # the STS base: the collection keys are dropped and the assume-role call is signed with the server's
+    # ambient identity instead. Here the assume fails (there is no STS endpoint) and the request goes out
+    # unsigned, so the query errors - it must NOT silently succeed by reading with the collection's keys.
     url = "http://minio1:9001/root/nc_role_override/data.tsv"
     node.query(
         f"INSERT INTO FUNCTION s3('{url}', '{minio_access_key}', '{minio_secret_key}', 'TSV', 'x UInt8') "
         "SELECT 5 SETTINGS s3_truncate_on_insert = 1"
     )
 
-    # The injected role is dropped, so the read succeeds using the collection's own keys.
+    error = node.query_and_get_error(
+        "SELECT * FROM s3(nc_with_keys, role_arn = 'arn:aws:iam::123456789012:role/evil', "
+        "format = 'TSV', structure = 'x UInt8')"
+    )
+    # Not the restriction rejection (the role is allowed), and not a successful read with the collection keys.
+    assert "server-managed credentials" not in error, error
+    assert error, error
+
+    # Control: without the injected role the collection keys are used directly and the read succeeds.
     assert (
-        node.query(
-            "SELECT * FROM s3(nc_with_keys, role_arn = 'arn:aws:iam::123456789012:role/evil', "
-            "format = 'TSV', structure = 'x UInt8')"
-        ).strip()
+        node.query("SELECT * FROM s3(nc_with_keys, format = 'TSV', structure = 'x UInt8')").strip()
         == "5"
     )
 
-    # With the override enabled the injected role is honored, so the role assume is attempted (and fails,
-    # there is no STS endpoint) instead of silently reading with the collection keys. This proves the read
-    # above succeeded because the role was dropped, not because the role was harmlessly ignored.
+    # With the opt-in the injected role is honored with the collection keys as the STS base; the assume is
+    # still attempted (and fails, there is no STS endpoint) instead of reading with the collection keys.
     error = node.query_and_get_error(
         "SELECT * FROM s3(nc_with_keys, role_arn = 'arn:aws:iam::123456789012:role/evil', "
         f"format = 'TSV', structure = 'x UInt8') {ALLOW}"
     )
     assert error, error
+
+
+def test_named_collection_key_override_drops_inherited_session_token():
+    # A collection that stores temporary credentials (key pair + session_token). When a query supplies its
+    # own key pair but no session_token, the collection's token must not be inherited: it was issued for the
+    # collection's keys and MinIO rejects it alongside a different key pair (and it would poison the STS base
+    # when a query-supplied role_arn is present). Mirrors the explicit-URL path.
+    url = f"http://{cluster.minio_host}:{cluster.minio_port}/root/nc_keys_and_token/data.tsv"
+    node.query(
+        f"INSERT INTO FUNCTION s3('{url}', '{minio_access_key}', '{minio_secret_key}', 'TSV', 'x UInt8') "
+        "SELECT 7 SETTINGS s3_truncate_on_insert = 1"
+    )
+
+    # Control: using the collection as-is sends its stale session_token, which MinIO rejects.
+    error = node.query_and_get_error(
+        "SELECT * FROM s3(nc_keys_and_token, format = 'TSV', structure = 'x UInt8')"
+    )
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
+
+    # A query that overrides the key pair (no session_token) drops the collection's token, so the read
+    # succeeds with the query's keys alone.
+    assert (
+        node.query(
+            f"SELECT * FROM s3(nc_keys_and_token, access_key_id = '{minio_access_key}', "
+            f"secret_access_key = '{minio_secret_key}', format = 'TSV', structure = 'x UInt8')"
+        ).strip()
+        == "7"
+    )
+
+
+def test_backup_key_override_drops_inherited_session_token():
+    # Same as above for the backup credential path (registerBackupEngineS3 / BackupIO_S3): a query key-pair
+    # override with no session_token must not inherit the collection's stale token.
+    node.query("DROP TABLE IF EXISTS t_backup_token_override SYNC")
+    node.query("CREATE TABLE t_backup_token_override (x UInt8) ENGINE = MergeTree ORDER BY tuple()")
+    node.query("INSERT INTO t_backup_token_override SELECT 1")
+
+    # Control: the collection's stale session_token is sent and MinIO rejects the backup.
+    error = node.query_and_get_error(
+        "BACKUP TABLE t_backup_token_override TO S3(nc_backup_keys_and_token, 'b_token_control')"
+    )
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
+
+    # Overriding the key pair (no session_token) drops the collection's token, so the backup succeeds.
+    node.query(
+        f"BACKUP TABLE t_backup_token_override TO S3(nc_backup_keys_and_token, "
+        f"access_key_id = '{minio_access_key}', secret_access_key = '{minio_secret_key}', 'b_token_ok')"
+    )
+
+    node.query("DROP TABLE t_backup_token_override SYNC")
 
 
 def test_database_s3_named_collection_use_environment_credentials():
@@ -311,20 +367,27 @@ def test_backup_explicit_keys_drop_inherited_session_token():
 
 
 def test_backup_role_arn_override_does_not_use_collection_keys():
-    # A query-overridden `role_arn` on a backup collection that carries operator-provisioned keys must not be
-    # assumed using those keys as the STS base. Under the restriction the injected role is dropped and the
-    # collection's keys are used directly, so the backup succeeds.
+    # A query-overridden `role_arn` on a backup collection that carries operator-provisioned keys is honored
+    # (STS assume-role stays allowed under the restriction), but it must not be assumed using those keys as
+    # the STS base: the collection keys are dropped and the assume-role call is signed with the server's
+    # ambient identity instead. Here the assume fails (there is no STS endpoint), so the backup errors - it
+    # must NOT silently succeed by writing with the collection's keys.
     node.query("DROP TABLE IF EXISTS t_backup_override SYNC")
     node.query("CREATE TABLE t_backup_override (x UInt8) ENGINE = MergeTree ORDER BY tuple()")
     node.query("INSERT INTO t_backup_override SELECT 1")
 
-    node.query(
+    error = node.query_and_get_error(
         "BACKUP TABLE t_backup_override TO "
         "S3(nc_backup_with_keys, role_arn = 'arn:aws:iam::123456789012:role/evil', 'b_override')"
     )
+    assert "server-managed credentials" not in error, error
+    assert error
 
-    # With the override enabled the injected role is honored, so the role assume is attempted (and fails) instead
-    # of silently using the collection keys -- proving the success above was the role being dropped.
+    # Control: without the injected role the collection keys are used directly and the backup succeeds.
+    node.query("BACKUP TABLE t_backup_override TO S3(nc_backup_with_keys, 'b_override_control')")
+
+    # With the opt-in the injected role is honored with the collection keys as the STS base; the assume is
+    # still attempted (and fails, there is no STS endpoint) instead of writing with the collection keys.
     error = node.query_and_get_error(
         "BACKUP TABLE t_backup_override TO "
         f"S3(nc_backup_with_keys, role_arn = 'arn:aws:iam::123456789012:role/evil', 'b_override_allowed') {ALLOW}"
@@ -334,9 +397,11 @@ def test_backup_role_arn_override_does_not_use_collection_keys():
     node.query("DROP TABLE t_backup_override SYNC")
 
 
-def test_backup_role_only_collection_is_rejected():
-    # A backup collection that defines only a `role_arn` (no base keys) would assume the role using the server's
-    # ambient credentials, so under the restriction it must reach the central rejection, not go anonymous.
+def test_backup_role_only_collection_assumes_role_with_ambient_identity():
+    # A backup collection that defines only a `role_arn` (no base keys) is allowed under the restriction: the
+    # role is assumed with the server's ambient identity (only the assumed role's credentials would sign the
+    # S3 requests). Here the assume fails (there is no STS endpoint) and the backup goes out unsigned, so it
+    # errors - but it must not be the ACCESS_DENIED restriction rejection.
     node.query("DROP TABLE IF EXISTS t_backup_role_only SYNC")
     node.query("CREATE TABLE t_backup_role_only (x UInt8) ENGINE = MergeTree ORDER BY tuple()")
     node.query("INSERT INTO t_backup_role_only SELECT 1")
@@ -344,7 +409,8 @@ def test_backup_role_only_collection_is_rejected():
     error = node.query_and_get_error(
         "BACKUP TABLE t_backup_role_only TO S3(nc_backup_role_only, 'b_role_only')"
     )
-    assert "server-managed credentials" in error, error
+    assert "server-managed credentials" not in error, error
+    assert "403" in error or "Access Denied" in error or "AccessDenied" in error, error
 
     node.query("DROP TABLE t_backup_role_only SYNC")
 
