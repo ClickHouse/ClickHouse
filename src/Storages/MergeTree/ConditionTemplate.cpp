@@ -23,6 +23,7 @@
 #include <base/defines.h>
 
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <ranges>
 
@@ -199,20 +200,24 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartit
     if (const auto * cond = lookupSubstituted(partition_id))
         return *cond;
 
+    std::optional<ActionsDAG> specialized;
     try
     {
-        auto specialized = substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot);
-        chassert(!specialized.getOutputs().empty());
-
-        Cond produced = generate(&specialized, specialized.getOutputs().front());
-        return setSubstituted(partition_id, std::move(produced));
+        specialized.emplace(substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot));
     }
     catch (const Exception &)
     {
         /// Constant substitution is best-effort: only expected query-evaluation failures
         /// (e.g. division by zero while folding a partition constant) are caught here.
+        /// Exceptions thrown by the condition factory below (`generate`) - such as memory-limit,
+        /// cancellation, or logical errors during condition construction - must propagate.
         return generateUnsubstituted();
     }
+
+    chassert(!specialized->getOutputs().empty());
+
+    Cond produced = generate(&*specialized, specialized->getOutputs().front());
+    return setSubstituted(partition_id, std::move(produced));
 }
 
 template <typename Cond>
