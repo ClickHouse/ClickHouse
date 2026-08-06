@@ -39,7 +39,11 @@ mechanism. The scratch root defaults to the repo `tmp` directory (disk-backed) a
 with BASE_DIR. The pre-OOM churn fails closed as well: until at least one churn cycle has completed
 successfully (and no cgroup OOM has fired yet), a failed `INSERT`/`OPTIMIZE` aborts the run with the
 client's error instead of letting every worker spin uselessly and misreport the broken workload as
-"OOM did not fire".
+"OOM did not fire". After that first successful cycle, failures are the expected way the workload dies
+as the cgroup fills - with one exception: a `Memory limit (total) exceeded` rejection at any point
+before the OOM aborts the run, because it means tracked memory reached `max_server_memory_usage`, and
+a subsequent kernel kill would then demonstrate ordinary tracked-memory exhaustion rather than the
+resident > tracked drift this script exists to prove.
 """
 
 import os
@@ -392,16 +396,23 @@ def main():
         #    allocator retention they leave behind, drive resident memory past the cgroup).
         stop = threading.Event()
         # Set once any worker has completed one full successful INSERT+OPTIMIZE cycle. Until then a
-        # failed query is a failure of the reproducer itself (connection refused, SQL error, an early
-        # tracked-memory rejection), not a symptom of the cgroup OOM, and it must abort the run: with
-        # every worker silently spinning on a broken workload the script would burn the whole churn
-        # window doing nothing and misreport "OOM did not fire". Once a cycle has succeeded - or once
-        # `oom_kill_count` has started incrementing - failures are the expected way the workload dies
-        # and the workers keep churning through them.
+        # failed query is a failure of the reproducer itself (connection refused, SQL error), not a
+        # symptom of the cgroup OOM, and it must abort the run: with every worker silently spinning on
+        # a broken workload the script would burn the whole churn window doing nothing and misreport
+        # "OOM did not fire". Once a cycle has succeeded - or once `oom_kill_count` has started
+        # incrementing - failures are the expected way the workload dies and the workers keep churning
+        # through them, except for tracked-memory rejections, which abort at any point before the kill
+        # (see below).
         churn_ok = threading.Event()
         # First pre-success failure, recorded for the abort message (`list.append` is atomic, and only
         # the first element is ever read).
         churn_failures = []
+        # First `Memory limit (total) exceeded` rejection observed before the OOM. The server's own
+        # tracked-memory limit firing means tracked memory reached `max_server_memory_usage`, so a
+        # later kernel kill would prove tracked exhaustion, not the resident > tracked drift - such a
+        # run must fail no matter what happens after, and unlike `churn_failures` it is not excused by
+        # `churn_ok` (same atomic-append/first-element-only discipline).
+        tracked_limit_failures = []
 
         def churn():
             while not stop.is_set():
@@ -421,11 +432,21 @@ def main():
                     continue
                 if insert.returncode == 0 and optimize.returncode == 0:
                     churn_ok.set()
-                elif not churn_ok.is_set() and oom_kill_count() == oom_before:
+                    continue
+                failed = insert if insert.returncode != 0 else optimize
+                if "Memory limit (total) exceeded" in failed.stderr and oom_kill_count() == oom_before:
+                    # The tracked-memory limit rejected the query before any cgroup OOM: tracked
+                    # memory has reached `max_server_memory_usage`, so the run can no longer prove
+                    # the resident > tracked mechanism - stop the churn and let `main` abort, even
+                    # though a first successful cycle has already been seen.
+                    tracked_limit_failures.append(failed)
+                    stop.set()
+                    return
+                if not churn_ok.is_set() and oom_kill_count() == oom_before:
                     # Fail closed: the workload broke before it ever worked and before any OOM - stop
                     # the churn now and let `main` abort with the client's error instead of waiting
                     # out the full churn window and reporting a false negative.
-                    churn_failures.append(insert if insert.returncode != 0 else optimize)
+                    churn_failures.append(failed)
                     stop.set()
                     return
 
@@ -453,6 +474,21 @@ def main():
             )
 
         oom_after = oom_kill_count()
+        # A tracked-memory rejection is decisive on its own: even if the kernel OOM fired afterwards,
+        # tracked memory was at the server limit before the kill, so the kill demonstrates tracked
+        # exhaustion, not the resident > tracked drift. No `oom_after` re-check here - unlike
+        # `churn_failures`, where a concurrent kill legitimizes the failure, a pre-kill rejection
+        # contaminates the run either way.
+        if tracked_limit_failures:
+            failed = tracked_limit_failures[0]
+            die(
+                "the churn hit the server's tracked memory limit (`Memory limit (total) exceeded`) "
+                "before any cgroup OOM: tracked memory reached `max_server_memory_usage`, so an OOM "
+                "in this run would prove ordinary tracked-memory exhaustion rather than the "
+                "resident > tracked drift this script demonstrates; lower LIMIT_GB (the retention "
+                "gap must outgrow the headroom between the tracked limit and `memory.max`) or use a "
+                f"fatter per-state payload:\n{failed.stdout}{failed.stderr}"
+            )
         # The churn never worked and no OOM fired: the reproducer itself is broken (server refused
         # connections, the SQL failed, ...) - report that instead of a false "OOM did not fire".
         # `oom_after` is re-checked here because the worker's own check races with the kill: if the
