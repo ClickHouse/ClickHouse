@@ -36,6 +36,7 @@ included). The parser must run on the collected fatal evidence too.
 """
 
 import os
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -416,6 +417,8 @@ def test_collected_fatal_is_parsed_into_a_named_failure(monkeypatch, tmp_path):
     assert parsed, f"no parsed abort among {_failed_names(result)}"
     leaf = next(leaf for leaf in result.results if leaf.name == parsed[0])
     assert "Logical error" in leaf.name
+    # Shape, not the literal id: a None id interpolates as the text `STID: None`.
+    assert re.search(r"\(STID: \d{4}-[0-9a-f]{4}\)", leaf.name), leaf.name
     assert "assertTypeEquality" in (leaf.info or ""), leaf.info
     # The pre-fix rows stay: the wrapper still failed, it is just attributed now.
     assert "Test script failed" in _leaf_names(result)
