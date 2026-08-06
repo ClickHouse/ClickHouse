@@ -144,10 +144,15 @@ static std::shared_ptr<ListNode> makeInArrayArgumentsList(
         return array_arguments_list;
     }
 
+    /// `has` compares the array elements against the left-hand side value, so the element type has
+    /// to be able to hold `NULL` when the right-hand side contains `NULL` literals or when `NULL`
+    /// values must not match. Types that cannot be inside `Nullable`, such as `Array(...)` or
+    /// `Map(...)`, are left as they are - the `Nullable` wrapper would be rejected when the column
+    /// is created. `Tuple(...)` is excluded explicitly, because it reports that it can be inside
+    /// `Nullable` while a `Nullable(Tuple(...))` column cannot be created by default.
     if ((rhs_has_null || !scope.context->getSettingsRef()[Setting::transform_null_in])
-        && !isTuple(common_type)
-        && !isNullableOrLowCardinalityNullable(common_type))
-        common_type = makeNullableOrLowCardinalityNullable(common_type);
+        && !isTuple(common_type))
+        common_type = makeNullableOrLowCardinalityNullableSafe(common_type);
 
     for (const auto & arg : array_elements)
         array_arguments_list->getNodes().push_back(cast_node_to_type(arg, common_type, scope));
