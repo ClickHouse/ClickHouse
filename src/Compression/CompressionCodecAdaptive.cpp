@@ -83,8 +83,8 @@ Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodec
 VectorWithMemoryTracking<TypeIndex> AdaptiveCodec::candidateTypeIndexes()
 {
     VectorWithMemoryTracking<TypeIndex> result;
-    for (const auto & group : CANDIDATES)
-        for (const TypeIndex type_id : group.types)
+    for (const auto & [codec_expr, types] : CANDIDATES)
+        for (const TypeIndex type_id : types)
             if (std::ranges::find(result, type_id) == result.end()) /// distinct: a type may appear in more than one group
                 result.push_back(type_id);
     return result;
@@ -93,8 +93,8 @@ VectorWithMemoryTracking<TypeIndex> AdaptiveCodec::candidateTypeIndexes()
 bool AdaptiveCodec::isCandidateType(const IDataType & type)
 {
     const TypeIndex type_id = type.getTypeId();
-    for (const auto & group : CANDIDATES)
-        if (std::ranges::find(group.types, type_id) != group.types.end())
+    for (const auto & [codec_expr, types] : CANDIDATES)
+        if (std::ranges::find(types, type_id) != types.end())
             return true;
     return false;
 }
@@ -110,9 +110,11 @@ CompressionCodecPtr AdaptiveCodec::select(const Codecs & pool, const char * sour
     for (size_t i = 1; i < pool.size(); ++i)
     {
         const UInt32 size = CompressedSizeCalculator::getCompressedBlockSize(*pool[i], source, source_size, scratch);
-        const bool is_smaller = size < best_size;
-        best_idx = is_smaller ? i : best_idx;
-        best_size = is_smaller ? size : best_size;
+        if (size < best_size)
+        {
+            best_idx = i;
+            best_size = size;
+        }
     }
 
     return pool[best_idx];
