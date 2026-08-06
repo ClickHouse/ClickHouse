@@ -1361,6 +1361,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.
 - `ProfileEvent_ParquetReadRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups read from parquet data
 - `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups pruned from parquet data
+- `ProfileEvent_ParquetPrunedPages` ([UInt64](/reference/data-types/int-uint)) — The total number of pages pruned from parquet data via column index
 - `ProfileEvent_ParquetDecodingTasks` ([UInt64](/reference/data-types/int-uint)) — Tasks issued by parquet reader
 - `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/reference/data-types/int-uint)) — Task groups sent to a thread pool by parquet reader
 - `ProfileEvent_ParquetPrefetcherReadRandomRead` ([UInt64](/reference/data-types/int-uint)) — The total number of reads with ReadMode::RandomRead by DB::Parquet::Prefetcher
@@ -1838,6 +1839,10 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_BcryptCacheBytes` ([Int64](/reference/data-types/int-uint)) — Total size of the bcrypt authentication cache in bytes
 - `CurrentMetric_BcryptCacheSize` ([Int64](/reference/data-types/int-uint)) — Total number of entries in the bcrypt authentication cache
 - `CurrentMetric_ColumnsDescriptionsCacheSize` ([Int64](/reference/data-types/int-uint)) — Size of ColumnsDescriptions cache (per-table cache)
+- `CurrentMetric_SharedPartSerializationsCacheSize` ([Int64](/reference/data-types/int-uint)) — Number of distinct serializations maps shared across data parts (sum over per-table caches)
+- `CurrentMetric_SharedPartSerializationGroupsCacheSize` ([Int64](/reference/data-types/int-uint)) — Number of distinct per-column serialization groups shared across data parts (sum over per-table caches)
+- `CurrentMetric_SharedPartColumnsSubstreamsCacheSize` ([Int64](/reference/data-types/int-uint)) — Number of distinct columns substreams lists shared across data parts (sum over per-table caches)
+- `CurrentMetric_SharedPartColumnSubstreamsEntriesCacheSize` ([Int64](/reference/data-types/int-uint)) — Number of distinct per-column substream entries shared across data parts (sum over per-table caches)
 - `CurrentMetric_S3Requests` ([Int64](/reference/data-types/int-uint)) — S3 requests count
 - `CurrentMetric_KeeperAliveConnections` ([Int64](/reference/data-types/int-uint)) — Number of alive connections
 - `CurrentMetric_KeeperOutstandingRequests` ([Int64](/reference/data-types/int-uint)) — Number of outstanding requests
@@ -1978,7 +1983,6 @@ hostname:                                                        clickhouse.eu-c
 event_date:                                                      2020-09-05
 event_time:                                                      2020-09-05 16:22:33
 event_time_microseconds:                                         2020-09-05 16:22:33.196807
-milliseconds:                                                    196
 ProfileEvent_Query:                                              0
 ProfileEvent_SelectQuery:                                        0
 ProfileEvent_InsertQuery:                                        0
