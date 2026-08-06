@@ -308,20 +308,18 @@ ProcessList::EntryPtr ProcessList::insert(
         {
             thread_group->performance_counters.setUserCounters(&user_process_list.user_performance_counters);
 
-            /// Until here the group had no user to account to, so whatever the query allocated since its scope
-            /// was created sits on the group and on the global tracker only. Hand it to the user now, or
-            /// `settleDriftOnQueryEnd` would give back more than the user was ever charged. A negative transfer
-            /// takes the bytes back from the global tracker, which keeps accounting them either way.
-            /// A group that accounts its memory in the server total keeps doing so: the query below it is only
-            /// how that work is carried out, not something its user asked for.
-            if (thread_group->charge_memory_to_query_user)
+            /// The group gets a user here, so hand it what the query allocated before that. Groups accounting
+            /// globally on purpose, and nested ones already on a user, keep the parent they have.
+            bool already_on_a_user = false;
+            for (auto * tracker = thread_group->memory_tracker.getParent(); tracker && !already_on_a_user;
+                 tracker = tracker->getParent())
+                already_on_a_user = tracker->level == VariableContext::User;
+
+            if (thread_group->charge_memory_to_query_user && !already_on_a_user)
             {
                 thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
-                if (Int64 accounted_before_the_user_was_known = thread_group->memory_tracker.get();
-                    accounted_before_the_user_was_known > 0)
-                {
-                    user_process_list.user_memory_tracker.transferToGlobal(-accounted_before_the_user_was_known);
-                }
+                if (Int64 allocated = thread_group->memory_tracker.get(); allocated > 0)
+                    user_process_list.user_memory_tracker.transferToGlobal(-allocated);
             }
             if (user_process_list.user_temp_data_on_disk)
             {
