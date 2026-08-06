@@ -210,7 +210,7 @@ def _derive_flags(parameter):
             True,
             False,
         ),
-        ("amd_llvm_coverage_per_test, per_test_coverage, 1/4", True, True),
+        ("amd_llvm_coverage_per_test, per_test_coverage, 1/8", True, True),
         ("amd_asan_ubsan, db disk, distributed plan, sequential, 1/3", False, False),
         ("amd_binary_excluded_from_llvm", False, False),
     ],
