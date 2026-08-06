@@ -78,17 +78,31 @@ promql_client -q "sort_desc(up) or vector(99)"
 echo "-- or preserves an ordered right suffix"
 promql_client -q "vector(99) or sort_desc(up)"
 
-echo "-- or preserves the relative order within an unsorted side that has multiple rows"
-# max_threads and query_plan_join_swap_table are pinned here because the row order within the
-# unsorted side comes from physical join/block emission order (no ORDER BY, since neither
-# `up{host2}` nor `up{host3}` carries a `sort_key`): the FULL JOIN in step 3 of
-# applyBinaryOperatorOr.cpp streams one side and only emits the other side's unmatched rows
-# after the stream is exhausted, and which side plays which role is decided by
-# `query_plan_join_swap_table`. Both settings are randomized by the test harness and could
-# otherwise reorder the two rows below run to run; with them pinned, host3 is emitted before
-# host2 (confirmed empirically across many CI runs with these two settings fixed, not merely
-# predicted from reading the code).
-promql_client -q 'sort_desc(up{instance="host1"}) or (up{instance="host2"} or up{instance="host3"})' --max_threads 1 --query_plan_join_swap_table auto
+echo "-- or breaks ties within an unsorted side using a content hash of each row's tags, not row order"
+# `up{host2}` and `up{host3}` both lack a `sort_key` (see applyBinaryOperatorOr.cpp), so their
+# relative order in the output is decided by a fallback tiebreak. That tiebreak used to be
+# `rowNumberInAllBlocks()`, on the theory that it reflected each side's own physical row order;
+# that turned out to still be execution-order-dependent in practice, not merely in theory: the
+# exact same compiled query, on the exact same commit, with the exact same pinned `max_threads`
+# and `query_plan_join_swap_table` settings, was observed to produce opposite row orders on two
+# different real CI runs. It has since been replaced with `timeSeriesGroupToSamplingKey(group)`,
+# a `CityHash64` computed purely from each row's own tag content (the same primitive `limitk`
+# already relies on for deterministic-regardless-of-read-order sampling) - so host2 and host3 are
+# now ordered by a fixed hash of their own tags rather than by "the order they originally
+# appeared in" (a notion that was never well-defined for an unsorted side to begin with).
+#
+# We deliberately do NOT hardcode which of host2/host3 sorts first below: that would require
+# computing a CityHash64 value by hand, and guessing it (twice, previously) is exactly the
+# mistake that led here. Instead:
+#  (1) pipe through `sort` so the reference only has to encode the *set* of expected rows, not
+#      the tiebreak order coming out of the fallback hash;
+#  (2) separately assert that the *unsorted*, un-normalized output is byte-identical across two
+#      runs under deliberately different max_threads/query_plan_join_swap_table settings, which
+#      is the actual property being protected (a real, deterministic tiebreak, not one that
+#      happens to look stable under one fixed set of settings).
+query='sort_desc(up{instance="host1"}) or (up{instance="host2"} or up{instance="host3"})'
+promql_client -q "$query" | sort
+diff <(promql_client -q "$query") <(promql_client -q "$query" --max_threads 1 --query_plan_join_swap_table false) && echo "OK: same row order regardless of max_threads/query_plan_join_swap_table"
 
 echo "-- sort_desc ordering does not survive a subquery and range function"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "

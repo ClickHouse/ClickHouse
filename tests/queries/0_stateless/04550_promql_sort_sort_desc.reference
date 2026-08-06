@@ -55,9 +55,10 @@
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
 [('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
 [('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
--- or preserves the relative order within an unsorted side that has multiple rows
+-- or breaks ties within an unsorted side using a content hash of each row's tags, not row order
 [('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	30
-[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
 [('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	20
+OK: same row order regardless of max_threads/query_plan_join_swap_table
 -- sort_desc ordering does not survive a subquery and range function
 1
