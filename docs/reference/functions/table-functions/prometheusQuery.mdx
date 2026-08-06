@@ -24,7 +24,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 - `promql_query` - A query written in [PromQL syntax](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 - `evaluation_time - The evaluation timestamp. To evaluate a query at the current time, use `now()` as `evaluation_time`.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The function can returns different columns depending on the result type of the query passed to parameter `promql_query`:
 

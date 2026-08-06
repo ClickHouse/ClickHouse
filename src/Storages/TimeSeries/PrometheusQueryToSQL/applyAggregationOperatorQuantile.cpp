@@ -27,7 +27,7 @@ namespace
 {
     /// Checks if the types of the specified arguments are valid for the `quantile` aggregation operator.
     void checkArgumentTypes(
-        const PQT::AggregationOperator * operator_node,
+        const PrometheusQueryTree::AggregationOperator * operator_node,
         const std::vector<SQLQueryPiece> & arguments,
         const ConverterContext & context)
     {
@@ -93,7 +93,7 @@ namespace
 
 
 SQLQueryPiece applyAggregationOperatorQuantile(
-    const PQT::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::AggregationOperator * operator_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     checkArgumentTypes(operator_node, arguments, context);
 

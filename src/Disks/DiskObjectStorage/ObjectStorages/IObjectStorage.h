@@ -64,6 +64,30 @@ private:
     std::chrono::system_clock::time_point expires_on;
 };
 
+/// A credential backed by an external token source (e.g. the OneLake catalog client, which
+/// renews access tokens with an Entra ID refresh token). The SDK invokes GetToken per request
+/// and caches the result until near ExpiresOn, so renewal is transparent to long reads.
+class TokenProviderCredential : public Azure::Core::Credentials::TokenCredential
+{
+public:
+    using TokenProvider = std::function<std::pair<std::string, std::chrono::system_clock::time_point>()>;
+
+    explicit TokenProviderCredential(TokenProvider provider_)
+        : provider(std::move(provider_))
+    {}
+
+    Azure::Core::Credentials::AccessToken GetToken(
+        Azure::Core::Credentials::TokenRequestContext const &,
+        Azure::Core::Context const &) const override
+    {
+        auto [token, expires_on] = provider();
+        return Azure::Core::Credentials::AccessToken { .Token = std::move(token), .ExpiresOn = expires_on };
+    }
+
+private:
+    TokenProvider provider;
+};
+
 using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
@@ -72,7 +96,8 @@ using AuthMethod = std::variant<
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
-    std::shared_ptr<AzureBlobStorage::StaticCredential>>;
+    std::shared_ptr<AzureBlobStorage::StaticCredential>,
+    std::shared_ptr<AzureBlobStorage::TokenProviderCredential>>;
 
 
 struct ConnectionParams;
