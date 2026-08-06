@@ -1273,7 +1273,7 @@ h3UnidirectionalEdgeisValid(index)
 
 ## h3GetOriginIndexFromUnidirectionalEdge {#h3getoriginindexfromunidirectionaledge}
 
-Returns the origin hexagon index from the unidirectional edge H3Index.
+Returns the origin hexagon index from the unidirectional edge H3Index. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting); returns `0` only when that setting is enabled.
 
 **Syntax**
 
@@ -1288,6 +1288,7 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 **Returned value**
 
 - Origin Hexagon Index number. [UInt64](/reference/data-types/int-uint).
+- Throws `INCORRECT_DATA` on invalid directed edges by default; returns `0` when `functions_h3_default_if_invalid = 1`.
 
 **Example**
 
@@ -1303,7 +1304,7 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 
 ## h3GetDestinationIndexFromUnidirectionalEdge {#h3getdestinationindexfromunidirectionaledge}
 
-Returns the destination hexagon index from the unidirectional edge H3Index.
+Returns the destination hexagon index from the unidirectional edge H3Index. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting); returns `0` only when that setting is enabled.
 
 **Syntax**
 
@@ -1318,6 +1319,7 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 **Returned value**
 
 - Destination Hexagon Index number. [UInt64](/reference/data-types/int-uint).
+- Throws `INCORRECT_DATA` on invalid directed edges by default; returns `0` when `functions_h3_default_if_invalid = 1`.
 
 **Example**
 
@@ -1368,7 +1370,7 @@ Throws an exception if the provided input is not a valid directed edge (controll
 
 ## h3GetUnidirectionalEdgesFromHexagon {#h3getunidirectionaledgesfromhexagon}
 
-Provides all of the unidirectional edges from the provided H3Index.
+Provides all of the unidirectional edges from the provided H3Index. Throws an exception if the input is not a valid H3 cell (controlled by the `functions_h3_default_if_invalid` setting); returns an empty array only when that setting is enabled.
 
 **Syntax**
 
@@ -1382,7 +1384,8 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 
 **Returned value**
 
-Array of h3 indexes representing each unidirectional edge. [Array](/reference/data-types/array)([UInt64](/reference/data-types/int-uint)).
+- Array of h3 indexes representing each unidirectional edge. [Array](/reference/data-types/array)([UInt64](/reference/data-types/int-uint)).
+- Throws `INCORRECT_DATA` on invalid cells by default; returns `[]` when `functions_h3_default_if_invalid = 1`.
 
 **Example**
 
@@ -1398,7 +1401,7 @@ Array of h3 indexes representing each unidirectional edge. [Array](/reference/da
 
 ## h3GetUnidirectionalEdgeBoundary {#h3getunidirectionaledgeboundary}
 
-Returns the coordinates defining the unidirectional edge.
+Returns the coordinates defining the unidirectional edge. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting); returns an empty array only when that setting is enabled.
 
 **Syntax**
 
@@ -1413,6 +1416,7 @@ h3GetUnidirectionalEdgeBoundary(index)
 **Returned value**
 
 - Array of pairs '(lat, lon)'. [Array](/reference/data-types/array)([Float64](/reference/data-types/float), [Float64](/reference/data-types/float)).
+- Throws `INCORRECT_DATA` on invalid directed edges by default; returns `[]` when `functions_h3_default_if_invalid = 1`.
 
 **Example**
 
