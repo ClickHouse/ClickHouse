@@ -223,7 +223,8 @@ namespace
                       std::move(k),
                       makeASTForNonNullIndices(std::move(values)));
               },
-              /* use_sampling_keys= */ true}},
+              /* use_sampling_keys= */ true,
+              /* order_descending= */ std::nullopt}},
         };
 
         auto it = impl_map.find(operator_name);
