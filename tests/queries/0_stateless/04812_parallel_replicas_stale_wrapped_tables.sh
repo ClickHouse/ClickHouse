@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# no-parallel: the failpoint is server-wide and would make every replica of every concurrent query look stale.
+# no-parallel: the failpoints are server-wide and would make every replica of every concurrent query look stale.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,19 +16,27 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # *replicated* table as lagging in its `TablesStatus` responses while non-replicated tables (and the
 # wrappers themselves) keep looking fresh - exactly the situation where the freshness check has to
 # resolve the wrapper to the replicated table underneath.
+#
+# The `slowdown_parallel_replicas_local_plan_read` failpoint keeps the initiator's local replica
+# from finishing the whole tiny read before the remote replicas even establish their connections -
+# a remote connection is created lazily on the first read from its source, so a local replica that
+# wins the race outright leaves `ParallelReplicasAvailableCount` at zero in the fresh case.
 
 function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT tables_status_report_replicated_tables_stale" 2>/dev/null
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read" 2>/dev/null
 }
 trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE t_pr_dim_wrapped (k UInt64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_pr_dim_wrapped', '1') ORDER BY k;
-    INSERT INTO t_pr_dim_wrapped SELECT number * 100 FROM numbers(20);
+    INSERT INTO t_pr_dim_wrapped SELECT number * 100 FROM numbers(10);
+    INSERT INTO t_pr_dim_wrapped SELECT (number + 10) * 100 FROM numbers(10);
     CREATE VIEW v_pr_dim AS SELECT k FROM t_pr_dim_wrapped;
     CREATE MATERIALIZED VIEW mv_pr_dim ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/mv_pr_dim', '1') ORDER BY k AS SELECT k FROM t_pr_dim_wrapped;
-    INSERT INTO mv_pr_dim SELECT number * 100 FROM numbers(20);
+    INSERT INTO mv_pr_dim SELECT number * 100 FROM numbers(10);
+    INSERT INTO mv_pr_dim SELECT (number + 10) * 100 FROM numbers(10);
     CREATE TABLE t_pr_mrgv_1 (k UInt64) ENGINE = MergeTree ORDER BY k;
     CREATE TABLE t_pr_mrgv_2 (k UInt64) ENGINE = MergeTree ORDER BY k;
     INSERT INTO t_pr_mrgv_1 SELECT number FROM numbers(1000);
@@ -40,6 +48,8 @@ $CLICKHOUSE_CLIENT --query "
 # then report 0 available replicas. `analyzer_inline_views` is pinned off so that the plain view
 # reaches the freshness check as a wrapper storage and not as an already-inlined subquery.
 PR_SETTINGS="enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_allow_merge_tables = 1, parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 1, parallel_replicas_allow_materialized_views = 1, analyzer_inline_views = 0, max_replica_delay_for_distributed_queries = 1, fallback_to_stale_replicas_for_distributed_queries = 0, parallel_replicas_connect_timeout_ms = 30000"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read"
 
 # Whether any replica was admitted to coordinated reading.
 function replicas_used()

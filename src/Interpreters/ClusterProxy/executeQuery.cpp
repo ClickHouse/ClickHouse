@@ -906,7 +906,11 @@ private:
             return;
 
         /// A view can reference another view; guard against revisiting (and against reference cycles).
-        if (!visited_storages.insert(storage->getStorageID().getFullTableName()).second)
+        /// The guard is keyed by object identity, not by storage id: every storage created by a table
+        /// function carries the same synthetic id (e.g. `_table_function.merge`), so two `merge()`
+        /// leaves reading different table sets must not deduplicate each other, while a table (or
+        /// view) of the catalog is a single shared instance however many times the query refers to it.
+        if (!visited_storages.insert(storage.get()).second)
             return;
 
         if (const auto * merge_storage = typeid_cast<const StorageMerge *>(storage.get()))
@@ -943,7 +947,7 @@ private:
     ContextPtr context;
     bool enumerate_view_sources;
     std::set<QualifiedTableName> tables;
-    std::set<String> visited_storages;
+    std::set<const IStorage *> visited_storages;
 };
 
 void executeQueryWithParallelReplicas(
