@@ -32,6 +32,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool serialize_query_plan;
 }
 }
 
@@ -175,6 +176,10 @@ bool guardsHold(const ReadFromMergeTree & reading)
         return false;
 
     if (reading.getDistributedReadBucketCount() > 0)
+        return false;
+
+    /// `ReadFromTextIndexCount` is not serializable; skip when the plan may be serialized and shipped.
+    if (context->getSettingsRef()[Setting::serialize_query_plan])
         return false;
 
     /// A transaction may see Outdated parts that the cardinalities do not reflect.
