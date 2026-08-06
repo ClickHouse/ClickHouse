@@ -1809,6 +1809,7 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
         lex.nextToken();
 
     current_stats_time_bucket_ns.reset();
+    current_stats_time_bucket_is_calendar = false;
 
     ASTs by_select;
     ASTs by_keys;
@@ -1860,6 +1861,8 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
                         interval = makeASTFunction(it->second, makeUInt64Literal(1));
                         if (auto it_ns = named_step_ns.find(Poco::toLower(bucket)); it_ns != named_step_ns.end())
                             current_stats_time_bucket_ns = it_ns->second;
+                        else
+                            current_stats_time_bucket_is_calendar = true;
                     }
                     else if (auto duration = tryParseDuration(bucket))
                     {
@@ -2175,6 +2178,9 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
             throwSyntaxError("rate() does not accept arguments");
         if (name == "rate_sum" && (wildcard || args.size() != 1))
             throwNotImplemented("rate_sum() over all fields or over multiple fields");
+        /// Month and year buckets have variable lengths, so a constant denominator would be wrong.
+        if (current_stats_time_bucket_is_calendar)
+            throwNotImplemented(fmt::format("{}() over month or year buckets", name));
 
         ASTPtr column = args.empty() ? nullptr : columnExpr(args[0]);
         std::optional<Float64> range_seconds;

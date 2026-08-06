@@ -145,6 +145,7 @@ LogsQLParser::QueryScopeGuard::QueryScopeGuard(LogsQLParser & parser_)
     , saved_options_global_filter(parser_.options_global_filter)
     , saved_query_time_range_ns(parser_.query_time_range_ns)
     , saved_current_stats_time_bucket_ns(parser_.current_stats_time_bucket_ns)
+    , saved_current_stats_time_bucket_is_calendar(parser_.current_stats_time_bucket_is_calendar)
 {
 }
 
@@ -154,10 +155,11 @@ LogsQLParser::QueryScopeGuard::~QueryScopeGuard()
     parser.options_global_filter = saved_options_global_filter;
     parser.query_time_range_ns = saved_query_time_range_ns;
     parser.current_stats_time_bucket_ns = saved_current_stats_time_bucket_ns;
+    parser.current_stats_time_bucket_is_calendar = saved_current_stats_time_bucket_is_calendar;
 }
 
 LogsQLParser::LogsQLParser(const char * begin_, const char * end_, Context context_)
-    : lex(begin_, end_), context(std::move(context_))
+    : lex(begin_, end_, context_.truncated), context(std::move(context_))
 {
 }
 
@@ -1752,9 +1754,11 @@ ASTPtr LogsQLParser::parseFilterDayRange()
     auto offset = parseOptionalTimeOffset();
 
     /// Seconds since the start of the day.
+    /// The global options(time_offset=...) applies here as well, same as in makeTimeCondition.
+    Int64 total_offset_ns = offset.value_or(0) + options_time_offset_ns;
     ASTPtr time_expr = columnExpr("_time");
-    if (offset)
-        time_expr = shiftTime(time_expr, -*offset);
+    if (total_offset_ns)
+        time_expr = shiftTime(time_expr, -total_offset_ns);
     ASTPtr seconds_of_day = makeASTFunction("plus",
         makeASTFunction("plus",
             makeASTFunction("multiply", makeASTFunction("toHour", time_expr), make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(3600)))),
@@ -1806,9 +1810,11 @@ ASTPtr LogsQLParser::parseFilterWeekRange()
 
     auto offset = parseOptionalTimeOffset();
 
+    /// The global options(time_offset=...) applies here as well, same as in makeTimeCondition.
+    Int64 total_offset_ns = offset.value_or(0) + options_time_offset_ns;
     ASTPtr time_expr = columnExpr("_time");
-    if (offset)
-        time_expr = shiftTime(time_expr, -*offset);
+    if (total_offset_ns)
+        time_expr = shiftTime(time_expr, -total_offset_ns);
 
     /// toDayOfWeek returns 1 for Monday ... 7 for Sunday; convert to Sunday = 0.
     ASTPtr day_of_week = makeASTFunction("modulo", makeASTFunction("toDayOfWeek", time_expr), make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(7))));

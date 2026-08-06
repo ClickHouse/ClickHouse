@@ -26,6 +26,8 @@ public:
         String time_column;  /// The column referred to by the `_time` field.
         String msg_column;   /// The column referred to by the `_msg` field.
         size_t max_depth = 0;
+        /// Whether the input was clipped by `max_query_size` (see ParserLogsQLQuery).
+        bool truncated = false;
     };
 
     LogsQLParser(const char * begin_, const char * end_, Context context_);
@@ -88,6 +90,9 @@ private:
     /// The `_time` bucket step of the stats pipe being parsed, if any: it takes precedence
     /// over the query time range as the denominator of `rate()` and `rate_sum()`.
     std::optional<Int64> current_stats_time_bucket_ns;
+    /// Whether that bucket is a calendar step (month or year) of variable length,
+    /// over which `rate()` and `rate_sum()` cannot use a constant denominator.
+    bool current_stats_time_bucket_is_calendar = false;
 
     /// Guards against deeply nested queries.
     struct IncreaseDepth
@@ -108,6 +113,7 @@ private:
         ASTPtr saved_options_global_filter;
         std::optional<Int64> saved_query_time_range_ns;
         std::optional<Int64> saved_current_stats_time_bucket_ns;
+        bool saved_current_stats_time_bucket_is_calendar;
 
         explicit QueryScopeGuard(LogsQLParser & parser_);
         ~QueryScopeGuard();
