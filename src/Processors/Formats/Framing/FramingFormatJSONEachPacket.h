@@ -27,7 +27,18 @@ public:
     }
 
     String getName() const override { return base64 ? "JSONEachPacketBase64" : "JSONEachPacketString"; }
-    String getContentType() const override { return "application/x-ndjson; charset=UTF-8"; }
+
+    /// The two variants do not encode the `data` field the same way, and only the base64 one
+    /// guarantees valid UTF-8 for the whole stream, so the response metadata is variant-specific:
+    /// the `payload` parameter tells the client how to decode `data`, and `charset=UTF-8`
+    /// is promised only when the framing enforces it.
+    String getContentType() const override
+    {
+        return base64
+            ? "application/x-ndjson; charset=UTF-8; payload=base64"
+            : "application/x-ndjson; payload=string";
+    }
+
     bool requiresTextPayload() const override { return !base64; }
 
 protected:
