@@ -1708,7 +1708,7 @@ void ObjectStorageQueueSource::finalizeCommit(
 }
 
 void ObjectStorageQueueSource::finalizeExclusiveCommitAfterDelete(
-    const std::vector<String> & /*failed_paths*/,
+    const std::vector<String> & failed_paths,
     UInt64 commit_id,
     time_t commit_time,
     time_t transaction_start_time_,
@@ -1716,6 +1716,11 @@ void ObjectStorageQueueSource::finalizeExclusiveCommitAfterDelete(
 {
     if (processed_files.empty())
         return;
+
+    UnorderedSetWithMemoryTracking<std::string_view> failed_paths_set;
+
+    for (const String & path : failed_paths)
+        failed_paths_set.insert(path);
 
     std::exception_ptr finalize_exception;
     for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
@@ -1736,8 +1741,10 @@ void ObjectStorageQueueSource::finalizeExclusiveCommitAfterDelete(
                 {
                     if (file_metadata->wasProcessingResetWithoutFailure())
                         file_metadata->finalizeResetProcessing();
-                    else
+                    else if (failed_path_set.contains(file_metadata->getPath()))
                         file_metadata->finalizeFailed(exception_message);
+                    else
+                        file_metadata->finalizeProcessed();
                     break;
                 }
                 case FileState::ErrorOnRead:
