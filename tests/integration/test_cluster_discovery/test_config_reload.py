@@ -137,6 +137,33 @@ CONFIG_OBSERVER = """
 </clickhouse>
 """
 
+CONFIG_INVISIBLE = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_invisible_transition>
+            <discovery>
+                <path>/clickhouse/discovery/test_invisible_transition</path>
+                <invisible/>
+            </discovery>
+        </test_invisible_transition>
+    </remote_servers>
+</clickhouse>
+"""
+
+CONFIG_VISIBLE = """
+<clickhouse>
+    <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <remote_servers>
+        <test_invisible_transition>
+            <discovery>
+                <path>/clickhouse/discovery/test_invisible_transition</path>
+            </discovery>
+        </test_invisible_transition>
+    </remote_servers>
+</clickhouse>
+"""
+
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -348,3 +375,60 @@ def test_reload_participant_to_observer_unregisters(start_cluster):
         query_params={"password": "passwordAbc"},
         retries=6,
     )
+
+
+def test_reload_invisible_to_visible_populates_cluster(start_cluster):
+    """Invisible -> visible reload must upsert and publish nodes promptly."""
+    reload_config_on_all(CONFIG_INVISIBLE)
+
+    for retry in range(10):
+        counts = [
+            int(
+                node.query(
+                    "SELECT count() FROM system.clusters "
+                    "WHERE cluster = 'test_invisible_transition'",
+                    password="passwordAbc",
+                )
+            )
+            for node in nodes.values()
+        ]
+        if all(c == 0 for c in counts):
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError(
+            f"Invisible cluster should not appear in system.clusters: {counts}"
+        )
+
+    reload_config_on_all(CONFIG_VISIBLE)
+
+    check_on_cluster(
+        list(nodes.values()),
+        len(nodes),
+        cluster_name="test_invisible_transition",
+        what="count()",
+        msg="Cluster did not appear after becoming visible",
+        query_params={"password": "passwordAbc"},
+        retries=6,
+    )
+
+    reload_config_on_all(CONFIG_INVISIBLE)
+
+    for retry in range(15):
+        counts = [
+            int(
+                node.query(
+                    "SELECT count() FROM system.clusters "
+                    "WHERE cluster = 'test_invisible_transition'",
+                    password="passwordAbc",
+                )
+            )
+            for node in nodes.values()
+        ]
+        if all(c == 0 for c in counts):
+            break
+        time.sleep(1)
+    else:
+        raise AssertionError(
+            f"Cluster still visible after invisible reload: {counts}"
+        )

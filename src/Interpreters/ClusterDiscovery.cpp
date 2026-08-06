@@ -362,7 +362,7 @@ bool ClusterDiscovery::updateStaticClusterFields(ClusterInfo & info, const Parse
     info.current_cluster_is_invisible = parsed.invisible;
     info.current_node = NodeInfo(expected_address, parsed.secure, parsed.shard_id);
 
-    if (registration_changed)
+    if (registration_changed || invisible_changed)
         clusters_to_update->set(info.name);
     else
         rebuildClusterObject(info);
@@ -781,6 +781,8 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
     if (cluster_info.current_cluster_is_invisible)
     {
         LOG_DEBUG(log, "Cluster '{}' is invisible.", cluster_info.name);
+        std::lock_guard lock(mutex);
+        cluster_impls.erase(cluster_info.name);
         return true;
     }
 
