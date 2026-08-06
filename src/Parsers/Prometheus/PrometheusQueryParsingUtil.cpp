@@ -349,7 +349,7 @@ namespace
     using TimestampType = PrometheusQueryParsingUtil::TimestampType;
     using DurationType = PrometheusQueryParsingUtil::DurationType;
 
-    bool hasNonZeroDecimalDigit(std::string_view input)
+    bool hasNonZeroMantissaDigit(std::string_view input)
     {
         size_t exponent_pos = input.find_first_of("eE");
         input = input.substr(0, exponent_pos);
@@ -416,7 +416,7 @@ namespace
         }
 
         if (is_nonzero)
-            *is_nonzero = hasNonZeroDecimalDigit(str);
+            *is_nonzero = hasNonZeroMantissaDigit(str);
 
         return true;
     }
@@ -555,7 +555,13 @@ namespace
     /// If it fails the function returns false and sets either `allow_other_formats` or `error_pos` & `error_message`.
     template <typename T>
     bool tryParseDurationFormat(
-        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool * is_nonzero = nullptr)
+        std::string_view input,
+        UInt32 scale,
+        T & result,
+        String * error_message,
+        size_t * error_pos,
+        bool * is_nonzero = nullptr,
+        bool * is_exact = nullptr)
     {
         bool has_time_units = false;
         bool has_nonzero_value = false;
@@ -734,12 +740,31 @@ namespace
         if (is_nonzero)
             *is_nonzero = has_nonzero_value;
 
+        if (is_exact)
+        {
+            *is_exact = true;
+            if constexpr (is_decimal<T>)
+            {
+                if (scale < 3)
+                {
+                    const auto divisor = DecimalUtils::scaleMultiplier<T>(3 - scale);
+                    *is_exact = milliseconds % divisor == 0;
+                }
+            }
+        }
+
         return true;
     }
 
     template <typename T>
     bool tryParseNumber(
-        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool * is_positive = nullptr)
+        std::string_view input,
+        UInt32 scale,
+        T & result,
+        String * error_message,
+        size_t * error_pos,
+        bool * is_positive = nullptr,
+        bool * is_exact = nullptr)
     {
         size_t pos = 0;
 
@@ -775,7 +800,7 @@ namespace
         }
         else if (isDurationFormat(unsigned_input))
         {
-            ok = tryParseDurationFormat(unsigned_input, scale, result, error_message, error_pos, &is_nonzero);
+            ok = tryParseDurationFormat(unsigned_input, scale, result, error_message, error_pos, &is_nonzero, is_exact);
         }
         else
         {
@@ -812,31 +837,29 @@ namespace
         String * error_message,
         size_t * error_pos)
     {
-        bool result = tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos, &info.is_positive);
+        bool result = tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos, &info.is_positive, &info.is_exact);
         if (!result || !info.is_positive)
             return result;
 
-        if (isDurationFormat(input))
+        if (!isDurationFormat(input))
         {
-            if (timestamp_scale < 3)
-            {
-                /// Parse at millisecond precision to detect a positive fraction discarded at the timestamp scale.
-                DurationType millisecond_duration;
-                bool millisecond_is_positive = false;
-                if (tryParseNumber(input, 3, millisecond_duration, nullptr, nullptr, &millisecond_is_positive) && millisecond_is_positive)
-                {
-                    const auto divisor = DecimalUtils::scaleMultiplier<DurationType>(3 - timestamp_scale);
-                    info.is_exact = millisecond_duration.value % divisor == 0;
-                }
-            }
-        }
-        else
-        {
-            /// Bare numeric durations can contain more fractional digits than the millisecond probe can observe.
             info.is_exact = isDecimalNumberExactAtScale(input, timestamp_scale);
         }
 
         return result;
+    }
+
+    bool tryRoundUpDuration(
+        DurationType & duration, std::string_view input, size_t input_pos, String * error_message, size_t * error_pos)
+    {
+        if (common::addOverflow(duration.value, DurationType::NativeType{1}, duration.value))
+        {
+            setErrorMessage(error_message, "Cannot parse time range {}: Overflow, the duration is too big", quoteString(input));
+            setErrorPos(error_pos, input_pos);
+            return false;
+        }
+
+        return true;
     }
 }
 
@@ -914,8 +937,9 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
         return false;
     }
 
-    if (!range_info.is_exact || res_range == 0)
-        ++res_range.value;
+    if ((!range_info.is_exact || res_range == 0)
+        && !tryRoundUpDuration(res_range, input, start_pos, error_message, error_pos))
+        return false;
 
     return true;
 }
@@ -998,8 +1022,9 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
         return false;
     }
 
-    if (!range_info.is_exact || res_range == 0)
-        ++res_range.value;
+    if ((!range_info.is_exact || res_range == 0)
+        && !tryRoundUpDuration(res_range, input, range_start_pos, error_message, error_pos))
+        return false;
 
     res_step.reset();
 
