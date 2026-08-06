@@ -298,28 +298,7 @@ const KeeperFeatureFlags & KeeperContext::getFeatureFlags() const
 SnapshotVersion KeeperContext::getWriteSnapshotVersion() const
 {
     const auto & settings = getCoordinationSettings();
-    validateCoordinationSettings(settings);
     return static_cast<SnapshotVersion>(settings[CoordinationSetting::write_snapshot_version].value);
-}
-
-void KeeperContext::validateCoordinationSettings(const CoordinationSettings & settings) const
-{
-    const uint64_t version = settings[CoordinationSetting::write_snapshot_version];
-    if (version < SnapshotVersion::V6 || version > MAX_SUPPORTED_SNAPSHOT_VERSION)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported write snapshot version {} (must be between {} and {})",
-            version, SnapshotVersion::V6, MAX_SUPPORTED_SNAPSHOT_VERSION);
-
-    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL) && version < SnapshotVersion::V8)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Feature flag CREATE_TTL requires write_snapshot_version >= {}, but it is set to {}. "
-            "Bump write_snapshot_version after every replica has been upgraded.",
-            static_cast<int>(SnapshotVersion::V8), version);
-
-    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_CONTAINER) && version < SnapshotVersion::V9)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Feature flag CREATE_CONTAINER requires write_snapshot_version >= {}, but it is set to {}. "
-            "Bump write_snapshot_version after every replica has been upgraded.",
-            static_cast<int>(SnapshotVersion::V9), version);
 }
 
 void KeeperContext::dumpConfiguration(WriteBufferFromOwnString & buf) const

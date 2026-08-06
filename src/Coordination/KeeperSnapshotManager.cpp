@@ -155,7 +155,7 @@ namespace
         }
         else if (stats.isTTL())
         {
-            /// KeeperContext::validateCoordinationSettings already checked that CREATE_TTL feature
+            /// KeeperContext::validateWriteSnapshotVersion already checked that CREATE_TTL feature
             /// flag is disabled, so this is pretty unexpected. Still possible if the feature flag
             /// was disabled after the node was created.
             throw Exception(
