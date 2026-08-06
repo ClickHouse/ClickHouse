@@ -126,6 +126,14 @@ def test_startup_with_small_bg_pool_partitioned(started_cluster):
 # collection, so it never retries.
 def test_restarting_task_rearmed_after_failed_attach_startup(started_cluster):
     start_clean_clickhouse()
+    # The restart above re-attaches every other ReplicatedMergeTree on this instance, and each
+    # one reaches the same startupImpl that carries the one-shot FP1 below. Drop them so they
+    # cannot consume it: DROP resolves the table through DatabaseCatalog, which waits for its
+    # startup job, so this quiesces the instance instead of racing it.
+    node.query("DROP TABLE IF EXISTS replicated_table SYNC")
+    node.query("DROP TABLE IF EXISTS replicated_table_partitioned SYNC")
+    assert node.query("SELECT count() FROM system.replicas").strip() == "0"
+
     # A fresh name per run: the log-line waits below must not match an earlier run's lines.
     table = f"replicated_table_rearm_{uuid.uuid4().hex}"
     node.query(
