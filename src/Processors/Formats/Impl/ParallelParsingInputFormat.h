@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -256,9 +258,9 @@ private:
 
     struct ChunkExt
     {
-        std::vector<Chunk> chunk;
-        std::vector<BlockMissingValues> block_missing_values;
-        std::vector<size_t> approx_chunk_sizes;
+        VectorWithMemoryTracking<Chunk> chunk;
+        VectorWithMemoryTracking<BlockMissingValues> block_missing_values;
+        VectorWithMemoryTracking<size_t> approx_chunk_sizes;
     };
 
     struct ProcessingUnit

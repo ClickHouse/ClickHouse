@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -47,7 +48,7 @@ String readStringOrFieldByEscapingRule(ReadBuffer & buf, FormatSettings::Escapin
 /// If cannot, return nullptr.
 /// See tryInferDataTypeForSingle(JSON)Field in SchemaInferenceUtils.h
 DataTypePtr tryInferDataTypeByEscapingRule(const String & field, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info = nullptr);
-DataTypes tryInferDataTypesByEscapingRule(const std::vector<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info = nullptr);
+DataTypes tryInferDataTypesByEscapingRule(const VectorWithMemoryTracking<String> & fields, const FormatSettings & format_settings, FormatSettings::EscapingRule escaping_rule, JSONInferenceInfo * json_info = nullptr);
 
 /// Check if we need to transform types inferred from data and transform it if necessary.
 /// See transformInferred(JSON)TypesIfNeeded in SchemaInferenceUtils.h

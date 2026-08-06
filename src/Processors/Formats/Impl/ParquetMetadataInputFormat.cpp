@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ParquetMetadataInputFormat.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #if USE_PARQUET
 

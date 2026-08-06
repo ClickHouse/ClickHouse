@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ORCBlockOutputFormat.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <unordered_map>
 

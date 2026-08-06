@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Formats/IOutputFormat.h>
+#include <Common/DequeWithMemoryTracking.h>
 
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>

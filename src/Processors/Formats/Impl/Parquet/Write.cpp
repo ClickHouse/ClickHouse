@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/Parquet/Write.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <arrow/util/key_value_metadata.h>
 #include <parquet/encoding.h>
@@ -565,7 +566,7 @@ struct ConverterJSON
     const ColumnObject & column;
     DataTypePtr data_type;
     PODArray<parquet::ByteArray> buf;
-    std::vector<String> stash;
+    VectorWithMemoryTracking<String> stash;
     const FormatSettings & format_settings;
 
     explicit ConverterJSON(const ColumnPtr & c, const DataTypePtr & data_type_, const FormatSettings & format_settings_)
@@ -893,9 +894,9 @@ void writeColumnImpl(
     if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
         s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
     if (s.max_rep > 0)
-        s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
+        s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1)); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift parq::SizeStatistics takes std::vector
     if (s.max_def > 0)
-        s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
+        s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1)); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- thrift parq::SizeStatistics takes std::vector
 
     /// Could use an arena here (by passing a custom MemoryPool), to reuse memory across pages.
     /// Alternatively, we could avoid using arrow's dictionary encoding code and leverage
@@ -913,7 +914,7 @@ void writeColumnImpl(
         PODArray<char> data;
         size_t first_row_index = 0;
     };
-    std::vector<PageData> dict_encoded_pages; // can't write them out until we have full dictionary
+    VectorWithMemoryTracking<PageData> dict_encoded_pages; // can't write them out until we have full dictionary
 
     /// Reused across pages to reduce number of allocations and improve locality.
     PODArray<char> encoded;
@@ -1536,7 +1537,7 @@ void writeFileFooter(FileWriteState & file,
     /// Documentation about geoparquet metadata: https://geoparquet.org/releases/v1.0.0-beta.1/
     if (options.write_geometadata)
     {
-        std::vector<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
+        VectorWithMemoryTracking<std::pair<std::string, Poco::JSON::Object::Ptr>> geo_columns_metadata;
         for (const auto & [column_name, type] : header.getNamesAndTypesList())
         {
             if (type->getCustomName() &&

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {

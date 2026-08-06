@@ -1,4 +1,5 @@
 #include <Storages/StorageFile.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -1817,7 +1818,7 @@ Chunk StorageFileSource::generate()
                 if (matching_marks.has_value())
                 {
                     const auto & marks = *matching_marks;
-                    std::vector<size_t> matching_row_groups;
+                    VectorWithMemoryTracking<size_t> matching_row_groups;
                     for (size_t i = 0; i < marks.size(); ++i)
                         if (marks[i])
                             matching_row_groups.push_back(i);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Formats/FormatSettings.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -42,7 +43,7 @@ protected:
     void writeBeforeExtremes() final;
 
     void writePrefix() override;
-    void writeLine(const std::vector<String> & values);
+    void writeLine(const Names & values);
 
     bool with_names;
     bool with_types;

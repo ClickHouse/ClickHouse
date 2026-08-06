@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
@@ -137,20 +139,20 @@ struct ColumnChunkWriteState
 struct RowGroupWithIndexes
 {
     parq::RowGroup row_group;
-    std::vector<ColumnChunkIndexes> column_indexes;
+    VectorWithMemoryTracking<ColumnChunkIndexes> column_indexes;
 };
 
 struct FileWriteState
 {
-    std::vector<RowGroupWithIndexes> completed_row_groups;
+    VectorWithMemoryTracking<RowGroupWithIndexes> completed_row_groups;
     RowGroupWithIndexes current_row_group;
     size_t row_groups_with_flushed_bloom_filter = 0;
     size_t unflushed_bloom_filter_bytes = 0;
     size_t offset = 0;
 };
 
-using SchemaElements = std::vector<parq::SchemaElement>;
-using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
+using SchemaElements = std::vector<parq::SchemaElement>; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- moved into thrift parq::FileMetaData::schema
+using ColumnChunkWriteStates = VectorWithMemoryTracking<ColumnChunkWriteState>;
 
 /// Parquet file consists of row groups, which consist of column chunks.
 ///

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Core/CaseAwareBlockNameMap.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/BlockMissingValues.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatSettings.h>

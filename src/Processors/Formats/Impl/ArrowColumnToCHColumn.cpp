@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Exception.h>
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
@@ -1854,7 +1856,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         {
             // Unwrap the Extension array into raw physical chunks
             auto ext_type = std::static_pointer_cast<arrow::ExtensionType>(arrow_column->type());
-            std::vector<std::shared_ptr<arrow::Array>> storage_chunks;
+            std::vector<std::shared_ptr<arrow::Array>> storage_chunks; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- arrow::ChunkedArray takes std::vector
 
             for (int i = 0; i < arrow_column->num_chunks(); ++i)
             {
@@ -2160,7 +2162,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         {
             auto arrow_type = arrow_column->type();
             auto * arrow_struct_type = assert_cast<arrow::StructType *>(arrow_type.get());
-            std::vector<arrow::ArrayVector> nested_arrow_columns(arrow_struct_type->num_fields());
+            VectorWithMemoryTracking<arrow::ArrayVector> nested_arrow_columns(arrow_struct_type->num_fields());
             for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
             {
                 auto & struct_chunk = assert_cast<arrow::StructArray &>(*(arrow_column->chunk(chunk_i)));
@@ -2191,7 +2193,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
             Columns tuple_elements;
             DataTypes tuple_types;
-            std::vector<String> tuple_names;
+            Strings tuple_names;
             const auto * tuple_type_hint = type_hint ? typeid_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
 
             for (int i = 0; i != arrow_struct_type->num_fields(); ++i)
@@ -2561,7 +2563,7 @@ static std::shared_ptr<arrow::DataType> unwrapArrowExtensionTypesRecursively(con
     if (type->id() == arrow::Type::STRUCT)
     {
         auto struct_type = std::static_pointer_cast<arrow::StructType>(type);
-        std::vector<std::shared_ptr<arrow::Field>> new_fields;
+        std::vector<std::shared_ptr<arrow::Field>> new_fields; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- arrow::struct_ takes std::vector
         for (const auto & struct_field : struct_type->fields())
         {
             // WithType preserves the field name and nullable status, only changing the underlying type

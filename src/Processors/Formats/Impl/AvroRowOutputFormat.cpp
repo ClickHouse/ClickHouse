@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/AvroRowOutputFormat.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #if USE_AVRO
 
 #include <Columns/ColumnArray.h>
@@ -404,7 +406,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             avro::UnionSchema union_schema;
             const auto & nested_types = variant_type.getVariants();
 
-            std::vector<SerializeFn> nested_serializers;
+            VectorWithMemoryTracking<SerializeFn> nested_serializers;
             nested_serializers.reserve(nested_types.size());
 
             for (const auto & nested_type : nested_types)
@@ -445,7 +447,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*data_type);
             const auto & nested_types = tuple_type.getElements();
             const auto & nested_names = tuple_type.getElementNames();
-            std::vector<SerializeFn> nested_serializers;
+            VectorWithMemoryTracking<SerializeFn> nested_serializers;
             nested_serializers.reserve(nested_types.size());
             /// We should use unique names for records. Otherwise avro will reuse schema of this record later
             /// for all records with the same name.
@@ -580,7 +582,7 @@ void AvroSerializer::setIcebergFieldIds(const avro::NodePtr & node, const String
             const auto & encoding = column_mapper->getStorageColumnEncoding();
             const size_t num_fields = node->leaves();
 
-            std::vector<int> field_ids(num_fields, -1);
+            std::vector<int> field_ids(num_fields, -1); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- avro::NodeRecord::setFieldIds takes std::vector
             for (size_t i = 0; i < num_fields; ++i)
             {
                 const String field_path = Nested::concatenateName(path, node->nameAt(static_cast<int>(i)));

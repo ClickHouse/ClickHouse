@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Processors/Formats/Impl/Parquet/Reader.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -24,14 +26,14 @@ struct SchemaConverter
     const ReadOptions & options;
     const Block * sample_block;
     const ColumnMapper * column_mapper = nullptr;
-    std::vector<String> external_columns;
+    VectorWithMemoryTracking<String> external_columns;
 
-    std::vector<PrimitiveColumnInfo> primitive_columns;
-    std::vector<OutputColumnInfo> output_columns;
+    VectorWithMemoryTracking<PrimitiveColumnInfo> primitive_columns;
+    VectorWithMemoryTracking<OutputColumnInfo> output_columns;
 
     size_t schema_idx = 1;
     size_t primitive_column_idx = 0;
-    std::vector<LevelInfo> levels;
+    VectorWithMemoryTracking<LevelInfo> levels;
     /// Actual recursion depth of processSubtree. Tracked unconditionally because the def-level
     /// counter only advances for OPTIONAL/REPEATED nodes, so REQUIRED-group nesting would bypass it.
     size_t recursion_depth = 0;

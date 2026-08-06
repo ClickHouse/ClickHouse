@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/TemplateRowInputFormat.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/EscapingRuleUtils.h>
@@ -72,7 +74,7 @@ TemplateRowInputFormat::TemplateRowInputFormat(SharedHeader header_, std::unique
       format_reader(std::make_unique<TemplateFormatReader>(*buf, ignore_spaces_, format, row_format, row_between_delimiter, settings))
 {
     /// Validate format string for rows
-    std::vector<UInt8> column_in_format(header_->columns(), false);
+    VectorWithMemoryTracking<UInt8> column_in_format(header_->columns(), false);
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
         const auto & column_index = row_format.format_idx_to_column_idx[i];

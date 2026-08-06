@@ -1,5 +1,7 @@
 #pragma once
 #include "config.h"
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #if USE_DWARF_PARSER && defined(__ELF__) && !defined(OS_FREEBSD)
 
 #include <llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h>
@@ -60,7 +62,7 @@ private:
         uint64_t base_address = UINT64_MAX;
 
         uint64_t offset = 0;
-        std::vector<StackEntry> stack;
+        VectorWithMemoryTracking<StackEntry> stack;
 
         bool eof() const { return offset == end_offset; }
 

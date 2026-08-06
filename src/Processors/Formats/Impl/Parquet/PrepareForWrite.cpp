@@ -1,4 +1,6 @@
 #include <DataTypes/DataTypeString.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
 
@@ -915,7 +917,7 @@ static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
         const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
         const auto & variants = variant_type.getVariants();
 
-        std::vector<std::shared_ptr<IWKBTransform>> transforms(variants.size());
+        VectorWithMemoryTracking<std::shared_ptr<IWKBTransform>> transforms(variants.size());
         for (size_t i = 0; i < variants.size(); ++i)
         {
             const auto & variant_name = variants[i]->getCustomName() ? variants[i]->getCustomName()->getName() : variants[i]->getName();

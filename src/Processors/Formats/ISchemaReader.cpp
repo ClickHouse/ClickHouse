@@ -1,4 +1,7 @@
 #include <Processors/Formats/ISchemaReader.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -271,7 +274,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
     bool eof = false;
     auto names_and_types = readRowAndGetNamesAndDataTypes(eof);
     std::unordered_map<String, DataTypePtr> names_to_types;
-    std::vector<String> names_order;
+    VectorWithMemoryTracking<String> names_order;
     names_to_types.reserve(names_and_types.size());
     names_order.reserve(names_and_types.size());
     for (const auto & [name, type] : names_and_types)

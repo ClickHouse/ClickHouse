@@ -1,5 +1,7 @@
 #pragma once
 #include "config.h"
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_ARROW || USE_PARQUET
 
@@ -51,7 +53,7 @@ public:
     static std::shared_ptr<arrow::Table> calculateArrowTable(
         const ColumnsWithTypeAndName & header_columns,
         const std::string & format_name,
-        const std::vector<Chunk> & chunks,
+        const VectorWithMemoryTracking<Chunk> & chunks,
         const Settings & settings,
         size_t columns_num,
         std::shared_ptr<arrow::Schema> schema,
@@ -83,7 +85,7 @@ public:
 
     void chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
-        const std::vector<Chunk> & chunk,
+        const VectorWithMemoryTracking<Chunk> & chunk,
         size_t columns_num,
         const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt);
 

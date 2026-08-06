@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/JSONUtils.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -553,9 +554,9 @@ namespace JSONUtils
         writeJSONString(exception_message, out, settings);
     }
 
-    Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8)
+    Names makeNamesValidJSONStrings(const Names & names, const FormatSettings & settings, bool validate_utf8)
     {
-        Strings result;
+        Names result;
         result.reserve(names.size());
         for (const auto & name : names)
         {

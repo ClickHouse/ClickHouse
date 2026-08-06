@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <unordered_map>
 #include <Columns/ColumnVariant.h>
 #include <Formats/FormatSettings.h>

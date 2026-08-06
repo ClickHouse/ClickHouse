@@ -1,4 +1,5 @@
 #include <cmath>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -24,7 +25,7 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
 
-    using Widths = std::vector<size_t>;
+    using Widths = VectorWithMemoryTracking<size_t>;
     Widths name_widths(columns);
     size_t max_name_width = 0;
 

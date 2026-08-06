@@ -1,4 +1,6 @@
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_ARROW || USE_PARQUET
 
@@ -500,8 +502,8 @@ namespace DB
                 format_name,
                 static_cast<int>(std::numeric_limits<int8_t>::max()));
 
-        std::vector<size_t> starts(num_variants);
-        std::vector<size_t> ends(num_variants);
+        VectorWithMemoryTracking<size_t> starts(num_variants);
+        VectorWithMemoryTracking<size_t> ends(num_variants);
         arrow::Status status;
         /// Here we are doing slicing - there is no clear specification on ColumnVariant having
         /// offsets being monotonic and contiguous (though from current code it seems they are),
@@ -1577,7 +1579,7 @@ namespace DB
             const auto & nested_types = tuple_type->getElements();
             const auto & nested_names = tuple_type->getElementNames();
             const auto * tuple_column = column ? assert_cast<const ColumnTuple *>(column.get()) : nullptr;
-            std::vector<std::shared_ptr<arrow::Field>> nested_fields;
+            std::vector<std::shared_ptr<arrow::Field>> nested_fields; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- arrow::struct_ takes std::vector
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
                 bool is_field_nullable = false;
@@ -1758,7 +1760,7 @@ namespace DB
         if (!columns_num)
             columns_num = header_columns.size();
 
-        std::vector<std::shared_ptr<arrow::Field>> arrow_fields;
+        std::vector<std::shared_ptr<arrow::Field>> arrow_fields; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- arrow::schema takes std::vector
         arrow_fields.reserve(*columns_num);
 
         for (size_t column_i = 0; column_i < *columns_num; ++column_i)
@@ -1814,7 +1816,7 @@ namespace DB
     std::shared_ptr<arrow::Table> CHColumnToArrowColumn::calculateArrowTable(
         const ColumnsWithTypeAndName & header_columns,
         const std::string & format_name,
-        const std::vector<Chunk> & chunks,
+        const VectorWithMemoryTracking<Chunk> & chunks,
         const Settings & settings,
         size_t columns_num,
         std::shared_ptr<arrow::Schema> schema,
@@ -1826,7 +1828,7 @@ namespace DB
         std::unordered_map<std::string, MutableColumnPtr> local_dictionary_values;
         std::unordered_map<std::string, MutableColumnPtr> & dictionary_values = cached_dictionary_values ? *cached_dictionary_values : local_dictionary_values;
 
-        std::vector<arrow::ArrayVector> table_data(columns_num);
+        VectorWithMemoryTracking<arrow::ArrayVector> table_data(columns_num);
 
         for (const auto & chunk : chunks)
         {
@@ -1873,7 +1875,7 @@ namespace DB
             }
         }
 
-        std::vector<std::shared_ptr<arrow::ChunkedArray>> columns;
+        std::vector<std::shared_ptr<arrow::ChunkedArray>> columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- arrow::Table::Make takes std::vector
         columns.reserve(columns_num);
         for (size_t column_i = 0; column_i < columns_num; ++column_i)
             columns.emplace_back(std::make_shared<arrow::ChunkedArray>(table_data.at(column_i)));
@@ -1930,7 +1932,7 @@ namespace DB
 
     void CHColumnToArrowColumn::chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
-        const std::vector<Chunk> & chunks,
+        const VectorWithMemoryTracking<Chunk> & chunks,
         size_t columns_num,
         const std::optional<std::unordered_map<String, Int64>> & column_to_field_id)
     {

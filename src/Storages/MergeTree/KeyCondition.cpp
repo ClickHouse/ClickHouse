@@ -6411,7 +6411,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
 }
 
 void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                          std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
+                                          std::function<std::optional<VectorWithMemoryTracking<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many)
 {
     for (auto & rpn_element : rpn)
     {
@@ -6440,7 +6440,7 @@ void KeyCondition::prepareBloomFilterData(std::function<std::optional<uint64_t>(
                 continue;
             }
 
-            hashes.emplace_back(std::vector<uint64_t>{*hashed_value});
+            hashes.emplace_back(VectorWithMemoryTracking<uint64_t>{*hashed_value});
 
             std::vector<std::size_t> key_columns_for_element;
             key_columns_for_element.emplace_back(rpn_element.getKeyColumn());
@@ -6876,7 +6876,7 @@ std::vector<std::pair</*start*/ size_t, /*end*/ size_t>> KeyCondition::topLevelC
     return std::move(stack[0].conjuncts);
 }
 
-void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const
+void KeyCondition::extractSingleColumnConditions(VectorWithMemoryTracking<std::pair<size_t, std::shared_ptr<KeyCondition>>> & out_column_conditions, std::shared_ptr<KeyCondition> * out_complex_condition) const
 {
     using RPNRanges = std::vector<std::pair<size_t, size_t>>;
     RPNRanges conjuncts = topLevelConjunction();

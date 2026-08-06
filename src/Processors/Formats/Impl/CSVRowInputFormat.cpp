@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
@@ -281,9 +282,9 @@ void CSVFormatReader::skipHeaderRow()
 }
 
 template <bool is_header>
-std::vector<String> CSVFormatReader::readRowImpl()
+VectorWithMemoryTracking<String> CSVFormatReader::readRowImpl()
 {
-    std::vector<String> fields;
+    VectorWithMemoryTracking<String> fields;
     do
     {
         fields.push_back(readCSVFieldIntoString<is_header>());
@@ -492,7 +493,7 @@ CSVSchemaReader::CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_t
 {
 }
 
-std::optional<std::pair<std::vector<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
+std::optional<std::pair<VectorWithMemoryTracking<String>, DataTypes>> CSVSchemaReader::readRowAndGetFieldsAndDataTypes()
 {
     if (buf.eof())
         return {};

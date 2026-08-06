@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ArrowGeoTypes.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <bit>
 #include <cstring>

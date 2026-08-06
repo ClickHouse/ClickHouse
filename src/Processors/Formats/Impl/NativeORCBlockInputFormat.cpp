@@ -1,4 +1,7 @@
 #include <Processors/Formats/Impl/NativeORCBlockInputFormat.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #if USE_ORC
 
@@ -802,7 +805,7 @@ static void buildORCSearchArgumentImpl(
                 const auto & set_column = ordered_set[0];
 
                 bool fail = false;
-                std::vector<orc::Literal> literals;
+                std::vector<orc::Literal> literals; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- orc::SearchArgumentBuilder::in takes std::vector
                 literals.reserve(set_column->size());
                 for (size_t i = 0; i < set_column->size(); ++i)
                 {
@@ -1157,7 +1160,7 @@ void NativeORCBlockInputFormat::prefetchStripes()
         return;
 
     size_t total_stripe_size = 0;
-    std::vector<uint32_t> stripes;
+    std::vector<uint32_t> stripes; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- orc::Reader::preBuffer takes std::vector
     while (prefetch_iterator < selected_stripes.size() && total_stripe_size < min_bytes_for_seek)
     {
         int stripe = selected_stripes[prefetch_iterator];
@@ -1178,9 +1181,9 @@ void NativeORCBlockInputFormat::prefetchStripes()
         time.elapsedMilliseconds());
 }
 
-std::vector<int> NativeORCBlockInputFormat::calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes)
+VectorWithMemoryTracking<int> NativeORCBlockInputFormat::calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes)
 {
-    std::vector<int> result;
+    VectorWithMemoryTracking<int> result;
     result.reserve(std::max<ssize_t>(num_stripes - skip_stripes.size(), 0));
     for (int stripe = 0; stripe < num_stripes; ++stripe)
     {
@@ -2220,16 +2223,16 @@ static DataTypes computeOrcUnionBranchHints(const orc::Type * orc_type, const Da
         return branch_hints;
 
     const auto & alternatives = variant_hint->getVariants();
-    std::vector<std::vector<size_t>> candidates(num_children);
+    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> candidates(num_children);
     for (size_t i = 0; i < num_children; ++i)
         for (size_t a = 0; a < alternatives.size(); ++a)
             if (orcUnionBranchMatchesType(orc_type->getSubtype(i), alternatives[a], case_insensitive_matching))
                 candidates[i].push_back(a);
 
-    std::vector<bool> alternative_taken(alternatives.size(), false);
+    VectorWithMemoryTracking<bool> alternative_taken(alternatives.size(), false);
     const auto preferred_candidates = [&](size_t i)
     {
-        std::vector<size_t> preferred;
+        VectorWithMemoryTracking<size_t> preferred;
         for (const size_t a : candidates[i])
             if (orcUnionBranchPrefersType(orc_type->getSubtype(i), alternatives[a]))
                 preferred.push_back(a);
@@ -2363,8 +2366,8 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         /// wrapping the branch value in Nullable.
         DataTypes branch_types;
         Columns branch_columns;
-        std::vector<ColumnPtr> branch_null_map_columns(num_children); /// keeps the null maps alive
-        std::vector<const NullMap *> branch_null_maps(num_children, nullptr);
+        VectorWithMemoryTracking<ColumnPtr> branch_null_map_columns(num_children); /// keeps the null maps alive
+        VectorWithMemoryTracking<const NullMap *> branch_null_maps(num_children, nullptr);
         branch_types.reserve(num_children);
         branch_columns.reserve(num_children);
         for (size_t i = 0; i < num_children; ++i)
@@ -2457,7 +2460,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             type_name_to_global[global_variants[g]->getName()] = static_cast<ColumnVariant::Discriminator>(g);
 
         MutableColumns variant_columns(global_variants.size());
-        std::vector<ColumnVariant::Discriminator> tag_to_global(num_children);
+        VectorWithMemoryTracking<ColumnVariant::Discriminator> tag_to_global(num_children);
         for (size_t i = 0; i < num_children; ++i)
         {
             auto global = type_name_to_global.at(branch_types[i]->getName());
@@ -2708,7 +2711,7 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
         {
             Columns tuple_elements;
             DataTypes tuple_types;
-            std::vector<String> tuple_names;
+            Strings tuple_names;
 
             const auto * tuple_type_hint = type_hint ? typeid_cast<const DataTypeTuple *>(type_hint.get()) : nullptr;
             const auto * orc_struct_column = dynamic_cast<const orc::StructVectorBatch *>(orc_column);

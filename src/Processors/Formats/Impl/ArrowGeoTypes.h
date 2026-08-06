@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/WKB.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Poco/Dynamic/Var.h>
 #include <Poco/JSON/Array.h>

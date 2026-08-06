@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <unordered_map>
 
 #include "config.h"

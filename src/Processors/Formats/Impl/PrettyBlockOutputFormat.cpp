@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/PrettyBlockOutputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Port.h>
@@ -538,8 +539,8 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     bool vertical_filler_written = false;
     size_t displayed_row = 0;
 
-    std::vector<std::optional<String>> serialized_values(num_columns);
-    std::vector<size_t> offsets_inside_serialized_values(num_columns);
+    VectorWithMemoryTracking<std::optional<String>> serialized_values(num_columns);
+    VectorWithMemoryTracking<size_t> offsets_inside_serialized_values(num_columns);
 
     for (size_t i = 0; i < num_rows && displayed_rows < format_settings.pretty.max_rows; ++i)
     {
