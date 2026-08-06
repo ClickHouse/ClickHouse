@@ -155,6 +155,17 @@ ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError AL
 DROP TABLE t_json_key_safety;
 
 -- ============================================================
+-- REJECT: MATERIALIZED column reaching the subcolumn through an ALIAS (alias chain must be expanded).
+-- ============================================================
+CREATE TABLE t_json_key_safety
+(id UInt32, j JSON(a Int32), a_alias String ALIAS reinterpretAsString(j.a), k String MATERIALIZED a_alias)
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', -1)) FROM numbers(2);
+SELECT 'MATERIALIZED column via ALIAS over subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
 -- REJECT: implicit auto-minmax index on an ALIAS column backed by the subcolumn.
 -- ============================================================
 CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32), k String ALIAS reinterpretAsString(j.a))

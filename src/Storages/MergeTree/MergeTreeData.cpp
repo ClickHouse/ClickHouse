@@ -62,6 +62,8 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Storages/ReplaceAliasByExpressionVisitor.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -5524,8 +5526,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             };
 
             /// Subcolumn-level required columns of an AST (analyzed with subcolumns, like an index
-            /// expression), for structures with no prebuilt ExpressionActions. Un-analyzable ASTs
-            /// (e.g. a group key that is a SELECT alias) are skipped.
+            /// expression), for structures with no prebuilt ExpressionActions. Table ALIAS columns are
+            /// expanded first so a MATERIALIZED column reaching the subcolumn through an alias is seen.
+            /// Un-analyzable ASTs (e.g. a group key that is a SELECT alias) are skipped.
             auto ast_uses_changed_subcolumn = [&](const ASTPtr & ast) -> bool
             {
                 if (!ast)
@@ -5542,6 +5545,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
                 try
                 {
+                    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+                    ReplaceAliasToExprVisitor::Data alias_data{old_columns_desc};
+                    ReplaceAliasToExprVisitor{alias_data}.visit(list);
+
                     auto syntax = TreeRewriter(local_context).analyze(
                         list, old_columns_desc.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
                     auto actions = ExpressionAnalyzer(list, syntax, local_context).getActions(/*add_aliases=*/ true);
