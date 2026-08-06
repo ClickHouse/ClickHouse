@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AggregateFunctions/WindowFunction.h>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Interpreters/WindowDescription.h>
 #include <Processors/IProcessor.h>
@@ -230,7 +231,7 @@ public:
 
     // Which input columns we actually read while computing the window functions: the PARTITION BY
     // and ORDER BY keys and the function arguments.
-    std::vector<UInt8> should_materialize;
+    VectorWithMemoryTracking<UInt8> should_materialize;
 
     // Per-window-function scratch spaces.
     VectorWithMemoryTracking<WindowFunctionWorkspace> workspaces;
@@ -243,7 +244,7 @@ public:
     // they arrive, and discard the blocks we don't need anymore. The blocks
     // have an always-incrementing index. The index of the first block is in
     // `first_block_number`.
-    std::deque<WindowTransformBlock> blocks;
+    DequeWithMemoryTracking<WindowTransformBlock> blocks;
     UInt64 first_block_number = 0;
     // The next block we are going to pass to the consumer.
     UInt64 next_output_block_number = 0;

@@ -1,4 +1,5 @@
 #include <Processors/Transforms/LimitByTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsCommon.h>
@@ -112,7 +113,7 @@ ChunkRowRange shrinkRunToLimitWindow(
 /// non-overlapping, and each slice must stay within `[0, source_row_count)`.
 /// Reuse the whole chunk when possible; otherwise prefer a single `cut` for
 /// contiguous rows and fall back to mask-based `filter`.
-UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt64 source_row_count, const std::vector<ChunkRowRange> & slices)
+UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt64 source_row_count, const VectorWithMemoryTracking<ChunkRowRange> & slices)
 {
     UInt64 output_row_count = 0;
     for (const auto & slice : slices)

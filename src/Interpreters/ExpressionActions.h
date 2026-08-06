@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/ActionsDAG.h>
@@ -122,11 +123,11 @@ public:
     ///
     /// `executeOnColumns` consumes `columns` (chunk data, in `header` order) and returns the result
     /// columns in `getSampleBlock()` order. It assumes `allow_duplicates_in_input == false`.
-    std::vector<ssize_t> getInputPositions(const Block & header) const;
+    VectorWithMemoryTracking<ssize_t> getInputPositions(const Block & header) const;
     Columns executeOnColumns(
         Columns columns,
         const Block & header,
-        const std::vector<ssize_t> & input_positions_for_header,
+        const VectorWithMemoryTracking<ssize_t> & input_positions_for_header,
         size_t & num_rows,
         bool dry_run = false,
         CheckCancelled check_cancelled = nullptr) const;

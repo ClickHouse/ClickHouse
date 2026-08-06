@@ -1,4 +1,5 @@
 #include <bit>
+#include <Common/ListWithMemoryTracking.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
@@ -471,7 +472,7 @@ private:
         return Status::Ready;
     }
 
-    std::list<Chunk> chunks;
+    ListWithMemoryTracking<Chunk> chunks;
 };
 
 /// Generates chunks with aggregated data.

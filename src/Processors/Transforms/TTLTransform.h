@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/PreparedSets.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
@@ -59,7 +60,7 @@ private:
         ExpressionActionsPtr default_expression;
         String default_column_name;
     };
-    std::unordered_map<String, ExpiredColumnData> expired_columns_data;
+    UnorderedMapWithMemoryTracking<String, ExpiredColumnData> expired_columns_data;
     LoggerPtr log;
 };
 

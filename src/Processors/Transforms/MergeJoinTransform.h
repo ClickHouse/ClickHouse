@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -269,7 +270,7 @@ private:
     SharedHeaders input_headers;
 
     /// For `USING` join key columns should have values from right side instead of defaults
-    std::unordered_map<size_t, size_t> left_to_right_key_remap;
+    UnorderedMapWithMemoryTracking<size_t, size_t> left_to_right_key_remap;
 
     std::array<FullMergeJoinCursor, 2> cursors;
     ASOFJoinInequality asof_inequality = ASOFJoinInequality::None;

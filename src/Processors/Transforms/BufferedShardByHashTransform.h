@@ -1,6 +1,7 @@
 #pragma once
 
-#include <deque>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/DequeWithMemoryTracking.h>
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
@@ -56,12 +57,12 @@ private:
     Chunk pending_input_chunk;
 
     /// Per-shard FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.
-    std::vector<std::deque<Chunk>> output_queues;
+    VectorWithMemoryTracking<DequeWithMemoryTracking<Chunk>> output_queues;
 
     /// Reused across input chunks to skip per-chunk reallocation.
     PaddedPODArray<UInt32> hash_buffer;
     IColumn::Selector selector;
-    std::vector<MutableColumns> shard_columns;
+    VectorWithMemoryTracking<MutableColumns> shard_columns;
 };
 
 }

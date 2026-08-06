@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Processors/Port.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
@@ -15,7 +16,7 @@ struct LazyMaterializingRows
 {
     using PartOffsetInDataPart = PaddedPODArray<UInt64>;
     /// part_index_in_query -> row numbers
-    using RowsInParts = std::map<size_t, PartOffsetInDataPart>;
+    using RowsInParts = MapWithMemoryTracking<size_t, PartOffsetInDataPart>;
 
     RowsInParts rows_in_parts;
     RangesInDataParts ranges_in_data_parts;

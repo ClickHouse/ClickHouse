@@ -66,10 +66,10 @@ private:
 
     /// The total number of input rows already seen for that group. This is useful to
     /// determine if the next row for that group should be outputted or not.
-    std::vector<UInt64> group_counts;
+    VectorWithMemoryTracking<UInt64> group_counts;
 
     /// Slices from the current chunk that will be emitted to output.
-    std::vector<ChunkRowRange> output_slices;
+    VectorWithMemoryTracking<ChunkRowRange> output_slices;
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 };
@@ -127,7 +127,7 @@ private:
     UInt64 current_group_rows_seen = 0;
 
     /// Slices from the current chunk that will be emitted to output.
-    std::vector<ChunkRowRange> output_slices;
+    VectorWithMemoryTracking<ChunkRowRange> output_slices;
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 };

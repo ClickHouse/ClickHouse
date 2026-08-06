@@ -1,6 +1,9 @@
 #pragma once
 
 #include <deque>
+#include <Common/DequeWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <list>
 #include <Columns/IColumn.h>
 #include <Core/SortDescription.h>
@@ -56,12 +59,12 @@ private:
     void consume(Chunk chunk) override;
     Chunk generate() override;
 
-    using CandidateList = std::list<ChunkSlice>;
+    using CandidateList = ListWithMemoryTracking<ChunkSlice>;
     using CandidateIt = CandidateList::iterator;
 
     struct GroupWindow
     {
-        std::deque<CandidateIt> slices;
+        DequeWithMemoryTracking<CandidateIt> slices;
         UInt64 window_rows = 0;
     };
 
@@ -74,7 +77,7 @@ private:
     template <typename Method>
     void consumeImpl(Method & method, const ColumnRawPtrs & key_columns, const ChunkSlice::ColumnsPtr & columns_ptr, UInt64 num_rows);
 
-    std::vector<size_t> key_positions;
+    VectorWithMemoryTracking<size_t> key_positions;
     const UInt64 group_offset;
     const UInt64 group_window_size;
 
@@ -82,7 +85,7 @@ private:
     CandidateList candidate_list;
 
     /// Holds the references to the ChunkSlices inside `candidate_list` per grouping key.
-    std::vector<GroupWindow> group_windows;
+    VectorWithMemoryTracking<GroupWindow> group_windows;
 
     AggregatedDataVariants data;
     ColumnsHashing::HashMethodContextPtr hash_method_context;
@@ -122,7 +125,7 @@ private:
 
     struct GroupWindow
     {
-        std::deque<ChunkSlice> slices;
+        DequeWithMemoryTracking<ChunkSlice> slices;
         UInt64 window_rows = 0;
     };
 
@@ -134,7 +137,7 @@ private:
 
     /// Positions of the non-constant grouping key columns in the chunk header, in physical sort order so
     /// that every column probed by `getEqualRangeEndAssumeSorted` is contiguous within the range.
-    std::vector<size_t> key_positions;
+    VectorWithMemoryTracking<size_t> key_positions;
     const UInt64 group_offset;
     const UInt64 group_window_size;
 
@@ -143,7 +146,7 @@ private:
 
     /// Slices staged for output. `generate()` coalesces consecutive slices
     /// sharing one source chunk into a single output chunk.
-    std::deque<ChunkSlice> pending;
+    DequeWithMemoryTracking<ChunkSlice> pending;
 };
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include <Compression/CompressedReadBuffer.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
@@ -24,7 +25,7 @@ public:
     VectorWithMemoryTracking<Int32> out_of_order_buckets; // out of order buckets for two level aggregation
 };
 
-using AggregatorList = std::list<Aggregator>;
+using AggregatorList = ListWithMemoryTracking<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
@@ -172,7 +173,7 @@ private:
 
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
-    std::list<TemporaryBlockStreamHolder> tmp_files;
+    ListWithMemoryTracking<TemporaryBlockStreamHolder> tmp_files;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 

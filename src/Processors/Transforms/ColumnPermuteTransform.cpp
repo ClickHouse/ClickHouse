@@ -7,10 +7,10 @@ namespace DB
 namespace
 {
 
-template <typename T, typename Allocator>
-void applyPermutation(std::vector<T, Allocator> & data, const VectorWithMemoryTracking<size_t> & permutation)
+template <typename TColumns>
+void applyPermutation(TColumns & data, const VectorWithMemoryTracking<size_t> & permutation)
 {
-    std::vector<T, Allocator> res;
+    TColumns res;
     res.reserve(permutation.size());
     for (size_t i : permutation)
         res.push_back(data[i]);

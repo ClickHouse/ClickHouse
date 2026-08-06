@@ -1190,7 +1190,7 @@ void WindowTransform::writeOutCurrentRow()
     }
 }
 
-static void assertSameColumns(const Columns & left_all, const Columns & right_all, const std::vector<UInt8> & columns_to_check)
+static void assertSameColumns(const Columns & left_all, const Columns & right_all, const VectorWithMemoryTracking<UInt8> & columns_to_check)
 {
     chassert(left_all.size() == right_all.size());
 

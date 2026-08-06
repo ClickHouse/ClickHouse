@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnLowCardinality.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Core/ColumnNumbers.h>
 #include <Interpreters/SetVariants.h>
 #include <Processors/ISimpleTransform.h>
@@ -91,7 +92,7 @@ private:
     };
 
     /// Per-dictionary state which may cover multiple IColumns.
-    std::unordered_map<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
+    UnorderedMapWithMemoryTracking<LCDictionaryKey, LCDictState, LCDictionaryKeyHash> lc_dict_states;
 
     LCOptimizationController lc_optimization_controller;
 
