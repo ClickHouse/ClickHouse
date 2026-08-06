@@ -5724,6 +5724,36 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
     for (const auto & ephemeral_column : columns.getEphemeral())
         all_columns_with_ephemeral.push_back(ephemeral_column);
 
+    /// `requiredSourceColumns` of an expression may name an `EPHEMERAL` column rather than the
+    /// stored columns its default expression reads (`m MATERIALIZED e + 1` with `e EPHEMERAL
+    /// x * 2` requires `e`, not `x`), so expand every `EPHEMERAL` dependency through its default
+    /// expression until only stored columns remain.
+    auto required_source_columns_expanded = [&](const ASTPtr & expression)
+    {
+        Names required_columns;
+        NameSet visited_columns;
+        std::vector<ASTPtr> expressions_to_analyze{expression};
+        while (!expressions_to_analyze.empty())
+        {
+            auto expression_query = expressions_to_analyze.back()->clone();
+            expressions_to_analyze.pop_back();
+            replaceSubcolumnsToGetSubcolumnFunctionInQuery(expression_query, all_columns_with_ephemeral);
+            auto syntax_result = TreeRewriter(getContext()).analyze(expression_query, all_columns_with_ephemeral);
+            for (const auto & required_column : syntax_result->requiredSourceColumns())
+            {
+                if (!visited_columns.emplace(required_column).second)
+                    continue;
+                const auto * required_column_desc = columns.tryGet(required_column);
+                if (required_column_desc && required_column_desc->default_desc.kind == ColumnDefaultKind::Ephemeral
+                    && required_column_desc->default_desc.expression)
+                    expressions_to_analyze.push_back(required_column_desc->default_desc.expression);
+                else
+                    required_columns.push_back(required_column);
+            }
+        }
+        return required_columns;
+    };
+
     for (const auto & dependent_column : columns)
     {
         if (dependent_column.default_desc.kind != ColumnDefaultKind::Materialized
@@ -5731,10 +5761,7 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
             || dependent_column.name == column_name)
             continue;
 
-        auto expression_query = dependent_column.default_desc.expression->clone();
-        replaceSubcolumnsToGetSubcolumnFunctionInQuery(expression_query, all_columns_with_ephemeral);
-        auto syntax_result = TreeRewriter(getContext()).analyze(expression_query, all_columns_with_ephemeral);
-        if (depends_on_recompressed_column(syntax_result->requiredSourceColumns()))
+        if (depends_on_recompressed_column(required_source_columns_expanded(dependent_column.default_desc.expression)))
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the stored MATERIALIZED column "
                 "`{}` is computed from this column, and it is not recalculated by the recompression, so "
