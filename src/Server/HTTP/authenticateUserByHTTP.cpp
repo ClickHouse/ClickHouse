@@ -57,6 +57,17 @@ namespace
         Session & session,
         const Poco::Net::SocketAddress & address)
     {
+        /// The empty-user reject must come before the memory check: the request is rejected
+        /// either way, and rejecting it as an anonymous login keeps the `LoginFailure` row in
+        /// `system.session_log` that the `default_session_user` setting promises for every
+        /// prohibited anonymous connection, even when the server is over the memory limit.
+        if (user_name.empty())
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from {}", method);
+            session.onAuthenticationFailure(user_name, address, exception);
+            throw exception; /// NOLINT
+        }
+
         auto users_to_ignore_early_memory_limit_check = context->getUsersToIgnoreEarlyMemoryLimitCheck();
         if (!(users_to_ignore_early_memory_limit_check && users_to_ignore_early_memory_limit_check->contains(user_name)))
         {
@@ -65,13 +76,6 @@ namespace
         }
         else
             LOG_TEST(getLogger("authenticateUserByHTTP"), "Skipping memory limit check for user: {}", user_name);
-
-        if (user_name.empty())
-        {
-            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from {}", method);
-            session.onAuthenticationFailure(user_name, address, exception);
-            throw exception; /// NOLINT
-        }
     }
 }
 
