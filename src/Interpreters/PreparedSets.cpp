@@ -64,6 +64,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode set_overflow_mode;
@@ -82,6 +83,14 @@ namespace ErrorCodes
 SizeLimits PreparedSets::getSizeLimitsForSet(const Settings & settings)
 {
     return SizeLimits(settings[Setting::max_rows_in_set], settings[Setting::max_bytes_in_set], settings[Setting::set_overflow_mode]);
+}
+
+/// A distributed plan ships the set's values to worker tasks, so
+/// `use_index_for_in_with_subqueries_max_values` must not drop them; the transfer limits
+/// bound them at task serialization.
+static size_t getMaxSizeForIndex(const Settings & settings)
+{
+    return settings[Setting::make_distributed_plan] ? 0 : settings[Setting::use_index_for_in_with_subqueries_max_values];
 }
 
 static bool equals(const DataTypes & lhs, const DataTypes & rhs)
@@ -410,6 +419,15 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
 
+    /// A distributed plan ships the set's elements to worker tasks: retain them, and skip the
+    /// cache, because a cached set was built elsewhere, without the elements.
+    if (settings[Setting::make_distributed_plan])
+    {
+        if (!set_and_key->set->hasExplicitSetElements())
+            set_and_key->set->fillSetElements();
+        prepared_sets_cache = nullptr;
+    }
+
     auto plan = build(network_transfer_limits, prepared_sets_cache);
 
     if (!plan)
@@ -560,6 +578,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         /// `source` is gone, so the deferred build cannot rebuild — exactly the previous behavior; the set
         /// is never reused with partial rows, because the deferred build throws "Not-ready Set" instead.
         auto prepared_sets_cache = context->getPreparedSetsCache();
+        /// A distributed plan ships the set's values to worker tasks, and a cached set has none.
+        if (settings[Setting::make_distributed_plan])
+            prepared_sets_cache = nullptr;
         plan = build(network_transfer_limits, prepared_sets_cache);
         if (!plan)
             return nullptr;
@@ -680,7 +701,7 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
         key, std::move(ast), std::move(source), std::move(external_table), std::move(external_table_set),
-        settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
+        settings[Setting::transform_null_in], size_limits, getMaxSizeForIndex(settings));
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 
@@ -699,7 +720,7 @@ FutureSetFromSubqueryPtr PreparedSets::addFromSubquery(
     auto size_limits = getSizeLimitsForSet(settings);
     auto from_subquery = std::make_shared<FutureSetFromSubquery>(
         key, std::move(ast), std::move(query_tree),
-        settings[Setting::transform_null_in], size_limits, settings[Setting::use_index_for_in_with_subqueries_max_values]);
+        settings[Setting::transform_null_in], size_limits, getMaxSizeForIndex(settings));
 
     auto [it, inserted] = sets_from_subqueries.emplace(key, from_subquery);
 
