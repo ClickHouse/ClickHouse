@@ -125,11 +125,9 @@ ClickHouse Cloud is tuned for variable workloads, and for that reason most syste
 ### Advanced security administration {#advanced-security-administration}
 As part of creating the ClickHouse service, we create a default database, and the default user that has broad permissions to this database. This initial user can create additional users and assign their permissions to this database. Beyond this, the ability to enable the following security features within the database using Kerberos, LDAP, or SSL X.509 certificate authentication aren't supported at this time.
 
-{/* CLOUD_NOT_SUPPORTED_FEATURES_START */}
-
 ## List of unsupported features {#list-of-unsupported-features}
 
-The following tables list features and self-managed procedures that are marked as unsupported in ClickHouse Cloud. Each entry names the specific unsupported capability, even when its source page also covers supported functionality. Source links are collected weekly from uses of the Cloud not supported badge; capability names and categories are curated.
+The following tables list features and self-managed procedures that are marked as unsupported in ClickHouse Cloud. Each entry names the specific unsupported capability, even when its source page also covers supported functionality.
 
 ### Managed infrastructure and operations {#unsupported-managed-infrastructure-and-operations}
 
@@ -219,8 +217,6 @@ The following tables list features and self-managed procedures that are marked a
 | Starting and stopping background fetches with `SYSTEM` statements | [`SYSTEM STOP FETCHES`](/reference/statements/system#stop-fetches), [`SYSTEM START FETCHES`](/reference/statements/system#start-fetches) |
 | Starting and stopping background merges with `SYSTEM` statements | [`SYSTEM STOP MERGES`](/reference/statements/system#stop-merges), [`SYSTEM START MERGES`](/reference/statements/system#start-merges) |
 | Starting and stopping background `TTL` merges with `SYSTEM` statements | [`SYSTEM STOP TTL MERGES`](/reference/statements/system#stop-ttl-merges), [`SYSTEM START TTL MERGES`](/reference/statements/system#start-ttl-merges) |
-
-{/* CLOUD_NOT_SUPPORTED_FEATURES_END */}
 
 ## Roadmap {#roadmap}
 
