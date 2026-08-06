@@ -523,6 +523,66 @@ def test_stop_server_wins_when_teardown_starts_inside_the_restart_gap(
         _cleanup(proc, ClickHouseProc._current_server_pid(pid_file) or startup_pid)
 
 
+def test_stop_respawned_server_survives_a_walk_failure_with_the_startup_snapshot(
+    monkeypatch, tmp_path
+):
+    # `_stop_respawned_server` walks the watchdogs up from whatever server came
+    # back, and on the `HAS_PROC = False` path a transient `ps` failure turns
+    # that walk into `[]` (see `_parent_pid`). Killing only the server then
+    # cannot win - the watchdog respawns another one on every attempt until the
+    # loop runs out and `stop_server` returns with a live server holding
+    # `<run_path>/status`. So that branch has to fall back to the `watchdogs`
+    # snapshot taken before the teardown, exactly as `_stop_one_server` does
+    # for its own walk.
+    pid_file = tmp_path / "clickhouse-server.pid"
+    proc, startup_pid = _start_fake_server(tmp_path, restart_mode="always")
+    watchdogs = ClickHouseProc._server_watchdog_pids(startup_pid)
+    try:
+        assert watchdogs, "the fake watchdog is not above the fake server"
+        ch = _make_proc(monkeypatch, tmp_path, proc, startup_pid)
+        # The startup snapshot above and the walk inside `_stop_one_server`
+        # stay real; the walk fails only while `_stop_respawned_server` runs,
+        # the shape of a `ps` outage that begins mid-teardown.
+        real_walk = ClickHouseProc._server_watchdog_pids.__func__
+        real_stop_respawned = ClickHouseProc._stop_respawned_server.__func__
+
+        def stop_respawned_with_failing_walk(cls, pid_file, run_path, watchdogs=()):
+            monkeypatch.setattr(
+                ClickHouseProc,
+                "_server_watchdog_pids",
+                classmethod(lambda cls, pid: []),
+            )
+            try:
+                return real_stop_respawned(cls, pid_file, run_path, watchdogs)
+            finally:
+                monkeypatch.setattr(
+                    ClickHouseProc, "_server_watchdog_pids", classmethod(real_walk)
+                )
+
+        monkeypatch.setattr(
+            ClickHouseProc,
+            "_stop_respawned_server",
+            classmethod(stop_respawned_with_failing_walk),
+        )
+        ch.stop_server()
+        for watchdog in watchdogs:
+            assert not _pid_alive(watchdog), (
+                f"the watchdog {watchdog} outlived a teardown whose watchdog "
+                "walk failed and is still free to bring a server back"
+            )
+        assert not ClickHouseProc._current_server_pid(pid_file), (
+            f"a server ({pid_file.read_text().strip()}) outlived stop_server"
+        )
+        assert _status_lock_is_free(tmp_path), (
+            "the status lock was still held after stop_server returned; "
+            "`clickhouse local` cannot scrape this replica's system tables"
+        )
+    finally:
+        for watchdog in watchdogs:
+            _cleanup(proc, watchdog)
+        _cleanup(proc, ClickHouseProc._current_server_pid(pid_file) or startup_pid)
+
+
 def test_watchdog_discovery_sees_the_renamed_watchdog(tmp_path):
     # `BaseDaemon::setupWatchdog` renames the watchdog to `clickhouse-watchdog`
     # in place, so a server started as `clickhouse-server` leaves it named

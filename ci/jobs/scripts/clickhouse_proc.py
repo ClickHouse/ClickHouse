@@ -951,7 +951,15 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     return
                 cls._kill_watchdogs(still_alive)
                 continue
-            cls._kill_watchdogs(cls._server_watchdog_pids(pid))
+            # The fresh walk can transiently come up empty - on the
+            # `HAS_PROC = False` path a failing `ps` yields no ancestors at all
+            # (see `_parent_pid`) - and killing only the server then loses to
+            # the watchdog, which respawns another one on every attempt until
+            # the loop runs out. The `watchdogs` snapshot is the same fallback
+            # `_stop_one_server` uses: the watchdog keeps its pid across the
+            # respawns it performs, and `_kill_watchdogs` re-checks each pid's
+            # identity before signalling it.
+            cls._kill_watchdogs(cls._server_watchdog_pids(pid) or list(watchdogs))
             print(
                 f"ClickHouse process {pid} came up again after the teardown - send KILL signal"
             )
