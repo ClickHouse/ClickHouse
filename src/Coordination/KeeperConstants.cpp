@@ -417,6 +417,9 @@ extern const std::vector<Event> keeper_profile_events
     M(KeeperChangelogReadAheadThreads) \
     M(KeeperChangelogReadAheadThreadsActive) \
     M(KeeperChangelogReadAheadThreadsScheduled) \
+    M(KeeperBlockCacheBytes) \
+    M(KeeperBlockCacheBlocks) \
+    M(KeeperContainerNodes) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \
