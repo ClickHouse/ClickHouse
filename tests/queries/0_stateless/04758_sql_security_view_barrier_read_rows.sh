@@ -31,10 +31,17 @@ EOF
 
 # `99999` exists in the table but is hidden by the view; `500000` exists nowhere. With the barrier
 # the two must read the same number of rows, so the invoker learns nothing about the hidden row.
+#
+# The comparison is an exact equality of `read_rows` between two runs, so the per-query random
+# read-path injections the test harness enables must be pinned off, and a single thread keeps the
+# read pool deterministic — none of them affects the index analysis the test guards.
 probe() {
     local query_id="probe_${CLICKHOUSE_DATABASE}_$1_$2"
-    ${CLICKHOUSE_CLIENT} --enable_analyzer "$1" --user "$user" --query_id "$query_id" --query \
-        "SELECT count() FROM $db.owned_view WHERE key = $2" > /dev/null
+    ${CLICKHOUSE_CLIENT} --enable_analyzer "$1" --user "$user" --query_id "$query_id" \
+        --max_threads 1 \
+        --merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability 0 \
+        --page_cache_inject_eviction 0 \
+        --query "SELECT count() FROM $db.owned_view WHERE key = $2" > /dev/null
     echo "$query_id"
 }
 
