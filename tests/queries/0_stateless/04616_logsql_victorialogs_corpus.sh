@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: long
+# It is a corpus of hundreds of queries, and it can take more than three minutes under sanitizers.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -1261,8 +1263,10 @@ CORPUS_EOF
 $CLICKHOUSE_CLIENT "${LOGSQL_OPTS[@]}" --queries-file "$VALID_QUERIES" < /dev/null > /dev/null && echo "valid queries: OK"
 
 # All these queries are invalid in LogsQL and must be rejected.
+# The queries are sent over HTTP, because spawning a separate client for each of them is too slow under sanitizers.
+LOGSQL_URL="${CLICKHOUSE_URL}&dialect=logsql&allow_experimental_logsql_dialect=1&logsql_table=corpus_logs_04616"
 while IFS= read -r query; do
-    if $CLICKHOUSE_CLIENT "${LOGSQL_OPTS[@]}" -q "$query" < /dev/null > /dev/null 2>&1; then
+    if ! ${CLICKHOUSE_CURL} -sS "$LOGSQL_URL" --data-binary "$query" 2>&1 | grep -q "Code:"; then
         echo "UNEXPECTEDLY ACCEPTED: $query"
     fi
 done <<'INVALID_EOF'
