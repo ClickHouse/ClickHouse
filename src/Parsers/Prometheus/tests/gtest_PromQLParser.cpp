@@ -1356,6 +1356,37 @@ PrometheusQueryTree(SCALAR):
 }
 
 
+TEST(PromQLParser, OctalTimestamp)
+{
+    EXPECT_EQ(parse("up @ 0755"), R"(
+up @ 493
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: 493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+}
+
+
+TEST(PromQLParser, OctalTimestampOverflow)
+{
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = String::npos;
+
+    EXPECT_FALSE(query_tree.tryParse(
+        "up @ 0777777777777777777777",
+        3,
+        &error_message,
+        &error_pos));
+
+    EXPECT_EQ(error_pos, 5);
+    EXPECT_NE(error_message.find("Overflow"), String::npos);
+}
+
+
 TEST(PromQLParser, OtherQueries)
 {
     EXPECT_EQ(parse("0.74"), R"(

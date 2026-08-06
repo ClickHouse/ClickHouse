@@ -391,8 +391,16 @@ namespace
             {
                 if constexpr (is_decimal<T>)
                 {
-                    result = T(value);
-                    result *= DecimalUtils::scaleMultiplier<Decimal64>(scale);
+                    if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<T>(scale), result.value))
+                    {
+                        setErrorMessage(
+                            error_message,
+                            "Cannot parse {} {} in octal format: Overflow, the number is too big",
+                            getTypeName<T>(),
+                            quoteString(input));
+                        setErrorPos(error_pos, 0);
+                        return false;
+                    }
                 }
                 else
                 {
