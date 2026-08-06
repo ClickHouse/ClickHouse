@@ -346,7 +346,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextP
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    StreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
+    MySQLStreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
     auto result = std::make_unique<MySQLSource>(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
     QueryPipeline pipeline(std::move(result));
 
@@ -612,10 +612,16 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         }
         else
         {
-            if (arguments.size() != 4)
+            /// The TLS credentials are trailing `key = value` arguments; the copy keeps them in the
+            /// stored `CREATE DATABASE` query, where they are masked when it is formatted.
+            ASTs positional_arguments = arguments;
+            configuration.ssl_params = StorageMySQL::extractSSLParamsFromArguments(positional_arguments, args.context);
+
+            if (positional_arguments.size() != 4)
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
-                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.");
+                    "MySQL database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments "
+                    "(optionally followed by ssl_ca_pem = '...', ssl_cert_pem = '...', ssl_key_pem = '...').");
 
 
             arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], args.context);
@@ -716,7 +722,22 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-## Data types support {#data_types-support}
+## TLS/SSL {#tls-ssl}
+
+The credentials of an encrypted connection to MySQL are passed as [named collection](/operations/named-collections.md) keys (or as key-value arguments):
+
+| Parameter | Description |
+|-----------|-------------|
+| `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. |
+| `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. |
+| `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. |
+
+The values are the contents of the corresponding PEM files, which can be copied into a named collection or into a query. They are masked in logs and in `SHOW` queries, the same way passwords are.
+
+The same credentials can also be given as paths to files on the server, in `ssl_ca`, `ssl_cert` and `ssl_key` — but **only in a named collection defined in the server configuration file**, and such a value cannot be overridden in a query. The server opens those files with its own privileges, so accepting a path from SQL would let any user who is able to define a MySQL source probe the local filesystem, and authenticate with a certificate and key they are not allowed to read themselves.
+
+<a id="data_types-support"></a>
+## Data types support {#data-types-support}
 
 | MySQL                            | ClickHouse                                                   |
 |----------------------------------|--------------------------------------------------------------|
@@ -733,8 +754,14 @@ SETTINGS enable_compression = 1;
 | DATE                             | [Date](/reference/data-types/date)               |
 | DATETIME, TIMESTAMP              | [DateTime](/reference/data-types/datetime)       |
 | BINARY                           | [FixedString](/reference/data-types/fixedstring) |
+| POINT                            | [Point](/reference/data-types/geo#point)         |
+| LINESTRING                       | [LineString](/reference/data-types/geo#linestring) |
+| POLYGON                          | [Polygon](/reference/data-types/geo#polygon)     |
+| MULTILINESTRING                  | [MultiLineString](/reference/data-types/geo#multilinestring) |
+| MULTIPOLYGON                     | [MultiPolygon](/reference/data-types/geo#multipolygon) |
+| GEOMETRY                         | [Geometry](/reference/data-types/geo#geometry)   |
 
-All other MySQL data types are converted into [String](/reference/data-types/string).
+The conversion of the spatial types (other than `POINT`, which is always converted) is controlled by the `geometry` flag of the [`mysql_datatypes_support_level`](/reference/settings/session-settings/mysql#mysql_datatypes_support_level) setting, enabled by default. The generic `GEOMETRY` column type is mapped to the umbrella [`Geometry`](/reference/data-types/geo#geometry) type (a `Variant` over the concrete geometric types). Because such a column can hold a value of any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; this incompatibility is accepted in exchange for a proper geometric type. Columns declared with the `GEOMETRYCOLLECTION` type are converted into [String](/reference/data-types/string) (the raw WKB) like all other MySQL data types.
 
 [Nullable](/reference/data-types/nullable) is supported.
 
