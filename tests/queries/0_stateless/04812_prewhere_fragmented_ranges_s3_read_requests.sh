@@ -29,7 +29,7 @@ SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0, index_granularity = 16,
     min_compress_block_size = 512, max_compress_block_size = 512;
 
 -- v is constant within each 16-row granule; only every 10th granule matches v = 3.
-INSERT INTO t_prewhere_s3_requests SELECT number, intDiv(number, 16) % 10, number FROM numbers(600000);
+INSERT INTO t_prewhere_s3_requests SELECT number, intDiv(number, 16) % 10, number FROM numbers(60000);
 "
 
 query_id="04812_prewhere_s3_requests_${CLICKHOUSE_DATABASE}_$RANDOM"
@@ -38,7 +38,7 @@ query_id="04812_prewhere_s3_requests_${CLICKHOUSE_DATABASE}_$RANDOM"
 ${CLICKHOUSE_CLIENT} --query "
 EXPLAIN indexes = 1
 SELECT sum(b) FROM t_prewhere_s3_requests PREWHERE v = 3
-SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0
+SETTINGS use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, enable_parallel_replicas = 0
 " | grep -A4 'Name: ix_v' | grep 'Granules:' | sed 's/^ *//'
 
 ${CLICKHOUSE_CLIENT} --query_id "$query_id" -m --query "
@@ -52,7 +52,7 @@ SETTINGS
     max_rows_to_read = 0,
     enable_parallel_replicas = 0,
     max_threads = 1,
-    max_block_size = 512,
+    max_block_size = 64,
     merge_tree_min_rows_for_concurrent_read = 1000000000,
     merge_tree_min_bytes_for_concurrent_read = 1000000000,
     allow_prefetched_read_pool_for_remote_filesystem = 0,
@@ -64,9 +64,9 @@ SETTINGS
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
-# The part has ~37500 granules, ~3750 of them survive the index analysis. Without a task-wide
-# right bound of read requests this query issues hundreds of requests (one per bound advance)
-# for the column read by the step after PREWHERE.
+# The part has ~3750 granules, ~375 of them survive the index analysis. Without a task-wide
+# right bound of read requests this query issues about a hundred requests (one per bound
+# advance) for the column read by the step after PREWHERE, versus a few with the bound.
 ${CLICKHOUSE_CLIENT} -m --query "
 SELECT
     ProfileEvents['S3ReadRequestsCount'] < 20 AS few_read_requests
