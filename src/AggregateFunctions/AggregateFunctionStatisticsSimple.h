@@ -56,6 +56,7 @@ struct StatFuncOneArg
     using Data = VarMoments<ResultType, _level>;
 
     static constexpr UInt32 num_args = 1;
+    static constexpr size_t level = _level;
 };
 
 template <typename T1, typename T2, template <typename> typename Moments>
@@ -142,29 +143,60 @@ public:
             /// (`Decimal::operator T`), so it would quietly accumulate the unscaled integers. Hence
             /// the conversion has to happen before the kernel sees the values.
             ///
-            /// Converting the whole range into one buffer would push it out to memory and read it
-            /// back, so the values are converted a tile at a time and each tile is accumulated while
-            /// it is still in L1.
-            if constexpr (StatFunc::num_args == 1)
+            /// Where that conversion belongs depends on whether the target can convert packed. If it
+            /// can, the division rides along inside the accumulation loop and nothing is copied. If
+            /// it cannot, the scalar converts would hold the accumulation back, so the values go
+            /// into a buffer first and the accumulation reads that instead - a tile at a time, since
+            /// converting the whole range would push it out to memory and read it back.
+            ///
+            /// `x86-64-v3` has no packed `int64 -> double` at all (`vcvtqq2pd` arrived with
+            /// AVX-512) and measures faster through the buffer for `Decimal32` as well. AArch64
+            /// converts and divides packed with `scvtf` and `fdiv`, but only up to 64-bit lanes, so
+            /// `Decimal128` and wider go through the buffer there too.
+            ///
+            /// This choice does not change the result. Both shapes accumulate into the same number
+            /// of lanes and walk the input in `TILE`-sized chunks, so the moments are folded at the
+            /// same points and the two produce bit-identical output; only where the division happens
+            /// differs. That was checked by running both against each other on x86-64 and AArch64.
+            ///
+            /// Only levels 1 and 2 - `varPop`, `varSamp`, `stddevPop`, `stddevSamp` - take this
+            /// path. `skewPop` and `kurtPop` carry two more moments per lane, and on AArch64 no lane
+            /// count recovers the cost: measured against the per-row path there, the best of 2, 4, 8
+            /// and 16 lanes still comes out at +6.9% for level 3, while on x86-64 the whole gain for
+            /// those two functions measured only -7.2% in CI. Not worth a regression on one target
+            /// for that, so the higher moments stay on the per-row path everywhere.
+            if constexpr (StatFunc::num_args == 1 && StatFunc::level <= 2)
             {
                 if (if_argument_pos < 0)
                 {
+#if defined(__x86_64__)
+                    static constexpr bool convert_into_buffer = true;
+#else
+                    static constexpr bool convert_into_buffer = sizeof(typename T1::NativeType) > 8;
+#endif
                     static constexpr size_t TILE = 1024; /// `ResultType[TILE]` stays in L1
                     const auto & vec = static_cast<const ColVecT1 &>(*columns[0]).getData();
                     auto & data = this->data(place);
-                    ResultType buf[TILE];
+
+                    [[maybe_unused]] ResultType buf[convert_into_buffer ? TILE : 1];
                     for (size_t off = row_begin; off < row_end; off += TILE)
                     {
                         const size_t tile = std::min(TILE, row_end - off);
-                        for (size_t k = 0; k < tile; ++k)
-                            buf[k] = convertOne(vec[off + k], decimal_divisor);
-                        data.addMany(buf, /*row_begin=*/0, tile);
+                        if constexpr (convert_into_buffer)
+                        {
+                            for (size_t k = 0; k < tile; ++k)
+                                buf[k] = convertOne(vec[off + k], decimal_divisor);
+                            data.addMany(buf, /*row_begin=*/0, tile);
+                        }
+                        else
+                            data.addManyDivided(vec.data() + off, decimal_divisor, /*row_begin=*/0, tile);
                     }
                     return;
                 }
             }
 
-            /// Conditional and two-argument aggregation over `Decimal` stay on the generic per-row path.
+            /// Conditional aggregation, the two-argument kinds and the higher moments stay on the
+            /// generic per-row path.
             Base::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
         }
         else

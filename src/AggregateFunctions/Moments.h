@@ -110,6 +110,53 @@ struct VarMoments
         addManyImpl(ptr, row_begin, row_end);
     }
 
+    /// `addManyImpl` for source elements that carry a scale, so that a value is only recovered as
+    /// `raw / 10^scale`: the division happens inside the accumulation loop. This is worth doing only
+    /// where the target converts and divides packed - AArch64 does, through `scvtf` and `fdiv`.
+    /// Where it cannot, the caller should convert into a buffer first and use `addMany` instead, so
+    /// the scalar converts do not hold the accumulation back.
+    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(
+    template <typename Value>
+    void NO_INLINE
+    ), addManyDividedImpl, MULTITARGET_FUNCTION_BODY((const Value * __restrict ptr, T divisor, size_t row_begin, size_t row_end) /// NOLINT
+    {
+        T partials[_level][unroll_count]{};
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t j = 0; j < unroll_count; ++j)
+            {
+                T x = static_cast<T>(ptr[i + j].value) / divisor;
+                partials[0][j] += x;
+                partials[1][j] += x * x;
+                if constexpr (_level >= 3) partials[2][j] += x * x * x;
+                if constexpr (_level >= 4) partials[3][j] += x * x * x * x;
+            }
+        }
+        m[0] += static_cast<T>(i - row_begin);
+        for (size_t k = 1; k <= _level; ++k)
+            for (size_t j = 0; j < unroll_count; ++j)
+                m[k] += partials[k - 1][j];
+        for (; i < row_end; ++i)
+            add(static_cast<T>(ptr[i].value) / divisor);
+    })
+    )
+
+    template <typename Value>
+    void addManyDivided(const Value * __restrict ptr, T divisor, size_t row_begin, size_t row_end)
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addManyDividedImpl_x86_64_v4(ptr, divisor, row_begin, row_end);
+            return;
+        }
+#endif
+
+        addManyDividedImpl(ptr, divisor, row_begin, row_end);
+    }
+
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value, bool add_if_zero>
