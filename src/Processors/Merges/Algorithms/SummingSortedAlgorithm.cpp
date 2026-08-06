@@ -1,4 +1,6 @@
 #include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <memory>
@@ -128,7 +130,7 @@ static bool isInNames(const std::string & column_name, const Names & names)
 /// ancestors is in `names`. `flatten_ancestors[flattened_index]` holds the ancestor paths of
 /// the flattened column, as produced by `Nested::flattenTupleRecursive`.
 static bool isColumnOrAncestorInNames(
-    size_t flattened_index, const Block & header_flatten, const std::vector<Strings> & flatten_ancestors, const Names & names)
+    size_t flattened_index, const Block & header_flatten, const VectorWithMemoryTracking<Strings> & flatten_ancestors, const Names & names)
 {
     if (isInNames(header_flatten.safeGetByPosition(flattened_index).name, names))
         return true;
@@ -137,8 +139,6 @@ static bool isColumnOrAncestorInNames(
             return true;
     return false;
 }
-
-using Row = std::vector<Field>;
 
 /// Returns true if merge result is not empty
 static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
@@ -176,7 +176,7 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
         return res;
     };
 
-    std::map<Array, Array> merged;
+    MapWithMemoryTracking<Array, Array> merged;
 
     auto accumulate = [](Array & dst, const Array & src)
     {
@@ -266,7 +266,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
 
     /// `flatten_ancestors[i]` holds, for flattened column `i`, the list of its true tuple
     /// ancestor paths (empty for columns that are not the result of tuple flattening).
-    std::vector<Strings> flatten_ancestors;
+    VectorWithMemoryTracking<Strings> flatten_ancestors;
     Block header_flatten;
     if (allow_tuple_element_aggregation)
         header_flatten = Nested::flattenTupleRecursive(header, &flatten_ancestors);
@@ -283,7 +283,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     NameSet original_column_names = header.getNameSet();
 
     /// name of nested structure -> the column numbers that refer to it.
-    std::unordered_map<std::string, VectorWithMemoryTracking<size_t>> discovered_maps;
+    UnorderedMapWithMemoryTracking<std::string, VectorWithMemoryTracking<size_t>> discovered_maps;
 
     /** Fill in the column numbers, which must be summed.
         * This can only be numeric columns that are not part of the sort key.
@@ -659,7 +659,7 @@ static void postprocessChunk(
 }
 
 static void setRow(Row & row, Columns & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num,
-                   const Names & column_names, const std::vector<bool> & columns_need_exact_copy)
+                   const Names & column_names, const VectorWithMemoryTracking<bool> & columns_need_exact_copy)
 {
     size_t num_columns = row.size();
     const auto handle_exception = [&](const char * logger_name, const char * reason, const size_t column_index)

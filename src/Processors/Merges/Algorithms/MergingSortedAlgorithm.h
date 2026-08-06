@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
@@ -77,7 +78,7 @@ private:
     void insertChunk(size_t source_num);
 
     /// Per-input pending virtual-row boundary (empty when none), used for debug checks to ensure virtual rows are placed correctly.
-    std::vector<Columns> virtual_row_boundary;
+    VectorWithMemoryTracking<Columns> virtual_row_boundary;
 };
 
 }

@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/QueueWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
 #include <Processors/Chunk.h>
 
-#include <queue>
 
 namespace Poco
 {
@@ -61,7 +61,7 @@ private:
     bool cleanup = false;
 
     bool enable_vertical_final = false; /// Either we use skipping final algorithm
-    std::queue<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
+    QueueWithMemoryTracking<detail::SharedChunkPtr> to_be_emitted;   /// To save chunks when using skipping final
 
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 2; /// last, current.

@@ -32,7 +32,10 @@ namespace DB::ErrorCodes
 
 namespace DB::Graphite
 {
-static std::unordered_map<RuleType, const String> ruleTypeMap =
+/// A process-wide constant built during static initialization. A `-WithMemoryTracking` container would
+/// charge it to whichever thread's memory tracker happens to be current, and would throw on allocation
+/// failure before any tracker is set up.
+static std::unordered_map<RuleType, const String> ruleTypeMap = /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 {
    { RuleTypeAll, "all" },
    { RuleTypePlain, "plain" },

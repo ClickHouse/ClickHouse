@@ -40,7 +40,7 @@ protected:
     };
 
     /// Sources currently being merged.
-    using Sources = std::vector<Source>;
+    using Sources = VectorWithMemoryTracking<Source>;
     Sources sources;
     VectorWithMemoryTracking<size_t> sources_origin_merge_tree_part_level;
 
