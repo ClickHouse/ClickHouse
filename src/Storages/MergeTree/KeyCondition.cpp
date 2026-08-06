@@ -4364,8 +4364,9 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
     /// that the sources above did not reach. For example, with `ORDER BY (concat(s, '_x'), s)`
     /// and `WHERE s = 'b'`, the direct match covers only `s`, and this source adds the
     /// leading key column `concat(s, '_x')`. Candidates for key columns that are already
-    /// covered (including the trivial identity transform of a plain key column) are dropped
-    /// by the first-wins deduplication below.
+    /// covered by an equally or more precise candidate (including the trivial identity
+    /// transform of a plain key column) are dropped by the deduplication below; an exact
+    /// injective candidate from this source outranks a relaxed monotonic one from source 2.
     /// Equality (in both polarities) is the only comparison that an arbitrary
     /// deterministic `f` translates: `x = c` implies `f(x) = f(c)`, but order
     /// comparisons are not preserved. `notEquals` is tolerable even though the
@@ -4570,44 +4571,58 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
             .element = std::move(element)};
     };
 
-    /// The deduplication per key column is first-wins. Candidates were collected in
-    /// source priority order, so a less precise candidate never replaces a more
-    /// precise one for the same key column.
+    /// The deduplication per key column prefers precision over source order. Source
+    /// order alone is not a precision order: one key column can be reachable both
+    /// through the relaxed monotonic transform (source 2) and through the exact
+    /// deterministic transform (source 3). For `ORDER BY negate(x)` and `WHERE x = 5`,
+    /// source 2 proposes the relaxed `negate(x) = -5` before source 3 proposes the
+    /// exact candidate for the same key column; keeping the relaxed one would make the
+    /// whole key condition relaxed (`isRelaxed`) and disable exact-range consumers such
+    /// as `markRangesFromPKRange`. So emission runs in two passes: first the candidates
+    /// whose constant is untransformed (the only ones that can still produce an exact
+    /// atom), then the already-relaxed ones for the key columns that are still
+    /// uncovered. Within a pass, candidates keep the source priority order.
     std::vector<bool> has_atom_for_key_column(num_key_columns, false);
 
-    for (const auto & candidate : candidates)
+    for (bool relaxed_candidates_pass : {false, true})
     {
-        if (candidate.key_column_num < has_atom_for_key_column.size() && has_atom_for_key_column[candidate.key_column_num])
-            continue;
-
-        std::string candidate_func_name = func_name;
-
-        auto normalized = normalize_candidate(candidate, std::move(candidate_func_name));
-        if (!normalized)
-            continue;
-
-        /// If normalize_candidate folded the comparison to ALWAYS_TRUE/ALWAYS_FALSE
-        /// (e.g., via float-to-integer rewriting), emit the element directly without
-        /// passing it through atom_map (which would overwrite the function).
-        if (normalized->element.function == RPNElement::ALWAYS_TRUE
-            || normalized->element.function == RPNElement::ALWAYS_FALSE)
+        for (const auto & candidate : candidates)
         {
+            if (candidate.is_constant_transformed != relaxed_candidates_pass)
+                continue;
+
+            if (candidate.key_column_num < has_atom_for_key_column.size() && has_atom_for_key_column[candidate.key_column_num])
+                continue;
+
+            std::string candidate_func_name = func_name;
+
+            auto normalized = normalize_candidate(candidate, std::move(candidate_func_name));
+            if (!normalized)
+                continue;
+
+            /// If normalize_candidate folded the comparison to ALWAYS_TRUE/ALWAYS_FALSE
+            /// (e.g., via float-to-integer rewriting), emit the element directly without
+            /// passing it through atom_map (which would overwrite the function).
+            if (normalized->element.function == RPNElement::ALWAYS_TRUE
+                || normalized->element.function == RPNElement::ALWAYS_FALSE)
+            {
+                out.emplace_back(std::move(normalized->element));
+                if (candidate.key_column_num < has_atom_for_key_column.size())
+                    has_atom_for_key_column[candidate.key_column_num] = true;
+                continue;
+            }
+
+            auto atom_it_for_candidate = atom_map.find(normalized->func_name);
+            if (atom_it_for_candidate == atom_map.end())
+                continue;
+
+            if (!atom_it_for_candidate->second(normalized->element, normalized->const_value))
+                continue;
+
             out.emplace_back(std::move(normalized->element));
             if (candidate.key_column_num < has_atom_for_key_column.size())
                 has_atom_for_key_column[candidate.key_column_num] = true;
-            continue;
         }
-
-        auto atom_it_for_candidate = atom_map.find(normalized->func_name);
-        if (atom_it_for_candidate == atom_map.end())
-            continue;
-
-        if (!atom_it_for_candidate->second(normalized->element, normalized->const_value))
-            continue;
-
-        out.emplace_back(std::move(normalized->element));
-        if (candidate.key_column_num < has_atom_for_key_column.size())
-            has_atom_for_key_column[candidate.key_column_num] = true;
     }
 
 }
