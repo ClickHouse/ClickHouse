@@ -34,12 +34,12 @@ rename_outcome() {
 # After a rejected rename the catalog must be untouched: the target name must not exist and the
 # source must still be addressable under its old name. These two see the catalog rename
 # (updateDatabaseName / database_name = new_name); recover_after_reject below sees the on-disk
-# half, which happens earlier and is invisible here.
+# half, which happens earlier and is invisible here. Both counts come from one scan, so a
+# diagnostic that carries no tab leaves the second field empty and cannot spell the expected line.
 reject_postcondition() {
-    local label="$1" src="$2" target="$3"
-    local target_present source_ok
-    target_present=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.databases WHERE name = '$target'" 2>&1)
-    source_ok=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.databases WHERE name = '$src'" 2>&1)
+    local label="$1" src="$2" target="$3" row target_present source_ok
+    row=$($CLICKHOUSE_CLIENT -q "SELECT countIf(name = '$target'), countIf(name = '$src') FROM system.databases" 2>&1)
+    IFS=$'\t' read -r target_present source_ok <<< "$row"
     echo "$label-postcondition target=$target_present source=$source_ok"
 }
 
@@ -65,16 +65,22 @@ drop_outcome() {
     else echo "$label-failed rc=$rc"; fi
 }
 
+# Setup is batched into one round trip per database. The reads below are deliberately NOT batched:
+# a multi-statement query stops at its first failing statement, and three arms reject by design, so
+# batching a read would drop the later oracles instead of reporting them.
 new_db_with_table() {
-    $CLICKHOUSE_CLIENT -q "CREATE DATABASE \`$1\` ENGINE = Atomic"
-    $CLICKHOUSE_CLIENT -q "CREATE TABLE \`$1\`.\`$2\` (c0 Int) ENGINE = MergeTree() ORDER BY tuple()"
+    $CLICKHOUSE_CLIENT -q "CREATE DATABASE \`$1\` ENGINE = Atomic; CREATE TABLE \`$1\`.\`$2\` (c0 Int) ENGINE = MergeTree() ORDER BY tuple()"
 }
 
 # The replica-status row a Replicated DDL returns is not part of what is asserted. A failure here
 # still surfaces, because the rename arm then reports -unexpected-error.
 new_replicated_db_with_table() {
-    $CLICKHOUSE_CLIENT -q "CREATE DATABASE \`$1\` ENGINE = Replicated('/clickhouse/databases/test/$1', 's1', 'r1')" >/dev/null
-    $CLICKHOUSE_CLIENT -q "CREATE TABLE \`$1\`.t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple()" >/dev/null
+    $CLICKHOUSE_CLIENT -q "CREATE DATABASE \`$1\` ENGINE = Replicated('/clickhouse/databases/test/$1', 's1', 'r1'); CREATE TABLE \`$1\`.t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple()" >/dev/null
+}
+
+# Same, with the table detached: the detached arms need exactly this state before the rename.
+new_db_with_detached_table() {
+    $CLICKHOUSE_CLIENT -q "CREATE DATABASE \`$1\` ENGINE = Atomic; CREATE TABLE \`$1\`.t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple(); DETACH TABLE \`$1\`.t0"
 }
 
 # When using s3_plain_rewriteable as a db disk, minio doesn't allow the path segment to have
@@ -103,22 +109,21 @@ mid_a=$(mkdb g 200);  mid_b=$(mkdb h 200)
 repl_long=$(mkdb i 214); repl_edge=$(mkdb j 211)
 long_tbl=ttttttttttttttttttt0
 
+# Each arm gets its own database, all prefixed with CLICKHOUSE_DATABASE, and teardown is deferred
+# to one batch at the end. Dropping per arm would cost more round trips than every assertion in
+# this test put together, and no other test asserts a database count.
+
 # 1. The bug: with dependency checks off the length check was skipped entirely.
 src="${CLICKHOUSE_DATABASE}_s1"
 new_db_with_table "$src" t0
 rename_outcome deps-off-into-long "RENAME DATABASE \`$src\` TO \`$long_a\`" "$CLIENT_NO_DEPS"
 reject_postcondition deps-off-into-long "$src" "$long_a"
 recover_after_reject deps-off-into-long "$src"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$src\`" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`${src}_ok\`" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$long_a\`" >/dev/null 2>&1
 
 # 2. Control: the guard-TRUE path was already correct and must stay so.
 src="${CLICKHOUSE_DATABASE}_s2"
 new_db_with_table "$src" t0
 rename_outcome deps-on-into-long "RENAME DATABASE \`$src\` TO \`$long_b\`" "$CLICKHOUSE_CLIENT"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$src\`" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$long_b\`" >/dev/null 2>&1
 
 # 3. Control against over-rejection: at 211 the limit is 2 and the table name is 2 characters,
 #    so the dropped-metadata name lands exactly on the limit. A flag-everything fix reddens
@@ -128,59 +133,43 @@ src="${CLICKHOUSE_DATABASE}_s3"
 new_db_with_table "$src" t0
 rename_outcome deps-off-accept "RENAME DATABASE \`$src\` TO \`$edge_a\`" "$CLIENT_NO_DEPS"
 drop_outcome droppable-after-accept "\`$edge_a\`.t0"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$src\`" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$edge_a\`" >/dev/null 2>&1
 
 # 4/5. The discriminating pair: the same target database length, accepted or rejected only by
 #      table name length (the limit at 200 is 13). No length-blind rule satisfies both rows.
 src="${CLICKHOUSE_DATABASE}_s4"
 new_db_with_table "$src" "$long_tbl"
 rename_outcome deps-off-boundary-reject "RENAME DATABASE \`$src\` TO \`$mid_a\`" "$CLIENT_NO_DEPS"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$src\`" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$mid_a\`" >/dev/null 2>&1
 
 src="${CLICKHOUSE_DATABASE}_s5"
 new_db_with_table "$src" t0
 rename_outcome deps-off-boundary-accept "RENAME DATABASE \`$src\` TO \`$mid_b\`" "$CLIENT_NO_DEPS"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$src\`" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$mid_b\`" >/dev/null 2>&1
 
 # 6. A detached table is absent from the attached-tables map, so it was never checked. ATTACH
 #    does not re-check the length and binds the table to the new database name, so its DROP
 #    then builds the oversized metadata_dropped path.
 src="${CLICKHOUSE_DATABASE}_s6"
-new_db_with_table "$src" t0
-$CLICKHOUSE_CLIENT -q "DETACH TABLE \`$src\`.t0"
+new_db_with_detached_table "$src"
 rename_outcome detached-into-long "RENAME DATABASE \`$src\` TO \`$long_c\`" "$CLIENT_NO_DEPS"
 reject_postcondition detached-into-long "$src" "$long_c"
 # The detached table must also still be bound to the OLD database name. That binding is what the
 # snapshot rewrite would corrupt, and the two counts above cannot see it.
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.detached_tables WHERE database = '$src' AND table = 't0'"
 recover_after_reject detached-into-long "$src"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$src\`" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`${src}_ok\`" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$long_c\`" >/dev/null 2>&1
 
 # 7. The same at DEFAULT settings: the attached-tables map is empty, so the pre-existing
 #    dependency-guarded loop had nothing to iterate and the rename was accepted even with
 #    check_table_dependencies left at its default.
 src="${CLICKHOUSE_DATABASE}_s7"
-new_db_with_table "$src" t0
-$CLICKHOUSE_CLIENT -q "DETACH TABLE \`$src\`.t0"
+new_db_with_detached_table "$src"
 rename_outcome detached-into-long-deps-on "RENAME DATABASE \`$src\` TO \`$long_d\`" "$CLICKHOUSE_CLIENT"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$src\`" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$long_d\`" >/dev/null 2>&1
 
 # 8. Control: the detached check must not over-reject either, and the table stays droppable
 #    after being reattached under the new database name.
 src="${CLICKHOUSE_DATABASE}_s8"
-new_db_with_table "$src" t0
-$CLICKHOUSE_CLIENT -q "DETACH TABLE \`$src\`.t0"
+new_db_with_detached_table "$src"
 rename_outcome detached-accept "RENAME DATABASE \`$src\` TO \`$edge_b\`" "$CLIENT_NO_DEPS"
 $CLICKHOUSE_CLIENT -q "ATTACH TABLE \`$edge_b\`.t0"
 drop_outcome detached-droppable-after-accept "\`$edge_b\`.t0"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$src\`" >/dev/null 2>&1
-$CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$edge_b\`" >/dev/null 2>&1
 
 # 9/10. A Replicated database delegates renameDatabase to DatabaseAtomic before it writes the
 #       new name to ZooKeeper, so it is covered by the same check. Both directions are pinned
@@ -197,9 +186,24 @@ new_replicated_db_with_table "${CLICKHOUSE_DATABASE}_r10"
 rename_outcome replicated-accept "RENAME DATABASE \`${CLICKHOUSE_DATABASE}_r10\` TO \`$repl_edge\`" "$CLIENT_NO_DEPS"
 drop_outcome replicated-droppable-after-accept "\`$repl_edge\`.t0"
 
-for db in "${CLICKHOUSE_DATABASE}_r9" "${CLICKHOUSE_DATABASE}_r9_ok" "${CLICKHOUSE_DATABASE}_r10" "$repl_edge" "$repl_long"; do
-    $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS \`$db\` SYNC" >/dev/null 2>&1
+# One batched teardown. SYNC everywhere so the Replicated databases release their ZooKeeper paths
+# before the script exits. --ignore-error is what makes the batch safe: IF EXISTS only covers an
+# absent database, and on a binary that wrongly accepted an oversized rename the DROP of that
+# database really does fail, which would otherwise stop the batch and strand every name after it.
+teardown=""
+for db in "${CLICKHOUSE_DATABASE}_s1" "${CLICKHOUSE_DATABASE}_s1_ok" "$long_a" \
+          "${CLICKHOUSE_DATABASE}_s2" "$long_b" \
+          "${CLICKHOUSE_DATABASE}_s3" "$edge_a" \
+          "${CLICKHOUSE_DATABASE}_s4" "$mid_a" \
+          "${CLICKHOUSE_DATABASE}_s5" "$mid_b" \
+          "${CLICKHOUSE_DATABASE}_s6" "${CLICKHOUSE_DATABASE}_s6_ok" "$long_c" \
+          "${CLICKHOUSE_DATABASE}_s7" "$long_d" \
+          "${CLICKHOUSE_DATABASE}_s8" "$edge_b" \
+          "${CLICKHOUSE_DATABASE}_r9" "${CLICKHOUSE_DATABASE}_r9_ok" "$repl_long" \
+          "${CLICKHOUSE_DATABASE}_r10" "$repl_edge"; do
+    teardown="$teardown DROP DATABASE IF EXISTS \`$db\` SYNC;"
 done
+$CLICKHOUSE_CLIENT --ignore-error -q "$teardown" >/dev/null 2>&1
 
 # Teardown of an oversized database fails on a binary without the fix, which is the bug itself.
 # The outcome of every arm is reported on stdout and checked against the reference, so the exit
