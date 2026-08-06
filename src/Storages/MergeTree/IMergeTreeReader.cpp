@@ -165,6 +165,8 @@ void IMergeTreeReader::fillMissingColumns(
 {
     try
     {
+        shared_offsets_of_missing_defaults.clear();
+
         /// Do a quick check to see if doing any work is necessary to begin with
         size_t num_columns_to_read = res_columns.size();
         bool missing = false;
@@ -197,7 +199,8 @@ void IMergeTreeReader::fillMissingColumns(
                 partially_read_columns,
                 storage_snapshot,
                 share_nested,
-                previous_step_columns);
+                previous_step_columns,
+                settings.reconcile_missing_defaults_with_shared_offsets ? &shared_offsets_of_missing_defaults : nullptr);
 
             should_evaluate_missing_defaults
                 = std::any_of(res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
@@ -254,9 +257,14 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         /// Defaults should be executed on full columns to get correct values for subcolumns.
         /// TODO: rewrite with columns interface. It will be possible after changes in ExpressionActions.
 
+        /// Positions filled below from the evaluated defaults, as opposed to columns read from the part.
+        std::vector<UInt8> was_missing(num_columns);
+
         auto it = original_requested_columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++it)
         {
+            was_missing[pos] = res_columns[pos] == nullptr;
+
             if (res_columns[pos])
             {
                 /// If column is already read, request it as is.
@@ -297,7 +305,25 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         {
             if (additional_columns.has(it->name))
             {
-                res_columns[pos] = additional_columns.getByName(it->name).column;
+                auto column = additional_columns.getByName(it->name).column;
+
+                /// On reads that feed merges and mutations, a missing column recomputed from its
+                /// default expression must stay consistent with the array sizes the part already
+                /// stores through the shared offsets of its Nested structure (salvaged by the
+                /// paired fillMissingColumns call); otherwise the merge would write it next to
+                /// sibling subcolumns with different array sizes and corrupt the shared offsets of
+                /// the new part. A filter may have been applied between the two calls; the row
+                /// counts then do not match and the offsets are not applicable.
+                if (settings.reconcile_missing_defaults_with_shared_offsets && was_missing[pos] && !it->isSubcolumn())
+                {
+                    auto offsets_it = shared_offsets_of_missing_defaults.find(it->name);
+                    if (offsets_it != shared_offsets_of_missing_defaults.end()
+                        && !offsets_it->second.empty()
+                        && offsets_it->second.front()->size() == column->size())
+                        column = reconcileEvaluatedDefaultWithSharedOffsets(column, it->type, offsets_it->second);
+                }
+
+                res_columns[pos] = std::move(column);
                 continue;
             }
 

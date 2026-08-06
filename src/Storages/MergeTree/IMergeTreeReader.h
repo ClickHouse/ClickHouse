@@ -173,6 +173,13 @@ protected:
 
     NameSet partially_read_columns;
 
+    /// Shared Nested offsets read from the part for requested columns that are missing from it but
+    /// have a default expression. Filled by fillMissingColumns and consumed by the paired
+    /// evaluateMissingDefaults call (both run on the same rows within one read step) to keep the
+    /// evaluated defaults consistent with the array sizes the part already stores. Mutable because
+    /// both methods are const.
+    mutable std::unordered_map<String, Columns> shared_offsets_of_missing_defaults;
+
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
 
