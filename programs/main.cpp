@@ -15,6 +15,10 @@
 
 #include <unistd.h>
 
+#if defined(OS_WINDOWS)
+#include <Poco/Net/Net.h>
+#endif
+
 #include <filesystem>
 #include <iostream>
 #include <new>
@@ -341,6 +345,17 @@ int main(int argc_, char ** argv_)
 {
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
+
+#if defined(OS_WINDOWS)
+    /// Winsock must be started before the first socket call. Poco does that from a static
+    /// initializer in `Net.cpp`, but `_poco_net` is a static library and nothing references that
+    /// translation unit, so the linker is free to drop it - and then the first socket call fails
+    /// with `WSANOTINITIALISED`. Calling `initializeNetwork` here forces `Net.cpp` into the link
+    /// (so its initializer runs before `main` even starts) and starts Winsock even if the
+    /// initializer were compiled out. `WSAStartup` is reference-counted, so the double start is
+    /// harmless; the extra reference also keeps Winsock alive through static destruction.
+    Poco::Net::initializeNetwork();
+#endif
 
     /// PHDR cache is required for query profiler to work reliably
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
