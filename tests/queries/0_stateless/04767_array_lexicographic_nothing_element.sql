@@ -73,11 +73,15 @@ SELECT toTypeName(a = b) FROM t_nullable_tuple_nothing, t_array_tuple; -- { serv
 SELECT a = b FROM t_nullable_tuple_nothing, t_array_tuple; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SET enable_nullable_tuple_type = 0;
 
--- a side's own `Nullable(Nothing)` member does not excuse the other side's nested bare `Nothing`
+-- A side's own `Nullable(Nothing)` member does not excuse the other side's nested bare `Nothing`:
+-- each side is classified on its own. Asserted on the declared type and in both operand orders,
+-- because a pairwise classifier would stop at the first member and accept the pair here.
 DROP TABLE IF EXISTS t_nullable_nothing_tuple;
 DROP TABLE IF EXISTS t_nested_nothing_tuple;
 CREATE TABLE t_nullable_nothing_tuple (a Array(Tuple(Nullable(Nothing), UInt64))) ENGINE = Memory;
 CREATE TABLE t_nested_nothing_tuple (b Array(Tuple(Tuple(Nothing, UInt64), Int64))) ENGINE = Memory;
+SELECT toTypeName(a = b) FROM t_nullable_nothing_tuple, t_nested_nothing_tuple; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(b = a) FROM t_nullable_nothing_tuple, t_nested_nothing_tuple; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT a = b FROM t_nullable_nothing_tuple, t_nested_nothing_tuple; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- `Map` and `Array` element types whose value type is `Nothing` share a supertype with their
