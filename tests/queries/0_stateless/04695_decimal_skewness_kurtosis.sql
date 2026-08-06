@@ -1,12 +1,3 @@
--- `skewPop`, `skewSamp`, `kurtPop` and `kurtSamp` over `Decimal` arguments share the vectorized
--- accumulation path with `varPop` and `stddevPop`, but they carry the extra `m[3]` and `m[4]`
--- moments that the variance functions never touch. 00700_decimal_aggregates only checks the
--- variance and stddev results, so the extra accumulators need their own coverage here.
---
--- The source elements are converted into a fixed-size tile before being accumulated, so the row
--- count is chosen to span several whole tiles and leave a partial one at the end - that is where a
--- wrong element count or a fold that drops a lane would show up.
-
 DROP TABLE IF EXISTS decimal_high_moments;
 
 CREATE TABLE decimal_high_moments

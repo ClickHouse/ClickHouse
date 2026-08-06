@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <cmath>
 #include <memory>
 
@@ -115,10 +114,6 @@ public:
                 convertOne(static_cast<const ColVecT1 &>(*columns[0]).getData()[row_num], decimal_divisor));
     }
 
-    /// Convert one source element to `ResultType`. For `Decimal` this is done inline -
-    /// `value / 10^scale` - rather than via the out-of-line `convertFromDecimal`, so the conversion
-    /// can itself auto-vectorize (`scvtf`/`fdiv` on AArch64, `vcvtdq2pd`/`vdivpd` for `Decimal32` on
-    /// x86); the value is identical to `convertFromDecimal` (same `convertToImpl` math).
     template <typename Src>
     static ALWAYS_INLINE ResultType convertOne(const Src & v, Float64 decimal_divisor)
     {
@@ -149,12 +144,7 @@ public:
             ///
             /// Converting the whole range into one buffer would push it out to memory and read it
             /// back, so the values are converted a tile at a time and each tile is accumulated while
-            /// it is still in L1. Keeping the two loops separate is also what lets the accumulation
-            /// vectorize on `x86-64-v3`, which has no packed `int64 -> double` (`vcvtqq2pd` arrived
-            /// with AVX-512): in a fused convert-and-accumulate loop the scalar converts would drag
-            /// the accumulation back down with them. Alone in its own loop, the conversion vectorizes
-            /// on its own where the target allows it - `vcvtdq2pd`/`vdivpd` for `Decimal32` on x86,
-            /// `scvtf`/`fdiv` on AArch64.
+            /// it is still in L1.
             if constexpr (StatFunc::num_args == 1)
             {
                 if (if_argument_pos < 0)
@@ -168,7 +158,7 @@ public:
                         const size_t tile = std::min(TILE, row_end - off);
                         for (size_t k = 0; k < tile; ++k)
                             buf[k] = convertOne(vec[off + k], decimal_divisor);
-                        data.addMany(buf, 0, tile);
+                        data.addMany(buf, /*row_begin=*/0, tile);
                     }
                     return;
                 }
