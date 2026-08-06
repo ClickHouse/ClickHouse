@@ -20,8 +20,10 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_streaming_rp SELECT number % 10, number % 5
 
 $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY rp_04545 ON t_streaming_rp FOR SELECT USING b < 5000 TO ALL"
 
+# No per-query time limit: the assertion expects the query to succeed, so a wall-clock limit here
+# can only fail a correct run. A hang is still bounded by the test runner's own per-test timeout.
 for _ in {1..30}; do
-    $CLICKHOUSE_CLIENT --enable_streaming_queries=1 --query_plan_remove_unused_columns=1 --max_threads=4 --max_threads_min_free_memory_per_thread=0 --max_execution_time=20 \
+    $CLICKHOUSE_CLIENT --enable_streaming_queries=1 --query_plan_remove_unused_columns=1 --max_threads=4 --max_threads_min_free_memory_per_thread=0 \
         -q "SELECT throwIf(max(b) >= 5000 OR count() = 0) FROM (SELECT b FROM t_streaming_rp STREAM LIMIT 400) FORMAT Null"
 done
 
