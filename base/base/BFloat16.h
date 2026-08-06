@@ -350,7 +350,10 @@ struct hash<BFloat16>
 {
     std::size_t operator()(const BFloat16 & x) const noexcept
     {
-        return std::hash<UInt16>()(x.raw());
+        /// `BFloat16` equality compares through `Float32`, so `-0` is equal to `+0` and has to produce
+        /// the same hash despite the different raw bits. Distinct `NaN` payloads never compare equal,
+        /// so hashing them by the raw bits is fine.
+        return std::hash<UInt16>()(x == BFloat16{} ? UInt16{} : x.raw());
     }
 };
 }
