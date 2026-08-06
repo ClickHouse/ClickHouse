@@ -111,6 +111,25 @@ void PostgreSQLSource<T>::onStart()
 
     LOG_TEST(getLogger("PostgreSQLSource"), "Stream data from database");
     stream = std::make_unique<pqxx::stream_from>(*tx, pqxx::from_query, std::string_view{query_str});
+
+    /// A cancel arriving while the COPY was starting ran before the backend had it, so it
+    /// interrupted nothing, and it consumed `is_completed`, so the destructor returns early and
+    /// does not cancel it either. Cancel it here, where it exists.
+    if (is_completed.load())
+    {
+        try
+        {
+            tx->conn().cancel_query();
+            stream->close();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
+        if (connection_holder)
+            connection_holder->setBroken();
+    }
 }
 
 template<typename T>

@@ -95,6 +95,45 @@ SELECT sleepy_start() AS id;"""
 
 
 @pytest.fixture(scope="module")
+def setup_streaming_view(started_cluster):
+    """A view whose COPY starts streaming at once but keeps running for a long time.
+
+    `infinite_counter` cannot be used for this: it is a plpgsql `SETOF` function, so
+    PostgreSQL builds its whole result set before the first row and never sends
+    `CopyOutResponse`. `pqxx::stream_from`'s constructor then blocks and `onStart` never
+    regains control, which is a different window from the one under test here.
+
+    The leading bulk rows make PostgreSQL send `CopyOutResponse` immediately, so the
+    constructor returns; the sleeping tail keeps the COPY running long enough to cancel it. A
+    single fast row is not enough, because `CopyOutResponse` is not sent until there is a
+    buffer of output to send with it.
+    """
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """CREATE TABLE streaming_head AS
+SELECT g AS counter, repeat('y', 900) AS pad FROM generate_series(1, 20000) g;"""
+    )
+    cursor.execute(
+        """CREATE OR REPLACE VIEW streaming_counter AS
+SELECT counter FROM streaming_head
+UNION ALL
+SELECT g FROM generate_series(1, 600) g
+CROSS JOIN LATERAL (SELECT pg_sleep(0.5) WHERE g IS NOT NULL) s;"""
+    )
+
+    yield
+
+    cursor.execute("DROP VIEW IF EXISTS streaming_counter")
+    cursor.execute("DROP TABLE IF EXISTS streaming_head")
+    cursor.close()
+    conn.close()
+
+
+@pytest.fixture(scope="module")
 def setup_big_data_table(started_cluster):
     # Connect to postgres_database database
     conn = get_postgres_conn(
@@ -149,13 +188,15 @@ def wait_for_proxy_listener_closed(host, port):
     raise AssertionError("PostgreSQL proxy listener is still accepting connections")
 
 
-class BeginStallingProxy:
-    """Forwards the PostgreSQL wire protocol, but withholds a `BEGIN READ ONLY` from the
-    server until release() is called.
+class StatementStallingProxy:
+    """Forwards the PostgreSQL wire protocol, but withholds the first client statement that
+    contains `marker` from the server until release() is called.
 
-    `pqxx::ReadTransaction`'s constructor issues that statement, so stalling it pins the
-    reading source inside the transaction constructor: `onStart` has not published `tx` yet,
-    which is exactly the window a cancel has to arrive in to be lost.
+    Stalling `BEGIN READ ONLY` pins the reading source inside `pqxx::ReadTransaction`'s
+    constructor, before `onStart` has published `tx`. Stalling the `COPY` pins it one step
+    later, inside `pqxx::stream_from`'s constructor, with `tx` published and still no
+    statement running on the connection. Those are the two startup windows in which a cancel
+    finds nothing to interrupt.
 
     `skip` exists because the source's transaction is not the only one on the wire. Reading
     through `postgresql()` without an explicit column list first fetches the table structure,
@@ -164,8 +205,10 @@ class BeginStallingProxy:
     """
 
     BEGIN = b"BEGIN READ ONLY"
+    COPY = b"COPY ("
 
-    def __init__(self, skip=0):
+    def __init__(self, skip=0, marker=BEGIN):
+        self._marker = marker
         self._skip = skip
         self._seen = 0
         self._seen_lock = threading.Lock()
@@ -193,7 +236,7 @@ class BeginStallingProxy:
             if not data:
                 break
 
-            if is_client_to_server and not stalled_once and self.BEGIN in data:
+            if is_client_to_server and not stalled_once and self._marker in data:
                 stalled_once = True
                 if self._should_stall():
                     self._stalled.set()
@@ -248,7 +291,7 @@ class BeginStallingProxy:
 
     def wait_until_stalled(self, timeout=60):
         if not self._stalled.wait(timeout=timeout):
-            raise AssertionError("proxy never saw BEGIN READ ONLY")
+            raise AssertionError(f"proxy never saw {self._marker.decode()}")
 
     def release(self):
         self._release.set()
@@ -271,14 +314,14 @@ def test_kill_query_while_transaction_is_starting(started_cluster, setup_infinit
     query keeps running until PostgreSQL finishes it on its own.
     """
     _, _ = setup_infinite_query
-    proxy = BeginStallingProxy()
+    proxy = StatementStallingProxy(marker=StatementStallingProxy.BEGIN)
     port = proxy.start((started_cluster.postgres_ip, started_cluster.postgres_port))
     proxy_host = socket.gethostbyname(socket.gethostname())
     query_id = str(uuid.uuid4())
     query_errors = []
 
     # An engine table with a declared structure, created before the proxy starts stalling, so
-    # that the read is the only thing that opens a transaction (see BeginStallingProxy).
+    # that the read is the only thing that opens a transaction (see StatementStallingProxy).
     node1.query("DROP TABLE IF EXISTS stalled_counter")
     node1.query(
         f"""CREATE TABLE stalled_counter (counter Nullable(Int32))
@@ -352,6 +395,104 @@ ENGINE = PostgreSQL(
         proxy.stop()
         query_thread.join(timeout=60)
         node1.query("DROP TABLE IF EXISTS stalled_counter")
+        assert not query_thread.is_alive(), "query thread outlived the test"
+
+
+def test_kill_query_while_copy_is_starting(started_cluster, setup_streaming_view):
+    """A cancel arriving after the transaction is published but before the COPY starts must
+    not be lost either.
+
+    This is one step later than `test_kill_query_while_transaction_is_starting`. Here `tx` is
+    already published, so `onCancel` does call `cancel_query()` -- but no statement is running
+    on that connection yet, so PostgreSQL has nothing to interrupt and the cancel is dropped.
+    `onStart` then opens the COPY anyway, and nothing cancels it afterwards: `onCancel` already
+    consumed the one-shot `is_completed` flag, so the destructor returns early and never
+    reaches its own `cancel_query()`, which leaves the rollback waiting for the COPY.
+
+    Stalling the COPY request rather than the `BEGIN` is what places the cancel in this
+    window; `test_kill_query_while_transaction_is_starting` cannot reach it, because there
+    the source is still pinned before publication.
+
+    The view has to start streaming promptly (see `setup_streaming_view`), otherwise
+    `stream_from`'s constructor never returns and the source is pinned before this window
+    instead of inside it.
+    """
+    proxy = StatementStallingProxy(marker=StatementStallingProxy.COPY)
+    port = proxy.start((started_cluster.postgres_ip, started_cluster.postgres_port))
+    proxy_host = socket.gethostbyname(socket.gethostname())
+    query_id = str(uuid.uuid4())
+    query_errors = []
+
+    node1.query("DROP TABLE IF EXISTS copy_stalled_counter")
+    node1.query(
+        f"""CREATE TABLE copy_stalled_counter (counter Nullable(Int32))
+ENGINE = PostgreSQL(
+    '{proxy_host}:{port}',
+    'postgres_database',
+    'streaming_counter',
+    'postgres',
+    'ClickHouse_PostgreSQL_P@ssw0rd')"""
+    )
+
+    def execute_query():
+        _, error = node1.query_and_get_answer_with_error(
+            "SELECT * FROM copy_stalled_counter",
+            query_id=query_id,
+            timeout=120,
+        )
+        query_errors.append(error)
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    try:
+        try:
+            # The source has published `tx` and is now pinned inside the `stream_from`
+            # constructor, with the COPY request withheld from the server.
+            proxy.wait_until_stalled()
+
+            assert_eq_with_retry(
+                node1,
+                f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+                "1",
+                retry_count=60,
+                sleep_time=0.5,
+            )
+
+            node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC")
+            # Deliver the cancel while the COPY is still withheld, so that `onCancel` runs
+            # against a connection with no statement in progress.
+            assert_eq_with_retry(
+                node1,
+                f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'",
+                "1",
+                retry_count=60,
+                sleep_time=0.5,
+            )
+        finally:
+            proxy.release()
+
+        # Once the COPY reaches the server the read has to be abandoned. Without the fix the
+        # dropped cancel leaves the source streaming the view to its end, so this join times
+        # out.
+        query_thread.join(timeout=60)
+        assert (
+            not query_thread.is_alive()
+        ), "cancelled query kept running after the COPY started"
+        assert query_errors and "QUERY_WAS_CANCELLED" in query_errors[0], query_errors
+
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+            "0",
+            retry_count=60,
+            sleep_time=0.5,
+        )
+    finally:
+        node1.query(f"KILL QUERY WHERE query_id='{query_id}' ASYNC", ignore_error=True)
+        proxy.stop()
+        query_thread.join(timeout=60)
+        node1.query("DROP TABLE IF EXISTS copy_stalled_counter")
         assert not query_thread.is_alive(), "query thread outlived the test"
 
 
