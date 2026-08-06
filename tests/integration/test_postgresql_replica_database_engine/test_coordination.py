@@ -2679,6 +2679,104 @@ def test_lost_leadership_during_snapshot_does_not_publish_stale_marker(started_c
     assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200
 
 
+def test_deposed_worker_aborts_redo_snapshot_before_touching_shared_state(started_cluster):
+    # A worker that entered the redo-the-snapshot recovery branch (the slot exists but there is no
+    # snapshot_completed marker) mutates shared state: it truncates the replicated nested tables and
+    # drops the shared slot. If its Keeper session expires right after it entered the branch, a
+    # successor may already have won /leader and be redoing the snapshot itself, so the deposed worker
+    # must abort at the leadership fence instead of wiping the tables the successor has reloaded and
+    # dropping the slot the successor just created.
+    marker_pause_line = "Pausing before marking the initial snapshot as completed"
+    redo_pause_line = "Pausing before redoing the initial snapshot"
+    demotion_line = "Keeper session expired, releasing replication leadership"
+    truncate_line = "Truncated nested table"
+    marker_failpoint = "materialized_postgresql_pause_before_marking_snapshot_completed"
+    redo_failpoint = "materialized_postgresql_pause_before_redo_snapshot_truncate"
+
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    pm = PartitionManager()
+    try:
+        # Park the first leader right before it publishes the marker, leaving the shared state as
+        # "slot exists, no marker" - the state that routes the next leader into the redo branch.
+        marker_pause_baseline = count_in_all_logs(instance, marker_pause_line)
+        instance.query(f"SYSTEM ENABLE FAILPOINT {marker_failpoint}")
+        # And park the second replica at the entry of the redo branch, before it touches anything.
+        instance2.query(f"SYSTEM ENABLE FAILPOINT {redo_failpoint}")
+
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+        wait_for_new_log_occurrence(
+            instance, marker_pause_line, marker_pause_baseline, timeout=90
+        )
+        assert wait_for_leader(instance) == "coord_instance1"
+
+        pg_manager2.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+        )
+
+        # Depose the parked first leader: the standby takes over, sees no marker, enters the redo
+        # branch and parks there - before truncating anything.
+        redo_pause_baseline = count_in_all_logs(instance2, redo_pause_line)
+        pm.drop_instance_zk_connections(instance)
+        wait_for_leader(instance2, expected="coord_instance2")
+        wait_for_new_log_occurrence(
+            instance2, redo_pause_line, redo_pause_baseline, timeout=120
+        )
+
+        # Release the first replica: its leadership session is gone, so it aborts at the marker fence
+        # and rejoins as a standby.
+        demotion_baseline1 = count_in_all_logs(instance, demotion_line)
+        pm.heal_all()
+        instance.query(f"SYSTEM DISABLE FAILPOINT {marker_failpoint}")
+        wait_for_new_log_occurrence(instance, demotion_line, demotion_baseline1, timeout=120)
+
+        # Depose the second replica while it is parked inside the redo branch. The first one takes
+        # over, runs the redo itself (truncate, new slot, full reload) and publishes the marker.
+        demotion_baseline2 = count_in_all_logs(instance2, demotion_line)
+        pm.drop_instance_zk_connections(instance2)
+        wait_for_leader(instance, expected="coord_instance1")
+        wait_for_marker(instance)
+
+        # Release the deposed second replica: its leadership session is gone, so it must abort at the
+        # fence without truncating the tables the first replica reloaded and without dropping the slot
+        # the first replica created.
+        truncate_baseline = count_in_all_logs(instance2, truncate_line)
+        pm.heal_all()
+        instance2.query(f"SYSTEM DISABLE FAILPOINT {redo_failpoint}")
+        wait_for_new_log_occurrence(
+            instance2, demotion_line, demotion_baseline2, timeout=120
+        )
+        assert count_in_all_logs(instance2, truncate_line) == truncate_baseline
+        assert marker_znode_exists(instance)
+    finally:
+        pm.heal_all()
+        for node, failpoint in (
+            (instance, marker_failpoint),
+            (instance2, redo_failpoint),
+        ):
+            try:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            except Exception:
+                pass
+
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 200
+    assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200
+
+
 def test_single_table_publication_recreated_after_external_drop(started_cluster):
     # The publication of a coordinated single-table engine is recreated by the same handler whenever it
     # disappears from PostgreSQL (an external drop, or a retry of a failure before it existed). The

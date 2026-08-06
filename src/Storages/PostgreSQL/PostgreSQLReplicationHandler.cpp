@@ -92,6 +92,7 @@ namespace FailPoints
     extern const char materialized_postgresql_fail_load_from_snapshot[];
     extern const char materialized_postgresql_pause_before_register_replica[];
     extern const char materialized_postgresql_pause_before_marking_snapshot_completed[];
+    extern const char materialized_postgresql_pause_before_redo_snapshot_truncate[];
 }
 
 class TemporaryReplicationSlot
@@ -1076,6 +1077,10 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         }
         else
         {
+            /// The slot is shared state: a deposed worker recreating it here would race the successor
+            /// that may already have created its own replacement slot (see the redo-the-snapshot branch
+            /// below, which drops the slot under the same fence).
+            assertReplicationLeadershipIsLive();
             createReplicationSlot(tx, start_lsn, snapshot_name);
         }
 
@@ -1175,7 +1180,29 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             "reloading all of them from a new snapshot",
             replication_slot);
 
+        /// Holds the worker between entering the mid-snapshot recovery branch and mutating any shared
+        /// state, so a test can expire its Keeper session here and verify that a deposed worker aborts
+        /// at the leadership fence below instead of truncating the tables its successor is reloading
+        /// and dropping the slot the successor just created.
+        fiu_do_on(FailPoints::materialized_postgresql_pause_before_redo_snapshot_truncate,
+        {
+            LOG_INFO(log, "Pausing before redoing the initial snapshot until failpoint "
+                     "materialized_postgresql_pause_before_redo_snapshot_truncate is disabled");
+            FailPointInjection::pauseFailPoint(FailPoints::materialized_postgresql_pause_before_redo_snapshot_truncate);
+        });
+
+        /// This whole recovery branch mutates shared state - the replicated nested tables and the shared
+        /// slot - so it is fenced on the live leadership session exactly like the snapshot load and the
+        /// marker write. If this worker's Keeper session expired after it entered this branch, a successor
+        /// may already have won /leader and be running the replacement snapshot: truncating now would wipe
+        /// the tables the successor has already reloaded, and dropping the slot would discard the slot it
+        /// just created. `truncateNestedTables` re-checks the fence per table, and it is re-checked here
+        /// once more before the slot is touched (the truncate can take a while on large tables).
+        assertReplicationLeadershipIsLive();
+
         truncateNestedTables();
+
+        assertReplicationLeadershipIsLive();
 
         if (!user_managed_slot)
             dropReplicationSlot(tx);
@@ -1584,12 +1611,16 @@ void PostgreSQLReplicationHandler::truncateNestedTables()
 {
     /// Only reached in coordinated mode, from the mid-snapshot recovery branch of `startSynchronization`.
     /// The nested tables were created by `ensureNestedTablesExist` and are Replicated/SharedReplacingMergeTree,
-    /// so truncating them here clears the shared tree on every replica. Only the single active worker runs
-    /// this, so there is no concurrent truncate.
+    /// so truncating them here clears the shared tree on every replica. Only the single active worker may run
+    /// this, which the per-table fence below enforces.
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::truncateNestedTables");
 
     for (const auto & [table_name, materialized_storage] : materialized_storages)
     {
+        /// Abort as soon as leadership is lost, mirroring the per-table fence of the snapshot load: a
+        /// deposed worker must not keep truncating tables its successor may already be reloading.
+        assertReplicationLeadershipIsLive();
+
         auto nested = materialized_storage->tryGetNested();
         if (!nested)
             continue;

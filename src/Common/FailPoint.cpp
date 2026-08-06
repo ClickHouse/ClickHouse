@@ -46,6 +46,7 @@ static struct InitFiu
     PAUSEABLE(materialized_postgresql_pause_after_stop_replication) \
     PAUSEABLE(materialized_postgresql_pause_before_register_replica) \
     PAUSEABLE(materialized_postgresql_pause_before_marking_snapshot_completed) \
+    PAUSEABLE(materialized_postgresql_pause_before_redo_snapshot_truncate) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(connection_stale_on_establish) \
