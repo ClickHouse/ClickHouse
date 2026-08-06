@@ -817,6 +817,11 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
     /// `forceMaterializeCTE` before the outer `DelayedMaterializingCTEsStep`
     /// in this plan is claimed. `resolveMaterializingCTEs` then only
     /// materializes the CTEs that were not already materialized inplace.
+    /// Reject sets that cannot cross a distributed-plan fragment boundary while the delayed set
+    /// steps still reference them; `addStepsToBuildSets` consumes those references below, and the
+    /// fragment cut would otherwise fail later with a generic non-serializable-step error.
+    if (optimization_settings.make_distributed_plan)
+        QueryPlanOptimizations::validateSetsForDistributedPlan(*root);
     if (optimization_settings.build_sets)
         QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
     if (optimization_settings.materialize_ctes)

@@ -196,6 +196,10 @@ public:
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
 
+    /// The set is backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, either through the
+    /// set that fills that table or through the table stored next to the set itself.
+    bool hasExternalTable() const;
+
 private:
     Hash hash;
     ASTPtr ast;

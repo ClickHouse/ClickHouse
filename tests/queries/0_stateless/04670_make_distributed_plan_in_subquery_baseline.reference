@@ -1,0 +1,8 @@
+-- literal IN ships as TupleValues
+3
+-- IN (subquery) works via the forced join rewrite
+50
+-- the direct set path is rejected at the cut (temporary pin)
+-- GLOBAL IN takes the set path and is rejected the same way
+-- GLOBAL JOIN executes as a distributed join (no external table under the analyzer)
+1000

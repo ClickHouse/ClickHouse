@@ -369,6 +369,11 @@ DataTypes FutureSetFromSubquery::getTypes() const
     return set_and_key->set->getElementsTypes();
 }
 
+bool FutureSetFromSubquery::hasExternalTable() const
+{
+    return external_table_set != nullptr || (set_and_key && set_and_key->external_table != nullptr);
+}
+
 FutureSet::Hash FutureSetFromSubquery::getHash() const { return hash; }
 
 std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache)
