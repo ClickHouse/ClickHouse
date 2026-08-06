@@ -3,6 +3,7 @@
 -- With enable_lazy_columns_replication the captured pattern must be replicated lazily (wrapped into ColumnReplicated)
 
 SELECT '-- correctness with a non-constant pattern';
+{% for i in range(2) -%}
 SELECT
     mapContainsKeyLike(m, p),
     mapContainsValueLike(m, replaceOne(p, 'k', 'v')),
@@ -15,36 +16,18 @@ FROM
         'k' || toString(number % 3) || '%' AS p
     FROM numbers(6)
 )
-SETTINGS enable_lazy_columns_replication = 0;
-
-SELECT
-    mapContainsKeyLike(m, p),
-    mapContainsValueLike(m, replaceOne(p, 'k', 'v')),
-    mapExtractKeyLike(m, p),
-    mapExtractValueLike(m, replaceOne(p, 'k', 'v'))
-FROM
-(
-    SELECT
-        mapFromArrays(arrayMap(i -> 'k' || toString(i), range(number % 4)), arrayMap(i -> 'v' || toString(i), range(number % 4))) AS m,
-        'k' || toString(number % 3) || '%' AS p
-    FROM numbers(6)
-)
-SETTINGS enable_lazy_columns_replication = 1;
+SETTINGS enable_lazy_columns_replication = {{ i }};
+{% endfor %}
 
 SELECT '-- large non-constant pattern is not physically replicated per map entry';
+{% for i in range(2) -%}
 WITH
     repeat('a', 100000) || toString(number) AS pattern,
     mapFromArrays(arrayMap(i -> 'key' || toString(i), range(20)), range(20)) AS m
 SELECT sum(mapContainsKeyLike(m, pattern)) FROM numbers(100)
-SETTINGS enable_lazy_columns_replication = 0, max_threads = 1, max_block_size = 65536, log_queries = 1, log_comment = '04616_map_like_eager'
+SETTINGS enable_lazy_columns_replication = {{ i }}, max_threads = 1, max_block_size = 65536, log_queries = 1, log_comment = '04616_map_like_{{ 'lazy' if i else 'eager' }}'
 FORMAT Null;
-
-WITH
-    repeat('a', 100000) || toString(number) AS pattern,
-    mapFromArrays(arrayMap(i -> 'key' || toString(i), range(20)), range(20)) AS m
-SELECT sum(mapContainsKeyLike(m, pattern)) FROM numbers(100)
-SETTINGS enable_lazy_columns_replication = 1, max_threads = 1, max_block_size = 65536, log_queries = 1, log_comment = '04616_map_like_lazy'
-FORMAT Null;
+{% endfor %}
 
 SYSTEM FLUSH LOGS query_log;
 
