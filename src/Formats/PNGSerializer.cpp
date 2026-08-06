@@ -531,6 +531,15 @@ void PNGSerializer::Impl::emitFrame(const Frame & frame, UInt64 delay_units)
     if (!frame_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No frame callback is installed on the PNG serializer");
 
+    /// `acTL` declares at most `MAX_DECLARED_FRAMES` frames (in the streaming mode that many are declared
+    /// up front as an upper bound), so a frame past that limit would make the declared count wrong and the
+    /// datastream invalid. Fail before writing it.
+    if (emitted_frames >= PNGWriter::MAX_DECLARED_FRAMES)
+        throw Exception(ErrorCodes::TOO_MANY_ROWS,
+            "The animation has more than {} frames (distinct values of 't'), which is the largest "
+            "frame count the 'acTL' chunk of an animated PNG can declare",
+            PNGWriter::MAX_DECLARED_FRAMES);
+
     last_delay_units = delay_units;
     const auto [delay_num, delay_den] = delayFromUnits(delay_units);
     frame_callback(frame.pixels.data(), delay_num, delay_den);
@@ -596,7 +605,17 @@ void PNGSerializer::Impl::switchFrame(size_t row_num)
     {
         auto [it, inserted] = buffered_frames.try_emplace(time);
         if (inserted)
+        {
+            /// Fail as soon as the limit of `acTL` is exceeded, instead of buffering frames that could
+            /// never be written out; this also keeps the frame count within `UInt32` for
+            /// `getDeclaredFrameCount`.
+            if (buffered_frames.size() > PNGWriter::MAX_DECLARED_FRAMES)
+                throw Exception(ErrorCodes::TOO_MANY_ROWS,
+                    "The animation has more than {} frames (distinct values of 't'), which is the largest "
+                    "frame count the 'acTL' chunk of an animated PNG can declare",
+                    PNGWriter::MAX_DECLARED_FRAMES);
             it->second.pixels.resize_fill(frame_bytes, 0);
+        }
         active_frame = &it->second;
     }
 
