@@ -3327,7 +3327,26 @@ catch (...)
         throw;
 }
 
-MergeTreeData::~MergeTreeData() = default;
+MergeTreeData::~MergeTreeData()
+{
+    /// The refresh tasks capture `this` and use members (`refresh_parts_mutex`, `stats_mutex`,
+    /// `cached_estimator`) that are declared after their task holders, so they are destroyed
+    /// before the holders' own destructors deactivate the tasks. `shutdown` deactivates the
+    /// tasks too, but a task activated after the shutdown (a table startup or an ALTER of
+    /// `refresh_statistics_interval` racing with a drop) can still be running here, so join it
+    /// before any member is destroyed.
+    try
+    {
+        if (refresh_parts_task)
+            refresh_parts_task->deactivate();
+        if (refresh_stats_task)
+            refresh_stats_task->deactivate();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to deactivate a refresh task");
+    }
+}
 
 void MergeTreeData::loadUnexpectedDataParts()
 try
