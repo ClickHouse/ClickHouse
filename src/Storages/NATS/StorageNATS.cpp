@@ -125,6 +125,14 @@ StorageNATS::StorageNATS(
     auto nats_client_cert_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_cert_file]);
     auto nats_client_key_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_client_key_file]);
 
+    /// A client certificate and its key are one credential, so they are inherited from the configuration
+    /// together. Inheriting them separately would pair a certificate from the query with a foreign key.
+    if (nats_client_cert_file.empty() && nats_client_key_file.empty())
+    {
+        nats_client_cert_file = getContext()->getConfigRef().getString("nats.client_cert_file", "");
+        nats_client_key_file = getContext()->getConfigRef().getString("nats.client_key_file", "");
+    }
+
     /// A credential source specified in the table settings overrides both config-level sources
     /// (otherwise a table with `nats_credential_file` would silently authenticate with a server-level `nats.credentials`).
     /// Only when neither is specified in the table settings, fall back to the config,
@@ -149,8 +157,8 @@ StorageNATS::StorageNATS(
         .credential_file = nats_credential_file,
         .credentials = nats_credentials,
         .ca_file = nats_ca_file.empty() ? getContext()->getConfigRef().getString("nats.ca_file", "") : nats_ca_file,
-        .client_cert_file = nats_client_cert_file.empty() ? getContext()->getConfigRef().getString("nats.client_cert_file", "") : nats_client_cert_file,
-        .client_key_file = nats_client_key_file.empty() ? getContext()->getConfigRef().getString("nats.client_key_file", "") : nats_client_key_file,
+        .client_cert_file = nats_client_cert_file,
+        .client_key_file = nats_client_key_file,
         .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
         .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
         .secure = (*nats_settings)[NATSSetting::nats_secure].value
