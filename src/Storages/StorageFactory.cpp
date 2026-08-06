@@ -6,7 +6,6 @@
 #include <Common/Exception.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
@@ -238,13 +237,12 @@ StoragePtr StorageFactory::get(
 
     chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
-    /// The storage object and its metadata live until the table is detached or the server stops, and are
-    /// freed by whoever does that, which cannot uncharge the query that ran the CREATE. So do not charge it:
-    /// the charge would sit on the per-user tracker for good. `total_memory_tracker` still accounts them, in
-    /// the dedicated arena for table-lifetime state.
+    /// The storage object and its metadata live until the table is detached or the server stops, far longer
+    /// than the query creating them, so keep them in the arena for table-lifetime state instead of
+    /// fragmenting the per-CPU arenas that serve queries. The charge is settled when the query ends, see
+    /// `MemoryTracker::settleDriftOnQueryEnd`.
     StoragePtr res;
     {
-        MemoryTrackerBlockerInThread not_charged_to_the_query;
         ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         res = storages.at(name).creator_fn(arguments);
     }

@@ -1,5 +1,4 @@
 #include <Storages/IStorage.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
@@ -43,12 +42,8 @@ namespace ErrorCodes
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
     : storage_id(std::move(storage_id_))
 {
-    /// Copy rather than adopt, so the metadata the table keeps is allocated blocked here as in
-    /// `setInMemoryMetadata`. Adopting a charged object that is later freed blocked would leak the charge.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
-
     if (metadata_)
-        metadata.set(std::make_unique<StorageInMemoryMetadata>(*metadata_));
+        metadata.set(std::move(metadata_));
     else
         metadata.set(std::make_unique<StorageInMemoryMetadata>());
 }
