@@ -91,7 +91,7 @@ void TokenWriteContext::add(UInt32 doc_id, PagePool & pool, Arena & chunk_arena,
         doc_deltas.gather(pool, scratch);
         doc_deltas.freeAll(pool);
 
-        const UInt32 doc_len = abpfor::b256::encodeBlock(scratch, packed_buffer);
+        const UInt32 doc_len = static_cast<UInt32>(abpfor::b256::encodeBlock(scratch, packed_buffer));
         chassert(doc_len <= ABPFOR_MAX_ENCODED_SIZE);
         auto * place = chunk_arena.alignedAlloc(doc_len + sizeof(PostingListChunk), alignof(PostingListChunk));
         PostingListChunk * cur_block = new (place) PostingListChunk(last_doc_id, doc_len, block_first_doc_id);
@@ -118,7 +118,7 @@ void TokenWriteContext::finalize(PagePool & pool, Arena & chunk_arena, UInt32 * 
         doc_deltas.gather(pool, scratch);
         doc_deltas.freeAll(pool);
 
-        const UInt32 len = abpfor::b256::encodeTail(scratch, tail, packed_buffer);
+        const UInt32 len = static_cast<UInt32>(abpfor::b256::encodeTail(scratch, tail, packed_buffer));
         auto * place = chunk_arena.alignedAlloc(len + sizeof(PostingListChunk), alignof(PostingListChunk));
         PostingListChunk * tail_block = new (place) PostingListChunk(last_doc_id, len, block_first_doc_id);
         memcpy(tail_block->data(), packed_buffer, len);
@@ -139,7 +139,7 @@ void TokenWriteContextPhrase::flushBlock(PagePool & pool, Arena & chunk_arena, U
     /// Encode doc_delta block
     doc_deltas.gather(pool, scratch);
     doc_deltas.freeAll(pool);
-    const UInt32 doc_len = abpfor::b256::encodeBlock(scratch, packed_buffer);
+    const UInt32 doc_len = static_cast<UInt32>(abpfor::b256::encodeBlock(scratch, packed_buffer));
     chassert(doc_len <= ABPFOR_MAX_ENCODED_SIZE);
     auto * doc_place = chunk_arena.alignedAlloc(doc_len + sizeof(PostingListChunk), alignof(PostingListChunk));
     PostingListChunk * doc_chunk = new (doc_place) PostingListChunk(last_doc_id, doc_len, block_first_doc_id);
@@ -158,7 +158,7 @@ void TokenWriteContextPhrase::flushBlock(PagePool & pool, Arena & chunk_arena, U
     UInt32 freq_sum = 0;
     for (UInt32 i = 0; i < ABPFOR_BLOCK_SIZE; ++i)
         freq_sum += scratch[i];
-    const UInt32 freq_len = abpfor::b256::encodeBlock(scratch, packed_buffer);
+    const UInt32 freq_len = static_cast<UInt32>(abpfor::b256::encodeBlock(scratch, packed_buffer));
     auto * freq_place = chunk_arena.alignedAlloc(freq_len + sizeof(PostingListChunk), alignof(PostingListChunk));
     PostingListChunk * freq_chunk = new (freq_place) PostingListChunk(freq_sum, freq_len);
     memcpy(freq_chunk->data(), packed_buffer, freq_len);
@@ -284,7 +284,7 @@ void TokenWriteContextPhrase::finalize(PagePool & pool, Arena & chunk_arena, UIn
         /// Encode tail doc_deltas
         doc_deltas.gather(pool, scratch);
         doc_deltas.freeAll(pool);
-        const UInt32 len = abpfor::b256::encodeTail(scratch, tail, packed_buffer);
+        const UInt32 len = static_cast<UInt32>(abpfor::b256::encodeTail(scratch, tail, packed_buffer));
         auto * place = chunk_arena.alignedAlloc(len + sizeof(PostingListChunk), alignof(PostingListChunk));
         PostingListChunk * tail_block = new (place) PostingListChunk(last_doc_id, len, block_first_doc_id);
         memcpy(tail_block->data(), packed_buffer, len);
@@ -301,7 +301,7 @@ void TokenWriteContextPhrase::finalize(PagePool & pool, Arena & chunk_arena, UIn
         UInt32 freq_sum = 0;
         for (UInt32 i = 0; i < tail; ++i)
             freq_sum += scratch[i];
-        const UInt32 flen = abpfor::b256::encodeTail(scratch, tail, packed_buffer);
+        const UInt32 flen = static_cast<UInt32>(abpfor::b256::encodeTail(scratch, tail, packed_buffer));
         place = chunk_arena.alignedAlloc(flen + sizeof(PostingListChunk), alignof(PostingListChunk));
         PostingListChunk * freq_chunk = new (place) PostingListChunk(freq_sum, flen);
         memcpy(freq_chunk->data(), packed_buffer, flen);
@@ -479,7 +479,7 @@ private:
         UInt32 remaining = count;
         while (remaining >= ABPFOR_BLOCK_SIZE)
         {
-            const UInt32 written = abpfor::b256::encodeBlockDelta1(values + p, pos_encode_buf, start);
+            const UInt32 written = static_cast<UInt32>(abpfor::b256::encodeBlockDelta1(values + p, pos_encode_buf, start));
             out.write(reinterpret_cast<const char *>(pos_encode_buf), written);
             start = values[p + ABPFOR_BLOCK_SIZE - 1];
             p += ABPFOR_BLOCK_SIZE;
@@ -487,7 +487,7 @@ private:
         }
         if (remaining > 0)
         {
-            const UInt32 written = abpfor::b256::encodeTailDelta1(values + p, remaining, pos_encode_buf, start);
+            const UInt32 written = static_cast<UInt32>(abpfor::b256::encodeTailDelta1(values + p, remaining, pos_encode_buf, start));
             out.write(reinterpret_cast<const char *>(pos_encode_buf), written);
         }
     }
@@ -547,9 +547,9 @@ private:
     {
         UInt32 encoded_bytes = 0;
         if (is_tail)
-            encoded_bytes = abpfor::b256::encodeTail(src, n, pos_encode_buf);
+            encoded_bytes = static_cast<UInt32>(abpfor::b256::encodeTail(src, n, pos_encode_buf));
         else
-            encoded_bytes = abpfor::b256::encodeBlock(src, pos_encode_buf);
+            encoded_bytes = static_cast<UInt32>(abpfor::b256::encodeBlock(src, pos_encode_buf));
         pos_out->write(reinterpret_cast<const char *>(pos_encode_buf), encoded_bytes);
         pos_block_cum_bytes.push_back(pos_block_cum_bytes.empty() ? encoded_bytes : pos_block_cum_bytes.back() + encoded_bytes);
     }
@@ -662,23 +662,27 @@ private:
 
             /// UInt64 offsets — abpfor delta-1 encoded.
             ///
-            /// `start` MUST be the `(T)-1` sentinel, not 0. These offset arrays begin at 0
+            /// `start` is the `(T)-1` sentinel rather than 0. These offset arrays begin at 0
             /// (the first large block starts at offset 0 of its stream), and abpfor's delta-1
             /// coding computes `delta[0] = values[0] - start - 1`. With `start == 0` that is
-            /// `0 - 0 - 1 == UINT64_MAX`, a 64-bit-wide delta. `abpfor::encodeBlock` cannot
-            /// represent width 64 in its 6-bit header field, so it emits a `kRaw` block
-            /// (header 0xFF) — but `decodeBlockDelta1` has no `kRaw` branch and misparses
-            /// 0xFF as a "constant" block of width 63, decoding offset 0 back as
-            /// `(UINT64_MAX & mask(63)) + 1 == 0x8000000000000000`. That bogus offset then
-            /// reaches `pread`, which rejects it with EINVAL.
+            /// `0 - 0 - 1 == UINT64_MAX`, a full-width delta, which pushes the block into
+            /// abpfor's uncompressed `kRaw` form. `(T)-1` makes
+            /// `delta[0] = values[0] - (T)-1 - 1 == values[0]`, which stays narrow: a lone
+            /// zero offset encodes to 1 byte instead of 9.
             ///
-            /// `(T)-1` makes `delta[0] = values[0] - (T)-1 - 1 == values[0]`, keeping every
-            /// delta in range. This matches the sentinel already used for the cumulative-bytes
-            /// arrays below and in `flushLargeBlock`. The reader must pass the identical
-            /// sentinel — see `decode_delta1_64` in `PostingListStream::read`.
+            /// This is a size choice, not a correctness workaround. It used to be both:
+            /// abpfor's scalar `decodeBlockDelta1` mistook `kRaw` (header 0xFF) for a constant
+            /// block and decoded offset 0 back as 0x8000000000000000, which reached `pread`
+            /// and failed with EINVAL. That was an upstream bug, fixed by amosbird/abpfor#1;
+            /// `start == 0` round-trips correctly now. The sentinel is kept for the smaller
+            /// encoding, and gtest_posting_list_codec pins that benefit so it is not dropped
+            /// as redundant.
             ///
-            /// The UInt32 `large_block_ranges` above is unaffected: a 32-bit `-1` delta stays
-            /// within abpfor's representable width and round-trips via unsigned wraparound.
+            /// The reader must pass the identical sentinel — see `decode_delta1_64` in
+            /// `PostingListStream::read`.
+            ///
+            /// The UInt32 `large_block_ranges` above keeps `start == 0`: those are doc-ID
+            /// pairs, so element 0 is not necessarily 0 and the sentinel would not help.
             encodeDelta1(large_block_pst_offsets.data(), n, static_cast<UInt64>(-1), tmp);
 
             if (write_block_index)
@@ -1035,9 +1039,9 @@ private:
             const uint8_t * p = dbuf.ptr();
             uint32_t consumed = 0;
             if (count == ABPFOR_BLOCK_SIZE)
-                consumed = abpfor::b256::decodeBlockDelta1(p, doc_buffer, last_doc_id);
+                consumed = static_cast<UInt32>(abpfor::b256::decodeBlockDelta1(p, doc_buffer, last_doc_id));
             else
-                consumed = abpfor::b256::decodeTailDelta1(p, count, doc_buffer, last_doc_id);
+                consumed = static_cast<UInt32>(abpfor::b256::decodeTailDelta1(p, count, doc_buffer, last_doc_id));
             dbuf.advance(consumed);
         }
 
@@ -1048,9 +1052,9 @@ private:
             const uint8_t * p = dbuf.ptr();
             uint32_t consumed = 0;
             if (count == ABPFOR_BLOCK_SIZE)
-                consumed = abpfor::b256::decodeBlock(p, freq_discard);
+                consumed = static_cast<UInt32>(abpfor::b256::decodeBlock(p, freq_discard));
             else
-                consumed = abpfor::b256::decodeTail(p, count, freq_discard);
+                consumed = static_cast<UInt32>(abpfor::b256::decodeTail(p, count, freq_discard));
             dbuf.advance(consumed);
         }
 
@@ -1329,11 +1333,10 @@ void PostingListStream::read(
     std::vector<UInt32> lb_ranges(num_large_blocks * 2);
     decode_delta1(ptr, num_large_blocks * 2, lb_ranges.data(), 0);
 
-    /// The UInt64 offset arrays are delta-1 encoded against the `(T)-1` sentinel, NOT 0 —
-    /// these arrays start at offset 0, and a `start` of 0 would make the first delta
-    /// `0 - 0 - 1 == UINT64_MAX`, which abpfor cannot round-trip (it encodes as a `kRaw`
-    /// block that `decodeBlockDelta1` misparses, yielding 0x8000000000000000). Must stay in
-    /// sync with `LargePostingBlockWriter::writeLargeBlockMeta`, which documents this in full.
+    /// The UInt64 offset arrays are delta-1 encoded against the `(T)-1` sentinel, not 0.
+    /// The reader must use the same start as the writer or every offset comes out shifted.
+    /// See `LargePostingBlockWriter::writeLargeBlockMeta` for why the sentinel is used
+    /// (smaller encoding for arrays that begin at 0).
     std::vector<UInt64> pst_offsets(num_large_blocks);
     decode_delta1_64(ptr, num_large_blocks, pst_offsets.data(), static_cast<UInt64>(-1));
 
@@ -1470,16 +1473,16 @@ void PostingListStream::write(
                         const uint8_t * p = pos_dbuf.ptr();
                         uint32_t consumed = 0;
                         if (n == ABPFOR_BLOCK_SIZE)
-                            consumed = abpfor::b256::decodeBlock(p, decode_buf);
+                            consumed = static_cast<UInt32>(abpfor::b256::decodeBlock(p, decode_buf));
                         else
-                            consumed = abpfor::b256::decodeTail(p, n, decode_buf);
+                            consumed = static_cast<UInt32>(abpfor::b256::decodeTail(p, n, decode_buf));
                         pos_dbuf.advance(consumed);
 
                         uint32_t written = 0;
                         if (n == ABPFOR_BLOCK_SIZE)
-                            written = abpfor::b256::encodeBlock(decode_buf, encode_buf);
+                            written = static_cast<UInt32>(abpfor::b256::encodeBlock(decode_buf, encode_buf));
                         else
-                            written = abpfor::b256::encodeTail(decode_buf, n, encode_buf);
+                            written = static_cast<UInt32>(abpfor::b256::encodeTail(decode_buf, n, encode_buf));
                         pos_writer->write(reinterpret_cast<const char *>(encode_buf), written);
 
                         remaining -= n;
@@ -1695,9 +1698,9 @@ void PostingListStream::write(
             const uint8_t * p = dbuf.ptr();
             uint32_t consumed = 0;
             if (n == ABPFOR_BLOCK_SIZE)
-                consumed = abpfor::b256::decodeBlock(p, pos_decoded);
+                consumed = static_cast<UInt32>(abpfor::b256::decodeBlock(p, pos_decoded));
             else
-                consumed = abpfor::b256::decodeTail(p, n, pos_decoded);
+                consumed = static_cast<UInt32>(abpfor::b256::decodeTail(p, n, pos_decoded));
             dbuf.advance(consumed);
 
             pos_buf_count = n;
@@ -1827,7 +1830,7 @@ void PostingListStream::write(
         if (pos_writer && freq_buffered > 0)
         {
             chassert(freq_buffered == ABPFOR_BLOCK_SIZE);
-            freq_bytes = abpfor::b256::encodeBlock(freq_buffer_merge, freq_packed);
+            freq_bytes = static_cast<UInt32>(abpfor::b256::encodeBlock(freq_buffer_merge, freq_packed));
             freq_data = reinterpret_cast<const char *>(freq_packed);
         }
 
@@ -1840,7 +1843,7 @@ void PostingListStream::write(
         if (!pos_deltas_buffer.empty())
             block_writer.feedPositionDeltas(pos_deltas_buffer.data(), static_cast<UInt32>(pos_deltas_buffer.size()));
 
-        const UInt32 doc_bytes = abpfor::b256::encodeBlock(doc_delta_buffer, packed_buffer);
+        const UInt32 doc_bytes = static_cast<UInt32>(abpfor::b256::encodeBlock(doc_delta_buffer, packed_buffer));
 
         block_writer.addBlock(
             block_first_doc_id_merge,
@@ -1865,7 +1868,7 @@ void PostingListStream::write(
         uint8_t freq_packed[ABPFOR_MAX_ENCODED_SIZE];
         if (pos_writer && freq_buffered > 0)
         {
-            freq_bytes = abpfor::b256::encodeTail(freq_buffer_merge, freq_buffered, freq_packed);
+            freq_bytes = static_cast<UInt32>(abpfor::b256::encodeTail(freq_buffer_merge, freq_buffered, freq_packed));
             freq_data = reinterpret_cast<const char *>(freq_packed);
         }
 
@@ -1876,7 +1879,7 @@ void PostingListStream::write(
         if (!pos_deltas_buffer.empty())
             block_writer.feedPositionDeltas(pos_deltas_buffer.data(), static_cast<UInt32>(pos_deltas_buffer.size()));
 
-        const UInt32 doc_bytes = abpfor::b256::encodeTail(doc_delta_buffer, buffered, packed_buffer);
+        const UInt32 doc_bytes = static_cast<UInt32>(abpfor::b256::encodeTail(doc_delta_buffer, buffered, packed_buffer));
 
         block_writer.addBlock(
             block_first_doc_id_merge,

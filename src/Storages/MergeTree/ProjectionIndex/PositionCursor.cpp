@@ -144,9 +144,9 @@ void PositionCursor::ensurePackedBlockDecoded(size_t lb_idx, size_t pb_idx)
         const uint8_t * p = pst_decode_buf->ptr();
         uint32_t consumed = 0;
         if (count == ABPFOR_BLOCK_SIZE)
-            consumed = abpfor::b256::decodeBlockDelta1(p, pb_cache.doc_ids, delta_base);
+            consumed = static_cast<UInt32>(abpfor::b256::decodeBlockDelta1(p, pb_cache.doc_ids, delta_base));
         else
-            consumed = abpfor::b256::decodeTailDelta1(p, count, pb_cache.doc_ids, delta_base);
+            consumed = static_cast<UInt32>(abpfor::b256::decodeTailDelta1(p, count, pb_cache.doc_ids, delta_base));
         pst_decode_buf->advance(consumed);
     }
 
@@ -155,9 +155,9 @@ void PositionCursor::ensurePackedBlockDecoded(size_t lb_idx, size_t pb_idx)
         const uint8_t * p = pst_decode_buf->ptr();
         uint32_t consumed = 0;
         if (count == ABPFOR_BLOCK_SIZE)
-            consumed = abpfor::b256::decodeBlock(p, pb_cache.freqs);
+            consumed = static_cast<UInt32>(abpfor::b256::decodeBlock(p, pb_cache.freqs));
         else
-            consumed = abpfor::b256::decodeTail(p, count, pb_cache.freqs);
+            consumed = static_cast<UInt32>(abpfor::b256::decodeTail(p, count, pb_cache.freqs));
         pst_decode_buf->advance(consumed);
     }
 
@@ -225,9 +225,9 @@ void PositionCursor::ensurePosBlockDecoded(size_t lb_idx, UInt32 pos_block_idx)
     const uint8_t * p = pos_decode_buf->ptr();
     uint32_t consumed = 0;
     if (count == ABPFOR_BLOCK_SIZE)
-        consumed = abpfor::b256::decodeBlock(p, pos_cache.values);
+        consumed = static_cast<UInt32>(abpfor::b256::decodeBlock(p, pos_cache.values));
     else
-        consumed = abpfor::b256::decodeTail(p, count, pos_cache.values);
+        consumed = static_cast<UInt32>(abpfor::b256::decodeTail(p, count, pos_cache.values));
     pos_decode_buf->advance(consumed);
 
     pos_cache.large_block = lb_idx;
@@ -272,9 +272,9 @@ UInt32 PositionCursor::seekDoc(UInt32 doc_id)
                 const uint8_t * p = pos_decode_buf->ptr();
                 uint32_t consumed = 0;
                 if (n == ABPFOR_BLOCK_SIZE)
-                    consumed = abpfor::b256::decodeBlock(p, pos_cache.values);
+                    consumed = static_cast<UInt32>(abpfor::b256::decodeBlock(p, pos_cache.values));
                 else
-                    consumed = abpfor::b256::decodeTail(p, n, pos_cache.values);
+                    consumed = static_cast<UInt32>(abpfor::b256::decodeTail(p, n, pos_cache.values));
                 pos_decode_buf->advance(consumed);
 
                 pos_cache.large_block = SIZE_MAX;
@@ -346,9 +346,9 @@ UInt32 PositionCursor::nextPosition()
             const uint8_t * p = pos_decode_buf->ptr();
             uint32_t consumed = 0;
             if (n == ABPFOR_BLOCK_SIZE)
-                consumed = abpfor::b256::decodeBlock(p, pos_cache.values);
+                consumed = static_cast<UInt32>(abpfor::b256::decodeBlock(p, pos_cache.values));
             else
-                consumed = abpfor::b256::decodeTail(p, n, pos_cache.values);
+                consumed = static_cast<UInt32>(abpfor::b256::decodeTail(p, n, pos_cache.values));
             pos_decode_buf->advance(consumed);
 
             ++pos_cache.pos_block_idx;

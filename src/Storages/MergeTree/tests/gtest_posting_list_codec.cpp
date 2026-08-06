@@ -864,20 +864,25 @@ TEST(PostingListCodecTest, PortableEncodeDecodedBySSEAndSSEEncodeDecodedByPortab
 #endif
 }
 
-/// Regression: the projection text index encodes its UInt64 large-block offset arrays
-/// (`.pst`/`.pidx`/`.pos`) with abpfor delta-1 coding. Those arrays start at offset 0, and
-/// delta-1 computes `delta[0] = values[0] - start - 1`, so `start == 0` makes the first delta
-/// `UINT64_MAX`. abpfor is documented as performance-first and validates nothing, and for a
-/// 64-bit-wide delta the tail codec does not round-trip: offset 0 decodes back as
-/// 0x8000000000000000. That value became `index_offset`, reached `pread`, and failed with
-/// EINVAL (`Cannot read from file ... posting.pidx`).
+/// The projection text index delta-1 encodes its offset and cumulative-byte arrays, all of
+/// which start at 0. delta-1 computes `delta[0] = values[0] - start - 1`, so `start == 0`
+/// makes the first delta `UINT64_MAX` — a full-width value that forces abpfor to fall back to
+/// its kRaw (uncompressed) block form. Using `(T)-1` as the start instead makes
+/// `delta[0] == values[0]`, which stays narrow.
 ///
-/// The corruption only shows up for `n == 1`; `n >= 2` happens to round-trip even with
-/// `start == 0`, which is why it survived initial probing. A single-large-block token is the
-/// common case, so this fired on the very first query. Both writer and reader must use the
-/// `(T)-1` sentinel, which makes `delta[0] == values[0]`.
-TEST(PostingListCodecTest, AbpforDelta1SentinelRoundTripsZeroFirstElement)
+/// This used to be a correctness requirement: abpfor's scalar delta-1 decoder mistook kRaw
+/// blocks (header 0xFF) for constant blocks, so offset 0 decoded back as 0x8000000000000000,
+/// became `index_offset`, reached `pread` and failed with EINVAL. That was an upstream bug,
+/// fixed in abpfor by amosbird/abpfor#1 (the constant branch now excludes `b == kRaw`), and
+/// the sentinel merely happened to steer clear of the broken path.
+///
+/// The sentinel is kept because it is the better encoding, not because it is a workaround: a
+/// `UINT64_MAX` first delta widens the whole block. The size assertions below pin that
+/// benefit, so the sentinel does not get removed as redundant now that both starts are
+/// correct. Measured with abpfor at the merge of #1.
+TEST(PostingListCodecTest, AbpforDelta1SentinelIsCorrectAndSmaller)
 {
+    /// Returns {decoded values, bytes written}. Also checks encode/decode agree on the length.
     auto round_trip_u64 = [](const std::vector<UInt64> & values, UInt64 start)
     {
         std::vector<uint8_t> buf(abpfor::b256::maxCompressedSize<UInt64>(values.size()) + 64, 0);
@@ -886,30 +891,41 @@ TEST(PostingListCodecTest, AbpforDelta1SentinelRoundTripsZeroFirstElement)
         std::vector<UInt64> decoded(values.size(), 0);
         const size_t consumed = abpfor::b256::decodeTailDelta1(buf.data(), n, decoded.data(), start);
         EXPECT_EQ(written, consumed) << "encode/decode byte counts must agree";
-        return decoded;
+        return std::pair<std::vector<UInt64>, size_t>{decoded, written};
     };
 
-    /// The exact shape that broke: a single-large-block token whose offset array is {0}.
-    /// With start = 0 this decodes to 0x8000000000000000 rather than 0.
-    EXPECT_EQ(round_trip_u64({0}, 0)[0], 0x8000000000000000ULL)
-        << "guard: if abpfor gains a kRaw delta-1 branch this corruption disappears and the "
-           "sentinel requirement below can be relaxed";
-
-    /// Only n == 1 is corrupted by start = 0. Pin that too, so a future reader who probes
-    /// with a multi-element array does not wrongly conclude start = 0 is safe.
-    EXPECT_EQ(round_trip_u64({0, 100}, 0), (std::vector<UInt64>{0, 100}))
-        << "n >= 2 round-trips even with start = 0 — this is why n == 1 is the trap";
-
-    /// With the (T)-1 sentinel the same arrays round-trip exactly.
+    /// Both starts must now round-trip. `{0}` is the shape that used to corrupt: a
+    /// single-large-block token whose offset array is just {0}, which is the common case and
+    /// is why the old bug fired on the very first query.
     for (const std::vector<UInt64> & values :
          {std::vector<UInt64>{0}, std::vector<UInt64>{0, 100}, std::vector<UInt64>{0, 64, 4096, 1 << 20}})
     {
-        EXPECT_EQ(round_trip_u64(values, static_cast<UInt64>(-1)), values)
+        EXPECT_EQ(round_trip_u64(values, static_cast<UInt64>(-1)).first, values)
             << "UInt64 delta-1 must round-trip with the (T)-1 sentinel";
+        EXPECT_EQ(round_trip_u64(values, 0).first, values)
+            << "start = 0 must also round-trip: abpfor#1 fixed the kRaw delta-1 misdecode. "
+               "If this fails, the abpfor submodule predates that fix";
     }
 
-    /// UInt32 range arrays keep `start == 0`: a 32-bit -1 delta stays representable and
-    /// round-trips via unsigned wraparound. Pin that so the two paths don't get "unified".
+    /// Why the sentinel is kept: it encodes strictly smaller for arrays that begin at 0.
+    /// A `UINT64_MAX` first delta needs the full width and widens the whole block.
+    for (const std::vector<UInt64> & values :
+         {std::vector<UInt64>{0}, std::vector<UInt64>{0, 100}, std::vector<UInt64>{0, 2, 22, 32}})
+    {
+        const size_t with_zero = round_trip_u64(values, 0).second;
+        const size_t with_sentinel = round_trip_u64(values, static_cast<UInt64>(-1)).second;
+        EXPECT_LT(with_sentinel, with_zero)
+            << "the (T)-1 sentinel is kept for size, not correctness — if it stops paying off, "
+               "revisit both call sites rather than silently dropping it (n=" << values.size() << ")";
+    }
+
+    /// The most extreme case, pinned exactly: a lone zero offset costs one byte with the
+    /// sentinel and nine without (kRaw header + 8 raw bytes).
+    EXPECT_EQ(round_trip_u64({0}, static_cast<UInt64>(-1)).second, 1u);
+    EXPECT_EQ(round_trip_u64({0}, 0).second, 9u);
+
+    /// UInt32 range arrays deliberately keep `start == 0`: they are pairs of doc IDs rather
+    /// than offsets, so element 0 is not necessarily 0 and the sentinel would not help.
     const std::vector<UInt32> ranges{0, 9, 10, 10};
     std::vector<uint8_t> buf(abpfor::b256::maxCompressedSize<UInt32>(ranges.size()) + 64, 0);
     const auto n32 = static_cast<unsigned>(ranges.size());
