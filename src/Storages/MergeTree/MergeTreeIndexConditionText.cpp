@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 
+#include "config.h"
+
 #include <set>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -129,12 +131,14 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
+    const std::optional<String> & normalized_index_column_name_,
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_)
     : WithContext(context_)
     , header(index_sample_block)
+    , normalized_index_column_name(normalized_index_column_name_)
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
@@ -969,9 +973,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     auto direct_read_mode = getDirectReadMode(function_name);
 
     auto index_column_name = index_column_node.getColumnName();
-    bool has_index_column = header.has(index_column_name);
-    bool has_map_keys_column = header.has(fmt::format("mapKeys({})", index_column_name));
-    bool has_map_values_column = header.has(fmt::format("mapValues({})", index_column_name));
+    bool has_index_column = hasIndexForColumn(index_column_name);
+    bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
+    bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
 
     if (traverseMapElementValueNode(index_column_node, value_field))
     {
@@ -1284,7 +1288,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             SplitByNonAlphaTokenizer::getExternalName(),
             SplitByStringTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
+#if USE_ICU
             IcuTokenizer::getExternalName(),
+#endif
             NgramsTokenizer::getExternalName(),
         };
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
@@ -1659,7 +1665,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
         {
             const auto column_name = function.getArgumentAt(0).getColumnName();
-            return header.has(fmt::format("mapValues({})", column_name));
+            return hasIndexForColumn(fmt::format("mapValues({})", column_name));
         }
         return false;
     }
@@ -1760,7 +1766,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
-        return header.has(node.getColumnName())
+        return hasIndexForColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONAllValuesIndex(node, header).has_value();
     };
