@@ -102,7 +102,7 @@ SELECT 'identity cast noindex', count() FROM t_json_all_values_coercion WHERE da
 
 -- A dynamic path has no single stored type, so the literal's own type is still used for the probe.
 INSERT INTO t_json_all_values_coercion
-SELECT '{"ip":"9.9.9.9","ips":["9.9.9.9"],"missing":9,"ts":"2021-02-02 02:02:02","x":9,"dynamic_x":9,"tag":"needle"}'
+SELECT '{"ip":"9.9.9.9","ips":["9.9.9.9"],"map_ip":{"a":"9.9.9.9"},"map_ips":[{"a":"9.9.9.9"}],"missing":9,"ts":"2021-02-02 02:02:02","tuple_ip":{"ip":"9.9.9.9"},"tuple_ips":[{"ip":"9.9.9.9"}],"x":9,"dynamic_x":9,"tag":"needle"}'
 FROM numbers(4);
 
 SELECT 'dynamic string index  ', count() FROM t_json_all_values_coercion WHERE data.tag = 'needle';
