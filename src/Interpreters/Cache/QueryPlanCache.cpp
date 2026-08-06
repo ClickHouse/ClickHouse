@@ -146,15 +146,15 @@ QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
     return result;
 }
 
-void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entry, size_t max_size_in_bytes_for_user)
+bool QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entry, size_t max_size_in_bytes_for_user)
 {
     /// CacheBase treats max_count=0 as "unlimited", but for the query plan cache
     /// we treat 0 as "disabled". Guard against inserting into a disabled cache.
     if (maxSizeInBytes() == 0 || maxCount() == 0)
-        return;
+        return false;
 
     if (!canStoreForUser(key, entry, max_size_in_bytes_for_user))
-        return;
+        return false;
 
     /// Stamp the inserter and the key so that `onEntryRemoval` can decrement the
     /// right user counter and erase the matching `entry_weights` record when this
@@ -166,7 +166,7 @@ void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
     /// An entry larger than the whole cache can never stay resident: `Base::set` would admit it
     /// and evict it again inside the same call. Skip the pointless insert/evict churn.
     if (entry_weight > maxSizeInBytes())
-        return;
+        return false;
 
     /// Build the mapped value before charging, so a failed allocation here leaves no accounting behind.
     auto entry_ptr = std::make_shared<QueryPlanCacheEntry>(std::move(entry));
@@ -208,6 +208,10 @@ void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
     try
     {
         Base::set(key, entry_ptr);
+        /// A synchronous eviction inside `Base::set` (the cache was full of protected entries) is
+        /// still an admission: it is transient cache pressure, not a state that makes this query
+        /// permanently non-storable, so it does not force the caller off the cacheable-plan path.
+        return true;
     }
     catch (...)
     {

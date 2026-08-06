@@ -164,7 +164,12 @@ public:
 
     /// Stores an entry. `max_size_in_bytes_for_user` comes from the current query's
     /// `query_plan_cache_size_in_bytes_quota` setting; 0 means no quota.
-    void set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entry, size_t max_size_in_bytes_for_user = 0);
+    /// Returns whether the entry was admitted. Admission fails when the cache is disabled, the
+    /// user's quota has no room for the entry, or the entry is larger than the whole cache - all
+    /// states that persist across identical executions, so the caller must not keep executing the
+    /// cacheable logical plan (which has ordinary planner behaviors switched off) for a query that
+    /// can never produce a hit.
+    bool set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entry, size_t max_size_in_bytes_for_user = 0);
 
     /// Removes the entry stored under `key`, but only while it is still `entry`. Called for an
     /// entry that failed validation or materialization: such an entry must be evicted rather than

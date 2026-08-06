@@ -1376,7 +1376,19 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     /// storages. Storing before it would leave a known-dead entry resident when the resolution
     /// loses a race with concurrent DDL: the entry is guaranteed to validation-miss on the next
     /// identical query, yet until then it consumes cache size and the user's quota.
-    query_plan_cache->set(*key, std::move(entry), settings[Setting::query_plan_cache_size_in_bytes_quota]);
+    if (!query_plan_cache->set(*key, std::move(entry), settings[Setting::query_plan_cache_size_in_bytes_quota]))
+    {
+        /// The entry was not admitted: the user's `query_plan_cache_size_in_bytes_quota` has no
+        /// room for it, or it is larger than the whole cache. These states persist across
+        /// identical executions, so executing the cacheable logical plan here would make the query
+        /// permanently slower (ordinary planner behaviors - trivial count, direct-join lookups -
+        /// are switched off in it) with no compensating hit ever. Fall back to the normal
+        /// interpreter, exactly like a plan with an unserializable step does.
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: the entry was not admitted into the cache (per-user quota or cache size limit), "
+            "falling back to normal planning");
+        return nullptr;
+    }
     return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
 }
 
