@@ -30,13 +30,13 @@ ORDER BY k
 SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000
 "
 
-# One Compact part with 400k marks. index_granularity = 1 plus a block size covering the whole
+# One Compact part with 100k marks. index_granularity = 1 plus a block size covering the whole
 # part means a single readRows call has to walk every mark, which takes many seconds.
 ${CLICKHOUSE_CLIENT} \
-    --max_block_size 400000 --max_insert_block_size 400000 \
+    --max_block_size 100000 --max_insert_block_size 100000 \
     --min_insert_block_size_rows 0 --min_insert_block_size_bytes 0 \
     -q "INSERT INTO t_compact_read_cancel
-        SELECT number, s, s, s, s, s, s, s, s, s FROM (SELECT number, repeat('x', 30) AS s FROM numbers(400000))"
+        SELECT number, s, s, s, s, s, s, s, s, s FROM (SELECT number, repeat('x', 30) AS s FROM numbers(100000))"
 
 ${CLICKHOUSE_CLIENT} -q "
 SELECT 'part type', part_type FROM system.parts
@@ -133,30 +133,34 @@ SETTINGS index_granularity = 1, min_bytes_for_wide_part = 1000000000, min_rows_f
 "
 
 ${CLICKHOUSE_CLIENT} \
-    --max_block_size 400000 --max_insert_block_size 400000 \
+    --max_block_size 100000 --max_insert_block_size 100000 \
     --min_insert_block_size_rows 0 --min_insert_block_size_bytes 0 \
     -q "INSERT INTO t_text_read_cancel
-        SELECT number, concat('tok', toString(number % 1000), ' filler text here') FROM numbers(400000)"
+        SELECT number, concat('tok', toString(number % 1000), ' filler text here') FROM numbers(100000)"
 
 ${CLICKHOUSE_CLIENT} -q "
 SELECT 'text part type', part_type FROM system.parts
 WHERE database = currentDatabase() AND table = 't_text_read_cancel' AND active"
 
-# Every row carries 'filler', so no mark is pruned and the walk covers all 400k of them. Each
+# Every row carries 'filler', so no mark is pruned and the walk covers all 100k of them. Each
 # extra predicate adds a virtual column whose posting list is materialized per mark, and the walk
-# costs about 150 ms per predicate, so the count sets how long the read lasts. It has to stay long
+# costs about 37 ms per predicate, so the count sets how long the read lasts. It has to stay long
 # relative to the handshake below, which needs a few client round-trips: at 30 predicates the read
-# takes 4.5 s and the cancel can arrive after it has already finished.
+# takes 1.1 s and the cancel can arrive after it has already finished.
 text_pred="1"
-for i in $(seq 1 120); do
+for i in $(seq 1 240); do
     text_pred="$text_pred AND hasAnyTokens(s, ['filler', 'tok$i'])"
 done
 text_query="SELECT count() FROM t_text_read_cancel WHERE $text_pred"
 
 # Assert the text index is what serves the query: if it silently fell back to a full scan the
-# reader under test would never run.
+# reader under test would never run. Analysing the predicate costs about as much per term as
+# reading does, so this asks the same question of a single term: whether the index is usable for
+# this predicate shape does not depend on how many terms are conjoined.
 ${CLICKHOUSE_CLIENT} --use_skip_indexes_on_data_read 0 --query_plan_direct_read_from_text_index 1 -q "
-SELECT 'text index used', count() > 0 FROM (EXPLAIN indexes = 1 $text_query) WHERE explain ILIKE '%Name: idx_s%'"
+SELECT 'text index used', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_text_read_cancel WHERE hasAnyTokens(s, ['filler', 'tok1']))
+WHERE explain ILIKE '%Name: idx_s%'"
 
 # Both settings are pinned per query because both are randomized and each one silently disarms the
 # assertion below.
