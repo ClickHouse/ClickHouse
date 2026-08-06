@@ -935,6 +935,12 @@ namespace
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
                 check_column_type(TimeSeriesColumnNames::Value, resolved_types.scalar_type);
+                /// `is_stale_marker` is optional here only so a plain 3-column (`id`/`timestamp`/`value`)
+                /// "samples" table can still be attached to a TimeSeries table definition (e.g. an external
+                /// table, or one predating this column) for non-Prometheus SQL access. The Prometheus
+                /// remote-write and PromQL read paths require the column and check for it themselves
+                /// (see PrometheusRemoteWriteProtocol::writeTimeSeries and StorageTimeSeriesSelector::readImpl)
+                /// rather than silently treating every row as fresh.
                 if (target_table_columns.has(TimeSeriesColumnNames::IsStaleMarker))
                     check_column_type(TimeSeriesColumnNames::IsStaleMarker, std::make_shared<DataTypeUInt8>());
                 break;

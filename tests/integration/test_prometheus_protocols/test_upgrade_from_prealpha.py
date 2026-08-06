@@ -1,5 +1,6 @@
 import os
 import pytest
+import requests
 
 from helpers.cluster import ClickHouseCluster
 from helpers.database_disk import get_database_disk_name, write_metadata
@@ -7,6 +8,7 @@ from helpers.database_disk import get_database_disk_name, write_metadata
 from helpers.test_tools import TSV
 from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
+    get_response_to_remote_write,
     send_protobuf_to_remote_write,
 )
 
@@ -184,6 +186,26 @@ def send_bar_via_remote_write():
     send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
 
 
+# Attempts to send the `bar` metric via RemoteWrite protocol and checks it's rejected because the
+# "samples"/"data" table still has the prealpha 3-column schema (no `is_stale_marker`).
+# The Prometheus remote-write path must fail closed on such tables instead of silently writing raw
+# stale-NaN samples with no way to flag them (see PrometheusRemoteWriteProtocol::writeTimeSeries).
+def send_bar_via_remote_write_expect_missing_is_stale_marker():
+    protobuf = convert_time_series_to_protobuf(bar)
+    response = get_response_to_remote_write(node.ip_address, 9093, "/write", protobuf)
+    assert response.status_code != requests.codes.no_content
+    assert "is_stale_marker" in response.text
+
+
+# Finds the name of the "samples"/"data" inner table currently backing `prometheus` and adds the
+# `is_stale_marker` column to it, simulating the migration an operator would run after upgrading.
+def migrate_data_table_add_is_stale_marker():
+    data_table_name = node.query(
+        "SELECT _table FROM timeSeriesData(prometheus) LIMIT 1"
+    ).strip()
+    node.query(f"ALTER TABLE `{data_table_name}` ADD COLUMN is_stale_marker UInt8 DEFAULT 0")
+
+
 # Checks that both `foo` and `bar` metrics exist.
 def check_foo_and_bar():
     result = node.query(
@@ -207,8 +229,13 @@ def cleanup_after_test():
 
 
 # Checks that an prealpha-version TimeSeries table can be attached and used.
+# The "data" table upgraded from prealpha still has the old 3-column schema (no `is_stale_marker`),
+# so RemoteWrite must reject it until it's migrated (see
+# send_bar_via_remote_write_expect_missing_is_stale_marker() above).
 def test_upgrade_from_prealpha():
     create_and_fill_prealpha_time_series()
+    send_bar_via_remote_write_expect_missing_is_stale_marker()
+    migrate_data_table_add_is_stale_marker()
     send_bar_via_remote_write()
     check_foo_and_bar()
 
@@ -222,6 +249,8 @@ def test_upgrade_from_prealpha_ordinary_db():
     )
 
     create_and_fill_prealpha_time_series()
+    send_bar_via_remote_write_expect_missing_is_stale_marker()
+    migrate_data_table_add_is_stale_marker()
     send_bar_via_remote_write()
     check_foo_and_bar()
 
@@ -235,5 +264,7 @@ def test_restore_from_prealpha():
     backup_file = os.path.join(os.path.dirname(__file__), "backups", "time_series_prealpha.zip")
     node.copy_file_to_container(backup_file, "/backups/time_series_prealpha.zip")
     node.query("RESTORE TABLE default.prometheus FROM Disk('backups', 'time_series_prealpha.zip')")
+    send_bar_via_remote_write_expect_missing_is_stale_marker()
+    migrate_data_table_add_is_stale_marker()
     send_bar_via_remote_write()
     check_foo_and_bar()

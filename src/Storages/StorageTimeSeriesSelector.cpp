@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 namespace
@@ -354,8 +355,7 @@ namespace
                                         DateTime64 max_time,
                                         const DataTypePtr & id_data_type,
                                         const DataTypePtr & timestamp_data_type,
-                                        const DataTypePtr & scalar_data_type,
-                                        bool has_is_stale_marker)
+                                        const DataTypePtr & scalar_data_type)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -375,16 +375,7 @@ namespace
             select_list.push_back(timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), scalar_data_type));
             select_list.back()->setAlias(TimeSeriesColumnNames::Value);
 
-            if (has_is_stale_marker)
-            {
-                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker));
-            }
-            else
-            {
-                auto zero = makeASTFunction("CAST", make_intrusive<ASTLiteral>(Field{static_cast<UInt64>(0)}), make_intrusive<ASTLiteral>("UInt8"));
-                zero->setAlias(TimeSeriesColumnNames::IsStaleMarker);
-                select_list.push_back(std::move(zero));
-            }
+            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker));
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
@@ -475,7 +466,24 @@ void StorageTimeSeriesSelector::readImpl(
 
     auto samples_storage = DatabaseCatalog::instance().getTable(samples_table_id, context);
     auto samples_storage_metadata = samples_storage->getInMemoryMetadataPtr(context, false);
-    bool has_is_stale_marker = samples_storage_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
+
+    /// PromQL query evaluation relies on the `is_stale_marker` column of the "samples" table to tell
+    /// Prometheus stale markers apart from ordinary samples (see PrometheusRemoteWriteProtocol.cpp's
+    /// `isPrometheusStaleMarker()` and fromSelector.cpp, which builds both explicit range-selector and bare
+    /// instant-selector queries against this table function). A "samples" table predating that column (or an
+    /// external table using the old 3-column schema, which `normalizeTimeSeriesDefinition.cpp` still accepts
+    /// for other purposes) cannot represent that flag, so treating every row as fresh here would silently
+    /// return wrong results for any stale marker actually stored (as raw NaN) in such a table. Fail closed
+    /// instead of doing that.
+    if (!samples_storage_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker))
+        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+            "{}: the \"samples\" table {} is missing column {} required for Prometheus stale-marker handling. "
+            "Run ALTER TABLE {} ADD COLUMN {} UInt8, or recreate the TimeSeries table, to add it",
+            config.time_series_storage_id.getNameForLogs(),
+            samples_table_id.getNameForLogs(),
+            TimeSeriesColumnNames::IsStaleMarker,
+            samples_table_id.getNameForLogs(),
+            TimeSeriesColumnNames::IsStaleMarker);
 
     ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(
         samples_table_id,
@@ -484,8 +492,7 @@ void StorageTimeSeriesSelector::readImpl(
         config.max_time,
         config.id_data_type,
         config.timestamp_data_type,
-        config.scalar_data_type,
-        has_is_stale_marker);
+        config.scalar_data_type);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query_from_data_table->formatForLogging());

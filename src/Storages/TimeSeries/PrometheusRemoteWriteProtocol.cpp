@@ -59,6 +59,7 @@ namespace TimeSeriesSetting
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 
@@ -543,8 +544,7 @@ namespace
         value_column->reserve(total_samples);
 
         /// Column "is_stale_marker".
-        bool has_is_stale_marker = samples_metadata.columns.has(TimeSeriesColumnNames::IsStaleMarker);
-        DataTypePtr is_stale_marker_type = has_is_stale_marker ? samples_metadata.columns.get(TimeSeriesColumnNames::IsStaleMarker).type : std::make_shared<DataTypeUInt8>();
+        DataTypePtr is_stale_marker_type = samples_metadata.columns.get(TimeSeriesColumnNames::IsStaleMarker).type;
         auto is_stale_marker_column = is_stale_marker_type->createColumn();
         is_stale_marker_column->reserve(total_samples);
 
@@ -560,8 +560,7 @@ namespace
         samples_block.insert(ColumnWithTypeAndName{std::move(id_column_in_data_table), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
         samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
-        if (has_is_stale_marker)
-            samples_block.insert(ColumnWithTypeAndName{std::move(is_stale_marker_column), is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
+        samples_block.insert(ColumnWithTypeAndName{std::move(is_stale_marker_column), is_stale_marker_type, TimeSeriesColumnNames::IsStaleMarker});
 
         BlocksToInsert res;
 
@@ -690,9 +689,27 @@ void PrometheusRemoteWriteProtocol::writeTimeSeries(const google::protobuf::Repe
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, getContext())->getInMemoryMetadataPtr(getContext(), false);
-    auto samples_table_metadata = time_series_storage->getTargetTable(ViewTarget::Samples, getContext())->getInMemoryMetadataPtr(getContext(), false);
+    auto samples_table = time_series_storage->getTargetTable(ViewTarget::Samples, getContext());
+    auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(getContext(), false);
     const auto & tags_metadata = *tags_table_metadata;
     const auto & samples_metadata = *samples_table_metadata;
+
+    /// The Prometheus remote-write protocol relies on the `is_stale_marker` column of the "samples" table to
+    /// flag Prometheus stale markers instead of writing them as ordinary NaN samples (see
+    /// `isPrometheusStaleMarker()` below). A "samples" table predating that column (or an external table using
+    /// the old 3-column schema, which `normalizeTimeSeriesDefinition.cpp` still accepts for other purposes)
+    /// cannot represent that flag, so writing to it here would silently store raw stale-NaN samples that are
+    /// later read back as ordinary samples. Fail closed instead of doing that.
+    if (!samples_metadata.columns.has(TimeSeriesColumnNames::IsStaleMarker))
+        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
+            "{}: the \"samples\" table {} is missing column {} required for Prometheus stale-marker handling. "
+            "Run ALTER TABLE {} ADD COLUMN {} UInt8, or recreate the TimeSeries table, to add it",
+            time_series_storage_id.getNameForLogs(),
+            samples_table->getStorageID().getNameForLogs(),
+            TimeSeriesColumnNames::IsStaleMarker,
+            samples_table->getStorageID().getNameForLogs(),
+            TimeSeriesColumnNames::IsStaleMarker);
+
     auto blocks = toBlocks(time_series, getContext(), *time_series_storage, *time_series_settings, tags_metadata, samples_metadata);
     insertToTargetTables(std::move(blocks), *time_series_storage, getContext(), log.get());
 

@@ -1,10 +1,13 @@
 import pytest
 import re
+import requests
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, QueryRuntimeException
 from helpers.test_tools import TSV, tsv_close_to
 from .prometheus_test_utils import (
+    convert_time_series_to_protobuf,
     execute_query_via_http_api,
+    get_response_to_remote_write,
     load_preset,
     send_protobuf_to_remote_write,
 )
@@ -379,7 +382,7 @@ def test_index_granularity():
 # instead of its own inner tables.
 def test_external_tables():
     node.query(
-        "CREATE TABLE mysamples (id UUID, timestamp DateTime64(3), value Float64) "
+        "CREATE TABLE mysamples (id UUID, timestamp DateTime64(3), value Float64, is_stale_marker UInt8) "
         "ENGINE=MergeTree ORDER BY (id, timestamp)"
     )
 
@@ -405,6 +408,52 @@ def test_external_tables():
     check()
 
 
+# Checks that a "samples" table missing the `is_stale_marker` column (either a genuinely external
+# table using the old 3-column `id`/`timestamp`/`value` schema, or an inner table upgraded from
+# before `is_stale_marker` was added -- see test_upgrade_from_prealpha.py) is still accepted by
+# `CREATE TABLE ... ENGINE = TimeSeries` (that compatibility path is intentional, see
+# normalizeTimeSeriesDefinition.cpp), but is rejected by the Prometheus-specific remote-write and
+# PromQL query paths with a clear, actionable error instead of silently treating every row as fresh
+# (see PrometheusRemoteWriteProtocol::writeTimeSeries and StorageTimeSeriesSelector::readImpl).
+def test_external_samples_table_missing_is_stale_marker():
+    node.query(
+        "CREATE TABLE mysamples (id UUID, timestamp DateTime64(3), value Float64) "
+        "ENGINE=MergeTree ORDER BY (id, timestamp)"
+    )
+    node.query(
+        "CREATE TABLE mytags ("
+        "id UUID, "
+        "metric_name LowCardinality(String), "
+        "tags Map(LowCardinality(String), String), "
+        "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
+        "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
+        "ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
+        "SETTINGS allow_dimensions_outside_sorting_key = 1"
+    )
+    node.query(
+        "CREATE TABLE mymetrics (metric_family_name String, type LowCardinality(String), unit LowCardinality(String), help String) "
+        "ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+    )
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SAMPLES mysamples TAGS mytags METRICS mymetrics"
+    )
+
+    # Remote-write must fail closed instead of silently writing a raw stale-NaN into `value`
+    # with the flag omitted.
+    protobuf = convert_time_series_to_protobuf(
+        [({"__name__": "up", "job": "myjob"}, {timestamp: 1.0})]
+    )
+    response = get_response_to_remote_write(node.ip_address, 9093, "/write", protobuf)
+    assert response.status_code != requests.codes.no_content
+    assert "is_stale_marker" in response.text
+
+    # A PromQL query (bare instant selector) must fail the same way instead of fabricating
+    # `is_stale_marker = 0` for every row.
+    with pytest.raises(QueryRuntimeException, match="is_stale_marker"):
+        node.query(f"SELECT * FROM prometheusQuery(prometheus, 'up', {timestamp})")
+
+
 # Checks that the `DATA` keyword works as an alias for `SAMPLES`
 # both with inline engine definitions and with external tables.
 def test_data_keyword():
@@ -419,7 +468,7 @@ def test_data_keyword():
     drop_prometheus_table()
 
     node.query(
-        "CREATE TABLE mydata (id UUID, timestamp DateTime64(3), value Float64) "
+        "CREATE TABLE mydata (id UUID, timestamp DateTime64(3), value Float64, is_stale_marker UInt8) "
         "ENGINE=MergeTree ORDER BY (id, timestamp)"
     )
     node.query(

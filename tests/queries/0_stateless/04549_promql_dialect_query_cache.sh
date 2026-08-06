@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -m -q "
-CREATE TABLE ts_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE ts_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64, is_stale_marker UInt8) ENGINE = MergeTree ORDER BY (id, timestamp);
 CREATE TABLE ts_tags (
     id UUID,
     metric_name LowCardinality(String),
@@ -19,7 +19,7 @@ ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensio
 CREATE TABLE ts_metrics (metric_family_name String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
 CREATE TABLE ts ENGINE = TimeSeries DATA ts_data TAGS ts_tags METRICS ts_metrics;
 INSERT INTO ts_tags VALUES ('00000000-0000-0000-0000-000000000001', 'up', {'instance':'host1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'));
-INSERT INTO ts_data VALUES ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000000, 3, 'UTC'), 1);
+INSERT INTO ts_data VALUES ('00000000-0000-0000-0000-000000000001', toDateTime64(1700000000, 3, 'UTC'), 1, 0);
 "
 
 promql_client()

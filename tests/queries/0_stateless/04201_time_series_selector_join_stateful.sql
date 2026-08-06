@@ -31,7 +31,8 @@ CREATE TABLE samples_table
 (
     id UInt64,
     timestamp DateTime64(3),
-    value Float64
+    value Float64,
+    is_stale_marker UInt8
 ) ENGINE = MergeTree() ORDER BY (id, timestamp);
 
 CREATE TABLE prometheus ENGINE = TimeSeries
@@ -43,10 +44,10 @@ INSERT INTO tags_table (id, metric_name, tags, min_time, max_time) VALUES
     (2836623, 'bar', map(), toDateTime64(0, 3), toDateTime64(1000, 3)),
     (3691271, 'baz', map(), toDateTime64(0, 3), toDateTime64(1000, 3));
 
-INSERT INTO samples_table (id, timestamp, value) VALUES
-    (1583154, toDateTime64(100, 3), 10.),
-    (2836623, toDateTime64(100, 3), 10.),
-    (3691271, toDateTime64(100, 3), 20.);
+INSERT INTO samples_table (id, timestamp, value, is_stale_marker) VALUES
+    (1583154, toDateTime64(100, 3), 10., 0),
+    (2836623, toDateTime64(100, 3), 10., 0),
+    (3691271, toDateTime64(100, 3), 20., 0);
 
 
 -- PromQL query `(foo == bar)[50:10]` internally evaluates a SQL query like this:
