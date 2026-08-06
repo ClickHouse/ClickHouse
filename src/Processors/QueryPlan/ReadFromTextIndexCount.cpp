@@ -141,10 +141,17 @@ UInt64 computeCountForPart(
         return postings;
     };
 
+    /// `analyzePostings` already folded the small (single-block) postings into `query_builder.postings` by search mode.
+    std::vector<const TokenPostingsInfo *> tokens_to_read;
+    tokens_to_read.reserve(query_builder.tokens.size());
+    for (const auto & [token, token_info] : query_builder.tokens)
+        if (!analyzer.hasReadPostings(token))
+            tokens_to_read.push_back(token_info.get());
+
     if (resolved.query->getSearchMode() != TextSearchMode::All)
     {
-        std::optional<PostingList> merged_postings;
-        for (const auto & [_, token_info] : query_builder.tokens)
+        std::optional<PostingList> merged_postings = query_builder.postings;
+        for (const auto * token_info : tokens_to_read)
         {
             check_cancelled();
             auto token_postings = read_postings(*token_info, full_range, nullptr);
@@ -156,24 +163,29 @@ UInt64 computeCountForPart(
         return merged_postings ? merged_postings->cardinality() : 0;
     }
 
-    /// Candidate-driven intersection: start from the rarest token (cardinalities are known from
-    /// the dictionary before any posting I/O) and read the other tokens' posting blocks only
-    /// where candidates survive, mirroring the reader's lazy intersection.
-    std::vector<const TokenPostingsInfo *> token_infos;
-    token_infos.reserve(query_builder.tokens.size());
-    for (const auto & [_, token_info] : query_builder.tokens)
-        token_infos.push_back(token_info.get());
-    std::sort(token_infos.begin(), token_infos.end(), [](const auto * lhs, const auto * rhs) { return lhs->cardinality < rhs->cardinality; });
+    /// Candidate-driven intersection: start from the folded baseline (or the rarest unread token when
+    /// nothing was folded) and read the remaining tokens' blocks only where candidates survive,
+    /// rarest first, mirroring the reader's lazy intersection.
+    std::sort(tokens_to_read.begin(), tokens_to_read.end(),
+        [](const auto * lhs, const auto * rhs) { return lhs->cardinality < rhs->cardinality; });
 
-    PostingList candidates = read_postings(*token_infos.front(), full_range, nullptr);
-    for (size_t i = 1; i < token_infos.size() && !candidates.isEmpty(); ++i)
+    std::optional<PostingList> candidates = query_builder.postings;
+    size_t next = 0;
+    if (!candidates)
     {
-        check_cancelled();
-        const RowsRange candidate_range(candidates.minimum(), candidates.maximum());
-        candidates &= read_postings(*token_infos[i], candidate_range, &candidates);
+        candidates = read_postings(*tokens_to_read.front(), full_range, nullptr);
+        next = 1;
     }
 
-    return candidates.cardinality();
+    while (next < tokens_to_read.size() && !candidates->isEmpty())
+    {
+        check_cancelled();
+        const RowsRange candidate_range(candidates->minimum(), candidates->maximum());
+        *candidates &= read_postings(*tokens_to_read[next], candidate_range, &*candidates);
+        ++next;
+    }
+
+    return candidates ? candidates->cardinality() : 0;
 }
 
 /// Emits one chunk with a single `count()` aggregate state per part, claiming parts from a shared queue.
