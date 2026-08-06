@@ -141,31 +141,30 @@ public:
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
 
-        /// A Nullable text column can arrive as `ColumnNullable` or as `ColumnConst(ColumnNullable)` (e.g. `NULL::Nullable(String)`).
-        /// `convertToFullColumnIfConst` unwraps the latter into the former, so a single null-map path handles both.
-        ColumnPtr text_column;
-        const ColumnNullable * text_nullable = nullptr;
-        if (arguments[text_arg_index].type->isNullable())
-        {
-            text_column = arguments[text_arg_index].column->convertToFullColumnIfConst();
-            text_nullable = typeid_cast<const ColumnNullable *>(text_column.get());
-        }
-        const IColumn & text_data_column = text_nullable
-            ? text_nullable->getNestedColumn()
-            : *arguments[text_arg_index].column;
+        /// `isNullAt` and `getDataAt` are virtual on `IColumn`, so a single path covers `ColumnString`,
+        /// `ColumnConst(ColumnString)`, `ColumnNullable` and `ColumnConst(ColumnNullable)` (e.g.
+        /// `NULL::Nullable(String)`). A constant is read at index 0 rather than materialized.
+        const IColumn & text_column = *arguments[text_arg_index].column;
 
-        /// Collect the rows that actually need an HTTP call: non-null and non-empty.
-        /// Both null and empty-string rows map to `[]` in the output.
+        /// A row needs an HTTP call only when non-null and non-empty; both null and empty-string rows map
+        /// to `[]` in the output. The `isNullAt` check also guards the only case where
+        /// `ColumnNullable::getDataAt` throws (a NULL value).
+        auto get_value = [](const IColumn & column, size_t row, std::string_view & out) -> bool
+        {
+            if (column.isNullAt(row))
+                return false;
+            out = column.getDataAt(row);
+            return !out.empty();
+        };
+
         VectorWithMemoryTracking<size_t> live_rows;
         VectorWithMemoryTracking<std::string_view> inputs;
         live_rows.reserve(input_rows_count);
         inputs.reserve(input_rows_count);
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            if (text_nullable && text_nullable->getNullMapData()[i])
-                continue;
-            auto value = text_data_column.getDataAt(i);
-            if (value.empty())
+            std::string_view value;
+            if (!get_value(text_column, i, value))
                 continue;
             live_rows.push_back(i);
             inputs.push_back(value);

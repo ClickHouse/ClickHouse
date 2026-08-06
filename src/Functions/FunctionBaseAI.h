@@ -143,9 +143,9 @@ public:
     /// target vector size when the model supports it.
     static AIParamSpecs embeddingParams();
 
-    /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the input list; an entry is empty when
-    /// that input was not embedded (quota exceeded, or a failed request with `ai_function_throw_on_error`
-    /// disabled). The counters feed the AI ProfileEvents.
+    /// Result of `embedTexts`. `embeddings` is aligned 1:1 with the `inputs` argument of `embedTexts`. An
+    /// entry is empty when that input was not embedded (quota exceeded, or a failed request with
+    /// `ai_function_throw_on_error` disabled). The counters feed the AI ProfileEvents.
     struct EmbeddingResult
     {
         VectorWithMemoryTracking<VectorWithMemoryTracking<Float32>> embeddings;

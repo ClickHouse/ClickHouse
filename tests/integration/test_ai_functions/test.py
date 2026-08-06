@@ -978,7 +978,8 @@ def test_generate_retry_respects_api_call_quota(started_cluster):
 def test_function_name_header(started_cluster):
     """The OpenAI provider tags every request with an `X-ClickHouse-AI-Function` header carrying the
     SQL name of the calling function, so the upstream endpoint can tell which function made the call.
-    Covers the chat path (aiGenerate/aiClassify/aiExtract/aiTranslate) and the embedding path (aiEmbed)."""
+    Covers the chat path (aiGenerate/aiClassify/aiExtract/aiTranslate) and the embedding path
+    (aiEmbed, aiSimilarity)."""
     cases = [
         ("aiGenerate", "SELECT aiGenerate('hi', map('credentials', 'ai_mock'))"),
         (
@@ -990,6 +991,10 @@ def test_function_name_header(started_cluster):
         (
             "aiEmbed",
             "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_embed'))",
+        ),
+        (
+            "aiSimilarity",
+            "SELECT aiSimilarity('cat', 'kitten', 'test-embed-model', map('credentials', 'ai_embed'))",
         ),
     ]
     for name, query in cases:
@@ -1205,3 +1210,35 @@ def test_similarity_empty_input_table(started_cluster):
     events = get_profile_events(qid)
     assert int(events["api_calls"]) == 0
     assert int(events["rows_processed"]) == 0
+
+
+def test_similarity_pairs_are_row_aligned(started_cluster):
+    """Each row compares its own two operands: for rows (a, b) and (c, d) the results are
+    similarity(a, b) and similarity(c, d), never a cross-row pairing such as similarity(a, c)."""
+    instance.query("DROP TABLE IF EXISTS sim_pairs")
+    instance.query("CREATE TABLE sim_pairs (id UInt8, t1 String, t2 String) ENGINE = Memory")
+    instance.query("INSERT INTO sim_pairs VALUES (0, 'a', 'b'), (1, 'c', 'd')")
+    result = instance.query(
+        "SELECT aiSimilarity(t1, t2, 'test-embed-model', map('credentials', 'ai_embed')) FROM sim_pairs ORDER BY id",
+        settings=AI_SETTINGS,
+    )
+    scores = [parse_nullable_float(line) for line in result.strip().split("\n")]
+    assert scores[0] == pytest.approx(expected_similarity("a", "b"), abs=1e-4)
+    assert scores[1] == pytest.approx(expected_similarity("c", "d"), abs=1e-4)
+    instance.query("DROP TABLE sim_pairs")
+
+
+def test_similarity_const_nullable_operand(started_cluster):
+    """`ColumnConst(ColumnNullable)` operands (a NULL or a value cast to Nullable(String) as a literal)
+    are read via the same `isNullAt`/`getDataAt` path: a const NULL yields NULL, and const non-null
+    values embed and score normally."""
+    null_result = instance.query(
+        "SELECT aiSimilarity(CAST(NULL AS Nullable(String)), 'hi', 'test-embed-model', map('credentials', 'ai_embed'))",
+        settings=AI_SETTINGS,
+    )
+    assert parse_nullable_float(null_result) is None
+    value_result = instance.query(
+        "SELECT aiSimilarity(CAST('cat' AS Nullable(String)), CAST('kitten' AS Nullable(String)), 'test-embed-model', map('credentials', 'ai_embed'))",
+        settings=AI_SETTINGS,
+    )
+    assert parse_nullable_float(value_result) == pytest.approx(expected_similarity("cat", "kitten"), abs=1e-4)

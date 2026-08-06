@@ -168,39 +168,19 @@ public:
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(settings[Setting::ai_function_request_timeout_sec].value) /*s*/, 0 /*us*/);
 
-        /// Unwrap each text argument, handling Nullable and Const uniformly (as `aiEmbed` does). A Nullable
-        /// column can arrive as `ColumnNullable` or `ColumnConst(ColumnNullable)`. `convertToFullColumnIfConst`
-        /// reduces the latter to the former so a single null-map path covers both. `holder` keeps it alive.
-        struct Operand
-        {
-            ColumnPtr holder;
-            const ColumnNullable * nullable = nullptr;
-            const IColumn * data = nullptr;
-        };
-        auto unwrap_nullable = [&](size_t arg_index) -> Operand
-        {
-            Operand op;
-            if (arguments[arg_index].type->isNullable())
-            {
-                op.holder = arguments[arg_index].column->convertToFullColumnIfConst();
-                op.nullable = typeid_cast<const ColumnNullable *>(op.holder.get());
-                op.data = &op.nullable->getNestedColumn();
-            }
-            else
-            {
-                op.data = arguments[arg_index].column.get();
-            }
-            return op;
-        };
-        Operand op1 = unwrap_nullable(0);
-        Operand op2 = unwrap_nullable(1);
+        /// `isNullAt` and `getDataAt` are virtual on `IColumn`, so a single path covers `ColumnString`,
+        /// `ColumnConst(ColumnString)`, `ColumnNullable` and `ColumnConst(ColumnNullable)`. A constant
+        /// operand is read at index 0 instead of being materialized into `input_rows_count` rows.
+        const IColumn & text1_column = *arguments[text1_arg_index].column;
+        const IColumn & text2_column = *arguments[text2_arg_index].column;
 
-        /// A row's operand contributes an embedding only when it is non-null and non-empty.
-        auto get_value = [](const Operand & op, size_t row, std::string_view & out) -> bool
+        /// A row's operand contributes an embedding only when it is non-null and non-empty. The `isNullAt`
+        /// check also guards the only case in which `ColumnNullable::getDataAt` throws (a NULL value).
+        auto get_value = [](const IColumn & column, size_t row, std::string_view & out) -> bool
         {
-            if (op.nullable && op.nullable->getNullMapData()[row])
+            if (column.isNullAt(row))
                 return false;
-            out = op.data->getDataAt(row);
+            out = column.getDataAt(row);
             return !out.empty();
         };
 
@@ -219,7 +199,7 @@ public:
             /// call and quota.
             std::string_view text1;
             std::string_view text2;
-            if (get_value(op1, i, text1) && get_value(op2, i, text2))
+            if (get_value(text1_column, i, text1) && get_value(text2_column, i, text2))
             {
                 left[i] = inputs.size();
                 inputs.push_back(text1);
@@ -282,6 +262,8 @@ public:
     }
 
 private:
+    static constexpr size_t text1_arg_index = 0;
+    static constexpr size_t text2_arg_index = 1;
     static constexpr size_t model_arg_index = 2;
 
     ContextPtr context;
@@ -299,7 +281,7 @@ Computes the semantic similarity of two texts using the configured embedding pro
 Calculates the embedding of both texts and returns the cosine similarity of the two vectors
 in the range `[-1, 1]`: `1` means the texts are semantically identical, `0` means unrelated,
 and negative values mean opposite. This is the complement of `cosineDistance` over the
-same embeddings (`aiSimilarity = 1 - cosineDistance`).
+same embeddings (`aiSimilarity = 1 - cosineDistance(embedding1, embedding2)`).
 
 Batching, credentials, and the `dimensions` parameter match `aiEmbed`, including the
 `ai_function_embedding_default_credentials` default-credentials setting.
@@ -318,7 +300,7 @@ named collection or the parameter map.
         = {{"Compare two strings (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},
            {"Rank reviews by similarity to a query", "SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100", ""},
            {"Semantic dedup over a self-join", "SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9", ""}},
-        .introduced_in = {26, 7},
+        .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::AI});
 
     factory.registerAlias("AISimilarity", "aiSimilarity");
