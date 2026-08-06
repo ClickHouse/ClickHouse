@@ -31,6 +31,13 @@ s.bind(('127.0.0.1', 0))
 print(s.getsockname()[1])
 s.close()
 ")
+FAIL_PORT=$(python3 -c "
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+")
 
 STDERR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.stderr"
 RELEASE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.release"
@@ -49,6 +56,23 @@ while True:
     accepted.append(conn)  # hold the connection open and never answer
 " &
 DEAD_PID=$!
+
+# Accepts and closes without answering, so an attempt here is counted but costs no receive timeout.
+python3 -c "
+import socket
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', $FAIL_PORT))
+srv.listen(128)
+while True:
+    conn, _ = srv.accept()
+    try:
+        conn.recv(65536)
+    except OSError:
+        pass
+    conn.close()
+" &
+FAIL_PID=$!
 
 # Answers a single TSV row, so failover past a dead option can be observed returning data.
 python3 -c "
@@ -94,7 +118,7 @@ while True:
 " &
 EMPTY_PID=$!
 
-trap 'kill $DEAD_PID $LIVE_PID $EMPTY_PID 2>/dev/null ||:; wait $DEAD_PID $LIVE_PID $EMPTY_PID 2>/dev/null ||:; rm -f "$STDERR" "$RELEASE"' EXIT
+trap 'kill $DEAD_PID $FAIL_PID $LIVE_PID $EMPTY_PID 2>/dev/null ||:; wait $DEAD_PID $FAIL_PID $LIVE_PID $EMPTY_PID 2>/dev/null ||:; rm -f "$STDERR" "$RELEASE"' EXIT
 
 wait_for_port()
 {
@@ -115,6 +139,7 @@ s.close()
     exit 1
 }
 wait_for_port "$DEAD_PORT"
+wait_for_port "$FAIL_PORT"
 wait_for_port "$LIVE_PORT"
 wait_for_port "$EMPTY_PORT"
 
@@ -178,12 +203,14 @@ wait_for_cancelled()
     exit 1
 }
 
+# Polled coarsely: nothing races the exit, because the awaited read has to wait out its own receive
+# timeout first, so a finer cadence only spends client startups. Same 60s cap as the helpers above.
 kill_and_wait()
 {
     ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '$1'" > /dev/null
-    for _ in $(seq 1 600); do
+    for _ in $(seq 1 120); do
         [ "$(${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.processes WHERE query_id = '$1'")" = "0" ] && return 0
-        sleep 0.1
+        sleep 0.5
     done
     echo "Timeout waiting for query $1 to be cancelled"
     exit 1
@@ -227,7 +254,7 @@ echo "--- cancelled, two options ---"
 QUERY_ID_TWO="04674_two_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_TWO" --query "
     SELECT * FROM url('http://127.0.0.1:$DEAD_PORT/a|http://127.0.0.1:$DEAD_PORT/b', 'TSV', 's String')
-    SETTINGS max_execution_time = 2, http_receive_timeout = 5, http_max_tries = 1,
+    SETTINGS max_execution_time = 2, http_receive_timeout = 3, http_max_tries = 1,
              http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
              send_logs_level = 'fatal'
 " 2>&1 | grep -c -m1 'All uri' | sed 's/^0$/reported as a cancellation/;s/^1$/reported as an unreachable endpoint/'
@@ -238,7 +265,7 @@ echo "--- cancelled, three options ---"
 QUERY_ID_THREE="04674_three_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_THREE" --query "
     SELECT * FROM url('http://127.0.0.1:$DEAD_PORT/a|http://127.0.0.1:$DEAD_PORT/b|http://127.0.0.1:$DEAD_PORT/c', 'TSV', 's String')
-    SETTINGS max_execution_time = 2, http_receive_timeout = 5, http_max_tries = 1,
+    SETTINGS max_execution_time = 2, http_receive_timeout = 3, http_max_tries = 1,
              http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
              send_logs_level = 'fatal'
 " 2>&1 | grep -c -m1 'All uri' | sed 's/^0$/reported as a cancellation/;s/^1$/reported as an unreachable endpoint/'
@@ -253,7 +280,7 @@ echo "--- cancelled, one option, schema inference ---"
 QUERY_ID_INFER="04674_infer_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_INFER" --query "
     SELECT * FROM url('http://127.0.0.1:$DEAD_PORT/a', 'TSV')
-    SETTINGS max_execution_time = 2, http_receive_timeout = 5, http_max_tries = 1,
+    SETTINGS max_execution_time = 2, http_receive_timeout = 3, http_max_tries = 1,
              http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
              send_logs_level = 'fatal'
 " > /dev/null 2>&1 ||:
@@ -262,11 +289,12 @@ outcome "$QUERY_ID_INFER"
 # The last option has no successor, so only reporting the cancellation from the handler itself can
 # keep the code: a check at the top of the failover loop is never reached again. The kill is fired
 # once the query's own request counter reaches 2, so option 2 is in flight by observation, not by timing.
+# Only the last option is held open; the first fails at once, so no receive timeout is spent on it.
 echo "--- KILL QUERY while the last option is in flight ---"
 QUERY_ID_LAST="04674_last_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_LAST" --query "
-    SELECT * FROM url('http://127.0.0.1:$DEAD_PORT/a|http://127.0.0.1:$DEAD_PORT/b', 'TSV', 's String')
-    SETTINGS max_execution_time = 0, http_receive_timeout = 10, http_max_tries = 1,
+    SELECT * FROM url('http://127.0.0.1:$FAIL_PORT/a|http://127.0.0.1:$DEAD_PORT/b', 'TSV', 's String')
+    SETTINGS max_execution_time = 0, http_receive_timeout = 4, http_max_tries = 1,
              http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
              send_logs_level = 'fatal'
 " > "$STDERR" 2>&1 &
@@ -339,11 +367,12 @@ ${CLICKHOUSE_CLIENT} --query "
              send_logs_level = 'fatal'"
 
 # Must not regress: with no cancellation, all options genuinely down still reports the aggregate
-# NETWORK_ERROR naming the option count, and still attempts every option.
+# NETWORK_ERROR naming the option count, and still attempts every option. Only the last option is
+# held open: the message counts options, not the time each took.
 echo "--- not cancelled, all options down ---"
 QUERY_ID_DOWN="04674_down_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_DOWN" --query "
-    SELECT * FROM url('http://127.0.0.1:$DEAD_PORT/a|http://127.0.0.1:$DEAD_PORT/b', 'TSV', 's String')
+    SELECT * FROM url('http://127.0.0.1:$FAIL_PORT/a|http://127.0.0.1:$DEAD_PORT/b', 'TSV', 's String')
     SETTINGS max_execution_time = 0, http_receive_timeout = 2, http_max_tries = 1,
              http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
              send_logs_level = 'fatal'
@@ -361,12 +390,12 @@ ${CLICKHOUSE_CLIENT} --query "
 
 # Must not regress: timeout_overflow_mode = 'break' does not mark the query killed, so the checks
 # added here must not fire for it. This is the discriminator against rethrowing on an error code
-# rather than on the query status.
+# rather than on the query status. The soft timeout still elapses while the last option is reading.
 echo "--- timeout_overflow_mode = break ---"
 QUERY_ID_BREAK="04674_break_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query_id "$QUERY_ID_BREAK" --query "
-    SELECT * FROM url('http://127.0.0.1:$DEAD_PORT/a|http://127.0.0.1:$DEAD_PORT/b', 'TSV', 's String')
-    SETTINGS max_execution_time = 2, timeout_overflow_mode = 'break', http_receive_timeout = 5,
+    SELECT * FROM url('http://127.0.0.1:$FAIL_PORT/a|http://127.0.0.1:$DEAD_PORT/b', 'TSV', 's String')
+    SETTINGS max_execution_time = 2, timeout_overflow_mode = 'break', http_receive_timeout = 3,
              http_max_tries = 1, http_make_head_request = 0, parallel_replicas_for_cluster_engines = 0,
              send_logs_level = 'fatal'
 " > /dev/null 2>&1 ||:
