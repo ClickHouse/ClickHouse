@@ -52,23 +52,13 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '$retry_comment' AND type >= 2
 ORDER BY event_time_microseconds DESC LIMIT 1"
 
-# The apparatus is only armed when mmap engages on this server at all: an ordinary read with the same
-# settings must create an mmap buffer, otherwise the arm above proves nothing about the mmap cache.
-${CLICKHOUSE_CLIENT} -m --query "
-DROP TABLE IF EXISTS mmap_probe;
-CREATE TABLE mmap_probe (s String) ENGINE = MergeTree ORDER BY tuple()
-    SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, prewarm_mark_cache = 0, serialization_info_version = 'basic';
-INSERT INTO mmap_probe VALUES ('Hello, world');
-"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM mmap_probe SETTINGS $mmap_settings, log_comment = '${retry_comment}_probe'" > /dev/null
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+# The lock read is only mmap-eligible when the reader executor serves it, the sole local read path
+# that passes the file size down. A zero means the read was never armed for the mmap cache, so the
+# assertion above would hold for want of a mapping rather than because the fix works.
 ${CLICKHOUSE_CLIENT} --query "
-SELECT ProfileEvents['CreatedReadBufferMMap'] > 0
+SELECT ProfileEvents['ReaderExecutorSourceRequests'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '${retry_comment}_probe' AND type >= 2
+WHERE current_database = currentDatabase() AND log_comment = '$retry_comment' AND type >= 2
 ORDER BY event_time_microseconds DESC LIMIT 1"
 
-${CLICKHOUSE_CLIENT} -m --query "
-DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.mmap_probe;
-DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t;
-"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${CLICKHOUSE_DATABASE}.t"

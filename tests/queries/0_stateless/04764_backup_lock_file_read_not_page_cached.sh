@@ -5,9 +5,9 @@
 # Regression for the '.lock' verification read of a backup writer being served from the userspace
 # page cache. Companion to 04763, which covers the mmap cache; this covers the second carrier.
 # BackupImpl::checkLockFile re-reads the lock file this process just wrote. The page cache is keyed
-# by path and an empty file_version for local disks, so after a failed attempt's lock at the same
-# path was removed, the retry's read returned the previous attempt's UUID and the retry aborted with
-# BACKUP_ALREADY_EXISTS even though no concurrent backup existed.
+# by path plus a file_version that local disks never populate, so after a failed attempt's lock at
+# the same path was removed, the retry's read returned the previous attempt's UUID and the retry
+# aborted with BACKUP_ALREADY_EXISTS even though no concurrent backup existed.
 #
 # clickhouse-local is required: page_cache_max_size is a server setting that defaults to 0 and no
 # file under tests/config/ sets it, so the stateless server has no page cache to poison.
