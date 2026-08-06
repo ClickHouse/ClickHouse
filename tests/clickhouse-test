@@ -1975,10 +1975,9 @@ def replace_in_file_re(filename, what, with_what):
     os.system(f"LC_ALL=C sed -i -e 's/{what}/{with_what}/' {filename}")
 
 
-# The three messages ever observed for this failure (InstrProfilingFile.c:469,
-# :522, :623); the runtime's other diagnostics are deliberately left alone. The
-# trailing field is strerror(errno), so the span is bounded by the strerror
-# table itself: an over-long match would delete real test output.
+# The three messages ever observed for this failure (InstrProfilingFile.c:469, :522, :623);
+# the runtime's other diagnostics are left alone. The trailing field is strerror(errno), so
+# the span is bounded by the strerror table: an over-long match would delete real output.
 _LLVM_PROFILE_ERROR = (
     rb"LLVM Profile Error: (?:Invalid profile data to merge"
     rb"|(?:Profile Merging of file [^\n]*? failed"
