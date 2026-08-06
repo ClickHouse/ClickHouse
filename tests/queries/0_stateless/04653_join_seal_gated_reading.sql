@@ -6,9 +6,10 @@ SET enable_join_runtime_filters = 1;
 SET enable_join_seal_gated_reading = 1;
 -- The gating marks only plain local reads (no parallel replicas).
 SET enable_parallel_replicas = 0;
--- Only the default multi-threaded reading path (MergeTree read pools) is gated: pin it,
--- since a single-stream or in-order read falls back to ungated reading.
+-- Pin the default multi-threaded read pool for the main queries; single-stream, in-order
+-- and prefetched-pool reads are gated too and covered by dedicated queries below.
 SET max_threads = 4, merge_tree_min_rows_for_concurrent_read = 256, optimize_read_in_order = 0;
+SET allow_prefetched_read_pool_for_local_filesystem = 0, allow_prefetched_read_pool_for_remote_filesystem = 0;
 -- Keep the read-time runtime-filter index analysis out of the picture: it prunes granules on
 -- its own (also for the ungated reference query), which would break the read_rows contrast.
 SET enable_join_runtime_filters_index_analysis = 0, use_skip_indexes_on_data_read = 0;
@@ -51,6 +52,33 @@ SELECT count() > 0 AS has_gated_reads_single_stream FROM (
 -- Reading in the order of the primary key is gated too.
 SELECT /* seal_gated_in_order */ p.k FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k ORDER BY p.k LIMIT 3
     SETTINGS optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+
+-- Reading in the reverse order of the primary key is gated too.
+SELECT /* seal_gated_reverse_order */ p.k FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k ORDER BY p.k DESC LIMIT 3
+    SETTINGS optimize_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+
+-- The prefetched read pool is gated too, and no prefetch is issued for dropped ranges.
+SELECT /* seal_gated_prefetched */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k
+    SETTINGS allow_prefetched_read_pool_for_local_filesystem = 1, local_filesystem_read_method = 'pread_threadpool';
+
+-- Ungatable reads fall back to plain reading with row-level filtering (correct results):
+-- parallel replicas (the seal cannot cross replicas)...
+SELECT /* seal_parallel_replicas */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k
+    SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, parallel_replicas_for_non_replicated_merge_tree = 1,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+
+-- ... a join sharded by primary key ranges ...
+SELECT /* seal_join_by_shards */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k
+    SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+
+-- ... and FINAL.
+DROP TABLE IF EXISTS t_seal_probe_final;
+CREATE TABLE t_seal_probe_final (k UInt64, v String) ENGINE = ReplacingMergeTree ORDER BY k
+    SETTINGS index_granularity = 128;
+INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(100000);
+INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(100000);
+SELECT /* seal_final */ count(), sum(p.k) FROM t_seal_probe_final AS p FINAL JOIN t_seal_build AS b ON p.k = b.k;
+DROP TABLE t_seal_probe_final;
 
 -- A gated read skips the redundant read-time index analysis by the same runtime filter:
 -- the marks are dropped by the refiner at task-cut time and no granules reach the
@@ -115,6 +143,25 @@ FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query LIKE '%seal_gated_in_order%'
+    AND query NOT LIKE '%query_log%';
+
+-- Same for the reverse order.
+SELECT
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 0 AS dropped_marks
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND query LIKE '%seal_gated_reverse_order%'
+    AND query NOT LIKE '%query_log%';
+
+-- The prefetched pool drops the same marks as the default pool.
+SELECT
+    ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] > 7000 AS dropped_marks,
+    read_rows < 100000 AS read_few_rows
+FROM system.query_log
+WHERE current_database = currentDatabase()
+    AND type = 'QueryFinish'
+    AND query LIKE '%seal_gated_prefetched%'
     AND query NOT LIKE '%query_log%';
 
 -- The gated read pruned at task-cut time and the read-time pruning by the same filter was
