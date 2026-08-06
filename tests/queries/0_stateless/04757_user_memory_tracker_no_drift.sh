@@ -10,14 +10,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="u_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS $user"
 ${CLICKHOUSE_CLIENT} -q "CREATE USER $user IDENTIFIED WITH no_password"
-${CLICKHOUSE_CLIENT} -q "GRANT SELECT, INSERT, CREATE, DROP, TRUNCATE, OPTIMIZE ON $CLICKHOUSE_DATABASE.* TO $user"
+${CLICKHOUSE_CLIENT} -q "GRANT SELECT, INSERT, CREATE, DROP, TRUNCATE, OPTIMIZE, ALTER ON $CLICKHOUSE_DATABASE.* TO $user"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE mem (k UInt64, s String) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE mt (k UInt64, s String) ENGINE = MergeTree ORDER BY k"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE jn (k UInt64, s String) ENGINE = Join(ANY, LEFT, k)"
 
-# Keeps the user active, and holds next to nothing itself, for as long as the queries below run.
+# Keeps the user active, and holds next to nothing itself, for as long as the queries below run. Five minutes,
+# which is far longer than they take even on a loaded machine with a debug build, and it is killed on the way out.
 ${CLICKHOUSE_CLIENT} --user "$user" --function_sleep_max_microseconds_per_block 0 -q "
-    SELECT count() FROM numbers(400) WHERE sleepEachRow(0.2) = 0 SETTINGS max_block_size = 1 FORMAT Null" &
+    SELECT count() FROM numbers(1500) WHERE sleepEachRow(0.2) = 0 SETTINGS max_block_size = 1 FORMAT Null" &
 holder=$!
 trap 'kill $holder 2>/dev/null' EXIT
 
@@ -28,6 +30,7 @@ running() {
 floor() {
     ${CLICKHOUSE_CLIENT} -q "SELECT ifNull(max(memory_usage), 0) FROM system.user_processes WHERE user = '$user'"
 }
+
 
 base=0
 for _ in {1..200}; do
@@ -44,13 +47,18 @@ if [ "$base" -le 0 ]; then
     exit 1
 fi
 
+# `< /dev/null`, or the client waits for data on an inherited stdin that never reaches EOF, while the server waits
+# for that same data, and the insert never completes.
 for _ in {1..10}; do
-    ${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO mem VALUES (1, 'x')"
+    ${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO mem VALUES (1, 'x')" < /dev/null
 done
 ${CLICKHOUSE_CLIENT} --user "$user" -q "TRUNCATE TABLE mem"
 # Left in the table on purpose: the data outlives the query that wrote it, and belongs to the server from then on.
 ${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO mem SELECT number, repeat(toString(number), 4) FROM numbers(500000)"
 ${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO mt SELECT number, toString(number) FROM numbers(200000)"
+${CLICKHOUSE_CLIENT} --user "$user" --async_insert 0 -q "INSERT INTO jn SELECT number, toString(number) FROM numbers(300000)"
+# Rewrites the whole join table, dropping data the server owns and building its replacement.
+${CLICKHOUSE_CLIENT} --user "$user" -q "ALTER TABLE jn DELETE WHERE k = 1"
 ${CLICKHOUSE_CLIENT} --user "$user" --use_uncompressed_cache 1 -q "SELECT sum(k) FROM mt FORMAT Null"
 ${CLICKHOUSE_CLIENT} --user "$user" -q "OPTIMIZE TABLE mt FINAL"
 
@@ -70,24 +78,31 @@ fi
 
 # Data waiting in the queue is still the user's: it must count against `max_memory_usage_for_user` until flushed.
 data_file="${CLICKHOUSE_TMP}/04757_${CLICKHOUSE_DATABASE}.csv"
-${CLICKHOUSE_CLIENT} -q "SELECT number, repeat('x', 100) FROM numbers(20000) FORMAT CSV" > "$data_file"
-for _ in {1..5}; do
-    ${CLICKHOUSE_CLIENT} --user "$user" --async_insert 1 --wait_for_async_insert 0 \
-        --async_insert_busy_timeout_min_ms 60000 --async_insert_busy_timeout_max_ms 60000 \
-        --async_insert_use_adaptive_busy_timeout 0 \
-        --async_insert_max_data_size 1000000000 --async_insert_max_query_number 1000000 \
-        -q "INSERT INTO mt FORMAT CSV" < "$data_file"
-done
+${CLICKHOUSE_CLIENT} -q "SELECT number, repeat('x', 100) FROM numbers(100000) FORMAT CSV" > "$data_file"
+queued_base=$(floor)
+${CLICKHOUSE_CLIENT} --user "$user" --async_insert 1 --wait_for_async_insert 0 \
+    --async_insert_busy_timeout_min_ms 600000 --async_insert_busy_timeout_max_ms 600000 \
+    --async_insert_use_adaptive_busy_timeout 0 \
+    --async_insert_max_data_size 1000000000 --async_insert_max_query_number 1000000 \
+    -q "INSERT INTO mt FORMAT CSV" < "$data_file"
 
-pending=$(( $(floor) - after ))
-if [ "$pending" -gt 5000000 ]; then
+if [ "$(running)" -lt 1 ]; then
+    echo "the holding query ended before the queued data could be measured"
+    exit 1
+fi
+pending=$(( $(floor) - queued_base ))
+if [ "$pending" -gt 4000000 ]; then
     echo "the data waiting in the queue counts against the user"
 else
     echo "the data waiting in the queue counts $pending bytes"
 fi
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE mt"
-flushed=$(( $(floor) - after ))
+if [ "$(running)" -lt 1 ]; then
+    echo "the holding query ended before the flush could be measured"
+    exit 1
+fi
+flushed=$(( $(floor) - queued_base ))
 if [ "${flushed#-}" -lt 4000000 ]; then
     echo "the flushed data stops counting against the user"
 else
