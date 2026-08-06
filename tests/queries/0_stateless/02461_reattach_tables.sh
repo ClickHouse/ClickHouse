@@ -380,6 +380,51 @@ ${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_mv_to"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_to_src"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_to_dst"
 
+# External `TimeSeries` `SAMPLES`/`TAGS` targets are resolved and type-checked by
+# `normalizeTimeSeriesDefinition` before the interpreter reads any source table, so
+# `CREATE TABLE ts ENGINE = TimeSeries SAMPLES missing_samples AS src` fails with `UNKNOWN_TABLE`
+# and must not detach `src` on the way. Because an existing target can still fail the type check
+# there, any statement carrying such a target conservatively never triggers the `DETACH`/`ATTACH`.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ts_src"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ts_src (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
+    --reattach_tables_before_query_execution=1 \
+    --allow_experimental_time_series_table=1 \
+    --query "CREATE TABLE t_reattach_ts ENGINE = TimeSeries SAMPLES t_reattach_ts_missing_samples AS t_reattach_ts_src" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "UNKNOWN_TABLE"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_ts_src"; then
+    echo "FAIL (source detached for a query failing on a missing TimeSeries target)"
+else
+    echo "OK"
+fi
+
+# Even a succeeding statement with an external `SAMPLES`/`TAGS` target is suppressed conservatively:
+# the target itself must not be detached either.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ts_samples"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ts_samples (id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
+    --reattach_tables_before_query_execution=1 \
+    --allow_experimental_time_series_table=1 \
+    --query "CREATE TABLE t_reattach_ts ENGINE = TimeSeries SAMPLES t_reattach_ts_samples" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -ne 0 ]; then
+    echo "FAIL (client error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_ts_samples"; then
+    echo "FAIL (external TimeSeries target detached)"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ts"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ts_samples"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ts_src"
+
 # `ALTER TABLE dst REPLACE PARTITION ... FROM src` needs `SELECT` on the source `src` (see
 # `InterpreterAlterQuery::getRequiredAccessForCommand`), which is kept in the command's `from_*` string
 # fields, not in a child AST node. A user who can `DETACH`/`ATTACH` the target `dst` but lacks `SELECT` on

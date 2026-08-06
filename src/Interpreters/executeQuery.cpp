@@ -1501,6 +1501,20 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
             return true;
     }
 
+    /// External `TimeSeries` targets (`CREATE TABLE ts ENGINE = TimeSeries SAMPLES samples_table TAGS
+    /// tags_table ...`) are resolved and type-checked by `normalizeTimeSeriesDefinition`
+    /// (`readTypesFromExternalTargets`) before the interpreter reads any source table — a missing or
+    /// type-incompatible external `SAMPLES`/`TAGS` target makes the statement throw before its `AS src`
+    /// structure source is touched. Whether an existing target passes that type check cannot be predicted
+    /// here, so any external `SAMPLES`/`TAGS` target conservatively stops the statement — erring toward
+    /// suppressing randomization for a succeeding statement rather than detaching a source of a failing
+    /// one. `ATTACH` is exempt: it skips the external-target resolution (`check_external_targets` is
+    /// false there), because the targets are allowed not to be loaded yet.
+    if (!create.attach && create.targets)
+        for (const auto & target : create.targets->targets)
+            if ((target.kind == ViewTarget::Samples || target.kind == ViewTarget::Tags) && !target.table_id.table_name.empty())
+                return true;
+
     /// The replacing forms really do replace an existing destination, so a taken name does not stop them.
     /// `CREATE DATABASE` has no destination table to collide with.
     if (!create.table || create.replace_table || create.replace_view || create.create_or_replace)
