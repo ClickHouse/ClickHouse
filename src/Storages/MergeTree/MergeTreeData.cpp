@@ -70,6 +70,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
@@ -5500,11 +5501,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             const auto & old_columns_desc = old_metadata.getColumns();
             const auto & new_columns_desc = new_metadata.getColumns();
 
-            auto expression_uses_changed_subcolumn = [&](const ExpressionActionsPtr & expr) -> bool
+            auto names_use_changed_subcolumn = [&](const Names & required_columns) -> bool
             {
-                if (!expr)
-                    return false;
-                for (const auto & required : expr->getRequiredColumns())
+                for (const auto & required : required_columns)
                 {
                     /// Only (sub)columns of the altered column.
                     auto old_column = old_columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required);
@@ -5517,6 +5516,41 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                         return true;
                 }
                 return false;
+            };
+
+            auto expression_uses_changed_subcolumn = [&](const ExpressionActionsPtr & expr) -> bool
+            {
+                return expr && names_use_changed_subcolumn(expr->getRequiredColumns());
+            };
+
+            /// Subcolumn-level required columns of an AST (analyzed with subcolumns, like an index
+            /// expression), for structures with no prebuilt ExpressionActions. Un-analyzable ASTs
+            /// (e.g. a group key that is a SELECT alias) are skipped.
+            auto ast_uses_changed_subcolumn = [&](const ASTPtr & ast) -> bool
+            {
+                if (!ast)
+                    return false;
+
+                ASTPtr list = make_intrusive<ASTExpressionList>();
+                if (const auto * existing = ast->as<ASTExpressionList>())
+                {
+                    for (const auto & child : existing->children)
+                        list->children.push_back(child->clone());
+                }
+                else
+                    list->children.push_back(ast->clone());
+
+                try
+                {
+                    auto syntax = TreeRewriter(local_context).analyze(
+                        list, old_columns_desc.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
+                    auto actions = ExpressionAnalyzer(list, syntax, local_context).getActions(/*add_aliases=*/ true);
+                    return names_use_changed_subcolumn(actions->getRequiredColumns());
+                }
+                catch (const Exception &)
+                {
+                    return false;
+                }
             };
 
             /// Primary/sorting key: forbidden (a full mutation cannot alter a key subcolumn either).
@@ -5541,11 +5575,30 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     backQuoteIfNeed(command.column_name));
             }
 
-            /// Skip index: a full mutation can rebuild it, so suggest disabling the lazy setting instead.
+            /// Stored MATERIALIZED columns: a lazy ALTER skips the mutation that would recompute them,
+            /// leaving stale bytes. (DEFAULT is set once at insert; ALIAS is recomputed on read.)
+            for (const auto & column : old_columns_desc)
+            {
+                if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
+                    continue;
+                if (!ast_uses_changed_subcolumn(column.default_desc.expression))
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of column {} changes the on-disk type of a subcolumn used by the MATERIALIZED column '{}'; "
+                    "a metadata-only ALTER cannot recompute it. Disable setting "
+                    "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation that "
+                    "recomputes the column, or drop the column first",
+                    backQuoteIfNeed(command.column_name),
+                    column.name);
+            }
+
+            /// Skip index (explicit or implicit): a full mutation can rebuild it, so suggest disabling the setting.
             const auto & new_indices = new_metadata.getSecondaryIndices();
             for (const auto & old_index : old_metadata.getSecondaryIndices())
             {
-                if (old_index.isImplicitlyCreated() || !expression_uses_changed_subcolumn(old_index.expression))
+                if (!expression_uses_changed_subcolumn(old_index.expression))
                     continue;
 
                 /// Dropped in the same ALTER: nothing to corrupt.
@@ -5569,7 +5622,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             const auto & new_projections = new_metadata.getProjections();
             for (const auto & projection : old_metadata.getProjections())
             {
-                if (!expression_uses_changed_subcolumn(projection.metadata->getSortingKey().expression))
+                bool uses_changed = expression_uses_changed_subcolumn(projection.metadata->getSortingKey().expression);
+
+                /// An aggregate projection's sort key is stored under the group expression's output name,
+                /// so `GROUP BY f(j.a)` is invisible above; analyze the GROUP BY to catch it (defensive,
+                /// unreachable until subcolumn group keys can be ingested).
+                if (!uses_changed && projection.type == ProjectionDescription::Type::Aggregate && projection.query_ast)
+                    if (const auto * select = projection.query_ast->as<ASTSelectQuery>())
+                        uses_changed = ast_uses_changed_subcolumn(select->groupBy());
+
+                if (!uses_changed)
                     continue;
 
                 /// Dropped in the same ALTER: nothing to corrupt.

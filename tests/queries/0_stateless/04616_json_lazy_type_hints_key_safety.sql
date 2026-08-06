@@ -144,6 +144,38 @@ ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError AL
 DROP TABLE t_json_key_safety;
 
 -- ============================================================
+-- REJECT: stored MATERIALIZED column derived from the subcolumn. A lazy change skips the
+-- mutation that would recompute it, leaving stale on-disk bytes read back with no error.
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32), k String MATERIALIZED reinterpretAsString(j.a))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number)) FROM numbers(4);
+SELECT 'MATERIALIZED column on subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
+-- REJECT: implicit auto-minmax index on an ALIAS column backed by the subcolumn.
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32), k String ALIAS reinterpretAsString(j.a))
+ENGINE = MergeTree ORDER BY id SETTINGS add_minmax_index_for_string_columns = 1;
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number)) FROM numbers(4);
+SELECT 'implicit index on ALIAS over subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
+-- REJECT: aggregate projection whose group key is an expression over the subcolumn. Defensive:
+-- such projections cannot ingest subcolumn data yet, but the ALTER is refused all the same.
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32)) ENGINE = MergeTree ORDER BY id
+SETTINGS deduplicate_merge_projection_mode = 'drop';
+ALTER TABLE t_json_key_safety ADD PROJECTION p (SELECT reinterpretAsString(j.a), count() GROUP BY reinterpretAsString(j.a));
+SELECT 'aggregate projection group key on subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
 -- ALLOW: total type change on a plain (non-key) column reads back correctly
 -- ============================================================
 CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32)) ENGINE = MergeTree ORDER BY id;
