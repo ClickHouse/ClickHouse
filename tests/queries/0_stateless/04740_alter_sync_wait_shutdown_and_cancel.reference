@@ -1,0 +1,6 @@
+Code: 159. Timeout exceeded: maximum: 5000 ms
+Code: 394. Query was cancelled
+entry queued on r2
+Code: 394. Query was cancelled
+database dropped
+Code: 341. Timeout exceeded while waiting for replicas r2 to process entry log-N

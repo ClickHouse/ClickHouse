@@ -90,8 +90,10 @@ Not every metric is emitted by every pipe type. In particular, CDC ClickPipes ex
 
 | Metric                                    | Type | Available for | Description |
 |-------------------------------------------|------|---------------|-------------|
-| `ClickPipes_Latency`                      | Gauge (_avg_) | Streaming, object storage | Time in milliseconds between when a record was produced at the source and when it was written to ClickHouse. |
+| `ClickPipes_Latency`                      | Gauge (_avg_) | All | Time in milliseconds between when a record was produced at the source and when it was written to ClickHouse. |
 | `ClickPipes_SourceReplicationLatency_MiB` | Gauge (_avg_) | CDC (Postgres only) | Replication slot lag at the source in MiB. Only emitted by Postgres ClickPipes. |
+| `ClickPipes_CDC_SourceLatency`            | Gauge (_avg_) | CDC | Lag in milliseconds from a source event timestamp to ClickPipes processing. |
+| `ClickPipes_CDC_DestinationLatency`       | Gauge (_avg_) | CDC | Lag in milliseconds from receiving an event in a ClickPipe to writing it into a ClickHouse table. |
 
 ### Resource utilization {#metrics-resources}
 
