@@ -1949,7 +1949,7 @@ VectorWithMemoryTracking<JoinActionRef> JoinStepLogical::getOutputActions() cons
 }
 
 
-void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings) const
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
     join_settings.updatePlanSettings(settings);
     sorting_settings.updatePlanSettings(settings);
