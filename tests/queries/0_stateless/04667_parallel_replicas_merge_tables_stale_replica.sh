@@ -34,6 +34,13 @@ $CLICKHOUSE_CLIENT --query "
 # then report 0 available replicas.
 PR_SETTINGS="enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_local_plan = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_allow_merge_tables = 1, max_replica_delay_for_distributed_queries = 1, fallback_to_stale_replicas_for_distributed_queries = 0, parallel_replicas_connect_timeout_ms = 30000"
 
+# The remote connections are established lazily, on the first read from a remote source, so on a tiny
+# table the initiator's local replica can finish the whole read and cancel the remotes before they are
+# ever counted - the cases that assert participation keep the initiator out of the set of replicas
+# that read, which makes the remote connections mandatory. The cases that assert exclusion keep the
+# local replica in: it is the only one allowed to read there.
+FRESH_SETTINGS="$PR_SETTINGS, parallel_replicas_prefer_local_replica = 0"
+
 # Whether any replica was admitted to coordinated reading.
 function replicas_used()
 {
@@ -48,7 +55,7 @@ for source in "t_pr_merge_stale" "merge(currentDatabase(), '^t_pr_merge_stale_')
 do
     # All the replicas are up to date: reading is coordinated across them, as usual.
     query_id="04667_${CLICKHOUSE_DATABASE}_fresh_$RANDOM"
-    $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT count(), sum(k) FROM $source SETTINGS $PR_SETTINGS"
+    $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT count(), sum(k) FROM $source SETTINGS $FRESH_SETTINGS"
     replicas_used "$query_id"
 
     # Every replica lags behind on the underlying replicated tables: none of them may read, and the
@@ -67,16 +74,16 @@ done
 # single query, and the freshness of the underlying replicated tables decides there as well.
 for source in "t_pr_merge_stale" "merge(currentDatabase(), '^t_pr_merge_stale_')"
 do
-    query="SELECT count(), sum(m.k) FROM $source AS m INNER JOIN t_pr_dim_stale AS d ON m.k = d.k SETTINGS $PR_SETTINGS"
+    query="SELECT count(), sum(m.k) FROM $source AS m INNER JOIN t_pr_dim_stale AS d ON m.k = d.k"
 
     query_id="04667_${CLICKHOUSE_DATABASE}_join_fresh_$RANDOM"
-    $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query"
+    $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query SETTINGS $FRESH_SETTINGS"
     replicas_used "$query_id"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
 
     query_id="04667_${CLICKHOUSE_DATABASE}_join_stale_$RANDOM"
-    $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query"
+    $CLICKHOUSE_CLIENT --query_id "$query_id" --query "$query SETTINGS $PR_SETTINGS"
 
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT replicated_merge_tree_all_replicas_stale"
 
@@ -100,7 +107,8 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT replicated_merge_tree_all_re
 
 query_id="04667_${CLICKHOUSE_DATABASE}_control_$RANDOM"
 $CLICKHOUSE_CLIENT --query_id "$query_id" --query "
-    SELECT count(), sum(k) FROM merge(currentDatabase(), '^t_pr_merge_plain_') SETTINGS $PLAIN_SETTINGS"
+    SELECT count(), sum(k) FROM merge(currentDatabase(), '^t_pr_merge_plain_')
+    SETTINGS $PLAIN_SETTINGS, parallel_replicas_prefer_local_replica = 0"
 
 query_id_join="04667_${CLICKHOUSE_DATABASE}_joined_dim_stale_$RANDOM"
 $CLICKHOUSE_CLIENT --query_id "$query_id_join" --query "
