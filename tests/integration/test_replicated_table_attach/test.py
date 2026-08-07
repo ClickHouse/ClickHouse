@@ -302,17 +302,31 @@ def test_attach_startup_keeps_the_retry_delay_chosen_by_the_restarting_thread(
     finally:
         node.query("SYSTEM DISABLE FAILPOINT rmt_restarting_thread_fail_startup")
 
-    log = node.grep_in_log(f"{table} .*Trying to start replica up") or ""
-    # grep_in_log can repeat a matching line, so key on the timestamp and sort.
-    stamps = sorted(
-        set(
-            re.findall(r"(\d{2}):(\d{2}):(\d{2}\.\d+).*Trying to start replica up", log)
+    # Only the attempts made after ATTACH: the CREATE above ran its own startup, and the gap
+    # between the two is user-driven rather than an interval run() chose.
+    def timestamps_of(marker):
+        # grep_in_log can repeat a matching line, so key on the timestamp.
+        return sorted(
+            set(
+                re.findall(
+                    rf"(\d{{2}}:\d{{2}}:\d{{2}}\.\d+).*{marker}",
+                    node.grep_in_log(f"{table} .*{marker}") or "",
+                )
+            )
         )
-    )
+
+    attach = timestamps_of("Trying to startup table from right now")
+    assert attach, "the attach path was never reached"
+    stamps = [s for s in timestamps_of("Trying to start replica up") if s >= attach[0]]
     assert (
         len(stamps) >= 3
-    ), f"too few startup attempts to measure a delay: {len(stamps)}"
-    seconds = [int(h) * 3600 + int(m) * 60 + float(s) for h, m, s in stamps]
+    ), f"too few startup attempts after ATTACH to measure a delay: {len(stamps)}"
+
+    def to_seconds(stamp):
+        h, m, s = stamp.split(":")
+        return int(h) * 3600 + int(m) * 60 + float(s)
+
+    seconds = [to_seconds(s) for s in stamps]
     gaps_ms = [round((b - a) * 1000, 1) for a, b in zip(seconds, seconds[1:])]
     # Every attempt follows a delay run() chose, the smallest being the 100 ms first failure.
     # Cancelling one of them shows up as an attempt that follows the previous one at once.
