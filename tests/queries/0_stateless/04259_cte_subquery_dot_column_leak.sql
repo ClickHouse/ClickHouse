@@ -94,8 +94,7 @@ SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 SELECT '-- inline subquery aliased b, with subcolumn (default: both ON keys on one side) --';
 SELECT *
 FROM t2_compat a
-LEFT JOIN (SELECT * FROM t2_compat a INNER JOIN t2_compat b ON a.id = b.id) b ON a.id = b.id
-SETTINGS query_plan_join_swap_table = 'false'; -- the swap would make it a RIGHT join, which the operator does not implement yet
+LEFT JOIN (SELECT * FROM t2_compat a INNER JOIN t2_compat b ON a.id = b.id) b ON a.id = b.id;
 
 SELECT '-- inline subquery aliased b, with subcolumn (compat) --';
 SELECT *

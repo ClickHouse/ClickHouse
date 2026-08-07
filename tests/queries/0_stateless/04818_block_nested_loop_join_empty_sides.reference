@@ -1,0 +1,54 @@
+INNER
+routed	1
+probe=1 build=1
+1	1	11	2
+1	1	12	3
+probe=0 build=1
+probe=1 build=0
+probe=0 build=0
+LEFT
+routed	1
+probe=1 build=1
+1	1	11	2
+1	1	12	3
+2	40	0	0
+probe=0 build=1
+probe=1 build=0
+1	1	0	0
+2	40	0	0
+probe=0 build=0
+RIGHT
+routed	1
+probe=1 build=1
+1	1	11	2
+1	1	12	3
+probe=0 build=1
+0	0	11	2
+0	0	12	3
+probe=1 build=0
+probe=0 build=0
+FULL
+routed	1
+probe=1 build=1
+1	1	11	2
+1	1	12	3
+2	40	0	0
+probe=0 build=1
+0	0	11	2
+0	0	12	3
+probe=1 build=0
+1	1	0	0
+2	40	0	0
+probe=0 build=0
+join_use_nulls
+1	1	\N	\N
+2	40	\N	\N
+-
+\N	\N	11	2
+\N	\N	12	3
+-
+\N	\N	11	2
+\N	\N	12	3
+-
+1	1	\N	\N
+2	40	\N	\N

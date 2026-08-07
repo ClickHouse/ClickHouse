@@ -1,12 +1,14 @@
 #include <Core/Block.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <Processors/DelayedPortsProcessor.h>
 #include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/BlockNestedLoopJoinData.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -91,16 +93,57 @@ static SharedHeader concatHeaders(const SharedHeaders & headers)
     return std::make_shared<const Block>(std::move(result));
 }
 
+/// The build rows that matched nothing may be emitted only once every probe stream is done, which
+/// is what `DelayedPorts` enforces here: the probe streams are its main ports and the scans over the
+/// stored blocks its delayed ones.
+void BlockNestedLoopJoinStep::addUnmatchedBuildRowsStage(
+    QueryPipelineBuilder & pipeline, const BlockNestedLoopJoinDataPtr & data, size_t max_streams) const
+{
+    pipeline.transform([&](const OutputPortRawPtrs & probe_ports)
+    {
+        const size_t num_streams = probe_ports.size();
+
+        VectorWithMemoryTracking<UInt64> delayed_ports;
+        delayed_ports.reserve(num_streams);
+        for (size_t i = 0; i < num_streams; ++i)
+            delayed_ports.push_back(2 * i + 1);
+
+        auto delayed = std::make_shared<DelayedPortsProcessor>(output_header, 2 * num_streams, delayed_ports);
+        auto next_input = delayed->getInputs().begin();
+
+        Processors new_processors;
+        for (size_t i = 0; i < num_streams; ++i)
+        {
+            connect(*probe_ports[i], *next_input++);
+
+            auto unmatched = std::make_shared<BlockNestedLoopUnmatchedBuildRowsTransform>(
+                output_header, data, max_block_size, i, num_streams);
+            connect(unmatched->getPort(), *next_input++);
+            new_processors.push_back(std::move(unmatched));
+        }
+        new_processors.push_back(std::move(delayed));
+        return new_processors;
+    });
+
+    pipeline.resize(max_streams);
+}
+
 QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BlockNestedLoopJoinStep expects two input pipelines, got {}", pipelines.size());
 
-    ///  (build) ┐                                                    (probe) ─> Probe ─> (joined)
-    ///          ╞> Resize ─> BlockNestedLoopBuild ─> Resize(1) ─╖
-    ///  (build) ┘                                               ╠> Delayed ports
-    ///                                                (probe) ──╢               ─> Probe ─> (joined)
-    ///                                               (totals) ──╜               ─> Totals
+    ///  (build) ┐                                     (probe) ─> Probe ────────╖
+    ///          ╞> Resize ─> BlockNestedLoopBuild ─> Resize(1) ─╖   Unmatched ─╢
+    ///  (build) ┘                                               ╠> Delayed     ╠> Delayed ─> (joined)
+    ///                                                (probe) ──╢     ports    ║    ports
+    ///                                               (totals) ──╜              ║
+    ///                                                       ─> Probe ─────────╢
+    ///                                                          Unmatched ─────╜
+    ///                                                       ─> Totals ─────────> (totals)
+    ///
+    /// The `Unmatched` sources and the second `Delayed ports` exist only for the kinds that emit the
+    /// build rows that matched nothing.
 
     auto probe_pipeline = std::move(pipelines[0]);
     auto build_pipeline = std::move(pipelines[1]);
@@ -164,6 +207,9 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
             return std::make_shared<BlockNestedLoopProbeTransform>(
                 header, output_header, data, predicate, max_block_size, max_block_bytes);
         });
+
+        if (keepsUnmatchedBuildRows(kind, strictness))
+            addUnmatchedBuildRowsStage(*probe_pipeline, data, max_streams);
 
         auto probe_processors = collector.detachProcessors(static_cast<size_t>(Stage::Probe));
         processors.insert(processors.end(), probe_processors.begin(), probe_processors.end());

@@ -8,6 +8,7 @@
 #include <QueryPipeline/SizeLimits.h>
 
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -24,6 +25,16 @@ enum class EmptyBuildSideAction : uint8_t
 };
 
 EmptyBuildSideAction emptyBuildSideActionFor(JoinKind kind, JoinStrictness strictness);
+
+/// Whether the result still depends on which build rows matched once the probe phase is over:
+/// `RIGHT` and `FULL` emit the build rows that matched nothing, and a right-driven `SEMI`/`ANTI`
+/// result is made of build rows selected by whether they matched at all. The other kinds decide
+/// every output row while the probe row that produced it is still at hand, so they keep no flags.
+bool needsBuildSideMatchFlags(JoinKind kind, JoinStrictness strictness);
+
+/// Whether a stage after the probe phase emits the build rows that no probe row matched, padded
+/// with the probe side's column defaults.
+bool keepsUnmatchedBuildRows(JoinKind kind, JoinStrictness strictness);
 
 /// The materialized build side of a block nested loop join, shared by every build and probe stream.
 /// The build streams append to it concurrently until `finish`; from then on it is read-only, and
@@ -50,12 +61,23 @@ public:
     void finish();
     bool isFinished() const { return finished.load(std::memory_order_acquire); }
 
-    /// The stored build blocks, in an arbitrary order. Valid only after `finish`.
+    /// The stored build blocks, in an arbitrary order. A block's rows are stored exactly as they
+    /// arrived, so a row's index into the block's columns is also its position in the block.
+    /// Valid only after `finish`.
     const std::vector<StoredBlock> & getBlocks() const;
     /// Global row number of the first row of block `i`, with a trailing entry equal to
     /// `getTotalRows()`. A global row number identifies a build row for the whole probe phase and
     /// stays stable when a block is later moved out of memory. Valid only after `finish`.
     const std::vector<size_t> & getRowOffsets() const;
+
+    /// Whether the match flags below are kept at all; decided by the kind and strictness.
+    bool hasBuildSideMatchFlags() const { return needs_match_flags; }
+    /// Records that some probe row matched the build row `global_row`. Called by every probe stream
+    /// concurrently, only for a kind that keeps the flags.
+    void setBuildRowMatched(size_t global_row);
+    /// Whether any probe row matched the build row `global_row`. Meaningful only once every probe
+    /// stream has finished.
+    bool isBuildRowMatched(size_t global_row) const;
 
     size_t getTotalRows() const { return total_rows.load(std::memory_order_relaxed); }
     size_t getTotalBytes() const { return total_bytes.load(std::memory_order_relaxed); }
@@ -76,11 +98,23 @@ private:
     const JoinStrictness strictness;
     const SizeLimits size_limits;
     const EmptyBuildSideAction empty_build_side_action;
+    const bool needs_match_flags;
 
     mutable std::mutex mutex;
     std::vector<StoredBlock> blocks TSA_GUARDED_BY(mutex);
     std::vector<size_t> row_offsets TSA_GUARDED_BY(mutex);
     Block build_side_totals TSA_GUARDED_BY(mutex);
+
+    /// One flag per build row, indexed by global row number; allocated by `finish` and only for the
+    /// kinds that need it.
+    ///
+    /// Relaxed is enough for the accesses themselves: a flag is only ever set, never cleared, so no
+    /// write can be lost, and the happens-before edge that makes every write visible to the
+    /// unmatched scan comes from the pipeline instead - a probe stream finishes its output port
+    /// only after its last write, and `DelayedPortsProcessor` observes that finish before it lets
+    /// the unmatched stage produce a single row. `finished` orders the allocation itself the same
+    /// way it orders `blocks` and `row_offsets`.
+    std::unique_ptr<std::atomic_bool[]> matched_flags;
 
     std::atomic<size_t> total_rows{0};
     std::atomic<size_t> total_bytes{0};

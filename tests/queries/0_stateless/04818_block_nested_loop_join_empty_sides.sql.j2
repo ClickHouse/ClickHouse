@@ -1,0 +1,50 @@
+-- Tags: no-old-analyzer
+
+-- Every join kind evaluated by the block nested loop operator with each side in turn empty. An
+-- empty build side leaves nothing to match, so only the kinds that keep unmatched probe rows
+-- produce anything; an empty probe side likewise leaves only the kinds that keep unmatched build
+-- rows, which those emit from the match-flag scan with every flag still unset.
+
+-- `hash` is left out of the list so that `INNER` goes to the operator too, instead of keeping its
+-- cross-join-with-a-filter plan.
+SET join_algorithm = 'partial_merge';
+SET cross_to_inner_join_rewrite = 0;
+SET join_use_nulls = 0;
+
+DROP TABLE IF EXISTS bnl_es_l;
+DROP TABLE IF EXISTS bnl_es_r;
+
+CREATE TABLE bnl_es_l (id Int32, x Int32) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE bnl_es_r (id Int32, y Int32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO bnl_es_l VALUES (1, 1), (2, 40);
+INSERT INTO bnl_es_r VALUES (11, 2), (12, 3);
+
+{% for kind in ['INNER', 'LEFT', 'RIGHT', 'FULL'] -%}
+
+SELECT '{{ kind }}';
+SELECT 'routed', count() FROM (EXPLAIN SELECT count() FROM bnl_es_l l {{ kind }} JOIN bnl_es_r r ON l.x < r.y)
+WHERE explain LIKE '%BlockNestedLoopJoin%';
+
+{% for probe_rows, build_rows in [(1, 1), (0, 1), (1, 0), (0, 0)] -%}
+SELECT 'probe={{ probe_rows }} build={{ build_rows }}';
+SELECT * FROM (SELECT * FROM bnl_es_l WHERE {{ probe_rows }}) l
+{{ kind }} JOIN (SELECT * FROM bnl_es_r WHERE {{ build_rows }}) r ON l.x < r.y
+ORDER BY ALL;
+{% endfor -%}
+
+{% endfor -%}
+
+-- With `join_use_nulls` the padded side of an unmatched row is NULL rather than the type's default,
+-- whichever side the emptiness is on.
+SET join_use_nulls = 1;
+SELECT 'join_use_nulls';
+SELECT * FROM bnl_es_l l LEFT JOIN (SELECT * FROM bnl_es_r WHERE 0) r ON l.x < r.y ORDER BY ALL;
+SELECT '-';
+SELECT * FROM (SELECT * FROM bnl_es_l WHERE 0) l RIGHT JOIN bnl_es_r r ON l.x < r.y ORDER BY ALL;
+SELECT '-';
+SELECT * FROM (SELECT * FROM bnl_es_l WHERE 0) l FULL JOIN bnl_es_r r ON l.x < r.y ORDER BY ALL;
+SELECT '-';
+SELECT * FROM bnl_es_l l FULL JOIN (SELECT * FROM bnl_es_r WHERE 0) r ON l.x < r.y ORDER BY ALL;
+
+DROP TABLE bnl_es_l;
+DROP TABLE bnl_es_r;

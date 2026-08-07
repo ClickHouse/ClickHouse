@@ -27,6 +27,24 @@ EmptyBuildSideAction emptyBuildSideActionFor(JoinKind kind, JoinStrictness stric
     return isLeftOrFull(kind) ? EmptyBuildSideAction::PassProbeRowsPadded : EmptyBuildSideAction::ProduceNothing;
 }
 
+bool needsBuildSideMatchFlags(JoinKind kind, JoinStrictness strictness)
+{
+    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
+        return isRight(kind);
+    return isRightOrFull(kind);
+}
+
+bool keepsUnmatchedBuildRows(JoinKind kind, JoinStrictness strictness)
+{
+    /// `RIGHT SEMI` is the exception among the right-driven kinds: it keeps a build row only when
+    /// it does match, which is the other half of the same flag scan.
+    if (strictness == JoinStrictness::Semi)
+        return false;
+    if (strictness == JoinStrictness::Anti)
+        return isRight(kind);
+    return isRightOrFull(kind);
+}
+
 BlockNestedLoopJoinData::BlockNestedLoopJoinData(
     SharedHeader build_header_, JoinKind kind_, JoinStrictness strictness_, const SizeLimits & size_limits_)
     : build_header(std::move(build_header_))
@@ -34,6 +52,7 @@ BlockNestedLoopJoinData::BlockNestedLoopJoinData(
     , strictness(strictness_)
     , size_limits(size_limits_)
     , empty_build_side_action(emptyBuildSideActionFor(kind_, strictness_))
+    , needs_match_flags(needsBuildSideMatchFlags(kind_, strictness_))
 {
 }
 
@@ -107,7 +126,22 @@ void BlockNestedLoopJoinData::finish()
     row_offsets.back() = offset;
     chassert(offset == total_rows.load(std::memory_order_relaxed));
 
+    if (needs_match_flags && offset != 0)
+        matched_flags = std::make_unique<std::atomic_bool[]>(offset);
+
     finished.store(true, std::memory_order_release);
+}
+
+void BlockNestedLoopJoinData::setBuildRowMatched(size_t global_row)
+{
+    chassert(global_row < getTotalRows());
+    matched_flags[global_row].store(true, std::memory_order_relaxed);
+}
+
+bool BlockNestedLoopJoinData::isBuildRowMatched(size_t global_row) const
+{
+    chassert(global_row < getTotalRows());
+    return matched_flags[global_row].load(std::memory_order_relaxed);
 }
 
 void BlockNestedLoopJoinData::assertFinished(const char * what) const

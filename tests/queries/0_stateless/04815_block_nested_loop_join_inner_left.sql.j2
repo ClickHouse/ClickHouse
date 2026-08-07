@@ -9,9 +9,6 @@
 
 SET cross_to_inner_join_rewrite = 0;
 SET join_use_nulls = 0;
--- The swap of the join inputs turns a `LEFT` join into a `RIGHT` one, which the operator does not
--- implement yet.
-SET query_plan_join_swap_table = 'false';
 
 DROP TABLE IF EXISTS bnl_probe;
 DROP TABLE IF EXISTS bnl_build;

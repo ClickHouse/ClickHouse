@@ -7,6 +7,8 @@
 #include <Processors/Transforms/BlockNestedLoopJoinTransform.h>
 #include <Common/assert_cast.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -19,11 +21,12 @@ namespace ErrorCodes
 namespace
 {
 
-/// The kinds and strictnesses the probe handles on its own. `RIGHT`/`FULL` additionally need the
-/// build-side used flags, and the early-exit strictnesses need their own walk over the build side.
+/// The kinds and strictnesses the probe handles. The early-exit strictnesses (`ANY`, `SEMI`, `ANTI`)
+/// need their own walk over the build side and are not implemented yet.
 bool isImplementedByProbe(JoinKind kind, JoinStrictness strictness)
 {
-    return strictness == JoinStrictness::All && (isInner(kind) || isLeft(kind) || isCrossOrComma(kind));
+    return strictness == JoinStrictness::All
+        && (isInner(kind) || isLeftOrRight(kind) || isFull(kind) || isCrossOrComma(kind));
 }
 
 /// Whether a probe row that matched no build row is still part of the result, padded with the
@@ -76,6 +79,7 @@ BlockNestedLoopProbeTransform::BlockNestedLoopProbeTransform(
     , max_block_bytes(max_block_bytes_)
     , implemented(isImplementedByProbe(data->getKind(), data->getStrictness()))
     , keep_unmatched_probe_rows(keepsUnmatchedProbeRows(data->getKind(), data->getStrictness()))
+    , flag_matched_build_rows(data->hasBuildSideMatchFlags())
 {
     if (output_header->columns() != probe_header->columns() + data->getHeader()->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -310,6 +314,15 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
         if (keep_unmatched_probe_rows)
             for (auto probe_row : probe_values)
                 probe_row_matched[probe_row] = 1;
+
+        if (flag_matched_build_rows)
+        {
+            /// A row's index into its block's columns is also its position in the block, so the
+            /// global row number the flags are indexed by is just the block's row offset plus it.
+            const size_t block_row_offset = data->getRowOffsets()[build_block_cursor];
+            for (auto build_row : build_values)
+                data->setBuildRowMatched(block_row_offset + build_row);
+        }
     }
 
     build_row_cursor += tile_build_rows;
@@ -437,6 +450,79 @@ Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
     Chunk chunk;
     chunk.setColumns(std::move(result), unmatched.size());
     return chunk;
+}
+
+BlockNestedLoopUnmatchedBuildRowsTransform::BlockNestedLoopUnmatchedBuildRowsTransform(
+    SharedHeader output_header_,
+    BlockNestedLoopJoinDataPtr data_,
+    size_t max_block_size_,
+    size_t stream_index_,
+    size_t num_streams_)
+    : ISource(std::move(output_header_))
+    , data(std::move(data_))
+    , num_probe_columns(getPort().getHeader().columns() - data->getHeader()->columns())
+    , max_block_size(max_block_size_)
+    , num_streams(num_streams_)
+    , block_cursor(stream_index_)
+{
+    if (!data->hasBuildSideMatchFlags())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Block nested loop join keeps no build-side match flags for {} {} JOIN",
+            toString(data->getStrictness()), toString(data->getKind()));
+}
+
+Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
+{
+    const auto & header = getPort().getHeader();
+    const auto & blocks = data->getBlocks();
+    const auto & row_offsets = data->getRowOffsets();
+    const size_t limit = max_block_size != 0 ? max_block_size : std::numeric_limits<size_t>::max();
+
+    /// One chunk comes from one stored block, so that its build columns are gathered in one go.
+    /// A block in which every row matched contributes nothing and the scan moves on to the next.
+    while (block_cursor < blocks.size())
+    {
+        const auto & block = blocks[block_cursor];
+        const size_t block_rows = block.selector.size();
+        const size_t block_row_offset = row_offsets[block_cursor];
+
+        auto indexes = ColumnUInt64::create();
+        auto & unmatched = indexes->getData();
+        while (row_cursor < block_rows && unmatched.size() < limit)
+        {
+            if (!data->isBuildRowMatched(block_row_offset + row_cursor))
+                unmatched.push_back(row_cursor);
+            ++row_cursor;
+        }
+
+        if (row_cursor >= block_rows)
+        {
+            row_cursor = 0;
+            block_cursor += num_streams;
+        }
+
+        if (unmatched.empty())
+            continue;
+
+        Columns result;
+        result.reserve(header.columns());
+        /// The default of the column type, which is NULL where `addToNullableIfNeeded` made the
+        /// padded side's columns `Nullable` in the pre-join actions.
+        for (size_t i = 0; i < num_probe_columns; ++i)
+        {
+            auto padded = header.getByPosition(i).type->createColumn();
+            padded->insertManyDefaults(unmatched.size());
+            result.push_back(std::move(padded));
+        }
+        for (const auto & column : block.columns)
+            result.push_back(column->index(*indexes, 0));
+
+        Chunk chunk;
+        chunk.setColumns(std::move(result), unmatched.size());
+        return chunk;
+    }
+
+    return {};
 }
 
 BlockNestedLoopTotalsTransform::BlockNestedLoopTotalsTransform(

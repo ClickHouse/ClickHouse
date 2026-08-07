@@ -22,5 +22,4 @@ FORMAT Null;
 SELECT 1 AS c0
 FROM remote('localhost:9000', generateSeries(1, 10)) AS t1
 LEFT JOIN (SELECT 1 AS c0) AS t2 USING (c0)
-FORMAT Null
-SETTINGS query_plan_join_swap_table = 'false'; -- the swap would make it a RIGHT join, which the operator does not implement yet
+FORMAT Null;

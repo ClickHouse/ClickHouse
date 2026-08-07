@@ -53,6 +53,11 @@ public:
 private:
     void updateOutputHeader() override;
 
+    /// Appends the stage that emits the build rows no probe row matched, held back until every probe
+    /// stream has finished.
+    void addUnmatchedBuildRowsStage(
+        QueryPipelineBuilder & pipeline, const BlockNestedLoopJoinDataPtr & data, size_t max_streams) const;
+
     /// The whole ON condition, with its inputs resolved against the input headers.
     BlockNestedLoopPredicate predicate;
 

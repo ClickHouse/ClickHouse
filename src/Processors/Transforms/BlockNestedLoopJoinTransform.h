@@ -3,6 +3,7 @@
 #include <Columns/FilterDescription.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/ISimpleTransform.h>
+#include <Processors/ISource.h>
 #include <Processors/Transforms/BlockNestedLoopJoinData.h>
 
 #include <deque>
@@ -93,6 +94,8 @@ private:
     const bool implemented;
     /// Whether a probe row that matched nothing is still part of the result, padded.
     const bool keep_unmatched_probe_rows;
+    /// Whether every matched build row must be flagged for the stage that runs after the probe.
+    const bool flag_matched_build_rows;
 
     /// The probe chunk being walked.
     Columns probe_columns;
@@ -120,6 +123,36 @@ private:
     size_t unmatched_probe_cursor = 0;
 
     std::optional<Chunk> output_chunk;
+};
+
+/// Emits the build rows that no probe row matched, padded with the probe side's column defaults -
+/// the `RIGHT`/`FULL` half of the result. Runs only after every probe stream has finished, which is
+/// what makes the match flags readable; the stored blocks are dealt out over the streams so that
+/// several of these scan the build side in parallel without overlapping.
+class BlockNestedLoopUnmatchedBuildRowsTransform final : public ISource
+{
+public:
+    BlockNestedLoopUnmatchedBuildRowsTransform(
+        SharedHeader output_header_,
+        BlockNestedLoopJoinDataPtr data_,
+        size_t max_block_size_,
+        size_t stream_index_,
+        size_t num_streams_);
+
+    String getName() const override { return "BlockNestedLoopUnmatchedBuildRows"; }
+
+protected:
+    Chunk generate() override;
+
+private:
+    BlockNestedLoopJoinDataPtr data;
+    /// The columns of the output header that belong to the probe side and are padded here.
+    const size_t num_probe_columns;
+    const size_t max_block_size;
+    /// This stream owns the blocks `stream_index, stream_index + num_streams, ...`.
+    const size_t num_streams;
+    size_t block_cursor;
+    size_t row_cursor = 0;
 };
 
 /// Produces the joined `WITH TOTALS` row: the probe side's totals row extended with the build

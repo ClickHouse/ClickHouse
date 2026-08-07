@@ -3,9 +3,7 @@
 -- ON shapes with fewer than two usable inequality conditions that must NOT be routed through
 -- IEJoin, and the behavior of the eligible shape without `ie_join` in `join_algorithm`. For
 -- INNER the rejected shapes fall back to a cross join with a filter (no `IEJoin` in the plan,
--- same result); for outer kinds the fallback is the block nested loop join. The swap of the join
--- inputs is pinned off where the swapped kind is one the block nested loop join does not
--- implement yet.
+-- same result); for outer kinds the fallback is the block nested loop join.
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SET cross_to_inner_join_rewrite = 0;
@@ -21,7 +19,7 @@ INSERT INTO neg_r VALUES (1, 1, 1, 'a%', 1.0), (2, 2, 3, 'b%', 2.0), (3, 3, 2, '
 -- A one-sided conjunct: not two table-to-table comparisons.
 SELECT 'one-sided', count() FROM (EXPLAIN SELECT count() FROM neg_l l JOIN neg_r r ON l.x < r.x AND l.y > 1) WHERE explain LIKE '%IEJoin%';
 SELECT 'one-sided result', (SELECT arraySort(groupArray((l.id, r.id))) FROM neg_l l JOIN neg_r r ON l.x < r.x AND l.y > 1) = (SELECT arraySort(groupArray((l.id, r.id))) FROM neg_l l, neg_r r WHERE l.x < r.x AND l.y > 1) AS ok;
-SELECT 'one-sided outer', count() FROM neg_l l LEFT JOIN neg_r r ON l.x < r.x AND l.y > 1 SETTINGS query_plan_join_swap_table = 'false';
+SELECT 'one-sided outer', count() FROM neg_l l LEFT JOIN neg_r r ON l.x < r.x AND l.y > 1;
 
 -- Both operands of a conjunct from the same side.
 SELECT 'same-side', count() FROM (EXPLAIN SELECT count() FROM neg_l l JOIN neg_r r ON l.x < l.y AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
@@ -35,7 +33,7 @@ SELECT 'non-comparison result', (SELECT arraySort(groupArray((l.id, r.id))) FROM
 -- shape must fall back to the cross join instead of failing on the common-type cast.
 SELECT 'no-supertype', count() FROM (EXPLAIN SELECT count() FROM neg_l l JOIN neg_r r ON l.dec < r.f AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
 SELECT 'no-supertype result', (SELECT arraySort(groupArray((l.id, r.id))) FROM neg_l l JOIN neg_r r ON l.dec < r.f AND l.y > r.y) = (SELECT arraySort(groupArray((l.id, r.id))) FROM neg_l l, neg_r r WHERE l.dec < r.f AND l.y > r.y) AS ok;
-SELECT 'no-supertype outer', count() FROM neg_l l LEFT JOIN neg_r r ON l.dec < r.f AND l.y > r.y SETTINGS query_plan_join_swap_table = 'false';
+SELECT 'no-supertype outer', count() FROM neg_l l LEFT JOIN neg_r r ON l.dec < r.f AND l.y > r.y;
 
 -- An input with totals is routed to IEJoin (the shape is eligible) but the operator's
 -- pipeline does not support totals: pin the clean error.
@@ -48,7 +46,7 @@ JOIN neg_r r ON l.x < r.x AND l.c > r.y; -- { serverError NOT_IMPLEMENTED }
 -- with a filter for INNER, the block nested loop join for outer kinds.
 SET join_algorithm = 'direct,parallel_hash,hash';
 SELECT 'setting off', count() FROM (EXPLAIN SELECT count() FROM neg_l l JOIN neg_r r ON l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
-SELECT 'setting off outer', count() FROM neg_l l LEFT JOIN neg_r r ON l.x < r.x AND l.y > r.y SETTINGS query_plan_join_swap_table = 'false';
+SELECT 'setting off outer', count() FROM neg_l l LEFT JOIN neg_r r ON l.x < r.x AND l.y > r.y;
 SELECT count() FROM neg_l l LEFT ANTI JOIN neg_r r ON l.x < r.x AND l.y > r.y; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE neg_l;

@@ -12,7 +12,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Processors/DelayedPortsProcessor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ResizeProcessor.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/BlockNestedLoopJoinTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -80,6 +82,33 @@ BlockNestedLoopPredicate makePredicate(const String & function_name, bool nullab
     return predicate;
 }
 
+/// The join's own output header: the probe column followed by the build column.
+SharedHeader makeOutputHeader(const SharedHeader & probe_header, const SharedHeader & build_header)
+{
+    Block output_block;
+    output_block.insert(probe_header->getByPosition(0));
+    output_block.insert(build_header->getByPosition(0));
+    return std::make_shared<const Block>(std::move(output_block));
+}
+
+BlockNestedLoopJoinDataPtr makeData(
+    const std::vector<Values> & build_blocks,
+    const SharedHeader & build_header,
+    JoinKind kind,
+    JoinStrictness strictness,
+    bool nullable)
+{
+    auto data = std::make_shared<BlockNestedLoopJoinData>(build_header, kind, strictness, SizeLimits{});
+    for (const auto & values : build_blocks)
+    {
+        Block block;
+        block.insert(ColumnWithTypeAndName(makeColumn(values, nullable), valueType(nullable), "build"));
+        data->addBlock(std::move(block), values.size());
+    }
+    data->finish();
+    return data;
+}
+
 struct ProbeResult
 {
     std::vector<JoinedRow> rows;
@@ -98,20 +127,8 @@ ProbeResult runProbe(
 {
     auto probe_header = makeHeader("probe", nullable);
     auto build_header = makeHeader("build", nullable);
-
-    Block output_block;
-    output_block.insert(probe_header->getByPosition(0));
-    output_block.insert(build_header->getByPosition(0));
-    auto output_header = std::make_shared<const Block>(std::move(output_block));
-
-    auto data = std::make_shared<BlockNestedLoopJoinData>(build_header, kind, strictness, SizeLimits{});
-    for (const auto & values : build_blocks)
-    {
-        Block block;
-        block.insert(ColumnWithTypeAndName(makeColumn(values, nullable), valueType(nullable), "build"));
-        data->addBlock(std::move(block), values.size());
-    }
-    data->finish();
+    auto output_header = makeOutputHeader(probe_header, build_header);
+    auto data = makeData(build_blocks, build_header, kind, strictness, nullable);
 
     Chunks chunks;
     for (const auto & values : probe_chunks)
@@ -127,6 +144,33 @@ ProbeResult runProbe(
     auto processors = std::make_shared<Processors>();
     processors->emplace_back(std::move(source));
     processors->emplace_back(std::move(probe));
+
+    if (keepsUnmatchedBuildRows(kind, strictness))
+    {
+        /// The same wiring the step builds: the probe stream is the main port of `DelayedPorts` and
+        /// the scan over the stored blocks its delayed one, so the scan starts only once the probe
+        /// stream is done and every match flag is set.
+        VectorWithMemoryTracking<UInt64> delayed_ports;
+        delayed_ports.push_back(1);
+        auto delayed = std::make_shared<DelayedPortsProcessor>(output_header, 2, delayed_ports);
+        auto unmatched = std::make_shared<BlockNestedLoopUnmatchedBuildRowsTransform>(
+            output_header, data, max_block_size, 0, 1);
+
+        auto next_input = delayed->getInputs().begin();
+        connect(*output_port, *next_input++);
+        connect(unmatched->getPort(), *next_input++);
+
+        auto resize = std::make_shared<ResizeProcessor>(output_header, 2, 1);
+        auto next_resize_input = resize->getInputs().begin();
+        for (auto & port : delayed->getOutputs())
+            connect(port, *next_resize_input++);
+
+        output_port = &resize->getOutputs().front();
+        processors->emplace_back(std::move(unmatched));
+        processors->emplace_back(std::move(delayed));
+        processors->emplace_back(std::move(resize));
+    }
+
     QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
 
     ProbeResult result;
@@ -142,6 +186,44 @@ ProbeResult runProbe(
             result.rows.emplace_back(valueAt(*columns[0], row), valueAt(*columns[1], row));
     }
     return result;
+}
+
+/// The build values each stream of the unmatched scan emits, given the build rows the probe flagged.
+std::vector<std::vector<UInt64>> runUnmatchedScan(
+    const std::vector<Values> & build_blocks, const std::vector<size_t> & matched_rows, size_t num_streams)
+{
+    auto probe_header = makeHeader("probe", /*nullable=*/ false);
+    auto build_header = makeHeader("build", /*nullable=*/ false);
+    auto output_header = makeOutputHeader(probe_header, build_header);
+    auto data = makeData(build_blocks, build_header, JoinKind::Right, JoinStrictness::All, /*nullable=*/ false);
+
+    for (auto row : matched_rows)
+        data->setBuildRowMatched(row);
+
+    std::vector<std::vector<UInt64>> per_stream(num_streams);
+    for (size_t stream_index = 0; stream_index < num_streams; ++stream_index)
+    {
+        auto unmatched = std::make_shared<BlockNestedLoopUnmatchedBuildRowsTransform>(
+            output_header, data, /*max_block_size=*/ 0, stream_index, num_streams);
+        auto * output_port = &unmatched->getPort();
+        auto processors = std::make_shared<Processors>();
+        processors->emplace_back(std::move(unmatched));
+        QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
+
+        PullingPipelineExecutor executor(pipeline);
+        Chunk chunk;
+        while (executor.pull(chunk))
+        {
+            const auto & columns = chunk.getColumns();
+            for (size_t row = 0; row < chunk.getNumRows(); ++row)
+            {
+                /// The probe side of an unmatched build row is padded with the column's default.
+                EXPECT_EQ(columns[0]->getUInt(row), 0);
+                per_stream[stream_index].push_back(columns[1]->getUInt(row));
+            }
+        }
+    }
+    return per_stream;
 }
 
 std::vector<JoinedRow> sorted(std::vector<JoinedRow> rows)
@@ -263,10 +345,102 @@ TEST(BlockNestedLoopJoinProbe, AnOutputChunkCanSpanSeveralStoredBlocks)
     EXPECT_EQ(sorted(result.rows), sorted({{1, 10}, {1, 11}, {1, 12}, {1, 13}}));
 }
 
+TEST(BlockNestedLoopJoinProbe, RightKeepsUnmatchedBuildRowsPadded)
+{
+    /// `probe < build` over probe {4, 9} and build {2, 5, 7}: only 5 and 7 are matched, so 2 is the
+    /// build row the scan after the probe emits. The probe row 9 matches nothing and is dropped.
+    auto result = runProbe(
+        {{2, 5}, {7}}, {{4, 9}},
+        JoinKind::Right, JoinStrictness::All, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+
+    EXPECT_EQ(sorted(result.rows), sorted({{Value(4), Value(5)}, {Value(4), Value(7)}, {std::nullopt, Value(2)}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, FullKeepsUnmatchedRowsOfBothSides)
+{
+    auto result = runProbe(
+        {{2, 5}, {7}}, {{4, 9}},
+        JoinKind::Full, JoinStrictness::All, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+
+    EXPECT_EQ(sorted(result.rows), sorted({
+        {Value(4), Value(5)}, {Value(4), Value(7)}, {std::nullopt, Value(2)}, {Value(9), std::nullopt}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, RightWithAnEmptyProbeSideEmitsEveryBuildRow)
+{
+    const std::vector<JoinedRow> expected{{std::nullopt, Value(2)}, {std::nullopt, Value(5)}, {std::nullopt, Value(7)}};
+
+    /// No probe chunk at all, ...
+    auto without_chunks = runProbe(
+        {{2}, {5, 7}}, {},
+        JoinKind::Right, JoinStrictness::All, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+    EXPECT_EQ(sorted(without_chunks.rows), sorted(expected));
+
+    /// ... and one chunk with no rows.
+    auto with_an_empty_chunk = runProbe(
+        {{2}, {5, 7}}, {{}},
+        JoinKind::Right, JoinStrictness::All, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+    EXPECT_EQ(sorted(with_an_empty_chunk.rows), sorted(expected));
+}
+
+TEST(BlockNestedLoopJoinProbe, RightWithAnAlwaysFalseConditionEmitsEveryBuildRow)
+{
+    auto result = runProbe(
+        {{1}, {2}}, {{5, 6}},
+        JoinKind::Right, JoinStrictness::All, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+
+    EXPECT_EQ(sorted(result.rows), sorted({{std::nullopt, Value(1)}, {std::nullopt, Value(2)}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, RightWithAnEmptyBuildSideProducesNothing)
+{
+    EXPECT_TRUE(runProbe({}, {{1, 2}}, JoinKind::Right).rows.empty());
+}
+
+TEST(BlockNestedLoopJoinProbe, UnmatchedBuildRowsAreCutToTheBlockSizeLimit)
+{
+    /// One build block of five rows, none of them matched, emitted in chunks of two.
+    auto result = runProbe(
+        {{5, 6, 7, 8, 9}}, {{20}},
+        JoinKind::Right, JoinStrictness::All, /*max_block_size=*/ 2, "less", /*nullable=*/ true);
+
+    EXPECT_EQ(result.rows.size(), 5);
+    for (auto chunk_size : result.chunk_sizes)
+        EXPECT_LE(chunk_size, 2);
+}
+
+TEST(BlockNestedLoopJoinProbe, TheUnmatchedScanPartitionsTheBuildBlocksOverStreams)
+{
+    /// Five blocks, and the rows 1, 4 and 7 flagged as matched by the probe.
+    const std::vector<Values> build_blocks{{10, 11}, {12, 13}, {14, 15}, {16, 17}, {18, 19}};
+    const std::vector<size_t> matched_rows{1, 4, 7};
+    const std::vector<UInt64> expected{10, 12, 13, 15, 16, 18, 19};
+
+    for (size_t num_streams : std::vector<size_t>{1, 2, 3, 8})
+    {
+        auto per_stream = runUnmatchedScan(build_blocks, matched_rows, num_streams);
+
+        std::vector<UInt64> all;
+        for (const auto & stream_rows : per_stream)
+            all.insert(all.end(), stream_rows.begin(), stream_rows.end());
+        std::sort(all.begin(), all.end());
+
+        /// Every unmatched row is emitted exactly once: the streams cover the build side and do not
+        /// overlap, whatever the ratio of streams to blocks.
+        EXPECT_EQ(all, expected) << "with " << num_streams << " streams";
+    }
+
+    /// Blocks are dealt out one by one, so with as many streams as blocks each takes exactly one.
+    auto per_stream = runUnmatchedScan(build_blocks, matched_rows, build_blocks.size());
+    EXPECT_EQ(per_stream[0], (std::vector<UInt64>{10}));
+    EXPECT_EQ(per_stream[1], (std::vector<UInt64>{12, 13}));
+    EXPECT_EQ(per_stream[2], (std::vector<UInt64>{15}));
+    EXPECT_EQ(per_stream[3], (std::vector<UInt64>{16}));
+    EXPECT_EQ(per_stream[4], (std::vector<UInt64>{18, 19}));
+}
+
 TEST(BlockNestedLoopJoinProbe, UnsupportedJoinTypesAreRejected)
 {
-    EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Right), Exception);
-    EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Full), Exception);
     EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Left, JoinStrictness::Any), Exception);
     EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Left, JoinStrictness::Semi), Exception);
     EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Left, JoinStrictness::Anti), Exception);

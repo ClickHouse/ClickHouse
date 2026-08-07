@@ -199,6 +199,91 @@ TEST(BlockNestedLoopJoinData, ConcurrentInsertsKeepEveryRow)
     }
 }
 
+TEST(BlockNestedLoopJoinData, MatchFlagsAreKeptOnlyWhereTheResultNeedsThem)
+{
+    for (auto strictness : {JoinStrictness::All, JoinStrictness::Any, JoinStrictness::RightAny})
+    {
+        EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Inner, strictness));
+        EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Left, strictness));
+        EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Cross, strictness));
+        EXPECT_TRUE(needsBuildSideMatchFlags(JoinKind::Right, strictness));
+        EXPECT_TRUE(needsBuildSideMatchFlags(JoinKind::Full, strictness));
+
+        EXPECT_FALSE(keepsUnmatchedBuildRows(JoinKind::Inner, strictness));
+        EXPECT_FALSE(keepsUnmatchedBuildRows(JoinKind::Left, strictness));
+        EXPECT_TRUE(keepsUnmatchedBuildRows(JoinKind::Right, strictness));
+        EXPECT_TRUE(keepsUnmatchedBuildRows(JoinKind::Full, strictness));
+    }
+
+    /// The right-driven early-exit kinds select build rows by their flag, the left-driven ones do not.
+    EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Left, JoinStrictness::Semi));
+    EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Left, JoinStrictness::Anti));
+    EXPECT_TRUE(needsBuildSideMatchFlags(JoinKind::Right, JoinStrictness::Semi));
+    EXPECT_TRUE(needsBuildSideMatchFlags(JoinKind::Right, JoinStrictness::Anti));
+
+    /// `RIGHT SEMI` emits the build rows that did match, which is the other half of the same scan.
+    EXPECT_FALSE(keepsUnmatchedBuildRows(JoinKind::Right, JoinStrictness::Semi));
+    EXPECT_TRUE(keepsUnmatchedBuildRows(JoinKind::Right, JoinStrictness::Anti));
+    EXPECT_FALSE(keepsUnmatchedBuildRows(JoinKind::Left, JoinStrictness::Anti));
+
+    auto without_flags = makeData(JoinKind::Left, JoinStrictness::All);
+    EXPECT_FALSE(without_flags->hasBuildSideMatchFlags());
+    auto with_flags = makeData(JoinKind::Full, JoinStrictness::All);
+    EXPECT_TRUE(with_flags->hasBuildSideMatchFlags());
+}
+
+TEST(BlockNestedLoopJoinData, MatchFlagsStartUnset)
+{
+    auto data = makeData(JoinKind::Right, JoinStrictness::All);
+    ASSERT_TRUE(data->addBlock(makeBlock({1, 2, 3}), 3));
+    ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2));
+    data->finish();
+
+    for (size_t row = 0; row < data->getTotalRows(); ++row)
+        EXPECT_FALSE(data->isBuildRowMatched(row));
+
+    data->setBuildRowMatched(0);
+    data->setBuildRowMatched(4);
+    /// Setting a flag twice is how two probe streams that matched the same build row behave.
+    data->setBuildRowMatched(4);
+
+    EXPECT_TRUE(data->isBuildRowMatched(0));
+    EXPECT_FALSE(data->isBuildRowMatched(1));
+    EXPECT_FALSE(data->isBuildRowMatched(2));
+    EXPECT_FALSE(data->isBuildRowMatched(3));
+    EXPECT_TRUE(data->isBuildRowMatched(4));
+}
+
+TEST(BlockNestedLoopJoinData, ConcurrentMatchFlagSetsKeepEveryFlag)
+{
+    constexpr size_t num_threads = 8;
+    constexpr size_t num_rows = 4096;
+
+    auto data = makeData(JoinKind::Full, JoinStrictness::All);
+    for (size_t i = 0; i < num_rows; ++i)
+        ASSERT_TRUE(data->addBlock(makeBlock({i}), 1));
+    data->finish();
+    ASSERT_EQ(data->getTotalRows(), num_rows);
+
+    /// Every thread walks the whole range and sets the rows of its own residue class, so the threads
+    /// contend on neighbouring flags throughout.
+    std::vector<std::thread> threads;
+    for (size_t thread_index = 0; thread_index < num_threads; ++thread_index)
+    {
+        threads.emplace_back([&, thread_index]
+        {
+            for (size_t row = 0; row < num_rows; ++row)
+                if (row % num_threads == thread_index && row % 3 != 0)
+                    data->setBuildRowMatched(row);
+        });
+    }
+    for (auto & thread : threads)
+        thread.join();
+
+    for (size_t row = 0; row < num_rows; ++row)
+        EXPECT_EQ(data->isBuildRowMatched(row), row % 3 != 0) << "row " << row;
+}
+
 TEST(BlockNestedLoopJoinData, EmptyBuildSideAction)
 {
     using enum EmptyBuildSideAction;
