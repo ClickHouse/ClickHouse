@@ -27,6 +27,7 @@ visible `Result` so investigators notice the file is corrupt.
 """
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -39,6 +40,8 @@ from ci.jobs.stress_job import (
     read_test_results,
     sanitize_test_result_line,
 )
+
+_DOCKER_SCRIPTS = Path(__file__).resolve().parents[2] / "tests" / "docker_scripts"
 
 
 def _write(tmp_path: Path, content: str) -> Path:
@@ -219,6 +222,103 @@ def test_escape_tsv_info_roundtrips_cr_through_parser(tmp_path):
     assert malformed == []
     assert len(results) == 1
     assert results[0].info == info
+
+
+def test_info_codec_is_reversible_for_literal_backslashes(tmp_path):
+    """A payload containing a literal backslash must survive the round trip.
+
+    Before the escape character was itself escaped, an on-disk `\\n` was
+    ambiguous and the reader always read it as an encoded LF: a fuzzer
+    query `SELECT '\\n'` was displayed as a real line break, and
+    `C:\\new\\table` as `C:<LF>ew<TAB>able`.
+    """
+    from ci.jobs.scripts.stress.stress import escape_tsv_info
+
+    # A field-initial `"` must not make csv consume the following rows.
+    path = _write(
+        tmp_path,
+        'row1\tFAIL\t\\N\t"unterminated hello\n'
+        "row2\tOK\t\\N\t\n"
+        "row3\tFAIL\t\\N\tthird\n",
+    )
+    results, malformed = read_test_results(path)
+    assert [r.name for r in results] == ["row1", "row2", "row3"]
+    assert malformed == []
+    assert results[0].info == '"unterminated hello'
+
+    payloads = {
+        # Lost before the fix.
+        "literal_n": "SELECT '\\n'",
+        "literal_t": "SELECT '\\t'",
+        "literal_r": "SELECT '\\r'",
+        "doubled": "SELECT '\\\\n'",
+        "windows_path": "C:\\new\\table",
+        "trailing": "SELECT 'x\\",
+        # The double quote is an ordinary character in the `Escaped` rule,
+        # so neither producer escapes it and the reader must not treat it
+        # as structural.
+        "dq_paired": 'he said "hello" ok',
+        "dq_leading": '"quoted"',
+        "dq_unterminated": '"unterminated hello',
+        # Controls: these already round-tripped and must keep doing so.
+        "plain": "SELECT 1 FROM numbers(10)",
+        "real_lf": "line one\nline two",
+        "real_tab": "col1\tcol2",
+        "real_cr": "a\rb",
+        "real_nul": "a\0b",
+        "literal_nul": "SELECT '\\0'",
+    }
+    content = "".join(
+        f"{name}\tFAIL\t\\N\t{escape_tsv_info(text)}\n"
+        for name, text in payloads.items()
+    )
+    results, malformed = read_test_results(_write(tmp_path, content))
+    assert malformed == []
+    assert {r.name: r.info for r in results} == payloads
+
+    # On-disk cell as emitted by `escaped()` in stress_tests.lib, which
+    # escapes the single quote and the whole `Escaped` alphabet. The
+    # backspace and form feed only ever reach the file from this producer:
+    # `escape_tsv_info` passes those two bytes through unescaped.
+    path = _write(
+        tmp_path,
+        "Cannot start clickhouse-server\tFAIL\t\\N\t"
+        "Code: 695. Load job \\'a\\bb\\fc\\0d\\' failed\\n\n",
+    )
+    results, malformed = read_test_results(path)
+    assert malformed == []
+    assert results[0].info == "Code: 695. Load job 'a\bb\fc\0d' failed\n"
+
+
+def test_shell_producers_append_escaped_output_with_printf():
+    """The shell half of the codec, which the Python tests cannot observe.
+
+    `escaped()` emits the row terminator at the same escape level as the
+    payload, so a caller appending its output through `echo -e` would
+    collapse both one level: the terminator becomes a real LF and the row
+    explodes into several physical lines, while every payload backslash is
+    destroyed. `printf '%s'` appends the substitution verbatim.
+    """
+    escaped_call = re.compile(r"\$\((escaped|head_escaped|trim_server_logs)\b")
+    terminator = re.compile(r"format_custom_row_after_delimiter='(.*?)'")
+
+    printf_sites = 0
+    for name in ("stress_tests.lib", "upgrade_runner.sh"):
+        source = (_DOCKER_SCRIPTS / name).read_text(encoding="utf-8")
+        for number, line in enumerate(source.split("\n"), start=1):
+            stripped = line.lstrip()
+            if stripped.startswith("#") or not escaped_call.search(line):
+                continue
+            where = f"{name}:{number}"
+            assert "echo -e" not in line, f"{where}: appends with `echo -e`"
+            assert "printf " in line, f"{where}: does not append with `printf`"
+            printf_sites += 1
+        for value in terminator.findall(source):
+            # The emitted terminator is the two characters `\n`, which a
+            # double-quoted bash string spells with four backslashes.
+            assert value == "\\\\\\\\n", f"{name}: terminator is {value!r}"
+
+    assert printf_sites == 9
 
 
 def test_dpkg_progress_in_info_does_not_split_row(tmp_path):

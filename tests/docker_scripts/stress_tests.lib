@@ -12,8 +12,10 @@ function escaped()
 {
     # That's the simplest way I found to escape a string in bash. Yep, bash is the most convenient programming language.
     # Also limit lines width just in case (too long lines are not really useful usually)
+    # The row separator is the two characters `\n`, at the same escape level as the payload,
+    # so callers must append the result with `printf '%s'` and not with `echo -e`.
     clickhouse local -S 's String' --input-format=LineAsString -q "select substr(s, 1, $FAILURE_CONTEXT_MAX_LINE_WIDTH)
-      from table format CustomSeparated settings format_custom_row_after_delimiter='\\\\\\\\n'"
+      from table format CustomSeparated settings format_custom_row_after_delimiter='\\\\n'"
 }
 
 function head_escaped()
@@ -297,7 +299,7 @@ function start_server()
         then
             echo "Cannot start clickhouse-server"
             rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt ||:
-            echo -e "Cannot start clickhouse-server$FAIL$(trim_server_logs application_errors.txt)" >> /test_output/test_results.tsv
+            printf "Cannot start clickhouse-server$FAIL%s\n" "$(trim_server_logs application_errors.txt)" >> /test_output/test_results.tsv
             cat /var/log/clickhouse-server/stdout.log
             tail -n100 /var/log/clickhouse-server/stderr.log
             tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
@@ -319,7 +321,7 @@ function check_server_start()
 {
     clickhouse-client --receive_timeout 30 --query "SELECT 'Server successfully started', 'OK', NULL, ''" >> /test_output/test_results.tsv \
         || (rg --text "<Error>.*Application" /var/log/clickhouse-server/clickhouse-server.log > /test_output/application_errors.txt \
-        && echo -e "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL$(trim_server_logs application_errors.txt)" \
+        && printf "Server failed to start (see application_errors.txt and clickhouse-server.clean.log)$FAIL%s\n" "$(trim_server_logs application_errors.txt)" \
         >> /test_output/test_results.tsv)
 
     # Remove file application_errors.txt if it's empty
@@ -337,7 +339,7 @@ function check_logs_for_critical_errors()
     #  - "Error during background download" printed by the filesystem cache background download worker (CacheMetadata):
     #    the prefetched object may be concurrently removed (DROP/mutation/part removal), the download is just marked failed and the data is re-read directly
     rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v -e "a.myext" -e "ReadBuffer is canceled by the exception" -e "DistributedCacheTCPHandler" -e "ReadBufferFromDistributedCache" -e "ReadBufferFromS3" -e "ReadBufferFromAzureBlobStorage" -e "AsynchronousBoundedReadBuffer" -e "Error during background download" -e "caller id: None:DistribCache" > /test_output/no_such_key_errors.txt \
-        && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
+        && printf "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL%s\n" "$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
         || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
 
     rg -Fa "it is lost forever" /var/log/clickhouse-server/clickhouse-server*.log | grep 'SharedMergeTreePartCheckThread' > /dev/null \
