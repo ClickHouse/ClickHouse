@@ -85,6 +85,12 @@ t04741_file_sibling	23
 -- arm K: a Buffer over a file-like target is pruned by name
 t04741_file_sibling	23
 -- arm K control: with no filter the same query opens the absent destination and fails
+-- arm L: a _database filter must not prune a wrapper over a file-like target
+-- arm M control: a wrapper stays pruned when the whole predicate rejects its target identity
+t04741_file_sibling	23
+-- arm N: same for a direct file-like child
+t04741_file_sibling	23
+-- arm O: a _table filter naming the forwarding target admits the wrapper
 -- arm I: a _table filter prunes the loop child, so the query terminates
 t04741_loop_sibling	31
 -- arm I control: the pruned plan really does not read it

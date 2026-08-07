@@ -316,6 +316,33 @@ SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_(buf|sibling)
 SELECT '-- arm K control: with no filter the same query opens the absent destination and fails';
 SELECT count() FROM merge(currentDatabase(), '^t04741_file_(buf|sibling)$'); -- { serverError FILE_DOESNT_EXIST }
 
+-- Arm L is arm K under the other predicate. The target declares no `_database`, so the wrapper's rows
+-- carry an empty one, which the wrapper's own database name never matches: a `_database` predicate must
+-- not prune it. Arm G is the same pair for a direct file-like child. Filtering for the empty value is
+-- what discriminates; `_database = currentDatabase()` matches the wrapper's name and is kept either way.
+SELECT '-- arm L: a _database filter must not prune a wrapper over a file-like target';
+SELECT count() FROM merge(currentDatabase(), '^t04741_file_(buf|sibling)$')
+    WHERE _database = ''; -- { serverError FILE_DOESNT_EXIST }
+
+-- Arms M and N are the other direction of the same rule: pruning is sound whenever the predicate
+-- rejects the identity the rows carry, whichever names it reads. Both filter the sibling by name and
+-- also require a `_database` the file-like rows can never have, so the child must still be pruned and
+-- its absent file never opened. Arm N is the witness: a rule keyed on which names the predicate reads
+-- admits the child there and raises. Arm M reads 23 on master, on that rule and on this fix, so it is
+-- a control asserting the wrapper keeps being pruned rather than a witness for the change.
+SELECT '-- arm M control: a wrapper stays pruned when the whole predicate rejects its target identity';
+SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_(buf|sibling)$')
+    WHERE _table = 't04741_file_sibling' AND _database = currentDatabase() GROUP BY 1 ORDER BY 1;
+
+SELECT '-- arm N: same for a direct file-like child';
+SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_(child|sibling)$')
+    WHERE _table = 't04741_file_sibling' AND _database = currentDatabase() GROUP BY 1 ORDER BY 1;
+
+-- The wrapper's rows carry the TARGET's `_table`, so a predicate naming the target must admit it.
+SELECT '-- arm O: a _table filter naming the forwarding target admits the wrapper';
+SELECT count() FROM merge(currentDatabase(), '^t04741_file_(buf|sibling)$')
+    WHERE _table = 't04741_file_buf_target'; -- { serverError FILE_DOESNT_EXIST }
+
 DROP TABLE t04741_file_buf;
 DROP TABLE t04741_file_buf_target;
 DROP TABLE t04741_file_present;
