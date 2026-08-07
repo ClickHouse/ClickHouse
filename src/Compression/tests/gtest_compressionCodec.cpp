@@ -1635,7 +1635,7 @@ TEST(SZ3Test, DecompressRejectsOversizedInnerLosslessSize)
     }
     catch (const Exception & e)
     {
-        rejected_before_allocation = e.message().find("exceeds the allowed capacity") != std::string::npos;
+        rejected_before_allocation = e.message().contains("exceeds the allowed capacity");
     }
     ASSERT_TRUE(rejected_before_allocation)
         << "Decompression must reject the oversized inner lossless size before allocating it";
@@ -1761,7 +1761,7 @@ TEST(SZ3Test, DecompressRejectsTamperedInterpolationDimensions)
     }
     catch (const Exception & e)
     {
-        rejected_dimensions = e.message().find("stored dimensions do not match") != std::string::npos;
+        rejected_dimensions = e.message().contains("stored dimensions do not match");
     }
     ASSERT_TRUE(rejected_dimensions)
         << "Decompression must reject tampered interpolation dimensions before any out-of-bounds access";
