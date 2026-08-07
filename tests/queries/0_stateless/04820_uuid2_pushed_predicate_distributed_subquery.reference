@@ -1,0 +1,10 @@
+UUID2 column, UUID2 constant
+2
+UUID column, UUID2 constant
+2
+UUID2 column, UUID constant
+2
+UUID2 column, IN with UUID2 constants
+4
+pushed filter is in the remote plan
+1
