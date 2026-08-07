@@ -436,8 +436,23 @@ public:
                     std::vector<UInt32>().swap(narrow);
                 }
 
-                const auto merge = [&](auto & values)
+                const auto add = [&](auto & values)
                 {
+                    /// A publication allocates entry identifiers above every identifier already stored, so
+                    /// every addition follows the tail in the common case. Appending keeps publication
+                    /// proportional to the batch, where the merge below would scan the whole posting while
+                    /// the shard is locked exclusively and readers of that shard cannot proceed.
+                    if (values.empty() || static_cast<EntryId>(values.back()) < *additions_begin)
+                    {
+                        if (std::adjacent_find(additions_begin, additions_end) != additions_end)
+                            return false;
+
+                        values.insert(values.end(), additions_begin, additions_end);
+                        return true;
+                    }
+
+                    /// A resurrected key reuses the identifier it had before its tombstone, so its addition
+                    /// can precede identifiers already stored and the general merge is required.
                     auto existing = values.begin();
                     auto addition = additions_begin;
                     while (existing != values.end() && addition != additions_end)
@@ -460,8 +475,8 @@ public:
                 };
 
                 if (!wide.empty() || max_entry_id > std::numeric_limits<UInt32>::max())
-                    return merge(wide);
-                return merge(narrow);
+                    return add(wide);
+                return add(narrow);
             }
 
             bool erase(EntryId entry_id)

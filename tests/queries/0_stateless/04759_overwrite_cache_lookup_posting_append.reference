@@ -1,0 +1,27 @@
+-- successive batches append to one shared posting
+3000	3000	0	2999
+3000
+-- a second key value interleaves without disturbing the first
+3000
+500
+500
+-- overwriting live keys adds no posting entries
+3000	1
+3500
+-- one batch mixes a resurrected identifier with identifiers past the tail
+2999
+3002
+3002
+resurrected
+7	resurrected
+9001	fresh-a
+9002	fresh-b
+-- a merged posting stays binary-searchable when two indexes are intersected
+100
+99
+102
+4	resurrected
+5000	fresh-a
+5001	fresh-b
+102
+402
