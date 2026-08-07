@@ -200,6 +200,7 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestFlushThrottling)
     DB::KeeperLogStore changelog(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000},
         DB::FlushSettings{.max_flush_batch_size = 1000, .min_time_between_fsyncs_ms = 100},
+        DB::ReadAheadSettings{},
         this->keeper_context);
     changelog.init(0, 0);
 
