@@ -99,7 +99,9 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
 /// `queryKindRequiresMutatingMethod` for the `Create` kind: `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW`
 /// need only the `CREATE_TEMPORARY_TABLE` access flag, which `ContextAccess` still allows under `readonly = 2`
 /// (the mode a safe HTTP method such as `GET` sets); they are rejected only under `readonly = 1`. So a temporary
-/// -object create is runnable over `GET` and must not require a mutating method here.
+/// -object create is runnable over `GET` and must not require a mutating method here. Its session-visible side
+/// effects are fenced off separately by `queryHasSideEffectsUnderReadonly`, which requires *every* method of
+/// such a handler to be a mutating one.
 bool queryRequiresMutatingMethod(const IAST & query)
 {
     if (const auto * create = query.as<ASTCreateQuery>(); create && create->isTemporary())
@@ -164,10 +166,27 @@ bool queryKindHasSideEffectsUnderReadonly(IAST::QueryKind kind)
     }
 }
 
-/// A short description of a side-effecting-under-readonly query kind for the error message.
-std::string_view describeSideEffectsUnderReadonly(IAST::QueryKind kind)
+/// Whether the concrete query still produces side effects under `readonly = 2`. This refines
+/// `queryKindHasSideEffectsUnderReadonly` for the `Create` kind: `CREATE TEMPORARY TABLE` /
+/// `CREATE TEMPORARY VIEW` need only the `CREATE_TEMPORARY_TABLE` access flag, which `ContextAccess` still
+/// allows under `readonly = 2` (the mode a safe HTTP method such as `GET` sets), and the created object lives
+/// in the session - with `session_id` it persists across requests, so a `GET` (or the implicitly served `HEAD`)
+/// would invisibly mutate session state. `WATCH` also reports `QueryKind::Create` but is a read-only streaming
+/// query without such effects; it is not an `ASTCreateQuery`, so it does not enter the branch.
+bool queryHasSideEffectsUnderReadonly(const IAST & query)
 {
-    switch (kind)
+    if (const auto * create = query.as<ASTCreateQuery>(); create && create->isTemporary())
+        return true;
+    return queryKindHasSideEffectsUnderReadonly(query.getQueryKind());
+}
+
+/// A short description of a side-effecting-under-readonly query kind for the error message.
+std::string_view describeSideEffectsUnderReadonly(const IAST & query)
+{
+    if (const auto * create = query.as<ASTCreateQuery>(); create && create->isTemporary())
+        return "a CREATE TEMPORARY query, which creates an object living in the session";
+
+    switch (query.getQueryKind())
     {
         case IAST::QueryKind::Backup: return "a BACKUP query, which writes a backup";
         case IAST::QueryKind::Restore: return "a RESTORE query, which writes data into tables";
@@ -200,6 +219,26 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     const String type = create.handler_type.value_or("query");
     if (type != "query")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported handler type `{}`, only `query` is supported", type);
+
+    /// The handler query is persisted as formatted text (see `handler->query` below), and
+    /// `ASTInsertQuery::formatImpl` intentionally drops the inline payload that follows `VALUES` or the
+    /// `FORMAT` clause - the stored handler would silently execute a different query (`INSERT INTO t VALUES`
+    /// with no rows) than the one the user wrote, and would also be misclassified as reading the request body.
+    /// An INSERT handler takes its data from the HTTP request body instead, so reject inline data outright.
+    /// Today such a query cannot reach this point via SQL - `ParserInsertQuery` leaves the payload unconsumed,
+    /// so the enclosing CREATE/ALTER HANDLER statement fails to parse (see
+    /// `04823_handler_insert_inline_data`) - but the check keeps the lossy-canonicalization invariant explicit
+    /// rather than dependent on that parser behavior.
+    if (const auto * insert = create.query->as<ASTInsertQuery>(); insert && insert->hasInlinedData())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Handler `{}` query is an INSERT with inline data after the VALUES or FORMAT clause. "
+            "Inline data cannot be preserved in a handler definition. "
+            "Leave the data out and send it in the HTTP request body "
+            "(for example, AS INSERT INTO t FORMAT TSV), or compute it in the query itself "
+            "with INSERT ... SELECT.",
+            create.handler_name);
+    }
 
     auto handler = std::make_shared<SQLDefinedHandler>();
     handler->name = create.handler_name;
@@ -240,11 +279,12 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
 
     /// The `readonly` enforcement above cannot fence off queries whose side effects survive `readonly = 2` - the
     /// mode that safe methods set: `BACKUP` / `RESTORE` write durable data, and `SET` / `SET ROLE` / `USE` /
-    /// transaction control mutate session state that persists across requests when `session_id` is in use. A safe
-    /// method must never trigger them - `GET` is expected to be side-effect-free, and a declared `GET` is also
-    /// served for `HEAD` (see `HTTPHandlerFactory`), where the suppressed response body would hide the effect
-    /// entirely. So require *every* allowed method of such a handler to be a mutating one.
-    if (queryKindHasSideEffectsUnderReadonly(create.query->getQueryKind())
+    /// transaction control / `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW` mutate session state that
+    /// persists across requests when `session_id` is in use. A safe method must never trigger them - `GET` is
+    /// expected to be side-effect-free, and a declared `GET` is also served for `HEAD` (see `HTTPHandlerFactory`),
+    /// where the suppressed response body would hide the effect entirely. So require *every* allowed method of
+    /// such a handler to be a mutating one.
+    if (queryHasSideEffectsUnderReadonly(*create.query)
         && !std::all_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -252,7 +292,7 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
             "but the handler's allowed HTTP methods ({}) include read-only ones. "
             "List only mutating methods (POST, PUT, or DELETE) in the METHODS clause.",
             create.handler_name,
-            describeSideEffectsUnderReadonly(create.query->getQueryKind()),
+            describeSideEffectsUnderReadonly(*create.query),
             fmt::join(handler->methods, ", "));
     }
 

@@ -48,13 +48,14 @@ echo "=== a lengthless non-chunked DELETE to a body-consuming handler is rejecte
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HDEL\` URL '${P}/del' METHODS (DELETE) AS INSERT INTO ${DB}.t FORMAT TSV"
 ${CLICKHOUSE_CURL} -sS -X DELETE -I "${BASE}${P}/del" | grep -c '411 Length Required'
 
-echo "=== CREATE TEMPORARY TABLE is allowed over a read-only (GET) handler method ==="
-# CREATE TEMPORARY TABLE needs only CREATE_TEMPORARY_TABLE, which is allowed under readonly = 2 (the mode
-# GET sets), so the create-time mutating-method gate must not reject it.
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HTMP\` URL '${P}/tmp' AS CREATE TEMPORARY TABLE tt (x UInt8) ENGINE = Memory" && echo "temp table handler created"
+echo "=== CREATE TEMPORARY TABLE is allowed over mutating-only handler methods ==="
+# CREATE TEMPORARY TABLE needs only CREATE_TEMPORARY_TABLE, which is allowed under readonly = 2, but the
+# created object lives in the session, so the handler must list only mutating methods (the safe-method
+# rejection is pinned in `04822_handler_temporary_object_safe_methods`).
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HTMP\` URL '${P}/tmp' METHODS (POST) AS CREATE TEMPORARY TABLE tt (x UInt8) ENGINE = Memory" && echo "temp table handler created"
 
-echo "=== CREATE TEMPORARY VIEW is allowed over a read-only (GET) handler method ==="
-$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HTMPV\` URL '${P}/tmpv' AS CREATE TEMPORARY VIEW tv AS SELECT 1" && echo "temp view handler created"
+echo "=== CREATE TEMPORARY VIEW is allowed over mutating-only handler methods ==="
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HTMPV\` URL '${P}/tmpv' METHODS (POST) AS CREATE TEMPORARY VIEW tv AS SELECT 1" && echo "temp view handler created"
 
 echo "=== a non-temporary CREATE TABLE still requires a mutating handler method ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HTAB\` URL '${P}/tab' AS CREATE TABLE ${DB}.persistent (x UInt8) ENGINE = Memory" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1

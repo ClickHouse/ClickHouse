@@ -6,9 +6,9 @@
 1
 === a lengthless non-chunked DELETE to a body-consuming handler is rejected with 411 ===
 1
-=== CREATE TEMPORARY TABLE is allowed over a read-only (GET) handler method ===
+=== CREATE TEMPORARY TABLE is allowed over mutating-only handler methods ===
 temp table handler created
-=== CREATE TEMPORARY VIEW is allowed over a read-only (GET) handler method ===
+=== CREATE TEMPORARY VIEW is allowed over mutating-only handler methods ===
 temp view handler created
 === a non-temporary CREATE TABLE still requires a mutating handler method ===
 BAD_ARGUMENTS
