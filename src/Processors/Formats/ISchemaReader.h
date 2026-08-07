@@ -76,7 +76,7 @@ protected:
     DataTypePtr default_type;
     String hints_str;
     FormatSettings format_settings;
-    std::unordered_map<String, DataTypePtr> hints;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> hints;
     String hints_parsing_error;
 };
 

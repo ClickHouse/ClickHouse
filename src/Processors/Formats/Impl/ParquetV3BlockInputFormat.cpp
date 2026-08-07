@@ -276,7 +276,7 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
         return nullptr;
     if (row_group_ids.empty())
         return std::make_shared<ParquetFileBucketInfo>(matching_row_groups);
-    std::unordered_set<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
+    UnorderedSetWithMemoryTracking<size_t> matching_set(matching_row_groups.begin(), matching_row_groups.end());
     VectorWithMemoryTracking<size_t> filtered;
     for (size_t rg : row_group_ids)
         if (matching_set.contains(rg))
@@ -286,8 +286,8 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
 }
 
-void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
-void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
+void registerParquetFileBucketInfo(UnorderedMapWithMemoryTracking<String, FileBucketInfoPtr> & instances);
+void registerParquetFileBucketInfo(UnorderedMapWithMemoryTracking<String, FileBucketInfoPtr> & instances)
 {
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
 }

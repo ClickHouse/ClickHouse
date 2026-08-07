@@ -59,7 +59,7 @@ void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, 
 
     if (buckets_to_read_)
     {
-        row_groups_to_read = std::unordered_set<UInt64>{};
+        row_groups_to_read = UnorderedSetWithMemoryTracking<UInt64>{};
         for (auto rg : *buckets_to_read_)
             row_groups_to_read->insert(rg);
     }

@@ -161,11 +161,11 @@ private:
     Action row_action;
     /// Map from name of named Avro type (record, enum, fixed) to SkipFn.
     /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
-    std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
+    MapWithMemoryTracking<avro::Name, SkipFn> symbolic_skip_fn_map;
 
     /// Guard against infinite recursion in createDeserializeFn and createAction
     /// when Avro schema contains cyclic symbolic references (e.g. TypeA -> TypeB -> TypeA).
-    std::unordered_set<std::string> symbolic_deserialize_guard;
+    UnorderedSetWithMemoryTracking<std::string> symbolic_deserialize_guard;
 
     bool null_as_default = false;
 
@@ -212,7 +212,7 @@ private:
 
     std::shared_ptr<ConfluentSchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
-    std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
+    UnorderedMapWithMemoryTracking<SchemaId, AvroDeserializer> deserializer_cache;
     const AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);
 
     avro::InputStreamPtr input_stream;
@@ -233,7 +233,7 @@ public:
     /// that CREATE TABLE rejects.
     static DataTypePtr avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type = true);
 private:
-    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type);
+    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, UnorderedSetWithMemoryTracking<std::string> & seen_names, bool allow_nullable_tuple_type);
 
     bool confluent;
     const FormatSettings format_settings;

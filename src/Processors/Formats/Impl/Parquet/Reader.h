@@ -470,7 +470,7 @@ struct Reader
 
         Hyperrectangle hyperrectangle; // min/max for each column; parallel to extended_sample_block
 
-        std::deque<RowSubgroup> subgroups;
+        DequeWithMemoryTracking<RowSubgroup> subgroups;
 
         VectorWithMemoryTracking<std::pair</*start*/ size_t, /*end*/ size_t>> intersected_row_ranges_after_column_index;
 
@@ -498,7 +498,7 @@ struct Reader
     Prefetcher prefetcher;
 
     parq::FileMetaData file_metadata;
-    std::deque<RowGroup> row_groups;
+    DequeWithMemoryTracking<RowGroup> row_groups;
 
     /// Don't get confused in different column numberings (sorry there are so many):
     ///  * In parquet metadata, columns are listed in array `schema`.
@@ -561,7 +561,7 @@ struct Reader
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
 
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
-    void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
+    void prefilterAndInitRowGroups(const std::optional<UnorderedSetWithMemoryTracking<UInt64>> & row_groups_to_read);
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.

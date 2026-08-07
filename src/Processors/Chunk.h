@@ -141,7 +141,7 @@ private:
     void checkNumRowsIsConsistent();
 };
 
-using Chunks = std::vector<Chunk>;
+using Chunks = std::vector<Chunk>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// AsyncInsert needs two kinds of information:
 /// - offsets of different sub-chunks

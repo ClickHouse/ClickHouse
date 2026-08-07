@@ -114,7 +114,7 @@ private:
     std::condition_variable delivery_cv;
     std::exception_ptr exception;
     /// Nullopt means that ReadManager reads all row groups
-    std::optional<std::unordered_set<UInt64>> row_groups_to_read;
+    std::optional<UnorderedSetWithMemoryTracking<UInt64>> row_groups_to_read;
 
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, VectorWithMemoryTracking<Task> & out_tasks);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);

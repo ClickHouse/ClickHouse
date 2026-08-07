@@ -1,4 +1,5 @@
 #include <Processors/ResizeProcessor.h>
+#include <Common/QueueWithMemoryTracking.h>
 
 #include <Processors/Port.h>
 
@@ -173,7 +174,7 @@ IProcessor::Status StrictResizeProcessor::prepare(const UpdatedInputPorts & upda
         return Status::Finished;
     }
 
-    std::queue<InputPort *> inputs_with_data;
+    QueueWithMemoryTracking<InputPort *> inputs_with_data;
 
     for (auto * input_port : updated_inputs)
     {

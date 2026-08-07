@@ -42,7 +42,7 @@ protected:
     {
         struct RowValue
         {
-            std::map<String, String> labels;
+            MapWithMemoryTracking<String, String> labels;
             String value;
             String timestamp;
         };

@@ -59,7 +59,7 @@ public:
 
     class Cache : boost::noncopyable
     {
-        std::unordered_map<size_t, TemplateStructurePtr> cache;
+        UnorderedMapWithMemoryTracking<size_t, TemplateStructurePtr> cache;
         const size_t max_size;
 
     public:

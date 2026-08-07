@@ -287,7 +287,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::Enum8:
         {
             auto schema = avro::EnumSchema("enum8_" + toString(type_name_increment));    /// type names must be different for different types.
-            std::unordered_map<DataTypeEnum8::FieldType, size_t> enum_mapping;
+            UnorderedMapWithMemoryTracking<DataTypeEnum8::FieldType, size_t> enum_mapping;
             const auto & enum_values = assert_cast<const DataTypeEnum8 &>(*data_type).getValues();
             for (size_t i = 0; i < enum_values.size(); ++i)
             {
@@ -306,7 +306,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::Enum16:
         {
             auto schema = avro::EnumSchema("enum16" + toString(type_name_increment));
-            std::unordered_map<DataTypeEnum16::FieldType, size_t> enum_mapping;
+            UnorderedMapWithMemoryTracking<DataTypeEnum16::FieldType, size_t> enum_mapping;
             const auto & enum_values = assert_cast<const DataTypeEnum16 &>(*data_type).getValues();
             for (size_t i = 0; i < enum_values.size(); ++i)
             {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/SortDescription.h>
 #include <Processors/Chunk.h>
@@ -57,7 +58,7 @@ private:
 
     size_t next_output_port = 0;
 
-    std::deque<Chunk> chunks_cache;
+    DequeWithMemoryTracking<Chunk> chunks_cache;
 
     /// Compute remaining integral offset once total rows_cnt is known.
     void finalizeOffset();

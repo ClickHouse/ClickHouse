@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/StepWallClock.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -17,7 +18,7 @@ StepWallClockRegistry::StepWallClockRegistry()
 
 void StepWallClockRegistry::populateFromPlan(const QueryPlan & plan)
 {
-    std::vector<const QueryPlan::Node *> stack;
+    VectorWithMemoryTracking<const QueryPlan::Node *> stack;
     stack.push_back(plan.getRootNode());
 
     while (!stack.empty())

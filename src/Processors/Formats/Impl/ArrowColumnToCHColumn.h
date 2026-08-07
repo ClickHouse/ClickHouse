@@ -26,8 +26,8 @@ public:
         const Block & header_,
         const std::string & format_name_,
         const FormatSettings & format_settings_,
-        const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse_,
-        const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet_,
+        const std::optional<UnorderedMapWithMemoryTracking<String, String>> & parquet_columns_to_clickhouse_,
+        const std::optional<UnorderedMapWithMemoryTracking<String, String>> & clickhouse_columns_to_parquet_,
         bool allow_missing_columns_,
         bool null_as_default_,
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_,
@@ -60,8 +60,8 @@ public:
         bool case_insensitive_matching = false,
         bool allow_geoparquet_parser = true,
         bool enable_json_parsing = true,
-        const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse = std::nullopt,
-        const std::optional<std::unordered_map<String, String>> & clickhouse_columns_to_parquet = std::nullopt);
+        const std::optional<UnorderedMapWithMemoryTracking<String, String>> & parquet_columns_to_clickhouse = std::nullopt,
+        const std::optional<UnorderedMapWithMemoryTracking<String, String>> & clickhouse_columns_to_parquet = std::nullopt);
 
     struct DictionaryInfo
     {
@@ -77,7 +77,7 @@ private:
         std::shared_ptr<arrow::Field> field;
     };
 
-    using NameToArrowColumn = std::unordered_map<std::string, ArrowColumn>;
+    using NameToArrowColumn = UnorderedMapWithMemoryTracking<std::string, ArrowColumn>;
 
     Chunk arrowColumnsToCHChunk(
         const NameToArrowColumn & name_to_arrow_column,
@@ -101,10 +101,10 @@ private:
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary
     /// to LowCardinality every chunk we save it and reuse.
-    std::unordered_map<std::string, DictionaryInfo> dictionary_infos;
+    UnorderedMapWithMemoryTracking<std::string, DictionaryInfo> dictionary_infos;
 
-    std::optional<std::unordered_map<String, String>> parquet_columns_to_clickhouse;
-    std::optional<std::unordered_map<String, String>> clickhouse_columns_to_parquet;
+    std::optional<UnorderedMapWithMemoryTracking<String, String>> parquet_columns_to_clickhouse;
+    std::optional<UnorderedMapWithMemoryTracking<String, String>> clickhouse_columns_to_parquet;
 };
 
 }

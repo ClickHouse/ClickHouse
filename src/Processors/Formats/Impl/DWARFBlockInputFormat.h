@@ -85,8 +85,8 @@ private:
     std::mutex mutex;
     std::condition_variable deliver_chunk;
     std::condition_variable wake_up_threads;
-    std::deque<UnitState> units_queue;
-    std::deque<std::pair<Chunk, size_t>> delivery_queue;
+    DequeWithMemoryTracking<UnitState> units_queue;
+    DequeWithMemoryTracking<std::pair<Chunk, size_t>> delivery_queue;
     size_t units_in_progress = 0;
 
     std::optional<Elf> elf;

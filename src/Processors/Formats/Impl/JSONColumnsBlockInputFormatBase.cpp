@@ -250,7 +250,7 @@ void JSONColumnsSchemaReaderBase::transformTypesFromDifferentFilesIfNeeded(DataT
 
 NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
 {
-    std::unordered_map<String, DataTypePtr> names_to_types;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> names_to_types;
     VectorWithMemoryTracking<String> names_order;
     /// Read data block by block and determine the type for each column
     /// until max_rows_to_read/max_bytes_to_read is reached.

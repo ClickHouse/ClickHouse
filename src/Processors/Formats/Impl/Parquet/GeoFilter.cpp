@@ -105,7 +105,7 @@ VectorWithMemoryTracking<SpatialFilter> extractSpatialFilters(
     const DB::Block & sample_block)
 {
     VectorWithMemoryTracking<SpatialFilter> result;
-    std::unordered_set<const DB::ActionsDAG::Node *> visited;
+    UnorderedSetWithMemoryTracking<const DB::ActionsDAG::Node *> visited;
 
     /// Walk from DAG outputs, following only `and` nodes.
     /// Spatial predicates reachable via OR or other non-conjunctive paths are excluded

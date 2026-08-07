@@ -238,7 +238,7 @@ private:
     std::exception_ptr background_exception = nullptr;
 
     /// We use deque, because ProcessingUnit doesn't have move or copy constructor.
-    std::deque<ProcessingUnit> processing_units;
+    DequeWithMemoryTracking<ProcessingUnit> processing_units;
 
     std::mutex mutex;
     std::atomic_bool emergency_stop{false};

@@ -44,7 +44,7 @@ struct SchemaConverter
     size_t nullable_tuple_group_depth = 0;
 
     /// The key is the parquet column name, without ColumnMapper.
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
+    std::unordered_map<String, GeoColumnMetadata> geo_columns; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- geo metadata map, shared with ArrowIPC which keeps it std::unordered_map
 
     /// If precomputed_geo_columns has a value it is used directly (including the empty-map case)
     /// and the constructor skips parsing the "geo" key-value metadata. This ensures that a
@@ -52,7 +52,7 @@ struct SchemaConverter
     /// SchemaConverter to re-parse and rethrow. Pass std::nullopt to let SchemaConverter
     /// parse according to its own settings.
     SchemaConverter(const parq::FileMetaData &, const ReadOptions &, const Block *,
-                    std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt);
+                    std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns = std::nullopt); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- geo metadata map, shared with ArrowIPC which keeps it std::unordered_map
 
     void prepareForReading();
     NamesAndTypesList inferSchema();

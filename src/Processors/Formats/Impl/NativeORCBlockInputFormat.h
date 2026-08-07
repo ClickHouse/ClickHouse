@@ -91,7 +91,7 @@ protected:
     void onCancel() noexcept override { is_stopped = 1; }
 
 private:
-    static VectorWithMemoryTracking<int> calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes);
+    static VectorWithMemoryTracking<int> calculateSelectedStripes(int num_stripes, const std::unordered_set<int> & skip_stripes); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- FormatSettings::orc::skip_stripes is std::unordered_set
 
     void prepareFileReader();
     bool prepareStripeReader();
@@ -147,7 +147,7 @@ public:
     using ORCColumnPtr = const orc::ColumnVectorBatch *;
     using ORCTypePtr = const orc::Type *;
     using ORCColumnWithType = std::pair<ORCColumnPtr, ORCTypePtr>;
-    using NameToColumnPtr = std::unordered_map<std::string, ORCColumnWithType>;
+    using NameToColumnPtr = UnorderedMapWithMemoryTracking<std::string, ORCColumnWithType>;
 
     ORCColumnToCHColumn(
         const Block & header_,

@@ -495,8 +495,8 @@ public:
 };
 
 
-using InputPorts = std::list<InputPort>;
-using OutputPorts = std::list<OutputPort>;
+using InputPorts = std::list<InputPort>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using OutputPorts = std::list<OutputPort>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 
 void connect(OutputPort & output, InputPort & input, bool reconnect = false);

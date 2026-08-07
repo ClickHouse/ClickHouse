@@ -19,7 +19,7 @@ struct PuffinBlob
     Int64 offset = 0;
     Int64 length = 0;
     String compression_codec;
-    std::map<String, String> properties;
+    MapWithMemoryTracking<String, String> properties;
 };
 
 struct PuffinFooter

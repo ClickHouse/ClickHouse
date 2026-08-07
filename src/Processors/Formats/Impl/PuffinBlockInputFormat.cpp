@@ -280,7 +280,7 @@ void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_inde
 
 void parseStringValuedProperties(
     const Poco::JSON::Object::Ptr & props_obj,
-    std::map<String, String> * out,
+    MapWithMemoryTracking<String, String> * out,
     bool for_blob,
     size_t blob_index)
 {
@@ -760,7 +760,7 @@ NamesAndTypesList getPuffinSchema()
 
 void checkPuffinFormatHeader(const Block & header, const NamesAndTypesList & expected_schema, const char * format_name)
 {
-    std::unordered_map<String, DataTypePtr> name_to_type;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> name_to_type;
     for (const auto & [name, type] : expected_schema)
         name_to_type[name] = type;
 
@@ -863,7 +863,7 @@ Chunk PuffinMetadataInputFormat::read()
     MutableColumnPtr col_props_arr = ColumnArray::create(std::move(col_props_tuple), std::move(col_props_offsets));
     MutableColumnPtr col_props = ColumnMap::create(std::move(col_props_arr));
 
-    std::unordered_map<String, MutableColumnPtr> built;
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> built;
     built.emplace("blob_type",         std::move(col_type));
     built.emplace("snapshot_id",       std::move(col_snap));
     built.emplace("sequence_number",   std::move(col_seq));
@@ -941,7 +941,7 @@ Chunk PuffinInputFormat::read()
         }
 
         const Block & out_header = getPort().getHeader();
-        std::unordered_map<String, MutableColumnPtr> built;
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> built;
         built.emplace("referenced_data_file", std::move(col_file));
         if (need_deleted_rows)
             built.emplace("deleted_rows", std::move(col_rows));

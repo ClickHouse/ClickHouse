@@ -105,7 +105,7 @@ static NamesAndTypesList getHeaderForParquetMetadata()
 static void checkHeader(const Block & header)
 {
     auto expected_names_and_types = getHeaderForParquetMetadata();
-    std::unordered_map<String, DataTypePtr> name_to_type;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> name_to_type;
     for (const auto & [name, type] : expected_names_and_types)
         name_to_type[name] = type;
 

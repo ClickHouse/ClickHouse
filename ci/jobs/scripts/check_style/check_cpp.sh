@@ -276,11 +276,7 @@ directories_to_lint_std_containers_usages=(
     src/Functions
     src/IO
     src/Loggers
-    src/Processors/Executors
-    src/Processors/Merges
-    src/Processors/QueryPlan
-    src/Processors/Sources
-    src/Processors/Transforms
+    src/Processors
     src/QueryPipeline
     src/TableFunctions
 )

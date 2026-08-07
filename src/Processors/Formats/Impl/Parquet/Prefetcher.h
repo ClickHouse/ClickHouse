@@ -187,9 +187,9 @@ private:
     std::mutex mutex;
 
     /// Arenas.
-    std::deque<RequestState> requests;
-    std::deque<Task> tasks;
-    std::deque<RangeSet> range_sets;
+    DequeWithMemoryTracking<RequestState> requests;
+    DequeWithMemoryTracking<Task> tasks;
+    DequeWithMemoryTracking<RangeSet> range_sets;
 
     std::atomic<bool> ranges_finalized {false};
 

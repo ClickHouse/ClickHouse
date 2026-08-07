@@ -134,8 +134,8 @@ private:
     size_t threads_running = 0;
     std::atomic<size_t> bytes_in_flight{0};
 
-    std::deque<Task> task_queue;
-    std::deque<RowGroupState> row_groups;
+    DequeWithMemoryTracking<Task> task_queue;
+    DequeWithMemoryTracking<RowGroupState> row_groups;
     FormatFilterInfoPtr format_filter_info;
 };
 

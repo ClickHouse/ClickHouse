@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <Common/DequeWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block_fwd.h>
 #include <Core/SortDescription.h>
@@ -80,7 +81,7 @@ private:
     /// Round-robin cursor for selecting an available output port.
     size_t next_output_port = 0;
 
-    std::deque<Chunk> cached_chunks;
+    DequeWithMemoryTracking<Chunk> cached_chunks;
 
     /// Convert fractional limit/offset to integral values once total_input_rows is known.
     void finalizeLimits();

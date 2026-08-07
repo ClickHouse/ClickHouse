@@ -544,7 +544,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 const auto & nested_types = variant_type.getVariants();
 
                 using AvroUnionIndex = size_t;
-                std::map<AvroUnionIndex, ColumnVariant::Discriminator> union_index_to_global_discriminator;
+                MapWithMemoryTracking<AvroUnionIndex, ColumnVariant::Discriminator> union_index_to_global_discriminator;
                 VectorWithMemoryTracking<DeserializeFn> nested_deserializers;
                 nested_deserializers.reserve(root_node->leaves());
 
@@ -1060,7 +1060,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
             return AvroDeserializer::Action(createSkipFn(node));
 
         /// Check that all nested columns are Arrays.
-        std::unordered_map<String, DataTypePtr> nested_types;
+        UnorderedMapWithMemoryTracking<String, DataTypePtr> nested_types;
         for (const auto & name : nested_names)
         {
             auto type = header.getByName(name).type;
@@ -1313,11 +1313,11 @@ DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_
 {
     checkStackSize();
 
-    std::unordered_set<std::string> seen_names;
+    UnorderedSetWithMemoryTracking<std::string> seen_names;
     return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type);
 }
 
-DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type)
+DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, UnorderedSetWithMemoryTracking<std::string> & seen_names, bool allow_nullable_tuple_type)
 {
     switch (node->type())
     {

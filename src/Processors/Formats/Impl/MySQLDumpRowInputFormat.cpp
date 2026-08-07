@@ -146,7 +146,7 @@ static void skipQuery(ReadBuffer & in)
 }
 
 
-static bool skipUntilRowStartedWithOneOfKeywords(const std::unordered_set<String> & keywords, ReadBuffer & in, String * keyword_out = nullptr)
+static bool skipUntilRowStartedWithOneOfKeywords(const UnorderedSetWithMemoryTracking<String> & keywords, ReadBuffer & in, String * keyword_out = nullptr)
 {
     while (true)
     {
@@ -308,7 +308,7 @@ static MySQLQueryType skipToInsertOrCreateQuery(String & table_name, ReadBuffer 
     String keyword;
     MySQLQueryType type = MySQLQueryType::NONE;
     /// In MySQL dumps INSERT queries might be replaced with REPLACE queries.
-    std::unordered_set<String> keywords = {"insert", "replace"};
+    UnorderedSetWithMemoryTracking<String> keywords = {"insert", "replace"};
     if (!skip_create_query)
         keywords.insert("create");
 
