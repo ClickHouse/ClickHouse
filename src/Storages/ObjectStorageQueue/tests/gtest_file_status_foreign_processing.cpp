@@ -4,6 +4,12 @@
 
 using namespace DB;
 
+/// NOTE: the `Bugfix validation (unit tests)` CI job compiles this file against the
+/// merge base (without the fix) and expects it to fail at runtime there. Therefore the
+/// members added by the fix are referenced only from discarded-unless-present branches
+/// of `if constexpr (requires ...)` inside templates: without the fix the file still
+/// compiles, and the corresponding tests fail at runtime.
+
 namespace
 {
 
@@ -99,35 +105,135 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingHintIsClearedByLocalProcessi
     ASSERT_EQ(file_status->processed_rows.load(), 5UL);
 }
 
+namespace
+{
+
 /// A terminal state committed by another processor replaces the data of an abandoned
 /// local attempt: `Processed` must not keep a stale exception, and `Failed` must carry
 /// the exception of the processor which actually failed the file.
+template <typename FS>
+void expectForeignTerminalStateReplacesDataOfPreviousLocalAttempt()
+{
+    if constexpr (requires(FS fs) { fs.onTerminalStateByAnotherProcessor(FS::State::Processed, std::string{}, size_t{}); })
+    {
+        auto file_status = std::make_shared<FS>("data/file.csv");
+
+        file_status->onProcessing();
+        file_status->processed_rows = 10;
+        file_status->retries = 2;
+        file_status->onFailed("Cannot read the file");
+
+        /// Another processor has committed the file as processed.
+        file_status->onTerminalStateByAnotherProcessor(FS::State::Processed, "", /* retries_ */ 0);
+
+        ASSERT_EQ(file_status->state.load(), FS::State::Processed);
+        ASSERT_EQ(file_status->processed_rows.load(), 0UL);
+        ASSERT_EQ(file_status->processing_start_time.load(), 0);
+        ASSERT_EQ(file_status->processing_end_time.load(), 0);
+        ASSERT_EQ(file_status->getException(), "");
+        ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
+
+        /// Another processor has failed the file: its exception and retries are reported.
+        file_status->onProcessing();
+        file_status->processed_rows = 5;
+        file_status->onTerminalStateByAnotherProcessor(FS::State::Failed, "Cannot parse the file", /* retries_ */ 3);
+
+        ASSERT_EQ(file_status->state.load(), FS::State::Failed);
+        ASSERT_EQ(file_status->processed_rows.load(), 0UL);
+        ASSERT_EQ(file_status->getException(), "Cannot parse the file");
+        ASSERT_EQ(file_status->retries.load(), 3UL);
+    }
+    else
+        FAIL() << "FileStatus does not keep track of terminal states committed by another processor";
+}
+
+/// A terminal node discovered by the set-processing probe (`trySetProcessing` /
+/// `prepareSetProcessingRequests`) must refresh the whole cached record, with the same
+/// guards as the listing pre-filter: a record which already describes this terminal
+/// state (a local attempt) and a locally owned `Processing` state are kept.
+template <typename Metadata>
+void expectSetProcessingTerminalDiscoveryRefreshesWholeRecord()
+{
+    if constexpr (requires { typename Metadata::FileTerminalState; })
+    {
+        /// The dependent alias keeps this branch uninstantiated at the merge base.
+        using FS = typename Metadata::FileStatus;
+        using TerminalState = typename Metadata::FileTerminalState;
+        std::atomic<size_t> metadata_ref_count{0};
+
+        {
+            /// The file was failed by another processor after an abandoned local attempt:
+            /// the cached record follows the `failed` node instead of mixing in stale data.
+            auto file_status = std::make_shared<FS>("data/file.csv");
+            auto metadata = makeFileMetadata(file_status, metadata_ref_count);
+
+            file_status->onProcessing();
+            file_status->processed_rows = 10;
+            file_status->onFailed("Cannot read the file");
+            metadata->afterSetProcessing(/* success */ false, FS::State::Processing);
+            ASSERT_TRUE(file_status->isProcessingByAnotherProcessor());
+
+            metadata->afterSetProcessing(
+                /* success */ false,
+                FS::State::Failed,
+                TerminalState{FS::State::Failed, "Cannot parse the file", 3});
+
+            ASSERT_EQ(file_status->state.load(), FS::State::Failed);
+            ASSERT_EQ(file_status->processed_rows.load(), 0UL);
+            ASSERT_EQ(file_status->processing_start_time.load(), 0);
+            ASSERT_EQ(file_status->processing_end_time.load(), 0);
+            ASSERT_EQ(file_status->getException(), "Cannot parse the file");
+            ASSERT_EQ(file_status->retries.load(), 3UL);
+        }
+
+        {
+            /// The cached record of a file processed by THIS server is kept when its own
+            /// `processed` node is rediscovered by a later set-processing attempt.
+            auto file_status = std::make_shared<FS>("data/file.csv");
+            auto metadata = makeFileMetadata(file_status, metadata_ref_count);
+
+            file_status->onProcessing();
+            file_status->processed_rows = 7;
+            file_status->onProcessed();
+
+            metadata->afterSetProcessing(
+                /* success */ false,
+                FS::State::Processed,
+                TerminalState{FS::State::Processed});
+
+            ASSERT_EQ(file_status->state.load(), FS::State::Processed);
+            ASSERT_EQ(file_status->processed_rows.load(), 7UL);
+        }
+
+        {
+            /// A locally owned `Processing` state is updated by its owner on commit.
+            auto file_status = std::make_shared<FS>("data/file.csv");
+            auto metadata = makeFileMetadata(file_status, metadata_ref_count);
+
+            file_status->onProcessing();
+            file_status->processed_rows = 5;
+
+            metadata->afterSetProcessing(
+                /* success */ false,
+                FS::State::Processed,
+                TerminalState{FS::State::Processed});
+
+            ASSERT_EQ(file_status->state.load(), FS::State::Processing);
+            ASSERT_EQ(file_status->processed_rows.load(), 5UL);
+        }
+    }
+    else
+        FAIL() << "The set-processing probe does not report the discovered terminal node metadata";
+}
+
+}
+
 TEST(ObjectStorageQueueFileStatus, ForeignTerminalStateReplacesDataOfPreviousLocalAttempt)
 {
-    auto file_status = std::make_shared<FileStatus>("data/file.csv");
+    expectForeignTerminalStateReplacesDataOfPreviousLocalAttempt<FileStatus>();
+}
 
-    file_status->onProcessing();
-    file_status->processed_rows = 10;
-    file_status->retries = 2;
-    file_status->onFailed("Cannot read the file");
-
-    /// Another processor has committed the file as processed.
-    file_status->onTerminalStateByAnotherProcessor(FileStatus::State::Processed, "", /* retries_ */ 0);
-
-    ASSERT_EQ(file_status->state.load(), FileStatus::State::Processed);
-    ASSERT_EQ(file_status->processed_rows.load(), 0UL);
-    ASSERT_EQ(file_status->processing_start_time.load(), 0);
-    ASSERT_EQ(file_status->processing_end_time.load(), 0);
-    ASSERT_EQ(file_status->getException(), "");
-    ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
-
-    /// Another processor has failed the file: its exception and retries are reported.
-    file_status->onProcessing();
-    file_status->processed_rows = 5;
-    file_status->onTerminalStateByAnotherProcessor(FileStatus::State::Failed, "Cannot parse the file", /* retries_ */ 3);
-
-    ASSERT_EQ(file_status->state.load(), FileStatus::State::Failed);
-    ASSERT_EQ(file_status->processed_rows.load(), 0UL);
-    ASSERT_EQ(file_status->getException(), "Cannot parse the file");
-    ASSERT_EQ(file_status->retries.load(), 3UL);
+TEST(ObjectStorageQueueFileStatus, SetProcessingTerminalDiscoveryRefreshesWholeRecord)
+{
+    expectSetProcessingTerminalDiscoveryRefreshesWholeRecord<ObjectStorageQueueUnorderedFileMetadata>();
 }
