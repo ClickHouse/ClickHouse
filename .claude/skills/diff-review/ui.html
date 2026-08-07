@@ -137,6 +137,7 @@ import { CodeView, parseDiffFromFile } from 'https://esm.sh/@pierre/diffs@1.2.12
 const $ = (id) => document.getElementById(id);
 const root = $('review-root');
 
+const NONCE = '__DIFF_REVIEW_NONCE__'; // injected by server.mjs when serving this page
 const data = await (await fetch('/data')).json();
 $('repo').textContent = data.repo.split('/').pop();
 $('base').textContent = `vs ${data.base} · ${data.files.length} file(s)`;
@@ -404,7 +405,7 @@ async function submit(verdict) {
   };
   const res = await fetch('/submit', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-diff-review-nonce': NONCE },
     body: JSON.stringify(payload),
   });
   if (res.ok) {

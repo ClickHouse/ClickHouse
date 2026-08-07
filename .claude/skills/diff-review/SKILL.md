@@ -22,8 +22,12 @@ line comments, and hands them back to you as JSON. You must address every commen
    ```
 
    - `--base <ref>` — what to diff against. `HEAD` (default) reviews uncommitted
-     work: staged + unstaged + untracked files. To review already-committed branch
-     work before a PR, use the merge base: `--base $(git merge-base origin/main HEAD)`.
+     work: staged + unstaged + untracked files.
+   - `--committed` — review already-committed branch work before a PR: diffs
+     `<base>..HEAD` and ignores the working tree, so uncommitted or untracked
+     local edits never leak into the review. Combine it with the merge base
+     against the repo's default branch, e.g.
+     `--base $(git merge-base origin/master HEAD) --committed`.
    - The server prints the URL, opens the user's browser automatically, and stays
      alive until the user clicks **Finish review** in the UI, then exits 0.
    - The UI loads `@pierre/diffs` from esm.sh, so the browser needs network access.
