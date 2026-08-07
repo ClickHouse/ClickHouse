@@ -345,6 +345,15 @@ std::optional<UInt32> tryParseIPv4(const String & text)
 namespace
 {
 
+unsigned daysInMonth(Int64 year, unsigned month)
+{
+    static constexpr unsigned days[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    bool leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    if (month == 2 && leap)
+        return 29;
+    return days[month - 1];
+}
+
 /// Days from the civil epoch 1970-01-01 to the given date. Howard Hinnant's algorithm.
 Int64 daysFromCivil(Int64 year, unsigned month, unsigned day)
 {
@@ -491,15 +500,35 @@ std::optional<TimeValue> tryParseTimestamp(const String & text)
             auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
             if (ec == std::errc() && end == text.data() + text.size())
             {
+                /// The unit is inferred from the number of digits. A value beyond the Int64
+                /// nanosecond range (the year 2262) is rejected instead of silently
+                /// overflowing into a wrong epoch.
+                constexpr auto max_ns = std::numeric_limits<Int64>::max();
                 Int64 ns = 0;
                 if (value < 100'000'000'000ULL)
+                {
+                    if (value > static_cast<UInt64>(max_ns / nsecs_per_second))
+                        return {};
                     ns = static_cast<Int64>(value) * nsecs_per_second;
+                }
                 else if (value < 100'000'000'000'000ULL)
+                {
+                    if (value > static_cast<UInt64>(max_ns / nsecs_per_millisecond))
+                        return {};
                     ns = static_cast<Int64>(value) * nsecs_per_millisecond;
+                }
                 else if (value < 100'000'000'000'000'000ULL)
+                {
+                    if (value > static_cast<UInt64>(max_ns / nsecs_per_microsecond))
+                        return {};
                     ns = static_cast<Int64>(value) * nsecs_per_microsecond;
+                }
                 else
+                {
+                    if (value > static_cast<UInt64>(max_ns))
+                        return {};
                     ns = static_cast<Int64>(value);
+                }
 
                 TimeValue result;
                 result.has_timezone = true;
@@ -542,6 +571,10 @@ std::optional<TimeValue> tryParseTimestamp(const String & text)
     unsigned year = 0;
     if (!parseFixedNumber(base, pos, 4, year))
         return {};
+    /// Nanoseconds since the epoch are carried in Int64 (the DateTime64(9) range,
+    /// years 1678..2261); years outside it would overflow the epoch arithmetic.
+    if (year < 1678 || year > 2261)
+        return {};
     t.year = year;
 
     auto parse_component = [&](char separator, size_t digits, unsigned & value, TimePrecision component_precision)
@@ -565,7 +598,7 @@ std::optional<TimeValue> tryParseTimestamp(const String & text)
             return {};
         if (parse_component('-', 2, t.day, TimePrecision::Day))
         {
-            if (t.day < 1 || t.day > 31)
+            if (t.day < 1 || t.day > daysInMonth(t.year, t.month))
                 return {};
             if (parse_component('T', 2, t.hour, TimePrecision::Hour) || parse_component('t', 2, t.hour, TimePrecision::Hour))
             {
