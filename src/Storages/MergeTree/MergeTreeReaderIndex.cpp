@@ -44,7 +44,6 @@ size_t MergeTreeReaderIndex::readRows(
     size_t /* current_task_last_mark */,
     bool continue_reading,
     size_t max_rows_to_read,
-    size_t rows_offset,
     MutableColumns & res_columns)
 {
     if (res_columns.size() != 1)
@@ -56,12 +55,11 @@ size_t MergeTreeReaderIndex::readRows(
             res_columns.size());
     }
 
-
     /// Determine the starting row.
     if (!continue_reading)
         current_row = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(from_mark);
 
-    size_t starting_row = current_row + rows_offset;
+    size_t starting_row = current_row;
 
     if (!continue_reading && lazy_materializing_rows)
         next_lazy_row_it = std::lower_bound(lazy_materializing_rows->begin(), lazy_materializing_rows->end(), starting_row);

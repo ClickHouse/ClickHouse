@@ -409,7 +409,6 @@ size_t MergeTreeReaderTextIndex::readRows(
     size_t current_task_last_mark,
     bool continue_reading,
     size_t max_rows_to_read,
-    size_t rows_offset,
     MutableColumns & res_columns)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
@@ -419,17 +418,17 @@ size_t MergeTreeReaderTextIndex::readRows(
     if (continue_reading)
     {
         from_mark = current_mark;
-        from_row = current_row + rows_offset;
+        from_row = current_row;
     }
     else
     {
         /// Backward jump invalidates the per-token cursor cache: cached cursors are
         /// forward-only (their `linearOr` / `linearAnd` / `advance` walk segments from
-        /// `current_segment_idx` onward), so they cannot serve an earlier `row_offset`.
+        /// `current_segment_idx` onward), so they cannot serve an earlier row.
         if (from_mark < current_mark)
             resetCursors();
 
-        from_row = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
+        from_row = index_granularity.getMarkStartingRow(from_mark);
     }
 
     size_t total_rows = data_part_info_for_read->getRowCount();
@@ -471,7 +470,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
     {
         MutableColumns fallback_cols(fallback_columns_list.size());
-        fallback_reader->readRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, rows_offset, fallback_cols);
+        fallback_reader->readRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, fallback_cols);
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
             fallback_block.insert({std::move(fallback_cols[col_idx++]), col_name_type.type, col_name_type.name});
@@ -587,7 +586,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
         return result;
 
     /// Clip to `slice_range`, not the full mark, so postings stay in bounds on partial-mark
-    /// reads (`rows_offset > 0` or `max_rows_to_read` stops inside the mark).
+    /// reads (`max_rows_to_read` stops inside the mark).
     auto effective_range = mark_range->intersectWith(slice_range);
     if (!effective_range.has_value())
         return result;

@@ -138,7 +138,6 @@ void SerializationObjectCombinedPath::throwNoSerialization()
 
 void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
     IColumn & result_column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -152,12 +151,12 @@ void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
     /// Deserialize literal path into a temporary column.
     auto literal_column = dynamic_type->createColumn();
     literal_serialization->deserializeBinaryBulkWithMultipleStreams(
-        *literal_column, rows_offset, limit, settings, combined_state->literal_state, cache);
+        *literal_column, limit, settings, combined_state->literal_state, cache);
 
     /// Deserialize sub-object into a temporary column, then keep it as an immutable pointer (we only read it below).
     auto mutable_sub_object_column = sub_object_type->createColumn();
     sub_object_serialization->deserializeBinaryBulkWithMultipleStreams(
-        *mutable_sub_object_column, rows_offset, limit, settings, combined_state->sub_object_state, cache);
+        *mutable_sub_object_column, limit, settings, combined_state->sub_object_state, cache);
     ColumnPtr sub_object_column = std::move(mutable_sub_object_column);
 
     size_t rows = literal_column->size();

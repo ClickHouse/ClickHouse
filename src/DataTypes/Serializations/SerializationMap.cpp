@@ -3,10 +3,10 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationArrayOffsets.h>
 #include <DataTypes/Serializations/SerializationMapKeysOrValues.h>
 #include <DataTypes/Serializations/SerializationMapSize.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 
 #include <Columns/ColumnArray.h>
@@ -630,7 +630,7 @@ void SerializationMap::enumerateStreams(
         /// and sums them to produce the total map size per row.
         settings.path.push_back(Substream::ArraySizes);
         auto subcolumn_name = "size" + std::to_string(settings.array_level);
-        auto array_size_serialization = SerializationNamed::create(SerializationArrayOffsets::create(), subcolumn_name, SubstreamType::NamedOffsets);
+        auto array_size_serialization = SerializationNamed::create(SerializationNumber<UInt64>::create(), subcolumn_name, SubstreamType::NamedOffsets);
         auto map_size_serialization = SerializationMapSize::create(array_size_serialization, serialization_version);
         settings.path.back().data = SubstreamData(map_size_serialization)
             .withType(map_type ? std::make_shared<DataTypeUInt64>() : nullptr)
@@ -1327,7 +1327,6 @@ void SerializationMap::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -1345,7 +1344,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     {
         IColumn & nested_col = column_map.getNestedColumn();
         size_t prev_size = nested_col.size();
-        nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_col, rows_offset, limit, settings, map_state->nested_state, cache);
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_col, limit, settings, map_state->nested_state, cache);
         /// Cache the whole nested column so key subcolumn reads (map['key'] via SerializationMapKeyValue) reuse it.
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_col.getPtr(), nested_col.size() - prev_size);
         return;
@@ -1361,7 +1360,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
 
         IColumn & nested_col = column_map.getNestedColumn();
         size_t prev_size = nested_col.size();
-        nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_col, rows_offset, limit, settings, map_state->bucket_nested_states[0], cache);
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(nested_col, limit, settings, map_state->bucket_nested_states[0], cache);
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_col.getPtr(), nested_col.size() - prev_size);
 
         settings.path.pop_back();
@@ -1372,15 +1371,6 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
     /// otherwise fall back to bucket-ascending order (old parts without the index stream).
     else
     {
-        /// The `bucket_indexes` stream is a flat array with one entry per key-value pair, so the
-        /// number of entries that belong to the first `rows_offset` rows is not known in advance
-        /// and those entries cannot be skipped on their own. Read the skipped rows together with
-        /// the requested ones, reassemble the whole range in the original order and drop the
-        /// prefix afterwards, so that the index stream stays in sync with the bucket streams.
-        const bool reorder_with_skipped_rows = map_state->has_bucket_index && rows_offset != 0;
-        const size_t buckets_rows_offset = reorder_with_skipped_rows ? 0 : rows_offset;
-        const size_t buckets_limit = reorder_with_skipped_rows ? rows_offset + limit : limit;
-
         VectorWithMemoryTracking<ColumnPtr> map_buckets(buckets_info_state->buckets);
         for (size_t bucket = 0; bucket != buckets_info_state->buckets; ++bucket)
         {
@@ -1388,7 +1378,7 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
             settings.path.back().bucket = bucket;
             auto mutable_bucket = column_map.cloneEmpty();
             IColumn & bucket_nested = assert_cast<ColumnMap &>(*mutable_bucket).getNestedColumn();
-            nested_serialization->deserializeBinaryBulkWithMultipleStreams(bucket_nested, buckets_rows_offset, buckets_limit, settings, map_state->bucket_nested_states[bucket], cache);
+            nested_serialization->deserializeBinaryBulkWithMultipleStreams(bucket_nested, limit, settings, map_state->bucket_nested_states[bucket], cache);
             /// Put each bucket's nested column into the cache so that a key subcolumn read of the same bucket reuses it.
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, bucket_nested.getPtr(), bucket_nested.size());
             map_buckets[bucket] = std::move(mutable_bucket);
@@ -1411,20 +1401,10 @@ void SerializationMap::deserializeBinaryBulkWithMultipleStreams(
             auto bucket_index_column = map_state->bucket_index_type->createColumn();
             settings.path.push_back(Substream::MapBucketIndexes);
             map_state->bucket_index_serialization->deserializeBinaryBulkWithMultipleStreams(
-                *bucket_index_column, 0, total_kv_pairs, settings, map_state->bucket_index_state, cache);
+                *bucket_index_column, total_kv_pairs, settings, map_state->bucket_index_state, cache);
             settings.path.pop_back();
 
-            if (reorder_with_skipped_rows)
-            {
-                auto whole_range_column = column_map.cloneEmpty();
-                collectMapFromBucketsWithOrder(map_buckets, *bucket_index_column, *whole_range_column);
-                if (whole_range_column->size() > rows_offset)
-                    column_map.insertRangeFrom(*whole_range_column, rows_offset, whole_range_column->size() - rows_offset);
-            }
-            else
-            {
-                collectMapFromBucketsWithOrder(map_buckets, *bucket_index_column, column_map);
-            }
+            collectMapFromBucketsWithOrder(map_buckets, *bucket_index_column, column_map);
         }
         else
         {

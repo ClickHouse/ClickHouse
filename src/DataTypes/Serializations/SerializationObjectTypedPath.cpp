@@ -80,7 +80,6 @@ void SerializationObjectTypedPath::serializeBinaryBulkWithMultipleStreams(const 
 
 void SerializationObjectTypedPath::deserializeBinaryBulkWithMultipleStreams(
     IColumn & result_column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -89,7 +88,7 @@ void SerializationObjectTypedPath::deserializeBinaryBulkWithMultipleStreams(
     settings.path.push_back(Substream::ObjectData);
     settings.path.push_back(Substream::ObjectTypedPath);
     settings.path.back().object_path_name = path;
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, rows_offset, limit, settings, state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, state, cache);
     settings.path.pop_back();
     settings.path.pop_back();
 }

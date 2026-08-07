@@ -196,7 +196,7 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(MutableColumns & columns, s
     if (num_rows)
     {
         size_t rows_read = merge_tree_reader->readRows(
-            current_mark, current_task_last_mark, continue_reading, num_rows, 0, columns);
+            current_mark, current_task_last_mark, continue_reading, num_rows, columns);
         continue_reading = true;
 
         /// Zero rows_read maybe either because reading has finished

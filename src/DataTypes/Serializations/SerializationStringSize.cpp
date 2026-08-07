@@ -47,7 +47,6 @@ void SerializationStringSize::enumerateStreams(
 
 void SerializationStringSize::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -56,10 +55,10 @@ void SerializationStringSize::deserializeBinaryBulkWithMultipleStreams(
     switch (version)
     {
         case MergeTreeStringSerializationVersion::SINGLE_STREAM:
-            deserializeBinaryBulkWithoutSizeStream(column, rows_offset, limit, settings, state, cache);
+            deserializeBinaryBulkWithoutSizeStream(column, limit, settings, state, cache);
             break;
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
-            deserializeBinaryBulkWithSizeStream(column, rows_offset, limit, settings, state, cache);
+            deserializeBinaryBulkWithSizeStream(column, limit, settings, state, cache);
             break;
     }
 }
@@ -97,7 +96,6 @@ void SerializationStringSize::deserializeBinaryBulkStatePrefix(
 
 void SerializationStringSize::deserializeBinaryBulkWithoutSizeStream(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -107,16 +105,15 @@ void SerializationStringSize::deserializeBinaryBulkWithoutSizeStream(
     auto * string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithoutSizeStream>(state);
 
     if (string_state->need_string_data)
-        deserializeWithStringData(column, rows_offset, limit, settings, cache);
+        deserializeWithStringData(column, limit, settings, cache);
     else
-        deserializeWithoutStringData(column, rows_offset, limit, settings, cache);
+        deserializeWithoutStringData(column, limit, settings, cache);
 
     settings.path.pop_back();
 }
 
 void SerializationStringSize::deserializeWithStringData(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     SubstreamsCache * cache) const
@@ -134,7 +131,7 @@ void SerializationStringSize::deserializeWithStringData(
         double avg_value_size_hint
             = settings.get_avg_value_size_hint_callback ? settings.get_avg_value_size_hint_callback(settings.path) : 0.0;
 
-        serialization_string->deserializeBinaryBulk(*mutable_string_column, *stream, rows_offset, limit, avg_value_size_hint);
+        serialization_string->deserializeBinaryBulk(*mutable_string_column, *stream, limit, avg_value_size_hint);
 
         num_read_rows = mutable_string_column->size();
         string_column = std::move(mutable_string_column);
@@ -159,7 +156,7 @@ void SerializationStringSize::deserializeWithStringData(
 }
 
 void SerializationStringSize::deserializeWithoutStringData(
-    IColumn & column, size_t rows_offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache) const
+    IColumn & column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache) const
 {
     if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
     {
@@ -167,13 +164,6 @@ void SerializationStringSize::deserializeWithoutStringData(
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
-        for (size_t i = 0; unlikely(i < rows_offset); ++i)
-        {
-            UInt64 size = 0;
-            readVarUInt(size, *stream);
-            stream->ignore(size);
-        }
-
         size_t prev_size = column.size();
         auto & mutable_column_data = typeid_cast<ColumnVector<UInt64> &>(column).getData();
         mutable_column_data.resize(prev_size + limit);
@@ -196,7 +186,6 @@ void SerializationStringSize::deserializeWithoutStringData(
 
 void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & /* state */,
@@ -211,28 +200,13 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
-        /// Deserialize rows_offset + limit rows, we will apply rows_offset later.
-        deserializeBinaryBulk(column, *stream, 0, rows_offset + limit, 0);
+        deserializeBinaryBulk(column, *stream, limit, 0);
 
         if (cache)
         {
             size_t num_read_rows = column.size() - prev_size;
-            /// rows_offset is applied in place below, so cache an unmodified cut() copy for other readers of this substream.
-            if (rows_offset)
-                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.cut(prev_size, num_read_rows), num_read_rows);
-            else
-                addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
         }
-    }
-
-    /// Apply rows_offset if needed.
-    if (rows_offset)
-    {
-        auto & data = assert_cast<ColumnUInt64 &>(column).getData();
-        size_t actual_new_size = column.size() - rows_offset;
-        for (size_t i = prev_size; i != actual_new_size; ++i)
-            data[i] = data[i + rows_offset];
-        data.resize(actual_new_size);
     }
 
     settings.path.pop_back();

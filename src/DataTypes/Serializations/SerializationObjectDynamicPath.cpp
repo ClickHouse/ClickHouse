@@ -178,7 +178,6 @@ void SerializationObjectDynamicPath::serializeBinaryBulkWithMultipleStreams(cons
 
 void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
     IColumn & result_column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -194,13 +193,13 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
     {
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
-        nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, rows_offset, limit, settings, dynamic_path_state->nested_state, cache);
+        nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
     }
     else
     {
         settings.path.push_back(Substream::ObjectSharedData);
-        dynamic_path_state->shared_data_path_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, rows_offset, limit, settings, dynamic_path_state->nested_state, cache);
+        dynamic_path_state->shared_data_path_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
     }
 

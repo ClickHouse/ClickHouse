@@ -139,7 +139,6 @@ void SerializationNullable::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -157,7 +156,7 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
         else if (auto * stream = settings.getter(settings.path))
         {
             size_t prev_size = col.getNullMapColumn().size();
-            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
+            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
             size_t n = col.getNullMapColumn().size() - prev_size;
             addColumnWithNumReadRowsToSubstreamsCache(
                 cache, settings.path, col.getNullMapColumn().getPtr(), n);
@@ -166,7 +165,7 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     }
 
     settings.path.push_back(Substream::NullableElements);
-    nested->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), rows_offset, limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), limit, settings, state, cache);
     settings.path.pop_back();
 
     if (use_default_null_map)

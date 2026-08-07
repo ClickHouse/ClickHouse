@@ -121,7 +121,6 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
-        size_t /*rows_offset*/,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -155,7 +154,7 @@ public:
                 return;
 
             auto value = value_type->createColumn();
-            nested_serialization->deserializeBinaryBulk(*value, *stream, /*rows_offset=*/0, /*limit=*/1, /*avg_value_size_hint=*/0.0);
+            nested_serialization->deserializeBinaryBulk(*value, *stream, /*limit=*/1, /*avg_value_size_hint=*/0.0);
             if (value->size() != 1)
                 throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
                     "Expected exactly one per-part PQ codebook value but read {}", value->size());

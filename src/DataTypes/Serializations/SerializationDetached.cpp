@@ -63,8 +63,7 @@ void SerializationDetached::serializeBinaryBulk(
 void SerializationDetached::deserializeBinaryBulk(
     IColumn & column,
     ReadBuffer & istr,
-    [[maybe_unused]] size_t rows_offset,
-    size_t limit,
+    [[maybe_unused]]     size_t limit,
     [[maybe_unused]] double avg_value_size_hint) const
 {
     auto & blob_column = typeid_cast<ColumnBLOB &>(column);
@@ -79,7 +78,6 @@ void SerializationDetached::deserializeBinaryBulk(
 
 void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -100,7 +98,7 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
             return ColumnBLOB::fromBLOB(blob, wrapped_column->cloneEmpty(), nested_serialization, limit, format_settings);
         });
 
-    ISerialization::deserializeBinaryBulkWithMultipleStreams(column, rows_offset, limit, settings, state, cache);
+    ISerialization::deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
 }
 
 [[noreturn]] void SerializationDetached::throwInapplicable()

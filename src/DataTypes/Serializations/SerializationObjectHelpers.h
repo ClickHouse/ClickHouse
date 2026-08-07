@@ -31,6 +31,6 @@ void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn &
 /// Create a column that will contain indexes of paths from paths_column column based on provided mapping path_to_index.
 std::pair<ColumnPtr, DataTypePtr> createPathsIndexes(const std::unordered_map<std::string_view, size_t> & path_to_index, const IColumn & paths_column, size_t start, size_t end);
 /// Deserialize up to limit indexes from the read buffer and collect corresponding paths to the paths_column.
-void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t rows_offset, size_t limit);
+void deserializeIndexesAndCollectPaths(IColumn & paths_column, ReadBuffer & istr, std::vector<String> && paths, size_t limit);
 
 }

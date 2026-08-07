@@ -210,7 +210,6 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkStatePrefix(
 
 void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::DeserializeBinaryBulkStatePtr & state,
@@ -235,7 +234,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         else
         {
             auto mutable_map_column = DataTypeObject::getTypeOfSharedData()->createColumn();
-            serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_map_column, rows_offset, limit, settings, sub_object_shared_data_state->map_state, cache);
+            serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_map_column, limit, settings, sub_object_shared_data_state->map_state, cache);
             num_read_rows = mutable_map_column->size();
             map_column = std::move(mutable_map_column);
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, map_column, num_read_rows);
@@ -293,7 +292,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             else
             {
                 auto mutable_bucket_column = DataTypeObject::getTypeOfSharedData()->createColumn();
-                serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_bucket_column, rows_offset, limit, settings, sub_object_shared_data_state->bucket_map_states[bucket], cache);
+                serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_bucket_column, limit, settings, sub_object_shared_data_state->bucket_map_states[bucket], cache);
                 bucket_map_columns[bucket] = std::move(mutable_bucket_column);
                 addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, bucket_map_columns[bucket], bucket_map_columns[bucket]->size());
             }
@@ -315,7 +314,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             settings.path.back().bucket = bucket;
 
             auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(sub_object_shared_data_state->bucket_structure_states[bucket]);
-            auto structure_granules = SerializationObjectSharedData::deserializeStructure(rows_offset, limit, settings, *shared_data_structure_state, cache);
+            auto structure_granules = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
             auto paths_infos_granules = SerializationObjectSharedData::deserializePathsInfos(*structure_granules, *shared_data_structure_state, settings, cache);
             bucket_paths_data_granules[bucket] = SerializationObjectSharedData::deserializePathsData(*structure_granules, *paths_infos_granules, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, cache);
 

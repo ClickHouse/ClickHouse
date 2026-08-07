@@ -126,7 +126,7 @@ void MergeTreeIndexGranuleSet::deserializeBinary(ReadBuffer & istr, MergeTreeInd
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, 0, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, rows_to_read, settings, state, nullptr);
         elem.column = std::move(mutable_col);
 
         /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
@@ -194,7 +194,7 @@ void MergeTreeIndexBulkGranulesSet::deserializeBinary(size_t granule_num, ReadBu
         ISerialization::DeserializeBinaryBulkStatePtr state;
 
         serializations[i]->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, 0, rows_to_read, settings, state, nullptr);
+        serializations[i]->deserializeBinaryBulkWithMultipleStreams(*mutable_col, rows_to_read, settings, state, nullptr);
 
         {
             auto mutable_column = IColumn::mutate(std::move(block.getByPosition(i).column));

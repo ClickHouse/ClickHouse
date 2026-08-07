@@ -119,7 +119,6 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -201,9 +200,8 @@ private:
         DeserializeBinaryBulkSettings & settings,
         SubstreamsDeserializeStatesCache * cache);
 
-    std::pair<std::vector<size_t>, std::vector<size_t>> deserializeCompactDiscriminators(
+    std::vector<size_t> deserializeCompactDiscriminators(
         IColumn & discriminators_column,
-        size_t rows_offset,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,

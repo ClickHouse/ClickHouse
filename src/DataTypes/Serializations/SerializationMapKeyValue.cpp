@@ -4,7 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
-#include <Common/logger_useful.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -139,7 +139,6 @@ void SerializationMapKeyValue::deserializeBinaryBulkStatePrefix(
 
 void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -165,7 +164,7 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
     else
     {
         auto mutable_nested_column = nested_type->createColumn();
-        map_nested_serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_nested_column, rows_offset, limit, settings, map_key_value_state->nested_state, cache);
+        map_nested_serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_nested_column, limit, settings, map_key_value_state->nested_state, cache);
         num_read_rows = mutable_nested_column->size();
         nested_column = std::move(mutable_nested_column);
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_column, num_read_rows);

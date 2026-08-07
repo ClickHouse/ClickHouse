@@ -154,7 +154,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
 
 size_t MergeTreeReaderWide::readRows(
     size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read,
-    size_t rows_offset, MutableColumns & res_columns)
+    MutableColumns & res_columns)
 {
     size_t read_rows = 0;
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
@@ -205,7 +205,6 @@ size_t MergeTreeReaderWide::readRows(
                     continue_reading,
                     current_task_last_mark,
                     max_rows_to_read,
-                    rows_offset,
                     cache,
                     deserialize_states_cache);
 
@@ -244,7 +243,7 @@ size_t MergeTreeReaderWide::readRows(
         }
         catch (Exception & e)
         {
-            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, rows_offset));
+            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
         }
 
         throw;
@@ -617,7 +616,6 @@ void MergeTreeReaderWide::readData(
     bool continue_reading,
     size_t current_task_last_mark,
     size_t max_rows_to_read,
-    size_t rows_offset,
     ISerialization::SubstreamsCache & cache,
     ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache)
 {
@@ -693,7 +691,7 @@ void MergeTreeReaderWide::readData(
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
-        column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+        column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
 }
 
 std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()

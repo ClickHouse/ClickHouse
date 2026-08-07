@@ -241,7 +241,7 @@ void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, 
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be serialized with multiple streams", column.getName());
 }
 
-void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, size_t, double) const
+void ISerialization::deserializeBinaryBulk(IColumn & column, ReadBuffer &, size_t, double) const
 {
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be deserialized with multiple streams", column.getName());
 }
@@ -261,7 +261,6 @@ void ISerialization::serializeBinaryBulkWithMultipleStreams(
 
 void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & /* state */,
@@ -279,7 +278,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
         double avg_value_size_hint = 0.0;
         if (settings.get_avg_value_size_hint_callback)
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
-        deserializeBinaryBulk(column, *stream, rows_offset, limit, avg_value_size_hint);
+        deserializeBinaryBulk(column, *stream, limit, avg_value_size_hint);
         size_t num_read_rows = column.size() - prev_size;
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
         if (settings.update_avg_value_size_hint_callback)

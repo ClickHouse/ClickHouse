@@ -841,7 +841,6 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -856,9 +855,8 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
         else if (ReadBuffer * stream = settings.getter(settings.path))
         {
             size_t prev_size = column.size();
-            auto ignored_size = stream->tryIgnore(rows_offset + limit);
-            auto delta = ignored_size < rows_offset ? 0 : ignored_size - rows_offset;
-            typeid_cast<ColumnTuple &>(column).addSize(delta);
+            auto ignored_size = stream->tryIgnore(limit);
+            typeid_cast<ColumnTuple &>(column).addSize(ignored_size);
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
         }
 
@@ -872,7 +870,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     for (size_t i = 0; i < elems.size(); ++i)
     {
         elems[i]->deserializeBinaryBulkWithMultipleStreams(
-            column_tuple.getColumn(i), rows_offset, limit, settings, tuple_state->states[i], cache);
+            column_tuple.getColumn(i), limit, settings, tuple_state->states[i], cache);
     }
 
     /// Verify that all Tuple elements have the same size.

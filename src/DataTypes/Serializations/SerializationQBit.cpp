@@ -455,14 +455,13 @@ void SerializationQBit::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationQBit::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
     auto & column_qbit = assert_cast<ColumnQBit &>(column);
-    nested->deserializeBinaryBulkWithMultipleStreams(column_qbit.getTupleColumn(), rows_offset, limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(column_qbit.getTupleColumn(), limit, settings, state, cache);
 }
 
 template <typename Word>

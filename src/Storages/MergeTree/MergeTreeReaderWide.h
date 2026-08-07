@@ -36,7 +36,6 @@ public:
         size_t current_task_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        size_t offset,
         MutableColumns & res_columns) override;
 
     bool canReadIncompleteGranules() const override { return true; }
@@ -84,7 +83,6 @@ private:
         bool continue_reading,
         size_t current_task_last_mark,
         size_t max_rows_to_read,
-        size_t rows_offset,
         ISerialization::SubstreamsCache & cache,
         ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
 

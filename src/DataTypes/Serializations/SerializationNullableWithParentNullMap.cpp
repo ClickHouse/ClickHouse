@@ -73,7 +73,6 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkStatePrefix(
 
 void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -94,7 +93,7 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     else if (auto * stream = settings.getter(settings.path))
     {
         auto mutable_parent_null_map = ColumnUInt8::create();
-        SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*mutable_parent_null_map, *stream, rows_offset, limit, 0);
+        SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*mutable_parent_null_map, *stream, limit, 0);
         parent_null_map = std::move(mutable_parent_null_map);
         parent_num_read_rows = parent_null_map->size();
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, parent_null_map, parent_num_read_rows);
@@ -114,7 +113,7 @@ void SerializationNullableWithParentNullMap::deserializeBinaryBulkWithMultipleSt
     MutableColumnPtr range_column = on_disk_type ? on_disk_type->createColumn(*nested_serialization) : column.cloneEmpty();
 
     settings.path.push_back(Substream::NullableElements);
-    nested_serialization->deserializeBinaryBulkWithMultipleStreams(*range_column, rows_offset, limit, settings, state, cache);
+    nested_serialization->deserializeBinaryBulkWithMultipleStreams(*range_column, limit, settings, state, cache);
     settings.path.pop_back();
 
     size_t new_rows = range_column->size();

@@ -182,7 +182,6 @@ void SerializationReplicated::deserializeBinaryBulkStatePrefix(
 
 void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -196,9 +195,6 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     /// - reading subcolumns of nested column.
     if (!settings.native_format)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Binary bulk deserialization of ColumnReplicated is supported only for Native format");
-
-    if (rows_offset != 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of rows_offset in Native format: {}. Expected 0", rows_offset);
 
     if (!column.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Reading into non-empty column ColumnReplicated is not supported in Native format");
@@ -227,19 +223,19 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
     {
         case sizeof(UInt8):
             indexes = ColumnUInt8::create();
-            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt8>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, limit, 0);
             break;
         case sizeof(UInt16):
             indexes = ColumnUInt16::create();
-            SerializationNumber<UInt16>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt16>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, limit, 0);
             break;
         case sizeof(UInt32):
             indexes = ColumnUInt32::create();
-            SerializationNumber<UInt32>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt32>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, limit, 0);
             break;
         case sizeof(UInt64):
             indexes = ColumnUInt64::create();
-            SerializationNumber<UInt64>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, 0, limit, 0);
+            SerializationNumber<UInt64>::create()->deserializeBinaryBulk(*indexes, *indexes_stream, limit, 0);
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for ColumnReplicated: {}", UInt32(size_of_indexes_type));
@@ -256,7 +252,7 @@ void SerializationReplicated::deserializeBinaryBulkWithMultipleStreams(
 
     size_t num_elements = 0;
     readVarUInt(num_elements, *elements_stream);
-    nested->deserializeBinaryBulkWithMultipleStreams(*column_replicated.getNestedColumn(), 0, num_elements, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(*column_replicated.getNestedColumn(), num_elements, settings, state, cache);
 }
 
 void SerializationReplicated::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const

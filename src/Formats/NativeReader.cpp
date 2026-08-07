@@ -117,7 +117,7 @@ void NativeReader::readData(
     ISerialization::DeserializeBinaryBulkStatePtr state;
 
     serialization.deserializeBinaryBulkStatePrefix(settings, state, nullptr);
-    serialization.deserializeBinaryBulkWithMultipleStreams(column, 0, rows, settings, state, nullptr);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
     if (column.size() != rows)
         throw Exception(

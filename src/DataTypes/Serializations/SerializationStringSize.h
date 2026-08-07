@@ -27,7 +27,6 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -47,14 +46,12 @@ private:
     /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
     void deserializeBinaryBulkWithSizeStream(
         IColumn & column,
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
         SubstreamsCache * cache) const;
     void deserializeBinaryBulkWithoutSizeStream(
         IColumn & column,
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -62,13 +59,12 @@ private:
 
     void deserializeWithStringData(
         IColumn & column,
-        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         SubstreamsCache * cache) const;
 
     void deserializeWithoutStringData(
-        IColumn & column, size_t rows_offset, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache) const;
+        IColumn & column, size_t limit, DeserializeBinaryBulkSettings & settings, SubstreamsCache * cache) const;
 };
 
 }

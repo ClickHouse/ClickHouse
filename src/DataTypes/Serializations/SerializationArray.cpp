@@ -3,7 +3,6 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
-#include <DataTypes/Serializations/SerializationArrayOffsets.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
@@ -259,7 +258,7 @@ void SerializationArray::enumerateStreams(
 
     auto subcolumn_name = "size" + std::to_string(settings.array_level);
     auto offsets_serialization = SerializationNamed::create(
-        SerializationArrayOffsets::create(),
+        SerializationNumber<UInt64>::create(),
         subcolumn_name, SubstreamType::NamedOffsets);
 
     auto offsets_column = offsets && !settings.position_independent_encoding
@@ -404,7 +403,7 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
         if (settings.position_independent_encoding)
             deserializeArraySizesPositionIndependent(offsets_column, *stream, limit);
         else
-            SerializationNumber<ColumnArray::Offset>::create()->deserializeBinaryBulk(offsets_column, *stream, 0, limit, 0);
+            SerializationNumber<ColumnArray::Offset>::create()->deserializeBinaryBulk(offsets_column, *stream, limit, 0);
 
         /// Verify offsets if the data comes over the network
         if (settings.native_format)
@@ -429,46 +428,28 @@ bool SerializationArray::deserializeOffsetsBinaryBulk(
     return false;
 }
 
-std::pair<size_t, size_t> SerializationArray::deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(
+size_t SerializationArray::deserializeOffsetsBinaryBulkAndGetNestedLimit(
     IColumn & offsets_column,
-    size_t offset,
     size_t limit,
     ISerialization::DeserializeBinaryBulkSettings & settings,
     ISerialization::SubstreamsCache * cache)
 {
     const auto & offsets_data = assert_cast<const ColumnArray::ColumnOffsets &>(offsets_column).getData();
     size_t prev_last_offset = offsets_data.back();
-    size_t prev_offset_size = offsets_data.size();
-    if (!deserializeOffsetsBinaryBulk(offsets_column, offset + limit, settings, cache))
-        return {0, 0};
+    if (!deserializeOffsetsBinaryBulk(offsets_column, limit, settings, cache))
+        return 0;
 
-    size_t skipped_nested_rows = 0;
-
-    /// Convert offsets array by removing the first rows_offset number of elements.
-    ColumnArray::Offsets & offset_values = assert_cast<ColumnArray::ColumnOffsets &>(offsets_column).getData();
-
-    if (offset)
-    {
-        size_t skipped_idx = std::min(prev_offset_size + offset, offset_values.size()) - 1;
-        skipped_nested_rows = offset_values[skipped_idx] - prev_last_offset;
-
-        for (auto i = prev_offset_size; i + offset < offset_values.size(); ++i)
-            offset_values[i] = offset_values[i + offset] - skipped_nested_rows;
-
-        offsets_column.popBack(offset);
-    }
+    const ColumnArray::Offsets & offset_values = assert_cast<const ColumnArray::ColumnOffsets &>(offsets_column).getData();
 
     /// Number of values corresponding with `offset_values` must be read.
     size_t last_offset = offset_values.back();
     if (last_offset < prev_last_offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Array elements column is longer (>{}) than the last offset ({})", prev_last_offset, last_offset);
-    size_t nested_limit = last_offset - prev_last_offset;
-    return {skipped_nested_rows, nested_limit};
+    return last_offset - prev_last_offset;
 }
 
 void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -477,7 +458,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
 
     settings.path.push_back(Substream::ArraySizes);
-    auto [skipped_nested_rows, nested_limit] = deserializeOffsetsBinaryBulkAndGetNestedOffsetAndLimit(column_array.getOffsetsColumn(), rows_offset, limit, settings, cache);
+    size_t nested_limit = deserializeOffsetsBinaryBulkAndGetNestedLimit(column_array.getOffsetsColumn(), limit, settings, cache);
 
     settings.path.back() = Substream::ArrayElements;
 
@@ -489,7 +470,7 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array sizes are too large: {}", nested_limit);
 
     nested->deserializeBinaryBulkWithMultipleStreams(
-        nested_column, skipped_nested_rows, nested_limit, settings, state, cache);
+        nested_column, nested_limit, settings, state, cache);
 
     settings.path.pop_back();
 

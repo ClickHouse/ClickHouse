@@ -197,7 +197,6 @@ void MergeTreeReaderCompact::readData(
     size_t column_idx,
     IColumn & column,
     size_t rows_to_read,
-    size_t rows_offset,
     size_t from_mark,
     size_t column_size_before_reading,
     MergeTreeReaderStream & stream,
@@ -278,7 +277,7 @@ void MergeTreeReaderCompact::readData(
             if (has_substream_marks)
             {
                 const auto & serialization = serializations[column_idx];
-                serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name], substreams_cache);
+                serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name], substreams_cache);
             }
             else
             {
@@ -291,7 +290,7 @@ void MergeTreeReaderCompact::readData(
                 if (!temp_full_column)
                 {
                     auto mutable_temp = type_in_storage->createColumn(*serialization);
-                    serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_temp, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], substreams_cache);
+                    serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_temp, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map_for_subcolumns[name_in_storage], substreams_cache);
                     temp_full_column = std::move(mutable_temp);
 
                     if (columns_cache_for_subcolumns)
@@ -305,7 +304,7 @@ void MergeTreeReaderCompact::readData(
         else
         {
             const auto & serialization = serializations[column_idx];
-            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_offset, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], substreams_cache);
+            serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, deserialize_binary_bulk_state_map[name], substreams_cache);
         }
 
         /// Cache the just-read column so other requested columns mapping to the same physical column in this

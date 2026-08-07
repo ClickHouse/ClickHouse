@@ -101,7 +101,6 @@ void SerializationVariantElementNullMap::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStreams(
     IColumn & result_column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -124,21 +123,19 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
             variant_element_null_map_state->discriminators_state);
 
         /// Deserialize discriminators into a fresh column according to serialization mode.
-        /// Don't skip rows_offset rows now, because we want to store discriminators without applied rows_offset in cache.
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
         {
             auto mutable_discriminators = ColumnVariant::ColumnDiscriminators::create();
             SerializationNumber<ColumnVariant::Discriminator>::create()->deserializeBinaryBulk(
-                *mutable_discriminators, *discriminators_stream, 0, rows_offset + limit, 0);
+                *mutable_discriminators, *discriminators_stream, limit, 0);
             discriminators = std::move(mutable_discriminators);
         }
         else
         {
             auto mutable_discriminators = ColumnVariant::ColumnDiscriminators::create();
-            auto variant_pair = SerializationVariantElement::deserializeCompactDiscriminators(
+            variant_limit = SerializationVariantElement::deserializeCompactDiscriminators(
                 *mutable_discriminators,
                 variant_discriminator,
-                rows_offset,
                 limit,
                 discriminators_stream,
                 settings.continuous_reading,
@@ -147,12 +144,9 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
                 num_variants,
                 this);
             discriminators = std::move(mutable_discriminators);
-
-            variant_limit = variant_pair.second;
         }
 
         num_read_discriminators = discriminators->size();
-        /// We are not going to apply rows_offsets to discriminators column here, so we can put it as is in the cache.
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, discriminators, num_read_discriminators);
     }
     else
@@ -166,7 +160,7 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
     }
     settings.path.pop_back();
 
-    size_t discriminators_offset = discriminators->size() - num_read_discriminators + rows_offset;
+    size_t discriminators_offset = discriminators->size() - num_read_discriminators;
 
     auto & data = assert_cast<ColumnUInt8 &>(result_column).getData();
     /// Check if there are no such variant in read range.

@@ -44,7 +44,6 @@ protected:
         size_t column_idx,
         IColumn & column,
         size_t rows_to_read,
-        size_t rows_offset,
         size_t from_mark,
         size_t column_size_before_reading,
         MergeTreeReaderStream & stream,

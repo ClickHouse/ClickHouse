@@ -347,7 +347,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr
         return &it->second.compressed.value();
     };
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(*column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(*column, max_rows_to_read, settings, deserialize_states[name], &cache);
     if (column->getDataType() != name_and_type.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
