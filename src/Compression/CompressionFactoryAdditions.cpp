@@ -22,6 +22,8 @@
 #include <Common/Exception.h>
 #include <Common/SetWithMemoryTracking.h>
 
+#include <limits>
+
 
 namespace DB
 {
@@ -235,6 +237,15 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 
         if (sanity_check)
         {
+            /// CompressionCodecMultiple stores the number of codecs in a single byte, so a longer chain
+            /// describes a part that cannot be read back. Being a sanity check, this is not enforced on
+            /// the metadata-load path, where an already stored table must stay loadable.
+            if (codecs_descriptions->children.size() > std::numeric_limits<UInt8>::max())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Too many codecs in the codec chain: {}. The number of codecs is stored in one byte, "
+                    "so at most {} are supported.",
+                    codecs_descriptions->children.size(), static_cast<size_t>(std::numeric_limits<UInt8>::max()));
+
             if (codecs_descriptions->children.size() > 1 && with_none_codec)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "It does not make sense to have codec NONE along with other compression codecs: {}. "
