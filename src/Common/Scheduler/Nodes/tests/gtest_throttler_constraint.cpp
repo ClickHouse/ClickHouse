@@ -243,7 +243,7 @@ TEST(SchedulerThrottlerConstraint, ThrottlingDurationSaturates)
     /// Cancelling the pending postponement must not undo the saturation: the total is a sentinel,
     /// and less than that postponement's whole delay went into it. Dropping the limit altogether is
     /// what makes a give-back observable, since then nothing re-postpones and re-adds it.
-    throttler.updateConstraints(/*max_speed=*/ 0.0, /*max_burst=*/ 0.0);
+    throttler.updateConstraints(/*new_max_speed=*/ 0.0, /*new_max_burst=*/ 0.0);
     EXPECT_EQ(throttler.getThrottlingDuration(), max_duration);
 }
 
@@ -263,13 +263,13 @@ TEST(SchedulerThrottlerConstraint, ThrottlingDurationIsNotDoubleCounted)
     /// Nothing has elapsed, so the whole delay is still pending and re-postponing it adds nothing.
     for (int i = 0; i < 3; i++)
     {
-        throttler.updateConstraints(max_speed, /*max_burst=*/ 0.0);
+        throttler.updateConstraints(max_speed, /*new_max_burst=*/ 0.0);
         EXPECT_EQ(throttler.getThrottlingDuration(), delay);
     }
 
     /// Halfway through, half the delay has been served and only the other half is re-postponed.
     t.process(start + delay / 2, 0);
-    throttler.updateConstraints(max_speed, /*max_burst=*/ 0.0);
+    throttler.updateConstraints(max_speed, /*new_max_burst=*/ 0.0);
     EXPECT_EQ(throttler.getThrottlingDuration(), delay);
 }
 
