@@ -4,6 +4,7 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperLogStore.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 #include <thread>
@@ -53,6 +54,32 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestSimple)
     EXPECT_EQ(changelog.last_entry()->get_term(), 77);
     EXPECT_EQ(changelog.entry_at(1)->get_term(), 77);
     EXPECT_EQ(changelog.log_entries(1, 2)->size(), 1);
+}
+
+TEST_P(CoordinationTestWithCompression, ChangelogTestFlushThrottling)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000},
+        DB::FlushSettings{.max_flush_batch_size = 1000, .min_time_between_fsyncs_ms = 100},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    Stopwatch watch;
+
+    /// The first flush is not throttled.
+    auto entry = getLogEntry("hello world", 77);
+    changelog.append(entry);
+    EXPECT_TRUE(changelog.flush());
+
+    /// The second flush must not start earlier than min_time_between_fsyncs_ms
+    /// after the start of the first one.
+    changelog.append(entry);
+    EXPECT_TRUE(changelog.flush());
+
+    EXPECT_GE(watch.elapsedMilliseconds(), 100);
 }
 
 TEST_P(CoordinationTestWithCompression, ChangelogTestFile)
