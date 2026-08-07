@@ -16,7 +16,10 @@ $CLICKHOUSE_CLIENT --query="OPTIMIZE TABLE small_table FINAL;"
 
 # optimize_trivial_count_with_sparsity_filter=0: keep the count reading data instead of being served
 # from the num_defaults counter (n's default is 0), otherwise nothing touches the uncompressed cache.
-cached_query="SELECT count() FROM small_table WHERE n > 0 SETTINGS optimize_trivial_count_with_sparsity_filter = 0;"
+# use_statistics=0, use_statistics_for_part_pruning=0: the test counts seeks and compressed bytes read
+# by the query, and loading column statistics during planning (e.g. with a randomized
+# use_statistics_cache=0, which rereads statistics from disk on every query) would inflate them.
+cached_query="SELECT count() FROM small_table WHERE n > 0 SETTINGS optimize_trivial_count_with_sparsity_filter = 0, use_statistics = 0, use_statistics_for_part_pruning = 0;"
 
 $CLICKHOUSE_CLIENT --log_queries 1 --use_uncompressed_cache 1 --query="$cached_query"
 $CLICKHOUSE_CLIENT --log_queries 1 --use_uncompressed_cache 1 --allow_prefetched_read_pool_for_remote_filesystem 0 --allow_prefetched_read_pool_for_local_filesystem 0 --query_id="test-query-uncompressed-cache" --query="$cached_query"
