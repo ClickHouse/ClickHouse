@@ -71,7 +71,7 @@ When serializing an [Enum](/reference/data-types/enum) value, the function outpu
 See also:
 - [output_format_json_quote_64bit_integers](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
 - [output_format_json_quote_denormals](/reference/settings/formats/output-format#output_format_json_quote_denormals)
-- [output_format_json_skip_null_value_in_json_columns](/reference/settings/formats/output-format#output_format_json_skip_null_value_in_json_columns)
+- [type_json_skip_null_paths_on_serialization](/reference/settings/formats/type-json#type_json_skip_null_paths_on_serialization)
     )";
     FunctionDocumentation::Syntax syntax = "toJSONString(value)";
     FunctionDocumentation::Arguments arguments = {

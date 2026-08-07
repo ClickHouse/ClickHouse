@@ -607,6 +607,9 @@ Possible values:
 + 0 — Disable (throw error on type mismatch).
 + 1 — Enable (skip field on type mismatch).
 )", 0) \
+    DECLARE(Bool, type_json_skip_null_paths_on_serialization, false, R"(
+Skips paths with null values when serializing `JSON` columns.
+)", 0) \
     DECLARE(UInt64Auto, max_dynamic_subcolumns_in_json_type_parsing, "auto", R"(
 The maximum number of dynamic subcolumns that can be created in every column during parsing of JSON column.
 It allows to control the number of dynamic subcolumns during parsing regardless of dynamic parameters specified in the data type.
@@ -1008,9 +1011,6 @@ Enabled by default.
 )", 0) \
     DECLARE(Bool, output_format_json_skip_null_value_in_named_tuples, false, R"(
 Skip key value pairs with null value when serialize named tuple columns as JSON objects. It is only valid when output_format_json_named_tuples_as_objects is true.
-)", 0) \
-    DECLARE(Bool, output_format_json_skip_null_value_in_json_columns, false, R"(
-Skips paths with null values when serializing `JSON` columns.
 )", 0) \
     DECLARE(Bool, output_format_json_array_of_rows, false, R"(
 Enables the ability to output all rows as a JSON array in the [JSONEachRow](/interfaces/formats/JSONEachRow) format.

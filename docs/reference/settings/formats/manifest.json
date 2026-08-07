@@ -218,7 +218,6 @@
     "output_format_json_quote_64bit_integers": "/reference/settings/formats/output-format",
     "output_format_json_quote_decimals": "/reference/settings/formats/output-format",
     "output_format_json_quote_denormals": "/reference/settings/formats/output-format",
-    "output_format_json_skip_null_value_in_json_columns": "/reference/settings/formats/output-format",
     "output_format_json_skip_null_value_in_named_tuples": "/reference/settings/formats/output-format",
     "output_format_json_validate_utf8": "/reference/settings/formats/output-format",
     "output_format_markdown_escape_special_characters": "/reference/settings/formats/output-format",
@@ -296,6 +295,7 @@
     "type_json_allow_duplicated_key_with_literal_and_nested_object": "/reference/settings/formats/type-json",
     "type_json_skip_duplicated_paths": "/reference/settings/formats/type-json",
     "type_json_skip_invalid_typed_paths": "/reference/settings/formats/type-json",
+    "type_json_skip_null_paths_on_serialization": "/reference/settings/formats/type-json",
     "type_json_use_partial_match_to_skip_paths_by_regexp": "/reference/settings/formats/type-json",
     "validate_experimental_and_suspicious_types_inside_nested_types": "/reference/settings/formats/other"
   },
