@@ -415,6 +415,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     {
         state.update(setting_change.name.size());
         state.update(setting_change.name);
+        state.update(setting_change.shorthand);
 
         auto setting_change_value_dump = setting_change.value.dump();
         state.update(setting_change_value_dump.size());

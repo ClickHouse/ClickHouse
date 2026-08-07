@@ -743,6 +743,38 @@ void addToEncodingsUsed(ColumnChunkWriteState & s, parq::Encoding::type e)
         s.column_chunk.meta_data.encodings.push_back(e);
 }
 
+/// Maintain PageEncodingStats as we write pages. Readers use it to tell whether a column chunk is
+/// fully dictionary-encoded (so the dictionary holds the complete set of values), which enables
+/// dictionary-based row group filtering.
+void addToEncodingStats(ColumnChunkWriteState & s, const parq::PageHeader & header)
+{
+    parq::Encoding::type encoding{};
+    if (header.__isset.dictionary_page_header)
+        encoding = header.dictionary_page_header.encoding;
+    else if (header.__isset.data_page_header)
+        encoding = header.data_page_header.encoding;
+    else if (header.__isset.data_page_header_v2)
+        encoding = header.data_page_header_v2.encoding;
+    else
+        return;
+
+    auto & stats = s.column_chunk.meta_data.encoding_stats;
+    for (parq::PageEncodingStats & st : stats)
+    {
+        if (st.page_type == header.type && st.encoding == encoding)
+        {
+            st.__set_count(st.count + 1);
+            return;
+        }
+    }
+    parq::PageEncodingStats st;
+    st.__set_page_type(header.type);
+    st.__set_encoding(encoding);
+    st.__set_count(1);
+    stats.push_back(std::move(st));
+    s.column_chunk.meta_data.__isset.encoding_stats = true;
+}
+
 void writePage(const parq::PageHeader & header, const PODArray<char> & compressed, ColumnChunkWriteState & s, bool add_to_offset_index, size_t first_row_index, WriteBuffer & out)
 {
     size_t header_size = serializeThriftStruct(header, out);
@@ -767,6 +799,8 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
 
     s.column_chunk.meta_data.total_uncompressed_size += header.uncompressed_page_size + header_size;
     s.column_chunk.meta_data.total_compressed_size += compressed_page_size;
+
+    addToEncodingStats(s, header);
 }
 
 void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkIndexes & indexes, const WriteOptions & options)
@@ -1082,21 +1116,26 @@ void writeColumnImpl(
 
             if (hashes_for_bloom_filter.has_value())
             {
+/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
+/// so any actual use triggers this warning.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
                 for (size_t i = 0; i < data_count; ++i)
                 {
                     UInt64 h = 0;
                     constexpr UInt64 seed = 0;
                     if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
-                        h = XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
+                        h = XXH_INLINE_XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
                     else if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-                        h = XXH64(converted[i].ptr, converted[i].len, seed);
+                        h = XXH_INLINE_XXH64(converted[i].ptr, converted[i].len, seed);
                     else
                     {
                         static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
-                        h = XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
+                        h = XXH_INLINE_XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
                     }
                     hashes_for_bloom_filter->insert(h);
                 }
+#pragma clang diagnostic pop
             }
 
             if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
@@ -1191,6 +1230,8 @@ void writeColumnChunkBody(
 
     /// We'll be updating these as we go.
     s.column_chunk.meta_data.__set_encodings({});
+    s.column_chunk.meta_data.encoding_stats.clear();
+    s.column_chunk.meta_data.__isset.encoding_stats = false;
     s.column_chunk.meta_data.__set_total_compressed_size(0);
     s.column_chunk.meta_data.__set_total_uncompressed_size(0);
     s.column_chunk.meta_data.__set_data_page_offset(-1);
