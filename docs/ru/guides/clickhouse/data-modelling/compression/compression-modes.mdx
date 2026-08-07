@@ -39,13 +39,13 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Блок
 </div>
 
-| поле                | тип     | описание                                                                                |
-| ------------------- | ------- | --------------------------------------------------------------------------------------- |
+| поле                | тип     | описание                                                                                   |
+| ------------------- | ------- | ------------------------------------------------------------------------------------------ |
 | checksum            | uint128 | [Хэш](/ru/resources/develop-contribute/native-protocol/hash) от (header + compressed data) |
-| raw&#95;size        | uint32  | Исходный размер без заголовка                                                           |
-| data&#95;size       | uint32  | Размер несжатых данных                                                                  |
-| mode                | byte    | Режим сжатия                                                                            |
-| compressed&#95;data | binary  | Блок сжатых данных                                                                      |
+| raw&#95;size        | uint32  | Исходный размер без заголовка                                                              |
+| data&#95;size       | uint32  | Размер несжатых данных                                                                     |
+| mode                | byte    | Режим сжатия                                                                               |
+| compressed&#95;data | binary  | Блок сжатых данных                                                                         |
 
 <Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="Диаграмма, иллюстрирующая структуру блока сжатия ClickHouse" />
 

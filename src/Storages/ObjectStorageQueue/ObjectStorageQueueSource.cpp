@@ -21,6 +21,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
+#include <Storages/IStreamingStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
@@ -65,6 +66,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
+    extern const char object_storage_queue_fail_tags_fetch[];
 }
 
 namespace ErrorCodes
@@ -164,6 +166,9 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
+    if (iterator_invalidated)
+        return true;
+
     std::lock_guard lock(mutex);
     LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
     return iterator_finished
@@ -385,6 +390,9 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 if (num_successful_objects != new_batch.size())
                 {
+                    /// file_metadatas is empty when the keeper tryMulti above failed and
+                    /// cleared it (see the chassert below); only compact it when populated.
+                    const bool compact_file_metadatas = !file_metadatas.empty();
                     size_t batch_i = 0;
                     for (size_t i = 0; i < num_successful_objects; ++i, ++batch_i)
                     {
@@ -400,10 +408,12 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
 
                         new_batch[i] = new_batch[batch_i];
-                        file_metadatas[i] = file_metadatas[batch_i];
+                        if (compact_file_metadatas)
+                            file_metadatas[i] = file_metadatas[batch_i];
                     }
                     new_batch.resize(num_successful_objects);
-                    file_metadatas.resize(num_successful_objects);
+                    if (compact_file_metadatas)
+                        file_metadatas.resize(num_successful_objects);
                 }
 
                 chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
@@ -497,7 +507,15 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (use_buckets_for_processing)
         {
+            refreshExpiringBucketLocks();
+
             std::lock_guard lock(mutex);
+
+            if (iterator_invalidated)
+            {
+                LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
+                return {};
+            }
             auto result = getNextKeyFromAcquiredBucket(processor);
             object_info = result.object_info;
             file_metadata = result.file_metadata;
@@ -597,6 +615,38 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     }
 }
 
+void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
+{
+    const size_t ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
+    if (!ttl_seconds)
+        return;
+
+    std::lock_guard lock(mutex);
+
+    /// Already invalidated (possibly by another thread), nothing to refresh.
+    /// Checked under the mutex to never hit the released holder of the lost lock.
+    if (iterator_invalidated)
+        return;
+    for (auto & [processor, holders] : bucket_holders)
+    {
+        for (auto & holder : *holders)
+        {
+            if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 4)
+            {
+                try
+                {
+                    holder->refresh();
+                }
+                catch (...)
+                {
+                    iterator_invalidated = true;
+                    throw;
+                }
+            }
+        }
+    }
+}
+
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
     std::lock_guard lock(mutex);
@@ -622,7 +672,15 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
                 chassert(holder->isFinished());
 
             /// Release bucket lock.
-            holder->release();
+            try
+            {
+                holder->release();
+            }
+            catch (...)
+            {
+                iterator_invalidated = true;
+                throw;
+            }
             ++released_holders;
 
             /// Reset bucket processor in cached state.
@@ -950,8 +1008,10 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const StorageID & storage_id_,
     LoggerPtr log_,
     bool commit_once_processed_,
+    bool is_direct_select_,
     bool add_deduplication_info_,
-    bool is_deduplication_v2_)
+    bool is_deduplication_v2_,
+    IStreamingStorage & streaming_storage_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
@@ -973,6 +1033,9 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , system_queue_log(system_queue_log_)
     , storage_id(storage_id_)
     , commit_once_processed(commit_once_processed_)
+    , is_direct_select(is_direct_select_)
+    , streaming_storage(streaming_storage_)
+    , cancel_epoch(streaming_storage_.currentCancelEpoch())
     , add_deduplication_info(add_deduplication_info_)
     , is_deduplication_v2(is_deduplication_v2_)
     , log(log_)
@@ -1024,6 +1087,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
     {
+        if (is_direct_select && streaming_storage.isConsumeCancelRequested(cancel_epoch))
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption aborted by SYSTEM STOP or SYSTEM CANCEL");
+
         if (isCancelled())
         {
             if (reader)
@@ -1157,6 +1223,30 @@ Chunk ObjectStorageQueueSource::generateImpl()
             LOG_TEST(log, "Will process file: {}", file_metadata->getPath());
 
             processed_files.emplace_back(file_metadata);
+
+            /// Tags are not fetched during listing (it lists with with_tags = false), so populate
+            /// them on demand here, once per file, only when _tags is requested. Must run after
+            /// emplace_back so a fetch failure fails the already-claimed file through the normal
+            /// commit accounting instead of leaving it orphaned.
+            if (read_from_format_info.requested_virtual_columns.contains("_tags"))
+            {
+                if (const auto & object_info_for_tags = reader.getObjectInfo())
+                {
+                    auto metadata_with_tags = object_info_for_tags->getObjectMetadata();
+                    if (metadata_with_tags && metadata_with_tags->tags.empty())
+                    {
+                        fiu_do_on(FailPoints::object_storage_queue_fail_tags_fetch, {
+                            throw Exception(
+                                ErrorCodes::UNKNOWN_EXCEPTION,
+                                "Failpoint-triggered tag fetch failure for file: {}", file_metadata->getPath());
+                        });
+
+                        metadata_with_tags->tags
+                            = object_storage->getObjectMetadata(object_info_for_tags->getPath(), /*with_tags=*/true).tags;
+                        object_info_for_tags->setObjectMetadata(*metadata_with_tags);
+                    }
+                }
+            }
         }
 
         chassert(file_metadata);
@@ -1288,6 +1378,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified,
                     .etag = &(object_metadata->etag),
+                    .tags = &(object_metadata->tags),
                 },
                 getContext(),
                 format_settings);
@@ -1699,9 +1790,9 @@ void ObjectStorageQueueSource::appendLogElement(
     const auto & file_path = file_metadata_->getPath();
     const auto & file_status = *file_metadata_->getFileStatus();
 
-    ObjectStorageQueueLogElement elem{};
+    system_queue_log->add([&](ObjectStorageQueueLogElement & element)
     {
-        elem = ObjectStorageQueueLogElement
+        element = ObjectStorageQueueLogElement
         {
             .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
             .database = storage_id.database_name,
@@ -1718,8 +1809,7 @@ void ObjectStorageQueueSource::appendLogElement(
             .transaction_start_time = transaction_start_time_,
             .get_object_time_ms = file_status.get_object_time_ms,
         };
-    }
-    system_queue_log->add(std::move(elem));
+    });
 }
 
 }

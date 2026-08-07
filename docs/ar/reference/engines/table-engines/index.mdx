@@ -31,6 +31,7 @@ doc_type: 'مرجع'
 
 | محركات MergeTree                                                                                               |
 | -------------------------------------------------------------------------------------------------------------- |
+| [نظرة عامة على عائلة MergeTree](/ar/reference/engines/table-engines/mergetree-family/index)                       |
 | [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)                                       |
 | [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree)                     |
 | [SummingMergeTree](/ar/reference/engines/table-engines/mergetree-family/summingmergetree)                         |
@@ -39,6 +40,10 @@ doc_type: 'مرجع'
 | [VersionedCollapsingMergeTree](/ar/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
 | [GraphiteMergeTree](/ar/reference/engines/table-engines/mergetree-family/graphitemergetree)                       |
 | [CoalescingMergeTree](/ar/reference/engines/table-engines/mergetree-family/coalescingmergetree)                   |
+| [البحث المتجهي الدقيق والتقريبي](/ar/reference/engines/table-engines/mergetree-family/annindexes)                 |
+| [مفتاح التقسيم المخصص](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key)              |
+| [محركات الجداول Replicated*](/ar/reference/engines/table-engines/mergetree-family/replication)                    |
+| [البحث النصي الكامل باستخدام فهارس النص](/ar/reference/engines/table-engines/mergetree-family/textindexes)        |
 
 <div id="log">
   ### Log
@@ -48,11 +53,12 @@ doc_type: 'مرجع'
 
 المحركات في هذه العائلة:
 
-| محركات Log                                                         |
-| ------------------------------------------------------------------ |
-| [TinyLog](/ar/reference/engines/table-engines/log-family/tinylog)     |
-| [StripeLog](/ar/reference/engines/table-engines/log-family/stripelog) |
-| [Log](/ar/reference/engines/table-engines/log-family/log)             |
+| محركات Log                                                            |
+| --------------------------------------------------------------------- |
+| [عائلة محركات Log](/ar/reference/engines/table-engines/log-family/index) |
+| [TinyLog](/ar/reference/engines/table-engines/log-family/tinylog)        |
+| [StripeLog](/ar/reference/engines/table-engines/log-family/stripelog)    |
+| [Log](/ar/reference/engines/table-engines/log-family/log)                |
 
 <div id="integration-engines">
   ### محركات التكامل
@@ -60,23 +66,37 @@ doc_type: 'مرجع'
 
 محركات للتواصل مع أنظمة أخرى لتخزين البيانات ومعالجتها.
 
-المحركات ضمن هذه العائلة:
+المحركات في هذه العائلة:
 
-| محركات التكامل                                                                    |
-| --------------------------------------------------------------------------------- |
-| [ODBC](/ar/reference/engines/table-engines/integrations/odbc)                         |
-| [JDBC](/ar/reference/engines/table-engines/integrations/jdbc)                        |
-| [MySQL](/ar/reference/engines/table-engines/integrations/mysql)                      |
-| [MongoDB](/ar/reference/engines/table-engines/integrations/mongodb)                  |
-| [Redis](/ar/reference/engines/table-engines/integrations/redis)                      |
-| [HDFS](/ar/reference/engines/table-engines/integrations/hdfs)                        |
-| [S3](/ar/reference/engines/table-engines/integrations/s3)                            |
-| [Kafka](/ar/reference/engines/table-engines/integrations/kafka)                      |
-| [EmbeddedRocksDB](/ar/reference/engines/table-engines/integrations/embedded-rocksdb) |
-| [RabbitMQ](/ar/reference/engines/table-engines/integrations/rabbitmq)                |
-| [PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql)            |
-| [S3Queue](/ar/reference/engines/table-engines/integrations/s3queue)                  |
-| [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series)           |
+| محركات التكامل                                                                                  |
+| ----------------------------------------------------------------------------------------------- |
+| [محركات الجداول للتكاملات](/ar/reference/engines/table-engines/integrations/index)                 |
+| [ODBC](/ar/reference/engines/table-engines/integrations/odbc)                                      |
+| [JDBC](/ar/reference/engines/table-engines/integrations/jdbc)                                      |
+| [MySQL](/ar/reference/engines/table-engines/integrations/mysql)                                    |
+| [MongoDB](/ar/reference/engines/table-engines/integrations/mongodb)                                |
+| [Redis](/ar/reference/engines/table-engines/integrations/redis)                                    |
+| [HDFS](/ar/reference/engines/table-engines/integrations/hdfs)                                      |
+| [S3](/ar/reference/engines/table-engines/integrations/s3)                                          |
+| [Kafka](/ar/reference/engines/table-engines/integrations/kafka)                                    |
+| [EmbeddedRocksDB](/ar/reference/engines/table-engines/integrations/embedded-rocksdb)               |
+| [RabbitMQ](/ar/reference/engines/table-engines/integrations/rabbitmq)                              |
+| [PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql)                          |
+| [S3Queue](/ar/reference/engines/table-engines/integrations/s3queue)                                |
+| [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series)                         |
+| [ArrowFlight](/ar/reference/engines/table-engines/integrations/arrowflight)                        |
+| [AzureQueue](/ar/reference/engines/table-engines/integrations/azure-queue)                         |
+| [AzureBlobStorage](/ar/reference/engines/table-engines/integrations/azureBlobStorage)              |
+| [DeltaLake](/ar/reference/engines/table-engines/integrations/deltalake)                            |
+| [ExternalDistributed](/ar/reference/engines/table-engines/integrations/ExternalDistributed)        |
+| [Hive](/ar/reference/engines/table-engines/integrations/hive)                                      |
+| [Hudi](/ar/reference/engines/table-engines/integrations/hudi)                                      |
+| [Iceberg](/ar/reference/engines/table-engines/integrations/iceberg)                                |
+| [MaterializedPostgreSQL](/ar/reference/engines/table-engines/integrations/materialized-postgresql) |
+| [NATS](/ar/reference/engines/table-engines/integrations/nats)                                      |
+| [Paimon](/ar/reference/engines/table-engines/integrations/paimon)                                  |
+| [SQLite](/ar/reference/engines/table-engines/integrations/sqlite)                                  |
+| [YTsaurus](/ar/reference/engines/table-engines/integrations/ytsaurus)                              |
 
 <div id="special-engines">
   ### المحركات الخاصة
@@ -86,6 +106,8 @@ doc_type: 'مرجع'
 
 | المحركات الخاصة                                                         |
 | ----------------------------------------------------------------------- |
+| [محركات الجداول الخاصة](/ar/reference/engines/table-engines/special/index) |
+| [اسم مستعار](/ar/reference/engines/table-engines/special/alias)            |
 | [Distributed](/ar/reference/engines/table-engines/special/distributed)     |
 | [Dictionary](/ar/reference/engines/table-engines/special/dictionary)       |
 | [Merge](/ar/reference/engines/table-engines/special/merge)                 |

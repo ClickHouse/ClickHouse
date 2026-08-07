@@ -121,6 +121,9 @@ public:
         return *storage;
     }
 
+    /// Issues a lock-free MVCC-style read view of the storage container.
+    std::unique_ptr<KeeperNodesReadView> getStorageReadView() const;
+
     void shutdownStorage();
 
     ClusterConfigPtr getClusterConfig() const;
@@ -139,19 +142,10 @@ public:
 
     KeeperStorageStats getStorageStats() const;
 
-    uint64_t getNodesCount() const;
-    uint64_t getTotalWatchesCount() const;
-    uint64_t getWatchedPathsCount() const;
-    uint64_t getSessionsWithWatchesCount() const;
-
     void dumpWatches(WriteBufferFromOwnString & buf) const;
     void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
     void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
 
-    uint64_t getSessionWithEphemeralNodesCount() const;
-    uint64_t getTotalEphemeralNodesCount() const;
-    uint64_t getApproximateDataSize() const;
-    uint64_t getKeyArenaSize() const;
     uint64_t getLatestSnapshotSize() const;
 
     void recalculateStorageStats();

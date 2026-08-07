@@ -676,7 +676,19 @@ Settings:
 - `processors` — For `EXPLAIN ANALYZE`, prints an additional line per stage with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
 
 <Note>
-The current version of `EXPLAIN ANALYZE` doesn't support queries executed in distributed mode.
+Because `EXPLAIN ANALYZE` actually executes the wrapped query, it behaves like that
+query — and unlike the non-executing `EXPLAIN` forms — in several ways:
+- **Quotas and limits.** It is charged against the same [quotas](/concepts/features/configuration/server-config/quotas)
+  and subject to the same [limits](/concepts/features/configuration/settings/query-complexity)
+  (e.g. `query_selects`, `read_rows`) as running the query directly. Sources exempt from quotas during planning
+  (such as `system.one`) are not charged.
+- **Failed transactions.** Inside a [transaction](/concepts/features/operations/insert/transactions)
+  that has already failed (`ROLLED_BACK`), it is rejected with `INVALID_TRANSACTION`,
+  just like a plain `SELECT` — issue `ROLLBACK` first.
+- **Streaming reads.** Over a streaming (`FROM ... STREAM`) read it is rejected with
+  `NOT_IMPLEMENTED`, because such a read never completes.
+- **Distributed queries.** It is not supported for queries executed in
+  [distributed](/reference/engines/table-engines/special/distributed) mode.
 </Note>
 
 Example:

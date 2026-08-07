@@ -1,31 +1,39 @@
 /// Measures `Base::BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN`: how a `timeSeries*ToGrid` finalize should visit its buckets in index
-/// order. The buckets live in an `UnorderedMapWithMemoryTracking<index, Bucket>` keyed by an index in
-/// `[0, bucket_count)`; finalize must process them in ascending index order. Two strategies, swept across
-/// densities:
+/// order. The buckets live in the production container `TimeSeriesBucketsMap` (a `HashMap` with `TrivialHash`)
+/// keyed by an index in `[0, bucket_count)`; finalize must process them in ascending index order. Two strategies,
+/// swept across densities:
 ///   - range scan: walk index 0..bucket_count and `find` each (the "dense" path); O(bucket_count).
-///   - collect + std::sort: gather the populated `(index, Bucket*)` and comparison-sort (the "sparse" path); O(n log n).
+///   - collect + sort: gather the populated `(index, Bucket*)` and comparison-sort with `::sort` (pdqsort, as
+///     production does; the "sparse" path); O(n log n).
 ///
 /// Each does the SAME per-bucket work (reads the bucket's sample), so the difference is the ordering cost
 /// (reported as ns per populated bucket). The range scan wins when buckets are dense and degrades as they get
-/// sparser; the smallest fill density `populated / bucket_count` at which it still beats `std::sort` is
+/// sparser; the smallest fill density `populated / bucket_count` at which it still beats the sort is
 /// `BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN` - i.e. use the range scan iff `populated / bucket_count >= factor`.
 ///
-/// (An earlier version also measured ClickHouse's `radixSort`; `std::sort` beat it for this n and 16-byte
-/// pointer-payload element, so radix was dropped.)
+/// With `TrivialHash` open addressing a cell's position is determined by the key (slot = key & mask), not by
+/// insertion order, so the map's memory layout is the same however the map was filled (bulk adds or a merge).
+/// When the table size exceeds `bucket_count` (high densities) iteration is even nearly index-ordered, which
+/// pdqsort exploits; the sweep covers both regimes.
 ///
-/// Driven over a production-shaped dataset (many series, buckets in node-based maps, working set > last-level
-/// cache) so the cache behaviour matches the real query.
+/// (An earlier version also measured ClickHouse's `radixSort`; the comparison sort beat it for this n and
+/// 16-byte pointer-payload element, so radix was dropped.)
+///
+/// Driven over a production-shaped dataset (many series, working set > last-level cache) so the cache behaviour
+/// matches the real query.
 ///
 /// Build: it is part of the `clickhouse-examples` multi-call binary.
 /// Run:   `clickhouse-examples timeseries_to_grid_range_scan_vs_std_sort`
 
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 
 #include <Common/Stopwatch.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Examples/clickhouse_examples.h>
+
+#include <base/sort.h>
 
 #include <fmt/format.h>
 #include <pcg_random.hpp>
@@ -48,7 +56,7 @@ constexpr Int64 STEP = 10;
 constexpr int REPEATS = 5;  /// timing iterations per measurement; the minimum over them is used
 
 using Bucket = AggregateFunctionTimeseriesSamples<UInt32, Float64>;
-using Buckets = UnorderedMapWithMemoryTracking<size_t, Bucket>;
+using Buckets = TimeSeriesBucketsMap<Bucket>;  /// the production bucket map type
 using Dataset = std::vector<Buckets>;  /// one Buckets map per series; STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 /// One populated bucket and its index, for the collect-and-sort strategy. Sorted by `index`.
@@ -89,16 +97,15 @@ Dataset buildDataset(Float64 density)
         for (size_t i = bucket_count - BASE_GRID; i < bucket_count; ++i)
         {
             const size_t candidate = static_cast<size_t>(rng() % (i + 1));
-            const size_t k = buckets.contains(candidate) ? i : candidate;
-            Bucket bucket;
-            bucket.add(static_cast<UInt32>(static_cast<Int64>(k) * STEP), static_cast<Float64>((k * 7 + series * 3) % 101));
-            buckets.emplace(k, std::move(bucket));
+            const size_t k = buckets.has(candidate) ? i : candidate;
+            /// Insert as production does: `operator[]` default-constructs the bucket, then samples are added.
+            buckets[k].add(static_cast<UInt32>(static_cast<Int64>(k) * STEP), static_cast<Float64>((k * 7 + series * 3) % 101));
         }
     }
     return dataset;
 }
 
-enum class Strategy { RangeScan, StdSort };
+enum class Strategy { RangeScan, Sort };
 
 /// Best (minimum over REPEATS) ns per populated bucket for one strategy over the whole dataset.
 Float64 measureNanoseconds(Strategy strategy, size_t bucket_count, const Dataset & dataset, Float64 & checksum)
@@ -113,9 +120,9 @@ Float64 measureNanoseconds(Strategy strategy, size_t bucket_count, const Dataset
             {
                 for (size_t i = 0; i < bucket_count; ++i)
                 {
-                    const auto it = buckets.find(i);
-                    if (it != buckets.end())
-                        checksum += processBucket(it->second);
+                    const auto * it = buckets.find(i);
+                    if (it)
+                        checksum += processBucket(it->getMapped());
                 }
             }
             else
@@ -123,9 +130,9 @@ Float64 measureNanoseconds(Strategy strategy, size_t bucket_count, const Dataset
                 /// Collect the populated buckets (a fresh vector per finalize, as production does), sort, process.
                 VectorWithMemoryTracking<IndexedBucket> ordered;
                 ordered.reserve(buckets.size());
-                for (const auto & [index, bucket] : buckets)
-                    ordered.push_back({static_cast<UInt32>(index), &bucket});
-                std::sort(ordered.begin(), ordered.end(),
+                for (const auto & entry : buckets)
+                    ordered.push_back({static_cast<UInt32>(entry.getKey()), &entry.getMapped()});
+                ::sort(ordered.begin(), ordered.end(),
                     [](const IndexedBucket & lhs, const IndexedBucket & rhs) { return lhs.index < rhs.index; });
                 for (const auto & indexed_bucket : ordered)
                     checksum += processBucket(*indexed_bucket.bucket);
@@ -145,8 +152,8 @@ int mainEntryExampleTimeSeriesToGridRangeScanVsStdSort(int, char **)
         NUM_SERIES, BASE_GRID);
     fmt::println("populated buckets is constant; bucket_count is the slot range the scan walks. Dense (range scan)");
     fmt::println("is chosen iff populated / bucket_count >= BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN.\n");
-    fmt::println("{:>22}  {:>12}  {:>14}  {:>14}  {:>30}  {:>10}",
-        "populated/bucket_count", "bucket_count", "range_scan(ns)", "std::sort(ns)", "ratio (range_scan / std::sort)", "winner");
+    fmt::println("{:>22}  {:>12}  {:>14}  {:>14}  {:>26}  {:>10}",
+        "populated/bucket_count", "bucket_count", "range_scan(ns)", "sort(ns)", "ratio (range_scan / sort)", "winner");
 
     Float64 checksum = 0;
     Float64 dense_factor = 0;    /// smallest populated/bucket_count at which the range scan still wins (the crossover)
@@ -156,16 +163,16 @@ int mainEntryExampleTimeSeriesToGridRangeScanVsStdSort(int, char **)
         const Dataset dataset = buildDataset(density);
         const size_t bucket_count = bucketCountForDensity(density);
         const Float64 range_scan_ns = measureNanoseconds(Strategy::RangeScan, bucket_count, dataset, checksum);
-        const Float64 std_sort_ns = measureNanoseconds(Strategy::StdSort, bucket_count, dataset, checksum);
-        const Float64 ratio = range_scan_ns / std_sort_ns;
-        const bool range_wins = range_scan_ns < std_sort_ns;
+        const Float64 sort_ns = measureNanoseconds(Strategy::Sort, bucket_count, dataset, checksum);
+        const Float64 ratio = range_scan_ns / sort_ns;
+        const bool range_wins = range_scan_ns < sort_ns;
         if (range_still_winning && range_wins)
             dense_factor = density;
         else
             range_still_winning = false;
         const Float64 actual_density = static_cast<Float64>(BASE_GRID) / static_cast<Float64>(bucket_count);
-        fmt::println("{:>22.3f}  {:>12}  {:>14.2f}  {:>14.2f}  {:>30.2f}  {:>10}",
-            actual_density, bucket_count, range_scan_ns, std_sort_ns, ratio, range_wins ? "range_scan" : "std::sort");
+        fmt::println("{:>22.3f}  {:>12}  {:>14.2f}  {:>14.2f}  {:>26.2f}  {:>10}",
+            actual_density, bucket_count, range_scan_ns, sort_ns, ratio, range_wins ? "range_scan" : "sort");
     }
 
     fmt::println("");

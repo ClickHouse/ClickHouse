@@ -10,14 +10,14 @@ keywords: ['kafka', 'vector', '日志收集', '可观测性', '集成']
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
 
 <div id="using-vector-with-kafka-and-clickhouse">
-  ## 使用 Vector、Kafka 和 ClickHouse
+  ## 将 Vector 与 Kafka 和 ClickHouse 结合使用
 </div>
 
 Vector 是一个与厂商无关的数据管道，能够从 Kafka 读取数据并将事件发送到 ClickHouse。
 
 面向 Vector 与 ClickHouse 的[入门](/zh/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse)指南主要聚焦于日志场景以及从文件中读取事件。这里我们使用 [GitHub 示例数据集](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson)，其中事件存放在 Kafka topic 中。
 
-Vector 使用 [sources](https://vector.dev/docs/about/concepts/#sources) 通过 push 或 pull 模型获取数据；同时，[sinks](https://vector.dev/docs/about/concepts/#sinks) 则作为事件的目标端。因此，我们这里使用 Kafka source 和 ClickHouse sink。请注意，虽然 Kafka 支持作为 Sink，但目前还没有可用的 ClickHouse source。因此，如果你想将数据从 ClickHouse 传输到 Kafka，就不适合使用 Vector。
+Vector 使用 [sources](https://vector.dev/docs/introduction/concepts/#sources) 通过 push 或 pull 模型获取数据；同时，[sinks](https://vector.dev/docs/introduction/concepts/#sinks) 则作为事件的目标端。因此，我们这里使用 Kafka source 和 ClickHouse sink。请注意，虽然 Kafka 支持作为 sink，但目前还没有可用的 ClickHouse source。因此，如果你想将数据从 ClickHouse 传输到 Kafka，就不适合使用 Vector。
 
 Vector 还支持对数据进行[转换](https://vector.dev/docs/reference/configuration/transforms/)。这不在本指南的讨论范围内；如有需要，请参考 Vector 文档来处理你的数据集。
 

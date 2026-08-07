@@ -46,6 +46,10 @@ SELECT
 
 Эта функция возвращает тот же результат, что и `now('UTC')`. Она была добавлена только для поддержки MySQL. Предпочтительно использовать [`now`](#now).
 
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -1648,8 +1652,8 @@ SELECT formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd
 
 ```response title=Response
 ┌─formatDateTimeInJodaSyntax(toDateTime('2010-01-04 12:34:56'), 'yyyy-MM-dd HH:mm:ss')─┐
-│ 2010-01-04 12:34:56                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│ 2010-01-04 12:34:56                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromDaysSinceYearZero">
@@ -1843,9 +1847,9 @@ SELECT fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')
 ```
 
 ```response title=Response
-┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00',3), 'Asia/Shanghai')─┐
-│                                                 2023-03-16 18:00:00.000 │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─fromUTCTimestamp(toDateTime64('2023-03-16 10:00:00', 3), 'Asia/Shanghai')─┐
+│                                                   2023-03-16 18:00:00.000 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="fromUnixTimestamp">
@@ -1960,6 +1964,10 @@ SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') A
 
 Возвращает текущее время суток в часовом поясе сервера (или сеанса) на момент анализа запроса.
 Функция является константным выражением. Это стандартный для SQL / PostgreSQL `LOCALTIME`, эквивалентный `CAST(now() AS Time)`.
+
+<Note>
+  Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -2230,13 +2238,17 @@ SELECT monthName(date_value)
 
 Возвращает текущие дату и время на момент анализа запроса. Эта функция является константным выражением.
 
+<Note>
+  Эта функция недетерминированна: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
 now([timezone])
 ```
 
-**Псевдонимы**: `localtimestamp`, `current_timestamp`
+**Псевдонимы**: `current_timestamp`, `localtimestamp`
 
 **Аргументы**
 
@@ -2292,6 +2304,10 @@ SELECT NOW, CURRENT_TIMESTAMP
 
 Возвращает текущие дату и время с точностью до долей секунды в момент анализа запроса. Функция является константным выражением.
 
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -2301,7 +2317,7 @@ now64([scale[, timezone]])
 **Аргументы**
 
 * `scale` — Необязательный. Размер шага (точность): 10^-precision секунды. Допустимый диапазон: [0 : 9]. Обычно используются значения 3 (по умолчанию) — миллисекунды, 6 — микросекунды, 9 — наносекунды. [`UInt8`](/ru/reference/data-types/int-uint)
-* `timezone` — Необязательный. Название часового пояса для возвращаемого значения. [`String`](/ru/reference/data-types/string)
+* `timezone` — Необязательный. Имя часового пояса для возвращаемого значения. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -2330,6 +2346,10 @@ SELECT now64(), now64(9, 'Asia/Istanbul')
 Возвращает текущие дату и время на момент обработки каждого блока данных. В отличие от функции [`now`](#now), это не константное выражение, и при длительном выполнении запроса возвращаемое значение будет различаться в разных блоках.
 
 Эту функцию имеет смысл использовать для генерации текущего времени в длительно выполняющихся запросах `INSERT SELECT`.
+
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -2377,6 +2397,10 @@ FORMAT PrettyCompactMonoBlock
 
 Эту функцию имеет смысл использовать для генерации текущего времени в длительно выполняющихся запросах INSERT SELECT.
 
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -2422,6 +2446,10 @@ FORMAT PrettyCompactMonoBlock
 
 Возвращает часовой пояс сервера, то есть значение настройки [`timezone`](/ru/reference/settings/server-settings/settings#timezone).
 Если функция выполняется в контексте distributed таблицы, она создаёт обычный столбец со значениями для каждого сегмента. В противном случае она возвращает константное значение.
+
+<Note>
+  Эта функция недетерминированна: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -2976,9 +3004,9 @@ SELECT dateSub('1998-06-16'::Date, INTERVAL 10 quarter)
 ```
 
 ```response title=Response
-┌─minus(CAST('1⋯Quarter(10))─┐
-│                1996-09-16 │
-└───────────────────────────┘
+┌─minus(CAST('1998-06-16', 'Date'), toIntervalQuarter(10))─┐
+│                                               1995-12-16 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 <div id="subtractSeconds">
@@ -3403,6 +3431,10 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 Добавленный в: v21.4.0
 
 Возвращает имя часового пояса текущего сеанса или преобразует смещение либо название часового пояса в каноническое имя часового пояса.
+
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -3932,15 +3964,15 @@ toLastDayOfWeek(datetime[, mode[, timezone]])
 
 ```sql title=Query
 SELECT
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* пятница */
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* пятница */
-    toLastDayOfWeek(toDate('2023-04-23')), /* воскресенье */
-    toLastDayOfWeek(toDate('2023-04-23'), 1) /* воскресенье */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+    toLastDayOfWeek(toDate('2023-04-23')), /* a Sunday */
+    toLastDayOfWeek(toDate('2023-04-23'), 1) /* a Sunday */
 FORMAT Vertical
 ```
 
 ```response title=Response
-Строка 1:
+Row 1:
 ──────
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
@@ -4170,8 +4202,8 @@ toMonday(value)
 
 ```sql title=Query
 SELECT
-toMonday(toDateTime('2023-04-21 10:20:30')), -- Пятница
-toMonday(toDate('2023-04-24'));              -- Уже понедельник
+toMonday(toDateTime('2023-04-21 10:20:30')), -- A Friday
+toMonday(toDate('2023-04-24'));              -- Already a Monday
 ```
 
 ```response title=Response
@@ -4716,7 +4748,7 @@ SELECT toStartOfDay(toDateTime('2023-04-21 10:20:30'))
 
 Добавленный в: v1.1.0
 
-Округляет дату и время в меньшую сторону до начала пятнадцатиминутного интервала.
+Округляет дату и время вниз до начала пятнадцатиминутного интервала.
 
 <Note>
   Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
@@ -4797,7 +4829,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Строка 1:
+Row 1:
 ──────
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -4929,7 +4961,7 @@ toStartOfInterval(value, INTERVAL x unit[, time_zone])
 toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 ```
 
-**Псевдонимы**: `time_bucket`, `date_bin`
+**Псевдонимы**: `date_bin`, `time_bucket`
 
 **Аргументы**
 
@@ -5106,7 +5138,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Строка 1:
+Row 1:
 ──────
 toStartOfMinute(toDateTime('2023-04-21 10:20:30')):           2023-04-21 10:20:00
 toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:00
@@ -5374,10 +5406,10 @@ toStartOfWeek(datetime[, mode[, timezone]])
 
 ```sql title=Query
 SELECT
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* пятница */
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* пятница */
-        toStartOfWeek(toDate('2023-04-24')), /* понедельник */
-        toStartOfWeek(toDate('2023-04-24'), 1) /* понедельник */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+        toStartOfWeek(toDate('2023-04-24')), /* a Monday */
+        toStartOfWeek(toDate('2023-04-24'), 1) /* a Monday */
     FORMAT Vertical
 ```
 
@@ -5565,8 +5597,8 @@ SELECT toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')
 
 ```response title=Response
 ┌─toUTCTimestamp(toDateTime('2023-03-16'), 'Asia/Shanghai')─┐
-│                                     2023-03-15 16:00:00 │
-└─────────────────────────────────────────────────────────┘
+│                                       2023-03-15 16:00:00 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp">
@@ -5928,13 +5960,17 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 Возвращает текущую дату на момент анализа запроса. То же, что и `toDate(now())`.
 
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
 today()
 ```
 
-**Псевдонимы**: `curdate`, `current_date`
+**Псевдонимы**: `current_date`, `curdate`
 
 **Аргументы**
 
@@ -5981,6 +6017,10 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 Добавленный в: v1.1.0
 
 Не принимает аргументов и возвращает вчерашнюю дату на одном из этапов анализа запроса.
+
+<Note>
+  Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 

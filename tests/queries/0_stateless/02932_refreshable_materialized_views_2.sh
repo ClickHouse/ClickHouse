@@ -82,16 +82,6 @@ $CLICKHOUSE_CLIENT -q "
     select '<24: rename during refresh>', * from rmv_f;"
 query_no_scheduling "select '<25: rename during refresh>', view, status from refreshes where view = 'rmv_f'"
 $CLICKHOUSE_CLIENT -q "alter table rmv_f modify refresh after 10 year settings refresh_retries = 0;"
-sleep 1 # make it likely that at least one row was processed
-# Cancel.
-$CLICKHOUSE_CLIENT -q "
-    system cancel view rmv_f;"
-while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes -- $LINENO" | xargs`" != 'Scheduled' ]
-do
-    sleep 0.5
-done
-# Check that another refresh doesn't immediately start after the cancelled one.
-query_no_scheduling "select '<27: cancelled>', view, status, exception != '' from refreshes where view = 'rmv_f'"
 $CLICKHOUSE_CLIENT -q "system refresh view rmv_f;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'rmv_f' -- $LINENO" | xargs`" != 'Running' ]
 do

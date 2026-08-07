@@ -352,6 +352,25 @@ jobs:
             failures_list=$(echo "$merge_failures" | sort -u | sed 's/^/- /')
             common_failures_list=$(echo "$common_failures" | sed 's/^/- /')
 
+            # Notify the original author and reviewers that their PR was reverted. A plain
+            # @mention in the PR body triggers a GitHub notification, so an author whose PR was
+            # auto-reverted finds out even if nobody pinged them in Slack. Collect the author
+            # plus everyone who submitted a review, drop automation accounts (GitHub App logins
+            # end in a literal "[bot]"; ClickHouse's own robots do not, so they are named), then
+            # `sort -u` de-duplicates. The `// empty` in jq turns a since-deleted account's null
+            # login into an empty line that `sed` drops, so no "null" ever reaches the mentions.
+            # Listing reviews is best-effort — a failure here must not block the revert.
+            pr_author=$(echo "$pr_json" | jq -r '.user.login // empty')
+            mentions=$( { echo "$pr_author"; gh api "repos/$GH_REPO/pulls/$pr_number/reviews" --paginate --jq '.[].user.login // empty' 2>/dev/null; } \
+              | sed '/^$/d' \
+              | grep -vxE '.*\[bot\]|clickhouse-gh|robot-clickhouse|clickhouse-robot-gh' \
+              | sort -u | sed 's/^/@/' | paste -sd' ' - || true)
+
+            mentions_line=""
+            if [ -n "$mentions" ]; then
+              mentions_line="cc $mentions — your pull request was automatically reverted; see above for details."
+            fi
+
             pr_body=$(cat <<EOF
           This reverts #$pr_number ($pr_title) because it was merged with failing CI checks.
 
@@ -360,6 +379,8 @@ jobs:
 
           The same checks also failed or never completed on the original PR's head commit, confirming this is not a flaky failure:
           $common_failures_list
+
+          $mentions_line
 
           ### Changelog category (leave one):
           - CI Fix or Improvement (changelog entry is not required)

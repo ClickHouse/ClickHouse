@@ -32,11 +32,11 @@ quantiles(level1, level2, ...)(expr)
 
 **인수**
 
-* `expr` — 컬럼 값에 대한 표현식입니다. 결과 타입은 숫자 데이터 타입, Date 또는 DateTime이어야 합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
+* `expr` — 컬럼 값에 대한 표현식입니다. 결과 타입은 숫자 데이터 타입, `Date`, `DateTime` 또는 `DateTime64`여야 합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Int128`](/ko/reference/data-types/int-uint) 또는 [`UInt128`](/ko/reference/data-types/int-uint) 또는 [`Int256`](/ko/reference/data-types/int-uint) 또는 [`UInt256`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
-지정된 수준의 근사 분위수를, 수준을 지정한 순서와 동일한 순서로 담은 배열입니다. [`Array(Float64)`](/ko/reference/data-types/array) 또는 [`Array(Date)`](/ko/reference/data-types/array) 또는 [`Array(DateTime)`](/ko/reference/data-types/array)
+지정된 수준의 근사 분위수를, 수준을 지정한 순서와 동일한 순서로 담은 배열입니다. 숫자 인수는 `Float64`를 반환하며, `Decimal`, `Date`, `DateTime`, `DateTime64` 인수는 입력 형식을 유지합니다. [`Array(Float64)`](/ko/reference/data-types/array) 또는 [`Array(Decimal*)`](/ko/reference/data-types/array) 또는 [`Array(Date)`](/ko/reference/data-types/array) 또는 [`Array(DateTime)`](/ko/reference/data-types/array) 또는 [`Array(DateTime64)`](/ko/reference/data-types/array)
 
 **예시**
 

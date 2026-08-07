@@ -351,6 +351,95 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
         },
         documentation_timeSeriesRateToGrid});
 
+    /// timeSeriesIncreaseToGrid documentation
+    FunctionDocumentation::Description description_timeSeriesIncreaseToGrid = R"(
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like increase](https://prometheus.io/docs/prometheus/latest/querying/functions/#increase) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `increase` are considered within the specified time window.
+
+The value is the total extrapolated increase of a counter over the window. A decrease between consecutive samples is treated as a counter reset and counted towards the increase, so the result reflects the cumulative growth of the counter even when it restarts from zero.
+
+:::warning
+This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax_timeSeriesIncreaseToGrid = R"(
+timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
+    )";
+    FunctionDocumentation::Parameters parameters_timeSeriesIncreaseToGrid = {
+        {"start_timestamp", "Specifies start of the grid.", {"UInt32", "DateTime"}},
+        {"end_timestamp", "Specifies end of the grid.", {"UInt32", "DateTime"}},
+        {"grid_step", "Specifies step of the grid in seconds.", {"UInt32"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval.", {"UInt32"}}
+    };
+    FunctionDocumentation::Arguments arguments_timeSeriesIncreaseToGrid = {
+        {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "Array(UInt32)", "Array(DateTime)"}},
+        {"value", "Value of the time series corresponding to the timestamp. Can be individual values or arrays.", {"Float*", "Array(Float*)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_timeSeriesIncreaseToGrid = {"Returns increase values on the specified grid. The returned array contains one value for each time grid point. The value is NULL if there are not enough samples within the window to calculate the increase value for a particular grid point.", {"Array(Nullable(Float64))"}};
+    FunctionDocumentation::Examples examples_timeSeriesIncreaseToGrid = {
+    {
+        "Basic usage with individual timestamp-value pairs",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
+    90 AS start_ts,       -- start of timestamp grid
+    90 + 120 AS end_ts,   -- end of timestamp grid
+    15 AS step_seconds,   -- step of timestamp grid
+    45 AS window_seconds  -- "staleness" window
+SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)
+FROM
+(
+    -- This subquery converts arrays of timestamps and values into rows of `timestamp`, `value`
+    SELECT
+        arrayJoin(arrayZip(timestamps, values)) AS ts_and_val,
+        ts_and_val.1 AS timestamp,
+        ts_and_val.2 AS value
+);
+        )",
+        R"(
+┌─timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                     │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Using array arguments",
+        R"(
+SET allow_experimental_time_series_aggregate_functions = 1;
+WITH
+    [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
+    [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values,
+    90 AS start_ts,
+    90 + 120 AS end_ts,
+    15 AS step_seconds,
+    45 AS window_seconds
+SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values);
+        )",
+        R"(
+┌─timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
+│ [NULL,NULL,0,3,4.5,2.5,NULL,NULL,3.75]                                                       │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_timeSeriesIncreaseToGrid = {26, 8};
+    FunctionDocumentation::Category category_timeSeriesIncreaseToGrid = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_timeSeriesIncreaseToGrid = {description_timeSeriesIncreaseToGrid, syntax_timeSeriesIncreaseToGrid, arguments_timeSeriesIncreaseToGrid, parameters_timeSeriesIncreaseToGrid, returned_value_timeSeriesIncreaseToGrid, examples_timeSeriesIncreaseToGrid, introduced_in_timeSeriesIncreaseToGrid, category_timeSeriesIncreaseToGrid};
+
+    factory.registerFunction("timeSeriesIncreaseToGrid",
+        {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
+        {
+            assertParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            {
+                return std::make_shared<AggregateFunctionTimeseriesIncreaseToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+            };
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
+        },
+        documentation_timeSeriesIncreaseToGrid});
+
     /// timeSeriesDeltaToGrid documentation
     FunctionDocumentation::Description description_timeSeriesDeltaToGrid = R"(
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like delta](https://prometheus.io/docs/prometheus/latest/querying/functions/#delta) from this data on a regular time grid described by start timestamp, end timestamp and step.

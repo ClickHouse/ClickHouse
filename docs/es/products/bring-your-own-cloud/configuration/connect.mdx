@@ -11,6 +11,24 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 Esta página describe las distintas formas de conectarse a sus servicios de ClickHouse en BYOC. Puede elegir entre balanceadores de carga públicos, balanceadores de carga privados o endpoints de PrivateLink/Private Service Connect según sus requisitos de seguridad y red.
 
+<div id="connection-via">
+  ## Seleccionar una ruta de conexión en la consola
+</div>
+
+Los detalles de conexión de cada servicio BYOC están disponibles en la consola de ClickHouse Cloud: abra el servicio y haga clic en **Conectar**.
+
+En los servicios BYOC, el cuadro de diálogo **Conectar** incluye un menú desplegable **Conexión mediante**. Úselo para elegir cómo acceder al servicio:
+
+* **Balanceador de carga público** — el endpoint expuesto a Internet.
+* **Balanceador de carga privado** — el endpoint interno, accesible mediante peering de VPC o redes conectadas. Solo aparece cuando hay un [balanceador de carga privado](#private-load-balancer) habilitado para su infraestructura.
+* **PrivateLink** (AWS) / **Private Service Connect** (GCP) — el hostname del endpoint privado del proveedor de Cloud. Solo aparece cuando [PrivateLink or Private Service Connect](#privatelink-or-private-service-connect) está habilitado.
+
+Al seleccionar una ruta, se actualiza el hostname en cada ejemplo de conexión del cuadro de diálogo — el comando HTTPS (`curl`), el client nativo, JDBC, MySQL y los fragmentos de client para cada lenguaje (Python, Node.js, Java, Go y C#) — para que pueda copiar un comando listo para usar para la ruta exacta que necesita, sin editar el hostname manualmente.
+
+El menú desplegable solo muestra las rutas habilitadas para su infraestructura, y la lista se actualiza cada vez que se abre el cuadro de diálogo: un balanceador de carga privado o un endpoint de PrivateLink recién habilitado aparecerá la próxima vez que abra **Conectar**, sin retraso de propagación. Cuando solo hay una ruta disponible, el menú desplegable aparece deshabilitado con ese endpoint seleccionado.
+
+<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="Cuadro de diálogo Conectar con el menú desplegable Conexión mediante expandido, que muestra las rutas de balanceador de carga público, balanceador de carga privado y PrivateLink" background="black" />
+
 <div id="public-load-balancer">
   ## Balanceador de carga público
 </div>
@@ -74,9 +92,12 @@ Para conectarse mediante el endpoint privado:
    * Para peering de VPC: complete la configuración de peering de VPC (consulte [Configuración de red privada](/es/products/bring-your-own-cloud/onboarding/network))
    * Para otras redes privadas: asegúrese de que el enrutamiento esté configurado para llegar a la VPC de BYOC
 3. **Obtenga su endpoint privado**:
-   El endpoint privado está disponible en la consola de ClickHouse Cloud, en la sección &quot;Connect&quot; de su servicio. El endpoint privado sigue el mismo formato que el endpoint público, pero con el sufijo `-private` añadido a la parte del ID del servicio. Por ejemplo:
+   El endpoint privado está disponible en la consola de ClickHouse Cloud, en la sección &quot;Conectar&quot; de su servicio. El endpoint privado sigue el mismo formato que el endpoint público, pero con el sufijo `-private` añadido a la parte del ID del servicio. Por ejemplo:
+
    * **Endpoint público**: `sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
    * **Endpoint privado**: `sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+
+   En lugar de construir manualmente el `hostname` con el sufijo `-private`, seleccione **Private load balancer** en el menú desplegable **Connection via** del cuadro de diálogo **Conectar** para copiar directamente el endpoint y los comandos de conexión ya preparados.
 
 <div id="public-ip-filtering">
   ### Filtrado por IP
@@ -114,12 +135,14 @@ AWS PrivateLink y GCP Private Service Connect ofrecen la opción de conectividad
   ### Conexión mediante PrivateLink/Private Service Connect
 </div>
 
-Complete la configuración de PrivateLink o Private Service Connect (consulte [Configuración de red privada](/es/products/bring-your-own-cloud/onboarding/network)). Una vez completada la configuración, puede conectarse a su servicio de ClickHouse mediante un formato de endpoint específico para PrivateLink. El endpoint de PrivateLink incluye un subdominio `vpce` para indicar que el tráfico se enruta a través del endpoint de la VPC. La resolución DNS en su VPC dirige automáticamente el tráfico a través del endpoint de PrivateLink.
+Complete la configuración de PrivateLink o Private Service Connect (consulte [Configuración de red privada](/es/products/bring-your-own-cloud/onboarding/network)). Una vez completada la configuración, puede conectarse a su servicio de ClickHouse mediante un formato de endpoint específico de PrivateLink. El endpoint de PrivateLink incluye un subdominio `vpce` para indicar que el tráfico se enruta a través del VPC endpoint. La resolución DNS en su VPC dirige automáticamente el tráfico a través del endpoint de PrivateLink.
 
-El formato del endpoint de PrivateLink es similar al del endpoint público, pero incluye un subdominio `vpce` entre el subdominio del servicio y el subdominio de infraestructura de BYOC. Por ejemplo:
+El formato del endpoint de PrivateLink es similar al del endpoint público, pero incluye un subdominio `vpce` entre el subdominio del servicio y el subdominio de infraestructura BYOC. Por ejemplo:
 
 * **Endpoint público**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
 * **Endpoint de PrivateLink**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+Una vez configurado el endpoint y añadido a la lista de permitidos, seleccione **PrivateLink** (o **Private Service Connect** en GCP) en el menú desplegable **Conexión mediante** del cuadro de diálogo **Conectar** para copiar directamente los detalles de conexión del endpoint privado.
 
 <div id="endpoint-id-allowlist">
   ### Lista de permitidos de Endpoint ID

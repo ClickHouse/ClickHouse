@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 Introducido en: v23.4.0
 
-Calcula el [`quantile`](https://en.wikipedia.org/wiki/Quantile) de una secuencia de datos numéricos mediante el algoritmo [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf).
+Calcula el [`cuantil`](https://en.wikipedia.org/wiki/Quantile) de una secuencia de datos numéricos mediante el algoritmo [Greenwald-Khanna](http://infolab.stanford.edu/~datar/courses/cs361a/papers/quantiles.pdf).
 
 El algoritmo Greenwald-Khanna se utiliza para calcular cuantiles en un flujo de datos de forma muy eficiente.
 Fue introducido por Michael Greenwald y Sanjeev Khanna en 2001.
@@ -39,11 +39,11 @@ quantileGK(accuracy, level)(expr)
 
 **Argumentos**
 
-* `expr` — Expresión sobre los valores de la columna que da como resultado tipos de datos numéricos, Date o DateTime. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime)
+* `expr` — Expresión sobre los valores de la columna que da como resultado tipos de datos numéricos, `Date`, `DateTime` o `DateTime64`. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Int128`](/es/reference/data-types/int-uint) o [`UInt128`](/es/reference/data-types/int-uint) o [`Int256`](/es/reference/data-types/int-uint) o [`UInt256`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64)
 
 **Valor devuelto**
 
-Devuelve el cuantil con el nivel y la precisión especificados. [`Float64`](/es/reference/data-types/float) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime)
+Devuelve el cuantil con el nivel y la precisión especificados. En los tipos de datos numéricos, el formato de salida coincide con el formato de entrada. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Int128`](/es/reference/data-types/int-uint) o [`UInt128`](/es/reference/data-types/int-uint) o [`Int256`](/es/reference/data-types/int-uint) o [`UInt256`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal*`](/es/reference/data-types/decimal) o [`Date`](/es/reference/data-types/date) o [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64)
 
 **Ejemplos**
 

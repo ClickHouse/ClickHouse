@@ -31,7 +31,7 @@ DiskLocalCheckThread::DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context
     , is_broken(CurrentMetrics::BrokenDisks)
 {
     check_period.setConfiguration(static_cast<double>(local_disk_check_period_ms), static_cast<double>(local_disk_check_period_ms) * 10, 1.1);
-    task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { run(); });
+    task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), log->name(), [this] { run(); });
     task->deactivate();
 }
 
@@ -42,8 +42,8 @@ DiskLocalCheckThread::~DiskLocalCheckThread()
 
 void DiskLocalCheckThread::startup()
 {
-    task->activateAndSchedule();
     LOG_INFO(log, "Disk check for disk {} started with period {}", disk->getName(), formatReadableTime(static_cast<double>(check_period.getCurrentDelay()) * 1e6));
+    task->activateAndSchedule();
 }
 
 void DiskLocalCheckThread::run()

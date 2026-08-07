@@ -15,10 +15,13 @@ doc_type: 'reference'
 | [DELETE](/ko/reference/statements/alter/delete)                         |
 | [UPDATE](/ko/reference/statements/alter/update)                         |
 | [ORDER BY](/ko/reference/statements/alter/order-by)                     |
+| [SAMPLE BY](/ko/reference/statements/alter/sample-by)                   |
 | [INDEX](/ko/reference/statements/alter/skipping-index)                  |
+| [PROJECTION](/ko/reference/statements/alter/projection)                 |
 | [CONSTRAINT](/ko/reference/statements/alter/constraint)                 |
 | [TTL](/ko/reference/statements/alter/ttl)                               |
 | [STATISTICS](/ko/reference/statements/alter/statistics)                 |
+| [SETTING](/ko/reference/statements/alter/setting)                       |
 | [APPLY DELETED MASK](/ko/reference/statements/alter/apply-deleted-mask) |
 | [APPLY PATCHES](/ko/reference/statements/alter/apply-patches)           |
 
@@ -32,7 +35,7 @@ doc_type: 'reference'
 | ---------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | [ALTER TABLE ... MODIFY QUERY](/ko/reference/statements/alter/view) | [구체화된 뷰(Materialized View)](/ko/reference/statements/create/view)의 구조를 수정합니다. |
 
-다음 `ALTER` SQL 문은 역할 기반 접근 제어와 관련된 개체를 수정합니다:
+다음 `ALTER` SQL 문은 역할 기반 접근 제어와 관련된 엔터티를 수정합니다:
 
 | SQL 문                                                            |
 | ---------------------------------------------------------------- |
@@ -40,12 +43,14 @@ doc_type: 'reference'
 | [ROLE](/ko/reference/statements/alter/role)                         |
 | [QUOTA](/ko/reference/statements/alter/quota)                       |
 | [ROW POLICY](/ko/reference/statements/alter/row-policy)             |
+| [MASKING POLICY](/ko/reference/statements/alter/masking-policy)     |
 | [SETTINGS PROFILE](/ko/reference/statements/alter/settings-profile) |
 
-| SQL 문                                                                  | 설명                                                                                      |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| [ALTER TABLE ... MODIFY COMMENT](/ko/reference/statements/alter/comment)  | 이전 설정 여부와 관계없이 테이블 주석을 추가, 수정 또는 제거합니다.                                                 |
-| [ALTER NAMED COLLECTION](/ko/reference/statements/alter/named-collection) | [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 수정합니다. |
+| SQL 문                                                                             | 설명                                                                                      |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/ko/reference/statements/alter/comment)             | 이전 설정 여부와 관계없이 테이블 주석을 추가, 수정 또는 제거합니다.                                                 |
+| [ALTER DATABASE ... MODIFY COMMENT](/ko/reference/statements/alter/database-comment) | 이전 설정 여부와 관계없이 데이터베이스 주석을 추가, 수정 또는 제거합니다.                                              |
+| [ALTER NAMED COLLECTION](/ko/reference/statements/alter/named-collection)            | [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 수정합니다. |
 
 <div id="mutations">
   ## 뮤테이션

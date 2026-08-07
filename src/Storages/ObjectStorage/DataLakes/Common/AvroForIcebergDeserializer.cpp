@@ -33,9 +33,9 @@ AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     const IcebergPathFromMetadata & manifest_file_path_,
     const DB::FormatSettings & format_settings)
 try
-    : buffer(std::move(buffer_))
-    , manifest_file_path(manifest_file_path_)
+    : manifest_file_path(manifest_file_path_)
 {
+    auto buffer = std::move(buffer_);
     auto manifest_file_reader
         = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 
@@ -114,7 +114,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
 {
     const auto format_version = getFormatVersionFromManifestFileMetadata();
     FileContentType content_type = FileContentType::DATA;
-    if (format_version > 1)
+    if (format_version > 1 && hasPath(c_data_file_content))
         content_type = FileContentType(getValueFromRowByName(row_index, c_data_file_content, TypeIndex::Int32).safeGet<UInt64>());
     const auto status = ManifestEntryStatus(getValueFromRowByName(row_index, f_status, TypeIndex::Int32).safeGet<UInt64>());
 
@@ -140,20 +140,27 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
 
     if (format_version > 1)
     {
-        const auto sequence_number_value = getValueFromRowByName(row_index, f_sequence_number);
-        if (sequence_number_value.isNull())
+        if (!hasPath(f_sequence_number))
         {
-            if (status == ManifestEntryStatus::EXISTING)
-            {
-                throw Exception(
-                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                    "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without sequence number",
-                    manifest_file_path);
-            }
+            sequence_number = 0;
         }
         else
         {
-            sequence_number = sequence_number_value.safeGet<Int64>();
+            const auto sequence_number_value = getValueFromRowByName(row_index, f_sequence_number);
+            if (sequence_number_value.isNull())
+            {
+                if (status == ManifestEntryStatus::EXISTING)
+                {
+                    throw Exception(
+                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                        "Cannot read Iceberg table: manifest file '{}' has entry with status 'EXISTING' without sequence number",
+                        manifest_file_path);
+                }
+            }
+            else
+            {
+                sequence_number = sequence_number_value.safeGet<Int64>();
+            }
         }
     }
 

@@ -55,31 +55,23 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step>
-        ### Создайте новый сервис
-
+      <Step title="Создайте новый сервис" id="create-a-service">
         На главной странице ClickHouse Cloud выберите `New service`, чтобы создать новый сервис.
 
         <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="Сервис" border />
       </Step>
 
-      <Step>
-        ### Укажите провайдера, регион и ресурс
-
+      <Step title="Укажите провайдера, регион и ресурс" id="specify-your-region-and-resources">
         <ProviderSelection />
       </Step>
 
-      <Step>
-        ### Настройте ингестию
-
+      <Step title="Настройте ингестию" id="setup-ingestion-create-new">
         После подготовки сервиса убедитесь, что он выбран, и выберите &quot;ClickStack&quot; в левом меню.
 
         <SetupManagedIngestion />
       </Step>
 
-      <Step>
-        ### Перейдите в интерфейс ClickStack
-
+      <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-clickstack-ui-cloud-create-new">
         <NavigateClickStackUI />
 
         <br />
@@ -91,9 +83,7 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step>
-        ### Выберите сервис
-
+      <Step title="Выберите сервис" id="select-service">
         На главной странице ClickHouse Cloud выберите сервис, для которого нужно включить Управляемый ClickStack.
 
         <Warning>
@@ -107,9 +97,7 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
         <Image img="/images/clickstack/select_service.webp" alt="Выберите сервис" size="lg" />
       </Step>
 
-      <Step>
-        ### Перейдите в интерфейс ClickStack
-
+      <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-the-clickstack-ui-existing">
         Выберите &#39;ClickStack&#39; в левом навигационном меню. Вы будете перенаправлены в интерфейс ClickStack и автоматически авторизованы в соответствии с вашими правами доступа ClickHouse Cloud.
 
         Если в вашем сервисе уже есть таблицы OpenTelemetry, они будут обнаружены автоматически, и для них будут созданы соответствующие источники данных.
@@ -127,9 +115,7 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
         Если этот шаг выполнен успешно, то на этом всё — всё готово 🎉, в противном случае переходите к настройке ингестии.
       </Step>
 
-      <Step>
-        ### Настройка ингестии
-
+      <Step title="Настройте ингестию" id="setup-ingestion-existing-service">
         Если автоматическое обнаружение завершится неудачей или у вас нет существующих таблиц, система предложит вам настроить ингестию.
 
         <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="Настройка ингестии в интерфейсе ClickStack" size="lg" />
@@ -153,7 +139,7 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
             ### Запуск коллектора
 
-            Ниже рассматривается рекомендуемый вариант — использование **дистрибутива ClickStack для OpenTelemetry Collector**, который включает дополнительную обработку и оптимизирован специально для ClickHouse Cloud. Если вы хотите использовать собственный OpenTelemetry Collector, см. [&quot;Настройка существующих коллекторов&quot;](#configure-existing-collectors)
+            Ниже рассматривается рекомендуемый вариант — использование **дистрибутива ClickStack для OpenTelemetry Collector**, который включает дополнительную обработку и оптимизирован специально для ClickHouse Cloud. Если вы хотите использовать собственный OpenTelemetry Collector, см. [&quot;Настройка существующих коллекторов&quot;](#configure-existing-collectors-existing)
 
             Чтобы быстро начать, скопируйте и выполните показанную Docker-команду.
 
@@ -260,9 +246,7 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
         </Tabs>
       </Step>
 
-      <Step>
-        ### Перейдите в интерфейс ClickStack
-
+      <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-clickstack-ui-existing-service">
         После завершения настройки ингестии и начала отправки данных выберите &quot;Next&quot;.
 
         <Tabs>
@@ -321,7 +305,7 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 <Warning>
   **Для оповещений требуется доступ администратора**
 
-  Чтобы включить оповещения, как минимум один пользователь с разрешениями **Service Admin** (сопоставленными с **Full Access** в раскрывающемся списке **SQL Console Access**) должен хотя бы один раз войти в HyperDX. Это создаст в базе данных выделенного пользователя, который будет выполнять запросы оповещений.
+  Чтобы включить оповещения, как минимум один пользователь с разрешениями **Service Admin** (сопоставленными с **Full Access** в раскрывающемся списке SQL Console Access) должен хотя бы один раз войти в HyperDX. Это создаст в базе данных выделенного пользователя, который будет выполнять запросы оповещений.
 </Warning>
 
 <div id="clickstack-read-only-compute">

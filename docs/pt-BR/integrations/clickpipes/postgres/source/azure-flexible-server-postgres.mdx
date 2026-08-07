@@ -76,7 +76,7 @@ Conecte-se ao seu Azure Flexible Server Postgres com o usuário admin e execute 
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-A publicação `clickpipes` conterá o conjunto de eventos de alteração gerados pelas tabelas especificadas e, mais tarde, será usada para fazer a ingestão do fluxo de replicação.
+A publicação `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
 
 <div id="add-clickpipes-ips-to-firewall">
   ## Adicione os IPs do ClickPipes ao firewall
@@ -85,7 +85,7 @@ A publicação `clickpipes` conterá o conjunto de eventos de alteração gerado
 Siga as etapas abaixo para adicionar os [IPs do ClickPipes](/pt-BR/integrations/clickpipes/home#list-of-static-ips) à sua rede.
 
 1. Acesse a guia **Networking** e adicione os [IPs do ClickPipes](/pt-BR/integrations/clickpipes/home#list-of-static-ips) ao firewall
-   do seu Azure Flexible Server Postgres ou ao Jump Server/bastion, se você estiver usando tunelamento SSH.
+   do seu Azure Flexible Server for Postgres ou ao Jump Server/bastion, se você estiver usando tunelamento SSH.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="Adicione os IPs do ClickPipes ao firewall no Azure Flexible Server for Postgres" size="lg" />
 

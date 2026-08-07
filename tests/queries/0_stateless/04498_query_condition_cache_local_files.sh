@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # Tag no-fasttest: needs Parquet
+# Tag no-parallel: asserts `QueryConditionCacheHits` on the instance-wide query condition cache.
+# A parallel sibling test can wipe that cache at any moment: dropping or renaming any UUID-less
+# (path-keyed) `MergeTree` table calls `Context::clearCaches`, which clears the query condition
+# cache along with the other path-keyed caches, turning an expected cache hit into a miss.
 
 # Tests that the Query Condition Cache works for local Parquet files backed by the
 # `File` table engine (previously the cache was populated only for object storage).
@@ -26,7 +30,9 @@
 #     stale "nothing matches" decision for the old file version must not be reused.
 #
 # The table gets a unique UUID per test run and a per-database file path, so the
-# cache keys are isolated and the test is parallel-safe without a global cache reset.
+# cache keys are isolated and the test needs no global cache reset. The keys being
+# isolated does not make the hit assertions parallel-safe, though - see the
+# no-parallel tag above.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

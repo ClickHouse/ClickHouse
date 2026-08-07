@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Common/StringUtils.h>
 #include <Common/Exception.h>
 #include <base/types.h>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 
 #include <map>
 
@@ -99,12 +98,16 @@ private: \
         String str2{str}; \
         std::vector<String> type_aliases; \
         \
-        boost::split(type_aliases, str2, [](char c) { return c == ','; }); \
-        for (auto & alias : type_aliases) \
+        for (size_t begin = 0; begin <= str2.length();) \
         { \
-            boost::trim(alias); \
-            aliases[alias] = type; \
+            size_t end = str2.find(',', begin); \
+            if (end == String::npos) \
+                end = str2.length(); \
+            type_aliases.push_back(trim(str2.substr(begin, end - begin), isWhitespaceASCII)); \
+            begin = end + 1; \
         } \
+        for (auto & alias : type_aliases) \
+            aliases[alias] = type; \
         \
         aliases[String{toString(type)}] = type; \
     } \
@@ -359,7 +362,9 @@ enum class AccessType : uint8_t
     M(SYSTEM_MOVES, "SYSTEM STOP MOVES, SYSTEM START MOVES, STOP MOVES, START MOVES", TABLE, SYSTEM) \
     M(SYSTEM_PULLING_REPLICATION_LOG, "SYSTEM STOP PULLING REPLICATION LOG, SYSTEM START PULLING REPLICATION LOG", TABLE, SYSTEM) \
     M(SYSTEM_CLEANUP, "SYSTEM STOP CLEANUP, SYSTEM START CLEANUP", TABLE, SYSTEM) \
-    M(SYSTEM_VIEWS, "SYSTEM REFRESH VIEW, SYSTEM START VIEWS, SYSTEM STOP VIEWS, SYSTEM START VIEW, SYSTEM STOP VIEW, SYSTEM PAUSE VIEWS, SYSTEM PAUSE VIEW, SYSTEM CANCEL VIEW, REFRESH VIEW, START VIEWS, STOP VIEWS, START VIEW, STOP VIEW, PAUSE VIEWS, PAUSE VIEW, CANCEL VIEW", VIEW, SYSTEM) \
+    M(SYSTEM_VIEWS, "SYSTEM REFRESH VIEW, SYSTEM START VIEWS, SYSTEM STOP VIEWS, SYSTEM START VIEW, SYSTEM STOP VIEW, SYSTEM PAUSE VIEWS, SYSTEM PAUSE VIEW, SYSTEM CANCEL VIEW, REFRESH VIEW, START VIEWS, STOP VIEWS, START VIEW, STOP VIEW, PAUSE VIEWS, PAUSE VIEW, CANCEL VIEW", VIEW, SYSTEM_BACKGROUND) \
+    M(SYSTEM_STREAMING_ENGINES, "", TABLE, SYSTEM_BACKGROUND) /* (Kafka, RabbitMQ, NATS, S3Queue/AzureQueue) */ \
+    M(SYSTEM_BACKGROUND, "", GROUP, SYSTEM) \
     M(SYSTEM_DISTRIBUTED_SENDS, "SYSTEM STOP DISTRIBUTED SENDS, SYSTEM START DISTRIBUTED SENDS, STOP DISTRIBUTED SENDS, START DISTRIBUTED SENDS", TABLE, SYSTEM_SENDS) \
     M(SYSTEM_REPLICATED_SENDS, "SYSTEM STOP REPLICATED SENDS, SYSTEM START REPLICATED SENDS, STOP REPLICATED SENDS, START REPLICATED SENDS", TABLE, SYSTEM_SENDS) \
     M(SYSTEM_SENDS, "SYSTEM STOP SENDS, SYSTEM START SENDS, STOP SENDS, START SENDS", GROUP, SYSTEM) \
@@ -396,7 +401,7 @@ enum class AccessType : uint8_t
     M(SYSTEM_RESET_DDL_WORKER, "SYSTEM RESET DDL WORKER, RESET DDL WORKER", GLOBAL, SYSTEM) \
     M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
     \
-    M(dictGet, "dictHas, dictGetHierarchy, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictIsIn() */\
+    M(dictGet, "dictHas, dictGetHierarchy, dictGetRoot, dictGetChildren, dictGetDescendants, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictGetRoot(), dictGetChildren(), dictGetDescendants(), dictIsIn() */\
     M(displaySecretsInShowAndSelect, "", GLOBAL, ALL) /* allows to show plaintext secrets in SELECT and SHOW queries. display_secrets_in_show_and_select format and server settings must be turned on */\
     \
     M(addressToLine, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToLine() */\
