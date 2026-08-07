@@ -154,7 +154,7 @@ namespace Setting
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
     extern const SettingsBool allow_experimental_polyglot_dialect;
-    extern const SettingsBool allow_experimental_json_ast_dialect;
+    extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsString polyglot_dialect;
@@ -495,10 +495,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     /// without being locked into JSON-only input.
     if (dialect == Dialect::clickhouse_json && !isClickHouseJSONSetEscape(pos, end, settings[Setting::max_query_size]))
     {
-        if (!settings[Setting::allow_experimental_json_ast_dialect])
+        if (!settings[Setting::enable_json_ast_dialect])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Support for clickhouse_json dialect is disabled "
-                "(turn on setting 'allow_experimental_json_ast_dialect')");
+                "(turn on setting 'enable_json_ast_dialect')");
 
         if (max_length != 0 && static_cast<size_t>(end - pos) > max_length)
             throw Exception(ErrorCodes::SYNTAX_ERROR,
@@ -1554,11 +1554,11 @@ void ClientBase::pinOutboundDialectForJSONDialect(const String & outbound_query)
     if (outbound_is_json)
     {
         /// Keep the JSON body parsed as JSON even if a JSON `SET dialect = ...` or
-        /// `SET allow_experimental_json_ast_dialect = 0` in this very query already changed the session
+        /// `SET enable_json_ast_dialect = 0` in this very query already changed the session
         /// settings on the client side. The SET still takes effect for subsequent queries (it is applied
         /// to the server session and re-applied to the client context after this query completes).
         client_context->setSetting("dialect", String("clickhouse_json"));
-        client_context->setSetting("allow_experimental_json_ast_dialect", true);
+        client_context->setSetting("enable_json_ast_dialect", true);
     }
     else
     {
@@ -2850,7 +2850,7 @@ void ClientBase::processParsedSingleQuery(
             connection->setFormatSettings(getFormatSettings(client_context));
         });
         /// Capture whether this query was parsed via the `clickhouse_json` dialect *before* applying any
-        /// in-query `SET` (which may change `dialect`/`allow_experimental_json_ast_dialect`). The outbound
+        /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
         /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
         current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
