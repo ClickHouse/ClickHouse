@@ -648,6 +648,10 @@ bool KeeperMemNodesStorage::visitUncommittedRecursive(std::string_view root_path
         return nodes_visited + queue.size() > limit;
     };
 
+    /// The root node (already queued above) counts toward `limit`, same as in `TestKeeper`.
+    if (limit_reached())
+        return false;
+
     while (!queue.empty())
     {
         std::string path = std::move(queue.front().path);

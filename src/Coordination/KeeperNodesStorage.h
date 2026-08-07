@@ -155,6 +155,7 @@ struct KeeperNodesStorage
     ///
     ///   /// Traverses subtree in pre-order (parent before children). Stops early and returns false
     ///   /// if callback returns false or if more than `limit` nodes are found.
+    ///   /// The root node counts toward `limit` (so `limit = 0` never visits an existing root).
     ///   /// Returns true if the whole subtree was visited (reported to check_node).
     ///   /// If the root node doesn't exist, returns true.
     ///   bool visitUncommittedRecursive(

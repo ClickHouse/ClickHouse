@@ -384,6 +384,29 @@ TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Coordination::Error::ZBADARGUMENTS);
     }
+
+    {
+        SCOPED_TRACE("Recursive Remove Single Node Zero Limit");
+        create("/T10", zkutil::CreateMode::Persistent);
+
+        /// The node itself counts toward the limit, so a zero limit removes nothing.
+        auto responses = remove_recursive("/T10", 0);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZNOTEMPTY);
+        ASSERT_TRUE(exists("/T10"));
+
+        responses = remove_recursive("/T10", 1);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+        ASSERT_FALSE(exists("/T10"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove Nonexistent Node Zero Limit");
+        auto responses = remove_recursive("/T11", 0);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+    }
 }
 
 namespace

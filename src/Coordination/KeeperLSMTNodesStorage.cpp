@@ -307,6 +307,7 @@ bool KeeperLSMTNodesStorage::visitUncommittedRecursive(std::string_view root_pat
 {
     DB::Arena arena; // for paths
     std::deque<NodePathWithHash> queue;
+    size_t nodes_visited = 0;
 
     {
         UncommittedNodeRef root_node = getUncommittedNode(root_path);
@@ -314,12 +315,13 @@ bool KeeperLSMTNodesStorage::visitUncommittedRecursive(std::string_view root_pat
             return true;
 
         NodePathWithHash root_node_path = root_node.node.getPathWithHash();
-        if (!check_node(root_path, std::move(root_node)))
+        /// The root node counts toward `limit`, same as in `KeeperMemNodesStorage` and `TestKeeper`.
+        ++nodes_visited;
+        if (nodes_visited > limit || !check_node(root_path, std::move(root_node)))
             return false;
         queue.push_back(root_node_path);
     }
 
-    size_t nodes_visited = 1;
     bool ok = true;
 
     while (!queue.empty() && ok)
