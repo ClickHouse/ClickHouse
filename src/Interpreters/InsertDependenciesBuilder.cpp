@@ -36,7 +36,7 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
-#include <Processors/Transforms/ISimpleTransform.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CheckConstraintsTransform.h>
@@ -571,7 +571,7 @@ static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, 
 }
 
 
-ASTPtr appendSourceTrackingColumns(const ASTPtr & query, const Names & tracking_columns)
+static ASTPtr appendSourceTrackingColumns(const ASTPtr & query, const Names & tracking_columns)
 {
     auto result = query->clone();
 
@@ -603,7 +603,7 @@ ASTPtr appendSourceTrackingColumns(const ASTPtr & query, const Names & tracking_
 }
 
 
-Block removeSourceTrackingColumns(Block header, const Names & tracking_columns)
+static Block removeSourceTrackingColumns(Block header, const Names & tracking_columns)
 {
     for (const auto & column_name : tracking_columns)
     {
