@@ -227,6 +227,23 @@ public:
         is_merge_tree = is_merge_tree_value;
     }
 
+    /** Returns true if the query selects no columns from this table expression, and the single
+      * column it reads was injected by `prepareBuildQueryPlanForTableExpression` purely to let the
+      * storage produce the correct number of rows (e.g. `SELECT count() FROM t`). The injected
+      * column is chosen among the columns the current user may read, so it does not represent the
+      * query's access contract: an access re-check (such as the query plan cache hit re-check)
+      * must apply the "any granted column" rule instead of requiring that particular column.
+      */
+    bool readsOnlyInjectedColumn() const
+    {
+        return reads_only_injected_column;
+    }
+
+    void setReadsOnlyInjectedColumn(bool reads_only_injected_column_value)
+    {
+        reads_only_injected_column = reads_only_injected_column_value;
+    }
+
     const std::optional<ActionsDAG> & getPrewhereFilterActions() const
     {
         return prewhere_filter_actions;
@@ -324,6 +341,9 @@ private:
 
     /// Is storage merge tree
     bool is_merge_tree = false;
+
+    /// The only read column was injected for an empty projection - see `readsOnlyInjectedColumn`
+    bool reads_only_injected_column = false;
 };
 
 }

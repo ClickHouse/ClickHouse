@@ -659,6 +659,9 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
             additional_column_to_read = chooseSmallestColumnToReadFromStorage(storage, storage_snapshot, columns_names_allowed_to_select);
+            /// The injected column is picked among the currently granted ones and stands for "read
+            /// any column"; access re-checks must not require that specific column (see the getter).
+            table_expression_data.setReadsOnlyInjectedColumn(true);
         }
         else if (query_node || union_node)
         {
@@ -1908,6 +1911,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             sample_block,
                             table_name,
                             table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
+                        /// Tell the query plan cache that the single output column was injected for
+                        /// an empty projection and is not a required column of this read (see
+                        /// `ReadFromTableStep::readsOnlyInjectedColumn`).
+                        reading_from_table->setReadsOnlyInjectedColumn(table_expression_data.readsOnlyInjectedColumn());
 
                         query_plan.addStep(std::move(reading_from_table));
                     }

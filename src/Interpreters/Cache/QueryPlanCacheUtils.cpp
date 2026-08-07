@@ -556,7 +556,14 @@ bool collectPlanDependencies(
             QueryPlanCacheDependency dep;
             if (!fillDependency(dep, table_node->getStorage(), context))
                 return false;
-            dep.columns = read_from_table->getOutputHeader()->getNames();
+            /// A zero-column read (`SELECT count() FROM t`, `SELECT 1 FROM t`) outputs a single
+            /// helper column the planner injected among the *currently granted* ones purely to let
+            /// the storage produce rows; it is not the query's access contract. Recording it would
+            /// make a hit require SELECT on that particular column, while a miss re-plans and
+            /// succeeds with any granted column. Leave the columns empty (and known): the hit
+            /// re-check then applies the same "SELECT on at least one column" rule as planning.
+            if (!read_from_table->readsOnlyInjectedColumn())
+                dep.columns = read_from_table->getOutputHeader()->getNames();
             dependencies.push_back(std::move(dep));
         }
         else

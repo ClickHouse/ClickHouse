@@ -24,11 +24,23 @@ public:
     bool useParallelReplicas() const { return use_parallel_replicas; }
     bool & useParallelReplicas() { return use_parallel_replicas; }
 
+    /** True when the query selects no columns from the table and the single output column was
+      * injected by the planner purely to produce the correct number of rows (`SELECT count() FROM t`).
+      * The injected column is chosen among the columns the current user may read, so it is not part
+      * of the query's access contract: the query plan cache must not record it as a required column
+      * of the cached plan's dependency (a hit re-check must apply the "any granted column" rule).
+      * This is a store-time-only annotation consumed while collecting cache dependencies from a
+      * freshly built plan; it is deliberately not serialized, so a deserialized step reports false.
+      */
+    bool readsOnlyInjectedColumn() const { return reads_only_injected_column; }
+    void setReadsOnlyInjectedColumn(bool value) { reads_only_injected_column = value; }
+
     QueryPlanStepPtr clone() const override;
 private:
     String table_name;
     TableExpressionModifiers table_expression_modifiers;
     bool use_parallel_replicas = false;
+    bool reads_only_injected_column = false;
 };
 
 }
