@@ -72,7 +72,9 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 {
     /// The final distinct deduplicates across the whole input, so it needs all data in a single
     /// stream; the pre-distinct only reduces the data, deduplicating each stream independently.
-    if (!pre_distinct)
+    /// However, when the input streams carry disjoint sets of the DISTINCT key values, each stream
+    /// can be deduplicated independently, so we keep the streams and skip merging them into one.
+    if (!pre_distinct && !skip_stream_merging)
         pipeline.resize(1);
 
     pipeline.addSimpleTransform(
@@ -112,6 +114,9 @@ void DistinctStep::describeActions(FormatSettings & settings) const
     }
 
     settings.out << '\n';
+
+    if (skip_stream_merging)
+        settings.out << prefix << "Skip stream merging: 1\n";
 }
 
 void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -121,6 +126,8 @@ void DistinctStep::describeActions(JSONBuilder::JSONMap & map) const
         columns_array->add(column);
 
     map.add("Columns", std::move(columns_array));
+    if (skip_stream_merging)
+        map.add("Skip stream merging", true);
 }
 
 void DistinctStep::updateOutputHeader()

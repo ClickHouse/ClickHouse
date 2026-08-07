@@ -140,7 +140,9 @@ namespace
     // Should we omit null values (zero for numbers / empty string for strings) while storing them.
     bool shouldSkipZeroOrEmpty(const FieldDescriptor & field_descriptor, bool google_wrappers_special_treatment = false)
     {
-        if (!field_descriptor.is_optional())
+        /// `FieldDescriptor::is_optional` was removed along with the rest of the label accessors;
+        /// a singular field is one that is neither repeated nor required.
+        if (field_descriptor.is_repeated() || field_descriptor.is_required())
             return false;
         if (field_descriptor.containing_type()->options().map_entry())
             return false;

@@ -16,6 +16,10 @@ struct IcebergDataSnapshot
     DB::ManifestFileCacheKeys manifest_list_entries;
     Int64 snapshot_id;
     Int64 schema_id_on_snapshot_commit;
+    /// Row-count hint from the snapshot summary (`total-records`). Only used to log a
+    /// warning when it disagrees with the row count derived from the manifest files; never
+    /// used as a data source, because the summary is maintained incrementally by writers
+    /// and a corrupted commit in the table history poisons it silently.
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_delete_rows;

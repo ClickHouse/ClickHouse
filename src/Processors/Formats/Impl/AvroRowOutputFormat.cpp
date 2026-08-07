@@ -339,7 +339,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
         case TypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*data_type);
-            auto nested_mapping = createSchemaWithSerializeFn(array_type.getNestedType(), type_name_increment, column_name, Nested::concatenateName(column_path, "element"));
+            auto nested_mapping = createFieldSchemaWithSerializeFn(array_type.getNestedType(), type_name_increment, column_name, Nested::concatenateName(column_path, "element"));
             auto schema = avro::ArraySchema(nested_mapping.schema);
             return {
                 schema,
@@ -457,7 +457,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             auto schema = avro::RecordSchema(column_name + "_" + std::to_string(type_name_increment));
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
-                auto nested_mapping = createSchemaWithSerializeFn(nested_types[i], type_name_increment, nested_names[i], Nested::concatenateName(column_path, nested_names[i]));
+                auto nested_mapping = createFieldSchemaWithSerializeFn(nested_types[i], type_name_increment, nested_names[i], Nested::concatenateName(column_path, nested_names[i]));
                 schema.addField(nested_names[i], nested_mapping.schema);
                 nested_serializers.push_back(nested_mapping.serialize);
             }
@@ -484,7 +484,7 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             };
 
             const auto & values_type = map_type.getValueType();
-            auto values_mapping = createSchemaWithSerializeFn(values_type, type_name_increment, column_name + ".value", Nested::concatenateName(column_path, "value"));
+            auto values_mapping = createFieldSchemaWithSerializeFn(values_type, type_name_increment, column_name + ".value", Nested::concatenateName(column_path, "value"));
             auto schema = avro::MapSchema(values_mapping.schema);
 
             return {schema, [keys_serializer, values_mapping](const IColumn & column, size_t row_num, avro::Encoder & encoder)
@@ -517,6 +517,32 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Avro output", data_type->getName());
 }
 
+AvroSerializer::SchemaWithSerializeFn AvroSerializer::createFieldSchemaWithSerializeFn(const DataTypePtr & data_type, size_t & type_name_increment, const String & column_name, const String & column_path)
+{
+    auto mapping = createSchemaWithSerializeFn(data_type, type_name_increment, column_name, column_path);
+
+    if (!column_mapper || !column_mapper->hasIcebergRequiredInfo() || !column_mapper->isIcebergOptionalPath(column_path))
+        return mapping;
+
+    /// A union already encodes the null branch (Nullable, Variant), and Avro forbids a union of
+    /// unions; a null schema would give the duplicate `["null", "null"]`. Both already express
+    /// optionality, so wrapping them would be wrong rather than redundant.
+    const auto schema_type = mapping.schema.type();
+    if (schema_type == avro::AVRO_UNION || schema_type == avro::AVRO_NULL)
+        return mapping;
+
+    avro::UnionSchema union_schema;
+    union_schema.addType(avro::NullSchema());
+    union_schema.addType(mapping.schema);
+    /// The ClickHouse column at an optional path is not Nullable (that is why the type cannot carry
+    /// the flag), so it is never null and only the non-null branch is ever encoded.
+    return {union_schema, [nested_serialize = mapping.serialize](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+    {
+        encoder.encodeUnionIndex(1);
+        nested_serialize(column, row_num, encoder);
+    }};
+}
+
 AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns, std::unique_ptr<AvroSerializerTraits> traits_, const FormatSettings & settings_, ColumnMapperPtr column_mapper_)
     : traits(std::move(traits_)), settings(settings_), column_mapper(std::move(column_mapper_))
 {
@@ -527,7 +553,7 @@ AvroSerializer::AvroSerializer(const ColumnsWithTypeAndName & columns, std::uniq
     {
         try
         {
-            auto field_mapping = createSchemaWithSerializeFn(column.type, type_name_increment, column.name, /*column_path=*/column.name);
+            auto field_mapping = createFieldSchemaWithSerializeFn(column.type, type_name_increment, column.name, /*column_path=*/column.name);
             serialize_fns.push_back(field_mapping.serialize);
             //TODO: verify name starts with A-Za-z_
             record_schema.addField(column.name, field_mapping.schema);

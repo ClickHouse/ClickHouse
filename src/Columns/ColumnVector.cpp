@@ -1,5 +1,6 @@
 #include <Columns/ColumnVector.h>
 
+#include <base/defines.h>
 #include <base/bit_cast.h>
 #include <base/scope_guard.h>
 #include <base/sort.h>
@@ -475,7 +476,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_index_implementation<T>)
     {
         /// For floating point, findExtremeMinIndex/MaxIndex skip NaN (NaN is always last).
         /// This matches the standard nan_direction_hint convention: ASC with hint >= 0, DESC with hint <= 0.
@@ -1539,7 +1540,8 @@ template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt8>(const PaddedPODArray<U
 template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const;
 template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const;
 
-#if defined(OS_DARWIN)
+/// `size_t` is not covered by the instantiations above where it is a type of its own.
+#if defined(SIZE_T_IS_A_DISTINCT_TYPE)
 template ColumnPtr ColumnVector<UInt8>::indexImpl<size_t>(const PaddedPODArray<size_t> & indexes, size_t limit) const;
 template ColumnPtr ColumnVector<UInt64>::indexImpl<size_t>(const PaddedPODArray<size_t> & indexes, size_t limit) const;
 #endif

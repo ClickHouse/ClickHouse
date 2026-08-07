@@ -51,6 +51,24 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
+const QueryPlan::Node * findNonSerializableStep(
+    const QueryPlan::Node * root, const std::function<bool(const IQueryPlanStep &)> & ignore)
+{
+    std::vector<const QueryPlan::Node *> stack;
+    if (root)
+        stack.push_back(root);
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (node->step && !node->step->isSerializable() && !(ignore && ignore(*node->step)))
+            return node;
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return nullptr;
+}
+
 namespace
 {
 
@@ -59,20 +77,10 @@ namespace
 /// message instead of late, mid-execution, with a generic error.
 void assertFragmentSerializable(const QueryPlan & fragment, const String & stage_name)
 {
-    std::vector<const QueryPlan::Node *> stack;
-    if (fragment.getRootNode())
-        stack.push_back(fragment.getRootNode());
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (node->step && !node->step->isSerializable())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "make_distributed_plan cannot distribute this query: step '{}' in stage '{}' is not "
-                "serializable for remote execution", node->step->getName(), stage_name);
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
+    if (const auto * node = findNonSerializableStep(fragment.getRootNode()))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan cannot distribute this query: step '{}' in stage '{}' is not "
+            "serializable for remote execution", node->step->getName(), stage_name);
 }
 
 }
@@ -927,6 +935,9 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
         {
             Pipe read_result_from(exchange_lookup->createSource(result_header, result_stream_id));
+            /// An in-memory exchange source emits zero-row chunks as scheduling ticks while
+            /// waiting for data; drop them so they do not reach the client as empty `Data` packets.
+            read_result_from.addTransform(makeSkipZeroRowChunksTransform(result_header));
             QueryPipelineBuilder builder;
             builder.init(std::move(read_result_from));
             return builder;

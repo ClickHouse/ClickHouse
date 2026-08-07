@@ -1,6 +1,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Common/Logger.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -72,6 +73,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -2016,9 +2018,6 @@ static BlockIO executeQueryImpl(
         /// Hold element of process list till end of query execution.
         res.process_list_entries.push_back(process_list_entry);
 
-        /// Hold query metadata cache till end of query execution.
-        res.query_metadata_cache = std::move(query_metadata_cache);
-
         if (query_plan)
         {
             auto plan = QueryPlan::makeSets(std::move(*query_plan), context);
@@ -2364,6 +2363,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->setCurrentQueryId("");
             if (!fuzzed_query_params.empty())
                 fuzz_context->setQueryParameters(fuzzed_query_params);
+
+            /// Run the fuzzed query on its own thread group, so that code reading the query context
+            /// from the thread (read/write settings, temporary data, distributed plan execution, ...)
+            /// sees the fuzz context and the limits pinned above instead of the outer query's.
+            ThreadGroupSwitcher thread_group_switcher(
+                ThreadGroup::createForQuery(fuzz_context), ThreadName::AST_FUZZER, /*allow_existing_group=*/ true);
 
             auto result = executeQuery(fuzzed_query, fuzz_context, QueryFlags{.internal = true});
 
