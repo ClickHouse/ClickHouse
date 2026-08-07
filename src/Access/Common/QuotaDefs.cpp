@@ -188,8 +188,8 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
         {
             static const auto info = make_info(
                 "EXECUTION_TIME",
-                "The current total amount of time (in nanoseconds) spent to execute queries within the current period of time",
-                "The maximum amount of time (in nanoseconds) allowed for all queries to execute within the specified period of time",
+                "The current total amount of time (in seconds, with nanosecond precision) spent to execute queries within the current period of time",
+                "The maximum amount of time (in seconds, with nanosecond precision) allowed for all queries to execute within the specified period of time",
                 1000000000 /* execution_time is stored in nanoseconds */
             );
             return info;

@@ -102,7 +102,7 @@ SHOW CREATE QUOTA ${QUOTA}_n;
 
 -- A limit of a quota type with an output denominator is scaled by it exactly: a value at the top of
 -- the range must be accepted, while the rounded product of doubles is 2^64 and used to be rejected
--- (18446744073.709551615 nanoseconds is exactly the maximum). The value 18446744073 has no exact
+-- (18446744073.709551615 seconds is exactly 18446744073709551615 nanoseconds, the maximum). The value 18446744073 has no exact
 -- double product either. The stored nanoseconds are shown back exactly, not through a double.
 CREATE QUOTA ${QUOTA}_s FOR INTERVAL 1 hour MAX execution_time = 18446744073.709551615;
 SHOW CREATE QUOTA ${QUOTA}_s;

@@ -25,7 +25,7 @@ Contains information about maximums for all intervals of all quotas. Any number 
 - `max_result_bytes` ([Nullable(UInt64)](/reference/data-types/nullable)) — The maximum total number of bytes in the result set of all queries allowed within the specified period of time.
 - `max_read_rows` ([Nullable(UInt64)](/reference/data-types/nullable)) — The maximum number of rows to read during execution of all queries allowed within the specified period of time.
 - `max_read_bytes` ([Nullable(UInt64)](/reference/data-types/nullable)) — The maximum number of bytes to read during execution of all queries allowed within the specified period of time.
-- `max_execution_time` ([Nullable(Decimal(20, 9))](/reference/data-types/nullable)) — The maximum amount of time (in nanoseconds) allowed for all queries to execute within the specified period of time
+- `max_execution_time` ([Nullable(Decimal(20, 9))](/reference/data-types/nullable)) — The maximum amount of time (in seconds, with nanosecond precision) allowed for all queries to execute within the specified period of time
 - `max_written_bytes` ([Nullable(UInt64)](/reference/data-types/nullable)) — The maximum number of bytes to written during execution of all queries allowed within the specified period of time.
 - `max_failed_sequential_authentications` ([Nullable(UInt64)](/reference/data-types/nullable)) — The maximum number of consecutive authentication failures allowed within the specified period of time.
 - `max_queries_per_normalized_hash` ([Nullable(UInt64)](/reference/data-types/nullable)) — The maximum number of executions of any single normalized query allowed within the specified period of time.
