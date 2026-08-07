@@ -1369,12 +1369,23 @@ namespace DB
                 break;
             case TypeIndex::Nothing:
             {
-                /// This case is reachable only when the schema allowed it (see `output_nothing_as_null`).
-                /// A `Nothing` column has no values, so every entry of the Arrow Null array is null
-                /// regardless of the null bytemap.
-                arrow::NullBuilder & builder = assert_cast<arrow::NullBuilder &>(*array_builder);
-                arrow::Status status = builder.AppendNulls(end - start);
-                checkStatus(status, column->getName(), format_name);
+                if (settings.output_nothing_as_null)
+                {
+                    /// The schema maps `Nothing` to the Arrow `Null` type (see `getArrowType`).
+                    /// A `Nothing` column has no values, so every entry of the Arrow Null array is null
+                    /// regardless of the null bytemap.
+                    arrow::NullBuilder & builder = assert_cast<arrow::NullBuilder &>(*array_builder);
+                    arrow::Status status = builder.AppendNulls(end - start);
+                    checkStatus(status, column->getName(), format_name);
+                }
+                else if (settings.output_unsupported_types_as_binary)
+                {
+                    /// The schema maps `Nothing` to the Arrow `Binary` type here (see `getArrowType`),
+                    /// e.g. the ArrowFlight server with `output_format_arrow_unsupported_types_as_binary`.
+                    fillArrowArrayWithRawColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                }
+                else
+                    throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type->getFamilyName(), column_name, format_name);
                 break;
             }
             case TypeIndex::Array:
