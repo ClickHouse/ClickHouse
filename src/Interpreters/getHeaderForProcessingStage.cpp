@@ -56,6 +56,10 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     select.tables()->children.resize(1);
 
     /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
+    /// The `group_by_all` flag must not survive either: a re-analysis of this rewritten query
+    /// (e.g. for a child plan of StorageMerge) would otherwise re-expand GROUP BY ALL over the
+    /// replaced select list. The `order_by_all` flag is reset by setExpression itself when the
+    /// ORDER BY clause is removed below.
     select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
     select.group_by_all = false;
     rewriter_result.aggregates.clear();
@@ -99,10 +103,10 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     replace_where(select, ASTSelectQuery::Expression::PREWHERE);
     select.setExpression(ASTSelectQuery::Expression::HAVING, {});
     select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
-    /// The `group_by_all`/`order_by_all` flags must not survive the removal of the corresponding
-    /// clauses: a re-analysis of this rewritten query (e.g. for a child plan of StorageMerge)
-    /// would otherwise try to expand `ORDER BY ALL` over the removed ORDER BY clause.
-    select.order_by_all = false;
+    /// INTERPOLATE can only exist together with ORDER BY ... WITH FILL, and RequiredSourceColumnsVisitor
+    /// traverses it independently of ORDER BY, so if it were kept, it could still reference columns
+    /// of the removed joined table.
+    select.setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
 
     return true;
 }

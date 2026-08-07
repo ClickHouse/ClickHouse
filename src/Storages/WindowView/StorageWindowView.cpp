@@ -773,6 +773,7 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     {
         modified_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
         modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+        modified_select.group_by_all = false;
     }
 
     auto select_list = make_intrusive<ASTExpressionList>();
@@ -795,6 +796,10 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
         order_by_elem->direction = 1;
         order_by->children.push_back(order_by_elem);
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(order_by));
+        /// The original query may have used ORDER BY ALL, but the clause was replaced above,
+        /// so the flag must not survive: otherwise the analysis of this query would treat
+        /// the timestamp sort element as the ALL keyword and expand it over all columns.
+        modified_select.order_by_all = false;
     }
     else
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
