@@ -22,14 +22,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t04692"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE t04692 (n UInt64) ENGINE = Memory"
-$CLICKHOUSE_CLIENT --query "INSERT INTO t04692 SELECT number FROM numbers(30000000)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO t04692 SELECT number FROM numbers(30000000) SETTINGS max_rows_to_read = 0"
 
 # Numeric path: `DistinctTransform::buildFilter`.
 $CLICKHOUSE_CLIENT --query "
     SELECT DISTINCT n FROM t04692
     SETTINGS max_block_size = 30000000, max_threads = 1,
         max_execution_time = 5, timeout_overflow_mode = 'break',
-        log_comment = '04692_distinct_timeout_hash'
+        max_rows_to_read = 0, log_comment = '04692_distinct_timeout_hash'
     FORMAT Null"
 
 # LowCardinality path: `DistinctTransform::buildLowCardinalityMask`.
@@ -37,7 +37,7 @@ $CLICKHOUSE_CLIENT --query "
     SELECT DISTINCT CAST(toString(n) AS LowCardinality(String)) FROM t04692
     SETTINGS max_block_size = 30000000, max_threads = 1,
         max_execution_time = 5, timeout_overflow_mode = 'break',
-        log_comment = '04692_distinct_timeout_lc'
+        max_rows_to_read = 0, log_comment = '04692_distinct_timeout_lc'
     FORMAT Null"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
@@ -49,4 +49,5 @@ $CLICKHOUSE_CLIENT --query "
         AND event_date >= yesterday()
         AND type = 'QueryFinish'
         AND log_comment IN ('04692_distinct_timeout_hash', '04692_distinct_timeout_lc')
-    ORDER BY log_comment"
+    ORDER BY log_comment
+    SETTINGS max_rows_to_read = 0"
