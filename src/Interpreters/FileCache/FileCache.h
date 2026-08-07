@@ -306,6 +306,11 @@ private:
     /// Fed by `keep_up_free_space_ratio_task`, which collects candidates and frees their queue entries.
     std::unique_ptr<ThreadPool> eviction_pool;
 
+    /// Pool for parallel keys removal on `SYSTEM DROP FILESYSTEM CACHE`.
+    /// Keeps no idle threads, so it costs nothing between drop requests.
+    const size_t drop_cache_threads;
+    std::unique_ptr<ThreadPool> drop_cache_pool;
+
     /// Single background maintenance task: removes the priority's invalidated
     /// queue entries and, on the same ticks, evicts idle clients.
     BackgroundSchedulePoolTaskHolder background_cleanup_task;
