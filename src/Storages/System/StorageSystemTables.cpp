@@ -27,6 +27,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageView.h>
@@ -47,6 +49,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
 
@@ -57,7 +60,9 @@ ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr co
     MutableColumnPtr column = ColumnString::create();
 
     const auto & settings = context->getSettingsRef();
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{
+        .with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables],
+        .with_remote_databases = settings[Setting::show_remote_databases_in_system_tables]});
     for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -353,7 +358,6 @@ protected:
 
             ++count;
         }
-        ++database_idx;
         return count;
     }
 
@@ -372,8 +376,12 @@ protected:
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
+            /// Consume the exhausted iterator, otherwise it could advance `database_idx` twice.
             if (tables_it && !tables_it->isValid())
+            {
                 ++database_idx;
+                tables_it.reset();
+            }
 
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
@@ -529,6 +537,7 @@ protected:
             {
                 size_t rows_added = fillTableNamesOnly(res_columns);
                 rows_count += rows_added;
+                ++database_idx;
                 continue;
             }
 
@@ -691,18 +700,71 @@ protected:
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
+                    bool inserted = false;
+
+                    try
+                    {
+                        // Extract from specific DataLake metadata if suitable
+                        if (auto * obj = dynamic_cast<StorageObjectStorage *>(table.get()))
+                        {
+                            if (auto * dl_meta = obj->getExternalMetadata(context))
+                            {
+                                if (auto p = dl_meta->partitionKey(context); p.has_value())
+                                {
+                                    res_columns[res_index++]->insert(*p);
+                                    inserted = true;
+                                }
+                            }
+
+                        }
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Failed to get info. It's not critical, just log it.
+                        tryLogCurrentException("StorageSystemTables");
+                    }
+
+                    if (!inserted)
+                    {
+                        if (metadata_snapshot && (expression_ptr = metadata_snapshot->getPartitionKeyAST()))
+                            res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
                 }
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
-                        res_columns[res_index++]->insert(format({context, *expression_ptr}));
-                    else
-                        res_columns[res_index++]->insertDefault();
+                    bool inserted = false;
+
+                    try
+                    {
+                        // Extract from specific DataLake metadata if suitable
+                        if (auto * obj = dynamic_cast<StorageObjectStorage *>(table.get()))
+                        {
+                            if (auto * dl_meta = obj->getExternalMetadata(context))
+                            {
+                                if (auto p = dl_meta->sortingKey(context); p.has_value())
+                                {
+                                    res_columns[res_index++]->insert(*p);
+                                    inserted = true;
+                                }
+                            }
+                        }
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Failed to get info. It's not critical, just log it.
+                        tryLogCurrentException("StorageSystemTables");
+                    }
+
+                    if (!inserted)
+                    {
+                        if (metadata_snapshot && (expression_ptr = metadata_snapshot->getSortingKey().expression_list_ast))
+                            res_columns[res_index++]->insert(format({context, *expression_ptr}));
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
                 }
 
                 if (columns_mask[src_index++])

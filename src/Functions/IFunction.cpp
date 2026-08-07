@@ -121,14 +121,7 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     return indexes;
 }
 
-void convertLowCardinalityColumnsToFull(ColumnsWithTypeAndName & args)
-{
-    for (auto & column : args)
-    {
-        column.column = recursiveRemoveLowCardinality(column.column);
-        column.type = recursiveRemoveLowCardinality(column.type);
-    }
-}
+
 }
 
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(

@@ -104,7 +104,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                "select count() from system.scheduler where path ilike '%/admin' and type='unified' and priority=0"
+                "select count() from system.scheduler where path ilike '%/admin' and type='workload' and priority=0"
             )
             == "1\n"
         )
@@ -116,7 +116,7 @@ def test_create_workload():
         )
         assert (
             node.query(
-                "select count() from system.scheduler where path ilike '%/production' and type='unified' and weight=9"
+                "select count() from system.scheduler where path ilike '%/production' and type='workload' and weight=9"
             )
             == "1\n"
         )
@@ -149,6 +149,14 @@ def test_create_workload():
     indirect=True,
 )
 def test_independent_pools(with_custom_config):
+    if (
+        node.is_built_with_address_sanitizer()
+        or node.is_built_with_thread_sanitizer()
+        or node.is_built_with_memory_sanitizer()
+        or node.is_built_with_llvm_coverage()
+    ):
+        pytest.skip("doesn't fit in timeouts due to heavy workload")
+
     node.query(
         """
         create resource cpu (master thread, worker thread);
@@ -338,7 +346,7 @@ class QueryPool:
 
 def get_all_dequeued_costs() -> dict[str, float]:
     rows = node.query(
-        "select path, dequeued_cost from system.scheduler where resource='cpu' and type='unified'"
+        "select path, dequeued_cost from system.scheduler where resource='cpu' and type='workload'"
     ).strip().split('\n')
     return {line.split()[0].split('/')[-1]: float(line.split()[1]) for line in rows if line}
 
@@ -391,6 +399,13 @@ def test_threads_oversubscription():
     ]
 )
 def test_cpu_time_fairness(queries, threads, production_length, development_length, randomize):
+    if (
+        node.is_built_with_address_sanitizer()
+        or node.is_built_with_thread_sanitizer()
+        or node.is_built_with_memory_sanitizer()
+        or node.is_built_with_llvm_coverage()
+    ):
+        pytest.skip("doesn't fit in timeouts due to heavy workload")
 
     # We use max_cpus=1 to make sure that we have voilated constraint.
     # In CI we should have at least one CPU core, so we never hit CPU bottleneck w/o hitting scheduler limit.

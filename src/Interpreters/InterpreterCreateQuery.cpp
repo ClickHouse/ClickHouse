@@ -44,6 +44,8 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Storages/MaterializedView/RefreshSet.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -148,6 +150,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsBool stop_refreshable_materialized_views_on_startup;
 }
 
 namespace ServerSetting
@@ -215,7 +218,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
     if (db_num_limit > 0 && !internal)
     {
-        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true}).size();
+        size_t db_count = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true}).size();
         std::initializer_list<std::string_view> system_databases =
         {
             DatabaseCatalog::TEMPORARY_DATABASE,
@@ -2270,6 +2273,27 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             database->checkTableNameLength(table_to_replace_name);
     }
 
+    /// A non-APPEND refreshable materialized view exclusively owns its target table. The replacement is
+    /// built while the view being replaced still owns it, so reject only when a different view owns it.
+    /// Gate this like the constructor-side guard, which only applies to non-APPEND refreshable views.
+    if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->append)
+    {
+        auto target_table_id = create.getTargetTableID(ViewTarget::To);
+        if (!target_table_id.empty())
+        {
+            if (target_table_id.database_name.empty())
+                target_table_id.database_name = create.getDatabase();
+            if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(target_table_id))
+            {
+                auto owner_view_id = task->getInfo().view_id;
+                if (owner_view_id != StorageID{create.getDatabase(), table_to_replace_name})
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table {} is already a target of another refreshable materialized view: {}",
+                        target_table_id.getFullTableName(), owner_view_id.getFullTableName());
+            }
+        }
+    }
+
     {
         const String name_hash = TemporaryReplaceTableName::calculateHash(create.getDatabase(), create.getTable());
         const String random_suffix = [&]()
@@ -2360,6 +2384,13 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             auto drop_context = make_drop_context();
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
+
+        /// The replacement view's refresher was created paused so it could not touch the target
+        /// before the rename. Resume it now, unless stop_refreshable_materialized_views_on_startup
+        /// keeps refreshable views stopped, in which case it stays stopped like a plain CREATE.
+        if (!current_context->getGlobalContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+            for (const auto & task : current_context->getRefreshSet().findTasks({create.getDatabase(), table_to_replace_name}))
+                task->start();
 
         create.setTable(table_to_replace_name);
 
