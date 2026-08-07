@@ -40,6 +40,8 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -991,9 +993,21 @@ BlockIO InterpreterSystemQuery::execute()
                 task->cancel();
             break;
         case Type::TEST_VIEW:
+        {
+            /// The parser keeps the literal text; resolving it needs the server timezone.
+            std::optional<Int64> fake_time;
+            if (query.fake_time_for_view)
+            {
+                ReadBufferFromString buf(*query.fake_time_for_view);
+                time_t time = 0;
+                readDateTimeText(time, buf);
+                assertEOF(buf);
+                fake_time = Int64(time);
+            }
             for (const auto & task : getRefreshTasks())
-                task->setFakeTime(query.fake_time_for_view);
+                task->setFakeTime(fake_time);
             break;
+        }
         case Type::STOP:
         case Type::START:
         case Type::PAUSE:

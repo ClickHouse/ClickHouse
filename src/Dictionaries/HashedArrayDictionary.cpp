@@ -1068,7 +1068,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
                     break;
 
                 ++total_blocks;
-                total_rows += block.rows();
+                total_rows += block.rows(); // NOLINT(clang-analyzer-cplusplus.Move)
 
                 Stopwatch watch_process;
                 resize(total_rows);
