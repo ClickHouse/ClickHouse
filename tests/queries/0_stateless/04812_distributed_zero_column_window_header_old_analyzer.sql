@@ -90,10 +90,12 @@ SELECT 'and so does the local one';
 DESCRIBE (SELECT count(*) OVER () FROM t04812_loc);
 SELECT 'a user column may carry the same name as the internal one, with the marker inactive';
 SELECT * FROM (SELECT a AS __row_count_marker, count(*) OVER () AS c FROM t04812_dist) ORDER BY 1, 2;
--- Here the only projection is the window function, so the internal column IS added and the user's
--- own output column carries the same name. The user's alias must win.
+-- Here the only projection is the window function, so the internal element IS added. Its column name is
+-- the quoted literal, so it cannot shadow the user's identically-spelled alias.
 SELECT 'a window function may be aliased to the internal name';
 SELECT count(*) OVER () AS `__row_count_marker` FROM t04812_dist;
+SELECT 'and the resulting column is that alias, not the internal literal';
+DESCRIBE (SELECT count(*) OVER () AS `__row_count_marker` FROM t04812_dist);
 -- The row count of a local query is never at risk, so a local plan must not carry the marker at all.
 -- Only the plan shows this: the marker is stripped again before the result either way, so no query
 -- result can tell a local pipeline that carries it from one that does not.
