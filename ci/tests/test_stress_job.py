@@ -301,6 +301,7 @@ def test_shell_producers_append_escaped_output_with_printf():
     """
     escaped_call = re.compile(r"\$\((escaped|head_escaped|trim_server_logs)\b")
     terminator = re.compile(r"format_custom_row_after_delimiter='(.*?)'")
+    printf_format = re.compile(r'printf\s+"([^"]*)"')
 
     printf_sites = 0
     terminator_settings = 0
@@ -313,6 +314,14 @@ def test_shell_producers_append_escaped_output_with_printf():
             where = f"{name}:{number}"
             assert "echo -e" not in line, f"{where}: appends with `echo -e`"
             assert "printf " in line, f"{where}: does not append with `printf`"
+            # `printf` interprets escapes in its format, so the escaped payload
+            # must be a `%s` argument; `%b` or an inline substitution re-collapse it.
+            fmt = printf_format.search(line)
+            assert fmt, f"{where}: no double-quoted printf format"
+            assert not escaped_call.search(
+                fmt.group(1)
+            ), f"{where}: escaped output is inside the printf format"
+            assert "%s" in fmt.group(1), f"{where}: format has no `%s` conversion"
             printf_sites += 1
         for value in terminator.findall(source):
             terminator_settings += 1
