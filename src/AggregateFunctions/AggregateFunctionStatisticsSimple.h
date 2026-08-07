@@ -137,31 +137,38 @@ public:
         if constexpr (is_decimal<T1>)
         {
             /// A `Decimal` column holds unscaled integers, so a value is only recovered as
-            /// `value / 10^scale`, and the kernel knows nothing about scale. Where that division
-            /// goes depends on whether converting one element takes a call.
+            /// `value / 10^scale`, and the kernel knows nothing about scale. That division either
+            /// rides along inside the accumulation loop or runs ahead of it over a tile, and which
+            /// wins comes down to what the loop can still hold: it already carries sixteen lane
+            /// accumulators, so anything else competing for vector registers spills them.
             ///
-            /// AArch64 converts and divides a machine integer with plain instructions, packed at
-            /// that, so the division sits inside the accumulation loop, which stays call-free and
-            /// vectorizes - 40 packed ops, no calls, 6 stack accesses for `Decimal64`.
-            /// `wide::integer<128>` has no such instruction and lowers to soft-float quad calls
-            /// (`__floatunditf`, `__multf3`, `__addtf3`); a call in the loop spills the lane
-            /// accumulators around every element, 102 calls and 291 stack accesses against 37. So
-            /// wide decimals convert into a buffer first and the accumulation reads that instead,
-            /// which measured 0.950s against 1.004s. x86-64 buffers at every width: it has no
-            /// packed `int64 -> double` (`vcvtqq2pd` needs AVX-512), and even `Decimal32`, which
-            /// `vcvtdq2pd` could convert, measured faster through the buffer.
+            /// AArch64 has the room, with 32 SIMD registers and a conversion that works in place on
+            /// the loaded vector: 40 packed ops, no calls, 6 stack accesses for `Decimal64`.
+            /// x86-64 has 16 `ymm` and does not. Its fused loop spills every iteration and the
+            /// vectorizer falls back to a mix of two-wide and scalar glued with shuffles - 11
+            /// scalar `vcvtsi2sd` against 3 packed `vcvtdq2pd`, 14 in-loop stack accesses - so it
+            /// converts into a tile at every width, including `Decimal32`, which does have a packed
+            /// convert. Measured on `Decimal32`: 0.194s buffered against 0.237s fused.
             ///
-            /// Both shapes fold the moments at the same points and return the same bits, which is
-            /// what the AArch64 one is for: dividing inline only ties the per-row path there - what
-            /// `Decimal32` and `Decimal64` gain over the previous code is the inlined conversion,
-            /// not the lanes - but it keeps AArch64 agreeing with x86-64.
+            /// `wide::integer` has no conversion instruction at all and lowers to soft-float quad
+            /// calls, which clobber the vector registers by calling convention - 102 calls and 291
+            /// stack accesses against 37 - so it takes the tile on either target. The calls still
+            /// run once per element; the tile only keeps them away from the accumulators, which was
+            /// worth 0.950s against 1.004s. Tiles are sized to stay in L1, the buffer costing a
+            /// store and a load per element.
             ///
-            /// That is also why `skewPop` and `kurtPop` are left out on every target rather than
-            /// just on AArch64. The per-row path gives each moment its own dependency chain, so the
-            /// third and fourth are free to it - it measures the same at every level - while the
-            /// lane kernel pays for them in arithmetic, and on AArch64 no lane count catches up,
-            /// +7.2% at level 3 being the best. Taking the path on x86-64 alone, where it measured
-            /// -7.2%, would leave the two targets disagreeing.
+            /// Either shape folds the moments at the same points and returns the same bits, so the
+            /// choice never changes a result. And it is the batched loop these two levels gain
+            /// from, not the conversion: precomputing `decimal_divisor` is worth nothing for
+            /// `Decimal32` and `Decimal64` - isolated with `varPopIf`, which stays per-row, they
+            /// measure the same before and after - while for `Decimal128` it is most of the win.
+            ///
+            /// `skewPop` and `kurtPop` are left out on every target rather than just on AArch64.
+            /// The per-row path gives each moment its own dependency chain, so the third and fourth
+            /// are free to it - it measures the same at every level - while the lane kernel pays for
+            /// them in arithmetic, and on AArch64 no lane count catches up, +7.2% at level 3 being
+            /// the best. Taking the path on x86-64 alone, where it measured -7.2%, would leave the
+            /// two targets disagreeing.
             if constexpr (StatFunc::num_args == 1 && StatFunc::level <= 2)
             {
                 if (if_argument_pos < 0)
