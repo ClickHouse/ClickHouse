@@ -1577,11 +1577,11 @@ public:
     /// In merge tree we do inserts with several steps. One of them:
     /// X. write part to temporary directory with some temp name
     /// Y. rename temporary directory to final name with correct block number value
-    /// As temp name MergeTree use just ordinary in memory counter, but in some cases
-    /// it can be useful to add additional part in temp name to avoid collisions on FS
-    /// (e.g. `StorageMergeTree` under `leader_election`, where several server processes
-    /// create temporary names under the same shared data path).
-    virtual std::string getPostfixForTempInsertName() const { return ""; }
+    /// As temp name MergeTree use just ordinary in memory counter or the deterministic name of
+    /// the produced part, but in some cases it can be useful to add additional token in temp name
+    /// to avoid collisions on FS (e.g. `StorageMergeTree` under `leader_election`, where several
+    /// server processes create temporary names under the same shared data path).
+    virtual std::string getPostfixForTempPartName() const { return ""; }
 
     /// For generating names of temporary parts during insertion.
     SimpleIncrement insert_increment;

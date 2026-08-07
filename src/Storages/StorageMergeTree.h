@@ -292,11 +292,12 @@ private:
 
     /// Under `leader_election`, temporary part directories and files are created under the shared
     /// `relative_data_path` by every participating server process, while their names are derived
-    /// from process-local counters (`tmp_insert_*`, `tmp_empty_*`, `tmp_move_from_*`,
-    /// `tmp_replace_from_*`, `tmp_mutation_*`). Scope them with a stable per-node token so
-    /// in-flight temporary work of two processes cannot collide during failover. Empty (no
-    /// postfix) when `leader_election` is disabled.
-    std::string getPostfixForTempInsertName() const override;
+    /// from process-local counters or deterministic part names (`tmp_insert_*`, `tmp_empty_*`,
+    /// `tmp_move_from_*`, `tmp_replace_from_*`, `tmp_mutation_*`, `tmp_merge_*`, `tmp_mut_*`,
+    /// `tmp_clone_*`). Scope them with a stable per-node token so in-flight temporary work of two
+    /// processes cannot collide during failover. Empty (no postfix) when `leader_election` is
+    /// disabled.
+    std::string getPostfixForTempPartName() const override;
 
     /// `reloading` is set on a `leader_election` leadership takeover, when mutation entries
     /// created by the previous leader while this node was a follower must be picked up. Already

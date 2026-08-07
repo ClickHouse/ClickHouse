@@ -2408,3 +2408,188 @@ def test_replace_partition_old_parts_retired_durably(started_cluster):
                 node1.query(f"DROP TABLE IF EXISTS {name} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_CLEAR_EMPTY_MID_LOOP = "12345678-abcd-abcd-abcd-12345678ab26"
+
+
+def test_clear_empty_parts_stops_when_lease_goes_stale_mid_loop(started_cluster):
+    """
+    Regression for the per-part freshness re-check inside `clearEmptyParts` (and
+    `clearUnusedPatchParts`): the lease used to be checked only before entering the helper, so a
+    lease that expired after the first empty part was dropped let the stale leader keep
+    persisting removal metadata and dedup-log `DROP` records for the rest of the list while the
+    new leader already owned the shared storage.
+
+    The `merge_tree_leader_election_stale_lease_mid_clear_empty_parts` failpoint simulates the
+    lease going stale right after the first empty part of the batch was dropped: the loop must
+    stop there and leave the remaining empty parts to the current leader.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_mid_clear_empty_parts"
+    table = "test_clear_empty_mid_loop"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_CLEAR_EMPTY_MID_LOOP}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, old_parts_lifetime = 1,
+                     merge_tree_clear_old_parts_interval_seconds = 60,
+                     cleanup_delay_period = 60, cleanup_delay_period_random_add = 0
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1)")
+        node1.query(f"INSERT INTO {table} VALUES (2)")
+
+        # One covering empty part is committed per active part (the leader probe above may have
+        # added parts of its own, so count them instead of hardcoding).
+        parts_before = int(
+            node1.query(
+                f"SELECT count() FROM system.parts WHERE database = currentDatabase()"
+                f" AND table = '{table}' AND active"
+            ).strip()
+        )
+        assert parts_before >= 2
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            # The DDL succeeds — the synchronous cleanup after it is best-effort — but its
+            # `clearEmptyParts` pass must stop after the first drop.
+            node1.query(f"TRUNCATE TABLE {table}")
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
+
+            assert node1.contains_in_log(
+                f"Stopping the removal of empty parts after 1 of {parts_before}"
+            ), "The per-part freshness re-check never fired inside the empty-parts loop"
+
+            # Exactly one empty part was dropped; the rest stay active for the current leader.
+            active_empty = int(
+                node1.query(
+                    f"SELECT count() FROM system.parts WHERE database = currentDatabase()"
+                    f" AND table = '{table}' AND active AND rows = 0"
+                ).strip()
+            )
+            assert active_empty == parts_before - 1, (
+                "The empty-parts loop kept dropping parts after the lease went stale"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The table stays truncated after the lease is fresh again.
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
+SHARED_UUID_MERGE_TMP_COLLISION = "12345678-abcd-abcd-abcd-12345678ab27"
+
+
+def test_merge_after_failover_does_not_collide_with_stale_tmp_dir(started_cluster):
+    """
+    Regression for the per-node scoping of the background-merge temporary directory names: the
+    merged part name is deterministic, so `tmp_merge_<part>` used to be the same path on every
+    node sharing the data path. A leader that died (or lost its lease) mid-merge left that
+    directory on shared storage, and the new leader, selecting the same merge, collided with it
+    (`DIRECTORY_ALREADY_EXISTS`) instead of making progress.
+
+    The merge temp directory is now scoped with the same per-node token as the insert / partition
+    DDL temp names (`tmp_merge_<token>_<part>`), so the new leader's merge must succeed. The
+    `merge_task_pause_after_temporary_directory_created` failpoint holds the leader's merge at
+    the point where its temporary directory exists on shared storage, and a hard kill leaves the
+    directory behind.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    failpoint = "merge_task_pause_after_temporary_directory_created"
+    table = "test_merge_tmp_collision"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_MERGE_TMP_COLLISION}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        attach_table_on_second_node(node2, table_name=table, uuid=SHARED_UUID_MERGE_TMP_COLLISION)
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        follower = followers[0]
+
+        leader.query(f"INSERT INTO {table} VALUES (1)")
+        leader.query(f"INSERT INTO {table} VALUES (2)")
+
+        # Hold the merge on the leader right after its temporary directory was created on the
+        # shared storage, then kill the node so the directory is left behind (a graceful failure
+        # would remove it: temporary parts are deleted on destruction).
+        leader.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        optimize_error = []
+
+        def run_optimize():
+            try:
+                leader.query(f"OPTIMIZE TABLE {table} FINAL")
+            except Exception as e:
+                optimize_error.append(e)
+
+        optimize_thread = threading.Thread(target=run_optimize)
+        optimize_thread.start()
+        try:
+            leader.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+            # The failpoint is global on this node, so a system-table merge could have been the
+            # first to pause. Make sure OUR merge is the one holding a temporary directory (its
+            # pause point is reached within moments of the merge registering).
+            deadline = time.monotonic() + 60
+            while (
+                leader.query(
+                    f"SELECT count() FROM system.merges WHERE table = '{table}'"
+                ).strip()
+                == "0"
+            ):
+                assert time.monotonic() < deadline, "The merge never started on the leader"
+                time.sleep(0.5)
+            time.sleep(2)
+        finally:
+            leader.stop_clickhouse(kill=True)
+            optimize_thread.join()
+
+        # The follower must take over (session_timeout = 5s) and be able to run the SAME merge —
+        # its temporary directory name is scoped by its own node token, so the dead leader's
+        # leftover directory does not collide with it.
+        deadline = time.monotonic() + 60
+        while True:
+            try:
+                follower.query(f"OPTIMIZE TABLE {table} FINAL", timeout=60)
+                break
+            except Exception as e:
+                if "TABLE_IS_READ_ONLY" in str(e) and time.monotonic() < deadline:
+                    time.sleep(1)
+                    continue
+                raise
+
+        assert follower.query(
+            f"SELECT x FROM {table} WHERE x > 0 ORDER BY x"
+        ).split() == ["1", "2"]
+        assert int(
+            follower.query(
+                f"SELECT count() FROM system.parts WHERE database = currentDatabase()"
+                f" AND table = '{table}' AND active"
+            ).strip()
+        ) == 1, "OPTIMIZE FINAL on the new leader did not produce a single merged part"
+    finally:
+        for node in (node1, node2):
+            try:
+                ensure_node_up(node)
+            except Exception:
+                pass
+        for node in (node1, node2):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass

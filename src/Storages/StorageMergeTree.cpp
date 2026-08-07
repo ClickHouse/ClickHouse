@@ -1352,7 +1352,7 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
 
     MergeTreeMutationEntry entry(
         commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings(),
-        getPostfixForTempInsertName());
+        getPostfixForTempPartName());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -3825,9 +3825,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
     /// Scope the temporary directory names to this server process: under `leader_election`,
     /// several processes share the destination data path and the process-local `temp_index`
-    /// below is not unique across them. See `getPostfixForTempInsertName`.
+    /// below is not unique across them. See `getPostfixForTempPartName`.
     String tmp_prefix = "tmp_replace_from_";
-    if (const auto temp_postfix = getPostfixForTempInsertName(); !temp_postfix.empty())
+    if (const auto temp_postfix = getPostfixForTempPartName(); !temp_postfix.empty())
         tmp_prefix += temp_postfix + "_";
 
     bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(source_table->getStoragePolicy());
@@ -4141,9 +4141,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     /// Scope the temporary directory names (created under the DESTINATION data path by
     /// `cloneAndLoadDataPart`) to this server process: under `leader_election`, several
     /// processes share that path and the process-local `temp_index` below is not unique
-    /// across them. See `getPostfixForTempInsertName`.
+    /// across them. See `getPostfixForTempPartName`.
     String tmp_prefix = "tmp_move_from_";
-    if (const auto temp_postfix = dest_table_storage->getPostfixForTempInsertName(); !temp_postfix.empty())
+    if (const auto temp_postfix = dest_table_storage->getPostfixForTempPartName(); !temp_postfix.empty())
         tmp_prefix += temp_postfix + "_";
 
     for (const DataPartPtr & src_part : src_parts)
@@ -4748,7 +4748,7 @@ void StorageMergeTree::assertWritableLeaderAtEpoch(UInt64 admission_epoch) const
             admission_epoch, current_epoch);
 }
 
-std::string StorageMergeTree::getPostfixForTempInsertName() const
+std::string StorageMergeTree::getPostfixForTempPartName() const
 {
     /// See the comment in the header. The token must be stable within the process (temporary
     /// cleanup on restart matches only the `tmp_*` prefixes, not the token) and distinct across

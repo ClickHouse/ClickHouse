@@ -440,6 +440,11 @@ namespace FailPoints
     /// freshness re-check rejects the rest, so they are rolled back to the Outdated state.
     extern const char merge_tree_leader_election_stale_lease_mid_cleanup[];
 
+    /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of dropping
+    /// a batch of empty (or unused patch) parts: the first part is dropped and the per-part
+    /// freshness re-check leaves the rest to the current leader.
+    extern const char merge_tree_leader_election_stale_lease_mid_clear_empty_parts[];
+
     /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of a sequence
     /// of permanent changes to the shared `detached/` namespace (`ATTACH PARTITION`): the first
     /// change succeeds and the next fence rejects the command, so the rollback journal is
@@ -4644,13 +4649,34 @@ size_t MergeTreeData::clearEmptyParts()
         }
     }
 
+    /// Each drop below persists removal metadata and a dedup-log `DROP` record before the
+    /// filesystem cleanup inside `dropPartNoWaitNoThrow` re-checks the lease, so under
+    /// `leader_election` the freshness must be re-checked per part: a lease that goes stale in
+    /// the middle of the loop must leave the remaining parts to the current leader instead of
+    /// mutating shared metadata under the stale lease. For every engine without `leader_election`
+    /// the check is a no-op returning true. `dropped` gates the test hook so that the simulated
+    /// staleness fires only after the first part was actually dropped (the failpoint is global,
+    /// but must only fire for the table under test).
+    const bool is_leader_election = (*getSettings())[MergeTreeSetting::leader_election];
+    size_t dropped = 0;
     for (auto & name : parts_names_to_drop)
     {
+        bool lease_went_stale = !canRunDestructiveCleanup();
+        if (is_leader_election && dropped > 0)
+            fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_clear_empty_parts, { lease_went_stale = true; });
+        if (lease_went_stale)
+        {
+            LOG_INFO(log, "Stopping the removal of empty parts after {} of {}: the leadership lease went stale; "
+                "the remaining parts are left to the current leader (leader_election)", dropped, parts_names_to_drop.size());
+            break;
+        }
+
         LOG_TRACE(log, "Will drop empty part {}", name);
         dropPartNoWaitNoThrow(name);
+        ++dropped;
     }
 
-    return parts_names_to_drop.size();
+    return dropped;
 }
 
 size_t MergeTreeData::clearUnusedPatchParts()
@@ -4686,13 +4712,29 @@ size_t MergeTreeData::clearUnusedPatchParts()
             patch_names_to_drop.push_back(patch->name);
     }
 
+    /// Same per-part freshness re-check as in `clearEmptyParts`: each drop persists removal
+    /// metadata and a dedup-log `DROP` record, so a lease that goes stale in the middle of the
+    /// loop must leave the remaining patch parts to the current leader.
+    const bool is_leader_election = (*getSettings())[MergeTreeSetting::leader_election];
+    size_t dropped = 0;
     for (const auto & name : patch_names_to_drop)
     {
+        bool lease_went_stale = !canRunDestructiveCleanup();
+        if (is_leader_election && dropped > 0)
+            fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_clear_empty_parts, { lease_went_stale = true; });
+        if (lease_went_stale)
+        {
+            LOG_INFO(log, "Stopping the removal of unused patch parts after {} of {}: the leadership lease went stale; "
+                "the remaining parts are left to the current leader (leader_election)", dropped, patch_names_to_drop.size());
+            break;
+        }
+
         LOG_INFO(log, "Will drop unused patch part {}", name);
         dropPartNoWaitNoThrow(name);
+        ++dropped;
     }
 
-    return patch_names_to_drop.size();
+    return dropped;
 }
 
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
@@ -10266,7 +10308,7 @@ void MergeTreeData::Transaction::undoPublishedRenames()
     /// Rename the published parts back to the temporary directories they came from. The command
     /// is aborted, so nothing of it may stay visible under a persistent name: otherwise the
     /// next leader would load parts of a DDL that failed. The temporary names are process-scoped
-    /// under `leader_election` (`getPostfixForTempInsertName`), so restoring them cannot collide
+    /// under `leader_election` (`getPostfixForTempPartName`), so restoring them cannot collide
     /// with the new leader's own work. Best effort: a failure here is logged, not propagated, so
     /// that the original rejection reaches the client.
     for (auto it = published_parts_pending_commit.rbegin(); it != published_parts_pending_commit.rend(); ++it)
@@ -12653,9 +12695,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     /// Scope the temporary directory name to this server process: under `leader_election`,
     /// several processes share the data path and empty covering parts for the same partition
-    /// could otherwise collide by name. See `getPostfixForTempInsertName`.
+    /// could otherwise collide by name. See `getPostfixForTempPartName`.
     String tmp_dir_name = EMPTY_PART_TMP_PREFIX;
-    if (const auto temp_postfix = getPostfixForTempInsertName(); !temp_postfix.empty())
+    if (const auto temp_postfix = getPostfixForTempPartName(); !temp_postfix.empty())
         tmp_dir_name += temp_postfix + "_";
     tmp_dir_name += new_part_name;
 

@@ -3789,7 +3789,14 @@ bool MutateTask::prepare()
         LOG_TRACE(ctx->log, "Part {} doesn't change up to mutation version {}", ctx->source_part->name, ctx->future_part->part_info.mutation);
         std::string prefix;
         if (ctx->need_prefix)
+        {
             prefix = "tmp_clone_";
+            /// Scope the temporary directory name to this server process: under `leader_election`,
+            /// several processes share the data path and the cloned part name is deterministic.
+            /// See `getPostfixForTempPartName`.
+            if (const auto temp_postfix = ctx->data->getPostfixForTempPartName(); !temp_postfix.empty())
+                prefix += temp_postfix + "_";
+        }
 
         IDataPartStorage::ClonePartParams clone_params
         {
@@ -3925,7 +3932,16 @@ bool MutateTask::prepare()
 
     std::string prefix;
     if (ctx->need_prefix)
+    {
         prefix = TEMP_DIRECTORY_PREFIX;
+        /// Scope the temporary directory name to this server process: under `leader_election`,
+        /// several processes share the data path and the mutated part name is deterministic, so
+        /// after a failover the new leader could otherwise collide with (or reclaim from under) a
+        /// leftover temporary directory of the previous leader's in-flight mutation of the same
+        /// part. See `getPostfixForTempPartName`.
+        if (const auto temp_postfix = ctx->data->getPostfixForTempPartName(); !temp_postfix.empty())
+            prefix += temp_postfix + "_";
+    }
 
     String tmp_part_dir_name = prefix + ctx->future_part->name;
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
