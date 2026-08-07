@@ -188,6 +188,8 @@ public:
 
     const Aggregator::Params & getParams() const { return params; }
 
+    void abandonTopKOptimization();
+
 private:
     void updateOutputHeader() override;
 

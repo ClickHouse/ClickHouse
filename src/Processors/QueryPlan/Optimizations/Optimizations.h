@@ -256,6 +256,10 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
 
 void abandonUnprofitableGroupByTopK(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
+/// Aggregate-projection rewriting turns aggregation steps into merge-only ones, which bypass the
+/// top-K heap; abandon the optimization (and the sort synthesized for it) on such steps.
+void abandonGroupByTopKForProjections(QueryPlan::Node & root);
+
 bool removeSyntheticTopKSort(QueryPlan::Node * aggregating_node, QueryPlan::Node * sort_node, QueryPlan::Node * parent_of_sort);
 
 /// Populates two maps in lock-step:

@@ -216,6 +216,68 @@ bool removeSyntheticTopKSort(QueryPlan::Node * aggregating_node, QueryPlan::Node
     return unlinked;
 }
 
+void abandonGroupByTopKForProjections(QueryPlan::Node & root)
+{
+    std::unordered_map<const QueryPlan::Node *, QueryPlan::Node *> parents;
+    std::vector<QueryPlan::Node *> stack;
+    stack.push_back(&root);
+
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+
+        for (auto * child : node->children)
+        {
+            parents[child] = node;
+            stack.push_back(child);
+        }
+
+        /// Aggregate-projection rewriting happens after the top-K optimization. It either turns the
+        /// `AggregatingStep` into merge-only (all parts have the projection) or replaces it with an
+        /// `AggregatingProjectionStep` (only some parts do). Merging of aggregation states bypasses
+        /// the heap, so keeping `top_k` there only disables hash-table size hints and leaves a stale
+        /// `Top-K` mark in `EXPLAIN`; abandon it, together with the sort synthesized for the heap.
+        bool synthetic_sort = false;
+        auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get());
+        auto * aggregating_projection_step = typeid_cast<AggregatingProjectionStep *>(node->step.get());
+
+        if (aggregating_step)
+        {
+            const auto & params = aggregating_step->getParams();
+            if (!params.top_k || !params.only_merge)
+                continue;
+            synthetic_sort = params.top_k->synthetic_sort;
+        }
+        else if (aggregating_projection_step)
+        {
+            const auto & params = aggregating_projection_step->getParams();
+            if (!params.top_k)
+                continue;
+            synthetic_sort = params.top_k->synthetic_sort;
+        }
+        else
+            continue;
+
+        if (synthetic_sort)
+        {
+            auto parent_it = parents.find(node);
+            QueryPlan::Node * sort_node = parent_it == parents.end() ? nullptr : parent_it->second;
+            auto grandparent_it = sort_node ? parents.find(sort_node) : parents.end();
+            QueryPlan::Node * parent_of_sort = grandparent_it == parents.end() ? nullptr : grandparent_it->second;
+
+            /// Even if the sort cannot be unlinked, abandoning the heap keeps the plan correct:
+            /// the synthesized sort merely orders the result by the grouping keys before the limit.
+            removeSyntheticTopKSort(node, sort_node, parent_of_sort);
+        }
+
+        if (aggregating_step)
+            aggregating_step->abandonTopKOptimization();
+        else
+            aggregating_projection_step->abandonTopKOptimization();
+    }
+}
+
 void abandonUnprofitableGroupByTopK(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
 {
     if (optimization_settings.is_explain)
