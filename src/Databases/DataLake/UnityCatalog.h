@@ -70,7 +70,7 @@ private:
 
     Poco::JSON::Object::Ptr requestReadCredentials(const String & table_id) const;
 
-    std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;
+    std::shared_ptr<IStorageCredentials> parseS3CompatibleCredentials(const Poco::JSON::Object::Ptr & response) const;
     std::shared_ptr<IStorageCredentials> parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const;
 
     bool getTableMetadataImpl(
