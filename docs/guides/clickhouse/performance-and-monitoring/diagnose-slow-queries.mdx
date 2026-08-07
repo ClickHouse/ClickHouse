@@ -19,6 +19,8 @@ The examples in this guide use the `nyc_taxi.trips_small_inferred` table. To run
   <NYCTaxiExampleDataset />
 </Accordion>
 
+To reproduce the query-log results in this guide, run one or more of the [example workload queries](/guides/clickhouse/performance-and-monitoring/query-optimization-example#establish-the-baseline) at least twice after loading the dataset. When diagnosing your own workload, ensure that `system.query_log` contains completed runs from the time range you intend to inspect.
+
 ## How it works {#how-it-works}
 
 By default, ClickHouse records information about completed queries in the [`system.query_log`](/reference/system-tables/query_log) table. Each record can include the query duration, the number of rows read, CPU and memory usage, and filesystem cache activity.
@@ -93,7 +95,7 @@ LIMIT 10
 
 Use `executions` to distinguish recurring workload from isolated queries. A pattern with a high median duration, frequent executions, or high resource usage is a stronger candidate for investigation than a single slow run.
 
-After selecting a pattern, inspect its individual executions. For example, the following query lists the five longest-running queries on the NYC Taxi dataset:
+As a quick inventory, the following query lists the five longest-running completed queries on the NYC Taxi dataset without grouping them into patterns. In the next step, you will narrow the query history to runs with the `normalized_query_hash` you selected above.
 
 <Tabs>
 <Tab title="Cluster">

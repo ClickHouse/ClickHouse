@@ -7,85 +7,30 @@ doc_type: 'guide'
 keywords: ['query optimization', 'performance', 'best practices', 'query tuning', 'efficiency', 'query log', 'EXPLAIN']
 ---
 
-Query optimization starts with understanding why a query is slow. The goal of these guides is not to prescribe a collection of unrelated fixes, but to show how ClickHouse processes a query, how to gather evidence about its performance, and how to validate one targeted improvement.
+These guides provide a workflow for investigating and improving slow queries in ClickHouse. Identify a recurring slow query, isolate its bottleneck, choose a targeted optimization, and compare the result with a repeatable baseline.
 
-## Start with a measured problem {#start-with-a-measured-problem}
+## Choose where to start {#choose-where-to-start}
 
-The best time to consider query performance is while designing the schema, before ingesting data. In practice, workloads and data volumes change in ways that are difficult to predict.
-
-When an existing query becomes slow, begin with a recurring query pattern and a reproducible baseline. An isolated slow run might be an ad hoc query or the result of temporary system load. Avoid choosing an optimization until you have evidence about where a representative query spends time or resources.
-
-## Optimization framework {#optimization-framework}
-
-Approach query optimization in three layers. Start with the fundamentals, then reduce the amount of work performed at query time:
-
-### Minimize the data footprint {#minimize-the-data-footprint}
-
-Use the smallest practical data types, avoid `Nullable` columns when null values are not required, and use `LowCardinality` where it fits the data. A smaller representation reduces storage, I/O, and memory usage.
-
-### Filter efficiently {#filter-efficiently}
-
-Organize data so that ClickHouse reads only the rows and columns required by the query. Start with an effective ordering key. Partition pruning, data-skipping indexes, and projections can support specific access patterns when the measured workload justifies them.
-
-### Move repeatable work to ingestion {#move-repeatable-work-to-ingestion}
-
-When queries repeatedly perform the same transformation or aggregation, consider calculating that result during ingestion. Materialized views and purpose-built tables can exchange ingestion and storage cost for faster queries.
-
-## How ClickHouse processes a query {#general-considerations}
-
-The following simplified model provides enough context to interpret query logs and execution plans. At a high level, ClickHouse processes a query in four stages:
-
-<Steps>
-<Step title="Parse and analyze the query" id="parse-and-analyze-the-query">
-ClickHouse parses and analyzes the query, then creates a query execution plan.
-</Step>
-
-<Step title="Optimize the query plan" id="optimize-the-query-plan">
-ClickHouse optimizes the plan, prunes unnecessary data, and builds a query pipeline.
-</Step>
-
-<Step title="Execute the query pipeline" id="execute-the-query-pipeline">
-ClickHouse reads and processes data in parallel, including filtering, aggregation, and sorting.
-</Step>
-
-<Step title="Prepare the result" id="prepare-the-result">
-ClickHouse merges, sorts, and formats the result before returning it to the client.
-</Step>
-</Steps>
-
-For more detail, see the [query analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) and [query execution](/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) guides.
-
-## Optimization workflow {#optimization-workflow}
-
-<Steps>
-<Step title="Diagnose the slow query" id="diagnose-the-slow-query">
-Use bounded query history from one node or the whole cluster to find a recurring slow-query pattern. Choose a representative run, then inspect its duration, resource usage, and query plan to form an initial hypothesis.
-</Step>
-
-<Step title="Isolate the bottleneck" id="isolate-the-bottleneck">
-Record a repeatable baseline, then compare the original query, a grouped `count`, and an ungrouped `count`. Use consistent timing differences and supporting measurements to identify which operations warrant further investigation.
-</Step>
-
-<Step title="Apply and validate one change" id="apply-and-validate-one-change">
-Use [Optimization approaches](/guides/clickhouse/performance-and-monitoring/optimization-approaches) to match the suspected bottleneck to one or more interventions. Change one part of the query or schema, repeat the measurement, and compare the results with the baseline.
-</Step>
-</Steps>
-
-## Guides in this section {#guides-in-this-section}
-
-The guides follow the workflow above, but each can also be used independently. Guides that use the NYC Taxi examples include the required dataset setup on the page.
+The first three guides form an end-to-end workflow, but you can also enter at the stage that matches what you already know.
 
 <CardGroup cols={1}>
-  <Card title="1. Diagnose slow queries" icon="magnifying-glass" href="/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">
-    Find recurring patterns in bounded local or cluster-wide query history, choose a representative run, and use query logs and `EXPLAIN` to form an initial hypothesis. This guide also covers unavailable replicas and preparing query evidence for Docs AI.
+  <Card title="Diagnose slow queries" icon="magnifying-glass" href="/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">
+    Start here when you need to identify a recurring slow-query pattern. Use local or cluster-wide query history to choose a representative run, inspect its resource usage, and form an initial hypothesis.
   </Card>
-  <Card title="2. Isolate query bottlenecks" icon="layer-group" href="/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
-    Establish comparable measurements and apply the three-run comparison. Use duration, `read_rows`, `read_bytes`, memory usage, and the physical plans to decide whether to investigate scanning and filtering, grouping, final computation, or another retained operation.
+  <Card title="Isolate query bottlenecks" icon="layer-group" href="/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
+    Start here when you have a slow query but do not yet know which operations dominate its performance. Compare progressively simpler forms of the query under controlled conditions.
   </Card>
-  <Card title="3. Optimization approaches" icon="sliders" href="/guides/clickhouse/performance-and-monitoring/optimization-approaches">
-    Match the measured bottleneck to an intervention. Evaluate the data footprint, filtering and data layout, ingestion-time processing, materialized views, projections, and purpose-built tables.
-  </Card>
-  <Card title="4. Worked optimization example" icon="flask" href="/guides/clickhouse/performance-and-monitoring/query-optimization-example">
-    Follow a complete example that measures the effects of reducing the data footprint and improving filtering on the NYC Taxi dataset. The example applies schema and ordering-key changes one at a time and compares each result with the original baseline.
+  <Card title="Optimization approaches" icon="sliders" href="/guides/clickhouse/performance-and-monitoring/optimization-approaches">
+    Start here when you have evidence about the bottleneck and need to choose a targeted change. Compare approaches for reducing the data processed, improving data selection, or precomputing repeatable work.
   </Card>
 </CardGroup>
+
+## See the workflow in practice {#see-the-workflow-in-practice}
+
+<Card title="Worked optimization example" icon="flask" href="/guides/clickhouse/performance-and-monitoring/query-optimization-example">
+  Follow a complete example that applies schema and ordering-key changes to the NYC Taxi dataset one at a time, then compares each result with the original baseline.
+</Card>
+
+## Understand query execution {#understand-query-execution}
+
+For more detail about how ClickHouse builds and executes a query plan, see the [query analyzer](/guides/clickhouse/performance-and-monitoring/analyzer) and [query execution](/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) guides.
