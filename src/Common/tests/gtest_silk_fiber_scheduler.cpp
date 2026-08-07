@@ -4,6 +4,7 @@
 
 #if USE_SILK
 
+#include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/SilkFiberScheduler.h>
@@ -16,7 +17,9 @@
 #include <silk/fibers/future.h>
 
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
+#include <tuple>
 #include <vector>
 
 namespace DB::ErrorCodes
@@ -63,14 +66,18 @@ TEST_F(SilkFiberSchedulerTest, ThrowingTaskReturnsErrorCode)
     EXPECT_NE(Silk::runBlocking([]() -> int { throw std::runtime_error("Task failure"); }), 0);
 }
 
-TEST_F(SilkFiberSchedulerTest, NoOSThreadTagMakesUnboundThreadStatus)
+TEST_F(SilkFiberSchedulerTest, FiberGetsUnboundThreadStatus)
 {
-    EXPECT_EQ(Silk::runBlocking([]() -> int
+    std::optional<UInt64> thread_id;
+    EXPECT_EQ(Silk::runBlocking([&thread_id]() -> int
     {
-        DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
-        EXPECT_EQ(thread_status.thread_id, DB::ThreadStatus::NO_OS_THREAD);
+        if (const DB::ThreadStatus * thread_status = loadCurrentThread())
+            thread_id = thread_status->thread_id;
         return 0;
     }), 0);
+
+    ASSERT_TRUE(thread_id.has_value());
+    EXPECT_EQ(*thread_id, DB::ThreadStatus::NO_OS_THREAD);
 }
 
 TEST_F(SilkFiberSchedulerTest, CurrentThreadIsPreservedAcrossSuspensions)
@@ -78,42 +85,46 @@ TEST_F(SilkFiberSchedulerTest, CurrentThreadIsPreservedAcrossSuspensions)
     constexpr size_t num_fibers = 42;
     constexpr size_t suspensions = 42;
 
-    auto with_thread_status = []() -> int
+    auto task = []() -> int
     {
-        DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
+        const DB::ThreadStatus * thread_status = loadCurrentThread();
+        EXPECT_NE(thread_status, nullptr);
         for (size_t i = 0; i < suspensions; ++i)
         {
             silk::FiberScheduler::yield();
-            EXPECT_EQ(loadCurrentThread(), &thread_status);
+            EXPECT_EQ(loadCurrentThread(), thread_status);
         }
         return 0;
     };
 
-    auto without_thread_status = []() -> int
+    std::vector<silk::FiberFuture> futures(num_fibers);
+    for (size_t i = 0; i < num_fibers; ++i)
     {
-        for (size_t i = 0; i < suspensions; ++i)
-        {
-            silk::FiberScheduler::yield();
-            EXPECT_EQ(loadCurrentThread(), nullptr);
-        }
-        return 0;
-    };
-
-    std::vector<silk::FiberFuture> futures(2 * num_fibers);
-    size_t spawned = 0;
-    for (auto task : {+with_thread_status, +without_thread_status})
-    {
-        const size_t end = spawned + num_fibers;
-        for (; spawned != end; ++spawned)
-        {
-            ASSERT_EQ(Silk::spawn(task, futures[spawned]), 0);
-        }
+        ASSERT_EQ(Silk::spawn(task, futures[i]), 0);
     }
 
-    for (size_t i = 0; i < spawned; ++i)
+    for (size_t i = 0; i < num_fibers; ++i)
     {
         futures[i].wait();
     }
+}
+
+/// A parked fiber must leave no untracked memory outside the per-CPU counters.
+TEST_F(SilkFiberSchedulerTest, SuspensionPublishesUntrackedMemory)
+{
+    EXPECT_EQ(Silk::runBlocking([]() -> int
+    {
+        DB::ThreadStatus * thread_status = loadCurrentThread();
+        EXPECT_NE(thread_status, nullptr);
+
+        DB::CurrentThread::flushUntrackedMemory();
+        std::ignore = CurrentMemoryTracker::allocNoThrow(1024);
+        EXPECT_EQ(thread_status->per_cpu_untracked_memory.contributed, 0);
+
+        silk::FiberScheduler::yield();
+        EXPECT_EQ(thread_status->per_cpu_untracked_memory.contributed, thread_status->untracked_memory.load());
+        return 0;
+    }), 0);
 }
 
 #endif

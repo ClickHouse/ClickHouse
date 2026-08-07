@@ -235,7 +235,6 @@ protected:
 
         UInt64 elapsedMilliseconds() const;
         UInt64 elapsedMilliseconds(const TimePoint & current) const;
-        UInt64 elapsedMicroseconds() const;
 
         std::chrono::time_point<std::chrono::system_clock> point;
     };
@@ -322,6 +321,7 @@ public:
     void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void flushUntrackedMemory();
+    void publishUntrackedMemory();
 
     void initGlobalProfiler(UInt64 global_profiler_real_time_period, UInt64 global_profiler_cpu_time_period);
 

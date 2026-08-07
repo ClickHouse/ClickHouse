@@ -35,12 +35,6 @@
 #endif
 
 
-namespace ProfileEvents
-{
-    extern const Event RealTimeMicroseconds;
-}
-
-
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
 /// TODO It doesn't make sense.
 
@@ -435,10 +429,6 @@ void ThreadStatus::detachFromGroup()
         finalizeQueryProfiler();
         finalizePerformanceCounters();
     }
-    else
-    {
-        performance_counters.increment(ProfileEvents::RealTimeMicroseconds, thread_attach_time.elapsedMicroseconds());
-    }
 
     performance_counters.setParent(&ProfileEvents::global_counters);
 
@@ -543,13 +533,6 @@ UInt64 ThreadStatus::TimePoint::elapsedMilliseconds() const
 UInt64 ThreadStatus::TimePoint::elapsedMilliseconds(const TimePoint & current) const
 {
     return std::chrono::duration_cast<std::chrono::milliseconds>(current.point - point).count();
-}
-
-UInt64 ThreadStatus::TimePoint::elapsedMicroseconds() const
-{
-    TimePoint now;
-    now.setUp();
-    return std::chrono::duration_cast<std::chrono::microseconds>(now.point - point).count();
 }
 
 void ThreadStatus::initPerformanceCounters()

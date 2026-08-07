@@ -272,6 +272,12 @@ void ThreadStatus::flushUntrackedMemory()
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
+void ThreadStatus::publishUntrackedMemory()
+{
+    if (!per_cpu_memory.publish(untracked_memory.load(), per_cpu_untracked_memory))
+        flushUntrackedMemory();
+}
+
 bool ThreadStatus::isQueryCanceled() const
 {
     if (!thread_group)
