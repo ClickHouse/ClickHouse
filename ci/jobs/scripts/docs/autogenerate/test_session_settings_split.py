@@ -91,8 +91,6 @@ def setting_names(mod, content):
 def main():
     mod = load_module()
     migrate = load_migrate_module()
-    mod.SESSION_SETTINGS_MAX_PER_PAGE = 20
-    mod.SESSION_SETTINGS_MAX_CHARS_PER_PAGE = 100_000
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
 
     generator_order = [
@@ -219,7 +217,6 @@ def main():
     complex_pages = mod.group_session_settings(
         complex_sections,
         base_route=server_family["base_route"],
-        max_characters=server_family["max_characters"],
     )
     complex_anchor_routes = mod._settings_anchor_routes(
         complex_pages, source_sections=complex_sections
@@ -280,7 +277,6 @@ def main():
         manifest = docs / "reference/settings/session-settings/manifest.json"
         manifest.parent.mkdir(parents=True)
         manifest.write_text(json.dumps({
-            "version": mod.SESSION_SETTINGS_GENERATOR_VERSION,
             "pages": [
                 "/reference/settings/session-settings/page",
                 "/reference/settings/session-settings/retired",
@@ -436,32 +432,17 @@ def main():
         assert generated_manifest["anchorRoutes"]["page_cache_alpha"] == \
             "/reference/settings/session-settings/page-cache"
         assert "](/reference/settings/session-settings/filesystem-cache#openssl)" in cache_page
-        assert generated_manifest["limits"]["minimumPrefixGroup"] == 2
-        assert generated_manifest["limits"]["maximumPageDepth"] == 1
         assert "legacyPages" not in generated_manifest
-        assert all(
-            page["settings"] <= mod.SESSION_SETTINGS_MAX_PER_PAGE
-            for page in generated_manifest["pageStats"])
-        assert not [
-            page for page in generated_manifest["pageStats"]
-            if page["settings"] == 1
-        ]
-        assert all(
-            page["settings"] > 0
-            for page in generated_manifest["pageStats"])
+        assert "limits" not in generated_manifest
+        assert "pageStats" not in generated_manifest
         assert any(
             route["prefix"] == "filesystem_cache"
             and route["target"] == "/reference/settings/session-settings/filesystem-cache"
             for route in generated_manifest["routes"])
         assert generated_manifest["anchorRoutes"]["filesystem_unmatched"] == \
             "/reference/settings/session-settings/other"
-        assert all(
-            page["label"].endswith("_*")
-            for page in generated_manifest["pageStats"]
-            if page["label"] != "Other")
-        assert any(
-            page["label"] == "Other"
-            for page in generated_manifest["pageStats"])
+        assert "/reference/settings/session-settings/other" in \
+            generated_manifest["pages"]
         assert "sidebarTitle: 'filesystem_cache_*'" in cache_page
         assert "title: 'filesystem_cache_* session settings'" in cache_page
 
@@ -501,7 +482,6 @@ def main():
         server_pages = mod.group_session_settings(
             server_sections,
             base_route=server_family["base_route"],
-            max_characters=server_family["max_characters"],
         )
         server_explorer = mod._settings_explorer_component(
             server_pages, server_family
@@ -648,9 +628,22 @@ def main():
         ]
         assert all(not page.children for page in representative_pages)
 
+        large_prefix_pages = mod.group_session_settings([
+            mod.SettingSection(
+                f"large_group_{index}",
+                f"large_group_{index}",
+                "x" * 1000,
+            )
+            for index in range(151)
+        ])
+        assert [
+            (page.label, len(page.sections))
+            for page in large_prefix_pages
+        ] == [("large_group_*", 151)]
+
         assert all(
-            len(page["path"].removeprefix(mod.SESSION_SETTINGS_BASE_ROUTE).strip("/").split("/")) == 1
-            for page in generated_manifest["pageStats"])
+            len(page.removeprefix(mod.SESSION_SETTINGS_BASE_ROUTE).strip("/").split("/")) == 1
+            for page in generated_manifest["pages"])
 
     with tempfile.TemporaryDirectory() as temp:
         docs = Path(temp)
