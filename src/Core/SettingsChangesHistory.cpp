@@ -67,11 +67,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
             {"network_compression_method", "LZ4", "ZSTD", "Switched the default compression method for client/server and server/server communication from `LZ4` to `ZSTD` to reduce network traffic."},
             {"network_zstd_compression_level", 1, 3, "Aligned the default network `ZSTD` compression level with the new default on-disk `ZSTD(3)` compression."},
+            {"allow_delta_kernel_rs", true, true, "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."},
             {"input_format_arrow_use_native_reader", true, true, "Obsolete setting, the native ClickHouse reader is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based reader has been removed)."},
             {"output_format_arrow_use_native_writer", true, true, "Obsolete setting, the native ClickHouse writer is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based writer has been removed)."},
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
+            {"analyzer_compatibility_multiple_joins_qualify_column_names", false, false, "New compatibility setting. When enabled, the analyzer mimics the old analyzer's qualified result column names for queries whose FROM clause has two or more JOINs."},
             {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups and pages based on spatial predicates and bounding box statistics"},
             {"use_text_index_negative_tokens_cache", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."},
+            {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -689,6 +692,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"apply_patch_parts", true, true, "A new setting"},
             {"allow_experimental_lightweight_update", false, false, "A new setting"},
             {"allow_experimental_delta_kernel_rs", false, true, "New setting"},
+            {"allow_delta_kernel_rs", false, true, "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."},
             {"allow_experimental_database_hms_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'hive'"},
             {"vector_search_filter_strategy", "auto", "auto", "New setting"},
             {"vector_search_postfilter_multiplier", 1.0, 1.0, "New setting"},
