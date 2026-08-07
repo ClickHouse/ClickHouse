@@ -6,6 +6,8 @@
 -- empty set
 0
 -- a set outside storage filters is not built at planning and is rejected at task serialization
+-- the index retention cap does not limit the shipped set
+50
 -- the set subquery itself executes as a distributed plan (deduplicated before the gather)
 50
 -- the transfer limits bound the shipped set

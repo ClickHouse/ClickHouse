@@ -28,5 +28,8 @@ SELECT count() FROM t_big WHERE k GLOBAL IN (SELECT val FROM t_small WHERE id < 
 SELECT '-- GLOBAL JOIN executes as a distributed join (no external table under the analyzer)';
 SELECT count() FROM t_big GLOBAL ANY LEFT JOIN t_small ON t_big.k = t_small.val;
 
+SELECT '-- value-producing IN works via the default rewrite';
+SELECT countIf(flag) FROM (SELECT (k IN (SELECT val FROM t_small WHERE id < 50)) AS flag FROM t_big);
+
 DROP TABLE t_big;
 DROP TABLE t_small;

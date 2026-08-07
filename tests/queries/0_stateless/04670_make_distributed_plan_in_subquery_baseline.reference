@@ -8,3 +8,5 @@
 50
 -- GLOBAL JOIN executes as a distributed join (no external table under the analyzer)
 1000
+-- value-producing IN works via the default rewrite
+50
