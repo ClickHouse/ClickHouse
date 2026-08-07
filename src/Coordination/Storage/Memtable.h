@@ -82,8 +82,16 @@ struct MemtableChildrenSet
 
     MemtableChildrenSet(MemtableChildrenSet && other) noexcept
     {
+#if defined(HWADDRESS_SANITIZER)
+        mode = other.mode;
+        if (mode == Mode::Inline)
+            entry = other.entry;
+        else if (mode == Mode::Set)
+            set = other.set;
+#else
         entry = other.entry; // copies the whole union; `mode` aliases the first 8 bytes of `entry`
-        other.mode = Mode::Empty;
+#endif
+        other.reset();
     }
 
     MemtableChildrenSet & operator=(MemtableChildrenSet && other) noexcept
@@ -91,8 +99,16 @@ struct MemtableChildrenSet
         if (this != &other)
         {
             destroy();
+#if defined(HWADDRESS_SANITIZER)
+            mode = other.mode;
+            if (mode == Mode::Inline)
+                entry = other.entry;
+            else if (mode == Mode::Set)
+                set = other.set;
+#else
             entry = other.entry;
-            other.mode = Mode::Empty;
+#endif
+            other.reset();
         }
         return *this;
     }
@@ -124,6 +140,18 @@ struct MemtableChildrenSet
     ConstIterator iterate() const;
 
 private:
+#if defined(HWADDRESS_SANITIZER)
+    /// A HWASan pointer has an 8-bit tag in bits 63..56. Keep the mode separate so neither
+    /// inline child pointers nor `ChildrenSet2` pointers lose that tag. The larger layout is
+    /// limited to sanitizer builds.
+    union
+    {
+        ChildrenSet2::Entry entry;
+        ChildrenSet2 * set = nullptr;
+    };
+
+    Mode mode = Mode::Empty;
+#else
     static constexpr uint64_t MODE_MASK = static_cast<uint64_t>(Mode::Inline) | static_cast<uint64_t>(Mode::Set);
     static constexpr uint64_t PTR_MASK = ~MODE_MASK;
 
@@ -138,41 +166,75 @@ private:
         /// store things in them.
         Mode mode = Mode::Empty;
     };
+#endif
 
-    Mode getMode() const { return static_cast<Mode>(static_cast<uint64_t>(mode) & MODE_MASK); }
+    Mode getMode() const
+    {
+#if defined(HWADDRESS_SANITIZER)
+        return mode;
+#else
+        return static_cast<Mode>(static_cast<uint64_t>(mode) & MODE_MASK);
+#endif
+    }
 
     ChildrenSet2 * getSet() const
     {
         chassert(getMode() == Mode::Set);
+#if defined(HWADDRESS_SANITIZER)
+        return set;
+#else
         return reinterpret_cast<ChildrenSet2 *>(static_cast<uint64_t>(mode) & PTR_MASK);
+#endif
     }
 
     ChildrenSet2::Entry getInlineEntry() const
     {
         chassert(getMode() == Mode::Inline);
+#if defined(HWADDRESS_SANITIZER)
+        return entry;
+#else
         static_assert(offsetof(ChildrenSet2::Entry, ptr) == 0);
         ChildrenSet2::Entry e = entry;
         e.ptr = reinterpret_cast<const char *>(reinterpret_cast<uint64_t>(e.ptr) & PTR_MASK);
         return e;
+#endif
     }
 
     void setInlineEntry(ChildrenSet2::Entry e)
     {
+#if defined(HWADDRESS_SANITIZER)
+        entry = e;
+        mode = Mode::Inline;
+#else
         chassert((reinterpret_cast<uint64_t>(e.ptr) & MODE_MASK) == 0);
         entry = e;
         mode = static_cast<Mode>(static_cast<uint64_t>(mode) | static_cast<uint64_t>(Mode::Inline));
+#endif
     }
 
     void setSet(ChildrenSet2 * s)
     {
+#if defined(HWADDRESS_SANITIZER)
+        set = s;
+        mode = Mode::Set;
+#else
         chassert((reinterpret_cast<uint64_t>(s) & MODE_MASK) == 0);
         mode = static_cast<Mode>(static_cast<uint64_t>(Mode::Set) | reinterpret_cast<uint64_t>(s));
+#endif
     }
 
     void destroy()
     {
         if (getMode() == Mode::Set)
             delete getSet();
+        reset();
+    }
+
+    void reset()
+    {
+#if defined(HWADDRESS_SANITIZER)
+        set = nullptr;
+#endif
         mode = Mode::Empty;
     }
 };
