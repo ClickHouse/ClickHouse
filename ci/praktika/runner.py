@@ -15,8 +15,10 @@ from .cidb import CIDB
 from .digest import Digest
 from .event import EventFeed
 from .gh import GH
+from .gh_auth import GHAuth
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
+from .host_metrics import HostMetricsCollector
 from .info import Info
 from .native_jobs import _check_and_link_open_issues, _is_praktika_job
 from .result import Result, ResultInfo
@@ -25,25 +27,6 @@ from .s3 import S3
 from .settings import Settings
 from .usage import ComputeUsage, StorageUsage
 from .utils import Shell, TeePopen, Utils
-
-_GH_authenticated = False
-
-
-def _GH_Auth():
-    global _GH_authenticated
-    if _GH_authenticated:
-        return True
-    if not Settings.USE_CUSTOM_GH_AUTH:
-        return True
-    from .gh_auth import GHAuth
-
-    try:
-        GHAuth.auth_from_settings()
-        _GH_authenticated = True
-        return True
-    except Exception as e:
-        print(f"WARNING: GH auth failed: {e}")
-        return False
 
 
 class Runner:
@@ -334,7 +317,7 @@ class Runner:
                 )
 
         if job.enable_gh_auth:
-            if not _GH_Auth():
+            if not GHAuth.auth(workflow, no_strict=True):
                 Utils.raise_with_error("GH auth failed - required by job")
 
         print("INFO: disk status before running a job:")
@@ -484,51 +467,63 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
-        with TeePopen(
-            cmd,
-            timeout=job.timeout,
-            preserve_stdio=preserve_stdio,
-            timeout_shell_cleanup=job.timeout_shell_cleanup,
-        ) as process:
-            Utils.timestamp()
+        # Sample whole-VM CPU/RAM usage in the background for the duration of the
+        # job (see HostMetricsCollector). Runs on the host, so metrics cover the
+        # whole VM even when the job itself runs inside Docker.
+        host_metrics_collector = HostMetricsCollector().start()
+        try:
+            with TeePopen(
+                cmd,
+                timeout=job.timeout,
+                preserve_stdio=preserve_stdio,
+                timeout_shell_cleanup=job.timeout_shell_cleanup,
+            ) as process:
+                Utils.timestamp()
 
-            exit_code = process.wait()
+                exit_code = process.wait()
+                host_metrics = host_metrics_collector.stop()
 
-            # When running Docker containers as root (non-rootless mode), any files
-            # created by the job will be owned by root.  Fix ownership here, before
-            # reading the result file or writing the host-side result, so that the
-            # host user can open them without a PermissionError.
-            if job.run_in_docker and not no_docker and from_root:
-                print("--- Fixing file ownership after running docker as root")
-                uid = os.getuid()
-                gid = os.getgid()
-                chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-                Shell.run(chown_cmd)
+                # When running Docker containers as root (non-rootless mode), any files
+                # created by the job will be owned by root.  Fix ownership here, before
+                # reading the result file or writing the host-side result, so that the
+                # host user can open them without a PermissionError.
+                if job.run_in_docker and not no_docker and from_root:
+                    print("--- Fixing file ownership after running docker as root")
+                    uid = os.getuid()
+                    gid = os.getgid()
+                    chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+                    Shell.run(chown_cmd)
 
-            result = Result.from_fs(job.name)
-            if exit_code != 0:
-                if not result.is_completed():
-                    if process.timeout_exceeded:
-                        print(
-                            f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
-                        )
-                        result.add_error(ResultInfo.TIMEOUT)
-                    elif result.is_running():
-                        info = f"Job killed, exit code [{exit_code}]"
-                        print(f"ERROR: {info}")
-                        result.add_error(info)
-                    else:
-                        info = f"Invalid status [{result.status}] for exit code [{exit_code}]"
-                        print(f"ERROR: {info}")
-                        result.add_error(info)
-                    result.set_status(Result.Status.ERROR)
-                    result.set_info(
-                        process.get_latest_log(max_lines=20)
-                    )
-            result.dump()
-
-        print("INFO: disk status after running a job:")
-        Shell.run("df -h")
+                result = Result.from_fs(job.name)
+                if host_metrics:
+                    result.add_ext_key_value("metrics", host_metrics)
+                    # Flag over/under-utilized runners, but not for skipped jobs -
+                    # they did no real work, so their metrics are meaningless.
+                    if not result.is_skipped():
+                        for label, hint in HostMetricsCollector.classify(host_metrics):
+                            result.set_label(label, hint=hint)
+                if exit_code != 0:
+                    if not result.is_completed():
+                        if process.timeout_exceeded:
+                            print(
+                                f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
+                            )
+                            result.add_error(ResultInfo.TIMEOUT)
+                        elif result.is_running():
+                            info = f"Job killed, exit code [{exit_code}]"
+                            print(f"ERROR: {info}")
+                            result.add_error(info)
+                        else:
+                            info = f"Invalid status [{result.status}] for exit code [{exit_code}]"
+                            print(f"ERROR: {info}")
+                            result.add_error(info)
+                        result.set_status(Result.Status.ERROR)
+                        result.set_info(process.get_latest_log(max_lines=20))
+                result.dump()
+        finally:
+            # Idempotent: a no-op if stop() already ran above; guarantees the
+            # sampling thread is always joined even if TeePopen raised.
+            host_metrics_collector.stop()
 
         return exit_code
 
@@ -812,7 +807,7 @@ class Runner:
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
-            if _GH_Auth():
+            if GHAuth.auth(workflow, no_strict=True):
                 if not GH.post_commit_status(
                     name=job.name,
                     status=result.status,
@@ -830,7 +825,7 @@ class Runner:
             status_updated = HtmlRunnerHooks.post_run(workflow, job)
             if status_updated:
                 print(f"Update GH commit status [{result.name}]: [{status_updated}]")
-                if _GH_Auth():
+                if GHAuth.auth(workflow, no_strict=True):
                     GH.post_commit_status(
                         name=workflow.name,
                         status=status_updated,
@@ -860,7 +855,7 @@ class Runner:
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
-        ) and _GH_Auth():
+        ) and GHAuth.auth(workflow, no_strict=True):
             workflow_result = Result.from_fs(workflow.name)
             try:
                 summary_body = GH.ResultSummaryForGH.from_result(
@@ -885,7 +880,7 @@ class Runner:
             and workflow.is_event_pull_request()
         ):
             try:
-                _GH_Auth()
+                GHAuth.auth(workflow, no_strict=True)
                 workflow_result = Result.from_fs(workflow.name)
                 if workflow_result.is_ok():
                     if not GH.merge_pr():
@@ -1152,6 +1147,10 @@ class Runner:
                 print("=== Post run script finished ===")
 
             result.dump()
+
+        # After the post hooks, so the numbers describe the disk the next job inherits.
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
 
         if not res and not job.force_success:
             sys.exit(1)

@@ -21,8 +21,8 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 
 # Substrings identifying a sanitizer build in a build type ("amd_asan_ubsan"),
 # a job parameter string ("amd_asan_ubsan, distributed plan, parallel"), or a
-# job name. Sanitizer builds get the tighter server memory cap and reduced
-# concurrency (see the `set_memory_ratio` and `nproc` logic in `main`).
+# job name. Sanitizer builds get the tighter server memory cap (see the
+# `set_memory_ratio` logic in `main`).
 SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
 
@@ -200,7 +200,11 @@ def invert_bugfix_validation_status(test_result: Result) -> bool:
     infrastructure outage) the per-test list is empty or partial and the
     pre-inversion `ERROR` already tells the truth. Preserve it instead of
     overwriting with a validation verdict - an infra-induced failure is
-    never counted as a validation. See #105789.
+    never counted as a validation. See #105789. A server crash caused by
+    the regression test itself does NOT hit this guard: in bugfix
+    validation `FTResultsProcessor` keeps the aborted-run culprit as
+    `FAIL` (instead of demoting it to `ERROR` as in normal runs), so the
+    crash is counted as a reproduction below.
 
     The aggregate check is not enough: `FTResultsProcessor` can leave the
     top-level status `OK` while still emitting `ERROR` per-test rows
@@ -264,6 +268,52 @@ def invert_bugfix_validation_status(test_result: Result) -> bool:
     return False
 
 
+def reconcile_bugfix_crash_repro(result: Result, fatals: list) -> bool:
+    """Fold a build type's fatal-log rows into its per-test result for bugfix
+    validation, treating a master-HEAD server crash as a reproduction.
+
+    A sanitizer assert / fatal in the master-HEAD server log (the
+    `BLOCKER`-labelled rows of `check_fatal_messages_in_logs`) means the server
+    crashed while running only the changed tests. With
+    `-fno-sanitize-recover=all` a reproduced UBSan bug kills the server
+    outright, which aborts the runner (`StopTesting`, exit code 2) and poisons
+    the per-test rows with `ERROR` - so a crash-manifesting bugfix could never
+    validate. That abort IS the bug reproducing, not an infra failure:
+    downgrade the runner-level `ERROR` and the per-row `ERROR`s it caused to
+    `FAIL`, which the inverter then flips into a successful reproduction. A run
+    that ends in `ERROR` without a fatal in the server logs (genuine infra
+    failure) is preserved as inconclusive (#105789). OOM kills are excluded:
+    the dmesg OOM row carries no `BLOCKER` label.
+
+    Capture the runner-level `ERROR` before `extend_sub_results`, which
+    recomputes the aggregate status from child rows only and would otherwise
+    erase a runner-level `ERROR` set by `FTResultsProcessor` (e.g.
+    `not s.success_finish`) when the parsed rows are all `OK`/`FAIL`; restore
+    it so `invert_bugfix_validation_status` still sees the error and does not
+    flip a harness-level termination into green.
+
+    Returns whether a crash reproduction was detected.
+    """
+    runner_level_error = result.is_error()
+    crash_repro = any(
+        r.status == Result.Status.FAIL and r.has_label(Result.Label.BLOCKER)
+        for r in fatals
+    )
+    if crash_repro:
+        print(
+            "The master-HEAD server crashed with a sanitizer/fatal failure "
+            "while running the changed tests - treating the resulting runner "
+            "abort / per-test errors as the bug reproducing."
+        )
+        for r in result.results:
+            if r.status == Result.Status.ERROR:
+                r.status = Result.Status.FAIL
+    result.extend_sub_results(fatals)
+    if runner_level_error and not crash_repro:
+        result.status = Result.Status.ERROR
+    return crash_repro
+
+
 def main():
     args = parse_args()
     test_options = [to.strip() for to in args.options.split(",")]
@@ -281,7 +331,6 @@ def main():
     is_llvm_coverage = False
     is_excluded_from_llvm = False
     is_per_test_coverage = False
-    is_distributed_plan = False
     runner_options = ""
     # optimal value for most of the jobs
     nproc = int(Utils.cpu_count() * 0.6)
@@ -337,8 +386,16 @@ def main():
             is_shared_catalog = True
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
-        if "distributed plan" in to:
-            is_distributed_plan = True
+
+    # The xfail inversion (and therefore the "a crash on master HEAD is a
+    # reproduction" reading of a server death) only applies when the PR is
+    # labelled as a bugfix; an unlabelled run of this job executes the sanity
+    # test instead, where a crash is an ordinary infra failure and must keep
+    # its ERROR classification in `FTResultsProcessor`.
+    is_labeled_bugfix_validation = is_bugfix_validation and (
+        Labels.PR_BUGFIX in info.pr_labels
+        or Labels.PR_CRITICAL_BUGFIX in info.pr_labels
+    )
 
     # If this PR only touches test files (no production/config code changed),
     # this job only needs to run if one of the changed tests would even be
@@ -352,6 +409,8 @@ def main():
         not is_flaky_check
         and not is_targeted_check
         and not is_bugfix_validation
+        and not is_llvm_coverage
+        and not is_excluded_from_llvm
         and not is_per_test_coverage
         and not args.test
     ):
@@ -435,40 +494,6 @@ def main():
             # shared server memory cap, so the OvercommitTracker kills queries across
             # all co-scheduled tests. Lower concurrency to keep peak total RSS under it.
             nproc = int(Utils.cpu_count() * 0.4)
-        elif (
-            is_distributed_plan
-            and "parallel" in test_options
-            and any(san in args.options for san in SANITIZERS)
-        ):
-            # `--distributed-plan` fans each query across local parallel replicas,
-            # multiplying the server-side memory of every in-flight query. Under the
-            # parallel runner dozens of such queries share one server, so their
-            # aggregate RSS overruns the sanitizer memory cap
-            # (`max_server_memory_usage_to_ram_ratio` 0.7) and the OvercommitTracker
-            # rejects queries across all co-scheduled tests with
-            # `MEMORY_LIMIT_EXCEEDED`. This is the same failure mode as azure above,
-            # but the per-query multiplication makes it heavier, so cut concurrency
-            # below the azure level to keep peak total RSS under the cap. The job
-            # gets a larger `timeout` (see `job_configs.py`) to absorb the reduced
-            # throughput. Gated to sanitizer builds: only they carry the 0.7 cap,
-            # and the non-sanitizer distributed-plan parallel jobs (e.g. amd_debug)
-            # run comfortably at the default concurrency.
-            #
-            # Tuned down in steps against observed peak RSS on the 32-vCPU
-            # `c7i.8xlarge` runner (cap 41.84 GiB at ratio 0.7): 0.35 -> 11 workers
-            # hit Code 241 at 43.01 GiB (~3% over); 0.3 -> 9 workers still landed
-            # right on the cap (41.90 GiB); 0.25 -> 8 workers reached 41.76 GiB;
-            # 0.22 -> 7 workers reached 41.71 GiB - each run still grazing the cap
-            # with a single rejected query. That near-flat response shows the RSS
-            # baseline is dominated by ASan overhead that accumulates with the
-            # amount of work done, not with concurrency, so cutting workers
-            # further cannot open a gap under the cap; the residual headroom comes
-            # from this job's slightly higher memory ratio instead (0.75, see the
-            # install stage below). The concurrency cut stays: it is what shrank
-            # the aggregate client RSS enough to make the higher server cap safe
-            # for the host, and 7 workers finish in ~2h44m, inside the 3.5h
-            # `timeout` (see `job_configs.py`).
-            nproc = int(Utils.cpu_count() * 0.22)
         elif is_per_test_coverage:
             cidb_cluster = CIDBCluster()
             if not info.is_local_run:
@@ -670,7 +695,7 @@ def main():
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
         else:
-            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels and Labels.PR_CRITICAL_BUGFIX not in info.pr_labels:
+            if is_bugfix_validation and not is_labeled_bugfix_validation:
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
             elif is_flaky_check:
@@ -717,6 +742,11 @@ def main():
         is_shared_catalog=is_shared_catalog,
         is_per_test_coverage=is_per_test_coverage,
     )
+    # `run_tests` runs `clickhouse-test` without changing directory, so clients
+    # it spawns inherit the repository root and dump their cores there.
+    # Declaring it lets `prepare_logs` retain the core of a client that died on a
+    # fatal signal; without it such a crash leaves no core and no stack anywhere.
+    CH.client_core_path = Utils.cwd()
 
     job_info = ""
 
@@ -764,8 +794,10 @@ def main():
         # test subset at reduced concurrency). 0.7 stays comfortably above the
         # largest legitimate single-query need (the ~25 GiB stateful-load INSERT).
         # The heaviest configs also cut test concurrency (see the `nproc` block
-        # above, e.g. azure and distributed-plan) so that the *aggregate* RSS of
-        # concurrent queries stays under this cap too.
+        # above, e.g. azure) so that the *aggregate* RSS of concurrent queries
+        # stays under this cap too; the memory-heavy distributed-plan parallel
+        # job instead runs on a larger 128 GiB runner (see `job_configs.py`),
+        # where the cap sits well above its aggregate RSS at full concurrency.
         #
         # The cap must follow the binary actually being launched, not the job
         # option string: bugfix validation passes only `BugfixValidation` in
@@ -773,30 +805,9 @@ def main():
         # (always `*_asan_ubsan`), and its validation loop later swaps to the
         # other build types, re-deriving the cap on every swap (sanitizer ->
         # 0.7, debug -> server default; see the TEST stage below).
-        #
-        # The distributed-plan parallel job gets a slightly higher cap (0.75).
-        # The global memory check compares the server's *OS RSS* against the
-        # cap, and on an ASan server RSS carries tens of GiB the tracker can
-        # neither see nor free by killing queries: ASan shadow memory,
-        # quarantine and redzones, plus file-backed pages from mmap reads. On
-        # the 32-vCPU runner that overhead accumulates over the run towards
-        # ~41.7 GiB regardless of concurrency - cutting workers 11 -> 9 -> 8
-        # -> 7 moved the peak RSS only 43.01 -> 41.90 -> 41.76 -> 41.71 GiB
-        # against the 41.84 GiB cap that 0.7 yields, and every run still
-        # grazed the cap (one query rejected on a 512 MiB chunk while RSS sat
-        # just under it). Concurrency is exhausted as a lever, so the cap
-        # itself must give the untrackable overhead room: 0.75 (~44.8 GiB)
-        # leaves ~3 GiB of headroom above the observed RSS equilibrium. The
-        # host-OOM invariant this cap protects (server cap + aggregate client
-        # RSS < RAM) still holds with >10 GiB to spare, because this job's
-        # concurrency is already cut to 0.22 * CPU (see `nproc` above), which
-        # shrinks the ASan client footprint from ~17 GiB to ~3 GiB.
         memory_cap_source = build_types[0] if is_bugfix_validation else args.options
         if any(san in memory_cap_source for san in SANITIZERS):
-            memory_ratio = (
-                0.75 if is_distributed_plan and "parallel" in test_options else 0.7
-            )
-            commands.append(lambda: CH.set_memory_ratio(memory_ratio))
+            commands.append(lambda: CH.set_memory_ratio(0.7))
 
         if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)
@@ -974,7 +985,10 @@ def main():
                 build_type=build_types[0] if is_bugfix_validation else None,
             )
 
-        test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)
+        test_result = ft_res_processor.run(
+            runner_exit_code=runner_exit_code,
+            is_bugfix_validation=is_labeled_bugfix_validation,
+        )
 
         # Run additional build types for bugfix validation.
         # Exit early on first failure to avoid duplicate test names,
@@ -990,16 +1004,7 @@ def main():
             first_bt_fatals = CH.check_fatal_messages_in_logs()
             for r in first_bt_fatals:
                 r.set_label(build_types[0])
-            # `extend_sub_results` recomputes the aggregate status from child
-            # rows only, which would erase a runner-level `ERROR` set by
-            # `FTResultsProcessor` (e.g. `not s.success_finish`) when the
-            # parsed rows are all `OK`/`FAIL`. Restore it so that
-            # `invert_bugfix_validation_status` still sees the error and
-            # does not flip a harness-level termination into green.
-            runner_level_error = test_result.is_error()
-            test_result.extend_sub_results(first_bt_fatals)
-            if runner_level_error:
-                test_result.status = Result.Status.ERROR
+            reconcile_bugfix_crash_repro(test_result, first_bt_fatals)
 
             if test_result.is_ok():
                 for bugfix_bt in build_types[1:]:
@@ -1137,21 +1142,21 @@ def main():
                         build_type=bugfix_bt,
                     )
                     bt_result = ft_res_processor_bt.run(
-                        runner_exit_code=bt_runner_exit_code
+                        runner_exit_code=bt_runner_exit_code,
+                        is_bugfix_validation=is_labeled_bugfix_validation,
                     )
 
-                    # Check fatal messages for this build type
+                    # Check fatal messages for this build type. As with the
+                    # first build type, a `BLOCKER` fatal is the bug crashing
+                    # the master binary, not infra: reuse the same downgrade so
+                    # a crash-only repro on a later build type
+                    # (amd_tsan / amd_msan / amd_debug) is counted as a
+                    # reproduction instead of being restored to `ERROR` and
+                    # preserved as inconclusive by the inverter.
                     bt_fatals = CH.check_fatal_messages_in_logs()
                     for r in bt_fatals:
                         r.set_label(bugfix_bt)
-                    # As with the first build type above: keep a runner-level
-                    # `ERROR` from being recomputed away by
-                    # `extend_sub_results` before it is copied into
-                    # `test_result.status` and checked by the inverter.
-                    bt_runner_level_error = bt_result.is_error()
-                    bt_result.extend_sub_results(bt_fatals)
-                    if bt_runner_level_error:
-                        bt_result.status = Result.Status.ERROR
+                    reconcile_bugfix_crash_repro(bt_result, bt_fatals)
 
                     for r in bt_result.results:
                         r.set_label(bugfix_bt)
@@ -1309,9 +1314,16 @@ def main():
         test_result.extend_sub_results(results[-1].results)
         results[-1].results = []
 
+    # `invert_bugfix_validation_status` below rewrites a reproduced failure to
+    # `OK` (and a no-repro to `SKIPPED`), both of which `Result.is_ok` accepts.
+    # The collect-logs gate must see the run's real outcome, or a bugfix
+    # validation job that reproduced a crash would attach neither its cores nor
+    # its full logs.
+    test_run_failed = bool(test_result) and not test_result.is_ok()
+
     # invert result status for bugfix validation
     bugfix_validation_no_repro = False
-    if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
+    if is_labeled_bugfix_validation and test_result:
         # `invert_bugfix_validation_status` returns True when the bug did not
         # reproduce on this arch. In that case it sets `test_result` to
         # SKIPPED; the SKIPPED status must also be propagated to the top-level
@@ -1325,7 +1337,7 @@ def main():
         print("Collect logs")
 
         def collect_logs():
-            CH.prepare_logs(all=test_result and not test_result.is_ok(), info=info)
+            CH.prepare_logs(all=test_run_failed, info=info)
 
         results.append(
             Result.from_commands_run(
@@ -1340,7 +1352,7 @@ def main():
     force_ok_exit = False
     if test_result:
         failures_cnt = len([r for r in test_result.results if not r.is_ok()])
-        if failures_cnt > 0 and failures_cnt < 4:
+        if failures_cnt > 0 and failures_cnt < 2:
             print(
                 f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
             )
