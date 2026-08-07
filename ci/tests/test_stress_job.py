@@ -28,6 +28,7 @@ visible `Result` so investigators notice the file is corrupt.
 
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -335,6 +336,90 @@ def test_shell_producers_append_escaped_output_with_printf():
     assert (
         terminator_settings == 1
     ), f"format_custom_row_after_delimiter set {terminator_settings} times, want 1"
+
+
+_ESCAPED_CALL = re.compile(r"\$\((escaped|head_escaped|trim_server_logs)\b")
+
+# What the fixed `escaped()` emits: payload verbatim, row terminator as the two
+# characters `\n`. The reader decodes those back into real line feeds.
+_STUB_ON_DISK = "line one here\\nline two here\\n"
+_STUB_DECODED = "line one here\nline two here\n"
+
+_STUB_PREAMBLE = r"""set -e
+FAIL="\tFAIL\t\\N\t"
+function escaped() { printf '%s' "$STUB_PAYLOAD"; }
+function head_escaped() { printf '%s' "$STUB_PAYLOAD"; }
+function trim_server_logs() { printf '%s' "$STUB_PAYLOAD"; }
+"""
+
+
+def _append_statements():
+    for name in ("stress_tests.lib", "upgrade_runner.sh"):
+        source = (_DOCKER_SCRIPTS / name).read_text(encoding="utf-8").split("\n")
+        number = 0
+        while number < len(source):
+            line = source[number]
+            if line.lstrip().startswith("#") or not _ESCAPED_CALL.search(line):
+                number += 1
+                continue
+            # Two of the sites are written as backslash continuations; join them
+            # so the harness runs the whole logical statement.
+            statement, last = line.rstrip(), number
+            while statement.endswith("\\"):
+                last += 1
+                statement = statement[:-1] + " " + source[last].strip()
+            yield f"{name}:{number + 1}", statement
+            number = last + 1
+
+
+def _standalone(statement):
+    # Drop a leading `&&`/`||` and the unbalanced `)` of an enclosing subshell,
+    # which bash would otherwise reject as a syntax error.
+    statement = re.sub(r"^\s*(&&|\|\|)\s*", "", statement)
+    if statement.count(")") > statement.count("("):
+        cut = statement.rstrip().rfind(")")
+        statement = statement[:cut] + statement[cut + 1 :]
+    return statement
+
+
+def test_shell_append_preserves_the_escaped_payload_end_to_end(tmp_path):
+    """The append contract asserted by outcome rather than by spelling.
+
+    A rule over `printf` spellings cannot enumerate the corrupting forms: word
+    splitting on an unquoted substitution, a `%b` conversion and an extra
+    operand all satisfy one and still write several rows. So run each real
+    append statement under bash with a stubbed producer and parse what lands in
+    the file. Following `test_upgrade_runner_download_boundary.py`, the
+    statements are extracted from the scripts themselves, so the test cannot
+    drift from what it guards. The `printf '%s'` stub keeps this independent of
+    a `clickhouse` binary, a server and the network.
+    """
+    sites = 0
+    for where, statement in _append_statements():
+        written = tmp_path / f"results_{sites}.tsv"
+        script = (
+            _STUB_PREAMBLE
+            + _standalone(statement).replace(
+                "/test_output/test_results.tsv", str(written)
+            )
+            + "\n"
+        )
+        run = subprocess.run(
+            ["bash", "-c", script],
+            env=dict(os.environ, STUB_PAYLOAD=_STUB_ON_DISK),
+            capture_output=True,
+            text=True,
+        )
+        assert run.returncode == 0, f"{where}: bash rc={run.returncode}: {run.stderr}"
+        physical_lines = written.read_text(encoding="utf-8").count("\n")
+        assert physical_lines == 1, f"{where}: wrote {physical_lines} rows, want 1"
+        results, malformed = read_test_results(written)
+        assert malformed == [], f"{where}: malformed {malformed}"
+        assert len(results) == 1, f"{where}: parsed {len(results)} rows, want 1"
+        assert results[0].info == _STUB_DECODED, f"{where}: info {results[0].info!r}"
+        sites += 1
+
+    assert sites == 9, f"scanned {sites} append sites, want 9"
 
 
 def test_dpkg_progress_in_info_does_not_split_row(tmp_path):
