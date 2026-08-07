@@ -87,6 +87,10 @@ private:
     /// The length of the last parsed top-level `_time` range with a known length.
     /// Used as the denominator of the `rate()` and `rate_sum()` stats functions.
     std::optional<Int64> query_time_range_ns;
+    /// The same range length in seconds as a runtime expression, for absolute `_time`
+    /// bounds without an explicit timezone: their epoch values depend on the session
+    /// timezone, so the length is only known at execution time.
+    ASTPtr query_time_range_seconds_expr;
     /// The `_time` bucket step of the stats pipe being parsed, if any: it takes precedence
     /// over the query time range as the denominator of `rate()` and `rate_sum()`.
     std::optional<Int64> current_stats_time_bucket_ns;
@@ -112,6 +116,7 @@ private:
         Int64 saved_options_time_offset_ns;
         ASTPtr saved_options_global_filter;
         std::optional<Int64> saved_query_time_range_ns;
+        ASTPtr saved_query_time_range_seconds_expr;
         std::optional<Int64> saved_current_stats_time_bucket_ns;
         bool saved_current_stats_time_bucket_is_calendar;
 
@@ -194,6 +199,7 @@ private:
     std::optional<Int64> parseOptionalTimeOffset();
     static ASTPtr makeIntervalAST(Int64 ns);
     static ASTPtr shiftTime(ASTPtr expr, Int64 offset_ns);
+    static ASTPtr makeTimeRangeSecondsExpr(ASTPtr lower, ASTPtr upper);
     ASTPtr makeTimeCondition(ASTPtr lower, bool lower_inclusive, ASTPtr upper, bool upper_inclusive, Int64 offset_ns);
 
     /// ---- Pipes ----

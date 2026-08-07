@@ -144,6 +144,7 @@ LogsQLParser::QueryScopeGuard::QueryScopeGuard(LogsQLParser & parser_)
     , saved_options_time_offset_ns(parser_.options_time_offset_ns)
     , saved_options_global_filter(parser_.options_global_filter)
     , saved_query_time_range_ns(parser_.query_time_range_ns)
+    , saved_query_time_range_seconds_expr(parser_.query_time_range_seconds_expr)
     , saved_current_stats_time_bucket_ns(parser_.current_stats_time_bucket_ns)
     , saved_current_stats_time_bucket_is_calendar(parser_.current_stats_time_bucket_is_calendar)
 {
@@ -154,6 +155,7 @@ LogsQLParser::QueryScopeGuard::~QueryScopeGuard()
     parser.options_time_offset_ns = saved_options_time_offset_ns;
     parser.options_global_filter = saved_options_global_filter;
     parser.query_time_range_ns = saved_query_time_range_ns;
+    parser.query_time_range_seconds_expr = saved_query_time_range_seconds_expr;
     parser.current_stats_time_bucket_ns = saved_current_stats_time_bucket_ns;
     parser.current_stats_time_bucket_is_calendar = saved_current_stats_time_bucket_is_calendar;
 }
@@ -1598,6 +1600,20 @@ LogsQLParser::TimeBound LogsQLParser::parseTimeBound()
     return result;
 }
 
+ASTPtr LogsQLParser::makeTimeRangeSecondsExpr(ASTPtr lower, ASTPtr upper)
+{
+    /// The bounds may be DateTime (`now()` arithmetic) or DateTime64 (absolute timestamps);
+    /// normalize to nanosecond precision before subtracting.
+    auto to_ns = [](const ASTPtr & instant)
+    {
+        return makeASTFunction("toUnixTimestamp64Nano",
+            makeASTFunction("toDateTime64", instant->clone(), make_intrusive<ASTLiteral>(Field(static_cast<UInt64>(9)))));
+    };
+    return makeASTFunction("divide",
+        makeASTFunction("minus", to_ns(upper), to_ns(lower)),
+        make_intrusive<ASTLiteral>(Field(1e9)));
+}
+
 ASTPtr LogsQLParser::makeTimeCondition(ASTPtr lower, bool lower_inclusive, ASTPtr upper, bool upper_inclusive, Int64 offset_ns)
 {
     offset_ns += options_time_offset_ns;
@@ -1686,10 +1702,20 @@ ASTPtr LogsQLParser::parseFilterTime()
         ASTPtr upper = include_end ? end_bound.end : end_bound.start;
 
         /// Remember the range length for the rate() and rate_sum() stats functions.
+        /// Without an explicit timezone the epoch bounds are unknown at parse time,
+        /// so the length is carried as a runtime expression over the civil bounds.
         auto lower_ns = include_start ? start_bound.start_ns : start_bound.end_ns;
         auto upper_ns = include_end ? end_bound.end_ns : end_bound.start_ns;
         if (lower_ns && upper_ns && *upper_ns > *lower_ns)
+        {
             query_time_range_ns = *upper_ns - *lower_ns;
+            query_time_range_seconds_expr = nullptr;
+        }
+        else if (lower && upper)
+        {
+            query_time_range_ns.reset();
+            query_time_range_seconds_expr = makeTimeRangeSecondsExpr(lower, upper);
+        }
 
         return makeTimeCondition(lower, true, upper, false, offset.value_or(0));
     }
@@ -1704,6 +1730,7 @@ ASTPtr LogsQLParser::parseFilterTime()
     if (auto duration = tryParseDuration(text))
     {
         query_time_range_ns = duration;
+        query_time_range_seconds_expr = nullptr;
         auto offset = parseOptionalTimeOffset();
         ASTPtr lower = makeASTFunction("minus", makeASTFunction("now"), makeIntervalAST(*duration));
         return makeTimeCondition(lower, true, makeASTFunction("now"), false, offset.value_or(0));
@@ -1713,7 +1740,17 @@ ASTPtr LogsQLParser::parseFilterTime()
     TimeBound bound = parseTimeBound();
     auto offset = parseOptionalTimeOffset();
     if (bound.start_ns && bound.end_ns && *bound.end_ns > *bound.start_ns)
+    {
         query_time_range_ns = *bound.end_ns - *bound.start_ns;
+        query_time_range_seconds_expr = nullptr;
+    }
+    /// An instant bound (`now`, a duration) has `start` and `end` pointing to the same
+    /// expression: it is not a period, so it does not define a range length.
+    else if (bound.start && bound.end && bound.start != bound.end)
+    {
+        query_time_range_ns.reset();
+        query_time_range_seconds_expr = makeTimeRangeSecondsExpr(bound.start, bound.end);
+    }
     return makeTimeCondition(bound.start, true, bound.end, false, offset.value_or(0));
 }
 
