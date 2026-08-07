@@ -285,7 +285,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     std::array<UInt16, WALLABY_MAX_EXCEPTIONS> exception_positions{};
     UInt32 exception_count = 0;
 
-    const auto quantizeAll = [&](UInt8 candidate_alpha) -> bool
+    const auto quantize_all = [&](UInt8 candidate_alpha) -> bool
     {
         exception_count = 0;
         SignedType previous_good = 0;
@@ -312,13 +312,13 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     };
 
     UInt8 alpha = sampled_alphas[sampled_alpha_count - 1];
-    if (!quantizeAll(alpha))
+    if (!quantize_all(alpha))
     {
         const UInt8 median_alpha = sampled_alphas[sampled_alpha_count / 2];
         if (median_alpha == alpha)
             return std::nullopt;
         alpha = median_alpha;
-        if (!quantizeAll(alpha))
+        if (!quantize_all(alpha))
             return std::nullopt;
     }
 
@@ -700,6 +700,13 @@ void decodeXor(const char * payload, UInt32 payload_size, T * out, UInt32 count)
         ring_position = (ring_position + 1) % WALLABY_RING_SIZE;
         previous = value;
     }
+
+    /// The encoder flushes with zero padding bits only, so after decoding `count` values fewer
+    /// than 8 bits of the declared payload may remain, and all of them must be zero. Anything
+    /// else means the payload size was inflated to hide trailing garbage inside the vector.
+    const UInt64 leftover_bits = reader.remaining();
+    if (leftover_bits >= 8 || (leftover_bits > 0 && reader.readBits(static_cast<UInt8>(leftover_bits)) != 0))
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, trailing garbage in XOR payload");
 }
 
 template <typename T>
