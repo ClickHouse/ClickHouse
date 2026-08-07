@@ -1,0 +1,353 @@
+---
+slug: /guides/developer/deduplication
+sidebarTitle: 'Stratégies de déduplication'
+description: 'Recourez à la déduplication lorsque vous devez effectuer fréquemment des upserts, des mises à jour et des suppressions.'
+title: 'Stratégies de déduplication'
+keywords: ['stratégies de déduplication', 'déduplication des données', 'upserts', 'mises à jour et suppressions', 'guide du développeur']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+**La déduplication** désigne le processus de ***suppression des lignes en double d’un jeu de données***. Dans une base de données OLTP, cela se fait facilement, car chaque ligne possède une clé primaire unique, mais au prix d’insertions plus lentes. Chaque ligne insérée doit d’abord être recherchée et, si elle est trouvée, remplacée.
+
+ClickHouse est conçu pour la rapidité d’insertion des données. Les fichiers de stockage sont immuables et ClickHouse ne vérifie pas l’existence d’une clé primaire avant d’insérer une ligne ; la déduplication demande donc un peu plus d’efforts. Cela signifie aussi que la déduplication n’est pas immédiate : elle est **différée**, ce qui entraîne quelques effets secondaires :
+
+* À tout moment, votre table peut encore contenir des doublons (des lignes avec la même clé de tri)
+* La suppression effective des lignes en double se produit lors de la fusion des parts
+* Vos requêtes doivent tenir compte de la possibilité de doublons
+
+<div class="transparent-table">
+  |                                                                                                   |                                                                                                                                                                                                                                                                                         |
+  | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | <Image img="/images/guides/developer/de_duplication.webp" alt="Logo de déduplication" size="sm" /> | ClickHouse propose une formation gratuite sur la déduplication et de nombreux autres sujets. Le [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) constitue un bon point de départ. |
+</div>
+
+<div id="options-for-deduplication">
+  ## Options de déduplication
+</div>
+
+La déduplication est mise en œuvre dans ClickHouse à l’aide des moteurs de table suivants :
+
+1. Moteur de table `ReplacingMergeTree` : avec ce moteur de table, les lignes dupliquées ayant la même clé de tri sont supprimées lors des fusions. `ReplacingMergeTree` est une bonne option pour simuler un comportement d’upsert (lorsque vous souhaitez que les requêtes renvoient la dernière ligne insérée).
+
+2. Collapsing de lignes : les moteurs de table `CollapsingMergeTree` et `VersionedCollapsingMergeTree` utilisent une logique dans laquelle une ligne existante est « annulée » et une nouvelle ligne est insérée. Ils sont plus complexes à mettre en œuvre que `ReplacingMergeTree`, mais vos requêtes et agrégations peuvent être plus simples à écrire, sans avoir à vous soucier de savoir si les données ont déjà été fusionnées ou non. Ces deux moteurs de table sont utiles lorsque vous devez mettre à jour fréquemment les données.
+
+Nous présentons ces deux techniques ci-dessous. Pour plus de détails, consultez notre [module de formation Deleting and Updating Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs), gratuit et disponible à la demande.
+
+<div id="using-replacingmergetree-for-upserts">
+  ## Utilisation de ReplacingMergeTree pour les upserts
+</div>
+
+Prenons un exemple simple dans lequel une table contient des commentaires Hacker News, avec une colonne `views` qui indique le nombre de fois qu’un commentaire a été consulté. Supposons que nous insérions une nouvelle ligne lorsqu’un article est publié, puis que nous effectuions chaque jour l’upsert d’une nouvelle ligne avec le nombre total de vues si cette valeur augmente :
+
+```sql
+CREATE TABLE hackernews_rmt (
+    id UInt32,
+    author String,
+    comment String,
+    views UInt64
+)
+ENGINE = ReplacingMergeTree
+PRIMARY KEY (author, id)
+```
+
+Insérons deux lignes :
+
+```sql
+INSERT INTO hackernews_rmt VALUES
+   (1, 'ricardo', 'This is post #1', 0),
+   (2, 'ch_fan', 'This is post #2', 0)
+```
+
+Pour mettre à jour la colonne `views`, insérez une nouvelle ligne avec la même clé primaire (notez les nouvelles valeurs de la colonne `views`) :
+
+```sql
+INSERT INTO hackernews_rmt VALUES
+   (1, 'ricardo', 'This is post #1', 100),
+   (2, 'ch_fan', 'This is post #2', 200)
+```
+
+La table contient désormais 4 lignes :
+
+```sql
+SELECT *
+FROM hackernews_rmt
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │     0 │
+│  1 │ ricardo │ This is post #1 │     0 │
+└────┴─────────┴─────────────────┴───────┘
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   200 │
+│  1 │ ricardo │ This is post #1 │   100 │
+└────┴─────────┴─────────────────┴───────┘
+```
+
+Les encadrés distincts ci-dessus dans la sortie montrent les deux parts en arrière-plan : ces données n&#39;ont pas encore été fusionnées, donc les lignes dupliquées n&#39;ont pas encore été supprimées. Utilisons le mot-clé `FINAL` dans la requête `SELECT`, ce qui entraîne une fusion logique du résultat de la requête :
+
+```sql
+SELECT *
+FROM hackernews_rmt
+FINAL
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   200 │
+│  1 │ ricardo │ This is post #1 │   100 │
+└────┴─────────┴─────────────────┴───────┘
+```
+
+Le résultat ne contient que 2 lignes, et la dernière ligne insérée est celle qui est renvoyée.
+
+<Note>
+  Utiliser `FINAL` fonctionne bien si vous avez peu de données. Si vous traitez un grand volume de données,
+  `FINAL` n&#39;est probablement pas la meilleure option. Voyons une meilleure solution pour
+  trouver la dernière valeur d&#39;une colonne.
+</Note>
+
+<div id="avoiding-final">
+  ### Éviter FINAL
+</div>
+
+Mettons de nouveau à jour la colonne `views` pour les deux lignes distinctes :
+
+```sql
+INSERT INTO hackernews_rmt VALUES
+   (1, 'ricardo', 'This is post #1', 150),
+   (2, 'ch_fan', 'This is post #2', 250)
+```
+
+La table contient maintenant 6 lignes, car aucune fusion réelle n&#39;a encore été effectuée (seule la fusion à l&#39;exécution de la requête a eu lieu lorsque nous avons utilisé `FINAL`).
+
+```sql
+SELECT *
+FROM hackernews_rmt
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   200 │
+│  1 │ ricardo │ This is post #1 │   100 │
+└────┴─────────┴─────────────────┴───────┘
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │     0 │
+│  1 │ ricardo │ This is post #1 │     0 │
+└────┴─────────┴─────────────────┴───────┘
+┌─id─┬─author──┬─comment─────────┬─views─┐
+│  2 │ ch_fan  │ This is post #2 │   250 │
+│  1 │ ricardo │ This is post #1 │   150 │
+└────┴─────────┴─────────────────┴───────┘
+```
+
+Au lieu d’utiliser `FINAL`, appuyons-nous sur une logique métier : nous savons que la colonne `views` augmente toujours. Nous pouvons donc sélectionner la ligne dont la valeur est la plus élevée à l’aide de la fonction `max`, après regroupement selon les colonnes souhaitées :
+
+```sql
+SELECT
+    id,
+    author,
+    comment,
+    max(views)
+FROM hackernews_rmt
+GROUP BY (id, author, comment)
+```
+
+```response
+┌─id─┬─author──┬─comment─────────┬─max(views)─┐
+│  2 │ ch_fan  │ This is post #2 │        250 │
+│  1 │ ricardo │ This is post #1 │        150 │
+└────┴─────────┴─────────────────┴────────────┘
+```
+
+Le regroupement, comme dans la requête ci-dessus, peut en réalité être plus efficace (en termes de performances des requêtes) que l’utilisation du mot-clé `FINAL`.
+
+Notre [module de formation Deleting and Updating Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) approfondit cet exemple, notamment en expliquant comment utiliser une colonne `version` avec `ReplacingMergeTree`.
+
+<div id="using-collapsingmergetree-for-updating-columns-frequently">
+  ## Utiliser CollapsingMergeTree pour mettre à jour fréquemment des colonnes
+</div>
+
+La mise à jour d’une colonne consiste à supprimer une ligne existante et à la remplacer par de nouvelles valeurs. Comme vous l’avez déjà vu, ce type de mutation dans ClickHouse se produit *à terme*, lors des fusions. Si vous avez beaucoup de lignes à mettre à jour, il peut en réalité être plus efficace d’éviter `ALTER TABLE..UPDATE` et d’insérer simplement les nouvelles données en plus des données existantes. On pourrait ajouter une colonne indiquant si les données sont obsolètes ou nouvelles... et il existe justement déjà un moteur de table qui implémente ce comportement de façon très élégante, d’autant plus qu’il supprime automatiquement les données obsolètes à votre place. Voyons comment cela fonctionne.
+
+Supposons que nous suivions le nombre de consultations d’un commentaire Hacker News à l’aide d’un système externe et que, toutes les quelques heures, nous envoyions les données dans ClickHouse. Nous voulons que les anciennes lignes soient supprimées et que les nouvelles lignes représentent le nouvel état de chaque commentaire Hacker News. Nous pouvons utiliser un `CollapsingMergeTree` pour implémenter ce comportement.
+
+Définissons une table pour stocker le nombre de consultations :
+
+```sql
+CREATE TABLE hackernews_views (
+    id UInt32,
+    author String,
+    views UInt64,
+    sign Int8
+)
+ENGINE = CollapsingMergeTree(sign)
+PRIMARY KEY (id, author)
+```
+
+Notez que la table `hackernews_views` comporte une colonne `Int8` nommée sign, appelée colonne **sign**. Le nom de la colonne sign est arbitraire, mais le type de données `Int8` est obligatoire, et notez que le nom de la colonne a été passé au constructeur de la table `CollapsingMergeTree`.
+
+Qu’est-ce que la colonne sign d’une table `CollapsingMergeTree` ? Elle représente l’*état* de la ligne, et la colonne sign ne peut prendre que les valeurs 1 ou -1. Voici comment cela fonctionne :
+
+* Si deux lignes ont la même clé primaire (ou le même ordre de tri s’il diffère de la clé primaire), mais des valeurs différentes dans la colonne sign, alors la dernière ligne insérée avec un +1 devient la ligne d’état et les autres lignes s’annulent mutuellement
+* Les lignes qui s’annulent mutuellement sont supprimées lors des fusions
+* Les lignes qui n&#39;ont pas de paire correspondante sont conservées
+
+Ajoutons une ligne à la table `hackernews_views`. Comme il s’agit de la seule ligne pour cette clé primaire, nous définissons son état sur 1 :
+
+```sql
+INSERT INTO hackernews_views VALUES
+   (123, 'ricardo', 0, 1)
+```
+
+Supposons maintenant que nous voulions modifier la colonne `views`. Vous insérez deux lignes : l’une pour annuler la ligne existante, et l’autre contenant le nouvel état de la ligne :
+
+```sql
+INSERT INTO hackernews_views VALUES
+   (123, 'ricardo', 0, -1),
+   (123, 'ricardo', 150, 1)
+```
+
+La table compte désormais 3 lignes avec la clé primaire `(123, 'ricardo')` :
+
+```sql
+SELECT *
+FROM hackernews_views
+```
+
+```response
+┌──id─┬─author──┬─views─┬─sign─┐
+│ 123 │ ricardo │     0 │   -1 │
+│ 123 │ ricardo │   150 │    1 │
+└─────┴─────────┴───────┴──────┘
+┌──id─┬─author──┬─views─┬─sign─┐
+│ 123 │ ricardo │     0 │    1 │
+└─────┴─────────┴───────┴──────┘
+```
+
+À noter, l’ajout de `FINAL` renvoie la ligne d’état actuelle :
+
+```sql
+SELECT *
+FROM hackernews_views
+FINAL
+```
+
+```response
+┌──id─┬─author──┬─views─┬─sign─┐
+│ 123 │ ricardo │   150 │    1 │
+└─────┴─────────┴───────┴──────┘
+```
+
+Mais, bien sûr, l’utilisation de `FINAL` n’est pas recommandée pour les tables volumineuses.
+
+<Note>
+  La valeur fournie pour la colonne `views` dans notre exemple n’est pas vraiment nécessaire, et elle n’a pas non plus besoin de correspondre à la valeur actuelle de `views` dans l’ancienne ligne. En fait, vous pouvez annuler une ligne avec uniquement la clé primaire et un -1 :
+
+  ```sql
+  INSERT INTO hackernews_views(id, author, sign) VALUES
+     (123, 'ricardo', -1)
+  ```
+</Note>
+
+<div id="real-time-updates-from-multiple-threads">
+  ## Mises à jour en temps réel depuis plusieurs threads
+</div>
+
+Avec une table `CollapsingMergeTree`, les lignes s’annulent entre elles à l’aide d’une colonne sign, et l’état d’une ligne est déterminé par la dernière ligne insérée. Mais cela peut poser problème si vous insérez des lignes depuis différents threads, car elles peuvent être insérées dans le désordre. Dans ce cas, utiliser la « dernière » ligne ne fonctionne pas.
+
+C’est là que `VersionedCollapsingMergeTree` devient utile : il regroupe les lignes comme `CollapsingMergeTree`, mais au lieu de conserver la dernière ligne insérée, il garde celle dont la valeur dans la colonne de version que vous spécifiez est la plus élevée.
+
+Prenons un exemple. Supposons que nous voulions suivre le nombre de vues de nos commentaires Hacker News et que les données soient mises à jour fréquemment. Nous voulons que les rapports utilisent les valeurs les plus récentes sans devoir forcer ni attendre les fusions. Nous commençons avec une table similaire à `CollapsedMergeTree`, sauf que nous ajoutons une colonne pour stocker la version de l’état de la ligne :
+
+```sql
+CREATE TABLE hackernews_views_vcmt (
+    id UInt32,
+    author String,
+    views UInt64,
+    sign Int8,
+    version UInt32
+)
+ENGINE = VersionedCollapsingMergeTree(sign, version)
+PRIMARY KEY (id, author)
+```
+
+Notez que la table utilise `VersionsedCollapsingMergeTree` comme moteur et prend en paramètre la **colonne sign** et une **colonne de version**. Voici comment elle fonctionne :
+
+* Elle supprime chaque paire de lignes ayant la même clé primaire et la même version, mais un signe différent
+* L’ordre dans lequel les lignes ont été insérées n’a pas d’importance
+* Notez que si la colonne de version ne fait pas partie de la clé primaire, ClickHouse l’ajoute implicitement à la clé primaire comme dernier champ
+
+Vous utiliserez le même type de logique lors de l’écriture de requêtes : regroupez par clé primaire et utilisez une logique appropriée pour éviter les lignes qui ont été annulées mais pas encore supprimées. Ajoutons quelques lignes à la table `hackernews_views_vcmt` :
+
+```sql
+INSERT INTO hackernews_views_vcmt VALUES
+   (1, 'ricardo', 0, 1, 1),
+   (2, 'ch_fan', 0, 1, 1),
+   (3, 'kenny', 0, 1, 1)
+```
+
+Nous mettons maintenant à jour deux des lignes et en supprimons une. Pour annuler une ligne, veillez à inclure le numéro de version précédent (puisqu’il fait partie de la clé primaire) :
+
+```sql
+INSERT INTO hackernews_views_vcmt VALUES
+   (1, 'ricardo', 0, -1, 1),
+   (1, 'ricardo', 50, 1, 2),
+   (2, 'ch_fan', 0, -1, 1),
+   (3, 'kenny', 0, -1, 1),
+   (3, 'kenny', 1000, 1, 2)
+```
+
+Nous allons exécuter la même requête que précédemment, qui additionne et soustrait intelligemment des valeurs en fonction de la colonne sign :
+
+```sql
+SELECT
+    id,
+    author,
+    sum(views * sign)
+FROM hackernews_views_vcmt
+GROUP BY (id, author)
+HAVING sum(sign) > 0
+ORDER BY id ASC
+```
+
+Le résultat comporte deux lignes :
+
+```response
+┌─id─┬─author──┬─sum(multiply(views, sign))─┐
+│  1 │ ricardo │                         50 │
+│  3 │ kenny   │                       1000 │
+└────┴─────────┴────────────────────────────┘
+```
+
+Forçons une fusion de la table :
+
+```sql
+OPTIMIZE TABLE hackernews_views_vcmt
+```
+
+Le résultat ne devrait contenir que deux lignes :
+
+```sql
+SELECT *
+FROM hackernews_views_vcmt
+```
+
+```response
+┌─id─┬─author──┬─views─┬─sign─┬─version─┐
+│  1 │ ricardo │    50 │    1 │       2 │
+│  3 │ kenny   │  1000 │    1 │       2 │
+└────┴─────────┴───────┴──────┴─────────┘
+```
+
+Une table `VersionedCollapsingMergeTree` est très pratique lorsque vous souhaitez mettre en œuvre la déduplication lors de l’insertion de lignes depuis plusieurs clients et/ou threads.
+
+<div id="why-arent-my-rows-being-deduplicated">
+  ## Pourquoi mes lignes ne sont-elles pas dédupliquées ?
+</div>
+
+L’une des raisons pour lesquelles des lignes insérées peuvent ne pas être dédupliquées est l’utilisation d’une fonction ou d’une expression non idempotente dans votre instruction `INSERT`. Par exemple, si vous insérez des lignes avec la colonne `createdAt DateTime64(3) DEFAULT now()`, vos lignes seront forcément uniques, car chaque ligne aura une valeur par défaut différente pour la colonne `createdAt`. Le moteur de table MergeTree / ReplicatedMergeTree ne pourra donc pas dédupliquer ces lignes, puisque chaque ligne insérée générera une somme de contrôle unique.
+
+Dans ce cas, vous pouvez définir votre propre `insert_deduplication_token` pour chaque lot de lignes afin de garantir que plusieurs insertions du même lot n’entraînent pas la réinsertion des mêmes lignes. Consultez la [documentation sur `insert_deduplication_token`](/fr/reference/settings/session-settings#insert_deduplication_token) pour plus de détails sur l’utilisation de ce paramètre.

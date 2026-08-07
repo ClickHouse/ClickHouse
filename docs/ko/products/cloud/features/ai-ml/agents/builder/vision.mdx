@@ -1,0 +1,37 @@
+---
+sidebarTitle: '비전'
+slug: /cloud/features/ai-ml/agents/builder/vision
+title: '비전'
+description: 'ClickHouse Agents의 이미지 입력과 시각적 이해'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', '비전', '이미지 입력', '멀티모달']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge />
+
+비전은 에이전트가 분석할 이미지를 업로드할 수 있게 해줍니다. 에이전트는 이미지를 비전 지원 모델에 전달하며, 이 모델은 이미지의 내용을 설명하거나 요약하거나 관련 질문에 답합니다.
+
+<div id="enable-it">
+  ## 비전 기능 활성화
+</div>
+
+비전은 이미지 입력을 지원하는 모델에서만 작동합니다. 선택한 모델이 이미지 입력을 처리할 수 없으면 메시지 컴포저의 업로드 컨트롤이 비활성화됩니다. 다시 활성화하려면 비전을 지원하는 모델로 전환하세요.
+
+<div id="use-it">
+  ## 비전 기능 사용
+</div>
+
+메시지 컴포저의 왼쪽 아래에 있는 클립 아이콘을 클릭하고 **Upload to Provider**를 선택해 이미지를 첨부하세요 — 스크린샷, 사진, 차트, 다이어그램 모두 가능합니다. 그런 다음 이미지를 읽어야 답할 수 있는 질문을 하세요. *&quot;이 쿼리 계획에서 무엇이 문제인가요?&quot;*, *&quot;이 스크린샷의 텍스트를 옮겨 적어 주세요,&quot;* 또는 *&quot;이 대시보드를 지난주 것과 비교해 주세요.&quot;*
+
+<Image img="/images/cloud/agent-builder/vision/vision.webp" alt="클립 메뉴가 열려 있고 Upload to Provider, Upload as Text, Upload to Code Environment 옵션이 표시된 메시지 컴포저" size="lg" />
+
+에이전트는 이미지를 메시지 컨텍스트의 일부로 처리하므로, 같은 대화 흐름의 후속 질문에서는 다시 업로드하지 않아도 앞서 본 내용을 참조할 수 있습니다.
+
+<div id="combine-with-other-tools">
+  ## 비전을 다른 도구와 함께 사용하기
+</div>
+
+비전은 이미지 기반 분석에서 [코드 인터프리터](/ko/products/cloud/features/ai-ml/agents/builder/code-interpreter)와 특히 잘 어울립니다. 예를 들어 에이전트가 스크린샷에서 숫자를 읽어낸 뒤 Python을 실행해 합계를 계산할 수 있습니다. 또한 이미지에 모델이 추가로 조회해야 할 내용이 포함된 경우 [웹 검색](/ko/products/cloud/features/ai-ml/agents/builder/web-search)과 함께 사용하는 것도 효과적입니다.

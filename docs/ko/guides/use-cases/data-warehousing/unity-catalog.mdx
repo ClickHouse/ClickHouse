@@ -1,0 +1,199 @@
+---
+slug: /use-cases/data-lake/unity-catalog
+sidebarTitle: 'Unity Catalog'
+title: 'Unity Catalog'
+description: '이 가이드에서는 ClickHouse와 Unity Catalog를 사용해
+ S3 버킷에 있는 데이터를 쿼리하는 방법을 단계별로 안내합니다.'
+keywords: ['Unity', '데이터 레이크']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+ClickHouse는 여러 카탈로그(Unity, Glue, Polaris 등)와의 통합을 지원합니다. 이 가이드에서는 ClickHouse와 [Unity Catalog](https://www.databricks.com/product/unity-catalog)를 사용해 Databricks에서 관리하는 데이터에 쿼리하는 방법을 안내합니다.
+
+Databricks lakehouse는 여러 데이터 포맷을 지원합니다. ClickHouse를 사용하면 Unity Catalog 테이블을 Delta와 Iceberg 형식 모두로 쿼리할 수 있습니다.
+
+<Note>
+  이 기능은 아직 실험적 기능이므로, 다음을 사용해 활성화해야 합니다:
+  `SET allow_experimental_database_unity_catalog = 1;`
+</Note>
+
+<div id="configuring-unity-in-databricks">
+  ## Databricks에서 Unity 구성하기
+</div>
+
+ClickHouse가 Unity Catalog와 상호 작용할 수 있도록 하려면, Unity Catalog가 외부 리더의 액세스를 허용하도록 구성되어 있는지 확인해야 합니다. 이는 다음 가이드인[ &quot;Unity Catalog에 대한 외부 데이터 액세스 활성화&quot;](https://docs.databricks.com/aws/en/external-access/admin)를 따르면 가능합니다.
+
+카탈로그 구성이 완료되면 ClickHouse용 자격 증명을 생성해야 합니다. Unity와의 연동 방식에 따라 두 가지 다른 메서드를 사용할 수 있습니다.
+
+* Iceberg 클라이언트의 경우 [service principal](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m)을 통한 인증을 사용합니다.
+
+* Delta 클라이언트의 경우 Personal Access Token([PAT](https://docs.databricks.com/aws/en/dev-tools/auth/pat))을 사용합니다.
+
+<div id="required-pat-token-permissions">
+  ### 필수 PAT 토큰 권한
+</div>
+
+읽기 액세스에 PAT를 사용하는 경우, 토큰에는 ClickHouse가 Unity Catalog 메타데이터의 목록을 확인하고 읽을 수 있는 권한이 있어야 합니다. PAT에 최소한 `EXTERNAL USE SCHEMA` [권한](https://docs.databricks.com/aws/en/external-access/admin#grant-a-principal-unity-catalog-privileges)과 함께 테이블에 대한 `SELECT` 권한, 상위 카탈로그에 대한 `USE CATALOG`, 상위 schema에 대한 `USE SCHEMA`가 있는지 확인하십시오.
+
+<div id="creating-a-connection-between-unity-catalog-and-clickhouse">
+  ## Unity Catalog와 ClickHouse 간 연결 만들기
+</div>
+
+Unity Catalog 구성을 완료하고 인증을 설정한 뒤, ClickHouse와 Unity Catalog 간 연결을 설정합니다.
+
+<div id="read-delta">
+  ### Delta 읽기
+</div>
+
+```sql
+CREATE DATABASE unity
+ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog')
+SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type = 'unity'
+```
+
+<div id="read-iceberg">
+  ### Iceberg 읽기
+</div>
+
+관리형 Iceberg 테이블에 접근하려면:
+
+```sql
+CREATE DATABASE unity
+ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest')
+SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret>', warehouse = 'workspace', 
+oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql'
+```
+
+<div id="querying-unity-catalog-tables-using-clickhouse">
+  ## ClickHouse를 사용하여 Unity 카탈로그 테이블 쿼리하기
+</div>
+
+이제 연결이 완료되었으므로 Unity 카탈로그를 통해 쿼리를 시작할 수 있습니다. 예시:
+
+```sql
+USE unity;
+
+SHOW TABLES;
+```
+
+```response
+┌─name───────────────────────────────────────────────┐
+│ clickbench.delta_hits                              │
+│ demo.fake_user                                     │
+│ information_schema.catalog_privileges              │
+│ information_schema.catalog_tags                    │
+│ information_schema.catalogs                        │
+│ information_schema.check_constraints               │
+│ information_schema.column_masks                    │
+│ information_schema.column_tags                     │
+│ information_schema.columns                         │
+│ information_schema.constraint_column_usage         │
+│ information_schema.constraint_table_usage          │
+│ information_schema.information_schema_catalog_name │
+│ information_schema.key_column_usage                │
+│ information_schema.parameters                      │
+│ information_schema.referential_constraints         │
+│ information_schema.routine_columns                 │
+│ information_schema.routine_privileges              │
+│ information_schema.routines                        │
+│ information_schema.row_filters                     │
+│ information_schema.schema_privileges               │
+│ information_schema.schema_tags                     │
+│ information_schema.schemata                        │
+│ information_schema.table_constraints               │
+│ information_schema.table_privileges                │
+│ information_schema.table_tags                      │
+│ information_schema.tables                          │
+│ information_schema.views                           │
+│ information_schema.volume_privileges               │
+│ information_schema.volume_tags                     │
+│ information_schema.volumes                         │
+│ uniform.delta_hits                                 │
+└────────────────────────────────────────────────────┘
+```
+
+```sql
+SHOW TABLES
+```
+
+```response
+┌─name───────────────┐
+│ uniform.delta_hits │
+└────────────────────┘
+```
+
+테이블을 쿼리하려면:
+
+```sql
+SELECT count(*) FROM `uniform.delta_hits`
+```
+
+<Info>
+  **백틱이 필요합니다**
+
+  ClickHouse는 둘 이상의 네임스페이스를 지원하지 않으므로 백틱이 필요합니다.
+</Info>
+
+테이블(table) DDL을 확인하려면:
+
+```sql
+SHOW CREATE TABLE `uniform.delta_hits`
+
+CREATE TABLE unity_uniform.`uniform.delta_hits`
+(
+    `WatchID` Int64,
+    `JavaEnable` Int32,
+    `Title` String,
+    `GoodEvent` Int32,
+    `EventTime` DateTime64(6, 'UTC'),
+    `EventDate` Date,
+    `CounterID` Int32,
+    `ClientIP` Int32,
+    ...
+    `FromTag` String,
+    `HasGCLID` Int32,
+    `RefererHash` Int64,
+    `URLHash` Int64,
+    `CLID` Int32
+)
+ENGINE = Iceberg('s3://<path>);
+
+```
+
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## 데이터 레이크의 데이터를 ClickHouse로 로드하기
+</div>
+
+Databricks에서 ClickHouse로 데이터를 로드해야 한다면, 먼저 로컬 ClickHouse 테이블을 생성하세요:
+
+```sql
+CREATE TABLE hits
+(
+    `WatchID` Int64,
+    `JavaEnable` Int32,
+    `Title` String,
+    `GoodEvent` Int32,
+    `EventTime` DateTime64(6, 'UTC'),
+    `EventDate` Date,
+    `CounterID` Int32,
+    `ClientIP` Int32,
+    ...
+    `FromTag` String,
+    `HasGCLID` Int32,
+    `RefererHash` Int64,
+    `URLHash` Int64,
+    `CLID` Int32
+)
+PRIMARY KEY (CounterID, EventDate, UserID, EventTime, WatchID);
+```
+
+그런 다음 `INSERT INTO SELECT`를 사용해 Unity Catalog 테이블의 데이터를 로드합니다:
+
+```sql
+INSERT INTO hits SELECT * FROM unity_uniform.`uniform.delta_hits`;
+```

@@ -1,0 +1,130 @@
+---
+slug: /cloud/data-sources/secure-azure
+sidebarTitle: 'Acceso seguro a datos de Azure'
+title: 'Conectar ClickHouse Cloud a Azure Blob Storage'
+description: 'Este artículo muestra cómo los clientes de ClickHouse Cloud pueden acceder de forma segura a sus datos de Azure'
+keywords: ['ABS', 'azure blob storage']
+doc_type: 'guide'
+---
+
+Esta guía explica cómo conectar de forma segura ClickHouse Cloud a Azure Blob Storage para la ingestión de datos, tablas externas y otros escenarios de integración.
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+ClickHouse Cloud puede conectarse a Azure Blob Storage mediante varios métodos de autenticación.
+Esta guía le ayudará a elegir el enfoque adecuado y a configurar la conexión de forma segura.
+
+Casos de uso compatibles:
+
+* Lectura de datos desde Azure Blob Storage mediante la [función de tabla azureBlobStorage](/es/reference/functions/table-functions/azureBlobStorage)
+* Creación de tablas externas con el [motor de tabla AzureBlobStorage](/es/reference/engines/table-engines/integrations/azureBlobStorage)
+* Ingesta de datos mediante ClickPipes
+* [Almacenamiento de copias de seguridad en Azure Blob Storage](/es/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui#azure)
+
+<Warning>
+  **Limitación importante de red**
+
+  Cuando su servicio de ClickHouse Cloud y el contenedor de Azure Blob Storage se implementan en la misma región de Azure, la inclusión de direcciones IP en listas de permitidos no funciona.
+
+  Esto ocurre porque Azure enruta el tráfico de la misma región a través de su red interna (VNet + Service Endpoints), omitiendo la internet pública y los gateways NAT.
+  Como resultado, las reglas de firewall de su cuenta de almacenamiento de Azure basadas en direcciones IP públicas no se aplicarán.
+
+  La inclusión de IP en listas de permitidos funciona cuando:
+
+  * Su servicio de ClickHouse Cloud está en una región de Azure distinta de la cuenta de almacenamiento
+  * Su servicio de ClickHouse Cloud está en AWS/GCP y se conecta al almacenamiento de Azure
+
+  La inclusión de IP en listas de permitidos falla cuando:
+
+  * Su servicio de ClickHouse Cloud y el almacenamiento están en la misma región de Azure. Use [firmas de acceso compartido (SAS)](/es/integrations/clickpipes/object-storage/azure-blob-storage/overview#authentication) mediante una cadena de conexión en lugar de la inclusión de IP en listas de permitidos, o implemente ABS y ClickHouse en regiones distintas.
+</Warning>
+
+<div id="network-config">
+  ## Configuración de red (solo entre regiones)
+</div>
+
+<Warning>
+  **Solo entre regiones**
+
+  Esta sección se aplica solo cuando su servicio de ClickHouse Cloud y el contenedor de Azure Blob Storage están en regiones de Azure distintas, o cuando ClickHouse Cloud está en AWS/GCP.
+  Para implementaciones en la misma región, use tokens SAS en su lugar.
+</Warning>
+
+<Steps>
+  <Step>
+    ### Encuentre las IP de salida de ClickHouse Cloud
+
+    Para configurar reglas de firewall basadas en IP, debe agregar a la lista de permitidos las direcciones IP de salida de su región de ClickHouse Cloud.
+
+    Ejecute el siguiente comando para obtener una lista de IP de salida y de entrada por región.
+    Sustituya `eastus` a continuación por su región para filtrar las demás regiones:
+
+    ```bash
+    # Para regiones de Azure
+    curl https://api.clickhouse.cloud/static-ips.json | jq '.azure[] | select(.region == "westus")'
+    ```
+
+    Verá algo similar a:
+
+    ```response
+    {
+      "egress_ips": [
+        "20.14.94.21",
+        "20.150.217.205",
+        "20.38.32.164"
+      ],
+      "ingress_ips": [
+        "4.227.34.126"
+      ],
+      "region": "westus3"
+    }
+    ```
+
+    <Tip>
+      Consulte [regiones de Azure](/es/products/cloud/reference/supported-regions#azure-regions) para ver una lista de regiones de Cloud compatibles,
+      y la columna &quot;Nombre programático&quot; de la [lista de regiones de Azure](https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1)
+      para saber qué nombre debe usar.
+    </Tip>
+
+    Consulte [“Direcciones IP de Cloud”](/es/products/cloud/guides/data-sources/cloud-endpoints-api) para obtener más detalles.
+  </Step>
+
+  <Step>
+    ### Configure el firewall de Azure Storage
+
+    Vaya a su Storage Account en Azure Portal
+
+    1. Vaya a **Networking** → **Firewalls and virtual networks**
+    2. Seleccione **Enabled from selected virtual networks and IP addresses**
+    3. Añada cada dirección IP de salida de ClickHouse Cloud obtenida en el paso anterior al campo Address range
+
+    <Warning>
+      No añada IP privadas de ClickHouse Cloud (direcciones 10.x.x.x)
+    </Warning>
+
+    4. Haga clic en Save
+
+    Consulte la [documentación para configurar firewalls de Azure Storage](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security?tabs=azure-portal) para obtener más detalles.
+  </Step>
+</Steps>
+
+<div id="clickpipes-config">
+  ## Configuración de ClickPipes
+</div>
+
+Al usar [ClickPipes](/es/integrations/clickpipes/home) con Azure Blob Storage, debes configurar la autenticación en la UI de ClickPipes.
+Consulta [&quot;Crear tu primer Azure ClickPipe&quot;](/es/integrations/clickpipes/object-storage/azure-blob-storage/get-started) para obtener más información.
+
+<Note>
+  ClickPipes usa direcciones IP estáticas independientes para las conexiones salientes.
+  Estas IP deben incluirse en la lista de permitidos si usas reglas de firewall basadas en IP.
+
+  Consulta [&quot;Lista de IP estáticas&quot;](/es/integrations/clickpipes/home#list-of-static-ips)
+</Note>
+
+<Tip>
+  La limitación de la inclusión de IP en listas de permitidos dentro de la misma región mencionada al inicio de este documento también se aplica a ClickPipes.
+  Si tu servicio de ClickPipes y Azure Blob Storage están en la misma región, usa autenticación con token SAS en lugar de la inclusión de IP en listas de permitidos.
+</Tip>

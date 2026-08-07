@@ -1,0 +1,46 @@
+---
+alias: ['MD']
+description: 'وثائق تنسيق Markdown'
+keywords: ['Markdown']
+slug: /interfaces/formats/Markdown
+title: 'Markdown'
+doc_type: 'reference'
+---
+
+| الإدخال | الإخراج | الاسم المستعار |
+| ------- | ------- | -------------- |
+| ✗       | ✔       | `MD`           |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكنك تصدير النتائج باستخدام تنسيق [Markdown](https://en.wikipedia.org/wiki/Markdown) لإنشاء مخرجات جاهزة للصقها في ملفات `.md`:
+
+سيُنشأ جدول Markdown تلقائيًا، ويمكن استخدامه على المنصات التي تدعم Markdown، مثل GitHub. يُستخدم هذا التنسيق للإخراج فقط.
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+```sql
+SELECT
+    number,
+    number * 2
+FROM numbers(5)
+FORMAT Markdown
+```
+
+```results
+| number | multiply(number, 2) |
+|-:|-:|
+| 0 | 0 |
+| 1 | 2 |
+| 2 | 4 |
+| 3 | 6 |
+| 4 | 8 |
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>

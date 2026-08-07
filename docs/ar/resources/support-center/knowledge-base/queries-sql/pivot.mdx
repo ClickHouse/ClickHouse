@@ -1,0 +1,338 @@
+---
+title: هل يمكنك استخدام PIVOT في ClickHouse؟
+description: "لا يوفّر ClickHouse بند PIVOT، لكن يمكننا الاقتراب من هذه الإمكانية باستخدام مُركِّبات الدوال التجميعية. لِنرَ كيف نفعل ذلك باستخدام مجموعة بيانات أسعار المنازل في المملكة المتحدة."
+date: 2024-12-11
+tags: ['نمذجة البيانات', 'المفاهيم الأساسية للبيانات']
+keywords: ['PIVOT', 'مُركِّبات الدوال التجميعية']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## مقدمة
+</div>
+
+لا يتضمن ClickHouse عامل PIVOT، لكن يمكننا تحقيق سلوك مشابه باستخدام [مُركِّبات الدوال التجميعية](/ar/reference/functions/aggregate-functions/combinators)، وبالأخص تلك التي تحمل اللاحقة [`-Map`](/ar/reference/functions/aggregate-functions/combinators#-map).
+
+في هذه المقالة، سنتعلّم كيفية تنفيذ ذلك.
+يوجد أيضًا فيديو يشرح المحتوى نفسه، ويمكنك مشاهدته أدناه:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/nlRMOmwYtF4?si=0TZSNg-uo7zjiO52" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="understanding-aggregate-function-combinators">
+  ## فهم مُعدِّلات الدوال التجميعية
+</div>
+
+لنبدأ بمثال بسيط. سنستخدم [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local)، ويمكنك تشغيله بتنفيذ الأمر التالي:
+
+```bash
+clickhouse -m --output_format_pretty_row_numbers=0
+```
+
+يستدعي الاستعلام التالي الدالة `sumMap`، التي تأخذ قيمة من النوع `Map` وتجمع قيم كل مفتاح:
+
+```sql
+SELECT sumMap(map('ClickHouse', 1, 'ClickBench', 2));
+```
+
+```text
+┌─sumMap(map('ClickHouse', 1, 'ClickBench', 2))─┐
+│ {'ClickBench':2,'ClickHouse':1}               │
+└───────────────────────────────────────────────┘
+```
+
+هذا المثال ليس مثيرًا للاهتمام كثيرًا، لأنه يعيد قيمة `Map` نفسها التي مررناها.
+لنستدعِ الآن `sumMap` على عدة صفوف من قيم `Map`;
+
+```sql
+WITH values AS (
+  SELECT map('ClickHouse', 3) AS value
+  UNION ALL
+  SELECT map('ClickBench', 2, 'ClickHouse', 4) AS value
+)
+SELECT sumMap(value)
+FROM values;
+```
+
+```text
+┌─sumMap(value)───────────────────┐
+│ {'ClickBench':2,'ClickHouse':7} │
+└─────────────────────────────────┘
+```
+
+ظهر المفتاح `ClickHouse` في كلا الصفَّين، وجُمِعت قيمه. أمّا المفتاح `ClickBench` فلم يظهر إلا في صف واحد، لذا تُجمَع له قيمة واحدة فقط، فتكون النتيجة هي تلك القيمة نفسها!
+
+يمكننا أيضًا استخدام `maxMap` للعثور على القيم العظمى لكل مفتاح:
+
+```sql
+WITH values AS (
+  SELECT map('ClickHouse', 3) AS value
+  UNION ALL
+  SELECT map('ClickBench', 2, 'ClickHouse', 4) AS value
+)
+SELECT maxMap(value)
+FROM values;
+```
+
+```text
+┌─maxMap(value)───────────────────┐
+│ {'ClickBench':2,'ClickHouse':4} │
+└─────────────────────────────────┘
+```
+
+أو يمكننا استخدام `avgMap` لحساب متوسط القيم لكل مفتاح:
+
+```sql
+WITH values AS (
+  SELECT map('ClickHouse', 3) AS value
+  UNION ALL
+  SELECT map('ClickBench', 2, 'ClickHouse', 4) AS value
+)
+SELECT avgMap(value)
+FROM values;
+```
+
+```text
+┌─avgMap(value)─────────────────────┐
+│ {'ClickBench':2,'ClickHouse':3.5} │
+└───────────────────────────────────┘
+```
+
+نأمل أن تكون قد تكوّنت لديك الآن فكرة عن كيفية عمل مُركِّبات الدوال هذه.
+
+<div id="real-world-application-uk-housing-prices-dataset">
+  ## تطبيق عملي: مجموعة بيانات أسعار المساكن في المملكة المتحدة
+</div>
+
+سنستخدمها الآن مع مجموعة بيانات أكبر في [ClickHouse SQL playground](https://clickhouse.com/blog/announcing-the-new-sql-playground).
+
+يمكننا الاتصال ببيئة التشغيل التفاعلية باستخدام `clickhouse-client`:
+
+```bash
+clickhouse client -m \
+  -h sql-clickhouse.clickhouse.com \
+  -u demo \
+  --secure
+```
+
+سنُجري استعلامًا على جدول `uk_price_paid`، لذا دعونا نستعرض البيانات في هذا الجدول:
+
+```sql
+SELECT * FROM uk.uk_price_paid LIMIT 1 FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+price:     145000
+date:      2008-11-19
+postcode1:
+postcode2:
+type:      semi-detached
+is_new:    0
+duration:  leasehold
+addr1:
+addr2:
+street:    CURLEW DRIVE
+locality:  SCARBOROUGH
+town:      SCARBOROUGH
+district:  SCARBOROUGH
+county:    NORTH YORKSHIRE
+category:  0
+```
+
+نرى أعلاه أن الجدول يتضمن حقولًا متعددة تتعلق بمبيعات العقارات في المملكة المتحدة.
+
+<div id="grouping-and-aggregating-by-decade">
+  ### التجميع والعمليات التجميعية حسب العقد الزمني
+</div>
+
+لنحسب الأسعار الوسيطة، مجمّعة حسب المقاطعة لكل عقد زمني في مجموعة البيانات:
+
+```sql
+WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
+SELECT
+    county,
+    medianMap(map(year, price)) AS medianPrices
+FROM uk.uk_price_paid
+GROUP BY ALL
+ORDER BY max(price) DESC
+LIMIT 10;
+```
+
+```text
+    ┌─county─────────────┬─medianPrices───────────────────────────────────────┐
+ 1. │ GREATER LONDON     │ {1990:89972.5,2000:215000,2010:381500,2020:485000} │
+ 2. │ TYNE AND WEAR      │ {1990:46500,2000:93000,2010:130000,2020:139000}    │
+ 3. │ WEST MIDLANDS      │ {1990:50000,2000:110000,2010:149950,2020:185000}   │
+ 4. │ GREATER MANCHESTER │ {1990:47000,2000:97000,2010:141171,2020:178000}    │
+ 5. │ MERSEYSIDE         │ {1990:46750,2000:94972.5,2010:128000,2020:149000}  │
+ 6. │ HERTFORDSHIRE      │ {1990:86500,2000:193000,2010:315000,2020:415000}   │
+ 7. │ WEST YORKSHIRE     │ {1990:48995,2000:99950,2010:139000,2020:164950}    │
+ 8. │ BRIGHTON AND HOVE  │ {1990:70000,2000:173000,2010:288000,2020:387000}   │
+ 9. │ DORSET             │ {1990:76500,2000:182000,2010:250000,2020:315000}   │
+10. │ HAMPSHIRE          │ {1990:79950,2000:177500,2010:260000,2020:335000}   │
+    └────────────────────┴────────────────────────────────────────────────────┘
+```
+
+<div id="filtering-results">
+  ### تصفية النتائج
+</div>
+
+يمكننا تصفية النتائج بحيث لا تشمل سوى البيانات اعتبارًا من عام 2010:
+
+```sql
+WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
+SELECT
+    county,
+    medianMap(map(year, price)) AS medianPrices
+FROM uk.uk_price_paid
+WHERE year >= 2010
+GROUP BY ALL
+ORDER BY max(price) DESC
+LIMIT 10;
+```
+
+```text
+    ┌─county─────────────┬─medianPrices────────────────┐
+ 1. │ GREATER LONDON     │ {2010:384975,2020:485919.5} │
+ 2. │ TYNE AND WEAR      │ {2010:130000,2020:140000}   │
+ 3. │ WEST MIDLANDS      │ {2010:146500,2020:185000}   │
+ 4. │ GREATER MANCHESTER │ {2010:140000,2020:177500}   │
+ 5. │ MERSEYSIDE         │ {2010:130000,2020:150000}   │
+ 6. │ HERTFORDSHIRE      │ {2010:315000,2020:415000}   │
+ 7. │ WEST YORKSHIRE     │ {2010:140000,2020:162500}   │
+ 8. │ BRIGHTON AND HOVE  │ {2010:287500,2020:387000}   │
+ 9. │ DORSET             │ {2010:255750,2020:315000}   │
+10. │ HAMPSHIRE          │ {2010:265000,2020:330000}   │
+    └────────────────────┴─────────────────────────────┘
+```
+
+<div id="combining-multiple-aggregations">
+  ## دمج عمليات تجميع متعددة
+</div>
+
+وإذا أردنا العثور على أعلى سعر لكل عقد زمني، فيمكننا فعل ذلك باستخدام الدالة `maxMap` التي رأيناها سابقًا:
+
+```sql
+WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
+SELECT
+    county,
+    medianMap(map(year, price)) AS medianPrices,
+    maxMap(map(year, price)) AS maxPrices
+FROM uk.uk_price_paid
+WHERE year >= 2010
+GROUP BY ALL
+ORDER BY max(price) DESC
+LIMIT 10;
+```
+
+```text
+    ┌─county─────────────┬─medianPrices──────────────┬─maxPrices───────────────────────┐
+ 1. │ GREATER LONDON     │ {2010:385000,2020:485250} │ {2010:594300000,2020:630000000} │
+ 2. │ TYNE AND WEAR      │ {2010:130000,2020:141000} │ {2010:448300979,2020:93395000}  │
+ 3. │ WEST MIDLANDS      │ {2010:149000,2020:184250} │ {2010:415000000,2020:104500000} │
+ 4. │ GREATER MANCHESTER │ {2010:140000,2020:175000} │ {2010:107086856,2020:319186000} │
+ 5. │ MERSEYSIDE         │ {2010:129950,2020:150000} │ {2010:300000000,2020:93395000}  │
+ 6. │ HERTFORDSHIRE      │ {2010:315000,2020:415000} │ {2010:254325163,2020:93395000}  │
+ 7. │ WEST YORKSHIRE     │ {2010:138500,2020:165000} │ {2010:246300000,2020:109686257} │
+ 8. │ BRIGHTON AND HOVE  │ {2010:285000,2020:387000} │ {2010:200000000,2020:71540000}  │
+ 9. │ DORSET             │ {2010:250000,2020:315000} │ {2010:150000000,2020:20230000}  │
+10. │ HAMPSHIRE          │ {2010:264000,2020:330000} │ {2010:150000000,2020:48482500}  │
+    └────────────────────┴───────────────────────────┴─────────────────────────────────┘
+```
+
+<div id="applying-functions-to-map-values">
+  ## تطبيق الدوال على قيم Map
+</div>
+
+بدلًا من ذلك، يمكننا احتساب متوسط السعر باستخدام `avgMap`.
+تحتوي هذه القيم على عدد كبير من الخانات العشرية، ويمكننا تبسيطها باستخدام الدالة [`mapApply`](/ar/reference/functions/regular-functions/tuple-map-functions#mapApply) لاستدعاء الدالة [`floor`](/ar/reference/functions/regular-functions/rounding-functions#floor) على كل قيمة في Map:
+
+```sql
+WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
+SELECT
+    county,
+    medianMap(map(year, price)) AS medianPrices,
+    mapApply((k, v) -> (k, floor(v)), avgMap(map(year, price))) AS avgPrices
+FROM uk.uk_price_paid
+WHERE year >= 2010
+GROUP BY ALL
+ORDER BY max(price) DESC
+LIMIT 10;
+```
+
+```text
+    ┌─county─────────────┬─medianPrices──────────────┬─avgPrices─────────────────┐
+ 1. │ GREATER LONDON     │ {2010:382000,2020:490000} │ {2010:626091,2020:807240} │
+ 2. │ TYNE AND WEAR      │ {2010:127000,2020:140000} │ {2010:176955,2020:225770} │
+ 3. │ WEST MIDLANDS      │ {2010:148500,2020:183000} │ {2010:204128,2020:257226} │
+ 4. │ GREATER MANCHESTER │ {2010:140000,2020:177500} │ {2010:195592,2020:251165} │
+ 5. │ MERSEYSIDE         │ {2010:127995,2020:150000} │ {2010:182194,2020:206062} │
+ 6. │ HERTFORDSHIRE      │ {2010:317500,2020:415000} │ {2010:414134,2020:529409} │
+ 7. │ WEST YORKSHIRE     │ {2010:140000,2020:164500} │ {2010:185121,2020:234870} │
+ 8. │ BRIGHTON AND HOVE  │ {2010:285000,2020:387000} │ {2010:372285,2020:527184} │
+ 9. │ DORSET             │ {2010:250000,2020:315000} │ {2010:305581,2020:370739} │
+10. │ HAMPSHIRE          │ {2010:265000,2020:330000} │ {2010:335945,2020:425196} │
+    └────────────────────┴───────────────────────────┴───────────────────────────┘
+```
+
+<div id="flexible-grouping-counties-districts-and-postcodes">
+  ## تجميع مرن: المقاطعات والمناطق والرموز البريدية
+</div>
+
+لنجرّب التجميع حسب بعض الحقول المختلفة.
+هذه المرة سنحسب الوسيط السعري لكل عقد، مع التجميع حسب المقاطعة والمنطقة:
+
+```sql
+WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
+SELECT
+    county,
+    district,
+    medianMap(map(year, price)) AS medianPrices
+FROM uk.uk_price_paid
+WHERE year >= 2010
+GROUP BY ALL
+ORDER BY max(price) DESC
+LIMIT 10
+```
+
+```text
+    ┌─county─────────────┬─district───────────────┬─medianPrices────────────────┐
+ 1. │ GREATER LONDON     │ CROYDON                │ {2010:298475,2020:400000}   │
+ 2. │ GREATER LONDON     │ CITY OF WESTMINSTER    │ {2010:800000,2020:935000}   │
+ 3. │ GREATER LONDON     │ SOUTHWARK              │ {2010:437000,2020:540000}   │
+ 4. │ TYNE AND WEAR      │ NEWCASTLE UPON TYNE    │ {2010:144000,2020:162500}   │
+ 5. │ WEST MIDLANDS      │ WALSALL                │ {2010:137450,2020:162000}   │
+ 6. │ GREATER LONDON     │ CITY OF LONDON         │ {2010:725875,2020:840000}   │
+ 7. │ GREATER LONDON     │ HILLINGDON             │ {2010:329125,2020:439000}   │
+ 8. │ GREATER MANCHESTER │ MANCHESTER             │ {2010:144972.5,2020:190000} │
+ 9. │ GREATER LONDON     │ HAMMERSMITH AND FULHAM │ {2010:622250,2020:750000}   │
+10. │ GREATER LONDON     │ ISLINGTON              │ {2010:500000,2020:640000}   │
+    └────────────────────┴────────────────────────┴─────────────────────────────┘
+```
+
+يمكننا أيضًا اختيار التجميع حسب السنة، ثم دمج `postcode1` و`postcode2` في الـ map:
+
+```sql
+WITH year(toStartOfInterval(date, toIntervalYear(10))) AS year
+SELECT
+    year,
+    medianMap(map(postcode1 || ' ' || postcode2, price)) AS medianPrices
+FROM uk.uk_price_paid
+WHERE postcode1 LIKE 'NP1'
+GROUP BY ALL;
+```
+
+```text
+   ┌─year─┬─medianPrices────────────────────────────────────────────────────────┐
+1. │ 1990 │ {'NP1 4PB':9000}                                                    │
+2. │ 2000 │ {'NP1 4SR':28475,'NP1 7HZ':200000}                                  │
+3. │ 2010 │ {'NP1 4PB':5000,'NP1 4QJ':1075000,'NP1 4SR':58000,'NP1 8BR':200000} │
+4. │ 2020 │ {'NP1 5DW':140000}                                                  │
+   └──────┴─────────────────────────────────────────────────────────────────────┘
+```

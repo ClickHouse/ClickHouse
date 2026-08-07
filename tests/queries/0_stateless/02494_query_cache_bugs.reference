@@ -1,0 +1,25 @@
+-- Bug 56258: Check literals (ASTLiteral)
+Row 1:
+──────
+10: 10
+Row 1:
+──────
+x: 10
+2
+-- Bug 56258: Check functions (ASTFunction)
+Row 1:
+──────
+toUInt64(42): 42
+Row 1:
+──────
+x: 42
+2
+-- Bug 56258: Check identifiers (ASTIdentifier)
+Row 1:
+──────
+c: 1
+Row 1:
+──────
+x: 1
+2
+-- Bug 67476: Queries with overflow mode != throw must not be cached by the query cache

@@ -1,0 +1,619 @@
+---
+position: 1
+slug: /clickhouse-operator/reference/api-reference
+title: 'مرجع واجهة برمجة تطبيقات ClickHouse Operator'
+keywords: ['kubernetes']
+description: 'يوفر هذا المستند مرجعًا تفصيليًا لواجهة برمجة تطبيقات الموارد المخصصة في ClickHouse Operator.'
+doc_type: 'reference'
+sidebarTitle: 'مرجع واجهة برمجة التطبيقات'
+---
+
+يوفر هذا المستند مرجعًا تفصيليًا لواجهة برمجة تطبيقات الموارد المخصصة في ClickHouse Operator.
+
+<div id="additionalport">
+  ## AdditionalPort
+</div>
+
+يحدّد AdditionalPort منفذ TCP إضافيًا واحدًا لكشفه على كبسولة ClickHouse والخدمة عديمة الرأس التي يديرها مشغّل.
+
+| الحقل  | النوع   | الوصف                                                                                                                                   | مطلوب | الافتراضي |
+| ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| `name` | string  | يعرّف الاسم المنفذ بشكل فريد داخل القائمة. ويُستخدم كاسم منفذ الحاوية واسم منفذ الخدمة معًا.<br />يجب أن تكون هذه القيمة DNS&#95;LABEL. | true  |           |
+| `port` | integer | هو رقم منفذ TCP المراد كشفه.                                                                                                            | true  |           |
+
+يظهر في:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="cabundleselector">
+  ## CABundleSelector
+</div>
+
+يختار CABundleSelector مفتاحًا يحتوي على حزمة CA من Secret ضمن مساحة اسم العنقود.
+
+| الحقل  | النوع      | الوصف                                                                    | مطلوب | الافتراضي |
+| ------ | ---------- | ------------------------------------------------------------------------ | ----- | --------- |
+| `name` | سلسلة نصية | اسم الـ Secret ضمن مساحة اسم العنقود الذي يتم الاختيار منه.              | true  |           |
+| `key`  | سلسلة نصية | مفتاح الـ Secret الذي يتم الاختيار منه. يجب أن يكون مفتاح Secret صالحًا. | false | ca.crt    |
+
+يظهر في:
+
+* [ClusterTLSSpec](#clustertlsspec)
+
+<div id="clickhousecluster">
+  ## ClickHouseCluster
+</div>
+
+ClickHouseCluster هو المخطط الخاص بواجهة برمجة تطبيقات `clickhouseclusters`.
+
+<div id="clickhousecluster-api-version-and-kind">
+  ### إصدار واجهة برمجة التطبيقات وKind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+```
+
+| الحقل    | النوع                                               | الوصف | مطلوب | الافتراضي |
+| -------- | --------------------------------------------------- | ----- | ----- | --------- |
+| `spec`   | [ClickHouseClusterSpec](#clickhouseclusterspec)     |       | true  |           |
+| `status` | [ClickHouseClusterStatus](#clickhouseclusterstatus) |       | true  |           |
+
+يرد في:
+
+* [ClickHouseClusterList](#clickhouseclusterlist)
+
+<div id="clickhouseclusterlist">
+  ## ClickHouseClusterList
+</div>
+
+يتضمن ClickHouseClusterList قائمةً من عناصر ClickHouseCluster.
+
+<div id="clickhousecluster-api-version-and-kind">
+  ### إصدار واجهة برمجة التطبيقات وKind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseClusterList
+```
+
+| الحقل   | النوع                                          | الوصف | مطلوب | الافتراضي |
+| ------- | ---------------------------------------------- | ----- | ----- | --------- |
+| `items` | [ClickHouseCluster](#clickhousecluster) مصفوفة |       | true  |           |
+
+<div id="clickhouseclusterspec">
+  ## ClickHouseClusterSpec
+</div>
+
+يحدّد ClickHouseClusterSpec الحالة المطلوبة لـ ClickHouseCluster.
+
+| الحقل                            | النوع                                                                                                                               | الوصف                                                                                                                                                                                                                                                       | مطلوب | الافتراضي     |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------- |
+| `replicas`                       | integer                                                                                                                             | عدد النسخ المتماثلة في الشظية الواحدة.                                                                                                                                                                                                                      | false | 3             |
+| `shards`                         | integer                                                                                                                             | عدد الشظايا في المجموعة.                                                                                                                                                                                                                                    | false | 1             |
+| `keeperClusterRef`               | [KeeperClusterReference](#keeperclusterreference)                                                                                   | مرجع إلى KeeperCluster المستخدَم لتنسيق ClickHouse.<br />عند عدم تحديد مساحة الاسم، تُستخدم مساحة اسم ClickHouseCluster.                                                                                                                                    | true  |               |
+| `podTemplate`                    | [PodTemplateSpec](#podtemplatespec)                                                                                                 | المعلمات التي تُمرَّر إلى كبسولة spec الخاصة بـ ClickHouse.                                                                                                                                                                                                 | false |               |
+| `containerTemplate`              | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | المعلمات التي تُمرَّر إلى container spec الخاصة بـ ClickHouse.                                                                                                                                                                                              | false |               |
+| `dataVolumeClaimSpec`            | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | مواصفة التخزين الدائم لبيانات ClickHouse.                                                                                                                                                                                                                   | false |               |
+| `additionalVolumeClaimTemplates` | [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate) array                                                               | قوالب PVC إضافية لكل كبسولة لتخزين JBOD / متعدد الأقراص.<br />يُمرَّر كل مُدخل إلى volumeClaimTemplate في StatefulSet، ويُربط عند `/var/lib/clickhouse/disks/<name>` كما<br />يُضاف إلى سياسة تخزين JBOD المُنشأة.<br />تكون مجموعة الأقراص ثابتة عند الإنشاء. | false |               |
+| `labels`                         | object (keys:string, values:string)                                                                                                 | تسميات إضافية تُضاف إلى الموارد.                                                                                                                                                                                                                            | false |               |
+| `annotations`                    | object (keys:string, values:string)                                                                                                 | تعليقات توضيحية إضافية تُضاف إلى الموارد.                                                                                                                                                                                                                   | false |               |
+| `podDisruptionBudget`            | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | يضبط PodDisruptionBudget مورد PDB الذي يُنشأ لكل شظية.<br />عند عدم تعيينه، يستخدم المشغّل افتراضيًا maxUnavailable=1 للشظايا<br />أحادية النسخة المتماثلة و minAvailable=1 للشظايا متعددة النسخ المتماثلة.                                                 | false |               |
+| `settings`                       | [ClickHouseSettings](#clickhousesettings)                                                                                           | معلمات تهيئة ClickHouse server.                                                                                                                                                                                                                             | false |               |
+| `clusterDomain`                  | string                                                                                                                              | ClusterDomain هي لاحقة نطاق Kubernetes cluster المستخدمة في حلّ أسماء DNS.                                                                                                                                                                                  | false | cluster.local |
+| `upgradeChannel`                 | string                                                                                                                              | يحدّد UpgradeChannel قناة الإصدار المستخدمة للتحقق من ترقيات الإصدارات الرئيسية.<br />وعند تركه فارغًا، لن تُقترح إلا التحديثات الثانوية. القيم المسموح بها هي: stable أو lts أو إصدار major.minor محدد (مثل 25.8).                                         | false |               |
+| `versionProbeTemplate`           | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | تجاوزات VersionProbeTemplate الخاصة بـ Job اكتشاف الإصدار.                                                                                                                                                                                                  | false |               |
+| `externalSecret`                 | [ExternalSecret](#externalsecret)                                                                                                   | ExternalSecret مرجع اختياري إلى Secret مُدار خارجيًا ويحتوي على أسرار المجموعة.<br />يجب أن يكون الـ Secret موجودًا في مساحة الاسم نفسها الخاصة بالمجموعة.                                                                                                  | false |               |
+| `additionalPorts`                | [AdditionalPort](#additionalport) array                                                                                             | يعرّف AdditionalPorts منافذ TCP إضافية لكشفها على كبسولة ClickHouse و الخدمة عديمة الرأس الذي يديره المشغّل.<br />يقتصر دور المشغّل على إضافة المنافذ إلى موارد Kubernetes، ولا يهيّئ ClickHouse server للاستماع عليها.                                          | false |               |
+
+يظهر في:
+
+* [ClickHouseCluster](#clickhousecluster)
+
+<div id="clickhouseclusterstatus">
+  ## ClickHouseClusterStatus
+</div>
+
+يحدّد ClickHouseClusterStatus الحالة المرصودة لـ ClickHouseCluster.
+
+| الحقل                   | النوع                                                                                                      | الوصف                                                                                                                                             | مطلوب | الافتراضي |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| `conditions`            | مصفوفة [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) |                                                                                                                                                   | false |           |
+| `readyReplicas`         | integer                                                                                                    | يشير ReadyReplicas إلى العدد الإجمالي للنسخ المتماثلة الجاهزة للتعامل مع الطلبات.                                                                 | false |           |
+| `configurationRevision` | string                                                                                                     | يشير ConfigurationRevision إلى مراجعة الإعدادات المستهدفة لكل نسخة متماثلة.                                                                       | true  |           |
+| `statefulSetRevision`   | string                                                                                                     | يشير StatefulSetRevision إلى مراجعة StatefulSet المستهدفة لكل نسخة متماثلة.                                                                       | true  |           |
+| `currentRevision`       | string                                                                                                     | يشير CurrentRevision إلى أحدث مراجعة مطبّقة لمواصفة ClickHouseCluster.                                                                            | true  |           |
+| `updateRevision`        | string                                                                                                     | يشير UpdateRevision إلى أحدث مراجعة مطلوبة لمواصفة ClickHouseCluster.                                                                             | true  |           |
+| `observedGeneration`    | integer                                                                                                    | يشير ObservedGeneration إلى أحدث جيل رصدته وحدة التحكم.                                                                                           | true  |           |
+| `version`               | string                                                                                                     | يشير Version إلى الإصدار الذي أبلغت عنه image الحاوية.                                                                                            | false |           |
+| `versionProbeRevision`  | string                                                                                                     | تمثل VersionProbeRevision تجزئة image لآخر فحص إصدار ناجح.<br />وعندما تتطابق هذه مع تجزئة image الحالية، يُستخدم Version المخزّن مؤقتًا مباشرةً. | false |           |
+
+يظهر في:
+
+* [ClickHouseCluster](#clickhousecluster)
+
+<div id="clickhousesettings">
+  ## ClickHouseSettings
+</div>
+
+يعرّف ClickHouseSettings خيارات إعدادات خادم ClickHouse.
+
+| الحقل                 | النوع                                                                                                         | الوصف                                                                                                                                                                             | مطلوب | الافتراضي |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| `defaultUserPassword` | [DefaultPasswordSelector](#defaultpasswordselector)                                                           | يحدد مصدر كلمة المرور ونوعها لمستخدم ClickHouse `default`.                                                                                                                        | false |           |
+| `logger`              | [LoggerConfig](#loggerconfig)                                                                                 | إعدادات تسجيل خادم ClickHouse.                                                                                                                                                    | false |           |
+| `tls`                 | [ClusterTLSSpec](#clustertlsspec)                                                                             | إعدادات TLS، وتتيح تكوين نقاط نهاية آمنة والتحقق من الشهادات لخادم ClickHouse.                                                                                                    | false |           |
+| `enableDatabaseSync`  | boolean                                                                                                       | يفعّل مزامنة قواعد بيانات ClickHouse مع النسخ المتماثلة المُنشأة حديثًا، وتنظيف النسخ المتماثلة القديمة<br />بعد تقليص العدد.<br />يدعم فقط قواعد بيانات Replicated وintegration. | false | true      |
+| `extraConfig`         | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | إعدادات ClickHouse إضافية ستُدمج مع الإعدادات الافتراضية.                                                                                                                         | false |           |
+| `extraUsersConfig`    | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | إعدادات إضافية لمستخدمي ClickHouse ستُدمج مع الإعدادات الافتراضية.                                                                                                                | false |           |
+
+يظهر في:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="clustertlsspec">
+  ## ClusterTLSSpec
+</div>
+
+يحدّد ClusterTLSSpec تهيئة TLS للمجموعة.
+
+| الحقل              | النوع                                                                                                                     | الوصف                                                                                                                                                                                                                                                             | مطلوب | الافتراضي |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| `enabled`          | boolean                                                                                                                   | يشير Enabled إلى ما إذا كان TLS مُمكّنًا، وبناءً عليه يتحدد ما إذا كان يجب فتح المنافذ الآمنة.                                                                                                                                                                    | false | false     |
+| `required`         | boolean                                                                                                                   | يحدّد Required ما إذا كان يجب فرض TLS على جميع الاتصالات. ويعطّل المنافذ غير الآمنة.                                                                                                                                                                              | false | false     |
+| `serverCertSecret` | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) | ServerCertSecret هو مرجع إلى Secret لـ TLS يحتوي على شهادة الخادم.<br />ويُفترض أن تكون بنية الـ Secret مطابقة لبنية الشهادات التي يُنشئها cert-manager،<br />مع تخزين الشهادة والمفتاح الخاص تحت المفتاحين &quot;tls.crt&quot; و&quot;tls.key&quot; على التوالي. | false |           |
+| `caBundle`         | [CABundleSelector](#cabundleselector)                                                                                     | CABundle هو مرجع إلى مفتاح في Secret يحتوي على حزمة CA تُستخدم للتحقق من شهادات الأقران.<br />إذا كان فارغًا، فستُستخدم حزمة CA الموثوقة الخاصة بالنظام.<br />تكون قيمة المفتاح الافتراضية &quot;ca.crt&quot; إذا لم يتم تحديده.                                  | false |           |
+
+يظهر في:
+
+* [ClickHouseSettings](#clickhousesettings)
+* [KeeperSettings](#keepersettings)
+
+<div id="configmapkeyselector">
+  ## ConfigMapKeySelector
+</div>
+
+يحدِّد ConfigMapKeySelector مفتاحًا من ConfigMap.
+
+| الحقل  | النوع      | الوصف                                                            | مطلوب | الافتراضي |
+| ------ | ---------- | ---------------------------------------------------------------- | ----- | --------- |
+| `name` | سلسلة نصية | اسم ConfigMap ضمن مساحة اسم العنقود المراد الاختيار منه.         | true  |           |
+| `key`  | سلسلة نصية | مفتاح ConfigMap المراد الاختيار منه. يجب أن يكون مفتاحًا صالحًا. | true  |           |
+
+يظهر في:
+
+* [DefaultPasswordSelector](#defaultpasswordselector)
+
+<div id="containerimage">
+  ## ContainerImage
+</div>
+
+يُعرِّف ContainerImage صورة حاوية تتضمن repository وtag أو hash.
+
+| الحقل        | النوع  | الوصف                                                              | مطلوب | الافتراضي |
+| ------------ | ------ | ------------------------------------------------------------------ | ----- | --------- |
+| `repository` | string | اسم سجل صورة الحاوية<br />Example: docker.io/clickhouse/clickhouse | false |           |
+| `tag`        | string | وسم صورة الحاوية، ويتعارض مع `hash`.<br />Example: 25.3            | false |           |
+| `hash`       | string | hash لصورة الحاوية، ويتعارض مع `tag`.                              | false |           |
+
+يظهر في:
+
+* [ContainerTemplateSpec](#containertemplatespec)
+
+<div id="containertemplatespec">
+  ## ContainerTemplateSpec
+</div>
+
+يصف `ContainerTemplateSpec` تجاوزات تهيئة الحاوية الخاصة بحاويات المجموعة.
+
+| Field             | Type                                                                                                                      | Description                                                                                                                                                                                                                                                                                                                                                                                         | Required | Default |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `image`           | [ContainerImage](#containerimage)                                                                                         | `Image` هي صورة الحاوية المطلوب نشرها.                                                                                                                                                                                                                                                                                                                                                              | true     |         |
+| `imagePullPolicy` | [PullPolicy](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#pullpolicy-v1-core)                     | `ImagePullPolicy` الخاصة بالصورة، وتكون افتراضيًا `IfNotPresent`.                                                                                                                                                                                                                                                                                                                                   | false    |         |
+| `resources`       | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | `Resources` هي متطلبات الموارد الخاصة بحاوية الخادم.<br />تُطبَّق كوحدة كاملة: لا تُستخدم القيم الافتراضية الخاصة بـ مشغّل إلا إذا كانت جميع حقول الموارد فارغة.                                                                                                                                                                                                                                  | false    |         |
+| `volumeMounts`    | [VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volumemount-v1-core) array             | `VolumeMounts` هي قائمة نقاط ربط وحدات التخزين للحاوية.<br />تُضاف إلى نقاط الربط التي يُنشئها مشغّل. وتُدمج الإدخالات التي تشترك في `mountPath` مع<br />نقطة ربط خاصة بـ مشغّل ضمن وحدة تخزين مُسقطة.                                                                                                                                                                                             | false    |         |
+| `env`             | [EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#envvar-v1-core) array                       | `Env` هي قائمة متغيرات البيئة المطلوب ضبطها في الحاوية.<br />تُدمج حسب الاسم مع القيم الافتراضية الخاصة بـ مشغّل.                                                                                                                                                                                                                                                                                 | false    |         |
+| `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core)           | يحدّد `SecurityContext` خيارات الأمان التي يجب تشغيل الحاوية بها.<br />يؤدي `SecurityContext` غير الصفري (`non-nil`) إلى استبدال القيم الافتراضية الخاصة بـ مشغّل بالكامل؛ ويصبح المستخدم مسؤولًا عن<br />الـ `struct` بالكامل. وعند كونه `nil`، تُحفَظ القيم الافتراضية الخاصة بـ مشغّل.<br />لمزيد من المعلومات: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ | false    |         |
+| `livenessProbe`   | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | يتجاوز `LivenessProbe` مسبار الحيوية الافتراضي الخاص بـ مشغّل.                                                                                                                                                                                                                                                                                                                                     | false    |         |
+| `readinessProbe`  | [Probe](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#probe-v1-core)                               | يتجاوز `ReadinessProbe` مسبار الجاهزية الافتراضي الخاص بـ مشغّل.                                                                                                                                                                                                                                                                                                                                   | false    |         |
+
+يظهر في:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="defaultpasswordselector">
+  ## DefaultPasswordSelector
+</div>
+
+يحدّد DefaultPasswordSelector مصدر كلمة مرور المستخدم `default`.
+
+| الحقل          | النوع                                         | الوصف                                                                                                                                         | مطلوب | الافتراضي |
+| -------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| `passwordType` | string                                        | نوع كلمة المرور المقدَّمة. راجع الوثائق لمعرفة القيم الممكنة https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword | true  | password  |
+| `secret`       | [SecretKeySelector](#secretkeyselector)       | اختر قيمة كلمة المرور من مفتاح في Secret                                                                                                      | false |           |
+| `configMap`    | [ConfigMapKeySelector](#configmapkeyselector) | اختر قيمة كلمة المرور من مفتاح في ConfigMap                                                                                                   | false |           |
+
+يظهر في:
+
+* [ClickHouseSettings](#clickhousesettings)
+
+<div id="externalsecret">
+  ## ExternalSecret
+</div>
+
+ExternalSecret هو مرجع إلى كائن Secret في مساحة الاسم نفسها.
+
+| الحقل    | النوع                                         | الوصف                                                                                                                                                                                                         | مطلوب | الافتراضي |
+| -------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| `name`   | string                                        | اسم كائن Secret.                                                                                                                                                                                              | نعم   |           |
+| `policy` | [ExternalSecretPolicy](#externalsecretpolicy) | تتحكم السياسة في كيفية تعامل المشغِّل مع محتوى الـ Secret.<br />Observe (الافتراضي): يمنع عملية المواءمة إذا كان أي مفتاح مطلوب مفقودًا.<br />Manage: يُنشئ المفاتيح المطلوبة المفقودة في كائن Secret الحالي. | لا    | Observe   |
+
+يظهر في:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="externalsecretpolicy">
+  ## ExternalSecretPolicy
+</div>
+
+يتحكم ExternalSecretPolicy في كيفية تعامل المشغّل مع محتوى الـ Secret الخارجي.
+
+| الحقل     | الوصف                                                                                                                                                                                                                                                                                |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Observe` | ‏ExternalSecretPolicyObserve هي السياسة الافتراضية: يقرأ المشغّل الـ Secret ويتحقق من صحته؛<br />تُمنع عملية المواءمة إذا كان أي مفتاح مطلوب غير موجود.<br />ويتم الإبلاغ عن المفاتيح المطلوبة المفقودة وتنسيقاتها المتوقعة عبر شرط الحالة ExternalSecretValid في وقت التشغيل.<br /> |
+| `Manage`  | ‏ExternalSecretPolicyManage هي السياسة التي يُكمِل فيها المشغّل أي مفاتيح مطلوبة مفقودة من خلال إنشاء<br />قيم لها. يتم تحديث الـ Secret، لكن المشغّل لا يمتلكه ولا يحذفه مطلقًا.<br />                                                                                              |
+
+يظهر في:
+
+* [ExternalSecret](#externalsecret)
+
+<div id="keepercluster">
+  ## KeeperCluster
+</div>
+
+يمثل KeeperCluster مخطط واجهة برمجة تطبيقات `keeperclusters`.
+
+<div id="keepercluster-api-version-and-kind">
+  ### إصدار واجهة برمجة تطبيقات وKind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+```
+
+| الحقل    | النوع                                       | الوصف | مطلوب | القيمة الافتراضية |
+| -------- | ------------------------------------------- | ----- | ----- | ----------------- |
+| `spec`   | [KeeperClusterSpec](#keeperclusterspec)     |       | true  |                   |
+| `status` | [KeeperClusterStatus](#keeperclusterstatus) |       | true  |                   |
+
+يظهر في:
+
+* [KeeperClusterList](#keeperclusterlist)
+
+<div id="keeperclusterlist">
+  ## KeeperClusterList
+</div>
+
+يحتوي KeeperClusterList على قائمة بـ KeeperCluster.
+
+<div id="clickhousecluster-api-version-and-kind">
+  ### إصدار واجهة برمجة التطبيقات وKind
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperClusterList
+```
+
+| الحقل   | النوع                                  | الوصف | مطلوب | القيمة الافتراضية |
+| ------- | -------------------------------------- | ----- | ----- | ----------------- |
+| `items` | [KeeperCluster](#keepercluster) مصفوفة |       | true  |                   |
+
+<div id="keeperclusterreference">
+  ## KeeperClusterReference
+</div>
+
+يُعرِّف KeeperClusterReference مورد KeeperCluster الذي يستخدمه ClickHouseCluster.
+
+| الحقل       | النوع      | الوصف                                                                                   | مطلوب | الافتراضي |
+| ----------- | ---------- | --------------------------------------------------------------------------------------- | ----- | --------- |
+| `name`      | سلسلة نصية | اسم مورد KeeperCluster.                                                                 | true  |           |
+| `namespace` | سلسلة نصية | مساحة الاسم لمورد KeeperCluster.<br />عند إغفالها، تُستخدم مساحة اسم ClickHouseCluster. | false |           |
+
+يظهر في:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="keeperclusterspec">
+  ## KeeperClusterSpec
+</div>
+
+يحدّد KeeperClusterSpec الحالة المطلوبة لـ KeeperCluster.
+
+| الحقل                  | النوع                                                                                                                               | الوصف                                                                                                                                                                                                                                                 | مطلوب | الافتراضي     |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------- |
+| `replicas`             | عدد صحيح                                                                                                                            | عدد النسخ المتماثلة في العنقود                                                                                                                                                                                                                        | false | 3             |
+| `podTemplate`          | [PodTemplateSpec](#podtemplatespec)                                                                                                 | المعلمات التي تُمرَّر إلى مواصفة كبسولة الخاصة بـ Keeper.                                                                                                                                                                                             | false |               |
+| `containerTemplate`    | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | المعلمات التي تُمرَّر إلى مواصفة الحاوية الخاصة بـ Keeper.                                                                                                                                                                                            | false |               |
+| `dataVolumeClaimSpec`  | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | مواصفة التخزين الدائم لبيانات ClickHouse Keeper.                                                                                                                                                                                                      | false |               |
+| `labels`               | كائن (المفاتيح:string، القيم:string)                                                                                                | labels إضافية تُضاف إلى الموارد.                                                                                                                                                                                                                      | false |               |
+| `annotations`          | كائن (المفاتيح:string، القيم:string)                                                                                                | annotations إضافية تُضاف إلى الموارد.                                                                                                                                                                                                                 | false |               |
+| `podDisruptionBudget`  | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | يضبط PodDisruptionBudget مورد PDB الذي يتم إنشاؤه لعنقود Keeper.<br />عند عدم تعيينه، يستخدم المشغّل افتراضيًا maxUnavailable=replicas/2<br />(مع الحفاظ على النصاب لعنقود 2F+1)؛ أما العناقيد ذات النسخة المتماثلة الواحدة فتستخدم maxUnavailable=1. | false |               |
+| `settings`             | [KeeperSettings](#keepersettings)                                                                                                   | معلمات التهيئة لخادم ClickHouse Keeper.                                                                                                                                                                                                               | false |               |
+| `clusterDomain`        | string                                                                                                                              | ClusterDomain هي لاحقة نطاق عنقود Kubernetes المستخدمة لاستيضاح DNS.                                                                                                                                                                                  | false | cluster.local |
+| `upgradeChannel`       | string                                                                                                                              | يحدد UpgradeChannel قناة الإصدار لعمليات التحقق من ترقية الإصدارات الرئيسية.<br />وعندما تكون فارغة، لن تُقترح إلا التحديثات الثانوية. القيم المسموح بها هي: stable أو lts أو إصدار major.minor محدد (مثل 25.8).                                      | false |               |
+| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | تجاوزات VersionProbeTemplate الخاصة بـ Job اكتشاف الإصدار.<br />مهمل: لم تعد Jobs فحص إصدار Keeper مستخدمة؛ وقد تم الإبقاء على هذا الحقل للتوافق مع الإصدارات السابقة.                                                                                 | false |               |
+
+يظهر في:
+
+* [KeeperCluster](#keepercluster)
+
+<div id="keeperclusterstatus">
+  ## KeeperClusterStatus
+</div>
+
+يحدّد KeeperClusterStatus الحالة المرصودة لـ KeeperCluster.
+
+| الحقل                   | النوع                                                                                                      | الوصف                                                                                                                                                                      | مطلوب | الافتراضي |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| `conditions`            | مصفوفة [Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#condition-v1-meta) |                                                                                                                                                                            | false |           |
+| `readyReplicas`         | integer                                                                                                    | ReadyReplicas هو إجمالي عدد النسخ المتماثلة الجاهزة لمعالجة الطلبات.                                                                                                       | false |           |
+| `configurationRevision` | string                                                                                                     | يشير ConfigurationRevision إلى مراجعة التهيئة المستهدفة لكل نسخة متماثلة.                                                                                                  | true  |           |
+| `statefulSetRevision`   | string                                                                                                     | يشير StatefulSetRevision إلى مراجعة StatefulSet المستهدفة لكل نسخة متماثلة.                                                                                                | true  |           |
+| `currentRevision`       | string                                                                                                     | يشير CurrentRevision إلى أحدث مراجعة مطبّقة لمواصفة KeeperCluster.                                                                                                         | true  |           |
+| `updateRevision`        | string                                                                                                     | يشير UpdateRevision إلى أحدث مراجعة مطلوبة لمواصفة KeeperCluster.                                                                                                          | true  |           |
+| `observedGeneration`    | integer                                                                                                    | يشير ObservedGeneration إلى أحدث رقم جيل رصدته وحدة التحكم.                                                                                                                | true  |           |
+| `version`               | string                                                                                                     | يشير Version إلى الإصدار الذي أبلغ عنه خادم Keeper.                                                                                                                        | false |           |
+| `versionProbeRevision`  | string                                                                                                     | VersionProbeRevision هو بصمة الصورة لآخر فحص إصدار ناجح.<br />مهمل: لا تُستخدم Jobs فحص إصدار Keeper؛ وقد تم الإبقاء على هذا الحقل للحفاظ على التوافق مع الإصدارات السابقة. | false |           |
+
+يظهر في:
+
+* [KeeperCluster](#keepercluster)
+
+<div id="keepersettings">
+  ## KeeperSettings
+</div>
+
+تُعرّف KeeperSettings إعدادات خادم ClickHouse Keeper.
+
+| الحقل         | النوع                                                                                                         | الوصف                                                                                     | مطلوب | الافتراضي |
+| ------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----- | --------- |
+| `logger`      | [LoggerConfig](#loggerconfig)                                                                                 | إعدادات تسجيل السجلات لخادم ClickHouse Keeper.                                            | false |           |
+| `tls`         | [ClusterTLSSpec](#clustertlsspec)                                                                             | إعدادات TLS، وتتيح تهيئة نقاط النهاية الآمنة والتحقق من الشهادات لخادم ClickHouse Keeper. | false |           |
+| `extraConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | إعدادات ClickHouse Keeper إضافية سيتم دمجها مع الإعدادات الافتراضية.                      | false |           |
+
+يظهر في:
+
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="loggerconfig">
+  ## LoggerConfig
+</div>
+
+يحدّد LoggerConfig إعدادات تسجيل الخادم.
+
+| الحقل       | النوع      | الوصف                                                         | مطلوب | الافتراضي |
+| ----------- | ---------- | ------------------------------------------------------------- | ----- | --------- |
+| `logToFile` | منطقي      | إذا كانت القيمة false، فسيتم تعطيل كل عمليات التسجيل إلى ملف. | false | true      |
+| `jsonLogs`  | منطقي      | إذا كانت القيمة true، فسيتم التسجيل بتنسيق JSON.              | false | false     |
+| `level`     | سلسلة نصية | مستوى تفصيل مسجل الخادم.                                      | false | trace     |
+| `size`      | سلسلة نصية | الحد الأقصى لحجم ملف السجل.                                   | false | 1000M     |
+| `count`     | عدد صحيح   | الحد الأقصى لعدد ملفات السجل المطلوب الاحتفاظ بها.            | false | 50        |
+
+يظهر في:
+
+* [ClickHouseSettings](#clickhousesettings)
+* [KeeperSettings](#keepersettings)
+
+<div id="namedtemplatemeta">
+  ## NamedTemplateMeta
+</div>
+
+يحدّد NamedTemplateMeta إعدادات البيانات الوصفية المدعومة لكائنات القوالب التي تتطلب اسمًا.
+
+| الحقل         | النوع                                | الوصف                                                           | مطلوب | الافتراضي |
+| ------------- | ------------------------------------ | --------------------------------------------------------------- | ----- | --------- |
+| `name`        | string                               | الاسم هو معرّف المورد.                                          | true  |           |
+| `labels`      | كائن (المفاتيح:string، القيم:string) | Labels هي التسميات المطبّقة على كائنات القوالب.                 | false |           |
+| `annotations` | كائن (المفاتيح:string، القيم:string) | Annotations هي التعليقات التوضيحية المطبّقة على كائنات القوالب. | false |           |
+
+يظهر في:
+
+* [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
+
+<div id="pdbpolicy">
+  ## PDBPolicy
+</div>
+
+تتحكم PDBPolicy في ما إذا كان سيتم إنشاء PodDisruptionBudgets.
+
+| الحقل      | الوصف                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `Enabled`  | يتيح PDBPolicyEnabled للمشغّل إنشاء PodDisruptionBudgets.<br />                                                          |
+| `Disabled` | يعطّل PDBPolicyDisabled ‏PodDisruptionBudgets، وسيحذف المشغّل المورد الذي يحمل التسميات المطابقة.<br />                  |
+| `Ignored`  | يتجاهل PDBPolicyIgnored ‏PodDisruptionBudgets، ولن يُنشئ المشغّل أي PDBs أو يحذفها، وستبقى PDBs الحالية دون تغيير.<br /> |
+
+يظهر في:
+
+* [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
+
+<div id="persistentvolumeclaimtemplate">
+  ## PersistentVolumeClaimTemplate
+</div>
+
+PersistentVolumeClaimTemplate هو قالب مُسمّى لـ PersistentVolumeClaim لكل نسخة متماثلة.
+
+| الحقل      | النوع                                                                                                                               | الوصف                                                                                                                                                                     | مطلوب | الافتراضي |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| `metadata` | [NamedTemplateMeta](#namedtemplatemeta)                                                                                             | ارجع إلى وثائق واجهة برمجة تطبيقات Kubernetes للتعرّف على حقول `metadata`.                                                                                                | true  |           |
+| `spec`     | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | يحدّد Spec الخصائص المطلوبة لوحدة تخزين يطلبها منشئ الجراب.<br />مزيد من المعلومات: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims | true  |           |
+
+يظهر في:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+
+<div id="poddisruptionbudgetspec">
+  ## PodDisruptionBudgetSpec
+</div>
+
+يُهيّئ PodDisruptionBudgetSpec مورد PDB الذي يتم إنشاؤه للعنقود.
+يمكن تعيين واحد فقط من MinAvailable أو MaxUnavailable.
+إذا لم يتم تعيين أيٍّ منهما، يختار المشغّل قيمة default آمنة استنادًا إلى عدد النُسخ المتماثلة.
+
+| الحقل                        | النوع                                                                                                                                           | الوصف                                                                                                                                                                                                           | مطلوب | الافتراضي |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | --------- |
+| `policy`                     | [PDBPolicy](#pdbpolicy)                                                                                                                         | تحدد السياسة ما إذا كان المشغّل سينشئ PodDisruptionBudgets.<br />تكون القيمة الافتراضية &quot;Enabled&quot; عند عدم تعيينها. اضبطها على &quot;Disabled&quot; لتخطي إنشاء PDB (على سبيل المثال، لبيئات التطوير). | false | Enabled   |
+| `minAvailable`               | [IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#intorstring-intstr-util)                                     | MinAvailable هو الحد الأدنى لعدد البودات التي يجب أن تظل متاحة أثناء الانقطاع.                                                                                                                                  | false |           |
+| `maxUnavailable`             | [IntOrString](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#intorstring-intstr-util)                                     | MaxUnavailable هو الحد الأقصى لعدد البودات التي يمكن أن تصبح غير متاحة أثناء الانقطاع.                                                                                                                          | false |           |
+| `unhealthyPodEvictionPolicy` | [UnhealthyPodEvictionPolicyType](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#unhealthypodevictionpolicytype-v1-policy) | يحدد UnhealthyPodEvictionPolicy المعايير الخاصة بالحالات التي<br />ينبغي فيها اعتبار البودات غير السليمة<br />مؤهلةً للإخلاء.<br />القيم الصالحة هي &quot;IfReady&quot; و &quot;AlwaysAllow&quot;.              | false |           |
+
+يظهر في:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="podtemplatespec">
+  ## PodTemplateSpec
+</div>
+
+يصف PodTemplateSpec تجاوزات إعدادات الكبسولات الخاصة بالعنقود.
+
+| الحقل                           | النوع                                                                                                                                    | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | مطلوب | القيمة الافتراضية |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----------------- |
+| `terminationGracePeriodSeconds` | عدد صحيح                                                                                                                                 | مدة اختيارية بالثواني تحتاجها الكبسولة لإنهاء التشغيل بشكل سليم. ويمكن تقليلها في طلب الحذف.<br />يجب أن تكون القيمة عددًا صحيحًا غير سالب. وتشير القيمة صفر إلى التوقف الفوري عبر<br />إشارة kill (من دون إتاحة فرصة لإيقاف التشغيل).<br />إذا كانت هذه القيمة nil، فستُستخدم فترة السماح الافتراضية بدلًا منها.<br />وفترة السماح هي المدة بالثواني بين إرسال<br />إشارة إنهاء إلى العمليات التي تعمل داخل الكبسولة وبين الوقت الذي تُوقَف فيه هذه العمليات قسرًا بإشارة kill.<br />اضبط هذه القيمة بحيث تكون أطول من وقت التنظيف المتوقع لعمليتك.<br />القيمة الافتراضية هي 30 ثانية. | لا    |                   |
+| `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) مصفوفة | يصف TopologySpreadConstraints كيفية توزيع مجموعة من الكبسولات عبر نطاقات<br />الطوبولوجيا. سيُجدول المُجدول الكبسولات بطريقة تلتزم بالقيود.<br />تُطبَّق جميع topologySpreadConstraints بعامل AND.<br />تُدمَج مع القيم الافتراضية الخاصة بالمُشغِّل بحسب `topologyKey`.                                                                                                                                                                                                                                                                                                                 | لا    |                   |
+| `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) مصفوفة         | ImagePullSecrets هي قائمة اختيارية من المراجع إلى الأسرار الموجودة في مساحة الاسم نفسها، تُستخدم لسحب أي صور يستخدمها PodSpec هذا.<br />عند تحديدها، تُمرَّر هذه الأسرار إلى كل آلية سحب على حدة لاستخدامها.<br />مزيد من المعلومات: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />تُدمج مع القيم الافتراضية للمُشغِّل حسب الاسم.                                                                                                                                                                                                      | false |                   |
+| `nodeSelector`                  | كائن (المفاتيح:string, القيم:string)                                                                                                     | NodeSelector هو محدِّد يجب أن يتحقق لكي يمكن وضع الجراب على عقدة.<br />محدِّد يجب أن يطابق تسميات العقدة لكي تتم جدولة الجراب على تلك العقدة.<br />مزيد من المعلومات: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                                                                                                                                                                                                                 | false |                   |
+| `affinity`                      | [التقارب](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                         | إذا تم تحديدها، فهي قيود جدولة الكبسولة.<br />تُلحَق بالقيم الافتراضية للمُشغِّل: تُدمَج قوائم شروط الجدولة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | false |                   |
+| `tolerations`                   | مصفوفة من [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core)                          | إذا تم تحديدها، فهي قيم Tolerations الخاصة بالكبسولة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | false |                   |
+| `schedulerName`                 | string                                                                                                                                   | إذا تم تحديده، فستُسنَد الكبسولة إلى المُجدول المحدد.<br />إذا لم يتم تحديده، فستُسنَد الكبسولة إلى المُجدول الافتراضي.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | false |                   |
+| `serviceAccountName`            | string                                                                                                                                   | ServiceAccountName هو اسم ServiceAccount المستخدم لتشغيل هذا الجراب.<br />مزيد من المعلومات: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/                                                                                                                                                                                                                                                                                                                                                                                                         | false |                   |
+| `priorityClassName`             | string                                                                                                                                   | PriorityClassName هو اسم PriorityClass المُراد استخدامه للكبسولة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | خطأ   |                   |
+| `runtimeClassName`              | سلسلة نصية                                                                                                                               | RuntimeClassName هو اسم RuntimeClass المُراد استخدامه للكبسولة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | خطأ   |                   |
+| `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) مصفوفة                                     | يحدّد Volumes قائمة وحدات التخزين التي يمكن للحاويات التابعة للكبسولة ربطها.<br />مزيد من المعلومات: https://kubernetes.io/docs/concepts/storage/volumes<br />تُدمج مع القيم الافتراضية للمشغّل حسب الاسم؛ وتستبدل أي وحدة تخزين يضيفها المستخدم أي وحدة تخزين للمشغّل تحمل الاسم نفسه.                                                                                                                                                                                                                                                                                                  | false |                   |
+| `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                    | يحتوي SecurityContext على سمات الأمان على مستوى الـ pod وإعدادات الحاويات المشتركة.<br />يستبدل SecurityContext غير المعيَّن بالقيمة nil الإعدادات الافتراضية للمشغّل بالكامل؛ ويكون المستخدم مسؤولًا عن<br />البنية بالكامل. وعند تعيينه بالقيمة nil، تُحفَظ الإعدادات الافتراضية للمشغّل.                                                                                                                                                                                                                                                                                              | false |                   |
+| `topologyZoneKey`               | String                                                                                                                                   | TopologyZoneKey هو مفتاح وسوم العُقد.<br />تُعدّ العُقد التي تحمل وسمًا بهذا المفتاح وقيمًا متطابقة ضمن منطقة طوبولوجية واحدة.<br />اضبطه لتمكين قواعد TopologySpreadConstraints وAffinity الافتراضية من توزيع الكبسولات عبر المناطق.<br />يُوصى بضبطه على &quot;topology.kubernetes.io/zone&quot;                                                                                                                                                                                                                                                                                       | false |                   |
+| `nodeHostnameKey`               | String                                                                                                                                   | NodeHostnameKey هو مفتاح وسوم العقد.<br />تُعدّ العقد التي تحمل وسمًا بهذا المفتاح وبالقيمة نفسها موجودة على العقدة نفسها.<br />اضبطه لتمكين قواعد AntiAffinity الافتراضية لتوزيع النسخ المتماثلة من الأجزاء المختلفة عبر العقد.<br />يُنصح بضبطه على &quot;kubernetes.io/hostname&quot;                                                                                                                                                                                                                                                                                                 | false |                   |
+| `initContainers`                | مصفوفة من [حاوية](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core)                                | InitContainers هي قائمة حاويات التهيئة التي تُشغَّل قبل بدء تشغيل حاوية الخادم الرئيسية.<br />وتُدمَج مع الإعدادات الافتراضية الخاصة بالمُشغِّل بحسب الاسم،<br />إذا كان الاسم نفسه.                                                                                                                                                                                                                                                                                                                                                                                                     | false |                   |
+
+يرد في:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)
+
+<div id="secretkeyselector">
+  ## SecretKeySelector
+</div>
+
+يحدّد SecretKeySelector مفتاحًا من مورد Secret.
+
+| الحقل  | النوع  | الوصف                                                                   | مطلوب | الافتراضي |
+| ------ | ------ | ----------------------------------------------------------------------- | ----- | --------- |
+| `name` | string | اسم الـ Secret في مساحة اسم الـ cluster المطلوب الاختيار منه.           | true  |           |
+| `key`  | string | مفتاح الـ Secret المطلوب الاختيار منه. يجب أن يكون مفتاح Secret صالحًا. | true  |           |
+
+يظهر في:
+
+* [DefaultPasswordSelector](#defaultpasswordselector)
+
+<div id="templatemeta">
+  ## TemplateMeta
+</div>
+
+يحدّد TemplateMeta إعدادات البيانات الوصفية المدعومة لكائنات القوالب.
+
+| الحقل         | النوع                               | الوصف                                                              | مطلوب | الافتراضي |
+| ------------- | ----------------------------------- | ------------------------------------------------------------------ | ----- | --------- |
+| `labels`      | object (keys:string, values:string) | الملصقات هي ملصقات تُطبَّق على كائنات القوالب.                     | false |           |
+| `annotations` | object (keys:string, values:string) | التعليقات التوضيحية هي تعليقات توضيحية تُطبَّق على كائنات القوالب. | false |           |
+
+يظهر في:
+
+* [VersionProbePodTemplate](#versionprobepodtemplate)
+* [VersionProbeTemplate](#versionprobetemplate)
+
+<div id="versionprobecontainer">
+  ## VersionProbeContainer
+</div>
+
+يحدّد VersionProbeContainer عمليات تجاوز على مستوى الحاوية لمسبار الإصدار.
+تتطابق أسماء الحقول ووسوم JSON مع corev1.Container لكي تُجري SMP عمليات الدمج حسب الاسم.
+
+| الحقل             | النوع                                                                                                                     | الوصف                                                                                                                   | مطلوب | الافتراضي     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----- | ------------- |
+| `name`            | سلسلة نصية                                                                                                                | اسم الحاوية. إذا كان فارغًا، يضبطه المشغّل على اسم حاوية مسبار الإصدار.                                                 | true  | version-probe |
+| `resources`       | [ResourceRequirements](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#resourcerequirements-v1-core) | الموارد هي متطلبات موارد الحوسبة لحاوية مسبار الإصدار.<br />تُدمَج دمجًا عميقًا مع القيم الافتراضية للمشغّل عبر SMP.    | false |               |
+| `securityContext` | [SecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#securitycontext-v1-core)           | يحدّد SecurityContext خيارات الأمان لحاوية مسبار الإصدار.<br />تُدمَج دمجًا عميقًا مع القيم الافتراضية للمشغّل عبر SMP. | false |               |
+
+يظهر في:
+
+* [VersionProbePodSpec](#versionprobepodspec)
+
+<div id="versionprobejobspec">
+  ## VersionProbeJobSpec
+</div>
+
+يحدّد VersionProbeJobSpec عمليات التجاوز على مستوى Job لمسبار الإصدار.
+
+| Field                     | Type                                                | Description                                          | Required | Default |
+| ------------------------- | --------------------------------------------------- | ---------------------------------------------------- | -------- | ------- |
+| `ttlSecondsAfterFinished` | integer                                             | يحدّ TTLSecondsAfterFinished من مدة بقاء Job مكتملة. | false    |         |
+| `template`                | [VersionProbePodTemplate](#versionprobepodtemplate) | يصف القالب الكبسولة التي ستُنشأ لمهمة مسبار الإصدار. | false    |         |
+
+يظهر في:
+
+* [VersionProbeTemplate](#versionprobetemplate)
+
+<div id="versionprobepodspec">
+  ## VersionProbePodSpec
+</div>
+
+يحدّد VersionProbePodSpec التجاوزات على مستوى الكبسولة لمسبار الإصدار.
+تتطابق أسماء الحقول ووسوم JSON مع corev1.PodSpec لضمان التوافق مع strategic merge patch.
+
+| Field             | Type                                                                                                                  | Description                                                                                                                                 | Required | Default |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- |
+| `nodeSelector`    | object (keys:string, values:string)                                                                                   | يقيّد NodeSelector كبسولة مسبار الإصدار بالعُقد ذات labels المطابقة.                                                                        | false    |         |
+| `tolerations`     | [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core) array           | قيم Tolerations لكبسولة مسبار الإصدار.                                                                                                      | false    |         |
+| `securityContext` | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core) | يحتوي SecurityContext على سمات الأمان على مستوى الكبسولة لكبسولة مسبار الإصدار.                                                             | false    |         |
+| `containers`      | [VersionProbeContainer](#versionprobecontainer) array                                                                 | تجاوزات الحاويات لكبسولة مسبار الإصدار.<br />حقل الاسم اختياري — يملؤه المشغّل بالحاوية `default`.<br />يمكن تحديد حاوية إضافية باسم مختلف. | false    |         |
+
+يظهر في:
+
+* [VersionProbePodTemplate](#versionprobepodtemplate)
+
+<div id="versionprobepodtemplate">
+  ## VersionProbePodTemplate
+</div>
+
+يصف VersionProbePodTemplate إعدادات التجاوز الخاصة بكبسولة مسبار الإصدار.
+
+| الحقل      | النوع                                       | الوصف                                                                  | مطلوب | الافتراضي |
+| ---------- | ------------------------------------------- | ---------------------------------------------------------------------- | ----- | --------- |
+| `metadata` | [TemplateMeta](#templatemeta)               | راجع وثائق واجهة برمجة تطبيقات Kubernetes للتعرّف على حقول `metadata`. | false |           |
+| `spec`     | [VersionProbePodSpec](#versionprobepodspec) | مواصفات السلوك المطلوب لكبسولة مسبار الإصدار.                         | false |           |
+
+يظهر في:
+
+* [VersionProbeJobSpec](#versionprobejobspec)
+
+<div id="versionprobetemplate">
+  ## VersionProbeTemplate
+</div>
+
+يحدّد VersionProbeTemplate التجاوزات الخاصة بـ Job اكتشاف الإصدار.
+ويحاكي هذا التركيب batchv1.JobTemplateSpec، مع إتاحة الحقول المدعومة فقط.
+
+| الحقل      | النوع                                       | الوصف                                                  | مطلوب | الافتراضي |
+| ---------- | ------------------------------------------- | ------------------------------------------------------ | ----- | --------- |
+| `metadata` | [TemplateMeta](#templatemeta)               | راجع وثائق Kubernetes API للتعرّف على حقول `metadata`. | false |           |
+| `spec`     | [VersionProbeJobSpec](#versionprobejobspec) | مواصفة السلوك المطلوب لـ Job مسبار الإصدار.            | false |           |
+
+يظهر في:
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
+* [KeeperClusterSpec](#keeperclusterspec)

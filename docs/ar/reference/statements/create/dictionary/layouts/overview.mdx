@@ -1,0 +1,156 @@
+---
+description: 'أنواع تخطيطات القواميس لتخزينها في الذاكرة'
+sidebarTitle: 'نظرة عامة'
+slug: /sql-reference/statements/create/dictionary/layouts
+title: 'تخطيطات القواميس'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/ar/_snippet_dictionary_in_cloud.mdx';
+
+<div id="storing-dictionaries-in-memory">
+  ## أنواع تخطيط القاموس
+</div>
+
+توجد عدة طرق لتخزين القواميس في الذاكرة، ولكل منها مفاضلات بين استخدام CPU وRAM.
+
+| التخطيط                                                                                                                       | الوصف                                                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [flat](/ar/reference/statements/create/dictionary/layouts/flat)                                                                  | يخزّن البيانات في مصفوفات مسطّحة مفهرسة حسب المفتاح. وهو أسرع تخطيط، لكن يجب أن تكون المفاتيح من النوع `UInt64` وأن تكون محدودة بالقيمة `max_array_size`. |
+| [hashed](/ar/reference/statements/create/dictionary/layouts/hashed)                                                              | يخزّن البيانات في جدول hash. لا يوجد حد لحجم المفتاح، ويدعم أي عدد من العناصر.                                                                            |
+| [sparse&#95;hashed](/ar/reference/statements/create/dictionary/layouts/hashed#sparse_hashed)                                     | يشبه `hashed`، لكنه يضحّي ببعض CPU مقابل تقليل استخدام الذاكرة.                                                                                           |
+| [complex&#95;key&#95;hashed](/ar/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                       | يشبه `hashed`، للمفاتيح المركبة.                                                                                                                          |
+| [complex&#95;key&#95;sparse&#95;hashed](/ar/reference/statements/create/dictionary/layouts/hashed#complex_key_sparse_hashed)     | يشبه `sparse_hashed`، للمفاتيح المركبة.                                                                                                                   |
+| [hashed&#95;array](/ar/reference/statements/create/dictionary/layouts/hashed-array)                                              | تُخزَّن السمات في مصفوفات مع جدول hash يربط المفاتيح بفهارس المصفوفات. وهو فعّال من حيث الذاكرة عند وجود عدد كبير من السمات.                              |
+| [complex&#95;key&#95;hashed&#95;array](/ar/reference/statements/create/dictionary/layouts/hashed-array#complex_key_hashed_array) | يشبه `hashed_array`، للمفاتيح المركبة.                                                                                                                    |
+| [range&#95;hashed](/ar/reference/statements/create/dictionary/layouts/range-hashed)                                              | جدول hash مع ranges مرتبة. يدعم عمليات lookup حسب المفتاح + نطاق التاريخ/الوقت.                                                                           |
+| [complex&#95;key&#95;range&#95;hashed](/ar/reference/statements/create/dictionary/layouts/range-hashed#complex_key_range_hashed) | يشبه `range_hashed`، للمفاتيح المركبة.                                                                                                                    |
+| [cache](/ar/reference/statements/create/dictionary/layouts/cache)                                                                | cache ثابتة الحجم داخل الذاكرة. لا تُخزَّن إلا المفاتيح التي يكثر الوصول إليها.                                                                           |
+| [complex&#95;key&#95;cache](/ar/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                        | يشبه `cache`، للمفاتيح المركبة.                                                                                                                           |
+| [ssd&#95;cache](/ar/reference/statements/create/dictionary/layouts/ssd-cache)                                                    | يشبه `cache`، لكنه يخزّن البيانات على SSD مع index داخل الذاكرة.                                                                                          |
+| [complex&#95;key&#95;ssd&#95;cache](/ar/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache)          | يشبه `ssd_cache`، للمفاتيح المركبة.                                                                                                                       |
+| [direct](/ar/reference/statements/create/dictionary/layouts/direct)                                                              | لا يستخدم تخزينًا داخل الذاكرة — بل يستعلم المصدر مباشرةً لكل طلب.                                                                                        |
+| [complex&#95;key&#95;direct](/ar/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | يشبه `direct`، للمفاتيح المركبة.                                                                                                                          |
+| [ip&#95;trie](/ar/reference/statements/create/dictionary/layouts/ip-trie)                                                        | بنية trie لإجراء عمليات lookup سريعة على بادئات IP (المعتمدة على CIDR).                                                                                   |
+
+<Tip>
+  **التخطيطات الموصى بها**
+
+  يوفّر [flat](/ar/reference/statements/create/dictionary/layouts/flat) و[hashed](/ar/reference/statements/create/dictionary/layouts/hashed) و[complex&#95;key&#95;hashed](/ar/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed) أفضل أداء للاستعلامات.
+  لا يُنصح بتخطيطات التخزين المؤقت بسبب احتمال ضعف الأداء وصعوبة ضبط المَعلمات — راجع [cache](/ar/reference/statements/create/dictionary/layouts/cache) للتفاصيل.
+</Tip>
+
+<div id="specify-dictionary-layout">
+  ## تحديد تخطيط القاموس
+</div>
+
+<CloudDetails />
+
+يمكنك ضبط تخطيط القاموس باستخدام العبارة `LAYOUT` ‏(في DDL) أو الإعداد `layout` في تعريفات ملف التهيئة.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY (...)
+    ...
+    LAYOUT(LAYOUT_TYPE(param value)) -- إعدادات التخطيط
+    ...
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <clickhouse>
+        <dictionary>
+            ...
+            <layout>
+                <layout_type>
+                    <!-- إعدادات التخطيط -->
+                </layout_type>
+            </layout>
+            ...
+        </dictionary>
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+انظر أيضًا إلى [CREATE DICTIONARY](/ar/reference/statements/create/dictionary) للاطّلاع على بنية DDL الكاملة.
+
+القواميس التي لا يتضمن تخطيطها الكلمة `complex-key*` يكون مفتاحها من النوع [UInt64](/ar/reference/data-types/int-uint)، أما قواميس `complex-key*` فلها مفتاح مركب (معقّد، وبأنواع مختلفة).
+
+**مثال على مفتاح رقمي** (العمود key&#95;column من النوع [UInt64](/ar/reference/data-types/int-uint)):
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        key_column UInt64,
+        ...
+    )
+    PRIMARY KEY key_column
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <structure>
+        <id>
+            <name>key_column</name>
+        </id>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+**مثال على مفتاح مركب** (يحتوي المفتاح على عنصر واحد من النوع [String](/ar/reference/data-types/string)):
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        country_code String,
+        ...
+    )
+    PRIMARY KEY country_code
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <structure>
+        <key>
+            <attribute>
+                <name>country_code</name>
+                <type>String</type>
+            </attribute>
+        </key>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="improve-performance">
+  ## تحسين أداء القاموس
+</div>
+
+هناك عدة طرق لتحسين أداء القاموس:
+
+* استدعِ الدالة المستخدمة للعمل مع القاموس بعد `GROUP BY`.
+* علِّم السمات المراد استخراجها بأنها injective.
+  تُعدّ السمة injective إذا كانت المفاتيح المختلفة تقابلها قيم سمات مختلفة.
+  لذلك، عندما يستخدم `GROUP BY` دالةً تجلب قيمة سمة باستخدام المفتاح، تُستبعد هذه الدالة تلقائيًا من `GROUP BY`.
+
+ينشئ ClickHouse استثناءً عند حدوث أخطاء في القواميس.
+ومن أمثلة هذه الأخطاء:
+
+* تعذّر تحميل القاموس الجاري الوصول إليه.
+* حدث خطأ أثناء تنفيذ استعلام على قاموس `cached`.
+
+يمكنك عرض قائمة القواميس وحالاتها في جدول [system.dictionaries](/ar/reference/system-tables/dictionaries).

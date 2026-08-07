@@ -1,0 +1,200 @@
+#pragma once
+
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/MergeTreeWriterStream.h>
+#include <IO/PackedFilesWriter.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <IO/HashingWriteBuffer.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/MarkCache.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Columns/IColumn_fwd.h>
+#include <Compression/ICompressionCodec.h>
+
+namespace DB
+{
+
+/// Single unit for writing data to disk. Contains information about
+/// amount of rows to write and marks.
+struct Granule
+{
+    /// Start row in block for granule
+    size_t start_row;
+    /// Amount of rows from block which have to be written to disk from start_row
+    size_t rows_to_write;
+    /// Global mark number in the list of all marks (index_granularity) for this part
+    size_t mark_number;
+    /// Should writer write mark for the first of this granule to disk.
+    /// NOTE: Sometimes we don't write mark for the start row, because
+    /// this granule can be continuation of the previous one.
+    bool mark_on_start;
+    /// if true: When this granule will be written to disk all rows for corresponding mark will
+    /// be wrtten. It doesn't mean that rows_to_write == index_granularity.getMarkRows(mark_number),
+    /// We may have a lot of small blocks between two marks and this may be the last one.
+    bool is_complete;
+};
+
+/// Multiple granules to write for concrete block.
+using Granules = std::vector<Granule>;
+
+/// Writes data part to disk in different formats.
+/// Calculates and serializes primary and skip indices if needed.
+class MergeTreeDataPartWriterOnDisk : public IMergeTreeDataPartWriter
+{
+public:
+    using WrittenOffsetSubstreams = std::set<std::string>;
+    using StreamPtr = std::unique_ptr<MergeTreeWriterStream>;
+
+    MergeTreeDataPartWriterOnDisk(
+        const String & data_part_name_,
+        const String & logger_name_,
+        const SerializationByName & serializations_,
+        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const MergeTreeSettingsPtr & storage_settings_,
+        const NamesAndTypesList & columns_list,
+        const StorageMetadataPtr & metadata_snapshot_,
+        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+        const String & marks_file_extension,
+        const CompressionCodecPtr & default_codec,
+        const MergeTreeWriterSettings & settings,
+        MergeTreeIndexGranularityPtr index_granularity_,
+        WrittenOffsetSubstreams * written_offset_substreams_);
+
+    void cancel() noexcept override;
+
+    void preloadPackedSkipIndicesArchive(const class DataPartStorageOnDiskBase & source, const NameSet & files) override;
+
+    /// Return the in-flight packed archive. Returns the borrowed pointer when this writer is
+    /// secondary; otherwise the owned writer (or nullptr if packing is disabled here).
+    PackedFilesWriter * getSkipIndicesPackedWriter() override
+    {
+        return skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
+    }
+
+    const Block & getColumnsSample() const override { return block_sample; }
+    const ColumnsSubstreams & getColumnsSubstreams() const override { return columns_substreams; }
+
+protected:
+     /// Count index_granularity for block and store in `index_granularity`
+    size_t computeIndexGranularity(const Block & block) const;
+
+    /// Write primary index according to granules_to_write
+    void calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write);
+    /// Write skip indices according to granules_to_write. Skip indices also have their own marks
+    /// and one skip index granule can contain multiple "normal" marks. So skip indices serialization
+    /// require additional state: skip_indices_aggregators and skip_index_accumulated_marks
+    void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
+
+    /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
+    void fillPrimaryIndexChecksums(MergeTreeDataPartChecksums & checksums);
+    void finishPrimaryIndexSerialization(bool sync);
+    /// Finishes skip indices serialization: write all accumulated data to disk and compute checksums
+    void fillSkipIndicesChecksums(MergeTreeDataPartChecksums & checksums);
+    void finishSkipIndicesSerialization(bool sync);
+
+    /// Get global number of the current which we are writing (or going to start to write)
+    size_t getCurrentMark() const { return current_mark; }
+
+    void setCurrentMark(size_t mark) { current_mark = mark; }
+
+    /// Get unique non ordered skip indices column.
+    Names getSkipIndicesColumns() const;
+
+    virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
+
+    /// For some columns the set of streams may depend on the dynamic structure/statistics of the actual column.
+    /// Before writing a block we need to prepare its columns, so they will always be serialized in the same
+    /// set of streams.
+    void prepareBlockForWriting(Block & block);
+
+    /// Initialize all streams for all columns. Should be called after first prepareBlockForWriting when block sample is initialized.
+    void initStreamsIfNeeded();
+
+    /// Initialize columns_substreams for all columns. Should be called after first prepareBlockForWriting when block sample is initialized.
+    void initColumnsSubstreamsIfNeeded();
+
+    virtual ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const = 0;
+
+    /// This is useful only for vector codecs (like SZ3).
+    static void setVectorDimensionsIfNeeded(CompressionCodecPtr codec, const IColumn * column);
+
+    const MergeTreeIndices skip_indices;
+    const String marks_file_extension;
+    const CompressionCodecPtr default_codec;
+
+    const bool compute_granularity;
+
+    std::vector<StreamPtr> skip_indices_streams_holders;
+    std::vector<MergeTreeIndexOutputStreams> skip_indices_streams;
+
+    MergeTreeIndexAggregators skip_indices_aggregators;
+    std::vector<size_t> skip_index_accumulated_marks;
+
+    /// Optional packed archive shared by all skip-index substreams that stayed under the
+    /// per-substream size threshold. Substreams that exceeded it were spilled to standalone
+    /// files on data_part_storage by the size-adaptive packing wrapper and are not part of
+    /// this archive. Null when packing is disabled (packed_skip_index_max_bytes = 0) or when
+    /// this writer is borrowing another writer's archive via @skip_indices_packed_writer_borrowed.
+    std::unique_ptr<PackedFilesWriter> skip_indices_packed_writer;
+    /// Non-owning pointer set when this writer is a "secondary" producer sharing an outer
+    /// writer's `PackedFilesWriter` (e.g. vertical-merge per-column writers sharing the
+    /// horizontal `MergedBlockOutputStream`'s archive). When set, this writer contributes
+    /// packed substreams to the borrowed archive but never writes `skp_idx.packed` itself; the
+    /// owner finalizes the archive on disk.
+    PackedFilesWriter * skip_indices_packed_writer_borrowed = nullptr;
+    /// Output buffer for the skp_idx.packed file itself. Constructed lazily during
+    /// fillSkipIndicesChecksums when the writer has content to flush.
+    std::unique_ptr<WriteBufferFromFileBase> skip_indices_packed_file;
+
+    std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
+    std::unique_ptr<HashingWriteBuffer> index_file_hashing_stream;
+    std::unique_ptr<CompressedWriteBuffer> index_compressor_stream;
+    std::unique_ptr<HashingWriteBuffer> index_source_hashing_stream;
+    bool compress_primary_key;
+
+    /// Last block with index columns.
+    /// It's written to index file in the `writeSuffixAndFinalizePart` method.
+    Block last_index_block;
+    Serializations index_serializations;
+
+    bool data_written = false;
+
+    /// Substreams that should be ignored by this writer, due to they had been written by other writer (as part of vertical merge)
+    /// This is to correctly write Nested elements column-by-column.
+    WrittenOffsetSubstreams * written_offset_substreams;
+
+    /// Data is already written up to this mark.
+    size_t current_mark = 0;
+
+    Block block_sample;
+
+    bool streams_initialized = false;
+
+    /// List of substreams for each column in order of serialization.
+    ColumnsSubstreams columns_substreams;
+
+private:
+    void initSkipIndices();
+    void initPrimaryIndex();
+
+    virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
+    void calculateAndSerializePrimaryIndexRow(const Block & index_block, size_t row);
+
+    struct ExecutionStatistics
+    {
+        explicit ExecutionStatistics(size_t skip_indices_cnt) : skip_indices_build_us(skip_indices_cnt, 0)
+        {
+        }
+
+        std::vector<size_t> skip_indices_build_us; // [i] corresponds to the i-th index
+    };
+
+    ExecutionStatistics execution_stats;
+    LoggerPtr log;
+};
+
+}

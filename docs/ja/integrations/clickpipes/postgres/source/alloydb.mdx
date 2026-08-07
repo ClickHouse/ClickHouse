@@ -1,0 +1,151 @@
+---
+sidebarTitle: 'AlloyDB Postgres'
+description: 'ClickPipes のソースとして AlloyDB Postgres インスタンスを設定する'
+slug: /integrations/clickpipes/postgres/source/alloydb
+title: 'AlloyDB Postgres ソースの設定ガイド'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="supported-versions">
+  ## サポート対象バージョン
+</div>
+
+ClickPipes を使用して AlloyDB インスタンスから ClickHouse Cloud にデータを連携するには、インスタンスで**論理レプリケーション**が設定されている必要があります。これは **AlloyDB Version 14 以降**でサポートされています。
+
+<div id="enable-logical-replication">
+  ## 論理レプリケーションを有効にする
+</div>
+
+AlloyDB インスタンスで論理レプリケーションが有効になっているかを確認するには、プライマリインスタンスに対して次のクエリを実行します。
+
+```sql
+SHOW  wal_level;
+```
+
+結果が `logical` の場合は、論理レプリケーションはすでに有効になっているため、[次の手順](#create-a-clickpipes-user-and-manage-replication-permissions)に進んでください。結果が `replica` の場合は、プライマリ インスタンスで [`alloydb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) フラグと [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) フラグを `on` に設定する必要があります。
+
+<Warning>
+  [AlloyDB flags documentation](https://cloud.google.com/alloydb/docs/reference/alloydb-flags) にあるとおり、論理レプリケーションを有効にするフラグの変更には、プライマリ インスタンスの再起動が必要です。
+</Warning>
+
+これらのフラグを有効にするには、次の手順を実行します。
+
+1. Google Cloud Console で AlloyDB の [Clusters](https://console.cloud.google.com/alloydb/clusters) ページに移動します。プライマリ インスタンスの **Actions** メニューから **Edit** をクリックします。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp" alt="プライマリ インスタンスの構成を編集" size="lg" border />
+
+2. 下にスクロールして **Advanced configuration options** セクションを展開します。**Flags** で **Add a database flag** をクリックします。
+
+   * [`allowdb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) フラグを追加し、値を `on` に設定します
+   * [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) フラグを追加し、値を `on` に設定します
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp" alt="allowdb.enable_pglogical フラグと alloydb.logical_decoding フラグを on に設定" size="lg" border />
+
+3. **Update instance** をクリックして構成変更を保存します。この操作により、**プライマリ インスタンスが再起動される**点に注意してください。
+
+4. インスタンスのステータスが `Updating` から `Ready` に変わったら、次のクエリをプライマリ インスタンスに対して実行し、論理レプリケーションが有効になっていることを確認します。
+
+   ```sql
+   SHOW  wal_level;
+   ```
+
+   結果は `logical` になるはずです。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp" alt="論理レプリケーションが有効になっていることを確認" size="lg" border />
+
+<div id="create-a-clickpipes-user-and-manage-replication-permissions">
+  ## ClickPipes ユーザーを作成し、レプリケーション権限を管理する
+</div>
+
+管理者ユーザーとして AlloyDB インスタンスに接続し、次のコマンドを実行します。
+
+1. ClickPipes 専用のユーザーを作成します。
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 前の手順で作成したユーザーに、スキーマレベルの読み取り専用アクセス権を付与します。次の例は `public` スキーマに対する権限を示しています。レプリケーションするテーブルを含む各スキーマに対して、これらのコマンドを繰り返してください。
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. ユーザーにレプリケーション権限を付与します。
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. レプリケーションしたいテーブルを含む [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) を作成します。パフォーマンスのオーバーヘッドを避けるため、publication には必要なテーブルだけを含めることを強く推奨します。
+
+<Warning>
+  publication に含まれるテーブルには、**主キー** が定義されているか、**replica identity** が `FULL` に設定されている必要があります。スコープ設定のガイダンスについては、[Postgres のよくある質問](/ja/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) を参照してください。
+</Warning>
+
+* 特定のテーブルに対する publication を作成するには:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 特定のスキーマ内のすべてのテーブルに対する publication を作成するには:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication には、指定したテーブルから生成される変更イベントのセットが含まれ、後でレプリケーションストリームを取り込むために使用されます。
+
+<div id="configure-network-access">
+  ## ネットワークアクセスを設定する
+</div>
+
+<Note>
+  ClickPipes は Private Service Connect (PSC) 接続をサポートしていません。AlloyDB インスタンスへのパブリックアクセスを許可しない場合は、[SSH トンネルを使用](#configure-network-access)して安全に接続できます。PSC は今後サポートされる予定です。
+</Note>
+
+次に、ClickPipes から AlloyDB インスタンスへの接続を許可する必要があります。
+
+<Tabs>
+  <Tab title="ClickPipes の IP を許可">
+    1. Google Cloud Console で、AlloyDB の [Clusters](https://console.cloud.google.com/alloydb/clusters) ページに移動します。プライマリインスタンスを選択して、**概要** ページを開きます。
+
+    2. **Instances in your cluster** までスクロールし、**Edit primary** をクリックします。
+
+    3. **Enable Public IP** チェックボックスをオンにして、パブリックインターネット経由でインスタンスへの接続を許可します。**Authorized external networks** で、サービスのデプロイ先リージョンに対応する [ClickPipes の静的 IP アドレス一覧](/ja/integrations/clickpipes/home#list-of-static-ips) を入力します。
+
+       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="IP 許可リストを使用してパブリックアクセス用のネットワークを設定する" size="lg" border />
+
+    <Note>
+      AlloyDB では、アドレスを [CIDR 表記](https://cloud.google.com/alloydb/docs/connection-overview#public-ip) で指定する必要があります。提供されている ClickPipes の静的 IP アドレス一覧の各アドレスに `/32` を追加すると、この表記に合わせられます。
+    </Note>
+
+    4. **Network Security** で、**Require SSL Encryption (default)** を選択します (まだ選択されていない場合) 。
+
+    5. **Update instance** をクリックして、ネットワークセキュリティ設定の変更を保存します。
+  </Tab>
+
+  <Tab title="SSH トンネルを使用">
+    AlloyDB インスタンスへのパブリックアクセスを許可しない場合は、まず SSH 踏み台サーバーを用意し、SSH トンネル経由で安全に接続できるようにする必要があります。Google Cloud Platform で SSH 踏み台サーバーを設定するには、次の手順を実行します。
+
+    1. [公式ドキュメント](https://cloud.google.com/compute/docs/instances/create-start-instance) に従って、Google Compute Engine (GCE) インスタンスを作成して起動します。
+       * GCE インスタンスが AlloyDB インスタンスと同じ Virtual Private Network (VPC) 内にあることを確認します。
+       * GCE インスタンスに [静的パブリック IP アドレス](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address) が割り当てられていることを確認します。ClickPipes を SSH 踏み台サーバーに接続する際、この IP アドレスを使用します。
+
+    2. SSH 踏み台サーバーのファイアウォールルールを更新し、サービスのデプロイ先リージョンに対応する [ClickPipes の静的 IP アドレス一覧](/ja/integrations/clickpipes/home#list-of-static-ips) からのトラフィックを許可します。
+
+    3. AlloyDB のファイアウォールルールを更新し、SSH 踏み台サーバーからのトラフィックを許可します。
+  </Tab>
+</Tabs>
+
+<div id="whats-next">
+  ## 次のステップ
+</div>
+
+これで、[ClickPipe を作成](/ja/integrations/clickpipes/postgres/index)して、Postgres インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。
+ClickPipe の作成時に必要になるため、Postgres インスタンスのセットアップ時に使用した接続情報は必ず控えておいてください。

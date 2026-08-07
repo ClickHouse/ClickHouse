@@ -1,0 +1,662 @@
+---
+description: 'Hacker News 데이터 2,800만 행이 포함된 데이터셋입니다.'
+sidebarTitle: 'Hacker News'
+slug: /getting-started/example-datasets/hacker-news
+title: 'Hacker News 데이터셋'
+doc_type: 'guide'
+keywords: ['예시 데이터셋', 'Hacker News', '샘플 데이터', '텍스트 분석', '벡터 검색']
+---
+
+> 이 튜토리얼에서는 CSV 및 Parquet 포맷의 Hacker News 데이터 2,800만 행을 ClickHouse
+> 테이블에 삽입하고, 몇 가지 간단한 쿼리를 실행해 데이터를 살펴봅니다.
+
+<div id="csv">
+  ## CSV
+</div>
+
+<Steps>
+  <Step>
+    ### CSV 다운로드
+
+    데이터셋의 CSV 버전은 공개 [S3 버킷](https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz)에서 다운로드하거나, 다음 명령을 실행해 다운로드할 수 있습니다:
+
+    ```bash
+    wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz
+    ```
+
+    4.6GB, 2,800만 행 규모의 이 압축 파일은 다운로드에 5~10분 정도 소요됩니다.
+  </Step>
+
+  <Step>
+    ### 데이터 샘플링
+
+    [`clickhouse-local`](/ko/concepts/features/tools-and-utilities/clickhouse-local)을 사용하면
+    ClickHouse 서버를 배포하거나 구성하지 않고도 로컬 파일을 빠르게 처리할 수 있습니다.
+
+    ClickHouse에 데이터를 저장하기 전에 clickhouse-local로 파일을 샘플링해 보겠습니다.
+    콘솔에서 다음을 실행하십시오:
+
+    ```bash
+    clickhouse-local
+    ```
+
+    다음으로, 데이터를 확인하려면 다음 명령을 실행하세요:
+
+    ```sql title="Query"
+    SELECT *
+    FROM file('hacknernews.csv.gz', CSVWithNames)
+    LIMIT 2
+    SETTINGS input_format_try_infer_datetimes = 0
+    FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    id:          344065
+    deleted:     0
+    type:        comment
+    by:          callmeed
+    time:        2008-10-26 05:06:58
+    text:        What kind of reports do you need?<p>ActiveMerchant just connects your app to a gateway for cc approval and processing.<p>Braintree has very nice reports on transactions and it's very easy to refund a payment.<p>Beyond that, you are dealing with Rails after all–it's pretty easy to scaffold out some reports from your subscriber base.
+    dead:        0
+    parent:      344038
+    poll:        0
+    kids:        []
+    url:
+    score:       0
+    title:
+    parts:       []
+    descendants: 0
+
+    Row 2:
+    ──────
+    id:          344066
+    deleted:     0
+    type:        story
+    by:          acangiano
+    time:        2008-10-26 05:07:59
+    text:
+    dead:        0
+    parent:      0
+    poll:        0
+    kids:        [344111,344202,344329,344606]
+    url:         http://antoniocangiano.com/2008/10/26/what-arc-should-learn-from-ruby/
+    score:       33
+    title:       What Arc should learn from Ruby
+    parts:       []
+    descendants: 10
+    ```
+
+    이 명령에는 눈에 띄지 않지만 유용한 기능이 많이 있습니다.
+    [`file`](/ko/reference/functions/regular-functions/files#file) 연산자를 사용하면 포맷으로 `CSVWithNames`만 지정하여 로컬 디스크의 파일을 읽을 수 있습니다.
+    가장 중요한 점은 파일 내용에서 스키마가 자동으로 추론된다는 것입니다.
+    또한 `clickhouse-local`이 확장자를 바탕으로 gzip 포맷을 추론해 압축된 파일을 읽을 수 있다는 점에도 주목하십시오.
+    `Vertical` 포맷을 사용하면 각 컬럼의 데이터를 더 쉽게 확인할 수 있습니다.
+  </Step>
+
+  <Step>
+    ### 스키마 추론으로 데이터 로드하기
+
+    데이터를 로드하는 가장 간단하면서도 강력한 도구는 `clickhouse-client`입니다. 기능이 풍부한 네이티브 command-line client입니다.
+    데이터를 로드할 때도 스키마 추론을 활용할 수 있으며, 컬럼의 타입은 ClickHouse가 결정합니다.
+
+    [`url`](/ko/reference/functions/table-functions/url) 함수를 통해 원격 CSV 파일의 내용에 접근하여 테이블을 생성하고 데이터를 직접 삽입하려면, 다음 명령을 실행하세요.
+    스키마는 자동으로 추론됩니다:
+
+    ```sql
+    CREATE TABLE hackernews ENGINE = MergeTree ORDER BY tuple
+    (
+    ) EMPTY AS SELECT * FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz', 'CSVWithNames');
+    ```
+
+    이렇게 하면 데이터에서 자동으로 추론된 스키마를 사용해 빈 테이블을 생성합니다.
+    [`DESCRIBE TABLE`](/ko/reference/statements/describe-table) 명령을 사용하면 할당된 타입을 확인할 수 있습니다.
+
+    ```sql title="Query"
+    DESCRIBE TABLE hackernews
+    ```
+
+    ```text title="Response"
+    ┌─name────────┬─type─────────────────────┬
+    │ id          │ Nullable(Float64)        │
+    │ deleted     │ Nullable(Float64)        │
+    │ type        │ Nullable(String)         │
+    │ by          │ Nullable(String)         │
+    │ time        │ Nullable(String)         │
+    │ text        │ Nullable(String)         │
+    │ dead        │ Nullable(Float64)        │
+    │ parent      │ Nullable(Float64)        │
+    │ poll        │ Nullable(Float64)        │
+    │ kids        │ Array(Nullable(Float64)) │
+    │ url         │ Nullable(String)         │
+    │ score       │ Nullable(Float64)        │
+    │ title       │ Nullable(String)         │
+    │ parts       │ Array(Nullable(Float64)) │
+    │ descendants │ Nullable(Float64)        │
+    └─────────────┴──────────────────────────┴
+    ```
+
+    이 테이블에 데이터를 삽입하려면 `INSERT INTO, SELECT` 명령을 사용하십시오.
+    `url` 함수와 함께 사용하면 URL에서 데이터를 직접 스트리밍할 수 있습니다:
+
+    ```sql
+    INSERT INTO hackernews SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz', 'CSVWithNames')
+    ```
+
+    명령 한 번으로 ClickHouse에 2,800만 개의 행을 성공적으로 삽입했습니다!
+  </Step>
+
+  <Step>
+    ### 데이터 탐색하기
+
+    다음 쿼리를 실행하여 Hacker News 스토리와 특정 컬럼의 샘플을 확인합니다:
+
+    ```sql title="Query"
+    SELECT
+        id,
+        title,
+        type,
+        by,
+        time,
+        url,
+        score
+    FROM hackernews
+    WHERE type = 'story'
+    LIMIT 3
+    FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    id:    2596866
+    title:
+    type:  story
+    by:
+    time:  1306685152
+    url:
+    score: 0
+
+    Row 2:
+    ──────
+    id:    2596870
+    title: WordPress capture users last login date and time
+    type:  story
+    by:    wpsnipp
+    time:  1306685252
+    url:   http://wpsnipp.com/index.php/date/capture-users-last-login-date-and-time/
+    score: 1
+
+    Row 3:
+    ──────
+    id:    2596872
+    title: Recent college graduates get some startup wisdom
+    type:  story
+    by:    whenimgone
+    time:  1306685352
+    url:   http://articles.chicagotribune.com/2011-05-27/business/sc-cons-0526-started-20110527_1_business-plan-recession-college-graduates
+    score: 1
+    ```
+
+    스키마 추론은 초기 데이터 탐색에 매우 유용한 도구이지만, 「best effort」 방식이므로 데이터에 최적화된 스키마를 정의하는 것을 장기적으로 대체할 수는 없습니다.
+  </Step>
+
+  <Step>
+    ### 스키마 정의
+
+    가장 명확하면서도 바로 적용할 수 있는 최적화 방법은 각 필드의 타입을 정의하는 것입니다.
+    시간 필드를 `DateTime` 타입으로 선언하는 것과 함께, 기존 데이터셋을 삭제한 뒤 아래 각 필드에도 적절한 타입을 지정합니다.
+    ClickHouse에서는 데이터의 프라이머리 키 ID를 `ORDER BY` 절로 정의합니다.
+
+    적절한 타입을 선택하고 `ORDER BY`
+    절에 포함할 컬럼을 결정하면 쿼리 속도와 압축 효율을 높이는 데 도움이 됩니다.
+
+    아래 쿼리를 실행하여 기존 스키마를 삭제하고 개선된 스키마를 생성하세요:
+
+    ```sql title="Query"
+    DROP TABLE IF EXISTS hackernews;
+
+    CREATE TABLE hackernews
+    (
+        `id` UInt32,
+        `deleted` UInt8,
+        `type` Enum('story' = 1, 'comment' = 2, 'poll' = 3, 'pollopt' = 4, 'job' = 5),
+        `by` LowCardinality(String),
+        `time` DateTime,
+        `text` String,
+        `dead` UInt8,
+        `parent` UInt32,
+        `poll` UInt32,
+        `kids` Array(UInt32),
+        `url` String,
+        `score` Int32,
+        `title` String,
+        `parts` Array(UInt32),
+        `descendants` Int32
+    )
+        ENGINE = MergeTree
+    ORDER BY id
+    ```
+
+    최적화된 스키마(schema)를 사용하면 이제 로컬 파일 시스템의 데이터를 삽입할 수 있습니다.
+    다시 `clickhouse-client`를 사용해, 명시적으로 `INSERT INTO`를 지정하고 `INFILE` 절로 파일의 데이터를 삽입합니다.
+
+    ```sql title="Query"
+    INSERT INTO hackernews FROM INFILE '/data/hacknernews.csv.gz' FORMAT CSVWithNames
+    ```
+  </Step>
+
+  <Step>
+    ### 샘플 쿼리 실행
+
+    아래에 몇 가지 샘플 쿼리를 제공합니다. 직접 쿼리를 작성할 때 참고하시기 바랍니다.
+
+    #### Hacker News에서 &quot;ClickHouse&quot;는 얼마나 자주 언급되는 주제입니까?
+
+    score 필드는 스토리의 인기도를 나타내는 메트릭을 제공하며, `id` 필드와 `||` 연결 연산자를 활용하면 원본 게시물의 링크를 생성할 수 있습니다.
+
+    ```sql title="Query"
+    SELECT
+        time,
+        score,
+        descendants,
+        title,
+        url,
+        'https://news.ycombinator.com/item?id=' || toString(id) AS hn_url
+    FROM hackernews
+    WHERE (type = 'story') AND (title ILIKE '%ClickHouse%')
+    ORDER BY score DESC
+    LIMIT 5 FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    time:        1632154428
+    score:       519
+    descendants: 159
+    title:       ClickHouse, Inc.
+    url:         https://github.com/ClickHouse/ClickHouse/blob/master/website/blog/en/2021/clickhouse-inc.md
+    hn_url:      https://news.ycombinator.com/item?id=28595419
+
+    Row 2:
+    ──────
+    time:        1614699632
+    score:       383
+    descendants: 134
+    title:       ClickHouse as an alternative to Elasticsearch for log storage and analysis
+    url:         https://pixeljets.com/blog/clickhouse-vs-elasticsearch/
+    hn_url:      https://news.ycombinator.com/item?id=26316401
+
+    Row 3:
+    ──────
+    time:        1465985177
+    score:       243
+    descendants: 70
+    title:       ClickHouse – high-performance open-source distributed column-oriented DBMS
+    url:         https://clickhouse.yandex/reference_en.html
+    hn_url:      https://news.ycombinator.com/item?id=11908254
+
+    Row 4:
+    ──────
+    time:        1578331410
+    score:       216
+    descendants: 86
+    title:       ClickHouse cost-efficiency in action: analyzing 500B rows on an Intel NUC
+    url:         https://www.altinity.com/blog/2020/1/1/clickhouse-cost-efficiency-in-action-analyzing-500-billion-rows-on-an-intel-nuc
+    hn_url:      https://news.ycombinator.com/item?id=21970952
+
+    Row 5:
+    ──────
+    time:        1622160768
+    score:       198
+    descendants: 55
+    title:       ClickHouse: An open-source column-oriented database management system
+    url:         https://github.com/ClickHouse/ClickHouse
+    hn_url:      https://news.ycombinator.com/item?id=27310247
+    ```
+
+    ClickHouse가 시간이 지남에 따라 노이즈가 증가하고 있습니까? 여기서 `time` 필드를 `DateTime`으로 정의하는 것의 유용성을 확인할 수 있습니다. 적절한 데이터 타입을 사용하면 `toYYYYMM()` 함수를 활용할 수 있습니다:
+
+    ```sql title="Query"
+    SELECT
+       toYYYYMM(time) AS monthYear,
+       bar(count(), 0, 120, 20)
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY monthYear
+    ORDER BY monthYear ASC
+    ```
+
+    ```response title="Response"
+    ┌─monthYear─┬─bar(count(), 0, 120, 20)─┐
+    │    201606 │ ██▎                      │
+    │    201607 │ ▏                        │
+    │    201610 │ ▎                        │
+    │    201612 │ ▏                        │
+    │    201701 │ ▎                        │
+    │    201702 │ █                        │
+    │    201703 │ ▋                        │
+    │    201704 │ █                        │
+    │    201705 │ ██                       │
+    │    201706 │ ▎                        │
+    │    201707 │ ▎                        │
+    │    201708 │ ▏                        │
+    │    201709 │ ▎                        │
+    │    201710 │ █▌                       │
+    │    201711 │ █▌                       │
+    │    201712 │ ▌                        │
+    │    201801 │ █▌                       │
+    │    201802 │ ▋                        │
+    │    201803 │ ███▏                     │
+    │    201804 │ ██▏                      │
+    │    201805 │ ▋                        │
+    │    201806 │ █▏                       │
+    │    201807 │ █▌                       │
+    │    201808 │ ▋                        │
+    │    201809 │ █▌                       │
+    │    201810 │ ███▌                     │
+    │    201811 │ ████                     │
+    │    201812 │ █▌                       │
+    │    201901 │ ████▋                    │
+    │    201902 │ ███                      │
+    │    201903 │ ▋                        │
+    │    201904 │ █                        │
+    │    201905 │ ███▋                     │
+    │    201906 │ █▏                       │
+    │    201907 │ ██▎                      │
+    │    201908 │ ██▋                      │
+    │    201909 │ █▋                       │
+    │    201910 │ █                        │
+    │    201911 │ ███                      │
+    │    201912 │ █▎                       │
+    │    202001 │ ███████████▋             │
+    │    202002 │ ██████▌                  │
+    │    202003 │ ███████████▋             │
+    │    202004 │ ███████▎                 │
+    │    202005 │ ██████▏                  │
+    │    202006 │ ██████▏                  │
+    │    202007 │ ███████▋                 │
+    │    202008 │ ███▋                     │
+    │    202009 │ ████                     │
+    │    202010 │ ████▌                    │
+    │    202011 │ █████▏                   │
+    │    202012 │ ███▋                     │
+    │    202101 │ ███▏                     │
+    │    202102 │ █████████                │
+    │    202103 │ █████████████▋           │
+    │    202104 │ ███▏                     │
+    │    202105 │ ████████████▋            │
+    │    202106 │ ███                      │
+    │    202107 │ █████▏                   │
+    │    202108 │ ████▎                    │
+    │    202109 │ ██████████████████▎      │
+    │    202110 │ ▏                        │
+    └───────────┴──────────────────────────┘
+    ```
+
+    &quot;ClickHouse&quot;는 시간이 지날수록 인기가 높아지고 있는 것으로 보입니다.
+
+    #### ClickHouse 관련 기사에서 댓글을 가장 많이 작성한 사용자는 누구인가요?
+
+    ```sql title="Query"
+    SELECT
+       by,
+       count() AS comments
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY by
+    ORDER BY comments DESC
+    LIMIT 5
+    ```
+
+    ```response title="Response"
+    ┌─by──────────┬─comments─┐
+    │ hodgesrm    │       78 │
+    │ zX41ZdbW    │       45 │
+    │ manigandham │       39 │
+    │ pachico     │       35 │
+    │ valyala     │       27 │
+    └─────────────┴──────────┘
+    ```
+
+    #### 어떤 댓글이 가장 많은 관심을 받습니까?
+
+    ```sql title="Query"
+    SELECT
+      by,
+      sum(score) AS total_score,
+      sum(length(kids)) AS total_sub_comments
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY by
+    ORDER BY total_score DESC
+    LIMIT 5
+    ```
+
+    ```response title="Response"
+    ┌─by───────┬─total_score─┬─total_sub_comments─┐
+    │ zX41ZdbW │        571  │              50    │
+    │ jetter   │        386  │              30    │
+    │ hodgesrm │        312  │              50    │
+    │ mechmind │        243  │              16    │
+    │ tosh     │        198  │              12    │
+    └──────────┴─────────────┴────────────────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="parquet">
+  ## Parquet
+</div>
+
+ClickHouse의 강점 중 하나는 다양한 [포맷](/ko/reference/formats/index)을 처리할 수 있다는 점입니다.
+CSV는 상당히 이상적인 사용 사례를 보여주지만, 데이터 교환에는 가장 효율적인 방식이 아닙니다.
+
+다음으로, 효율적인 컬럼 지향 포맷인 Parquet 파일에서 데이터를 로드합니다.
+
+Parquet는 타입이 매우 제한적이며, ClickHouse는 이를 그대로 따라야 합니다. 그리고 이 타입 정보는 포맷 자체에 인코딩되어 있습니다.
+Parquet 파일에 대해 타입 추론을 수행하면 CSV 파일의 스키마와는 항상 약간 다른 스키마가 생성됩니다.
+
+<Steps>
+  <Step>
+    ### 데이터를 삽입합니다
+
+    다시 `url` 함수를 사용해 원격 데이터를 읽고, 다음 쿼리를 실행하여 동일한 데이터를 Parquet 포맷으로 읽습니다:
+
+    ```sql
+    DROP TABLE IF EXISTS hackernews;
+
+    CREATE TABLE hackernews
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS allow_nullable_key = 1 EMPTY AS
+    SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+
+    INSERT INTO hackernews SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    ```
+
+    <Info>
+      **Parquet의 NULL 키**
+
+      Parquet 포맷의 특성상, 데이터에 실제로 없더라도
+      키가 `NULL`일 수 있음을 감안해야 합니다.
+    </Info>
+
+    자동 추론된 스키마(schema)를 보려면 다음 명령을 실행하세요:
+
+    ```response title="Response"
+    ┌─name────────┬─type───────────────────┬
+    │ id          │ Nullable(Int64)        │
+    │ deleted     │ Nullable(UInt8)        │
+    │ type        │ Nullable(String)       │
+    │ time        │ Nullable(Int64)        │
+    │ text        │ Nullable(String)       │
+    │ dead        │ Nullable(UInt8)        │
+    │ parent      │ Nullable(Int64)        │
+    │ poll        │ Nullable(Int64)        │
+    │ kids        │ Array(Nullable(Int64)) │
+    │ url         │ Nullable(String)       │
+    │ score       │ Nullable(Int32)        │
+    │ title       │ Nullable(String)       │
+    │ parts       │ Array(Nullable(Int64)) │
+    │ descendants │ Nullable(Int32)        │
+    └─────────────┴────────────────────────┴
+    ```
+
+    앞서 CSV 파일에서와 마찬가지로, 선택할 타입을 더 세밀하게 제어할 수 있도록 스키마를 수동으로 지정하고
+    S3에서 직접 데이터를 삽입할 수 있습니다:
+
+    ```sql
+    CREATE TABLE hackernews
+    (
+        `id` UInt64,
+        `deleted` UInt8,
+        `type` String,
+        `author` String,
+        `timestamp` DateTime,
+        `comment` String,
+        `dead` UInt8,
+        `parent` UInt64,
+        `poll` UInt64,
+        `children` Array(UInt32),
+        `url` String,
+        `score` UInt32,
+        `title` String,
+        `parts` Array(UInt32),
+        `descendants` UInt32
+    )
+    ENGINE = MergeTree
+    ORDER BY (type, author);
+
+    INSERT INTO hackernews
+    SELECT * FROM s3(
+            'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+            'Parquet',
+            'id UInt64,
+             deleted UInt8,
+             type String,
+             by String,
+             time DateTime,
+             text String,
+             dead UInt8,
+             parent UInt64,
+             poll UInt64,
+             kids Array(UInt32),
+             url String,
+             score UInt32,
+             title String,
+             parts Array(UInt32),
+             descendants UInt32');
+    ```
+  </Step>
+
+  <Step>
+    ### 쿼리 속도를 높이기 위한 스키핑 인덱스 추가
+
+    &quot;ClickHouse&quot;를 언급한 댓글이 몇 개인지 확인하려면 다음 쿼리를 실행하세요:
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'ClickHouse');
+    ```
+
+    ```response title="Response" highlight={1}
+    1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
+    ┌─count()─┐
+    │     516 │
+    └─────────┘
+    ```
+
+    다음으로, 이 쿼리 속도를 높이기 위해 &quot;comment&quot; 컬럼에 역색인 [인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)를 생성합니다.
+    소문자로 변환된 comment가 인덱싱되므로 대소문자와 관계없이 용어를 찾을 수 있습니다.
+
+    다음 명령을 실행하여 인덱스를 생성하세요:
+
+    ```sql
+    ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
+    ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
+    ```
+
+    인덱스가 머티리얼라이즈되는 데는 다소 시간이 걸립니다(인덱스가 생성되었는지 확인하려면 시스템 테이블(system table) `system.data_skipping_indices`를 사용하십시오).
+
+    인덱스가 생성되면 쿼리를 다시 실행하십시오:
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'clickhouse');
+    ```
+
+    이제 인덱스를 사용하면 쿼리가 0.248초만 걸리며, 이전에 인덱스가 없을 때의 0.843초보다 훨씬 짧아진 것을 확인할 수 있습니다:
+
+    ```response title="Response" highlight={1}
+    1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
+    ┌─count()─┐
+    │    1145 │
+    └─────────┘
+    ```
+
+    [`EXPLAIN`](/ko/reference/statements/explain) 절을 사용하면 이 인덱스를 추가했을 때 쿼리 성능이 약 3.4배 향상된 이유를 이해할 수 있습니다.
+
+    ```response text="Query"
+    EXPLAIN indexes = 1
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'clickhouse')
+    ```
+
+    ```response title="Response"
+    ┌─explain─────────────────────────────────────────┐
+    │ Expression ((Projection + Before ORDER BY))     │
+    │   Aggregating                                   │
+    │     Expression (Before GROUP BY)                │
+    │       Filter (WHERE)                            │
+    │         ReadFromMergeTree (default.hackernews)  │
+    │         Indexes:                                │
+    │           PrimaryKey                            │
+    │             Condition: true                     │
+    │             Parts: 4/4                          │
+    │             Granules: 3528/3528                 │
+    │           Skip                                  │
+    │             Name: comment_idx                   │
+    │             Description: inverted GRANULARITY 1 │
+    │             Parts: 4/4                          │
+    │             Granules: 554/3528                  │
+    └─────────────────────────────────────────────────┘
+    ```
+
+    인덱스가 상당수의 그래뉼을 스키핑하여 쿼리 속도를 높인 것을 확인할 수 있습니다.
+
+    이제 하나의 검색어뿐 아니라 여러 검색어를 모두 효율적으로 검색할 수도 있습니다:
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+    ```
+
+    ```response title="Response"
+    ┌─count()─┐
+    │    2177 │
+    └─────────┘
+    ```
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+    ```
+
+    ```response title="Response"
+    ┌─count()─┐
+    │      22 │
+    └─────────┘
+    ```
+  </Step>
+</Steps>

@@ -1,0 +1,262 @@
+---
+description: 'ClickHouse の Map データ型に関するドキュメント'
+sidebarTitle: 'Map(K, V)'
+slug: /sql-reference/data-types/map
+title: 'Map(K, V)'
+doc_type: 'reference'
+---
+
+データ型 `Map(K, V)` は、キー・バリューのペアを格納します。
+
+他のデータベースとは異なり、ClickHouse の map ではキーは一意ではありません。つまり、1 つの map に同じキーを持つ 2 つの要素を含めることができます。
+(これは、map が内部的に `Array(Tuple(K, V))` として実装されているためです。)
+
+構文 `m[k]` を使用すると、map `m` のキー `k` に対応する値を取得できます。
+また、`m[k]` は map を走査するため、この操作の実行時間は map のサイズに対して線形です。
+
+**パラメータ**
+
+* `K` — Map のキーの型。[Nullable](/ja/reference/data-types/nullable)、および [Nullable](/ja/reference/data-types/nullable) 型をネストした [LowCardinality](/ja/reference/data-types/lowcardinality) を除く任意の型。
+* `V` — Map の値の型。任意の型。
+
+**例**
+
+map 型のカラムを持つテーブルを作成します。
+
+```sql title="Query"
+CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
+INSERT INTO tab VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
+```
+
+`key2` の値を選択するには:
+
+```sql title="Query"
+SELECT m['key2'] FROM tab;
+```
+
+```text title="Response"
+┌─arrayElement(m, 'key2')─┐
+│                      10 │
+│                      20 │
+│                      30 │
+└─────────────────────────┘
+```
+
+要求したキー `k` が map に含まれていない場合、`m[k]` は値型のデフォルト値を返します。たとえば、整数型では `0`、文字列型では `''` です。
+キーが map に存在するかどうかを確認するには、関数 [mapContains](/ja/reference/functions/regular-functions/tuple-map-functions#mapContainsKey) を使用できます。
+
+```sql title="Query"
+CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
+INSERT INTO tab VALUES ({'key1':100}), ({});
+SELECT m['key1'] FROM tab;
+```
+
+```text title="Response"
+┌─arrayElement(m, 'key1')─┐
+│                     100 │
+│                       0 │
+└─────────────────────────┘
+```
+
+<div id="converting-tuple-to-map">
+  ## Tuple を Map に変換する
+</div>
+
+`Tuple()` 型の値は、関数 [CAST](/ja/reference/functions/regular-functions/type-conversion-functions#CAST) を使用して `Map()` 型の値にキャストできます。
+
+**例**
+
+```sql title="Query"
+SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map;
+```
+
+```text title="Response"
+┌─map───────────────────────────┐
+│ {1:'Ready',2:'Steady',3:'Go'} │
+└───────────────────────────────┘
+```
+
+<div id="reading-subcolumns-of-map">
+  ## Map のサブカラムを読み取る
+</div>
+
+Map 全体を読み取らずに済むよう、場合によってはサブカラム `keys` と `values` を使用できます。
+
+**例**
+
+```sql title="Query"
+CREATE TABLE tab (m Map(String, UInt64)) ENGINE = Memory;
+INSERT INTO tab VALUES (map('key1', 1, 'key2', 2, 'key3', 3));
+
+SELECT m.keys FROM tab; --   mapKeys(m) と同じ
+SELECT m.values FROM tab; -- mapValues(m) と同じ
+```
+
+```text title="Response"
+┌─m.keys─────────────────┐
+│ ['key1','key2','key3'] │
+└────────────────────────┘
+
+┌─m.values─┐
+│ [1,2,3]  │
+└──────────┘
+```
+
+<div id="bucketed-map-serialization">
+  ## MergeTree におけるバケット化された Map シリアライゼーション
+</div>
+
+デフォルトでは、MergeTree の `Map` カラムは、単一の `Array(Tuple(K, V))` ストリームとして保存されます。
+`m['key']` で 1 つのキーを読み取るには、必要なのがそのキーだけであっても、カラム全体、つまりすべての行にあるすべてのキー・バリューのペアを走査する必要があります。
+キーの種類が多い Map では、これがボトルネックになります。
+
+バケット化シリアライゼーション (`with_buckets`) では、キーをハッシュ化して、キー・バリューのペアを複数の独立したサブストリーム (バケット) に分割します。
+クエリが `m['key']` にアクセスすると、そのキーを含むバケットだけがディスクから読み取られ、ほかのバケットはすべてスキップされます。
+
+<div id="enabling-bucketed-serialization">
+  ### バケット化シリアライゼーションの有効化
+</div>
+
+```sql
+CREATE TABLE tab (id UInt64, m Map(String, UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    map_serialization_version = 'with_buckets',
+    max_buckets_in_map = 32,
+    map_buckets_strategy = 'sqrt';
+```
+
+`INSERT` 時に作成されるゼロレベルのパーツでは `basic` シリアライゼーションのままにし、マージ後のパーツでのみ `with_buckets` を使用することで、挿入速度の低下を防げます:
+
+```sql
+CREATE TABLE tab (id UInt64, m Map(String, UInt64))
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    map_serialization_version = 'with_buckets',
+    map_serialization_version_for_zero_level_parts = 'basic',
+    max_buckets_in_map = 32,
+    map_buckets_strategy = 'sqrt';
+```
+
+<div id="how-it-works">
+  ### 仕組み
+</div>
+
+データパートが `with_buckets` シリアライゼーションで書き込まれる場合:
+
+1. 1行あたりの平均キー数が、ブロックの統計情報から計算されます。
+2. バケット 数は、設定された戦略によって決まります ([Settings](#bucketed-map-settings) を参照) 。
+3. 各キー・バリューのペアは、キーを ハッシュ して バケット に割り当てられます: `bucket = hash(key) % num_buckets`。
+4. 各 バケット は、それぞれ独自のキー、値、オフセットを持つ独立したサブストリームとして保存されます。
+5. `buckets_info` メタデータストリームに、バケット 数と統計情報が記録されます。
+
+クエリが特定のキー (`m['key']`) を読み取る場合、オプティマイザは expression をキーのサブカラム (`m.key_<serialized_key>`) に書き換えます。
+シリアライゼーション層は、要求されたキーがどの バケット に属するかを計算し、その バケット だけをディスクから読み取ります。
+
+Map 全体を読み取る場合 (たとえば `SELECT m`) 、すべての バケット が読み取られ、元の Map に再構成されます。これは、複数のサブストリームの読み取りと merge のオーバーヘッドがあるため、`basic` シリアライゼーションより低速です。
+
+<Note>
+  `with_buckets` シリアライゼーションを使用すると、Map 値内のキーの順序が元の insert 順序と異なる場合があります。キーは ハッシュ によって バケット に分散され、insert 順ではなく バケット 順で再構成されます。`basic` シリアライゼーションでは、挿入された Map のキー順が保持されます。
+</Note>
+
+バケット 数はパーツごとに異なる場合があります。バケット 数が異なるパーツが merge されると、新しいパーツの バケット 数は、merge 後の統計情報に基づいて再計算されます。`basic` と `with_buckets` シリアライゼーションのパーツは同じ table 内に共存でき、透過的に merge されます。
+
+<div id="bucketed-map-settings">
+  ### 設定
+</div>
+
+| 設定                                               | デフォルト   | 説明                                                                                                                                                                                                                         |
+| ------------------------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `map_serialization_version`                      | `basic` | `Map` カラムのシリアライゼーション形式。`basic` は単一の配列ストリームとして保存します。`with_buckets` は、単一キーの読み取りを高速化するためにキーをバケットに分割します。                                                                                                                       |
+| `map_serialization_version_for_zero_level_parts` | `basic` | ゼロレベルのパーツ (`INSERT` によって作成されるもの) のシリアライゼーション形式。書き込みオーバーヘッドを避けるため、INSERT では `basic` のままにしつつ、マージ後のパーツでは `with_buckets` を使用できます。                                                                                              |
+| `max_buckets_in_map`                             | `32`    | バケット数の上限。実際の数は `map_buckets_strategy` に依存します。許容される最大値は 256 です。                                                                                                                                                             |
+| `map_buckets_strategy`                           | `sqrt`  | 平均 map サイズからバケット数を計算するための戦略: `constant` — 常に `max_buckets_in_map` を使用します。`sqrt` — `round(coefficient * sqrt(avg_size))` を使用します。`linear` — `round(coefficient * avg_size)` を使用します。結果は `[1, max_buckets_in_map]` の範囲に制限されます。 |
+| `map_buckets_coefficient`                        | `1.0`   | `sqrt` および `linear` 戦略の係数です。戦略が `constant` の場合は無視されます。                                                                                                                                                                     |
+| `map_buckets_min_avg_size`                       | `32`    | バケット化を有効にするための、1 行あたりの平均キー数の最小値です。平均がこのしきい値を下回る場合、ほかの設定に関係なく単一のバケットが使用されます。しきい値を無効にするには `0` に設定します。                                                                                                                        |
+
+<div id="performance-trade-offs">
+  ### パフォーマンス面のトレードオフ
+</div>
+
+次の表は、さまざまな Map サイズ (1 行あたり 10 ～ 10,000 個のキー) において、`basic` シリアライゼーションと比較した `with_buckets` のパフォーマンスへの影響をまとめたものです。バケット数は、32 を上限とする `sqrt` 戦略で決定しています。正確な数値は、キー/値の型、データ分布、ハードウェアに依存します。
+
+| 操作                                             | 10 キー       | 100 キー      | 1,000 キー    | 10,000 キー   | 備考                                                                                                                     |
+| ---------------------------------------------- | ----------- | ----------- | ----------- | ----------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **単一キーのルックアップ** (`m['key']`)                   | 1.6～3.2 倍高速 | 4.5～7.7 倍高速 | 16～39 倍高速   | 21～49 倍高速   | カラム全体ではなく、1 つのバケットだけを読み取ります。                                                                                           |
+| **5 キーのルックアップ**                                | 約 1 倍       | 1.5～3.1 倍高速 | 2.9～8.3 倍高速 | 4.5～6.7 倍高速 | 各キーごとに対応するバケットを読み取ります。バケットが一部重複する場合があります。                                                                              |
+| **PREWHERE** (`SELECT m WHERE m['key'] = ...`) | 1.5～3.0 倍高速 | 2.9～7.3 倍高速 | 5.3～31 倍高速  | 20～45 倍高速   | PREWHERE フィルタでは 1 つのバケットだけを読み取り、Map 全体の読み取りは一致した行に対してのみ行われます。高速化の度合いは選択性に依存し、一致するグラニュールが少ないほど Map 全体に対する I/O は少なくなります。 |
+| **Map 全体のスキャン** (`SELECT m`)                   | 約 2 倍低速     | 約 2 倍低速     | 約 2 倍低速     | 約 2 倍低速     | すべてのバケットを読み取り、再構成する必要があります。                                                                                            |
+| **INSERT**                                     | 1.5～2.5 倍低速 | 1.5～2.5 倍低速 | 1.5～2.5 倍低速 | 1.5～2.5 倍低速 | キーの ハッシュ 計算と複数のサブストリームへの書き込みによるオーバーヘッドがあります。                                                                           |
+
+<div id="recommendations">
+  ### 推奨事項
+</div>
+
+* **小規模な map (平均 32 キー未満) :** `basic` シリアライゼーションのままにしてください。小規模な map では、バケット化のオーバーヘッドに見合う効果はありません。デフォルトの `map_buckets_min_avg_size = 32` により、これは自動的に適用されます。
+* **中規模な map (32～100 キー) :** クエリで個々のキーに頻繁にアクセスする場合は、`sqrt` 戦略の `with_buckets` を使用してください。単一キーのルックアップは 4～8 倍高速になります。
+* **大規模な map (100 キー以上) :** `with_buckets` を使用してください。単一キーのルックアップは 16～49 倍高速になります。insert 速度をベースラインに近い水準に保つには、`map_serialization_version_for_zero_level_parts = 'basic'` を検討してください。
+* **map 全体のスキャンがワークロードの大半を占める場合:** `basic` のままにしてください。バケット化シリアライゼーションでは、全スキャン時に約 2 倍のオーバーヘッドが発生します。
+* **混合ワークロード (キーのルックアップと全スキャンが混在する場合) :** ゼロレベルのパーツを `basic` に設定した `with_buckets` を使用してください。`PREWHERE` 最適化では、まず filter に関連するバケットだけを読み取り、その後、一致した行についてのみ map 全体を読み込むため、全体として大幅な高速化が得られます。
+
+<div id="map-alternatives">
+  ### 代替アプローチ
+</div>
+
+バケット化された `Map` のシリアライゼーションがユースケースに合わない場合は、キー単位のアクセス性能を向上させるための代替手法が 2 つあります。
+
+<div id="using-the-json-data-type">
+  #### JSONデータ型の使用
+</div>
+
+[JSON](/ja/reference/data-types/newjson) データ型は、頻出する各パスを個別の動的サブカラムとして格納します。`max_dynamic_paths` の上限を超えたパスは、[共有データ構造](/ja/reference/data-types/newjson#shared-data-structure) に格納されます。この共有データ構造では、単一パスの読み取りを最適化するために `advanced` シリアライゼーションを使用できます。`advanced` シリアライゼーションの詳しい概要については、[ブログ記事](https://clickhouse.com/blog/json-data-type-gets-even-better)を参照してください。
+
+| 項目            | バケット付き `Map`                                                        | `JSON`                                                                                   |
+| ------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 単一キーの読み取り     | 1 つのバケットを読み込みます (他のキーを含む場合があります) 。バケット内のすべてのキー・バリューのペアがデシリアライズされます。 | 頻出するパスは動的サブカラムから直接読み込まれます。頻度の低いパスは共有データに格納され、`advanced` シリアライゼーションでは対象のパスのデータだけが読み込まれます。 |
+| 値の型           | すべての値は同じ型 `V` を共有します                                                | 各パスはそれぞれ独自の型を持てます。型ヒントのないパスには `Dynamic` が使用されます。                                         |
+| スキップ索引のサポート   | `mapKeys`/`mapValues` に対して作成された一部の索引型で利用できます                        | スキップ索引は特定のパスのサブカラムに対してのみ作成でき、すべてのパス/値に一度に対して作成することはできません。                                |
+| フルカラム読み取り     | バケットの再構成が必要なため、`basic` より約 2 倍遅くなります                                | `Dynamic` 型のエンコードとパスの再構成によるオーバーヘッドがあります。                                                 |
+| ストレージのオーバーヘッド | 追加のメタデータは最小限です                                                      | `Dynamic` 型のエンコード、パス名の保存、`advanced` シリアライゼーションで追加されるメタデータにより、オーバーヘッドは大きくなります。            |
+| スキーマの柔軟性      | テーブル作成時にキー型と値型が固定されます                                               | 完全に動的です — キーや値の型は行ごとに異なる場合があります。既知のパスについては、直接サブカラムアクセスできるように型付きパスヒントを宣言できます。             |
+
+異なるキーごとに異なる値型が必要な場合、キーの集合が行ごとに大きく異なる場合、または頻繁にアクセスするキーが事前に分かっており、直接サブカラムアクセスできるよう型付きパスとして宣言できる場合は、`JSON` を使用してください。
+
+<div id="manual-sharding-into-multiple-map-columns">
+  #### 複数の Map カラムへの手動分片
+</div>
+
+アプリケーションレベルで、キーのハッシュに基づいて 1 つの `Map` を複数のカラムに手動で分割できます。
+
+```sql
+CREATE TABLE tab (
+    id UInt64,
+    m0 Map(String, UInt64),
+    m1 Map(String, UInt64),
+    m2 Map(String, UInt64),
+    m3 Map(String, UInt64)
+) ENGINE = MergeTree ORDER BY id;
+```
+
+挿入時には、各キー・バリューのペアをカラム `m{hash(key) % 4}` に振り分けます。クエリ時には、対象のカラム `m{hash('target_key') % 4}['target_key']` から読み取ります。
+
+| Aspect         | `Map` with buckets          | Manual sharding                               |
+| -------------- | --------------------------- | --------------------------------------------- |
+| 使いやすさ          | 透過的 — ストレージエンジンが処理          | insert と select のためのアプリケーションレベルのルーティングロジックが必要 |
+| Vertical merge | 非対応 — すべてのバケットは 1 つのカラムに属する | 対応 — 各 `Map` カラムは独立したカラムであり、垂直マージが可能          |
+| スキーマ変更         | バケット数はパートごとに自動的に適応          | 分片数を変更するには、データの書き換えまたは新しいカラムの追加が必要            |
+| クエリ構文          | `m['key']` をそのまま使用できる       | 正しいカラムを計算する必要がある: `m0['key']`、`m1['key']` など  |
+| バケット粒度         | パート単位で、データ統計に応じて適応          | テーブル作成時に固定                                    |
+
+手動シャーディングは、多数のカラムを持つテーブルのマージ時にメモリ使用量を削減するうえで垂直マージが重要な場合や、分片数を固定して明示的に制御する必要がある場合に有効です。ほとんどのユースケースでは、自動バケット化シリアライゼーションのほうがシンプルで十分です。
+
+**関連項目**
+
+* [map()](/ja/reference/functions/regular-functions/tuple-map-functions#map) 関数
+* [CAST()](/ja/reference/functions/regular-functions/type-conversion-functions#CAST) 関数
+* [Map データ型用の -Map combinator](/ja/reference/functions/aggregate-functions/combinators#-map)
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [ClickHouseでオブザーバビリティ ソリューションを構築する - パート2 - トレース](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

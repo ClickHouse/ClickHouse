@@ -1,0 +1,63 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>serialization</name>
+            <values>
+                <value>sparse</value>
+                <value>full</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>ratio</name>
+            <values>
+                <value>10</value>
+                <value>100</value>
+                <value>1000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE test_full_{ratio} (id UInt64, u8 UInt8, u64 UInt64, str String)
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <create_query>
+        CREATE TABLE test_sparse_{ratio} (id UInt64, u8 UInt8, u64 UInt64, str String)
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS ratio_of_defaults_for_sparse_serialization = 0.8
+    </create_query>
+
+    <create_query>SYSTEM STOP MERGES test_{serialization}_{ratio}</create_query>
+
+    <fill_query>
+        INSERT INTO test_{serialization}_{ratio} SELECT
+            number,
+            number % {ratio} = 0 ? rand(1) : 0,
+            number % {ratio} = 0 ? rand(2) : 0,
+            number % {ratio} = 0 ? randomPrintableASCII(64, 3) : ''
+        FROM numbers(100000000)
+    </fill_query>
+
+    <query>SELECT u8 FROM test_{serialization}_{ratio} FORMAT Null</query>
+    <query>SELECT u64 FROM test_{serialization}_{ratio} FORMAT Null</query>
+    <query>SELECT str FROM test_{serialization}_{ratio} FORMAT Null</query>
+
+    <query>SELECT erf(u64) FROM test_{serialization}_{ratio} FORMAT Null</query>
+    <query>SELECT lower(str) FROM test_{serialization}_{ratio} FORMAT Null</query>
+
+    <query>SELECT id FROM test_{serialization}_{ratio} ORDER BY u64 DESC LIMIT 100 FORMAT Null</query>
+    <query>SELECT id FROM test_{serialization}_{ratio} ORDER BY str DESC LIMIT 100 FORMAT Null</query>
+    <query>SELECT id FROM test_{serialization}_{ratio} ORDER BY u8, u64 DESC LIMIT 100 FORMAT Null</query>
+    <query>SELECT * FROM test_{serialization}_{ratio} ORDER BY u8, u64 DESC LIMIT 100 FORMAT Null</query>
+
+    <query>SELECT sum(u64) FROM test_{serialization}_{ratio} GROUP BY id % 11 FORMAT Null</query>
+    <query>SELECT uniq(str) FROM test_{serialization}_{ratio} GROUP BY id % 11 FORMAT Null</query>
+    <query>SELECT sum(u64) FROM test_{serialization}_{ratio} FORMAT Null</query>
+    <query>SELECT uniq(str) FROM test_{serialization}_{ratio} FORMAT Null</query>
+
+    <query>SELECT count() FROM test_{serialization}_{ratio} WHERE u64 > 0</query>
+    <query>SELECT count() FROM test_{serialization}_{ratio} WHERE notEmpty(str)</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_{serialization}_{ratio}</drop_query>
+</test>

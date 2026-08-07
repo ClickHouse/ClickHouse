@@ -1,0 +1,37 @@
+---
+description: '用于测试，是生成大量行最快的方法。
+  类似于 `system.zeros` 和 `system.zeros_mt` 系统表。'
+sidebarTitle: 'zeros'
+slug: /sql-reference/table-functions/zeros
+title: 'zeros'
+doc_type: 'reference'
+---
+
+* `zeros(N)` – 返回一个只包含单个 &#39;zero&#39; 列 (UInt8) 的表，其中整数 0 出现 `N` 次
+* `zeros_mt(N)` – 与 `zeros` 相同，但使用多个线程。
+
+此函数用于测试，是生成大量行最快的方法。类似于 `system.zeros` 和 `system.zeros_mt` 系统表。
+
+以下查询是等效的：
+
+```sql
+SELECT * FROM zeros(10);
+SELECT * FROM system.zeros LIMIT 10;
+SELECT * FROM zeros_mt(10);
+SELECT * FROM system.zeros_mt LIMIT 10;
+```
+
+```response
+┌─zero─┐
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+└──────┘
+```

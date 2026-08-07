@@ -1,0 +1,57 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/ytsaurus
+title: 'مصدر القاموس YTsaurus'
+sidebarTitle: 'YTsaurus'
+description: 'قم بتهيئة YTsaurus كمصدر قاموس في ClickHouse.'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Info>
+  هذه ميزة تجريبية قد تتغير في الإصدارات المستقبلية بطرق غير متوافقة مع الإصدارات السابقة.
+  فعِّل استخدام مصدر القاموس YTsaurus
+  باستخدام الإعداد [`allow_experimental_ytsaurus_dictionary_source`](/ar/reference/settings/session-settings#allow_experimental_ytsaurus_dictionary_source).
+</Info>
+
+مثال على الإعدادات:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(YTSAURUS(
+        http_proxy_urls 'http://localhost:8000'
+        cypress_path '//tmp/test'
+        oauth_token 'password'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <source>
+        <ytsaurus>
+            <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+            <cypress_path>//tmp/test</cypress_path>
+            <oauth_token>password</oauth_token>
+            <check_table_schema>1</check_table_schema>
+        </ytsaurus>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+حقول الإعدادات:
+
+| الإعداد           | الوصف                                   |
+| ----------------- | --------------------------------------- |
+| `http_proxy_urls` | عنوان URL لوكيل HTTP الخاص بـ YTsaurus. |
+| `cypress_path`    | مسار Cypress إلى مصدر الجدول.           |
+| `oauth_token`     | رمز OAuth.                              |

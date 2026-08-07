@@ -1,0 +1,202 @@
+---
+description: 'توثيق SETTINGS PROFILE'
+sidebarTitle: 'SETTINGS PROFILE'
+slug: /sql-reference/statements/alter/settings-profile
+title: 'ALTER SETTINGS PROFILE'
+doc_type: 'reference'
+---
+
+يُجري تغييرات على ملفات تعريف الإعدادات.
+
+الصيغة:
+
+```sql
+ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
+    [ON CLUSTER cluster_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
+    [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [DROP SETTINGS variable [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [DROP ALL SETTINGS]
+    [DROP ALL PROFILES]
+    [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
+```
+
+يتيح البند `ON CLUSTER` تعديل ملفات تعريف الإعدادات على مستوى العنقود، راجع [DDL الموزع](/ar/reference/statements/distributed-ddl).
+
+<div id="replacing-vs-modifying">
+  ## استبدال الإعدادات مقابل تعديلها
+</div>
+
+يدعم `ALTER SETTINGS PROFILE` طريقتين مختلفتين لتغيير الإعدادات وملفات التعريف الأصلية (الموروثة) الخاصة بملف تعريف معيّن. ويختلف سلوك كلٍّ منهما كثيرًا، لذا من المهم اختيار الطريقة المناسبة.
+
+<div id="replacing-form">
+  ### صيغة الاستبدال: `SETTINGS` / `INHERIT` المجرّدتان
+</div>
+
+إن عبارة `SETTINGS` المجرّدة (من دون `ADD` أو `MODIFY` أو `DROP`) **تستبدل قائمة الإعدادات بالكامل وجميع ملفات التعريف الأصلية** لملف التعريف بما تدرجه أنت حرفيًا. وأي عنصر كان موجودًا مسبقًا ولم يُدرج في القائمة يُحذَف بصمت — من دون أي تحذير.
+
+```sql
+CREATE SETTINGS PROFILE OR REPLACE p
+    SETTINGS max_execution_time = 10, enable_lazy_columns_replication = 1;
+
+ALTER SETTINGS PROFILE p SETTINGS max_memory_usage = 16106127360;
+
+SHOW CREATE SETTINGS PROFILE p;
+-- → CREATE SETTINGS PROFILE p SETTINGS max_memory_usage = 16106127360
+-- max_execution_time and enable_lazy_columns_replication are gone.
+```
+
+<Warning>
+  لأن صيغة `SETTINGS` المجرّدة تستبدل كل شيء بالكامل، فإن استخدامها من أجل &quot;تجاوز إعداد واحد&quot; فوق ملف تعريف أساسي مُعبّأ سيؤدي إلى حذف جميع الإعدادات الأخرى (وجميع ملفات الإعدادات الأصل) في ذلك الملف. إذا كنت تريد فقط تغيير إعداد واحد مع الإبقاء على بقية الإعدادات، فاستخدم الصيغة التزايدية `MODIFY`/`ADD`/`DROP` الموضحة أدناه.
+</Warning>
+
+هذا هو السلوك نفسه لـ `SETTINGS` في [`CREATE SETTINGS PROFILE`](/ar/reference/statements/create/settings-profile): إذ يحدّد هذا البند قائمة الإعدادات الكاملة.
+
+<div id="incremental-form">
+  ### الصيغة التزايدية: `ADD` / `MODIFY` / `DROP`
+</div>
+
+تُغيّر الكلمات المفتاحية `ADD` و`MODIFY` و`DROP` المدخلات الفردية مع ترك كل ما عدا ذلك في ملف التعريف كما هو:
+
+* `ADD SETTINGS variable = value [constraints]` — يضيف إعدادًا غير موجود بعد.
+* `MODIFY SETTINGS variable = value [constraints]` — يستبدل مدخلة إعداد واحدة. وتُستبدل المدخلة بالكامل (القيمة والقيود)، لذا أعِد تحديد `MIN`/`MAX`/`READONLY`/إلخ إذا كنت تريد الاحتفاظ بها.
+* `DROP SETTINGS variable [,...]` — يزيل الإعدادات المُدرجة.
+* `ADD PROFILES 'profile_name' [,...]` / `DROP PROFILES 'profile_name' [,...]` — يضيف أو يزيل ملفات التعريف الأصلية (الموروثة).
+* `DROP ALL SETTINGS` / `DROP ALL PROFILES` — يزيل جميع الإعدادات أو جميع ملفات التعريف الأصلية.
+
+يمكن دمج عدة بنود من هذه البنود في تعليمة واحدة، على سبيل المثال `DROP SETTINGS a ADD SETTINGS b = 1`.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+تجاوز إعدادًا واحدًا مع الاحتفاظ ببقية إعدادات ملف تعريف مُعدّ مسبقًا:
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 16106127360;
+```
+
+أضِف إعدادًا مقيّدًا جديدًا واحذف إعدادًا آخر:
+
+```sql
+ALTER SETTINGS PROFILE my_profile
+    DROP SETTINGS readonly
+    ADD SETTINGS max_threads = 8 MIN 4 MAX 16 WRITABLE;
+```
+
+أدِر ملفات التعريف الرئيسية بشكل تزايدي:
+
+```sql
+ALTER SETTINGS PROFILE my_profile ADD PROFILES p1;
+ALTER SETTINGS PROFILE my_profile DROP PROFILES p1;
+```
+
+تحقّق دائمًا من النتيجة باستخدام [`SHOW CREATE SETTINGS PROFILE`](/ar/reference/statements/show):
+
+```sql
+SHOW CREATE SETTINGS PROFILE my_profile;
+```
+
+<div id="incremental-vs-full-replacement">
+  ## التزايدي مقابل الاستبدال الكامل
+</div>
+
+<Warning>
+  يؤدي استخدام عبارة `SETTINGS` وحدها إلى **إزالة جميع الإعدادات الحالية وجميع ملفات التعريف الموروثة (الأصل)** من ملف التعريف قبل تطبيق الإعدادات الجديدة.
+</Warning>
+
+لتغيير إعداد واحد مع الإبقاء على بقية الإعدادات، استخدم `ADD SETTINGS` أو `MODIFY SETTINGS` (راجع الأمثلة أدناه).
+
+<div id="add-vs-modify">
+  ## ADD مقابل MODIFY
+</div>
+
+يحافظ كلٌّ من `ADD SETTINGS` و`MODIFY SETTINGS` على الإعدادات الأخرى في ملف التعريف، لكنهما يتعاملان بشكل مختلف مع entry موجودة للإعداد *نفسه*:
+
+* `ADD SETTINGS variable = value ...` يحذف أولًا أي entry موجودة لـ `variable` ثم يُدرج entry جديدة. لذلك فهو **يستبدل القيمة مع جميع القيود** الخاصة بذلك الإعداد. وأي `MIN` أو `MAX` أو قابلية للكتابة (`READONLY`/`WRITABLE`/`CONST`/`CHANGEABLE_IN_READONLY`) كانت معرّفة مسبقًا لـ `variable` ولا تعيد ذكرها، تُحذَف.
+* `MODIFY SETTINGS variable = value ...` يقوم **بـ merge حقلًا بحقل**: إذ يطبّق override فقط على الحقول التي تحددها فعليًا (القيمة، أو `MIN`، أو `MAX`، أو قابلية الكتابة) ويُبقي الحقول الأخرى لذلك الإعداد كما هي.
+
+<Tip>
+  باختصار، استخدم `MODIFY SETTINGS` عندما تريد فقط تعديل جانب واحد من الإعداد (مثلًا القيمة فقط مع الإبقاء على `MAX` الحالية)؛ واستخدم `ADD SETTINGS` عندما تريد إعادة تعريف الإعداد من الصفر.
+</Tip>
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+أنشئ ملف تعريف لاستخدامه في الأمثلة التالية:
+
+```sql
+CREATE SETTINGS PROFILE OR REPLACE p SETTINGS max_execution_time = 60;
+```
+
+<div id="example-modify-settings">
+  ### MODIFY SETTINGS
+</div>
+
+أضِف إعدادًا واحدًا أو عدِّله مع الإبقاء على بقية الإعدادات:
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 20000000000;
+SHOW CREATE SETTINGS PROFILE p;
+-- CREATE SETTINGS PROFILE p SETTINGS
+--     max_execution_time = 60,
+--     max_memory_usage = 20000000000
+```
+
+لأن `MODIFY` يدمج حقلًا بعد حقل، فإن تغيير قيمة إعداد فقط يُبقي القيود الحالية كما هي:
+
+```sql
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 20000000000 MAX 30000000000;
+ALTER SETTINGS PROFILE p MODIFY SETTINGS max_memory_usage = 25000000000;
+SHOW CREATE SETTINGS PROFILE p;
+-- ... max_memory_usage = 25000000000 MAX 30000000000  -- the MAX constraint is preserved
+```
+
+<div id="example-add-settings">
+  ### ADD SETTINGS
+</div>
+
+أضِف إعدادًا (مع الاحتفاظ بالإعدادات الأخرى أيضًا)، وأعِد تعريفه بالكامل إذا كان موجودًا مسبقًا:
+
+```sql
+ALTER SETTINGS PROFILE p ADD SETTINGS max_threads = 8 MAX 16 READONLY;
+```
+
+على عكس `MODIFY`، فإن إعادة تنفيذ `ADD` مع قيمة فقط تؤدي إلى حذف القيود المحددة سابقًا لهذا الإعداد:
+
+```sql
+ALTER SETTINGS PROFILE p ADD SETTINGS max_threads = 4;
+SHOW CREATE SETTINGS PROFILE p;
+-- ... max_threads = 4   -- the MAX and READONLY constraints are gone
+```
+
+<div id="example-drop-settings">
+  ### DROP SETTINGS
+</div>
+
+أزِل إعدادًا واحدًا أو أكثر من الإعدادات المُحددة بالاسم:
+
+```sql
+ALTER SETTINGS PROFILE p DROP SETTINGS max_threads;
+```
+
+احذف جميع الإعدادات دفعةً واحدة:
+
+```sql
+ALTER SETTINGS PROFILE p DROP ALL SETTINGS;
+```
+
+<div id="example-profiles">
+  ### التعامل مع ملفات التعريف الموروثة
+</div>
+
+أضِف ملفات التعريف الأصلية (الموروثة) أو أزِلها دون التأثير على إعدادات ملف التعريف نفسه:
+
+```sql
+ALTER SETTINGS PROFILE p ADD PROFILES base_profile;
+ALTER SETTINGS PROFILE p DROP PROFILES base_profile;
+ALTER SETTINGS PROFILE p DROP ALL PROFILES;
+```

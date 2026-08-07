@@ -1,0 +1,142 @@
+---
+title: S3 인증 및 버킷
+---
+
+<Accordion title="S3 버킷 및 IAM 사용자 생성">
+  이 문서에서는 AWS IAM 사용자를 구성하고, S3 버킷을 생성하며, ClickHouse가 해당 버킷을 S3 디스크로 사용하도록 설정하는 기본적인 방법을 설명합니다.
+  실제 사용할 권한(permissions)은 보안 팀과 협의하여 결정하시고, 이 문서의 내용은 출발점으로 참고하시기 바랍니다.
+
+  ### AWS IAM 사용자 생성
+
+  다음 단계에서는 서비스 계정 사용자(로그인 사용자가 아닌)를 생성합니다.
+
+  1. AWS IAM 관리 콘솔에 로그인합니다.
+
+  2. `Users` 메뉴에서 `Create user`를 선택하세요
+
+  <Image size="md" img="/images/_snippets/s3/s3-1.webp" alt="AWS IAM 관리 콘솔 - 새 사용자 추가" border force />
+
+  3. 사용자 이름을 입력하고 자격 증명 유형을 `Access key - Programmatic access`로 설정한 다음 `다음: Permissions`를 선택하세요
+
+  <Image size="md" img="/images/_snippets/s3/s3-2.webp" alt="IAM 사용자의 이름 및 액세스 유형 설정" border force />
+
+  4. 사용자를 어떤 그룹에도 추가하지 말고 `다음: 태그`를 선택하세요
+
+  <Image size="md" img="/images/_snippets/s3/s3-3.webp" alt="IAM 사용자의 그룹 할당을 생략합니다" border force />
+
+  5. 태그를 추가할 필요가 없다면 `Next: Review`를 선택하세요
+
+  <Image size="md" img="/images/_snippets/s3/s3-4.webp" alt="IAM 사용자의 태그 할당을 건너뜁니다" border force />
+
+  6. `Create User`를 선택하세요
+
+  <Note>
+    사용자에게 권한이 없다는 경고 메시지는 무시해도 됩니다. 다음 섹션에서 사용자에게 버킷 권한을 부여합니다.
+  </Note>
+
+  <Image size="md" img="/images/_snippets/s3/s3-5.webp" alt="권한 없이 IAM 사용자를 생성할 때 나타나는 경고" border force />
+
+  7. 이제 사용자가 생성되었습니다. `show`를 클릭한 다음 액세스 키와 시크릿 키를 복사하세요.
+
+  <Note>
+    키는 다른 안전한 곳에 저장해 두십시오. 비밀 액세스 키는 지금 이때만 확인할 수 있습니다.
+  </Note>
+
+  <Image size="md" img="/images/_snippets/s3/s3-6.webp" alt="IAM 사용자 액세스 키 확인 및 복사" border force />
+
+  8. 닫기를 클릭한 다음, 사용자 화면에서 해당 사용자를 찾으십시오.
+
+  <Image size="md" img="/images/_snippets/s3/s3-7.webp" alt="사용자 목록에서 새로 생성된 IAM 사용자 찾기" border force />
+
+  9. ARN(Amazon Resource Name)을 복사하여 버킷의 액세스 정책을 구성할 때 사용할 수 있도록 저장하십시오.
+
+  <Image size="md" img="/images/_snippets/s3/s3-8.webp" alt="IAM 사용자 ARN 복사" border force />
+
+  ### S3 버킷 생성
+
+  1. S3 버킷 섹션에서 `Create bucket`을 선택하십시오
+
+  <Image size="md" img="/images/_snippets/s3/s3-9.webp" alt="S3 버킷 생성 시작" border force />
+
+  2. 버킷 이름을 입력하고 다른 옵션은 기본값으로 유지합니다
+
+  <Note>
+    버킷 이름은 조직 내에서만이 아니라 AWS 전체에서 고유해야 하며, 그렇지 않으면 오류가 발생합니다.
+  </Note>
+
+  3. `Block all Public Access`는 활성화된 상태로 두세요. 퍼블릭 액세스는 필요하지 않습니다.
+
+  <Image size="md" img="/images/_snippets/s3/s3-a.webp" alt="공개 액세스가 차단된 S3 버킷 설정 구성하기" border force />
+
+  4. 페이지 하단의 `Create Bucket`을 선택하세요
+
+  <Image size="md" img="/images/_snippets/s3/s3-b.webp" alt="S3 버킷 생성 마무리하기" border force />
+
+  5. 링크를 선택해 ARN을 복사한 후, 버킷의 액세스 정책을 구성할 때 사용할 수 있도록 저장하십시오.
+
+  6. 버킷이 생성되면 S3 버킷 목록에서 새 S3 버킷을 찾아 해당 링크를 선택하십시오.
+
+  <Image size="md" img="/images/_snippets/s3/s3-c.webp" alt="버킷 목록에서 새로 생성한 S3 버킷 찾기" border force />
+
+  7. `Create folder`를 선택하십시오
+
+  <Image size="md" img="/images/_snippets/s3/s3-d.webp" alt="S3 버킷에 새 폴더 생성하기" border force />
+
+  8. ClickHouse S3 디스크의 대상으로 사용할 폴더 이름을 입력하고 `Create folder`를 선택하세요
+
+  <Image size="md" img="/images/_snippets/s3/s3-e.webp" alt="ClickHouse S3 디스크 사용 시 폴더 이름 설정" border force />
+
+  9. 이제 버킷 목록에서 폴더가 표시되어야 합니다
+
+  <Image size="md" img="/images/_snippets/s3/s3-f.webp" alt="S3 버킷에서 새로 생성된 폴더 보기" border force />
+
+  10. 새 폴더의 체크박스를 선택하고 `Copy URL`을 클릭하십시오. 다음 섹션의 ClickHouse 스토리지 구성에 사용할 수 있도록 복사한 URL을 저장하십시오.
+
+  <Image size="md" img="/images/_snippets/s3/s3-g.webp" alt="ClickHouse 구성에 사용할 S3 폴더 URL 복사" border force />
+
+  11. `Permissions` 탭을 선택한 다음 `Bucket Policy` 섹션에서 `Edit` 버튼을 클릭하세요
+
+  <Image size="md" img="/images/_snippets/s3/s3-h.webp" alt="S3 버킷 정책 구성에 액세스하기" border force />
+
+  12. 버킷 정책을 추가하십시오. 예시는 다음과 같습니다:
+
+  ```json
+  {
+    "Version" : "2012-10-17",
+    "Id" : "Policy123456",
+    "Statement" : [
+      {
+        "Sid" : "abc123",
+        "Effect" : "Allow",
+        "Principal" : {
+          "AWS" : "arn:aws:iam::921234567898:user/mars-s3-user"
+        },
+        "Action" : "s3:*",
+        "Resource" : [
+          "arn:aws:s3:::mars-doc-test",
+          "arn:aws:s3:::mars-doc-test/*"
+        ]
+      }
+    ]
+  }
+  ```
+
+  ```response
+  |매개변수 | 설명 | 예시 값 |
+  |----------|-------------|----------------|
+  |Version | 정책 인터프리터의 버전으로, 그대로 유지하십시오 | 2012-10-17 |
+  |Sid | 사용자 정의 정책 ID | abc123 |
+  |Effect | 사용자 요청의 허용 또는 거부 여부 | Allow |
+  |Principal | 허용할 계정 또는 사용자 | arn:aws:iam::921234567898:user/mars-s3-user |
+  |Action | 버킷에서 허용되는 작업 | s3:*|
+  |Resource | 버킷 내에서 작업이 허용되는 리소스 | "arn:aws:s3:::mars-doc-test", "arn:aws:s3:::mars-doc-test/*" |
+  ```
+
+  <Note>
+    사용할 권한을 결정할 때는 보안 팀과 협의하고, 아래 내용을 출발점으로 삼으십시오.
+    정책 및 설정에 대한 자세한 내용은 AWS 문서를 참조하십시오:
+    https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
+  </Note>
+
+  13. 정책 구성을 저장하십시오.
+</Accordion>

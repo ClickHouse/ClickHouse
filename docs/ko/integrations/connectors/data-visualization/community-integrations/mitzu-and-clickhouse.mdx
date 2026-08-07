@@ -1,0 +1,206 @@
+---
+sidebarTitle: 'Mitzu'
+slug: /integrations/mitzu
+keywords: ['ClickHouse', 'Mitzu', '연결', '통합', 'UI']
+description: 'Mitzu는 노코드 warehouse-native 제품 분석 애플리케이션입니다.'
+title: 'Mitzu를 ClickHouse에 연결하기'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Mitzu는 코드 작성 없이 사용할 수 있는 warehouse-native 제품 분석 애플리케이션입니다. Amplitude, Mixpanel, PostHog와 같은 도구와 마찬가지로, Mitzu를 사용하면 SQL이나 Python 전문 지식 없이도 제품 사용 데이터를 분석할 수 있습니다.
+
+하지만 이러한 플랫폼과 달리 Mitzu는 회사의 제품 사용 데이터를 복제하지 않습니다. 대신 회사의 기존 데이터 웨어하우스나 데이터 레이크에서 직접 네이티브 SQL 쿼리를 생성합니다.
+
+<div id="goal">
+  ## 목표
+</div>
+
+이 가이드에서는 다음 내용을 살펴봅니다.
+
+* warehouse-native 제품 분석
+* Mitzu를 ClickHouse와 통합하는 방법
+
+<Tip>
+  **예시 데이터셋**
+
+  Mitzu에 사용할 데이터셋이 없다면 NYC Taxi Data를 사용할 수 있습니다.
+  이 데이터셋은 ClickHouse Cloud에서 사용할 수 있으며, [다음 안내에 따라 로드할 수도 있습니다](/ko/get-started/sample-datasets/nyc-taxi).
+</Tip>
+
+이 가이드는 Mitzu 사용 방법을 간략히 소개합니다. 자세한 내용은 [Mitzu 문서](https://docs.mitzu.io/)에서 확인할 수 있습니다.
+
+<div id="1-gather-your-connection-details">
+  ## 1. 접속 정보 수집
+</div>
+
+<ConnectionDetails />
+
+<div id="2-sign-in-or-sign-up-to-mitzu">
+  ## 2. Mitzu에 로그인하거나 회원가입하세요
+</div>
+
+먼저 회원가입을 위해 [https://app.mitzu.io](https://app.mitzu.io)로 이동하세요.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="이메일 및 비밀번호 필드가 있는 Mitzu 로그인 페이지" border />
+
+<div id="3-configure-your-workspace">
+  ## 3. 워크스페이스 구성
+</div>
+
+조직을 생성한 후 왼쪽 사이드바에서 `Set up your workspace` 온보딩 가이드를 따라 설정을 진행하십시오. 그런 다음 `Connect Mitzu with your data warehouse` 링크를 클릭하십시오.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="온보딩 단계를 보여주는 Mitzu 워크스페이스 설정 페이지" border />
+
+<div id="4-connect-mitzu-to-clickhouse">
+  ## 4. Mitzu를 ClickHouse에 연결하기
+</div>
+
+먼저 연결 유형으로 ClickHouse를 선택하고 연결 세부 정보를 설정합니다. 그런 다음 `Test connection & Save` 버튼을 클릭하여 설정을 저장합니다.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="구성 양식이 있는 ClickHouse용 Mitzu 연결 설정 페이지" border />
+
+<div id="5-configure-event-tables">
+  ## 5. 이벤트 테이블 구성
+</div>
+
+연결이 저장되면 `Event tables` 탭을 선택하고 `Add table` 버튼을 클릭하십시오. 모달에서 데이터베이스와 Mitzu에 추가할 테이블을 선택하십시오.
+
+체크박스를 사용해 테이블을 하나 이상 선택한 다음 `Configure table` 버튼을 클릭하십시오. 그러면 각 테이블의 키 컬럼을 설정할 수 있는 모달 창이 열립니다.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="데이터베이스 테이블을 보여주는 Mitzu 테이블 선택 인터페이스" border />
+
+<br />
+
+> ClickHouse 설정에서 제품 분석을 실행하려면 테이블에서 몇 가지 핵심 컬럼을 지정해야 합니다.
+>
+> 다음과 같습니다:
+>
+> * **사용자 ID** - 사용자의 고유 식별자를 나타내는 컬럼입니다.
+> * **이벤트 시간** - 이벤트의 타임스탬프 컬럼입니다.
+> * 선택 사항[**이벤트 이름**] - 테이블에 여러 이벤트 타입이 포함된 경우 이 컬럼을 사용해 이벤트를 구분합니다.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="컬럼 매핑 옵션을 보여주는 Mitzu 이벤트 카탈로그 구성" border />
+
+<br />
+
+모든 테이블 구성이 완료되면 `Save & update event catalog` 버튼을 클릭하십시오. 그러면 Mitzu가 위에서 정의한 테이블에서 모든 이벤트와 해당 속성을 찾습니다. 이 단계는 데이터셋 크기에 따라 몇 분 정도 걸릴 수 있습니다.
+
+<div id="4-run-segmentation-queries">
+  ## 4. 세그먼테이션 쿼리 실행
+</div>
+
+Mitzu에서의 사용자 세분화는 Amplitude, Mixpanel, PostHog와 마찬가지로 간단합니다.
+
+Explore 페이지의 왼쪽에는 이벤트 선택 영역이 있고, 상단에서는 조회 기간을 설정할 수 있습니다.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="이벤트 선택 및 시간 설정 기능이 있는 Mitzu 세그먼테이션 쿼리 인터페이스" border />
+
+<br />
+
+<Tip>
+  **필터 및 세분화**
+
+  필터링은 일반적인 방식으로 수행합니다. 속성(ClickHouse 컬럼)을 선택한 다음, 드롭다운에서 필터링할 값을 선택하면 됩니다.
+  세분화에는 이벤트 속성이나 사용자 속성을 자유롭게 사용할 수 있습니다(사용자 속성을 통합하는 방법은 아래를 참조하십시오).
+</Tip>
+
+<div id="5-run-funnel-queries">
+  ## 5. 퍼널 쿼리 실행
+</div>
+
+퍼널에서 최대 9개의 단계를 선택하십시오. 사용자가 퍼널을 완료할 수 있는 시간 범위를 선택하십시오.
+SQL 코드를 한 줄도 작성하지 않고도 전환율을 즉시 파악할 수 있습니다.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="단계 간 전환율을 보여주는 Mitzu 퍼널 분석 화면" border />
+
+<br />
+
+<Tip>
+  **추세 시각화**
+
+  시간에 따른 퍼널 추세를 시각화하려면 `Funnel trends`를 선택하십시오.
+</Tip>
+
+<div id="6-run-retention-queries">
+  ## 6. 유지율 쿼리 실행
+</div>
+
+유지율을 계산할 때 최대 2개의 단계를 선택합니다. 반복 윈도우에 사용할 유지 기간을 선택하면 SQL 코드를 한 줄도 작성하지 않고도 즉시 전환율 인사이트를 확인할 수 있습니다.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="코호트 유지율을 보여주는 Mitzu 유지율 분석" border />
+
+<br />
+
+<Tip>
+  **코호트 유지율**
+
+  시간이 지남에 따라 유지율이 어떻게 변하는지 시각화하려면 `Weekly cohort retention`을 선택하세요.
+</Tip>
+
+<div id="7-run-journey-queries">
+  ## 7. 여정 쿼리 실행
+</div>
+
+퍼널에서 최대 9개의 단계를 선택합니다. 사용자가 여정을 완료할 수 있는 시간 범위를 선택합니다. Mitzu 여정 차트는 선택한 이벤트들 사이에서 사용자가 거치는 모든 경로를 시각적으로 보여줍니다.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="이벤트 간 사용자 경로 흐름을 보여주는 Mitzu 여정 시각화" border />
+
+<br />
+
+<Tip>
+  **단계 세분화**
+
+  같은 단계에 있는 사용자를 구분하려면 세그먼트 `Break down`의 속성을 선택할 수 있습니다.
+</Tip>
+
+<br />
+
+<div id="8-run-revenue-queries">
+  ## 8. 매출 쿼리 실행
+</div>
+
+매출 설정이 되어 있으면 Mitzu는 결제 이벤트를 바탕으로 총 MRR과 구독 수를 계산할 수 있습니다.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="MRR 메트릭이 표시된 Mitzu 매출 분석 대시보드" border />
+
+<div id="9-sql-native">
+  ## 9. SQL 네이티브
+</div>
+
+Mitzu는 SQL 네이티브 방식으로 작동하며, Explore 페이지에서 선택한 구성에 따라 네이티브 SQL 코드를 생성합니다.
+
+<Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="네이티브 ClickHouse 쿼리를 보여주는 Mitzu SQL 코드 생성 화면" border />
+
+<br />
+
+<Tip>
+  **BI 도구에서 작업 계속하기**
+
+  Mitzu UI에 한계가 있으면 SQL 코드를 복사해 BI 도구에서 작업을 계속하세요.
+</Tip>
+
+<div id="mitzu-support">
+  ## Mitzu 지원
+</div>
+
+도움이 필요하면 [support@mitzu.io](email://support@mitzu.io)로 언제든지 문의하십시오.
+
+또는 [여기](https://join.slack.com/t/mitzu-io/shared_invite/zt-1h1ykr93a-_VtVu0XshfspFjOg6sczKg)에서 Slack 커뮤니티에 참여할 수 있습니다.
+
+<div id="learn-more">
+  ## 자세히 알아보기
+</div>
+
+Mitzu에 대한 자세한 정보는 [mitzu.io](https://mitzu.io)에서 확인하실 수 있습니다.
+
+문서는 [docs.mitzu.io](https://docs.mitzu.io)에서 확인하실 수 있습니다.

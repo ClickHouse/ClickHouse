@@ -1,0 +1,8 @@
+SELECT x
+FROM
+(
+    SELECT 1 AS x
+    UNION DISTINCT
+    SELECT 1
+)
+LIMIT 1;

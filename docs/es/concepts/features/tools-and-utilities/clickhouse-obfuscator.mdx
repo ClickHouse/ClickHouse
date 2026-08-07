@@ -1,0 +1,54 @@
+---
+description: 'Documentación de ClickHouse Obfuscator'
+slug: /operations/utilities/clickhouse-obfuscator
+title: 'clickhouse-obfuscator'
+doc_type: 'reference'
+---
+
+Una herramienta sencilla para la ofuscación de datos de tablas.
+
+Lee una tabla de entrada y genera una tabla de salida que conserva algunas propiedades de la original, pero contiene datos diferentes.
+Permite publicar datos de producción casi reales para usarlos en benchmarks.
+
+Está diseñada para conservar las siguientes propiedades de los datos:
+
+* cardinalidades de valores (número de valores distintos) para cada columna y cada tupla de columnas;
+
+* cardinalidades condicionales: número de valores distintos de una columna bajo la condición del valor de otra columna;
+
+* distribuciones de probabilidad del valor absoluto de los enteros; del signo de los enteros con signo; del exponente y el signo de los flotantes;
+
+* distribuciones de probabilidad de la longitud de las cadenas;
+
+* probabilidad de valores cero en números; de cadenas vacías y Arrays, y de `NULL`;
+
+* relación de compresión de los datos al comprimirse con LZ77 y la familia de codecs de entropía;
+
+* continuidad (magnitud de la diferencia) de los valores temporales a lo largo de la tabla; continuidad de los valores de coma flotante;
+
+* componente de fecha de los valores `DateTime`;
+
+* validez UTF-8 de los valores de cadena;
+
+* los valores de cadena tienen un aspecto natural.
+
+La mayoría de las propiedades anteriores son útiles para las pruebas de rendimiento:
+
+la lectura de datos, el filtrado, la aggregation y la ordenación funcionarán casi a la misma velocidad
+que con los datos originales gracias a que se conservan las cardinalidades, magnitudes, relaciones de compresión, etc.
+
+Funciona de manera deterministic: se define un valor seed y la transformación queda determinada por los datos de entrada y por la seed.
+Algunas transformaciones son uno a uno y podrían revertirse, por lo que necesita una seed grande y mantenerla en secreto.
+
+Utiliza algunas Primitive criptográficas para transformar los datos, pero desde el punto de vista criptográfico no lo hace correctamente; por eso, no debe considerar el resultado como seguro salvo que tenga otro motivo para hacerlo. El resultado puede conservar algunos datos que no desea publicar.
+
+Siempre deja los números 0, 1 y -1, las fechas, las longitudes de los Arrays y los indicadores de null exactamente igual que en los datos de origen.
+Por Example, si tiene una columna `IsMobile` en su tabla con valores 0 y 1, en los datos transformados tendrá el mismo valor.
+
+Así, el usuario podrá calcular la proporción exacta del tráfico móvil.
+
+Veamos otro Example. Si tiene datos privados en su tabla, como el correo electrónico del usuario, y no quiere publicar ni una sola dirección de correo.
+Si su tabla es lo bastante grande, contiene varios correos distintos y ninguno tiene una frecuencia muy superior a la de los demás, anonimizará todos los datos. Pero si tiene pocos valores distintos en una columna, puede reproducir algunos de ellos.
+Debería revisar cómo funciona el algoritmo de esta herramienta y ajustar con precisión sus Parameters de línea de comandos.
+
+Esta herramienta solo funciona bien con al menos una cantidad moderada de datos (al menos miles de filas).

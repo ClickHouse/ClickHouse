@@ -1,0 +1,128 @@
+---
+description: 'データをRAMにバッファし、定期的に別のテーブルへフラッシュします。読み取り時には、バッファと別のテーブルの両方から同時にデータが読み取られます。'
+sidebarTitle: 'Buffer'
+slug: /engines/table-engines/special/buffer
+title: 'Buffer テーブルエンジン'
+doc_type: 'reference'
+---
+
+データをRAMにバッファし、定期的に別のテーブルへフラッシュします。読み取り時には、バッファと別のテーブルの両方から同時にデータが読み取られます。
+
+<Note>
+  Buffer テーブルエンジンの代替としては、[非同期挿入](/ja/concepts/features/operations/insert/asyncinserts)を有効にすることを推奨します。
+</Note>
+
+```sql
+Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes [,flush_time [,flush_rows [,flush_bytes]]])
+```
+
+<div id="engine-parameters">
+  ### エンジンパラメータ
+</div>
+
+<div id="database">
+  #### `database`
+</div>
+
+`database` – データベース名。`currentDatabase()` または、文字列を返す他の定数式を使用できます。
+
+<div id="table">
+  #### `table`
+</div>
+
+`table` – データのフラッシュ先となるテーブル。
+
+<div id="num_layers">
+  #### `num_layers`
+</div>
+
+`num_layers` – 並列化レイヤー。物理的には、テーブルは `num_layers` 個の独立したバッファで表現されます。
+
+<div id="min_time-max_time-min_rows-max_rows-min_bytes-and-max_bytes">
+  #### `min_time`, `max_time`, `min_rows`, `max_rows`, `min_bytes`, and `max_bytes`
+</div>
+
+バッファからデータをフラッシュするための条件。
+
+<div id="optional-engine-parameters">
+  ### 任意のエンジンパラメータ
+</div>
+
+<div id="flush_time-flush_rows-and-flush_bytes">
+  #### `flush_time`, `flush_rows`, and `flush_bytes`
+</div>
+
+バックグラウンドでバッファからデータをフラッシュする条件です (省略されているか 0 の場合は、`flush*` パラメーターがないことを意味します) 。
+
+すべての `min*` 条件、または少なくとも 1 つの `max*` 条件が満たされると、データはバッファからフラッシュされ、宛先テーブルに書き込まれます。
+
+また、少なくとも 1 つの `flush*` 条件が満たされると、バックグラウンドでフラッシュが開始されます。これは `max*` とは異なり、`flush*` を使うことで、Buffer テーブルへの `INSERT` クエリにレイテンシを追加しないよう、バックグラウンドフラッシュを個別に設定できます。
+
+<div id="min_time-max_time-and-flush_time">
+  #### `min_time`, `max_time`, and `flush_time`
+</div>
+
+バッファへの最初の書き込みからの経過秒数に関する条件です。
+
+<div id="min_rows-max_rows-and-flush_rows">
+  #### `min_rows`, `max_rows`、および `flush_rows`
+</div>
+
+バッファ内の行数に対する条件。
+
+<div id="min_bytes-max_bytes-and-flush_bytes">
+  #### `min_bytes`, `max_bytes`, and `flush_bytes`
+</div>
+
+バッファ内のバイト数に関する条件です。
+
+書き込み時には、データは 1 つ以上のランダムなバッファ (`num_layers` で設定) に挿入されます。なお、挿入する data part が十分に大きい場合 (`max_rows` または `max_bytes` を超える場合) は、バッファを経由せずに宛先テーブルへ直接書き込まれます。
+
+データをフラッシュする条件は、`num_layers` 個の各バッファごとに個別に計算されます。たとえば、`num_layers = 16` かつ `max_bytes = 100000000` の場合、RAM の最大消費量は 1.6 GB です。
+
+例:
+
+```sql
+CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 1, 10, 100, 10000, 1000000, 10000000, 100000000)
+```
+
+`merge.hits` と同じ構造を持ち、Buffer engine を使用する `merge.hits_buffer` テーブルを作成します。このテーブルに書き込むと、データは RAM にバッファされ、後で `merge.hits` テーブルに書き込まれます。単一のバッファが作成され、次のいずれかの条件を満たすとデータがフラッシュされます。
+
+* 前回のフラッシュから 100 秒が経過した (`max_time`) 場合、または
+* 100 万行が書き込まれた (`max_rows`) 場合、または
+* 100 MB のデータが書き込まれた (`max_bytes`) 場合、または
+* 10 秒が経過し (`min_time`)、かつ 10,000 行 (`min_rows`) と 10 MB (`min_bytes`) のデータが書き込まれた場合
+
+たとえば、1 行しか書き込まれていない場合でも、100 秒後には必ずフラッシュされます。一方、多数の行が書き込まれている場合は、より早くデータがフラッシュされます。
+
+サーバーが停止したとき、または `DROP TABLE` や `DETACH TABLE` の実行時にも、バッファされたデータは宛先テーブルにフラッシュされます。
+
+データベース名とテーブル名には、シングルクォートで囲んだ空文字列を設定できます。これは宛先テーブルが存在しないことを示します。この場合、データのフラッシュ条件に達すると、バッファは単にクリアされます。これは、データのウィンドウをメモリ内に保持するのに便利な場合があります。
+
+Buffer テーブルから読み取るときは、データはバッファと宛先テーブル (存在する場合) の両方から処理されます。
+なお、Buffer テーブルは索引をサポートしていません。つまり、バッファ内のデータは全走査されるため、バッファが大きいと低速になる可能性があります。 (従属テーブル内のデータについては、そのテーブルでサポートされている索引が使用されます。)
+
+Buffer テーブルのカラムの集合が従属テーブルのカラムの集合と一致しない場合は、両方のテーブルに存在するカラムの部分集合が挿入されます。
+
+Buffer テーブルと従属テーブルのいずれかのカラムで型が一致しない場合、エラーメッセージがサーバーログに記録され、バッファはクリアされます。
+バッファがフラッシュされた時点で従属テーブルが存在しない場合も、同じことが起こります。
+
+<Note>
+  2021 年 10 月 26 日より前のリリースでは、Buffer テーブルに対して ALTER を実行すると `Block structure mismatch` エラーが発生するため ([#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) および [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565) を参照) 、Buffer テーブルを削除して再作成する以外に方法はありません。Buffer テーブルで ALTER を実行する前に、このエラーが使用中のリリースで修正されていることを確認してください。
+</Note>
+
+サーバーが異常終了して再起動した場合、バッファ内のデータは失われます。
+
+`FINAL` と `SAMPLE` は Buffer テーブルでは正しく動作しません。これらの条件は宛先テーブルには渡されますが、バッファ内のデータの処理には使用されません。これらの機能が必要な場合は、Buffer テーブルは書き込み専用にし、読み取りは宛先テーブルから行うことを推奨します。
+
+Buffer テーブルにデータを追加するときは、いずれかのバッファがロックされます。そのため、同時にそのテーブルから読み取り操作が行われていると遅延が発生します。
+
+Buffer テーブルに挿入されたデータは、従属テーブルでは順序やブロックが異なって格納される場合があります。そのため、Buffer テーブルを使って CollapsingMergeTree に正しく書き込むのは困難です。問題を避けるには、`num_layers` を 1 に設定できます。
+
+宛先テーブルがレプリケートされている場合、Buffer テーブルへの書き込み時には、レプリケートテーブルに期待される特性の一部が失われます。行の順序やデータパーツのサイズがランダムに変化することで重複排除が機能しなくなり、レプリケートテーブルに対する信頼できる「exactly once」の書き込みは不可能になります。
+
+これらの欠点があるため、Buffer テーブルの使用はまれなケースでのみ推奨されます。
+
+Buffer テーブルは、単位時間あたりに多数のサーバーから非常に多くの INSERT を受け取り、挿入前にデータをバッファできず、その結果 INSERT を十分な速度で実行できない場合に使用されます。
+
+Buffer テーブルであっても、データを1行ずつ挿入するのは意味がないことに注意してください。この方法では、速度は毎秒数千行程度にしかならない一方で、より大きなブロック単位でデータを挿入すれば、毎秒100万行を超えることもあります。

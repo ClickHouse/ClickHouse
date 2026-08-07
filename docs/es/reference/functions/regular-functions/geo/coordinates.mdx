@@ -1,0 +1,191 @@
+---
+description: 'Documentación de coordenadas'
+sidebarTitle: 'Coordenadas geográficas'
+slug: /sql-reference/functions/geo/coordinates
+title: 'Funciones para trabajar con coordenadas geográficas'
+doc_type: 'reference'
+---
+
+<div id="greatcircledistance">
+  ## greatCircleDistance
+</div>
+
+Calcula la distancia entre dos puntos sobre la superficie terrestre usando [la fórmula del gran círculo](https://en.wikipedia.org/wiki/Great-circle_distance).
+
+```sql
+greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**Parámetros de entrada**
+
+* `lon1Deg` — Longitud del primer punto en grados. Rango: `[-180°, 180°]`.
+* `lat1Deg` — Latitud del primer punto en grados. Rango: `[-90°, 90°]`.
+* `lon2Deg` — Longitud del segundo punto en grados. Rango: `[-180°, 180°]`.
+* `lat2Deg` — Latitud del segundo punto en grados. Rango: `[-90°, 90°]`.
+
+Los valores positivos corresponden a la latitud norte y la longitud este, mientras que los valores negativos corresponden a la latitud sur y la longitud oeste.
+
+**Valor devuelto**
+
+La distancia entre dos puntos de la superficie terrestre, en metros.
+
+Genera una excepción cuando los valores de los parámetros de entrada están fuera del rango.
+
+**Ejemplo**
+
+```sql
+SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance
+```
+
+```text
+┌─greatCircleDistance─┐
+│            14128352 │
+└─────────────────────┘
+```
+
+<div id="geodistance">
+  ## geoDistance
+</div>
+
+Es similar a `greatCircleDistance`, pero calcula la distancia sobre el elipsoide WGS-84 en lugar de hacerlo sobre una esfera. Esta es una aproximación más precisa del geoide terrestre.
+El rendimiento es el mismo que el de `greatCircleDistance` (sin pérdida de rendimiento). Se recomienda usar `geoDistance` para calcular distancias sobre la Tierra.
+
+Nota técnica: para puntos suficientemente cercanos, calculamos la distancia mediante una aproximación plana con la métrica en el plano tangente en el punto medio de las coordenadas.
+
+```sql
+geoDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**Parámetros de entrada**
+
+* `lon1Deg` — Longitud del primer punto en grados. Rango: `[-180°, 180°]`.
+* `lat1Deg` — Latitud del primer punto en grados. Rango: `[-90°, 90°]`.
+* `lon2Deg` — Longitud del segundo punto en grados. Rango: `[-180°, 180°]`.
+* `lat2Deg` — Latitud del segundo punto en grados. Rango: `[-90°, 90°]`.
+
+Los valores positivos corresponden a la latitud norte y la longitud este, y los valores negativos corresponden a la latitud sur y la longitud oeste.
+
+**Valor devuelto**
+
+La distancia entre dos puntos de la superficie terrestre, en metros.
+
+Genera una excepción cuando los valores de los parámetros de entrada están fuera del rango.
+
+**Ejemplo**
+
+```sql
+SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
+```
+
+```text
+┌─geoDistance─┐
+│   212458.73 │
+└─────────────┘
+```
+
+<div id="greatcircleangle">
+  ## greatCircleAngle
+</div>
+
+Calcula el ángulo central entre dos puntos de la superficie terrestre usando [la fórmula del gran círculo](https://en.wikipedia.org/wiki/Great-circle_distance).
+
+```sql
+greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**Parámetros de entrada**
+
+* `lon1Deg` — Longitud del primer punto, en grados.
+* `lat1Deg` — Latitud del primer punto, en grados.
+* `lon2Deg` — Longitud del segundo punto, en grados.
+* `lat2Deg` — Latitud del segundo punto, en grados.
+
+**Valor devuelto**
+
+El ángulo central entre dos puntos, en grados.
+
+**Ejemplo**
+
+```sql
+SELECT greatCircleAngle(0, 0, 45, 0) AS arc
+```
+
+```text
+┌─arc─┐
+│  45 │
+└─────┘
+```
+
+<div id="pointinellipses">
+  ## pointInEllipses
+</div>
+
+Comprueba si el punto pertenece a al menos una de las elipses.
+Las coordenadas son geométricas y se expresan en el sistema de coordenadas cartesianas.
+
+```sql
+pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
+```
+
+**Parámetros de entrada**
+
+* `x, y` — Coordenadas de un punto en el plano.
+* `xᵢ, yᵢ` — Coordenadas del centro de la elipse `i`.
+* `aᵢ, bᵢ` — Ejes de la elipse `i` en unidades de las coordenadas `x` e `y`.
+
+La cantidad de parámetros de entrada debe ser `2+4⋅n`, donde `n` es el número de elipses.
+
+**Valores devueltos**
+
+`1` si el punto está dentro de al menos una de las elipses; `0` si no lo está.
+
+**Ejemplo**
+
+```sql
+SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
+```
+
+```text
+┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
+│                                               1 │
+└─────────────────────────────────────────────────┘
+```
+
+<div id="pointinpolygon">
+  ## pointInPolygon
+</div>
+
+Comprueba si el punto está dentro del polígono en el plano.
+
+```sql
+pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
+```
+
+**Valores de entrada**
+
+* `(x, y)` — Coordenadas de un punto en el plano. Tipo de dato — [Tuple](/es/reference/data-types/tuple) — Una tupla de dos números.
+* `[(a, b), (c, d) ...]` — Vértices del polígono. Tipo de dato — [Array](/es/reference/data-types/array). Cada vértice se representa mediante un par de coordenadas `(a, b)`. Los vértices deben especificarse en sentido horario o antihorario. El número mínimo de vértices es 3. El polígono debe ser constante.
+* La función admite polígonos con huecos (secciones recortadas). Tipo de dato — [Polygon](/es/reference/data-types/geo#polygon). Pase el `Polygon` completo como segundo argumento, o bien pase primero el anillo exterior y luego cada hueco como argumento adicional independiente.
+* La función también admite multipolígonos. Tipo de dato — [MultiPolygon](/es/reference/data-types/geo#multipolygon). Pase el `MultiPolygon` completo como segundo argumento, o indique cada polígono componente como un argumento independiente.
+
+**Valores devueltos**
+
+`1` si el punto está dentro del polígono, `0` si no lo está.
+Si el punto está en el borde del polígono, la función puede devolver 0 o 1.
+
+**Ejemplo**
+
+```sql
+SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
+```
+
+```text
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+> **Nota**
+> • Puede establecer `validate_polygons = 0` para omitir la validación geométrica.
+> • `pointInPolygon` asume que cada polígono está bien formado. Si la entrada se interseca a sí misma, tiene anillos en un orden incorrecto o bordes superpuestos, los resultados dejan de ser fiables, especialmente para puntos que están exactamente sobre un borde, un vértice o dentro de una autointersección, donde la noción de &quot;dentro&quot; frente a &quot;fuera&quot; no está definida.
+> • Cuando el argumento del polígono es constante y el punto se expresa mediante columnas de clave indexadas (por ejemplo, `pointInPolygon((x, y), constant_polygon)` en una tabla donde `x, y` forman parte de la `PRIMARY KEY` o están incluidas en un índice `minmax`), ClickHouse puede usar tanto la clave primaria como los índices de omisión de datos `minmax` para descartar gránulos irrelevantes.

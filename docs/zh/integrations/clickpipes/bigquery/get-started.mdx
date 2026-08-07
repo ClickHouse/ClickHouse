@@ -1,0 +1,94 @@
+---
+sidebarTitle: '快速入门'
+description: '分步指导您创建首个 BigQuery ClickPipe。'
+slug: /integrations/clickpipes/bigquery/get-started
+title: '创建您的首个 BigQuery ClickPipe'
+doc_type: 'guide'
+---
+
+import IntroClickPipe from '/snippets/zh/_intro.mdx';
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<IntroClickPipe />
+
+<div id="pre-requisites">
+  ## 前提条件
+</div>
+
+* 您必须具备在 GCP 项目中管理[服务账号](https://docs.cloud.google.com/iam/docs/service-account-overview)和 [IAM roles](https://docs.cloud.google.com/iam/docs/roles-overview) 的权限，或者获得管理员协助。我们建议按照[官方文档](https://docs.cloud.google.com/iam/docs/service-accounts-create)创建一个专用服务账号，并仅授予所需的最小[权限](/zh/integrations/clickpipes/bigquery/overview#permissions)。
+
+* 初始加载过程需要用户提供一个 Google Cloud Storage (GCS) 存储桶用于暂存。我们建议按照[官方文档](https://docs.cloud.google.com/storage/docs/creating-buckets)为您的 ClickPipe 创建一个专用存储桶。未来，该中间存储桶将由 ClickPipes 提供并管理。
+
+<Steps>
+  <Step>
+    ## 选择数据源
+
+    **1.** 在 ClickHouse Cloud 中，从主导航菜单选择 **Data sources**，然后点击 **Create ClickPipe**。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
+
+    **2.** 点击 **BigQuery** 卡片。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="选择 BigQuery 卡片" size="lg" border />
+  </Step>
+
+  <Step>
+    ## 设置你的 ClickPipe 连接
+
+    要设置新的 ClickPipe，你需要提供连接并验证 BigQuery 数据仓库所需的信息，以及一个用于暂存的 GCS 存储桶。
+
+    **1.** 上传你为 ClickPipes 创建的服务账号 `.json` 密钥文件。确保该服务账号具备所需的最小权限集 [permissions](/zh/integrations/clickpipes/bigquery/overview#permissions)。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="上传服务账号密钥" size="lg" border />
+
+    **2.** 选择 **Replication method**。在私有预览阶段，当前唯一支持的选项是 [**仅初始加载**](/zh/integrations/clickpipes/bigquery/overview#initial-load)。
+
+    **3.** 提供初始加载期间用于暂存数据的 GCS 存储桶路径。
+
+    **4.** 点击 **Next** 进行验证。
+  </Step>
+
+  <Step>
+    ## 配置你的 ClickPipe
+
+    根据 BigQuery 数据集的大小，或你想同步的表的总大小，你可能需要调整 ClickPipe 的默认摄取设置。
+  </Step>
+
+  <Step>
+    ## 配置表
+
+    **1.** 选择要将 BigQuery 表复制到的 ClickHouse 数据库。你可以选择现有数据库，也可以新建数据库。
+
+    **2.** 选择要复制的表，以及可选的列。只有该服务账号有权访问的数据集才会显示在列表中。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="权限" size="lg" border />
+
+    **3.** 对于每个选中的表，请务必在 **Advanced settings** &gt; **Use a custom sorting key** 下定义自定义排序键。未来，系统将根据上游数据库中现有的聚类键或分区键自动推断排序键。
+
+    <Warning>
+      你**必须**为复制表定义 [排序键](/zh/concepts/best-practices/choosing-a-primary-key)，以优化 ClickHouse 中的查询性能。否则，排序键将被设置为 `tuple()`，这意味着不会创建主索引，ClickHouse 将对该表上的所有查询执行全表扫描。
+    </Warning>
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="权限" size="lg" border />
+  </Step>
+
+  <Step>
+    ## 配置权限
+
+    最后，你可以为内部 ClickPipes 用户配置权限。
+
+    **Permissions:** ClickPipes 会创建一个专用用户，用于将数据写入目标表。你可以为该内部用户选择自定义角色，或以下预定义角色之一：
+
+    * `Full access`：对集群具有完全访问权限。如果你要将 materialized views 或字典与目标表配合使用，则需要此权限。
+    * `Only destination`：仅具有向目标表插入数据的权限。
+  </Step>
+
+  <Step>
+    ## 完成设置
+
+    点击 **Create ClickPipe** 完成设置。随后你将被重定向到概览页面，在那里可以查看初始加载的进度，并点击查看 BigQuery ClickPipes 的详细信息。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="权限" size="lg" border />
+  </Step>
+</Steps>

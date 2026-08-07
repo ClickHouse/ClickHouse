@@ -1,0 +1,5 @@
+<clickhouse>
+    <backups>
+        <data_file_name_generator>checksum</data_file_name_generator>
+    </backups>
+</clickhouse>

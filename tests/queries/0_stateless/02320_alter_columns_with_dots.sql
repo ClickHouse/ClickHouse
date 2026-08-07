@@ -1,0 +1,15 @@
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (id String, `abc.1` String, `abc.2` String, `abc` String) ENGINE MergeTree order by id;
+DESC TABLE test;
+ALTER TABLE test MODIFY COLUMN `abc.1` String AFTER `abc`;
+DESC TABLE test;
+ALTER TABLE test MODIFY COLUMN `abc.2` String AFTER `abc`;
+DESC TABLE test;
+ALTER TABLE test MODIFY COLUMN `abc` String AFTER `abc.2`;
+DESC TABLE test;
+ALTER TABLE test MODIFY COLUMN `abc` String AFTER `id`;
+DESC TABLE test;
+ALTER TABLE test MODIFY COLUMN `abc` String AFTER `abc.1`;
+DESC TABLE test;
+ALTER TABLE test DROP COLUMN `abc`;
+DESC TABLE test;

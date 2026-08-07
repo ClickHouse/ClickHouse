@@ -1,0 +1,800 @@
+---
+description: '为存储在 Amazon S3、Azure、HDFS 或本地的 Apache Iceberg 表提供只读的表式接口。'
+sidebarTitle: 'iceberg'
+slug: /sql-reference/table-functions/iceberg
+title: 'iceberg'
+doc_type: 'reference'
+---
+
+为存储在 Amazon S3、Azure、HDFS 或本地的 Apache [Iceberg](https://iceberg.apache.org/) 表提供只读的表式接口。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3(named_collection[, option=value [,..]])
+
+icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzure(named_collection[, option=value [,..]])
+
+icebergHDFS(path_to_table, [,format] [,compression_method])
+icebergHDFS(named_collection[, option=value [,..]])
+
+icebergLocal(path_to_table, [,format] [,compression_method])
+icebergLocal(named_collection[, option=value [,..]])
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+这些参数的说明分别与表函数 `s3`、`azureBlobStorage`、`HDFS` 和 `file` 中对应参数的说明一致。
+`format` 表示 Iceberg 表中数据文件的格式。
+
+对于 `icebergS3`，可使用可选参数 `extra_credentials` 传入 `role_arn`，以便在 ClickHouse Cloud 中实现基于角色的访问。有关配置步骤，请参见 [安全访问 S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
+
+<div id="returned-value">
+  ### 返回值
+</div>
+
+一个具有指定结构的表，用于读取指定 Iceberg 表中的数据。
+
+<div id="example">
+  ### 示例
+</div>
+
+```sql
+SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+<Warning>
+  ClickHouse 当前支持通过 `icebergS3`、`icebergAzure`、`icebergHDFS` 和 `icebergLocal` 表函数，以及 `IcebergS3`、`icebergAzure`、`IcebergHDFS` 和 `IcebergLocal` 表引擎，读取 Iceberg 格式的 v1 和 v2 版本。
+</Warning>
+
+<div id="defining-a-named-collection">
+  ## 定义命名集合
+</div>
+
+下面是一个用于存储 URL 和凭据的命名集合配置示例：
+
+```xml
+<clickhouse>
+    <named_collections>
+        <iceberg_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+            <format>auto</format>
+            <structure>auto</structure>
+        </iceberg_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
+DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
+```
+
+<div id="iceberg-writes-catalogs">
+  ## 使用数据目录
+</div>
+
+Iceberg 表也可以配合多种数据目录使用，例如 [REST Catalog](https://iceberg.apache.org/rest-catalog-spec/)、[AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html) 和 [Unity Catalog](https://www.unitycatalog.io/)。
+
+<Warning>
+  使用目录时，大多数用户通常会选择 `DataLakeCatalog` 数据库引擎，它可将 ClickHouse 连接到你的目录，以发现其中的表。你可以使用此数据库引擎，而不必通过 `IcebergS3` 表引擎手动逐个创建表。
+</Warning>
+
+要使用这些目录，请使用 `IcebergS3` 引擎创建表，并提供必要的设置。
+
+例如，结合 MinIO 存储使用 REST Catalog：
+
+```sql
+CREATE TABLE `database_name.table_name`
+ENGINE = IcebergS3(
+  'http://minio:9000/warehouse-rest/table_name/',
+  'minio_access_key',
+  'minio_secret_key'
+)
+```
+
+或者，使用 AWS Glue Data Catalog 和 S3：
+
+```sql
+CREATE TABLE `my_database.my_table`  
+ENGINE = IcebergS3(
+  's3://my-data-bucket/warehouse/my_database/my_table/',
+  'aws_access_key',
+  'aws_secret_key'
+)
+```
+
+<div id="schema-evolution">
+  ## Schema 演进
+</div>
+
+目前，借助 CH，你可以读取 schema 会随时间演变的 Iceberg 表。当前支持读取以下这类表：列被添加或删除，以及列顺序发生变化。你还可以将某一列从必须有值改为允许 NULL。此外，我们还支持简单类型之间允许的类型转换，即：  
+
+* int -&gt; long
+* float -&gt; double
+* decimal(P, S) -&gt; decimal(P&#39;, S) where P&#39; &gt; P.
+
+目前，尚不支持更改嵌套结构，或更改数组和 Map 中元素的类型。
+
+<div id="partition-pruning">
+  ## 分区裁剪
+</div>
+
+ClickHouse 支持在对 Iceberg 表执行 SELECT 查询时进行分区裁剪，这有助于通过跳过不相关的数据文件来优化查询性能。要启用分区裁剪，请设置 `use_iceberg_partition_pruning = 1`。有关 Iceberg 分区裁剪的更多信息，请参见 https://iceberg.apache.org/spec/#partitioning
+
+<div id="time-travel">
+  ## 时间旅行
+</div>
+
+ClickHouse 支持 Iceberg 表的时间旅行功能，让您可以使用特定的时间戳或快照 ID 查询历史数据。
+
+<div id="deleted-rows">
+  ## 处理含已删除行的表
+</div>
+
+目前，仅支持带有[位置删除](https://iceberg.apache.org/spec/#position-delete-files)的 Iceberg 表。
+
+以下删除方法**暂不支持**：
+
+* [等值删除](https://iceberg.apache.org/spec/#equality-delete-files)
+* [删除向量](https://iceberg.apache.org/spec/#deletion-vectors) (在 v3 中引入)
+
+<div id="basic-usage">
+  ### 基本用法
+</div>
+
+```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_timestamp_ms = 1714636800000
+```
+
+```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_snapshot_id = 3547395809148285433
+```
+
+注意：不能在同一查询中同时指定 `iceberg_timestamp_ms` 和 `iceberg_snapshot_id` 参数。
+
+<div id="important-considerations">
+  ### 重要注意事项
+</div>
+
+* **快照**通常会在以下情况下创建：
+
+* 向表中写入新数据时
+
+* 执行某种数据合并整理时
+
+* **schema 变更通常不会创建快照**——这会在对经历过 schema 演进的表使用时间旅行时带来一些重要行为。
+
+<div id="example-scenarios">
+  ### 示例场景
+</div>
+
+以下所有场景均使用 Spark，因为 CH 目前尚不支持向 Iceberg 表写入数据。
+
+<div id="scenario-1">
+  #### 场景 1：无新增快照时的 schema 变更
+</div>
+
+考虑以下操作顺序：
+
+```sql
+ -- 创建一个包含两列的表
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+- - 向表中插入数据
+  INSERT INTO spark_catalog.db.time_travel_example VALUES 
+    (1, 'Mars')
+
+  ts1 = now() // 伪代码示例
+
+- - 修改表结构，添加新列
+  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+ 
+  ts2 = now()
+
+- - 向表中插入数据
+  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+
+   ts3 = now()
+
+- - 查询各时间戳对应的表数据
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+
++------------+------------+-----+
+|order_number|product_code|price|
++------------+------------+-----+
+|           1|        Mars| NULL|
+|           2|       Venus|100.0|
++------------+------------+-----+
+```
+
+不同时间戳下的查询结果：
+
+* 在 ts1 和 ts2：仅显示最初的两列
+* 在 ts3：显示全部三列，其中第一行的 price 为 NULL
+
+<div id="scenario-2">
+  #### 场景 2：历史 schema 与当前 schema 的差异
+</div>
+
+在当前时刻执行时间旅行查询时，显示的 schema 可能与当前表的 schema 不同：
+
+```sql
+-- 创建表
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+-- 向表中插入初始数据
+  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+
+-- 修改表以添加新列
+  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+
+  ts = now();
+
+-- 使用时间戳语法查询当前时刻的表
+
+  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+
+    +------------+------------+
+    |order_number|product_code|
+    +------------+------------+
+    |           2|       Venus|
+    +------------+------------+
+
+-- 查询当前时刻的表
+  SELECT * FROM spark_catalog.db.time_travel_example_2;
+    +------------+------------+-----+
+    |order_number|product_code|price|
+    +------------+------------+-----+
+    |           2|       Venus| NULL|
+    +------------+------------+-----+
+```
+
+出现这种情况，是因为 `ALTER TABLE` 不会创建新的 快照；对于当前表，Spark 读取的是最新元数据文件中的 `schema_id` 值，而不是从某个 快照 中获取。
+
+<div id="scenario-3">
+  #### 场景 3：历史 schema 与当前 schema 的差异
+</div>
+
+第二点是，进行时间旅行时，你无法获取表在写入任何数据之前的状态：
+
+```sql
+-- 创建一张表
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2');
+
+  ts = now();
+
+-- 查询表在特定时间戳时的状态
+  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- 报错：Cannot find a snapshot older than ts.
+```
+
+在 ClickHouse 中，这种行为与 Spark 保持一致。你可以直接将 Spark 的 Select 查询理解为 ClickHouse 的 Select 查询，两者的工作方式相同。
+
+<div id="metadata-file-resolution">
+  ## 元数据文件定位
+</div>
+
+在 ClickHouse 中使用 `iceberg` 表函数时，系统需要找到正确的 metadata.json 文件，该文件用于描述 Iceberg 表的结构。下面介绍这一定位过程的工作方式：
+
+<div id="candidate-search">
+  ### 候选项搜索 (按优先顺序)
+</div>
+
+1. **直接指定路径**：
+   *如果设置了 `iceberg_metadata_file_path`，系统会将其与 Iceberg 表目录路径拼接，使用该精确路径。
+
+* 提供此设置后，所有其他解析设置都会被忽略。
+
+2. **表 UUID 匹配**：
+   *如果指定了 `iceberg_metadata_table_uuid`，系统将：
+   *仅查看 `metadata` 目录中的 `.metadata.json` 文件
+   *筛选出包含 `table-uuid` 字段且与指定 UUID 匹配的文件 (不区分大小写)
+
+3. **默认搜索**：
+   *如果以上两个设置都未提供，`metadata` 目录中的所有 `.metadata.json` 文件都会成为候选项
+
+<div id="most-recent-file">
+  ### 选择最新文件
+</div>
+
+根据上述规则识别出候选文件后，系统会进一步确定其中哪个是最新的：
+
+* 如果启用了 `iceberg_recent_metadata_file_by_last_updated_ms_field`：
+
+* 选择 `last-updated-ms` 值最大的文件
+
+* 否则：
+
+* 选择版本号最高的文件
+
+* (对于格式为 `V.metadata.json` 或 `V-uuid.metadata.json` 的文件名，版本号显示为 `V`)
+
+**注意**：上述所有设置都是表函数设置 (不是全局设置，也不是查询级设置) ，必须按如下所示指定：
+
+```sql
+SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
+    SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
+```
+
+**注意**：虽然 Iceberg 目录通常负责处理元数据解析，但 ClickHouse 中的 `iceberg` 表函数 会直接将存储在 S3 中的文件识别为 Iceberg 表，因此理解这些解析规则很重要。
+
+<div id="metadata-cache">
+  ## 元数据缓存
+</div>
+
+`Iceberg` 表引擎和表函数支持元数据缓存，可存储 manifest 文件、manifest 列表以及元数据 json 的相关信息。该缓存存储在内存中。此功能由设置 `use_iceberg_metadata_files_cache` 控制，且默认启用。
+
+<div id="aliases">
+  ## 别名
+</div>
+
+表函数 `iceberg` 现为 `icebergS3` 的别名。
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_path` — 文件路径。类型：`LowCardinality(String)`。
+* `_file` — 文件名。类型：`LowCardinality(String)`。
+* `_size` — 文件大小 (单位：字节) 。类型：`Nullable(UInt64)`。如果文件大小未知，则值为 `NULL`。
+* `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
+* `_etag` — 文件的 etag。类型：`LowCardinality(String)`。如果 etag 未知，则值为 `NULL`。
+
+<div id="writes-into-iceberg-table">
+  ## 写入 Iceberg 表
+</div>
+
+从 25.7 版本开始，ClickHouse 支持对用户的 Iceberg 表进行修改。
+
+目前这还是一项 Experimental 功能，因此首先需要启用它：
+
+```sql
+SET allow_insert_into_iceberg = 1;
+```
+
+<div id="create-iceberg-table">
+  ### 创建表
+</div>
+
+要创建自己的空 Iceberg 表，请使用与读取时相同的命令，但需要显式指定 schema。
+写入支持 Iceberg 规范中的所有数据格式，例如 Parquet、Avro、ORC。
+
+<div id="example">
+  ### 示例
+</div>
+
+```sql
+CREATE TABLE iceberg_writes_example
+(
+    x Nullable(String),
+    y Nullable(Int32)
+)
+ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
+```
+
+注意：如需创建 version hint 文件，请启用 `iceberg_use_version_hint` 设置。
+如果要压缩 metadata.json 文件，请在 `iceberg_metadata_compression_method` 设置中指定编解码器名称。
+
+<div id="writes-inserts">
+  ### INSERT
+</div>
+
+创建新表后，您可以使用标准的 ClickHouse 语法插入数据。
+
+<div id="example">
+  ### 示例
+</div>
+
+```sql
+INSERT INTO iceberg_writes_example VALUES ('Pavel', 777), ('Ivanov', 993);
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Pavel
+y: 777
+
+Row 2:
+──────
+x: Ivanov
+y: 993
+```
+
+<div id="iceberg-writes-delete">
+  ### DELETE
+</div>
+
+ClickHouse 也支持在 merge-on-read 格式下删除多余的行。
+该查询会创建一个包含位置删除文件的新快照。
+
+<div id="example">
+  ### 示例
+</div>
+
+```sql
+ALTER TABLE iceberg_writes_example DELETE WHERE x != 'Ivanov';
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
+
+<div id="iceberg-writes-schema-evolution">
+  ### Schema 演进
+</div>
+
+ClickHouse 允许你对简单类型 (不包括 Tuple、Array 和 Map) 的列进行添加、删除、修改或重命名。
+
+<div id="example">
+  ### 示例
+</div>
+
+```sql
+ALTER TABLE iceberg_writes_example MODIFY COLUMN y Nullable(Int64);
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+ALTER TABLE iceberg_writes_example ADD COLUMN z Nullable(Int32);
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64),                                 ↴│
+   │↳    `z` Nullable(Int32)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+z: ᴺᵁᴸᴸ
+
+ALTER TABLE iceberg_writes_example DROP COLUMN z;
+SHOW CREATE TABLE iceberg_writes_example;
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+
+ALTER TABLE iceberg_writes_example RENAME COLUMN y TO value;
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `value` Nullable(Int64)                              ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+value: 993
+```
+
+<div id="iceberg-writes-compaction">
+  ### 合并整理
+</div>
+
+ClickHouse 支持对 Iceberg 表执行合并整理。目前，它可以在更新元数据的同时，将位置删除文件合并到数据文件中。此前的快照 ID 和时间戳保持不变，因此仍可使用相同的值进行时间旅行查询。
+
+使用方法：
+
+```sql
+SET allow_experimental_iceberg_compaction = 1
+
+OPTIMIZE TABLE iceberg_writes_example;
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
+
+<div id="iceberg-expire-snapshots">
+  ### 过期快照
+</div>
+
+Iceberg 表会在每次 INSERT、DELETE 或 UPDATE 操作时累积快照。随着时间推移，这可能会产生大量快照及其关联的数据文件。`expire_snapshots` 命令会删除旧快照，并清理不再被任何保留快照引用的数据文件。
+
+**语法：**
+
+```sql
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(
+    ['timestamp']
+    [, expire_before = 'timestamp']
+    [, retention_period = '3d']
+    [, retain_last = 100]
+    [, snapshot_ids = [1, 2, 3, 4]]
+    [, dry_run = 1]
+);
+```
+
+默认情况下，要保留哪些快照由[保留策略](#iceberg-snapshot-retention-policy)决定 (表属性 `min-snapshots-to-keep`、`max-snapshot-age-ms` 以及针对各 ref 的覆盖配置) 。指定 `snapshot_ids` 时，会绕过保留策略，并且只会将列出的快照纳入过期处理范围。
+
+**参数：**
+
+* `'timestamp'` (位置参数) 或 `expire_before = 'timestamp'` — 一个日期时间字符串 (例如 `'2024-06-01 00:00:00'`) ，按**服务器时区**解释。它相当于一个安全阀：`timestamp-ms` 等于或晚于该值的快照会受到保护，不会被过期处理，即使按保留策略原本应被过期处理。可与 `snapshot_ids` 组合使用；在这种情况下，列表中等于或晚于该时间戳的快照不会被过期处理。
+* `retention_period = '<duration>'` — 仅对本次调用覆盖表级 `history.expire.max-snapshot-age-ms`。早于该时长的快照 (从当前时刻往前计算) 会成为过期候选。该值是一个时长字符串，由一个或多个连续拼接的 `{number}{unit}` 对组成。支持的单位：`y` (365 天) 、`w` (7 天) 、`d` (24 小时) 、`h` (60 分钟) 、`m` (60 秒) 、`s` (1 秒) 、`ms` (1 毫秒) 。单位可以组合，例如 `'3d'`、`'12h'`、`'1d12h30m'`、`'500ms'`。
+* `retain_last = N` — 仅对本次调用覆盖表级 `history.expire.min-snapshots-to-keep`。无论快照多旧，始终至少保留 `N` 个快照。
+* `snapshot_ids = [id1, id2, ...]` — 仅对列出的快照 ID 执行过期处理 (当前快照、分支或标签引用的快照除外) 。此模式会完全绕过保留策略，且不能与 `retention_period` 或 `retain_last` 组合使用。
+* `dry_run = 1` — 计算哪些内容会被过期处理，并返回指标，但不会写入新元数据或删除文件。
+
+<Note>
+  `retention_period` 和 `retain_last` 仅覆盖**表级**保留默认值。Iceberg 表属性中为各 ref (branch/tag) 配置的保留覆盖 (例如 `refs.<branch>.min-snapshots-to-keep`) 绝不会被覆盖——它们始终按表元数据中的配置生效。
+</Note>
+
+**示例：**
+
+```sql
+SET allow_insert_into_iceberg = 1;
+
+-- 通过插入数据创建一些快照
+INSERT INTO iceberg_table VALUES (1);
+INSERT INTO iceberg_table VALUES (2);
+INSERT INTO iceberg_table VALUES (3);
+
+-- 仅使用保留策略使快照过期
+ALTER TABLE iceberg_table EXECUTE expire_snapshots();
+
+-- 使用安全熔断：保护晚于该时间戳的快照（位置参数语法）
+ALTER TABLE iceberg_table EXECUTE expire_snapshots('2025-01-01 00:00:00');
+
+-- 使用命名参数形式实现相同效果
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(expire_before = '2025-01-01 00:00:00');
+
+-- 仅针对本次执行覆盖保留参数
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '3d', retain_last = 10);
+
+-- 使指定快照过期
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(snapshot_ids = [101, 102, 103]);
+
+-- 试运行预览（不更新元数据，不删除文件）
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_run = 1);
+```
+
+**输出：**
+
+该命令会返回一个包含两列 (`metric_name String`、`metric_value Int64`) 的表，其中每个指标对应一行。指标名称遵循 [Iceberg 规范](https://iceberg.apache.org/docs/latest/spark-procedures/#output)：
+
+| metric&#95;name                       | 描述                      |
+| ------------------------------------- | ----------------------- |
+| `deleted_data_files_count`            | 已删除的数据文件数量              |
+| `deleted_position_delete_files_count` | 已删除的位置删除文件数量            |
+| `deleted_equality_delete_files_count` | 已删除的等值删除文件数量            |
+| `deleted_manifest_files_count`        | 已删除的 manifest 文件数量      |
+| `deleted_manifest_lists_count`        | 已删除的 manifest 列表文件数量    |
+| `deleted_statistics_files_count`      | 已删除的统计信息文件数量 (当前始终为 0)  |
+| `dry_run`                             | `1` 表示试运行模式，`0` 表示正常执行  |
+
+该命令执行以下步骤：
+
+1. 评估保留策略 (见下文) ，以确定必须保留哪些快照
+2. 如果提供了时间戳参数，还会额外保护该时间戳及之后的所有快照
+3. 让既未被保留策略保留、也未受时间戳保护机制保护的快照过期
+4. 计算哪些文件仅与已过期的快照关联
+5. 在正常模式下：生成不包含已过期快照的新元数据
+6. 在正常模式下：物理删除不可达的 manifest 列表、manifest 文件和数据文件
+7. 在 `dry_run = 1` 模式下：跳过步骤 5 和 6，仅返回计算出的指标
+
+<div id="iceberg-snapshot-retention-policy">
+  #### 快照保留策略
+</div>
+
+`expire_snapshots` 命令遵循 [Iceberg 快照保留策略](https://iceberg.apache.org/spec/#snapshot-retention-policy)。保留策略通过 Iceberg 表属性以及按引用的覆盖设置进行配置：
+
+| 属性                                     | 范围 | 默认值                                                                    | 描述                                |
+| -------------------------------------- | -- | ---------------------------------------------------------------------- | --------------------------------- |
+| `history.expire.min-snapshots-to-keep` | 表  | `iceberg_expire_default_min_snapshots_to_keep` (默认值为 `1`)              | 每个分支的祖先链中至少要保留的快照数量               |
+| `history.expire.max-snapshot-age-ms`   | 表  | `iceberg_expire_default_max_snapshot_age_ms` (默认值为 `432000000`，即 5 天)  | 分支中要保留的快照的最大保留时长 (毫秒)             |
+| `history.expire.max-ref-age-ms`        | 表  | `iceberg_expire_default_max_ref_age_ms` (默认值为 `∞`)                     | 快照引用 (分支或标签) 在被移除前允许的最大保留时长 (毫秒)  |
+
+每个快照引用 (Iceberg 元数据中的 `refs`) 都可以通过引用级字段覆盖这些值：`min-snapshots-to-keep`、`max-snapshot-age-ms` 和 `max-ref-age-ms`。
+
+**保留规则评估：**
+
+* **对于每个分支** (包括 `main`) ：从分支头开始遍历其祖先链。只要满足以下任一条件，就会保留该快照：
+  * 该快照位于祖先链中的前 `min-snapshots-to-keep` 个快照之内
+  * 该快照的存在时长未超过 `max-snapshot-age-ms` (即 `now - timestamp-ms <= max-snapshot-age-ms`)
+* **对于标签**：被标记的快照会被保留，除非该标签已超过其 `max-ref-age-ms`，此时会移除该标签引用
+* **非 `main` 引用** 如果其存在时长超过 `max-ref-age-ms`，将被完全移除 (`main` 分支永远不会被移除)
+* **悬空引用** 如果指向不存在的快照，将在发出警告后被移除
+* **当前快照始终会被保留**，无论保留设置如何
+
+**所需权限：**
+
+需要 `ALTER TABLE EXECUTE` 权限，它在 ClickHouse 访问控制层级中是 `ALTER TABLE` 的子权限。你可以单独授予该权限，也可以通过其父权限授予：
+
+```sql
+-- 仅授予 EXECUTE 权限
+GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
+
+-- 或授予所有 ALTER TABLE 权限（包含 ALTER TABLE EXECUTE）
+GRANT ALTER TABLE ON my_iceberg_table TO my_user;
+```
+
+<Note>
+  * 仅支持 Iceberg format version 2 表 (v1 快照不保证包含 `manifest-list`，而安全识别待清理文件需要它)
+  * 当前快照始终会被保留，即使它早于指定的 timestamp
+  * 要求启用 `allow_insert_into_iceberg` 设置
+  * 要求启用 `allow_experimental_expire_snapshots` 设置
+  * 当 ClickHouse 更新元数据时，目录 自身的授权 (REST catalog auth、AWS Glue IAM 等) 仍会独立执行
+</Note>
+
+<div id="iceberg-remove-orphan-files">
+  ### 删除孤立文件
+</div>
+
+孤立文件是指存储中存在、但未被 Iceberg 表元数据中的任何快照引用的文件。它们会因写入失败、合并整理后的清理不完整以及操作中断而不断累积，导致存储空间持续增长且无上限。`remove_orphan_files` 命令可用于识别并删除这些孤立文件。
+
+**语法：**
+
+```sql
+-- 位置形式：单个未命名的 older_than 参数
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files('timestamp')
+
+-- 命名形式
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    older_than = 'timestamp',
+    location = 'path',
+    dry_run = 0|1
+)
+
+-- 无参数：使用所有默认值（older_than = 3 天前）
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
+```
+
+**参数：**
+
+| 参数           | 类型              | 默认值                                                      | 描述                                                    |
+| ------------ | --------------- | -------------------------------------------------------- | ----------------------------------------------------- |
+| `older_than` | `String` (时间戳)  | 3 天前 (可通过 `iceberg_orphan_files_older_than_seconds` 配置)  | 仅将最后修改时间早于此时间戳的文件视为孤立文件候选文件。作为安全保护，防止删除正在进行的写入所产生的文件。 |
+| `location`   | `String`        | 表位置                                                      | 将扫描范围限制为表位置下的特定子目录 (例如 `'data/'` 或 `'metadata/'`) 。   |
+| `dry_run`    | `UInt64`        | `0`                                                      | 当为 `1` 时，会识别孤立文件并返回结果摘要，但不会实际删除任何内容。                  |
+
+**示例：**
+
+```sql
+-- 删除早于特定时间戳的孤立文件
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files('2026-03-01 00:00:00');
+
+-- 试运行：预览将被删除的文件
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(dry_run = 1);
+
+-- 仅扫描数据目录
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    older_than = '2026-03-01 00:00:00',
+    location = 'data/'
+);
+
+-- 将位置参数 older_than 与命名参数结合使用
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    '2026-03-01 00:00:00',
+    dry_run = 1
+);
+```
+
+**输出：**
+
+该命令会返回一个表，包含 `metric_name` 和 `metric_value` 两列，按类别显示已删除文件的数量 (或在 dry&#95;run 模式下将要删除的文件数量) 。文件类别会基于文件命名约定，采用尽力而为的启发式规则进行分类；不匹配任何特定模式的文件默认计入 `deleted_data_files_count`：
+
+| metric&#95;name                                     | metric&#95;value |
+| --------------------------------------------------- | ---------------- |
+| deleted&#95;data&#95;files&#95;count                | 5                |
+| deleted&#95;position&#95;delete&#95;files&#95;count | 2                |
+| deleted&#95;equality&#95;delete&#95;files&#95;count | 0                |
+| deleted&#95;manifest&#95;files&#95;count            | 3                |
+| deleted&#95;manifest&#95;lists&#95;count            | 1                |
+| deleted&#95;metadata&#95;files&#95;count            | 0                |
+| deleted&#95;statistics&#95;files&#95;count          | 0                |
+| skipped&#95;missing&#95;metadata&#95;count          | 0                |
+| failed&#95;deletions&#95;count                      | 0                |
+
+**设置：**
+
+| 设置                                        | 类型       | 默认值               | 说明                                 |
+| ----------------------------------------- | -------- | ----------------- | ---------------------------------- |
+| `allow_iceberg_remove_orphan_files`       | `Bool`   | `false`           | 用于启用该功能的门控设置 (Experimental) 。      |
+| `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 days) | 省略该参数时，`older_than` 的默认阈值 (单位为秒) 。 |
+
+<Note>
+  * **需要 Iceberg format version 2 (或更高版本) 。** Version 1 表会被拒绝，因为其快照中缺少 `manifest-list` 指针，而安全确定可达文件集合需要这些指针。在 v1 表上运行该命令会返回 `BAD_ARGUMENTS` 错误。
+  * 需要同时启用 `allow_insert_into_iceberg` 和 `allow_iceberg_remove_orphan_files` 设置
+  * 建议先运行 `expire_snapshots`，再运行 `remove_orphan_files`，以便先清理由已过期快照唯一引用的文件
+  * 使用 `dry_run = 1` 可在删除前预览孤儿文件
+  * `older_than` 阈值可防止删除仍在写入中的文件——默认 3 天的阈值提供了较为充足的安全余量
+</Note>
+
+<div id="see-also">
+  ## 另请参见
+</div>
+
+* [Iceberg 引擎](/zh/reference/engines/table-engines/integrations/iceberg)
+* [Iceberg cluster 表函数](/zh/reference/functions/table-functions/icebergCluster)

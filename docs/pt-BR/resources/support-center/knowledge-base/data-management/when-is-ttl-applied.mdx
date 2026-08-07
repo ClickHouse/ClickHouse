@@ -1,0 +1,88 @@
+---
+date: 2023-05-02
+title: Quando as regras de TTL são aplicadas, e temos controle sobre isso?
+description: As regras de TTL no ClickHouse acabam sendo aplicadas, e você pode controlar quando isso acontece usando a configuração `merge_with_ttl_timeout`. Saiba como forçar a aplicação do TTL e gerenciar threads em segundo plano para sua execução.
+tags: ['Conceitos fundamentais de dados']
+keywords: ['TTL']
+---
+
+<div id="ttl-rules-and-control">
+  ## Regras e controle de TTL
+</div>
+
+O TTL será aplicado ***em algum momento***. O que isso significa? A configuração da tabela `MergeTree` [`merge_with_ttl_timeout`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout) define o atraso mínimo, em segundos, antes de repetir um merge com TTL de exclusão. O valor padrão é de 14400 segundos (4 horas). Mas esse é apenas o atraso mínimo; pode levar mais tempo até que um merge para TTL de exclusão seja acionado.
+
+Você pode ver todas as configurações atuais de TTL (como `merge_with_ttl_timeout`) com esta consulta:
+
+```sql
+SELECT *
+FROM system.merge_tree_settings
+WHERE name like '%ttl%'
+```
+
+A resposta será assim:
+
+```response
+┌─name───────────────────────────────────────────────────────────┬─value───┬─changed─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┬─type───┐
+│ max_replicated_merges_with_ttl_in_queue                        │ 1       │       0 │ Quantas tarefas de merge de partes com TTL são permitidas simultaneamente na fila do ReplicatedMergeTree.                                                                                 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ max_number_of_merges_with_ttl_in_pool                          │ 2       │       0 │ Quando o número de merges com entradas de TTL no pool exceder o valor especificado, nenhum novo merge com TTL será atribuído. Isso libera threads para merges regulares e evita "Too many parts" │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds │ 2592000 │       1 │ Remove partes detached antigas e corrompidas em segundo plano caso permaneçam intocadas pelo período de tempo especificado por esta configuração.                                           │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_with_ttl_timeout                                         │ 14400   │       0 │ Tempo mínimo em segundos para que um merge com TTL de exclusão possa ser repetido.                                                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ merge_with_recompression_ttl_timeout                           │ 14400   │       0 │ Tempo mínimo em segundos para que um merge com TTL de recompressão possa ser repetido.                                                                                                    │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ ttl_only_drop_parts                                            │ 0       │       0 │ Remove as partes expiradas por completo, sem poda parcial.                                                                                                                                 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+│ materialize_ttl_recalculate_only                               │ 0       │       0 │ Apenas recalcula as informações de TTL ao executar MATERIALIZE TTL                                                                                                                         │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+└────────────────────────────────────────────────────────────────┴─────────┴─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┴────────┘
+```
+
+Você pode usar `SHOW CREATE TABLE` para verificar se a sua tabela contém regras de TTL, bem como se alguma das opções em `SETTINGS` da tabela alterou os valores das configurações acima:
+
+```sql
+SHOW CREATE TABLE <TableName>
+```
+
+<div id="force-a-ttl-rule-to-be-applied">
+  ## Forçar a aplicação de uma regra TTL
+</div>
+
+Esta não é a solução mais elegante, mas você pode executar explicitamente `MATERIALIZE TTL`, o que força a materialização de todas as regras TTL de uma tabela:
+
+```sql
+ALTER TABLE my_table
+    MATERIALIZE TTL
+```
+
+<div id="background-threads-affecting-ttl">
+  ## Threads em segundo plano que afetam o TTL
+</div>
+
+É possível que suas regras de TTL não estejam sendo aplicadas porque não há threads de trabalho suficientes no pool em segundo plano. Por exemplo, se você inserir dados de forma intensa, todo o pool em segundo plano poderá ser usado para merges normais. No entanto, você pode aumentar o tamanho do pool em segundo plano.
+
+Você pode verificar o tamanho atual do pool em segundo plano com esta consulta:
+
+```sql
+SELECT *
+FROM system.settings
+WHERE name = 'background_pool_size';
+```
+
+A resposta será semelhante a:
+
+```response
+┌─name─────────────────┬─value─┬─changed─┬─description─────────────────────┬─min──┬─max──┬─readonly─┬─type───┬─default─┬─alias_for─┐
+│ background_pool_size │ 16    │       0 │ Configuração obsoleta, não faz nada. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
+└──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
+```
+
+Consulte a documentação para saber como modificar a configuração [`background_pool_size`](/pt-BR/reference/settings/server-settings/settings#background_pool_size), que é definida da seguinte forma:
+
+```xml
+<background_pool_size>16</background_pool_size>
+```
+
+Você pode verificar a atividade atual do pool em segundo plano com esta consulta:
+
+```sql
+SELECT *
+FROM system.metrics
+WHERE metric like 'Background%'
+```

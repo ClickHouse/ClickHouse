@@ -1,0 +1,105 @@
+---
+description: 'يدعم المحرك `Atomic` استعلامات `DROP TABLE` و`RENAME TABLE`
+  غير المعطِّلة، واستعلامات `EXCHANGE TABLES` الذرّية. ويُستخدم محرك قاعدة البيانات `Atomic`
+  افتراضيًا.'
+sidebarTitle: 'Atomic'
+slug: /engines/database-engines/atomic
+title: 'Atomic'
+doc_type: 'reference'
+---
+
+يدعم المحرك `Atomic` استعلامات [`DROP TABLE`](#drop-detach-table) و[`RENAME TABLE`](#rename-table) غير المعطِّلة، واستعلامات [`EXCHANGE TABLES`](#exchange-tables) الذرّية. ويُستخدم محرك قاعدة البيانات `Atomic` افتراضيًا في ClickHouse مفتوح المصدر.
+
+<Note>
+  في ClickHouse Cloud، يُستخدم أيضًا افتراضيًا [`محرك قاعدة البيانات `Shared&#96;&#96;](/ar/products/cloud/features/infrastructure/shared-catalog#shared-database-engine)، كما يدعم العمليات المذكورة أعلاه.
+</Note>
+
+<div id="creating-a-database">
+  ## إنشاء قاعدة بيانات
+</div>
+
+```sql
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+```
+
+<div id="specifics-and-recommendations">
+  ## تفاصيل وتوصيات
+</div>
+
+<div id="table-uuid">
+  ### معرّف UUID للجدول
+</div>
+
+لكل جدول في قاعدة البيانات `Atomic` معرّف [معرّف UUID](/ar/reference/data-types/uuid) دائم، وتُخزَّن بياناته في الدليل التالي:
+
+```text
+/clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
+```
+
+حيث يشير `xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` إلى معرّف UUID الخاص بالجدول.
+
+افتراضيًا، يُنشأ معرّف UUID تلقائيًا. ومع ذلك، يمكن للمستخدمين تحديد معرّف UUID صراحةً عند إنشاء جدول، رغم أن ذلك غير مُوصى به.
+
+على سبيل المثال:
+
+```sql
+CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE = ...;
+```
+
+<Note>
+  يمكنك استخدام الإعداد [show&#95;table&#95;uuid&#95;in&#95;table&#95;create&#95;query&#95;if&#95;not&#95;nil](/ar/reference/settings/session-settings#show_table_uuid_in_table_create_query_if_not_nil) لعرض معرّف UUID عبر استعلام `SHOW CREATE`.
+</Note>
+
+<div id="rename-table">
+  ### RENAME TABLE
+</div>
+
+لا تُعدّل استعلامات [`RENAME`](/ar/reference/statements/rename) معرّف UUID ولا تنقل بيانات الجدول. تُنفَّذ هذه الاستعلامات فورًا ولا تنتظر حتى تكتمل الاستعلامات الأخرى التي تستخدم الجدول.
+
+<div id="drop-detach-table">
+  ### DROP/DETACH TABLE
+</div>
+
+عند استخدام `DROP TABLE`، لا تُزال أي بيانات. يكتفي محرّك `Atomic` بوضع علامة على الجدول على أنه محذوف، وذلك بنقل البيانات الوصفية الخاصة به إلى `/clickhouse_path/metadata_dropped/` وإخطار خيط المعالجة في الخلفية. ويُحدَّد التأخير قبل الحذف النهائي لبيانات الجدول بواسطة إعداد [`database_atomic_delay_before_drop_table_sec`](/ar/reference/settings/server-settings/settings#database_atomic_delay_before_drop_table_sec).
+يمكنك تحديد الوضع المتزامن باستخدام المُعدِّل `SYNC`. استخدم الإعداد [`database_atomic_wait_for_drop_and_detach_synchronously`](/ar/reference/settings/session-settings#database_atomic_wait_for_drop_and_detach_synchronously) لتحقيق ذلك. في هذه الحالة، ينتظر `DROP` حتى تنتهي استعلامات `SELECT` و`INSERT` وغيرها من الاستعلامات الجارية التي تستخدم الجدول. وسيُزال الجدول عندما لا يعود قيد الاستخدام.
+
+<div id="exchange-tables">
+  ### EXCHANGE TABLES/DICTIONARIES
+</div>
+
+يُبدّل استعلام [`EXCHANGE`](/ar/reference/statements/exchange) الجداول أو القواميس تبديلًا ذريًا. على سبيل المثال، بدلًا من هذه العملية غير الذرية:
+
+```sql title="Non-atomic"
+RENAME TABLE new_table TO tmp, old_table TO new_table, tmp TO old_table;
+```
+
+يمكنك استخدام قاعدة بيانات بمحرك atomic:
+
+```sql title="Atomic"
+EXCHANGE TABLES new_table AND old_table;
+```
+
+<div id="replicatedmergetree-in-atomic-database">
+  ### ReplicatedMergeTree في قاعدة بيانات atomic
+</div>
+
+بالنسبة إلى جداول [`ReplicatedMergeTree`](/ar/reference/engines/table-engines/mergetree-family/replication)، يُنصح بعدم تحديد معلمات المحرك الخاصة بالمسار في ZooKeeper واسم النسخة المتماثلة. في هذه الحالة، ستُستخدم معلمتا الإعداد [`default_replica_path`](/ar/reference/settings/server-settings/settings#default_replica_path) و[`default_replica_name`](/ar/reference/settings/server-settings/settings#default_replica_name). وإذا أردت تحديد معلمات المحرك صراحةً، فيُنصح باستخدام ماكرو `{uuid}`. وهذا يضمن إنشاء مسارات فريدة تلقائيًا لكل جدول في ZooKeeper.
+
+<div id="metadata-disk">
+  ### قرص البيانات الوصفية
+</div>
+
+عند تحديد `disk` ضمن `SETTINGS`، يُستخدم القرص لتخزين ملفات البيانات الوصفية للجدول.
+على سبيل المثال:
+
+```sql
+CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+```
+
+إذا لم يُحدَّد، فسيُستخدم تلقائيًا القرص المُعرَّف في `database_disk.disk`.
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [system.databases](/ar/reference/system-tables/databases) جدول النظام

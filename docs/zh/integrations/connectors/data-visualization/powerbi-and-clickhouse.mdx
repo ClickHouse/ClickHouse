@@ -1,0 +1,322 @@
+---
+sidebarTitle: 'Power BI'
+slug: /integrations/powerbi
+keywords: ['clickhouse', 'Power BI', '连接', '集成', 'UI']
+description: 'Microsoft Power BI 是由 Microsoft 开发的一款交互式数据可视化软件产品，主要用于商业智能。'
+title: 'Power BI'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Microsoft Power BI 可以从 [ClickHouse Cloud](https://clickhouse.com/cloud) 或自管理部署中查询数据，或将数据加载到内存中。
+
+你可以使用多种 Power BI 版本来可视化数据：
+
+* Power BI Desktop：用于创建仪表盘和可视化内容的 Windows 桌面应用
+* Power BI Service：Azure 中提供的 SaaS 服务，用于托管在 Power BI Desktop 中创建的仪表盘
+
+Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布到 Power BI Service。
+
+本教程将指导你完成以下操作：
+
+* [安装 ClickHouse ODBC 驱动程序](#install-the-odbc-driver)
+* [将 ClickHouse Power BI Connector 安装到 Power BI Desktop 中](#power-bi-installation)
+* [从 ClickHouse 查询数据并在 Power BI Desktop 中进行可视化](#query-and-visualise-data)
+* [为 Power BI Service 设置本地数据网关](#power-bi-service)
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+<div id="power-bi-installation">
+  ### Power BI 安装
+</div>
+
+本教程假设你已在 Windows 计算机上安装 Microsoft Power BI Desktop。你可以在[这里](https://www.microsoft.com/en-us/download/details.aspx?id=58494)下载并安装 Power BI Desktop。
+
+我们建议将 Power BI 更新到最新版本。自版本 `2.137.751.0` 起，默认提供 ClickHouse 连接器。
+
+<div id="gather-your-clickhouse-connection-details">
+  ### 收集你的 ClickHouse 连接信息
+</div>
+
+你需要以下信息来连接到你的 ClickHouse 实例：
+
+* Hostname - ClickHouse 主机名
+* 用户名 - 用户凭据中的用户名
+* 密码 - 该用户的密码
+* Database - 你要连接的实例上的数据库名称
+
+<div id="power-bi-desktop">
+  ## Power BI 桌面版
+</div>
+
+要开始在 Power BI Desktop 中查询数据，您需要完成以下步骤：
+
+1. 安装 ClickHouse ODBC 驱动程序
+2. 查找 ClickHouse 连接器
+3. 连接到 ClickHouse
+4. 查询并可视化数据
+
+<div id="install-the-odbc-driver">
+  ### 安装 ODBC 驱动程序
+</div>
+
+下载最新的 [ClickHouse ODBC 发行版](https://github.com/ClickHouse/clickhouse-odbc/releases)。
+
+运行随附的 `.msi` 安装程序，并按照安装向导完成安装。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_install.webp" alt="显示安装选项的 ClickHouse ODBC 驱动程序 安装向导" border />
+
+<br />
+
+<Note>
+  `Debug symbols` 为可选项，并非必需。
+</Note>
+
+<div id="verify-odbc-driver">
+  #### 验证 ODBC 驱动程序
+</div>
+
+驱动程序安装完成后，你可以通过以下步骤验证是否安装成功：
+
+在开始菜单中搜索 ODBC，然后选择“ODBC 数据源 **(64-bit)**”。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="Windows 搜索中显示“ODBC 数据源 (64-bit)”选项" border />
+
+<br />
+
+确认列表中包含 ClickHouse Driver。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_verify.webp" alt="ODBC 数据源管理器在“驱动程序”选项卡中显示 ClickHouse 驱动程序" border />
+
+<br />
+
+<div id="find-the-clickhouse-connector">
+  ### 查找 ClickHouse 连接器
+</div>
+
+<Note>
+  适用于 Power BI Desktop `2.137.751.0` 版本
+</Note>
+
+在 Power BI Desktop 启动界面上，点击“获取数据”。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="显示“获取数据”按钮的 Power BI Desktop 启动界面" border />
+
+<br />
+
+搜索“ClickHouse”
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_search_clickhouse.webp" alt="Power BI“获取数据”对话框，搜索栏中已搜索 ClickHouse" border />
+
+<br />
+
+<div id="connect-to-clickhouse">
+  ### 连接到 ClickHouse
+</div>
+
+选择连接器，然后输入 ClickHouse 实例的凭据：
+
+* Host (必填) - 实例的域名/地址。请确保不要添加任何前缀/后缀。
+* Port (必填) - 实例的端口。
+* Database - 数据库名称。
+* Options - [ClickHouse ODBC GitHub 页面](https://github.com/ClickHouse/clickhouse-odbc#configuration)中列出的任意 ODBC 选项
+* Data Connectivity mode - DirectQuery
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_db.webp" alt="显示主机、端口、数据库和连接模式字段的 ClickHouse 连接对话框" border />
+
+<br />
+
+<Note>
+  建议选择 DirectQuery，以直接查询 ClickHouse。
+
+  如果数据量较小，也可以选择导入模式，全部数据都会加载到 Power BI 中。
+</Note>
+
+* 指定用户名和密码
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_user.webp" alt="用于输入用户名和密码的 ClickHouse 连接凭据对话框" border />
+
+<br />
+
+<div id="query-and-visualise-data">
+  ### 查询和可视化数据
+</div>
+
+最后，你应该能在 Navigator 视图中看到数据库和表。选择所需的表，然后点击“Load”，以
+从 ClickHouse 导入数据。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="Power BI Navigator 视图显示 ClickHouse 数据库表和样本数据" border />
+
+<br />
+
+导入完成后，你就可以像平常一样在 Power BI 中访问 ClickHouse 数据。
+
+<br />
+
+<div id="power-bi-service">
+  ## Power BI Service
+</div>
+
+若要使用 Microsoft Power BI Service，您需要创建一个[本地数据网关](https://learn.microsoft.com/en-us/power-bi/connect-data/service-gateway-onprem)。
+
+有关设置自定义连接器的更多信息，请参阅 Microsoft 关于如何[通过本地数据网关使用自定义数据连接器](https://learn.microsoft.com/en-us/power-bi/connect-data/service-gateway-custom-connectors)的文档。
+
+<div id="odbc-driver-import-only">
+  ## ODBC 驱动程序 (仅导入)
+</div>
+
+我们建议使用支持 DirectQuery 的 ClickHouse 连接器。
+
+请按上述说明，在本地数据网关实例上安装 [ODBC 驱动程序](#install-the-odbc-driver)，并进行[验证](#verify-odbc-driver)。
+
+<div id="create-a-new-user-dsn">
+  ### 创建新的用户 DSN
+</div>
+
+驱动程序安装完成后，即可创建 ODBC 数据源。在开始菜单中搜索 ODBC，然后选择“ODBC 数据源 (64 位) ”。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="Windows 搜索中显示“ODBC 数据源（64 位）”选项" border />
+
+<br />
+
+我们需要在这里添加一个新的用户 DSN。点击左侧的“添加”按钮。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_add_dsn.webp" alt="ODBC 数据源管理器中高亮显示用于创建新 DSN 的“添加”按钮" border />
+
+<br />
+
+选择 ODBC 驱动程序的 Unicode 版本。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_select_unicode.webp" alt="“创建新数据源”对话框中显示已选择 ClickHouse Unicode Driver" border />
+
+<br />
+
+填写连接信息。
+
+<Image size="sm" img="/images/integrations/data-visualization/powerbi_connection_details.webp" alt="包含连接参数的 ClickHouse ODBC Driver 配置对话框" border />
+
+<br />
+
+<Note>
+  如果你使用的是已启用 SSL 的部署 (例如 ClickHouse Cloud 或自管理实例) ，则应在 `SSLMode` 字段中填写 `require`。
+
+  * `Host` 应始终省略协议 (即不要包含 `http://` 或 `https://`) 。
+  * `Timeout` 是一个表示秒数的整数。默认值：`30 seconds`。
+</Note>
+
+<div id="get-data-into-power-bi">
+  ### 将数据导入 Power BI
+</div>
+
+如果您尚未安装 Power BI，
+请[下载并安装 Power BI Desktop](https://www.microsoft.com/en-us/download/details.aspx?id=58494)。
+
+在 Power BI Desktop 启动屏幕上，单击“Get Data”。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="显示“Get Data”按钮的 Power BI Desktop 主屏幕" border />
+
+<br />
+
+选择“Other”-&gt;“ODBC”。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_select_odbc.webp" alt="Power BI“Get Data”对话框，其中“Other”类别下的“ODBC”选项已选中" border />
+
+<br />
+
+从列表中选择您之前创建的数据源。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_select_dsn.webp" alt="显示已配置 ClickHouse DSN 的 ODBC 驱动程序选择对话框" border />
+
+<br />
+
+<Note>
+  如果您在创建数据源时未指定凭据，系统会提示您输入用户名和密码。
+</Note>
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_dsn_credentials.webp" alt="ODBC DSN connection 的凭据对话框" border />
+
+<br />
+
+最后，您应会在 Navigator 视图中看到数据库和表。选择所需的表，然后单击“Load”从 ClickHouse 导入数据。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="显示 ClickHouse 数据库表和样本数据的 Power BI Navigator 视图" border />
+
+<br />
+
+导入完成后，您就可以像平常一样在 Power BI 中访问 ClickHouse 数据。
+
+<div id="optimizing-work-with-large-datasets">
+  ## 优化大规模数据集的使用体验
+</div>
+
+PowerBI 是为传统的行式数据库和中等数据量场景设计的。在大规模使用 ClickHouse (数十亿行数据) 时，需要采用特定的架构模式才能获得最佳性能。
+
+PowerBI 会自动生成包含嵌套子查询、复杂 JOIN 以及即时转换的 SQL 查询。这些模式在传统 SQL 数据库中运行良好，但在大规模查询 ClickHouse 这类列式数据库时，效率可能并不理想。
+
+**大型数据集的推荐做法：** 不要直接查询原始表，而是为每个仪表盘可视化在 ClickHouse 中创建专用的 `materialized views`。这样可以获得：
+
+* 无论数据量大小如何，都能保持稳定且快速的性能
+* 降低 ClickHouse 集群负载
+* 更可预测的成本
+
+<Warning>
+  如果你的仪表盘很慢，请检查 ClickHouse 的 [`query_log`](/zh/reference/system-tables/query_log)，查看 Power BI 实际执行了哪些 SQL 查询。常见问题包括嵌套子查询、扫描整张表，或低效的 JOIN。一旦定位到问题，就创建能够解决这些具体问题的 [materialized views](/zh/concepts/features/materialized-views/index)。
+</Warning>
+
+<div id="implementation-best-practices">
+  ### 实施最佳实践
+</div>
+
+<div id="pre-aggregation-strategy">
+  #### 预聚合策略
+</div>
+
+在多个聚合级别创建 materialized view：
+
+* 对近期的详细仪表盘使用按小时聚合
+* 对历史趋势使用按天聚合
+* 对长期报表使用按月 rollup
+* 保留具有适当生存时间 (TTL) 的原始数据，以便进行临时分析
+
+<div id="data-modelling-optimization">
+  #### 数据建模优化
+</div>
+
+* 定义与查询模式相匹配的 `ORDER BY` 键
+* 对时间序列数据进行分区
+* 将小型维度表转换为字典，以提高查找效率
+* 利用投影进一步优化查询
+
+<div id="known-limitations">
+  ## 已知限制
+</div>
+
+<div id="uint64">
+  ### UInt64
+</div>
+
+UInt64 及更大的无符号整数类型不会自动加载到数据集中，因为 Int64 是 Power BI 支持的最大整数类型。
+
+<Note>
+  要正确导入数据，请先在 Navigator 中点击“转换数据”，再点击“加载”按钮。
+</Note>
+
+在此示例中，`pageviews` 表有一个 UInt64 列，默认会被识别为“二进制”。
+点击“转换数据”会打开 Power Query Editor，我们可以在其中重新指定该列的类型，例如将其设置为
+文本。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_16.webp" alt="Power Query Editor 中显示 UInt64 列的数据类型转换" border />
+
+<br />
+
+完成后，点击左上角的“关闭并应用”，然后继续加载数据。

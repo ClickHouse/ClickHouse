@@ -1,0 +1,299 @@
+---
+description: 'محرك جدول يوفّر واجهة شبيهة بالجدول لتنفيذ SELECT من الملفات وINSERT إليها، على نحو مماثل لدالة الجدول `s3`. استخدم `file` عند العمل مع الملفات المحلية، و`s3` عند العمل مع حاويات في تخزين الكائنات مثل S3 أو GCS أو MinIO.'
+sidebarTitle: 'file'
+slug: /sql-reference/table-functions/file
+title: 'file'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="file-table-function">
+  # دالة الجدول file
+</div>
+
+محرك جدول يوفّر واجهة شبيهة بالجدول لإجراء `SELECT` من الملفات و`INSERT` إليها، على غرار دالة الجدول [s3](/ar/reference/functions/table-functions/s3). استخدم `file` عند العمل مع الملفات المحلية، واستخدم `s3` عند العمل مع الحاويات في تخزين الكائنات مثل S3 أو GCS أو MinIO.
+
+يمكن استخدام الدالة `file` في استعلامات `SELECT` و`INSERT` لقراءة الملفات أو الكتابة إليها.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+file([path_to_archive ::] path [,format] [,structure] [,compression])
+```
+
+في استعلامات `SELECT`، يمكن أيضًا أن يكون `path` تعبيرًا يُرجِع `Array(String)`:
+
+```sql
+file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
+```
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+| المعلمة           | الوصف                                                                                                                                                                                                                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`            | المسار النسبي إلى الملف من [user&#95;files&#95;path](/ar/reference/settings/server-settings/settings#user_files_path)، أو `Array(String)` من المسارات في استعلامات `SELECT`. يدعم في وضع القراءة فقط [أنماط glob](#globs-in-path) التالية: `*` و`?` و`{abc,def}` (حيث إن `'abc'` و`'def'` سلاسل نصية) و`{N..M}` (حيث إن `N` و`M` أرقام). |
+| `path_to_archive` | المسار النسبي إلى أرشيف zip/tar/7z. ويدعم أنماط glob نفسها المستخدمة في `path`.                                                                                                                                                                                                                                                       |
+| `format`          | [التنسيق](/ar/reference/formats/index) الخاص بالملف.                                                                                                                                                                                                                                                                                     |
+| `structure`       | بنية الجدول. التنسيق: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                  |
+| `compression`     | نوع الضغط الموجود عند استخدامه في استعلام `SELECT`، أو نوع الضغط المطلوب عند استخدامه في استعلام `INSERT`. أنواع الضغط المدعومة هي `gz` و`br` و`xz` و`zst` و`lz4` و`bz2`.                                                                                                                                                             |
+
+<Tip>
+  عند حذف الوسيط `structure`، يستنتج ClickHouse المخطط من التنسيق نفسه.
+  وتنتج التنسيقات المختلفة أسماء أعمدة وأنواعًا افتراضية مختلفة.
+  لعرض المخطط لتنسيق معيّن، استخدم [`DESC`](/ar/reference/statements/describe-table) مع دالة الجدول [`format`](/ar/reference/functions/table-functions/format).
+
+  على سبيل المثال:
+
+  ```sql
+  DESC format(LineAsString, 'Hello\nWorld')
+  ```
+
+  ```response
+  ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+  │ line │ String │              │                    │         │                  │                │
+  └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+  ```
+</Tip>
+
+<div id="returned_value">
+  ## القيمة المعادة
+</div>
+
+جدول لقراءة البيانات من ملف أو كتابتها فيه.
+
+<div id="examples-for-writing-to-a-file">
+  ## أمثلة على الكتابة إلى ملف
+</div>
+
+<div id="write-to-a-tsv-file">
+  ### الكتابة إلى ملف TSV
+</div>
+
+```sql
+INSERT INTO TABLE FUNCTION
+file('test.tsv', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
+```
+
+ونتيجةً لذلك، تُكتَب البيانات في الملف `test.tsv`:
+
+```bash
+# cat /var/lib/clickhouse/user_files/test.tsv
+1    2    3
+3    2    1
+1    3    2
+```
+
+<div id="partitioned-write-to-multiple-tsv-files">
+  ### كتابة مُقسَّمة إلى عدة ملفات TSV
+</div>
+
+إذا حدّدت تعبير `PARTITION BY` عند إدراج البيانات في دالة جدول من النوع `file`، فسيُنشأ ملف منفصل لكل partition. ويساعد تقسيم البيانات إلى ملفات منفصلة على تحسين أداء عمليات القراءة.
+
+```sql
+INSERT INTO TABLE FUNCTION
+file('test_{_partition_id}.tsv', 'TSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+PARTITION BY column3
+VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
+```
+
+وبالتالي، تُكتب البيانات في ثلاثة ملفات: `test_1.tsv` و`test_2.tsv` و`test_3.tsv`.
+
+```bash
+# cat /var/lib/clickhouse/user_files/test_1.tsv
+3    2    1
+
+# cat /var/lib/clickhouse/user_files/test_2.tsv
+1    3    2
+
+# cat /var/lib/clickhouse/user_files/test_3.tsv
+1    2    3
+```
+
+<div id="examples-for-reading-from-a-file">
+  ## أمثلة على القراءة من ملف
+</div>
+
+<div id="select-from-a-csv-file">
+  ### SELECT من ملف CSV
+</div>
+
+أولًا، اضبط `user_files_path` في إعدادات الخادم وجهّز ملفًا باسم `test.csv`:
+
+```bash
+$ grep user_files_path /etc/clickhouse-server/config.xml
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+
+$ cat /var/lib/clickhouse/user_files/test.csv
+    1,2,3
+    3,2,1
+    78,43,45
+```
+
+ثم اقرأ البيانات من `test.csv` إلى جدول، ثم اعرض أول صفّين منه:
+
+```sql
+SELECT * FROM
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+LIMIT 2;
+```
+
+```text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+<div id="inserting-data-from-a-file-into-a-table">
+  ### إدخال البيانات من ملف إلى جدول
+</div>
+
+```sql
+INSERT INTO FUNCTION
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+VALUES (1, 2, 3), (3, 2, 1);
+```
+
+```sql
+SELECT * FROM
+file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+```
+
+```text
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
+```
+
+قراءة البيانات من `table.csv`، الموجود في `archive1.zip` أو في `archive2.zip` أو كليهما:
+
+```sql
+SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
+```
+
+<div id="globs-in-path">
+  ## أنماط glob في المسار
+</div>
+
+قد تستخدم المسارات أنماط glob. يجب أن تطابق الملفات نمط المسار بالكامل، لا اللاحقة أو البادئة فقط. ويوجد استثناء واحد: إذا كان المسار يشير إلى
+دليل موجود ولا يستخدم أنماط glob، فستُضاف `*` ضمنيًا إلى المسار بحيث
+تُحدَّد جميع الملفات الموجودة في الدليل.
+
+* `*` — يمثّل أي عدد من المحارف باستثناء `/`، بما في ذلك السلسلة الفارغة.
+* `?` — يمثّل محرفًا واحدًا أيًا كان.
+* `{some_string,another_string,yet_another_one}` — يستبدل بأي من السلاسل `'some_string', 'another_string', 'yet_another_one'`. ويمكن أن تحتوي السلاسل على الرمز `/`.
+* `{N..M}` — يمثّل أي رقم `>= N` و `<= M`.
+* `**` - يمثّل جميع الملفات داخل مجلد على نحوٍ تكراري.
+
+البُنى التي تستخدم `{}` مشابهة لما في دالتي الجداول [remote](/ar/reference/functions/table-functions/remote) و [hdfs](/ar/reference/functions/table-functions/hdfs).
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+**مثال**
+
+لنفترض وجود هذه الملفات بالمسارات النسبية التالية:
+
+* `some_dir/some_file_1`
+* `some_dir/some_file_2`
+* `some_dir/some_file_3`
+* `another_dir/some_file_1`
+* `another_dir/some_file_2`
+* `another_dir/some_file_3`
+
+نفّذ استعلامًا لحساب العدد الإجمالي للصفوف في جميع الملفات:
+
+```sql
+SELECT count(*) FROM file('{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32');
+```
+
+تعبير بديل للمسار يحقق النتيجة نفسها:
+
+```sql
+SELECT count(*) FROM file('{some,another}_dir/*', 'TSV', 'name String, value UInt32');
+```
+
+استعلم عن إجمالي عدد الصفوف في `some_dir` باستخدام `*` الضمني:
+
+```sql
+SELECT count(*) FROM file('some_dir', 'TSV', 'name String, value UInt32');
+```
+
+<Note>
+  إذا كانت قائمة الملفات لديك تحتوي على نطاقات رقمية تبدأ بأصفار، فاستخدم الصيغة بالأقواس المعقوفة لكل رقم على حدة، أو استخدم `?`.
+</Note>
+
+**مثال**
+
+استعلم عن العدد الإجمالي للصفوف في الملفات المسماة `file000` و`file001` و... و`file999`:
+
+```sql
+SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32');
+```
+
+**مثال**
+
+استعلم عن العدد الإجمالي للصفوف من جميع الملفات داخل الدليل `big_dir/`، بما في ذلك الأدلة الفرعية:
+
+```sql
+SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
+```
+
+**مثال**
+
+استعلم عن العدد الإجمالي للصفوف في جميع ملفات `file002` داخل أي مجلد ضمن الدليل `big_dir/`، بما يشمل جميع المجلدات الفرعية:
+
+```sql
+SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
+```
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — مسار الملف. النوع: `LowCardinality(String)`.
+* `_file` — اسم الملف. النوع: `LowCardinality(String)`.
+* `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، تكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل على الملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
+
+<div id="hive-style-partitioning">
+  ## إعداد use_hive_partitioning
+</div>
+
+عند تعيين `use_hive_partitioning` إلى 1، سيكتشف ClickHouse التقسيم بنمط Hive في المسار (`/name=value/`)، وسيتيح استخدام أعمدة التقسيم كأعمدة افتراضية في الاستعلام. وستحمل هذه الأعمدة الافتراضية الأسماء نفسها الموجودة في مسار التقسيم.
+
+**مثال**
+
+استخدام عمود افتراضي أُنشئ باستخدام التقسيم بنمط Hive
+
+```sql
+SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="settings">
+  ## الإعدادات
+</div>
+
+| الإعداد                                                                                                                                     | الوصف                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [engine&#95;file&#95;empty&#95;if&#95;not&#95;exists](/ar/reference/settings/session-settings#engine_file_empty_if_not_exists)                 | يتيح إرجاع بيانات فارغة من ملف غير موجود. يكون معطّلًا افتراضيًا.                                                                                                                           |
+| [engine&#95;file&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings#engine_file_truncate_on_insert)                       | يتيح اقتطاع الملف قبل الإدراج فيه. يكون معطّلًا افتراضيًا.                                                                                                                                  |
+| [engine&#95;file&#95;allow&#95;create&#95;multiple&#95;files](/ar/reference/settings/session-settings#engine_file_allow_create_multiple_files) | يتيح إنشاء ملف جديد عند كل عملية إدراج إذا كان التنسيق يتضمن لاحقة. يكون معطّلًا افتراضيًا.                                                                                                 |
+| [engine&#95;file&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings#engine_file_skip_empty_files)                           | يتيح تخطي الملفات الفارغة أثناء القراءة. يكون معطّلًا افتراضيًا.                                                                                                                            |
+| [storage&#95;file&#95;read&#95;method](/ar/reference/settings/session-settings#engine_file_empty_if_not_exists)                                | طريقة قراءة البيانات من ملف التخزين، وهي إحدى القيم التالية: read أو pread أو mmap (فقط لـ clickhouse-local). القيمة الافتراضية: `pread` لـ clickhouse-server، و`mmap` لـ clickhouse-local. |
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)
+* [إعادة تسمية الملفات بعد المعالجة](/ar/reference/settings/session-settings#rename_files_after_processing)

@@ -1,0 +1,15 @@
+---
+description: '向 `Null` 表写入数据时，数据会被忽略。从
+  `Null` 表读取时，返回结果为空。'
+sidebarTitle: 'Null'
+slug: /engines/table-engines/special/null
+title: 'Null 表引擎'
+doc_type: 'reference'
+---
+
+向 `Null` 表写入数据时，数据会被忽略。
+从 `Null` 表读取时，返回结果为空。
+
+`Null` 表引擎适用于数据转换场景，即在转换完成后不再需要原始数据的情况。
+为此，你可以在 `Null` 表上创建一个 materialized view。
+写入该表的数据会被该视图消费，但原始数据会被丢弃。

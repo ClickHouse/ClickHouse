@@ -1,0 +1,107 @@
+---
+description: 'SQLite データベースに接続し、`INSERT` および `SELECT`
+  クエリを実行して、ClickHouse と SQLite 間でデータをやり取りできます。'
+sidebarTitle: 'SQLite'
+slug: /engines/database-engines/sqlite
+title: 'SQLite'
+doc_type: 'reference'
+---
+
+[SQLite](https://www.sqlite.org/index.html) データベースに接続し、`INSERT` および `SELECT` クエリを実行して、ClickHouse と SQLite 間でデータをやり取りできます。
+
+<div id="creating-a-database">
+  ## データベースの作成
+</div>
+
+```sql
+    CREATE DATABASE sqlite_database
+    ENGINE = SQLite('db_path')
+```
+
+**エンジンパラメータ**
+
+* `db_path` — SQLiteデータベースファイルへのパス。
+
+<div id="data_types-support">
+  ## データ型のサポート
+</div>
+
+以下の表は、ClickHouse が SQLite からスキーマを自動推論する際のデフォルトの型マッピングを示しています。
+
+| SQLite  | ClickHouse                              |
+| ------- | --------------------------------------- |
+| INTEGER | [Int32](/ja/reference/data-types/int-uint) |
+| REAL    | [Float32](/ja/reference/data-types/float)  |
+| TEXT    | [String](/ja/reference/data-types/string)  |
+| TEXT    | [UUID](/ja/reference/data-types/uuid)      |
+| BLOB    | [String](/ja/reference/data-types/string)  |
+
+[SQLite table engine](/ja/reference/engines/table-engines/integrations/sqlite) を使用して、特定の ClickHouse 型でテーブルを明示的に定義した場合、SQLite の TEXT カラムから次の ClickHouse 型をパースできます。
+
+* [Date](/ja/reference/data-types/date), [Date32](/ja/reference/data-types/date32)
+* [DateTime](/ja/reference/data-types/datetime), [DateTime64](/ja/reference/data-types/datetime64)
+* [UUID](/ja/reference/data-types/uuid)
+* [Enum8, Enum16](/ja/reference/data-types/enum)
+* [Decimal32, Decimal64, Decimal128, Decimal256](/ja/reference/data-types/decimal)
+* [FixedString](/ja/reference/data-types/fixedstring)
+* すべての整数型 ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/ja/reference/data-types/int-uint))
+* [Float32, Float64](/ja/reference/data-types/float)
+
+SQLite は動的型付けを採用しており、型アクセス関数では自動的に型変換が行われます。たとえば、TEXT カラムを整数として読み取る場合、そのテキストを数値としてパースできなければ 0 が返されます。つまり、ClickHouse テーブルが基になる SQLite カラムとは異なる型で定義されていると、エラーにならずに値が暗黙的に変換される可能性があります。
+
+<div id="specifics-and-recommendations">
+  ## 特記事項と推奨事項
+</div>
+
+SQLite は、データベース全体 (定義、テーブル、インデックス、データそのもの) を、ホストマシン上の単一のクロスプラットフォーム対応ファイルとして保存します。書き込み時にはデータベースファイル全体がロックされるため、書き込み操作は順次実行されます。一方、読み取り操作は並行して実行できます。
+SQLite では、サービス管理 (起動スクリプトなど) や、`GRANT` やパスワードに基づくアクセス制御は必要ありません。アクセス制御は、データベースファイル自体に設定されたファイルシステム権限によって行われます。
+
+<div id="usage-example">
+  ## 使用例
+</div>
+
+SQLite に接続された ClickHouse のデータベース:
+
+```sql
+CREATE DATABASE sqlite_db ENGINE = SQLite('sqlite.db');
+SHOW TABLES FROM sqlite_db;
+```
+
+```text
+┌──name───┐
+│ table1  │
+│ table2  │
+└─────────┘
+```
+
+テーブルを表示します：
+
+```sql
+SELECT * FROM sqlite_db.table1;
+```
+
+```text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+
+ClickHouseテーブルからSQLiteテーブルへデータを挿入する:
+
+```sql
+CREATE TABLE clickhouse_table(`col1` String,`col2` Int16) ENGINE = MergeTree() ORDER BY col2;
+INSERT INTO clickhouse_table VALUES ('text',10);
+INSERT INTO sqlite_db.table1 SELECT * FROM clickhouse_table;
+SELECT * FROM sqlite_db.table1;
+```
+
+```text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+│ text  │   10 │
+└───────┴──────┘
+```

@@ -1,0 +1,25 @@
+<test>
+  <settings>
+    <join_algorithm>parallel_hash</join_algorithm>
+    <query_plan_join_swap_table>0</query_plan_join_swap_table>
+    <max_threads>8</max_threads>
+    <enable_analyzer>1</enable_analyzer>
+    <parallel_hash_join_threshold>1</parallel_hash_join_threshold>
+    <query_plan_convert_outer_join_to_inner_join>0</query_plan_convert_outer_join_to_inner_join>
+  </settings>
+
+  <query tag='RIGHT_1e2_1e7'>SELECT * FROM numbers_mt(100) AS l RIGHT JOIN numbers_mt(10000000) AS r USING (number)</query>
+  <query tag='FULL_1e2_1e7'>SELECT * FROM numbers_mt(100) AS l FULL JOIN numbers_mt(10000000) AS r USING (number)</query>
+  <query tag='RIGHT_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l RIGHT JOIN numbers_mt(10000000) AS r USING (number)</query>
+  <query tag='FULL_1e7_1e7'>SELECT * FROM numbers_mt(10000000) AS l FULL JOIN numbers_mt(10000000) AS r USING (number)</query>
+
+  <query tag='FULL_hits_2_level_map'>SELECT count() FROM hits_10m_single AS t1 FULL JOIN hits_10m_single AS t2 ON t1.URL = t2.Referer AND t1.UserID = t2.UserID AND t1.URL != '' AND t2.Referer != ''</query>
+
+  <query tag='FULL_str_no_overlap_5e6'>
+    SELECT count()
+    FROM (SELECT toString(number) AS key FROM numbers_mt(10000000)) AS l
+    FULL JOIN (SELECT toString(number + 100000000) AS key FROM numbers_mt(10000000)) AS r
+    ON l.key = r.key
+  </query>
+
+</test>

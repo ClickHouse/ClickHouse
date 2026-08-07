@@ -1,0 +1,29 @@
+<dictionaries>
+    <dictionary>
+        <name>long_loading_dictionary</name>
+
+        <source>
+            <executable>
+                <command>sleep 9 &amp;&amp; echo "key,value" &amp;&amp; echo "1,aa" &amp;&amp; echo "2,bb"</command>
+            	<format>CSVWithNames</format>
+            </executable>
+        </source>
+
+        <lifetime>600</lifetime>
+
+        <layout>
+            <flat/>
+        </layout>
+
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</dictionaries>

@@ -1,0 +1,87 @@
+---
+alias: []
+description: 'Documentation sur le format Npy'
+input_format: true
+keywords: ['Npy']
+output_format: true
+slug: /interfaces/formats/Npy
+title: 'Npy'
+doc_type: 'reference'
+---
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✔      | ✔      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+Le format `Npy` est conçu pour charger dans ClickHouse un tableau NumPy depuis un fichier `.npy`.
+Le format de fichier NumPy est un format binaire utilisé pour stocker efficacement des tableaux de données numériques.
+Lors de l’importation, ClickHouse interprète la dimension de premier niveau comme un tableau de lignes à colonne unique.
+
+Le tableau ci-dessous présente les types de données Npy pris en charge et leur type correspondant dans ClickHouse :
+
+<div id="data_types-matching">
+  ## Correspondance des types de données
+</div>
+
+| Type de données Npy (`INSERT`) | Type de données ClickHouse                       | Type de données Npy (`SELECT`) |
+| ------------------------------ | ------------------------------------------------ | ------------------------------ |
+| `i1`                           | [Int8](/fr/reference/data-types/int-uint)           | `i1`                           |
+| `i2`                           | [Int16](/fr/reference/data-types/int-uint)          | `i2`                           |
+| `i4`                           | [Int32](/fr/reference/data-types/int-uint)          | `i4`                           |
+| `i8`                           | [Int64](/fr/reference/data-types/int-uint)          | `i8`                           |
+| `u1`, `b1`                     | [UInt8](/fr/reference/data-types/int-uint)          | `u1`                           |
+| `u2`                           | [UInt16](/fr/reference/data-types/int-uint)         | `u2`                           |
+| `u4`                           | [UInt32](/fr/reference/data-types/int-uint)         | `u4`                           |
+| `u8`                           | [UInt64](/fr/reference/data-types/int-uint)         | `u8`                           |
+| `f2`, `f4`                     | [Float32](/fr/reference/data-types/float)           | `f4`                           |
+| `f8`                           | [Float64](/fr/reference/data-types/float)           | `f8`                           |
+| `S`, `U`                       | [String](/fr/reference/data-types/string)           | `S`                            |
+|                                | [FixedString](/fr/reference/data-types/fixedstring) | `S`                            |
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+<div id="saving-an-array-in-npy-format-using-python">
+  ### Enregistrer un tableau au format .npy avec Python
+</div>
+
+```Python
+import numpy as np
+arr = np.array([[[1],[2],[3]],[[4],[5],[6]]])
+np.save('example_array.npy', arr)
+```
+
+<div id="reading-a-numpy-file-in-clickhouse">
+  ### Lecture d’un fichier NumPy dans ClickHouse
+</div>
+
+```sql title="Query"
+SELECT *
+FROM file('example_array.npy', Npy)
+```
+
+```response title="Response"
+┌─array─────────┐
+│ [[1],[2],[3]] │
+│ [[4],[5],[6]] │
+└───────────────┘
+```
+
+<div id="selecting-data">
+  ### Sélection des données
+</div>
+
+Vous pouvez sélectionner des données à partir d’une table ClickHouse et les enregistrer dans un fichier au format Npy à l’aide de la commande suivante avec clickhouse-client :
+
+```bash
+$ clickhouse-client --query="SELECT {column} FROM {some_table} FORMAT Npy" > {filename.npy}
+```
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>

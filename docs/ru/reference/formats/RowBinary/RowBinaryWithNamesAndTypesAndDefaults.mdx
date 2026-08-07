@@ -1,0 +1,90 @@
+---
+alias: []
+description: 'Документация для формата RowBinaryWithNamesAndTypesAndDefaults'
+input_format: true
+keywords: ['RowBinaryWithNamesAndTypesAndDefaults']
+output_format: false
+slug: /interfaces/formats/RowBinaryWithNamesAndTypesAndDefaults
+title: 'RowBinaryWithNamesAndTypesAndDefaults'
+doc_type: 'reference'
+---
+
+import RowBinaryFormatSettings from '/snippets/ru/common-row-binary-format-settings.mdx';
+
+| Вход | Выход | Псевдоним |
+| ---- | ----- | --------- |
+| ✔    | ✗     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+Похож на формат [`RowBinaryWithNamesAndTypes`](/ru/reference/formats/RowBinary/RowBinaryWithNamesAndTypes), но перед каждой ячейкой добавляется дополнительный байт, который указывает, нужно ли использовать значение `DEFAULT` для столбца, — точно так же, как в формате [`RowBinaryWithDefaults`](/ru/reference/formats/RowBinary/RowBinaryWithDefaults). Такая комбинация поддерживает `INSERT` при изменении схемы: отправитель может опускать столбцы в заголовке (тогда для них используется `DEFAULT` целевого столбца), а для любого передаваемого столбца может помечать отдельные ячейки как «использовать `DEFAULT` столбца», не смешивая это с `NULL`.
+
+Этот формат предназначен только для ввода.
+
+<div id="wire-format">
+  ## Формат передачи данных
+</div>
+
+Заголовок идентичен [`RowBinaryWithNamesAndTypes`](/ru/reference/formats/RowBinary/RowBinaryWithNamesAndTypes):
+
+1. `VarUInt` с числом столбцов `N`.
+2. `N` значений `String` с префиксом длины, содержащих имена столбцов.
+3. `N` типов столбцов — либо в виде текстовых имен, либо в компактном двоичном кодировании, в зависимости от настроек `output_format_binary_encode_types_in_binary_format` / `input_format_binary_decode_types_in_binary_format`.
+
+После заголовка каждая строка состоит из `N` ячеек. Для каждой ячейки:
+
+* Один байт-маркер `UInt8`.
+  * `0x01` — использовать выражение `DEFAULT` целевого столбца. Байты значения после этого не следуют.
+  * `0x00` — далее идет значение, сериализованное с помощью сериализатора `RowBinary` для типа столбца. Для `Nullable(T)` байты значения начинаются с `Nullable` null-байта (`0` для не-NULL, `1` для NULL), затем идет внутреннее значение, если оно не равно NULL.
+
+<div id="defaults-vs-null">
+  ## Значения по умолчанию и NULL
+</div>
+
+Маркер значения по умолчанию для каждой ячейки и встроенный null-байт в `Nullable` независимы друг от друга. Столбец `Nullable(UInt32) DEFAULT 42` можно передавать тремя разными способами для каждой строки:
+
+| Байты     | Значение                                                    |
+| --------- | ----------------------------------------------------------- |
+| `01`      | Использовать `DEFAULT 42`.                                  |
+| `00 01`   | Сначала путь значения, затем `NULL` через тип `Nullable`.   |
+| `00 00 …` | Сначала путь значения, затем ненулевое внутреннее значение. |
+
+<div id="schema-evolution">
+  ## Изменение схемы
+</div>
+
+| Случай                                                      | Поведение                                                                                                                                                                                           |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Столбец полностью отсутствует в заголовке файла             | Заполняется в целевой таблице с помощью `insertDefaultsForNotSeenColumns`; управляется параметром `defaults_for_omitted_fields`.                                                                    |
+| Столбец присутствует в заголовке, маркер ячейки `0x01`      | Для каждой строки вызывается `insertDefault`.                                                                                                                                                       |
+| Столбец присутствует в заголовке, маркер ячейки `0x00`      | Значение разбирается как обычно.                                                                                                                                                                    |
+| Лишний столбец в заголовке, отсутствующий в целевой таблице | Игнорируется, если `input_format_skip_unknown_fields = 1` (сначала считывается маркер; если `0x01`, больше ничего не происходит; если `0x00`, типизированное значение разбирается и отбрасывается). |
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+```sql title="Query"
+SELECT * FROM format(
+    'RowBinaryWithNamesAndTypesAndDefaults',
+    'x Nullable(UInt32) DEFAULT 42',
+    unhex('01' || '0178' || '10' || hex('Nullable(UInt32)') || '01')
+);
+```
+
+```response title="Response"
+┌──x─┐
+│ 42 │
+└────┘
+```
+
+* В заголовке указан один столбец с именем `x` типа `Nullable(UInt32)`.
+* Единственная ячейка использует маркер `0x01`, что означает &quot;использовать `DEFAULT 42`&quot;.
+
+<div id="format-settings">
+  ## Настройки формата
+</div>
+
+<RowBinaryFormatSettings />

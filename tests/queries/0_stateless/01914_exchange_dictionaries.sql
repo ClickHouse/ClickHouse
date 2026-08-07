@@ -1,0 +1,43 @@
+-- Tags: no-ordinary-database, no-parallel
+-- Tag no-ordinary-database: Requires Atomic database
+
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE=Atomic;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+
+DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.table_1;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.table_1 (id UInt64, value String) ENGINE=TinyLog;
+
+DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.table_2;
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.table_2 (id UInt64, value String) ENGINE=TinyLog;
+
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.table_1 VALUES (1, 'Table1');
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.table_2 VALUES (2, 'Table2');
+
+DROP DICTIONARY IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_1;
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_1 (id UInt64, value String)
+PRIMARY KEY id
+LAYOUT(DIRECT())
+SOURCE(CLICKHOUSE(DB currentDatabase() TABLE 'table_1'));
+
+DROP DICTIONARY IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_2;
+CREATE DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_2 (id UInt64, value String)
+PRIMARY KEY id
+LAYOUT(DIRECT())
+SOURCE(CLICKHOUSE(DB currentDatabase() TABLE 'table_2'));
+
+SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_1;
+SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_2;
+
+EXCHANGE DICTIONARIES {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_1 AND {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_2;
+
+SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_1;
+SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_2;
+
+DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_1;
+DROP DICTIONARY {CLICKHOUSE_DATABASE_1:Identifier}.dictionary_2;
+
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.table_1;
+DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.table_2;
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

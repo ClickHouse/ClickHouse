@@ -1,0 +1,94 @@
+---
+sidebarTitle: 'Looker Studio'
+slug: /integrations/lookerstudio
+keywords: ['clickhouse', 'looker', 'studio', 'conectar', 'mysql', 'integrar', 'UI']
+description: 'Looker Studio, antes conocido como Google Data Studio, es una herramienta en línea para convertir datos en informes y dashboards personalizables e informativos.'
+title: 'Looker Studio'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import MySQLCloudSetup from '/snippets/es/_clickhouse_mysql_cloud_setup.mdx';
+import MySQLOnPremiseSetup from '/snippets/es/_clickhouse_mysql_on_premise_setup.mdx';
+
+import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Looker Studio puede conectarse a ClickHouse mediante la interfaz MySQL y la fuente de datos MySQL oficial de Google.
+
+<div id="clickhouse-cloud-setup">
+  ## Configuración de ClickHouse Cloud
+</div>
+
+<MySQLCloudSetup />
+
+<div id="on-premise-clickhouse-server-setup">
+  ## Configuración del servidor ClickHouse on-premise
+</div>
+
+<MySQLOnPremiseSetup />
+
+<div id="connecting-looker-studio-to-clickhouse">
+  ## Conectar Looker Studio con ClickHouse
+</div>
+
+Primero, inicia sesión en https://lookerstudio.google.com con tu cuenta de Google y crea una nueva fuente de datos:
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_01.webp" alt="Creación de una nueva fuente de datos en la interfaz de Looker Studio" border />
+
+<br />
+
+Busca el conector oficial de MySQL proporcionado por Google (llamado simplemente **MySQL**):
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_02.webp" alt="Búsqueda del conector MySQL en la lista de conectores de Looker Studio" border />
+
+<br />
+
+Especifica los detalles de conexión. Ten en cuenta que el puerto de la interfaz MySQL es 9004 de forma predeterminada
+y puede variar según la configuración del servidor.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_03.webp" alt="Especificación de los detalles de conexión MySQL de ClickHouse en Looker Studio" border />
+
+<br />
+
+Ahora tienes dos opciones para obtener los datos de ClickHouse. La primera es usar la función Table Browser:
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_04.webp" alt="Uso de Table Browser para seleccionar tablas de ClickHouse en Looker Studio" border />
+
+<br />
+
+Como alternativa, puedes especificar una consulta personalizada para obtener los datos:
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_05.webp" alt="Uso de una consulta SQL personalizada para obtener datos de ClickHouse en Looker Studio" border />
+
+<br />
+
+Por último, deberías poder ver la estructura de la tabla detectada y ajustar los tipos de datos si es necesario.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_06.webp" alt="Visualización de la estructura de la tabla de ClickHouse detectada en Looker Studio" border />
+
+<br />
+
+Ya puedes seguir explorando tus datos o crear un informe nuevo.
+
+<div id="using-looker-studio-with-clickhouse-cloud">
+  ## Uso de Looker Studio con ClickHouse Cloud
+</div>
+
+Si usas ClickHouse Cloud, primero debes habilitar la interfaz MySQL. Puedes hacerlo en el cuadro de diálogo de conexión, en la pestaña &quot;MySQL&quot;.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_enable_mysql.webp" alt="Habilitación de la interfaz MySQL en la configuración de ClickHouse Cloud" border />
+
+<br />
+
+En la UI de Looker Studio, selecciona la opción &quot;Enable SSL&quot;. El certificado SSL de ClickHouse Cloud está firmado por [Let&#39;s Encrypt](https://letsencrypt.org/certificates/). Puedes descargar este certificado raíz [aquí](https://letsencrypt.org/certs/isrgrootx1.pem).
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_mysql_cloud.webp" alt="Configuración de la conexión de Looker Studio con los ajustes SSL de ClickHouse Cloud" border />
+
+<br />
+
+El resto de los pasos son los mismos que se indican en la sección anterior.

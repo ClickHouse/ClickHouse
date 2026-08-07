@@ -1,0 +1,53 @@
+---
+title: Consultas comuns de RBAC
+description: "Consultas que ajudam a conceder permissões específicas aos usuários."
+date: 2023-09-28
+tags: ['Segurança e autenticação', 'Gerenciamento da Cloud']
+keywords: ['RBAC', 'Consultas']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+A seguir, estão algumas consultas comuns para ajudar a conceder permissões específicas aos usuários.
+
+<div id="how-do-i-grant-the-same-permissions-as-the-current-user-to-another-user">
+  ## Como conceder a outro usuário as mesmas permissões do usuário atual?
+</div>
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-based-on-the-grants-of-the-current-user">
+  ## Como conceder uma permissão específica a um usuário com base nos privilégios do usuário atual?
+</div>
+
+No exemplo abaixo, `another_user` poderá executar comandos `SELECT` em todos os bancos de dados e tabelas do usuário atual.
+
+```sql
+GRANT CURRENT GRANTS(SELECT ON *.*) TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-for-a-specific-database-based-on-the-grants-of-the-current-user">
+  ## Como concedo uma permissão específica a um usuário para um banco de dados específico com base nos privilégios do usuário atual?
+</div>
+
+No exemplo abaixo, `another_user` poderá executar comandos `INSERT` em todas as tabelas de `my_database`.
+
+```sql
+GRANT INSERT ON my_database.* TO another_user;
+```
+
+<div id="how-do-i-give-access-to-all-grants-for-a-specific-user-based-on-the-default-user">
+  ## Como concedo a um usuário específico acesso a todos os privilégios com base no usuário `default`?
+</div>
+
+```sql
+GRANT default_role TO another_user;
+```

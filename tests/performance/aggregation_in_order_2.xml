@@ -1,0 +1,30 @@
+<test>
+    <settings>
+        <optimize_aggregation_in_order>1</optimize_aggregation_in_order>
+        <max_insert_block_size>10000000</max_insert_block_size>
+        <max_threads>30</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>uniqs</name>
+            <values>
+                <value>100</value>
+                <value>10000</value>
+                <value>1000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>CREATE TABLE mt_30_parts_{uniqs}_uniqs(id UInt32, val1 UInt32, val2 UInt32) ENGINE = MergeTree ORDER BY val1 PARTITION BY id % 30 SETTINGS parts_to_throw_insert=10000, parts_to_delay_insert=10000</create_query>
+    <fill_query>SYSTEM STOP MERGES mt_30_parts_{uniqs}_uniqs</fill_query>
+    <fill_query>INSERT INTO mt_30_parts_{uniqs}_uniqs SELECT number, rand() % {uniqs}, rand() FROM numbers_mt(100000000) SETTINGS max_block_size=10000000</fill_query>
+    <fill_query>SYSTEM START MERGES mt_30_parts_{uniqs}_uniqs</fill_query>
+    <fill_query>OPTIMIZE TABLE mt_30_parts_{uniqs}_uniqs FINAL</fill_query>
+
+    <query>SELECT sum(val2) FROM mt_30_parts_{uniqs}_uniqs GROUP BY val1 FORMAT Null</query>
+    <query>SELECT groupArray(val2) FROM mt_30_parts_{uniqs}_uniqs GROUP BY val1 FORMAT Null</query>
+    <query>SELECT uniqExact(val2) FROM mt_30_parts_{uniqs}_uniqs GROUP BY val1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS mt_30_parts_{uniqs}_uniqs</drop_query>
+</test>

@@ -1,0 +1,113 @@
+---
+sidebarTitle: '备份'
+slug: /cloud/features/backups
+title: '备份'
+keywords: ['备份', '云备份', '恢复']
+description: '概述 ClickHouse Cloud 中的备份功能'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+数据库备份可作为一道安全保障：如果因任何不可预见的原因导致数据丢失，便可通过最近一次成功备份将服务恢复到之前的状态。
+这能最大限度地缩短停机时间，并避免业务关键数据永久丢失。
+
+<div id="backups">
+  ## 备份
+</div>
+
+<div id="how-backups-work-in-clickhouse-cloud">
+  ### ClickHouse Cloud 中备份的工作原理
+</div>
+
+ClickHouse Cloud 备份由“全量备份”和“增量备份”共同组成，形成一条备份链。每条链都始于一次全量备份，随后在接下来几个计划时间周期内执行增量备份，从而形成一系列备份。当备份链达到一定长度后，就会开始新的一条链。必要时，可以利用整条备份链将数据恢复到新的 service 中。一旦某条链中的所有备份都超过了为该 service 设置的保留期限 (有关保留策略的更多信息见下文) ，该链就会被丢弃。
+
+在下图中，实线方框表示全量备份，虚线方框表示增量备份。方框外侧的实线矩形表示保留期，以及终端用户可见、可用于恢复的备份。在下面的示例中，系统每 24 小时执行一次备份，并保留 2 天。
+
+第 1 天会执行一次全量备份，以启动备份链。第 2 天会执行一次增量备份，此时全量备份和增量备份都可用于恢复。到第 7 天时，这条链中已有 1 个全量备份和 6 个增量备份，其中用户可见的是最近的 2 个增量备份。到第 8 天，系统会执行一次新的全量备份；到第 9 天，当新链中已有 2 个备份后，前一条链就会被丢弃。
+
+<Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloud 中的备份链示例" />
+
+<div id="default-backup-policy">
+  ### 默认备份策略
+</div>
+
+在基础版、Scale 和 Enterprise 层级中，备份会单独计量和计费，不包含在存储费用内。
+所有服务默认每天备份一次；从 Scale 层级开始，还可通过 Cloud 控制台的 Settings 选项卡配置更多备份。
+每个备份至少保留 24 小时。
+
+更多详情，请参阅[&quot;查看和恢复备份&quot;](/zh/products/cloud/guides/backups/review-and-restore-backups)。
+
+<div id="configurable-backups">
+  ## 可配置备份
+</div>
+
+<ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
+
+ClickHouse Cloud 支持为 **Scale** 和 **Enterprise** 层级的服务配置备份计划。可根据业务需求从以下几个维度进行配置。
+
+* **保留期**：每个备份的保留天数。保留期最短可设为 1 天，最长可设为 30 天，中间还有多个可选值。
+* **频率**：用于指定相邻两次备份之间的时间间隔。例如，“每 12 小时一次”表示两次备份之间相隔 12 小时。频率范围可为“每 6 小时一次”到“每 48 小时一次”，可选间隔包括：`6`、`8`、`12`、`16`、`20`、`24`、`36`、`48` 小时。
+* **开始时间**：指定每天开始执行备份的时间。指定开始时间后，备份“频率”默认会设置为每 24 小时一次。ClickHouse Cloud 会在指定开始时间后的一小时内启动备份。
+
+<Note>
+  自定义计划会覆盖 ClickHouse Cloud 为相应服务设置的默认备份策略。
+
+  在极少数情况下，备份调度器可能不会遵循指定的 **开始时间**。具体来说，如果在当前计划备份时间之前的 24 小时内曾触发过一次成功备份，就会出现这种情况。这可能是由于备份重试机制导致的。在这种情况下，调度器会跳过当天的备份，并在第二天的计划时间再次尝试备份。
+</Note>
+
+请参阅[&quot;配置备份计划&quot;](/zh/products/cloud/guides/backups/configurable-backups)了解配置备份的步骤。
+
+<div id="byob">
+  ## 自带存储桶 (BYOB) 备份
+</div>
+
+ClickHouse Cloud 允许将备份导出到您自己的云服务提供商 (CSP) 账户存储 (AWS S3、Google Cloud Storage 或 Azure Blob 存储) 。
+如果您将备份配置到自己的存储桶，ClickHouse Cloud 仍会每天将备份保存到其自己的存储桶中。
+这样做是为了确保当您存储桶中的备份损坏时，我们至少还有一份数据副本可供恢复。
+有关 ClickHouse Cloud 备份工作机制的详细信息，请参阅 [backups](/zh/products/cloud/guides/backups/review-and-restore-backups) 文档。
+
+本指南将介绍如何将备份导出到您的 AWS、GCP 和 Azure 对象存储，以及如何将您账户中的这些备份恢复到新的 ClickHouse Cloud 服务。
+我们还会提供备份/恢复命令，帮助您将备份导出到自己的存储桶并进行恢复。
+
+<Info>
+  **跨区域备份**
+
+  如果将备份导出到同一云提供商中的
+  其他区域，则会产生 [数据传输](/zh/products/cloud/reference/billing/network-data-transfer)
+  费用。
+
+  目前，我们不支持对使用 [透明数据加密 (TDE)](/zh/products/cloud/guides/security/cmek#transparent-data-encryption-tde) 的服务或受监管服务进行备份/恢复。
+</Info>
+
+有关如何对 AWS、GCP、Azure 对象存储执行完整备份和增量备份，以及如何从这些备份中恢复的示例，请参阅[“将备份导出到您自己的 Cloud 账户”](/zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)。
+
+<div id="backup-options">
+  ### 备份选项
+</div>
+
+要将备份导出到您自己的云账户，您有两种方式可选：
+
+<Steps>
+  <Step>
+    ##### 通过 Cloud Console UI
+
+    可以[在 UI 中配置](/zh/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui)外部备份。
+    默认情况下，系统会按天执行备份 (如[默认备份策略](/zh/products/cloud/features/backups/overview#default-backup-policy)所述) 。
+    不过，我们也支持导出到您自己的云账户的[可配置](/zh/products/cloud/guides/backups/configurable-backups)备份，允许您设置自定义计划。
+    需要特别注意的是，导出到您的存储桶的所有备份都是全量备份，与之前或之后的任何其他备份都没有关系。
+  </Step>
+
+  <Step>
+    ##### 使用 SQL 命令
+
+    您可以使用[SQL 命令](/zh/products/cloud/guides/backups/bring-your-own-backup/backup-restore-using-commands)将备份导出到您的存储桶。
+  </Step>
+</Steps>
+
+<Warning>
+  ClickHouse Cloud 不会管理客户存储桶中备份的生命周期。
+  客户有责任确保其存储桶中的备份得到妥善管理，以满足合规要求并控制成本。
+  如果备份损坏，将无法恢复。
+</Warning>

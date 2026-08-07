@@ -1,0 +1,51 @@
+Basic usage
+{"a":42}	['42']
+{"b":"Hello"}	['Hello']
+{"a":[1,2,3],"c":"2020-01-01"}	['[1,2,3]','2020-01-01']
+With max_dynamic_paths=1 (some paths go to shared data)
+{"a":42}	['42']
+{"b":"Hello"}	['Hello']
+{"a":[1,2,3],"c":"2020-01-01"}	['[1,2,3]','2020-01-01']
+With max_dynamic_paths=0 (all paths in shared data)
+{"a":42}	['42']
+{"b":"Hello"}	['Hello']
+{"a":[1,2,3],"c":"2020-01-01"}	['[1,2,3]','2020-01-01']
+With typed paths
+{"a":42,"b":"Hello"}	['42','Hello']
+{"a":0,"b":"World"}	['0','World']
+Empty JSON
+{}	[]
+Nested paths
+{"a":{"b":1,"c":2},"d":3}	['1','2','3']
+Multiple types in same path across rows
+{"a":42}	['42']
+{"a":[1,2,3],"c":"2020-01-01"}	['[1,2,3]','2020-01-01']
+{"b":"Hello"}	['Hello']
+Complex structures with plain JSON
+1	{"a":{"b":{"c":1,"d":"alpha"}},"m":true,"meta":{"id":1}}	['1','alpha','true','1']
+2	{"a":[{"b":1},{"b":2}],"k":"v","meta":{"id":2}}	['[\'{"b":1}\',\'{"b":2}\']','v','2']
+3	{"arr":[[1,2],[3]],"meta":{"id":3},"obj":{"empty":[],"list":["x","y"]}}	['[[1,2],[3]]','3','[]','[\'x\',\'y\']']
+4	{"a":{"b":{"c":[1,2],"d":{"x":1}}},"m":false,"meta":{"id":4}}	['[1,2]','1','false','4']
+5	{"arr":[],"empty":"","meta":{"id":5},"space":" "}	['[]','','5',' ']
+6	{"arr":[{"z":0},{"z":1}],"meta":{"id":6},"nested":{"a":"A","b":"B"},"p1":1,"p2":2,"p3":3}	['[\'{"z":0}\',\'{"z":1}\']','6','A','B','1','2','3']
+Complex structures with max_dynamic_paths=1
+1	['1','alpha','true','1']	['meta.id']	['a.b.c','a.b.d','m']
+2	['[\'{"b":1}\',\'{"b":2}\']','v','2']	['meta.id']	['a','k']
+3	['[[1,2],[3]]','3','[]','[\'x\',\'y\']']	['meta.id']	['arr','obj.empty','obj.list']
+4	['[1,2]','1','false','4']	['meta.id']	['a.b.c','a.b.d.x','m']
+5	['[]','','5',' ']	['meta.id']	['arr','empty','space']
+6	['[\'{"z":0}\',\'{"z":1}\']','6','A','B','1','2','3']	['meta.id']	['arr','nested.a','nested.b','p1','p2','p3']
+Complex structures with max_dynamic_paths=0
+1	['1','alpha','true','1']	[]	['a.b.c','a.b.d','m','meta.id']
+2	['[\'{"b":1}\',\'{"b":2}\']','v','2']	[]	['a','k','meta.id']
+3	['[[1,2],[3]]','3','[]','[\'x\',\'y\']']	[]	['arr','meta.id','obj.empty','obj.list']
+4	['[1,2]','1','false','4']	[]	['a.b.c','a.b.d.x','m','meta.id']
+5	['[]','','5',' ']	[]	['arr','empty','meta.id','space']
+6	['[\'{"z":0}\',\'{"z":1}\']','6','A','B','1','2','3']	[]	['arr','meta.id','nested.a','nested.b','p1','p2','p3']
+Complex structures with typed path variant
+1	1	['1','alpha','true','1']
+2	2	['[\'{"b":1}\',\'{"b":2}\']','v','2']
+3	3	['[[1,2],[3]]','3','[]','[\'x\',\'y\']']
+4	4	['[1,2]','1','false','4']
+5	5	['[]','','5',' ']
+6	6	['[\'{"z":0}\',\'{"z":1}\']','6','A','B','1','2','3']

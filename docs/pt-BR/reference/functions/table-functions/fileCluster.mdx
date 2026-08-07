@@ -1,0 +1,97 @@
+---
+description: 'Permite o processamento simultâneo de arquivos que correspondem a um caminho especificado em vários nós de um cluster. O iniciador estabelece conexões com os nós worker, expande globs no caminho do arquivo e delega tarefas de leitura de arquivos aos nós worker. Cada nó worker consulta o iniciador para obter o próximo arquivo a ser processado, repetindo esse processo até que todas as tarefas sejam concluídas (todos os arquivos sejam lidos).'
+sidebarTitle: 'fileCluster'
+slug: /sql-reference/table-functions/fileCluster
+title: 'fileCluster'
+doc_type: 'reference'
+---
+
+Permite o processamento simultâneo de arquivos que correspondem a um caminho especificado em vários nós de um cluster. O iniciador estabelece conexões com os nós worker, expande globs no caminho do arquivo e delega tarefas de leitura de arquivos aos nós worker. Cada nó worker consulta o iniciador para obter o próximo arquivo a ser processado, repetindo esse processo até que todas as tarefas sejam concluídas (todos os arquivos sejam lidos).
+
+<Note>
+  Esta função operará *corretamente* somente se o conjunto de arquivos que corresponde ao caminho especificado inicialmente for idêntico em todos os nós e se o conteúdo deles for consistente entre os diferentes nós.
+  Caso esses arquivos sejam diferentes entre os nós, o valor de retorno não pode ser determinado antecipadamente e depende da ordem em que os nós worker solicitam tarefas ao iniciador.
+</Note>
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+fileCluster(cluster_name, path[, format, structure, compression_method])
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+| Argumento            | Descrição                                                                                                                                                                                          |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`       | Nome de um cluster usado para criar um conjunto de endereços e parâmetros de conexão para servidores remotos e locais.                                                                             |
+| `path`               | Caminho relativo para o arquivo em [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings#user_files_path). O caminho do arquivo também oferece suporte a [globs](#globs-in-path). |
+| `format`             | [Formato](/pt-BR/reference/formats/index) dos arquivos. Tipo: [String](/pt-BR/reference/data-types/string).                                                                                                    |
+| `structure`          | Estrutura da tabela no formato `'UserID UInt64, Name String'`. Determina os nomes e os tipos das colunas. Tipo: [String](/pt-BR/reference/data-types/string).                                            |
+| `compression_method` | Método de compressão. Os tipos de compressão suportados são `gz`, `br`, `xz`, `zst`, `lz4` e `bz2`.                                                                                                |
+
+<div id="returned_value">
+  ## Valor retornado
+</div>
+
+Uma tabela com o formato e a estrutura especificados, com dados de arquivos que correspondem ao caminho especificado.
+
+**Exemplo**
+
+Considerando um cluster chamado `my_cluster` e o seguinte valor da configuração `user_files_path`:
+
+```bash
+$ grep user_files_path /etc/clickhouse-server/config.xml
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+```
+
+Além disso, supondo que os arquivos `test1.csv` e `test2.csv` estejam em `user_files_path` de cada nó do cluster, e que seu conteúdo seja idêntico entre os diferentes nós:
+
+```bash
+$ cat /var/lib/clickhouse/user_files/test1.csv
+    1,"file1"
+    11,"file11"
+
+$ cat /var/lib/clickhouse/user_files/test2.csv
+    2,"file2"
+    22,"file22"
+```
+
+Por exemplo, é possível criar esses arquivos executando essas duas consultas em cada nó do cluster:
+
+```sql
+INSERT INTO TABLE FUNCTION file('file1.csv', 'CSV', 'i UInt32, s String') VALUES (1,'file1'), (11,'file11');
+INSERT INTO TABLE FUNCTION file('file2.csv', 'CSV', 'i UInt32, s String') VALUES (2,'file2'), (22,'file22');
+```
+
+Agora, leia os dados contidos em `test1.csv` e `test2.csv` por meio da função de tabela `fileCluster`:
+
+```sql
+SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s String') ORDER BY i, s
+```
+
+```response
+┌──i─┬─s──────┐
+│  1 │ file1  │
+│ 11 │ file11 │
+└────┴────────┘
+┌──i─┬─s──────┐
+│  2 │ file2  │
+│ 22 │ file22 │
+└────┴────────┘
+```
+
+<div id="globs-in-path">
+  ## Globs no Caminho
+</div>
+
+Todos os padrões compatíveis com a função de tabela [File](/pt-BR/reference/functions/table-functions/file#globs-in-path) também são suportados pelo FileCluster.
+
+<div id="related">
+  ## Relacionados
+</div>
+
+* [Função de tabela File](/pt-BR/reference/functions/table-functions/file)

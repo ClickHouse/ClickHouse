@@ -1,0 +1,98 @@
+---
+slug: /integrations/integration-development/building-integrations
+title: '使用 ClickHouse 构建集成'
+sidebarTitle: '构建集成'
+description: '介绍 ClickHouse 集成中的摄取、消费、传输协议和客户端约定。'
+keywords: ['partner', 'integration', 'ingestion', 'consumption', 'ClickPipes', 'language clients', 'user-agent']
+doc_type: 'guide'
+---
+
+本页将帮助你了解集成的整体范围，以便界定摄取和消费相关工作的范围。关于验证和发布，请继续阅读[测试你的集成](/zh/resources/develop-contribute/integrations/testing-your-integration)和[为你的集成编写文档](/zh/resources/develop-contribute/integrations/documenting-your-integration)。
+
+<div id="ingestion">
+  ## 摄取
+</div>
+
+有两种路径可将数据导入 ClickHouse。请根据您的产品是自行管理摄取平面，还是将其委托给其他方，选择合适的路径。
+
+<div id="path-a-clickpipes">
+  ### 路径 A：ClickPipes (托管，且仅限 ClickHouse Cloud)
+</div>
+
+如果你不想自行构建和运维摄取基础设施，[ClickPipes](/zh/integrations/clickpipes/home) 是一项托管服务，可将数据从客户的数据源拉取到其 ClickHouse Cloud 服务中。ClickPipes 负责处理扩缩容、并行化、重试以及滞后情况报告。
+
+当前支持的数据源包括：
+
+* **流式：**Apache Kafka (包括 MSK、Confluent Cloud、Redpanda、Azure Event Hubs、WarpStream) 、Amazon Kinesis
+* **对象存储：**Amazon S3 (以及兼容 S3 的存储) 、Google Cloud Storage、Azure Blob 存储
+* **CDC：**PostgreSQL、MySQL、MongoDB、BigQuery
+
+<div id="path-b-language-client">
+  ### 路径 B：通过官方语言客户端自行摄取
+</div>
+
+如果这条管道由你自行维护，请使用[官方语言客户端](/zh/integrations/language-clients/index)之一。它们会处理序列化、批处理、TLS、压缩和连接池。你只需传入运行时基本类型；传输格式由客户端负责处理。
+
+* 官方客户端：Python、Go、Java、JavaScript、Rust、C#、C++
+* 两种传输协议：HTTP (所有客户端) 和 native TCP (仅限 Go 和 C++ 客户端)
+* 认证：默认通过 TLS 使用用户名和密码；所有主流客户端都支持 mTLS 和 SSL 客户端证书认证
+* 数据格式通常属于实现细节。客户端会将运行时类型转换为 ClickHouse Native 或 RowBinary 格式。如果你已经生成了 Arrow、Parquet、JSONEachRow 或其他格式，大多数客户端都提供用于发送预序列化数据的原始字节 API
+* 为了获得更高吞吐量，建议按 **1 万到 10 万行**分批，并将**每秒约一次插入**作为同步插入的上限目标。如果客户端侧批处理不现实，请使用[异步插入](/zh/concepts/features/operations/insert/asyncinserts)，将批处理转移到服务器端
+
+另请参阅：[批量插入](/zh/concepts/features/operations/insert/bulkinserts)。
+
+<div id="consumption">
+  ## 消费
+</div>
+
+HTTP 和 native TCP 都可用于查询。native TCP 使用二进制协议，开销更低。HTTP 可通过负载均衡器和代理工作。两者都是同等的一线选项；应根据基础设施来选择，而不是功能差距。
+
+* **应用程序代码：** 使用与摄取相同的[官方语言客户端](/zh/integrations/language-clients/index)
+* **BI 和 SQL 工具：** ClickHouse 提供官方 [JDBC v2 驱动](/zh/integrations/language-clients/java/index) (Java) 和 [ODBC 驱动](/zh/concepts/features/interfaces/odbc)。Tableau、Looker、Power BI、Metabase、Apache Superset 和 Grafana 可通过这些驱动，或通过由 ClickHouse 及其合作伙伴维护的专用连接器进行集成
+* **结果格式：** 客户端通常自行负责序列化。如果你的产品需要，也可以在传输过程中请求 Arrow、Parquet 或其他列式格式
+
+<div id="result-set-sizing">
+  ### 结果集大小
+</div>
+
+大多数分析查询返回的结果集都很小 (聚合、摘要、top-N) ，网络传输很少会成为瓶颈。ClickHouse 表可以容纳数十亿行，而在大型事实表上执行无界的 `SELECT *` 可能会传输数 TB 数据。**请在应用程序中控制请求的形态：**使用 `LIMIT`、分页、流式读取以及显式列清单。如果你正在构建面向用户的分析功能，请将无界结果集视为 UX 问题，而不是传输问题。
+
+ClickHouse 拥有丰富的类型系统：数组、Tuple、Map、JSON、Nested、LowCardinality 等。官方客户端会将这些类型映射为符合各语言习惯的类型。如果你的产品会将 ClickHouse 数据展示给最终用户，请尽早规划类型映射策略。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+选择一条路径，基于 [ClickHouse Cloud 试用版](https://clickhouse.com/cloud) 进行原型验证，然后在[合作伙伴门户](https://clickhouse.com/partners)中注册您的集成。
+
+<div id="user-agent-string-convention">
+  ## User-Agent 字符串约定
+</div>
+
+HTTP 客户端应设置一个可标识你的集成的 `User-Agent` 字符串。ClickHouse 会在服务端对其进行解析，以跟踪采用情况、展示使用遥测数据，并为产品路线图提供依据。
+
+格式：
+
+```text
+<app_name>/<app_version> <client_name>/<client_version> (<comment>; <key1>: <value1>; <key2>: <value2>)
+```
+
+示例：
+
+* `clickhouse-java/0.8.0`
+* `my-analytics-app/3.1.2 clickhouse-js/1.2.0 (env: staging; region: us-east-1; lv: node/20.10)`
+
+规则：
+
+* 客户端名称和版本中不得包含空白字符
+* 如果包含注释，则必须放在最前面
+* 标准元数据键：`lv` (语言或框架版本) 、`os`、`arch`
+* TCP 和原生协议客户端通过协议字段上报客户端名称和版本，而不是通过 `User-Agent`
+
+如果你使用 JDBC，请参阅[客户端标识](/zh/integrations/language-clients/java/jdbc#client-identification)，了解驱动程序如何设置 `User-Agent` 及相关字段。
+
+<div id="sandbox-and-trial-access">
+  ## 沙盒和试用访问权限
+</div>
+
+[ClickHouse Cloud](https://clickhouse.com/cloud) 提供免费试用，可用于开发和集成验证。如果您是 House Mate 合作伙伴，可以通过 [合作伙伴门户](https://clickhouse.com/partners) 申请额外的开发额度。

@@ -1,0 +1,42 @@
+---
+slug: /cloud/managed-postgres/settings
+sidebarTitle: 'Настройки'
+title: 'Настройки'
+description: 'Настройте параметры PostgreSQL и PgBouncer и управляйте настройками экземпляра Managed Postgres'
+keywords: ['конфигурация Postgres', 'настройки PostgreSQL', 'PgBouncer']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
+
+Вы можете изменять параметры конфигурации и управлять настройками экземпляра Managed Postgres на вкладке **Настройки** в боковой панели.
+
+<div id="service-actions">
+  ## Действия сервиса и масштабирование
+</div>
+
+<Image img="/images/managed-postgres/service-actions.webp" alt="Действия сервиса и масштабирование" size="md" border />
+
+Панель инструментов **Действия сервиса** содержит элементы управления для вашего экземпляра Managed Postgres:
+
+* **Сбросить пароль**: обновить пароль суперпользователя (только когда экземпляр находится в состоянии `Running`)
+* **Перезапустить**: перезапустить экземпляр базы данных (только когда экземпляр находится в состоянии `Running`)
+* **Удалить**: удалить экземпляр
+
+Раздел **Масштабирование** позволяет менять типы экземпляров основного и резервных узлов, увеличивая или уменьшая вычислительные ресурсы и объем хранилища.
+Подробнее см. на [странице масштабирования](/ru/products/managed-postgres/scaling).
+
+<div id="changing-configuration">
+  ## Изменение параметров конфигурации
+</div>
+
+<Image img="/images/managed-postgres/postgres-parameters.webp" alt="Настройка параметров Postgres" size="md" border />
+
+Чтобы изменить параметр, нажмите кнопку **Edit parameters**. Выберите параметры, которые нужно изменить, и задайте для них нужные значения. Когда изменения вас устроят, нажмите кнопку **Save Changes**.
+
+Все изменения параметров конфигурации обычно сохраняются для экземпляра в течение одной минуты. Для применения некоторых параметров требуется перезапуск базы данных. Эти изменения вступят в силу после следующего перезапуска, который можно вручную запустить на панели **действий сервиса**.
+
+См. официальную [документацию](https://www.postgresql.org/docs/current/runtime-config.html) по параметрам конфигурации. Список доступных для настройки параметров скоро будет расширен. Пока что свяжитесь со [службой поддержки](https://clickhouse.com/support/program), чтобы запросить параметр, который сейчас не поддерживается.

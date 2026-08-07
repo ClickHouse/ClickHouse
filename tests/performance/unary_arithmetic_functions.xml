@@ -1,0 +1,40 @@
+<test>
+    <substitutions>
+         <substitution>
+           <name>func</name>
+           <values>
+               <value>bitCount</value>
+               <value>bitNot</value>
+               <value>abs</value>
+               <value>intExp2</value>
+               <value>intExp10</value>
+               <value>negate</value>
+               <value>roundAge</value>
+               <value>roundDuration</value>
+               <value>roundToExp2</value>
+               <value>sign</value>
+           </values>
+        </substitution>
+
+        <substitution>
+            <name>expr</name>
+
+            <values>
+                <value>number</value>
+                <value>toUInt32(number)</value>
+                <value>toUInt16(number)</value>
+                <value>toUInt8(number)</value>
+
+                <value>toInt64(number)</value>
+                <value>toInt32(number)</value>
+                <value>toInt16(number)</value>
+                <value>toInt8(number)</value>
+
+                <value>toFloat64(number)</value>
+                <value>toFloat32(number)</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT {func}({expr}) FROM numbers(100000000) FORMAT Null</query>
+</test>

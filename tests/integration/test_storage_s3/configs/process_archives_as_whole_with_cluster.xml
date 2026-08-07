@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+          <cluster_function_process_archive_on_multiple_nodes>0</cluster_function_process_archive_on_multiple_nodes>
+        </default>
+    </profiles>
+</clickhouse>

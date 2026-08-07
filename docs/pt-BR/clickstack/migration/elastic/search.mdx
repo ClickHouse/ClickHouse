@@ -1,0 +1,73 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/search
+title: 'Busca no ClickStack e no Elastic'
+sidebarTitle: 'Busca'
+description: 'Busca no ClickStack e no Elastic'
+doc_type: 'guide'
+keywords: ['clickstack', 'busca', 'logs', 'observabilidade', 'busca de texto completo']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="search-in-clickstack-and-elastic">
+  ## Busca no ClickStack e no Elastic
+</div>
+
+O ClickHouse é um engine com SQL nativo, projetado desde o início para cargas de trabalho analíticas de alto desempenho. Em contraste, o Elasticsearch fornece uma interface semelhante a SQL, convertendo SQL para a query DSL subjacente do Elasticsearch — o que significa que ela não é uma funcionalidade nativa, e a [paridade de recursos](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations) é limitada.
+
+O ClickHouse não apenas oferece suporte completo a SQL, como também o estende com uma variedade de funções voltadas para observabilidade, como [`argMax`](/pt-BR/reference/functions/aggregate-functions/argMax), [`histogram`](/pt-BR/reference/functions/aggregate-functions/parametric-functions#histogram) e [`quantileTiming`](/pt-BR/reference/functions/aggregate-functions/quantileTiming), que simplificam consultas em logs, métricas e traces estruturados.
+
+Para exploração simples de logs e traces, a UI do ClickStack (HyperDX) fornece uma [sintaxe no estilo Lucene](/pt-BR/clickstack/features/search) para filtragem textual intuitiva de consultas por campo-valor, intervalos, curingas e muito mais. Isso é comparável à [sintaxe Lucene](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) no Elasticsearch e a elementos da [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql).
+
+<Image img="/images/use-cases/observability/hyperdx-search.webp" alt="Busca" size="lg" />
+
+A interface de busca oferece suporte a essa sintaxe familiar, mas a traduz nos bastidores em cláusulas SQL `WHERE` eficientes, tornando a experiência familiar para usuários do Kibana e, ao mesmo tempo, permitindo aproveitar o poder do SQL quando necessário. Isso permite que você explore toda a gama de [funções de busca em strings](/pt-BR/reference/functions/regular-functions/string-search-functions), [funções de similaridade](/pt-BR/reference/functions/regular-functions/string-functions#stringJaccardIndex) e [funções de data e hora](/pt-BR/reference/functions/regular-functions/date-time-functions) no ClickHouse.
+
+<Image img="/images/use-cases/observability/hyperdx-sql.webp" alt="SQL" size="lg" />
+
+Abaixo, comparamos as linguagens de consulta Lucene do ClickStack e do Elasticsearch.
+
+<div id="clickstack-vs-elasticsearch-query-string">
+  ## Sintaxe de busca do ClickStack vs. query string do Elasticsearch
+</div>
+
+Tanto o ClickStack quanto o Elasticsearch oferecem linguagens de consulta flexíveis para permitir uma filtragem intuitiva de logs e traces. Enquanto a query string do Elasticsearch é fortemente integrada ao seu DSL e mecanismo de indexação, o ClickStack oferece uma sintaxe inspirada no Lucene que é traduzida em ClickHouse SQL nos bastidores. A tabela abaixo mostra como padrões de busca comuns se comportam nos dois sistemas, destacando semelhanças de sintaxe e diferenças na execução no backend.
+
+| **Recurso**                           | **Sintaxe do ClickStack**           | **Sintaxe do Elasticsearch**      | **Comentários**                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------- | ----------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Busca de texto livre                  | `error`                             | `error`                           | Faz correspondência em todos os campos indexados; no ClickStack, isso é reescrito como um SQL `ILIKE` em vários campos.                                                                                                                                                                                                                             |
+| Correspondência de campo              | `level:error`                       | `level:error`                     | Sintaxe idêntica. No ClickStack, a correspondência é feita com valores exatos do campo no ClickHouse.                                                                                                                                                                                                                                               |
+| Busca por frase                       | `"disk full"`                       | `"disk full"`                     | O texto entre aspas corresponde a uma sequência exata; o ClickHouse usa igualdade de string ou `ILIKE`.                                                                                                                                                                                                                                             |
+| Correspondência de frase em campo     | `message:"disk full"`               | `message:"disk full"`             | É traduzido para SQL `ILIKE` ou correspondência exata.                                                                                                                                                                                                                                                                                              |
+| Condições OR                          | `error OR warning`                  | `error OR warning`                | OU lógico entre termos; ambos os sistemas oferecem suporte nativo a isso.                                                                                                                                                                                                                                                                           |
+| Condições AND                         | `error AND db`                      | `error AND db`                    | Ambos são traduzidos para interseção; não há diferença na sintaxe para o usuário.                                                                                                                                                                                                                                                                   |
+| Negação                               | `NOT error` or `-error`             | `NOT error` or `-error`           | Suportado da mesma forma; o ClickStack converte para SQL `NOT ILIKE`.                                                                                                                                                                                                                                                                               |
+| Agrupamento                           | `(error OR fail) AND db`            | `(error OR fail) AND db`          | Agrupamento booleano padrão em ambos.                                                                                                                                                                                                                                                                                                               |
+| Wildcards                             | `error*` or `*fail*`                | `error*`, `*fail*`                | O ClickStack oferece suporte a wildcards no início/fim; o ES desabilita wildcards iniciais por padrão por questões de desempenho. Wildcards dentro de termos não são suportados, por exemplo, `f*ail.` Os wildcards devem ser aplicados com uma correspondência de campo.                                                                           |
+| Intervalos (numérico/data)            | `duration:[100 TO 200]`             | `duration:[100 TO 200]`           | O ClickStack usa SQL `BETWEEN`; o Elasticsearch expande para consultas de intervalo. `*` sem limite em intervalos não é suportado, por exemplo, `duration:[100 TO *]`. Se necessário, use `Unbounded ranges` abaixo.                                                                                                                                |
+| Intervalos sem limite (numérico/data) | `duration:>10` or `duration:>=10`   | `duration:>10` or `duration:>=10` | O ClickStack usa operadores SQL padrão                                                                                                                                                                                                                                                                                                              |
+| Inclusivo/exclusivo                   | `duration:{100 TO 200}` (exclusive) | Same                              | `{}` indica limites exclusivos. `*` em intervalos não é suportado, por exemplo, `duration:[100 TO *]`                                                                                                                                                                                                                                               |
+| Verificação de existência             | N/A                                 | `_exists_:user` or `field:*`      | `_exists_` não é suportado. Use `LogAttributes.log.file.path: *` para colunas `Map`, por exemplo, `LogAttributes`. Para colunas raiz, elas precisam existir e terão um valor padrão se não forem incluídas no evento. Para buscar valores padrão ou colunas ausentes, use a mesma sintaxe do Elasticsearch: `ServiceName:*` ou `ServiceName != ''`. |
+| Regex                                 | função `match`                      | `name:/joh?n(ath[oa]n)/`          | Atualmente não é suportado na sintaxe Lucene. Você pode usar SQL e a função [`match`](/pt-BR/reference/functions/regular-functions/string-search-functions#match) ou outras [funções de busca de string](/pt-BR/reference/functions/regular-functions/string-search-functions).                                                                                 |
+| Correspondência difusa                | `editDistance('quikc', field) = 1`  | `quikc~`                          | Atualmente não é suportado na sintaxe Lucene. As funções de distância podem ser usadas em SQL, por exemplo, `editDistance('rror', SeverityText) = 1`, ou [outras funções de similaridade](/pt-BR/reference/functions/regular-functions/string-functions#jaroSimilarity).                                                                                  |
+| Busca por proximidade                 | Não suportado                       | `"fox quick"~5`                   | Atualmente não é suportado na sintaxe Lucene.                                                                                                                                                                                                                                                                                                       |
+| Boosting                              | `quick^2 fox`                       | `quick^2 fox`                     | Não é suportado no ClickStack no momento.                                                                                                                                                                                                                                                                                                           |
+| Wildcard de campo                     | `service.*:error`                   | `service.*:error`                 | Não é suportado no ClickStack no momento.                                                                                                                                                                                                                                                                                                           |
+| Caracteres especiais com escape       | Escape reserved characters with `\` | Same                              | Escape obrigatório para símbolos reservados.                                                                                                                                                                                                                                                                                                        |
+
+<div id="empty-value-differences">
+  ## Diferenças entre existência/ausência
+</div>
+
+Diferentemente do Elasticsearch, em que um campo pode ser totalmente omitido de um evento e, portanto, realmente &quot;não existir&quot;, o ClickHouse exige que todas as colunas em um esquema de tabela existam. Se um campo não for fornecido em um evento de inserção:
+
+* Para campos [`Nullable`](/pt-BR/reference/data-types/nullable), ele será definido como `NULL`.
+* Para campos não anuláveis (o padrão), ele será preenchido com um valor padrão (geralmente uma string vazia, 0 ou equivalente).
+
+No ClickStack, usamos a segunda opção, já que [`Nullable`](/pt-BR/reference/data-types/nullable) [não é recomendado](/pt-BR/concepts/best-practices/avoidnullablecolumns).
+
+Esse comportamento significa que verificar se um campo &quot;existe&quot; no sentido do Elasticsearch não tem suporte direto.
+
+Em vez disso, você pode usar `field:*` ou `field != ''` para verificar a presença de um valor não vazio. Assim, não é possível distinguir entre campos realmente ausentes e campos explicitamente vazios.
+
+Na prática, essa diferença raramente causa problemas em casos de uso de observabilidade, mas é importante tê-la em mente ao traduzir consultas entre sistemas.

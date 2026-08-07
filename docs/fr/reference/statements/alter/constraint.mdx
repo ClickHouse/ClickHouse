@@ -1,0 +1,24 @@
+---
+description: 'Documentation de référence sur la gestion des contraintes'
+sidebarTitle: 'CONSTRAINT'
+slug: /sql-reference/statements/alter/constraint
+title: 'Gestion des contraintes'
+doc_type: 'reference'
+---
+
+Les contraintes peuvent être ajoutées ou supprimées à l’aide de la syntaxe suivante :
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
+```
+
+Voir plus d&#39;informations sur les [contraintes](/fr/reference/statements/create/table#constraints).
+
+Les requêtes ajoutent ou suppriment des métadonnées relatives aux contraintes de la table ; elles sont donc traitées immédiatement.
+
+<Tip>
+  Si une contrainte est ajoutée, sa vérification **ne sera pas exécutée** sur les données existantes.
+</Tip>
+
+Toutes les modifications apportées aux tables répliquées sont propagées à ZooKeeper et seront également appliquées aux autres répliques.

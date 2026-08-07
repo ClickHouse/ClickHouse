@@ -1,0 +1,157 @@
+---
+title: 'المراقبة في ClickHouse Cloud Console'
+slug: /cloud/monitoring/cloud-console
+description: 'لوحات معلومات المراقبة المدمجة في ClickHouse Cloud Console'
+keywords: ['السحابة', 'المراقبة', 'لوحات المعلومات', 'صحة الخدمة', 'استخدام الموارد', 'لوحة المعلومات المتقدمة']
+sidebarTitle: 'Cloud Console'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تأتي الخدمات في ClickHouse Cloud مزوّدةً بمكوّنات Monitoring جاهزة توفّر للمستخدمين لوحات معلومات وإشعارات. وبشكل افتراضي، يمكن لجميع المستخدمين في Cloud Console الوصول إلى لوحات المعلومات هذه.
+
+<div id="dashboards">
+  ## لوحات المعلومات
+</div>
+
+<div id="service-health">
+  ### Service Health
+</div>
+
+يمكن استخدام لوحة المعلومات Service Health لمراقبة الوضع الصحي العام للخدمة. يجمع ClickHouse Cloud المقاييس المعروضة في لوحة المعلومات هذه من جداول النظام ويخزنها، بحيث يمكن عرضها عندما تكون الخدمة في حالة خمول.
+
+{/* TODO: أضف لقطة شاشة للوحة معلومات Service Health */}
+
+<div id="resource-utilization">
+  ### استخدام الموارد
+</div>
+
+توفّر لوحة معلومات Infrastructure عرضًا تفصيليًا للموارد التي تستخدمها عملية ClickHouse. ويجمع ClickHouse Cloud المقاييس المعروضة على لوحة المعلومات هذه من جداول النظام ويخزّنها، بحيث يمكن عرضها عندما تكون الخدمة في حالة خمول.
+
+<div id="memory-and-cpu">
+  #### الذاكرة وCPU
+</div>
+
+تعرض الرسوم البيانية **CPU المخصّص** و**الذاكرة المخصّصة** إجمالي موارد الحوسبة المتاحة لكل نسخة متماثلة في خدمتك. ويمكن تغيير هذه المخصّصات باستخدام [ميزات التوسّع](/ar/products/cloud/features/autoscaling/overview) في ClickHouse Cloud.
+
+تقدّر الرسوم البيانية **استخدام الذاكرة** و**استخدام CPU** مقدار ما تستهلكه عمليات ClickHouse فعليًا من CPU والذاكرة في كل نسخة متماثلة، بما في ذلك الاستعلامات والعمليات التي تعمل في الخلفية مثل عمليات الدمج.
+
+<Info>
+  **تراجع الأداء**
+
+  إذا كان استهلاك الذاكرة أو CPU يقترب من الذاكرة أو CPU المخصّصين، فقد تبدأ بملاحظة تراجع في الأداء. ولحل ذلك، نوصي بما يلي:
+
+  * تحسين استعلاماتك
+  * تغيير تقسيم البيانات في محركات الجداول لديك
+  * إضافة المزيد من موارد الحوسبة إلى خدمتك باستخدام [التوسّع](/ar/products/cloud/features/autoscaling/overview)
+</Info>
+
+فيما يلي مقاييس جدول النظام المقابلة المعروضة في هذه الرسوم البيانية:
+
+| الرسم البياني     | اسم المقياس المقابل | التجميع     | ملاحظات                                               |
+| ----------------- | ------------------- | ----------- | ----------------------------------------------------- |
+| الذاكرة المخصّصة  | `CGroupMemoryTotal` | الحد الأقصى |                                                       |
+| CPU المخصّص       | `CGroupMaxCPU`      | الحد الأقصى |                                                       |
+| الذاكرة المستخدمة | `MemoryResident`    | الحد الأقصى |                                                       |
+| CPU المستخدم      | مقياس CPU للنظام    | الحد الأقصى | `ClickHouseServer_UsageCores` عبر نقطة نهاية Prometheus |
+
+<div id="data-transfer">
+  #### نقل البيانات
+</div>
+
+تعرض الرسوم البيانية حركة البيانات الداخلة والخارجة من ClickHouse Cloud. تعرّف على المزيد حول [نقل بيانات الشبكة](/ar/products/cloud/reference/billing/network-data-transfer).
+
+<div id="advanced-dashboard">
+  ### لوحة المعلومات المتقدمة
+</div>
+
+لوحة المعلومات هذه هي نسخة معدّلة من [لوحة observability المتقدمة المضمّنة](/ar/products/cloud/features/monitoring/advanced-dashboard)، حيث تمثّل كل سلسلة المقاييس لكل نسخة متماثلة. يمكن أن تكون هذه اللوحة مفيدة في مراقبة المشكلات الخاصة بـ ClickHouse واستكشافها وإصلاحها.
+
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="لوحة المعلومات المتقدمة في ClickHouse Cloud" border />
+
+<Note>
+  يقوم ClickHouse Cloud بجمع المقاييس المعروضة في لوحة المعلومات هذه وتخزينها من جداول النظام بحيث يمكن عرضها حتى عندما تكون الخدمة في حالة خمول. ولا يؤدي الوصول إلى هذه المقاييس إلى تنفيذ استعلام على الخدمة الأساسية، كما أنه لن يوقظ الخدمات الخاملة.
+</Note>
+
+يوضّح الجدول أدناه مطابقة كل رسم بياني في لوحة المعلومات المتقدمة مع اسم مقياس ClickHouse المقابل، وجدول النظام المصدر، ونوع التجميع:
+
+| الرسم البياني                                     | اسم مقياس ClickHouse المقابل                                                                                                                                            | جدول النظام               | نوع التجميع             |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ----------------------- |
+| الاستعلامات/ثانية                                 | `ProfileEvent_Query`                                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| الاستعلامات قيد التشغيل                           | `CurrentMetric_Query`                                                                                                                                                   | `metric_log`              | Avg                     |
+| عمليات الدمج قيد التشغيل                          | `CurrentMetric_Merge`                                                                                                                                                   | `metric_log`              | Avg                     |
+| البايتات المحددة/ثانية                            | `ProfileEvent_SelectedBytes`                                                                                                                                            | `metric_log`              | Sum / bucketSizeSeconds |
+| انتظار IO                                         | `ProfileEvent_OSIOWaitMicroseconds`                                                                                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
+| انتظار القراءة من S3                              | `ProfileEvent_ReadBufferFromS3Microseconds`                                                                                                                             | `metric_log`              | Sum / bucketSizeSeconds |
+| أخطاء القراءة من S3/ثانية                         | `ProfileEvent_ReadBufferFromS3RequestsErrors`                                                                                                                           | `metric_log`              | Sum / bucketSizeSeconds |
+| انتظار CPU                                        | `ProfileEvent_OSCPUWaitMicroseconds`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| استخدام CPU لنظام التشغيل (userspace، normalized) | `OSUserTimeNormalized`                                                                                                                                                  | `asynchronous_metric_log` |                         |
+| استخدام CPU لنظام التشغيل (kernel، normalized)    | `OSSystemTimeNormalized`                                                                                                                                                | `asynchronous_metric_log` |                         |
+| القراءة من disk                                   | `ProfileEvent_OSReadBytes`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
+| القراءة من filesystem                             | `ProfileEvent_OSReadChars`                                                                                                                                              | `metric_log`              | Sum / bucketSizeSeconds |
+| الذاكرة (المتعقبة، بايتات)                        | `CurrentMetric_MemoryTracking`                                                                                                                                          | `metric_log`              |                         |
+| إجمالي أجزاء MergeTree                            | `TotalPartsOfMergeTreeTables`                                                                                                                                           | `asynchronous_metric_log` |                         |
+| الحد الأقصى للأجزاء لكل partition                 | `MaxPartCountForPartition`                                                                                                                                              | `asynchronous_metric_log` |                         |
+| القراءة من S3                                     | `ProfileEvent_ReadBufferFromS3Bytes`                                                                                                                                    | `metric_log`              | Sum / bucketSizeSeconds |
+| حجم filesystem cache                              | `CurrentMetric_FilesystemCacheSize`                                                                                                                                     | `metric_log`              |                         |
+| طلبات الكتابة إلى Disk S3/ثانية                   | `ProfileEvent_DiskS3PutObject` + `ProfileEvent_DiskS3UploadPart` + `ProfileEvent_DiskS3CreateMultipartUpload` + `ProfileEvent_DiskS3CompleteMultipartUpload`            | `metric_log`              | Sum / bucketSizeSeconds |
+| طلبات القراءة من Disk S3/ثانية                    | `ProfileEvent_DiskS3GetObject` + `ProfileEvent_DiskS3HeadObject` + `ProfileEvent_DiskS3ListObjects`                                                                     | `metric_log`              | Sum / bucketSizeSeconds |
+| معدل الإصابة في FS cache                          | `sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) / (sum(ProfileEvent_CachedReadBufferReadFromCacheBytes) + sum(ProfileEvent_CachedReadBufferReadFromSourceBytes))` | `metric_log`              |                         |
+| معدل الإصابة في Page cache                        | `greatest(0, (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes)) / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes)))`              | `metric_log`              |                         |
+| بايتات استقبال الشبكة/ثانية                       | `NetworkReceiveBytes`                                                                                                                                                   | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
+| بايتات إرسال الشبكة/ثانية                         | `NetworkSendBytes`                                                                                                                                                      | `asynchronous_metric_log` | Sum / bucketSizeSeconds |
+| اتصالات TCP المتزامنة                             | `CurrentMetric_TCPConnection`                                                                                                                                           | `metric_log`              |                         |
+| اتصالات MySQL المتزامنة                           | `CurrentMetric_MySQLConnection`                                                                                                                                         | `metric_log`              |                         |
+| اتصالات HTTP المتزامنة                            | `CurrentMetric_HTTPConnection`                                                                                                                                          | `metric_log`              |                         |
+
+للحصول على معلومات تفصيلية حول كل تصور وكيفية استخدامه في استكشاف المشكلات وإصلاحها، راجع [توثيق لوحة المعلومات المتقدمة](/ar/products/cloud/features/monitoring/advanced-dashboard).
+
+<div id="query-insights">
+  ## Query insights
+</div>
+
+تُسهّل ميزة **Query Insights** استخدام سجل الاستعلامات المضمّن في ClickHouse من خلال مجموعة متنوعة من المرئيات والجداول. ويُعد جدول ClickHouse ‏`system.query_log` مصدرًا أساسيًا للمعلومات اللازمة لتحسين الاستعلامات، واستكشاف الأخطاء وإصلاحها، ومراقبة الحالة العامة للعنقود وأدائه.
+
+بعد تحديد خدمة، يتوسّع عنصر التنقل **Monitoring** في الشريط الجانبي الأيسر ليُظهر عنصرًا فرعيًا باسم **Query insights**:
+
+<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="نظرة عامة على واجهة مستخدم Query Insights" border />
+
+<div id="top-level-metrics">
+  ### المقاييس عالية المستوى
+</div>
+
+تمثل مربعات الإحصاءات في الأعلى مقاييس الاستعلام الأساسية خلال الفترة الزمنية المحددة. وأسفلها، تعرض المخططات الزمنية حجم الاستعلامات، وزمن الاستجابة، ومعدل الأخطاء، مقسّمة حسب نوع الاستعلام (select وinsert وother). ويمكن ضبط مخطط زمن الاستجابة لعرض قيم p50 وp90 وp99:
+
+<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="مخطط زمن الاستجابة في Query Insights" border />
+
+<div id="recent-queries">
+  ### الاستعلامات الأخيرة
+</div>
+
+يعرض الجدول إدخالات من سجل الاستعلامات، مجمّعة حسب تجزئة الاستعلام المُطبَّع والمستخدم ضمن الفترة الزمنية المحددة. يمكن تصفية الاستعلامات الأخيرة وفرزها حسب أي حقل متاح، كما يمكن تهيئة الجدول لعرض حقول إضافية مثل الجداول وزمني الاستجابة p90 وp99 أو إخفائها:
+
+<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="جدول الاستعلامات الأخيرة في Query Insights" border />
+
+<div id="query-drill-down">
+  ### التعمّق في الاستعلام
+</div>
+
+يؤدي اختيار استعلام من جدول الاستعلامات الأخيرة إلى فتح لوحة منبثقة تحتوي على مقاييس ومعلومات خاصة بالاستعلام المحدد:
+
+<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="واجهة Query Insights للتعمّق في الاستعلام" border />
+
+جميع المقاييس في علامة التبويب **معلومات الاستعلام** هي مقاييس مُجمّعة، ولكن يمكننا أيضًا عرض مقاييس عمليات التنفيذ الفردية عبر تحديد علامة التبويب **سجل الاستعلام**:
+
+<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="واجهة Query Insights لمعلومات الاستعلام" border />
+
+من هذه اللوحة، يمكن توسيع العنصرين `Settings` و`Profile Events` لكل عملية تنفيذ استعلام لإظهار معلومات إضافية.
+
+<div id="related">
+  ## الصفحات ذات الصلة
+</div>
+
+* [الإشعارات](/ar/products/cloud/features/monitoring/notifications) — هيّئ التنبيهات لأحداث التوسّع والأخطاء والفوترة
+* [لوحة المعلومات المتقدمة](/ar/products/cloud/features/monitoring/advanced-dashboard) — مرجع تفصيلي لكل تصوّر في لوحة المعلومات
+* [الاستعلام عن جداول النظام](/ar/products/cloud/features/monitoring/system-tables) — شغّل استعلامات SQL مخصّصة على جداول النظام لإجراء استقصاء داخلي متعمّق
+* [نقطة نهاية Prometheus](/ar/products/cloud/features/monitoring/prometheus) — صدّر المقاييس إلى Grafana أو Datadog أو أي أدوات أخرى متوافقة مع Prometheus

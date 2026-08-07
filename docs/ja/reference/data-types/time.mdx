@@ -1,0 +1,150 @@
+---
+description: '秒精度の時刻を格納するClickHouseのTimeデータ型に関するドキュメント'
+slug: /sql-reference/data-types/time
+sidebarTitle: 'Time'
+title: 'Time'
+doc_type: 'reference'
+---
+
+データ型 `Time` は、時・分・秒の部分を持つ時刻を表します。
+これはどの暦日にも依存せず、日・月・年の部分が不要な値に適しています。
+
+構文:
+
+```sql
+Time
+```
+
+文字列表現の範囲: [-999:59:59, 999:59:59]。
+
+分解能: 1秒。
+
+<div id="implementation-details">
+  ## 実装の詳細
+</div>
+
+**表現とパフォーマンス**。
+データ型 `Time` は内部的に、秒をエンコードした符号付き 32 ビット整数として格納されます。
+`Time` 型と `DateTime` 型の値はバイトサイズが同じであるため、パフォーマンスも同程度です。
+
+**正規化**。
+文字列を `Time` にパースする際、時刻の各部分は正規化されますが、妥当性の検証は行われません。
+たとえば、`25:70:70` は `26:11:10` と解釈されます。
+
+**負の値**。
+先頭のマイナス記号はサポートされ、そのまま保持されます。
+負の値は通常、`Time` 値に対する算術演算によって生じます。
+`Time` 型では、テキスト入力 (例: `'-01:02:03'`) でも数値入力 (例: `-3723`) でも、負の入力は保持されます。
+
+**飽和**。
+時刻の値は [-999:59:59, 999:59:59] の範囲に制限されます。
+時間が 999 を超える値 (または -999 未満の値) は、テキストで表現した場合も再度テキストに戻した場合も、`999:59:59` (または `-999:59:59`) として表されます。
+
+**タイムゾーン**。
+`Time` はタイムゾーンをサポートしません。つまり、`Time` の値は地域的な文脈なしに解釈されます。
+型パラメータとして、または値の作成時に `Time` にタイムゾーンを指定すると、エラーになります。
+同様に、`Time` カラムにタイムゾーンを適用または変更することもサポートされておらず、エラーになります。
+`Time` の値が異なるタイムゾーンのもとで暗黙に再解釈されることはありません。
+
+<div id="examples">
+  ## 例
+</div>
+
+**1.** `Time` 型のカラムを持つテーブルを作成し、データを挿入する例:
+
+```sql
+CREATE TABLE tab
+(
+    `event_id` UInt8,
+    `time` Time
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Time をパース
+-- - 文字列から、
+-- - 00:00:00 からの秒数として解釈される整数から。
+INSERT INTO tab VALUES (1, '14:30:25'), (2, 52225);
+
+SELECT * FROM tab ORDER BY event_id;
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**2.** `Time` の値によるフィルタリング
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT * FROM tab WHERE time = toTime('14:30:25')
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+`Time` カラムの値は、`WHERE` 述語で文字列を使ってフィルタできます。これは自動的に `Time` に変換されます。
+
+```sql
+SELECT * FROM tab WHERE time = '14:30:25'
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**3.** 結果の型を確認します：
+
+```sql
+SELECT CAST('14:30:25' AS Time) AS column, toTypeName(column) AS type
+```
+
+```text
+   ┌────column─┬─type─┐
+1. │ 14:30:25 │ Time │
+   └───────────┴──────┘
+```
+
+<div id="addition-with-date">
+  ## Date への加算
+</div>
+
+[Time](/ja/reference/data-types/time) 値は [Date](/ja/reference/data-types/date) または [Date32](/ja/reference/data-types/date32) 値に加算でき、その結果 [DateTime](/ja/reference/data-types/datetime) または [DateTime64](/ja/reference/data-types/datetime64) になります。
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') as datetime;
+```
+
+```text
+   ┌────────────datetime─┐
+1. │ 2024-07-15 14:30:25 │
+   └─────────────────────┘
+```
+
+サポートされているすべての組み合わせと結果の型について詳しくは、[日付と時刻の加算](/ja/reference/operators/index#date-time-addition)を参照してください。
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [型変換関数](/ja/reference/functions/regular-functions/type-conversion-functions)
+* [日付と時刻を扱う関数](/ja/reference/functions/regular-functions/date-time-functions)
+* [Array を扱う関数](/ja/reference/functions/regular-functions/array-functions)
+* [`date_time_input_format` 設定](/ja/reference/settings/formats#date_time_input_format)
+* [`date_time_output_format` 設定](/ja/reference/settings/formats#date_time_output_format)
+* [`timezone` サーバー設定パラメータ](/ja/reference/settings/server-settings/settings#timezone)
+* [`session_timezone` 設定](/ja/reference/settings/session-settings#session_timezone)
+* [`DateTime` データ型](/ja/reference/data-types/datetime)
+* [`Date` データ型](/ja/reference/data-types/date)

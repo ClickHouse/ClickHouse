@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS echo_test_0
+DROP TABLE IF EXISTS echo_test_2;
+DROP TABLE IF EXISTS echo_test_3

@@ -1,0 +1,54 @@
+---
+description: 'Documentation de ClickHouse Obfuscator'
+slug: /operations/utilities/clickhouse-obfuscator
+title: 'clickhouse-obfuscator'
+doc_type: 'reference'
+---
+
+Un outil simple d&#39;obfuscation des données de table.
+
+Il lit une table d&#39;entrée et produit une table de sortie qui conserve certaines propriétés de l&#39;entrée, mais contient des données différentes.
+Il permet de publier des données de production presque réelles afin de les utiliser dans des benchmarks.
+
+Il est conçu pour conserver les propriétés de données suivantes :
+
+* les cardinalités des valeurs (nombre de valeurs distinctes) pour chaque colonne et chaque tuple de colonnes ;
+
+* les cardinalités conditionnelles : le nombre de valeurs distinctes d&#39;une colonne sous condition sur la valeur d&#39;une autre colonne ;
+
+* les distributions de probabilité de la valeur absolue des entiers, du signe des entiers signés, ainsi que de l&#39;exposant et du signe des flottants ;
+
+* les distributions de probabilité de la longueur des chaînes ;
+
+* la probabilité des valeurs nulles pour les nombres, des chaînes et tableaux vides, ainsi que des `NULL` ;
+
+* le taux de compression des données lorsqu&#39;elles sont compressées avec LZ77 et la famille de codecs entropy ;
+
+* la continuité (amplitude des écarts) des valeurs temporelles dans l&#39;ensemble de la table, ainsi que la continuité des valeurs en virgule flottante ;
+
+* la composante date des valeurs `DateTime` ;
+
+* la validité UTF-8 des valeurs de chaîne ;
+
+* les valeurs de chaîne ont un aspect naturel.
+
+La plupart des propriétés ci-dessus sont utiles pour les tests de performance :
+
+la lecture des données, le filtrage, l&#39;aggregation et le tri fonctionneront presque à la même vitesse
+que sur les données d&#39;origine grâce aux cardinalités, amplitudes, taux de compression, etc. conservés.
+
+Il fonctionne de manière deterministic : vous définissez une valeur seed et la transformation est déterminée par les données d&#39;entrée et par la seed.
+Certaines transformations sont bijectives et peuvent être inversées ; vous devez donc choisir une seed suffisamment grande et la garder secrète.
+
+Il utilise certaines primitives cryptographiques pour transformer les données, mais, du point de vue cryptographique, il ne le fait pas correctement. C&#39;est pourquoi vous ne devez pas considérer le résultat comme sûr, sauf si vous avez une autre raison de le faire. Le résultat peut conserver certaines données que vous ne souhaitez pas publier.
+
+Il laisse toujours exactement inchangés, comme dans les données source, les nombres 0, 1 et -1, les dates, les longueurs des tableaux et les indicateurs de nullité.
+Par exemple, si vous avez une colonne `IsMobile` dans votre table avec les valeurs 0 et 1, elle aura la même valeur dans les données transformées.
+
+L&#39;utilisateur pourra donc calculer le ratio exact du trafic mobile.
+
+Prenons un autre exemple. Si votre table contient des données privées, comme l&#39;adresse e-mail d&#39;un utilisateur, et que vous ne voulez publier aucune adresse e-mail.
+Si votre table est suffisamment grande, contient plusieurs adresses e-mail différentes et qu&#39;aucune n&#39;a une fréquence bien plus élevée que les autres, l&#39;outil anonymisera toutes les données. En revanche, si une colonne ne contient qu&#39;un petit nombre de valeurs différentes, il peut en reproduire certaines.
+Vous devez examiner l&#39;algorithme de fonctionnement de cet outil et affiner ses paramètres en ligne de commande.
+
+Cet outil ne fonctionne correctement qu&#39;avec au moins un volume modéré de données (au moins des milliers de lignes).

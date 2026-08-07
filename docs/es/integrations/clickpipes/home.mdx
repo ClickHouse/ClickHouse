@@ -1,0 +1,208 @@
+---
+sidebarTitle: 'Introducción'
+description: 'Conecta fácilmente tus fuentes de datos externas a ClickHouse Cloud.'
+slug: /integrations/clickpipes
+title: 'Integración con ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'plataforma de ingestión de datos', 'datos en streaming', 'plataforma de integración', 'ClickHouse Cloud']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="introduction">
+  ## Introducción
+</div>
+
+[ClickPipes](/es/integrations/clickpipes/home) es una plataforma de integración gestionada que hace que la ingestión de datos desde una amplia variedad de fuentes sea tan sencilla como hacer clic en unos pocos botones. Diseñada para las cargas de trabajo más exigentes, la arquitectura robusta y escalable de ClickPipes garantiza un rendimiento y una fiabilidad constantes. ClickPipes puede utilizarse para necesidades de streaming a largo plazo o para una carga puntual de datos.
+
+ClickPipes puede implementarse y gestionarse manualmente mediante la UI de ClickPipes, así como de forma programática mediante [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/clickpipes_stack.webp" alt="stack de ClickPipes" size="lg" border />
+
+<div id="supported-data-sources">
+  ## Fuentes de datos compatibles
+</div>
+
+| Nombre                                                      | Logo                                                                                                      | Tipo                      | Estado               | Descripción                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Apache Kafka](/es/integrations/clickpipes/kafka/index)        | <img src="/images/integrations/logos/kafka.svg" alt="logo de Apache Kafka" width="32" />                  | Streaming                 | Estable              | Configure ClickPipes y comience a ingerir datos en streaming desde Apache Kafka hacia ClickHouse Cloud.                                                                                                                                           |
+| Confluent Cloud                                             | <img src="/images/integrations/logos/confluent.svg" alt="logo de Confluent Cloud" width="32" />           | Streaming                 | Estable              | Aproveche la potencia combinada de Confluent y ClickHouse Cloud con nuestra integración directa.                                                                                                                                                  |
+| Redpanda                                                    | <img src="/images/integrations/logos/logo_redpanda.webp" alt="logo de Redpanda" width="32" />              | Streaming                 | Estable              | Configure ClickPipes y comience a ingerir datos en streaming desde Redpanda hacia ClickHouse Cloud.                                                                                                                                               |
+| AWS MSK                                                     | <img src="/images/integrations/logos/msk.svg" alt="logo de AWS MSK" width="32" />                         | Streaming                 | Estable              | Configure ClickPipes y comience a ingerir datos en streaming desde AWS MSK hacia ClickHouse Cloud.                                                                                                                                                |
+| Azure Event Hubs                                            | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="logo de Azure Event Hubs" width="32" />   | Streaming                 | Estable              | Configure ClickPipes y comience a ingerir datos en streaming desde Azure Event Hubs hacia ClickHouse Cloud. Consulte las [preguntas frecuentes de Azure Event Hubs](/es/integrations/clickpipes/kafka/faq#azure-eventhubs) para obtener orientación. |
+| WarpStream                                                  | <img src="/images/integrations/logos/warpstream.svg" alt="logo de WarpStream" width="32" />               | Streaming                 | Estable              | Configure ClickPipes y comience a ingerir datos en streaming desde WarpStream hacia ClickHouse Cloud.                                                                                                                                             |
+| Amazon S3                                                   | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="logo de Amazon S3" width="32" />            | Almacenamiento de objetos | Estable              | Configure ClickPipes para ingerir grandes volúmenes de datos desde el almacenamiento de objetos.                                                                                                                                                  |
+| Google Cloud Storage                                        | <img src="/images/integrations/logos/gcs.svg" alt="logo de Google Cloud Storage" width="32" />            | Almacenamiento de objetos | Estable              | Configure ClickPipes para ingerir grandes volúmenes de datos desde el almacenamiento de objetos.                                                                                                                                                  |
+| DigitalOcean Spaces                                         | <img src="/images/integrations/logos/digitalocean.svg" alt="logo de Digital Ocean" width="32" />          | Almacenamiento de objetos | Estable              | Configure ClickPipes para ingerir grandes volúmenes de datos desde el almacenamiento de objetos.                                                                                                                                                  |
+| Azure Blob Storage                                          | <img src="/images/integrations/logos/azureblobstorage.svg" alt="logo de Azure Blob Storage" width="32" /> | Almacenamiento de objetos | Estable              | Configure ClickPipes para ingerir grandes volúmenes de datos desde el almacenamiento de objetos.                                                                                                                                                  |
+| [Amazon Kinesis](/es/integrations/clickpipes/kinesis/overview) | <img src="/images/integrations/logos/amazon_kinesis_logo.svg" alt="logo de Amazon Kenesis" width="32" />  | Streaming                 | Estable              | Configure ClickPipes y comience a ingerir datos en streaming desde Amazon Kinesis hacia ClickHouse Cloud.                                                                                                                                         |
+| [GCP Pub/Sub](/es/integrations/clickpipes/pubsub/overview)     | <img src="/images/integrations/logos/google_pubsub.svg" alt="logo de Google Cloud Pub/Sub" width="32" />  | Streaming                 | Beta pública         | Configure ClickPipes y comience a ingerir datos en streaming desde Google Cloud Pub/Sub hacia ClickHouse Cloud.                                                                                                                                   |
+| [Postgres](/es/integrations/clickpipes/postgres/index)         | <img src="/images/integrations/logos/postgresql.svg" alt="logo de Postgres" width="32" />                 | DBMS                      | Estable              | Configure ClickPipes y comience a ingerir datos desde Postgres hacia ClickHouse Cloud.                                                                                                                                                            |
+| [MySQL](/es/integrations/clickpipes/mysql/index)               | <img src="/images/integrations/logos/mysql.svg" alt="logo de MySQL" width="32" />                         | DBMS                      | Beta pública         | Configure ClickPipes y comience a ingerir datos desde MySQL hacia ClickHouse Cloud.                                                                                                                                                               |
+| [MongoDB](/es/integrations/clickpipes/mongodb/index)           | <img src="/images/integrations/logos/mongodb.svg" alt="logo de MongoDB" width="32" />                     | DBMS                      | Vista previa privada | Configure ClickPipes y comience a ingerir datos desde MongoDB hacia ClickHouse Cloud.                                                                                                                                                             |
+
+Se irán añadiendo más conectores a ClickPipes. Puede obtener más información [poniéndose en contacto con nosotros](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="list-of-static-ips">
+  ## Lista de IP estáticas
+</div>
+
+Las siguientes tablas enumeran las direcciones IP NAT estáticas que ClickPipes usa para conectarse a sus servicios externos. Añada a su lista de IP permitidas las IP de la región de ClickPipes que da servicio a su servicio de ClickHouse Cloud. En el caso de las pipes de almacenamiento de objetos, también debe añadir las [IP del clúster de ClickHouse](/es/products/cloud/guides/data-sources/cloud-endpoints-api) a su lista de IP permitidas.
+
+Los servicios de las regiones de Google Cloud que se enumeran en la tabla de Google Cloud a continuación usan esas IP de Google Cloud solo si el servicio no contenía ClickPipes preexistentes antes del 15 de junio de 2026. Los servicios de esas regiones con ClickPipes preexistentes antes del 15 de junio de 2026 siguen usando las IP predeterminadas de región que se indican a continuación.
+
+Para otros servicios, el tráfico de ClickPipes se originará desde una región predeterminada en función de la ubicación de su servicio:
+
+* **eu-central-1**: Para todas las regiones de la UE no enumeradas explícitamente, además de las regiones de Azure en la UE y los servicios de Google Cloud en la UE con ClickPipes preexistentes antes del 15 de junio de 2026.
+* **eu-west-1**: Para todos los servicios de AWS `eu-west-1` creados el 20 de enero de 2026 o después (los servicios creados antes de esta fecha usan IP de `eu-central-1`).
+* **us-east-1**: Para todos los servicios de AWS `us-east-1`.
+* **ap-south-1**: Para los servicios de AWS `ap-south-1` creados el 25 de junio de 2025 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **ap-northeast-2**: Para los servicios de AWS `ap-northeast-2` creados el 14 de noviembre de 2025 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **af-south-1**: Para los servicios de AWS `af-south-1` creados el 15 de abril de 2026 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **ap-east-1**: Para los servicios de AWS `ap-east-1` creados el 15 de abril de 2026 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **ap-northeast-1**: Para los servicios de AWS `ap-northeast-1` creados el 15 de abril de 2026 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **ap-southeast-1**: Para los servicios de AWS `ap-southeast-1` creados el 18 de marzo de 2026 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **ap-southeast-2**: Para los servicios de AWS `ap-southeast-2` creados el 25 de junio de 2025 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **ap-southeast-3**: Para los servicios de AWS `ap-southeast-3` creados el 6 de marzo de 2026 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **ca-central-1**: Para los servicios de AWS `ca-central-1` creados el 15 de abril de 2026 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **eu-north-1**: Para los servicios de AWS `eu-north-1` creados el 15 de abril de 2026 o después (los servicios creados antes de esta fecha usan IP de `eu-central-1`).
+* **eu-west-2**: Para los servicios de AWS `eu-west-2` creados el 15 de abril de 2026 o después (los servicios creados antes de esta fecha usan IP de `eu-central-1`).
+* **il-central-1**: Para los servicios de AWS `il-central-1` creados el 15 de abril de 2026 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **mx-central-1**: Para los servicios de AWS `mx-central-1` creados el 19 de mayo de 2026 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **sa-east-1**: Para los servicios de AWS `sa-east-1` creados el 15 de abril de 2026 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **us-west-2**: Para los servicios de AWS `us-west-2` creados el 24 de junio de 2025 o después (los servicios creados antes de esta fecha usan IP de `us-east-2`).
+* **us-east-2**: Para todas las demás regiones que no coincidan con ninguna de las reglas anteriores, incluidas las regiones de Azure y los servicios de Google Cloud con ClickPipes preexistentes antes del 15 de junio de 2026.
+
+<div id="aws-static-nat-ips">
+  ### Direcciones IP NAT estáticas de AWS
+</div>
+
+| Región de AWS                                                       | Direcciones IP                                                                                                                              |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **eu-central-1** - Fráncfort                                        | `18.195.233.217`, `3.127.86.90`, `35.157.23.2`, `18.197.167.47`, `3.122.25.29`, `52.28.148.40`                                              |
+| **eu-west-1** - Irlanda (a partir del 20 ene 2026)                  | `54.228.1.92` , `54.72.101.254`, `54.228.16.208`, `54.76.200.104`, `52.211.2.177`, `54.77.10.134`                                           |
+| **us-east-1** - Virginia del Norte                                  | `54.82.38.199`, `3.90.133.29`, `52.5.177.8`, `3.227.227.145`, `3.216.6.184`, `54.84.202.92`, `3.131.130.196`, `3.23.172.68`, `3.20.208.150` |
+| **us-east-2** - Ohio                                                | `3.131.130.196`, `3.23.172.68`, `3.20.208.150`, `3.132.20.192`, `18.119.76.110`, `3.134.185.180`                                            |
+| **ap-south-1** - Mumbai (a partir del 25 jun 2025)                  | `13.203.140.189`, `13.232.213.12`, `13.235.145.208`, `35.154.167.40`, `65.0.39.245`, `65.1.225.89`                                          |
+| **ap-northeast-2** - Seúl (desde el 14 de nov. de 2025)             | `3.38.68.69`, `52.78.68.128`, `13.209.152.13`, `3.38.24.84`, `3.37.159.31`, `3.34.25.104`                                                   |
+| **ap-southeast-1** - Singapur (desde el 18 de marzo de 2026)        | `13.215.65.134`, `18.139.118.108`, `47.130.197.47`, `54.251.134.219`, `54.254.98.29`, `54.255.153.106`                                      |
+| **ap-southeast-2** - Sídney (a partir del 25 jun 2025)              | `3.106.48.103`, `52.62.168.142`, `13.55.113.162`, `3.24.61.148`, `54.206.77.184`, `54.79.253.17`                                            |
+| **af-south-1** - Ciudad del Cabo (a partir del 15 de abril de 2026) | `13.245.187.24`, `15.240.60.178`, `15.240.81.191`, `13.245.25.101`, `13.245.91.225`, `15.240.54.195`                                        |
+| **ap-east-1** - Hong Kong (a partir del 15 abr 2026)                | `18.166.168.168`, `43.199.224.85`, `95.40.0.242`, `16.162.107.229`, `43.199.125.240`, `54.46.86.27`                                         |
+| **ap-northeast-1** - Tokio (desde el 15 de abril de 2026)           | `54.168.88.92`, `35.76.97.79`, `54.64.100.89`, `54.178.40.17`, `52.195.101.208`, `13.193.109.245`                                           |
+| **ap-southeast-1** - Singapur (a partir del 18 de marzo de 2026)    | `47.130.197.47`, `54.251.134.219`, `18.139.118.108`, `54.255.153.106`, `54.254.98.29`, `13.215.65.134`                                      |
+| **ap-southeast-3** - Yakarta (desde el 6 de marzo de 2026)          | `16.78.195.195`, `43.218.184.235`, `16.79.88.54`, `16.78.153.162`, `16.79.6.125`, `108.137.52.155`                                          |
+| **ca-central-1** - Canadá (a partir del 15 abr 2026)                | `52.60.123.235`, `3.97.222.98`, `3.99.62.248`, `15.223.61.186`, `3.96.255.101`, `3.97.29.96`                                                |
+| **eu-north-1** - Estocolmo (a partir del 15 de abril de 2026)       | `13.63.1.65`, `16.171.127.30`, `56.228.76.44`, `13.63.101.248`, `16.170.124.188`, `13.60.109.201`                                           |
+| **eu-west-2** - Londres (a partir del 15 abr 2026)                  | `13.134.82.158`, `16.60.209.167`, `18.134.221.203`, `16.60.139.176`, `13.43.66.75`, `3.11.78.183`                                           |
+| **il-central-1** - Tel Aviv (a partir del 15 abr 2026)              | `16.164.25.13`, `51.84.162.29`, `51.85.90.183`, `51.84.36.146`, `51.84.72.29`, `51.85.28.184`                                               |
+| **mx-central-1** - México (a partir del 19 may 2026)                | `78.12.67.220`, `78.12.117.175`, `78.13.186.238`, `78.13.219.184`, `78.13.224.212`, `78.13.248.162`                                         |
+| **sa-east-1** - São Paulo (a partir del 15 abr 2026)                | `18.230.164.131`, `56.126.1.234`, `18.230.39.24`, `15.229.102.116`, `18.230.174.204`, `18.229.237.116`                                      |
+| **us-west-2** - Oregón (a partir del 24 jun 2025)                   | `52.42.100.5`, `44.242.47.162`, `52.40.44.52`, `44.227.206.163`, `44.246.241.23`, `35.83.230.19`                                            |
+
+<div id="google-cloud-static-nat-ips">
+  ### Direcciones IP NAT estáticas de Google Cloud
+</div>
+
+| Región de Google Cloud                                            | Direcciones IP                                                                        |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **asia-northeast1** - Tokio (a partir del 27 de mayo de 2026)     | `104.198.114.210`, `35.221.66.81`, `35.243.126.127`, `136.110.107.86`, `34.85.18.112` |
+| **asia-southeast1** - Singapur (a partir del 27 de mayo de 2026)  | `34.21.197.28`, `35.197.141.23`, `35.197.157.90`, `136.110.17.200`, `35.185.179.231`  |
+| **europe-west2** - Londres (a partir del 27 de mayo de 2026)      | `35.242.131.178`, `34.39.77.101`, `34.39.47.179`, `34.89.53.234`, `8.228.63.151`      |
+| **europe-west4** - Países Bajos (a partir del 27 de mayo de 2026) | `34.34.86.3`, `34.6.175.56`, `34.178.6.187`, `34.91.204.220`, `34.12.85.206`          |
+| **us-central1** - Iowa (a partir del 27 de mayo de 2026)          | `34.28.24.54`, `34.42.56.195`, `34.63.141.9`, `35.238.146.37`, `34.10.251.49`         |
+| **us-east1** - Carolina del Sur (a partir del 27 de mayo de 2026) | `34.24.134.232`, `34.24.214.165`, `34.24.20.1`, `35.243.193.248`, `34.23.98.76`       |
+
+<div id="adjusting-clickhouse-settings">
+  ## Ajustar los ajustes de ClickHouse
+</div>
+
+ClickHouse Cloud proporciona valores predeterminados adecuados para la mayoría de los casos de uso. Sin embargo, si necesita ajustar algunos ajustes de ClickHouse para las tablas de destino de ClickPipes, un rol dedicado para ClickPipes es la solución más flexible.
+Pasos:
+
+1. cree un rol personalizado `CREATE ROLE my_clickpipes_role SETTINGS ...`. Consulte la sintaxis de [CREATE ROLE](/es/reference/statements/create/role) para obtener más información.
+2. añada el rol personalizado al usuario de ClickPipes en el paso `Details and Settings` durante la creación de ClickPipes.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp" alt="Asignar un rol personalizado" size="lg" border />
+
+<div id="clickpipes-advanced-settings">
+  ## Ajustar la configuración avanzada de ClickPipes
+</div>
+
+ClickPipes proporciona valores predeterminados adecuados para la mayoría de los casos de uso. Si su caso de uso requiere un ajuste más preciso, puede modificar la siguiente configuración:
+
+<div id="clickpipes-advanced-settings-object-storage">
+  ### ClickPipes de almacenamiento de objetos
+</div>
+
+| Configuración                        | Valor predeterminado | Descripción                                                                                                                                             |
+| ------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10 GB                | Número de bytes que se procesan en un único lote de inserción.                                                                                          |
+| `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                |
+| `Max threads`                        | auto(3)              | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings#max_threads) para el procesamiento de archivos.                              |
+| `Max insert threads`                 | 1                    | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings#max_insert_threads) para el procesamiento de archivos.          |
+| `Min insert block size bytes`        | 1 GB                 | [Tamaño mínimo en bytes del bloque](/es/reference/settings/session-settings#min_insert_block_size_bytes) que puede insertarse en una tabla.                |
+| `Max download threads`               | 4                    | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings#max_download_threads).                                           |
+| `Object storage polling interval`    | 30 s                 | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                              |
+| `Parallel distributed insert select` | 2                    | [Configuración de inserción distribuida paralela para SELECT](/es/reference/settings/session-settings#parallel_distributed_insert_select).                 |
+| `Parallel view processing`           | false                | Si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings#parallel_view_processing). |
+| `Use cluster function`               | true                 | Si los archivos se procesan en paralelo en varios nodos.                                                                                                |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configuración avanzada de ClickPipes" size="lg" border />
+
+<div id="clickpipes-advanced-settings-streaming">
+  ### ClickPipes de streaming
+</div>
+
+| Configuración                    | Valor predeterminado | Descripción                                                                               |
+| -------------------------------- | -------------------- | ----------------------------------------------------------------------------------------- |
+| `Streaming max insert wait time` | 5 s                  | Configura el tiempo máximo de espera antes de insertar datos en el clúster de ClickHouse. |
+
+<div id="error-reporting">
+  ## Registro de errores
+</div>
+
+ClickPipes almacenará los errores en dos tablas distintas, según el tipo de error que se produzca durante el proceso de ingestión.
+
+<div id="record-errors">
+  ### Registro de errores
+</div>
+
+ClickPipes creará una tabla junto a tu tabla de destino con el sufijo `<destination_table_name>_clickpipes_error`. Esta tabla contendrá cualquier error provocado por datos malformados o por un esquema incompatible, e incluirá el mensaje no válido completo. Esta tabla tiene un [TTL](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de 7 días.
+
+<div id="system-errors">
+  ### Errores del sistema
+</div>
+
+Los errores relacionados con el funcionamiento de ClickPipe se almacenarán en la tabla `system.clickpipes_log`. En ella se guardarán todos los demás errores relacionados con el funcionamiento de su ClickPipe (red, conectividad, etc.). Esta tabla tiene un [TTL](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de 7 días.
+
+Si ClickPipes no puede conectarse a una fuente de datos después de 15 min o a un destino después de 1 h, la instancia de ClickPipes se detendrá y almacenará un mensaje correspondiente en la tabla de errores del sistema (siempre que la instancia de ClickHouse esté disponible).
+
+<div id="monitoring">
+  ## Monitoreo
+</div>
+
+Además del monitoreo en la consola, ClickPipes expone métricas en un [endpoint compatible con Prometheus](/es/products/cloud/features/monitoring/prometheus) para su scraping. Estas métricas se publican junto con otras métricas del servicio de ClickHouse Cloud y le permiten integrar el monitoreo de ClickPipes con su stack de observabilidad actual (por ejemplo, [Grafana](/es/products/cloud/features/monitoring/prometheus#integrating-with-grafana), [Datadog](/es/products/cloud/features/monitoring/prometheus#integrating-with-datadog)). Consulte [Monitoreo de ClickPipes](/es/integrations/clickpipes/monitoring) para ver la lista completa de métricas disponibles.
+
+<div id="faq">
+  ## Preguntas frecuentes
+</div>
+
+* **¿Qué es ClickPipes?**
+
+  ClickPipes es una funcionalidad de ClickHouse Cloud que facilita la conexión de sus servicios de ClickHouse con fuentes de datos externas, en concreto Kafka. Con ClickPipes for Kafka, puede cargar datos de forma continua en ClickHouse y ponerlos a disposición para análisis en tiempo real.
+
+* **¿ClickPipes admite la transformación de datos?**
+
+  Sí, ClickPipes admite transformaciones básicas de datos al exponer la creación del DDL. Después, puede aplicar transformaciones más avanzadas a los datos a medida que se cargan en su tabla de destino en un servicio de ClickHouse Cloud, aprovechando la [funcionalidad de vistas materializadas](/es/concepts/features/materialized-views/cascading-materialized-views) de ClickHouse.
+
+* **¿Usar ClickPipes implica un costo adicional?**
+
+  ClickPipes se factura en dos dimensiones: Ingested Data y Compute. Los detalles completos de los precios están disponibles en [esta página](/es/products/cloud/reference/billing/clickpipes/index). Ejecutar ClickPipes también puede generar un costo indirecto de cómputo y almacenamiento en el servicio de ClickHouse Cloud de destino, como ocurre con cualquier carga de trabajo de ingesta.
+
+* **¿Hay alguna forma de gestionar errores o fallos al usar ClickPipes for Kafka?**
+
+  Sí, ClickPipes for Kafka realizará reintentos automáticos en caso de fallos al consumir datos de Kafka debidos a cualquier problema operativo, incluidos problemas de red, de conectividad, etc. En caso de datos malformados o de un esquema no válido, ClickPipes almacenará el registro en la tabla record&#95;error y continuará procesándolo.

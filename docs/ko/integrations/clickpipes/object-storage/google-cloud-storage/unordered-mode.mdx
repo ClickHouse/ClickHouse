@@ -1,0 +1,85 @@
+---
+sidebarTitle: '비순차 모드 구성'
+title: '지속적인 수집을 위한 비순차 모드 구성'
+slug: /integrations/clickpipes/object-storage/gcs/unordered-mode
+description: 'GCS ClickPipes에서 지속적인 수집을 위한 비순차 모드를 구성하는 단계별 가이드입니다.'
+doc_type: 'guide'
+---
+
+기본적으로 GCS ClickPipe는 파일이 버킷에 [사전식 순서](/ko/integrations/clickpipes/object-storage/google-cloud-storage/overview#continuous-ingestion-lexicographical-order)로 추가된다고 가정합니다. 버킷에 연결된 [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) subscription을 설정하면, 암묵적인 순서가 없는 파일도 수집하도록 GCS ClickPipe를 구성할 수 있습니다. 이렇게 하면 ClickPipes가 `OBJECT_FINALIZE` 알림을 수신하여 파일 이름 규칙과 관계없이 새 파일을 수집할 수 있습니다.
+
+<Note>
+  비순차 모드는 공개 버킷에서는 **지원되지 않습니다**. 사용하려면 **Service Account** 인증과 버킷에 연결된 [Google Cloud Pub/Sub](https://cloud.google.com/pubsub) subscription이 필요합니다.
+</Note>
+
+<div id="how-it-works">
+  ## 작동 방식
+</div>
+
+이 모드에서는 GCS ClickPipe가 선택한 경로의 **모든 파일**을 초기 적재한 다음, 지정된 경로와 일치하는 Pub/Sub subscription을 통해 객체 알림을 수신합니다. 이미 확인한 파일에 대한 메시지, 경로와 일치하지 않는 파일에 대한 메시지, 또는 다른 유형의 이벤트는 모두 **무시됩니다**. 특정 파일이나 특정 시점부터 수집을 시작하는 것은 **불가능합니다**. ClickPipes는 항상 선택한 경로의 모든 파일을 적재합니다.
+
+데이터를 수집하는 과정에서 다양한 유형의 장애가 발생할 수 있으며, 이로 인해 일부만 삽입되거나 중복 데이터가 생길 수 있습니다. 객체 스토리지 ClickPipes는 삽입 실패에 탄력적으로 대응하며, 임시 스테이징 테이블을 사용해 정확히 한 번 처리 의미 체계를 제공합니다. 데이터는 먼저 스테이징 테이블에 삽입되며, 문제가 발생하면 스테이징 테이블을 TRUNCATE한 후 깨끗한 상태에서 삽입을 다시 시도합니다. 삽입이 성공적으로 완료된 경우에만 파티션이 대상 테이블로 이동됩니다.
+
+<Steps>
+  <Step>
+    ## Google Cloud Pub/Sub 토픽 만들기
+
+    **1.** Google Cloud Console에서 **Pub/Sub &gt; Topics &gt; Create topic**으로 이동합니다. 기본 subscription이 포함된 새 토픽을 만들고 **Topic Name**을 기록합니다.
+
+    **2.** 위에서 만든 Pub/Sub 토픽으로 [`OBJECT_FINALIZE` 이벤트](https://docs.cloud.google.com/storage/docs/pubsub-notifications)를 게시하도록 GCS 버킷 알림을 구성합니다.
+
+    **2.1.** 이 단계는 Google Cloud Console에서는 수행할 수 없으므로 `gcloud` 클라이언트 또는 Google Cloud용 선호하는 프로그래밍 인터페이스를 사용해야 합니다. 예를 들어 `gcloud`를 사용하면 다음과 같습니다.
+
+    ```bash
+    # 버킷의 새 객체에 대한 Pub/Sub 알림 생성
+    gcloud storage buckets notifications create "gs://${YOUR_BUCKET_NAME}" \
+      --topic="projects/${YOUR_PROJECT_ID}/topics/${YOUR_TOPIC_NAME}" \
+      --event-types="OBJECT_FINALIZE" \
+      --payload-format="json"
+
+    # 버킷의 Pub/Sub 알림 나열
+    gcloud storage buckets notifications describe
+    ```
+  </Step>
+
+  <Step>
+    ## 서비스 계정 구성
+
+    **1.** 지정된 버킷에서 ClickPipes가 객체를 나열하고 가져올 수 있으며, Pub/Sub subscription의 알림을 소비하고 모니터링할 수 있도록 [필요한 권한](/ko/integrations/clickpipes/object-storage/google-cloud-storage/overview#permissions)이 있는 [서비스 계정](http://docs.cloud.google.com/iam/docs/keys-create-delete)을 구성합니다.
+
+    **1.1.** 이 단계는 Google Cloud Console, `gcloud` 클라이언트 또는 Google Cloud용 선호하는 프로그래밍 인터페이스를 사용해 수행할 수 있습니다. 예를 들어 `gcloud`를 사용하면 다음과 같습니다.
+
+    ```bash
+    # 1. GCS 버킷에 읽기 권한 부여
+    gcloud storage buckets add-iam-policy-binding "gs://${YOUR_BUCKET_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/storage.objectViewer"
+
+    # 2. Pub/Sub subscription에 읽기 권한 부여
+    gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/pubsub.subscriber"
+
+    # 3. Pub/Sub subscription 메타데이터를 가져올 권한 부여
+    gcloud pubsub subscriptions add-iam-policy-binding "${YOUR_SUBSCRIPTION_NAME}" \
+      --member="serviceAccount:${YOUR_SERVICE_ACCOUNT}@${YOUR_PROJECT_ID}.iam.gserviceaccount.com" \
+      --role="roles/pubsub.viewer"
+    ```
+  </Step>
+
+  <Step>
+    ## 비순차 모드로 ClickPipe 만들기
+
+    **1.** ClickHouse Cloud 콘솔에서 **Data Sources &gt; Create ClickPipe**로 이동한 다음 **Google Cloud Storage**를 선택합니다. GCS 버킷에 연결하는 데 필요한 세부 정보를 입력합니다. **Authentication method**에서 **Service Account**를 선택하고 `.json` 서비스 계정 키를 제공합니다.
+
+    **2.** **Continuous ingestion**을 켠 다음, 수집 모드로 **Any order**를 선택하고 버킷에 연결된 subscription의 **Pub/Sub subscription** 이름을 입력합니다. subscription 이름은 다음 형식을 따라야 합니다.
+
+    ```text
+    projects/${YOUR_PROJECT_ID}/subscriptions/${YOUR_SUBSCRIPTION_NAME}
+    ```
+
+    **3.** **Incoming data**를 클릭합니다. 대상 테이블의 **Sorting key**를 정의합니다. 매핑된 schema를 필요에 따라 조정한 다음 ClickPipes 데이터베이스 사용자의 역할을 구성합니다.
+
+    **4.** 구성을 검토한 후 **Create ClickPipe**를 클릭합니다. ClickPipes는 먼저 버킷을 초기 스캔하여 지정된 경로와 일치하는 기존 파일을 모두 적재한 다음, 토픽에 새 `OBJECT_FINALIZE` 이벤트가 도착하면 파일 처리를 시작합니다.
+  </Step>
+</Steps>

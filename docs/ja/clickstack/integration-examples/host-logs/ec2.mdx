@@ -1,0 +1,630 @@
+---
+slug: /use-cases/observability/clickstack/integrations/host-logs/ec2
+title: 'ClickStackでEC2ホストログを監視する'
+sidebarTitle: 'EC2ホストログ'
+description: 'ClickStackでEC2ホストログを監視する'
+doc_type: 'guide'
+keywords: ['EC2', 'AWS', 'ホストログ', 'systemd', 'syslog', 'OTel', 'ClickStack', 'システム監視', 'クラウドメタデータ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **要点**
+
+  OpenTelemetry Collector を使用して、EC2 のシステムログを自動的に EC2 メタデータ (インスタンス ID、リージョン、AZ、インスタンスタイプ) でエンリッチし、ClickStack に収集・可視化します。デモデータセットとあらかじめ用意されたダッシュボードも含まれています。
+</Info>
+
+<div id="existing-ec2">
+  ## 既存のEC2インスタンスとのインテグレーション
+</div>
+
+このセクションでは、システムログを収集し、EC2メタデータを自動的に付与して ClickStack に送信するために、EC2インスタンスへ OpenTelemetry Collector をインストールする方法を説明します。この分散アーキテクチャは本番環境での利用を前提としており、複数のインスタンスへスケールできます。
+
+<Info>
+  **ClickStack を同じEC2インスタンスで実行していますか？**
+
+  監視対象のログがあるEC2インスタンス上で ClickStack も実行している場合は、[Generic Host Logs ガイド](/ja/clickstack/integration-examples/host-logs) と同様のオールインワン構成を使用できます。`/var/log` を ClickStack コンテナーにマウントし、カスタム設定に `resourcedetection` processor を追加すると、EC2メタデータを自動的に取得できます。このガイドでは、本番環境へのデプロイでより一般的な分散アーキテクチャに焦点を当てます。
+</Info>
+
+本番インスタンスを構成する前に EC2 ホストログのインテグレーションを試したい場合は、[&quot;デモデータセット&quot;](/ja/clickstack/integration-examples/host-logs/ec2#demo-dataset) セクションにある事前構成済みのセットアップとサンプルデータでテストできます。
+
+<div id="prerequisites">
+  ##### 前提条件
+</div>
+
+* ClickStack インスタンスが稼働中であること (オンプレミス、クラウド、またはローカル環境のいずれでも可)
+* EC2 インスタンスが稼働中であること (Ubuntu、Amazon Linux、またはその他の Linux ディストリビューション)
+* EC2 インスタンスから ClickStack の OTLP エンドポイントにネットワーク接続できること (HTTP はポート 4318、gRPC は 4317)
+* EC2 インスタンスメタデータサービスにアクセスできること (デフォルトで有効)
+
+<Steps>
+  <Step>
+    #### EC2メタデータにアクセスできることを確認する
+
+    EC2インスタンス上で、メタデータサービスにアクセスできることを確認します。
+
+    ```bash
+    # メタデータトークンを取得する (IMDSv2)
+    TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+
+    # インスタンスメタデータを確認する
+    curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
+    curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
+    curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
+    ```
+
+    インスタンス ID、リージョン、インスタンスタイプが表示されるはずです。これらのコマンドが失敗する場合は、次の点を確認してください。
+
+    * インスタンスメタデータサービスが有効になっている
+    * IMDSv2 がセキュリティグループまたはネットワーク ACL によってブロックされていない
+    * これらのコマンドを EC2 インスタンス自体で実行している
+
+    <Note>
+      EC2 メタデータは、インスタンス内から `http://169.254.169.254` で利用できます。OpenTelemetry の `resourcedetection` プロセッサは、このエンドポイントを使用してログにクラウドのコンテキスト情報を自動的に付加します。
+    </Note>
+  </Step>
+
+  <Step>
+    #### syslog ファイルが存在することを確認する
+
+    EC2 インスタンスに syslog ファイルが出力されていることを確認します。
+
+    ```bash
+    # Ubuntuインスタンス
+    ls -la /var/log/syslog
+
+    # Amazon Linux / RHELインスタンス
+    ls -la /var/log/messages
+
+    # 最近のエントリを表示
+    tail -20 /var/log/syslog
+    # または
+    tail -20 /var/log/messages
+    ```
+  </Step>
+
+  <Step>
+    #### OpenTelemetry Collector をインストールする
+
+    EC2インスタンスに OpenTelemetry Collector Contrib をインストールします。
+
+    ```bash
+    # 最新リリースをダウンロード
+    wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
+
+    # 展開してインストール
+    tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
+    sudo mv otelcol-contrib /usr/local/bin/
+
+    # インストールを確認
+    otelcol-contrib --version
+    ```
+  </Step>
+
+  <Step>
+    #### collector configurationの作成
+
+    `/etc/otelcol-contrib/config.yaml` に OpenTelemetry Collector の設定ファイルを作成します：
+
+    ```bash
+    sudo mkdir -p /etc/otelcol-contrib
+    ```
+
+    お使いのLinuxディストリビューションに合わせて設定を選択してください：
+
+    <Tabs>
+      <Tab title="モダンな Linux（Ubuntu 24.04+）">
+        ```yaml
+        sudo tee /etc/otelcol-contrib/config.yaml > /dev/null << 'EOF'
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/syslog
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout_type: gotime
+                layout: '2006-01-02T15:04:05.999999-07:00'
+              
+              - type: add
+                field: attributes.source
+                value: "ec2-host-logs"
+
+        processors:
+          resourcedetection:
+            detectors: [ec2, system]
+            timeout: 5s
+            override: false
+            ec2:
+              tags:
+                - ^Name
+                - ^Environment
+                - ^Team
+          
+          batch:
+            timeout: 10s
+            send_batch_size: 10000
+
+        exporters:
+          otlphttp:
+            endpoint: "http://YOUR_CLICKSTACK_HOST:4318"
+            headers:
+              authorization: "${env:CLICKSTACK_API_KEY}"
+
+        service:
+          pipelines:
+            logs:
+              receivers: [filelog/syslog]
+              processors: [resourcedetection, batch]
+              exporters: [otlphttp]
+        EOF
+        ```
+      </Tab>
+
+      <Tab title="レガシー Linux（Amazon Linux 2、RHEL、古い Ubuntu）">
+        ```yaml
+        sudo tee /etc/otelcol-contrib/config.yaml > /dev/null << 'EOF'
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/messages
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+ \d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout: '%b %d %H:%M:%S'
+              
+              - type: add
+                field: attributes.source
+                value: "ec2-host-logs"
+
+        processors:
+          resourcedetection:
+            detectors: [ec2, system]
+            timeout: 5s
+            override: false
+            ec2:
+              tags:
+                - ^Name
+                - ^Environment
+                - ^Team
+          
+          batch:
+            timeout: 10s
+            send_batch_size: 10000
+
+        exporters:
+          otlphttp:
+            endpoint: "http://YOUR_CLICKSTACK_HOST:4318"
+            headers:
+              authorization: "${env:CLICKSTACK_API_KEY}"
+
+        service:
+          pipelines:
+            logs:
+              receivers: [filelog/syslog]
+              processors: [resourcedetection, batch]
+              exporters: [otlphttp]
+        EOF
+        ```
+      </Tab>
+    </Tabs>
+
+    <br />
+
+    **設定内の以下の項目を置き換えてください：**
+
+    * `YOUR_CLICKSTACK_HOST`: ClickStack が稼働しているホスト名または IP アドレス
+    * ローカルでテストする場合は、SSH トンネルを使用できます ([トラブルシューティング セクション](#troubleshooting)を参照) 。
+
+    この設定:
+
+    * 標準的な場所 (Ubuntu では `/var/log/syslog`、Amazon Linux/RHEL では `/var/log/messages`) にあるシステムログファイルを読み取ります
+    * syslog形式を解析し、構造化フィールド (タイムスタンプ、ホスト名、unit/service、PID、メッセージ) を抽出
+    * **EC2 メタデータを自動的に検出して追加**するには、`resourcedetection` プロセッサを使用します
+    * 存在する場合は、必要に応じて EC2 タグ (Name、Environment、Team) も含まれます
+    * OTLP HTTP 経由でログを ClickStack に送信する
+
+    <Info>
+      **EC2メタデータの付加**
+
+      `resourcedetection` プロセッサは、すべてのログに次の属性を自動的に追加します。
+
+      * `cloud.provider`: &quot;aws&quot;
+      * `cloud.platform`: &quot;aws&#95;ec2&quot;
+      * `cloud.region`: AWSリージョン (例: &quot;us-east-1&quot;)
+      * `cloud.availability_zone`: AZ (例: &quot;us-east-1a&quot;)
+      * `cloud.account.id`: AWSアカウント ID
+      * `host.id`: EC2 インスタンス ID (例: &quot;i-1234567890abcdef0&quot;)
+      * `host.type`: インスタンスタイプ (例: &quot;t3.medium&quot;)
+      * `host.name`: インスタンスのホスト名
+    </Info>
+  </Step>
+
+  <Step>
+    #### ClickStack APIキーを設定する
+
+    ClickStack APIキーを環境変数としてエクスポートします：
+
+    ```bash
+    export CLICKSTACK_API_KEY="your-api-key-here"
+    ```
+
+    再起動後も有効にするには、シェルのプロファイルに追加してください。
+
+    ```bash
+    echo 'export CLICKSTACK_API_KEY="your-api-key-here"' >> ~/.bashrc
+    source ~/.bashrc
+    ```
+  </Step>
+
+  <Step>
+    #### collector を起動する
+
+    OpenTelemetry Collector を起動します。
+
+    ```bash
+    CLICKSTACK_API_KEY="your-api-key-here" /usr/local/bin/otelcol-contrib --config /etc/otelcol-contrib/config.yaml
+    ```
+
+    <Info>
+      **本番環境で使用する場合**
+
+      collector が systemd サービスとして実行されるように設定し、起動時に自動的に開始され、障害発生時に再起動されるようにします。詳細は、[OpenTelemetry Collector documentation](https://opentelemetry.io/docs/collector/deployment/)を参照してください。
+    </Info>
+  </Step>
+
+  <Step>
+    #### HyperDX でログを確認する
+
+    collector が起動したら、HyperDX にログインし、EC2 メタデータ付きのログが流れていることを確認します。
+
+    1. Search view に移動します
+    2. ログソースを `Logs` に設定します
+    3. `source:ec2-host-logs` で絞り込みます
+    4. ログエントリをクリックして展開します
+    5. リソース属性に EC2 メタデータが表示されていることを確認します。
+       * `cloud.provider`
+       * `cloud.region`
+       * `host.id` (インスタンス ID)
+       * `host.type` (インスタンスタイプ)
+       * `cloud.availability_zone`
+
+    <Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="EC2 ログの Search view" />
+
+    <Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="メタデータが表示された EC2 ログの詳細" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## デモデータセット
+</div>
+
+本番環境のインスタンスを構成する前に EC2 ホストログのインテグレーションを試したい方向けに、シミュレーションされた EC2 メタデータを含むデモデータセットを用意しています。
+
+<Steps>
+  <Step>
+    #### サンプルデータセットをダウンロードする
+
+    サンプルのログファイルをダウンロードします：
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+    ```
+
+    このデータセットには、以下が含まれます：
+
+    * システムの起動シーケンス
+    * SSH ログインのアクティビティ (成功した試行と失敗した試行)
+    * セキュリティインシデント (fail2ban による対応を伴うブルートフォース攻撃)
+    * 定期メンテナンス (cron ジョブ、anacron)
+    * サービスの再起動 (rsyslog)
+    * カーネルメッセージとファイアウォールのアクティビティ
+    * 通常の運用と特筆すべきイベントの混在
+  </Step>
+
+  <Step>
+    #### テスト用collectorの設定を作成する
+
+    以下の設定で、`ec2-host-logs-demo.yaml` という名前のファイルを作成します。
+
+    ```yaml
+    cat > ec2-host-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/journal:
+        include:
+          - /tmp/host-demo/journal.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%Y-%m-%dT%H:%M:%S%z'
+          
+          - type: add
+            field: attributes.source
+            value: "ec2-demo"
+
+    processors:
+      # デモ用にEC2メタデータをシミュレート（実際のEC2インスタンス不要）
+      resource:
+        attributes:
+          - key: service.name
+            value: "ec2-demo"
+            action: insert
+          - key: cloud.provider
+            value: "aws"
+            action: insert
+          - key: cloud.platform
+            value: "aws_ec2"
+            action: insert
+          - key: cloud.region
+            value: "us-east-1"
+            action: insert
+          - key: cloud.availability_zone
+            value: "us-east-1a"
+            action: insert
+          - key: host.id
+            value: "i-0abc123def456789"
+            action: insert
+          - key: host.type
+            value: "t3.medium"
+            action: insert
+          - key: host.name
+            value: "prod-web-01"
+            action: insert
+
+    service:
+      pipelines:
+        logs/ec2-demo:
+          receivers: [filelog/journal]
+          processors:
+            - resource
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+
+    <Note>
+      デモ目的のため、ここでは `resource` プロセッサを使用して EC2 メタデータを手動で追加しています。本番環境で実際の EC2 インスタンスを使用する場合は、EC2 メタデータ API を自動的に問い合わせる `resourcedetection` プロセッサを使用してください。
+    </Note>
+  </Step>
+
+  <Step>
+    #### デモ設定で ClickStack を実行する
+
+    デモ用のログと設定を使用して ClickStack を実行します。
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/ec2-host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
+      docker.hyperdx.io/hyperdx/hyperdx-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### HyperDX でログを確認する
+
+    collector が起動したら、次の手順を実行します。
+
+    1. [HyperDX](http://localhost:8080/) を開き、アカウントにログインします (必要に応じて先にアカウントを作成してください)
+    2. 検索ビューに移動し、ログソースを `Logs` に設定します
+    3. 時間範囲を **2025-11-10 00:00:00 - 2025-11-13 00:00:00** に設定します
+    4. `source:ec2-demo` で絞り込みます
+    5. ログエントリを展開し、リソース属性に含まれる EC2 メタデータを確認します
+
+    <Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="EC2 ログの検索ビュー" />
+
+    <Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="メタデータ付きの EC2 ログ詳細" />
+
+    <Info>
+      **タイムゾーン表示**
+
+      HyperDX はタイムスタンプをブラウザーのローカルタイムゾーンで表示します。デモデータの期間は **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** です。時間範囲を広めに設定しているため、どの地域からでもデモログを確認できます。ログが表示されたら、可視化を見やすくするために期間を 24 時間まで絞り込めます。
+    </Info>
+
+    以下を含む、シミュレートされた EC2 コンテキストを持つログが表示されるはずです。
+
+    * インスタンス ID: `i-0abc123def456789`
+    * リージョン: `us-east-1`
+    * アベイラビリティーゾーン: `us-east-1a`
+    * インスタンスタイプ: `t3.medium`
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## ダッシュボードと可視化
+</div>
+
+ClickStack で EC2 ホストログの監視をすぐに始められるよう、クラウドコンテキストを含む主要な可視化を用意しています。
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">ダウンロード</TrackedLink> ダッシュボード設定
+  </Step>
+
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポートする
+
+    1. HyperDX を開き、Dashboards セクションに移動します
+    2. 右上の三点メニューから **Import Dashboard** をクリックします
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポートボタン" />
+
+    3. `host-logs-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
+
+    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="インポートの完了" />
+  </Step>
+
+  <Step>
+    #### ダッシュボードを表示する
+
+    ダッシュボードは、すべての可視化があらかじめ設定された状態で作成されます。
+
+    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="EC2 ログダッシュボード" />
+
+    ダッシュボードの可視化は、EC2 コンテキストで絞り込めます。
+
+    * `cloud.region:us-east-1` - 特定のリージョンのログを表示
+    * `host.type:t3.medium` - インスタンスタイプで絞り込み
+    * `host.id:i-0abc123def456` - 特定のインスタンスのログ
+
+    <Note>
+      デモデータセットでは、時間範囲を **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** に設定してください (ローカルの timezone に応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が指定されていません。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="no-metadata">
+  ### ログにEC2メタデータが表示されない
+</div>
+
+**EC2メタデータサービスにアクセスできることを確認してください。**
+
+```bash
+# メタデータトークンを取得する
+TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+
+# メタデータエンドポイントをテストする
+curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
+```
+
+これが失敗する場合は、以下を確認してください。
+
+* インスタンスメタデータサービスが有効になっていること
+* IMDSv2 がセキュリティグループでブロックされていないこと
+* collector を EC2 インスタンス上で実行していること
+
+**メタデータ関連のエラーについて collector のログを確認してください。**
+
+```bash
+# systemdサービスとして実行している場合
+sudo journalctl -u otelcol-contrib -f | grep -i "ec2\|metadata\|resourcedetection"
+
+# フォアグラウンドで実行している場合は、stdoutを確認する
+```
+
+<div id="no-logs">
+  ### HyperDX にログが表示されない
+</div>
+
+**syslog ファイルが存在し、書き込みが行われていることを確認します。**
+
+```bash
+ls -la /var/log/syslog /var/log/messages
+tail -f /var/log/syslog
+```
+
+**collector がログファイルを読み取れるか確認してください:**
+
+```bash
+cat /var/log/syslog | head -20
+```
+
+**ClickStack へのネットワーク接続を確認する:**
+
+```bash
+# OTLPエンドポイントをテスト
+curl -v http://YOUR_CLICKSTACK_HOST:4318/v1/logs
+
+# レスポンスが返ってくれば（エラーでも可）、エンドポイントに到達できている
+```
+
+**collector のログにエラーがないか確認する:**
+
+```bash
+# フォアグラウンドで実行している場合
+# 標準出力のエラーメッセージを確認する
+
+# systemd サービスとして実行している場合
+sudo journalctl -u otelcol-contrib -f | grep -i "error\|failed"
+```
+
+<div id="logs-not-parsing">
+  ### ログが正しくパースされない
+</div>
+
+**syslog のフォーマットを確認してください:**
+
+Ubuntu 24.04 以降の場合:
+
+```bash
+# ISO8601フォーマットで表示されるはずです: 2025-11-17T20:55:44.826796+00:00
+tail -5 /var/log/syslog
+```
+
+Amazon Linux 2 / Ubuntu 20.04 の場合:
+
+```bash
+# 従来のフォーマットで表示されるはずです: Nov 17 14:16:16
+tail -5 /var/log/messages
+```
+
+フォーマットが一致しない場合は、使用しているディストリビューションに応じて、[collector 設定の作成](#create-config) セクションで該当する設定タブを使用してください。
+
+<div id="systemd-issues">
+  ### systemd サービスとして collector が起動しない
+</div>
+
+**サービスの状態を確認します。**
+
+```bash
+sudo systemctl status otelcol-contrib
+```
+
+**詳細なログを確認する:**
+
+```bash
+sudo journalctl -u otelcol-contrib -n 50
+```
+
+**よくある問題:**
+
+* 環境変数で API key が正しく設定されていない
+* 設定ファイルの構文エラー
+* ログファイルの読み取り権限の問題
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* 重要なシステムイベント (サービス障害、認証の失敗、ディスク警告) に対する[アラート](/ja/clickstack/features/alerts)を設定します
+* EC2 メタデータ属性 (リージョン、インスタンスタイプ、インスタンス ID) で絞り込み、特定のリソースを監視します
+* EC2 のホストログをアプリケーションログと相関付け、総合的なトラブルシューティングを行います
+* セキュリティ監視 (SSH 接続の試行、sudo の使用、ファイアウォールによるブロック) 向けにカスタムダッシュボードを作成します
+
+<div id="going-to-production">
+  ## 本番環境での運用
+</div>
+
+このガイドでは、ホストレベルの監視向けの本番環境構成として推奨される方法に従い、OpenTelemetry Collector を EC2 インスタンスに直接インストールします。多数のインスタンスにまたがる collector の管理には、構成管理ツール (Ansible、Chef、Puppet) や、Kubernetes 環境では OpenTelemetry Operator の利用を検討してください。本番環境向けの設定については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

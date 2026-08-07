@@ -1,0 +1,351 @@
+---
+slug: /integrations/prometheus
+sidebarTitle: 'Prometheus 端点'
+title: 'Prometheus 集成'
+description: '将 ClickHouse 指标导出到 Prometheus'
+keywords: ['prometheus', 'grafana', '监控', '指标', 'exporter']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+此功能支持集成 [Prometheus](https://prometheus.io/)，用于监控 ClickHouse Cloud 服务。Prometheus 指标通过 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 端点提供，您可以通过该端点安全地连接，并将指标导出到您的 Prometheus 指标收集器中。这些指标还可以集成到仪表盘中，例如 Grafana、Datadog，以便进行可视化。
+
+要开始使用，请先[生成 API key](/zh/products/cloud/features/admin-features/api/openapi)。
+
+如果您要查找 [Managed Postgres](/zh/products/managed-postgres/overview) 服务的对应端点，请参阅 [Managed Postgres Prometheus 端点](/zh/products/managed-postgres/monitoring/prometheus)。
+
+<div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
+  ## 用于获取 ClickHouse Cloud 指标的 Prometheus 端点 API
+</div>
+
+<div id="api-reference">
+  ### API 参考文档
+</div>
+
+| 方法  | 路径                                                                                                                              | 描述           |
+| --- | ------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | 返回特定服务的指标    |
+| GET | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | 返回组织内所有服务的指标 |
+
+**请求参数**
+
+| 名称                   | 位置   | 类型            |
+| -------------------- | ---- | ------------- |
+| Organization ID      | 端点地址 | uuid          |
+| Service ID           | 端点地址 | uuid (可选)     |
+| filtered&#95;metrics | 查询参数 | boolean (可选)  |
+
+<div id="authentication">
+  ### 身份验证
+</div>
+
+使用您的 ClickHouse Cloud API key 进行基本身份验证：
+
+```bash
+Username: <KEY_ID>
+Password: <KEY_SECRET>
+Example request
+export KEY_SECRET=<key_secret>
+export KEY_ID=<key_id>
+export ORG_ID=<org_id>
+
+# 适用于 $ORG_ID 中的所有服务
+curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations/$ORG_ID/prometheus?filtered_metrics=true
+
+# 仅适用于单个服务
+export SERVICE_ID=<service_id>
+curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/prometheus?filtered_metrics=true
+```
+
+<div id="sample-response">
+  ### 响应示例
+</div>
+
+```response
+# HELP ClickHouse_ServiceInfo 服务信息，包括集群状态和 ClickHouse 版本
+# TYPE ClickHouse_ServiceInfo untyped
+ClickHouse_ServiceInfo{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",clickhouse_cluster_status="running",clickhouse_version="24.5",scrape="full"} 1
+
+# HELP ClickHouseProfileEvents_Query 待解析并可能执行的查询数量。不包括解析失败的查询，或因 AST 大小限制、配额限制或并发查询数量限制而被拒绝的查询。可能包含 ClickHouse 自身发起的内部查询。不计入子查询。
+# TYPE ClickHouseProfileEvents_Query counter
+ClickHouseProfileEvents_Query{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 6
+
+# HELP ClickHouseProfileEvents_QueriesWithSubqueries 统计包含所有子查询的查询数量
+# TYPE ClickHouseProfileEvents_QueriesWithSubqueries counter
+ClickHouseProfileEvents_QueriesWithSubqueries{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 230
+
+# HELP ClickHouseProfileEvents_SelectQueriesWithSubqueries 统计包含所有子查询的 SELECT 查询数量
+# TYPE ClickHouseProfileEvents_SelectQueriesWithSubqueries counter
+ClickHouseProfileEvents_SelectQueriesWithSubqueries{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 224
+
+# HELP ClickHouseProfileEvents_FileOpen 已打开的文件数量。
+# TYPE ClickHouseProfileEvents_FileOpen counter
+ClickHouseProfileEvents_FileOpen{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 4157
+
+# HELP ClickHouseProfileEvents_Seek 调用 'lseek' 函数的次数。
+# TYPE ClickHouseProfileEvents_Seek counter
+ClickHouseProfileEvents_Seek{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 1840
+
+# HELP ClickPipes_Info 始终等于 1。标签 "clickpipe_state" 包含管道的当前状态：Stopped/Provisioning/Running/Paused/Failed
+# TYPE ClickPipes_Info gauge
+ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent",clickpipe_status="Running"} 1
+
+# HELP ClickPipes_SentEvents_Total 已发送至 ClickHouse 的记录总数
+# TYPE ClickPipes_SentEvents_Total counter
+ClickPipes_SentEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 5534250
+
+# HELP ClickPipes_SentBytesCompressed_Total 已发送至 ClickHouse 的压缩字节总数。
+# TYPE ClickPipes_SentBytesCompressed_Total counter
+ClickPipes_SentBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name
+="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 380837520
+ClickPipes_SentBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name
+
+# HELP ClickPipes_FetchedBytes_Total 从数据源拉取的未压缩字节总数。
+# TYPE ClickPipes_FetchedBytes_Total counter
+ClickPipes_FetchedBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 873286202
+
+# HELP ClickPipes_Errors_Total 摄取数据时发生的错误总数。
+# TYPE ClickPipes_Errors_Total counter
+ClickPipes_Errors_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 0
+
+# HELP ClickPipes_SentBytes_Total 已发送至 ClickHouse 的未压缩字节总数。
+# TYPE ClickPipes_SentBytes_Total counter
+ClickPipes_SentBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 477187967
+
+# HELP ClickPipes_FetchedBytesCompressed_Total 从数据源拉取的压缩字节总数。若数据在源端未经压缩，则此值将等于 ClickPipes_FetchedBytes_Total
+# TYPE ClickPipes_FetchedBytesCompressed_Total counter
+ClickPipes_FetchedBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 873286202
+
+# HELP ClickPipes_FetchedEvents_Total 从源端拉取的记录总数。
+# TYPE ClickPipes_FetchedEvents_Total counter
+ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 5535376
+```
+
+<div id="metric-labels">
+  ### 指标标签
+</div>
+
+所有指标都带有以下标签：
+
+| 标签                              | 说明    |
+| ------------------------------- | ----- |
+| clickhouse&#95;org              | 组织 ID |
+| clickhouse&#95;service          | 服务 ID |
+| clickhouse&#95;service&#95;name | 服务名称  |
+
+对于 ClickPipes，指标还会带有以下标签：
+
+| 标签                   | 说明            |
+| -------------------- | ------------- |
+| clickpipe&#95;id     | ClickPipe ID  |
+| clickpipe&#95;name   | ClickPipe 名称  |
+| clickpipe&#95;source | ClickPipe 源类型 |
+
+<div id="information-metrics">
+  ### 信息指标
+</div>
+
+ClickHouse Cloud 提供了一个特殊指标 `ClickHouse_ServiceInfo`，它是一个值始终为 `1` 的 `gauge`。该指标除包含所有**指标标签**外，还包含以下标签：
+
+| 标签                                | 说明                                                                     |
+| --------------------------------- | ---------------------------------------------------------------------- |
+| clickhouse&#95;cluster&#95;status | 服务状态。可能为以下之一：[`awaking` | `running` | `degraded` | `idle` | `stopped`] |
+| clickhouse&#95;version            | 该服务运行的 ClickHouse server 版本                                            |
+| scrape                            | 表示最近一次抓取的状态。可能为 `full` 或 `partial`                                     |
+| full                              | 表示最近一次指标抓取期间未发生任何错误                                                    |
+| partial                           | 表示最近一次指标抓取期间发生了一些错误，并且只返回了 `ClickHouse_ServiceInfo` 指标。                |
+
+用于获取指标的请求不会恢复已休眠的服务。如果服务处于 `idle` 状态，则只会返回 `ClickHouse_ServiceInfo` 指标。
+
+对于 ClickPipes，也有一个类似的 `ClickPipes_Info` `gauge` 指标，除**指标标签**外，还包含以下标签：
+
+| 标签                  | 说明      |
+| ------------------- | ------- |
+| clickpipe&#95;state | 管道的当前状态 |
+
+<div id="configuring-prometheus">
+  ### 配置 Prometheus
+</div>
+
+Prometheus 服务器会按照给定的时间间隔从已配置的目标采集指标。下面是一个示例配置，展示如何让 Prometheus 服务器使用 ClickHouse Cloud Prometheus 端点：
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+    - targets: ["localhost:9090"]
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["api.clickhouse.cloud"]
+    scheme: https
+    params:
+      filtered_metrics: ["true"]
+    metrics_path: "/v1/organizations/<ORG_ID>/prometheus"
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+```
+
+请注意，必须将配置参数 `honor_labels` 设为 `true`，实例标记才能被正确填充。另请注意，在上述示例中，`filtered_metrics` 被设置为 `true`，但实际应根据用户偏好进行配置。
+
+<div id="integrating-with-grafana">
+  ## 与 Grafana 集成
+</div>
+
+与 Grafana 集成主要有两种方式：
+
+* **指标端点** – 这种方式的优势在于无需任何额外组件或基础设施。此方案仅适用于 Grafana Cloud，只需提供 ClickHouse Cloud Prometheus 端点 URL 和凭据。
+* **Grafana Alloy** - Grafana Alloy 是 OpenTelemetry (OTel) Collector 的一种供应商中立发行版，用于替代 Grafana Agent。它可用作抓取器，可部署在您自己的基础设施中，并兼容任何 Prometheus 端点。
+
+下面我们将提供这些选项的使用说明，重点说明 ClickHouse Cloud Prometheus 端点相关的特定细节。
+
+<div id="grafana-cloud-with-metrics-endpoint">
+  ### 使用 metrics endpoint 接入 Grafana Cloud
+</div>
+
+* 登录你的 Grafana Cloud 账户
+* 选择 **Metrics Endpoint**，添加新连接
+* 将 Scrape URL 配置为指向 Prometheus 端点，并使用基本身份验证通过 API key/secret 配置连接
+* 测试连接，确保可以成功连通
+
+<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="配置 Grafana 指标端点" border />
+
+<br />
+
+配置完成后，你应该会在下拉列表中看到这些指标，可选择它们来配置仪表盘：
+
+<Image img="/images/integrations/prometheus-grafana-dropdown.webp" size="md" alt="Grafana 指标浏览器下拉列表" border />
+
+<br />
+
+<Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Grafana 指标浏览器图表" border />
+
+<div id="grafana-cloud-with-alloy">
+  ### 通过 Alloy 使用 Grafana Cloud
+</div>
+
+如果你使用的是 Grafana Cloud，可以在 Grafana 中打开 Alloy 菜单，并按照屏幕上的说明安装 Alloy：
+
+<Image img="/images/integrations/prometheus-grafana-alloy.webp" size="md" alt="Grafana Alloy" border />
+
+<br />
+
+这样会将 Alloy 配置为包含一个 `prometheus.remote_write` 组件，用于通过身份验证令牌将数据发送到 Grafana Cloud 端点。之后，用户只需修改 Alloy 配置 (在 Linux 上位于 `/etc/alloy/config.alloy`) ，加入一个用于抓取 ClickHouse Cloud Prometheus 端点的抓取器即可。
+
+下面给出了一个 Alloy 配置示例，其中包含一个用于从 ClickHouse Cloud 端点抓取指标的 `prometheus.scrape` 组件，以及自动配置的 `prometheus.remote_write` 组件。请注意，`basic_auth` 配置组件分别将我们的 Cloud API key ID 和 secret 用作用户名和密码。
+
+```yaml
+prometheus.scrape "clickhouse_cloud" {
+  targets = [{
+  __address__ = "api.clickhouse.cloud",
+  }]
+
+  scheme       = "https"
+  metrics_path = "/v1/organizations/<clickhouse_org_id>/prometheus"
+
+  params = {
+  "filtered_metrics" = ["true"],
+  }
+
+  honor_labels    = true
+  scrape_interval = "30s"
+  scrape_timeout  = "25s"
+
+  basic_auth {
+  username = "<clickhouse_api_key_id>"
+  password = "<clickhouse_api_key_secret>"
+  }
+
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+  prometheus.remote_write "grafana_cloud" {
+  endpoint {
+  url = "https://<grafana_prometheus_url>/api/prom/push"
+
+  basic_auth {
+  username = "<grafana_username>"
+  password = "<grafana_api_token>"
+  }
+  }
+}
+```
+
+请注意，必须将 `honor_labels` 配置参数设为 `true`，`instance` 标签才能被正确填充。
+
+<div id="grafana-self-managed-with-alloy">
+  ### 使用 Alloy 的 Grafana 自管理版本
+</div>
+
+使用 Grafana 自管理版本的用户可在[这里](https://grafana.com/docs/alloy/latest/get-started/install/)找到安装 Alloy agent 的说明。我们假定用户已将 Alloy 配置为把 Prometheus 指标发送到所需的目标端。下面的 `prometheus.scrape` 组件会让 Alloy 抓取 ClickHouse Cloud 端点。我们假定 `prometheus.remote_write` 会接收抓取到的指标。如果未配置该项，请将 `forward_to key` 调整为目标端。
+
+```yaml
+// prometheus.scrape 组件使 Alloy 抓取 ClickHouse Cloud Prometheus 端点。
+  // 如有差异，请调整 forward_to 键以匹配您的 remote_write receiver。
+  prometheus.scrape "clickhouse_cloud" {
+  targets = [{
+  __address__ = "api.clickhouse.cloud",
+  }]
+
+  scheme       = "https"
+  metrics_path = "/v1/organizations/<organizationId>/prometheus"
+
+  params = {
+  "filtered_metrics" = ["true"],
+  }
+
+  honor_labels = true
+
+  basic_auth {
+  username = "<KEY_ID>"
+  password = "<KEY_SECRET>"
+  }
+
+  forward_to = [prometheus.remote_write.metrics_service.receiver]
+}
+```
+
+配置完成后，你应该会在指标浏览器中看到与 ClickHouse 相关的指标：
+
+<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Grafana 指标浏览器" border />
+
+<br />
+
+请注意，必须将 `honor_labels` 配置参数设为 `true`，实例标签才能正确填充。
+
+<div id="integrating-with-datadog">
+  ## 与 Datadog 集成
+</div>
+
+你可以使用 Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux) 和 [OpenMetrics 集成](https://docs.datadoghq.com/integrations/openmetrics/)，从 ClickHouse Cloud 端点收集指标。下面是该 agent 和集成的一个简单配置示例。不过请注意，你可能只需要选择自己最关心的那些指标。下面这个兜底示例会导出成千上万个“指标-实例”组合，Datadog 会将其视为自定义指标。
+
+```yaml
+init_config:
+
+instances:
+   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/prometheus?filtered_metrics=true'
+     namespace: 'clickhouse'
+     metrics:
+         - '^ClickHouse.*'
+     username: username
+     password: password
+```
+
+<br />
+
+<Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Prometheus 与 Datadog 集成" />
+
+<div id="related">
+  ## 相关页面
+</div>
+
+* [监控概览](/zh/products/cloud/features/monitoring/overview) — 对比 ClickHouse Cloud 的所有监控方式
+* [Cloud Console 监控](/zh/products/cloud/features/monitoring/cloud-console) — 无需外部工具的内置仪表盘
+* [社区和合作伙伴集成](/zh/products/cloud/features/monitoring/integrations) — Datadog agent 集成和社区解决方案
+* [查询系统表](/zh/products/cloud/features/monitoring/system-tables) — 通过 SQL 直接访问系统指标
+* [Managed Postgres Prometheus 端点](/zh/products/managed-postgres/monitoring/prometheus) — 从您的 Managed Postgres 服务抓取指标

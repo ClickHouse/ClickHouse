@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Gestion des clés API'
+slug: /cloud/manage/openapi
+title: 'Gestion des clés API'
+description: "ClickHouse Cloud propose une API basée sur OpenAPI qui vous permet de gérer par programmation votre compte et certains aspects de vos services."
+doc_type: 'guide'
+keywords: ['api', 'openapi', 'api rest', 'documentation', 'gestion du Cloud']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer par programmation votre compte et certains aspects de vos services.
+
+<Note>
+  Ce document couvre l’API ClickHouse Cloud. Pour les endpoints de l’API de base de données, veuillez consulter [Cloud Endpoints API](/fr/products/cloud/guides/sql-console/query-endpoints)
+</Note>
+
+1. Vous pouvez utiliser l’onglet **Clés API** dans le menu de gauche pour créer et gérer vos clés API.
+
+<Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="Onglet Clés API" border />
+
+2. La page **Clés API** affiche au départ un message vous invitant à créer votre première clé API, comme illustré ci-dessous. Une fois cette première clé créée, vous pourrez en créer de nouvelles à l’aide du bouton `New API Key`, qui apparaît dans le coin supérieur droit.
+
+<Image img="/images/cloud/manage/openapi2.webp" size="md" alt="Page Clés API" border />
+
+3. Pour créer une clé API, indiquez le nom de la clé, ses autorisations et sa date d’expiration, puis cliquez sur `Generate API Key`.
+
+<br />
+
+<Note>
+  Les autorisations correspondent aux [rôles prédéfinis](/fr/products/cloud/reference/security/console-roles) de ClickHouse Cloud. Le rôle developer dispose d’autorisations en lecture seule sur les services qui lui sont attribués, et le rôle admin dispose d’autorisations complètes en lecture et en écriture.
+</Note>
+
+<Tip>
+  **Query API Endpoints**
+
+  Pour utiliser des clés API avec les [Query API Endpoints](/fr/products/cloud/guides/sql-console/query-endpoints), définissez Organization Role sur `Member` (au minimum) et accordez à Service Role l’accès à `Query Endpoints`.
+</Tip>
+
+<Image img="/images/cloud/manage/openapi3.png" size="md" alt="Formulaire de création de clé API" border />
+
+4. L’écran suivant affichera votre ID de clé et le secret de la clé. Copiez ces valeurs et conservez-les dans un endroit sûr, comme un coffre-fort. Elles ne seront plus affichées après avoir quitté cet écran.
+
+<Image img="/images/cloud/manage/openapi4.webp" size="md" alt="Détails de la clé API" border />
+
+5. L’API ClickHouse Cloud utilise l’[authentification HTTP Basic](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication) pour vérifier la validité de vos clés API. Voici un exemple montrant comment utiliser vos clés API pour envoyer des requêtes à l’API ClickHouse Cloud avec `curl` :
+
+```bash
+$ KEY_ID=mykeyid
+$ KEY_SECRET=mykeysecret
+
+$ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
+```
+
+6. En revenant à la page **Clés API**, vous verrez le nom de la clé, les quatre derniers caractères de l’ID de clé, les permissions, le statut, la date d’expiration et le créateur. Depuis cet écran, vous pouvez modifier le nom de la clé, les permissions et la date d’expiration. Les clés peuvent également y être désactivées ou supprimées.
+
+<br />
+
+<Note>
+  La suppression d’une clé API est une action permanente. Tous les services qui utilisent cette clé perdront immédiatement l’accès à ClickHouse Cloud.
+</Note>
+
+<Image img="/images/cloud/manage/openapi5.webp" size="md" alt="Page de gestion des clés API" border />
+
+<div id="endpoints">
+  ## Endpoints
+</div>
+
+Pour en savoir plus sur les endpoints, consultez la [Référence API](/fr/api-reference/organization/get-list-of-available-organizations).
+Utilisez votre clé API et votre secret API avec l’URL de base `https://api.clickhouse.cloud/v1`.

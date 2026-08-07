@@ -1,0 +1,177 @@
+---
+sidebarTitle: 'Airbyte'
+keywords: ['clickhouse', 'Airbyte', 'conectar', 'integrar', 'etl', 'integración de datos']
+slug: /integrations/airbyte
+description: 'Envía datos a ClickHouse con los pipelines de datos de Airbyte'
+title: 'Conecta Airbyte con ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://airbyte.com/'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import PartnerBadge from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Note>
+  Ten en cuenta que los conectores de origen y destino de Airbyte para ClickHouse se encuentran actualmente en fase Alpha y no son adecuados para transferir grandes conjuntos de datos (&gt; 10 millones de filas)
+</Note>
+
+<a href="https://www.airbyte.com/" target="_blank">Airbyte</a> es una plataforma de integración de datos de código abierto. Permite crear canalizaciones de datos <a href="https://airbyte.com/blog/why-the-future-of-etl-is-not-elt-but-el" target="_blank">ELT</a> e incluye más de 140 conectores listos para usar. Este tutorial paso a paso muestra cómo conectar Airbyte a ClickHouse como destino y cargar un conjunto de datos de ejemplo.
+
+<Steps>
+  <Step>
+    ## Descarga y ejecuta Airbyte
+
+    1. Airbyte se ejecuta en Docker y utiliza `docker-compose`. Asegúrate de descargar e instalar las versiones más recientes de Docker.
+
+    2. Despliega Airbyte clonando el repositorio oficial de GitHub y ejecutando `docker-compose up` en tu terminal preferido:
+
+       ```bash
+       git clone https://github.com/airbytehq/airbyte.git --depth=1
+       cd airbyte
+       ./run-ab-platform.sh
+       ```
+
+    3. Cuando veas el banner de Airbyte en tu terminal, podrás conectarte a <a href="http://localhost:8000" target="_blank">localhost:8000</a>
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_01.webp" size="lg" border alt="Banner de Airbyte" />
+
+    <Note>
+      También puedes registrarte y usar <a href="https://docs.airbyte.com/deploying-airbyte/on-cloud" target="_blank">Airbyte Cloud</a>
+    </Note>
+  </Step>
+
+  <Step>
+    ## Añadir ClickHouse como destino
+
+    En esta sección, mostraremos cómo añadir una instancia de ClickHouse como destino.
+
+    1. Inicie su servidor ClickHouse (Airbyte es compatible con la versión `21.8.10.19` de ClickHouse o superior) o inicie sesión en su cuenta de ClickHouse Cloud:
+
+       ```bash
+       clickhouse-server start
+       ```
+
+    2. En Airbyte, seleccione la página &quot;Destinations&quot; y añada un nuevo destino:
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_02.webp" size="lg" border alt="Añadir un destino en Airbyte" />
+
+    3. Seleccione ClickHouse en la lista desplegable &quot;Destination type&quot; y complete el formulario &quot;Set up the destination&quot; indicando el hostname y los puertos de su instancia de ClickHouse, el nombre de la base de datos, el nombre de usuario y la contraseña, y seleccione si se trata de una conexión SSL (equivalente al indicador `--secure` en `clickhouse-client`):
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_03.webp" size="lg" border alt="Creación del destino ClickHouse en Airbyte" />
+
+    4. ¡Enhorabuena! Ya ha añadido ClickHouse como destino en Airbyte.
+
+    <Note>
+      Para usar ClickHouse como destino, el usuario que vaya a utilizar debe tener permisos para crear bases de datos, tablas e insertar filas. Recomendamos crear un usuario dedicado para Airbyte (p. ej., `my_airbyte_user`) con los siguientes permisos:
+
+      ```sql
+      CREATE USER 'my_airbyte_user'@'%' IDENTIFIED BY 'your_password_here';
+
+      GRANT CREATE ON * TO my_airbyte_user;
+      ```
+    </Note>
+  </Step>
+
+  <Step>
+    ## Añadir un conjunto de datos como fuente
+
+    El conjunto de datos de ejemplo que usaremos es <a href="/es/get-started/sample-datasets/nyc-taxi" target="_blank">New York City Taxi Data</a> (en <a href="https://github.com/toddwschneider/nyc-taxi-data" target="_blank">GitHub</a>). Para este tutorial, usaremos un subconjunto de este conjunto de datos correspondiente al mes de enero de 2022.
+
+    1. En Airbyte, selecciona la página &quot;Sources&quot; y añade una nueva fuente de tipo archivo.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_04.webp" size="lg" border alt="Añadir una fuente en Airbyte" />
+
+    2. Completa el formulario &quot;Set up the source&quot; asignando un nombre a la fuente y proporcionando la URL del archivo de NYC Taxi de enero de 2022 (consulta más abajo). Asegúrate de elegir `parquet` como formato de archivo, `HTTPS Public Web` como proveedor de almacenamiento y `nyc_taxi_2022` como nombre del conjunto de datos.
+
+       ```text
+       https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2022-01.parquet
+       ```
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_05.webp" size="lg" border alt="Creación de fuente de ClickHouse en Airbyte" />
+
+    3. ¡Enhorabuena! Ya has añadido un archivo fuente en Airbyte.
+  </Step>
+
+  <Step>
+    ## Crear una conexión y cargar el conjunto de datos en ClickHouse
+
+    1. En Airbyte, selecciona la página &quot;Connections&quot; y añade una nueva conexión
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_06.webp" size="lg" border alt="Añadir una conexión en Airbyte" />
+
+    2. Seleccione &quot;Usar una fuente existente&quot; y seleccione New York City Taxi Data; luego, seleccione &quot;Usar un destino existente&quot; y seleccione su instancia de ClickHouse.
+
+    3. Completa el formulario &quot;Configurar la conexión&quot; seleccionando una Frecuencia de replicación (usaremos `manual` para este tutorial) y `nyc_taxi_2022` como el `stream` que quieres sincronizar. Asegúrate de elegir `Normalized Tabular Data` como normalización.
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_07.webp" size="lg" border alt="Creación de una conexión en Airbyte" />
+
+    4. Ahora que la conexión ya está creada, haz clic en &quot;Sync now&quot; para iniciar la carga de datos (ya que seleccionamos `Manual` como frecuencia de replicación)
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_08.webp" size="lg" border alt="Sincroniza ahora con Airbyte" />
+
+    5. Tus datos empezarán a cargarse; puedes ampliar la vista para ver los logs y el progreso de Airbyte. Cuando finalice la operación, verás un mensaje `Completed successfully` en los logs:
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_09.webp" size="lg" border alt="Se completó correctamente" />
+
+    6. Conéctese a su instancia de ClickHouse con el cliente SQL que prefiera y compruebe la tabla resultante:
+
+       ```sql
+       SELECT *
+       FROM nyc_taxi_2022
+       LIMIT 10
+       ```
+
+       La respuesta debería verse así:
+
+       ```response
+       Query id: 4f79c106-fe49-4145-8eba-15e1cb36d325
+
+       ┌─extra─┬─mta_tax─┬─VendorID─┬─RatecodeID─┬─tip_amount─┬─airport_fee─┬─fare_amount─┬─DOLocationID─┬─PULocationID─┬─payment_type─┬─tolls_amount─┬─total_amount─┬─trip_distance─┬─passenger_count─┬─store_and_fwd_flag─┬─congestion_surcharge─┬─tpep_pickup_datetime─┬─improvement_surcharge─┬─tpep_dropoff_datetime─┬─_airbyte_ab_id───────────────────────┬─────_airbyte_emitted_at─┬─_airbyte_normalized_at─┬─_airbyte_nyc_taxi_2022_hashid────┐
+       │     0 │     0.5 │        2 │          1 │       2.03 │           0 │          17 │           41 │          162 │            1 │            0 │        22.33 │          4.25 │               3 │ N                  │                  2.5 │ 2022-01-24T16:02:27  │                   0.3 │ 2022-01-24T16:22:23   │ 000022a5-3f14-4217-9938-5657f9041c8a │ 2022-07-19 04:35:31.000 │    2022-07-19 04:39:20 │ 91F83E2A3AF3CA79E27BD5019FA7EC94 │
+       │     3 │     0.5 │        1 │          1 │       1.75 │           0 │           5 │          186 │          246 │            1 │            0 │        10.55 │           0.9 │               1 │ N                  │                  2.5 │ 2022-01-22T23:23:05  │                   0.3 │ 2022-01-22T23:27:03   │ 000036b6-1c6a-493b-b585-4713e433b9cd │ 2022-07-19 04:34:53.000 │    2022-07-19 04:39:20 │ 5522F328014A7234E23F9FC5FA78FA66 │
+       │     0 │     0.5 │        2 │          1 │       7.62 │        1.25 │          27 │          238 │           70 │            1 │         6.55 │        45.72 │          9.16 │               1 │ N                  │                  2.5 │ 2022-01-22T19:20:37  │                   0.3 │ 2022-01-22T19:40:51   │ 00003c6d-78ad-4288-a79d-00a62d3ca3c5 │ 2022-07-19 04:34:46.000 │    2022-07-19 04:39:20 │ 449743975782E613109CEE448AFA0AB3 │
+       │   0.5 │     0.5 │        2 │          1 │          0 │           0 │         9.5 │          234 │          249 │            1 │            0 │         13.3 │           1.5 │               1 │ N                  │                  2.5 │ 2022-01-22T20:13:39  │                   0.3 │ 2022-01-22T20:26:40   │ 000042f6-6f61-498b-85b9-989eaf8b264b │ 2022-07-19 04:34:47.000 │    2022-07-19 04:39:20 │ 01771AF57922D1279096E5FFE1BD104A │
+       │     0 │       0 │        2 │          5 │          5 │           0 │          60 │          265 │           90 │            1 │            0 │         65.3 │          5.59 │               1 │ N                  │                    0 │ 2022-01-25T09:28:36  │                   0.3 │ 2022-01-25T09:47:16   │ 00004c25-53a4-4cd4-b012-a34dbc128aeb │ 2022-07-19 04:35:46.000 │    2022-07-19 04:39:20 │ CDA4831B683D10A7770EB492CC772029 │
+       │     0 │     0.5 │        2 │          1 │          0 │           0 │        11.5 │           68 │          170 │            2 │            0 │         14.8 │           2.2 │               1 │ N                  │                  2.5 │ 2022-01-25T13:19:26  │                   0.3 │ 2022-01-25T13:36:19   │ 00005c75-c3c8-440c-a8e8-b1bd2b7b7425 │ 2022-07-19 04:35:52.000 │    2022-07-19 04:39:20 │ 24D75D8AADD488840D78EA658EBDFB41 │
+       │   2.5 │     0.5 │        1 │          1 │       0.88 │           0 │         5.5 │           79 │          137 │            1 │            0 │         9.68 │           1.1 │               1 │ N                  │                  2.5 │ 2022-01-22T15:45:09  │                   0.3 │ 2022-01-22T15:50:16   │ 0000acc3-e64f-4b58-8e15-dc47ff1685f3 │ 2022-07-19 04:34:37.000 │    2022-07-19 04:39:20 │ 2BB5B8E849A438E08F7FCF789E7D7E65 │
+       │  1.75 │     0.5 │        1 │          1 │        7.5 │        1.25 │        27.5 │           17 │          138 │            1 │            0 │        37.55 │             9 │               1 │ N                  │                    0 │ 2022-01-30T21:58:19  │                   0.3 │ 2022-01-30T22:19:30   │ 0000b339-b44b-40b0-99f8-ebbf2092cc5b │ 2022-07-19 04:38:10.000 │    2022-07-19 04:39:20 │ DCCE79199EF9217CD769EFD5271302FE │
+       │   0.5 │     0.5 │        2 │          1 │          0 │           0 │          13 │           79 │          140 │            2 │            0 │         16.8 │          3.19 │               1 │ N                  │                  2.5 │ 2022-01-26T20:43:14  │                   0.3 │ 2022-01-26T20:58:08   │ 0000caa8-d46a-4682-bd25-38b2b0b9300b │ 2022-07-19 04:36:36.000 │    2022-07-19 04:39:20 │ F502BE51809AF36582561B2D037B4DDC │
+       │     0 │     0.5 │        2 │          1 │       1.76 │           0 │         5.5 │          141 │          237 │            1 │            0 │        10.56 │          0.72 │               2 │ N                  │                  2.5 │ 2022-01-27T15:19:54  │                   0.3 │ 2022-01-27T15:26:23   │ 0000cd63-c71f-4eb9-9c27-09f402fddc76 │ 2022-07-19 04:36:55.000 │    2022-07-19 04:39:20 │ 8612CDB63E13D70C1D8B34351A7CA00D │
+       └───────┴─────────┴──────────┴────────────┴────────────┴─────────────┴─────────────┴──────────────┴──────────────┴──────────────┴──────────────┴──────────────┴───────────────┴─────────────────┴────────────────────┴──────────────────────┴──────────────────────┴───────────────────────┴───────────────────────┴──────────────────────────────────────┴─────────────────────────┴────────────────────────┴──────────────────────────────────┘
+       ```
+
+       ```sql
+       SELECT count(*)
+       FROM nyc_taxi_2022
+       ```
+
+       La respuesta es:
+
+       ```response
+       Query id: a9172d39-50f7-421e-8330-296de0baa67e
+
+       ┌─count()─┐
+       │ 2392428 │
+       └─────────┘
+       ```
+
+    7. Ten en cuenta que Airbyte infirió automáticamente los tipos de datos y añadió 4 columnas a la tabla de destino. Airbyte utiliza estas columnas para gestionar la lógica de replicación y registrar las operaciones. Puedes encontrar más detalles en la <a href="https://docs.airbyte.com/integrations/destinations/clickhouse#output-schema" target="_blank">documentación oficial de Airbyte</a>.
+
+       ```sql
+           `_airbyte_ab_id` String,
+           `_airbyte_emitted_at` DateTime64(3, 'GMT'),
+           `_airbyte_normalized_at` DateTime,
+           `_airbyte_nyc_taxi_072021_hashid` String
+       ```
+
+       Ahora que el conjunto de datos está cargado en tu instancia de ClickHouse, puedes crear una nueva tabla y usar tipos de datos de ClickHouse más apropiados (<a href="/es/get-started/sample-datasets/nyc-taxi" target="_blank">más detalles</a>).
+
+    8. ¡Enhorabuena! Has cargado correctamente los datos de taxis de Nueva York en ClickHouse con Airbyte.
+  </Step>
+</Steps>

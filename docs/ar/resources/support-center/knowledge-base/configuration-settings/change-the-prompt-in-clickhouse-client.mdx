@@ -1,0 +1,164 @@
+---
+title: تغيير موجّه الأوامر في clickhouse-client
+description: "تشرح هذه المقالة كيفية تغيير موجّه الأوامر في عميل ClickHouse ونافذة طرفية clickhouse-local من :) إلى بادئة متبوعة بـ :)"
+date: 2023-11-16
+tags: ['الإعدادات', 'العملاء الأصليون والواجهات']
+keywords: ['عميل ClickHouse', 'تغيير موجّه الأوامر']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+إذا لم يعجبك شكل عرض `clickhouse client` وclickhouse-local لموجّه الأوامر في نافذة الطرفية، فيمكنك تغييره بإضافة بادئة.
+تشرح هذه المقالة كيفية تغيير موجّه الأوامر إلى أي قيمة تريدها.
+
+موجّه الأوامر الافتراضي هو اسم جهازك المحلي متبوعًا بـ `:) `:
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="موجّه عميل ClickHouse الافتراضي" />
+
+فيما يلي المتغيرات التي يمكنك استخدامها في موجّه الأوامر: `{user}`، `{host}`
+
+هناك عدة طرق لتحديث موجّه الأوامر، وسنستعرضها واحدةً تلو الأخرى.
+
+<div id="--prompt-flag">
+  ## الخيار --prompt
+</div>
+
+الطريقة الأولى لتغيير هذا الخيار هي باستخدام `--prompt`:
+
+```bash
+clickhouse --prompt 👉
+```
+
+سيضيف هذا إيموجي الإصبع قبل الوجه المبتسم:
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="موجّه عميل ClickHouse مع إيموجي الإصبع" />
+
+<div id="config-file---top-level">
+  ## ملف التهيئة - المستوى الأعلى
+</div>
+
+بدلًا من ذلك، يمكنك تحديد بادئة لموجّه الأوامر في ملف `config.xml`:
+
+```xml
+<config>
+    <prompt>👉 </prompt>
+</config>
+```
+
+```
+clickhouse
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع ملف إعدادات" />
+
+يمكننا استخدام ملف إعدادات بأي اسم نشاء وتمريره باستخدام العلامة `-C`:
+
+```xml
+<config>
+    <prompt>🎄 </prompt>
+</config>
+```
+
+```
+clickhouse -C christmas.xml
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع رمز تعبيري لشجرة عيد الميلاد" />
+
+هل تفضّل أن تكون ملفات الإعداد لديك بصيغة YAML؟
+هذا ممكن أيضًا:
+
+```yaml
+prompt: 🟡
+```
+
+```bash
+clickhouse -C christmas.yaml
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع إيموجي دائرة صفراء" />
+
+<div id="config-file---connections_credentials">
+  ## ملف التهيئة - connections_credentials
+</div>
+
+بدلًا من ذلك، يمكنك تحديد موجّه الأوامر لكل مجموعة من بيانات اعتماد الاتصال.
+ولا يكون هذا منطقيًا إلا عند استخدام clickhouse-client.
+
+```xml
+<config>
+    <connections_credentials>
+        <connection>
+            <n>prod<n>
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>0</secure>
+            <user>default</user>
+            <prompt>\e[31m[PRODUCTION]\e[0m {user}@prod</prompt>
+        </connection>
+        <connection>
+            <n>dev<n>
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>0</secure>
+            <user>default</user>
+            <prompt>\e[32m[DEVELOPMENT]\e[0m {user}@dev</prompt>
+        </connection>
+    </connections_credentials>
+</config>
+```
+
+يمكننا بعد ذلك محاولة الاتصال باستخدام الاتصال `dev`:
+
+```bash
+clickhouse client -C connections.xml --connection dev
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع اتصال التطوير" />
+
+أو الخاص بـ `prod`:
+
+```bash
+clickhouse client -C connections.xml --connection prod
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع اتصال ببيئة الإنتاج" />
+
+وإليك نسخة YAML:
+
+```yaml
+connections_credentials:
+  connection:
+    - name: prod
+      hostname: 127.0.0.1
+      port: 9000
+      secure: 0
+      user: default
+      prompt: "\e[35m[PRODUCTION]\e[0m {user}@{host}"
+    - name: dev
+      hostname: 127.0.0.1
+      port: 9000
+      secure: 0
+      user: default
+      prompt: "\e[34m[DEVELOPMENT]\e[0m {user}@{host}"
+```
+
+باستخدام اتصال `dev`:
+
+```bash
+clickhouse client -C connections.yaml --connection dev
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse لاتصال Development باستخدام YAML" />
+
+والآن `prod`:
+
+```bash
+clickhouse client -C connections.yaml --connection prod
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع اتصال ببيئة الإنتاج باستخدام YAML" />

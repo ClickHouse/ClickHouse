@@ -1,0 +1,212 @@
+---
+slug: /migrations/postgresql/appendix
+title: '附录'
+keywords: ['Postgres', 'postgresql', '数据类型', '类型']
+description: '有关从 PostgreSQL 迁移的补充信息'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
+  ## Postgres 与 ClickHouse：对应概念与差异
+</div>
+
+对于来自 OLTP 系统、习惯了 ACID 事务的用户，需要注意的是，ClickHouse 为了换取性能，有意不完全提供这些特性。只要理解其语义，ClickHouse 仍可提供很高的持久性保障和写入吞吐量。下面将重点介绍一些关键概念；如果你是从 Postgres 转向 ClickHouse，建议先熟悉这些概念。
+
+<div id="shards-vs-replicas">
+  ### 分片与副本
+</div>
+
+当存储和/或计算资源成为性能瓶颈时，分片和复制是突破单个 Postgres 实例扩展上限的两种策略。Postgres 中的分片是指将大型数据库拆分为分布在多个节点上的更小、更易管理的部分。不过，Postgres 原生并不支持分片。相反，可以借助 [Citus](https://www.citusdata.com/) 等扩展来实现分片，使 Postgres 成为可水平扩展的分布式数据库。通过将负载分摊到多台机器上，这种方式使 Postgres 能够处理更高的事务速率和更大的数据集。分片可以按行或基于 schema 进行，以灵活适配事务型或分析型等不同工作负载类型。由于需要跨多台机器进行协调并保证一致性，分片会在数据管理和查询执行方面引入相当大的复杂性。
+
+与分片不同，副本是额外的 Postgres 实例，包含主节点中的全部或部分数据。使用副本有多种原因，包括提升读取性能以及用于 HA (高可用) 场景。物理复制是 Postgres 的原生特性，它会将整个数据库或其中的大部分内容复制到另一台服务器，包括所有数据库、表和索引。这一过程涉及通过 TCP/IP 将 WAL 分段从主节点流式传输到副本。相比之下，逻辑复制是更高层级的抽象，它基于 `INSERT`、`UPDATE` 和 `DELETE` 操作流式传输变更。虽然物理复制在某些情况下也能达到类似效果，但逻辑复制在针对特定表和操作、进行数据转换以及支持不同 Postgres 版本方面提供了更高的灵活性。
+
+**相比之下，ClickHouse 的分片和副本是与数据分布和冗余相关的两个关键概念**。ClickHouse 副本可以类比为 Postgres 副本，不过其复制是最终一致的，并且没有主节点这一概念。与 Postgres 不同，ClickHouse 原生支持分片。
+
+分片是表数据的一部分。你始终至少有一个分片。如果单台服务器的容量不足，可以将数据分片到多台服务器上以分摊负载，并在执行查询时让所有分片并行工作。你可以在不同服务器上手动为某个表创建分片，并将数据直接插入其中。或者，也可以使用分布式表，并通过分片键定义数据应路由到哪个分片。分片键可以是随机的，也可以是某个哈希函数的输出。重要的是，一个分片可以包含多个副本。
+
+副本是数据的一个拷贝。ClickHouse 始终至少保留一份数据副本，因此副本的最小数量为 1。为数据增加第二个副本可以提供容错能力，并可能增加用于处理更多查询的计算资源 (还可以使用 [并行副本](https://clickhouse.com/blog/clickhouse-release-23-03#parallel-replicas-for-utilizing-the-full-power-of-your-replicas-nikita-mikhailov) 将单个查询的计算资源分布到多个副本上，从而降低延迟) 。副本通过 [ReplicatedMergeTree 表引擎](/zh/reference/engines/table-engines/mergetree-family/replication) 实现，它使 ClickHouse 能够在不同服务器之间保持多份数据副本同步。复制是物理层面的：节点之间传输的只有压缩后的 parts，而不是查询。
+
+总之，副本是数据的拷贝，用于提供冗余和可靠性 (以及潜在的分布式处理能力) ；而分片则是数据的一个子集，用于实现分布式处理和负载均衡。
+
+> ClickHouse Cloud 使用存储在 S3 中的单份数据，并配备多个计算副本。每个副本节点都可以访问这些数据，并且各自都拥有本地 SSD 缓存。这仅依赖通过 ClickHouse Keeper 进行的元数据复制。
+
+<div id="eventual-consistency">
+  ## 最终一致性
+</div>
+
+ClickHouse 使用 ClickHouse Keeper (一个用 C++ 实现的 ZooKeeper，也可以直接使用 ZooKeeper) 来管理其内部复制机制，主要负责元数据存储并确保最终一致性。Keeper 会在分布式环境中为每次插入分配唯一的顺序编号，这对于在各项操作之间保持顺序和一致性至关重要。该机制还负责处理合并和变更等后台操作，既能将这些任务分发出去，又能保证它们在所有副本上按相同顺序执行。除了元数据之外，Keeper 还充当复制体系的综合控制中心，包括跟踪已存储数据分区片段的校验和，并作为副本之间的分布式通知系统。
+
+ClickHouse 中的复制过程 (1) 始于数据被插入任意一个副本时。这些处于原始插入形式的数据会连同其校验和一起被 (2) 写入磁盘。写入完成后，该副本会 (3) 尝试在 Keeper 中注册这个新的数据分区片段，具体做法是分配唯一的块编号并记录该新分区片段的详细信息。其他副本在 (4) 检测到复制日志中的新条目后，会 (5) 通过内部 HTTP 协议下载相应的数据分区片段，并根据 ZooKeeper 中列出的校验和进行校验。该方法确保即使各副本处理速度不同或存在潜在延迟，最终也都能持有一致且最新的数据。此外，系统还能够并发处理多项操作，从而优化数据管理流程，并提升系统的可扩展性以及应对硬件差异的稳健性。
+
+<Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="最终一致性" />
+
+请注意，ClickHouse Cloud 使用一种[针对云环境优化的复制机制](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates)，以适配其存储与计算分离的架构。由于数据存储在共享对象存储中，所有计算节点都可以自动访问这些数据，而无需在节点之间物理复制数据。相反，Keeper 仅用于在计算节点之间共享元数据 (即哪些数据存在于对象存储中的什么位置) 。
+
+与 ClickHouse 相比，PostgreSQL 采用了不同的复制策略，主要使用流式复制，也就是主节点-副本模型：数据会持续从主节点流向一个或多个副本节点。这种复制方式可确保接近实时的一致性，并且既可以是同步的，也可以是异步的，使管理员能够在可用性与一致性之间进行权衡。与 ClickHouse 不同，PostgreSQL 依赖 WAL (预写日志) 、逻辑复制 和 decoding，在节点之间传输数据对象和变更。PostgreSQL 的这种方式更直接，但在高度分布式环境中，可能无法像 ClickHouse 那样通过复杂的 Keeper 协调分布式操作并实现最终一致性，从而提供同等水平的可扩展性和容错能力。
+
+<div id="user-implications">
+  ## 对用户的影响
+</div>
+
+在 ClickHouse 中，之所以可能出现脏读——即数据写入一个副本后，又从另一个副本读到尚未完成复制的数据——是因为其采用了由 Keeper 管理的最终一致性复制模型。该模型更侧重分布式系统中的性能和可扩展性，允许各副本独立运行并进行异步同步。因此，新插入的数据未必会立即在所有副本上可见，具体取决于复制延迟以及变更在系统内传播所需的时间。
+
+相比之下，PostgreSQL 的流式复制模型通常可通过同步复制选项避免脏读：主节点会在提交事务前，至少等待一个副本确认已收到数据。这意味着事务一旦提交，就可以保证数据已在另一副本中可用。即使主节点发生故障，副本也能确保查询看到已提交的数据，从而提供更严格的一致性保障。
+
+<div id="recommendations">
+  ## 建议
+</div>
+
+刚开始使用 ClickHouse 的用户应当了解这些差异，因为在复制环境中，这些差异会体现得更加明显。通常，对于涉及数十亿甚至数万亿数据点的分析场景，最终一致性已经足够——因为指标往往较为稳定，或者在新数据持续高速写入的情况下，估算结果也完全可以接受。
+
+如果确实有需要，也有几种方法可以提高读取一致性。但这两种做法都会带来更高的复杂度或额外开销——从而降低查询性能，并使 ClickHouse 更难扩展。**我们建议仅在绝对必要时才采用这些方法。**
+
+<div id="consistent-routing">
+  ## 一致性路由
+</div>
+
+为克服最终一致性的一些局限性，你可以确保将客户端路由到同一副本。在多个用户查询 ClickHouse，且需要各次请求结果保持确定性的场景下，这一点非常有用。虽然随着新数据写入，结果可能会发生变化，但通过查询同一副本，可以确保视图一致。
+
+这可以通过多种方式实现，具体取决于你的架构，以及你使用的是 ClickHouse OSS 还是 ClickHouse Cloud。
+
+<div id="clickhouse-cloud">
+  ## ClickHouse Cloud
+</div>
+
+ClickHouse Cloud 使用一份存储在 S3 中的数据副本，并配有多个计算副本。每个副本节点都可以访问这份数据，并带有本地 SSD 缓存。因此，为了确保结果一致，用户只需确保请求始终被路由到同一个节点。
+
+与 ClickHouse Cloud 服务各节点之间的通信通过代理进行。HTTP 和原生协议连接在保持打开期间会被路由到同一个节点。对于大多数客户端发起的 HTTP 1.1 连接，这取决于 Keep-Alive 窗口。大多数客户端 (例如 Node.js) 都可以对此进行配置。这还需要服务端配置，且服务端的值会高于客户端；在 ClickHouse Cloud 中，该值设置为 10 秒。
+
+为了确保跨连接的一致路由，例如在使用连接池或连接过期时，你可以确保始终使用同一个连接 (这对原生协议来说更容易) ，或者申请启用粘性端点。这样会为集群中的每个节点提供一组端点，从而使客户端能够确保查询被确定性地路由。
+
+> 联系支持团队以获取粘性端点的访问权限。
+
+<div id="clickhouse-oss">
+  ## ClickHouse OSS
+</div>
+
+在 OSS 中，要实现这种行为，取决于你的分片和副本拓扑，以及查询时是否使用了[分布式表](/zh/reference/engines/table-engines/special/distributed)。
+
+当你只有一个分片和多个副本时 (这种情况很常见，因为 ClickHouse 更适合纵向扩展) ，用户会在客户端层选择节点，并直接查询某个副本，同时确保该选择是确定性的。
+
+虽然在不使用分布式表的情况下，也可以采用包含多个分片和副本的拓扑，但这类高级部署通常都有自己的路由基础设施。因此，我们假定只要部署包含多个分片，就会使用分布式表 (分布式表也可用于单分片部署，但通常没有必要) 。
+
+在这种情况下，你应确保基于某个属性进行一致的节点路由，例如 `session_id` 或 `user_id`。应在[查询中设置](/zh/concepts/features/configuration/settings/settings-query-level) [`prefer_localhost_replica=0`](/zh/reference/settings/session-settings#prefer_localhost_replica) 和 [`load_balancing=in_order`](/zh/reference/settings/session-settings#load_balancing)。这样可以确保优先选择各分片的本地副本；否则，在错误数相同的情况下，会优先按照配置中列出的顺序选择副本——如果错误数更高，则会随机选择并执行故障转移。也可以使用 [`load_balancing=nearest_hostname`](/zh/reference/settings/session-settings#load_balancing) 作为这种确定性分片选择的替代方案。
+
+> 创建分布式表时，你需要指定一个 cluster。这个在 config.xml 中定义的 cluster 会列出各个分片 (及其副本) ，从而让用户可以控制每个节点使用它们的顺序。利用这一点，你可以确保选择具有确定性。
+
+<div id="sequential-consistency">
+  ## 顺序一致性
+</div>
+
+在极少数情况下，你可能需要顺序一致性。
+
+数据库中的顺序一致性是指，数据库上的操作看起来会按某种顺序依次执行，并且这一顺序对所有与数据库交互的进程都保持一致。这意味着，每个操作看起来都会在调用到完成之间的某个瞬间立即生效，而且所有进程观察到的操作顺序都是唯一且一致的。
+
+从用户角度来看，这通常表现为：需要将数据写入 ClickHouse，并在读取数据时保证返回最新插入的行。
+这可以通过多种方式实现 (按优先顺序排列) ：
+
+1. **在同一节点上读/写** - 如果你使用 native protocol，或者使用 [session 通过 HTTP 执行写入/读取](/zh/concepts/features/interfaces/http#default-database)，那么你应当连接到同一个副本：在这种情况下，你直接从写入所在的节点读取，因此读取结果始终是一致的。
+2. **手动同步副本** - 如果你写入一个副本，却从另一个副本读取，可以在读取前执行 `SYSTEM SYNC REPLICA LIGHTWEIGHT`。
+3. **启用顺序一致性** - 通过查询设置 [`select_sequential_consistency = 1`](/zh/reference/settings/session-settings#select_sequential_consistency)。在 OSS 中，还必须指定设置 `insert_quorum = 'auto'`。
+
+<br />
+
+有关如何启用这些设置的更多详细信息，请参见[此处](/zh/products/cloud/features/infrastructure/shared-merge-tree#consistency)。
+
+> 使用顺序一致性会给 ClickHouse Keeper 带来更高负载。结果可能是
+> 插入和读取速度变慢。作为 ClickHouse Cloud 中主要 table engine 的 SharedMergeTree，顺序一致性[带来的额外开销更低，扩展性也更好](/zh/products/cloud/features/infrastructure/shared-merge-tree#consistency)。在 OSS 中，你应谨慎使用这种方式，并衡量 Keeper 负载。
+
+<div id="transactional-acid-support">
+  ## 事务 (ACID) 支持
+</div>
+
+从 PostgreSQL 迁移而来的用户，可能已经习惯了它对 ACID (原子性、一致性、隔离性、持久性) 特性的强大支持，这使其成为事务型数据库的可靠选择。PostgreSQL 中的原子性确保每个事务都被视为一个单一单元，要么完全成功，要么完全回滚，从而避免部分更新。一致性则通过强制执行约束、触发器和规则来保持，以确保所有数据库事务都会使数据处于有效状态。PostgreSQL 支持从 Read Committed 到 Serializable 的隔离级别，因此可以对并发事务所做更改的可见性进行精细控制。最后，持久性通过预写日志 (WAL) 实现，确保事务一旦提交，即使发生系统故障也不会丢失。
+
+这些特性在作为单一事实来源的 OLTP 数据库中很常见。
+
+尽管功能强大，但这也带来了固有的限制，使扩展到 PB 级规模变得颇具挑战。ClickHouse 在这些特性上做出取舍，以便在大规模场景下提供快速的分析查询，同时保持高写入吞吐量。
+
+ClickHouse 仅在[有限配置](/zh/concepts/features/operations/insert/transactions)下提供 ACID 特性——最简单的情况是使用具有单个分区的非复制 MergeTree 表引擎实例。你不应期望在这些场景之外也具备这些特性，并应确保这些特性不是你的硬性要求。
+
+<div id="compression">
+  ## 压缩
+</div>
+
+ClickHouse 的列式存储意味着，相比 Postgres，其压缩效果通常会好得多。下图展示了比较两个数据库中所有 Stack Overflow 表存储需求的结果：
+
+```sql title="Query (Postgres)"
+SELECT
+    schemaname,
+    tablename,
+    pg_total_relation_size(schemaname || '.' || tablename) AS total_size_bytes,
+    pg_total_relation_size(schemaname || '.' || tablename) / (1024 * 1024 * 1024) AS total_size_gb
+FROM
+    pg_tables s
+WHERE
+    schemaname = 'public';
+```
+
+```sql title="Query (ClickHouse)"
+SELECT
+        `table`,
+        formatReadableSize(sum(data_compressed_bytes)) AS compressed_size
+FROM system.parts
+WHERE (database = 'stackoverflow') AND active
+GROUP BY `table`
+```
+
+```response title="Response"
+┌─table───────┬─compressed_size─┐
+│ posts       │ 25.17 GiB       │
+│ users       │ 846.57 MiB      │
+│ badges      │ 513.13 MiB      │
+│ comments    │ 7.11 GiB        │
+│ votes       │ 1.28 GiB        │
+│ posthistory │ 40.44 GiB       │
+│ postlinks   │ 79.22 MiB       │
+└─────────────┴─────────────────┘
+```
+
+有关优化和评估压缩的更多信息，请参见[此处](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。
+
+<div id="data-type-mappings">
+  ## 数据类型映射
+</div>
+
+下表展示了 Postgres 对应的 ClickHouse 数据类型。
+
+| Postgres 数据类型        | ClickHouse 类型                                                                                                                                                                          |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATE`               | [Date](/zh/reference/data-types/date)                                                                                                                                                     |
+| `TIMESTAMP`          | [日期时间](/zh/reference/data-types/datetime)                                                                                                                                             |
+| `REAL`               | [Float32](/zh/reference/data-types/float)                                                                                                                                                 |
+| `DOUBLE`             | [Float64](/zh/reference/data-types/float)                                                                                                                                                 |
+| `DECIMAL, NUMERIC`   | [Decimal](/zh/reference/data-types/decimal)                                                                                                                                               |
+| `SMALLINT`           | [Int16](/zh/reference/data-types/int-uint)                                                                                                                                                |
+| `INTEGER`            | [Int32](/zh/reference/data-types/int-uint)                                                                                                                                                |
+| `BIGINT`             | [Int64](/zh/reference/data-types/int-uint)                                                                                                                                                |
+| `SERIAL`             | [UInt32](/zh/reference/data-types/int-uint)                                                                                                                                               |
+| `BIGSERIAL`          | [UInt64](/zh/reference/data-types/int-uint)                                                                                                                                               |
+| `TEXT, CHAR, BPCHAR` | [String](/zh/reference/data-types/string)                                                                                                                                                 |
+| `INTEGER`            | Nullable([Int32](/zh/reference/data-types/int-uint))                                                                                                                                      |
+| `ARRAY`              | [Array](/zh/reference/data-types/array)                                                                                                                                                   |
+| `FLOAT4`             | [Float32](/zh/reference/data-types/float)                                                                                                                                                 |
+| `BOOLEAN`            | [Bool](/zh/reference/data-types/boolean)                                                                                                                                                  |
+| `VARCHAR`            | [String](/zh/reference/data-types/string)                                                                                                                                                 |
+| `BIT`                | [String](/zh/reference/data-types/string)                                                                                                                                                 |
+| `BIT VARYING`        | [String](/zh/reference/data-types/string)                                                                                                                                                 |
+| `BYTEA`              | [String](/zh/reference/data-types/string)                                                                                                                                                 |
+| `NUMERIC`            | [Decimal](/zh/reference/data-types/decimal)                                                                                                                                               |
+| `GEOGRAPHY`          | [Point](/zh/reference/data-types/geo#point), [Ring](/zh/reference/data-types/geo#ring), [Polygon](/zh/reference/data-types/geo#polygon), [MultiPolygon](/zh/reference/data-types/geo#multipolygon) |
+| `GEOMETRY`           | [Point](/zh/reference/data-types/geo#point), [Ring](/zh/reference/data-types/geo#ring), [Polygon](/zh/reference/data-types/geo#polygon), [MultiPolygon](/zh/reference/data-types/geo#multipolygon) |
+| `INET`               | [IPv4](/zh/reference/data-types/ipv4), [IPv6](/zh/reference/data-types/ipv6)                                                                                                                 |
+| `MACADDR`            | [String](/zh/reference/data-types/string)                                                                                                                                                 |
+| `CIDR`               | [String](/zh/reference/data-types/string)                                                                                                                                                 |
+| `HSTORE`             | [Map(K, V)](/zh/reference/data-types/map), [Map](/zh/reference/data-types/map)(K,[Variant](/zh/reference/data-types/variant))                                                                   |
+| `UUID`               | [UUID](/zh/reference/data-types/uuid)                                                                                                                                                     |
+| `ARRAY<T>`           | [ARRAY(T)](/zh/reference/data-types/array)                                                                                                                                                |
+| `JSON`               | [String](/zh/reference/data-types/string), [Variant](/zh/reference/data-types/variant), [Nested](/zh/reference/data-types/nested-data-structures/index), [Tuple](/zh/reference/data-types/tuple)   |
+| `JSON`               | [String](/zh/reference/data-types/string), [Variant](/zh/reference/data-types/variant), [Nested](/zh/reference/data-types/nested-data-structures), [Tuple](/zh/reference/data-types/tuple)         |
+| `JSONB`              | [String](/zh/reference/data-types/string)                                                                                                                                                 |

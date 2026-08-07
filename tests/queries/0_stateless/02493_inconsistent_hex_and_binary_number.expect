@@ -1,0 +1,52 @@
+#!/usr/bin/expect -f
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max 100000
+set stty_init "rows 25 cols 120"
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash --noprofile --norc -c "PS1='bash) ' bash --noprofile --norc"
+send "source $basedir/../shell_config.sh\r"
+expect "bash) "
+
+send "\$CLICKHOUSE_CLIENT --query 'select 0b'\r"
+expect "(UNKNOWN_IDENTIFIER)"
+expect "bash) "
+
+send "\$CLICKHOUSE_CLIENT --query 'select 0b;'\r"
+expect "(UNKNOWN_IDENTIFIER)"
+expect "bash) "
+
+send "\$CLICKHOUSE_CLIENT --query 'select 0b ;'\r"
+expect "(UNKNOWN_IDENTIFIER)"
+expect "bash) "
+
+
+send "\$CLICKHOUSE_CLIENT --query 'select 0x'\r"
+expect "(UNKNOWN_IDENTIFIER)"
+expect "bash) "
+
+send "\$CLICKHOUSE_CLIENT --query 'select 0x;'\r"
+expect "(UNKNOWN_IDENTIFIER)"
+expect "bash) "
+
+send "\$CLICKHOUSE_CLIENT --query 'select 0x ;'\r"
+expect "(UNKNOWN_IDENTIFIER)"
+expect "bash) "
+
+send "exit\r"
+expect eof

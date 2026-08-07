@@ -1,0 +1,142 @@
+allowed	0	0	0
+allowed	1	1	0
+allowed	2	2	0
+allowed	3	3	0
+allowed	4	4	0
+allowed	5	5	0
+allowed	6	6	0
+allowed	7	7	0
+allowed	8	8	0
+allowed	9	9	0
+partial_allowed	10	0	0
+partial_allowed	11	1	0
+partial_allowed	12	2	0
+partial_allowed	13	3	0
+partial_allowed	14	4	0
+partial_allowed	15	5	0
+partial_allowed	16	6	0
+partial_allowed	17	7	0
+partial_allowed	18	8	0
+partial_allowed	19	9	0
+not_allowed	20	0	0
+not_allowed	21	1	0
+not_allowed	22	2	0
+not_allowed	23	3	0
+not_allowed	24	4	0
+not_allowed	25	5	0
+not_allowed	26	6	0
+not_allowed	27	7	0
+not_allowed	28	8	0
+not_allowed	29	9	0
+no_show_allowed	30	0	0
+no_show_allowed	31	1	1
+no_show_allowed	32	2	2
+no_show_allowed	33	3	3
+no_show_allowed	34	4	4
+no_show_allowed	35	5	5
+no_show_allowed	36	6	6
+no_show_allowed	37	7	7
+no_show_allowed	38	8	8
+no_show_allowed	39	9	9
+----Table engine
+----select allowed columns and databases
+allowed	0
+allowed	1
+allowed	2
+allowed	3
+allowed	4
+allowed	5
+allowed	6
+allowed	7
+allowed	8
+allowed	9
+partial_allowed	10
+partial_allowed	11
+partial_allowed	12
+partial_allowed	13
+partial_allowed	14
+partial_allowed	15
+partial_allowed	16
+partial_allowed	17
+partial_allowed	18
+partial_allowed	19
+----
+allowed	0	0
+allowed	1	1
+allowed	2	2
+allowed	3	3
+allowed	4	4
+allowed	5	5
+allowed	6	6
+allowed	7	7
+allowed	8	8
+allowed	9	9
+----
+allowed	0
+allowed	1
+allowed	2
+allowed	3
+allowed	4
+allowed	5
+allowed	6
+allowed	7
+allowed	8
+allowed	9
+----create without show all
+a
+b
+----select user created table
+allowed	0	0
+allowed	1	1
+allowed	2	2
+allowed	3	3
+allowed	4	4
+allowed	5	5
+allowed	6	6
+allowed	7	7
+allowed	8	8
+allowed	9	9
+----Table function
+----select allowed columns and databases
+allowed	0
+allowed	1
+allowed	2
+allowed	3
+allowed	4
+allowed	5
+allowed	6
+allowed	7
+allowed	8
+allowed	9
+partial_allowed	10
+partial_allowed	11
+partial_allowed	12
+partial_allowed	13
+partial_allowed	14
+partial_allowed	15
+partial_allowed	16
+partial_allowed	17
+partial_allowed	18
+partial_allowed	19
+----
+allowed	0	0
+allowed	1	1
+allowed	2	2
+allowed	3	3
+allowed	4	4
+allowed	5	5
+allowed	6	6
+allowed	7	7
+allowed	8	8
+allowed	9	9
+----
+allowed	0
+allowed	1
+allowed	2
+allowed	3
+allowed	4
+allowed	5
+allowed	6
+allowed	7
+allowed	8
+allowed	9

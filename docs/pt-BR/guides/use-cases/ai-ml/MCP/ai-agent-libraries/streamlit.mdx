@@ -1,0 +1,240 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/streamlit-agent
+sidebarTitle: 'Integrar Streamlit'
+title: 'Como criar um agente de IA com ClickHouse como backend usando Streamlit'
+description: 'Aprenda a criar um agente de IA para a web com Streamlit e o servidor MCP do ClickHouse'
+keywords: ['ClickHouse', 'MCP', 'Streamlit', 'Agno', 'agente de IA']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Neste guia, você aprenderá a criar um agente de IA para a web usando [Streamlit](https://streamlit.io/) que pode interagir com o [SQL playground do ClickHouse](https://sql.clickhouse.com/) usando o [servidor MCP do ClickHouse](https://github.com/ClickHouse/mcp-clickhouse) e [Agno](https://github.com/agno-agi/agno).
+
+<Info>
+  **Aplicação de exemplo**
+
+  Este exemplo cria uma aplicação web completa que fornece uma interface de chat para consultar dados no ClickHouse.
+  Você pode encontrar o código-fonte deste exemplo no [repositório de exemplos](https://github.com/ClickHouse/examples/tree/main/ai/mcp/streamlit).
+</Info>
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Você precisará ter o Python instalado no sistema.
+  Também precisará ter o [`uv`](https://docs.astral.sh/uv/getting-started/installation/) instalado
+* Você precisará de uma API key da Anthropic ou de outro provedor de LLM
+
+Você pode seguir as etapas abaixo para criar sua aplicação Streamlit.
+
+<Steps>
+  <Step>
+    ## Instale as bibliotecas
+
+    Instale as bibliotecas necessárias com os seguintes comandos:
+
+    ```bash
+    pip install streamlit agno ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## Criar arquivo de utilitários
+
+    Crie um arquivo `utils.py` com duas funções utilitárias. A primeira é uma
+    função geradora assíncrona para lidar com respostas em streaming do
+    agente Agno. A segunda é uma função para aplicar estilos ao aplicativo
+    Streamlit:
+
+    ```python title="utils.py"
+    import streamlit as st
+    from agno.run.response import RunEvent, RunResponse
+
+    async def as_stream(response):
+        async for chunk in response:
+            if isinstance(chunk, RunResponse) and isinstance(chunk.content, str):
+                if chunk.event == RunEvent.run_response:
+                    yield chunk.content
+
+    def apply_styles():
+        st.markdown("""
+      <style>
+      hr.divider {
+      background-color: white;
+      margin: 0;
+      }
+      </style>
+      <hr class='divider' />""", unsafe_allow_html=True)
+    ```
+  </Step>
+
+  <Step>
+    ## Configure suas credenciais
+
+    Defina sua chave de API da Anthropic como variável de ambiente:
+
+    ```bash
+    export ANTHROPIC_API_KEY="your_api_key_here"
+    ```
+
+    <Info>
+      **Usando outro provedor de LLM**
+
+      Se você não tiver uma chave de API da Anthropic e quiser usar outro provedor de LLM,
+      poderá encontrar instruções para configurar suas credenciais na [documentação &quot;Integrations&quot; do Agno](https://docs.agentops.ai/v2/integrations/ag2)
+    </Info>
+  </Step>
+
+  <Step>
+    ## Importe as bibliotecas necessárias
+
+    Comece criando o arquivo principal da sua aplicação Streamlit (por exemplo, `app.py`) e inclua os imports:
+
+    ```python
+    from utils import apply_styles
+
+    import streamlit as st
+    from textwrap import dedent
+
+    from agno.models.anthropic import Claude
+    from agno.agent import Agent
+    from agno.tools.mcp import MCPTools
+    from agno.storage.json import JsonStorage
+    from agno.run.response import RunEvent, RunResponse
+    from mcp.client.stdio import stdio_client, StdioServerParameters
+
+    from mcp import ClientSession
+
+    import asyncio
+    import threading
+    from queue import Queue
+    ```
+  </Step>
+
+  <Step>
+    ## Defina a função de streaming do agent
+
+    Adicione a função principal do agent que se conecta ao [SQL playground do ClickHouse](https://sql.clickhouse.com/) e envia respostas em streaming:
+
+    ```python
+    async def stream_clickhouse_agent(message):
+        env = {
+                "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+                "CLICKHOUSE_PORT": "8443",
+                "CLICKHOUSE_USER": "demo",
+                "CLICKHOUSE_PASSWORD": "",
+                "CLICKHOUSE_SECURE": "true"
+            }
+        
+        server_params = StdioServerParameters(
+            command="uv",
+            args=[
+            'run',
+            '--with', 'mcp-clickhouse',
+            '--python', '3.13',
+            'mcp-clickhouse'
+            ],
+            env=env
+        )
+        
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                mcp_tools = MCPTools(timeout_seconds=60, session=session)
+                await mcp_tools.initialize()
+                agent = Agent(
+                    model=Claude(id="claude-3-5-sonnet-20240620"),
+                    tools=[mcp_tools],
+                    instructions=dedent("""\
+                        You are a ClickHouse assistant. Help users query and understand data using ClickHouse.
+                        - Run SQL queries using the ClickHouse MCP tool
+                        - Present results in markdown tables when relevant
+                        - Keep output concise, useful, and well-formatted
+                    """),
+                    markdown=True,
+                    show_tool_calls=True,
+                    storage=JsonStorage(dir_path="tmp/team_sessions_json"),
+                    add_datetime_to_instructions=True, 
+                    add_history_to_messages=True,
+                )
+                chunks = await agent.arun(message, stream=True)
+                async for chunk in chunks:
+                    if isinstance(chunk, RunResponse) and chunk.event == RunEvent.run_response:
+                        yield chunk.content
+    ```
+  </Step>
+
+  <Step>
+    ## Adicione funções wrapper síncronas
+
+    Adicione funções auxiliares para lidar com streaming assíncrono no Streamlit:
+
+    ```python
+    def run_agent_query_sync(message):
+        queue = Queue()
+        def run():
+            asyncio.run(_agent_stream_to_queue(message, queue))
+            queue.put(None)  # Sentinela para encerrar o stream
+        threading.Thread(target=run, daemon=True).start()
+        while True:
+            chunk = queue.get()
+            if chunk is None:
+                break
+            yield chunk
+
+    async def _agent_stream_to_queue(message, queue):
+        async for chunk in stream_clickhouse_agent(message):
+            queue.put(chunk)
+    ```
+  </Step>
+
+  <Step>
+    ## Crie a interface do Streamlit
+
+    Adicione os componentes da interface do Streamlit e a funcionalidade de chat:
+
+    ```python
+    st.title("A ClickHouse-backed AI agent")
+
+    if st.button("💬 New Chat"):
+      st.session_state.messages = []
+      st.rerun()
+
+    apply_styles()
+
+    if "messages" not in st.session_state:
+      st.session_state.messages = []
+
+    for message in st.session_state.messages:
+      with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+    if prompt := st.chat_input("What is up?"):
+      st.session_state.messages.append({"role": "user", "content": prompt})
+      with st.chat_message("user"):
+        st.markdown(prompt)
+      with st.chat_message("assistant"):
+        response = st.write_stream(run_agent_query_sync(prompt))
+      st.session_state.messages.append({"role": "assistant", "content": response})
+    ```
+  </Step>
+
+  <Step>
+    ## Inicie a aplicação
+
+    Para iniciar sua aplicação web do agente de IA do ClickHouse, execute o
+    seguinte comando no terminal:
+
+    ```bash
+    uv run \
+      --with streamlit \
+      --with agno \
+      --with anthropic \
+      --with mcp \
+      streamlit run app.py --server.headless true
+    ```
+
+    Isso abrirá seu navegador e levará você para `http://localhost:8501`, onde
+    você poderá interagir com seu agente de IA e fazer perguntas sobre os conjuntos de dados de exemplo
+    disponíveis no SQL playground do ClickHouse.
+  </Step>
+</Steps>

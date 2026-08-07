@@ -1,0 +1,53 @@
+---
+description: 'Позволяет выполнять запросы к данным, хранящимся в базе данных SQLite [SQLite](/reference/engines/database-engines/sqlite).'
+sidebarTitle: 'sqlite'
+slug: /sql-reference/table-functions/sqlite
+title: 'sqlite'
+doc_type: 'reference'
+---
+
+Позволяет выполнять запросы к данным, хранящимся в базе данных [SQLite](/ru/reference/engines/database-engines/sqlite).
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+sqlite('db_path', 'table_name')
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+* `db_path` — Путь к файлу базы данных SQLite. [String](/ru/reference/data-types/string).
+* `table_name` — Имя таблицы в базе данных SQLite. [String](/ru/reference/data-types/string).
+
+<div id="returned_value">
+  ## Возвращаемое значение
+</div>
+
+* Объект table с теми же столбцами, что и в исходной таблице `SQLite`.
+
+<div id="example">
+  ## Пример
+</div>
+
+```sql title="Query"
+SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
+```
+
+```text title="Response"
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+
+<div id="related">
+  ## См. также
+</div>
+
+* [SQLite](/ru/reference/engines/table-engines/integrations/sqlite) — движок таблицы
+* [Движок базы данных SQLite](/ru/reference/engines/database-engines/sqlite) — раздел о поддержке типов данных

@@ -1,0 +1,160 @@
+---
+slug: /cloud/managed-postgres/security
+sidebarTitle: 'セキュリティ'
+title: 'セキュリティ'
+description: 'IP アドレスの許可リスト設定、暗号化、プライベートリンクなど、ClickHouse Managed Postgres のセキュリティ機能'
+keywords: ['Postgres セキュリティ', 'IP アドレスの許可リスト設定', '暗号化', 'TLS', 'SSL', 'プライベートリンク', 'バックアップ保持期間']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
+
+Managed Postgres には、データを保護し、コンプライアンス要件を満たすためのエンタープライズレベルのセキュリティ機能が備わっています。このページでは、ネットワークセキュリティ、暗号化、バックアップ保持期間のポリシーについて説明します。
+
+<div id="ip-whitelisting">
+  ## IP アドレスの許可リスト設定
+</div>
+
+IP フィルタは、Managed Postgres インスタンスへの接続を許可する送信元 IP アドレスを制御し、未承認の接続からデータベースを保護するためのネットワークレベルのアクセス制御を提供します。
+
+<Image img="/images/managed-postgres/ip-filters.webp" alt="IP Access List の設定" size="md" border />
+
+<div id="configuring-ip-filters">
+  ### IP フィルタの設定
+</div>
+
+IP フィルタを設定するには、次の手順に従います。
+
+1. **設定** タブに移動します
+2. **IP フィルタ** の **Edit** をクリックします
+3. 接続を許可する IP アドレスまたは CIDR 範囲を追加します
+4. **Save** をクリックして変更を適用します
+
+次を指定できます。
+
+* 個別の IP アドレス (例: `203.0.113.5`)
+* ネットワークの CIDR 範囲 (例: `192.168.1.0/24`)
+* すべての IP アドレスを許可する **Anywhere** (本番環境では非推奨)
+* すべての接続をブロックする **Nowhere**
+
+<Warning>
+  **本番環境のベストプラクティス**
+
+  IP フィルタが設定されていない場合、すべての IP アドレスからの接続が許可されます。本番ワークロードでは、既知の IP アドレスまたは CIDR 範囲のみにアクセスを制限してください。アクセスを許可する対象として、以下を検討してください。
+
+  * アプリケーションサーバー
+  * VPN ゲートウェイの IP アドレス
+  * 管理アクセス用の踏み台サーバー
+  * 自動デプロイ用の CI/CD パイプラインの IP アドレス
+</Warning>
+
+<div id="encryption">
+  ## 暗号化
+</div>
+
+Managed Postgres では、包括的なデータ保護を実現するため、保存時と転送時の両方でデータが暗号化されます。
+
+<div id="encryption-at-rest">
+  ### 保存時の暗号化
+</div>
+
+Managed Postgres に保存されるすべてのデータは、基盤となるストレージインフラストラクチャへの不正アクセスから保護するため、保存時に暗号化されます。
+
+<div id="nvme-encryption">
+  #### NVMe ストレージの暗号化
+</div>
+
+NVMe ドライブに保存されるデータベースファイル、トランザクションログ、一時ファイルは、業界標準の暗号化アルゴリズムで暗号化されています。この暗号化はアプリケーションには透過的で、設定は不要です。
+
+<div id="s3-encryption">
+  #### オブジェクトストレージの暗号化 (S3)
+</div>
+
+オブジェクトストレージに保存されるバックアップと Write-Ahead Log (WAL) アーカイブも、保存時に暗号化されます。これには次のものが含まれます。
+
+* 日次のフルバックアップ
+* インクリメンタル WAL アーカイブ
+* ポイントインタイムリカバリ用データ
+
+すべてのバックアップデータは、各インスタンス専用の認証情報が設定された、専用かつ分離されたストレージバケットに保存されます。これにより、バックアップデータの安全性が確保され、許可されたシステムのみがアクセスできます。
+
+<Info>
+  保存時の暗号化は、すべての Managed Postgres インスタンスでデフォルトで有効になっており、無効にすることはできません。追加の設定は不要です。
+</Info>
+
+<div id="encryption-in-transit">
+  ### 通信中の暗号化
+</div>
+
+Managed Postgres へのすべてのネットワーク接続は、アプリケーションとデータベースの間で送受信されるデータを保護するため、TLS (Transport Layer Security) で保護されています。
+
+<div id="tls-ssl">
+  #### TLS/SSL の設定
+</div>
+
+デフォルトでは、接続に TLS 暗号化が使用されますが、証明書の検証は行われません。本番ワークロードでは、正しいサーバーと通信していることを確実にするため、証明書を検証した TLS で接続することを推奨します。
+
+TLS の設定と接続オプションの詳細については、[接続](/ja/products/managed-postgres/connection#tls) ページを参照してください。
+
+<div id="private-link">
+  ## プライベートリンク
+</div>
+
+プライベートリンクを使用すると、Managed Postgres インスタンスとお客様の Virtual Private Cloud (VPC) との間で、トラフィックをパブリックインターネットに公開することなく、プライベート接続を確立できます。これにより、ネットワーク分離とセキュリティがさらに強化されます。
+
+<Info>
+  **手動でのセットアップが必要です**
+
+  プライベートリンクはサポートされていますが、ClickHouse Support による手動設定が必要です。この機能は、厳格なネットワーク分離要件を持つ Enterprise のお客様に最適です。
+</Info>
+
+<div id="requesting-private-link">
+  ### プライベートリンクのセットアップをリクエストする
+</div>
+
+Managed Postgres インスタンスでプライベートリンクを有効にするには、次の手順に従ってください。
+
+1. **サポートチケットを作成して ClickHouse Support に連絡します**
+
+2. **次の情報を提供します**:
+   * ClickHouse の Organization ID
+   * Postgres service の ID/hostname
+   * プライベートリンクの接続先としたい AWS アカウント ID/ARN
+     * (任意) Postgres インスタンスの Region 以外で、接続元として使用したい Region
+
+3. **ClickHouse Support が次を実施します**:
+   * Managed Postgres 側でプライベートリンクの endpoint をプロビジョニングします
+   * endpoint の connection details を提供します。これを使用して endpoint インターフェイスを作成できます。
+
+4. **プライベートリンクを Setup します**:
+   * AWS の設定で endpoint インターフェイスに移動し、ClickHouse Support から提供された設定を使用してプライベートリンクを作成します。
+   * プライベートリンクが &quot;Available&quot; 状態になったら、AWS UI に表示される Private DNS 名を使用して接続できます。
+
+<div id="backup-retention">
+  ## バックアップ保持期間
+</div>
+
+Managed Postgres は、誤削除や破損、その他のデータ損失から保護するために、データを自動的にバックアップします。
+
+<div id="retention-policy">
+  ### 保持ポリシー
+</div>
+
+* **デフォルトの保持期間**: 7日間
+* **バックアップ頻度**: 毎日のフルバックアップ + 継続的なWALアーカイブ (60秒ごと、または16 MBに達した時点のいずれか早い方)
+* **復旧の粒度**: 保持期間内の任意の時点へのポイントインタイムリカバリ
+
+<div id="backup-security">
+  ### バックアップのセキュリティ
+</div>
+
+バックアップは、元データと同等のセキュリティ保証の下で保存されます。
+
+* オブジェクトストレージでの**保存時の暗号化**
+* 権限範囲が限定された認証情報を使用する、インスタンスごとに分離された**ストレージバケット**
+* バックアップに関連付けられた Postgres インスタンスのみに制限された**アクセス制御**
+
+バックアップ戦略とポイントインタイム リカバリの詳細については、[バックアップと復元](/ja/products/managed-postgres/backup-and-restore) ページを参照してください。

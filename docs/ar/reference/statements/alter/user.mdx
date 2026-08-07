@@ -1,0 +1,119 @@
+---
+description: 'وثائق USER'
+sidebarTitle: 'USER'
+slug: /sql-reference/statements/alter/user
+title: 'ALTER USER'
+doc_type: 'مرجع'
+---
+
+يُعدِّل حسابات مستخدمي ClickHouse.
+
+الصيغة:
+
+```sql
+ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]] 
+    [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime]
+    [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
+    [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [DROP ALL PROFILES]
+    [DROP ALL SETTINGS]
+    [DROP SETTINGS variable [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
+```
+
+لاستخدام `ALTER USER`، يجب أن يكون لديك امتياز [ALTER USER](/ar/reference/statements/grant#access-management).
+
+<div id="grantees-clause">
+  ## عبارة GRANTEES
+</div>
+
+تحدّد المستخدمين أو الأدوار المسموح لها بتلقّي [الامتيازات](/ar/reference/statements/grant#privileges) من هذا المستخدم، بشرط أن يكون هذا المستخدم قد مُنِح أيضًا جميع صلاحيات الوصول المطلوبة مع [GRANT OPTION](/ar/reference/statements/grant#granting-privilege-syntax). خيارات عبارة `GRANTEES`:
+
+* `user` — يحدّد مستخدمًا يمكن لهذا المستخدم منح الامتيازات إليه.
+* `role` — يحدّد دورًا يمكن لهذا المستخدم منح الامتيازات إليه.
+* `ANY` — يمكن لهذا المستخدم منح الامتيازات لأي شخص. وهذا هو إعداد default.
+* `NONE` — لا يمكن لهذا المستخدم منح الامتيازات إلى أي شخص.
+
+يمكنك استثناء أي مستخدم أو دور باستخدام تعبير `EXCEPT`. على سبيل المثال، `ALTER USER user1 GRANTEES ANY EXCEPT user2`. وهذا يعني أنه إذا كانت لدى `user1` بعض الامتيازات الممنوحة باستخدام `GRANT OPTION`، فسيتمكّن من منح تلك الامتيازات لأي شخص باستثناء `user2`.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+اجعل الأدوار المُسنَدة default:
+
+```sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+إذا لم تكن قد أُسنِدت أي أدوار إلى المستخدم مسبقًا، فإن ClickHouse يُصدر استثناءً.
+
+عيّن جميع الأدوار المُسندة إلى default:
+
+```sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+إذا عُيِّن دورٌ لمستخدم لاحقًا، فسيصبح دور default تلقائيًا.
+
+عيّن جميع الأدوار المعيّنة كأدوار default، باستثناء `role1` و`role2`:
+
+```sql
+ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+يتيح للمستخدم صاحب الحساب `john` منح امتيازاته للمستخدم صاحب الحساب `jack`:
+
+```sql
+ALTER USER john GRANTEES jack;
+```
+
+يضيف للمستخدم طرق المصادقة جديدة مع الإبقاء على الطرق الحالية:
+
+```sql
+ALTER USER user1 ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+```
+
+ملاحظات:
+
+1. قد لا تدعم الإصدارات الأقدم من ClickHouse صيغة استخدام عدة طرق للمصادقة. لذلك، إذا كان خادم ClickHouse يتضمن مستخدمين من هذا النوع ثم جرى الرجوع به إلى إصدار لا يدعم ذلك، فسيصبح هؤلاء المستخدمون غير قابلين للاستخدام وستتعطل بعض العمليات المرتبطة بالمستخدمين. ولتنفيذ الرجوع إلى إصدار أقدم بسلاسة، يجب ضبط جميع المستخدمين بحيث تكون لكل مستخدم طريقة المصادقة واحدة فقط قبل الرجوع إلى إصدار أقدم. بدلاً من ذلك، إذا جرى الرجوع بالخادم إلى إصدار أقدم من دون اتباع الإجراء الصحيح، فيجب حذف المستخدمين المتأثرين.
+2. لا يمكن أن يتعايش `no_password` مع طرق المصادقة الأخرى لأسباب أمنية.
+   لذلك، لا يمكن `ADD` لطريقة المصادقة `no_password`. سيؤدي الاستعلام أدناه إلى حدوث خطأ:
+
+```sql
+ALTER USER user1 ADD IDENTIFIED WITH no_password
+```
+
+إذا كنت تريد حذف طرق المصادقة لمستخدم والاعتماد على `no_password`، فيجب عليك استخدام صيغة الاستبدال أدناه.
+
+تُعيد تعيين طرق المصادقة وتضيف الطرق المحددة في الاستعلام (وهو تأثير وجود IDENTIFIED في البداية من دون الكلمة المفتاحية ADD):
+
+```sql
+ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+```
+
+أعِد تعيين طرق المصادقة واحتفظ بأحدث طريقة أُضيفت:
+
+```sql
+ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
+```
+
+<div id="valid-until-clause">
+  ## عبارة VALID UNTIL
+</div>
+
+تتيح لك تحديد تاريخ انتهاء الصلاحية، ووقت الانتهاء اختياريًا، لطريقة مصادقة. وتقبل سلسلة نصية كمعلَمة. يُنصح باستخدام التنسيق `YYYY-MM-DD [hh:mm:ss] [timezone]` لقيم التاريخ والوقت. افتراضيًا، تساوي هذه المعلَمة `'infinity'`.
+لا يمكن تحديد عبارة `VALID UNTIL` إلا مع طريقة مصادقة، باستثناء الحالة التي لا تكون فيها أي طريقة مصادقة محددة في الاستعلام. في هذه الحالة، ستُطبَّق عبارة `VALID UNTIL` على جميع طرق المصادقة الموجودة.
+
+أمثلة:
+
+* `ALTER USER name1 VALID UNTIL '2025-01-01'`
+* `ALTER USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
+* `ALTER USER name1 VALID UNTIL 'infinity'`
+* `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL'2025-01-01''`

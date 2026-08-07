@@ -1,0 +1,191 @@
+---
+description: '座標に関するドキュメント'
+sidebarTitle: '地理座標'
+slug: /sql-reference/functions/geo/coordinates
+title: '地理座標を扱う関数'
+doc_type: 'reference'
+---
+
+<div id="greatcircledistance">
+  ## greatCircleDistance
+</div>
+
+[大円距離の公式](https://en.wikipedia.org/wiki/Great-circle_distance)を用いて、地球表面上の2点間の距離を計算します。
+
+```sql
+greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**入力パラメータ**
+
+* `lon1Deg` — 1 点目の経度 (度単位) 。範囲: `[-180°, 180°]`。
+* `lat1Deg` — 1 点目の緯度 (度単位) 。範囲: `[-90°, 90°]`。
+* `lon2Deg` — 2 点目の経度 (度単位) 。範囲: `[-180°, 180°]`。
+* `lat2Deg` — 2 点目の緯度 (度単位) 。範囲: `[-90°, 90°]`。
+
+正の値は北緯および東経、負の値は南緯および西経に対応します。
+
+**戻り値**
+
+地表上の 2 点間の距離 (メートル単位) 。
+
+入力パラメータの値が範囲外の場合は、例外が生成されます。
+
+**例**
+
+```sql
+SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance
+```
+
+```text
+┌─greatCircleDistance─┐
+│            14128352 │
+└─────────────────────┘
+```
+
+<div id="geodistance">
+  ## geoDistance
+</div>
+
+`greatCircleDistance` と似ていますが、球面ではなく WGS-84 楕円体上での距離を計算します。これは地球のジオイドをより正確に近似するものです。
+パフォーマンスは `greatCircleDistance` と同等で、性能上のデメリットはありません。地球上の距離を計算する場合は、`geoDistance` の使用を推奨します。
+
+技術的な注記: 十分に近い点どうしについては、座標の中点における接平面上の計量を用いた平面近似によって距離を計算します。
+
+```sql
+geoDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**入力パラメータ**
+
+* `lon1Deg` — 1 番目の地点の経度 (度) 。範囲: `[-180°, 180°]`。
+* `lat1Deg` — 1 番目の地点の緯度 (度) 。範囲: `[-90°, 90°]`。
+* `lon2Deg` — 2 番目の地点の経度 (度) 。範囲: `[-180°, 180°]`。
+* `lat2Deg` — 2 番目の地点の緯度 (度) 。範囲: `[-90°, 90°]`。
+
+正の値は北緯および東経、負の値は南緯および西経に対応します。
+
+**戻り値**
+
+地球表面上の 2 地点間の距離 (メートル単位) 。
+
+入力パラメータの値が範囲外の場合、例外が発生します。
+
+**例**
+
+```sql
+SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
+```
+
+```text
+┌─geoDistance─┐
+│   212458.73 │
+└─────────────┘
+```
+
+<div id="greatcircleangle">
+  ## greatCircleAngle
+</div>
+
+[大円距離の公式](https://en.wikipedia.org/wiki/Great-circle_distance)を用いて、地球表面上の2点間の中心角を計算します。
+
+```sql
+greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**入力パラメータ**
+
+* `lon1Deg` — 1 番目の点の経度 (度) 。
+* `lat1Deg` — 1 番目の点の緯度 (度) 。
+* `lon2Deg` — 2 番目の点の経度 (度) 。
+* `lat2Deg` — 2 番目の点の緯度 (度) 。
+
+**戻り値**
+
+2 点間の中心角 (度) 。
+
+**例**
+
+```sql
+SELECT greatCircleAngle(0, 0, 45, 0) AS arc
+```
+
+```text
+┌─arc─┐
+│  45 │
+└─────┘
+```
+
+<div id="pointinellipses">
+  ## pointInEllipses
+</div>
+
+点が少なくとも1つの楕円内にあるかどうかを判定します。
+座標はデカルト座標系の幾何座標です。
+
+```sql
+pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
+```
+
+**入力パラメータ**
+
+* `x, y` — 平面上の点の座標。
+* `xᵢ, yᵢ` — `i` 番目の楕円の中心の座標。
+* `aᵢ, bᵢ` — `i` 番目の楕円の軸を x, y 座標の単位で表したもの。
+
+入力パラメータの数は `2+4⋅n` でなければなりません。ここで、`n` は楕円の数です。
+
+**戻り値**
+
+点が少なくとも 1 つの楕円の内側にある場合は `1`、そうでない場合は `0`。
+
+**例**
+
+```sql
+SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
+```
+
+```text
+┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
+│                                               1 │
+└─────────────────────────────────────────────────┘
+```
+
+<div id="pointinpolygon">
+  ## pointInPolygon
+</div>
+
+平面上で、その点がポリゴン内にあるかどうかを判定します。
+
+```sql
+pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
+```
+
+**入力値**
+
+* `(x, y)` — 平面上の点の座標。データ型 — [Tuple](/ja/reference/data-types/tuple) — 2 つの数値からなるタプル。
+* `[(a, b), (c, d) ...]` — Polygon の頂点。データ型 — [Array](/ja/reference/data-types/array)。各頂点は座標の組 `(a, b)` で表されます。頂点は時計回りまたは反時計回りの順序で指定する必要があります。頂点の最小数は 3 です。Polygon は定数である必要があります。
+* この関数は穴 (切り抜き部分) のある Polygon もサポートします。データ型 — [Polygon](/ja/reference/data-types/geo#polygon)。`Polygon` 全体を第 2 引数として渡すか、外側のリングを最初に渡し、その後に各穴を個別の追加引数として渡します。
+* この関数は MultiPolygon もサポートします。データ型 — [MultiPolygon](/ja/reference/data-types/geo#multipolygon)。`MultiPolygon` 全体を第 2 引数として渡すか、各構成 Polygon をそれぞれ個別の引数として列挙します。
+
+**戻り値**
+
+点が Polygon の内側にある場合は `1`、そうでない場合は `0` を返します。
+点が Polygon の境界上にある場合、この関数は `0` または `1` のいずれかを返すことがあります。
+
+**例**
+
+```sql
+SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
+```
+
+```text
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+> **注**
+> • ジオメトリの検証をスキップするには、`validate_polygons = 0` を設定できます。
+> • `pointInPolygon` は、すべてのポリゴンが正しい形式であることを前提としています。入力が自己交差している、リングの順序が誤っている、または辺同士が重なっている場合、結果は信頼できなくなります。特に、点が辺上や頂点上にちょうどある場合や、&quot;内側&quot; と &quot;外側&quot; の区別が定義できない自己交差部分の内部にある場合は、その傾向が顕著です。
+> • ポリゴン引数が定数で、点が索引付きのキーカラムで表されている場合 (たとえば、`x, y` が `PRIMARY KEY` の一部である、または `minmax` 索引でカバーされているテーブル上の `pointInPolygon((x, y), constant_polygon)` など) 、ClickHouse は主キーと `minmax` のデータスキップ索引の両方を使って、無関係なグラニュールを刈り込むことができます。

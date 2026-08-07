@@ -1,0 +1,63 @@
+---
+date: 2025-11-11
+title: 지원용 HAR 파일 생성 방법
+tags: ['도구 및 유틸리티']
+keywords: ['HAR 파일', 'HTTP Archive']
+description: 'HAR(HTTP Archive) 파일은 브라우저의 네트워크 활동을 기록합니다. 이 파일은 지원 팀이 페이지 로드 지연, 요청 실패 또는 기타 네트워크 문제를 진단하는 데 도움이 될 수 있습니다.'
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="from-google-chrome">
+  ## Google Chrome에서
+</div>
+
+1. <kbd>F12</kbd> 또는 <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd>(Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd>(Mac)를 눌러 개발자 도구를 여세요.
+2. &quot;Network&quot; 탭을 클릭하세요.
+3. 페이지를 새로고침한 다음 문제를 재현하세요.
+4. 개발자 도구에서 다운로드 버튼을 클릭하세요.
+
+<div id="from-mozilla-firefox">
+  ## Mozilla Firefox에서
+</div>
+
+1. <kbd>F12</kbd>를 누르거나 <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd>(Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>E</kbd>(Mac)를 눌러 개발자 도구를 여십시오.
+2. &quot;Network&quot; 탭을 클릭하십시오.
+3. 페이지를 새로 고친 후 문제를 다시 재현하십시오.
+4. 개발자 도구의 요청 목록에서 마우스 오른쪽 버튼을 클릭한 다음 &quot;Save All As HAR&quot;를 선택하십시오.
+
+<div id="from-microsoft-edge">
+  ## Microsoft Edge에서
+</div>
+
+1. <kbd>F12</kbd> 또는 <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd>(Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd>(Mac)를 눌러 개발자 도구를 여세요.
+2. &quot;Network&quot; 탭을 클릭하세요.
+3. 페이지를 새로고침한 후 문제를 재현하세요.
+4. 개발자 도구의 네트워크 목록에서 마우스 오른쪽 버튼을 클릭한 다음 &quot;Save all as HAR with content&quot;를 선택하세요.
+
+<div id="from-safari">
+  ## Safari에서
+</div>
+
+1. 개발자 도구가 아직 활성화되지 않았다면 활성화하세요.
+   * Safari &gt; Settings &gt; Advanced로 이동하세요.
+   * 하단의 &quot;Show Develop menu in menu bar&quot;를 체크하세요.
+2. Develop &gt; Show Web Inspector를 클릭하세요.
+3. &quot;Network&quot; 탭을 클릭하세요.
+4. 페이지를 새로고침한 후 문제를 재현하세요.
+5. 개발자 도구에서 &quot;Export&quot; 버튼을 클릭하세요.
+
+<div id="sending-har-file">
+  ## .HAR 파일 전송하기
+</div>
+
+1. 파일 이름을 짧고 알아보기 쉽게 변경하세요(예: login-issue.har).
+2. 파일을 압축하세요(선택 사항이지만 권장합니다).
+3. 지원 케이스에 첨부하거나 배정된 지원 담당자에게 이메일로 보내세요.
+
+<Note>
+  HAR 파일에는 session 쿠키 또는 기타 민감한 데이터가 포함될 수 있습니다.
+  권한이 있는 지원 담당자에게만 공유하세요.
+</Note>

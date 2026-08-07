@@ -1,0 +1,425 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-v1
+title: 'Helm (v1.x)'
+description: 'v1.x 인라인 템플릿 Helm 차트를 사용한 ClickStack 배포'
+doc_type: 'guide'
+keywords: ['ClickStack Helm 차트', 'Helm을 사용한 ClickHouse 배포', 'HyperDX Helm 설치', 'Kubernetes 관측성 스택', 'ClickStack Kubernetes 배포']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import JSONSupport from '/snippets/ko/_json_support.mdx';
+
+<Warning>
+  **지원 중단 — v1.x chart**
+
+  이 페이지는 유지보수 모드인 **v1.x** 인라인 템플릿 Helm 차트를 설명합니다. 이 차트에는 더 이상 새 기능이 추가되지 않습니다. 새 배포에는 [v2.x chart](/ko/clickstack/deployment/helm)를 사용하십시오. 기존 v1.x 배포를 마이그레이션하려면 [Upgrade guide](/ko/clickstack/deployment/helm-upgrade)를 참조하십시오.
+</Warning>
+
+ClickStack용 helm 차트는 [여기](https://github.com/ClickHouse/ClickStack-helm-charts)에서 확인할 수 있으며, 운영 환경 배포에 **권장되는** 방식입니다.
+
+기본적으로 Helm 차트는 다음을 포함한 모든 핵심 구성 요소를 프로비저닝합니다.
+
+* **ClickHouse**
+* **HyperDX**
+* **OpenTelemetry (OTel) collector**
+* **MongoDB** (애플리케이션 상태를 영구적으로 저장하기 위해)
+
+하지만 기존 ClickHouse 배포와 통합하도록 손쉽게 사용자 지정할 수 있습니다. 예를 들어 **ClickHouse Cloud**에서 호스팅되는 배포와 연동할 수 있습니다.
+
+이 차트는 다음과 같은 Kubernetes 모범 사례를 지원합니다.
+
+* `values.yaml`을 통한 환경별 구성
+* 리소스 제한 및 파드 수준 스케일링
+* TLS 및 인그레스 구성
+* 시크릿 관리 및 인증 설정
+
+<div id="suitable-for">
+  ### 적합한 사용 사례
+</div>
+
+* 개념 검증
+* 프로덕션 환경
+
+<div id="deployment-steps">
+  ## 배포 단계
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### 사전 요구 사항
+
+    * [Helm](https://helm.sh/) v3+
+    * Kubernetes 클러스터(v1.20+ 권장)
+    * 클러스터와 상호 작용하도록 구성된 `kubectl`
+  </Step>
+
+  <Step>
+    ### ClickStack Helm 리포지토리 추가
+
+    ClickStack Helm 리포지토리를 추가하세요:
+
+    ```shell
+    helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
+    helm repo update
+    ```
+  </Step>
+
+  <Step>
+    ### ClickStack 설치
+
+    기본 values를 사용해 ClickStack 차트를 설치하려면:
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack
+    ```
+  </Step>
+
+  <Step>
+    ### 설치 확인
+
+    설치가 올바르게 완료되었는지 확인합니다:
+
+    ```shell
+    kubectl get pods -l "app.kubernetes.io/name=clickstack"
+    ```
+
+    모든 파드가 준비되면 다음 단계로 진행하세요.
+  </Step>
+
+  <Step>
+    ### 포트 포워딩
+
+    포트 포워딩을 사용하면 HyperDX에 접속하여 설정할 수 있습니다. 프로덕션 환경에 배포하는 경우에는 적절한 네트워크 접근, TLS 종료, 확장성을 보장할 수 있도록 대신 인그레스 또는 로드 밸런서를 통해 서비스를 외부에 노출해야 합니다. 포트 포워딩은 로컬 개발이나 일회성 관리 작업에 가장 적합하며, 장기 운영 환경이나 고가용성 환경에는 적합하지 않습니다.
+
+    ```shell
+    kubectl port-forward \
+      pod/$(kubectl get pod -l app.kubernetes.io/name=clickstack -o jsonpath='{.items[0].metadata.name}') \
+      8080:3000
+    ```
+
+    <Tip>
+      **프로덕션 인그레스 설정**
+
+      프로덕션 배포에서는 포트 포워딩 대신 TLS를 사용해 인그레스를 구성하십시오. 자세한 설정 지침은 [인그레스 구성 가이드](/ko/clickstack/deployment/helm-configuration-v1#ingress-setup)를 참조하십시오.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### UI로 이동
+
+    HyperDX UI에 접속하려면 [http://localhost:8080](http://localhost:8080)으로 이동하십시오.
+
+    요구 사항을 충족하는 사용자 이름과 비밀번호를 입력하여 사용자를 생성하십시오.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    `Create`를 클릭하면 Helm 차트로 배포된 ClickHouse 인스턴스용 데이터 소스가 생성됩니다.
+
+    <Info>
+      **기본 연결 재정의**
+
+      통합된 ClickHouse 인스턴스의 기본 연결을 재정의할 수 있습니다. 자세한 내용은 [&quot;ClickHouse Cloud 사용&quot;](#using-clickhouse-cloud)을 참조하십시오.
+    </Info>
+  </Step>
+
+  <Step>
+    ### values 사용자 지정(선택 사항)
+
+    `--set` 플래그를 사용해 설정을 사용자 지정할 수 있습니다. 예를 들면 다음과 같습니다:
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack --set key=value
+    ```
+
+    또는 `values.yaml`을 편집하세요. 기본값을 가져오려면 다음과 같이 하십시오:
+
+    ```shell
+    helm show values clickstack/clickstack > values.yaml
+    ```
+
+    구성 예시:
+
+    ```yaml
+    replicaCount: 2
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+    ingress:
+      enabled: true
+      annotations:
+        kubernetes.io/ingress.class: nginx
+      hosts:
+        - host: hyperdx.example.com
+          paths:
+            - path: /
+              pathType: ImplementationSpecific
+    ```
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack -f values.yaml
+    ```
+  </Step>
+
+  <Step>
+    ### 시크릿 사용(선택 사항)
+
+    API Key 또는 데이터베이스 자격 증명과 같은 민감한 데이터를 처리하려면 Kubernetes 시크릿을 사용하세요. HyperDX Helm 차트에는 수정한 뒤 클러스터에 적용할 수 있는 기본 시크릿 파일이 포함되어 있습니다.
+
+    #### 미리 구성된 시크릿 사용
+
+    Helm 차트에는 [`charts/clickstack/templates/secrets.yaml`](https://github.com/ClickHouse/ClickStack-helm-charts/blob/main/charts/clickstack/templates/secrets.yaml)에 있는 기본 시크릿 템플릿이 포함되어 있습니다. 이 파일은 시크릿 관리를 위한 기본 구조를 제공합니다.
+
+    시크릿을 수동으로 적용해야 하는 경우, 제공된 `secrets.yaml` 템플릿을 수정한 뒤 적용하세요:
+
+    ```yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: hyperdx-secret
+      annotations:
+        "helm.sh/resource-policy": keep
+    type: Opaque
+    data:
+      API_KEY: <base64-encoded-api-key>
+    ```
+
+    클러스터에 시크릿을 적용하세요:
+
+    ```shell
+    kubectl apply -f secrets.yaml
+    ```
+
+    #### 사용자 지정 시크릿 생성
+
+    원하면 사용자 지정 Kubernetes 시크릿을 수동으로 직접 생성할 수 있습니다.
+
+    ```shell
+    kubectl create secret generic hyperdx-secret \
+      --from-literal=API_KEY=my-secret-api-key
+    ```
+
+    #### 시크릿 참조
+
+    `values.yaml`에서 시크릿을 참조하려면 다음과 같이 하십시오:
+
+    ```yaml
+    hyperdx:
+      apiKey:
+        valueFrom:
+          secretKeyRef:
+            name: hyperdx-secret
+            key: API_KEY
+    ```
+
+    <Tip>
+      **API Key 관리**
+
+      여러 구성 방법과 파드 재시작 절차를 포함한 API Key 설정에 대한 자세한 내용은 [API Key 설정 가이드](/ko/clickstack/deployment/helm-configuration-v1#api-key-setup)를 참조하십시오.
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="using-clickhouse-cloud">
+  ## ClickHouse Cloud 사용
+</div>
+
+ClickHouse Cloud를 사용하는 경우 Helm 차트로 배포한 ClickHouse 인스턴스를 비활성화하고 Cloud 자격 증명을 지정합니다:
+
+```shell
+# ClickHouse Cloud 자격 증명 지정
+export CLICKHOUSE_URL=<CLICKHOUSE_CLOUD_URL> # 전체 https URL
+export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+
+# 기본 connection을 덮어쓰는 방법
+helm install my-clickstack clickstack/clickstack \
+  --set clickhouse.enabled=false \
+  --set clickhouse.persistence.enabled=false \
+  --set otel.clickhouseEndpoint=${CLICKHOUSE_URL} \
+  --set clickhouse.config.users.otelUser=${CLICKHOUSE_USER} \
+  --set clickhouse.config.users.otelUserPassword=${CLICKHOUSE_PASSWORD}
+```
+
+또는 `values.yaml` 파일을 사용할 수도 있습니다:
+
+```yaml
+clickhouse:
+  enabled: false
+  persistence:
+    enabled: false
+  config:
+    users:
+      otelUser: ${CLICKHOUSE_USER}
+      otelUserPassword: ${CLICKHOUSE_PASSWORD}
+
+otel:
+  clickhouseEndpoint: ${CLICKHOUSE_URL}
+
+hyperdx:
+  defaultConnections: |
+    [
+      {
+        "name": "External ClickHouse",
+        "host": "http://your-clickhouse-server:8123",
+        "port": 8123,
+        "username": "your-username",
+        "password": "your-password"
+      }
+    ]
+```
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values.yaml
+# 또는 이미 설치되어 있는 경우...
+# helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<Tip>
+  **고급 외부 구성**
+
+  운영 환경에서 시크릿 기반 구성을 사용하거나, 외부 OTel collector를 사용하거나, 최소 구성으로 배포하는 경우 [배포 옵션 가이드](/ko/clickstack/deployment/helm-deployment-options-v1)를 참조하세요.
+</Tip>
+
+<div id="production-notes">
+  ## 프로덕션 참고 사항
+</div>
+
+기본적으로 이 차트는 ClickHouse와 OTel collector도 함께 설치합니다. 그러나 프로덕션 환경에서는 ClickHouse와 OTel collector를 별도로 관리하는 것이 좋습니다.
+
+ClickHouse와 OTel collector를 비활성화하려면 다음 values를 설정하십시오:
+
+```shell
+helm install my-clickstack clickstack/clickstack \
+  --set clickhouse.enabled=false \
+  --set clickhouse.persistence.enabled=false \
+  --set otel.enabled=false
+```
+
+<Tip>
+  **프로덕션 모범 사례**
+
+  고가용성 구성, 리소스 관리, 인그레스/TLS 설정, 클라우드별 구성(GKE, EKS, AKS)을 포함한 프로덕션 배포에 관한 내용은 다음을 참조하십시오:
+
+  * [구성 가이드](/ko/clickstack/deployment/helm-configuration-v1) - 인그레스, TLS 및 시크릿 관리
+  * [Cloud 배포](/ko/clickstack/deployment/helm-cloud-v1) - Cloud별 설정 및 프로덕션 체크리스트
+</Tip>
+
+<div id="task-configuration">
+  ## 작업 구성
+</div>
+
+기본적으로 차트 설정에는 크론 작업으로 1개의 작업이 포함되어 있으며, 알림을 보내야 하는지 확인하는 역할을 합니다. 다음은 해당 구성 옵션입니다.
+
+| 매개변수                          | 설명                                                                                                           | 기본값              |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------- |
+| `tasks.enabled`               | 클러스터에서 크론 작업을 활성화/비활성화합니다. 기본적으로 HyperDX 이미지가 프로세스 내에서 크론 작업을 실행합니다. 클러스터에서 별도의 크론 작업을 사용하려면 `true`로 변경하십시오. | `false`          |
+| `tasks.checkAlerts.schedule`  | check-alerts 작업의 크론 일정                                                                                       | `*/1 * * * *`    |
+| `tasks.checkAlerts.resources` | check-alerts 작업의 리소스 요청 및 제한                                                                                 | `values.yaml` 참조 |
+
+<div id="upgrading-the-chart">
+  ## 차트 업그레이드
+</div>
+
+새 버전으로 업그레이드하려면:
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+사용 가능한 차트 버전을 확인하려면:
+
+```shell
+helm search repo clickstack
+```
+
+<Info>
+  **v2.x로 업그레이드**
+
+  v2.x 서브차트 기반 차트로 마이그레이션하려면 [업그레이드 가이드](/ko/clickstack/deployment/helm-upgrade)의 마이그레이션 지침을 참조하십시오. 이는 호환성이 깨지는 변경 사항이므로 `helm upgrade`를 현재 설치에 바로 적용하는 방식은 지원되지 않습니다.
+</Info>
+
+<div id="uninstalling-clickstack">
+  ## ClickStack 제거
+</div>
+
+배포를 삭제하려면:
+
+```shell
+helm uninstall my-clickstack
+```
+
+이렇게 하면 릴리스와 관련된 모든 리소스가 제거되지만, 영구 데이터가 있는 경우 남아 있을 수 있습니다.
+
+<div id="troubleshooting">
+  ## 문제 해결
+</div>
+
+<div id="checking-logs">
+  ### 로그 확인
+</div>
+
+```shell
+kubectl logs -l app.kubernetes.io/name=clickstack
+```
+
+<div id="debugging-a-failed-install">
+  ### 설치 실패 디버깅
+</div>
+
+```shell
+helm install my-clickstack clickstack/clickstack --debug --dry-run
+```
+
+<div id="verifying-deployment">
+  ### 배포 확인
+</div>
+
+```shell
+kubectl get pods -l app.kubernetes.io/name=clickstack
+```
+
+<Tip>
+  **추가 문제 해결 자료**
+
+  인그레스 관련 문제, TLS 문제 또는 Cloud 배포 문제를 해결하려면 다음을 참조하십시오.
+
+  * [인그레스 문제 해결](/ko/clickstack/deployment/helm-configuration-v1#troubleshooting-ingress) - 에셋 제공, 경로 재작성, 브라우저 관련 문제
+  * [Cloud 배포](/ko/clickstack/deployment/helm-cloud-v1#loadbalancer-dns-resolution-issue) - GKE OpAMP 문제 및 Cloud 환경별 문제
+</Tip>
+
+<JSONSupport />
+
+<div id="related-documentation">
+  ## 관련 문서
+</div>
+
+<div id="deployment-guides">
+  ### v1.x 배포 가이드
+</div>
+
+* [배포 옵션 (v1.x)](/ko/clickstack/deployment/helm-deployment-options-v1) - 외부 ClickHouse, OTel collector 및 최소 배포
+* [구성 가이드 (v1.x)](/ko/clickstack/deployment/helm-configuration-v1) - API Key, 시크릿 및 인그레스 설정
+* [Cloud 배포 (v1.x)](/ko/clickstack/deployment/helm-cloud-v1) - GKE, EKS, AKS 구성 및 프로덕션 모범 사례
+
+<div id="v2x-documentation">
+  ### v2.x 문서
+</div>
+
+* [Helm (v2.x)](/ko/clickstack/deployment/helm) - v2.x 배포 가이드
+* [업그레이드 가이드](/ko/clickstack/deployment/helm-upgrade) - v1.x에서 v2.x로 업그레이드하기
+
+<div id="additional-resources">
+  ### 추가 자료
+</div>
+
+* [ClickStack 시작하기 가이드](/ko/clickstack/getting-started/index) - ClickStack 소개
+* [ClickStack Helm 차트 리포지토리](https://github.com/ClickHouse/ClickStack-helm-charts) - 차트 소스 코드 및 values 참고 자료
+* [Kubernetes 문서](https://kubernetes.io/docs/) - Kubernetes 참고 자료
+* [Helm 문서](https://helm.sh/docs/) - Helm 참고 자료

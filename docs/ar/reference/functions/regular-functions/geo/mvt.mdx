@@ -1,0 +1,346 @@
+---
+description: 'وثائق ترميز Mapbox Vector Tiles'
+sidebarTitle: 'Mapbox Vector Tiles'
+slug: /sql-reference/functions/geo/mvt
+title: 'دوال ترميز Mapbox Vector Tiles'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+تُعد [Mapbox Vector Tiles](https://github.com/mapbox/vector-tile-spec) ‏(MVT) بلاطات مشفّرة بصيغة Protobuf تعرضها
+تطبيقات خرائط الويب مثل MapLibre وMapbox GL مباشرةً. ويمكن لـ ClickHouse إنشاء هذه البلاطات بالكامل باستخدام SQL عبر دالتين
+تعملان معاً:
+
+* `MVTEncodeGeom` — دالة قياسية تُسقِط شكلاً هندسياً إلى فضاء البكسلات المحلي للبلاطة ضمن slippy-map وتقصّه
+  إلى حدود البلاطة.
+* `MVTEncode` — دالة تجميعية تجمع الأشكال الهندسية المُسقطة لمجموعة ما في بايتات ثنائية
+  لبلاطة أحادية الطبقة.
+
+تعيد دالتا المساعدة `MVTBoundingBox` و`MVTBoundingBoxMercator` المربع المحيط للبلاطة، بحيث يمكن
+تقييد الصفوف به في عبارة `WHERE` باستخدام فهرس.
+
+تدعم هذه الدوال الأشكال الهندسية النقطية والخطية ومتعددة الأضلاع، بما في ذلك النوع `Geometry` والأنواع الجغرافية المحددة (`Point`,
+`LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
+
+تمثل البايتات الناتجة بلاطة كاملة يمكن إرجاعه مباشرةً عبر واجهة HTTP باستخدام `FORMAT RawBLOB`.
+
+تحاكي هذه الدوال سير العمل في PostGIS، وهي متاحة أيضاً تحت أسماء PostGIS الخاصة بها كأسماء مستعارة: `ST_AsMVTGeom`
+لـ `MVTEncodeGeom` و`ST_AsMVT` لـ `MVTEncode`.
+
+<div id="mvtencodegeom">
+  ## MVTEncodeGeom
+</div>
+
+يحوِّل شكلاً هندسياً مُعطىً بالإحداثيات الجغرافية (خط الطول/دائرة العرض) إلى فضاء البكسلات المحلي للبلاطة في
+بلاطة `slippy-map` المحددة بواسطة `zoom` و`tile_x` و`tile_y`، ثم يقصّه إلى حدود البلاطة، ويطابقه مع شبكة
+البكسلات الصحيحة، ويُرجع الشكل الهندسي في `tile-space`.
+
+يكون الإسقاط وفق Web Mercator على كامل نطاق الإحداثيات `UInt32`. وتكون الإحداثيات المُعادة ذات أصل عند
+الزاوية العلوية اليسرى للبلاطة مع اتجاه المحور y إلى الأسفل، وهو اصطلاح الإحداثيات المستخدم في تنسيق Mapbox Vector
+Tile، لذلك يمكن تمرير النتيجة مباشرةً إلى `MVTEncode`. وتُقرَّب الإحداثيات إلى بكسلات كاملة، لذا فإن التجميع حسب
+`MVTEncodeGeom` يدمج الأشكال الهندسية الواقعة على الشبكة نفسها في عنقود واحد.
+
+عندما يكون `clip` مفعّلاً (وهو الإعداد الافتراضي)، يُقصّ الشكل الهندسي إلى البلاطة الموسَّعة بمقدار `buffer` من البكسلات (النطاق
+`[-buffer, extent + buffer]` على كل محور)؛ أما الشكل الهندسي الذي يقع بالكامل خارجها فيصبح `NULL`. وهذا هو النظير لـ
+PostGIS `ST_AsMVTGeom`.
+
+يعتمد نوع الشكل الهندسي الناتج على المُدخل: إذ يُرجع `Point` قيمة `Point`؛ ويُرجع `LineString` أو `MultiLineString`
+قيمة `MultiLineString`؛ وتُرجع `Ring` أو `Polygon` أو `MultiPolygon` قيمة `MultiPolygon` (إذ قد يؤدي القص إلى تقسيم الشكل الهندسي إلى
+عدة أجزاء).
+
+**الصيغة**
+
+```sql
+MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
+```
+
+**الوسيطات**
+
+* `geometry` — كائن هندسي بإحداثيات درجات الطول/العرض. يُقيَّد خط الطول إلى `[-180, 180]` وخط العرض إلى نطاق Web Mercator `[-85.05112878, 85.05112878]`. [`Point`](/ar/reference/data-types/geo) / [`LineString`](/ar/reference/data-types/geo) / [`MultiLineString`](/ar/reference/data-types/geo) / [`Ring`](/ar/reference/data-types/geo) / [`Polygon`](/ar/reference/data-types/geo) / [`MultiPolygon`](/ar/reference/data-types/geo) / [`Geometry`](/ar/reference/data-types/geo).
+* `zoom` — مستوى التكبير في slippy-map، ضمن النطاق `[0, 32]`. [`UInt8`](/ar/reference/data-types/int-uint).
+* `tile_x` — فهرس عمود البلاطة، ضمن النطاق `[0, 2^zoom - 1]`. [`UInt32`](/ar/reference/data-types/int-uint).
+* `tile_y` — فهرس صف البلاطة، ضمن النطاق `[0, 2^zoom - 1]`. [`UInt32`](/ar/reference/data-types/int-uint).
+* `extent` — الامتداد الاختياري للبلاطة، بالبكسل لكل ضلع، ضمن النطاق `[1, 2147483647]`. القيمة الافتراضية هي `4096`، وهي القيمة الافتراضية في Mapbox Vector Tile. [`UInt32`](/ar/reference/data-types/int-uint).
+* `buffer` — هامش اقتصاص اختياري بالبكسل، ضمن النطاق `[0, 2147483647]`. القيمة الافتراضية هي `1`. [`UInt32`](/ar/reference/data-types/int-uint).
+* `clip` — علامة اختيارية؛ عند كونها غير صفرية (وهو الإعداد الافتراضي)، يُقتص الكائن الهندسي إلى حدود البلاطة مع الهامش. [`UInt8`](/ar/reference/data-types/int-uint).
+
+**القيمة المعادة**
+
+يعيد الكائن الهندسي في tile-space، أو `NULL` إذا جرى اقتصاصه بالكامل. [`Geometry`](/ar/reference/data-types/geo).
+
+**مثال**
+
+```sql
+SELECT MVTEncodeGeom((13.37, 52.52)::Point, 10, 550, 335) AS pixel
+```
+
+```text
+┌─pixel──────┐
+│ (124,3384) │
+└────────────┘
+```
+
+<div id="mvtencode">
+  ## MVTEncode
+</div>
+
+يُشفِّر مجموعة من المعالم في طبقة ثنائية بتنسيق Mapbox Vector Tile. وهو المقابل التجميعي للدالة
+القياسية `MVTEncodeGeom`. يتحول كل صف إدخال إلى معلم واحد؛ كما أن هندسة النقطة والخط والمضلع مدعومة.
+
+تكون الوسيطة `geometry` من النوع `Geometry` بإحداثيات فضاء البلاطة، وعادةً ما تُنتَج بواسطة `MVTEncodeGeom`. وتُتخطى
+الصفوف التي تكون فيها الهندسة `NULL` (على سبيل المثال، التي اقتطعها `MVTEncodeGeom`). أما الوسيطة الاختيارية `properties` فهي
+`Tuple` مسمّى، بحيث تصبح أسماء عناصره مفاتيح سمات المعلم، وتحدد أنواع عناصره أنواع القيم في البلاطة المتجهية.
+
+النتيجة هي البايتات الخام لبلاطة أحادية الطبقة. وتنتج المجموعة الفارغة بلاطة فارغة. وهذا هو النظير لـ
+PostGIS `ST_AsMVT`.
+
+**الصيغة**
+
+```sql
+MVTEncode(layer_name[, extent[, feature_id_name[, stringify_unsupported]]])(geometry[, properties])
+```
+
+**المعلمات**
+
+* `layer_name` — اسم طبقة البلاطة المتجهة. [`String`](/ar/reference/data-types/string).
+* `extent` — امتداد البلاطة بالبكسل لكل ضلع، ضمن النطاق `[1, 2147483647]`. القيمة الافتراضية هي `4096`. [`UInt32`](/ar/reference/data-types/int-uint).
+* `feature_id_name` — اسم اختياري لعنصر عددٍ صحيح غير موقّع ضمن الـ tuple `properties` لإخراجه باعتباره `id` لمعلم MVT (من النوع `UInt64`) بدلًا من إخراجه كوسم. تُرفَض الأعداد الصحيحة الموقّعة. وإذا كانت قيمة `id` هي `NULL`، يُحذَف هذا المعرّف لذلك المعلم. المعلمات موضعية، لذا يجب تمرير `extent` لاستخدامه. [`String`](/ar/reference/data-types/string).
+* `stringify_unsupported` — علامة اختيارية (`0`/`1`، والقيمة الافتراضية `0`)؛ عند ضبطها على `1`، تُشفَّر أنواع الخصائص غير المدعومة مباشرةً (مثل الأعداد الصحيحة الكبيرة و`UUID` و`Decimal`) على هيئة `string_value` نصية بدلًا من إطلاق خطأ. [`UInt8`](/ar/reference/data-types/int-uint).
+
+**الوسيطات**
+
+* `geometry` — هندسة ضمن فضاء البلاطة، على سبيل المثال من `MVTEncodeGeom`. [`Geometry`](/ar/reference/data-types/geo).
+* `properties` — `named tuple` اختياري لسمات المعلم. وتصبح أسماء العناصر مفاتيح للسمات. [`Tuple`](/ar/reference/data-types/tuple).
+
+**القيمة المعادة**
+
+يُرجع المحتوى الثنائي لبلاطة Mapbox Vector Tile أحادية الطبقة. [`String`](/ar/reference/data-types/string).
+
+<div id="property-types">
+  ### أنواع الخصائص
+</div>
+
+يُرمَّز كل عنصر من عناصر الخاصية باعتباره المتغيّر `Value` من Mapbox Vector Tile المطابق لنوعه في ClickHouse:
+
+| نوع ClickHouse                                                 | نوع قيمة Vector Tile |
+| -------------------------------------------------------------- | -------------------- |
+| `String` / `FixedString`                                       | `string_value`       |
+| `Float32` / `BFloat16`                                         | `float_value`        |
+| `Float64`                                                      | `double_value`       |
+| `Bool`                                                         | `bool_value`         |
+| `Int8` / `Int16` / `Int32` / `Int64` / `Date32`                | `sint_value`         |
+| `UInt8` / `UInt16` / `UInt32` / `UInt64` / `Date` / `DateTime` | `uint_value`         |
+
+يمكن تغليف الأنواع بـ `Nullable` و/أو `LowCardinality`. تؤدي القيمة `NULL` إلى حذف تلك السمة من المعلم، لأن
+تنسيق Vector Tile لا يحتوي على قيمة null. وأي نوع خاصية آخر يثير استثناءً، ما لم يتم تعيين `stringify_unsupported`،
+وعندئذٍ يُرمَّز على أنه `string_value` النصي المقابل له.
+
+تُخزَّن قيم الخصائص المتطابقة في مخزن القيم المشترك الخاص بالطبقة، لذا فإن القيمة التي تظهر في العديد من المعالم
+لا تُخزَّن إلا مرة واحدة.
+
+<div id="naming-the-properties-tuple">
+  ### تسمية Tuple ‏properties
+</div>
+
+يجب أن يحتوي Tuple ‏properties على أسماء عناصر صريحة. لا تُطبَّق الأسماء المستعارة للأعمدة داخل `tuple(...)` على أسماء عناصر
+الـTuple، لذا سمِّ العناصر باستخدام CAST:
+
+```sql
+tuple(count(), any(id))::Tuple(cluster_count UInt64, id String)
+```
+
+<div id="clustering">
+  ### التجميع العنقودي
+</div>
+
+يُعبَّر عن التجميع العنقودي في SQL، وليس عبر الدالة. ولأن `MVTEncodeGeom` يقرّب القيم إلى بكسلات كاملة، فإن التجميع حسب
+هندسة البكسل يدمج الأشكال الهندسية المتطابقة؛ نفِّذ التجميع في استعلام فرعي، ثم مرِّر صفًا واحدًا لكل عنقود إلى
+`MVTEncode`:
+
+```sql
+SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)) AS tile
+FROM
+(
+    SELECT MVTEncodeGeom((lon, lat)::Point, 10, 550, 335) AS geom, count() AS cluster_count
+    FROM points
+    GROUP BY geom
+)
+SETTINGS allow_suspicious_types_in_group_by = 1;
+```
+
+يتطلّب التجميع حسب قيمة `Geometry` ضبط `allow_suspicious_types_in_group_by = 1`، لأن التجميع حسب النوع `Geometry`
+القائم على `Variant` مقيَّد افتراضيًا. احذف `GROUP BY` الداخلي (و`count()`) لإخراج معلم واحد لكل صف إدخال
+بدلًا من المعالم المجمَّعة.
+
+<div id="mvtboundingbox">
+  ## MVTBoundingBox
+</div>
+
+تعيد هذه الدالة المربع المحيط الجغرافي لبلاطة slippy-map المحددة بواسطة `zoom` و`tile_x` و`tile_y` على شكل tuple
+`(min_lon, min_lat, max_lon, max_lat)` بالدرجات.
+
+استخدمها لحصر الصفوف ضمن بلاطة معيّنة عند التصفية مباشرةً على العمودين `longitude`/`latitude` — بحيث يمكن استخدام مفتاح أساسي أو
+فهرس على هذين العمودين — بدلًا من إعادة حساب إسقاط Web Mercator لكل صف. يوسّع الخيار الاختياري `margin`
+المربع من كل جانب بهذا الكسر من حجم البلاطة؛ اضبطه على `buffer / extent` لتغطية clip buffer الخاص بـ
+`MVTEncodeGeom`.
+
+**الصيغة**
+
+```sql
+MVTBoundingBox(zoom, tile_x, tile_y[, margin])
+```
+
+**الوسيطات**
+
+* `zoom` — مستوى التكبير في slippy-map، ضمن النطاق `[0, 32]`. [`UInt8`](/ar/reference/data-types/int-uint).
+* `tile_x` — فهرس عمود البلاطة، ضمن النطاق `[0, 2^zoom - 1]`. [`UInt32`](/ar/reference/data-types/int-uint).
+* `tile_y` — فهرس صف البلاطة، ضمن النطاق `[0, 2^zoom - 1]`. [`UInt32`](/ar/reference/data-types/int-uint).
+* `margin` — نسبة اختيارية من حجم البلاطة لتوسيع المربع المحيط من جميع الجوانب. القيمة الافتراضية هي `0`. [`Float64`](/ar/reference/data-types/float).
+
+**القيمة المُعادة**
+
+يعيد المربع المحيط للبلاطة على هيئة Tuple `(min_lon, min_lat, max_lon, max_lat)` بالدرجات. [`Tuple(Float64, Float64, Float64, Float64)`](/ar/reference/data-types/tuple).
+
+**مثال**
+
+```sql
+SELECT MVTBoundingBox(0, 0, 0) AS bbox
+```
+
+```text
+┌─bbox────────────────────────────────────────────┐
+│ (-180,-85.05112877980659,180,85.05112877980659)  │
+└──────────────────────────────────────────────────┘
+```
+
+<div id="mvtboundingboxmercator">
+  ## MVTBoundingBoxMercator
+</div>
+
+النظير بنظام Web Mercator للدالة `MVTBoundingBox`. تُرجِع
+المربع المحيط للبلاطة في فضاء إحداثيات Web Mercator الكامل من نوع `UInt32` والمستخدَم داخليًا بواسطة `MVTEncodeGeom`، على هيئة tuple
+`(min_x, min_y, max_x, max_y)`. يزداد المحور y باتجاه الأسفل (الشمال في الأعلى). وهي مخصّصة للجداول التي تُخزِّن
+أعمدة إحداثيات Mercator فعليًا وتُفهرِسها بدلًا من `longitude`/`latitude`.
+
+**الصيغة**
+
+```sql
+MVTBoundingBoxMercator(zoom, tile_x, tile_y[, margin])
+```
+
+**المعاملات**
+
+مطابقة لـ [`MVTBoundingBox`](#mvtboundingbox).
+
+**القيمة المُعادة**
+
+تعيد المربع المحيط للبلاطة على شكل tuple `(min_x, min_y, max_x, max_y)` بإحداثيات Web Mercator. [`Tuple(Float64, Float64, Float64, Float64)`](/ar/reference/data-types/tuple).
+
+**مثال**
+
+```sql
+SELECT MVTBoundingBoxMercator(1, 0, 0) AS bbox
+```
+
+```text
+┌─bbox────────────────────────┐
+│ (0,0,2147483648,2147483648)  │
+└──────────────────────────────┘
+```
+
+<div id="restricting-rows-to-a-tile">
+  ## تقييد الصفوف ضمن بلاطة
+</div>
+
+يجب ألا تحتوي البلاطة إلا على الأشكال الهندسية التابعة لها. ويُعبَّر عن ذلك على أفضل وجه من خلال خطوتين متكاملتين:
+شرط مربع إحاطة منخفض الكلفة ويستخدم الفهرس في عبارة `WHERE` (للأداء)، ثم القص في `MVTEncodeGeom` (للصحة).
+يستبعد القص الأشكال الهندسية الواقعة خارج البلاطة، لذا حتى شرط مربع الإحاطة المتساهل لا يمكنه أن يسرّب
+أشكالًا هندسية من خارج البلاطة إلى النتيجة.
+
+```sql
+WITH
+    1 AS buffer,
+    4096 AS extent,
+    MVTBoundingBox({z:UInt8}, {x:UInt32}, {y:UInt32}, buffer / extent) AS bounding_box   -- margin matches the clip buffer
+SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64))
+FROM
+(
+    SELECT MVTEncodeGeom((lon, lat)::Point, {z:UInt8}, {x:UInt32}, {y:UInt32}) AS geom, count() AS cluster_count
+    FROM points
+    WHERE lon BETWEEN bounding_box.1 AND bounding_box.3 AND lat BETWEEN bounding_box.2 AND bounding_box.4   -- index-using prefilter
+    GROUP BY geom
+)
+SETTINGS allow_suspicious_types_in_group_by = 1
+```
+
+إن شرط صندوق الإحاطة ليس سوى مرشحٍ أولي تقريبي؛ أما الحد الدقيق للبلاطة فيُطبَّق عبر القص في
+`MVTEncodeGeom`. مرّر `clip => false` (المعامل السابع) إلى `MVTEncodeGeom` لتعطيل القص والاعتماد على
+شرط `WHERE` وحده.
+
+<div id="serving-tiles-over-http">
+  ## تقديم البلاطات عبر HTTP
+</div>
+
+لا يوفّر ClickHouse نقطة نهاية للبلاطات افتراضيًا، إذ إن واجهة HTTP لا تقبل سوى الاستعلامات على `/`. ويضيف المشغّل عنوان URL نظيفًا
+`/tile/{z}/{x}/{y}` باستخدام [معالج استعلام مُعرّف مسبقًا](/ar/concepts/features/interfaces/http) في
+إعدادات الخادم. ويستخدم `url` الخاص بالمعالج صيغة `regex:` لالتقاط مقاطع المسار، وربطها بمعلمات
+الاستعلام، ثم إرجاع البايتات باستخدام `FORMAT RawBLOB`.
+
+في أبسط الحالات، يحتوي الجدول على عمود `Geometry`، ويعرض المعالج معلمًا واحدًا لكل صف — إذ يقوم `MVTEncodeGeom`
+بإسقاط كل شكل هندسي على البلاطة المطلوبة وقصّه، بحيث تُستبعَد الصفوف الواقعة خارج البلاطة تلقائيًا:
+
+```xml
+<http_handlers>
+    <rule>
+        <methods>GET</methods>
+        <url><![CDATA[regex:/tile/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)]]></url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>
+                SELECT MVTEncode('shapes')(
+                    MVTEncodeGeom(geom, {z:UInt8}, {x:UInt32}, {y:UInt32}),
+                    tuple(id, name)::Tuple(id UInt32, name String))
+                FROM shapes
+                FORMAT RawBLOB
+            </query>
+            <content_type>application/vnd.mapbox-vector-tile</content_type>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers>
+```
+
+هنا `shapes` هو جدول يحتوي على عمود `geom Geometry` (أي مزيج من النقاط والخطوط والمضلعات). ويعيد `GET /tile/10/550/335`
+البلاطة المُرمَّزة.
+
+بالنسبة إلى بيانات النقاط، يعمل هذا بالقدر نفسه من الفعالية مع أعمدة `longitude`/`latitude` العادية أيضًا، وذلك ببناء النقطة مباشرةً باستخدام
+`MVTEncodeGeom((lon, lat)::Point, …)`. ولتجميع المعالم المتطابقة مكانيًا، أو لإضافة تصفية مسبقة باستخدام مربع الإحاطة تعتمد على الفهرس
+للجداول الكبيرة، وسّع الاستعلام الداخلي كما هو موضح في [تجميع عنقودي](#clustering) و
+[تقييد الصفوف إلى بلاطة](#restricting-rows-to-a-tile).
+
+<div id="limitations">
+  ## القيود
+</div>
+
+* يقيّد إسقاط Web Mercator خط العرض إلى `±85.05112878°`، ولا يتعامل مع المدخلات التي تعبر خط الطول المقابل.
+
+* **لا يضمن قصّ المضلع إخراجًا صالحًا لـ MVT.** يُصحّح القص اتجاه الحلقة وانغلاقها، لكنه لا يُصلح التقاطعات الذاتية. لذلك لا تُصلَح الحلقة ذاتية التقاطع (&quot;ربطة الفراشة&quot;): فبحسب كيفية تقاطعها مع الـ `tile`، إمّا تُخرَج كما هي (وتظل غير صالحة)، أو تُسقَط إلى `NULL`. على سبيل المثال، تُسقَط ربطة فراشة تقع بالكامل داخل الـ `tile`، بينما تُحفَظ الزوايا الأربع نفسها إذا لُفَّت على هيئة حلقة بسيطة:
+
+```sql
+-- self-intersecting ring -> dropped (NULL)
+SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 50.0), (50.0, 40.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 1
+-- simple ring, same four corners -> kept
+SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 40.0), (50.0, 50.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 0
+```
+
+* **تُقصّ الهندسة قبل تقريبها إلى شبكة البكسلات ذات الإحداثيات الصحيحة.** يقوم PostGIS أولًا بمواءمة الهندسة مع شبكة البكسلات ذات الإحداثيات الصحيحة ثم يقصّها ثانيًا؛ أما `MVTEncodeGeom` فيقصّ أولًا (على الإحداثيات المُسقطة ذات الفاصلة العائمة) ثم يقرّب ثانيًا. وبالقرب من حافة البلاطة، قد يؤدي ذلك إلى إسقاط إحداثي كان سيُقرَّب بخلاف ذلك إلى بكسل الحافة. على سبيل المثال، عند `buffer = 0`، تُقصّ نقطة تقع مباشرةً شرق حافة البلاطة، رغم أنها تُقرَّب إلى بكسل الحافة `4096` الذي كان نهج التقريب أولًا سيُبقي عليه:
+
+```sql
+-- floating-point x ~= 4096.23 is just past the east edge (extent = 4096) -> clipped
+SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0) IS NULL;          -- 1
+-- the same point projected without clipping rounds onto the edge pixel:
+SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0, false);           -- (4096,2664)
+```

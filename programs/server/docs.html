@@ -1,0 +1,1655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ClickHouse Reference</title>
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        /* Light theme (default) and dark theme, switchable like in `play.html`. Only a handful of
+           variables differ; everything else is derived from them (often via `color-mix`). */
+        :root {
+            --bg: #F8F8F8;
+            --fg: #1A1A1A;
+            --panel-bg: #FFFFFF;
+            --border: #DDDDDD;
+            --border-soft: #EEEEEE;
+            --muted: #888888;
+            --hover-bg: #FFF7DA;
+            --code-bg: #F0F0F0;
+            --pre-bg: #1A1A1A;
+            --link: #0088FF;
+        }
+        [data-theme="dark"] {
+            --bg: #1A1A1A;
+            --fg: #DDDDDD;
+            --panel-bg: #242424;
+            --border: #3A3A3A;
+            --border-soft: #333333;
+            --muted: #999999;
+            --hover-bg: #3A3A26;
+            --code-bg: #2E2E2E;
+            --pre-bg: #141414;
+            --link: #FF0;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            /* Theme-aware scrollbars, as in `play.html`. */
+            scrollbar-color: var(--border) var(--bg);
+            /* Same typefaces as `play.html`. */
+            font-family: Roboto Mono, Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        a {
+            color: var(--link);
+        }
+
+        #header {
+            padding: 0.5rem 1rem;
+            background: #1A1A1A;
+            color: #FF0;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        #header h1 {
+            font-size: 14pt;
+            margin: 0;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        #header h1 .accent {
+            color: white;
+        }
+
+        #connection-params {
+            margin-left: auto;
+            display: flex;
+            gap: 0.25rem;
+        }
+        #connection-params input {
+            border: 1px solid #555;
+            background: #2A2A2A;
+            color: #EEE;
+            font-size: 10pt;
+            padding: 0.2rem 0.4rem;
+        }
+        #url { width: 16rem; }
+        #user, #password { width: 6rem; }
+
+        #search-bar {
+            padding: 1rem;
+            background: #FF0;
+        }
+        #search {
+            width: 100%;
+            border: 1px solid black;
+            font-size: 18pt;
+            font-weight: bold;
+            padding: 0.6rem 0.9rem;
+            outline: none;
+        }
+
+        #main {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+        }
+
+        #results {
+            width: 24rem;
+            /* Cap the result list at 30% of the width so it does not dominate narrow (mobile) screens.
+               On wide screens 24rem is the smaller value and wins, so the layout is unchanged there. */
+            max-width: 30%;
+            overflow-y: auto;
+            border-right: 1px solid var(--border);
+            background: var(--panel-bg);
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) var(--panel-bg);
+        }
+        .result {
+            padding: 0.5rem 0.9rem;
+            border-bottom: 1px solid var(--border-soft);
+            cursor: pointer;
+            /* Each entity type gets a faint tint, blended into the panel background so it adapts to
+               the theme. The `:hover`/`.selected` rules below set `background` directly and so win
+               regardless of source order. */
+            background: color-mix(in srgb, var(--type-accent, transparent) 14%, var(--panel-bg));
+        }
+        .result:hover {
+            background: var(--hover-bg);
+        }
+        .result.selected {
+            background: #FF0;
+            color: #1A1A1A;
+        }
+        .result .name {
+            font-weight: bold;
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+            font-size: 12pt;
+            word-break: break-all;
+        }
+        .result .type {
+            font-size: 9pt;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .result.selected .type {
+            color: #663D00;
+        }
+        /* A small badge next to the name marks an entity that is just an alias of another, so it is
+           recognizable in the list without opening it. It is tinted with the type accent like the row. */
+        .result .name .alias-badge {
+            display: inline-block;
+            margin-left: 0.5em;
+            padding: 0 0.4em;
+            font-size: 7.5pt;
+            font-weight: normal;
+            line-height: 1.6;
+            vertical-align: middle;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--muted);
+            background: color-mix(in srgb, var(--type-accent, var(--muted)) 16%, var(--panel-bg));
+            border: 1px solid color-mix(in srgb, var(--type-accent, var(--muted)) 45%, var(--border));
+            border-radius: 4px;
+        }
+        .result.selected .name .alias-badge {
+            color: #663D00;
+            background: transparent;
+            border-color: #663D00;
+        }
+
+        #doc {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem 2rem;
+            background: var(--panel-bg);
+            line-height: 1.5;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) var(--panel-bg);
+        }
+        #doc.empty {
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13pt;
+        }
+
+        /* Rendered Markdown styling */
+        #doc h1 { font-size: 20pt; margin-top: 0; border-bottom: 2px solid #FF0; padding-bottom: 0.3rem; }
+        #doc h2 { font-size: 16pt; border-bottom: 1px solid var(--border); padding-bottom: 0.2rem; }
+        #doc h3 { font-size: 13pt; }
+        #doc code {
+            background: var(--code-bg);
+            padding: 0.1rem 0.3rem;
+            font-size: 90%;
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+        }
+        #doc pre {
+            position: relative;
+            background: var(--pre-bg);
+            color: #EEE;
+            padding: 0.8rem 1rem;
+            overflow-x: auto;
+            /* Keep code blocks tight: the relaxed prose line-height (1.5 on `#doc`) would space out
+               code lines, so reset it to 1 here. */
+            line-height: 1;
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+            /* Code blocks are always dark, so their scrollbar is dark in both themes. */
+            scrollbar-width: thin;
+            scrollbar-color: #555 transparent;
+        }
+        #doc pre code {
+            background: none;
+            color: inherit;
+            padding: 0;
+        }
+        /* The code block lives in a non-scrolling wrapper so the Copy button can be pinned to the
+           visible right edge, independent of the code's horizontal scroll. */
+        #doc .code-wrapper {
+            position: relative;
+        }
+        /* Copy button, shown at the top-right of a code block while the cursor is over it. */
+        #doc .code-wrapper .copy-button {
+            position: absolute;
+            top: 0.4rem;
+            right: 0.4rem;
+            opacity: 0;
+            transition: opacity 0.1s;
+            background: rgba(255, 255, 255, 0.12);
+            color: #EEE;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            font-size: 9pt;
+            padding: 0.15rem 0.5rem;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        #doc .code-wrapper:hover .copy-button {
+            opacity: 1;
+        }
+        #doc .code-wrapper .copy-button:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+        /* Per-token SQL syntax highlighting, produced by the embedded ClickHouse lexer
+           (compiled to WebAssembly). The palette is the dark-background variant from
+           `play.html`, since our code blocks render on a dark background. */
+        #doc pre .q-kw  { color: #EEE; font-weight: bold; }
+        #doc pre .q-id  { color: #00CDCD; }
+        #doc pre .q-fn  { color: #CDCD00; }
+        #doc pre .q-num { color: #00D700; }
+        #doc pre .q-str { color: #00CD00; }
+        #doc pre .q-qid { color: #00D7D7; }
+        #doc pre .q-com { color: #9E9E9E; font-style: italic; }
+        #doc pre .q-op  { color: #EEE; }
+        #doc pre .q-err { color: #FF6E40; }
+        #doc table {
+            border-collapse: collapse;
+        }
+        #doc th, #doc td {
+            border: 1px solid var(--border);
+            padding: 0.3rem 0.6rem;
+        }
+        #doc blockquote {
+            border-left: 4px solid #FF0;
+            margin-left: 0;
+            padding-left: 1rem;
+            color: var(--muted);
+        }
+        #doc .entity-type {
+            display: inline-block;
+            background: #FF0;
+            color: black;
+            font-size: 9pt;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0.15rem 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* A pencil link next to the entity title that opens the entity's source file on GitHub
+           (from the `source` column of `system.documentation`). Muted by default, accented on hover. */
+        #doc .source-link {
+            color: var(--muted);
+            text-decoration: none;
+            margin-left: 0.6rem;
+            opacity: 0.7;
+            transition: color 0.1s, opacity 0.1s;
+        }
+        #doc h1:hover .source-link {
+            opacity: 1;
+        }
+        #doc .source-link:hover {
+            color: var(--link);
+            opacity: 1;
+        }
+        #doc .source-link svg {
+            width: 0.7em;
+            height: 0.7em;
+            fill: currentColor;
+            vertical-align: baseline;
+        }
+
+        #logo {
+            height: 1.6rem;
+            display: block;
+        }
+
+        /* Heading anchors: a "#" symbol that appears on hover and links to the section. */
+        #doc h1, #doc h2, #doc h3, #doc h4, #doc h5, #doc h6 {
+            scroll-margin-top: 1rem;
+        }
+        #doc .heading-anchor {
+            color: var(--muted);
+            text-decoration: none;
+            margin-left: 0.4rem;
+            font-weight: normal;
+            opacity: 0;
+            transition: opacity 0.1s;
+        }
+        #doc h1:hover .heading-anchor, #doc h2:hover .heading-anchor,
+        #doc h3:hover .heading-anchor, #doc h4:hover .heading-anchor,
+        #doc h5:hover .heading-anchor, #doc h6:hover .heading-anchor {
+            opacity: 1;
+        }
+        #doc .heading-anchor:hover {
+            color: var(--fg);
+        }
+
+        /* Internal links (to another documented entity) get a subtle dotted underline. */
+        #doc a.doc-internal-link {
+            text-decoration: underline dotted;
+        }
+
+        /* `:::note`-style admonitions, modelled on the documentation website. The tinted background
+           is blended into the panel background so it works in both light and dark themes. */
+        #doc .admonition {
+            --adm-color: #888;
+            border-left: 4px solid var(--adm-color);
+            background: color-mix(in srgb, var(--adm-color) 12%, var(--panel-bg));
+            padding: 0.6rem 1rem;
+            margin: 1rem 0;
+        }
+        #doc .admonition-title {
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 9pt;
+            margin-bottom: 0.3rem;
+            color: var(--adm-color);
+        }
+        #doc .admonition > :last-child {
+            margin-bottom: 0;
+        }
+        #doc .admonition-note    { --adm-color: #2F7FF7; }
+        #doc .admonition-tip     { --adm-color: #18A974; }
+        #doc .admonition-info    { --adm-color: #0099B8; }
+        #doc .admonition-warning { --adm-color: #D79400; }
+        #doc .admonition-danger  { --adm-color: #E5403A; }
+
+        /* Theme switcher (sun / moon), like in `play.html`: only the icon for the *other* theme is
+           shown, and clicking it switches and memoizes the choice. */
+        #theme {
+            cursor: pointer;
+            font-size: 14pt;
+            user-select: none;
+            line-height: 1;
+        }
+        [data-theme="light"] #toggle-light, [data-theme="dark"] #toggle-dark {
+            display: none;
+        }
+
+        #status {
+            font-size: 9pt;
+            color: var(--muted);
+            padding: 0.3rem 0.9rem;
+        }
+        .error {
+            color: #E5484D;
+            white-space: pre-wrap;
+            font-family: DejaVu Sans Mono, Liberation Mono, MonoLisa, Consolas, monospace;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <!-- The ClickHouse logo, matching the one in `play.html`. -->
+        <svg id="logo" viewBox="0 0 11 10" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0" y="0" width="11" height="10" fill="#FF0"/>
+            <path d="M1,1 h1 v8 h-1 z" fill="#000"/>
+            <path d="M3,1 h1 v8 h-1 z" fill="#000"/>
+            <path d="M5,1 h1 v8 h-1 z" fill="#000"/>
+            <path d="M7,1 h1 v8 h-1 z" fill="#000"/>
+            <path d="M9,4.25 h1 v1.5 h-1 z" fill="#000"/>
+        </svg>
+        <h1>ClickHouse <span class="accent">Reference</span></h1>
+        <form id="connection-params" onsubmit="return false">
+            <input spellcheck="false" id="url" type="text" placeholder="URL" />
+            <input spellcheck="false" id="user" type="text" placeholder="user" />
+            <input spellcheck="false" id="password" type="password" placeholder="password" />
+        </form>
+        <div id="theme" title="Switch color theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
+    </div>
+    <div id="search-bar">
+        <input spellcheck="false" autocomplete="off" autofocus id="search" type="text"
+               placeholder="Search functions, settings, table engines, data types…" />
+    </div>
+    <div id="main">
+        <div id="results"></div>
+        <div id="doc" class="empty">Start typing to search the documentation.</div>
+    </div>
+    <div id="status"></div>
+
+    <!-- Marked (Markdown renderer) and KaTeX (TeX math renderer).
+         When this page is served by ClickHouse, these CDN links are rewritten to embedded,
+         same-origin copies under "/js/" (see DocsWebUIRequestHandler), so no third-party code
+         runs in the ClickHouse HTTP origin. The CDN URLs are kept here so the page still works
+         when opened as a local file (file://) pointed at a remote server. -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script>
+
+    const $search = document.getElementById('search');
+    const $results = document.getElementById('results');
+    const $doc = document.getElementById('doc');
+    const $status = document.getElementById('status');
+    const $url = document.getElementById('url');
+    const $user = document.getElementById('user');
+    const $password = document.getElementById('password');
+
+    if (!$url.value) {
+        $url.value = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
+    }
+
+    {
+        /// Pick up the user name from the query string if present, like the other built-in UI pages.
+        const user_from_url = new URL(window.location).searchParams.get('user');
+        if (user_from_url) {
+            $user.value = user_from_url;
+        }
+    }
+
+    /* ----------------------------------------------------------------------------------------
+       Color theme. Precedence matches `play.html`: the `?theme=` query parameter, then the value
+       memoized in `localStorage`, then the operating-system preference. The user's choice (made
+       with the switcher) is remembered in `localStorage`.
+       ---------------------------------------------------------------------------------------- */
+
+    function setColorTheme(new_theme, update_preference) {
+        if (update_preference) {
+            window.localStorage.setItem('theme', new_theme);
+        }
+        document.documentElement.setAttribute('data-theme', new_theme);
+    }
+
+    {
+        let theme = new URL(window.location).searchParams.get('theme');
+        if (['dark', 'light'].indexOf(theme) === -1) {
+            theme = window.localStorage.getItem('theme');
+        }
+        if (theme) {
+            setColorTheme(theme);
+        } else {
+            /// Autodetect from the OS preference, and keep following it if it changes later
+            /// (some systems switch automatically between day and night).
+            const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
+            setColorTheme(media_query_list.matches ? 'dark' : 'light');
+            media_query_list.addEventListener('change', e => setColorTheme(e.matches ? 'dark' : 'light'));
+        }
+    }
+
+    document.getElementById('toggle-light').onclick = () => setColorTheme('light', true);
+    document.getElementById('toggle-dark').onclick = () => setColorTheme('dark', true);
+
+    /// The current set of results and which one is selected.
+    let current = [];
+    let selected = -1;
+    /// The id of the in-page section the user navigated to inside the open entity, if any.
+    let current_section = '';
+    /// A lazily-loaded map from lower-cased entity name to the list of {name, type} entities that
+    /// share it, used to turn relative documentation links into in-app links when they point to
+    /// another documented entity. The value is a list because names are not unique across types
+    /// (e.g. `JSON` is both a data type and a format); a link is disambiguated by its target route.
+    let all_names = null;
+
+    /// Used to discard responses of queries that were superseded by a newer keystroke.
+    let request_seq = 0;
+
+    /// Bumped whenever the connection (server URL, user, or password) changes. `loadAllNames`
+    /// snapshots it before the request and only publishes the result into `all_names` if it is
+    /// still current, so an in-flight request that resolves after a connection change cannot
+    /// repopulate the cross-link cache with names from the previous server or user.
+    let connection_seq = 0;
+
+    /// A distinct accent color per entity type, so the kinds of entities are visually
+    /// distinguishable in the result list (used for the left stripe and a faint, theme-blended
+    /// row tint). Keyed by the `type` enum values of `system.documentation`.
+    const TYPE_ACCENT = {
+        'Function':                      '#4F8DF7',
+        'Aggregate Function':            '#3F6FE0',
+        'Aggregate Function Combinator': '#6A6AE0',
+        'Table Function':                '#3FB0E0',
+        'Table Engine':                  '#4FB04F',
+        'Database Engine':               '#3F9F66',
+        'Data Type':                     '#9B59D0',
+        'Dictionary Layout':             '#2FB39A',
+        'Dictionary Source':             '#1F9E88',
+        'Data Skipping Index':           '#E08A2F',
+        'Disk Type':                     '#A07A4F',
+        'Setting':                       '#D9B600',
+        'MergeTree Setting':             '#C7A400',
+        'Server Setting':                '#B89600',
+        'Format':                        '#E05A93',
+        'Compression Codec':             '#D95F4F',
+        'Profile Event':                 '#7C8FB8',
+        'Current Metric':                '#5FA88F',
+        'Asynchronous Metric':           '#9A8FCF',
+        'System Table':                  '#8A8F99',
+    };
+
+    function buildURL() {
+        /// Always request CORS headers, exactly like `/play` and `/schema`. When this page is opened
+        /// as a local file (`file://`) and pointed at a remote server, the queries are cross-origin
+        /// (the browser sends `Origin: null`), and ClickHouse only adds `Access-Control-Allow-Origin`
+        /// when `add_http_cors_header=1` is set; without it the searches would be blocked by CORS.
+        /// The configured URL may already carry query parameters (e.g. `http://host:8123/?database=db`),
+        /// so append with `&` in that case instead of a second `?`, exactly like `play.html`; otherwise
+        /// `default_format` would be folded into the existing parameter and the response would not be JSON.
+        const sep = $url.value.indexOf('?') >= 0 ? '&' : '?';
+        let url = `${$url.value}${sep}default_format=JSONEachRow&enable_http_compression=1&add_http_cors_header=1`;
+        if ($user.value) {
+            url += `&user=${encodeURIComponent($user.value)}`;
+        }
+        if ($password.value) {
+            url += `&password=${encodeURIComponent($password.value)}`;
+        }
+        return url;
+    }
+
+    /* ----------------------------------------------------------------------------------------
+       Markdown rendering setup.
+       ---------------------------------------------------------------------------------------- */
+
+    /// `:::note ... :::` admonitions (as used on the documentation website). Implemented as a
+    /// block-level Marked extension so that the body is itself rendered as Markdown.
+    const admonitionExtension = {
+        name: 'admonition',
+        level: 'block',
+        start(src) {
+            const i = src.search(/^:::/m);
+            return i < 0 ? undefined : i;
+        },
+        tokenizer(src) {
+            const rule = /^:::([a-zA-Z]+)[ \t]*(.*)\n([\s\S]*?)\n:::[ \t]*(?:\n|$)/;
+            const match = rule.exec(src);
+            if (match) {
+                const token = {
+                    type: 'admonition',
+                    raw: match[0],
+                    variant: match[1].toLowerCase(),
+                    title: (match[2] || match[1]).trim(),
+                    tokens: [],
+                };
+                this.lexer.blockTokens(match[3], token.tokens);
+                return token;
+            }
+        },
+        renderer(token) {
+            const inner = this.parser.parse(token.tokens);
+            return `<div class="admonition admonition-${escapeHTML(token.variant)}">`
+                + `<div class="admonition-title">${escapeHTML(token.title)}</div>`
+                + inner + `</div>`;
+        },
+    };
+
+    /// Render a TeX fragment with KaTeX. The math is captured raw by the tokenizers below (before
+    /// Markdown's inline rules can mangle backslashes, underscores, etc.), so it renders faithfully.
+    function renderTeX(tex, display_mode) {
+        if (typeof katex === 'undefined') {
+            /// KaTeX is not loaded (e.g. offline): show the original TeX source.
+            const fence = display_mode ? '$$' : '$';
+            return escapeHTML(fence + tex + fence);
+        }
+        try {
+            return katex.renderToString(tex, { displayMode: display_mode, throwOnError: false });
+        } catch (e) {
+            return escapeHTML(tex);
+        }
+    }
+
+    /// TeX math: `$$ ... $$` (and `\[ ... \]`) as display math, `$ ... $` (and `\( ... \)`) inline.
+    const mathBlockExtension = {
+        name: 'mathBlock',
+        level: 'block',
+        start(src) {
+            const i = src.search(/\$\$|\\\[/);
+            return i < 0 ? undefined : i;
+        },
+        tokenizer(src) {
+            const match = /^\$\$([\s\S]+?)\$\$/.exec(src) || /^\\\[([\s\S]+?)\\\]/.exec(src);
+            if (match) {
+                return { type: 'mathBlock', raw: match[0], text: match[1].trim() };
+            }
+        },
+        renderer(token) {
+            return renderTeX(token.text, /*display_mode=*/ true);
+        },
+    };
+    const mathInlineExtension = {
+        name: 'mathInline',
+        level: 'inline',
+        start(src) {
+            const i = src.search(/\$|\\\(/);
+            return i < 0 ? undefined : i;
+        },
+        tokenizer(src) {
+            /// `$ ... $` on a single line (not `$$`), or `\( ... \)`.
+            const match = /^\$(?!\$)([^\n$]+?)\$/.exec(src) || /^\\\(([\s\S]+?)\\\)/.exec(src);
+            if (match) {
+                return { type: 'mathInline', raw: match[0], text: match[1].trim() };
+            }
+        },
+        renderer(token) {
+            return renderTeX(token.text, /*display_mode=*/ false);
+        },
+    };
+
+    marked.use({ extensions: [admonitionExtension, mathBlockExtension, mathInlineExtension] });
+
+    /// Known MDX components from the documentation toolchain (status badges and a few layout
+    /// wrappers). These are build machinery, not content, and are stripped whether or not the
+    /// Markdown that uses them also `import`s them: some embedded entries use them without a local
+    /// import (e.g. `transactionID` opens with a bare `<ExperimentalBadge/>` / `<CloudNotSupportedBadge/>`).
+    /// Only these known names, plus any `*Badge` component (see `preprocessMarkdown`), are stripped, so
+    /// literal `<...>` placeholders in the prose (e.g. `<SearchPhrase>` in an XML example) are preserved.
+    const MDX_COMPONENTS = [
+        'ExperimentalBadge', 'BetaBadge', 'DeprecatedBadge',
+        'CloudNotSupportedBadge', 'CloudAvailableBadge', 'PrivatePreviewBadge',
+        'Tabs', 'TabItem', 'VerticalStepper', 'Image',
+    ];
+
+    /// Strip MDX-isms that occasionally leak into the documentation text: `import`/`export`
+    /// statements and `<import ... >` directives are machinery for the website build, not content.
+    /// The components brought in by those `import`s (e.g. the `<ExperimentalBadge/>` of an
+    /// experimental feature, or a `<Tabs>` wrapper), as well as the known `MDX_COMPONENTS` above
+    /// even when they are not imported, are stripped as well: a self-closing custom tag like
+    /// `<ExperimentalBadge/>` is otherwise parsed by the HTML parser as an unclosed element — the
+    /// self-closing slash is ignored for non-void elements — that swallows the rest of the document
+    /// as its children, so the sanitizer then drops the whole body (the visible symptom: an
+    /// experimental entity rendered as an empty page).
+    function preprocessMarkdown(md) {
+        /// Seed with the known component names, then add the local names of imported MDX components:
+        /// default imports (`import ExperimentalBadge from '...'`) and named/aliased imports
+        /// (`import {Tabs, TabItem as Item} from '...'`).
+        const components = new Set(MDX_COMPONENTS);
+        const importRe = /^[ \t]*import\s+([\s\S]*?)\s+from\s+['"][^'"]+['"];?[ \t]*$/gm;
+        for (const m of md.matchAll(importRe)) {
+            const clause = m[1].trim();
+            const braced = /\{([^}]*)\}/.exec(clause);
+            const names = braced ? braced[1].split(',') : [clause];
+            for (const name of names) {
+                /// The local binding is the identifier after `as` when the import is aliased.
+                const id = /([A-Za-z_$][\w$]*)\s*$/.exec(name.trim());
+                if (id)
+                    components.add(id[1]);
+            }
+        }
+
+        let out = md
+            .replace(importRe, '')
+            .replace(/^[ \t]*export\s+default\b.*$/gm, '')
+            .replace(/<import\b[^>]*\/?>/gi, '');
+
+        /// Remove the opening, closing, and self-closing tags of those components, keeping any
+        /// content nested between an open/close pair.
+        for (const name of components)
+            out = out.replace(new RegExp('</?' + name + '(?:\\s[^>]*)?/?>', 'g'), '');
+
+        /// Also strip any `*Badge` MDX component even when it was neither imported nor in the known list
+        /// above. The website adds new status badges over time (e.g. `<ScalePlanFeatureBadge .../>` in the
+        /// `S3Queue` engine docs), and an importless self-closing badge swallows the rest of the document
+        /// into its subtree, which the sanitizer then drops. Stripping `*Badge` by name removes the
+        /// dependency on the local `import` being present. A `*Badge` is a PascalCase component name that
+        /// does not occur in documentation prose, so this is safe; the terminal Markdown renderer strips
+        /// `*Badge` components the same way.
+        out = out.replace(/<\/?[A-Z][A-Za-z0-9]*Badge(?:\s[^>]*)?\/?>/g, '');
+
+        return out;
+    }
+
+    /* ----------------------------------------------------------------------------------------
+       Sanitization of rendered Markdown.
+
+       `marked.parse` is not a sanitizer: it passes raw HTML in the Markdown through verbatim and
+       keeps any URL scheme in links and images. The documentation rendered here comes from the
+       server the user points this page at, over a connection whose credentials live in this same
+       origin, so an untrusted or compromised `system.documentation` could otherwise inject
+       `<img src=x onerror=...>` or `[x](javascript:...)` that runs in this origin, reads the
+       `user`/`password` fields, and issues same-origin queries. Every rendered document is
+       therefore sanitized against an allowlist before it reaches the DOM: elements not on the
+       list are dropped with their subtree, attributes not on the list are removed, `href`/`src`
+       values are kept only for safe URL schemes, and resource sinks that auto-load when the
+       document renders — a same-origin `src`, or a `url(...)` in a `style` — are rejected so that
+       untrusted documentation cannot make the browser fetch `/?query=...` from this origin on its
+       own. The allowlist covers what Markdown, the admonition and math extensions, and KaTeX (its
+       HTML and the parallel MathML) legitimately produce.
+       ---------------------------------------------------------------------------------------- */
+
+    const ALLOWED_TAGS = new Set([
+        /// Markdown block- and inline-level elements.
+        'p', 'br', 'hr', 'div', 'span', 'a', 'img', 'code', 'pre', 'blockquote',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+        'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+        'strong', 'em', 'b', 'i', 'u', 's', 'del', 'ins', 'sub', 'sup', 'kbd', 'samp',
+        'abbr', 'mark', 'small', 'wbr',
+        /// Disclosure widgets: some embedded docs wrap notes in `<details><summary>...`, e.g. the
+        /// "Implementation details" sections of the `uniq` and `uniqCombined` aggregate functions.
+        /// Dropping them (with their subtree) made those sections disappear from the rendered page.
+        'details', 'summary',
+        /// MathML, as emitted by KaTeX alongside its visible HTML rendering.
+        'math', 'semantics', 'annotation', 'mrow', 'mi', 'mo', 'mn', 'ms', 'mtext', 'mspace',
+        'msup', 'msub', 'msubsup', 'mfrac', 'msqrt', 'mroot', 'mover', 'munder', 'munderover',
+        'mtable', 'mtr', 'mtd', 'mlabeledtr', 'mpadded', 'mphantom', 'menclose', 'mstyle',
+        'merror', 'mglyph', 'mmultiscripts', 'mprescripts', 'none',
+    ]);
+
+    const ALLOWED_ATTRS = new Set([
+        /// `class` and `style` are needed by KaTeX (inline layout) and our admonitions; the rest are
+        /// harmless presentational or accessibility attributes. `href`/`src` are additionally
+        /// scheme-checked below.
+        'class', 'style', 'id', 'title', 'colspan', 'rowspan', 'align', 'start', 'aria-hidden',
+        'href', 'src', 'alt', 'target', 'rel', 'open',
+        /// MathML presentation attributes used by KaTeX.
+        'mathvariant', 'displaystyle', 'scriptlevel', 'stretchy', 'accent', 'accentunder',
+        'width', 'height', 'depth', 'lspace', 'rspace', 'voffset', 'fence', 'separator',
+        'mathcolor', 'mathbackground', 'linethickness', 'encoding', 'xmlns',
+    ]);
+
+    /// Whether a URL is unsafe to keep in an `href`/`src`. Only relative URLs, in-page anchors, and
+    /// the `http`/`https`/`mailto` schemes are allowed; `javascript:`, `data:`, `vbscript:`, and the
+    /// like are rejected. Browsers ignore ASCII whitespace and control characters when resolving the
+    /// scheme, so those are stripped first to catch tricks like `java\tscript:`.
+    function isUnsafeURL(value) {
+        const match = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(value.replace(/[\u0000-\u0020]+/g, ''));
+        if (!match) {
+            return false; /// No scheme: a relative URL or a `#` fragment, which is safe.
+        }
+        const scheme = match[1].toLowerCase();
+        return scheme !== 'http' && scheme !== 'https' && scheme !== 'mailto';
+    }
+
+    /// Whether a URL resolves to this page's own origin. `src` values that do are rejected: unlike a
+    /// link (`href`), a `src` is fetched automatically when the document renders, so a same-origin
+    /// `src` such as `![x](/?query=SELECT%201)` would make the browser issue an unintended query
+    /// against the very ClickHouse server whose credentials live in this origin. Cross-origin images
+    /// remain allowed; only the credentialed same origin is special.
+    function isSameOriginURL(value) {
+        try {
+            return new URL(value, location.href).origin === location.origin;
+        } catch (e) {
+            return false; /// Unparseable (e.g. a bare fragment): not a resource load against this origin.
+        }
+    }
+
+    /// Sanitize the value of a `style` attribute, or return `null` to drop the attribute entirely.
+    /// CSS can also auto-load resources — `url(...)`, `image-set(...)`, `cross-fade(...)` — so a
+    /// `style="background:url('/?query=SELECT%201')"` is the same hazard as a same-origin `src`.
+    /// KaTeX's inline styles are plain layout declarations (dimensions, offsets, colors) that never
+    /// contain those functions, nor CSS escapes; so the safe and robust rule is to drop any `style`
+    /// that uses a resource-loading function or hides one behind a backslash escape (e.g. `u\72l(`).
+    function sanitizeStyle(value) {
+        if (value.includes('\\'))
+            return null;
+        if (/(?:^|[^\w-])(?:url|image-set|-webkit-image-set|cross-fade)\s*\(/i.test(value))
+            return null;
+        return value;
+    }
+
+    /// Sanitize a parsed DOM subtree in place (see the block comment above).
+    function sanitizeNode(node) {
+        /// Snapshot the children first: the loop removes nodes and attributes as it goes.
+        for (const child of [...node.childNodes]) {
+            if (child.nodeType === Node.ELEMENT_NODE) {
+                if (!ALLOWED_TAGS.has(child.tagName.toLowerCase())) {
+                    child.remove();
+                    continue;
+                }
+                for (const attr of [...child.attributes]) {
+                    const name = attr.name.toLowerCase();
+                    if (!ALLOWED_ATTRS.has(name)
+                        || (name === 'href' && isUnsafeURL(attr.value))
+                        || (name === 'src' && (isUnsafeURL(attr.value) || isSameOriginURL(attr.value)))
+                        || (name === 'style' && sanitizeStyle(attr.value) === null)) {
+                        child.removeAttribute(attr.name);
+                    }
+                }
+                sanitizeNode(child);
+            } else if (child.nodeType === Node.COMMENT_NODE) {
+                child.remove();
+            }
+        }
+    }
+
+    /// Render rendered-Markdown HTML into `element`, sanitized first (see the block comment above).
+    function setSanitizedHTML(element, html) {
+        const template = document.createElement('template');
+        template.innerHTML = html;
+        sanitizeNode(template.content);
+        element.replaceChildren(template.content);
+    }
+
+    /// Search both the name and the body of the documentation, but rank exact and prefix
+    /// name matches first, so the most relevant entities are at the top.
+    const QUERY = `
+        SELECT name, type, description, source
+        FROM system.documentation
+        WHERE positionCaseInsensitive(name, {q:String}) > 0
+           OR positionCaseInsensitive(description, {q:String}) > 0
+        ORDER BY
+            (lowerUTF8(name) = lowerUTF8({q:String})) DESC,
+            startsWithUTF8(lowerUTF8(name), lowerUTF8({q:String})) DESC,
+            positionCaseInsensitive(name, {q:String}) > 0 DESC,
+            length(name) ASC,
+            name ASC
+        LIMIT 200`;
+
+    /// Run a search and render the results. `desired`, if given, is `{name, type, section}` of the
+    /// entry that should be selected once the results arrive (used when restoring from the URL);
+    /// otherwise the first result is selected. This function never touches the browser history —
+    /// the callers decide whether to push or replace a history entry.
+    async function runSearch(term, desired) {
+        const seq = ++request_seq;
+        /// Snapshot the connection generation this search belongs to. A response is fetched, parsed,
+        /// and rendered across two `await`s, and during either of them the user may change the server
+        /// URL, user, or password (which bumps `connection_seq` and clears `all_names`). Re-checking
+        /// this snapshot after each `await`, alongside `request_seq`, keeps a response fetched from the
+        /// previous connection from being rendered or mixed into the rebuilt cross-link cache.
+        const conn = connection_seq;
+
+        if (!term) {
+            current = [];
+            selected = -1;
+            renderResults();
+            $doc.className = 'empty';
+            $doc.innerText = 'Start typing to search the documentation.';
+            $status.innerText = '';
+            return;
+        }
+
+        const url = buildURL() + `&param_q=${encodeURIComponent(term)}`;
+
+        try {
+            /// `Authorization: never` keeps the browser from attaching stored HTTP Basic
+            /// credentials, so the empty `user`/`password` fields connect as the default user,
+            /// exactly as `play.html` does, instead of authenticating as a cached `default` login.
+            const response = await fetch(url, { method: 'POST', body: QUERY, headers: { 'Authorization': 'never' } });
+
+            if (seq !== request_seq || conn !== connection_seq) {
+                return; /// A newer query or a connection change has superseded this; drop the response.
+            }
+
+            const text = await response.text();
+            if (seq !== request_seq || conn !== connection_seq) {
+                return; /// Re-check after the body arrives: either could have changed while it streamed.
+            }
+            if (!response.ok) {
+                $status.innerText = '';
+                $doc.className = 'empty';
+                $doc.innerHTML = `<div class="error"></div>`;
+                $doc.querySelector('.error').innerText = text;
+                return;
+            }
+
+            current = text.split('\n').filter(l => l).map(l => JSON.parse(l));
+
+            if (desired && desired.name) {
+                const idx = current.findIndex(r =>
+                    r.name === desired.name && (!desired.type || r.type === desired.type));
+                selected = idx >= 0 ? idx : (current.length ? 0 : -1);
+            } else {
+                selected = current.length ? 0 : -1;
+            }
+
+            renderResults();
+            await renderDoc();
+
+            if (desired && desired.section) {
+                current_section = desired.section;
+                scrollToSection(desired.section);
+            }
+
+            $status.innerText = `${current.length} result${current.length == 1 ? '' : 's'}` +
+                (current.length == 200 ? ' (showing first 200)' : '');
+        } catch (e) {
+            if (seq !== request_seq || conn !== connection_seq) {
+                return;
+            }
+            $doc.className = 'empty';
+            $doc.innerHTML = `<div class="error"></div>`;
+            $doc.querySelector('.error').innerText = e.toString();
+        }
+    }
+
+    /// An alias entity's whole documentation is the generated "Alias of `canonical`." string (see
+    /// `system.documentation`); the same form is already recognized by `linkifyReferences`. Return the
+    /// canonical name when a description is exactly that, so the result list can badge aliases without
+    /// opening them, and `null` otherwise.
+    function aliasTarget(description) {
+        const match = /^\s*Alias of `([^`]+)`\.?\s*$/.exec(description || '');
+        return match ? match[1] : null;
+    }
+
+    function renderResults() {
+        $results.innerHTML = '';
+        current.forEach((row, i) => {
+            const el = document.createElement('div');
+            el.className = 'result' + (i === selected ? ' selected' : '');
+            const accent = TYPE_ACCENT[row.type];
+            if (accent) {
+                el.style.setProperty('--type-accent', accent);
+            }
+            const name = document.createElement('div');
+            name.className = 'name';
+            name.innerText = row.name;
+            /// Mark aliases with a badge so they are distinguishable in the list at a glance; the
+            /// canonical name goes in the tooltip.
+            const alias_of = aliasTarget(row.description);
+            if (alias_of !== null) {
+                const badge = document.createElement('span');
+                badge.className = 'alias-badge';
+                badge.innerText = 'alias';
+                badge.title = 'Alias of ' + alias_of;
+                name.appendChild(badge);
+            }
+            const type = document.createElement('div');
+            type.className = 'type';
+            type.innerText = row.type;
+            el.appendChild(name);
+            el.appendChild(type);
+            /// Clicking a result opens it: this is a user-initiated page change, so it adds a
+            /// history entry.
+            el.addEventListener('click', () => openEntity(i));
+            $results.appendChild(el);
+        });
+    }
+
+    async function renderDoc() {
+        if (selected < 0 || !current[selected]) {
+            $doc.className = 'empty';
+            $doc.innerText = 'No matches.';
+            return;
+        }
+        const row = current[selected];
+        $doc.className = '';
+        /// `marked.parse` turns the Markdown stored in `system.documentation` into HTML.
+        const html = marked.parse(preprocessMarkdown(row.description || ''));
+        $doc.innerHTML =
+            `<div class="entity-type"></div>` +
+            `<h1 class="entity-name"></h1>` +
+            `<div class="entity-body"></div>`;
+        $doc.querySelector('.entity-type').innerText = row.type;
+        const name_el = $doc.querySelector('.entity-name');
+        name_el.innerText = row.name;
+        /// When the entity's source location is known, show a pencil link next to the title that
+        /// opens the source file on GitHub (the `master` branch). `source` is the repository-relative
+        /// path from `system.documentation`; it is empty for entities of unknown origin (e.g. an alias
+        /// of an undocumented function), in which case no link is shown.
+        if (row.source) {
+            name_el.appendChild(sourceLink(row.source));
+        }
+        const body = $doc.querySelector('.entity-body');
+        /// `marked.parse` does not sanitize: insert the result through `setSanitizedHTML`, never
+        /// directly as `innerHTML`, so untrusted documentation cannot inject script into this origin.
+        setSanitizedHTML(body, html);
+
+        /// Post-process the rendered HTML: give headings stable anchors, and rewrite relative links.
+        /// The names map is needed to recognize links that point to another documented entity.
+        processHeadingAnchors(body);
+        await loadAllNames();
+        rewriteLinks(body);
+        linkifyReferences(body);
+        addCopyButtons(body);
+
+        /// Apply ClickHouse SQL syntax highlighting to the code blocks. This is asynchronous
+        /// (the lexer is WebAssembly), but the markdown is already on screen, so highlighting
+        /// just colors it in a moment later.
+        highlightCodeBlocks(body);
+
+        /// The doc pane scrolls back to the top for a freshly opened entity.
+        $doc.scrollTop = 0;
+
+        /// Keep the selected item visible in the list.
+        const sel = $results.children[selected];
+        if (sel) sel.scrollIntoView({ block: 'nearest' });
+    }
+
+    /// Build the pencil link to an entity's source file on GitHub, from its repository-relative
+    /// `source` path. The `master` branch is used, and the link opens in a new tab. Path segments
+    /// are encoded individually (keeping the `/` separators) so unusual characters are handled safely.
+    const GITHUB_SOURCE_BASE = 'https://github.com/ClickHouse/ClickHouse/blob/master/';
+    function sourceLink(source) {
+        const a = document.createElement('a');
+        a.className = 'source-link';
+        a.href = GITHUB_SOURCE_BASE + source.split('/').map(encodeURIComponent).join('/');
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.title = `View the source of this page on GitHub (${source})`;
+        a.setAttribute('aria-label', 'View the source of this page on GitHub');
+        /// The GitHub "pencil" octicon, inlined so the page stays self-contained and the icon is
+        /// theme-aware (it inherits the link color via `fill: currentColor`).
+        a.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true">'
+            + '<path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61'
+            + 'c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Z'
+            + 'm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064Z'
+            + 'm1.238-3.763a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354Z"></path></svg>';
+        return a;
+    }
+
+    /// Turn a heading into a section: assign it an id (from an explicit `{#anchor}` if present,
+    /// otherwise a slug of its text) and append a "#" anchor symbol linking to it.
+    function processHeadingAnchors(body) {
+        for (const h of body.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+            let id;
+            /// An explicit `{#anchor}` is matched on the rendered HTML so inline formatting in the
+            /// heading is preserved.
+            const match = h.innerHTML.match(/^([\s\S]*?)\s*\{#([\w-]+)\}\s*$/);
+            if (match) {
+                h.innerHTML = match[1];
+                id = match[2];
+            } else {
+                id = slugify(h.textContent);
+            }
+            if (!id) continue;
+            h.id = id;
+
+            const anchor = document.createElement('a');
+            anchor.className = 'heading-anchor';
+            anchor.textContent = '#';
+            anchor.setAttribute('aria-label', 'Link to this section');
+            anchor.href = stateToHash({ q: $search.value.trim(), name: current[selected].name, type: current[selected].type, section: id });
+            anchor.addEventListener('click', e => { e.preventDefault(); openSection(id); });
+            h.appendChild(anchor);
+        }
+    }
+
+    function slugify(text) {
+        return text.trim().toLowerCase().replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, '');
+    }
+
+    /// The entity type documented under each docs route section, used to disambiguate a link whose
+    /// target name exists under more than one type. Keyed by a path segment that appears in the href.
+    const DOCS_SECTION_TYPE = {
+        'data-types': 'Data Type',
+        'formats': 'Format',
+        'functions': 'Function',
+        'aggregate-functions': 'Aggregate Function',
+        'table-functions': 'Table Function',
+        'table-engines': 'Table Engine',
+        'database-engines': 'Database Engine',
+        'system-tables': 'System Table',
+    };
+
+    /// The documented entity type implied by a relative link's target route, or null when the route
+    /// carries no such hint. For example `/interfaces/formats/JSON` points at the `Format` named
+    /// `JSON`, not the `Data Type` of the same name.
+    function typeFromDocsHref(href) {
+        const path = href.split('#')[0].split('?')[0];
+        for (const seg of path.split('/'))
+            if (DOCS_SECTION_TYPE[seg]) return DOCS_SECTION_TYPE[seg];
+        return null;
+    }
+
+    /// Resolve a relative link's candidate `term` to a single documented entity, or null when it is
+    /// not documented or cannot be resolved unambiguously. A single same-named entity is used
+    /// directly; when several share the name (e.g. the `JSON` data type and the `JSON` format) the
+    /// link's target route disambiguates, and if it cannot, the link is left as an external docs link
+    /// rather than guessing the wrong entity.
+    function resolveDocEntity(term, href) {
+        const list = term && all_names ? all_names.get(term.toLowerCase()) : null;
+        if (!list || !list.length) return null;
+        if (list.length === 1) return list[0];
+        const type = typeFromDocsHref(href);
+        return (type && list.find(e => e.type === type)) || null;
+    }
+
+    /// Rewrite the links inside a rendered document:
+    ///   - in-page anchors (`#id`) navigate within the open entity;
+    ///   - relative links to another documented entity open that entity in this app;
+    ///   - any other relative link is resolved against https://clickhouse.com/docs.
+    function rewriteLinks(body) {
+        for (const a of body.querySelectorAll('a')) {
+            const href = a.getAttribute('href');
+            if (!href) continue;
+
+            /// Already absolute (`http:`, `https:`, `mailto:`, ...) or protocol-relative: leave as is,
+            /// but make it open in a new tab.
+            if (/^[a-zA-Z][\w+.-]*:/.test(href) || href.startsWith('//')) {
+                a.setAttribute('target', '_blank');
+                a.setAttribute('rel', 'noopener');
+                continue;
+            }
+
+            if (href.startsWith('#')) {
+                const id = href.slice(1);
+                a.addEventListener('click', e => { e.preventDefault(); openSection(id); });
+                continue;
+            }
+
+            const entity = resolveDocEntity(candidateTerm(a, href), href);
+            if (entity) {
+                a.classList.add('doc-internal-link');
+                a.href = stateToHash({ q: $search.value.trim(), name: entity.name, type: entity.type, section: '' });
+                a.addEventListener('click', e => { e.preventDefault(); openTerm(entity); });
+            } else {
+                a.href = toDocsURL(href);
+                a.setAttribute('target', '_blank');
+                a.setAttribute('rel', 'noopener');
+            }
+        }
+    }
+
+    /// Best guess at which documented entity a relative link refers to: prefer the link text when
+    /// it is a single identifier (e.g. ``[`toFloat64`](...)``), otherwise the last path segment.
+    function candidateTerm(a, href) {
+        const text = a.textContent.trim().replace(/^`+|`+$/g, '');
+        if (/^[A-Za-z_]\w*$/.test(text)) return text;
+        let path = href.split('#')[0].split('?')[0].replace(/\/+$/, '');
+        let seg = path.substring(path.lastIndexOf('/') + 1).replace(/\.mdx?$/, '');
+        return seg || null;
+    }
+
+    /// Canonical docs route for a relative-link section directory. The embedded documentation links
+    /// across sections with repository-relative paths such as `../data-types/int-uint.md`, but the
+    /// docs site serves each section under a fixed route (data types live at `/sql-reference/data-types`),
+    /// so a relative path cannot just be appended to the docs root. Sections whose directory name is
+    /// unique in the docs tree are mapped to their route here; the leading segment of the cleaned
+    /// relative path is matched against it.
+    const DOCS_SECTION_ROUTE = {
+        'data-types': '/sql-reference/data-types',
+        'functions': '/sql-reference/functions',
+        'aggregate-functions': '/sql-reference/aggregate-functions',
+        'window-functions': '/sql-reference/window-functions',
+        'table-functions': '/sql-reference/table-functions',
+        'dictionaries': '/sql-reference/dictionaries',
+        'statements': '/sql-reference/statements',
+        'operators': '/sql-reference/operators',
+        'formats': '/interfaces/formats',
+        'system-tables': '/operations/system-tables',
+        'settings': '/operations/settings',
+        'server-configuration-parameters': '/operations/server-configuration-parameters',
+        'table-engines': '/engines/table-engines',
+        'database-engines': '/engines/database-engines',
+    };
+
+    /// Top-level docs route roots: when a link's leading segment is one of these it is already a full
+    /// route (only the docs base is prepended), even if it arrived through `../` segments.
+    const DOCS_ROUTE_ROOTS = new Set([
+        'sql-reference', 'operations', 'interfaces', 'engines', 'guides', 'development',
+        'cloud', 'integrations', 'getting-started', 'concepts', 'use-cases', 'whats-new',
+        'native-protocol', 'chdb', 'faq', 'tutorial', 'about-us',
+    ]);
+
+    /// Canonical docs route for a standalone documentation page that is neither a documented entity nor a
+    /// section directory: a bare page name whose section the relative path does not reveal (the entity's
+    /// embedded `source` is a code path, not a docs path). The embedded documentation links to a handful of
+    /// such pages with source-relative paths — e.g. `../syntax.md#string`, `../query-cache.md`,
+    /// `type-conversion-functions.md#parseDateTime64BestEffort`, and `merge-tree-settings.md/#...` — that
+    /// would otherwise fall back to the docs root and lose the target page and anchor. Mapping each to its
+    /// route resolves it (keeping the leading path segment's `#fragment`/`?query`) to the intended page instead.
+    const DOCS_PAGE_ROUTE = {
+        'syntax': '/sql-reference/syntax',
+        'query-cache': '/operations/query-cache',
+        'type-conversion-functions': '/sql-reference/functions/type-conversion-functions',
+        'merge-tree-settings': '/operations/settings/merge-tree-settings',
+    };
+
+    function toDocsURL(href) {
+        const base = 'https://clickhouse.com/docs';
+        /// The embedded documentation links to source files by their repository path, keeping the
+        /// `.md`/`.mdx` extension (e.g. `/operations/workload-scheduling.md`). Those extension URLs 404
+        /// on the docs site, while the extensionless routes work, so strip the extension from the path
+        /// part only, preserving any `#fragment`/`?query` suffix. Some entries also leave a stray slash
+        /// between the extension and the fragment (e.g. `merge-tree-settings.md/#materialize_skip_indexes_on_merge`),
+        /// so drop a trailing slash before stripping the extension.
+        const [, path, suffix] = /^([^?#]*)(.*)$/.exec(href);
+        const cleanPath = path.replace(/\/+$/, '').replace(/\.mdx?$/, '');
+
+        /// An absolute docs path is used as is.
+        if (cleanPath.startsWith('/')) return base + cleanPath + suffix;
+
+        /// A relative path (`./x`, `../section/x`): its `./`/`../` segments cannot be resolved against the
+        /// docs root, because the page they come from lives under a section route that the embedded `source`
+        /// (a code path, not a docs path) does not reveal. Drop the leading `./`/`../` and resolve the first
+        /// remaining segment to its canonical route when it names a known section, is already a route root, or
+        /// names a standalone page mapped in `DOCS_PAGE_ROUTE`.
+        /// A bare same-directory link (e.g. `textindexes.md`), or any leading segment we cannot map, has no
+        /// determinable route: rather than emit a fabricated path that 404s, fall back to the docs root.
+        const rel = cleanPath.replace(/^(\.\.?\/)+/, '');
+        const slash = rel.indexOf('/');
+        const head = slash === -1 ? rel : rel.slice(0, slash);
+        const tail = slash === -1 ? '' : rel.slice(slash); /// keeps its leading '/'
+        if (DOCS_ROUTE_ROOTS.has(head)) return base + '/' + rel + suffix;
+        if (DOCS_SECTION_ROUTE[head]) return base + DOCS_SECTION_ROUTE[head] + tail + suffix;
+        if (DOCS_PAGE_ROUTE[head]) return base + DOCS_PAGE_ROUTE[head] + tail + suffix;
+        return base;
+    }
+
+    /// Turn an inline `code` element into an in-app link when its text is a documented entity.
+    function linkifyCode(code) {
+        /// A `Related:`/`Alias of` reference carries no target route, so only an unambiguous (single)
+        /// match is linkified; a name shared across types is left as plain inline code.
+        const list = all_names ? all_names.get(code.textContent.trim().toLowerCase()) : null;
+        const entity = list && list.length === 1 ? list[0] : null;
+        if (!entity) return;
+        const a = document.createElement('a');
+        a.className = 'doc-internal-link';
+        a.href = stateToHash({ q: $search.value.trim(), name: entity.name, type: entity.type, section: '' });
+        a.addEventListener('click', e => { e.preventDefault(); openTerm(entity); });
+        a.appendChild(code.cloneNode(true)); /// Keep the monospace `code` styling inside the link.
+        code.replaceWith(a);
+    }
+
+    /// The embedded documentation refers to other entities as inline `code` in two recurring places:
+    /// the "**Related:**" list, and the "Alias of `name`." description of an alias. Turn those
+    /// references into in-app links whenever the referenced entity is itself documented.
+    function linkifyReferences(body) {
+        if (!all_names) return;
+        for (const strong of body.querySelectorAll('strong')) {
+            if (strong.textContent.trim().replace(/:$/, '').toLowerCase() !== 'related') continue;
+            const container = strong.parentElement;
+            if (container) for (const code of [...container.querySelectorAll('code')]) linkifyCode(code);
+        }
+        for (const p of body.querySelectorAll('p')) {
+            if (/^\s*alias of\b/i.test(p.textContent)) {
+                for (const code of [...p.querySelectorAll('code')]) linkifyCode(code);
+            }
+        }
+    }
+
+    function scrollToSection(id) {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ block: 'start' });
+    }
+
+    /// Add a "Copy" button to every code block; it copies the code (not the button label) to the
+    /// clipboard and briefly confirms. The button lives in a non-scrolling wrapper around the `pre`,
+    /// so it stays pinned to the right edge regardless of the code block's horizontal scroll.
+    function addCopyButtons(body) {
+        for (const pre of body.querySelectorAll('pre')) {
+            if (pre.parentElement && pre.parentElement.classList.contains('code-wrapper')) continue;
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'code-wrapper';
+            pre.parentNode.insertBefore(wrapper, pre);
+            wrapper.appendChild(pre);
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'copy-button';
+            button.textContent = 'Copy';
+            button.addEventListener('click', async () => {
+                const code = pre.querySelector('code');
+                const text = code ? code.textContent : pre.textContent;
+                try {
+                    await navigator.clipboard.writeText(text);
+                    button.textContent = 'Copied!';
+                } catch (e) {
+                    button.textContent = 'Error';
+                }
+                setTimeout(() => { button.textContent = 'Copy'; }, 1200);
+            });
+            wrapper.appendChild(button);
+        }
+    }
+
+    /* ----------------------------------------------------------------------------------------
+       Navigation and browser-history integration.
+
+       The current state (search term, open entity, and in-page section) is mirrored into the URL
+       fragment. Opening a different entity pushes a new history entry; merely changing the search
+       term replaces the current one, so typing does not flood the back-stack.
+       ---------------------------------------------------------------------------------------- */
+
+    function currentState() {
+        const row = (selected >= 0 && current[selected]) ? current[selected] : null;
+        return {
+            q: $search.value.trim(),
+            name: row ? row.name : '',
+            type: row ? row.type : '',
+            section: current_section,
+        };
+    }
+
+    function stateToHash(state) {
+        const params = new URLSearchParams();
+        if (state.q) params.set('q', state.q);
+        if (state.name) params.set('name', state.name);
+        if (state.type) params.set('type', state.type);
+        if (state.section) params.set('section', state.section);
+        const s = params.toString();
+        return s ? '#' + s : '#';
+    }
+
+    function readStateFromURL() {
+        const params = new URLSearchParams(location.hash.replace(/^#/, ''));
+        return {
+            q: params.get('q') || '',
+            name: params.get('name') || '',
+            type: params.get('type') || '',
+            section: params.get('section') || '',
+        };
+    }
+
+    function pushURL() {
+        const state = currentState();
+        history.pushState(state, '', stateToHash(state));
+    }
+
+    function replaceURL() {
+        const state = currentState();
+        history.replaceState(state, '', stateToHash(state));
+    }
+
+    /// Open the entity at the given result index (a user-initiated page change → push history).
+    async function openEntity(index) {
+        if (index < 0 || index >= current.length || index === selected) return;
+        selected = index;
+        current_section = '';
+        renderResults();
+        await renderDoc();
+        pushURL();
+    }
+
+    /// Open a documented entity reached through an in-doc link (it may not be in the current
+    /// result list, so we search for it first).
+    async function openTerm(entity) {
+        $search.value = entity.name;
+        current_section = '';
+        await runSearch(entity.name, { name: entity.name, type: entity.type });
+        pushURL();
+    }
+
+    /// Navigate to an in-page section of the open entity.
+    function openSection(id) {
+        current_section = id;
+        scrollToSection(id);
+        pushURL();
+    }
+
+    async function loadAllNames() {
+        if (all_names) return all_names;
+        /// Snapshot the connection generation this request belongs to. If the user changes the
+        /// connection while the request is in flight, `connection_seq` is bumped and we must not
+        /// publish this response into the shared cache (the names would belong to the old server).
+        const seq = connection_seq;
+        const map = new Map();
+        try {
+            const response = await fetch(buildURL(), { method: 'POST', body: 'SELECT name, type FROM system.documentation', headers: { 'Authorization': 'never' } });
+            if (!response.ok) {
+                /// Do not cache on failure. On a server that requires credentials, the initial
+                /// background call can run before the user enters them; returning an empty map for
+                /// just this call (while leaving `all_names` null) lets a later call retry once the
+                /// credentials are available, instead of permanently poisoning the cross-link cache.
+                return map;
+            }
+            for (const line of (await response.text()).split('\n')) {
+                if (!line) continue;
+                const row = JSON.parse(line);
+                const key = row.name.toLowerCase();
+                let list = map.get(key);
+                if (!list) { list = []; map.set(key, list); }
+                list.push(row);
+            }
+        } catch (e) {
+            console.log(e); /// Without this map, links simply fall back to clickhouse.com/docs.
+            return map; /// Network error: same as above — do not cache, retry on the next call.
+        }
+        /// Publish only if the connection has not changed since this request started; otherwise the
+        /// caller still gets this response, but the stale names are not cached for later searches.
+        if (seq === connection_seq) {
+            all_names = map;
+        }
+        return map;
+    }
+
+    /* ----------------------------------------------------------------------------------------
+       Event wiring.
+       ---------------------------------------------------------------------------------------- */
+
+    /// Debounce keystrokes so we issue at most one query per short interval, giving an "instant"
+    /// feel without flooding the server. A search-term change replaces the current history entry.
+    let debounce_timer = null;
+    $search.addEventListener('input', () => {
+        clearTimeout(debounce_timer);
+        debounce_timer = setTimeout(async () => {
+            current_section = '';
+            await runSearch($search.value.trim());
+            replaceURL();
+        }, 120);
+    });
+
+    /// Changing the connection (server URL, user, or password) invalidates the cross-link name
+    /// cache, so it is rebuilt against the new connection on the next search instead of keeping a
+    /// map (possibly empty) fetched with the previous credentials.
+    for (const $input of [$url, $user, $password]) {
+        $input.addEventListener('change', () => { all_names = null; ++connection_seq; });
+    }
+
+    /// Up/Down arrows navigate the list of matches, regardless of where focus is (except when the
+    /// user is typing in the connection inputs).
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        if (e.target === $url || e.target === $user || e.target === $password) return;
+        if (current.length === 0) return;
+
+        if (e.key === 'ArrowDown' && selected < current.length - 1) {
+            e.preventDefault();
+            openEntity(selected + 1);
+        } else if (e.key === 'ArrowUp' && selected > 0) {
+            e.preventDefault();
+            openEntity(selected - 1);
+        }
+    });
+
+    /// Back/forward navigation restores the mirrored state.
+    window.addEventListener('popstate', async () => {
+        const state = readStateFromURL();
+        $search.value = state.q;
+        current_section = state.section;
+        await runSearch(state.q || state.name, state);
+    });
+
+    /* ----------------------------------------------------------------------------------------
+       ClickHouse SQL syntax highlighting.
+
+       The ClickHouse lexer is compiled to WebAssembly (`src/Parsers/Lexer.wasm`, embedded below
+       as base64) and reused here to tokenize the SQL code blocks of the rendered documentation,
+       exactly as `play.html` does for the query editor. Keep the lexer payload and the token
+       classification in sync with `play.html`.
+       ---------------------------------------------------------------------------------------- */
+
+    let lexer_module;
+    async function loadLexer() {
+        // base64 -w0 build/src/Parsers/Lexer.wasm
+        const lexer_base64 = "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A08NAkEBIQgDQCACLQAAIgVBMGshAQJAAkAgBwRAIAFB/wFxQQpJIAVBwQBrQQZJcg0CIAVB4QBrQQZPDQEMAgsgAUH/AXFBCkkNAQsgCCAFQd8AR3JBAXENBAJAIAJBAWoiCSADTw0AIAktAAAiBUEwayEBIAcEQCABQf8BcUEKSSAFQcEAa0EGSXINASAFQeEAa0EGTw0HDAELIAFB/wFxQQlLDQYLIAMgCUYNBAsgBiACQQFqIgI2AgBBACEIIAIgA0kNAAsMAgsgBiACQQFqIgI2AgBBACEIIAIgA0cNAAsLIAJBAWoiASADTw0AIAItAAAhBQJAIAcEQCAFQSByQfAARw0CDAELIAVBIHJB5QBHDQELIAYgATYCAAJAIAJBAmogA08NAAJAIAEtAABBK2sOAwABAAELIAYgAUEBaiIBNgIAIAEgA08NAgtBASECA0AgAS0AACIFQTBrQf8BcUEKTwRAIAIgBUHfAEdyQQFxDQMgAUEBaiICIANPDQMgAi0AAEEwa0H/AXFBCUsNAwsgBiABQQFqIgE2AgBBACECIAEgA0cNAAsMAQsgAiEBCwJ/AkACQCABIANPDQAgAS0AACICQd8ARiACQTBrQf8BcUEKSXJFIAJB3wFxQcEAa0H/AXFBGUtxDQAgAUEBaiEFA0AgBiAFIgE2AgAgASADTw0CIAFBAWohBSABLQAAIgdBMGshAiAHQd8ARiACQf8BcUEKSXIgB0HfAXFBwQBrQf8BcUEaSXINAAsgAUEBawwCCyAAIAE2AggMCgsgAUEBawshAwJAIAEgBE0NACAEQQFrIQUDQCAFQQFqIgUtAAAiAkEkRiACQd8ARnIgAkEwa0H/AXFBCklyRSACQd8BcUHBAGtB/wFxQRpPcUUEQCADIAVLDQEMAgsLIAAgATYCCCAAIAQ2AgQgAEEvOgAADwsMCQsgBiAEQQJqIgE2AgACQCABIANGDQADQCABLQAAQQpGDQEgAUEBaiIBIANHDQALIAMhAQsLIAAgATYCCCAAIAQ2AgQgAEEBOgAACyAGIAE2AgAPCyAAIAE2AgggACAENgIEIABBADoAAA8LIAAgBEEBaiIANgIIDAILIAAgBEECaiIANgIIDAELIAAgATYCCCAAIAQ2AgQgAEEoOgAADwsgBiAANgIADwsgACAENgIEIABBAzoAAA8LIAAgATYCCCAAIAQ2AgQgAEECOgAACyUAIABBADoAECAAIAM2AgwgACACNgIIIAAgATYCBCAAIAE2AgALNgEBfyMAQRBrIgMkACADQQRqIAAQASABIAMoAgg2AgAgAiADKAIMNgIAIAMtAAQgA0EQaiQACwcAIABBAUsLBwAgAEEnSwsHACAAQSdGCwsIAQBBgAgLARQAeQlwcm9kdWNlcnMBDHByb2Nlc3NlZC1ieQEFY2xhbmdZMjAuMC4wZ2l0IChnaXRAZ2l0aHViLmNvbTpsbHZtL2xsdm0tcHJvamVjdC5naXQgNmNiYzY0ZWQ5MjJjYzY5YmMyOTJkMzk0YmE1YzY4MWZhMzA5ZjQwNCkAaw90YXJnZXRfZmVhdHVyZXMGKw9tdXRhYmxlLWdsb2JhbHMrE25vbnRyYXBwaW5nLWZwdG9pbnQrC2J1bGstbWVtb3J5KwhzaWduLWV4dCsPcmVmZXJlbmNlLXR5cGVzKwptdWx0aXZhbHVl";
+
+        if (!lexer_module) {
+            const binary = atob(lexer_base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            lexer_module = await WebAssembly.instantiate(bytes);
+        }
+    }
+
+    async function tokenize(query) {
+        await loadLexer();
+
+        const exports = lexer_module.instance.exports;
+        const buffer = exports.memory.buffer;
+        let memory_offset = 0;
+
+        /// Allocate memory for the lexer object.
+        const lexer = new Uint8Array(buffer, memory_offset, exports.clickhouse_lexer_size);
+        memory_offset += exports.clickhouse_lexer_size;
+
+        /// Allocate the query.
+        const bytes = new TextEncoder().encode(query);
+        const query_array = new Uint8Array(buffer, memory_offset, bytes.length);
+        query_array.set(bytes);
+        const query_begin = memory_offset;
+        memory_offset += bytes.length;
+        const query_end = memory_offset;
+
+        /// Initialize the lexer.
+        exports.clickhouse_lexer_create(lexer, query_begin, query_end, 65536);
+
+        /// Allocate the out ptrs.
+        const token_begin = memory_offset;
+        memory_offset += 4;
+        const token_end = memory_offset;
+        memory_offset += 4;
+
+        const result = [];
+        while (true) {
+            const token_type = exports.clickhouse_lexer_next_token(lexer, token_begin, token_end);
+            if (exports.clickhouse_lexer_token_is_error(token_type) || exports.clickhouse_lexer_token_is_end(token_type)) {
+                break;
+            }
+
+            const view = new DataView(buffer);
+            const begin = view.getUint32(token_begin, true);
+            const end = view.getUint32(token_end, true);
+
+            const token_bytes = new Uint8Array(buffer, begin, end - begin);
+            const token = new TextDecoder().decode(token_bytes);
+
+            result.push({ type: token_type, token: token });
+        }
+        return result;
+    }
+
+    function escapeHTML(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    /// Numeric TokenType values, matching the order of the C++ enum in `src/Parsers/Lexer.h`.
+    const TT = {
+        Whitespace: 0, Comment: 1, BareWord: 2, Number: 3, StringLiteral: 4, QuotedIdentifier: 5,
+        OpeningRoundBracket: 6, ClosingRoundBracket: 7,
+        Semicolon: 13, Asterisk: 16, HereDoc: 17, DollarSign: 18,
+        Plus: 19, Minus: 20, Slash: 21, Percent: 22, Arrow: 23,
+        QuestionMark: 24, Colon: 25, Caret: 26, DoubleColon: 27,
+        Equals: 28, NotEquals: 29, Less: 30, Greater: 31,
+        LessOrEquals: 32, GreaterOrEquals: 33, Spaceship: 34,
+        PipeMark: 35, Concatenation: 36, At: 37, DoubleAt: 38,
+    };
+
+    /// SQL keywords recognized for highlighting. The lexer reports them as BareWord, so we
+    /// disambiguate identifiers from keywords here. Comparisons are case-insensitive.
+    const SQL_KEYWORDS = new Set([
+        'ADD', 'AFTER', 'ALL', 'ALTER', 'AND', 'ANTI', 'ANY', 'ARRAY', 'AS', 'ASC', 'ASCENDING',
+        'ASOF', 'AST', 'ASYNC', 'ATTACH', 'BACKUP', 'BEGIN', 'BETWEEN', 'BOTH', 'BY',
+        'CACHE', 'CASCADE', 'CASE', 'CAST', 'CHANGE', 'CHANGED', 'CHECK', 'CLEAR', 'CLUSTER',
+        'CODEC', 'COLLATE', 'COLUMN', 'COLUMNS', 'COMMENT', 'COMMIT', 'CONSTRAINT', 'CREATE',
+        'CROSS', 'CUBE', 'CURRENT',
+        'DATABASE', 'DATABASES', 'DAY', 'DEDUPLICATE', 'DEFAULT', 'DELETE', 'DESC', 'DESCENDING',
+        'DESCRIBE', 'DETACH', 'DICTIONARIES', 'DICTIONARY', 'DISK', 'DISTINCT', 'DISTRIBUTED',
+        'DROP', 'ELSE', 'END', 'ENGINE', 'ESTIMATE', 'EVENTS', 'EXCEPT', 'EXCHANGE', 'EXISTS',
+        'EXPLAIN', 'EXPRESSION', 'EXTENDED', 'EXTRACT',
+        'FALSE', 'FETCH', 'FETCHES', 'FILE', 'FILESYSTEM', 'FINAL', 'FIRST', 'FLUSH', 'FOLLOWING',
+        'FOR', 'FOREIGN', 'FORMAT', 'FREEZE', 'FROM', 'FULL', 'FUNCTION',
+        'GLOBAL', 'GRANT', 'GROUP', 'GROUPS', 'HAVING', 'HIERARCHICAL', 'HOUR',
+        'ID', 'IDENTIFIED', 'IF', 'ILIKE', 'IN', 'INDEX', 'INF', 'INHERIT', 'INJECTIVE',
+        'INNER', 'INSERT', 'INTERSECT', 'INTERVAL', 'INTO', 'INVISIBLE', 'IS', 'IS_OBJECT_ID',
+        'JOIN', 'KEY', 'KEYED', 'KILL',
+        'LAST', 'LATERAL', 'LAYOUT', 'LEADING', 'LEFT', 'LIFETIME', 'LIKE', 'LIMIT', 'LIMITS',
+        'LIVE', 'LOCAL', 'LOGS',
+        'MATERIALIZE', 'MATERIALIZED', 'MAX', 'MERGES', 'MICROSECOND', 'MILLISECOND', 'MIN',
+        'MINUTE', 'MODIFY', 'MONTH', 'MOVE', 'MUTATION',
+        'NAN_SQL', 'NEXT', 'NO', 'NONE', 'NOT', 'NULL', 'NULLS',
+        'OFFSET', 'ON', 'ONLY', 'OPTIMIZE', 'OPTION', 'OR', 'ORDER', 'OUTER', 'OUTFILE', 'OVER',
+        'PARTITION', 'PASTE', 'PERMANENTLY', 'PLAN', 'POPULATE', 'PRECEDING', 'PRECISION',
+        'PREWHERE', 'PRIMARY', 'PROFILE', 'PROJECTION', 'QUARTER', 'QUERY', 'QUOTA',
+        'RANDOMIZED', 'RANGE', 'RECURSIVE', 'REFRESH', 'REGEXP', 'RELOAD', 'REMOTE', 'RENAME',
+        'REPLACE', 'REPLICA', 'REPLICAS', 'RESET', 'RESTORE', 'RESTRICT', 'RESTRICTIVE',
+        'RETURNS', 'REVOKE', 'RIGHT', 'ROLE', 'ROLLBACK', 'ROLLUP', 'ROW', 'ROWS',
+        'SAMPLE', 'SECOND', 'SELECT', 'SEMI', 'SENDS', 'SET', 'SETS', 'SETTINGS', 'SHARD',
+        'SHOW', 'SIGNED', 'SOURCE', 'SQL_SECURITY', 'START', 'STEP', 'STORAGE', 'STRICT',
+        'STRICTLY_ASCENDING', 'SUBPARTITION', 'SUBSTRING', 'SUSPEND', 'SYNC', 'SYNTAX', 'SYSTEM',
+        'TABLE', 'TABLES', 'TEMPORARY', 'TEST', 'THEN', 'TIES', 'TIMESTAMP', 'TO', 'TOP',
+        'TOTALS', 'TRACKING', 'TRAILING', 'TRANSACTION', 'TRIGGER', 'TRIM', 'TRUE', 'TRUNCATE',
+        'TYPE',
+        'UNBOUNDED', 'UNFREEZE', 'UNION', 'UNIQUE', 'UNSIGNED', 'UPDATE', 'USE', 'USING',
+        'UUID', 'VALUES', 'VARYING', 'VIEW', 'VIRTUAL', 'VISIBLE',
+        'WATCH', 'WEEK', 'WHEN', 'WHERE', 'WINDOW', 'WITH', 'WORK', 'WRITABLE',
+        'XOR', 'YEAR', 'ZKPATH',
+    ]);
+
+    /// Map a single token to a CSS class. For BareWords we peek at the next non-whitespace
+    /// token to distinguish a function call (`foo(`) from a plain identifier.
+    function tokenClass(tokens, i) {
+        const elem = tokens[i];
+        switch (elem.type) {
+            case TT.Comment: return 'q-com';
+            case TT.Number: return 'q-num';
+            case TT.StringLiteral:
+            case TT.HereDoc: return 'q-str';
+            case TT.QuotedIdentifier: return 'q-qid';
+            case TT.BareWord: {
+                if (SQL_KEYWORDS.has(elem.token.toUpperCase())) return 'q-kw';
+                for (let j = i + 1; j < tokens.length; ++j) {
+                    if (tokens[j].type === TT.Whitespace) continue;
+                    return tokens[j].type === TT.OpeningRoundBracket ? 'q-fn' : 'q-id';
+                }
+                return 'q-id';
+            }
+            case TT.Asterisk: case TT.Plus: case TT.Minus: case TT.Slash: case TT.Percent:
+            case TT.Arrow: case TT.QuestionMark: case TT.Colon: case TT.DoubleColon: case TT.Caret:
+            case TT.Equals: case TT.NotEquals:
+            case TT.Less: case TT.Greater: case TT.LessOrEquals: case TT.GreaterOrEquals:
+            case TT.Spaceship: case TT.PipeMark: case TT.Concatenation:
+            case TT.At: case TT.DoubleAt: case TT.DollarSign:
+                return 'q-op';
+            default:
+                return '';
+        }
+    }
+
+    /// Tokenize SQL text and return it as HTML with per-token highlighting spans.
+    async function highlightSQL(text) {
+        const tokens = await tokenize(text);
+        let html = '';
+        let consumed = 0;
+        for (let i = 0; i < tokens.length; ++i) {
+            const elem = tokens[i];
+            consumed += elem.token.length;
+            const cls = tokenClass(tokens, i);
+            const escaped = escapeHTML(elem.token);
+            html += cls ? `<span class="${cls}">${escaped}</span>` : escaped;
+        }
+        /// Any tail the lexer did not cover (an error, or past the size limit) is shown verbatim.
+        if (consumed < text.length) {
+            html += escapeHTML(text.substring(consumed));
+        }
+        return html;
+    }
+
+    /// Highlight the SQL code blocks of a rendered documentation entry in place.
+    async function highlightCodeBlocks(container) {
+        if (typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function') {
+            return; /// No WebAssembly: leave the code blocks unstyled.
+        }
+        for (const block of container.querySelectorAll('pre code')) {
+            const cls = block.className || '';
+            /// Highlight blocks explicitly marked as SQL, or fenced blocks with no language.
+            if (cls && !/(^|\s)language-sql(\s|$)/.test(cls)) {
+                continue;
+            }
+            try {
+                block.innerHTML = await highlightSQL(block.textContent);
+            } catch (e) {
+                console.log(e); /// Keep the plain text on failure.
+            }
+        }
+    }
+
+    /* ----------------------------------------------------------------------------------------
+       Initialization: restore the state encoded in the URL fragment, if any.
+       ---------------------------------------------------------------------------------------- */
+
+    (async function init() {
+        /// Load the set of documented names in the background; it is only needed for link rewriting.
+        loadAllNames();
+
+        const state = readStateFromURL();
+        if (state.q || state.name) {
+            $search.value = state.q;
+            current_section = state.section;
+            await runSearch(state.q || state.name, state);
+            /// Normalize the URL to the canonical encoding of the restored state.
+            replaceURL();
+        }
+        $search.focus();
+    })();
+
+    </script>
+</body>
+</html>

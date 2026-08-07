@@ -1,0 +1,92 @@
+---
+title: ClickHouse에서 데이터를 파일로 내보내는 방법
+description: "`INTO OUTFILE`, File 테이블 엔진, 명령줄 리디렉션을 비롯해 ClickHouse에서 데이터를 내보내는 다양한 방법을 알아봅니다."
+date: 2023-03-22
+tags: ['데이터 내보내기']
+keywords: ['데이터 내보내기', 'INTO OUTFILE', 'File 테이블 엔진']
+---
+
+{frontMatter.description}
+
+{/* 생략 */}
+
+<div id="using-into-outfile-clause">
+  ## INTO OUTFILE 절 사용하기
+</div>
+
+쿼리에 [INTO OUTFILE](/ko/reference/statements/select/into-outfile) 절을 추가하십시오.
+
+예시:
+
+```sql
+SELECT * FROM table INTO OUTFILE 'file'
+```
+
+기본적으로 ClickHouse는 파일 이름의 확장자를 기준으로 출력 형식과 압축을 결정합니다. 예를 들어, `nyc_taxi`의 모든 행은 Parquet 포맷으로 `nyc_taxi.parquet` 파일에 내보내집니다:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.parquet'
+```
+
+그리고 다음 파일은 압축된 탭 구분 파일입니다:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.tsv.gz'
+```
+
+ClickHouse가 파일 확장자로 포맷을 판별할 수 없으면, 출력 데이터의 [출력 형식](/ko/reference/formats/index)은 기본적으로 [TabSeparated](/ko/reference/formats/index)로 설정됩니다. [출력 형식](/ko/reference/formats/index)을 지정하려면 [FORMAT 절](/ko/reference/statements/select/format)을 사용하십시오.
+
+예시:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.txt'
+FORMAT CSV
+```
+
+<div id="using-a-file-engine-table">
+  ## File 테이블 엔진 사용하기
+</div>
+
+또 다른 방법으로는 [File](/ko/reference/engines/table-engines/special/file) 테이블 엔진을 사용할 수 있습니다. 이 경우 ClickHouse는 파일에 데이터를 저장합니다. 파일에 직접 쿼리를 실행하고 데이터를 삽입할 수 있습니다.
+
+예시:
+
+```sql
+CREATE TABLE my_table (
+   x UInt32,
+   y String,
+   z DateTime
+)
+ENGINE = File(Parquet)
+```
+
+몇 개의 행을 삽입하세요:
+
+```sql
+INSERT INTO my_table VALUES
+   (1, 'Hello', now()),
+   (2, 'World', now()),
+   (3, 'Goodbye', now())
+```
+
+파일은 ClickHouse 서버의 `data` 폴더에 저장되며, 정확히는 `/data/default/my_table` 경로 아래의 `data.Parquet` 파일에 저장됩니다.
+
+<Note>
+  `File` 테이블 엔진은 파일 시스템에서 파일을 생성하고 쿼리할 때 매우 유용합니다. 다만 `File` 테이블은 `MergeTree` 테이블이 아니므로 `MergeTree`가 제공하는 모든 장점을 활용할 수는 없다는 점에 유의하십시오. ClickHouse에서 데이터를 편리한 포맷으로 내보낼 때는 편의를 위해 `File`을 사용하십시오.
+</Note>
+
+<div id="using-command-line-redirection">
+  ## 명령줄 리디렉션 사용
+</div>
+
+```bash
+$ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
+```
+
+[clickhouse-client](/ko/concepts/features/interfaces/cli)를 참고하십시오.

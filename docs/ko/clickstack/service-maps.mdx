@@ -1,0 +1,52 @@
+---
+slug: /use-cases/observability/clickstack/service-maps
+title: '서비스 맵'
+sidebarTitle: '서비스 맵'
+description: 'ClickStack 서비스 맵으로 서비스 간 종속성과 요청 흐름을 시각화합니다.'
+doc_type: 'guide'
+keywords: ['ClickStack', '서비스 맵', '토폴로지', '트레이스', '종속성', '분산 추적', '관측성', '요청 그래프']
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+import { Video } from "/snippets/ko/components/Video/Video.jsx";
+
+<BetaBadge />
+
+서비스 맵은 서비스들이 서로 어떻게 상호작용하는지 시각화합니다. ClickStack은 동일한 트레이스 내에서 클라이언트 스팬(나가는 요청)과 서버 스팬(들어오는 요청)을 매칭해 서비스 간 요청 경로를 재구성하고 그래프를 생성합니다.
+
+왼쪽 탐색 패널에서 **Service Map**을 클릭해 전체 그래프를 여세요. OpenTelemetry로 [트레이스 데이터를 수집](/ko/clickstack/ingesting-data)하면 서비스가 표시됩니다.
+
+<Image img="/images/clickstack/service-maps/service-map-overview.webp" alt="서비스 노드와 그 사이의 요청 흐름을 보여주는 서비스 맵" size="lg" />
+
+<div id="exploring-the-service-map">
+  ## 서비스 맵 살펴보기
+</div>
+
+각 노드는 서비스를 나타내며 `service.name` resource 속성으로 식별됩니다. 간선(점선)은 한 서비스의 클라이언트 스팬이 다른 서비스의 서버 스팬과 일치할 때 두 서비스를 연결합니다. 노드 크기는 상대적인 트래픽 양을 반영하며, 빨간색 노드는 선택한 시간 범위에서 오류가 발생한 서비스를 나타냅니다.
+
+맵 위의 도구 모음에서 필터를 적용하고 보기를 조정할 수 있습니다.
+
+**소스 셀렉터** — 맵을 특정 트레이스 소스(예: &quot;ClickPy Traces&quot;)로 필터링합니다.
+
+<Image img="/images/clickstack/service-maps/source-selector.webp" alt="서비스 맵 도구 모음에서 강조 표시된 소스 셀렉터" size="lg" />
+
+**샘플링 슬라이더** — 성능과 정확성의 균형을 맞출 수 있도록 샘플링 비율을 조정합니다. 비율이 낮을수록 대용량 클러스터에서 더 빠르게 로드됩니다.
+
+<Image img="/images/clickstack/service-maps/sampling.webp" alt="서비스 맵 도구 모음에서 강조 표시된 샘플링 슬라이더" size="lg" />
+
+**날짜 범위 선택기** — 맵을 생성하는 데 사용하는 트레이스 데이터의 시간 범위를 설정합니다.
+
+<Image img="/images/clickstack/service-maps/date-selector.webp" alt="서비스 맵 도구 모음에서 강조 표시된 날짜 범위 선택기" size="lg" />
+
+맵 왼쪽 아래의 **+/-** 버튼을 사용하거나 스크롤하여 확대하거나 축소할 수 있습니다.
+
+<div id="trace-level-service-maps">
+  ## 트레이스 수준 서비스 맵
+</div>
+
+개별 트레이스를 살펴보면, 해당 요청이 서비스 간을 어떻게 이동했는지 보여 주는 서비스 맵이 표시됩니다. 이를 통해 트레이스 워터폴을 벗어나지 않고도 단일 요청의 토폴로지를 확인할 수 있습니다.
+
+<Frame>
+  <Video src="/images/clickstack/service-maps/service-map-demo.mp4" />
+</Frame>

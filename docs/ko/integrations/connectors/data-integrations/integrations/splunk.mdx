@@ -1,0 +1,103 @@
+---
+sidebarTitle: 'Splunk'
+slug: /integrations/audit-splunk
+keywords: ['clickhouse', 'Splunk', 'audit', 'cloud']
+description: 'ClickHouse Cloud 감사 로그를 Splunk에 저장합니다.'
+title: 'Splunk에 ClickHouse Cloud 감사 로그 저장하기'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Splunk](https://www.splunk.com/)은 데이터 분석 및 모니터링 플랫폼입니다.
+
+이 애드온을 사용하면 [ClickHouse Cloud 감사 로그](/ko/products/cloud/reference/security/audit-logging)를 Splunk에 저장할 수 있습니다. [ClickHouse Cloud API](/ko/products/cloud/features/admin-features/api/api-overview)를 사용해 감사 로그를 다운로드합니다.
+
+이 애드온에는 모듈형 입력만 포함되어 있으며, 추가 UI는 제공되지 않습니다.
+
+<div id="installation">
+  # 설치
+</div>
+
+<div id="for-splunk-enterprise">
+  ## Splunk Enterprise용
+</div>
+
+[Splunkbase](https://splunkbase.splunk.com/app/7709)에서 Splunk용 ClickHouse Cloud Audit Add-on을 다운로드하세요.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_001.webp" size="lg" alt="Splunk용 ClickHouse Cloud Audit Add-on 다운로드 페이지가 표시된 Splunkbase 웹사이트" border />
+
+Splunk Enterprise에서 Apps -&gt; Manage로 이동한 다음 Install app from file을 클릭하세요.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_002.webp" size="lg" alt="Install app from file 옵션이 있는 Apps 관리 페이지를 보여주는 Splunk Enterprise 인터페이스" border />
+
+Splunkbase에서 다운로드한 압축 파일을 선택한 후 Upload를 클릭하세요.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_003.webp" size="lg" alt="ClickHouse add-on을 업로드하는 Splunk 앱 설치 대화상자" border />
+
+모든 것이 정상적으로 진행되면 ClickHouse Audit logs 애플리케이션이 설치된 것을 확인할 수 있습니다. 그렇지 않다면 Splunkd 로그에서 오류를 확인하세요.
+
+<div id="modular-input-configuration">
+  # 모듈형 입력 구성
+</div>
+
+모듈형 입력을 구성하려면 먼저 ClickHouse Cloud 배포 환경에서 다음 정보를 확인해야 합니다:
+
+* 조직 ID
+* 관리자 [API 키](/ko/products/cloud/features/admin-features/api/openapi)
+
+<div id="getting-information-from-clickhouse-cloud">
+  ## ClickHouse Cloud에서 정보 가져오기
+</div>
+
+[ClickHouse Cloud 콘솔](https://console.clickhouse.cloud/)에 로그인합니다.
+
+Organization -&gt; Organization details로 이동합니다. 여기에서 Organization ID를 복사할 수 있습니다.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_004.webp" size="lg" alt="Organization ID가 표시된 Organization details 페이지를 보여주는 ClickHouse Cloud 콘솔" border />
+
+그런 다음 왼쪽 메뉴에서 API Keys로 이동합니다.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_005.webp" size="lg" alt="왼쪽 탐색 메뉴의 API Keys 섹션을 보여주는 ClickHouse Cloud 콘솔" border />
+
+API Key를 생성하고, 알아보기 쉬운 이름을 지정한 다음 `Admin` 권한을 선택합니다. Generate API Key를 클릭합니다.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_006.webp" size="lg" alt="Admin 권한이 선택된 API Key 생성 인터페이스를 보여주는 ClickHouse Cloud 콘솔" border />
+
+API Key와 secret을 안전한 곳에 저장합니다.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_007.webp" size="lg" alt="저장할 생성된 API Key와 secret을 보여주는 ClickHouse Cloud 콘솔" border />
+
+<div id="configure-data-input-in-splunk">
+  ## Splunk에서 데이터 입력 구성하기
+</div>
+
+Splunk로 돌아가 Settings -&gt; Data inputs로 이동합니다.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_008.webp" size="lg" alt="Data inputs 옵션이 있는 Settings 메뉴를 보여주는 Splunk 인터페이스" border />
+
+ClickHouse Cloud Audit Logs 데이터 입력을 선택합니다.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_009.webp" size="lg" alt="ClickHouse Cloud Audit Logs 옵션을 보여주는 Splunk Data inputs 페이지" border />
+
+새 데이터 입력 인스턴스를 구성하려면 &quot;New&quot;를 클릭합니다.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_010.webp" size="lg" alt="새 ClickHouse Cloud Audit Logs 데이터 입력을 구성하는 Splunk 인터페이스" border />
+
+모든 정보를 입력했으면 Next를 클릭합니다.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_011.webp" size="lg" alt="완료된 ClickHouse 데이터 입력 설정을 보여주는 Splunk 구성 페이지" border />
+
+이제 입력 구성이 완료되었으므로 감사 로그를 확인할 수 있습니다.
+
+<div id="usage">
+  # 사용
+</div>
+
+모듈형 입력은 데이터를 Splunk에 저장합니다. 데이터를 보려면 Splunk의 일반 검색 화면을 사용할 수 있습니다.
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_012.webp" size="lg" alt="ClickHouse 감사 로그 데이터를 보여주는 Splunk 검색 인터페이스" border />

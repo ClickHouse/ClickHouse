@@ -1,0 +1,346 @@
+-- { echoOn }
+DROP TABLE IF EXISTS table_basic;
+CREATE TABLE table_basic
+(
+    d DateTime('America/New_York')
+)
+ENGINE = MergeTree
+ORDER BY d::String
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
+INSERT INTO table_basic VALUES
+    (toDateTime(1730611800, 'America/New_York')),
+    (toDateTime(1730615400, 'America/New_York'));
+EXPLAIN indexes = 1
+SELECT
+    toUnixTimestamp(d)
+FROM table_basic
+WHERE has([toDateTime(1730611800, 'America/New_York')], d);
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.table_basic)
+    Indexes:
+      PrimaryKey
+        Keys:
+          CAST(d, \'String\')
+        Condition: (CAST(d, \'String\') in 1-element set)
+        Parts: 1/1
+        Granules: 2/2
+        Search Algorithm: binary search
+      Ranges: 1
+EXPLAIN indexes = 1
+SELECT
+    toUnixTimestamp(d)
+FROM table_basic
+WHERE d IN [toDateTime(1730611800, 'America/New_York')];
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.table_basic)
+    Indexes:
+      PrimaryKey
+        Keys:
+          CAST(d, \'String\')
+        Condition: (CAST(d, \'String\') in 1-element set)
+        Parts: 1/1
+        Granules: 2/2
+        Search Algorithm: binary search
+      Ranges: 1
+EXPLAIN indexes = 1
+SELECT
+    toUnixTimestamp(d)
+FROM table_basic
+WHERE has([toDateTime(1730611801, 'America/New_York')], d);
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.table_basic)
+    Indexes:
+      PrimaryKey
+        Keys:
+          CAST(d, \'String\')
+        Condition: (CAST(d, \'String\') in 1-element set)
+        Parts: 0/1
+        Granules: 0/2
+        Search Algorithm: binary search
+      Ranges: 0
+EXPLAIN indexes = 1
+SELECT
+    toUnixTimestamp(d)
+FROM table_basic
+WHERE d IN [toDateTime(1730611801, 'America/New_York')];
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.table_basic)
+    Indexes:
+      PrimaryKey
+        Keys:
+          CAST(d, \'String\')
+        Condition: (CAST(d, \'String\') in 1-element set)
+        Parts: 0/1
+        Granules: 0/2
+        Search Algorithm: binary search
+      Ranges: 0
+DROP TABLE IF EXISTS table_intdiv_string;
+CREATE TABLE table_intdiv_string
+(
+    x Int32
+)
+ENGINE = MergeTree
+ORDER BY toString(intDiv(x, 10))
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
+INSERT INTO table_intdiv_string VALUES
+    (2), (5), (9), (10), (12), (15), (19), (20), (29), (33), (39), (40), (55), (59), (90), (95), (99);
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(x))
+FROM table_intdiv_string
+WHERE has(CAST([12,95,2,33,100] AS Array(Int32)), x);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_intdiv_string)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toString(intDiv(x, 10))
+            Condition: (toString(intDiv(x, 10)) in 5-element set)
+            Parts: 1/1
+            Granules: 14/17
+            Search Algorithm: generic exclusion search
+          Ranges: 3
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(x))
+FROM table_intdiv_string
+WHERE x IN CAST([12,95,2,33,100] AS Array(Int32));
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_intdiv_string)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toString(intDiv(x, 10))
+            Condition: (toString(intDiv(x, 10)) in 5-element set)
+            Parts: 1/1
+            Granules: 14/17
+            Search Algorithm: generic exclusion search
+          Ranges: 3
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(x))
+FROM table_intdiv_string
+WHERE NOT has(CAST([12,95,2,33,100] AS Array(Int32)), x);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_intdiv_string)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toString(intDiv(x, 10))
+            Condition: not((toString(intDiv(x, 10)) in 5-element set))
+            Parts: 1/1
+            Granules: 17/17
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(x))
+FROM table_intdiv_string
+WHERE x NOT IN CAST([12,95,2,33,100] AS Array(Int32));
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_intdiv_string)
+        Indexes:
+          PrimaryKey
+            Keys:
+              toString(intDiv(x, 10))
+            Condition: (toString(intDiv(x, 10)) notIn 5-element set)
+            Parts: 1/1
+            Granules: 17/17
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+DROP TABLE IF EXISTS table_str_chain;
+CREATE TABLE table_str_chain
+(
+    s String
+)
+ENGINE = MergeTree
+ORDER BY reverse(lower(s))
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
+INSERT INTO table_str_chain VALUES
+    ('Abc'), ('abc'),
+    ('XYZ'), ('xYz'),
+    ('Bar'), ('bar'),
+    ('Hello'), ('hello'),
+    ('World'), ('world'),
+    ('AA'), ('aa'),
+    ('A'), ('a'),
+    ('baz'), ('Qux'), ('qux');
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(s))
+FROM table_str_chain
+WHERE has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_str_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(lower(s))
+            Condition: (reverse(lower(s)) in 5-element set)
+            Parts: 1/1
+            Granules: 13/17
+            Search Algorithm: generic exclusion search
+          Ranges: 3
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(s))
+FROM table_str_chain
+WHERE s IN ['Abc', 'Bar', 'XYZ', 'Hello', 'AA'];
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_str_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(lower(s))
+            Condition: (reverse(lower(s)) in 5-element set)
+            Parts: 1/1
+            Granules: 13/17
+            Search Algorithm: generic exclusion search
+          Ranges: 3
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(s))
+FROM table_str_chain
+WHERE NOT has(['Abc', 'Bar', 'XYZ', 'Hello', 'AA'], s);
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_str_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(lower(s))
+            Condition: not((reverse(lower(s)) in 5-element set))
+            Parts: 1/1
+            Granules: 17/17
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+EXPLAIN indexes = 1
+SELECT arraySort(groupArray(s))
+FROM table_str_chain
+WHERE s NOT IN ['Abc', 'Bar', 'XYZ', 'Hello', 'AA'];
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_str_chain)
+        Indexes:
+          PrimaryKey
+            Keys:
+              reverse(lower(s))
+            Condition: (reverse(lower(s)) notIn 5-element set)
+            Parts: 1/1
+            Granules: 17/17
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SET use_variant_as_common_type=1;
+DROP TABLE IF EXISTS table_json;
+CREATE TABLE table_json (id UInt64, json JSON(a UInt32)) ENGINE = MergeTree ORDER BY (json.a, json.b::String) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
+INSERT INTO table_json SELECT number, toJSONString(map('a', number % 2, 'b', 'str_' || number % 3, 'c', range(number % 10))) FROM numbers(4);
+INSERT INTO table_json SELECT number, toJSONString(map('a', number % 2 + 4, 'b', 'str_' || number % 3 + 4, 'c', range(number % 10))) FROM numbers(4, 4);
+EXPLAIN indexes = 1
+SELECT * FROM table_json WHERE json.a = 0 AND has(['str_0', 'str_1'], json.b) ORDER BY id;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_json)
+        Indexes:
+          PrimaryKey
+            Keys:
+              json.a
+              CAST(json.b, \'String\')
+            Condition: and((CAST(json.b, \'String\') in 2-element set), (json.a in [0, 0]))
+            Parts: 1/2
+            Granules: 1/8
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+EXPLAIN indexes = 1
+SELECT * FROM table_json WHERE json.a = 0 AND NOT has(['str_0', 'str_1'], json.b) ORDER BY id;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_json)
+        Indexes:
+          PrimaryKey
+            Keys:
+              json.a
+              CAST(json.b, \'String\')
+            Condition: and(not((CAST(json.b, \'String\') in 2-element set)), (json.a in [0, 0]))
+            Parts: 1/2
+            Granules: 2/8
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+DROP TABLE IF EXISTS table_json_or_null;
+CREATE TABLE table_json_or_null (id UInt64, json JSON(a UInt32))
+ENGINE = MergeTree
+ORDER BY (json.a, json.b::UInt64)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
+INSERT INTO table_json_or_null
+SELECT number, toJSONString(map('a', number % 2, 'b', toString(number % 3)))
+FROM numbers(8);
+EXPLAIN indexes = 1
+SELECT *
+FROM table_json_or_null
+WHERE json.a = 0 AND has(['0', '1'], json.b)
+ORDER BY id;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_json_or_null)
+        Indexes:
+          PrimaryKey
+            Keys:
+              json.a
+              CAST(json.b, \'UInt64\')
+            Condition: and((CAST(json.b, \'UInt64\') in 2-element set), (json.a in [0, 0]))
+            Parts: 1/1
+            Granules: 3/8
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+-- Not supported yet
+DROP TABLE IF EXISTS table_json_nested_cast;
+CREATE TABLE table_json_nested_cast (id UInt64, json JSON(a UInt32))
+ENGINE = MergeTree
+ORDER BY (json.a, (json.b::String)::UInt64)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns=0;
+INSERT INTO table_json_nested_cast
+SELECT number, toJSONString(map('a', number % 2, 'b', toString(number % 3)))
+FROM numbers(8);
+EXPLAIN indexes = 1
+SELECT *
+FROM table_json_nested_cast
+WHERE json.a = 0 AND has(['0', '1'], json.b)
+ORDER BY id;
+Expression (Project names)
+  Sorting (Sorting for ORDER BY)
+    Expression ((Before ORDER BY + Projection))
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.table_json_nested_cast)
+        Indexes:
+          PrimaryKey
+            Keys:
+              json.a
+            Condition: (json.a in [0, 0])
+            Parts: 1/1
+            Granules: 4/8
+            Search Algorithm: binary search
+          Ranges: 1

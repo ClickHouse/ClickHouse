@@ -1,0 +1,148 @@
+---
+slug: /native-protocol/server
+title: 'Pacotes do servidor'
+description: 'Protocolo nativo do servidor'
+doc_type: 'reference'
+keywords: ['protocolo nativo', 'protocolo TCP', 'cliente-servidor', 'especificação do protocolo', 'rede']
+---
+
+| valor | nome                             | descrição                                                                                 |
+| ----- | -------------------------------- | ----------------------------------------------------------------------------------------- |
+| 0     | [Hello](#hello)                  | Resposta de handshake do servidor                                                         |
+| 1     | Data                             | O mesmo que [dados do cliente](/pt-BR/resources/develop-contribute/native-protocol/client#data) |
+| 2     | [Exception](#exception)          | Exceção no processamento da consulta                                                      |
+| 3     | [Progress](#progress)            | Progresso da consulta                                                                     |
+| 4     | [Pong](#pong)                    | Resposta ao Ping                                                                          |
+| 5     | [EndOfStream](#end-of-stream)    | Todos os pacotes foram transferidos                                                       |
+| 6     | [ProfileInfo](#profile-info)     | Dados de perfil                                                                           |
+| 7     | Totals                           | Valores totais                                                                            |
+| 8     | Extremes                         | Valores extremos (mín., máx.)                                                             |
+| 9     | TablesStatusResponse             | Resposta à solicitação TableStatus                                                        |
+| 10    | [Log](#log)                      | Log do sistema de consultas                                                               |
+| 11    | TableColumns                     | Descrição das colunas                                                                     |
+| 12    | UUIDs                            | Lista de IDs únicos de partes                                                             |
+| 13    | ReadTaskRequest                  | String (UUID) descreve uma solicitação que precisa da próxima tarefa                      |
+| 14    | [ProfileEvents](#profile-events) | Pacote com eventos de perfil do servidor                                                  |
+
+Os `Data`, `Totals` e `Extremes` podem ser comprimidos.
+
+<div id="hello">
+  ## Hello
+</div>
+
+Resposta ao [Hello do cliente](/pt-BR/resources/develop-contribute/native-protocol/client#hello).
+
+| campo             | tipo    | valor           | descrição                     |
+| ----------------- | ------- | --------------- | ----------------------------- |
+| name              | String  | `Clickhouse`    | Nome do servidor              |
+| version&#95;major | UVarInt | `21`            | Versão principal do servidor  |
+| version&#95;minor | UVarInt | `12`            | Versão secundária do servidor |
+| revision          | UVarInt | `54452`         | Revisão do servidor           |
+| tz                | String  | `Europe/Moscow` | Fuso horário do servidor      |
+| display&#95;name  | String  | `Clickhouse`    | Nome do servidor para a UI    |
+| version&#95;patch | UVarInt | `3`             | Versão de patch do servidor   |
+
+<div id="exception">
+  ## Exceção
+</div>
+
+Exceção do servidor durante o processamento da consulta.
+
+| campo           | tipo   | valor                                  | descrição                         |
+| --------------- | ------ | -------------------------------------- | --------------------------------- |
+| code            | Int32  | `60`                                   | Consulte [ErrorCodes.cpp][codes]. |
+| name            | String | `DB::Exception`                        | Versão principal do servidor      |
+| message         | String | `DB::Exception: Table X doesn't exist` | Versão secundária do servidor     |
+| stack&#95;trace | String | ~                                      | Rastreamento de pilha em C++      |
+| nested          | Bool   | `true`                                 | Há mais erros                     |
+
+Pode haver uma lista contínua de exceções até que `nested` seja `false`.
+
+[codes]: https://clickhouse.com/codebrowser/ClickHouse/src/Common/ErrorCodes.cpp.html "Lista de códigos de erro"
+
+<div id="progress">
+  ## Progress
+</div>
+
+Progresso da execução da consulta informado periodicamente pelo servidor.
+
+<Tip>
+  O Progress é informado em **deltas**. Para obter os totais, acumule-os no cliente.
+</Tip>
+
+| campo           | tipo    | valor    | descrição                  |
+| --------------- | ------- | -------- | -------------------------- |
+| rows            | UVarInt | `65535`  | Contagem de linhas         |
+| bytes           | UVarInt | `871799` | Contagem de bytes          |
+| total&#95;rows  | UVarInt | `0`      | Total de linhas            |
+| wrote&#95;rows  | UVarInt | `0`      | Linhas gravadas do cliente |
+| wrote&#95;bytes | UVarInt | `0`      | Bytes gravados do cliente  |
+
+<div id="pong">
+  ## Pong
+</div>
+
+Resposta ao [Ping do cliente](/pt-BR/resources/develop-contribute/native-protocol/client#ping), sem corpo do pacote.
+
+<div id="end-of-stream">
+  ## Fim do fluxo
+</div>
+
+Não serão enviados mais pacotes **Data**; o resultado da consulta foi totalmente transmitido do servidor para o cliente.
+
+Não há corpo de pacote.
+
+<div id="profile-info">
+  ## Informações do perfil
+</div>
+
+| campo                                    | tipo    |
+| ---------------------------------------- | ------- |
+| linhas                                   | UVarInt |
+| blocos                                   | UVarInt |
+| bytes                                    | UVarInt |
+| applied&#95;limit                        | Bool    |
+| rows&#95;before&#95;limit                | UVarInt |
+| calculated&#95;rows&#95;before&#95;limit | Bool    |
+
+<div id="log">
+  ## Log
+</div>
+
+**Bloco de dados** com o log do servidor.
+
+<Tip>
+  Codificado como um **bloco de dados** em colunas, mas nunca é compactado.
+</Tip>
+
+| coluna         | tipo     |
+| -------------- | -------- |
+| time           | DateTime |
+| time&#95;micro | UInt32   |
+| host&#95;name  | String   |
+| query&#95;id   | String   |
+| thread&#95;id  | UInt64   |
+| priority       | Int8     |
+| source         | String   |
+| text           | String   |
+
+<div id="profile-events">
+  ## Eventos de perfil
+</div>
+
+**Bloco de dados** com eventos de perfil.
+
+<Tip>
+  Codificado como **bloco de dados** em colunas, mas nunca é comprimido.
+
+  O tipo de `value` é `UInt64` ou `Int64`, dependendo da revisão do servidor.
+</Tip>
+
+| coluna           | tipo            |
+| ---------------- | --------------- |
+| host&#95;name    | String          |
+| current&#95;time | DateTime        |
+| thread&#95;id    | UInt64          |
+| type             | Int8            |
+| name             | String          |
+| value            | UInt64 ou Int64 |

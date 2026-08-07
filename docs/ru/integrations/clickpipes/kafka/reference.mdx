@@ -1,0 +1,197 @@
+---
+sidebarTitle: 'Справочник'
+description: 'Содержит сведения о поддерживаемых форматах, источниках, семантике доставки, аутентификации и экспериментальных возможностях Kafka ClickPipes.'
+slug: /integrations/clickpipes/kafka/reference
+title: 'Справочник'
+doc_type: 'reference'
+keywords: ['справочник Kafka', 'ClickPipes', 'источники данных', 'avro', 'виртуальные столбцы']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="supported-data-sources">
+  ## Поддерживаемые источники данных
+</div>
+
+| Название         | Логотип                                                                                                 | Тип      | Статус     | Описание                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------- | -------- | ---------- | --------------------------------------------------------------------------------------------- |
+| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="Логотип Apache Kafka" width="32" />                | Стриминг | Стабильный | Настройте ClickPipes и начните приём потоковых данных из Apache Kafka в ClickHouse Cloud.     |
+| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="Логотип Confluent Cloud" width="32" />         | Стриминг | Стабильный | Используйте все преимущества Confluent и ClickHouse Cloud благодаря нашей прямой интеграции.  |
+| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Логотип Redpanda" width="32" />            | Стриминг | Стабильный | Настройте ClickPipes и начните приём потоковых данных из Redpanda в ClickHouse Cloud.         |
+| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="Логотип AWS MSK" width="32" />                       | Стриминг | Стабильный | Настройте ClickPipes и начните приём потоковых данных из AWS MSK в ClickHouse Cloud.          |
+| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Логотип Azure Event Hubs" width="32" /> | Стриминг | Стабильный | Настройте ClickPipes и начните приём потоковых данных из Azure Event Hubs в ClickHouse Cloud. |
+| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="Логотип WarpStream" width="32" />             | Стриминг | Стабильный | Настройте ClickPipes и начните приём потоковых данных из WarpStream в ClickHouse Cloud.       |
+
+<div id="supported-data-formats">
+  ## Поддерживаемые форматы данных
+</div>
+
+Поддерживаются следующие форматы:
+
+* [JSON](/ru/guides/clickhouse/data-formats/json/intro)
+* [AvroConfluent](/ru/reference/formats/Avro/AvroConfluent)
+* [Protobuf](/ru/reference/formats/Protobuf/Protobuf)
+
+<div id="supported-data-types">
+  ## Поддерживаемые типы данных
+</div>
+
+<div id="standard-types-support">
+  ### Стандартные типы
+</div>
+
+В настоящее время ClickPipes поддерживает следующие стандартные типы данных ClickHouse:
+
+* Базовые числовые типы — [U]Int8/16/32/64, Float32/64 и BFloat16
+* Большие целочисленные типы — [U]Int128/256
+* Типы Decimal
+* Boolean
+* String
+* FixedString
+* Date, Date32
+* DateTime, DateTime64 (только часовые пояса UTC)
+* Enum8/Enum16
+* UUID
+* IPv4
+* IPv6
+* Time, Time64
+* JSON
+* все типы ClickHouse LowCardinality
+* Map, где ключи и значения используют любой из перечисленных выше типов (включая Nullable)
+* Tuple и Array, где элементы используют любой из перечисленных выше типов (включая Nullable; только один уровень вложенности)
+* типы SimpleAggregateFunction (для пунктов назначения AggregatingMergeTree или SummingMergeTree)
+
+<div id="variant-type-support">
+  ### Поддержка типа Variant
+</div>
+
+ClickPipes поддерживает тип Variant в следующих случаях:
+
+* Union в Avro. Если ваша схема Avro содержит union с несколькими типами, отличными от null, ClickPipes определит
+  подходящий тип Variant. В остальных случаях типы Variant для данных Avro не поддерживаются.
+* Поля JSON. Вы можете вручную указать тип Variant (например, `Variant(String, Int64, DateTime)`) для любого поля JSON
+  в исходном потоке данных. Сложные подтипы (arrays/maps/tuples) не поддерживаются. Кроме того, из-за особенностей того, как ClickPipes определяет
+  нужный подтип варианта, в определении Variant можно использовать только один целочисленный тип или тип datetime — например, `Variant(Int64, UInt32)` не поддерживается.
+
+<div id="json-type-support">
+  ### Поддержка JSON-типа
+</div>
+
+ClickPipes поддерживает JSON-тип в следующих случаях:
+
+* Поля Avro Record и Protobuf Message всегда можно назначить JSON-столбцу.
+* Поля Avro String и Bytes можно назначить JSON-столбцу, если поле Avro фактически содержит объекты JSON, представленные в виде строк.
+* Типы Protobuf String и Bytes можно назначить JSON-столбцу, если поле Protobuf фактически содержит объекты JSON, представленные в виде строк.
+* Поля JSON, которые всегда содержат объект JSON, можно назначить целевому JSON-столбцу.
+
+Обратите внимание, что вам потребуется вручную изменить целевой столбец на нужный JSON-тип, включая все фиксированные или пропущенные пути.
+
+<div id="avro">
+  ### Avro
+</div>
+
+<div id="supported-avro-data-types">
+  #### Поддерживаемые типы данных Avro
+</div>
+
+ClickPipes поддерживает все примитивные и составные типы Avro, а также все логические типы Avro, кроме `local-timestamp-millis` и `local_timestamp-micros`. Типы Avro `record` преобразуются в Tuple, типы `array` — в Array, а `map` — в Map (только со строковыми ключами). В общем случае доступны преобразования, перечисленные [здесь](/ru/concepts/features/interfaces/schema-inference#avro). Мы рекомендуем использовать точное соответствие типов для числовых типов Avro, поскольку ClickPipes не проверяет переполнение или потерю точности при преобразовании типов.
+Также все типы Avro можно вставить в столбец `String`; в этом случае они будут представлены как корректная JSON-строка.
+
+<div id="nullable-types-and-avro-unions">
+  #### Типы Nullable и union в Avro
+</div>
+
+Типы Nullable в Avro определяются с помощью схемы Union вида `(T, null)` или `(null, T)`, где T — базовый тип Avro. Во время определения схемы такие union будут сопоставляться со столбцом ClickHouse &quot;Nullable&quot;. Обратите внимание, что ClickHouse не поддерживает типы
+`Nullable(Array)`, `Nullable(Map)` и `Nullable(Tuple)`. Union с null в Avro для этих типов будут сопоставлены с версиями без Nullable (типы Avro Record сопоставляются с именованным Tuple в ClickHouse). Значения Avro &quot;null&quot; для этих типов будут вставлены как:
+
+* пустой Array для null-массива Avro
+* пустой Map для null-значения Avro Map
+* именованный Tuple со всеми значениями по умолчанию/нулевыми значениями для null-Record Avro
+
+<div id="protobuf">
+  ### Protobuf
+</div>
+
+<div id="supported-protobuf-data-types">
+  #### Поддерживаемые типы данных Protobuf
+</div>
+
+ClickPipes поддерживает все типы Protobuf 2 и 3, за исключением давно устаревшего типа `group` из proto2. Для базовых преобразований типов используются
+следующие сопоставления:
+
+<Note>
+  Также поддерживаются варианты `Array`, `Map` и `Nullable` для всех базовых типов.
+</Note>
+
+| Тип Protobuf                  | Тип ClickHouse |
+| ----------------------------- | -------------- |
+| `bool`                        | `UInt8`        |
+| `float`                       | `Float32`      |
+| `double`                      | `Float64`      |
+| `int32`, `sint32`, `sfixed32` | `Int32`        |
+| `int64`, `sint64`, `sfixed64` | `Int64`        |
+| `uint32`, `fixed32`           | `UInt32`       |
+| `uint64`, `fixed64`           | `UInt64`       |
+| `string`, `bytes`             | `String`       |
+| `enum`                        | `Enum`         |
+| `repeated T`                  | `Array(T)`     |
+| `message`                     | `Tuple`        |
+
+<Tip>
+  Для числовых типов рекомендуется точное соответствие, чтобы избежать переполнения или потери точности.
+</Tip>
+
+Также поддерживаются следующие [стандартные типы](https://protobuf.dev/reference/protobuf/google.protobuf/):
+
+| Стандартный тип                                                                              | Тип ClickHouse           |
+| -------------------------------------------------------------------------------------------- | ------------------------ |
+| `google.protobuf.Timestamp`                                                                  | `DateTime`, `DateTime64` |
+| `google.protobuf.Duration`                                                                   | `Time`, `Time64`         |
+| `google.protobuf.StringValue`, `google.protobuf.BytesValue`                                  | `Nullable(String)`       |
+| `google.protobuf.Int32Value`, `google.protobuf.SInt32Value`, `google.protobuf.SFixed32Value` | `Nullable(Int32)`        |
+| `google.protobuf.Int64Value`, `google.protobuf.SInt64Value`, `google.protobuf.SFixed64Value` | `Nullable(Int64)`        |
+| `google.protobuf.UInt32Value`, `google.protobuf.Fixed32Value`                                | `Nullable(UInt32)`       |
+| `google.protobuf.UInt64Value`, `google.protobuf.Fixed64Value`                                | `Nullable(UInt64)`       |
+| `google.protobuf.FloatValue`                                                                 | `Nullable(Float32)`      |
+| `google.protobuf.DoubleValue`                                                                | `Nullable(Float64)`      |
+| `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
+
+<div id="protobuf-one-ofs">
+  #### Protobuf `oneof`
+</div>
+
+При определении схемы поля Protobuf `oneof` по умолчанию сопоставляются с именованным `Tuple`, в котором не более одного поля содержит значение, отличное от значения по умолчанию.
+Эти поля также могут автоматически сопоставляться со столбцом `Variant`, где активное значение принимает тип
+того входящего поля, которое задано. Кроме того, каждое входящее поле можно вручную сопоставить с отдельным столбцом ClickHouse; поскольку поля `oneof`
+взаимоисключают друг друга, в каждой записи будет заполнен только один столбец.
+
+<div id="protobuf-message-lists">
+  #### Списки сообщений
+</div>
+
+Если схема Protobuf верхнего уровня, заданная для ClickPipe, содержит одно повторяющееся поле, которое само является сообщением Protobuf, то определение схемы и сопоставление столбцов будут выполняться на основе «вложенного» поля Message. Сообщение Kafka будет обрабатываться как список таких сообщений, и одно сообщение Kafka будет разворачиваться в несколько строк ClickHouse.
+
+<div id="kafka-virtual-columns">
+  ## Виртуальные столбцы Kafka
+</div>
+
+Для совместимых с Kafka стриминговых источников данных поддерживаются следующие виртуальные столбцы. При создании нового пункта назначения виртуальные столбцы можно добавить в целевую таблицу с помощью кнопки `Add Column`.
+
+| Name             | Description                                        | Recommended Data Type |
+| ---------------- | -------------------------------------------------- | --------------------- |
+| `_key`           | Ключ сообщения Kafka                               | `String`              |
+| `_timestamp`     | Временная метка Kafka (с точностью до миллисекунд) | `DateTime64(3)`       |
+| `_partition`     | Партиция Kafka                                     | `Int32`               |
+| `_offset`        | Смещение Kafka                                     | `Int64`               |
+| `_topic`         | Топик Kafka                                        | `String`              |
+| `_header_keys`   | Параллельный массив ключей в заголовках записи     | `Array(String)`       |
+| `_header_values` | Параллельный массив заголовков в записи            | `Array(String)`       |
+| `_raw_message`   | Полное сообщение Kafka                             | `String`              |
+
+Обратите внимание, что столбец `_raw_message` рекомендуется использовать только для данных JSON.
+В сценариях, где требуется только строка JSON (например, при использовании функций ClickHouse [`JsonExtract*`](/ru/reference/functions/regular-functions/json-functions#jsonextract-functions) для
+заполнения последующей materialized view), удаление всех «не виртуальных» столбцов может повысить производительность ClickPipes.

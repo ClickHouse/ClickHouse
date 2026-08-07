@@ -1,0 +1,190 @@
+---
+description: '允许对存储在远程 MySQL 服务器中的数据执行 `SELECT` 和 `INSERT` 查询。'
+sidebarTitle: 'mysql'
+slug: /sql-reference/table-functions/mysql
+title: 'mysql'
+doc_type: 'reference'
+---
+
+允许对存储在远程 MySQL 服务器中的数据执行 `SELECT` 和 `INSERT` 查询。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+| 参数                    | 描述                                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `host:port`           | MySQL 服务器地址。                                                                                                                                                                                                                                                                                                                                                                         |
+| `database`            | 远程数据库名称。                                                                                                                                                                                                                                                                                                                                                                             |
+| `table`               | 远程表名。                                                                                                                                                                                                                                                                                                                                                                                |
+| `user`                | MySQL 用户。                                                                                                                                                                                                                                                                                                                                                                            |
+| `password`            | 用户密码。                                                                                                                                                                                                                                                                                                                                                                                |
+| `replace_query`       | 用于将 `INSERT INTO` 查询转换为 `REPLACE INTO` 的标志。可能的值：<br />    - `0` - 以 `INSERT INTO` 执行该查询。<br />    - `1` - 以 `REPLACE INTO` 执行该查询。                                                                                                                                                                                                                                                    |
+| `on_duplicate_clause` | 添加到 `INSERT` 查询中的 `ON DUPLICATE KEY on_duplicate_clause` 表达式。只能在 `replace_query = 0` 时指定 (如果同时传入 `replace_query = 1` 和 `on_duplicate_clause`，ClickHouse 会抛出异常) 。<br />    示例：`INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1;`<br />    此处的 `on_duplicate_clause` 为 `UPDATE c2 = c2 + 1`。请参阅 MySQL 文档，了解 `ON DUPLICATE KEY` 子句支持哪些 `on_duplicate_clause`。 |
+
+参数也可以通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)传递。在这种情况下，需要分别指定 `host` 和 `port`。这种方式推荐在生产环境中使用。
+
+目前，诸如 `=, !=, >, >=, <, <=` 这样的简单 `WHERE` 子句会在 MySQL 服务器上执行。
+
+其余条件以及 `LIMIT` 采样约束，只会在对 MySQL 的查询完成后由 ClickHouse 执行。
+
+支持多个副本，必须使用 `|` 列出。例如：
+
+```sql
+SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
+或
+
+```sql
+SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+一个表对象，其列与原始 MySQL 表的列相同。
+
+<Note>
+  MySQL 的某些数据类型可映射为不同的 ClickHouse 类型——可通过查询级设置 [mysql&#95;datatypes&#95;support&#95;level](/zh/reference/settings/session-settings#mysql_datatypes_support_level) 来处理这一点。
+</Note>
+
+<Note>
+  在 `INSERT` 查询中，为了将表函数 `mysql(...)` 与带列名列表的表名区分开来，必须使用关键字 `FUNCTION` 或 `TABLE FUNCTION`。请参见下面的示例。
+</Note>
+
+<div id="examples">
+  ## 示例
+</div>
+
+MySQL 中的表：
+
+```text
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `float` FLOAT NOT NULL,
+    ->   PRIMARY KEY (`int_id`));
+
+mysql> INSERT INTO test (`int_id`, `float`) VALUES (1,2);
+
+mysql> SELECT * FROM test;
++--------+-------+
+| int_id | float |
++--------+-------+
+|      1 |     2 |
++--------+-------+
+```
+
+从 ClickHouse 查询数据：
+
+```sql
+SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
+```
+
+或者使用[命名集合](/zh/concepts/features/configuration/server-config/named-collections)：
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = 'localhost',
+        port = 3306,
+        database = 'test',
+        user = 'bayonet',
+        password = '123';
+SELECT * FROM mysql(creds, table='test');
+```
+
+```text
+┌─int_id─┬─float─┐
+│      1 │     2 │
+└────────┴───────┘
+```
+
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
+
+为 MySQL 协议连接启用压缩。
+
+默认值：`false`。
+
+此设置适用于：
+
+* `mysql` 表函数；
+* `MySQL` 表引擎；
+* `MySQL` 数据库引擎；
+* 用于 MySQL 集成的命名集合。
+
+启用后，ClickHouse 会为该连接请求压缩。
+
+示例：
+
+```sql
+SELECT *
+FROM mysql(
+    'mysql80:3306',
+    'clickhouse',
+    'test_table',
+    'root',
+    'password',
+    SETTINGS enable_compression = 1
+);
+```
+
+替换与插入：
+
+```sql
+INSERT INTO FUNCTION mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 1) (int_id, float) VALUES (1, 3);
+INSERT INTO TABLE FUNCTION mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 0, 'UPDATE int_id = int_id + 1') (int_id, float) VALUES (1, 4);
+SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
+```
+
+```text
+┌─int_id─┬─float─┐
+│      1 │     3 │
+│      2 │     4 │
+└────────┴───────┘
+```
+
+将 MySQL 表中的数据复制到 ClickHouse 表中：
+
+```sql
+CREATE TABLE mysql_copy
+(
+   `id` UInt64,
+   `datetime` DateTime('UTC'),
+   `description` String,
+)
+ENGINE = MergeTree
+ORDER BY (id,datetime);
+
+INSERT INTO mysql_copy
+SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password');
+```
+
+或者，如果只想根据当前的最大 ID 从 MySQL 复制一个增量批次：
+
+```sql
+INSERT INTO mysql_copy
+SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
+WHERE id > (SELECT max(id) FROM mysql_copy);
+```
+
+<div id="related">
+  ## 相关
+</div>
+
+* [“MySQL”表引擎](/zh/reference/engines/table-engines/integrations/mysql)
+* [将 MySQL 用作字典源](/zh/reference/statements/create/dictionary/sources/mysql)
+* [mysql&#95;datatypes&#95;support&#95;level](/zh/reference/settings/session-settings#mysql_datatypes_support_level)
+* [mysql&#95;map&#95;fixed&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/zh/reference/settings/session-settings#mysql_map_fixed_string_to_text_in_show_columns)
+* [mysql&#95;map&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/zh/reference/settings/session-settings#mysql_map_string_to_text_in_show_columns)
+* [mysql&#95;max&#95;rows&#95;to&#95;insert](/zh/reference/settings/session-settings#mysql_max_rows_to_insert)

@@ -1,0 +1,80 @@
+---
+title: Como validar se duas consultas retornam conjuntos de resultados idênticos
+description: Aprenda a validar se duas consultas do ClickHouse produzem conjuntos de resultados idênticos usando funções hash e técnicas de comparação.
+date: 2023-05-04
+tags: ['Funções']
+keywords: ['Validar', 'Conjuntos de resultados', 'Funções hash']
+---
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Como posso validar que duas consultas retornam o mesmo conjunto de resultados?
+
+<div id="answer">
+  ## Resposta
+</div>
+
+Você pode usar a abordagem abaixo:
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- sua consulta 1 aqui
+            -- SELECT ...
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- sua consulta 2 aqui
+            -- SELECT ...
+        )
+    ) AS q2_resultset_hash
+SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
+```
+
+O exemplo usa uma [CTE](/pt-BR/reference/statements/select/with) para calcular a soma dos valores de [cityHash](/pt-BR/reference/functions/regular-functions/hash-functions#cityhash64) de cada linha nessas duas consultas e retornará `1` se os dois conjuntos de resultados forem idênticos.
+
+Usando alguns dados de sequência de inteiros e formatação Pretty:
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number DESC
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number ASC
+        )
+    ) AS q2_resultset_hash
+SELECT q1_resultset_hash = q2_resultset_hash AS Q1_equals_Q2
+FORMAT Pretty
+```
+
+retorna:
+
+```
+┏━━━━━━━━━━━━━━┓
+┃ Q1_equals_Q2 ┃
+┡━━━━━━━━━━━━━━┩
+│            1 │
+└──────────────┘
+```
+
+Embora isso possa ser útil em muitos cenários, não pode ser considerado uma solução definitiva para validar a igualdade de conjuntos de resultados para todos os tipos de dados, e há algumas ressalvas no seu uso; por exemplo, se alguma linha contiver valores `NULL`, a abordagem acima falhará.

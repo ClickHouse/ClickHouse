@@ -1,0 +1,6 @@
+-- First query run to populate query condition cache
+1	10000	19999	10000
+2	20000	29999	10000
+-- Second query run to assert that query condition cache doesnt affect results
+1	10000	19999	10000
+2	20000	29999	10000

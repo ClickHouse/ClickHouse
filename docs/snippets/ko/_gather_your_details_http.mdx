@@ -1,0 +1,22 @@
+---
+title: HTTP 연결 정보 확인
+---
+
+HTTP(S)로 ClickHouse에 연결하려면 다음 정보가 필요합니다.
+
+| 매개변수                      | 설명                                                         |
+| ------------------------- | ---------------------------------------------------------- |
+| `HOST` and `PORT`         | 일반적으로 TLS를 사용하는 경우 포트는 8443, TLS를 사용하지 않는 경우 8123입니다.      |
+| `DATABASE NAME`           | 기본적으로 `default`라는 이름의 데이터베이스가 제공되며, 연결할 데이터베이스 이름을 사용하십시오. |
+| `USERNAME` and `PASSWORD` | 기본 사용자 이름은 `default`입니다. 사용 사례에 맞는 사용자 이름을 사용하십시오.         |
+
+ClickHouse Cloud 서비스의 연결 정보는 ClickHouse Cloud 콘솔에서 확인할 수 있습니다.
+서비스를 선택한 다음 **Connect**를 클릭하십시오.
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud 서비스 연결 버튼" border />
+
+**HTTPS**를 선택하십시오. 연결 정보가 예시 `curl` 명령으로 표시됩니다.
+
+<Image img="/images/_snippets/connection-details-https.webp" size="md" alt="ClickHouse Cloud HTTPS 연결 정보" border />
+
+자가 관리형 ClickHouse를 사용하는 경우 연결 정보는 ClickHouse 관리자가 설정합니다.

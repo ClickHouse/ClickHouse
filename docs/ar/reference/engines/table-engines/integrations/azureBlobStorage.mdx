@@ -1,0 +1,147 @@
+---
+description: 'يوفر هذا المحرك تكاملًا مع Azure Blob Storage.'
+sidebarTitle: 'Azure Blob Storage'
+slug: /engines/table-engines/integrations/azureBlobStorage
+title: 'محرك الجدول AzureBlobStorage'
+doc_type: 'reference'
+---
+
+يوفر هذا المحرك تكاملًا مع [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
+
+<div id="create-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE azure_blob_storage_table (name String, value UInt32)
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+```
+
+<div id="engine-parameters">
+  ### معلمات المحرّك
+</div>
+
+* `endpoint` — عنوان URL لنقطة نهاية AzureBlobStorage مع الحاوية والبادئة. ويمكن أن يتضمن اختياريًا account&#95;name إذا كانت طريقة المصادقة المستخدمة تتطلب ذلك. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) أو يمكن توفير هذه المعلمات بشكل منفصل باستخدام storage&#95;account&#95;url و account&#95;name و container. ولتحديد البادئة، يجب استخدام endpoint.
+* `endpoint_contains_account_name` - يُستخدم هذا العلَم لتحديد ما إذا كان endpoint يتضمن account&#95;name، لأنه لا يلزم إلا لبعض طرق المصادقة. (القيمة الافتراضية: true)
+* `connection_string|storage_account_url` — يتضمن connection&#95;string اسم الحساب والمفتاح ([Create connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)) أو يمكنك أيضًا توفير عنوان URL لحساب التخزين هنا، مع اسم الحساب ومفتاح الحساب كمعلمات منفصلة (انظر المعلمتين account&#95;name و account&#95;key)
+* `container_name` - اسم الحاوية
+* `blobpath` - مسار الملف. يدعم أحرف البدل التالية في وضع readonly: `*`, `**`, `?`, `{abc,def}` و `{N..M}` حيث إن `N` و `M` — أرقام، و `'abc'` و `'def'` — سلاسل نصية.
+* `account_name` - إذا استُخدم storage&#95;account&#95;url، فيمكن تحديد اسم الحساب هنا
+* `account_key` - إذا استُخدم storage&#95;account&#95;url، فيمكن تحديد مفتاح الحساب هنا
+* `format` — [تنسيق](/ar/reference/formats/index) الملف.
+* `compression` — القيم المدعومة: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. افتراضيًا، سيُكتشف الضغط تلقائيًا من امتداد الملف. (وهو ما يعادل ضبطه على `auto`).
+* `partition_strategy` – الخيارات: `wildcard` أو `hive`. يتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. أما `hive` فلا يسمح بأحرف البدل، ويفترض أن المسار هو جذر الجدول، ويُنشئ أدلة تقسيم بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. وتكون القيمة الافتراضية وفق إعداد `file_like_engine_default_partition_strategy` (`wildcard` ضمن إعدادات `compatibility` الأقدم من `26.6`، و`hive` بخلاف ذلك).
+* `partition_columns_in_data_file` - يُستخدم فقط مع استراتيجية التقسيم `hive`. ويُخبر ClickHouse ما إذا كان ينبغي توقّع كتابة أعمدة التقسيم في ملف البيانات. والقيمة الافتراضية `false`.
+* `extra_credentials` - استخدم `client_id` و `tenant_id` للمصادقة. إذا جرى توفير extra&#95;credentials، فستُعطى أولوية على `account_name` و `account_key`.
+
+**مثال**
+
+يمكن للمستخدمين استخدام محاكي Azurite لتطوير Azure Storage محليًا. مزيد من التفاصيل [هنا](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). وإذا كنت تستخدم مثيلًا محليًا من Azurite، فقد تحتاج إلى استبدال `http://localhost:10000` بـ `http://azurite1:10000` في الأوامر أدناه، حيث نفترض أن Azurite متاح على المضيف `azurite1`.
+
+```sql
+CREATE TABLE test_table (key UInt64, data String)
+    ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', 'test_table', 'CSV');
+
+INSERT INTO test_table VALUES (1, 'a'), (2, 'b'), (3, 'c');
+
+SELECT * FROM test_table;
+```
+
+```text
+┌─key──┬─data──┐
+│  1   │   a   │
+│  2   │   b   │
+│  3   │   c   │
+└──────┴───────┘
+```
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — مسار الملف. النوع: `LowCardinality(String)`.
+* `_file` — اسم الملف. النوع: `LowCardinality(String)`.
+* `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان الحجم غير معروف، تكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
+
+<div id="authentication">
+  ## المصادقة
+</div>
+
+توجد حاليًا 3 طرق للمصادقة:
+
+* `Managed Identity` - يمكن استخدامها عبر توفير `endpoint` أو `connection_string` أو `storage_account_url`.
+* `SAS Token` - يمكن استخدامها عبر توفير `endpoint` أو `connection_string` أو `storage_account_url`. ويُستدلّ عليها بوجود &#39;?&#39; في عنوان URL. راجع [azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) للاطلاع على أمثلة.
+* `Workload Identity` - يمكن استخدامها عبر توفير `endpoint` أو `storage_account_url`. إذا تم تعيين المعلَمة `use_workload_identity` في `config`، فستُستخدم [workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications) للمصادقة.
+
+<div id="data-cache">
+  ### التخزين المؤقت للبيانات
+</div>
+
+يدعم محرك الجدول `Azure` التخزين المؤقت للبيانات على القرص المحلي.
+راجع خيارات تهيئة ذاكرة التخزين المؤقت لنظام الملفات وطريقة استخدامها في هذا [القسم](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache).
+يعتمد التخزين المؤقت على المسار و`ETag` لكائن التخزين، لذلك لن يقرأ ClickHouse نسخة قديمة من ذاكرة التخزين المؤقت.
+
+لتمكين التخزين المؤقت، استخدم الإعداد `filesystem_cache_name = '<name>'` و`enable_filesystem_cache = 1`.
+
+```sql
+SELECT *
+FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', 'test_table', 'CSV')
+SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
+```
+
+1. أضِف القسم التالي إلى ملف إعدادات ClickHouse:
+
+```xml
+<clickhouse>
+    <filesystem_caches>
+        <cache_for_azure>
+            <path>path to cache directory</path>
+            <max_size>10Gi</max_size>
+        </cache_for_azure>
+    </filesystem_caches>
+</clickhouse>
+```
+
+2. إعادة استخدام إعدادات ذاكرة التخزين المؤقت (وبالتالي مساحة تخزينها) من قسم `storage_configuration` في ClickHouse، [كما هو موضح هنا](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache)
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+`PARTITION BY` — اختياري. في معظم الحالات، لا تحتاج إلى مفتاح تقسيم، وحتى إذا احتجت إليه، فغالبًا لا تحتاج إلى مفتاح تقسيم أكثر تفصيلًا من التقسيم حسب الشهر. لا يؤدي التقسيم إلى تسريع الاستعلامات (على عكس تعبير `ORDER BY`). يجب ألّا تستخدم أبدًا تقسيمًا مفرط الدقة. لا تقسّم بياناتك حسب معرّفات العملاء أو أسمائهم (واجعل بدلًا من ذلك معرّف العميل أو اسمه هو العمود الأول في تعبير `ORDER BY`).
+
+للتقسيم حسب الشهر، استخدم التعبير `toYYYYMM(date_column)`، حيث إن `date_column` هو عمود يحتوي على تاريخ من النوع [Date](/ar/reference/data-types/date). وتكون أسماء الأقسام هنا بالتنسيق `"YYYYMM"`.
+
+<div id="partition-strategy">
+  #### استراتيجية التقسيم
+</div>
+
+`wildcard`: يستبدل حرف البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. القراءة غير مدعومة. يُحدَّد افتراضيًا فقط ضمن إعدادات `compatibility` الأقدم من `26.6`؛ بخلاف ذلك تكون القيمة الافتراضية هي `hive` (راجع الإعداد `file_like_engine_default_partition_strategy`).
+
+يطبّق `hive` التقسيم بنمط Hive لعمليات القراءة والكتابة. تُنفَّذ القراءة باستخدام نمط glob تكراري. وتُنشئ الكتابة ملفات بالتنسيق التالي: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+
+ملاحظة: عند استخدام استراتيجية التقسيم `hive`، لا يكون للإعداد `use_hive_partitioning` أي تأثير.
+
+مثال على استراتيجية التقسيم `hive`:
+
+```sql
+arthur :) create table azure_table (year UInt16, country String, counter UInt8) ENGINE=AzureBlobStorage(account_name='devstoreaccount1', account_key='Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', storage_account_url = 'http://localhost:30000/devstoreaccount1', container='cont', blob_path='hive_partitioned', format='Parquet', compression='auto', partition_strategy='hive') PARTITION BY (year, country);
+
+arthur :) insert into azure_table values (2020, 'Russia', 1), (2021, 'Brazil', 2);
+
+arthur :) select _path, * from azure_table;
+
+   ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
+1. │ cont/hive_partitioned/year=2020/country=Russia/7351305360873664512.parquet │ 2020 │ Russia  │       1 │
+2. │ cont/hive_partitioned/year=2021/country=Brazil/7351305360894636032.parquet │ 2021 │ Brazil  │       2 │
+   └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+[دالة الجدول Azure Blob Storage](/ar/reference/functions/table-functions/azureBlobStorage)

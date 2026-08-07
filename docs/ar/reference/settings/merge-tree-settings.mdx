@@ -1,0 +1,4358 @@
+---
+description: 'إعدادات MergeTree في `system.merge_tree_settings`'
+slug: /operations/settings/merge-tree-settings
+title: 'إعدادات جداول MergeTree'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import VersionHistory from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
+
+يعرض جدول النظام `system.merge_tree_settings` إعدادات MergeTree المعيَّنة على المستوى العام.
+
+يمكن تعيين إعدادات MergeTree في قسم `merge_tree` ضمن ملف إعدادات الخادم، أو تحديدها لكل جدول `MergeTree` على حدة في
+عبارة `SETTINGS` ضمن تعليمة `CREATE TABLE`.
+
+مثال على تخصيص الإعداد `max_suspicious_broken_parts`:
+
+اضبط القيمة الافتراضية لجميع جداول `MergeTree` في ملف إعدادات الخادم:
+
+```text
+<merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</merge_tree>
+```
+
+اضبطه لجدول معيّن:
+
+```sql
+CREATE TABLE tab
+(
+    `A` Int64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS max_suspicious_broken_parts = 500;
+```
+
+عدّل إعدادات جدول معيّن باستخدام `ALTER TABLE ... MODIFY SETTING`:
+
+```sql
+ALTER TABLE tab MODIFY SETTING max_suspicious_broken_parts = 100;
+
+-- reset to global default (value from system.merge_tree_settings)
+ALTER TABLE tab RESET SETTING max_suspicious_broken_parts;
+```
+
+<div id="mergetree-settings">
+  ## إعدادات MergeTree
+</div>
+
+{/* تُولَّد الإعدادات أدناه تلقائيًا بواسطة البرنامج النصي على 
+  https://github.com/ClickHouse/clickhouse-docs/blob/main/scripts/settings/autogenerate-settings.sh
+  */}
+
+<div id="adaptive_write_buffer_initial_size">
+  ## adaptive_write_buffer_initial_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
+
+الحجم الأولي لمخزن كتابة مؤقت تكيّفي
+
+<div id="add_implicit_sign_column_constraint_for_collapsing_engine">
+  ## add_implicit_sign_column_constraint_for_collapsing_engine
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+إذا كانت القيمة `true`، فسيُضاف قيد ضمني على العمود `sign` في جدول CollapsingMergeTree
+أو VersionedCollapsingMergeTree بحيث لا يُسمح إلا بالقيم الصالحة (`1` و `-1`).
+
+<div id="add_minmax_index_for_block_number_column">
+  ## add_minmax_index_for_block_number_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
+
+عند تفعيله، يُضاف فهرس min-max ضمني (للتخطي) للعمود الافتراضي الدائم `_block_number`.
+يتطلب ذلك ضبط `enable_block_number_column = 1` حتى يسري مفعوله. لا يُبنى الفهرس إلا أثناء عمليات الدمج،
+وليس أثناء عمليات الإدراج: ففي وقت الإدراج يكون رقم block مؤقتًا، ما يعني فهرسة قيمة ثابتة.
+
+<div id="add_minmax_index_for_block_offset_column">
+  ## add_minmax_index_for_block_offset_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "إعداد جديد."}]}]} />
+
+عند التفعيل، يُضاف فهرس min-max ضمني من نوع (skipping) للعمود الافتراضي المستمر `_block_offset`.
+يتطلب هذا الإعداد `enable_block_offset_column = 1` لكي يسري مفعوله. لا يُنشأ الفهرس إلا أثناء عمليات الدمج،
+وليس أثناء عمليات الإدراج.
+
+<div id="add_minmax_index_for_numeric_columns">
+  ## add_minmax_index_for_numeric_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+عند التفعيل، تُضاف فهارس الحد الأدنى والحد الأقصى (التخطي) إلى جميع الأعمدة الرقمية
+في الجدول.
+
+<div id="add_minmax_index_for_string_columns">
+  ## add_minmax_index_for_string_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+عند تمكينه، تُضاف فهارس min-max ‏(skipping) إلى جميع الأعمدة النصية في الجدول.
+
+<div id="add_minmax_index_for_temporal_columns">
+  ## add_minmax_index_for_temporal_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+عند تفعيل هذا الخيار، تُضاف فهارس min-max ‏(skipping) إلى جميع أعمدة Date وDate32 وTime وTime64 وDateTime وDateTime64 في الجدول
+
+<div id="allow_coalescing_columns_in_partition_or_order_key">
+  ## allow_coalescing_columns_in_partition_or_order_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "إعداد جديد يتيح استخدام أعمدة الدمج في مفتاح التقسيم أو مفتاح الترتيب."}]}]} />
+
+عند تمكينه، يتيح استخدام أعمدة الدمج في جدول CoalescingMergeTree ضمن مفتاح التقسيم أو مفتاح الترتيب.
+
+<div id="allow_commit_order_projection">
+  ## allow_commit_order_projection
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يُمكّن الإسقاطات المعتمدة على ترتيب الالتزام التي تخزّن العمودين الافتراضيين `_block_number` و`_block_offset`، مع الحفاظ على ترتيب الإدراج الأصلي عبر عمليات الدمج.
+ويتطلب أن يكون كلٌّ من `enable_block_number_column` و`enable_block_offset_column` مُمكّنًا.
+
+<div id="allow_experimental_replacing_merge_with_cleanup">
+  ## allow_experimental_replacing_merge_with_cleanup
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+يسمح بعمليات الدمج التجريبية من نوع CLEANUP لمحرك ReplacingMergeTree مع العمود `is_deleted`.
+وعند تمكينه، يتيح استخدام `OPTIMIZE ... FINAL CLEANUP` يدويًا
+لدمج جميع الأجزاء في partition في جزء واحد وإزالة أي
+صفوف محذوفة.
+
+كما يتيح تمكين حدوث عمليات الدمج هذه تلقائيًا في الخلفية
+باستخدام الإعدادات `min_age_to_force_merge_seconds`،
+`min_age_to_force_merge_on_partition_only` و
+`enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`.
+
+<div id="allow_experimental_reverse_key">
+  ## allow_experimental_reverse_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+إعداد متقادم، ولا تأثير له.
+
+<div id="allow_floating_point_partition_key">
+  ## allow_floating_point_partition_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+يتيح السماح باستخدام عدد ذي فاصلة عائمة كمفتاح التقسيم.
+
+القيم الممكنة:
+
+* `0` — مفتاح التقسيم ذي الفاصلة العائمة غير مسموح به.
+* `1` — مفتاح التقسيم ذي الفاصلة العائمة مسموح به.
+
+<div id="allow_nullable_key">
+  ## allow_nullable_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+إتاحة استخدام أنواع Nullable كمفاتيح أساسية.
+
+<div id="allow_part_offset_column_in_projections">
+  ## allow_part_offset_column_in_projections
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "يمكن الآن للإسقاطات استخدام العمود _part_offset."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "إعداد جديد، يمنع إنشاء إسقاطات باستخدام عمود إزاحة الجزء الأب إلى أن تستقر هذه الميزة."}]}]} />
+
+السماح باستخدام العمود &#39;&#95;part&#95;offset&#39; في استعلام SELECT الخاص بالإسقاطات.
+
+<div id="allow_reduce_blocking_parts_task">
+  ## allow_reduce_blocking_parts_task
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "الآن سيزيل SMT الأجزاء المعيقة المتقادمة من ZooKeeper افتراضيًا"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+مهمة تعمل في الخلفية لتقليل الأجزاء المعيقة في جداول shared merge tree.
+متاح فقط في ClickHouse Cloud
+
+<div id="allow_remote_fs_zero_copy_replication">
+  ## allow_remote_fs_zero_copy_replication
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+لا تستخدم هذا الإعداد في بيئة الإنتاج، لأنه غير جاهز بعد.
+
+<div id="allow_summing_columns_in_partition_or_order_key">
+  ## allow_summing_columns_in_partition_or_order_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "إعداد جديد يسمح باستخدام الأعمدة التي تُجمَّع في مفتاح التقسيم أو مفتاح الترتيب"}]}]} />
+
+عند التمكين، يسمح باستخدام الأعمدة التي تُجمَّع في جدول SummingMergeTree ضمن
+مفتاح التقسيم أو مفتاح الترتيب.
+
+<div id="allow_suspicious_indices">
+  ## allow_suspicious_indices
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+يرفض الفهارس الأساسية/الثانوية ومفاتيح الترتيب ذات التعبيرات المتطابقة
+
+<div id="allow_tuple_element_aggregation">
+  ## allow_tuple_element_aggregation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+عند التمكين، تشارك العناصر الفردية داخل أعمدة Tuple في
+التجميع أثناء الدمج في SummingMergeTree وAggregatingMergeTree و
+CoalescingMergeTree. وتُوسَّع Tuples المتداخلة بشكل تكراري بحيث تُجمَّع جميع
+العناصر الطرفية بشكل مستقل. هذا الإعداد ثابت
+ويجب تحديده عند إنشاء الجدول.
+
+<div id="allow_vertical_merges_from_compact_to_wide_parts">
+  ## allow_vertical_merges_from_compact_to_wide_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+يسمح بعمليات الدمج العمودي من الأجزاء بتنسيق compact إلى الأجزاء بتنسيق wide. يجب أن تكون قيمة هذا الإعداد
+متماثلة على جميع النسخ المتماثلة.
+
+<div id="alter_column_secondary_index_mode">
+  ## alter_column_secondary_index_mode
+</div>
+
+<SettingsInfoBlock type="AlterColumnSecondaryIndexMode" default_value="rebuild" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "rebuild"},{"label": "تغيير السلوك للسماح بأوامر ALTER على `column` عندما تكون لها فهارس ثانوية تابعة"}]}]} />
+
+يضبط ما إذا كان يجب السماح بأوامر `ALTER` التي تعدّل الأعمدة المشمولة بفهارس ثانوية، وما الإجراء الذي يجب اتخاذه إذا
+كان يُسمح بها. افتراضيًا، يُسمح بأوامر `ALTER` هذه وتُعاد بناء الفهارس.
+
+القيم الممكنة:
+
+* `rebuild` (الافتراضي): يعيد بناء أي فهارس ثانوية تتأثر بالعمود في أمر `ALTER`.
+* `throw`: يمنع أي `ALTER` على الأعمدة المشمولة بفهارس ثانوية **صريحة** من خلال إطلاق استثناء. ولا يشمل هذا القيد الفهارس الضمنية، إذ ستُعاد بناؤها.
+* `drop`: يحذف الفهارس الثانوية التابعة. ولن تحتوي الأجزاء الجديدة على هذه الفهارس، ما يتطلب `MATERIALIZE INDEX` لإعادة إنشائها.
+* `compatibility`: يطابق السلوك الأصلي: `throw` عند `ALTER ... MODIFY COLUMN` و`rebuild` عند `ALTER ... UPDATE/DELETE`.
+* `ignore`: مخصص لاستخدام الخبراء. يترك الفهارس في حالة غير متسقة، ما قد يؤدي إلى نتائج استعلام غير صحيحة.
+
+<div id="always_fetch_merged_part">
+  ## always_fetch_merged_part
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+إذا كانت القيمة `true`، فلن تُجري هذه النسخة المتماثلة أي عمليات دمج للأجزاء، وستجلب دائمًا الأجزاء المدمجة
+من النسخ المتماثلة الأخرى.
+
+القيم الممكنة:
+
+* true, false
+
+<div id="always_use_copy_instead_of_hardlinks">
+  ## always_use_copy_instead_of_hardlinks
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+انسخ البيانات دائمًا بدلًا من استخدام الروابط الصلبة أثناء عمليات mutation وreplace وdetach
+وما إلى ذلك.
+
+<div id="apply_patches_on_merge">
+  ## apply_patches_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+إذا كانت القيمة true، فسيتم تطبيق أجزاء التصحيح أثناء عمليات الدمج
+
+<div id="assign_part_uuids">
+  ## assign_part_uuids
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+عند تفعيله، سيُخصَّص معرّف فريد لكل جزء جديد.
+قبل تفعيله، تحقّق من أن جميع النسخ المتماثلة تدعم UUID الإصدار 4.
+
+<div id="async_block_ids_cache_update_wait_ms">
+  ## async_block_ids_cache_update_wait_ms
+</div>
+
+<SettingsInfoBlock type="مللي ثانية" default_value="100" />
+
+المدة التي ينتظرها كل تكرار من عملية الإدراج لتحديث async&#95;block&#95;ids&#95;cache
+
+<div id="async_insert">
+  ## async_insert
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+إذا كانت القيمة true، فتُخزَّن بيانات استعلام INSERT في قائمة انتظار، ثم تُفرَّغ لاحقًا إلى
+الجدول في الخلفية.
+
+<div id="auto_statistics_types">
+  ## auto_statistics_types
+</div>
+
+<SettingsInfoBlock type="String" default_value="minmax, uniq" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "تمكين الإحصاءات التلقائية بشكل افتراضي"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": ""},{"label": "إعداد جديد"}]}]} />
+
+قائمة مفصولة بفواصل لأنواع الإحصاءات التي تُحتسب تلقائيًا لجميع الأعمدة المناسبة.
+أنواع الإحصاءات المدعومة: basic, tdigest, countmin, minmax, uniq.
+
+<div id="background_task_preferred_step_execution_time_ms">
+  ## background_task_preferred_step_execution_time_ms
+</div>
+
+<SettingsInfoBlock type="مللي ثانية" default_value="50" />
+
+الوقت المستهدف لتنفيذ خطوة واحدة من عمليات الدمج أو التعديل. وقد يتم تجاوزه إذا
+استغرقت إحدى الخطوات وقتًا أطول
+
+<div id="cache_populated_by_fetch">
+  ## cache_populated_by_fetch
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<Note>
+  ينطبق هذا الإعداد فقط على ClickHouse Cloud.
+</Note>
+
+عندما يكون `cache_populated_by_fetch` معطّلًا (وهو الإعداد الافتراضي)، لا تُحمَّل أجزاء البيانات
+الجديدة إلى cache نظام الملفات إلا عند تشغيل query يتطلب تلك الأجزاء.
+
+إذا كان مفعّلًا، فإن `cache_populated_by_fetch` سيؤدي بدلًا من ذلك إلى قيام جميع العقد بتحميل
+أجزاء البيانات الجديدة من التخزين إلى cache نظام الملفات الخاصة بها، من دون الحاجة إلى query
+ليؤدي إلى هذا الإجراء.
+
+**راجع أيضًا**
+
+* [ignore&#95;cold&#95;parts&#95;seconds](/ar/reference/settings/session-settings#ignore_cold_parts_seconds)
+* [prefer&#95;warmed&#95;unmerged&#95;parts&#95;seconds](/ar/reference/settings/session-settings#prefer_warmed_unmerged_parts_seconds)
+* [cache&#95;warmer&#95;threads](/ar/reference/settings/session-settings#cache_warmer_threads)
+
+<div id="cache_populated_by_fetch_filename_regexp">
+  ## cache_populated_by_fetch_filename_regexp
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": ""},{"label": "إعداد جديد"}]}]} />
+
+<Note>
+  ينطبق هذا الإعداد فقط على ClickHouse Cloud.
+</Note>
+
+إذا لم تكن القيمة فارغة، فسيُحمَّل مسبقًا إلى ذاكرة التخزين المؤقت بعد الجلب فقط الملفات التي تطابق هذا التعبير النمطي (إذا كان `cache_populated_by_fetch` مُمكّنًا).
+
+<div id="check_delay_period">
+  ## check_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+إعداد متقادم، ولا تأثير له.
+
+<div id="check_sample_column_is_correct">
+  ## check_sample_column_is_correct
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+يُفعِّل هذا الفحص عند إنشاء الجدول للتأكد من صحة نوع بيانات العمود المستخدم في أخذ
+العينات أو تعبير أخذ العينات. يجب أن يكون نوع البيانات أحد [أنواع الأعداد الصحيحة](/ar/reference/data-types/int-uint) غير الموقَّعة التالية: `UInt8`, `UInt16`,
+`UInt32`, `UInt64`.
+
+القيم الممكنة:
+
+* `true`  — الفحص مفعَّل.
+* `false` — الفحص معطَّل عند إنشاء الجدول.
+
+القيمة الافتراضية: `true`.
+
+يتحقق ClickHouse server افتراضيًا عند إنشاء الجدول من نوع بيانات العمود
+المستخدم في أخذ العينات أو تعبير أخذ العينات. إذا كانت لديك بالفعل جداول تحتوي على
+تعبير أخذ عينات غير صحيح ولا تريد أن يُثير الخادم استثناءً
+أثناء بدء التشغيل، فاضبط `check_sample_column_is_correct` على `false`.
+
+<div id="clean_deleted_rows">
+  ## clean_deleted_rows
+</div>
+
+<SettingsInfoBlock type="CleanDeletedRows" default_value="أبدًا" />
+
+متقادم، لا تأثير له.
+
+<div id="cleanup_delay_period">
+  ## cleanup_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+الحد الأدنى للفترة اللازمة لتنظيف سجلات queue القديمة، وقيم hash الخاصة بـ blocks، وparts.
+
+<div id="cleanup_delay_period_random_add">
+  ## cleanup_delay_period_random_add
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+أضِف قيمة موزعة توزيعًا منتظمًا من 0 إلى x ثانية إلى cleanup&#95;delay&#95;period
+لتجنب ظاهرة الاندفاع الجماعي وما قد ينتج عنها من هجوم حجب الخدمة على ZooKeeper في حال
+وجود عدد كبير جدًا من الجداول.
+
+<div id="cleanup_thread_preferred_points_per_iteration">
+  ## cleanup_thread_preferred_points_per_iteration
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="150" />
+
+حجم الدفعة المفضّل لعمليات التنظيف في الخلفية (النقاط هنا قيمة مجرّدة، لكن نقطة واحدة
+تعادل تقريبًا كتلة واحدة مُدخلة).
+
+<div id="cleanup_threads">
+  ## cleanup_threads
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="128" />
+
+إعداد متقادم، بلا أي تأثير.
+
+<div id="clone_replica_zookeeper_create_get_part_batch_size">
+  ## clone_replica_zookeeper_create_get_part_batch_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "100"},{"label": "إعداد جديد"}]}]} />
+
+حجم الدفعة لطلبات get-part متعددة الإنشاء في ZooKeeper عند استنساخ النسخة المتماثلة.
+
+<div id="columns_and_secondary_indices_sizes_lazy_calculation">
+  ## columns_and_secondary_indices_sizes_lazy_calculation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "إعداد جديد لحساب أحجام الأعمدة والفهارس الثانوية عند الحاجة"}]}]} />
+
+احسب أحجام الأعمدة والفهارس الثانوية عند الطلب الأول بدلًا
+من حسابها عند تهيئة الجدول.
+
+<div id="columns_to_prewarm_mark_cache">
+  ## columns_to_prewarm_mark_cache
+</div>
+
+قائمة الأعمدة المطلوب إجراء تسخين مسبق لذاكرة التخزين المؤقت للعلامات لها (إذا كانت مفعّلة). تشير القيمة الفارغة إلى جميع الأعمدة
+
+<div id="compact_parts_max_bytes_to_buffer">
+  ## compact_parts_max_bytes_to_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+متاح فقط في ClickHouse Cloud. الحد الأقصى لعدد البايتات التي يمكن كتابتها في
+stripe واحد داخل compact parts
+
+<div id="compact_parts_max_granules_to_buffer">
+  ## compact_parts_max_granules_to_buffer
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="128" />
+
+متاح فقط في ClickHouse Cloud. الحد الأقصى لعدد granules التي يمكن كتابتها في
+stripe واحد داخل compact parts
+
+<div id="compact_parts_merge_max_bytes_to_prefetch_part">
+  ## compact_parts_merge_max_bytes_to_prefetch_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16777216" />
+
+متاح فقط في ClickHouse Cloud. الحد الأقصى لحجم compact part لقراءته بالكامل في الذاكرة أثناء الدمج.
+
+<div id="compatibility_allow_sampling_expression_not_in_primary_key">
+  ## compatibility_allow_sampling_expression_not_in_primary_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+يسمح بإنشاء جدول يكون فيه تعبير أخذ العينات غير موجود في المفتاح الأساسي. وهذا
+مطلوب فقط للسماح مؤقتًا بتشغيل الخادم باستخدام جداول غير صحيحة من أجل
+التوافق مع الإصدارات السابقة.
+
+<div id="compress_marks">
+  ## compress_marks
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+تدعم العلامات الضغط، ما يقلّل حجم ملف العلامات ويُسرّع نقلها عبر الشبكة.
+
+<div id="compress_per_column_in_compact_parts">
+  ## compress_per_column_in_compact_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+يتحكم هذا الإعداد في التخطيط المادي للأجزاء المدمجة. إذا كانت القيمة true (وهو الإعداد الافتراضي)، فسيبدأ كل عمود داخل granule كتلةً مضغوطة جديدة، مما يتيح لـ ClickHouse تخطي قراءة الأعمدة غير الضرورية من القرص. وإذا كانت القيمة false، فستُحزَم جميع الأعمدة داخل granule في الكتلة المضغوطة نفسها، مما يحسّن نسبة الضغط، لكنه يتطلب فك ضغط قدر أكبر من البيانات أثناء القراءة. ويكون هذا مفيدًا لأحمال العمل التي تقرأ جميع الأعمدة دائمًا (مثل projections).
+
+<div id="compress_primary_key">
+  ## compress_primary_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+يدعم ضغط المفتاح الأساسي، مما يقلّل حجم ملف المفتاح الأساسي ويُسرّع
+نقل البيانات عبر الشبكة.
+
+<div id="concurrent_part_removal_threshold">
+  ## concurrent_part_removal_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+فعِّل إزالة الأجزاء بالتزامن (راجع `max_part_removal_threads`) فقط إذا
+كان عدد أجزاء البيانات غير النشطة لا يقل عن هذه القيمة.
+
+<div id="concurrent_part_removal_threshold_for_remote_disk">
+  ## concurrent_part_removal_threshold_for_remote_disk
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "16"},{"label": "إعداد جديد. عتبة أقل للدخول في مسار إزالة الأجزاء المتزامنة عندما يكون أي جزء من الأجزاء المُزالة موجودًا على قرص بعيد، إذ تتطلب كل عملية إزالة عادةً رحلة ذهاب وإياب واحدة عبر الشبكة. تتوافق القيمة القديمة (100) مع القيمة الافتراضية القديمة لـ `concurrent_part_removal_threshold`، لذا تحافظ أوضاع `compatibility` الأقدم على السلوك السابق."}]}]} />
+
+مثل `concurrent_part_removal_threshold`، لكنه يُستخدم عندما يكون جزء واحد
+على الأقل من الأجزاء المُزالة مخزّنًا على قرص بعيد. وتكون القيمة
+الافتراضية أقل لأن إزالة كل جزء من التخزين البعيد تتطلب عادةً رحلة
+ذهاب وإياب عبر الشبكة (على سبيل المثال، طلب `DELETE` واحد عبر HTTP
+لكل جزء في تخزين الكائنات)، لذلك فإن الإزالة التسلسلية حتى لـ 100 جزء
+قد تؤخر `DROP TABLE` لعشرات الثواني.
+
+<div id="deduplicate_merge_projection_mode">
+  ## deduplicate_merge_projection_mode
+</div>
+
+<SettingsInfoBlock type="DeduplicateMergeProjectionMode" default_value="throw" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "throw"},{"label": "عدم السماح بإنشاء إسقاط غير متسق"}]}]} />
+
+ما إذا كان ينبغي السماح بإنشاء إسقاط لجدول يستخدم MergeTree غير كلاسيكي،
+أي ليس من النوعين MergeTree ‏(Replicated, Shared). خيار `ignore` مخصص فقط
+للتوافق، وقد يؤدي إلى نتائج غير صحيحة. بخلاف ذلك، إذا كان ذلك مسموحًا،
+فما الإجراء الذي يجب اتخاذه عند دمج الإسقاطات: إما حذفها أو إعادة بنائها. لذلك فإن
+MergeTree الكلاسيكي سيتجاهل هذا الإعداد. كما أنه يتحكم أيضًا في `OPTIMIZE DEDUPLICATE`،
+لكن تأثيره يشمل جميع أفراد عائلة MergeTree. وهو أيضًا، على غرار
+الخيار `lightweight_mutation_projection_mode`، يعمل على مستوى الجزء.
+
+القيم الممكنة:
+
+* `ignore`
+* `throw`
+* `drop`
+* `rebuild`
+
+<div id="default_compression_codec">
+  ## default_compression_codec
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": ""},{"label": "إعداد جديد"}]}]} />
+
+يحدّد برنامج ترميز الضغط الافتراضي الذي سيُستخدم إذا لم يكن محددًا لعمود معيّن في تعريف الجدول.
+ترتيب اختيار برنامج ترميز الضغط لعمود ما:
+
+1. برنامج ترميز الضغط المعرّف للعمود في تعريف الجدول
+2. برنامج ترميز الضغط المعرّف في `default_compression_codec` (هذا الإعداد)
+3. برنامج ترميز الضغط الافتراضي المعرّف في إعدادات `compression`
+   القيمة الافتراضية: سلسلة فارغة (غير معرّفة).
+
+<div id="detach_not_byte_identical_parts">
+  ## detach_not_byte_identical_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+يؤدي هذا الإعداد إلى تمكين أو تعطيل فصل data part على نسخة متماثلة بعد عملية merge أو
+mutation إذا لم يكن مطابقًا بايتًا ببايت لأجزاء البيانات الموجودة على النسخ المتماثلة الأخرى. وإذا
+كان معطّلًا، فستتم إزالة data part. فعّل هذا الإعداد إذا كنت تريد
+تحليل هذه الأجزاء لاحقًا.
+
+ينطبق هذا الإعداد على جداول `MergeTree` التي تكون فيها
+[data replication](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) مفعّلة.
+
+القيم الممكنة:
+
+* `0` — تُزال الأجزاء.
+* `1` — تُفصل الأجزاء.
+
+<div id="detach_old_local_parts_when_cloning_replica">
+  ## detach_old_local_parts_when_cloning_replica
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+لا تُزِل الأجزاء المحلية القديمة عند إصلاح نسخة متماثلة مفقودة.
+
+القيم الممكنة:
+
+* `true`
+* `false`
+
+<div id="disable_detach_partition_for_zero_copy_replication">
+  ## disable_detach_partition_for_zero_copy_replication
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+يُعطِّل استعلام DETACH PARTITION في نسخ متماثل دون نسخ.
+
+<div id="disable_fetch_partition_for_zero_copy_replication">
+  ## disable_fetch_partition_for_zero_copy_replication
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+تعطيل استعلام FETCH PARTITION في نسخ متماثل دون نسخ.
+
+<div id="disable_freeze_partition_for_zero_copy_replication">
+  ## disable_freeze_partition_for_zero_copy_replication
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+تعطيل استعلام FREEZE PARTITION عند استخدام نسخ متماثل دون نسخ.
+
+<div id="disk">
+  ## القرص
+</div>
+
+اسم قرص التخزين. يمكن تحديده عوضًا عن سياسة التخزين.
+
+<div id="distributed_index_analysis_min_indexes_bytes_to_activate">
+  ## distributed_index_analysis_min_indexes_bytes_to_activate
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1073741824"},{"label": "إعداد جديد"}]}]} />
+
+الحد الأدنى لأحجام الفهارس على القرص (لفهارس تخطّي البيانات والمفتاح الأساسي، ومن دون ضغط) لتفعيل تحليل الفهرس الموزّع
+
+<div id="distributed_index_analysis_min_parts_to_activate">
+  ## distributed_index_analysis_min_parts_to_activate
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "10"},{"label": "إعداد جديد"}]}]} />
+
+الحد الأدنى لعدد الأجزاء اللازمة لتفعيل تحليل الفهارس الموزّع
+
+<div id="dynamic_serialization_version">
+  ## dynamic_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeDynamicSerializationVersion" default_value="v3" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "v2"},{"label": "إضافة إعداد للتحكم في إصدارات تسلسل Dynamic"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "v3"},{"label": "تمكين إصدار التسلسل v3 لـ Dynamic بشكل افتراضي لتحسين التسلسل/إلغاء التسلسل"}]}]} />
+
+إصدار التسلسل لنوع البيانات Dynamic. مطلوب للتوافق.
+
+القيم الممكنة:
+
+* `v1`
+* `v2`
+* `v3`
+
+<div id="enable_block_number_column">
+  ## enable_block_number_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+تمكين الاحتفاظ بالعمود &#95;block&#95;number لكل صف.
+
+<div id="enable_block_offset_column">
+  ## enable_block_offset_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+يحتفظ بالعمود الافتراضي `_block_offset` أثناء عمليات الدمج.
+
+<div id="enable_index_granularity_compression">
+  ## enable_index_granularity_compression
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+اضغط قيم دقة الفهرسة في الذاكرة إن أمكن ذلك
+
+<div id="enable_max_bytes_limit_for_min_age_to_force_merge">
+  ## enable_max_bytes_limit_for_min_age_to_force_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "تقييد أحجام الأجزاء افتراضيًا حتى مع استخدام min_age_to_force_merge_seconds"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "إعداد جديد"}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "أُضيف إعداد جديد لتقييد الحد الأقصى للبايتات لـ min_age_to_force_merge."}]}]} />
+
+ما إذا كان ينبغي أن يراعي الإعدادان `min_age_to_force_merge_seconds` و
+`min_age_to_force_merge_on_partition_only` الإعداد
+`max_bytes_to_merge_at_max_space_in_pool`.
+
+القيم الممكنة:
+
+* `true`
+* `false`
+
+<div id="enable_mixed_granularity_parts">
+  ## enable_mixed_granularity_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+يُفعِّل أو يعطِّل التحوّل إلى التحكم في حجم الـ granule باستخدام
+الإعداد `index_granularity_bytes`. قبل الإصدار 19.11، كان الإعداد
+`index_granularity` هو الوحيد المستخدم لتقييد حجم الـ granule. يُحسِّن
+الإعداد `index_granularity_bytes` أداء ClickHouse عند
+قراءة البيانات من الجداول التي تحتوي على صفوف كبيرة (بعشرات أو مئات الميغابايت).
+إذا كانت لديك جداول تحتوي على صفوف كبيرة، فيمكنك تفعيل هذا الإعداد لهذه الجداول
+لتحسين كفاءة استعلامات `SELECT`.
+
+<div id="enable_replacing_merge_with_cleanup_for_min_age_to_force_merge">
+  ## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "إعداد جديد للسماح بعمليات دمج CLEANUP التلقائية لـ ReplacingMergeTree"}]}]} />
+
+ما إذا كان سيتم استخدام عمليات دمج `CLEANUP` لـ ReplacingMergeTree عند دمج
+الأقسام حتى تصبح جزءًا واحدًا. يتطلب ذلك تفعيل `allow_experimental_replacing_merge_with_cleanup`
+و`min_age_to_force_merge_seconds` و`min_age_to_force_merge_on_partition_only`.
+
+القيم الممكنة:
+
+* `true`
+* `false`
+
+<div id="enable_the_endpoint_id_with_zookeeper_name_prefix">
+  ## enable_the_endpoint_id_with_zookeeper_name_prefix
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+تمكين معرّف نقطة النهاية باستخدام بادئة اسم ZooKeeper لجدول ReplicatedMergeTree.
+
+<div id="enable_vertical_merge_algorithm">
+  ## enable_vertical_merge_algorithm
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+تمكين استخدام خوارزمية الدمج العمودي.
+
+<div id="enforce_index_structure_match_on_partition_manipulation">
+  ## enforce_index_structure_match_on_partition_manipulation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+إذا كان هذا الإعداد مُمكّنًا لجدول الوجهة في استعلام لمعالجة التقسيم
+(`ATTACH/MOVE/REPLACE PARTITION`)، فيجب أن تكون الفهارس والإسقاطات
+متطابقة بين جدولي المصدر والوجهة. وإلا، يمكن أن يحتوي جدول الوجهة
+على مجموعة شاملة لفهارس جدول المصدر وإسقاطاته.
+
+<div id="escape_index_filenames">
+  ## escape_index_filenames
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "إفلات المحارف غير ASCII في أسماء الملفات المُنشأة للفهارس"}]}]} />
+
+قبل الإصدار 26.1، لم نكن نجري إفلاتًا للرموز الخاصة في أسماء الملفات المُنشأة للفهارس الثانوية، مما قد يؤدي إلى مشكلات
+إذ قد تتسبب بعض المحارف في أسماء الفهارس في إنشاء أجزاء تالفة. أُضيف هذا فقط لأسباب تتعلق بالتوافق. ولا ينبغي تغييره إلا إذا كنت
+تقرأ أجزاء قديمة تحتوي على فهارس تستخدم محارف غير ASCII في أسمائها.
+
+<div id="escape_variant_subcolumn_filenames">
+  ## escape_variant_subcolumn_filenames
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "إفلات الرموز الخاصة في أسماء الملفات المُنشأة للأعمدة الفرعية من نوع Variant في الأجزاء العريضة لجدول MergeTree"}]}]} />
+
+إفلات الرموز الخاصة في أسماء الملفات المُنشأة للأعمدة الفرعية من نوع البيانات Variant في الأجزاء العريضة لجدول MergeTree. ضروري للتوافق.
+
+<div id="exclude_deleted_rows_for_part_size_in_merge">
+  ## exclude_deleted_rows_for_part_size_in_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+إذا كان هذا الإعداد مُمكّنًا، فسيُستخدم الحجم الفعلي التقديري لأجزاء البيانات (أي باستبعاد الصفوف
+التي حُذفت باستخدام `DELETE FROM`) عند اختيار
+الأجزاء المطلوب دمجها. لاحظ أن هذا السلوك لا يُفعَّل إلا لأجزاء البيانات
+المتأثرة بعملية `DELETE FROM` نُفِّذت بعد تمكين هذا الإعداد.
+
+القيم الممكنة:
+
+* `true`
+* `false`
+
+**انظر أيضًا**
+
+* [load&#95;existing&#95;rows&#95;count&#95;for&#95;old&#95;parts](#load_existing_rows_count_for_old_parts)
+  الإعداد
+
+<div id="exclude_materialize_skip_indexes_on_merge">
+  ## exclude_materialize_skip_indexes_on_merge
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "إعداد جديد."}]}]} />
+
+يستبعد قائمة فهارس التخطي المحددة والمفصولة بفواصل من الإنشاء والتخزين أثناء عمليات الدمج. ولا يكون له أي تأثير إذا كانت
+[materialize&#95;skip&#95;indexes&#95;on&#95;merge](#materialize_skip_indexes_on_merge) بقيمة false.
+
+ستظل فهارس التخطي المستثناة تُنشأ وتُخزَّن من خلال استعلام
+[MATERIALIZE INDEX](/ar/reference/statements/alter/skipping-index#materialize-index) صريح أو أثناء عمليات INSERT، وذلك وفقًا
+لإعداد [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ar/reference/settings/session-settings#materialize_skip_indexes_on_insert)
+للجلسة.
+
+مثال:
+
+```sql
+CREATE TABLE tab
+(
+a UInt64,
+b UInt64,
+INDEX idx_a a TYPE minmax,
+INDEX idx_b b TYPE set(3)
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS exclude_materialize_skip_indexes_on_merge = 'idx_a';
+
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- setting has no effect on INSERTs
+
+-- idx_a will be excluded from update during background or explicit merge via OPTIMIZE TABLE FINAL
+
+-- can exclude multiple indexes by providing a list
+ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = 'idx_a, idx_b';
+
+-- default setting, no indexes excluded from being updated during merge
+ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
+```
+
+<div id="execute_merges_on_single_replica_time_threshold">
+  ## execute_merges_on_single_replica_time_threshold
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="0" />
+
+عندما تكون قيمة هذا الإعداد أكبر من صفر، تبدأ نسخة متماثلة واحدة فقط
+عملية الدمج فورًا، بينما تنتظر النسخ المتماثلة الأخرى حتى انقضاء تلك المدة
+لتنزيل النتيجة بدلًا من تنفيذ عمليات الدمج محليًا. وإذا لم تُنهِ النسخة المتماثلة
+المختارة عملية الدمج خلال تلك المدة، فسيجري الرجوع إلى السلوك القياسي.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="fault_probability_after_part_commit">
+  ## fault_probability_after_part_commit
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0" />
+
+مخصّص للاختبار. لا تغيّره.
+
+<div id="fault_probability_before_part_commit">
+  ## fault_probability_before_part_commit
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0" />
+
+للاختبار. لا تغيّره.
+
+<div id="finished_mutations_to_keep">
+  ## finished_mutations_to_keep
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+عدد السجلات الخاصة بعمليات mutation المكتملة المطلوب الاحتفاظ بها. إذا كانت القيمة صفرًا، فسيتم الاحتفاظ
+بها كلها.
+
+<div id="force_read_through_cache_for_merges">
+  ## force_read_through_cache_for_merges
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+فرض القراءة من خلال ذاكرة التخزين المؤقت لنظام الملفات أثناء عمليات الدمج
+
+<div id="fsync_after_insert">
+  ## fsync_after_insert
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+نفّذ `fsync` لكل جزء يتم إدراجه. يؤدي ذلك إلى انخفاض كبير في أداء
+عمليات الإدراج، ولا يُنصح باستخدامه مع الأجزاء الواسعة.
+
+<div id="fsync_part_directory">
+  ## fsync_part_directory
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+نفّذ fsync على دليل الجزء بعد اكتمال جميع عمليات الجزء (الكتابة، وإعادة التسمية، وما إلى ذلك).
+
+<div id="in_memory_parts_enable_wal">
+  ## in_memory_parts_enable_wal
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+إعداد متقادم، ولا تأثير له.
+
+<div id="in_memory_parts_insert_sync">
+  ## in_memory_parts_insert_sync
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+إعداد متقادم، وليس له أي تأثير.
+
+<div id="inactive_parts_to_delay_insert">
+  ## inactive_parts_to_delay_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+إذا تجاوز عدد الأجزاء غير النشطة في قسم واحد من الجدول
+قيمة `inactive_parts_to_delay_insert`، يتم إبطاء
+عملية `INSERT` عمدًا.
+
+<Tip>
+  يفيد ذلك عندما يعجز الخادم عن تنظيف الأجزاء بالسرعة الكافية.
+</Tip>
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="inactive_parts_to_throw_insert">
+  ## inactive_parts_to_throw_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+إذا تجاوز عدد الأجزاء غير النشطة في قسم واحد قيمة
+`inactive_parts_to_throw_insert`، تتم مقاطعة `INSERT` مع
+الخطأ التالي:
+
+> &quot;عدد الأجزاء غير النشطة كبير جدًا (N). تتم معالجة تنظيف الأجزاء بمعدل أبطأ بكثير من عمليات الإدراج&quot; استثناء.&quot;
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="index_granularity">
+  ## index_granularity
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8192" />
+
+الحد الأقصى لعدد صفوف البيانات بين علامات الفهرس. أي: عدد الصفوف
+المقابل لقيمة واحدة من المفتاح الأساسي.
+
+<div id="index_granularity_bytes">
+  ## index_granularity_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+الحد الأقصى لحجم حبيبات البيانات، بالبايت.
+
+لقصر حجم الحبيبة على عدد الصفوف فقط، اضبطه على `0` (غير مستحسن).
+
+<div id="initialization_retry_period">
+  ## initialization_retry_period
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="60" />
+
+فترة إعادة المحاولة لتهيئة الجدول، بالثواني.
+
+<div id="kill_delay_period">
+  ## kill_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+إعداد متقادم، وليس له أي تأثير.
+
+<div id="kill_delay_period_random_add">
+  ## kill_delay_period_random_add
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+إعداد متقادم، بلا تأثير.
+
+<div id="kill_threads">
+  ## kill_threads
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="128" />
+
+إعداد متقادم، وليس له أي تأثير.
+
+<div id="lightweight_mutation_projection_mode">
+  ## lightweight_mutation_projection_mode
+</div>
+
+<SettingsInfoBlock type="LightweightMutationProjectionMode" default_value="throw" />
+
+افتراضيًا، لا تعمل ميزة الحذف خفيف الوزن `DELETE` مع الجداول التي تحتوي على
+إسقاطات. ويرجع ذلك إلى أن الصفوف في الإسقاط قد تتأثر بعملية
+`DELETE`. لذلك، تكون القيمة الافتراضية هي `throw`. ومع ذلك، يمكن لهذا
+الخيار تغيير هذا السلوك. عند استخدام القيمة `drop` أو `rebuild`،
+سيعمل الحذف مع الإسقاطات. تؤدي القيمة `drop` إلى حذف الإسقاط، لذا
+قد يكون ذلك سريعًا في الاستعلام الحالي لأن الإسقاط سيُحذف، لكنه قد يكون
+أبطأ في الاستعلامات المستقبلية لعدم وجود إسقاط مرفق. أما `rebuild` فيؤدي إلى
+إعادة بناء الإسقاط، ما قد يؤثر في أداء الاستعلام الحالي، لكنه
+قد يسرّع الاستعلامات المستقبلية. ومن الميزات الجيدة أن هذه الخيارات
+لا تعمل إلا على مستوى الجزء، ما يعني أن الإسقاطات الموجودة في الجزء الذي لا
+يجري المساس به ستبقى سليمة بدلًا من أن تؤدي إلى تشغيل أي إجراء مثل
+drop أو rebuild.
+
+القيم الممكنة:
+
+* `throw`
+* `drop`
+* `rebuild`
+
+<div id="load_existing_rows_count_for_old_parts">
+  ## load_existing_rows_count_for_old_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+إذا كان هذا الإعداد ممكّنًا مع [exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](#exclude_deleted_rows_for_part_size_in_merge)،
+فسيُحتسب عدد الصفوف المحذوفة لأجزاء البيانات الموجودة عند
+بدء تشغيل الجدول. لاحظ أن ذلك قد يبطّئ تحميل الجدول عند بدء التشغيل.
+
+القيم الممكنة:
+
+* `true`
+* `false`
+
+**راجع أيضًا**
+
+* الإعداد [exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](#exclude_deleted_rows_for_part_size_in_merge)
+
+<div id="lock_acquire_timeout_for_background_operations">
+  ## lock_acquire_timeout_for_background_operations
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="120" />
+
+لعمليات الخلفية مثل عمليات الدمج والتعديلات وغيرها: عدد الثواني التي يُنتظرها قبل الإخفاق في الحصول على أقفال الجدول.
+
+<div id="map_buckets_coefficient">
+  ## map_buckets_coefficient
+</div>
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "إضافة إعداد للتحكم في المعامل المستخدم في الاستراتيجيتين `sqrt` و`linear` لحساب عدد الحاويات لتسلسل Map من نوع 'with_buckets'"}]}]} />
+
+المعامل المستخدم في [map&#95;buckets&#95;strategy](#map_buckets_strategy) بالاستراتيجيتين `sqrt` و`linear` لحساب عدد الحاويات استنادًا إلى متوسط حجم الخريطة.
+بالنسبة إلى استراتيجية `sqrt`: ‏`round(map_buckets_coefficient * sqrt(avg_map_size))`.
+بالنسبة إلى استراتيجية `linear`: ‏`round(map_buckets_coefficient * avg_map_size)`.
+يُتجاهل هذا الإعداد عندما تكون قيمة `map_buckets_strategy` هي `constant`.
+
+<div id="map_buckets_min_avg_size">
+  ## map_buckets_min_avg_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "32"},{"label": "إضافة إعداد للتحكم في الحد الأدنى لمتوسط حجم Map (عدد المفاتيح لكل صف) اللازم لتطبيق تسلسل `with_buckets`"}]}]} />
+
+الحد الأدنى لمتوسط حجم Map (عدد المفاتيح لكل صف) اللازم لتطبيق تسلسل `with_buckets`.
+إذا كان متوسط حجم Map أقل من هذه القيمة، فسيُستخدم حاوية واحد بصرف النظر عن إعدادات الحاوية الأخرى.
+تؤدي القيمة `0` إلى تعطيل العتبة وتطبيق استراتيجية التقسيم إلى حاوية دائمًا.
+يفيد هذا الإعداد في تجنب الحمل الإضافي الناتج عن التسلسل المعتمد على الحاوية مع قيم Map الصغيرة، حيث تكون الفائدة محدودة.
+
+<div id="map_buckets_strategy">
+  ## map_buckets_strategy
+</div>
+
+<SettingsInfoBlock type="MergeTreeMapBucketsStrategy" default_value="sqrt" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "sqrt"},{"label": "إضافة إعداد للتحكم في استراتيجية اختيار عدد الحاويات لتسلسل `Map` من النوع `with_buckets`"}]}]} />
+
+يتحكم هذا الإعداد في استراتيجية اختيار عدد الحاويات في تسلسل `with_buckets` لـ `Map` استنادًا إلى متوسط حجم الخريطة.
+
+القيم الممكنة:
+
+* constant — استخدم دائمًا [max&#95;buckets&#95;in&#95;map](#max_buckets_in_map) كعددٍ للحاويات، بغض النظر عن متوسط حجم الخريطة.
+* sqrt — استخدم `round(map_buckets_coefficient * sqrt(avg_map_size))` كعددٍ للحاويات، مع حصره ضمن `[1, max_buckets_in_map]`.
+* linear — استخدم `round(map_buckets_coefficient * avg_map_size)` كعددٍ للحاويات، مع حصره ضمن `[1, max_buckets_in_map]`.
+
+<div id="map_serialization_version">
+  ## map_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "basic"},{"label": "إضافة إعداد للتحكم في إصدار تسلسل Map"}]}]} />
+
+يتحكم في أسلوب التسلسل المستخدم لأعمدة `Map`.
+
+القيم المحتملة:
+
+* basic — يستخدم التسلسل القياسي لـ `Map`.
+* with&#95;buckets — يقسّم المفاتيح إلى حاوية أثناء التسلسل. ويؤدي استخدام حاوية إلى تحسين قراءة المفاتيح الفردية من `Map`.
+
+يُحدَّد عدد حاوية في تسلسل `with_buckets` بواسطة [max&#95;buckets&#95;in&#95;map](#max_buckets_in_map) و [map&#95;buckets&#95;strategy](#map_buckets_strategy).
+
+<div id="map_serialization_version_for_zero_level_parts">
+  ## map_serialization_version_for_zero_level_parts
+</div>
+
+<SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "basic"},{"label": "إضافة إعداد للتحكم في إصدار تسلسل Map للأجزاء ذات المستوى الصفري"}]}]} />
+
+يتيح هذا الإعداد تحديد إصدار مختلف من التسلسل لأعمدة
+`Map` في الأجزاء ذات المستوى الصفري التي يتم إنشاؤها أثناء عمليات insert.
+وقد يكون من المفيد الإبقاء على تسلسل `basic` للأجزاء ذات المستوى الصفري لتجنب
+تدهور الأداء أثناء عمليات insert، مع استخدام `with_buckets` للأجزاء المدمجة.
+
+<div id="marks_compress_block_size">
+  ## marks_compress_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
+
+حجم كتلة ضغط العلامات، أي الحجم الفعلي للكتلة التي ستُضغط.
+
+<div id="marks_compression_codec">
+  ## marks_compression_codec
+</div>
+
+<SettingsInfoBlock type="سلسلة" default_value="ZSTD(3)" />
+
+ترميز الضغط المستخدم للعلامات؛ وبما أن العلامات صغيرة بما يكفي وتُخزَّن مؤقتًا، فإن الضغط الافتراضي هو ZSTD(3).
+
+<div id="materialize_projections_on_insert">
+  ## materialize_projections_on_insert
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+عند تفعيل هذا الإعداد، تُنشئ عمليات INSERT أجزاءً جديدة تتضمن الإسقاطات.
+وإلا، يمكن إنشاؤها صراحةً عبر [MATERIALIZE PROJECTION](/ar/reference/statements/alter/projection#materialize-projection)
+أو أثناء عمليات الدمج باستخدام [materialize&#95;projections&#95;on&#95;merge](/ar/reference/settings/merge-tree-settings#materialize_projections_on_merge).
+
+<div id="materialize_projections_on_merge">
+  ## materialize_projections_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+عند تمكين هذا الإعداد، تعيد عملية الدمج إنشاء الإسقاط إذا كان مفقودًا من جميع أجزائه المصدرية (على سبيل المثال، لأنها أُدرجت باستخدام `materialize_projections_on_insert = 0`)، بحيث يحتوي الجزء الناتج عن الدمج على هذا الإسقاط.
+
+تظل عمليات الدمج تقتصر على دمج الأجزاء التي تشترك في المجموعة نفسها من الإسقاطات. ولاستكمال إسقاط في جميع الأجزاء الموجودة،
+استخدم [MATERIALIZE PROJECTION](/ar/reference/statements/alter/projection#materialize-projection) بشكل صريح. كما تُنشأ الإسقاطات أيضًا
+أثناء عمليات INSERT باستخدام [materialize&#95;projections&#95;on&#95;insert](/ar/reference/settings/merge-tree-settings#materialize_projections_on_insert).
+
+<div id="materialize_skip_indexes_on_merge">
+  ## materialize_skip_indexes_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+عند تفعيل هذا الإعداد، تُنشئ عمليات الدمج فهارس التخطي للأجزاء الجديدة وتخزّنها.
+أما إذا لم يكن مفعّلًا، فيمكن إنشاؤها/تخزينها صراحةً عبر [MATERIALIZE INDEX](/ar/reference/statements/alter/skipping-index#materialize-index)
+أو [أثناء عمليات INSERT](/ar/reference/settings/session-settings#materialize_skip_indexes_on_insert).
+
+راجع أيضًا [exclude&#95;materialize&#95;skip&#95;indexes&#95;on&#95;merge](#exclude_materialize_skip_indexes_on_merge) لمزيد من التحكم الدقيق.
+
+<div id="materialize_statistics_on_merge">
+  ## materialize_statistics_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+عند تفعيل هذا الإعداد، تنشئ عمليات الدمج الإحصاءات للأجزاء الجديدة وتخزّنها.
+وإلا، يمكن إنشاؤها/تخزينها صراحةً باستخدام [MATERIALIZE STATISTICS](/ar/reference/statements/alter/statistics)
+أو [أثناء عمليات INSERT](/ar/reference/settings/session-settings#materialize_statistics_on_insert)
+
+<div id="materialize_ttl_recalculate_only">
+  ## materialize_ttl_recalculate_only
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+أعِد احتساب معلومات TTL فقط عند تنفيذ MATERIALIZE TTL
+
+<div id="max_avg_part_size_for_too_many_parts">
+  ## max_avg_part_size_for_too_many_parts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+لن يكون فحص &#39;too many parts&#39; وفقًا لـ &#39;parts&#95;to&#95;delay&#95;insert&#39; و
+&#39;parts&#95;to&#95;throw&#95;insert&#39; نشطًا إلا إذا كان متوسط حجم الجزء (في
+الـ partition المعني) لا يتجاوز العتبة المحددة. وإذا
+تجاوزها، فلن تُؤجَّل عمليات INSERT ولن تُرفَض. يتيح ذلك
+وجود مئات التيرابايتات في جدول واحد على خادم واحد إذا
+دُمجت الأجزاء بنجاح في أجزاء أكبر. ولا يؤثر ذلك في
+العتبات الخاصة بالأجزاء غير النشطة أو بإجمالي الأجزاء.
+
+<div id="max_buckets_in_map">
+  ## max_buckets_in_map
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "32"},{"label": "إضافة إعداد للتحكم في الحد الأقصى لعدد الـ حاوية لتسلسل `Map` باستخدام `with_buckets`"}]}]} />
+
+الحد الأقصى لعدد الـ حاوية لتسلسل `Map`. يعمل مع تسلسل `Map` باستخدام `with_buckets`.
+يُحدَّد العدد الفعلي للـ حاوية بواسطة [map&#95;buckets&#95;strategy](#map_buckets_strategy).
+الحد الأقصى المسموح به هو 256.
+
+<div id="max_bytes_to_merge_at_max_space_in_pool">
+  ## max_bytes_to_merge_at_max_space_in_pool
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="161061273600" />
+
+الحد الأقصى لإجمالي حجم الأجزاء (بالبايت) التي يمكن دمجها في جزء واحد، إذا
+كانت الموارد المتاحة كافية. ويقابل ذلك تقريبًا أكبر
+حجم ممكن للجزء الناتج عن عملية دمج تلقائية في الخلفية. (تعني القيمة 0 تعطيل عمليات الدمج)
+
+القيم الممكنة:
+
+* أي عدد صحيح غير سالب.
+
+يحلّل مُجدول الدمج دوريًا أحجام الأجزاء وعددها داخل
+الأقسام، وإذا توفرت موارد حرة كافية في المجمّع، فإنه يبدأ
+عمليات دمج في الخلفية. وتستمر عمليات الدمج إلى أن يصبح الحجم الإجمالي للأجزاء المصدر
+أكبر من `max_bytes_to_merge_at_max_space_in_pool`.
+
+تتجاهل عمليات الدمج التي يبدأها [OPTIMIZE FINAL](/ar/reference/statements/optimize)
+القيمة `max_bytes_to_merge_at_max_space_in_pool` (إذ لا
+تؤخذ في الحسبان إلا المساحة الحرة على القرص).
+
+<div id="max_bytes_to_merge_at_min_space_in_pool">
+  ## max_bytes_to_merge_at_min_space_in_pool
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1048576" />
+
+الحد الأقصى لإجمالي حجم الأجزاء (بالبايت) التي يمكن دمجها في جزء واحد، عند
+الحد الأدنى من الموارد المتاحة في تجمع الخلفية.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+يحدّد `max_bytes_to_merge_at_min_space_in_pool` الحد الأقصى للحجم الإجمالي
+للأجزاء التي يمكن دمجها رغم نقص مساحة القرص المتاحة (في التجمع).
+وهذا ضروري لتقليل عدد الأجزاء الصغيرة وخفض احتمال ظهور أخطاء
+`Too many parts`.
+تحجز عمليات الدمج مساحة على القرص تعادل ضعف الحجم الإجمالي للأجزاء المدمجة.
+لذلك، عند توفّر قدر قليل من المساحة الحرة على القرص، قد تنشأ حالة
+تكون فيها هناك مساحة حرة، لكنها تكون محجوزة بالفعل لعمليات دمج كبيرة جارية،
+وبالتالي لا تتمكن عمليات دمج أخرى من البدء، ويزداد عدد الأجزاء الصغيرة
+مع كل عملية insert.
+
+<div id="max_cleanup_delay_period">
+  ## max_cleanup_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+الحد الأقصى للمدة اللازمة لتنظيف سجلات قائمة الانتظار القديمة، وقيم تجزئة الكتل، والأجزاء.
+
+<div id="max_compress_block_size">
+  ## max_compress_block_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأقصى لحجم كتل البيانات غير المضغوطة قبل ضغطها وكتابتها
+إلى جدول. يمكنك أيضًا تحديد هذا الإعداد ضمن الإعدادات العامة
+(راجع إعداد [max&#95;compress&#95;block&#95;size](/ar/reference/settings/merge-tree-settings#max_compress_block_size)
+). تتجاوز القيمة المحددة عند إنشاء الجدول
+القيمة العامة لهذا الإعداد.
+
+<div id="max_concurrent_queries">
+  ## max_concurrent_queries
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأقصى لعدد الاستعلامات التي تُنفَّذ بالتوازي والمرتبطة بجدول MergeTree.
+ستظل الاستعلامات خاضعة لإعدادات `max_concurrent_queries` الأخرى.
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+* `0` — بدون حد.
+
+القيمة الافتراضية: `0` (بدون حد).
+
+**مثال**
+
+```xml
+<max_concurrent_queries>50</max_concurrent_queries>
+```
+
+<div id="max_delay_to_insert">
+  ## max_delay_to_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+القيمة بالثواني، وتُستخدم لحساب تأخير `INSERT` إذا
+تجاوز عدد الأجزاء النشطة في partition واحدة قيمة
+[parts&#95;to&#95;delay&#95;insert](#parts_to_delay_insert).
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+يُحسب تأخير `INSERT` (بالملي ثانية) وفق الصيغة التالية:
+
+```code
+max_k = parts_to_throw_insert - parts_to_delay_insert
+k = 1 + parts_count_in_partition - parts_to_delay_insert
+delay_milliseconds = pow(max_delay_to_insert * 1000, k / max_k)
+```
+
+على سبيل المثال، إذا كان partition يحتوي على 299 جزءًا نشطًا وكان parts&#95;to&#95;throw&#95;insert
+= 300، وparts&#95;to&#95;delay&#95;insert = 150، وmax&#95;delay&#95;to&#95;insert = 1، فسيتم
+تأخير `INSERT` لمدة `pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000`
+مللي ثانية.
+
+اعتبارًا من الإصدار 23.1، تغيرت الصيغة إلى:
+
+```code
+allowed_parts_over_threshold = parts_to_throw_insert - parts_to_delay_insert
+parts_over_threshold = parts_count_in_partition - parts_to_delay_insert + 1
+delay_milliseconds = max(min_delay_to_insert_ms, (max_delay_to_insert * 1000)
+* parts_over_threshold / allowed_parts_over_threshold)
+```
+
+على سبيل المثال، إذا كان لأحد الأقسام 224 جزءًا نشطًا وكانت قيم parts&#95;to&#95;throw&#95;insert
+= 300، وparts&#95;to&#95;delay&#95;insert = 150، وmax&#95;delay&#95;to&#95;insert = 1،
+وmin&#95;delay&#95;to&#95;insert&#95;ms = 10، فسيُؤخَّر `INSERT` لمدة `max( 10, 1 * 1000 *
+(224 - 150 + 1) / (300 - 150) ) = 500` مللي ثانية.
+
+<div id="max_delay_to_mutate_ms">
+  ## max_delay_to_mutate_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+الحد الأقصى لتأخير إجراء mutation على جدول MergeTree بالمللي ثانية، إذا كان هناك عدد كبير من
+عمليات mutation غير المكتملة
+
+<div id="max_digestion_size_per_segment">
+  ## max_digestion_size_per_segment
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "268435456"},{"label": "إعداد متقادم"}]}]} />
+
+إعداد متقادم، وليس له أي تأثير.
+
+<div id="max_file_name_length">
+  ## max_file_name_length
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="127" />
+
+الحد الأقصى لطول اسم الملف للإبقاء عليه كما هو من دون تجزئته.
+يسري هذا فقط إذا كان الإعداد `replace_long_file_name_to_hash` مُمكّنًا.
+لا تتضمن قيمة هذا الإعداد طول امتداد الملف. لذلك،
+يوصى بضبطه على قيمة أقل من الحد الأقصى لطول اسم الملف (عادةً 255
+بايتًا) مع ترك هامش لتجنب أخطاء نظام الملفات.
+
+<div id="max_files_to_modify_in_alter_columns">
+  ## max_files_to_modify_in_alter_columns
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="75" />
+
+لا تُنفِّذ ALTER إذا كان عدد الملفات المطلوب تعديلها (حذفًا أو إضافةً)
+أكبر من قيمة هذا الإعداد.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+القيمة الافتراضية: 75
+
+<div id="max_files_to_remove_in_alter_columns">
+  ## max_files_to_remove_in_alter_columns
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="50" />
+
+لا تُنفِّذ ALTER إذا كان عدد الملفات المراد حذفها أكبر من هذا
+الإعداد.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="max_merge_delayed_streams_for_parallel_write">
+  ## max_merge_delayed_streams_for_parallel_write
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="40" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "40"},{"label": "إعداد جديد"}]}]} />
+
+الحد الأقصى لعدد المسارات (الأعمدة) التي يمكن تفريغها بالتوازي
+(النظير لـ max&#95;insert&#95;delayed&#95;streams&#95;for&#95;parallel&#95;write في عمليات الدمج). يعمل
+فقط مع عمليات الدمج الرأسية.
+
+<div id="max_merge_selecting_sleep_ms">
+  ## max_merge_selecting_sleep_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60000" />
+
+الحد الأقصى للوقت الواجب انتظاره قبل إعادة محاولة تحديد الأجزاء المراد دمجها بعد
+عدم تحديد أي أجزاء. سيؤدي تقليل هذه القيمة إلى تشغيل مهام التحديد بشكل متكرر في
+background&#95;schedule&#95;pool، مما ينتج عنه عدد كبير من
+الطلبات إلى ZooKeeper في العناقيد واسعة النطاق
+
+<div id="max_number_of_merges_with_ttl_in_pool">
+  ## max_number_of_merges_with_ttl_in_pool
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2" />
+
+عندما يتجاوز عدد
+عمليات الدمج التي تحتوي على إدخالات TTL في المجمّع العددَ المحدد، فلا تُسند
+عملية دمج جديدة مع TTL. يهدف ذلك إلى الإبقاء على
+خيوط تنفيذ متاحة لعمليات الدمج العادية وتجنّب &quot;Too many parts&quot;
+
+<div id="max_number_of_mutations_for_replica">
+  ## max_number_of_mutations_for_replica
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+يحدّ عدد عمليات تعديل الأجزاء لكل نسخة متماثلة بالقيمة المحددة.
+يعني الصفر عدم فرض أي حدّ على عدد عمليات التعديل لكل نسخة متماثلة (مع أن التنفيذ قد
+يبقى مقيّدًا بإعدادات أخرى).
+
+<div id="max_part_loading_threads">
+  ## max_part_loading_threads
+</div>
+
+<SettingsInfoBlock type="MaxThreads" default_value="'auto(14)'" />
+
+إعداد متقادم لم يعد له أي تأثير.
+
+<div id="max_part_removal_threads">
+  ## max_part_removal_threads
+</div>
+
+<SettingsInfoBlock type="MaxThreads" default_value="'auto(14)'" />
+
+إعداد متقادم، بلا تأثير.
+
+<div id="max_partitions_to_read">
+  ## max_partitions_to_read
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+يحدّد الحد الأقصى لعدد الأقسام التي يمكن الوصول إليها في استعلام واحد.
+
+يمكن تجاوز قيمة الإعداد المحددة عند إنشاء الجدول
+عبر إعداد على مستوى الاستعلام.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+يمكنك أيضًا تحديد إعداد لتعقيد الاستعلام [max&#95;partitions&#95;to&#95;read](/ar/reference/settings/session-settings#max_partitions_to_read)
+على مستوى الاستعلام / الجلسة / ملف التعريف.
+
+<div id="max_parts_in_total">
+  ## max_parts_in_total
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+إذا تجاوز العدد الإجمالي للأجزاء النشطة في جميع الأقسام في جدول واحد
+القيمة `max_parts_in_total`، تتوقف عملية `INSERT` ويُطرح الاستثناء `Too many parts
+(N)`.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+يؤدي العدد الكبير من الأجزاء في الجدول إلى تراجع أداء استعلامات ClickHouse
+وزيادة وقت بدء تشغيل ClickHouse. وغالبًا ما يكون ذلك نتيجة تصميم غير
+صحيح (أخطاء عند اختيار استراتيجية التقسيم - أقسام صغيرة جدًا).
+
+<div id="max_parts_to_merge_at_once">
+  ## max_parts_to_merge_at_once
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+الحد الأقصى لعدد الأجزاء التي يمكن دمجها في المرة الواحدة (0 - معطّل). لا يؤثر هذا
+في استعلام OPTIMIZE FINAL.
+
+<div id="max_postpone_time_for_failed_mutations_ms">
+  ## max_postpone_time_for_failed_mutations_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300000" />
+
+الحد الأقصى لمدة تأجيل التعديلات الفاشلة.
+
+<div id="max_postpone_time_for_failed_replicated_fetches_ms">
+  ## max_postpone_time_for_failed_replicated_fetches_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "أُضيف إعداد جديد لتمكين تأجيل مهام الجلب في قائمة انتظار النسخ المتماثل."}]}]} />
+
+الحد الأقصى لمدة تأجيل عمليات الجلب الفاشلة في النسخ المتماثل.
+
+<div id="max_postpone_time_for_failed_replicated_merges_ms">
+  ## max_postpone_time_for_failed_replicated_merges_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "تمت إضافة إعداد جديد لتمكين تأجيل مهام الدمج في قائمة انتظار النسخ المتماثل."}]}]} />
+
+الحد الأقصى لوقت تأجيل عمليات الدمج المتماثلة الفاشلة.
+
+<div id="max_postpone_time_for_failed_replicated_tasks_ms">
+  ## max_postpone_time_for_failed_replicated_tasks_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "300000"},{"label": "أُضيف إعداد جديد لتمكين تأجيل المهام في قائمة انتظار النسخ المتماثل."}]}]} />
+
+الحد الأقصى لمدة تأجيل المهمة المتماثلة الفاشلة. تُستخدم هذه القيمة إذا لم تكن المهمة عملية جلب أو دمج أو تعديل.
+
+<div id="max_projections">
+  ## max_projections
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="25" />
+
+الحد الأقصى لعدد إسقاطات MergeTree.
+
+<div id="max_replicated_fetches_network_bandwidth">
+  ## max_replicated_fetches_network_bandwidth
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+يحدّد السرعة القصوى لتبادل البيانات عبر الشبكة، بالبايت في
+الثانية، لعمليات الجلب [المتماثلة](/ar/reference/engines/table-engines/mergetree-family/replication).
+ويُطبَّق هذا الإعداد على جدول معيّن، بخلاف
+الإعداد [`max_replicated_fetches_network_bandwidth_for_server`](/ar/reference/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)،
+الذي يُطبَّق على الخادم.
+
+يمكنك تقييد كلٍّ من شبكة الخادم والشبكة الخاصة بجدول معيّن، ولكن لتحقيق
+ذلك يجب أن تكون قيمة الإعداد على مستوى الجدول أقل من القيمة على مستوى
+الخادم. وإلا فلن يأخذ الخادم في الاعتبار إلا
+الإعداد `max_replicated_fetches_network_bandwidth_for_server`.
+
+لا يُلتزم بهذا الإعداد دائمًا بدقة تامة.
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+* `0` — غير محدود.
+
+القيمة الافتراضية: `0`.
+
+**الاستخدام**
+
+يمكن استخدامه لتقييد السرعة عند نسخ البيانات متماثلًا لإضافة
+عُقد جديدة أو استبدال عُقد قائمة.
+
+<div id="max_replicated_logs_to_keep">
+  ## max_replicated_logs_to_keep
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+عدد السجلات التي يمكن أن يحتوي عليها سجل ClickHouse Keeper إذا كانت هناك
+نسخة متماثلة غير نشطة. وتُعدّ النسخة المتماثلة غير النشطة مفقودة عند تجاوز هذا العدد.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="max_replicated_merges_in_queue">
+  ## max_replicated_merges_in_queue
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+عدد مهام دمج الأجزاء وتعديلها المسموح بتنفيذها بالتزامن في
+قائمة انتظار ReplicatedMergeTree.
+
+<div id="max_replicated_merges_with_ttl_in_queue">
+  ## max_replicated_merges_with_ttl_in_queue
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+عدد مهام دمج الأجزاء المرتبطة بـ TTL المسموح بتنفيذها في الوقت نفسه ضمن قائمة انتظار ReplicatedMergeTree.
+
+<div id="max_replicated_mutations_in_queue">
+  ## max_replicated_mutations_in_queue
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+عدد المهام الخاصة بالأجزاء قيد التعديل المسموح بتنفيذها بالتزامن في
+قائمة انتظار ReplicatedMergeTree.
+
+<div id="max_replicated_sends_network_bandwidth">
+  ## max_replicated_sends_network_bandwidth
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+يحدّد السرعة القصوى لتبادل البيانات عبر الشبكة، بالبايت في
+الثانية، لعمليات الإرسال [المتماثلة](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree).
+يُطبَّق هذا الإعداد على جدول معيّن، بخلاف الإعداد
+[`max_replicated_sends_network_bandwidth_for_server`](/ar/reference/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)
+الذي يُطبَّق على الخادم.
+
+يمكنك تقييد كلٍّ من شبكة الخادم والشبكة الخاصة بجدول معيّن، ولكن
+يتطلّب ذلك أن تكون قيمة الإعداد على مستوى الجدول أقل من
+القيمة على مستوى الخادم. وإلا فلن يأخذ الخادم في الاعتبار سوى
+الإعداد `max_replicated_sends_network_bandwidth_for_server`.
+
+لا يُطبَّق هذا الإعداد دائمًا بدقة تامة.
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+* `0` — غير محدود.
+
+**الاستخدام**
+
+يمكن استخدامه لتقييد السرعة عند نسخ البيانات إلى
+عُقد جديدة لإضافتها أو استبدالها.
+
+<div id="max_suspicious_broken_parts">
+  ## max_suspicious_broken_parts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+إذا تجاوز عدد الأجزاء التالفة في تجزئة واحدة
+القيمة `max_suspicious_broken_parts`، فسيُرفض الحذف التلقائي.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="max_suspicious_broken_parts_bytes">
+  ## max_suspicious_broken_parts_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+الحد الأقصى لإجمالي حجم الأجزاء التالفة؛ وإذا زاد عن ذلك، فسيتم رفض الحذف التلقائي.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="max_uncompressed_bytes_in_patches">
+  ## max_uncompressed_bytes_in_patches
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32212254720" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32212254720"},{"label": "إعداد جديد"}]}]} />
+
+الحد الأقصى للحجم غير المضغوط للبيانات في جميع أجزاء التصحيح، محسوبًا بالبايت.
+إذا تجاوزت كمية البيانات في جميع أجزاء التصحيح هذه القيمة، فستُرفَض التحديثات خفيفة الوزن.
+0 - غير محدود.
+
+<div id="merge_max_block_size">
+  ## merge_max_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
+
+عدد الصفوف التي تُقرأ من الأجزاء المدمجة إلى الذاكرة.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+تقرأ عملية الدمج الصفوف من الأجزاء على شكل كتل تضم `merge_max_block_size` صفًا، ثم
+تدمج النتيجة وتكتبها في جزء جديد. وتُوضَع كتلة القراءة في RAM،
+لذا يؤثر `merge_max_block_size` في مقدار RAM المطلوب لعملية الدمج.
+لذلك، قد تستهلك عمليات الدمج مقدارًا كبيرًا من RAM في الجداول ذات الصفوف العريضة جدًا
+(إذا كان متوسط حجم الصف 100kb، فعند دمج 10 أجزاء،
+فإن (100kb * 10 * 8192) = ~ 8GB من RAM). ومن خلال تقليل `merge_max_block_size`،
+يمكنك تقليل مقدار RAM المطلوب لعملية الدمج، لكن ذلك سيبطّئ عملية الدمج.
+
+<div id="merge_max_block_size_bytes">
+  ## merge_max_block_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+عدد البايتات في الكتل التي ينبغي تكوينها لعمليات الدمج. وتكون هذه القيمة افتراضيًا
+مطابقة لقيمة `index_granularity_bytes`.
+
+<div id="merge_max_bytes_to_prewarm_cache">
+  ## merge_max_bytes_to_prewarm_cache
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1073741824"},{"label": "مزامنة Cloud"}]}]} />
+
+متاح فقط في ClickHouse Cloud. الحد الأقصى لحجم جزء (compact أو packed)
+لإجراء تهيئة مسبقة cache أثناء merge.
+
+<div id="merge_max_dynamic_subcolumns_in_compact_part">
+  ## merge_max_dynamic_subcolumns_in_compact_part
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "auto"},{"label": "إضافة إعداد جديد لتقييد عدد الأعمدة الفرعية الديناميكية في الجزء Compact بعد الدمج، بغض النظر عن المعلمات المحددة في نوع البيانات"}]}]} />
+
+الحد الأقصى لعدد الأعمدة الفرعية الديناميكية التي يمكن إنشاؤها في كل عمود ضمن جزء البيانات Compact بعد الدمج.
+ويتيح ذلك التحكم في عدد الأعمدة الفرعية الديناميكية في الجزء Compact بغض النظر عن المعلمات الديناميكية المحددة في نوع البيانات.
+
+على سبيل المثال، إذا كان الجدول يحتوي على عمود من النوع JSON(max&#95;dynamic&#95;paths=1024) وكان الإعداد merge&#95;max&#95;dynamic&#95;subcolumns&#95;in&#95;compact&#95;part مضبوطًا على 128،
+فبعد الدمج في جزء البيانات Compact سيُخفَّض عدد المسارات الديناميكية إلى 128 في هذا الجزء، ولن يُكتَب إلا 128 مسارًا كأعمدة فرعية ديناميكية.
+
+<div id="merge_max_dynamic_subcolumns_in_wide_part">
+  ## merge_max_dynamic_subcolumns_in_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "auto"},{"label": "إضافة إعداد جديد للحد من عدد الأعمدة الفرعية الديناميكية في Wide جزء بعد الدمج، بغض النظر عن المعلمات المحددة في نوع البيانات"}]}]} />
+
+الحد الأقصى لعدد الأعمدة الفرعية الديناميكية التي يمكن إنشاؤها في كل عمود ضمن جزء البيانات Wide بعد الدمج.
+ويتيح ذلك تقليل عدد الملفات التي يتم إنشاؤها في جزء البيانات Wide، بغض النظر عن المعلمات الديناميكية المحددة في نوع البيانات.
+
+على سبيل المثال، إذا كان الجدول يحتوي على عمود من النوع JSON(max&#95;dynamic&#95;paths=1024) وكان الإعداد merge&#95;max&#95;dynamic&#95;subcolumns&#95;in&#95;wide&#95;part مضبوطًا على 128،
+فبعد الدمج في جزء البيانات Wide، سيُخفَّض عدد المسارات الديناميكية إلى 128 في هذا الجزء، ولن يُكتَب إلا 128 مسارًا كأعمدة فرعية ديناميكية.
+
+<div id="merge_selecting_sleep_ms">
+  ## merge_selecting_sleep_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+الحد الأدنى للوقت الذي يجب انتظاره قبل إعادة محاولة تحديد الأجزاء المراد دمجها بعد
+عدم تحديد أي أجزاء. سيؤدي تقليل هذا الإعداد إلى تشغيل مهام التحديد في
+background&#95;schedule&#95;pool بشكل متكرر، مما ينتج عنه عدد كبير من الطلبات
+إلى ZooKeeper في العناقيد واسعة النطاق
+
+<div id="merge_selecting_sleep_slowdown_factor">
+  ## merge_selecting_sleep_slowdown_factor
+</div>
+
+<SettingsInfoBlock type="Float" default_value="1.2" />
+
+يُضرَب وقت الانتظار لمهمة اختيار الدمج في هذا العامل عندما
+لا توجد عمليات دمج، ويُقسَم عليه عندما تُسنَد عملية دمج
+
+<div id="merge_selector_algorithm">
+  ## merge_selector_algorithm
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="MergeSelectorAlgorithm" default_value="Simple" />
+
+الخوارزمية المستخدمة لاختيار الأجزاء لإسناد عمليات الدمج
+
+<div id="merge_selector_base">
+  ## merge_selector_base
+</div>
+
+<SettingsInfoBlock type="Float" default_value="5" />
+
+يؤثر في تضخيم الكتابة لعمليات الدمج
+المحددة (إعداد مخصص للمستخدمين الخبراء، لا تغيّره إذا لم تكن تفهم
+ما الذي يفعله). يعمل مع محددات الدمج Simple و StochasticSimple
+
+<div id="merge_selector_blurry_base_scale_factor">
+  ## merge_selector_blurry_base_scale_factor
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+يتحكم في توقيت تفعيل هذا المنطق بالنسبة إلى عدد الأجزاء في
+التقسيم. وكلما زادت قيمة العامل، كان التفاعل أكثر تأخرًا.
+
+<div id="merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once">
+  ## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يُفعِّل نهجًا استدلاليًا لمحدِّد الدمج البسيط، مما يُخفِّض الحد الأقصى لاختيار عمليات الدمج.
+وبذلك سيزداد عدد عمليات الدمج المتزامنة، مما قد يساعد في تقليل أخطاء TOO&#95;MANY&#95;PARTS،
+لكنه في الوقت نفسه سيزيد من تضخيم الكتابة.
+
+<div id="merge_selector_enable_heuristic_to_remove_small_parts_at_right">
+  ## merge_selector_enable_heuristic_to_remove_small_parts_at_right
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+تمكين آلية استدلالية لاختيار الأجزاء المراد دمجها، بحيث تزيل الأجزاء من الجانب
+الأيمن من النطاق إذا كان حجمها أقل من النسبة المحددة (0.01) من sum&#95;size.
+تعمل مع محددات الدمج Simple وStochasticSimple
+
+<div id="merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent">
+  ## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "5"},{"label": "إعداد جديد"}]}]} />
+
+يتحكم في قيمة الأس المستخدمة في الصيغ التي تنشئ منحنى الخفض. سيؤدي تقليل قيمة الأس إلى تقليل أحجام الدمج، ما يؤدي إلى زيادة تضخيم الكتابة. وينطبق العكس أيضًا.
+
+<div id="merge_selector_window_size">
+  ## merge_selector_window_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+عدد الأجزاء التي تُفحَص في المرة الواحدة.
+
+<div id="merge_total_max_bytes_to_prewarm_cache">
+  ## merge_total_max_bytes_to_prewarm_cache
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16106127360" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "16106127360"},{"label": "مزامنة Cloud"}]}]} />
+
+متاح فقط في ClickHouse Cloud. الحد الأقصى لإجمالي حجم الأجزاء التي ستُهيَّأ تهيئة مسبقة إلى ذاكرة التخزين المؤقت أثناء الدمج.
+
+<div id="merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds">
+  ## merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2592000" />
+
+إعداد متقادم، وليس له أي تأثير.
+
+<div id="merge_tree_clear_old_parts_interval_seconds">
+  ## merge_tree_clear_old_parts_interval_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+يحدّد الفاصل الزمني بالثواني الذي ينفّذ عنده ClickHouse عملية تنظيف
+الأجزاء القديمة، وWALs، والتعديلات.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="merge_tree_clear_old_temporary_directories_interval_seconds">
+  ## merge_tree_clear_old_temporary_directories_interval_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+يحدّد الفاصل الزمني، بالثواني، الذي ينفّذ فيه ClickHouse عملية تنظيف
+الأدلة المؤقتة القديمة.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="merge_tree_enable_clear_old_broken_detached">
+  ## merge_tree_enable_clear_old_broken_detached
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+إعداد متقادم، لا تأثير له.
+
+<div id="merge_with_recompression_ttl_timeout">
+  ## merge_with_recompression_ttl_timeout
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="14400" />
+
+الحد الأدنى لفترة التأخير بالثواني قبل تكرار عملية دمج باستخدام TTL لإعادة الضغط.
+
+<div id="merge_with_ttl_timeout">
+  ## merge_with_ttl_timeout
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="14400" />
+
+الحد الأدنى للتأخير، بالثواني، قبل إعادة تنفيذ عملية دمج مع TTL للحذف.
+
+<div id="merge_workload">
+  ## merge_workload
+</div>
+
+يُستخدم لتنظيم كيفية استخدام الموارد وتقاسمها بين عمليات الدمج
+وأحمال العمل الأخرى. وتُستخدم القيمة المحددة كقيمة لإعداد `workload`
+لعمليات الدمج في الخلفية لهذا الجدول. وإذا لم تُحدَّد (سلسلة فارغة)،
+فسيُستخدم بدلًا من ذلك إعداد الخادم `merge_workload`.
+
+**انظر أيضًا**
+
+* [جدولة أحمال العمل](/ar/concepts/features/configuration/server-config/workload-scheduling)
+
+<div id="min_absolute_delay_to_close">
+  ## min_absolute_delay_to_close
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأدنى للتأخير المطلق قبل الإغلاق، والتوقف عن خدمة الطلبات، وعدم
+إرجاع Ok أثناء التحقق من status.
+
+<div id="min_age_to_force_merge_on_partition_only">
+  ## min_age_to_force_merge_on_partition_only
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+ما إذا كان يجب تطبيق `min_age_to_force_merge_seconds` على القسم بأكمله فقط،
+وليس على مجموعة فرعية.
+
+افتراضيًا، يتجاهل هذا الإعداد `max_bytes_to_merge_at_max_space_in_pool` (راجع
+`enable_max_bytes_limit_for_min_age_to_force_merge`).
+
+القيم الممكنة:
+
+* true, false
+
+<div id="min_age_to_force_merge_seconds">
+  ## min_age_to_force_merge_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+ادمج الأجزاء إذا كان كل جزء ضمن النطاق أقدم من القيمة المحددة في
+`min_age_to_force_merge_seconds`.
+
+يتجاهل هذا الإعداد افتراضيًا الإعداد `max_bytes_to_merge_at_max_space_in_pool`
+(راجع `enable_max_bytes_limit_for_min_age_to_force_merge`).
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+
+<div id="min_bytes_for_compact_part">
+  ## min_bytes_for_compact_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+إعداد قديم لم يعد له أي تأثير.
+
+<div id="min_bytes_for_full_part_storage">
+  ## min_bytes_for_full_part_storage
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+متاح فقط في ClickHouse Cloud. الحد الأدنى للحجم غير المضغوط، بالبايتات،
+لاستخدام نوع التخزين الكامل لجزء البيانات بدلًا من packed
+
+<div id="min_bytes_for_wide_part">
+  ## min_bytes_for_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+الحد الأدنى لعدد البايتات/الصفوف في جزء بيانات يمكن تخزينه بتنسيق `Wide`.
+يمكنك تعيين أحد هذين الإعدادين أو كليهما، أو عدم تعيين أيٍّ منهما.
+
+<div id="min_bytes_to_prewarm_caches">
+  ## min_bytes_to_prewarm_caches
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+الحد الأدنى للحجم (بالبايتات غير المضغوطة) المطلوب للتهيئة المسبقة لذاكرة التخزين المؤقت للعلامات وذاكرة التخزين المؤقت للفهرس الأساسي
+للأجزاء الجديدة
+
+<div id="min_bytes_to_rebalance_partition_over_jbod">
+  ## min_bytes_to_rebalance_partition_over_jbod
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+يحدد الحد الأدنى من البايتات المطلوب لتمكين الموازنة عند توزيع
+الأجزاء الكبيرة الجديدة على أقراص وحدة التخزين [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures).
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+* `0` — تكون الموازنة معطلة.
+
+**الاستخدام**
+
+يجب ألا تقل قيمة الإعداد `min_bytes_to_rebalance_partition_over_jbod`
+عن قيمة
+[max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/ar/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)
+/ 1024. وإلا، فسيُصدر ClickHouse استثناءً.
+
+<div id="min_columns_to_activate_adaptive_write_buffer">
+  ## min_columns_to_activate_adaptive_write_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="500" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "500"},{"label": "إعداد جديد"}]}]} />
+
+يسمح بتقليل استهلاك الذاكرة للجداول التي تحتوي على عدد كبير من الأعمدة باستخدام مخازن الكتابة التكيفية.
+
+القيم الممكنة:
+
+* 0 - غير محدود
+* 1 - ممكّن دائمًا
+
+<div id="min_compress_block_size">
+  ## min_compress_block_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأدنى لحجم كتل البيانات غير المضغوطة اللازمة لتطبيق الضغط عند
+كتابة الـ mark التالية. يمكنك أيضًا تحديد هذا الإعداد ضمن الإعدادات العامة
+(راجع إعداد
+[min&#95;compress&#95;block&#95;size](/ar/reference/settings/merge-tree-settings#min_compress_block_size)).
+تتجاوز القيمة المحددة عند إنشاء الجدول القيمة العامة
+لهذا الإعداد.
+
+<div id="min_compressed_bytes_to_fsync_after_fetch">
+  ## min_compressed_bytes_to_fsync_after_fetch
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأدنى لعدد البايتات المضغوطة اللازمة لإجراء `fsync` للجزء بعد جلبه (0 - معطّل)
+
+<div id="min_compressed_bytes_to_fsync_after_merge">
+  ## min_compressed_bytes_to_fsync_after_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأدنى لعدد البايتات المضغوطة اللازمة لتنفيذ fsync على الجزء بعد الدمج (0 - معطّل)
+
+<div id="min_delay_to_insert_ms">
+  ## min_delay_to_insert_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+الحد الأدنى لتأخير إدراج البيانات في جدول MergeTree، بالمللي ثانية، إذا كان هناك
+عدد كبير من الأجزاء غير المدمجة ضمن قسم واحد.
+
+<div id="min_delay_to_mutate_ms">
+  ## min_delay_to_mutate_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+الحد الأدنى للتأخير قبل إجراء mutation على جدول MergeTree، بالمللي ثانية، إذا كان هناك عدد كبير من عمليات mutation غير المكتملة
+
+<div id="min_free_disk_bytes_to_perform_insert">
+  ## min_free_disk_bytes_to_perform_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأدنى لعدد البايتات التي يجب أن تكون متوفرة كمساحة حرة على القرص
+لإدراج البيانات. إذا كان عدد البايتات الحرة المتوفرة أقل من
+`min_free_disk_bytes_to_perform_insert`، فسيتم إطلاق استثناء ولن يتم
+تنفيذ عملية الإدراج. لاحظ أن هذا الإعداد:
+
+* يأخذ في الاعتبار الإعداد `keep_free_space_bytes`.
+* لا يأخذ في الاعتبار مقدار البيانات التي ستتم كتابتها بواسطة عملية
+  `INSERT`.
+* لا يتم التحقق منه إلا إذا تم تحديد عدد بايتات موجب (غير صفري)
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<Note>
+  إذا تم تحديد كل من `min_free_disk_bytes_to_perform_insert` و `min_free_disk_ratio_to_perform_insert`،
+  فإن ClickHouse سيعتمد على القيمة التي ستسمح بتنفيذ
+  عمليات الإدراج على مقدار أكبر من الذاكرة الحرة.
+</Note>
+
+<div id="min_free_disk_ratio_to_perform_insert">
+  ## min_free_disk_ratio_to_perform_insert
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0" />
+
+الحد الأدنى لنسبة المساحة الحرة إلى إجمالي مساحة القرص اللازمة لتنفيذ `INSERT`. يجب أن تكون
+قيمة عددية عائمة بين 0 و1. لاحظ أن هذا الإعداد:
+
+* يأخذ في الاعتبار الإعداد `keep_free_space_bytes`.
+* لا يأخذ في الاعتبار مقدار البيانات التي ستتم كتابتها بواسطة
+  عملية `INSERT`.
+* لا يتم التحقق منه إلا إذا تم تحديد نسبة موجبة (غير صفرية)
+
+القيم الممكنة:
+
+* Float، 0.0 - 1.0
+
+لاحظ أنه إذا تم تحديد كل من `min_free_disk_ratio_to_perform_insert` و
+`min_free_disk_bytes_to_perform_insert`، فسيعتمد ClickHouse
+على القيمة التي ستسمح بتنفيذ عمليات insert عند توفر مقدار أكبر من
+الذاكرة الحرة.
+
+<div id="min_index_granularity_bytes">
+  ## min_index_granularity_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1024" />
+
+الحد الأدنى المسموح به لحجم حبيبات البيانات بالبايت.
+
+لتوفير حماية من إنشاء الجداول عن طريق الخطأ بقيمة منخفضة جدًا لـ
+`index_granularity_bytes`.
+
+<div id="min_level_for_full_part_storage">
+  ## min_level_for_full_part_storage
+</div>
+
+<SettingsInfoBlock type="UInt32" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+متاح فقط في ClickHouse Cloud. الحد الأدنى لمستوى الجزء لاستخدام نوع التخزين الكامل لجزء البيانات بدلًا من التخزين مضغوط
+
+<div id="min_level_for_wide_part">
+  ## min_level_for_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt32" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+الحد الأدنى لمستوى جزء البيانات لإنشاء جزء بيانات بتنسيق `Wide` بدلًا من `Compact`.
+
+<div id="min_marks_to_honor_max_concurrent_queries">
+  ## min_marks_to_honor_max_concurrent_queries
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأدنى لعدد العلامات التي يقرأها الاستعلام لتطبيق الإعداد [max&#95;concurrent&#95;queries](#max_concurrent_queries).
+
+<Note>
+  ستظل الاستعلامات مقيَّدة بإعدادات `max_concurrent_queries` الأخرى.
+</Note>
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+* `0` — معطَّل (لا يُطبَّق حد `max_concurrent_queries` على أي استعلام).
+
+**مثال**
+
+```xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
+```
+
+<div id="min_merge_bytes_to_use_direct_io">
+  ## min_merge_bytes_to_use_direct_io
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10737418240" />
+
+الحد الأدنى لحجم البيانات في عملية الدمج اللازم لاستخدام
+وصول I/O المباشر إلى قرص التخزين. عند دمج أجزاء البيانات، يحسب ClickHouse
+إجمالي حجم التخزين لجميع البيانات المطلوب دمجها. إذا تجاوز هذا الحجم
+`min_merge_bytes_to_use_direct_io` بايت، يقرأ ClickHouse البيانات ويكتبها
+إلى قرص التخزين باستخدام واجهة I/O المباشرة (الخيار `O_DIRECT`).
+إذا كانت قيمة `min_merge_bytes_to_use_direct_io = 0`، فسيتم تعطيل I/O المباشر.
+
+<div id="min_parts_to_merge_at_once">
+  ## min_parts_to_merge_at_once
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأدنى لعدد أجزاء البيانات التي يمكن لمنتقي الدمج اختيارها لدمجها دفعة واحدة
+(إعداد مخصّص للخبراء، لا تغيّره إذا لم تكن تفهم ما يفعله).
+0 - معطّل. يعمل مع منتقِيَي الدمج Simple وStochasticSimple.
+
+<div id="min_relative_delay_to_close">
+  ## min_relative_delay_to_close
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+الحد الأدنى للتأخير مقارنةً بالنسخ المتماثلة الأخرى قبل إغلاق الخدمة، والتوقف عن
+خدمة الطلبات، وعدم إرجاع Ok أثناء فحص الحالة.
+
+<div id="min_relative_delay_to_measure">
+  ## min_relative_delay_to_measure
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="120" />
+
+احسب التأخير النسبي للنسخة المتماثلة فقط إذا كان التأخير المطلق لا يقل عن
+هذه القيمة.
+
+<div id="min_relative_delay_to_yield_leadership">
+  ## min_relative_delay_to_yield_leadership
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="120" />
+
+إعداد متقادِم، لا تأثير له.
+
+<div id="min_replicated_logs_to_keep">
+  ## min_replicated_logs_to_keep
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+احتفِظ بنحو هذا العدد من آخر السجلات في سجل ZooKeeper، حتى لو كانت
+متقادمة. لا يؤثر ذلك في عمل الجداول: إذ يُستخدم فقط لتشخيص سجل ZooKeeper
+قبل تنظيفه.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="min_rows_for_compact_part">
+  ## min_rows_for_compact_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+إعداد متقادم، لا تأثير له.
+
+<div id="min_rows_for_full_part_storage">
+  ## min_rows_for_full_part_storage
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+متاح فقط في ClickHouse Cloud. الحد الأدنى لعدد الصفوف المطلوب لاستخدام نوع التخزين الكامل
+لجزء البيانات بدلًا من التخزين المضغوط
+
+<div id="min_rows_for_wide_part">
+  ## min_rows_for_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأدنى لعدد الصفوف اللازمة لإنشاء جزء بيانات بتنسيق `Wide` بدلًا من `Compact`.
+
+<div id="min_rows_to_fsync_after_merge">
+  ## min_rows_to_fsync_after_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأدنى لعدد الصفوف المطلوب لتنفيذ `fsync` للجزء بعد الدمج (0 - معطّل)
+
+<div id="mutation_workload">
+  ## mutation_workload
+</div>
+
+يُستخدم لضبط كيفية استخدام الموارد وتقاسمها بين الـmutations وأعباء العمل
+الأخرى. وتُستخدم القيمة المحددة كقيمة لإعداد `workload` لعمليات الـmutations
+التي تعمل في الخلفية لهذا الجدول. وإذا لم تُحدَّد (سلسلة فارغة)، فسيُستخدم بدلًا
+من ذلك إعداد الخادم `mutation_workload`.
+
+**راجع أيضًا**
+
+* [جدولة أعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling)
+
+<div id="non_replicated_deduplication_window">
+  ## non_replicated_deduplication_window
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+عدد أحدث الكتل التي أُدرجت في جدول
+[MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) غير المكرّر
+والتي تُخزَّن مجاميع hash الخاصة بها للتحقق من التكرارات.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+* `0` (تعطيل إزالة التكرار).
+
+تُستخدم آلية لإزالة التكرار مشابهة لتلك المستخدمة في الجداول المكرّرة (انظر
+إعداد [replicated&#95;deduplication&#95;window](#replicated_deduplication_window)).
+وتُكتب مجاميع hash الخاصة بالأجزاء المُنشأة إلى ملف محلي على قرص.
+
+<div id="notify_newest_block_number">
+  ## notify_newest_block_number
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "مزامنة Cloud"}]}]} />
+
+إخطار SharedJoin أو SharedSet برقم أحدث كتلة. متاح فقط في ClickHouse Cloud.
+
+<div id="nullable_serialization_version">
+  ## nullable_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeNullableSerializationVersion" default_value="basic" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "basic"},{"label": "إعداد جديد"}]}]} />
+
+يتحكم في طريقة التسلسل المستخدمة لأعمدة `Nullable(T)`.
+
+القيم الممكنة:
+
+* basic — يستخدم التسلسل القياسي لـ `Nullable(T)`.
+
+* allow&#95;sparse — يتيح لـ `Nullable(T)` استخدام الترميز المتناثر.
+
+<div id="number_of_free_entries_in_pool_to_execute_mutation">
+  ## number_of_free_entries_in_pool_to_execute_mutation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="20" />
+
+عندما يكون عدد الخانات الحرة في المجمّع أقل من العدد المحدد، لا
+تُنفَّذ mutation للأجزاء. والهدف من ذلك هو إبقاء خيوط حرة لعمليات الدمج
+العادية وتجنّب أخطاء &quot;Too many parts&quot;.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+**الاستخدام**
+
+يجب أن تكون قيمة الإعداد `number_of_free_entries_in_pool_to_execute_mutation`
+أقل من قيمة [background&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_pool_size)
+
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/ar/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio).
+  وإلا، فسيطرح ClickHouse استثناءً.
+
+<div id="number_of_free_entries_in_pool_to_execute_optimize_entire_partition">
+  ## number_of_free_entries_in_pool_to_execute_optimize_entire_partition
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="25" />
+
+عندما يكون عدد الخانات الحرة في المجمّع أقل من العدد المحدد، لا
+تُنفَّذ عملية تحسين القسم بالكامل في الخلفية (تُنشأ هذه المهمة
+عند تعيين `min_age_to_force_merge_seconds` وتمكين
+`min_age_to_force_merge_on_partition_only`). يهدف ذلك إلى ترك خيوط تنفيذ حرة
+لعمليات الدمج العادية وتجنّب &quot;Too many parts&quot;.
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+
+يجب أن تكون قيمة الإعداد `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
+أقل من قيمة
+[background&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_pool_size)
+
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/ar/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio).
+  وإلا فإن ClickHouse يطرح استثناءً.
+
+<div id="number_of_free_entries_in_pool_to_lower_max_size_of_merge">
+  ## number_of_free_entries_in_pool_to_lower_max_size_of_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+عندما يكون عدد الخانات الشاغرة في المجمّع
+(أو في قائمة انتظار النسخ المتماثل) أقل من العدد المحدد، ابدأ بخفض الحجم الأقصى لعملية الدمج المطلوب معالجتها
+(أو وضعها في قائمة الانتظار).
+يهدف ذلك إلى إتاحة معالجة عمليات الدمج الصغيرة، بحيث لا يمتلئ المجمّع بعمليات دمج طويلة
+التشغيل.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="number_of_mutations_to_delay">
+  ## number_of_mutations_to_delay
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="500" />
+
+إذا كان الجدول يحتوي على هذا العدد على الأقل
+من mutations غير المكتملة، فسيتم إبطاء mutations الجدول اصطناعيًا.
+يُعطَّل إذا ضُبط على 0
+
+<div id="number_of_mutations_to_throw">
+  ## number_of_mutations_to_throw
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+إذا كان الجدول يحتوي على هذا العدد أو أكثر من عمليات mutation غير المكتملة، فسيتم طرح الاستثناء &#39;Too many mutations&#39;
+يُعطَّل إذا ضُبط على 0
+
+<div id="number_of_partitions_to_consider_for_merge">
+  ## number_of_partitions_to_consider_for_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "مزامنة Cloud"}]}]} />
+
+متاح فقط في ClickHouse Cloud. حتى أعلى N من التقسيمات التي سنأخذها
+في الاعتبار عند إجراء الدمج. تُختار التقسيمات بطريقة عشوائية موزونة، بحيث يكون الوزن
+هو عدد أجزاء البيانات التي يمكن دمجها في هذا التقسيم.
+
+<div id="object_serialization_version">
+  ## object_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeObjectSerializationVersion" default_value="v3" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "v2"},{"label": "إضافة إعداد للتحكم في إصدارات تسلسل JSON"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "v3"},{"label": "تمكين إصدار التسلسل v3 لـ JSON افتراضيًا لاستخدام تسلسل البيانات المشتركة المتقدم"}]}]} />
+
+إصدار التسلسل لنوع بيانات JSON. وهو مطلوب للتوافق.
+
+القيم الممكنة:
+
+* `v1`
+* `v2`
+* `v3`
+
+لا يدعم تغيير إصدار تسلسل البيانات المشتركة إلا الإصدار `v3`.
+
+<div id="object_shared_data_buckets_for_compact_part">
+  ## object_shared_data_buckets_for_compact_part
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "8"},{"label": "إضافة إعداد للتحكم في عدد الحاويات للبيانات المشتركة في تسلسل JSON في الأجزاء المضغوطة"}]}]} />
+
+عدد الحاويات لتسلسل البيانات المشتركة في JSON في الأجزاء المضغوطة. يعمل مع تسلسلي البيانات المشتركة `map_with_buckets` و`advanced`.
+الحد الأقصى المسموح به هو 256.
+
+<div id="object_shared_data_buckets_for_wide_part">
+  ## object_shared_data_buckets_for_wide_part
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32"},{"label": "إضافة إعداد للتحكم في عدد الحاويات للبيانات المشتركة في تسلسل JSON داخل الأجزاء واسعة التنسيق"}]}]} />
+
+عدد الحاويات المستخدمة لتسلسل البيانات المشتركة في JSON داخل الأجزاء واسعة التنسيق. يعمل مع تسلسلي البيانات المشتركة `map_with_buckets` و`advanced`.
+الحد الأقصى المسموح به هو 256.
+
+<div id="object_shared_data_serialization_version">
+  ## object_shared_data_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "map"},{"label": "إضافة إعداد للتحكم في إصدارات تسلسل JSON"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "advanced"},{"label": "تمكين إصدار تسلسل البيانات المشتركة المتقدم افتراضيًا"}]}]} />
+
+إصدار التسلسل للبيانات المشتركة داخل نوع بيانات JSON.
+
+القيم الممكنة:
+
+* `map` - تخزين البيانات المشتركة على هيئة `Map(String, String)`
+* `map_with_buckets` - تخزين البيانات المشتركة في عدة أعمدة منفصلة من `Map(String, String)`. يؤدي استخدام `buckets` إلى تحسين قراءة المسارات الفردية من البيانات المشتركة.
+* `advanced` - تسلسل خاص للبيانات المشتركة، صُمم لتحسين قراءة المسارات الفردية من البيانات المشتركة بشكل كبير.
+  لاحظ أن هذا التسلسل يزيد حجم تخزين البيانات المشتركة على القرص، لأننا نخزن قدرًا كبيرًا من المعلومات الإضافية.
+
+يُحدَّد عدد `buckets` لتسلسلي `map_with_buckets` و`advanced` بواسطة الإعدادين
+[object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](#object_shared_data_buckets_for_wide_part).
+
+<div id="object_shared_data_serialization_version_for_zero_level_parts">
+  ## object_shared_data_serialization_version_for_zero_level_parts
+</div>
+
+<SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "map"},{"label": "إضافة إعداد للتحكم في إصدارات تسلسل JSON للأجزاء ذات المستوى الصفري"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "map_with_buckets"},{"label": "تفعيل إصدار تسلسل البيانات المشتركة map_with_buckets للأجزاء ذات المستوى الصفري افتراضيًا"}]}]} />
+
+يتيح هذا الإعداد تحديد إصدار تسلسل مختلف
+للبيانات المشتركة داخل نوع JSON للأجزاء ذات المستوى الصفري التي تُنشأ أثناء عمليات الإدراج.
+ويُوصى بعدم استخدام تسلسل البيانات المشتركة `advanced` للأجزاء ذات المستوى الصفري، لأنه قد يزيد
+زمن الإدراج بشكل ملحوظ.
+
+<div id="old_parts_lifetime">
+  ## old_parts_lifetime
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="480" />
+
+المدة الزمنية (بالثواني) للاحتفاظ بالأجزاء غير النشطة حمايةً من فقدان البيانات
+أثناء إعادة التشغيل المفاجئة للخادم.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+بعد دمج عدة أجزاء في جزء جديد، يضع ClickHouse علامة على الأجزاء
+الأصلية باعتبارها غير نشطة، ولا يحذفها إلا بعد مرور `old_parts_lifetime` ثانية.
+تُزال الأجزاء غير النشطة إذا لم تكن مستخدمة في الاستعلامات الحالية، أي إذا
+كانت قيمة `refcount` للجزء تساوي 1.
+
+لا يُستدعى `fsync` للأجزاء الجديدة، لذلك تظل هذه الأجزاء لبعض الوقت موجودة فقط
+في RAM الخاصة بالخادم (ذاكرة التخزين المؤقت لنظام التشغيل). وإذا أُعيد تشغيل الخادم
+فجأة، فقد تُفقد الأجزاء الجديدة أو تتلف. ولحماية البيانات، لا تُحذف
+الأجزاء غير النشطة فورًا.
+
+أثناء بدء التشغيل، يتحقق ClickHouse من سلامة الأجزاء. وإذا كان الجزء
+المُدمَج تالفًا، يعيد ClickHouse الأجزاء غير النشطة إلى القائمة النشطة،
+ثم يدمجها مرة أخرى لاحقًا. بعد ذلك يُعاد تسمية الجزء التالف (تُضاف
+البادئة `broken_`) ويُنقل إلى المجلد `detached`. وإذا لم يكن الجزء المُدمَج
+تالفًا، فتُعاد تسمية الأجزاء الأصلية غير النشطة (تُضاف البادئة `ignored_`)
+وتُنقل إلى المجلد `detached`.
+
+القيمة الافتراضية لـ `dirty_expire_centisecs` (وهو إعداد في نواة Linux) هي 30
+ثانية (وهي الحد الأقصى للمدة التي تُخزَّن فيها البيانات المكتوبة في RAM فقط)، ولكن
+مع الأحمال العالية على نظام القرص قد لا تُكتب البيانات إلا بعد ذلك بوقت أطول بكثير. تجريبيًا،
+اختيرت قيمة 480 ثانية لـ `old_parts_lifetime`، وهي مدة يُضمن خلالها
+كتابة الجزء الجديد إلى القرص.
+
+<div id="optimize_row_order">
+  ## optimize_row_order
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+يتحكم هذا الإعداد في ما إذا كان ينبغي تحسين ترتيب الصفوف أثناء عمليات الإدراج لتحسين
+قابلية ضغط جزء الجدول المُدرَج حديثًا.
+
+لا يؤثر هذا الإعداد إلا في جداول MergeTree-engine العادية. ولا يكون له أي تأثير على
+جداول محرك MergeTree المتخصصة (مثل CollapsingMergeTree).
+
+تُضغط جداول MergeTree (اختياريًا) باستخدام [ترميزات الضغط](/ar/reference/statements/create/table#column_compression_codec).
+وتحقق ترميزات الضغط العامة مثل LZ4 و ZSTD أعلى معدلات ضغط
+عندما تُظهر البيانات أنماطًا متكررة. وعادةً ما تُضغط السلاسل الطويلة من القيمة نفسها
+بكفاءة عالية.
+
+إذا كان هذا الإعداد مُمكّنًا، يحاول ClickHouse تخزين البيانات في الأجزاء
+المُدرَجة حديثًا بترتيب للصفوف يقلل عدد السلاسل ذات القيم المتساوية
+عبر أعمدة جزء الجدول الجديد.
+وبعبارة أخرى، فإن قلة عدد السلاسل ذات القيم المتساوية تعني أن كل سلسلة
+تكون طويلة وتُضغط جيدًا.
+
+يُعد العثور على ترتيب الصفوف الأمثل غير عملي حسابيًا (NP-hard).
+لذلك، يستخدم ClickHouse أسلوبًا استدلاليًا للعثور بسرعة على ترتيب للصفوف
+يُحسّن معدلات الضغط مقارنةً بترتيب الصفوف الأصلي.
+
+<details markdown="1">
+  <summary>أساليب استدلالية للعثور على ترتيب الصفوف</summary>
+
+  يمكن عمومًا خلط صفوف الجدول (أو جزء الجدول)
+  بحرية، لأن SQL تعتبر الجدول نفسه (أو جزء الجدول نفسه) مكافئًا
+  حتى مع اختلاف ترتيب الصفوف.
+
+  تُقيَّد هذه الحرية في خلط الصفوف عندما يكون المفتاح الأساسي معرّفًا
+  للجدول. في ClickHouse، يفرض المفتاح الأساسي `C1, C2, ..., CN` أن
+  تُرتَّب صفوف الجدول حسب الأعمدة `C1`, `C2`, ... `Cn` ([clustered index](https://en.wikipedia.org/wiki/Database_index#Clustered)).
+  ونتيجة لذلك، لا يمكن خلط الصفوف إلا داخل &quot;فئات تكافؤ&quot; للصفوف،
+  أي الصفوف التي لها القيم نفسها في أعمدة المفتاح الأساسي.
+  والفكرة هنا أن المفاتيح الأساسية ذات cardinality المرتفعة، مثل المفاتيح الأساسية
+  التي تتضمن عمود timestamp من النوع `DateTime64`، تؤدي إلى عدد كبير من فئات التكافؤ
+  الصغيرة. وبالمثل، فإن الجداول ذات المفتاح الأساسي منخفض cardinality تُنشئ عددًا قليلًا من
+  فئات التكافؤ الكبيرة. وتمثل الجداول التي لا تحتوي على مفتاح أساسي الحالة
+  القصوى المتمثلة في فئة تكافؤ واحدة تمتد عبر جميع الصفوف.
+
+  وكلما قل عدد فئات التكافؤ وكبر حجمها، زادت درجة
+  الحرية عند إعادة خلط الصفوف.
+
+  الأسلوب الاستدلالي المُستخدم للعثور على أفضل ترتيب للصفوف داخل كل فئة
+  تكافؤ اقترحه D. Lemire و O. Kaser في
+  [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002)
+  ويعتمد على ترتيب الصفوف داخل كل فئة تكافؤ تصاعديًا بحسب
+  cardinality للأعمدة غير التابعة للمفتاح الأساسي.
+
+  ويتضمن ثلاث خطوات:
+
+  1. العثور على جميع فئات التكافؤ استنادًا إلى قيم الصفوف في أعمدة المفتاح الأساسي.
+  2. لكل فئة تكافؤ، حساب cardinality
+     للأعمدة غير التابعة للمفتاح الأساسي (أو تقديرها في العادة).
+  3. لكل فئة تكافؤ، ترتيب الصفوف تصاعديًا
+     بحسب cardinality للأعمدة غير التابعة للمفتاح الأساسي.
+</details>
+
+إذا كان هذا الإعداد مُمكّنًا، فستتحمل عمليات الإدراج تكلفة إضافية على CPU لتحليل
+ترتيب صفوف البيانات الجديدة وتحسينه. ومن المتوقع أن تستغرق عمليات INSERT وقتًا أطول بنسبة 30-50%
+بحسب خصائص البيانات.
+كما تتحسن معدلات الضغط في LZ4 أو ZSTD بمتوسط 20-40%.
+
+يعمل هذا الإعداد بأفضل شكل مع الجداول التي لا تحتوي على مفتاح أساسي أو التي لها مفتاح أساسي
+منخفض cardinality، أي جدول لا يحتوي إلا على عدد قليل من قيم المفتاح الأساسي المميزة.
+أما المفاتيح الأساسية ذات cardinality المرتفعة، مثل التي تتضمن أعمدة timestamp من النوع
+`DateTime64`، فلا يُتوقع أن تستفيد من هذا الإعداد.
+
+<div id="packed_skip_index_max_bytes">
+  ## packed_skip_index_max_bytes
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "إعداد جديد. جمِّع أي substream لفهرس تخطٍّ لا يتجاوز حجمه المتسلسل على disk هذا العدد من البايتات في أرشيف `skp_idx.packed` واحد لكل part؛ أما substreams الأكبر فتظل في تخطيط `skp_idx_<name>.idx2` / `.mrk2` المنفصل. يُتخذ القرار لكل substream عند وقت الكتابة."}]}]} />
+
+الحدّ (بالبايتات المتسلسلة على disk، أي بعد Compression وسلسلة hash
+الخاصة بالـ substream) الذي إذا كان أقل منه، يُجمَّع substream لفهرس التخطّي في أرشيف
+`skp_idx.packed` واحد لكل part بدلًا من كتابته كملف `skp_idx_<name>.idx2` / `.mrk2`
+منفصل. أما substreams الأكبر من ذلك فتظل في تخطيط legacy لكل ملف. ويُتخذ القرار
+بشكل مستقل لكل substream عند وقت الكتابة، لذا يمكن أن يحتوي part واحد على
+فهارس صغيرة (مثل `minmax`) مجمّعة وأخرى كبيرة (مثل `bloom_filter` ثقيل) كملفات منفصلة.
+اضبطه على 0 لتعطيل packing بالكامل (القيمة الافتراضية).
+
+يتكوّن كل substream لفهرس التخطّي فعليًا من ملف data وملف marks؛ ويُحتفَظ بكليهما مؤقتًا
+في Memory حتى بلوغ الحدّ قبل اتخاذ قرار spill. لذا فإن Peak memory أثناء
+الكتابة يتناسب مع `2 * packed_skip_index_max_bytes * (number of substreams that stay
+below the threshold)`.
+
+فهارس النص الكامل غير مدعومة بهذا الإعداد ولا يتم packing لها مطلقًا.
+
+يقلّل packing الضغط على inode عند تعريف عدد كبير من فهارس التخطّي على table (على سبيل المثال
+باستخدام `add_minmax_index_for_numeric_columns`).
+
+إن format على disk ذاتي الوصف: يكتشف القارئون `skp_idx.packed` ويقدّمون
+substreams المجمّعة من داخله بشفافية. يؤثر تغيير هذا الإعداد في parts المكتوبة حديثًا
+فقط؛ أما parts الموجودة فتحتفظ بالتخطيط الذي كانت عليه وقت الكتابة.
+
+قيد معروف: يُبلّغ كل من `system.data_skipping_indices.data_uncompressed_bytes` و
+`system.parts.secondary_indices_uncompressed_bytes` عن الحجم compressed لـ substreams المجمّعة
+(إذ لا يخزّن فهرس الأرشيف أحجامها غير المضغوطة). وهذا تجميلي في
+Monitoring مع نتيجة functional واحدة:
+يقارن `distributed_index_analysis_min_indexes_bytes_to_activate` مع
+`data_uncompressed`، لذا قد لا يتجاوز فهرس مجمّع ينضغط جيدًا (`set` أو `bloom_filter` على
+Strings) حدّ التفعيل حتى لو كان الحجم الحقيقي غير المضغوط سيتجاوزه.
+ويكون fallback هو query plan العادية، وليس نتيجة خاطئة.
+
+<div id="part_minmax_index_columns">
+  ## part_minmax_index_columns
+</div>
+
+<SettingsInfoBlock type="MergeTreePartMinMaxIndexColumns" default_value="partition_key_only" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "partition_key_only"},{"label": "إعداد جديد."}]}]} />
+
+يحدّد الأعمدة التي يشملها فهرس min-max لكل جزء. وتُفعِّل كل قيمة مجموعة إضافية من الأعمدة فوق المجموعة التي تسبقها.
+
+القيم الممكنة:
+
+* `partition_key_only` — لا تُتتبَّع إلا أعمدة مفتاح التقسيم.
+* `with_block_number_offset` — أعمدة مفتاح التقسيم بالإضافة إلى العمودين الافتراضيين المحفوظين `_block_number` و`_block_offset`. يتيح ذلك استبعاد الأجزاء على مستوى الجزء باستخدام هذين العمودين.
+
+<div id="part_moves_between_shards_delay_seconds">
+  ## part_moves_between_shards_delay_seconds
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+المدة التي يجب انتظارها قبل/بعد نقل الأجزاء بين الشظايا.
+
+<div id="part_moves_between_shards_enable">
+  ## part_moves_between_shards_enable
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+ميزة تجريبية/غير مكتملة لنقل الأجزاء بين الشظايا. لا تأخذ
+تعبيرات التشظية في الحسبان.
+
+<div id="parts_to_delay_insert">
+  ## parts_to_delay_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+إذا تجاوز عدد الأجزاء النشطة في قسم واحد
+القيمة `parts_to_delay_insert`، فسيتم إبطاء `INSERT` بشكل مصطنع.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+يُطيل ClickHouse تنفيذ `INSERT` بشكل مصطنع (بإضافة &#39;sleep&#39;) حتى تتمكن
+عملية الدمج في الخلفية من دمج الأجزاء بسرعة تفوق سرعة إضافتها.
+
+<div id="parts_to_throw_insert">
+  ## parts_to_throw_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="3000" />
+
+إذا تجاوز عدد الأجزاء النشطة في تقسيم واحد
+القيمة `parts_to_throw_insert`، تتم مقاطعة `INSERT` مع الاستثناء `Too many
+parts (N). Merges are processing significantly slower than inserts`.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+لتحقيق أقصى أداء لاستعلامات `SELECT`، من الضروري
+تقليل عدد الأجزاء التي تتم معالجتها إلى الحد الأدنى، راجع [Merge Tree](/ar/resources/develop-contribute/introduction/architecture#merge-tree).
+
+قبل الإصدار 23.6، كان هذا الإعداد مضبوطًا على 300. يمكنك تعيين قيمة
+أعلى، مما سيقلل احتمال حدوث الخطأ `Too many parts`،
+لكن في الوقت نفسه قد يتراجع أداء `SELECT`. كذلك، في حال
+وجود مشكلة في الدمج (على سبيل المثال، بسبب عدم كفاية مساحة القرص) فستلاحظها
+في وقت متأخر مقارنةً بما كنت ستلاحظه عند استخدام القيمة الأصلية 300.
+
+<div id="prefer_fetch_merged_part_size_threshold">
+  ## prefer_fetch_merged_part_size_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10737418240" />
+
+إذا تجاوز مجموع أحجام الأجزاء هذه العتبة، وكان الوقت المنقضي منذ إنشاء إدخال في سجل النسخ المتماثل أكبر من
+`prefer_fetch_merged_part_time_threshold`، فسيُفضَّل جلب الجزء المدمج
+من نسخة متماثلة بدلًا من إجراء الدمج محليًا. يهدف ذلك إلى تسريع
+عمليات الدمج الطويلة جدًا.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="prefer_fetch_merged_part_time_threshold">
+  ## prefer_fetch_merged_part_time_threshold
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="3600" />
+
+إذا تجاوز الوقت المنقضي منذ إنشاء إدخال في سجل النسخ المتماثل (ClickHouse Keeper أو ZooKeeper)
+هذه العتبة، وكان مجموع أحجام الأجزاء
+أكبر من `prefer_fetch_merged_part_size_threshold`، فسيُفضَّل جلب
+جزء مدمج من نسخة متماثلة بدلًا من إجراء الدمج محليًا. يهدف ذلك إلى تسريع
+عمليات الدمج الطويلة جدًا.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="prewarm_mark_cache">
+  ## prewarm_mark_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+إذا كانت القيمة true، فسيتم
+التسخين المسبق لذاكرة التخزين المؤقت للعلامات عبر حفظ العلامات فيها عند عمليات الإدراج والدمج والجلب، وعند
+بدء تشغيل الخادم
+
+<div id="prewarm_primary_key_cache">
+  ## prewarm_primary_key_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+إذا كانت القيمة true، فستتم تهيئة ذاكرة التخزين المؤقت للفهرس الأساسي مسبقًا
+بحفظ العلامات في ذاكرة التخزين المؤقت للعلامات عند عمليات الإدراج والدمج
+والجلب وعند بدء تشغيل الخادم
+
+<div id="primary_key_compress_block_size">
+  ## primary_key_compress_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
+
+حجم كتلة الضغط للمفتاح الأساسي؛ أي الحجم الفعلي للكتلة التي ستُضغط.
+
+<div id="primary_key_compression_codec">
+  ## primary_key_compression_codec
+</div>
+
+<SettingsInfoBlock type="String" default_value="ZSTD(3)" />
+
+ترميز الضغط المستخدم للمفتاح الأساسي. ونظرًا إلى أن المفتاح الأساسي صغير بما يكفي ويكون مخزّنًا مؤقتًا،
+فإن الضغط الافتراضي هو ZSTD(3).
+
+<div id="primary_key_lazy_load">
+  ## primary_key_lazy_load
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+حمّل المفتاح الأساسي في الذاكرة عند
+أول استخدام بدلًا من تحميله عند تهيئة الجدول. يمكن أن يوفّر ذلك الذاكرة
+عند وجود عدد كبير من الجداول.
+
+<div id="primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns">
+  ## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.9" />
+
+إذا تغيّرت قيمة أحد أعمدة المفتاح الأساسي في جزء البيانات بهذه النسبة من المرات على الأقل، فتخطَّ تحميل الأعمدة التالية في الذاكرة. يتيح ذلك تقليل استهلاك الذاكرة عبر عدم تحميل الأعمدة غير المفيدة من المفتاح الأساسي.
+
+<div id="propagate_types_serialization_versions_to_nested_types">
+  ## propagate_types_serialization_versions_to_nested_types
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "تمرير إصدار تسلسل أنواع البيانات إلى الأنواع المتداخلة افتراضيًا"}]}]} />
+
+إذا كانت القيمة true، فسيتم تمرير إصدارات التسلسل مثل string&#95;serialization&#95;version إلى داخل الأنواع المتداخلة مثل Array/Map/Nullable/JSON/etc. وإذا كان هذا الخيار معطّلًا، فسيقتصر تأثير إصدار التسلسل على الأعمدة ذات المستوى الأعلى من هذا النوع وTuple el
+
+<div id="ratio_of_defaults_for_sparse_serialization">
+  ## ratio_of_defaults_for_sparse_serialization
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.9375" />
+
+الحد الأدنى لنسبة عدد القيم *الافتراضية* إلى عدد *جميع* القيم
+في عمود. يؤدي ضبط هذه القيمة إلى تخزين العمود باستخدام
+التسلسل المتناثر.
+
+إذا كان العمود متناثرًا (أي يحتوي في معظمه على أصفار)، يمكن لـ ClickHouse ترميزه
+بتنسيق متناثر وتحسين العمليات الحسابية تلقائيًا، إذ لا تتطلب البيانات
+فك الضغط الكامل أثناء الاستعلامات. لتمكين هذا
+التسلسل المتناثر، عيّن الإعداد `ratio_of_defaults_for_sparse_serialization`
+ليكون أقل من 1.0. وإذا كانت القيمة أكبر من أو تساوي 1.0،
+فستُكتب الأعمدة دائمًا باستخدام التسلسل الكامل العادي.
+
+القيم الممكنة:
+
+* قيمة `Float` بين `0` و `1` لتمكين التسلسل المتناثر
+* `1.0` (أو أكبر) إذا كنت لا تريد استخدام التسلسل المتناثر
+
+**مثال**
+
+لاحظ أن العمود `s` في الجدول التالي يكون سلسلة فارغة في 95% من
+الصفوف. في `my_regular_table` لا نستخدم التسلسل المتناثر، وفي
+`my_sparse_table` نعيّن `ratio_of_defaults_for_sparse_serialization` إلى
+0.95:
+
+```sql
+CREATE TABLE my_regular_table
+(
+`id` UInt64,
+`s` String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO my_regular_table
+SELECT
+number AS id,
+number % 20 = 0 ? toString(number): '' AS s
+FROM
+numbers(10000000);
+
+CREATE TABLE my_sparse_table
+(
+`id` UInt64,
+`s` String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.95;
+
+INSERT INTO my_sparse_table
+SELECT
+number,
+number % 20 = 0 ? toString(number): ''
+FROM
+numbers(10000000);
+```
+
+لاحظ أن العمود `s` في `my_sparse_table` يشغل مساحة تخزين أقل على القرص:
+
+```sql
+SELECT table, name, data_compressed_bytes, data_uncompressed_bytes FROM system.columns
+WHERE table LIKE 'my_%_table';
+```
+
+```response
+┌─table────────────┬─name─┬─data_compressed_bytes─┬─data_uncompressed_bytes─┐
+│ my_regular_table │ id   │              37790741 │                75488328 │
+│ my_regular_table │ s    │               2451377 │                12683106 │
+│ my_sparse_table  │ id   │              37790741 │                75488328 │
+│ my_sparse_table  │ s    │               2283454 │                 9855751 │
+└──────────────────┴──────┴───────────────────────┴─────────────────────────┘
+```
+
+يمكنك التحقق مما إذا كان عمود ما يستخدم الترميز المتناثر من خلال عرض
+العمود `serialization_kind` في جدول `system.parts_columns`:
+
+```sql
+SELECT column, serialization_kind FROM system.parts_columns
+WHERE table LIKE 'my_sparse_table';
+```
+
+يمكنك معرفة أي أجزاء `s` جرى تخزينها باستخدام التسلسل المتناثر:
+
+```response
+┌─column─┬─serialization_kind─┐
+│ id     │ Default            │
+│ s      │ Default            │
+│ id     │ Default            │
+│ s      │ Default            │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+└────────┴────────────────────┘
+```
+
+<div id="reduce_blocking_parts_sleep_ms">
+  ## reduce_blocking_parts_sleep_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "5000"},{"label": "Cloud sync"}]}]} />
+
+متاح فقط في ClickHouse Cloud. الحد الأدنى للوقت الذي يجب انتظاره قبل محاولة
+تقليل الأجزاء المُعيقة مرة أخرى إذا لم يتم إسقاط/استبدال أي ranges. سيؤدي
+تعيين قيمة أقل إلى تشغيل المهام في background&#95;schedule&#95;pool بشكل متكرر، مما
+ينتج عنه عدد كبير من الطلبات إلى ZooKeeper في العناقيد واسعة النطاق
+
+<div id="refresh_parts_interval">
+  ## refresh_parts_interval
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+إذا كانت القيمة أكبر من صفر، فستُحدَّث قائمة أجزاء البيانات من نظام الملفات الأساسي للتحقق مما إذا كانت البيانات قد حُدِّثت في الخلفية.
+لا يمكن تعيينه إلا إذا كان الجدول موجودًا على أقراص للقراءة فقط (ما يعني أن هذه نسخة متماثلة للقراءة فقط، بينما تُكتب البيانات بواسطة نسخة متماثلة أخرى).
+
+<div id="refresh_statistics_interval">
+  ## refresh_statistics_interval
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="300" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "300"},{"label": "تمكين ذاكرة التخزين المؤقت للإحصاءات"}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+الفاصل الزمني لتحديث ذاكرة التخزين المؤقت للإحصاءات، بالثواني. إذا ضُبط على صفر، فسيُعطَّل التحديث.
+
+<div id="remote_fs_execute_merges_on_single_replica_time_threshold">
+  ## remote_fs_execute_merges_on_single_replica_time_threshold
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="10800" />
+
+عندما تكون قيمة هذا الإعداد أكبر من الصفر، تبدأ نسخة متماثلة واحدة فقط
+عملية الدمج فورًا إذا كان الجزء المدمج موجودًا على وحدة التخزين المشتركة.
+
+<Note>
+  النسخ المتماثل zero-copy غير جاهز بعد للاستخدام في بيئة الإنتاج.
+  يكون النسخ المتماثل zero-copy معطّلًا افتراضيًا في ClickHouse الإصدار 22.8
+  والإصدارات الأحدث.
+
+  لا يُنصح باستخدام هذه الميزة في بيئة الإنتاج.
+</Note>
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="remote_fs_zero_copy_path_compatible_mode">
+  ## remote_fs_zero_copy_path_compatible_mode
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+يشغّل zero-copy في وضع التوافق أثناء عملية التحويل.
+
+<div id="remote_fs_zero_copy_zookeeper_path">
+  ## remote_fs_zero_copy_zookeeper_path
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="/clickhouse/zero_copy" />
+
+مسار ZooKeeper للمعلومات المستقلة عن الجدول الخاصة بـ zero-copy.
+
+<div id="remove_empty_parts">
+  ## remove_empty_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+أزل الأجزاء الفارغة بعد تشذيبها بواسطة TTL أو mutation أو خوارزمية الدمج collapsing.
+
+<div id="remove_rolled_back_parts_immediately">
+  ## remove_rolled_back_parts_immediately
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+إعداد لميزة تجريبية لم تكتمل بعد.
+
+<div id="remove_unused_patch_parts">
+  ## remove_unused_patch_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+إزالة أجزاء التصحيح في الخلفية بعد تطبيقها على جميع الأجزاء النشطة.
+
+<div id="replace_long_file_name_to_hash">
+  ## replace_long_file_name_to_hash
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+إذا كان اسم ملف العمود طويلًا جدًا (أكثر من &#39;max&#95;file&#95;name&#95;length&#39;
+بايت)، فاستبدله بـ SipHash128
+
+<div id="replicated_can_become_leader">
+  ## replicated_can_become_leader
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+إذا كانت القيمة `true`، فستحاول النسخ المتماثلة للجداول المتماثلة على هذه العقدة تولّي دور القائد.
+
+القيم الممكنة:
+
+* `true`
+* `false`
+
+<div id="replicated_deduplication_window">
+  ## replicated_deduplication_window
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "10000"},{"label": "زيادة القيمة الافتراضية"}]}]} />
+
+عدد أحدث الكتل المُدرجة التي يخزّن ClickHouse Keeper لها قيم التجزئة للتحقق من التكرارات.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+* 0 (تعطيل إزالة التكرار)
+
+ينشئ الأمر `Insert` كتلة واحدة أو أكثر (أجزاء). بالنسبة إلى [insert deduplication](/ar/reference/engines/table-engines/mergetree-family/replication)، عند الكتابة إلى الجداول المتماثلة، يكتب ClickHouse قيم التجزئة الخاصة بالأجزاء المُنشأة إلى ClickHouse Keeper. ولا تُخزَّن قيم التجزئة إلا لأحدث `replicated_deduplication_window` من الكتل. وتُزال أقدم قيم التجزئة من ClickHouse Keeper.
+
+إن تعيين قيمة كبيرة لـ `replicated_deduplication_window` يبطّئ عمليات `Inserts` لأن عددًا أكبر من الإدخالات يحتاج إلى المقارنة. وتُحسَب قيمة التجزئة من تكوين أسماء الحقول وأنواعها وبيانات الجزء المُدرج (تدفّق من البايتات).
+
+<div id="replicated_deduplication_window_for_async_inserts">
+  ## replicated_deduplication_window_for_async_inserts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+عدد الكتل المُدرجة مؤخرًا باستخدام async insert التي يخزّن ClickHouse Keeper
+قيمة التجزئة الخاصة بها للتحقق من التكرارات.
+
+Possible values:
+
+* أي عدد صحيح موجب.
+* 0 (تعطيل إزالة التكرار لـ async&#95;inserts)
+
+سيتم تخزين أمر [Async Insert](/ar/reference/settings/session-settings#async_insert)
+مؤقتًا في كتلة واحدة أو أكثر (parts). ولأغراض [insert إزالة التكرار](/ar/reference/engines/table-engines/mergetree-family/replication)،
+عند الكتابة إلى جداول متماثلة، يكتب ClickHouse قيم قيمة التجزئة لكل
+insert في ClickHouse Keeper. ولا تُخزَّن قيم قيمة التجزئة إلا لأحدث
+`replicated_deduplication_window_for_async_inserts` من الكتل. وتُزال أقدم قيم قيمة التجزئة
+sums من ClickHouse Keeper.
+إن زيادة قيمة `replicated_deduplication_window_for_async_inserts` تؤدي إلى إبطاء
+`Async Inserts` لأنها تتطلب مقارنة عدد أكبر من entries.
+ويُحتسب قيمة التجزئة استنادًا إلى تكوين أسماء الحقول وأنواعها
+وبيانات الـ insert (stream من bytes).
+
+<div id="replicated_deduplication_window_seconds">
+  ## replicated_deduplication_window_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="3600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3600"},{"label": "تقليل القيمة الافتراضية"}]}]} />
+
+عدد الثواني التي بعد انقضائها تُزال قيم التجزئة الخاصة بالكتل المُدخلة
+من ClickHouse Keeper.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+على غرار [replicated&#95;إزالة التكرار&#95;window](#replicated_deduplication_window)،
+يحدّد `replicated_deduplication_window_seconds` مدة الاحتفاظ بقيم التجزئة
+للكتل لأغراض insert إزالة التكرار. وتُزال قيم التجزئة الأقدم من
+`replicated_deduplication_window_seconds` من ClickHouse Keeper،
+حتى إذا كانت أقل من ` replicated_deduplication_window`.
+
+يُحتسب الوقت نسبةً إلى وقت أحدث سجل، وليس إلى
+الوقت الفعلي. وإذا كان هذا هو السجل الوحيد، فسيُحفَظ إلى الأبد.
+
+<div id="replicated_deduplication_window_seconds_for_async_inserts">
+  ## replicated_deduplication_window_seconds_for_async_inserts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="604800" />
+
+عدد الثواني التي تُزال بعدها قيم التجزئة الخاصة بعمليات async inserts من
+ClickHouse Keeper.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+على غرار [replicated&#95;إزالة التكرار&#95;window&#95;for&#95;async&#95;inserts](#replicated_deduplication_window_for_async_inserts)،
+يحدّد `replicated_deduplication_window_seconds_for_async_inserts` مدة
+الاحتفاظ بقيم التجزئة الخاصة بالكتل من أجل insert إزالة التكرار في async inserts. وتُزال قيم التجزئة
+الأقدم من `replicated_deduplication_window_seconds_for_async_inserts` من
+ClickHouse Keeper، حتى إذا كانت أقل من
+`replicated_deduplication_window_for_async_inserts`.
+
+يُحتسب الوقت هنا نسبةً إلى وقت أحدث سجل، وليس إلى الوقت الفعلي.
+وإذا كان هذا هو السجل الوحيد، فسيُخزَّن إلى الأبد.
+
+<div id="replicated_fetches_http_connection_timeout">
+  ## replicated_fetches_http_connection_timeout
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="0" />
+
+إعداد متقادم، ليس له أي تأثير.
+
+<div id="replicated_fetches_http_receive_timeout">
+  ## replicated_fetches_http_receive_timeout
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="0" />
+
+إعداد متقادم، ليس له أي تأثير.
+
+<div id="replicated_fetches_http_send_timeout">
+  ## replicated_fetches_http_send_timeout
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="0" />
+
+إعداد مهمل، ولا تأثير له.
+
+<div id="replicated_fetches_min_part_level">
+  ## replicated_fetches_min_part_level
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+الحد الأدنى لمستوى الجزء الذي سيتم جلبه من النسخ المتماثلة الأخرى. تُؤجَّل الأجزاء التي يكون مستواها أقل من هذه العتبة
+(تظل في قائمة انتظار النسخ المتماثل ويُعاد تقييمها في كل دورة جدولة، ولا تُتجاهَل نهائيًا).
+استخدم القيمة 1 لتأجيل جلب الأجزاء من المستوى 0 (غير المدمجة)، مما يقلل العبء الإضافي للنسخ المتماثل أثناء الإدخال المكثف للبيانات.
+القيمة الافتراضية: 0 (جلب جميع الأجزاء بغض النظر عن المستوى).
+
+<div id="replicated_fetches_min_part_level_timeout_seconds">
+  ## replicated_fetches_min_part_level_timeout_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "300"},{"label": "إعداد جديد"}]}]} />
+
+المهلة، بالثواني، التي بعدها سيتم جلب أي جزء يقع دون replicated&#95;fetches&#95;min&#95;part&#95;level على أي حال.
+استخدم 0 لتعطيل المهلة (تُؤجَّل الأجزاء التي تقع دون الحد الأدنى للمستوى إلى أجل غير مسمى حتى يتم دمجها).
+الافتراضي: 300 (فرض الجلب بعد 5 دقائق).
+
+<div id="replicated_max_mutations_in_one_entry">
+  ## replicated_max_mutations_in_one_entry
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+الحد الأقصى لعدد أوامر mutation التي يمكن دمجها معًا وتنفيذها ضمن
+إدخال MUTATE&#95;PART واحد (0 تعني بلا حد أقصى)
+
+<div id="replicated_max_parallel_fetches">
+  ## replicated_max_parallel_fetches
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+إعداد متقادم، ليس له أي تأثير.
+
+<div id="replicated_max_parallel_fetches_for_host">
+  ## replicated_max_parallel_fetches_for_host
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="15" />
+
+إعداد قديم لم يعد له أي تأثير.
+
+<div id="replicated_max_parallel_fetches_for_table">
+  ## replicated_max_parallel_fetches_for_table
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+إعداد متقادم، لا تأثير له.
+
+<div id="replicated_max_parallel_sends">
+  ## replicated_max_parallel_sends
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+إعداد متقادم، وليس له أي تأثير.
+
+<div id="replicated_max_parallel_sends_for_table">
+  ## replicated_max_parallel_sends_for_table
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+إعداد متقادم، بلا تأثير.
+
+<div id="replicated_max_ratio_of_wrong_parts">
+  ## replicated_max_ratio_of_wrong_parts
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+إذا كانت نسبة الأجزاء غير الصحيحة إلى إجمالي عدد الأجزاء أقل من هذه القيمة،
+فيُسمح بالتشغيل.
+
+القيم الممكنة:
+
+* Float، 0.0 - 1.0
+
+<div id="search_orphaned_parts_disks">
+  ## search_orphaned_parts_disks
+</div>
+
+<SettingsInfoBlock type="SearchOrphanedPartsDisks" default_value="any" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "any"},{"label": "إعداد جديد"}]}]} />
+
+يفحص ClickHouse جميع الأقراص بحثًا عن الأجزاء اليتيمة عند أي ATTACH أو CREATE لجدول،
+وذلك حتى لا تفوته أجزاء البيانات الموجودة على أقراص غير معرّفة (غير مشمولة في سياسة التخزين).
+قد تنشأ الأجزاء اليتيمة بسبب إعادة تهيئة التخزين غير الآمنة، على سبيل المثال إذا جرى استبعاد قرص من سياسة التخزين.
+يحدّد هذا الإعداد نطاق الأقراص التي سيجري البحث فيها وفقًا لخصائص الأقراص.
+
+القيم الممكنة:
+
+* any - النطاق غير مقيّد.
+* local - يقتصر النطاق على الأقراص المحلية.
+* none - نطاق فارغ، لا تُجرِ بحثًا
+
+<div id="serialization_info_version">
+  ## serialization_info_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeSerializationInfoVersion" default_value="with_types" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "with_types"},{"label": "التغيير إلى التنسيق الأحدث الذي يتيح تسلسلاً مخصصًا للسلاسل النصية"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "basic"},{"label": "إعداد جديد"}]}]} />
+
+إصدار معلومات التسلسل المستخدم عند كتابة `serialization.json`.
+هذا الإعداد مطلوب لضمان التوافق أثناء ترقيات العنقود.
+
+القيم الممكنة:
+
+* `basic` - تنسيق أساسي.
+* `with_types` - تنسيق يتضمن الحقل الإضافي `types_serialization_versions`، مما يتيح إصدارات تسلسل لكل نوع.
+  وهذا يجعل إعدادات مثل `string_serialization_version` سارية المفعول.
+
+أثناء الترقيات المتدرجة، اضبط هذا على `basic` لكي تُنتج الخوادم الجديدة
+أجزاء بيانات متوافقة مع الخوادم القديمة. بعد اكتمال الترقية،
+بدّل إلى `WITH_TYPES` لتمكين إصدارات التسلسل لكل نوع.
+
+<div id="share_nested_offsets">
+  ## share_nested_offsets
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "عند ضبطها على false، تُعامَل أعمدة Array ذات الأسماء المنقطة التي تشترك في بادئة واحدة على أنها أعمدة مستقلة بدلًا من مشاركة ملفات الإزاحات كجزء من دلالات Nested القديمة"}]}]} />
+
+عند التفعيل (وهو الوضع الافتراضي)، تُعامَل أعمدة Array ذات الأسماء المنقطة التي تشترك في بادئة واحدة (مثل `n.a` و `n.b`)
+على أنها جزء من بنية Nested: إذ تشترك في ملف إزاحات واحد على القرص (مثل `n.size0`)،
+ويُتحقَّق من تساوي أحجام المصفوفات فيها أثناء `INSERT`.
+وعند التعطيل، يحصل كل عمود Array على ملف إزاحات مستقل، ولا تعود الأسماء المنقطة تحمل أي
+دلالات خاصة، كما يمكن أن يتعايش عمود قياسي مع أعمدة Array منقطة تشترك في البادئة نفسها
+(مثل `n UInt32` إلى جانب `n.a Array(String)`). هذا الإعداد غير قابل للتغيير بعد إنشاء الجدول.
+
+<div id="shared_merge_tree_activate_coordinated_merges_tasks">
+  ## shared_merge_tree_activate_coordinated_merges_tasks
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "إعدادات جديدة"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "إعدادات جديدة"}]}, {"id": "row-3","items": [{"label": "25.7"},{"label": "0"},{"label": "إعدادات جديدة"}]}, {"id": "row-4","items": [{"label": "25.6"},{"label": "0"},{"label": "إعدادات جديدة"}]}, {"id": "row-5","items": [{"label": "25.10"},{"label": "0"},{"label": "إعدادات جديدة"}]}]} />
+
+يُفعّل إعادة جدولة مهام الدمج المنسّق. وقد يكون ذلك مفيدًا حتى عندما
+shared&#95;merge&#95;tree&#95;enable&#95;coordinated&#95;merges=0، لأن هذا سيُعبّئ إحصاءات منسّق الدمج
+ويساعد في حالات التشغيل البارد.
+
+<div id="shared_merge_tree_create_per_replica_metadata_nodes">
+  ## shared_merge_tree_create_per_replica_metadata_nodes
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "تقليل كمية البيانات الوصفية في Keeper."}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+يُمكّن من إنشاء العُقدتَين /metadata و /columns لكل نسخة متماثلة في ZooKeeper.
+متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_disable_merges_and_mutations_assignment">
+  ## shared_merge_tree_disable_merges_and_mutations_assignment
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+إيقاف تعيين عمليات الدمج وتعديلات في shared merge tree. متاح فقط في ClickHouse
+Cloud
+
+<div id="shared_merge_tree_empty_partition_lifetime">
+  ## shared_merge_tree_empty_partition_lifetime
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "86400"},{"label": "إعداد جديد"}]}]} />
+
+عدد الثواني التي سيتم خلالها الاحتفاظ بالتقسيم في Keeper إذا لم تكن له أي أجزاء.
+
+<div id="shared_merge_tree_enable_automatic_empty_partitions_cleanup">
+  ## shared_merge_tree_enable_automatic_empty_partitions_cleanup
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "مُمكَّن افتراضيًا"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يُمكّن تنظيف إدخالات Keeper الخاصة بالقسم الفارغ.
+
+<div id="shared_merge_tree_enable_coordinated_merges">
+  ## shared_merge_tree_enable_coordinated_merges
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يُمكّن استخدام استراتيجية الدمج المنسّق
+
+<div id="shared_merge_tree_enable_keeper_parts_extra_data">
+  ## shared_merge_tree_enable_keeper_parts_extra_data
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يمكّن كتابة السمات في الأجزاء الافتراضية وتثبيت الكتل في Keeper
+
+<div id="shared_merge_tree_enable_outdated_parts_check">
+  ## shared_merge_tree_enable_outdated_parts_check
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+يُفعّل التحقق من الأجزاء القديمة. متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_idle_parts_update_seconds">
+  ## shared_merge_tree_idle_parts_update_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="3600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "3600"},{"label": "Cloud sync"}]}]} />
+
+الفاصل الزمني بالثواني لتحديث الأجزاء من دون أن يتم تحفيزه بواسطة watch في ZooKeeper
+ضمن shared merge tree. متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_initial_parts_update_backoff_ms">
+  ## shared_merge_tree_initial_parts_update_backoff_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="50" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "50"},{"label": "إعداد جديد"}]}]} />
+
+التراجع التدريجي الأولي لتحديث الأجزاء. متوفر فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_interserver_http_connection_timeout_ms">
+  ## shared_merge_tree_interserver_http_connection_timeout_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "100"},{"label": "إعداد جديد"}]}]} />
+
+مهلات اتصال HTTP بين الخوادم. متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_interserver_http_timeout_ms">
+  ## shared_merge_tree_interserver_http_timeout_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10000"},{"label": "Cloud sync"}]}]} />
+
+مهلات اتصال HTTP بين الخوادم. متاح فقط في ClickHouse
+Cloud
+
+<div id="shared_merge_tree_leader_update_period_random_add_seconds">
+  ## shared_merge_tree_leader_update_period_random_add_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]} />
+
+أضف قيمة موزعة توزيعًا منتظمًا من 0 إلى x ثانية إلى
+shared&#95;merge&#95;tree&#95;leader&#95;update&#95;period لتجنّب ظاهرة
+اندفاع القطيع. هذا الإعداد متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_leader_update_period_seconds">
+  ## shared_merge_tree_leader_update_period_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "30"},{"label": "Cloud sync"}]}]} />
+
+الحد الأقصى للفترة لإعادة التحقق من القائد المسؤول عن تحديث الأجزاء. متاح فقط في
+ClickHouse Cloud
+
+<div id="shared_merge_tree_max_outdated_parts_to_process_at_once">
+  ## shared_merge_tree_max_outdated_parts_to_process_at_once
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000"},{"label": "Cloud sync"}]}]} />
+
+الحد الأقصى لعدد الأجزاء القديمة التي ستحاول العقدة القائدة تأكيد إزالتها
+ضمن طلب HTTP واحد. هذا الإعداد متاح فقط في ClickHouse Cloud.
+
+<div id="shared_merge_tree_max_parts_update_backoff_ms">
+  ## shared_merge_tree_max_parts_update_backoff_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "5000"},{"label": "إعداد جديد"}]}]} />
+
+الحد الأقصى لفترة التراجع التدريجي عند تحديث الأجزاء. متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_max_parts_update_leaders_in_total">
+  ## shared_merge_tree_max_parts_update_leaders_in_total
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="6" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "6"},{"label": "Cloud sync"}]}]} />
+
+الحد الأقصى لعدد القادة المسؤولين عن تحديث الأجزاء. متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_max_parts_update_leaders_per_az">
+  ## shared_merge_tree_max_parts_update_leaders_per_az
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "2"},{"label": "Cloud sync"}]}]} />
+
+الحد الأقصى لعدد قادة تحديث الأجزاء. متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_max_replicas_for_parts_deletion">
+  ## shared_merge_tree_max_replicas_for_parts_deletion
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]} />
+
+الحد الأقصى لعدد النسخ المتماثلة التي ستشارك في حذف الأجزاء (killer thread). يتوفر فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range">
+  ## shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "5"},{"label": "Cloud sync"}]}]} />
+
+الحد الأقصى لعدد النُسخ المتماثلة التي ستحاول إسناد عمليات دمج يُحتمل أن تكون متعارضة
+(مما يساعد على تجنب التعارضات غير الضرورية في إسناد عمليات الدمج). تعني القيمة 0 أن هذه الميزة معطّلة. وهي
+متاحة فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_max_suspicious_broken_parts">
+  ## shared_merge_tree_max_suspicious_broken_parts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "الحد الأقصى للأجزاء التالفة في SMT، وإذا تجاوز العدد ذلك، يُمنع الـ detach التلقائي"}]}]} />
+
+الحد الأقصى للأجزاء التالفة في SMT، وإذا تجاوز العدد ذلك، يُمنع الـ detach التلقائي.
+
+<div id="shared_merge_tree_max_suspicious_broken_parts_bytes">
+  ## shared_merge_tree_max_suspicious_broken_parts_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "الحد الأقصى لإجمالي حجم جميع الأجزاء التالفة في SMT، وإذا تجاوز هذا الحد، يُمنع detach التلقائي"}]}]} />
+
+الحد الأقصى لإجمالي حجم جميع الأجزاء التالفة في SMT، وإذا تجاوز هذا الحد، يُمنع detach التلقائي.
+
+<div id="shared_merge_tree_memo_ids_remove_timeout_seconds">
+  ## shared_merge_tree_memo_ids_remove_timeout_seconds
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="1800" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1800"},{"label": "Cloud sync"}]}]} />
+
+المدة التي نحتفظ خلالها بمعرّفات memoization الخاصة بعمليات `insert` لتجنّب تنفيذ إجراءات غير صحيحة أثناء
+إعادة محاولة `insert`. هذا متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_merge_coordinator_election_check_period_ms">
+  ## shared_merge_tree_merge_coordinator_election_check_period_ms
+</div>
+
+<SettingsInfoBlock type="مللي ثانية" default_value="30000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "30000"},{"label": "إعداد جديد"}]}]} />
+
+الفاصل الزمني بين عمليات تشغيل مؤشر ترابط انتخاب منسّق الدمج
+
+<div id="shared_merge_tree_merge_coordinator_factor">
+  ## shared_merge_tree_merge_coordinator_factor
+</div>
+
+<SettingsInfoBlock type="Float" default_value="1.1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1.100000023841858"},{"label": "إعداد جديد"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "1.100000023841858"},{"label": "تقليل مدة سكون المنسق بعد التحميل"}]}]} />
+
+معامل تغيير مدة تأخير مؤشر ترابط المنسق
+
+<div id="shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms">
+  ## shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms
+</div>
+
+<SettingsInfoBlock type="مللي ثانية" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "إعداد جديد"}]}]} />
+
+الفترة التي يجب أن يزامن فيها منسّق الدمج مع ZooKeeper لجلب بيانات وصفية حديثة
+
+<div id="shared_merge_tree_merge_coordinator_max_merge_request_size">
+  ## shared_merge_tree_merge_coordinator_max_merge_request_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="20" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "20"},{"label": "إعداد جديد"}]}]} />
+
+عدد عمليات الدمج التي يمكن أن يطلبها المنسّق من MergerMutator دفعة واحدة
+
+<div id="shared_merge_tree_merge_coordinator_max_period_ms">
+  ## shared_merge_tree_merge_coordinator_max_period_ms
+</div>
+
+<SettingsInfoBlock type="مللي ثانية" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "إعداد جديد"}]}]} />
+
+الحد الأقصى للمدة الفاصلة بين مرات تشغيل مؤشر ترابط منسّق الدمج
+
+<div id="shared_merge_tree_merge_coordinator_merges_prepare_count">
+  ## shared_merge_tree_merge_coordinator_merges_prepare_count
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "auto"},{"label": "اجعل الإعداد auto: الحد الأقصى لمهام الدمج لكل replica * عدد replicas النشطة"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "100"},{"label": "إعداد جديد"}]}]} />
+
+عدد إدخالات الدمج التي ينبغي أن يُعِدّها منسق ويوزعها على workers.
+عند ضبطه على &#39;auto&#39;، يساوي الحد الأقصى لعدد مهام الدمج المسموح بها على replica واحدة مضروبًا في عدد replicas النشطة.
+
+<div id="shared_merge_tree_merge_coordinator_min_period_ms">
+  ## shared_merge_tree_merge_coordinator_min_period_ms
+</div>
+
+<SettingsInfoBlock type="مللي ثانية" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+الحد الأدنى للفاصل الزمني بين مرات تشغيل خيط منسّق الدمج
+
+<div id="shared_merge_tree_merge_worker_fast_timeout_ms">
+  ## shared_merge_tree_merge_worker_fast_timeout_ms
+</div>
+
+<SettingsInfoBlock type="مللي ثانية" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "100"},{"label": "إعداد جديد"}]}]} />
+
+المهلة التي سيستخدمها مؤشر ترابط عامل الدمج إذا استلزم الأمر تحديث حالته بعد إجراء فوري
+
+<div id="shared_merge_tree_merge_worker_regular_timeout_ms">
+  ## shared_merge_tree_merge_worker_regular_timeout_ms
+</div>
+
+<SettingsInfoBlock type="مللي ثانية" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "إعداد جديد"}]}]} />
+
+الفاصل الزمني بين مرات تشغيل مؤشر ترابط عامل الدمج
+
+<div id="shared_merge_tree_outdated_parts_group_size">
+  ## shared_merge_tree_outdated_parts_group_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "2"},{"label": "إعداد جديد"}]}]} />
+
+كم عدد النسخ المتماثلة التي ستكون ضمن مجموعة تجزئة rendezvous نفسها لتنظيف الأجزاء القديمة.
+متاح فقط في ClickHouse Cloud.
+
+<div id="shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations">
+  ## shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+سيُعاد تحميل شرط الدمج في مهمة اختيار الدمج/التعديلات عندما تكون نسبة `<candidate
+partitions for mutations only (partitions that cannot be merged)>/<candidate
+partitions for mutations>` أكبر من قيمة هذا الإعداد. يتوفر هذا فقط
+في ClickHouse Cloud
+
+<div id="shared_merge_tree_parts_load_batch_size">
+  ## shared_merge_tree_parts_load_batch_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+عدد وظائف جلب البيانات الوصفية للأجزاء التي تُجدوَل دفعةً واحدة. متاح فقط في
+ClickHouse Cloud
+
+<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms">
+  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+المدة الزمنية للاحتفاظ بجزء مدموج محليًا دون بدء عملية دمج جديدة تتضمن
+هذا الجزء. يتيح ذلك للنسخ المتماثلة الأخرى فرصة جلب هذا الجزء وبدء عملية الدمج هذه.
+متاح فقط في ClickHouse Cloud.
+
+<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold">
+  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000000"},{"label": "Cloud sync"}]}]} />
+
+الحد الأدنى لحجم الجزء (بعدد الصفوف) الذي يؤجَّل عنده إسناد عملية الدمج التالية مباشرةً بعد
+دمجه محليًا. متاح فقط في ClickHouse Cloud.
+
+<div id="shared_merge_tree_range_for_merge_window_size">
+  ## shared_merge_tree_range_for_merge_window_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]} />
+
+المدة الزمنية للاحتفاظ بجزء تم دمجه محليًا قبل بدء عملية دمج جديدة تتضمن
+هذا الجزء. يمنح ذلك النسخ المتماثلة الأخرى فرصة لجلب الجزء وبدء عملية الدمج هذه.
+متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_read_virtual_parts_from_leader">
+  ## shared_merge_tree_read_virtual_parts_from_leader
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+اقرأ الأجزاء الافتراضية من القائد متى أمكن. هذا الإعداد متاح فقط في ClickHouse
+Cloud
+
+<div id="shared_merge_tree_replica_set_max_lifetime_seconds">
+  ## shared_merge_tree_replica_set_max_lifetime_seconds
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="1800" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1800"},{"label": "زيادة الفاصل الزمني الافتراضي لتحديث مجموعة النسخ المتماثلة في الخلفية إلى 30 دقيقة"}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "300"},{"label": "إعداد جديد"}]}]} />
+
+عدد مرات محاولة النسخ المتماثلة تحديث مجموعة النسخ المتماثلة في الخلفية. يُضاف انحراف عشوائي إلى وقت التشغيل التالي
+بتوزيع منتظم ضمن [0, value] ثانية. الاستثناء: القيمة = 0 لا تتبع هذه القاعدة؛
+إذ يطبّق التنفيذ حدًا أدنى مقداره 200 مللي ثانية، لذلك يُضاف انحراف عشوائي إلى وقت التشغيل التالي ضمن [0, 200] مللي ثانية.
+
+<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas">
+  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "إعداد جديد لجلب بيانات الجزء الموجودة في الذاكرة من النسخ المتماثلة الأخرى"}]}]} />
+
+إذا كان هذا الإعداد مفعّلًا، فستحاول جميع النسخ المتماثلة جلب بيانات الجزء الموجودة في الذاكرة (مثل المفتاح الأساسي ومعلومات القسم وما إلى ذلك) من النسخ المتماثلة الأخرى التي تتوفر فيها هذه البيانات بالفعل.
+
+<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup">
+  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "إعداد جديد يتيح لـ SMT جلب بيانات الأجزاء من النسخ المتماثلة بدلًا من S3 عند بدء التشغيل"}]}]} />
+
+إذا كان هذا الإعداد مُمكّنًا، فستحاول جميع النسخ المتماثلة عند بدء التشغيل جلب بيانات الأجزاء في الذاكرة (مثل المفتاح
+الأساسي، ومعلومات القسم، وما إلى ذلك) من نسخ متماثلة أخرى تتوفر لديها هذه البيانات بالفعل.
+
+<div id="shared_merge_tree_update_replica_flags_delay_ms">
+  ## shared_merge_tree_update_replica_flags_delay_ms
+</div>
+
+<SettingsInfoBlock type="مللي ثانية" default_value="30000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "30000"},{"label": "إعداد جديد"}]}]} />
+
+الفاصل الزمني الذي تحاول عنده النسخة المتماثلة إعادة تحميل علاماتها وفقًا للجدولة في الخلفية.
+
+<div id="shared_merge_tree_use_metadata_hints_cache">
+  ## shared_merge_tree_use_metadata_hints_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+يُمكّن من طلب تلميحات ذاكرة التخزين المؤقت لنظام الملفات من
+ذاكرة التخزين المؤقت الموجودة في الذاكرة
+على النسخ المتماثلة الأخرى. متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_use_outdated_parts_compact_format">
+  ## shared_merge_tree_use_outdated_parts_compact_format
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1"},{"label": "تمكين الأجزاء القديمة v3 افتراضيًا"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+استخدم التنسيق المضغوط للأجزاء القديمة: فهو يقلل الحمل على Keeper، ويحسّن
+معالجة الأجزاء القديمة. متاح فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_use_too_many_parts_count_from_virtual_parts">
+  ## shared_merge_tree_use_too_many_parts_count_from_virtual_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+إذا كان مُمكّنًا، فسيعتمد عدّاد Too many parts على البيانات المشتركة في Keeper، لا على حالة النسخة المتماثلة المحلية. يتوفر هذا فقط في ClickHouse Cloud
+
+<div id="shared_merge_tree_use_zookeeper_connection_pool">
+  ## shared_merge_tree_use_zookeeper_connection_pool
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+إذا كان مُمكّنًا، يستخدم SharedMergeTree إحدى جلسات ZooKeeper المجمّعة على مستوى الخادم.
+
+<div id="shared_merge_tree_virtual_parts_discovery_batch">
+  ## shared_merge_tree_virtual_parts_discovery_batch
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+عدد عمليات اكتشاف الأقسام المطلوب تجميعها في دفعة واحدة
+
+<div id="simultaneous_parts_removal_limit">
+  ## simultaneous_parts_removal_limit
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+إذا كان هناك عدد كبير من الأجزاء القديمة، فسيحاول مؤشر ترابط التنظيف حذف ما يصل إلى
+`simultaneous_parts_removal_limit` من الأجزاء خلال تكرار واحد.
+يعني تعيين `simultaneous_parts_removal_limit` إلى `0` أنه غير محدود.
+
+<div id="sleep_before_commit_local_part_in_replicated_table_ms">
+  ## sleep_before_commit_local_part_in_replicated_table_ms
+</div>
+
+<SettingsInfoBlock type="مللي ثانية" default_value="0" />
+
+لأغراض الاختبار. لا تغيّره.
+
+<div id="sleep_before_loading_outdated_parts_ms">
+  ## sleep_before_loading_outdated_parts_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+مخصّص للاختبار. لا تغيّره.
+
+<div id="storage_policy">
+  ## storage_policy
+</div>
+
+<SettingsInfoBlock type="String" default_value="default" />
+
+اسم سياسة قرص التخزين
+
+<div id="string_serialization_version">
+  ## string_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeStringSerializationVersion" default_value="with_size_stream" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "with_size_stream"},{"label": "التبديل إلى التنسيق الأحدث ذي الأحجام المنفصلة"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "single_stream"},{"label": "إعداد جديد"}]}]} />
+
+يتحكم هذا الإعداد في تنسيق التسلسل لأعمدة `String` ذات المستوى الأعلى.
+
+لا يسري مفعول هذا الإعداد إلا عندما تكون قيمة `serialization_info_version` مضبوطة على &quot;with&#95;types&quot;.
+وعند ضبطه على `with_size_stream`، تُسلسَل أعمدة `String` ذات المستوى الأعلى باستخدام
+عمود فرعي منفصل باسم `.size` لتخزين أطوال السلاسل النصية، بدلًا من تضمينها ضمنيًا. يتيح ذلك استخدام أعمدة فرعية
+حقيقية باسم `.size`، ويمكن أن يحسّن كفاءة الضغط.
+
+أنواع `String` المتداخلة (مثلًا داخل `Nullable` أو `LowCardinality` أو `Array` أو `Map`)
+لا تتأثر، إلا إذا ظهرت داخل `Tuple`.
+
+القيم الممكنة:
+
+* `single_stream` — استخدم تنسيق التسلسل القياسي مع أحجام مضمنة.
+* `with_size_stream` — استخدم تدفق أحجام منفصلًا لأعمدة `String` ذات المستوى الأعلى.
+
+<div id="table_disk">
+  ## table_disk
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+هذا قرص الجدول؛ ويجب أن يشير المسار/نقطة النهاية إلى بيانات الجدول، لا إلى
+بيانات قاعدة البيانات. ولا يمكن تعيينه إلا لـ s3&#95;plain/s3&#95;plain&#95;rewritable/web.
+
+<div id="table_readonly">
+  ## table_readonly
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "إعداد جديد لوضع الجدول في وضع القراءة فقط، مما يمنع عمليات الإدراج والتعديل"}]}]} />
+
+إذا تم تعيينه على true، فسيكون الجدول في وضع القراءة فقط. وستفشل أي محاولات لإدراج البيانات أو تعديل الجدول.
+
+<div id="temporary_directories_lifetime">
+  ## temporary_directories_lifetime
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="86400" />
+
+عدد الثواني التي يتم خلالها الاحتفاظ بأدلة tmp&#95;. لا ينبغي خفض هذه القيمة
+لأن عمليات الدمج والتعديلات قد لا تتمكن من العمل إذا كانت قيمة هذا
+الإعداد منخفضة.
+
+<div id="text_index_dictionary_block_frontcoding_compression">
+  ## text_index_dictionary_block_frontcoding_compression
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+ضغط front-coding الافتراضي لكتل قاموس الفهرس النصي.
+يمكن تجاوز هذا الإعداد باستخدام وسيطة الفهرس الصريحة `dictionary_block_frontcoding_compression`.
+
+<div id="text_index_dictionary_block_size">
+  ## text_index_dictionary_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "إعداد جديد"}]}]} />
+
+حجم كتلة القاموس الافتراضي للفهارس النصية.
+يمكن تجاوز هذه القيمة باستخدام وسيطة الفهرس الصريحة `dictionary_block_size`.
+
+<div id="text_index_posting_list_block_size">
+  ## text_index_posting_list_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1048576"},{"label": "إعداد جديد"}]}]} />
+
+حجم الكتلة الافتراضي لقائمة الترحيل في فهارس النص (بالصفوف).
+يمكن تجاوز هذه القيمة باستخدام وسيطة الفهرس الصريحة `posting_list_block_size`.
+
+<div id="text_index_posting_list_codec">
+  ## text_index_posting_list_codec
+</div>
+
+<SettingsInfoBlock type="TextIndexPostingListCodec" default_value="none" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "none"},{"label": "إعداد جديد"}]}]} />
+
+برنامج الترميز الافتراضي لقائمة الترحيلات في الفهارس النصية.
+يمكن تجاوزه باستخدام وسيطة الفهرس الصريحة `posting_list_codec`.
+
+<div id="try_fetch_recompressed_part_timeout">
+  ## try_fetch_recompressed_part_timeout
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="7200" />
+
+مهلة الانتظار (بالثواني) قبل بدء الدمج مع إعادة الضغط. خلال هذه
+المدة، يحاول ClickHouse جلب الجزء المُعاد ضغطه من النسخة المتماثلة التي أُسنِد
+إليها هذا الدمج مع إعادة الضغط.
+
+تكون إعادة الضغط بطيئة في معظم الحالات، لذلك لا نبدأ الدمج مع
+إعادة الضغط إلا بعد انقضاء هذه المهلة، مع محاولة جلب الجزء المُعاد ضغطه من
+النسخة المتماثلة التي أُسنِد إليها هذا الدمج مع إعادة الضغط.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.
+
+<div id="ttl_only_drop_parts">
+  ## ttl_only_drop_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+يتحكم هذا الإعداد في ما إذا كانت data parts تُحذف بالكامل في جداول MergeTree عندما
+تكون جميع الصفوف في ذلك الجزء قد انتهت صلاحيتها وفقًا لإعدادات `TTL` الخاصة بها.
+
+عندما يكون `ttl_only_drop_parts` معطّلًا (وهو الوضع الافتراضي)، لا تُحذف إلا الصفوف التي
+انتهت صلاحيتها استنادًا إلى إعدادات `TTL` الخاصة بها.
+
+عندما يكون `ttl_only_drop_parts` مفعّلًا، يُحذف الجزء بالكامل إذا كانت جميع
+الصفوف في ذلك الجزء قد انتهت صلاحيتها وفقًا لإعدادات `TTL` الخاصة بها.
+
+<div id="use_adaptive_write_buffer_for_dynamic_subcolumns">
+  ## use_adaptive_write_buffer_for_dynamic_subcolumns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+يتيح استخدام مخازن الكتابة المؤقتة التكيفية عند كتابة الأعمدة الفرعية الديناميكية
+لتقليل استهلاك الذاكرة
+
+<div id="use_async_block_ids_cache">
+  ## use_async_block_ids_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+إذا كانت القيمة true، فسنخزّن قيم hash الخاصة بعمليات async inserts مؤقتًا.
+
+القيم الممكنة:
+
+* `true`
+* `false`
+
+ستُولِّد الكتلة المرتبطة بعدة عمليات async inserts عدة قيم hash.
+وعندما تكون بعض عمليات insert مكررة، فلن يعيد Keeper سوى
+قيمة hash مكررة واحدة في استدعاء RPC واحد، مما سيتسبب في
+محاولات RPC إضافية غير ضرورية.
+سيراقب هذا التخزين المؤقت path الخاصة بقيم hash في Keeper. وإذا جرت
+مراقبة التحديثات في Keeper، فسيُحدَّث التخزين المؤقت بأسرع وقت ممكن، حتى نتمكن
+من تصفية عمليات insert المكررة في الذاكرة.
+
+<div id="use_compact_variant_discriminators_serialization">
+  ## use_compact_variant_discriminators_serialization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+يُفعّل الوضع المضغوط للتسلسل الثنائي لقيم discriminator في نوع البيانات Variant.
+يتيح هذا الوضع استخدام ذاكرة أقل بكثير لتخزين قيم discriminator
+في الأجزاء عندما يكون هناك غالبًا variant واحد أو عدد كبير من قيم NULL.
+
+<div id="use_const_adaptive_granularity">
+  ## use_const_adaptive_granularity
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+استخدم دائمًا دقة حبيبات ثابتة للجزء بأكمله. يتيح ذلك ضغط قيم دقة حبيبات الفهرس في
+الذاكرة. وقد يكون هذا مفيدًا في أحمال العمل الكبيرة جدًا
+ذات الجداول قليلة الأعمدة.
+
+<div id="use_metadata_cache">
+  ## use_metadata_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+إعداد مهمل، ولا يؤدي أي وظيفة.
+
+<div id="use_minimalistic_checksums_in_zookeeper">
+  ## use_minimalistic_checksums_in_zookeeper
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+استخدم تنسيقًا صغيرًا (عشرات البايتات) من أجل part checksums في ZooKeeper بدلًا من
+التنسيق المعتاد (عشرات الكيلوبايتات). قبل التمكين، تحقّق من أن جميع النسخ المتماثلة تدعم
+التنسيق الجديد.
+
+<div id="use_minimalistic_part_header_in_zookeeper">
+  ## use_minimalistic_part_header_in_zookeeper
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+طريقة تخزين رؤوس أجزاء البيانات في ZooKeeper. عند تمكينه، يخزّن ZooKeeper
+بيانات أقل. لمزيد من التفاصيل، راجع [هنا](/ar/reference/settings/server-settings/settings#use_minimalistic_part_header_in_zookeeper).
+
+<div id="use_primary_key_cache">
+  ## use_primary_key_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+استخدم الذاكرة المؤقتة للفهرس الأساسي
+بدلًا من الاحتفاظ بجميع الفهارس في الذاكرة. قد يكون ذلك مفيدًا جدًا للجداول الكبيرة جدًا
+
+<div id="vertical_merge_algorithm_min_bytes_to_activate">
+  ## vertical_merge_algorithm_min_bytes_to_activate
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+الحد الأدنى (التقريبي) للحجم غير المضغوط، بالبايت، في الأجزاء التي يجري دمجها لتفعيل
+خوارزمية الدمج العمودي.
+
+<div id="vertical_merge_algorithm_min_columns_to_activate">
+  ## vertical_merge_algorithm_min_columns_to_activate
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="11" />
+
+الحد الأدنى لعدد الأعمدة غير المدرجة ضمن المفتاح الأساسي لتفعيل خوارزمية الدمج العمودي.
+
+<div id="vertical_merge_algorithm_min_rows_to_activate">
+  ## vertical_merge_algorithm_min_rows_to_activate
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="131072" />
+
+الحد الأدنى (التقريبي) لإجمالي عدد الصفوف في
+الأجزاء قيد الدمج لتفعيل خوارزمية الدمج العمودي.
+
+<div id="vertical_merge_optimize_lightweight_delete">
+  ## vertical_merge_optimize_lightweight_delete
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
+
+إذا كانت القيمة true، فسيجري تحسين الحذف خفيف الوزن أثناء الدمج العمودي.
+
+<div id="vertical_merge_optimize_ttl_delete">
+  ## vertical_merge_optimize_ttl_delete
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "السماح بخوارزمية الدمج العمودي لعمليات الدمج التي تتطلب إزالة الصفوف المنتهية صلاحيتها وفق TTL"}]}]} />
+
+إذا كانت القيمة true، فسيُحسَّن حذف الصفوف وفق TTL عند الدمج العمودي. وبدلاً من فرض
+الدمج الأفقي، يُقيَّم عامل تصفية TTL ويُمرَّر إلى خوارزمية الدمج التي تضبط علامات التخطي في مصادر الصفوف.
+
+<div id="vertical_merge_remote_filesystem_prefetch">
+  ## vertical_merge_remote_filesystem_prefetch
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+إذا كانت القيمة true، فسيُستخدَم الجلب المسبق للبيانات من نظام الملفات البعيد للعمود التالي أثناء الدمج
+
+<div id="wait_for_unique_parts_send_before_shutdown_ms">
+  ## wait_for_unique_parts_send_before_shutdown_ms
+</div>
+
+<SettingsInfoBlock type="مللي ثانية" default_value="0" />
+
+قبل إيقاف التشغيل، سينتظر الجدول المدة المطلوبة لكي تتمكّن النسخ المتماثلة الأخرى من جلب الأجزاء الفريدة
+(الموجودة فقط على النسخة المتماثلة الحالية)؛ وتشير القيمة 0 إلى
+التعطيل.
+
+<div id="write_ahead_log_bytes_to_fsync">
+  ## write_ahead_log_bytes_to_fsync
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="104857600" />
+
+إعداد مهمل، وليس له أي تأثير.
+
+<div id="write_ahead_log_interval_ms_to_fsync">
+  ## write_ahead_log_interval_ms_to_fsync
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+إعداد متقادِم، ولا يؤدي أي وظيفة.
+
+<div id="write_ahead_log_max_bytes">
+  ## write_ahead_log_max_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+إعداد متقادم، لا تأثير له.
+
+<div id="write_final_mark">
+  ## write_final_mark
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+إعداد مهمل، ولا تأثير له.
+
+<div id="write_marks_for_substreams_in_compact_parts">
+  ## write_marks_for_substreams_in_compact_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "تمكين كتابة العلامات لكل تيار فرعي في الأجزاء المدمجة افتراضيًا"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+يُمكّن هذا الإعداد من كتابة علامة لكل تيار فرعي بدلًا من كتابة علامة لكل عمود في الأجزاء المدمجة.
+ويتيح ذلك قراءة الأعمدة الفرعية الفردية من جزء البيانات بكفاءة.
+
+على سبيل المثال، يُسلسَل العمود `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` في التيارات الفرعية التالية:
+
+* `t.a` لبيانات String الخاصة بالعنصر `a` من Tuple
+* `t.b` لبيانات UInt32 الخاصة بالعنصر `b` من Tuple
+* `t.c.size0` لأحجام المصفوفة الخاصة بالعنصر `c` من Tuple
+* `t.c.null` لخريطة null لعناصر المصفوفة المتداخلة الخاصة بالعنصر `c` من Tuple
+* `t.c` لبيانات UInt32 الخاصة بعناصر المصفوفة المتداخلة للعنصر `c` من Tuple
+
+عند تمكين هذا الإعداد، ستُكتب علامة لكل واحد من هذه التيارات الفرعية الخمسة، ما يعني أننا سنتمكن من قراءة
+بيانات كل تيار فرعي على حدة من الـ granule بشكل مستقل عند الحاجة. على سبيل المثال، إذا أردنا قراءة العمود الفرعي `t.c`، فسنقرأ فقط بيانات
+التيارات الفرعية `t.c.size0` و`t.c.null` و`t.c`، ولن نقرأ بيانات من التيارين الفرعيين `t.a` و`t.b`. وعند تعطيل هذا الإعداد،
+ستُكتب علامة واحدة فقط للعمود الأعلى مستوى `t`، ما يعني أننا سنقرأ دائمًا بيانات العمود بالكامل من الـ granule، حتى إذا كنا نحتاج فقط إلى بيانات بعض التيارات الفرعية.
+
+<div id="zero_copy_concurrent_part_removal_max_postpone_ratio">
+  ## zero_copy_concurrent_part_removal_max_postpone_ratio
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.05" />
+
+الحد الأقصى للنسبة المئوية للأجزاء من المستوى الأعلى التي يمكن تأجيل إزالتها للحصول على نطاقات مستقلة أصغر.
+يُنصح بعدم تغييره.
+
+<div id="zero_copy_concurrent_part_removal_max_split_times">
+  ## zero_copy_concurrent_part_removal_max_split_times
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+الحد الأقصى لعمق التكرار عند تقسيم نطاقات الأجزاء القديمة المستقلة إلى
+نطاقات فرعية أصغر. يُنصح بعدم تغييره.
+
+<div id="zero_copy_merge_mutation_min_parts_size_sleep_before_lock">
+  ## zero_copy_merge_mutation_min_parts_size_sleep_before_lock
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+إذا كان النسخ المتماثل بدون نسخ مفعّلًا، فانتظر مدة عشوائية قبل محاولة الحصول على القفل، وذلك بحسب حجم الأجزاء لعمليتَي الدمج أو التعديل
+
+<div id="zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock">
+  ## zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+إذا كان النسخ المتماثل دون نسخ مُمكّنًا، فانتظر مدة عشوائية تصل إلى 500 مللي ثانية
+قبل محاولة الحصول على قفل لإجراء عملية دمج أو mutation.
+
+<div id="zookeeper_session_expiration_check_period">
+  ## zookeeper_session_expiration_check_period
+</div>
+
+<SettingsInfoBlock type="ثوانٍ" default_value="60" />
+
+فترة التحقق من انتهاء جلسة ZooKeeper، بالثواني.
+
+القيم الممكنة:
+
+* أي عدد صحيح موجب.

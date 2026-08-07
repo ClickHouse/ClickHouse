@@ -1,0 +1,4 @@
+c1	Nullable(Int64)					
+c2	Nullable(Float64)					
+c3	Nullable(String)					
+42	42.42	True

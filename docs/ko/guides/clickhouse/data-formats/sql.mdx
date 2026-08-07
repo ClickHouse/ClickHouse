@@ -1,0 +1,125 @@
+---
+sidebarTitle: 'SQL 덤프'
+slug: /integrations/data-formats/sql
+title: 'ClickHouse에서 SQL 데이터 삽입 및 덤프 생성'
+description: 'SQL 덤프를 사용하여 다른 데이터베이스와 ClickHouse 간에 데이터를 전송하는 방법을 설명하는 페이지입니다.'
+doc_type: 'guide'
+keywords: ['sql format', 'data export', 'data import', 'backup', 'sql dumps']
+---
+
+ClickHouse는 다양한 방식으로 OLTP 데이터베이스 인프라와 쉽게 통합할 수 있습니다. 그중 한 가지 방법은 SQL 덤프를 사용해 다른 데이터베이스와 ClickHouse 간에 데이터를 전송하는 것입니다.
+
+<div id="creating-sql-dumps">
+  ## SQL 덤프 생성
+</div>
+
+[SQLInsert](/ko/reference/formats/SQLInsert)를 사용하면 데이터를 SQL 포맷으로 덤프할 수 있습니다. ClickHouse는 데이터를 `INSERT INTO <table name> VALUES(...` 형식으로 기록하며, [`output_format_sql_insert_table_name`](/ko/reference/settings/formats#output_format_sql_insert_table_name) 설정 옵션의 값을 테이블 이름으로 사용합니다:
+
+```sql
+SET output_format_sql_insert_table_name = 'some_table';
+SELECT * FROM some_data
+INTO OUTFILE 'dump.sql'
+FORMAT SQLInsert
+```
+
+컬럼 이름은 [`output_format_sql_insert_include_column_names`](/ko/reference/settings/formats#output_format_sql_insert_include_column_names) 옵션을 비활성화하여 생략할 수 있습니다:
+
+```sql
+SET output_format_sql_insert_include_column_names = 0
+```
+
+이제 [dump.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/dump.sql) 파일을 다른 OLTP 데이터베이스로 가져올 수 있습니다:
+
+```bash
+mysql some_db < dump.sql
+```
+
+`some_db` MySQL 데이터베이스에 `some_table` 테이블이 존재한다고 가정합니다.
+
+일부 DBMS는 단일 배치에서 처리할 수 있는 값의 수에 제한이 있을 수 있습니다. 기본적으로 ClickHouse는 65k개의 값으로 이루어진 배치를 생성하지만, 이는 [`output_format_sql_insert_max_batch_size`](/ko/reference/settings/formats#output_format_sql_insert_max_batch_size) 옵션으로 변경할 수 있습니다:
+
+```sql
+SET output_format_sql_insert_max_batch_size = 1000;
+```
+
+<div id="exporting-a-set-of-values">
+  ### 값 집합 내보내기
+</div>
+
+ClickHouse에는 [Values](/ko/reference/formats/Values) 포맷이 있는데, 이는 SQLInsert와 비슷하지만 `INSERT INTO table VALUES` 부분을 생략하고 값 집합만 반환합니다:
+
+```sql
+SELECT * FROM some_data LIMIT 3 FORMAT Values
+```
+
+```response
+('Bangor_City_Forest','2015-07-01',34),('Alireza_Afzal','2017-02-01',24),('Akhaura-Laksam-Chittagong_Line','2015-09-01',30)
+```
+
+<div id="inserting-data-from-sql-dumps">
+  ## SQL 덤프에서 데이터 삽입하기
+</div>
+
+SQL 덤프를 읽으려면 [MySQLDump](/ko/reference/formats/MySQLDump) 포맷을 사용합니다:
+
+```sql
+SELECT *
+FROM file('dump.sql', MySQLDump)
+LIMIT 5
+```
+
+```response
+┌─path───────────────────────────┬──────month─┬─hits─┐
+│ Bangor_City_Forest             │ 2015-07-01 │   34 │
+│ Alireza_Afzal                  │ 2017-02-01 │   24 │
+│ Akhaura-Laksam-Chittagong_Line │ 2015-09-01 │   30 │
+│ 1973_National_500              │ 2017-10-01 │   80 │
+│ Attachment                     │ 2017-09-01 │ 1356 │
+└────────────────────────────────┴────────────┴──────┘
+```
+
+기본적으로 ClickHouse는 알 수 없는 컬럼을 건너뛰고([input&#95;format&#95;skip&#95;unknown&#95;fields](/ko/reference/settings/formats#input_format_skip_unknown_fields) 옵션으로 제어), 덤프에서 처음 발견된 테이블의 데이터를 처리합니다(여러 테이블이 하나의 파일에 덤프된 경우). DDL 문은 건너뜁니다. MySQL 덤프에서 테이블로 데이터를 로드하려면([mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql) 파일):
+
+```sql
+INSERT INTO some_data
+FROM INFILE 'mysql.sql' FORMAT MySQLDump
+```
+
+MySQL dump 파일을 사용해 테이블을 자동으로 생성할 수도 있습니다:
+
+```sql
+CREATE TABLE table_from_mysql
+ENGINE = MergeTree
+ORDER BY tuple() AS
+SELECT *
+FROM file('mysql.sql', MySQLDump)
+```
+
+여기서는 ClickHouse가 자동으로 추론한 구조를 바탕으로 `table_from_mysql`이라는 테이블을 생성했습니다. ClickHouse는 데이터에 기반해 타입을 감지하거나, 가능한 경우 DDL을 사용합니다:
+
+```sql
+DESCRIBE TABLE table_from_mysql;
+```
+
+```response
+┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path  │ Nullable(String) │              │                    │         │                  │                │
+│ month │ Nullable(Date32) │              │                    │         │                  │                │
+│ hits  │ Nullable(UInt32) │              │                    │         │                  │                │
+└───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="other-formats">
+  ## 기타 포맷
+</div>
+
+ClickHouse는 다양한 시나리오와 플랫폼을 지원하기 위해 텍스트 포맷과 바이너리 포맷을 비롯한 여러 포맷을 지원합니다. 다음 문서에서 더 많은 포맷과 활용 방법을 살펴보십시오.
+
+* [CSV 및 TSV 포맷](/ko/guides/clickhouse/data-formats/csv-tsv)
+* [Parquet](/ko/guides/clickhouse/data-formats/parquet)
+* [JSON 포맷](/ko/guides/clickhouse/data-formats/json/intro)
+* [Regex 및 Template](/ko/guides/clickhouse/data-formats/templates-regex)
+* [네이티브 및 바이너리 포맷](/ko/guides/clickhouse/data-formats/binary)
+* **SQL 포맷**
+
+또한 [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)도 확인해 보십시오. ClickHouse 서버 없이 로컬/원격 파일을 대상으로 작업할 수 있는 이식 가능한 완전한 기능의 도구입니다.

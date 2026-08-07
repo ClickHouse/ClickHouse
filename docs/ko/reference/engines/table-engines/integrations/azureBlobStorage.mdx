@@ -1,0 +1,147 @@
+---
+description: '이 엔진은 Azure Blob Storage 생태계와 통합됩니다.'
+sidebarTitle: 'Azure Blob Storage'
+slug: /engines/table-engines/integrations/azureBlobStorage
+title: 'AzureBlobStorage 테이블 엔진'
+doc_type: 'reference'
+---
+
+이 엔진은 [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) 생태계와 통합됩니다.
+
+<div id="create-table">
+  ## 테이블 생성
+</div>
+
+```sql
+CREATE TABLE azure_blob_storage_table (name String, value UInt32)
+    ENGINE = AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, extra_credentials(client_id=, tenant_id=)])
+    [PARTITION BY expr]
+    [SETTINGS ...]
+```
+
+<div id="engine-parameters">
+  ### 엔진 매개변수
+</div>
+
+* `endpoint` — container 및 prefix가 포함된 AzureBlobStorage endpoint URL입니다. 사용하는 인증 방법에 따라 필요한 경우 `account_name`을 선택적으로 포함할 수 있습니다. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) 또는 `storage_account_url`, `account_name`, `container`를 사용해 이러한 매개변수를 각각 별도로 제공할 수도 있습니다. prefix를 지정하려면 `endpoint`를 사용해야 합니다.
+* `endpoint_contains_account_name` - `endpoint`에 `account_name`이 포함되어 있는지를 지정하는 플래그입니다. `account_name`은 특정 인증 방법에서만 필요합니다. (기본값: `true`)
+* `connection_string|storage_account_url` — `connection_string`에는 account name과 key가 포함됩니다([Create connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)). 또는 여기서 스토리지 계정 URL을 제공하고, account name과 account key를 별도 매개변수로 지정할 수도 있습니다(`account_name` 및 `account_key` 매개변수 참조).
+* `container_name` - Container 이름
+* `blobpath` - 파일 경로입니다. readonly 모드에서는 다음 와일드카드를 지원합니다: `*`, `**`, `?`, `{abc,def}`, `{N..M}`. 여기서 `N`, `M`은 숫자이고 `'abc'`, `'def'`는 문자열입니다.
+* `account_name` - `storage_account_url`을 사용하는 경우 여기에서 account name을 지정할 수 있습니다
+* `account_key` - `storage_account_url`을 사용하는 경우 여기에서 account key를 지정할 수 있습니다
+* `format` — 파일의 [포맷](/ko/reference/formats/index)입니다.
+* `compression` — 지원되는 값: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. 기본적으로 파일 확장자를 기준으로 압축을 자동 감지합니다. (`auto`로 설정한 것과 동일합니다.)
+* `partition_strategy` – 옵션: `wildcard` 또는 `hive`. `wildcard`는 경로에 `{_partition_id}`가 있어야 하며, 이 값은 파티션 키로 대체됩니다. `hive`는 와일드카드를 허용하지 않으며, 경로를 테이블 루트로 간주하고, 파일 이름으로 Snowflake ID를 사용하며 파일 포맷을 확장자로 하는 Hive 스타일의 파티션 디렉터리를 생성합니다. 기본값은 `file_like_engine_default_partition_strategy` 설정입니다(`26.6`보다 오래된 `compatibility` 설정에서는 `wildcard`, 그 외에는 `hive`).
+* `partition_columns_in_data_file` - `hive` 파티션 전략에서만 사용됩니다. 데이터 파일에 파티션 컬럼이 기록되어 있다고 ClickHouse가 예상할지 여부를 지정합니다. 기본값은 `false`입니다.
+* `extra_credentials` - 인증에 `client_id`와 `tenant_id`를 사용합니다. `extra_credentials`가 제공되면 `account_name`과 `account_key`보다 우선 적용됩니다.
+
+**예시**
+
+로컬 Azure Storage 개발에는 Azurite 에뮬레이터를 사용할 수 있습니다. 자세한 내용은 [여기](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage)에서 확인할 수 있습니다. 로컬 Azurite 인스턴스를 사용하는 경우, 아래 명령에서 `http://azurite1:10000` 대신 `http://localhost:10000`을 사용해야 할 수 있습니다. 여기서는 Azurite가 호스트 `azurite1`에서 사용 가능하다고 가정합니다.
+
+```sql
+CREATE TABLE test_table (key UInt64, data String)
+    ENGINE = AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', 'test_table', 'CSV');
+
+INSERT INTO test_table VALUES (1, 'a'), (2, 'b'), (3, 'c');
+
+SELECT * FROM test_table;
+```
+
+```text
+┌─key──┬─data──┐
+│  1   │   a   │
+│  2   │   b   │
+│  3   │   c   │
+└──────┴───────┘
+```
+
+<div id="virtual-columns">
+  ## 가상 컬럼
+</div>
+
+* `_path` — 파일 경로입니다. 유형: `LowCardinality(String)`.
+* `_file` — 파일 이름입니다. 유형: `LowCardinality(String)`.
+* `_size` — 파일 크기(바이트)입니다. 유형: `Nullable(UInt64)`. 크기를 알 수 없으면 값은 `NULL`입니다.
+* `_time` — 파일의 마지막 수정 시각입니다. 유형: `Nullable(DateTime)`. 시각을 알 수 없으면 값은 `NULL`입니다.
+
+<div id="authentication">
+  ## 인증
+</div>
+
+현재 인증 방법은 3가지입니다.
+
+* `Managed Identity` - `endpoint`, `connection_string` 또는 `storage_account_url`을 제공하면 사용할 수 있습니다.
+* `SAS Token` - `endpoint`, `connection_string` 또는 `storage_account_url`을 제공하면 사용할 수 있습니다. URL에 `?`가 포함되어 있으면 SAS 토큰으로 식별됩니다. 예시는 [azureBlobStorage](/ko/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens)를 참조하십시오.
+* `Workload Identity` - `endpoint` 또는 `storage_account_url`을 제공하면 사용할 수 있습니다. 구성에서 `use_workload_identity` 매개변수를 설정하면 인증에 [workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)가 사용됩니다.
+
+<div id="data-cache">
+  ### 데이터 캐시
+</div>
+
+`Azure` 테이블 엔진은 로컬 디스크에 데이터를 캐시하는 기능을 지원합니다.
+파일 시스템 캐시 구성 옵션과 사용 방법은 이 [섹션](/ko/concepts/features/configuration/server-config/storing-data#using-local-cache)에서 확인하십시오.
+캐시는 스토리지 객체의 경로와 ETag를 기준으로 생성되므로 ClickHouse는 오래된 캐시 버전을 읽지 않습니다.
+
+캐시를 활성화하려면 `filesystem_cache_name = '<name>'` 및 `enable_filesystem_cache = 1` 설정을 사용하십시오.
+
+```sql
+SELECT *
+FROM azureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;', 'testcontainer', 'test_table', 'CSV')
+SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
+```
+
+1. ClickHouse 설정 파일에 다음 섹션을 추가하십시오:
+
+```xml
+<clickhouse>
+    <filesystem_caches>
+        <cache_for_azure>
+            <path>path to cache directory</path>
+            <max_size>10Gi</max_size>
+        </cache_for_azure>
+    </filesystem_caches>
+</clickhouse>
+```
+
+2. ClickHouse `storage_configuration` 섹션의 캐시 구성(따라서 캐시 저장소도)을 재사용합니다. [자세한 내용은 여기](/ko/concepts/features/configuration/server-config/storing-data#using-local-cache)
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+`PARTITION BY` — 선택 사항입니다. 대부분의 경우 파티션 키는 필요하지 않으며, 필요하더라도 보통 월 단위보다 더 세분화된 파티션 키는 필요하지 않습니다. 파티셔닝은 쿼리 속도를 높이지 않습니다(`ORDER BY` 표현식과는 다릅니다). 지나치게 세분화된 파티셔닝은 절대 사용하지 마십시오. 데이터를 클라이언트 식별자나 이름으로 파티셔닝하지 마십시오(대신 클라이언트 식별자 또는 이름을 `ORDER BY` 표현식의 첫 번째 컬럼으로 지정하십시오).
+
+월 단위 파티셔닝에는 `toYYYYMM(date_column)` 표현식을 사용하십시오. 여기서 `date_column`은 [Date](/ko/reference/data-types/date) 타입의 날짜 컬럼입니다. 이 경우 파티션 이름의 포맷은 `"YYYYMM"`입니다.
+
+<div id="partition-strategy">
+  #### 파티션 전략
+</div>
+
+`wildcard`: 파일 경로의 `{_partition_id}` 와일드카드를 실제 파티션 키로 대체합니다. 읽기는 지원되지 않습니다. `26.6`보다 이전 `compatibility` 설정에서만 기본값으로 선택되며, 그 외에는 `hive`가 기본값입니다(`file_like_engine_default_partition_strategy` 설정 참조).
+
+`hive`는 읽기 및 쓰기에 Hive 스타일 파티셔닝을 사용합니다. 읽기는 재귀적 glob 패턴을 사용해 구현됩니다. 쓰기는 다음 포맷으로 파일을 생성합니다: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+
+참고: `hive` 파티션 전략을 사용하는 경우 `use_hive_partitioning` 설정은 효과가 없습니다.
+
+`hive` 파티션 전략의 예시:
+
+```sql
+arthur :) create table azure_table (year UInt16, country String, counter UInt8) ENGINE=AzureBlobStorage(account_name='devstoreaccount1', account_key='Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', storage_account_url = 'http://localhost:30000/devstoreaccount1', container='cont', blob_path='hive_partitioned', format='Parquet', compression='auto', partition_strategy='hive') PARTITION BY (year, country);
+
+arthur :) insert into azure_table values (2020, 'Russia', 1), (2021, 'Brazil', 2);
+
+arthur :) select _path, * from azure_table;
+
+   ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
+1. │ cont/hive_partitioned/year=2020/country=Russia/7351305360873664512.parquet │ 2020 │ Russia  │       1 │
+2. │ cont/hive_partitioned/year=2021/country=Brazil/7351305360894636032.parquet │ 2021 │ Brazil  │       2 │
+   └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+[Azure Blob Storage 테이블 함수](/ko/reference/functions/table-functions/azureBlobStorage)

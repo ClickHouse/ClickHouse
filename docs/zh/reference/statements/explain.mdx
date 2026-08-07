@@ -1,0 +1,707 @@
+---
+description: 'EXPLAIN 文档'
+sidebarTitle: 'EXPLAIN'
+slug: /sql-reference/statements/explain
+title: 'EXPLAIN 语句'
+doc_type: 'reference'
+---
+
+显示语句的执行计划。
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/hP6G2Nlz_cA"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+语法：
+
+```sql
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+    [
+      SELECT ... |
+      tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
+    ]
+    [FORMAT ...]
+```
+
+示例：
+
+```sql
+EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM numbers(10) ORDER BY sum(number) ASC FORMAT TSV;
+```
+
+```sql
+Union
+  Expression (Projection)
+    Expression (Before ORDER BY and SELECT)
+      Aggregating
+        Expression (Before GROUP BY)
+          SettingQuotaAndLimits (Set limits and quota after reading from storage)
+            ReadFromStorage (SystemNumbers)
+  Expression (Projection)
+    MergingSorted (Merge sorted streams for ORDER BY)
+      MergeSorting (Merge sorted blocks for ORDER BY)
+        PartialSorting (Sort each block for ORDER BY)
+          Expression (Before ORDER BY and SELECT)
+            Aggregating
+              Expression (Before GROUP BY)
+                SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                  ReadFromStorage (SystemNumbers)
+```
+
+<div id="explain-types">
+  ## EXPLAIN 类型
+</div>
+
+* `AST` — 抽象语法树。
+* `SYNTAX` — 经 AST 层级优化后的查询文本。
+* `QUERY TREE` — 经查询树层级优化后的查询树。
+* `PLAN` — 查询执行计划。
+* `PIPELINE` — 查询执行流水线。
+
+<div id="explain-ast">
+  ### EXPLAIN AST
+</div>
+
+转储查询的 AST。支持所有类型的查询，不仅限于 `SELECT`。
+
+设置：
+
+* `graph` – 以 [DOT](https://en.wikipedia.org/wiki/DOT_\(graph_description_language\)) 图描述语言定义的图形式输出 AST。默认值：0。
+
+示例：
+
+```sql
+EXPLAIN AST SELECT 1;
+```
+
+```sql
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Literal UInt64_1
+```
+
+```sql
+EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
+```
+
+```sql
+  explain
+  AlterQuery  t1 (children 1)
+   ExpressionList (children 1)
+    AlterCommand 27 (children 1)
+     Function equals (children 1)
+      ExpressionList (children 2)
+       Identifier date
+       Function today (children 1)
+        ExpressionList
+```
+
+<div id="explain-syntax">
+  ### EXPLAIN SYNTAX
+</div>
+
+显示查询在语法分析后的抽象语法树 (AST) 。
+
+其过程是：解析查询、构建查询 AST 和查询树，并可选择运行查询分析器和优化阶段，然后再将查询树转换回查询 AST。
+
+设置：
+
+* `oneline` – 以单行形式输出查询。默认值：`0`。
+* `run_query_tree_passes` – 在转储查询树之前运行查询树处理阶段。默认值：`0`。
+* `query_tree_passes` – 如果设置了 `run_query_tree_passes`，则指定要运行的处理阶段数量。若未指定 `query_tree_passes`，则会运行所有处理阶段。
+
+示例：
+
+```sql title="Query"
+EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+```
+
+```sql title="Response"
+SELECT *
+FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
+WHERE (a.number = b.number) AND (b.number = c.number)
+```
+
+使用 `run_query_tree_passes` 时：
+
+```sql title="Query"
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+```
+
+```sql title="Response"
+SELECT
+    __table1.number AS `a.number`,
+    __table2.number AS `b.number`,
+    __table3.number AS `c.number`
+FROM system.numbers AS __table1
+ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
+ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
+```
+
+<div id="explain-query-tree">
+  ### EXPLAIN QUERY TREE
+</div>
+
+设置：
+
+* `run_passes` — 在转储查询树之前运行所有查询树处理阶段。默认值：`1`。
+* `dump_passes` — 在转储查询树之前，先转储已使用处理阶段的信息。默认值：`0`。
+* `passes` — 指定要运行的处理阶段数量。如果设置为 `-1`，则运行所有处理阶段。默认值：`-1`。
+* `dump_tree` — 显示查询树。默认值：`1`。
+* `dump_ast` — 显示根据查询树生成的查询 AST。默认值：`0`。
+
+示例：
+
+```sql
+EXPLAIN QUERY TREE SELECT id, value FROM test_table;
+```
+
+```sql
+QUERY id: 0
+  PROJECTION COLUMNS
+    id UInt64
+    value String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
+      COLUMN id: 4, column_name: value, result_type: String, source_id: 3
+  JOIN TREE
+    TABLE id: 3, table_name: default.test_table
+```
+
+<div id="explain-plan">
+  ### EXPLAIN PLAN
+</div>
+
+转储查询计划步骤。
+
+设置：
+
+* `optimize` — 控制在显示查询计划之前是否应用查询计划优化。默认值：1。
+* `header` — 打印步骤的输出请求头。默认值：0。
+* `description` — 打印步骤说明。默认值：1。
+* `indexes` — 显示使用到的索引、每个已应用索引过滤掉的 parts 数量，以及过滤掉的粒度数量。默认值：0。支持 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表。从 ClickHouse &gt;= v25.9 开始，此语句只有在配合 `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0` 使用时，才会显示合理的输出。
+* `projections` — 显示所有已分析的投影，以及它们基于投影主键条件对 part 级过滤的影响。对于每个投影，此部分都会包含统计信息，例如通过投影主键评估的 parts、行、标记和范围数量。它还会显示由于这种过滤而跳过了多少 data parts，而无需实际从投影本身读取数据。某个投影是否实际用于读取，还是仅用于过滤分析，可通过 `description` 字段判断。默认值：0。支持 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表。
+* `actions` — 打印步骤操作的详细信息。默认值：0。
+* `sorting` — 为每个生成有序输出的计划步骤打印排序说明。默认值：0。
+* `keep_logical_steps` — 对 joins 保留逻辑计划步骤，而不是将其转换为物理 join 实现。默认值：0。
+* `json` — 以 [JSON](/zh/reference/formats/JSON/JSON) 格式将查询计划步骤打印为一行。默认值：0。建议使用 [TabSeparatedRaw (TSVRaw)](/zh/reference/formats/TabSeparated/TabSeparatedRaw) 格式，以避免不必要的转义。
+* `input_headers` — 打印步骤的输入请求头。默认值：0。通常仅对开发者调试输入输出请求头不匹配相关问题时有用。
+* `column_structure` — 除列名和类型外，还会打印请求头中列的结构。默认值：0。通常仅对开发者调试输入输出请求头不匹配相关问题时有用。
+* `distributed` — 显示在远程节点上为分布式表或并行副本执行的查询计划。默认值：0。
+* `compact` — 启用后，会在计划中隐藏表达式步骤以及详细操作信息 (输入、函数、别名和输出位置) 。仅在 actions = 1 时生效。默认值：0。
+* `pretty` — 使用线框字符 (├──、└──、│) 而不是缩进来打印计划树，以便更直观地展示层级结构。还会以内联方式格式化 join 步骤属性。默认值：0。
+
+当 `json=1` 时，步骤名称会包含一个额外后缀，其中带有唯一的步骤标识符。
+
+示例：
+
+```sql
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+```
+
+```sql
+Union
+  Expression (Projection)
+  Expression (Before ORDER BY and SELECT)
+    Aggregating
+      Expression (Before GROUP BY)
+        SettingQuotaAndLimits (Set limits and quota after reading from storage)
+          ReadFromStorage (SystemNumbers)
+```
+
+<Note>
+  不支持步骤和查询成本估算。
+</Note>
+
+当 `json = 1` 时，查询计划将以 JSON 格式表示。每个节点都是一个字典，并且始终包含 `Node Type` 和 `Plans` 这两个键。`Node Type` 是一个表示步骤名称的字符串。`Plans` 是一个包含子步骤描述的数组。根据节点类型和设置，节点中还可能包含其他可选键。
+
+示例：
+
+```sql
+EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Union",
+      "Node Id": "Union_10",
+      "Plans": [
+        {
+          "Node Type": "Expression",
+          "Node Id": "Expression_13",
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_0"
+            }
+          ]
+        },
+        {
+          "Node Type": "Expression",
+          "Node Id": "Expression_16",
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_4"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+```
+
+当 `description` = 1 时，会在该步骤中添加 `Description` 键：
+
+```json
+{
+  "Node Type": "ReadFromStorage",
+  "Description": "SystemOne"
+}
+```
+
+当 `header` = 1 时，`Header` 键会以列数组的形式添加到该步骤中。
+
+示例：
+
+```sql
+EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Node Id": "Expression_5",
+      "Header": [
+        {
+          "Name": "1",
+          "Type": "UInt8"
+        },
+        {
+          "Name": "plus(2, dummy)",
+          "Type": "UInt16"
+        }
+      ],
+      "Plans": [
+        {
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0",
+          "Header": [
+            {
+              "Name": "dummy",
+              "Type": "UInt8"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+```
+
+当 `indexes` = 1 时，会添加 `Indexes` 键。它包含一个由已使用索引组成的数组。每个索引都以 JSON 格式描述，包含 `Type` 键 (其值为字符串 `Partition Min-Max`、`Partition`、`Statistics`、`PrimaryKey` 或 `Skip`) 以及以下可选键：
+
+* `Name` — 索引名称 (目前仅用于 `Skip` 索引) 。
+* `Keys` — 该索引使用的列数组。
+* `Condition` — 使用的条件。
+* `Description` — 索引描述 (目前仅用于 `Skip` 索引) 。
+* `Parts` — 应用该索引后/前的 parts 数量。
+* `Granules` — 应用该索引后/前的粒度数量。
+* `Ranges` — 应用该索引后的粒度范围数量。
+
+示例：
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Indexes": [
+  {
+    "Type": "Partition Min-Max",
+    "Keys": ["y"],
+    "Condition": "(y in [1, +inf))",
+    "Parts": 4/5,
+    "Granules": 11/12
+  },
+  {
+    "Type": "Partition",
+    "Keys": ["y", "bitAnd(z, 3)"],
+    "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
+    "Parts": 3/4,
+    "Granules": 10/11
+  },
+  {
+    "Type": "PrimaryKey",
+    "Keys": ["x", "y"],
+    "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
+    "Parts": 2/3,
+    "Granules": 6/10,
+    "Search Algorithm": "generic exclusion search"
+  },
+  {
+    "Type": "Skip",
+    "Name": "t_minmax",
+    "Description": "minmax GRANULARITY 2",
+    "Parts": 1/2,
+    "Granules": 2/6
+  },
+  {
+    "Type": "Skip",
+    "Name": "t_set",
+    "Description": "set GRANULARITY 2",
+    "": 1/1,
+    "Granules": 1/2
+  }
+]
+```
+
+当 `projections` = 1 时，会新增 `Projections` 键。它包含一个由已分析投影组成的数组。每个投影都以 JSON 形式描述，包含以下键：
+
+* `Name` — 投影名称。
+* `Condition` — 所使用的投影主键条件。
+* `Description` — 该投影使用方式的描述 (例如 part 级过滤) 。
+* `Selected Parts` — 该投影选中的 parts 数量。
+* `Selected Marks` — 选中的标记数量。
+* `Selected Ranges` — 选中的范围数量。
+* `Selected Rows` — 选中的行数。
+* `Filtered Parts` — 由于 part 级过滤而跳过的 parts 数量。
+
+示例：
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Projections": [
+  {
+    "Name": "region_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(region in ['us_west', 'us_west'])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 3,
+    "Selected Marks": 3,
+    "Selected Ranges": 3,
+    "Selected Rows": 3,
+    "Filtered Parts": 2
+  },
+  {
+    "Name": "user_id_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(user_id in [107, 107])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 1,
+    "Selected Marks": 1,
+    "Selected Ranges": 1,
+    "Selected Rows": 1,
+    "Filtered Parts": 2
+  }
+]
+```
+
+当 `actions` = 1 时，添加的键取决于步骤类型。
+
+示例：
+
+```sql
+EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Node Id": "Expression_5",
+      "Expression": {
+        "Inputs": [
+          {
+            "Name": "dummy",
+            "Type": "UInt8"
+          }
+        ],
+        "Actions": [
+          {
+            "Node Type": "INPUT",
+            "Result Type": "UInt8",
+            "Result Name": "dummy",
+            "Arguments": [0],
+            "Removed Arguments": [0],
+            "Result": 0
+          },
+          {
+            "Node Type": "COLUMN",
+            "Result Type": "UInt8",
+            "Result Name": "1",
+            "Column": "Const(UInt8)",
+            "Arguments": [],
+            "Removed Arguments": [],
+            "Result": 1
+          }
+        ],
+        "Outputs": [
+          {
+            "Name": "1",
+            "Type": "UInt8"
+          }
+        ],
+        "Positions": [1]
+      },
+      "Plans": [
+        {
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0"
+        }
+      ]
+    }
+  }
+]
+```
+
+设置 `compact = 1` 后，每个 `Expression` 步骤将被移除。此外，若同时设置 `actions = 1`，则 `Actions` 和 `Positions` 行将被隐藏，仅保留步骤描述：
+
+```sql
+EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+```
+
+```text
+Aggregating
+Keys: modulo(__table1.number, 4_UInt8)
+Aggregates:
+    sum(__table1.number)
+      Function: sum(UInt64) → UInt64
+      Arguments: __table1.number
+Skip merging: 0
+  ReadFromSystemNumbers
+```
+
+当 `distributed` = 1 时，输出不仅包含本地查询计划，还包含将在远程节点上执行的查询计划。这对于分析和调试分布式查询非常有用。
+
+分布式表示例：
+
+```sql
+EXPLAIN distributed=1 SELECT * FROM remote('127.0.0.{1,2}', numbers(2)) WHERE number = 1;
+```
+
+```sql
+Union
+  Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromSystemNumbers
+  Expression ((Project names + (Projection + Change column names to column identifiers)))
+    ReadFromRemote (Read from remote replica)
+      Expression ((Project names + Projection))
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromSystemNumbers
+```
+
+并行副本示例：
+
+```sql
+SET enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'default';
+
+EXPLAIN distributed=1 SELECT sum(number) FROM test_table GROUP BY number % 4;
+```
+
+```sql
+Expression ((Project names + Projection))
+  MergingAggregated
+    Union
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.test_table)
+      ReadFromRemoteParallelReplicas
+        BlocksMarshalling
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (default.test_table)
+```
+
+在这两个示例中，查询计划均展示了完整的执行流程，包括本地步骤和远程步骤。
+
+当 `pretty` = 1 时，计划树将以线条字符代替缩进的方式展示，并为关键步骤显示额外信息：
+
+* **查询输出列** 显示在执行计划顶部。
+* 过滤器、聚合键、排序说明和窗口函数中的 **表达式** 会以便于阅读的类 SQL 记法显示 (例如，显示为 `a + 1 > 5`，而不是 `greater(plus(a, 1), 5)`) 。为提高清晰度，内部列标识符前缀 (如 `__table1.`) 会被移除。
+* **Source 步骤** (例如 `ReadFromMergeTree`) 会显示其输出列。
+* **Filter 步骤** 会以 SQL 记法显示过滤条件。如果存在运行时 join 过滤器，则会单独显示。
+* **Aggregation 步骤** 会显示键以及聚合函数及其参数 (例如 `sum(c)`、`count()`) 。
+* 来自元组字面量的 **IN 集合** 会显示其值 (大型集合会被截断) ；基于子查询的集合会标记为 `subquery1`、`subquery2` 等；来自 `Set` engine 表的集合会显示表名。
+* **Join 步骤** 会用数学符号显示 join 关系、预估结果行数，
+  以及输出列分别来自左侧还是右侧。以下符号用于
+  表示不同的 join 类型：
+
+| 符号                     | Join 类型 |
+| ---------------------- | ------- |
+| `⋈`                    | 内连接     |
+| `⟕`                    | 左连接     |
+| `⟖`                    | 右连接     |
+| `⟗`                    | 全连接     |
+| `⋉`                    | 左半连接    |
+| `⋊`                    | 右半连接    |
+| `⋉` with strikethrough | 左反连接    |
+| `⋊` with strikethrough | 右反连接    |
+| `×`                    | 交叉连接    |
+
+例如，`t1 ⟕ t2` 表示表 `t1` 与 `t2` 之间的左连接。
+表名后方括号中的数字 (例如 `t1[100]`) 表示预估行数，
+前提是表统计信息可用。
+
+`pretty` 选项与 `compact = 1` 搭配使用效果很好，它会隐藏 `Expression` 步骤和详细的动作信息，使执行计划更易于阅读。
+
+```sql
+EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+```
+
+```text
+Expression ((Project names + Projection))
+└──Aggregating
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      └──ReadFromSystemNumbers
+```
+
+一个更详细的 JOIN 示例：
+
+```sql
+CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
+INSERT INTO t2 SELECT number, toString(number) FROM numbers(100);
+
+EXPLAIN actions = 1, compact = 1, pretty = 1
+SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
+```
+
+```text
+Output: id, value, t2.id, t2.value
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Output:
+│    Left:  id, value
+│    Right: id, value
+│  Join conditions: id = id
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: id, value
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: id, value
+```
+
+<div id="explain-pipeline">
+  ### EXPLAIN PIPELINE
+</div>
+
+设置：
+
+* `header` — 为每个输出端口打印请求头。默认值：0。
+* `graph` — 打印以 [DOT](https://en.wikipedia.org/wiki/DOT_\(graph_description_language\)) 图描述语言表示的图。默认值：0。
+* `compact` — 如果启用了 `graph` 设置，则以紧凑模式打印图。默认值：1。
+* `compact_repeated_processor_chains` — 在文本输出中，通过显示一份事件链副本及其重复次数，将相邻的重复处理器事件链进行紧凑表示。当同一事件链多次出现时 (例如在 joins 中) ，这可以让并行管道更易于阅读。它不会影响图输出。默认值：0。
+
+```text
+Resize 16 → 1
+  FillingRightJoinSide          │
+    SimpleSquashingTransform    │ × 16
+      Resize 1 → 16
+```
+
+当 `compact=0` 且 `graph=1` 时，处理器名称会包含一个额外的后缀，用于标明处理器的唯一标识符。
+
+示例：
+
+```sql
+EXPLAIN PIPELINE SELECT sum(number) FROM numbers_mt(100000) GROUP BY number % 4;
+```
+
+```sql
+(Union)
+(Expression)
+ExpressionTransform
+  (Expression)
+  ExpressionTransform
+    (Aggregating)
+    Resize 2 → 1
+      AggregatingTransform × 2
+        (Expression)
+        ExpressionTransform × 2
+          (SettingQuotaAndLimits)
+            (ReadFromStorage)
+            NumbersRange × 2 0 → 1
+```
+
+<div id="explain-estimate">
+  ### EXPLAIN ESTIMATE
+</div>
+
+显示在处理查询时，将从表中读取的预估行数、标记数和 parts 数量。适用于 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族的表。
+
+**示例**
+
+创建表：
+
+```sql title="Query"
+CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
+INSERT INTO ttt SELECT number FROM numbers(128);
+OPTIMIZE TABLE ttt;
+```
+
+```sql title="Query"
+EXPLAIN ESTIMATE SELECT * FROM ttt;
+```
+
+```text title="Response"
+┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
+│ default  │ ttt   │     1 │  128 │     8 │
+└──────────┴───────┴───────┴──────┴───────┘
+```
+
+<div id="explain-table-override">
+  ### EXPLAIN TABLE OVERRIDE
+</div>
+
+显示通过 table function 访问的表 schema 上应用表覆盖后的结果。
+还会进行一些验证；如果该覆盖会导致某种失败，则会抛出异常。
+
+**示例**
+
+假设你有一个如下所示的远程 MySQL 表：
+
+```sql title="Query"
+CREATE TABLE db.tbl (
+    id INT PRIMARY KEY,
+    created DATETIME DEFAULT now()
+)
+```
+
+```sql title="Query"
+EXPLAIN TABLE OVERRIDE mysql('127.0.0.1:3306', 'db', 'tbl', 'root', 'clickhouse')
+PARTITION BY toYYYYMM(assumeNotNull(created))
+```
+
+```text title="Response"
+┌─explain─────────────────────────────────────────────────┐
+│ PARTITION BY uses columns: `created` Nullable(DateTime) │
+└─────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  验证并不完整，因此查询成功也不能保证该覆盖不会导致问题。
+</Note>

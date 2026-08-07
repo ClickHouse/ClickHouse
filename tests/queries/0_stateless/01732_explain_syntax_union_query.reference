@@ -1,0 +1,141 @@
+(
+    SELECT 1
+    FROM system.one
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)
+-
+(
+    SELECT 1
+    FROM system.one
+)
+UNION ALL
+(
+    (
+        SELECT 1
+        FROM system.one
+    )
+    UNION DISTINCT
+    (
+        SELECT 1
+        FROM system.one
+    )
+    UNION DISTINCT
+    (
+        SELECT 1
+        FROM system.one
+    )
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)
+-
+SELECT x
+FROM
+(
+    (
+        SELECT 1 AS x
+        FROM system.one
+    )
+    UNION ALL
+    (
+        (
+            SELECT 1
+            FROM system.one
+        )
+        UNION DISTINCT
+        (
+            SELECT 1
+            FROM system.one
+        )
+        UNION DISTINCT
+        (
+            SELECT 1
+            FROM system.one
+        )
+    )
+    UNION ALL
+    (
+        SELECT 1
+        FROM system.one
+    )
+)
+-
+SELECT x
+FROM
+(
+    (
+        SELECT 1 AS x
+        FROM system.one
+    )
+    UNION ALL
+    (
+        SELECT 1
+        FROM system.one
+    )
+    UNION ALL
+    (
+        SELECT 1
+        FROM system.one
+    )
+)
+-
+(
+    SELECT 1
+    FROM system.one
+)
+UNION DISTINCT
+(
+    SELECT 1
+    FROM system.one
+)
+UNION DISTINCT
+(
+    SELECT 1
+    FROM system.one
+)
+-
+SELECT 1
+FROM system.one
+-
+(
+    (
+        SELECT 1
+        FROM system.one
+    )
+    UNION DISTINCT
+    (
+        SELECT 1
+        FROM system.one
+    )
+    UNION DISTINCT
+    (
+        SELECT 1
+        FROM system.one
+    )
+)
+UNION ALL
+(
+    SELECT 1
+    FROM system.one
+)

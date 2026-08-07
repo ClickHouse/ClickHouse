@@ -1,0 +1,253 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/telemetrygen
+title: 'telemetrygen으로 합성 OpenTelemetry 데이터 생성'
+sidebarTitle: 'telemetrygen을 사용한 합성 데이터'
+description: 'telemetrygen을 사용하여 다양한 합성 로그, 트레이스, 메트릭을 ClickStack OpenTelemetry collector로 전송합니다'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'telemetrygen', '합성 데이터', 'OpenTelemetry', '테스트', '로그', '트레이스', '메트릭', '관측성']
+---
+
+[`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen)은 OpenTelemetry Collector Contrib용 데이터 생성기입니다. 이 도구는 합성 OTLP 로그, 트레이스, 메트릭을 생성하며, 여러 서비스, 로그 심각도, 스팬 상태와 하위 스팬, 다양한 메트릭 타입 등 데이터 형태를 조정할 수 있는 플래그를 제공합니다. 이를 사용하면 ClickStack OpenTelemetry collector가 데이터를 수신하는지, 그리고 다양하고 현실적인 이벤트가 ClickStack UI에 표시되는지 확인할 수 있습니다.
+
+이 가이드는 collector가 이미 `4317`(gRPC) 및 `4318`(HTTP)에서 OTLP 엔드포인트와 함께 실행 중이라고 가정합니다.
+
+<Tabs>
+  <Tab title="관리형 ClickStack">
+    <Steps>
+      <Step>
+        ### 사전 요구 사항
+
+        이 가이드는 [Managed ClickStack 시작하기 가이드](/ko/clickstack/deployment/managed)를 완료했으며, `telemetrygen`을 실행하는 머신에서 OTLP gRPC (`4317`) 및 HTTP (`4318`) 엔드포인트에 연결할 수 있는 OpenTelemetry collector가 실행 중이라고 가정합니다. [collector를 보호](/ko/clickstack/ingesting-data/collector#securing-the-collector)하기 위해 `OTLP_AUTH_TOKEN`을 설정했다면 해당 값을 미리 준비해 두십시오.
+      </Step>
+
+      <Step>
+        ### telemetrygen 설치
+
+        Docker image에서 `telemetrygen`을 실행합니다(설치할 필요 없음). 아래 명령을 더 읽기 쉽게 유지할 수 있도록 간단한 wrapper를 정의합니다. `--add-host`를 사용하면 컨테이너가 호스트에서 수신 대기 중인 collector에 접근할 수 있습니다:
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=host.docker.internal:4317
+        ```
+
+        또는 Go로 바이너리를 설치한 뒤 대상 호스트를 `localhost`로 지정할 수도 있습니다:
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        export OTEL_ENDPOINT=localhost:4317
+        ```
+      </Step>
+
+      <Step>
+        ### 환경 변수 설정
+
+        collector가 보안 설정된 경우 인증 토큰을 export하세요:
+
+        ```shell
+        export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
+        ```
+
+        <Info>
+          **보안이 설정되지 않은 collector**
+
+          ClickStack OpenTelemetry collector는 기본적으로 인증이 설정되어 있지 않습니다. [collector 보안 설정](/ko/clickstack/ingesting-data/collector#securing-the-collector)을 따라 `OTLP_AUTH_TOKEN`을 설정하지 않았다면, 아래 helper에서 `--otlp-header` 줄을 제거하십시오.
+        </Info>
+
+        각 명령에서 달라지는 값(서비스, 심각도, 상태, 속성)만 지정하면 되도록 작은 `tg` helper를 정의합니다:
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${OTLP_AUTH_TOKEN}\"" \
+          --rate 5 --duration 30s "$@"; }
+        ```
+      </Step>
+
+      <Step>
+        ### 로그 생성
+
+        로그는 하나의 획일적인 스트림이 아니라, 대부분 정보성 로그로 구성하되 서비스 전반에 걸쳐 경고와 오류도 섞인 현실적인 심각도 조합으로 전송하십시오:
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        가장 유용한 로그 플래그는 다음과 같습니다.
+
+        * `--service`는 이벤트를 특정 서비스에 연결할 수 있도록 `service.name`을 설정합니다.
+        * `--severity-text`와 `--severity-number`는 수준을 설정합니다(`severity-number`는 1~24 범위입니다).
+        * `--body`는 로그 메시지를 설정합니다.
+        * `--otlp-attributes`는 리소스 수준 속성(`key="value"`, `key=true`, 또는 `key=<integer>`)을 설정합니다.
+        * `--telemetry-attributes`는 레코드별 속성을 설정합니다.
+      </Step>
+
+      <Step>
+        ### 트레이스 생성
+
+        여러 정상 서비스와 장애가 있는 종속성 1개에서 다중 스팬 트레이스를 전송합니다. 이렇게 하면 Service Map이 대부분은 정상이고 하나의 서비스에서만 오류가 발생하는 현실적인 형태를 띠게 되며, 오류 뷰도 채워집니다.
+
+        ```shell
+        # Healthy services: the bulk of the traffic, all spans Ok
+        for svc in frontend checkout cart; do
+          tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes "http.route=\"/$svc\""
+        done
+
+        # One slow dependency returning errors
+        tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.route="/charge"'
+        ```
+
+        가장 유용한 트레이스 플래그:
+
+        * `--child-spans`는 트레이스당 지정한 수만큼 하위 스팬을 생성하여 각 트레이스에 실제 깊이를 더합니다.
+        * `--span-duration`은 각 스팬의 지속 시간을 설정합니다(예: `120ms`, `2s`).
+        * `--status-code`는 `Unset`, `Error`, `Ok`(또는 `0`, `1`, `2`) 중 하나입니다. 오류 뷰를 테스트하려면 `Error`를 사용하세요.
+        * `--span-links`는 스팬 사이에 링크를 추가합니다.
+        * `--workers`는 더 많고 다양한 볼륨을 생성하기 위해 여러 생성기를 병렬로 실행합니다.
+      </Step>
+
+      <Step>
+        ### 메트릭 생성
+
+        대시보드에 카운터, 게이지, 분포가 포함되도록 일반적으로 사용되는 3가지 메트릭 유형을 전송합니다. 일부 생성기와 달리 `telemetrygen`은 메트릭에 대해 `--duration`을 지원하므로 수동으로 중지할 필요가 없습니다:
+
+        ```shell
+        tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+        tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+        tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+        ```
+
+        `--metric-type`는 `Gauge`, `Sum`, `Histogram` 또는 `ExponentialHistogram`을 사용할 수 있습니다. `--otlp-metric-name`은 UI에서 찾을 수 있도록 series 이름을 지정하고, `--aggregation-temporality`는 `delta` 또는 `cumulative`입니다.
+      </Step>
+
+      <Step>
+        ### ClickStack에서 확인
+
+        ClickHouse Cloud 콘솔에서 ClickStack UI를 여십시오. `검색` 보기에서 시간 범위를 `Last 15 minutes`로 설정하고 소스를 `Logs`와 `Traces` 사이에서 전환하십시오. `ServiceName`으로 필터링해 `frontend`, `checkout`, `cart`, `payment` 서비스를 확인하고, `SeverityText`로 필터링해 경고 및 오류 로그 항목을 찾으십시오. `payment` 트레이스를 열어 하위 스팬과 오류 상태를 확인하십시오. `Chart Explorer`를 열고 `Metrics`를 선택한 다음, 위에서 설정한 메트릭 이름 중 하나(예: `http.server.requests`)를 차트로 표시해 메트릭 수집을 확인하십시오.
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    <Steps>
+      <Step>
+        ### 사전 요구 사항
+
+        이 가이드는 [all-in-one image용 안내](/ko/clickstack/getting-started/oss)에 따라 Open Source ClickStack을 시작해 두었고, OTLP 엔드포인트(`4317` gRPC 및 `4318` HTTP)에 접근할 수 있다고 가정합니다. 또한 HyperDX UI의 `Team Settings > API Keys`에서 수집 API key를 준비해야 합니다.
+      </Step>
+
+      <Step>
+        ### telemetrygen 설치
+
+        Docker image로 `telemetrygen`을 실행합니다(설치할 필요는 없습니다). 아래 명령을 더 읽기 쉽게 유지할 수 있도록 간단한 wrapper를 정의합니다. `--add-host`를 사용하면 컨테이너가 호스트에서 수신 대기 중인 collector에 연결할 수 있습니다:
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=host.docker.internal:4317
+        ```
+
+        또는 Go로 바이너리를 설치하고 `localhost`를 대상으로 지정하십시오:
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        export OTEL_ENDPOINT=localhost:4317
+        ```
+      </Step>
+
+      <Step>
+        ### 환경 변수 설정
+
+        수집 API key를 설정합니다:
+
+        ```shell
+        export CLICKSTACK_API_KEY=<your_ingestion_api_key>
+        ```
+
+        각 명령에서는 달라지는 항목만 지정하면 되도록 작은 `tg` 헬퍼를 정의합니다(`service`, `severity`, `status`, `attributes`):
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${CLICKSTACK_API_KEY}\"" \
+          --rate 5 --duration 30s "$@"; }
+        ```
+      </Step>
+
+      <Step>
+        ### 로그 생성
+
+        하나의 균일한 스트림이 아니라, 대부분은 정보성 로그로 하고 경고와 오류도 포함되도록 서비스 전반에 걸쳐 심각도가 현실적으로 섞인 로그를 전송합니다:
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+      </Step>
+
+      <Step>
+        ### 트레이스 생성
+
+        정상적으로 동작하는 여러 서비스와 오류가 발생하는 하나의 종속성에서 여러 스팬으로 구성된 트레이스를 전송합니다. 그러면 Service Map이 대부분 정상이고 한 서비스에서만 오류가 발생하는 보다 현실적인 형태를 띠게 되며, 오류 뷰도 채워집니다:
+
+        ```shell
+        # Healthy services: the bulk of the traffic, all spans Ok
+        for svc in frontend checkout cart; do
+          tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes "http.route=\"/$svc\""
+        done
+
+        # One slow dependency returning errors
+        tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.route="/charge"'
+        ```
+      </Step>
+
+      <Step>
+        ### 메트릭 생성
+
+        차트에 counter, gauge, distribution이 모두 표시되도록 일반적으로 사용되는 3가지 메트릭 유형을 전송합니다:
+
+        ```shell
+        tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+        tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+        tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+        ```
+
+        `--metric-type`에는 `Gauge`, `Sum`, `Histogram` 또는 `ExponentialHistogram`을 지정할 수 있습니다.
+      </Step>
+
+      <Step>
+        ### ClickStack에서 확인
+
+        [http://localhost:8080](http://localhost:8080)에 접속하여 ClickStack UI를 여십시오. `검색` 보기에서 시간 범위를 `Last 15 minutes`로 설정하고 소스를 `Logs`와 `Traces`로 바꿔 가며 확인하십시오. `ServiceName`으로 필터링하여 `frontend`, `checkout`, `cart`, `payment` 서비스를 확인하고, `SeverityText`로 필터링하여 경고 및 오류 로그 항목을 찾으십시오. `payment` trace를 열어 하위 스팬과 오류 상태를 확인하십시오. `Chart Explorer`를 열고 `Metrics`를 선택한 다음, 위에서 설정한 메트릭 이름 중 하나(예: `http.server.requests`)를 차트로 표시하여 메트릭 수집을 확인하십시오.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

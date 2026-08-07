@@ -1,0 +1,103 @@
+-- { echoOn }
+set max_block_size = 10, enable_unaligned_array_join = true;
+SELECT n, count(1) from (SELECT groupArray(number % 10) AS x FROM (SELECT * FROM numbers(100000))) ARRAY JOIN x as n group by n;
+0	10000
+1	10000
+2	10000
+3	10000
+4	10000
+5	10000
+6	10000
+7	10000
+8	10000
+9	10000
+SELECT n % 10, count(1) from (SELECT range(0, number) as x FROM numbers(1000)) LEFT ARRAY JOIN x as n group by n % 10;
+0	50401
+1	50300
+2	50200
+3	50100
+4	50000
+5	49900
+6	49800
+7	49700
+8	49600
+9	49500
+SELECT (m+n) % 10, count(1) from (SELECT range(0, number+1) as x, range(0, number+2) as y FROM numbers(100)) ARRAY JOIN x as m, y as n group by (m+n) % 10;
+0	1060
+1	10
+2	1040
+3	10
+4	1020
+5	10
+6	1000
+7	10
+8	980
+9	10
+set max_block_size = 1000, enable_unaligned_array_join = true;
+SELECT n, count(1) from (SELECT groupArray(number % 10) AS x FROM (SELECT * FROM numbers(100000))) ARRAY JOIN x as n group by n;
+0	10000
+1	10000
+2	10000
+3	10000
+4	10000
+5	10000
+6	10000
+7	10000
+8	10000
+9	10000
+SELECT n % 10, count(1) from (SELECT range(0, number) as x FROM numbers(1000)) LEFT ARRAY JOIN x as n group by n % 10;
+0	50401
+1	50300
+2	50200
+3	50100
+4	50000
+5	49900
+6	49800
+7	49700
+8	49600
+9	49500
+SELECT (m+n) % 10, count(1) from (SELECT range(0, number+1) as x, range(0, number+2) as y FROM numbers(100)) ARRAY JOIN x as m, y as n group by (m+n) % 10;
+0	1060
+1	10
+2	1040
+3	10
+4	1020
+5	10
+6	1000
+7	10
+8	980
+9	10
+set max_block_size = 100000, enable_unaligned_array_join = true;
+SELECT n, count(1) from (SELECT groupArray(number % 10) AS x FROM (SELECT * FROM numbers(100000))) ARRAY JOIN x as n group by n;
+0	10000
+1	10000
+2	10000
+3	10000
+4	10000
+5	10000
+6	10000
+7	10000
+8	10000
+9	10000
+SELECT n % 10, count(1) from (SELECT range(0, number) as x FROM numbers(1000)) LEFT ARRAY JOIN x as n group by n % 10;
+0	50401
+1	50300
+2	50200
+3	50100
+4	50000
+5	49900
+6	49800
+7	49700
+8	49600
+9	49500
+SELECT (m+n) % 10, count(1) from (SELECT range(0, number+1) as x, range(0, number+2) as y FROM numbers(100)) ARRAY JOIN x as m, y as n group by (m+n) % 10;
+0	1060
+1	10
+2	1040
+3	10
+4	1020
+5	10
+6	1000
+7	10
+8	980
+9	10

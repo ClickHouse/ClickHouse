@@ -1,0 +1,18 @@
+<clickhouse>
+  <include_from>/etc/clickhouse-server/config.d/include_from_source.yml</include_from>
+  <profiles>
+    <default>
+        <max_query_size incl="mqs" />
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+
+      <include incl="users_1" />
+      <include incl="users_2" />
+  </users>
+</clickhouse>

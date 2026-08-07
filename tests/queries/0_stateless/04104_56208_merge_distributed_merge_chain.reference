@@ -1,0 +1,6 @@
+-- enable_analyzer=1 --
+10
+local_data
+-- enable_analyzer=0 --
+10
+local_data

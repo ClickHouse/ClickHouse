@@ -1,0 +1,130 @@
+---
+title: Créer un alias DNS personnalisé en configurant un proxy inverse
+description: Découvrez comment configurer un alias DNS personnalisé pour votre instance à l’aide d’un proxy inverse
+date: 2025-05-16
+tags: ['Administration du serveur', 'Sécurité et authentification']
+keywords: ['alias DNS personnalisé', 'DNS']
+hide_title: true
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<br />
+
+<br />
+
+<div id="custom-dns-alias">
+  # Alias DNS personnalisé via la configuration d’un proxy inverse
+</div>
+
+> Dans cet article de la base de connaissances, nous vous expliquons comment configurer un
+> alias DNS personnalisé pour votre instance ClickHouse Cloud à l’aide d’un proxy inverse
+> tel que Nginx pour le client natif ClickHouse.
+
+<div id="create-certificate">
+  ## Créer un certificat autosigné
+</div>
+
+<Note>
+  Cette étape n’est pas nécessaire si vous utilisez des certificats signés.
+</Note>
+
+Créez un certificat autosigné avec le nom de domaine de votre choix.
+Dans cet exemple, nous utiliserons le nom de domaine `xyz-customdomain.com` et
+créerons un certificat nommé `MyCertificate.crt`. Consultez [« Créer des certificats SSL »](/fr/concepts/features/security/tls/configuring-tls#2-create-tls-certificates)
+pour plus d’informations.
+
+Ajoutez le certificat à `/etc/clickhouse-client/config.xml` :
+
+```yaml highlight={5}
+<clickhouse>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <caConfig>/etc/ssl/certs/MyCertificate.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>
+```
+
+<div id="update-nginx-config">
+  ## Mettre à jour la configuration de Nginx
+</div>
+
+Ajoutez les éléments suivants à votre fichier `nginx.conf` :
+
+```text
+proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+proxy_ssl_server_name on;
+```
+
+```text highlight={21-22}
+stream {
+    upstream stream_backend {
+         server xyz.us-west-2.aws.clickhouse.cloud:9440;
+    }
+
+    server {
+        listen                9440 ssl;
+        proxy_pass            stream_backend;
+
+        ssl_certificate       /etc/ssl/certs/MyCertificate.crt;
+        ssl_certificate_key   /etc/ssl/certs/MyKey.key;
+        ssl_protocols         SSLv3 TLSv1 TLSv1.1 TLSv1.2;
+        ssl_ciphers           HIGH:!aNULL:!MD5;
+        ssl_session_cache     shared:SSL:20m;
+        ssl_session_timeout   4h;
+        ssl_handshake_timeout 30s;
+	proxy_ssl on;
+	proxy_ssl_trusted_certificate /etc/ssl/certs/isrgrootx1.pem;
+	proxy_ssl_session_reuse on;
+        proxy_ssl_verify on;
+	proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+	proxy_ssl_server_name on;
+    }
+}
+```
+
+Où `isrgrootx1.pem` est le certificat racine de ClickHouse Cloud, que vous
+pouvez télécharger [ici](https://letsencrypt.org/certs/isrgrootx1.pem).
+
+<div id="update-hosts-file">
+  ## Mettre à jour le fichier hosts
+</div>
+
+<Note>
+  L’étape suivante n’est pas nécessaire si vous utilisez vos propres serveurs DNS
+</Note>
+
+Ajoutez les lignes suivantes au fichier `/etc/hosts` du serveur Nginx :
+
+```text title='/etc/hosts'
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost6 localhost6.localdomain6
+10.X.Y.Z  xyz-customdomain.com
+```
+
+Où `10.X.Y.Z` correspond à l’adresse IP de votre serveur Nginx.
+
+<div id="connect-to-cloud-using-alias">
+  ## Se connecter à Cloud avec un alias
+</div>
+
+Vous pouvez maintenant vous connecter avec votre alias personnalisé :
+
+```bash
+clickhouse-client --host xyz.customdomain.com --secure --password 'xxxxxxx'
+ClickHouse client version 23.12.1.428 (official build).
+Connecting to xyz.customdomain.com:9440 as user default.
+Connected to ClickHouse server version 23.9.2.
+
+clickhouse-cloud :)
+```

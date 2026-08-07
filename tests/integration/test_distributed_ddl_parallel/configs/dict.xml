@@ -1,0 +1,53 @@
+<clickhouse>
+    <dictionary>
+        <name>slow_dict_7</name>
+        <source>
+           <executable>
+               <command>sleep 7</command>
+               <format>TabSeparated</format>
+               <!-- Raise the 10s default: sanitizer-induced pipe-read delay must not look like a hang. -->
+               <command_read_timeout>60000</command_read_timeout>
+           </executable>
+        </source>
+        <layout>
+           <flat/>
+        </layout>
+        <structure>
+           <id>
+              <name>id</name>
+           </id>
+           <attribute>
+              <name>value</name>
+              <type>String</type>
+              <null_value></null_value>
+           </attribute>
+        </structure>
+        <lifetime>0</lifetime>
+    </dictionary>
+
+    <dictionary>
+        <name>slow_dict_3</name>
+        <source>
+           <executable>
+               <command>sleep 3</command>
+               <format>TabSeparated</format>
+               <!-- Raise the 10s default: sanitizer-induced pipe-read delay must not look like a hang. -->
+               <command_read_timeout>60000</command_read_timeout>
+           </executable>
+        </source>
+        <layout>
+           <flat/>
+        </layout>
+        <structure>
+           <id>
+              <name>id</name>
+           </id>
+           <attribute>
+              <name>value</name>
+              <type>String</type>
+              <null_value></null_value>
+           </attribute>
+        </structure>
+        <lifetime>0</lifetime>
+    </dictionary>
+</clickhouse>

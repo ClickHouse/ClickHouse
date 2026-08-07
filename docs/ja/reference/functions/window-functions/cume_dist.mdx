@@ -1,0 +1,79 @@
+---
+description: 'cume_dist window function のドキュメント'
+sidebarTitle: 'cume_dist'
+slug: /sql-reference/window-functions/cume_dist
+title: 'cume_dist'
+doc_type: 'reference'
+---
+
+値のグループ内における累積分布、つまり現在の行の値以下の値を持つ行の割合を計算します。パーティション内でその値が相対的にどの位置にあるかを判断する際に使用できます。
+
+**構文**
+
+```sql
+cume_dist ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+FROM table_name
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+```
+
+デフォルトで必須のウィンドウフレーム定義は `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` です。
+
+window function の構文の詳細については、[Window Functions - Syntax](/ja/reference/functions/window-functions/index#syntax)を参照してください。
+
+**戻り値**
+
+* 現在の行の相対的な順位を返します。戻り値の型は、[0, 1] の範囲の Float64 です。[Float64](/ja/reference/data-types/float)。
+
+**例**
+
+次の例では、チーム内の給与の累積分布を計算します。
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       cume_dist() OVER (ORDER BY salary DESC) AS cume_dist
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬───────────cume_dist─┐
+1. │ Robert George   │ 195000 │  0.2857142857142857 │
+2. │ Gary Chen       │ 195000 │  0.2857142857142857 │
+3. │ Charles Juarez  │ 190000 │ 0.42857142857142855 │
+4. │ Douglas Benson  │ 150000 │  0.8571428571428571 │
+5. │ Michael Stanley │ 150000 │  0.8571428571428571 │
+6. │ Scott Harrison  │ 150000 │  0.8571428571428571 │
+7. │ James Henderson │ 140000 │                   1 │
+   └─────────────────┴────────┴─────────────────────┘
+```
+
+**実装の詳細**
+
+`cume_dist()` 関数は、次の式で相対位置を計算します。
+
+```text
+cume_dist = (number of rows ≤ current row value) / (total number of rows in partition)
+```
+
+同じ値を持つ行 (同順位の行) には同じ累積分布値が割り当てられ、その値は同順位グループ内の最大の順位に対応します。

@@ -1,0 +1,168 @@
+---
+description: 'Documentation de la clause LIMIT'
+sidebarTitle: 'LIMIT'
+slug: /sql-reference/statements/select/limit
+title: 'Clause LIMIT'
+doc_type: 'reference'
+---
+
+La clause `LIMIT` détermine le nombre de lignes renvoyées par votre requête.
+
+<div id="basic-syntax">
+  ## Syntaxe de base
+</div>
+
+**Sélectionner les premières lignes :**
+
+```sql
+LIMIT m
+```
+
+Renvoie les `m` premières lignes du résultat, ou tous les enregistrements s&#39;il y en a moins de `m`.
+
+**Syntaxe alternative de TOP (compatible MS SQL Server) :**
+
+```sql
+-- SELECT TOP number|percent column_name(s) FROM table_name
+SELECT TOP 10 * FROM numbers(100);
+SELECT TOP 0.1 * FROM numbers(100);
+```
+
+Cela est équivalent à `LIMIT m` et peut être utilisé pour assurer la compatibilité avec les requêtes de Microsoft SQL Server.
+
+**Sélection avec OFFSET :**
+
+```sql
+LIMIT m OFFSET n
+-- or equivalently:
+LIMIT n, m
+```
+
+Saute les `n` premières lignes, puis renvoie les `m` lignes suivantes.
+
+Dans les deux cas, `n` et `m` doivent être des entiers non négatifs.
+
+<div id="negative-limits">
+  ## Limites négatives
+</div>
+
+Sélectionnez des lignes depuis la *fin* de l’ensemble de résultats à l’aide de valeurs négatives :
+
+| Syntaxe              | Résultat                                                         |
+| -------------------- | ---------------------------------------------------------------- |
+| `LIMIT -m`           | `m` dernières lignes                                             |
+| `LIMIT -m OFFSET -n` | `m` dernières lignes après avoir ignoré les `n` dernières lignes |
+| `LIMIT m OFFSET -n`  | `m` premières lignes après avoir ignoré les `n` dernières lignes |
+| `LIMIT -m OFFSET n`  | `m` dernières lignes après avoir ignoré les `n` premières lignes |
+
+La syntaxe `LIMIT -n, -m` est équivalente à `LIMIT -m OFFSET -n`.
+
+<div id="fractional-limits">
+  ## Limites fractionnaires
+</div>
+
+Utilisez des valeurs décimales comprises entre 0 et 1 pour sélectionner un pourcentage de lignes :
+
+| Syntaxe                 | Résultat                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------- |
+| `LIMIT 0.1`             | Les 10 % premières lignes                                                         |
+| `LIMIT 1 OFFSET 0.5`    | La ligne médiane                                                                  |
+| `LIMIT 0.25 OFFSET 0.5` | Troisième quartile (25 % des lignes après avoir ignoré les 50 % premières lignes) |
+
+<Note>
+  * Les fractions doivent être des valeurs [Float64](/fr/reference/data-types/float) supérieures à 0 et inférieures à 1.
+  * Les nombres de lignes fractionnaires sont arrondis à l&#39;entier supérieur.
+</Note>
+
+<div id="combining-limit-types">
+  ## Combiner différents types de LIMIT
+</div>
+
+Vous pouvez combiner des entiers standard avec des OFFSET fractionnaires ou négatifs :
+
+```sql
+LIMIT 10 OFFSET 0.5    -- 10 rows starting from the halfway point
+LIMIT 10 OFFSET -20    -- 10 rows after skipping the last 20
+```
+
+<div id="limit--with-ties-modifier">
+  ## LIMIT ... WITH TIES
+</div>
+
+Le modificateur `WITH TIES` inclut des lignes supplémentaires ayant les mêmes valeurs `ORDER BY` que la dernière ligne incluse dans la limite.
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+Avec `WITH TIES`, toutes les lignes ayant la même valeur que la dernière sont incluses :
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+La ligne 6 est incluse, car elle a la même valeur (`2`) que la ligne 5.
+
+Le même principe s’applique lorsque le OFFSET est indiqué avec le mot-clé `OFFSET` :
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 3 OFFSET 2 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+Si l’on ignore les 2 premières lignes et que l’on en prend 3, le résultat serait normalement `1, 1, 2`, mais le deuxième `2` est inclus car il est ex æquo avec la dernière ligne.
+
+<Note>
+  `WITH TIES` n’est pas pris en charge avec des valeurs négatives de `LIMIT`.
+</Note>
+
+Ce modificateur peut être combiné avec le modificateur [`ORDER BY ... WITH FILL`](/fr/reference/statements/select/order-by#order-by-expr-with-fill-modifier).
+
+<div id="considerations">
+  ## Considérations
+</div>
+
+**Résultats non déterministes :** Sans clause [`ORDER BY`](/fr/reference/statements/select/order-by), les lignes renvoyées peuvent être choisies de manière arbitraire et varier d&#39;une exécution de requête à l&#39;autre.
+
+**Limite côté serveur :** Le nombre de lignes renvoyées peut également être affecté par le paramètre [limit](/fr/reference/settings/session-settings#limit).
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [LIMIT BY](/fr/reference/statements/select/limit-by) — Limite le nombre de lignes par groupe de valeurs, utile pour obtenir les résultats top N dans chaque catégorie.

@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'スキーマレジストリと連携する'
+description: 'スキーマ管理のために ClickPipes をスキーマレジストリと連携する方法。'
+slug: /integrations/clickpipes/kafka/schema-registries
+title: 'Kafka ClickPipe 向けスキーマレジストリ'
+doc_type: 'guide'
+keywords: ['スキーマレジストリ', 'kafka', 'clickpipes', 'avro', 'confluent']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+ClickPipes は、Avro および Protobuf でエンコードされたトピックをデコードするためのスキーマレジストリとの連携をサポートしています。
+
+<div id="supported-schema-registries">
+  ## Kafka ClickPipes でサポートされているレジストリ
+</div>
+
+Confluent スキーマレジストリと API 互換性のあるスキーマレジストリをサポートしています。これには以下が含まれます。
+
+* Confluent スキーマレジストリ
+* Redpanda Schema Registry
+
+ClickPipes は現在、AWS Glue Schema Registry または Azure Schema Registry をサポートしていません。これらのスキーマレジストリのサポートが必要な場合は、[当社のチームまでお問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
+
+<div id="schema-registry-configuration">
+  ## 設定
+</div>
+
+ClickPipes の設定でスキーマレジストリを統合するには、次のいずれかの方法を使用する必要があります。
+
+1. スキーマの subject への完全なパスを指定します (例: `https://registry.example.com/subjects/events`)
+   * 必要に応じて、URL に `/versions/[version]` を追加することで特定のバージョンを参照できます (追加しない場合、ClickPipes は最新バージョンを取得します) 。
+2. スキーマ ID への完全なパスを指定します (例: `https://registry.example.com/schemas/ids/1000`)
+3. スキーマレジストリのルート URL を指定します (例: `https://registry.example.com`)
+
+<div id="network-connectivity">
+  ## ネットワーク接続
+</div>
+
+ClickPipes は、指定した URL を使用して HTTPS 経由でスキーマレジストリに接続します。スキーマレジストリをパブリックに公開しておく必要はありません。
+
+Kafka ブローカーに [reverse private endpoint](/ja/integrations/clickpipes/aws-privatelink) (AWS PrivateLink または GCP Private Service Connect) 経由でアクセスしている場合、スキーマレジストリでも同じプライベート接続を利用できます。ClickPipes は reverse private endpoint のプライベート DNS を使ってレジストリのホスト名を名前解決するため、ブローカーと同じくプライベート環境でホストされているレジストリであっても、そのホスト名が reverse private endpoint のプライベート IP アドレスに解決される限り到達できます (エンドポイントのプライベート DNS サポート、またはカスタムのプライベート DNS マッピングを使用) 。
+
+次の点に注意してください。
+
+* スキーマレジストリの URL には `https://` を使用する必要があります。
+* レジストリのホスト名がプライベートアドレスに解決される場合は、ClickPipe 用に選択された reverse private endpoint 経由で到達可能である必要があります。そうでないと、Setup 中の接続チェックは失敗します。
+
+<div id="how-schema-registries-work">
+  ## 仕組み
+</div>
+
+ClickPipes は、設定されたスキーマレジストリからスキーマを動的に取得して適用します。
+
+* メッセージにスキーマ ID が埋め込まれている場合は、それを使ってスキーマを取得します。
+* メッセージにスキーマ ID が埋め込まれていない場合は、ClickPipe の設定で指定されたスキーマ ID または subject 名を使ってスキーマを取得します。
+* メッセージに埋め込みのスキーマ ID がなく、かつ ClickPipe の設定でスキーマ ID も subject 名も指定されていない場合、スキーマは取得されず、ClickPipes のエラーテーブルに `SOURCE_SCHEMA_ERROR` が記録され、そのメッセージはスキップされます。
+* メッセージがスキーマに準拠していない場合、ClickPipes のエラーテーブルに `DATA_PARSING_ERROR` が記録され、そのメッセージはスキップされます。
+* Protobuf スキーマのみ: ClickPipes は、依存関係として定義された import 済みのスキーマを読み込みます。外部参照を含む Avro スキーマは、現時点ではサポートされていません。
+
+<div id="schema-mapping">
+  ## スキーママッピング
+</div>
+
+取得したスキーマと ClickHouse の宛先テーブルのマッピングには、次のルールが適用されます。
+
+* スキーマに、ClickHouse の宛先マッピングに含まれていないフィールドがある場合、そのフィールドは無視されます。
+* スキーマに、ClickHouse の宛先マッピングで定義されているフィールドがない場合、ClickHouse のカラムには 0 や空文字列などの「ゼロ」値が設定されます。なお、`DEFAULT` 式はサポートされていません。
+* スキーマのフィールドと ClickHouse のカラムに互換性がない場合、その行/メッセージの挿入は失敗し、その失敗は ClickPipes のエラーテーブルに記録されます。なお、いくつかの暗黙的な変換 (たとえば数値型同士) はサポートされていますが、すべてがサポートされるわけではありません (たとえば、Avro のレコードフィールドを `Int32` の ClickHouse カラムに挿入することはできません) 。

@@ -1,0 +1,100 @@
+---
+description: 'ثبّت إصدارات ClickHouse المحلية وأدِرها باستخدام clickhousectl، واجهة سطر أوامر ClickHouse'
+keywords: ['ClickHouse', 'تثبيت', 'clickhousectl', 'CLI']
+sidebarTitle: 'clickhousectl (CLI)'
+slug: /install/clickhousectl
+title: 'التثبيت باستخدام ClickHouse CLI'
+hide_title: true
+doc_type: 'guide'
+---
+
+<Info>
+  **مستخدمو Windows**
+
+  يعمل ClickHouse أصلًا على Linux وmacOS. على Windows، نفّذ هذه الخطوات من داخل
+  [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/about).
+</Info>
+
+تساعدك ClickHouse CLI (`clickhousectl`) على تثبيت إصدارات ClickHouse المحلية
+وإدارتها، وبدء الخوادم، وتشغيل الاستعلامات.
+
+<Steps>
+  <Step>
+    ## تثبيت ClickHouse CLI
+
+    ```bash
+    curl https://clickhouse.com/cli | sh
+    ```
+
+    يُنشأ أيضًا الاسم المستعار `chctl` تلقائيًا لتسهيل الاستخدام.
+  </Step>
+
+  <Step>
+    ## تثبيت ClickHouse
+
+    ثبّت أحدث إصدار من ClickHouse واجعله الإصدار `default` لديك:
+
+    ```bash
+    clickhousectl local use latest
+    ```
+
+    يقوم `local use` بتثبيت الإصدار إذا لم يكن موجودًا بالفعل، ويضبطه
+    كإصدار `default`، وينشئ رابطًا رمزيًا `clickhouse` في `~/.local/bin` (ضمن `PATH`
+    لديك)، بحيث يمكنك تشغيل الملف التنفيذي `clickhouse` مباشرةً. وبذلك، ستعمل كما هي أي خطوة لاحقة في هذا الدليل
+    تستخدم أمر `clickhouse`.
+
+    يمكنك أيضًا اختيار إصدار محدد:
+
+    ```bash
+    clickhousectl local use 26.5            # أحدث إصدار 26.5.x.x
+    clickhousectl local use 26.5.2.39       # الإصدار المحدد تمامًا
+    ```
+
+    <Info>
+      **use مقابل install**
+
+      يقوم `clickhousectl local use <version>` بتثبيت إصدار *وجعله أيضًا* الإصدار
+      `default` لديك، مع تحديث الرابط الرمزي `clickhouse` على `PATH`. ولتنزيل إصدار
+      من دون تغيير الإصدار `default` أو تحديث الرابط الرمزي، استخدم
+      `clickhousectl local install <version>` بدلًا من ذلك.
+    </Info>
+  </Step>
+
+  <Step>
+    ## بدء clickhouse-server
+
+    ```bash
+    clickhousectl local server start
+    ```
+
+    يعمل الخادم في الخلفية. وللتحقق من أنه يعمل:
+
+    ```bash
+    clickhousectl local server list
+    ```
+  </Step>
+
+  <Step>
+    ## بدء clickhouse-client
+
+    ```bash
+    clickhousectl local client
+    ```
+
+    سترى شيئًا مشابهًا لما يلي:
+
+    ```response
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    أنت الآن جاهز لبدء إرسال أوامر SQL إلى ClickHouse!
+
+    <Tip>
+      يرشدك [Quick Start](/ar/get-started/setup/install) خلال خطوات إنشاء الجداول وإدراج البيانات.
+    </Tip>
+  </Step>
+</Steps>

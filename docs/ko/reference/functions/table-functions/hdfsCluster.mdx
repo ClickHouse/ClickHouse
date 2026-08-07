@@ -1,0 +1,72 @@
+---
+description: '지정된 클러스터(cluster)의 여러 노드에서 HDFS 파일을 병렬로 처리할 수 있습니다.'
+sidebarTitle: 'hdfsCluster'
+slug: /sql-reference/table-functions/hdfsCluster
+title: 'hdfsCluster'
+doc_type: 'reference'
+---
+
+지정된 클러스터(cluster)의 여러 노드에서 HDFS 파일을 병렬로 처리할 수 있습니다. initiator 노드에서는 클러스터의 모든 노드에 연결(connection)을 생성하고, HDFS 파일 경로의 별표(*)를 확장한 뒤, 각 파일을 동적으로 분배합니다. worker 노드에서는 initiator에 다음으로 처리할 작업을 요청해 이를 처리합니다. 이 과정은 모든 작업이 완료될 때까지 반복됩니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+hdfsCluster(cluster_name, URI, format, structure)
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+| 인수             | 설명                                                                                                                                                                                                                                                 |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name` | 원격 및 로컬 서버의 주소 집합과 연결 매개변수를 구성하는 데 사용되는 클러스터 이름입니다.                                                                                                                                                                                                |
+| `URI`          | 파일 또는 여러 파일에 대한 URI입니다. 읽기 전용 모드에서는 다음 와일드카드를 지원합니다: `*`, `**`, `?`, `{'abc','def'}` 및 `{N..M}`. 여기서 `N`, `M`은 숫자이고 `abc`, `def`는 문자열입니다. 자세한 내용은 [Wildcards In Path](/ko/reference/engines/table-engines/integrations/s3#wildcards-in-path)를 참조하십시오. |
+| `format`       | 파일의 [포맷](/ko/reference/formats/index)입니다.                                                                                                                                                                                                             |
+| `structure`    | 테이블 구조입니다. 포맷은 `'column1_name column1_type, column2_name column2_type, ...'`입니다.                                                                                                                                                                   |
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+지정된 파일에서 데이터를 읽기 위한, 지정된 구조의 테이블입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+1. `cluster_simple`이라는 이름의 ClickHouse 클러스터가 있고, HDFS에 다음 URI를 사용하는 여러 파일이 있다고 가정합니다.
+
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;3&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
+
+2. 이 파일들의 행 수를 조회합니다:
+
+```sql
+SELECT count(*)
+FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
+```
+
+3. 이 두 디렉터리의 모든 파일에 있는 행 수를 조회합니다:
+
+```sql
+SELECT count(*)
+FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
+```
+
+<Note>
+  파일 목록에 앞자리가 0인 숫자 범위가 포함된 경우, 각 자릿수별로 중괄호를 사용하는 구문을 사용하거나 `?`를 사용하십시오.
+</Note>
+
+<div id="related">
+  ## 관련 항목
+</div>
+
+* [HDFS 엔진](/ko/reference/engines/table-engines/integrations/hdfs)
+* [HDFS 테이블 함수](/ko/reference/functions/table-functions/hdfs)

@@ -1,0 +1,113 @@
+---
+title: 'Interroger la base de données système de ClickHouse'
+slug: /cloud/monitoring/system-tables
+description: 'Surveillez ClickHouse Cloud en interrogeant directement les tables système'
+keywords: ['cloud', 'monitoring', 'tables système', 'query_log', 'clusterAllReplicas', 'tableau de bord d’observabilité']
+sidebarTitle: 'Tables système'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Toutes les instances ClickHouse incluent un ensemble de [tables système](/fr/reference/system-tables/overview) dans la base de données `system`, qui contiennent des informations sur :
+
+* L&#39;état du serveur, les processus et l&#39;environnement.
+* Les processus internes du serveur.
+* Les options utilisées lors de la compilation du binaire ClickHouse.
+
+L&#39;interrogation directe de ces tables est utile pour la surveillance des déploiements ClickHouse, en particulier pour l&#39;introspection approfondie et le débogage.
+
+<div id="using-cloud-console">
+  ## Utilisation de la ClickHouse Cloud Console
+</div>
+
+La ClickHouse Cloud console inclut une [console SQL](/fr/products/cloud/features/sql-console-features/sql-console) et des [outils de création de tableaux de bord](/fr/products/cloud/features/sql-console-features/dashboards) qui peuvent être utilisés pour interroger les tables système. Par exemple, la requête ci-dessous permet d&#39;examiner combien de nouvelles parts sont créées au cours des deux dernières heures (et à quelle fréquence) :
+
+```sql
+SELECT
+    count() AS new_parts,
+    toStartOfMinute(event_time) AS modification_time_m,
+    table,
+    sum(rows) AS total_written_rows,
+    formatReadableSize(sum(size_in_bytes)) AS total_bytes_on_disk
+FROM clusterAllReplicas(default, system.part_log)
+WHERE (event_type = 'NewPart') AND (event_time > (now() - toIntervalHour(2)))
+GROUP BY
+    modification_time_m,
+    table
+ORDER BY
+    modification_time_m ASC,
+    table DESC
+```
+
+<Tip>
+  **Autres exemples de requêtes**
+
+  Pour obtenir d’autres requêtes de monitoring, consultez les ressources suivantes :
+
+  * [Requêtes utiles pour le dépannage](/fr/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+  * [Monitoring et dépannage des requêtes insert](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
+  * [Monitoring et dépannage des requêtes select](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)
+
+  Vous pouvez également utiliser ces requêtes pour [créer un tableau de bord personnalisé](https://clickhouse.com/blog/essential-monitoring-queries-creating-a-dashboard-in-clickHouse-cloud) dans la Cloud Console.
+</Tip>
+
+<div id="built-in-advanced-observability-dashboard">
+  ## Tableau de bord avancé d’observabilité intégré
+</div>
+
+ClickHouse inclut une fonctionnalité intégrée de tableau de bord avancé d’observabilité, accessible à l’adresse `$HOST:$PORT/dashboard` (nécessite un nom d’utilisateur et un mot de passe), qui affiche les métriques de Cloud Overview contenues dans `system.dashboards`.
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Tableau de bord avancé natif d’observabilité" border />
+
+<Note>
+  Ce tableau de bord nécessite une authentification directe auprès de l’instance ClickHouse et est distinct du [tableau de bord avancé de la Cloud Console](/fr/products/cloud/features/monitoring/cloud-console#advanced-dashboard), accessible depuis l’UI de Cloud Console sans authentification supplémentaire.
+</Note>
+
+Pour en savoir plus sur les visualisations disponibles et sur leur utilisation pour le troubleshooting, consultez la [documentation du tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard).
+
+<div id="querying-across-nodes">
+  ## Interroger l’ensemble des nœuds et des versions
+</div>
+
+Pour obtenir une vue complète du cluster, les utilisateurs peuvent exploiter la fonction `clusterAllReplicas` en combinaison avec la fonction `merge`. La fonction `clusterAllReplicas` permet d’interroger les tables système sur l’ensemble des réplicas du cluster &quot;default&quot;, en regroupant les données propres à chaque nœud dans un résultat unifié. Combinée à la fonction `merge`, elle permet de cibler toutes les données système d’une table donnée dans un cluster.
+
+Par exemple, pour trouver les 5 requêtes ayant le temps d’exécution le plus long sur l’ensemble des réplicas au cours de la dernière heure :
+
+```sql
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type = 'QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+Cette approche est particulièrement utile pour la surveillance et le débogage des opérations à l’échelle du cluster, ce qui permet aux utilisateurs d’analyser efficacement l’état et les performances de leur déploiement ClickHouse Cloud.
+
+Pour plus de détails, consultez [l’interrogation sur plusieurs nœuds](/fr/reference/system-tables/overview#querying-across-nodes).
+
+<div id="system-considerations">
+  ## Considérations relatives au système
+</div>
+
+<Warning>
+  Interroger directement les tables système ajoute une charge de requêtes à votre service de production, empêche les instances ClickHouse Cloud de se mettre en veille (ce qui peut avoir un impact sur les coûts) et lie la disponibilité du monitoring à l’état de santé du système de production. Si le système de production tombe en panne, le monitoring peut lui aussi être affecté.
+</Warning>
+
+Pour le monitoring de production en temps réel avec une séparation opérationnelle, envisagez d’utiliser l’[endpoint de métriques compatible Prometheus](/fr/products/cloud/features/monitoring/prometheus) ou les [Cloud Console dashboards](/fr/products/cloud/features/monitoring/cloud-console), qui s’appuient tous deux sur des métriques pré-collectées et n’émettent pas de requêtes vers le service sous-jacent.
+
+<div id="related">
+  ## Pages associées
+</div>
+
+* [Référence des tables système](/fr/reference/system-tables/overview) — Référence complète de toutes les tables système disponibles
+* [Monitoring de Cloud Console](/fr/products/cloud/features/monitoring/cloud-console) — Des dashboards sans configuration qui n’affectent pas les performances du service
+* [Endpoint Prometheus](/fr/products/cloud/features/monitoring/prometheus) — Exportez des metrics vers des outils de monitoring externes
+* [tableau de bord avancé](/fr/products/cloud/features/monitoring/advanced-dashboard) — Référence détaillée des visualisations du dashboard

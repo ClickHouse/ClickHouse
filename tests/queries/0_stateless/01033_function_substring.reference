@@ -1,0 +1,175 @@
+-- argument validation
+
+-- FixedString arguments
+hello\0\0\0
+hello\0\0\0
+0\0\0\0\0\0\0\0
+1\0\0\0\0\0\0\0
+2\0\0\0\0\0\0\0
+3\0\0\0\0\0\0\0
+4\0\0\0\0\0\0\0
+5\0\0\0\0\0\0\0
+6\0\0\0\0\0\0\0
+7\0\0\0\0\0\0\0
+8\0\0\0\0\0\0\0
+9\0\0\0\0\0\0\0
+995
+996
+997
+998
+999
+100
+100
+100
+100
+100
+
+9
+99
+998
+999\0
+
+1
+10
+100
+1004
+995\0
+96\0
+7\0
+\0
+
+1000
+001
+02
+3
+
+995
+9
+7\0
+\0
+
+10
+001
+0
+3
+
+-- Enum arguments
+hello	shark
+world	eagle
+ello	hark
+orld	agle
+o	k
+d	e
+lo	rk
+ld	le
+	
+	
+-- Constant enums
+f	fo
+-- negative offset argument
+abc
+abc
+abc
+bc
+c
+
+abc
+bc
+c
+
+abc
+abc
+abc
+bc
+c
+
+abc
+bc
+c
+
+abc
+abc
+abc
+bc
+c
+
+abc
+bc
+c
+
+abc
+abc
+abc
+bc
+c
+
+abc
+bc
+c
+
+lickhou
+lickhou
+lickhou
+lickhou
+lickhou
+lickhou
+lickhou
+lickhou
+-- negative length argument
+bcdef
+bcdef
+bcdef
+bcdef
+bcdef
+bcdef
+bcdef
+bcdef
+bcdef
+23456
+bcdef
+3456
+bcdef
+2345
+bcdef
+345
+bcdef
+23456
+bcdef
+3456
+bcdef
+2345
+bcdef
+345
+-- negative offset and size
+
+
+
+g
+g
+g
+
+
+
+g
+g
+g
+
+
+
+6
+
+
+
+
+-
+
+
+
+6
+
+
+
+
+-- UBSAN bug
+-- Alias
+el

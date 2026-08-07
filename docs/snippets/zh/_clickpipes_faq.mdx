@@ -1,0 +1,85 @@
+---
+title: ClickPipes 常见问题
+---
+
+<Accordion title="什么是 ClickPipes 副本？">
+  ClickPipes 通过独立的专用基础设施从远程数据源摄取数据，
+  该基础设施的运行和扩缩容均独立于 ClickHouse Cloud 服务。
+  因此，它使用专用计算副本。
+  下图展示了简化后的架构。
+
+  对于流式 ClickPipes，ClickPipes 副本会访问远程数据源 (例如 Kafka broker) ，
+  拉取数据、进行处理，并将其摄取到目标 ClickHouse 服务。
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_1.webp" size="lg" alt="ClickPipes 副本 - 流式 ClickPipes" border force />
+
+  对于对象存储 ClickPipes，
+  ClickPipes 副本负责协调数据加载任务
+   (识别要复制的文件、维护状态以及移动分区) ，
+  而数据则由 ClickHouse 服务直接拉取。
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_2.webp" size="lg" alt="ClickPipes 副本 - 对象存储 ClickPipes" border force />
+</Accordion>
+
+<Accordion title="默认的副本数量和规格是多少？">
+  每个 ClickPipe 默认有 1 个副本，配备 2 GiB RAM 和 0.5 vCPU。
+  这相当于 **0.25** 个 ClickHouse 计算单元 (1 个单元 = 8 GiB RAM、2 个 vCPU) 。
+</Accordion>
+
+<Accordion title="ClickPipes 副本可以扩缩容吗？">
+  可以，流式 ClickPipes 支持水平和垂直扩缩容。
+  水平扩缩容会增加副本数量以提升吞吐量，而垂直扩缩容则会增加分配给每个副本的资源 (CPU 和 RAM) ，以处理更高强度的工作负载。
+  这可以在创建 ClickPipe 时配置，也可以之后随时在 **Settings** -&gt; **Advanced Settings** -&gt; **Scaling** 中进行配置。
+</Accordion>
+
+<Accordion title="我需要多少个 ClickPipes 副本？">
+  这取决于工作负载的吞吐量和延迟要求。
+  我们建议先使用默认的 1 个副本，测量延迟，再按需增加副本。
+  请注意，对于 Kafka ClickPipes，你还需要相应地调整 Kafka broker 分区数。
+  每个流式 ClickPipe 的“settings”下都提供了扩缩容控制项。
+
+  <Image img="/images/cloud/manage/jan2025_faq/external_clickpipes_pricing_faq_3.webp" size="lg" alt="ClickPipes 副本 - 我需要多少个 ClickPipes 副本？" border force />
+</Accordion>
+
+<Accordion title="ClickPipes 的定价结构是什么样的？">
+  它由两个维度组成：
+
+  * **计算资源**：按单位按小时计费
+    计算资源表示运行 ClickPipes 副本 Pod (容器组) 的成本，无论它们是否在主动摄取数据。
+    这适用于所有类型的 ClickPipes。
+  * **摄取数据量**：按 GB 计费
+    摄取数据量费率适用于所有流式 ClickPipes
+     (Kafka、Confluent、Amazon MSK、Amazon Kinesis、Redpanda、WarpStream、
+    Azure Event Hubs) 中通过副本 Pod (容器组) 传输的数据。
+    摄取数据大小 (GB) 按从源端接收的字节数计费 (无论是否压缩) 。
+</Accordion>
+
+<Accordion title="ClickPipes 的公开定价是多少？">
+  * 计算资源：$0.20 / 单位 / 小时 ($0.05 / 副本 / 小时) 
+  * 摄取数据量：$0.04 / GB
+</Accordion>
+
+<Accordion title="用一个示例来说明是什么样的？">
+  例如，使用单个副本 (0.25 个计算单元) 通过 Kafka 连接器在 24 小时内摄取 1 TB 数据，成本为：
+
+  $$
+  (0.25 \times 0.20 \times 24) + (0.04 \times 1000) = $41.2
+  $$
+
+  <br />
+
+  对于对象存储连接器 (S3 和 GCS) ，
+  由于 ClickPipes pod (容器组) 并不处理数据，
+  而只是协调由底层 ClickHouse 服务执行的传输，
+  因此只会产生 ClickPipes 的计算资源成本：
+
+  $$
+  0.25 \times 0,20 \times 24 = $1.2
+  $$
+</Accordion>
+
+<Accordion title="ClickPipes 的定价与市场相比如何？">
+  ClickPipes 的定价理念是
+  在覆盖平台运营成本的同时，提供一种简单、可靠的数据迁移到 ClickHouse Cloud 的方式。
+  从这个角度来看，我们的市场分析表明，我们的定价具有竞争力。
+</Accordion>

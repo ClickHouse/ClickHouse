@@ -1,0 +1,10 @@
+('key','String')
+('out','Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))')
+('outputs','Array(JSON(max_dynamic_types=8, max_dynamic_paths=64))')
+('outputs','Array(Nullable(String))')
+('type','Int64')
+('value','Int64')
+('index','Int64')
+('n','Int64')
+v1	[0,0]	[1,2]	[[],[1960131]]	[[],[0]]
+v2	[1,1]	[4,3]	[[1881212],[]]	[[1],[]]

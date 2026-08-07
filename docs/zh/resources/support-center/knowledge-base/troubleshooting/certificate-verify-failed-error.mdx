@@ -1,0 +1,53 @@
+---
+title: 解决 ClickHouse 中的 SSL 证书验证失败错误
+description: 了解如何解决 SSL Exception CERTIFICATE_VERIFY_FAILED 错误。
+date: 2023-05-02
+tags: ['安全与身份验证', '错误与异常']
+keywords: ['错误', 'SSL 证书', '210']
+---
+
+<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+  ## 解决 ClickHouse 中代码 210 的 SSL 证书验证失败错误
+</div>
+
+该错误通常显示为：
+
+`Code: 210. DB::NetException: SSL Exception: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED`
+
+<div id="cause-of-the-error">
+  ## 错误原因
+</div>
+
+尝试使用 `clickhouse-client` 连接到 ClickHouse 服务器时，会出现此错误。其原因通常是以下之一：
+
+* 客户端配置文件 `config.xml` 中缺少机器默认 CA 证书存储中的根证书，或
+* 存在未配置的自签名证书或内部 CA 证书
+
+<div id="solution">
+  ## 解决方案
+</div>
+
+如果使用内部 CA 或自签名 CA，请在客户端目录 (例如 `/etc/clickhouse-client`) 中的 `config.xml` 中配置 CA 根证书，并禁用从默认位置加载默认根 CA 证书。
+
+以下是示例配置：
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="additional-resources">
+  ## 更多资源
+</div>
+
+参见 [https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/zh/concepts/features/interfaces/cli#configuration_files)

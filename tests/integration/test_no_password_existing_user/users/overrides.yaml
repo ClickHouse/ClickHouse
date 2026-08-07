@@ -1,0 +1,6 @@
+---
+users:
+  admin:
+    password_sha256_hex: c64c5e4e53ea1a9f1427d2713b3a22bbebe8940bc807adaf654744b1568c70ab
+    access_management: 1
+    profile: default

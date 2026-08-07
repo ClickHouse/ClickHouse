@@ -1,0 +1,105 @@
+---
+sidebarTitle: 'نظرة عامة'
+title: 'ClickHouse Cloud واجهة برمجة تطبيقات'
+slug: /cloud/manage/api/api-overview
+description: 'تعرّف على ClickHouse Cloud واجهة برمجة تطبيقات'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'نظرة عامة على واجهة برمجة تطبيقات', 'واجهة برمجة تطبيقات السحابة', 'واجهة برمجة تطبيقات REST', 'الوصول البرمجي']
+---
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+تُعد ClickHouse Cloud API واجهة برمجة تطبيقات REST صُممت للمطورين لتسهيل إدارة
+المؤسسات والخدمات على ClickHouse Cloud. وباستخدام Cloud API الخاصة بنا، يمكنك
+إنشاء الخدمات وإدارتها، وإنشاء مفاتيح API، وإضافة أعضاء إلى
+مؤسستك أو إزالتهم، وغير ذلك الكثير.
+
+[تعرّف على كيفية إنشاء أول مفتاح API والبدء في استخدام ClickHouse Cloud API.](/ar/products/cloud/features/admin-features/api/openapi)
+
+<div id="swagger-openapi-endpoint-and-ui">
+  ## نقطة نهاية Swagger (OpenAPI) وواجهة المستخدم
+</div>
+
+تم إنشاء واجهة برمجة تطبيقات ClickHouse Cloud استنادًا إلى مواصفة [OpenAPI المفتوحة المصدر](https://www.openapis.org/)
+لضمان إمكانية استهلاكها من جانب العميل بشكل متوقَّع. إذا كنت بحاجة إلى
+استهلاك وثائق واجهة برمجة تطبيقات ClickHouse Cloud برمجيًا، فنحن نوفر نقطة نهاية Swagger
+بصيغة JSON عبر https://api.clickhouse.cloud/v1. ويمكنك أيضًا العثور على وثائق API عبر
+[واجهة مستخدم Swagger](/ar/api-reference/organization/get-list-of-available-organizations).
+
+<Note>
+  إذا كانت مؤسستك قد نُقلت إلى إحدى [خطط التسعير الجديدة](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false)، وكنت تستخدم OpenAPI، فسيتعين عليك إزالة الحقل `tier` من طلب `POST` الخاص بإنشاء الخدمة.
+
+  تمت إزالة الحقل `tier` من كائن الخدمة لأننا لم نعد نعتمد فئات للخدمة.
+  سيؤثر ذلك في الكائنات التي تُرجعها طلبات الخدمة `POST` و`GET` و`PATCH`. لذلك، قد يلزم تعديل أي شيفرة تستهلك واجهات برمجة التطبيقات هذه للتعامل مع هذه التغييرات.
+</Note>
+
+<div id="rate-limits">
+  ## حدود المعدل
+</div>
+
+يُسمح للمطورين بما يصل إلى 100 مفتاح API لكل مؤسسة. ولكل مفتاح API
+حد أقصى يبلغ 10 طلبات خلال نافذة مدتها 10 ثوانٍ. إذا كنت ترغب في زيادة
+عدد مفاتيح API أو عدد الطلبات لكل نافذة مدتها 10 ثوانٍ في مؤسستك،
+فيرجى التواصل مع support@clickhouse.com
+
+<div id="terraform-provider">
+  ## موفّر Terraform
+</div>
+
+يتيح لك موفّر Terraform الرسمي من ClickHouse استخدام [البنية التحتية بوصفها شيفرة](https://www.redhat.com/en/topics/automation/what-is-infrastructure-as-code-iac)
+لإنشاء تهيئات قابلة للتنبؤ وخاضعة للتحكم في الإصدارات، مما يجعل عمليات النشر
+أقل عرضةً للأخطاء بكثير.
+
+يمكنك الاطلاع على وثائق موفّر Terraform في [سجل Terraform](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs).
+
+إذا كنت ترغب في المساهمة في موفّر Terraform الخاص بـ ClickHouse، فيمكنك الاطلاع
+على المصدر [في مستودع GitHub](https://github.com/ClickHouse/terraform-provider-clickhouse).
+
+<Note>
+  إذا كانت مؤسستك قد رُحّلت إلى إحدى [خطط التسعير الجديدة](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false)، فسيتعيّن عليك استخدام [موفّر Terraform من ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) بالإصدار 2.0.0 أو أحدث. وهذه الترقية مطلوبة للتعامل مع التغييرات في السمة `tier` الخاصة بالخدمة، إذ بعد ترحيل التسعير، لم يعد الحقل `tier` مقبولًا ويجب إزالة أي إشارات إليه.
+
+  ستتمكن الآن أيضًا من تحديد الحقل `num_replicas` كخاصية ضمن مورد الخدمة.
+</Note>
+
+<div id="terraform-provider-releases">
+  ## إصدارات موفّر Terraform
+</div>
+
+توفّر ClickHouse موفّرَين رسميَّين لـ Terraform — موفّر ClickHouse Cloud للبنية التحتية السحابية وموفّر DBops للكائنات على مستوى قاعدة البيانات. وكلاهما يتّبع نموذج الإصدار نفسه.
+
+<div id="stable-vs-alpha">
+  ### الإصدارات المستقرة مقابل alpha
+</div>
+
+لا تتضمن الإصدارات المستقرة (مثل 3.11.1 و1.9.0) سوى الموارد الخاصة بميزات GA. أما إصدارات alpha (مثل 3.12.0-alpha2 و1.10.0-alpha1)، فتتضمن كل ما تتضمنه الإصدارات المستقرة، بالإضافة إلى موارد للميزات التي لا تزال في مرحلة Beta أو private preview، ويجب تثبيت إصدارها بشكل صريح لاستخدامها.
+
+<div id="versioning">
+  ### إدارة الإصدارات
+</div>
+
+يستخدم كلا الموفّرين نظام الإصدارات الدلالية (MAJOR.MINOR.PATCH). ويُزاد رقم الإصدار الرئيسي عند حدوث تغييرات غير متوافقة، ورقم الإصدار الثانوي عند إضافة ميزات أو موارد جديدة، و
+رقم إصدار التصحيحات عند إصلاح العيوب. وتُلحق إصدارات alpha لاحقة ما قبل الإصدار بالإصدار الثانوي التالي (مثل 3.12.0-alpha1)، مع زيادة رقم alpha كلما أُضيفت إصلاحات أو تغييرات إضافية قبل الترقية (مثل alpha1 → alpha2 → alpha3). وتُطرح الإصدارات عند الحاجة بدلًا من اتباع جدول زمني ثابت. ويُنشأ إصدار alpha جديد عند إضافة مورد لميزة لم تصل بعد إلى GA، أو عندما يحتاج إصلاح ما إلى تحقق مبكر. ويُنشأ إصدار مستقر جديد بمجرد أن تصبح التغييرات المتراكمة — بما في ذلك أي ميزات وصلت منذ ذلك الحين إلى GA — جاهزة لبيئة production، ويكون ذلك عادةً بعد فترة من ملاحظات العملاء. وقد تتراكم عدة إصدارات ثانوية من alpha قبل دمجها في إصدار مستقر واحد.
+
+<div id="promotion">
+  ### الترقية من alpha إلى مستقر
+</div>
+
+عندما تصبح إحدى ميزات Terraform جاهزة لمرحلة GA، يُرقّى مورد Terraform من alpha إلى مستقر في الإصدار المستقر التالي. وحتى ذلك الحين، لا يتوفر هذا المورد إلا في إصدارات alpha.
+
+<div id="terraform-and-openapi-new-pricing---replica-settings-explained">
+  ## Terraform وOpenAPI للتسعير الجديد: شرح إعدادات النسخ المتماثلة
+</div>
+
+يكون العدد الافتراضي للنسخ المتماثلة التي تُنشأ لكل خدمة هو 3 في مستويَي Scale وEnterprise، بينما يكون 1 في مستوى Basic.
+وفي مستويَي Scale وEnterprise، يمكن تعديل هذا العدد بتمرير الحقل `numReplicas` في طلب إنشاء الخدمة.
+يجب أن تكون قيمة الحقل `numReplicas` بين 2 و20 بالنسبة إلى الخدمة الأولى في مستودع. أما الخدمات التي تُنشأ في مستودع حالي، فيمكن أن يكون عدد النسخ المتماثلة فيها منخفضًا حتى 1.
+
+<div id="support">
+  ## الدعم
+</div>
+
+نوصي بزيارة [قناة Slack الخاصة بنا](https://clickhouse.com/slack) أولًا للحصول على دعم سريع. وإذا
+كنت ترغب في الحصول على مساعدة إضافية أو مزيد من المعلومات حول واجهة برمجة التطبيقات وإمكاناتها،
+فيرجى التواصل مع ClickHouse Support عبر https://console.clickhouse.cloud/support

@@ -1,0 +1,137 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/pydantic-ai
+sidebarTitle: 'دمج PydanticAI'
+title: 'كيفية إنشاء وكيل PydanticAI باستخدام ClickHouse MCP server.'
+description: 'تعرّف على كيفية إنشاء وكيل PydanticAI يمكنه التفاعل مع ClickHouse MCP server.'
+keywords: ['ClickHouse', 'MCP', 'PydanticAI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+في هذا الدليل، ستتعلّم كيفية إنشاء وكيل [PydanticAI](https://ai.pydantic.dev/mcp/client/#__tabbed_1_1)
+يمكنه التفاعل مع [SQL playground الخاص بـ ClickHouse](https://sql.clickhouse.com/) باستخدام [ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse).
+
+<Info>
+  **دفتر ملاحظات المثال**
+
+  يمكن العثور على هذا المثال في صورة دفتر ملاحظات ضمن [مستودع الأمثلة](https://github.com/ClickHouse/examples/blob/main/ai/mcp/pydanticai/pydantic.ipynb).
+</Info>
+
+<div id="prerequisites">
+  ## المتطلبات المسبقة
+</div>
+
+* ستحتاج إلى تثبيت بايثون على نظامك.
+* ستحتاج إلى تثبيت `pip` على نظامك.
+* ستحتاج إلى مفتاح API من Anthropic، أو مفتاح API من مزود LLM آخر.
+
+يمكنك تنفيذ الخطوات التالية إما من مفسّر بايثون التفاعلي (REPL) أو عبر برنامج نصي.
+
+<Steps>
+  <Step>
+    ## ثبّت المكتبات
+
+    ثبّت المكتبات المطلوبة بتشغيل الأوامر التالية:
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q "pydantic-ai-slim[mcp]"
+    pip install -q "pydantic-ai-slim[anthropic]" # استبدله بالحزمة المناسبة إذا كنت تستخدم مزود LLM مختلفًا
+    ```
+  </Step>
+
+  <Step>
+    ## إعداد بيانات الاعتماد
+
+    بعد ذلك، ستحتاج إلى توفير مفتاح API الخاص بـ Anthropic:
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="الاستجابة"
+    Enter Anthropic API Key: ········
+    ```
+
+    <Info>
+      **استخدام مزود LLM آخر**
+
+      إذا لم يكن لديك مفتاح API من Anthropic، وأردت استخدام مزود LLM آخر،
+      فيمكنك العثور على تعليمات إعداد بيانات الاعتماد في [توثيق PydanticAI](https://ai.pydantic.dev/models/)
+    </Info>
+
+    بعد ذلك، عرّف بيانات الاعتماد اللازمة للاتصال بـ ClickHouse SQL playground:
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## هيّئ خادم MCP ووكيل PydanticAI
+
+    الآن، اضبط ClickHouse MCP server بحيث يشير إلى ClickHouse SQL playground:
+
+    ```python
+    from pydantic_ai import Agent
+    from pydantic_ai.mcp import MCPServerStdio
+    from pydantic_ai.messages import ToolCallPart, ToolReturnPart
+
+    server = MCPServerStdio(
+        'uv',
+        args=[
+            'run',
+            '--with', 'mcp-clickhouse',
+            '--python', '3.13',
+            'mcp-clickhouse'
+        ],
+        env=env
+    )
+    agent = Agent('anthropic:claude-sonnet-4-0', mcp_servers=[server])
+    ```
+  </Step>
+
+  <Step>
+    ## اطرح سؤالًا على الوكيل
+
+    أخيرًا، يمكنك طرح سؤال على الوكيل:
+
+    ```python
+    async with agent.run_mcp_servers():
+        result = await agent.run("Who's done the most PRs for ClickHouse?")
+        print(result.output)
+    ```
+
+    ستحصل على استجابة مشابهة لما يلي:
+
+    ```response title="الاستجابة"
+    استنادًا إلى بيانات مستودع ClickHouse على GitHub، إليك أبرز المساهمين بحسب عدد طلبات السحب التي أنشؤوها:
+
+    **أبرز المساهمين في ClickHouse بحسب عدد طلبات السحب المفتوحة:**
+
+    1. **alexey-milovidov** - فتح 3,370 طلب سحب
+    2. **azat** - فتح 1,905 طلبات سحب  
+    3. **rschu1ze** - فتح 979 طلب سحب
+    4. **alesapin** - فتح 947 طلب سحب
+    5. **tavplubix** - فتح 896 طلب سحب
+    6. **kssenii** - فتح 871 طلب سحب
+    7. **Avogar** - فتح 805 طلبات سحب
+    8. **KochetovNicolai** - فتح 700 طلب سحب
+    9. **Algunenano** - فتح 658 طلب سحب
+    10. **kitaisreal** - فتح 630 طلب سحب
+
+    يبرز **Alexey Milovidov** باعتباره المساهم الأكثر نشاطًا بفارق كبير، إذ فتح أكثر من 3,370 طلب سحب، وهو عدد يفوق بكثير ما فتحه أي مساهم آخر. وهذا منطقي، لأن Alexey Milovidov أحد مؤسسي ClickHouse وأحد مطوّريه الرئيسيين.
+
+    وتُظهر البيانات أيضًا أن alexey-milovidov كان نشطًا جدًا في إدارة طلبات السحب، مع 12,818 حدث "إغلاق" (يرجّح أنها مراجعة طلبات السحب الخاصة بمساهمين آخرين وإغلاقها) بالإضافة إلى إنشاء طلبات السحب الخاصة به.
+
+    ومن الجدير بالملاحظة أنني استبعدت مختلف حسابات الروبوتات التي تتولى العمليات المؤتمتة، وركزت على المساهمين من البشر لأقدّم لك إجابة أكثر دلالة حول من قدّم أكبر عدد من طلبات السحب في ClickHouse.
+    ```
+  </Step>
+</Steps>

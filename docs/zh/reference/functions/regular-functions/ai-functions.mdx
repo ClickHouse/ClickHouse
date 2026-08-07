@@ -1,0 +1,454 @@
+---
+description: 'AI 函数文档'
+sidebarTitle: 'AI'
+slug: /sql-reference/functions/ai-functions
+title: 'AI 函数'
+doc_type: 'reference'
+---
+
+AI 函数是 ClickHouse 中的内置函数，可用于调用 AI 或生成嵌入向量，以处理数据、提取信息、对数据进行分类等……
+
+<Note>
+  AI 函数处于 Experimental 阶段。设置 [`allow_experimental_ai_functions`](/zh/reference/settings/session-settings#allow_experimental_ai_functions) 以启用它们。
+</Note>
+
+<Note>
+  AI 函数可能会返回不可预测的输出。结果在很大程度上取决于提示词的质量和所使用的模型。
+</Note>
+
+所有函数共用一套通用基础设施，提供：
+
+* **配额限制**：每次查询的标记数限制 ([`ai_function_max_input_tokens_per_query`](/zh/reference/settings/session-settings#ai_function_max_input_tokens_per_query)、[`ai_function_max_output_tokens_per_query`](/zh/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) 以及 API 调用次数限制 ([`ai_function_max_api_calls_per_query`](/zh/reference/settings/session-settings#ai_function_max_api_calls_per_query)) 。
+* **退避重试**：遇到临时性故障时会自动重试 ([`ai_function_max_retries`](/zh/reference/settings/session-settings#ai_function_max_retries)) ，并采用指数退避 ([`ai_function_retry_initial_delay_ms`](/zh/reference/settings/session-settings#ai_function_retry_initial_delay_ms)) 。
+
+<div id="configuration">
+  ## 配置
+</div>
+
+AI 函数会从[**命名集合**](/zh/concepts/features/configuration/server-config/named-collections)中读取提供商凭据和配置。要指定用于凭据的命名集合，请使用 [`ai_function_credentials`](/zh/reference/settings/session-settings#ai_function_credentials) 设置。
+
+用于创建包含提供商凭据的命名集合的示例语句：
+
+```sql
+CREATE NAMED COLLECTION my_ai_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/chat/completions',
+    model = 'gpt-4o-mini',
+    api_key = 'sk-...';
+```
+
+可通过 `ai_function_credentials` 设置为当前会话或单次查询选择该集合：
+
+```sql
+-- For the session:
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
+
+-- Or for a single query:
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
+SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_credentials';
+```
+
+当 `ai_function_credentials` 为空 (默认值) 时，会引发异常。
+
+<div id="named-collection-parameters">
+  ### 命名集合参数
+</div>
+
+| 参数            | 类型     | 默认值    | 描述                                                           |
+| ------------- | ------ | ------ | ------------------------------------------------------------ |
+| `provider`    | String | —      | 模型提供商。支持：`'openai'`、`'anthropic'`。请参见下方说明。                   |
+| `endpoint`    | String | —      | API 端点 URL。                                                  |
+| `model`       | String | —      | 模型名称 (例如 `'gpt-4o-mini'`、`'text-embedding-3-small'`) 。       |
+| `api_key`     | String | —      | 提供商的身份验证密钥。可选：省略时不会发送身份验证请求头，因此可以将目标指向不需要身份验证的 OpenAI 兼容服务器。 |
+| `max_tokens`  | UInt64 | `1024` | 每次 API 调用可输出的最大标记数。                                          |
+| `api_version` | String | —      | API 版本字符串。Anthropic 使用此参数 (`'2023-06-01'`) 。                 |
+
+<Note>
+  将 `provider` 设为 `'openai'`，并把 `endpoint` 指向你的服务，即可使用任何与 OpenAI 兼容的 API (例如 vLLM、Ollama、LiteLLM) 。
+</Note>
+
+<div id="query-level-settings">
+  ### 查询级别设置
+</div>
+
+要使用哪个命名集合，由 [`ai_function_credentials`](/zh/reference/settings/session-settings#ai_function_credentials) 设置决定。所有与 AI 相关的设置均列在 [设置](/zh/reference/settings/session-settings) 中，前缀为 `ai_function_`。
+
+<div id="default-and-materialized-columns">
+  ### 在 `DEFAULT` 和 `MATERIALIZED` 列中使用
+</div>
+
+系统会在计算默认表达式时读取 `ai_function_credentials` 设置，而不是在定义列时读取。collection 名称不会存储在列定义中：
+
+```sql
+CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
+-- The stored default is `aiEmbed(doc)`; no collection is captured.
+```
+
+对该 expression 求值需要满足三个条件：必须设置 `allow_experimental_ai_functions` 和 `ai_function_credentials`，并且执行求值的用户必须拥有该命名集合上的 `GRANT NAMED COLLECTION` 权限 (解析凭证时会执行一次 `NAMED COLLECTION` 访问检查) 。缺少其中任何一项都会引发异常 (`SUPPORT_IS_DISABLED`、空凭证错误或 `ACCESS_DENIED`) 。
+
+`DEFAULT` 列会在 `INSERT` 时求值，因此这两个设置都必须在执行插入的会话或查询中设置：
+
+```sql
+GRANT NAMED COLLECTION ON my_ai_credentials TO user;
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+INSERT INTO t (id, doc) VALUES (1, 'hello');
+```
+
+要让此类表无需在每个会话中单独设置这些项也能插入数据，请在 [settings profile](/zh/concepts/features/configuration/settings/settings-profiles) 中同时设置这两项：
+
+```xml
+<profiles>
+    <default>
+        <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
+        <ai_function_credentials>my_ai_credentials</ai_function_credentials>
+    </default>
+</profiles>
+```
+
+`MATERIALIZED` 列会像 `DEFAULT` 列一样在 `INSERT` 时计算，也会因 `ALTER TABLE ... MATERIALIZE COLUMN` 之类的变更而重新计算。变更在用户会话之外运行，不会继承某个查询的 `SETTINGS` 子句，但会继承 settings profile 中的设置。要让由变更触发的重新计算成功完成，请在 settings profile 中同时设置这两个参数，并向表所有者授予 `NAMED COLLECTION`。
+
+<div id="restricting-endpoint-hosts">
+  ### 限制端点主机
+</div>
+
+AI 命名集合中的 `endpoint` URL 是服务器以自身身份连接的出站目标端，并可能 (如果已指定) 在请求头中携带该命名集合的 `api_key`。默认情况下，ClickHouse 允许连接任意主机。要将函数限制为一组特定的提供商，请在服务器配置中设置 [`remote_url_allow_hosts`](/zh/reference/settings/server-settings/settings#remote_url_allow_hosts)，例如：
+
+```xml
+<remote_url_allow_hosts>
+    <host>api.openai.com</host>
+    <host>api.anthropic.com</host>
+</remote_url_allow_hosts>
+```
+
+请注意，此设置对整个服务器生效，并适用于所有使用 HTTP 的功能。
+
+<div id="supported-providers">
+  ## 支持的提供商
+</div>
+
+| 提供商       | `provider` 值  | 聊天功能 | 说明                    |
+| --------- | ------------- | ---- | --------------------- |
+| OpenAI    | `'openai'`    | 是    | 默认提供商。                |
+| Anthropic | `'anthropic'` | 是    | 使用 `/v1/messages` 端点。 |
+
+<div id="observability">
+  ## 可观测性
+</div>
+
+可通过 ClickHouse [ProfileEvents](/zh/reference/system-tables/query_log) 跟踪 AI 函数活动：
+
+| ProfileEvent      | Description                                               |
+| ----------------- | --------------------------------------------------------- |
+| `AIAPICalls`      | 向 AI 提供商发出的 HTTP 请求数。                                     |
+| `AIInputTokens`   | 消耗的输入标记总数。                                                |
+| `AIOutputTokens`  | 消耗的输出标记总数。                                                |
+| `AIRowsProcessed` | 获得结果的行数。                                                  |
+| `AIRowsSkipped`   | 被跳过的行数 (超出配额，或在 `ai_function_throw_on_error = 0` 时发生错误) 。 |
+
+查询这些事件：
+
+```sql
+SELECT
+    ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIInputTokens'] AS input_tokens,
+    ProfileEvents['AIOutputTokens'] AS output_tokens
+FROM system.query_log
+WHERE query_id = 'query_id'
+AND type = 'QueryFinish'
+ORDER BY event_time DESC;
+```
+
+{/*
+  以下标签内的内容会在文档框架构建时被替换为
+  根据 system.functions 生成的文档。请勿修改或删除这些标签。
+  参见：https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="aiClassify">
+  ## aiClassify
+</div>
+
+引入版本：v26.4.0
+
+使用 LLM 提供商将给定文本归类到所提供类别中的某一类。
+
+该函数会将文本与固定的分类提示词以及 JSON schema 响应格式一并发送，
+以约束模型必须精确返回所提供标签中的一个。当响应以 `{"category": "..."}` 形式的 JSON
+对象返回时，会提取其中的标签并返回该标签字符串。
+
+提供商凭据和配置取自 `ai_function_credentials` 设置指定的命名集合。
+
+**语法**
+
+```sql
+aiClassify(text, categories[, temperature])
+```
+
+**别名**: `AIClassify`
+
+**参数**
+
+* `text` — 待分类的文本。[`String`](/zh/reference/data-types/string)
+* `categories` — 候选类别标签的常量列表。[`Array(String)`](/zh/reference/data-types/array)
+* `temperature` — 用于控制随机性的采样温度。默认值：`0.0`。[`Float64`](/zh/reference/data-types/float)
+
+**返回值**
+
+返回提供的类别标签之一；如果请求失败且禁用了 `ai_function_throw_on_error`，则返回该列类型的默认值 (空字符串) 。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**情感分类**
+
+```sql title=Query
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+positive
+```
+
+**对列分类**
+
+```sql title=Query
+SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiEmbed">
+  ## aiEmbed
+</div>
+
+引入版本：v26.6.0
+
+使用已配置的 AI 提供商为给定文本生成嵌入向量。
+
+该函数会将文本发送到已配置的嵌入端点，并以 `Array(Float32)` 的形式返回结果向量。
+在单个数据块的行内，输入会按批次分组，每个 HTTP 请求最多包含
+[`ai_function_embedding_max_batch_size`](/zh/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+个条目，以减少每次调用的额外开销。
+
+提供商凭据和配置取自 `ai_function_credentials` 设置指定的命名集合。
+可选的 `dimensions` 参数会在模型支持时 (例如 OpenAI 的 `text-embedding-3-*`)
+请求返回指定大小的向量；否则将返回模型的原生大小。
+
+**语法**
+
+```sql
+aiEmbed(text[, dimensions])
+```
+
+**参数**
+
+* `text` — 要嵌入的文本。[`String`](/zh/reference/data-types/string)
+* `dimensions` — 输出向量的可选目标维度。`0` 或省略表示使用模型的原生维度。[`UInt64`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+嵌入向量；如果输入为 NULL 或为空、请求失败且禁用了 `ai_function_throw_on_error`，或者超出配额且禁用了 `ai_function_throw_on_quota_exceeded`，则返回空数组。[`Array(Float32)`](/zh/reference/data-types/array)
+
+**示例**
+
+**嵌入单个字符串**
+
+```sql title=Query
+SELECT aiEmbed('Hello world') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**显式指定维度**
+
+```sql title=Query
+SELECT aiEmbed('Hello world', 256) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**对一列文本进行嵌入**
+
+```sql title=Query
+SELECT aiEmbed(title, 256) FROM articles LIMIT 10
+```
+
+```response title=Response
+```
+
+<div id="aiExtract">
+  ## aiExtract
+</div>
+
+引入于：v26.4.0
+
+使用 LLM 提供商从非结构化文本中提取结构化信息。
+
+第二个参数既可以是自由形式的自然语言指令 (例如 `'主要诉求'`) ，也可以是如下形式的 JSON 编码 schema：`'{"field_a": "字段 a 的描述", "field_b": "字段 b 的描述"}'`。
+
+在指令模式下，该函数会将提取出的值作为普通字符串返回；如果未找到任何内容，则返回空字符串。
+在 schema 模式下，该函数返回一个 JSON 对象字符串，其键与所请求的 schema 一致；缺失字段为 `null`。
+
+提供商凭据和配置取自 `ai_function_credentials` setting 指定的命名集合。
+
+**语法**
+
+```sql
+aiExtract(text, instruction_or_schema[, temperature])
+```
+
+**别名**: `AIExtract`
+
+**参数**
+
+* `text` — 要从中提取信息的文本。[`String`](/zh/reference/data-types/string)
+* `instruction_or_schema` — 自由格式的提取指令，或用于描述待提取字段的常量 JSON 对象。[`const String`](/zh/reference/data-types/string)
+* `temperature` — 用于控制随机性的采样温度。默认值：`0.0`。[`const Float64`](/zh/reference/data-types/float)
+
+**返回值**
+
+单个提取值 (指令模式) ，或 JSON 对象字符串 (schema 模式) 。如果请求失败且禁用了 `ai_function_throw_on_error`，则返回该列类型的默认值 (空字符串) 。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**自由格式指令**
+
+```sql title=Query
+SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+late and damaged package
+```
+
+**Schema 提取**
+
+```sql title=Query
+SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiGenerate">
+  ## aiGenerate
+</div>
+
+引入版本：v26.4.0
+
+使用 LLM 提供商根据提示词生成自由格式的文本内容。
+
+该函数会将提示词发送给已配置的 AI 提供商，并返回生成的文本。
+您还可以提供可选的系统提示来引导模型的行为 (例如语气、格式、角色) 。
+如果未提供系统提示，则默认系统提示为：`You are a helpful assistant. Provide a clear and concise response.`
+
+提供商凭据和配置取自 `ai_function_credentials` 设置指定的命名集合。
+
+**语法**
+
+```sql
+aiGenerate(prompt[, system_prompt[, temperature]])
+```
+
+**别名**: `AIGenerate`
+
+**参数**
+
+* `prompt` — 发送给模型的用户提示词或问题。[`String`](/zh/reference/data-types/string)
+* `system_prompt` — 可选的固定系统级指令，用于引导模型行为 (例如角色设定、输出格式) ，并会随每次提示词一同发送。[`String`](/zh/reference/data-types/string)
+* `temperature` — 控制随机性的采样温度。默认：`0.7`。[`Float64`](/zh/reference/data-types/float)
+
+**返回值**
+
+生成的文本响应；如果请求失败且禁用了 `ai_function_throw_on_error`，则返回列类型的默认值 (空字符串) 。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**简单问题**
+
+```sql title=Query
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+4
+```
+
+**使用系统提示**
+
+```sql title=Query
+SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**汇总列中的值**
+
+```sql title=Query
+SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiTranslate">
+  ## aiTranslate
+</div>
+
+引入版本：v26.4.0
+
+使用 LLM 提供商将给定文本翻译为指定的目标语言。
+
+还可将额外的风格或方言说明作为第三个参数传入 (例如 `'保留技术术语不翻译'`) 。
+
+提供商凭据和配置取自由 `ai_function_credentials` 设置指定的命名集合。
+
+**语法**
+
+```sql
+aiTranslate(text, target_language[, instructions[, temperature]])
+```
+
+**别名**: `AITranslate`
+
+**参数**
+
+* `text` — 要翻译的文本。[`String`](/zh/reference/data-types/string)
+* `target_language` — 目标语言名称或 BCP-47 代码 (例如 `'French'`、`'es-MX'`) 。[`String`](/zh/reference/data-types/string)
+* `instructions` — 提供给翻译器的可选固定附加说明。[`String`](/zh/reference/data-types/string)
+* `temperature` — 用于控制随机性的采样温度。默认值：`0.3`。[`Float64`](/zh/reference/data-types/float)
+
+**返回值**
+
+翻译后的文本；如果请求失败且禁用了 `ai_function_throw_on_error`，则返回列类型的默认值 (空字符串) 。[`String`](/zh/reference/data-types/string)
+
+**示例**
+
+**翻译为法语**
+
+```sql title=Query
+SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+Bonjour le monde!
+```
+
+**翻译成日语，并遵循风格说明**
+
+```sql title=Query
+SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+{/*AUTOGENERATED_END*/}

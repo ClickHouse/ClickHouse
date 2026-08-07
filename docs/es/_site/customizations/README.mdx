@@ -1,0 +1,30 @@
+---
+title: README
+---
+
+<div id="customizations">
+  # Personalizaciones
+</div>
+
+Scripts personalizados que modifican el aspecto y el comportamiento del sitio de Mintlify.
+Se cargan mediante el array `scripts` en `docs.json` y se ejecutan en cada página.
+
+Consulta la documentación de Mintlify sobre [scripts personalizados](https://www.mintlify.com/docs/customize/custom-scripts) para más información.
+
+<div id="scripts">
+  ## Scripts
+</div>
+
+* `ask-ai-button.js` — ajusta el estilo y el comportamiento del botón Ask-AI.
+* `cookie-banner.js` — inserta y gestiona el banner de consentimiento de cookies.
+* `custom-footer.js` — renderiza el pie de página personalizado del sitio (`#ch-custom-footer`).
+* `inkeep-init.js` — reemplaza la búsqueda nativa de Mintlify (⌘K / barra de búsqueda de la barra de navegación) por el modal de búsqueda de Inkeep. Solo para búsquedas; el chat con IA sigue en Kapa.
+* `kapa-init.js` — inicializa el widget RAG de Kapa.ai.
+* `navbar-cta.js` — añade el CTA &quot;Comenzar&quot; a la barra de navegación.
+* `clickhouse-sql-lexer-wasm.js` — expone el lexer SQL de ClickHouse (`src/Parsers/Lexer.cpp` compilado a WebAssembly) como una variable global en base64. Instantánea de ClickHouse `programs/server/play.html`; vuelve a extraerlo si cambian el lexer upstream o la lista de palabras clave.
+* `clickhouse-sql-highlight.js` — vuelve a resaltar los bloques de código `language="sql"` usando el lexer WASM (colores nativos de ClickHouse, a juego con play.html / clickhouse-client) en lugar de Shiki. Debe cargarse después de `clickhouse-sql-lexer-wasm.js`. Los demás lenguajes se dejan tal como los renderizó Shiki.
+* `quickstart-back-link.js` — en las páginas de guía de inicio rápido, reubica la insignia autogenerada &quot;Todas las guías de inicio rápido&quot; desde la parte superior del cuerpo hasta el encabezado, encima del título (posición de las migas de pan).
+
+Para añadir un script nuevo, agrega una entrada
+`{ "src": "/_site/customizations/<name>.js" }`
+al array `scripts` de nivel superior en `docs.json`.

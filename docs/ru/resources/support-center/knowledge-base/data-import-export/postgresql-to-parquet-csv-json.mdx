@@ -1,0 +1,136 @@
+---
+title: "Как экспортировать данные PostgreSQL в Parquet, CSV или JSON?"
+date: 2023-03-22
+description: "Узнайте, как с помощью `clickhouse-local` экспортировать данные PostgreSQL в форматы Parquet, CSV и JSON, на нескольких примерах."
+tags: ['Экспорт данных', 'Форматы данных']
+keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="how-to-export-postgresql-data-to-parquet-csv-or-json">
+  ## Как экспортировать данные PostgreSQL в Parquet, CSV или JSON
+</div>
+
+Это легко сделать с помощью `clickhouse-local`:
+
+* Используйте [табличную функцию `postgresql`](/ru/reference/functions/table-functions/postgresql), чтобы прочитать данные
+* Используйте предложение `INTO OUTFILE _filename_ FORMAT` и укажите нужный формат вывода
+
+Форматом вывода может быть любой из поддерживаемых [форматов вывода](/ru/reference/formats/index) в ClickHouse. Рассмотрим несколько примеров...
+
+В этих примерах используется `clickhouse-local`, который входит в состав бинарного файла ClickHouse. Скачайте его следующим образом:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+<div id="export-postgresql-to-parquet">
+  ## Экспорт PostgreSQL в Parquet
+</div>
+
+Табличная функция `postgresql` позволяет выполнять запросы `SELECT` (и `INSERT`) к данным, хранящимся на удалённом сервере PostgreSQL. Например, чтобы просмотреть всё содержимое таблицы в PostgreSQL:
+
+```bash
+SELECT *
+FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+);
+```
+
+Мы можем направить результат этого запроса в файл с помощью `INTO OUTFILE`. Используйте `FORMAT`, чтобы указать формат создаваемого файла. Давайте выгрузим всё содержимое таблицы PostgreSQL в файл Parquet:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.parquet'"
+```
+
+<Note>
+  Поскольку имя выходного файла имеет расширение `.parquet`, ClickHouse предполагает, что нам нужен формат Parquet, поэтому обратите внимание: мы опустили конструкцию `FORMAT Parquet`.
+</Note>
+
+<div id="export-postgresql-to-csv">
+  ## Экспорт PostgreSQL в CSV
+</div>
+
+Всё то же, что и для Parquet, только для выходного файла мы указываем более подходящее имя:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.csv'"
+```
+
+Вот и всё! ClickHouse распознаёт расширение `.csv` в имени выходного файла и выводит данные в формате CSV. В остальном это та же самая команда, что и выше.
+
+<div id="export-postgresql-to-json">
+  ## Экспорт из PostgreSQL в JSON
+</div>
+
+Чтобы экспортировать данные из PostgreSQL в JSON, достаточно изменить имя файла, и ClickHouse сам определит формат:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.ndjson'"
+```
+
+<Note>
+  На этом можно не останавливаться — `clickhouse-local` также позволяет забирать данные из PostgreSQL и отправлять их в [любые форматы вывода](/ru/reference/formats/index).
+
+  Если ClickHouse не может определить выходной формат по расширению имени файла или если вы хотите явно указать формат, добавьте предложение `FOMRAT`:
+
+  ```bash
+  ./clickhouse local -q "SELECT * FROM
+     postgresql(
+      'localhost:5432',
+      'postgres_database',
+      'postgres_table',
+      'user',
+      'password'
+  )
+  INTO OUTFILE 'my_output_file.ndjson'
+  FORMAT JSONEachRow"
+  ```
+</Note>
+
+<div id="stream-postgresql-to-another-process">
+  ## Потоковая передача PostgreSQL в другой процесс
+</div>
+
+Вместо `INTO OUTFILE` можно передавать результаты табличной функции в другой процесс в виде потока. Вот простой пример, демонстрирующий синтаксис: мы подсчитываем количество строк с помощью команды Linux `wc -l`:
+
+```bash
+./clickhouse local -q "SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet'
+FORMAT JSONEachRow
+)" | wc -l
+```
+
+Однако мы можем без труда передавать эти строки в shell-скрипт, скрипт на Python или любой другой нужный вам процесс.

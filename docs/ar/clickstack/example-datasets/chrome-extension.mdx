@@ -1,0 +1,211 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/chrome-extension
+title: 'إضافة Chrome'
+description: 'جهّز أي موقع ويب لإعادة تشغيل الجلسات وRUM في ClickStack باستخدام إضافة HyperDX Chrome'
+doc_type: 'دليل'
+keywords: ['ClickStack', 'إضافة Chrome', 'إعادة تشغيل الجلسات', 'Browser SDK', 'rum', 'observability', 'HyperDX']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<Info>
+  **الخلاصة**
+
+  يوضح هذا الدليل كيفية إدراج ClickStack Browser SDK في أي موقع ويب باستخدام [إضافة HyperDX Chrome](https://github.com/kyreddie/hyperdx-chrome-extension). لا حاجة إلى إجراء أي تغييرات على الشيفرة المصدرية للتطبيق المستهدف — ما عليك سوى تهيئة الإضافة مرة واحدة، ثم تصفح الموقع، واطّلع على عمليات إعادة تشغيل الجلسات في ClickStack.
+
+  الوقت المطلوب: 10-15 دقيقة
+</Info>
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+يقوم [إضافة HyperDX Chrome](https://github.com/kyreddie/hyperdx-chrome-extension) بحقن حزمة SDK الخاصة بـ[@hyperdx/browser](https://github.com/hyperdxio/hyperdx-js) في الصفحات التي تزورها. ويكون مفيدًا عندما تريد تصحيح أخطاء إعادة تشغيل الجلسة أو RUM أو تمرير التتبّع على موقع من دون تعديل الشفرة المصدرية الخاصة به — مثل تطبيق تابع لجهة خارجية، أو إصدار إنتاجي، أو خادم تطوير محلي يفرض سياسة Content Security Policy ‏(CSP) صارمة.
+
+حزمة SDK مضمّنة داخل الإضافة (~480 KB)، لذلك لا تحتاج الصفحات إلى تحميل البرامج النصية من CDN وقت التشغيل. وتحاول الإضافة أولًا حقن البرامج النصية الخارجية عبر `chrome-extension://`، ثم تلجأ إلى الحقن المضمّن عندما تمنع CSP البرامج النصية القادمة من مصدر الإضافة.
+
+وعلى خلاف [Session Replay Demo](/ar/clickstack/example-datasets/session-replay)، الذي يضيف أدوات الرصد إلى تطبيق تجريبي تتحكم فيه، يعمل هذا الأسلوب مع **أي** عنوان URL تفتحه في Chrome. وتُنشئ بيانات الجلسة من خلال التفاعل مع الموقع كمستخدم عادي.
+
+للاطلاع على خلفية حول إعادة تشغيل الجلسة وكيف تندرج ضمن ClickStack، راجع صفحة ميزة [إعادة تشغيل الجلسة](/ar/clickstack/features/session-replay).
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* Google Chrome أو متصفح يعتمد على Chromium ‏(Edge وBrave وما إلى ذلك)
+* تثبيت [Docker](https://docs.docker.com/get-docker/) إذا كنت تشغّل ClickStack محليًا
+* توافر المنافذ 4317 و4318 و8080 (لتشغيل ClickStack محليًا)
+
+<div id="running-the-demo">
+  ## تشغيل العرض التوضيحي
+</div>
+
+<Steps>
+  <Step>
+    ### استنساخ مستودع الإضافة
+
+    ```shell
+    git clone https://github.com/kyreddie/hyperdx-chrome-extension
+    cd hyperdx-chrome-extension
+    ```
+  </Step>
+
+  <Step>
+    ### تثبيت الإضافة
+
+    1. افتح Chrome وانتقل إلى `chrome://extensions`.
+    2. فعّل **Developer mode** (أعلى اليمين).
+    3. انقر على **Load unpacked**.
+    4. حدّد الدليل `hyperdx-chrome-extension` الذي استنسخته.
+
+    ستظهر الإضافة في شريط الأدوات باسم **HyperDX Browser Extension**.
+  </Step>
+
+  <Step>
+    ### تشغيل ClickStack
+
+    إذا كانت لديك بالفعل نقطة نهاية لاستيعاب البيانات في ClickStack أو HyperDX، فانتقل مباشرةً إلى [تهيئة الإضافة](#configure-extension).
+
+    بالنسبة إلى ClickStack محلي، شغّل OpenTelemetry Collector. استبدل `{{CLICKHOUSE_ENDPOINT}}` و`{{CLICKHOUSE_PASSWORD}}` بتفاصيل اتصال ClickHouse:
+
+    ```shell
+    export CLICKHOUSE_ENDPOINT={{CLICKHOUSE_ENDPOINT}}
+    export CLICKHOUSE_PASSWORD={{CLICKHOUSE_PASSWORD}}
+
+    docker run \
+      -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+      -e CLICKHOUSE_USER=default \
+      -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+      -p 8080:8080 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      clickhouse/clickstack-otel-collector:latest
+    ```
+
+    افتح HyperDX على [http://localhost:8080](http://localhost:8080) للتأكد من أن واجهة المستخدم تعمل.
+
+    للنشر المحلي الكامل مع ClickHouse وHyperDX UI، راجع [البدء مع ClickStack](/ar/clickstack/getting-started/oss).
+  </Step>
+
+  <Step>
+    ### احصل على API key الخاصة بك
+
+    بالنسبة إلى ClickStack المحلي، قد لا تحتاج إلى API key — اترك الحقل فارغًا في الإضافة عند إرسال بيانات telemetry إلى collector مستضاف ذاتيًا على `http://localhost:4318`.
+
+    أما لاستيعاب البيانات في ClickStack Cloud أو HyperDX Cloud، فافتح HyperDX وانتقل إلى **Team Settings → API Keys**، ثم انسخ **Ingestion API Key** الخاصة بك.
+  </Step>
+
+  <Step>
+    ### تهيئة الإضافة
+
+    انقر على أيقونة **HyperDX Browser Extension** في شريط أدوات Chrome واملأ الإعدادات التالية:
+
+    | الحقل                            | مثال ClickStack محلي                  | ملاحظات                                                                           |
+    | -------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------- |
+    | **Enable HyperDX Monitoring**    | تشغيل                                 | مفتاح التبديل الرئيسي للحقن                                                       |
+    | **Service Name**                 | `my-frontend-app`                     | مطلوب — يعرّف الخدمة في ClickStack                                                |
+    | **API Key**                      | *(فارغ)*                              | مطلوب للاستيعاب السحابي؛ واختياري في بعض إعدادات الاستضافة الذاتية                |
+    | **Collector URL**                | `http://localhost:4318`               | نقطة نهاية OTLP HTTP؛ والقيمة السحابية الافتراضية هي `https://in-otel.hyperdx.io` |
+    | **Environment**                  | `development`                         | اختياري — يضبط سمة المورد `deployment.environment`                                |
+    | **Trace Propagation Targets**    | `/api\.myapp\.domain/i, /localhost/i` | اختياري — أنماط regex في JavaScript مفصولة بفواصل لنشر ترويسات التتبّع            |
+    | **Only inject on matching URLs** | إيقاف                                 | فعّله لحصر التهيئة بالمواقع المطابقة فقط                                          |
+    | **Capture console logs**         | إيقاف                                 | فعّله لإرسال مخرجات console في المتصفح                                            |
+    | **Advanced network capture**     | إيقاف                                 | فعّله لالتقاط طلبات الشبكة بتفاصيل إضافية                                         |
+
+    انقر على **Save Configuration**، ثم أعد تحميل أي علامات تبويب تريد تهيئتها.
+
+    <Image img="/images/clickstack/chrome-extension/extension-config.png" alt="نافذة منبثقة لتهيئة HyperDX Chrome extension مع إعدادات ClickStack محلية" size="sm" />
+
+    توضح لقطة الشاشة أعلاه إعدادًا محليًا نموذجيًا: المراقبة مفعّلة، واسم الخدمة معيّن، وcollector موجّه إلى `http://localhost:4318`، ونشر التتبّع مقيّد بعناوين URL الخاصة بـ API وlocalhost.
+  </Step>
+
+  <Step>
+    ### تصفّح موقعًا وأنشئ جلسة
+
+    افتح أي موقع ويب أو تطبيق محلي في Chrome — على سبيل المثال، [http://localhost:3000](http://localhost:3000) لخادم تطوير الواجهة الأمامية.
+
+    تفاعل مع الصفحة بشكل طبيعي: انقر على الروابط، وأرسل النماذج، وتسبّب في أخطاء، وتنقّل بين الواجهات. تحقن الإضافة Browser SDK تلقائيًا عند كل تحميل للصفحة إذا كانت التهيئة صحيحة.
+  </Step>
+
+  <Step>
+    ### اعرض session replay الخاصة بك
+
+    عُد إلى HyperDX على [http://localhost:8080](http://localhost:8080) وانتقل إلى **Client Sessions** من الشريط الجانبي الأيسر.
+
+    يُفترض أن تظهر جلستك في القائمة مع مدتها وعدد الأحداث فيها. انقر على الزر ▶️ لإعادة تشغيلها.
+
+    بدّل بين وضعي **Highlighted** و**All Events** لضبط مستوى التفاصيل في المخطط الزمني.
+  </Step>
+</Steps>
+
+<div id="url-filtering">
+  ## تصفية عناوين URL
+</div>
+
+بشكل افتراضي، تُدرِج الإضافة حزمة SDK في كل صفحة تزورها ما دامت المراقبة مفعّلة. لقصر الحقن على مواقع محددة، فعِّل **الحقن فقط في عناوين URL المطابقة** وأضف نمطًا واحدًا في كل سطر (أو افصل بينها بفواصل):
+
+| النمط                      | يطابق                                |
+| -------------------------- | ------------------------------------ |
+| `http://homedepot.com/*`   | HTTP فقط على `homedepot.com`         |
+| `*://homedepot.com/*`      | HTTP وHTTPS على `homedepot.com`      |
+| `*://*.homedepot.com/*`    | نطاقات فرعية مثل `www.homedepot.com` |
+| `https://localhost:3000/*` | خادم التطوير المحلي على المنفذ 3000  |
+
+أعِد تحميل علامة التبويب بعد حفظ أنماط عناوين URL.
+
+<div id="verify-injection">
+  ## التحقق من الحقن
+</div>
+
+افتح أدوات المطوّر على صفحة قيد المراقبة (علامة تبويب **Console**)، ثم أعد تحميل الصفحة وابحث عن:
+
+```text
+[HyperDX Extension] Configuration valid, injecting HyperDX
+[HyperDX Extension] Injected via extension scripts
+[HyperDX Extension] HyperDX initialized
+```
+
+إذا حظر CSP البرامج النصية الصادرة عن الإضافة، تسجّل الإضافة رسالة تفيد بالرجوع إلى مسار بديل ثم تعيد المحاولة باستخدام الحقن المضمّن.
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<Accordion title="عدم ظهور الجلسات في HyperDX">
+  1. تحقّق من Console المتصفح بحثًا عن رسائل السجل أو الأخطاء الخاصة بـ `[HyperDX Extension]`
+  2. تأكّد من تفعيل **Enable HyperDX Monitoring** وتعيين **Service Name**
+  3. تحقّق من أن ClickStack قيد التشغيل وأن عنوان URL الخاص بـ collector صحيح (مثل `http://localhost:4318`)
+  4. اضبط النطاق الزمني في عرض **Client Sessions** (جرّب **Last 15 minutes**)
+  5. أجرِ تحديثًا إجباريًا للمتصفح: `Cmd+Shift+R` (Mac) أو `Ctrl+Shift+R` (Windows/Linux)
+</Accordion>
+
+<Accordion title="أخطاء chrome-extension://invalid/">
+  أعِد تحميل الامتداد من `chrome://extensions`، ثم أجرِ تحديثًا إجباريًا لعلامة التبويب. يحدث هذا عندما يتم تحديث الامتداد أو إعادة تحميله بينما تظل علامات التبويب مفتوحة.
+</Accordion>
+
+<Accordion title="عدم حدوث حقن على موقع">
+  1. تحقّق من أن المراقبة مفعّلة وأن اسم الخدمة مُعدّ
+  2. إذا كان **Only inject on matching URLs** مفعّلًا، فتأكّد من أن عنوان URL للصفحة الحالية يطابق أحد الأنماط التي حدّدتها
+  3. تحظر بعض المواقع كلاً من الحقن من مصدر الامتداد وحقن النصوص البرمجية المضمّنة عبر CSP — وقد لا يكون الحقن ممكنًا في تلك الصفحات
+  4.
+</Accordion>
+
+<Accordion title="HyperDX: apiKey مفقود في Console">
+  هذا متوقّع عندما يكون حقل مفتاح API فارغًا. أضف مفتاح API للإدخال من HyperDX لنقاط النهاية السحابية، أو تجاهله إذا كان collector المستضاف ذاتيًا لديك يقبل حركة مرور محلية غير موثّقة.
+</Accordion>
+
+<div id="privacy">
+  ## الخصوصية
+</div>
+
+تحقن الإضافة شيفرة الرصد في الصفحات التي تزورها. استخدمها فقط على المواقع المصرّح لك بتصحيح أخطائها. لا تشارك مفاتيح واجهة برمجة التطبيقات ولا تُضمّنها في نظام التحكّم بالإصدارات.
+
+<div id="learn-more">
+  ## تعرّف على المزيد
+</div>
+
+* [إعادة تشغيل الجلسة](/ar/clickstack/features/session-replay) — نظرة عامة على الميزة، وخيارات SDK، وضوابط الخصوصية
+* [Browser SDK Reference](/ar/clickstack/ingesting-data/sdks/browser) — جميع خيارات SDK والإعدادات المتقدمة
+* [إعادة تشغيل الجلسة Demo](/ar/clickstack/example-datasets/session-replay) — جهّز تطبيقًا تجريبيًا انطلاقًا من الشيفرة المصدرية
+* [ClickStack Getting Started](/ar/clickstack/getting-started/index) — انشر ClickStack وأدخِل أولى بياناتك
+* [إضافة HyperDX Chrome on GitHub](https://github.com/kyreddie/hyperdx-chrome-extension) — الشيفرة المصدرية ومتتبّع المشكلات

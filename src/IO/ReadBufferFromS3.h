@@ -1,0 +1,138 @@
+#pragma once
+
+#include <IO/S3Settings.h>
+#include "config.h"
+
+#if USE_AWS_S3
+
+#include <memory>
+
+#include <IO/HTTPCommon.h>
+#include <IO/S3/ReadBufferFromGetObjectResult.h>
+#include <IO/ReadSettings.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+
+#include <aws/s3/model/GetObjectResult.h>
+
+namespace DB
+{
+
+class BlobStorageLogWriter;
+using BlobStorageLogWriterPtr = std::shared_ptr<BlobStorageLogWriter>;
+
+/**
+ * Perform S3 HTTP GET request and provide response to read.
+ */
+class ReadBufferFromS3 : public ReadBufferFromFileBase
+{
+private:
+    mutable std::shared_ptr<const S3::Client> client_ptr;
+    String bucket;
+    String key;
+    String version_id;
+    /// ETag observed at read setup; each GET response ETag is checked against it to catch an
+    /// in-place overwrite mid-read (instead of stitching two object generations). Empty means skip.
+    String expected_etag;
+    const S3::S3RequestSettings request_settings;
+
+    /// These variables are atomic because they can be used for `logging only`
+    /// (where it is not important to get consistent result)
+    /// from separate thread other than the one which uses the buffer for s3 reading.
+    std::atomic<off_t> offset = 0;
+    std::atomic<off_t> read_until_position = 0;
+    std::string stop_reason;
+    std::string release_reason;
+
+    std::unique_ptr<S3::ReadBufferFromGetObjectResult> impl;
+
+    LoggerPtr log = getLogger("ReadBufferFromS3");
+
+public:
+    using S3CredentialsRefreshCallback = std::function<std::unique_ptr<const S3::Client>()>;
+
+    ReadBufferFromS3(
+        std::shared_ptr<const S3::Client> client_ptr_,
+        const String & bucket_,
+        const String & key_,
+        const String & version_id_,
+        const S3::S3RequestSettings & request_settings_,
+        const ReadSettings & settings_,
+        bool use_external_buffer = false,
+        size_t offset_ = 0,
+        size_t read_until_position_ = 0,
+        bool restricted_seek_ = false,
+        std::optional<size_t> file_size = std::nullopt,
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] {return nullptr;},
+        BlobStorageLogWriterPtr blob_storage_log_ = {},
+        const String & expected_etag_ = {}
+        );
+
+    ~ReadBufferFromS3() override = default;
+
+    bool nextImpl() override;
+
+    off_t seek(off_t off, int whence) override;
+
+    off_t getPosition() override;
+
+    std::optional<size_t> tryGetFileSize() override;
+
+    void setReadUntilPosition(size_t position) override;
+    void setReadUntilEnd() override;
+
+    size_t getFileOffsetOfBufferEnd() const override { return offset; }
+
+    bool supportsRightBoundedReads() const override { return true; }
+
+    String getFileName() const override { return bucket + "/" + key; }
+
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+
+    bool supportsReadAt() override { return true; }
+
+    /// nextImpl fills the caller's set() buffer only when built for external-buffer use.
+    bool supportsExternalBufferMode() const override { return use_external_buffer; }
+
+    /// Buffer may issue several requests, so theoretically metadata may be different for different requests.
+    /// This method returns metadata from the last request. If there were no requests, it will throw exception.
+    ObjectMetadata getObjectMetadataFromTheLastRequest() const;
+
+    size_t getReadUntilPosition() const { return read_until_position; }
+
+    std::string getStopReason() const { return stop_reason; }
+
+    std::optional<RemoteFileMetadata> getRemoteFileMetadata() const override;
+
+private:
+    std::unique_ptr<S3::ReadBufferFromGetObjectResult> initialize(size_t attempt);
+
+    /// If true, if we destroy impl now, no work was wasted. Just for metrics.
+    bool atEndOfRequestedRangeGuess();
+
+    /// Call inside catch() block if GetObject fails. Bumps metrics, logs the error.
+    /// Returns true if the error looks retriable.
+    bool processException(size_t read_offset, size_t attempt) const;
+
+    size_t getObjectSizeFromS3() const;
+
+    Aws::S3::Model::GetObjectResult sendRequest(size_t attempt, size_t range_begin, std::optional<size_t> range_end_incl) const;
+
+    ReadSettings read_settings;
+
+    bool use_external_buffer;
+
+    /// There is different seek policy for disk seek and for non-disk seek
+    /// (non-disk seek is applied for seekable input formats: orc, arrow, parquet).
+    bool restricted_seek;
+
+    bool read_all_range_successfully = false;
+
+    const S3CredentialsRefreshCallback credentials_refresh_callback;
+
+    mutable BlobStorageLogWriterPtr blob_storage_log;
+};
+
+}
+
+#endif

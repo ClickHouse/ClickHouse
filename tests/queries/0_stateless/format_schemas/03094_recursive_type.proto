@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+message Struct {
+  map<string, Value> fields = 1;
+}
+
+message Value {
+  // The kind of value.
+  oneof kind {
+    string string_value = 1;
+    ListValue list_value = 2;
+  }
+}
+
+message ListValue {
+  repeated Value values = 1;
+}

@@ -1,0 +1,212 @@
+---
+slug: /migrations/postgresql/appendix
+title: 'Apêndice'
+keywords: ['postgres', 'postgresql', 'tipos de dados', 'tipos']
+description: 'Informações adicionais sobre a migração do PostgreSQL'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
+  ## Postgres vs ClickHouse: Conceitos equivalentes e diferentes
+</div>
+
+Usuários que vêm de sistemas OLTP e estão acostumados com transações ACID devem estar cientes de que o ClickHouse faz concessões deliberadas ao não oferecê-las integralmente em troca de desempenho. A semântica do ClickHouse pode oferecer altas garantias de durabilidade e alta taxa de transferência de gravação, se for bem compreendida. Destacamos abaixo alguns conceitos-chave com os quais você deve estar familiarizado antes de migrar do Postgres para o ClickHouse.
+
+<div id="shards-vs-replicas">
+  ### Shards vs réplicas
+</div>
+
+Sharding e replicação são duas estratégias usadas para escalar além de uma instância do Postgres quando o armazenamento e/ou a capacidade computacional se tornam um gargalo de desempenho. No Postgres, sharding envolve dividir um banco de dados grande em partes menores e mais gerenciáveis distribuídas por vários nós. No entanto, o Postgres não oferece suporte nativo a sharding. Em vez disso, o sharding pode ser obtido usando extensões como [Citus](https://www.citusdata.com/), na qual o Postgres se torna um banco de dados distribuído capaz de escalar horizontalmente. Essa abordagem permite que o Postgres lide com taxas de transação mais altas e conjuntos de dados maiores ao distribuir a carga entre várias máquinas. Os shards podem ser baseados em linhas ou em schema, oferecendo flexibilidade para diferentes tipos de workload, como transacional ou analítico. O sharding pode introduzir uma complexidade significativa em termos de gerenciamento de dados e execução de consultas, pois exige coordenação entre várias máquinas e garantias de consistência.
+
+Ao contrário dos shards, as réplicas são instâncias adicionais do Postgres que contêm todos ou parte dos dados do nó primário. As réplicas são usadas por vários motivos, incluindo melhor desempenho de leitura e cenários de HA (alta disponibilidade). A replicação física é um recurso nativo do Postgres que envolve copiar o banco de dados inteiro ou partes significativas dele para outro servidor, incluindo todos os bancos de dados, tabelas e índices. Isso envolve transmitir segmentos de WAL do nó primário para as réplicas por TCP/IP. Em contraste, a replicação lógica é um nível mais alto de abstração que transmite alterações com base em operações `INSERT`, `UPDATE` e `DELETE`. Embora a replicação física possa levar aos mesmos resultados, a replicação lógica oferece maior flexibilidade para direcionar tabelas e operações específicas, bem como para realizar transformações de dados e dar suporte a diferentes versões do Postgres.
+
+**Em contraste, shards e réplicas no ClickHouse são dois conceitos-chave relacionados à distribuição de dados e à redundância**. As réplicas do ClickHouse podem ser consideradas análogas às réplicas do Postgres, embora a replicação seja eventualmente consistente, sem a noção de um primário. O sharding, diferentemente do Postgres, tem suporte nativo.
+
+Um shard é uma parte dos dados da sua tabela. Você sempre tem pelo menos um shard. Distribuir os dados em shards entre vários servidores pode ser usado para dividir a carga quando você excede a capacidade de um único servidor, com todos os shards sendo usados para executar uma consulta em paralelo. Você pode criar manualmente shards para uma tabela em diferentes servidores e inserir dados diretamente neles. Como alternativa, uma tabela distribuída pode ser usada com uma chave de sharding que define para qual shard os dados são encaminhados. A chave de sharding pode ser aleatória ou o resultado de uma função hash. É importante observar que um shard pode consistir em várias réplicas.
+
+Uma réplica é uma cópia dos seus dados. O ClickHouse sempre tem pelo menos uma cópia dos seus dados e, portanto, o número mínimo de réplicas é um. Adicionar uma segunda réplica dos seus dados fornece tolerância a falhas e potencialmente capacidade computacional adicional para processar mais consultas ([Parallel Replicas](https://clickhouse.com/blog/clickhouse-release-23-03#parallel-replicas-for-utilizing-the-full-power-of-your-replicas-nikita-mikhailov) também podem ser usadas para distribuir a capacidade computacional de uma única consulta, reduzindo assim a latência). As réplicas são obtidas com o [motor de tabela ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replication), que permite ao ClickHouse manter várias cópias dos dados sincronizadas entre diferentes servidores. A replicação é física: apenas partes compactadas são transferidas entre os nós, não consultas.
+
+Em resumo, uma réplica é uma cópia dos dados que fornece redundância e confiabilidade (e potencialmente processamento distribuído), enquanto um shard é um subconjunto dos dados que permite processamento distribuído e balanceamento de carga.
+
+> O ClickHouse Cloud usa uma única cópia dos dados armazenada no S3 com várias réplicas de computação. Os dados ficam disponíveis para cada nó de réplica, cada um dos quais tem um cache em SSD local. Isso depende apenas da replicação de metadados por meio do ClickHouse Keeper.
+
+<div id="eventual-consistency">
+  ## Consistência eventual
+</div>
+
+O ClickHouse usa o ClickHouse Keeper (implementação do ZooKeeper em C++; o ZooKeeper também pode ser usado) para gerenciar seu mecanismo interno de replicação, com foco principalmente no armazenamento de metadados e em garantir consistência eventual. O Keeper é usado para atribuir números sequenciais exclusivos a cada inserção em um ambiente distribuído. Isso é crucial para manter a ordem e a consistência entre as operações. Essa estrutura também gerencia operações em segundo plano, como merges e mutações, garantindo que esse trabalho seja distribuído e, ao mesmo tempo, executado na mesma ordem em todas as réplicas. Além dos metadados, o Keeper funciona como um centro de controle abrangente para a replicação, incluindo o rastreamento dos checksums das partes de dados armazenadas, e atua como um sistema distribuído de notificações entre réplicas.
+
+O processo de replicação no ClickHouse (1) começa quando os dados são inseridos em qualquer réplica. Esses dados, em sua forma bruta de inserção, são (2) gravados em disco junto com seus checksums. Depois de gravados, a réplica (3) tenta registrar essa nova parte de dados no Keeper, alocando um número de bloco exclusivo e registrando os detalhes da nova parte. Outras réplicas, ao (4) detectar novas entradas no log de replicação, (5) baixam a parte de dados correspondente por meio de um protocolo HTTP interno, verificando-a em relação aos checksums listados no ZooKeeper. Esse método garante que todas as réplicas acabem mantendo dados consistentes e atualizados, apesar de velocidades de processamento diferentes ou possíveis atrasos. Além disso, o sistema é capaz de lidar com várias operações simultaneamente, otimizando os processos de gerenciamento de dados e permitindo escalabilidade e robustez diante de diferenças de hardware.
+
+<Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="Consistência eventual" />
+
+Observe que o ClickHouse Cloud usa um [mecanismo de replicação otimizado para a nuvem](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates) adaptado à sua arquitetura com separação entre armazenamento e compute. Ao armazenar dados em armazenamento de objetos compartilhado, os dados ficam automaticamente disponíveis para todos os nós de compute, sem a necessidade de replicá-los fisicamente entre os nós. Em vez disso, o Keeper é usado apenas para compartilhar metadados (quais dados existem e onde estão no armazenamento de objetos) entre os nós de compute.
+
+O PostgreSQL emprega uma estratégia de replicação diferente da do ClickHouse, usando principalmente replicação por streaming, que envolve um modelo de réplica primária no qual os dados são transmitidos continuamente da primária para um ou mais nós de réplica. Esse tipo de replicação garante consistência quase em tempo real e pode ser síncrona ou assíncrona, dando aos administradores controle sobre o equilíbrio entre disponibilidade e consistência. Ao contrário do ClickHouse, o PostgreSQL depende de um WAL (Write-Ahead Logging), com replicação lógica e decodificação, para transmitir objetos de dados e alterações entre nós. Essa abordagem no PostgreSQL é mais direta, mas pode não oferecer o mesmo nível de escalabilidade e tolerância a falhas em ambientes altamente distribuídos que o ClickHouse alcança por meio de seu uso complexo do Keeper para coordenação de operações distribuídas e consistência eventual.
+
+<div id="user-implications">
+  ## Implicações para o usuário
+</div>
+
+No ClickHouse, a possibilidade de leituras sujas — em que você pode gravar dados em uma réplica e depois ler, em outra, dados potencialmente ainda não replicados — decorre do seu modelo de replicação com consistência eventual, gerenciado via Keeper. Esse modelo prioriza desempenho e escalabilidade em sistemas distribuídos, permitindo que as réplicas operem de forma independente e se sincronizem de maneira assíncrona. Como resultado, os dados inseridos recentemente podem não ficar visíveis imediatamente em todas as réplicas, dependendo do atraso de replicação e do tempo necessário para que as alterações se propaguem pelo sistema.
+
+Por outro lado, o modelo de replicação por streaming do PostgreSQL normalmente consegue evitar leituras sujas ao empregar opções de replicação síncrona, nas quais o primário aguarda que pelo menos uma réplica confirme o recebimento dos dados antes de confirmar as transações. Isso garante que, uma vez confirmada uma transação, haja a garantia de que os dados estejam disponíveis em outra réplica. Em caso de falha do primário, a réplica garantirá que as consultas vejam os dados confirmados, mantendo assim um nível mais rigoroso de consistência.
+
+<div id="recommendations">
+  ## Recomendações
+</div>
+
+Usuários iniciantes no ClickHouse devem estar cientes dessas diferenças, que ficam evidentes em ambientes replicados. Em geral, a consistência eventual é suficiente para análises sobre bilhões — ou até trilhões — de pontos de dados, em que as métricas tendem a ser mais estáveis ou uma estimativa já é suficiente, já que novos dados são inseridos continuamente em grande volume.
+
+Há várias opções para aumentar a consistência das leituras, caso isso seja necessário. Ambos os exemplos exigem mais complexidade ou sobrecarga, reduzindo o desempenho das consultas e dificultando escalar o ClickHouse. **Recomendamos essas abordagens apenas se forem absolutamente necessárias.**
+
+<div id="consistent-routing">
+  ## Roteamento consistente
+</div>
+
+Para contornar algumas das limitações da consistência eventual, você pode garantir que os clientes sejam roteados para as mesmas réplicas. Isso é útil quando vários usuários estão fazendo consultas no ClickHouse e os resultados precisam ser determinísticos entre as solicitações. Embora os resultados possam variar à medida que novos dados são inseridos, as mesmas réplicas devem ser consultadas, garantindo uma visão consistente.
+
+Isso pode ser feito de várias maneiras, dependendo da sua arquitetura e se você está usando ClickHouse OSS ou ClickHouse Cloud.
+
+<div id="clickhouse-cloud">
+  ## ClickHouse Cloud
+</div>
+
+O ClickHouse Cloud usa uma única cópia dos dados armazenada no S3, com várias réplicas de computação. Os dados ficam disponíveis para cada nó de réplica, que tem um cache em Local SSD. Para garantir resultados consistentes, os usuários precisam apenas assegurar o roteamento consistente para o mesmo nó.
+
+A comunicação com os nós de um serviço do ClickHouse Cloud ocorre por meio de um proxy. Conexões HTTP e do protocolo nativo serão roteadas para o mesmo nó durante o período em que permanecerem abertas. No caso de conexões HTTP 1.1 da maioria dos clientes, isso depende da janela de Keep-Alive. Isso pode ser configurado na maioria dos clientes, por exemplo, no Node.js. Isso também exige uma configuração no lado do servidor, que será maior do que a do cliente e está definida como 10s no ClickHouse Cloud.
+
+Para garantir roteamento consistente entre conexões, por exemplo, ao usar um pool de conexões ou se as conexões expirarem, você pode garantir que a mesma conexão seja usada (mais fácil para o protocolo nativo) ou solicitar a exposição de endpoints fixos. Isso fornece um conjunto de endpoints para cada nó no cluster, permitindo, assim, que os clientes garantam que as queries sejam roteadas de forma determinística.
+
+> Entre em contato com o suporte para obter acesso aos endpoints fixos.
+
+<div id="clickhouse-oss">
+  ## ClickHouse OSS
+</div>
+
+Para obter esse comportamento no OSS, isso depende da topologia de shards e réplicas e de você estar usando uma [tabela distribuída](/pt-BR/reference/engines/table-engines/special/distributed) para fazer consultas.
+
+Quando há apenas um shard e réplicas (algo comum, já que o ClickHouse escala verticalmente), os usuários selecionam o nó na camada de cliente e consultam uma réplica diretamente, garantindo que ela seja escolhida de forma determinística.
+
+Embora topologias com vários shards e réplicas sejam possíveis sem uma tabela distribuída, essas implantações mais avançadas normalmente têm sua própria infraestrutura de roteamento. Portanto, presumimos que implantações com mais de um shard usem uma tabela distribuída (tabelas distribuídas podem ser usadas em implantações com shard único, mas geralmente são desnecessárias).
+
+Nesse caso, você deve garantir que o roteamento consistente de nós seja feito com base em uma propriedade, por exemplo, `session_id` ou `user_id`. As configurações [`prefer_localhost_replica=0`](/pt-BR/reference/settings/session-settings#prefer_localhost_replica) e [`load_balancing=in_order`](/pt-BR/reference/settings/session-settings#load_balancing) devem ser [definidas na consulta](/pt-BR/concepts/features/configuration/settings/settings-query-level). Isso garantirá que quaisquer réplicas locais dos shards sejam priorizadas; caso contrário, as réplicas serão priorizadas na ordem em que aparecem na configuração, desde que tenham o mesmo número de erros. Se o número de erros for maior, o failover ocorrerá com seleção aleatória. [`load_balancing=nearest_hostname`](/pt-BR/reference/settings/session-settings#load_balancing) também pode ser usado como alternativa para essa seleção determinística de shard.
+
+> Ao criar uma tabela distribuída, você especificará um cluster. Essa definição de cluster, especificada em config.xml, listará os shards (e suas réplicas), permitindo que os usuários controlem a ordem em que eles são usados a partir de cada nó. Com isso, você pode garantir que a seleção seja determinística.
+
+<div id="sequential-consistency">
+  ## Consistência sequencial
+</div>
+
+Em casos excepcionais, você pode precisar de consistência sequencial.
+
+Consistência sequencial em bancos de dados é quando as operações em um banco de dados parecem ser executadas em alguma ordem sequencial, e essa ordem é consistente em todos os processos que interagem com o banco de dados. Isso significa que cada operação parece entrar em vigor instantaneamente entre sua invocação e sua conclusão, e há uma única ordem acordada na qual todas as operações são observadas por qualquer processo.
+
+Na perspectiva do usuário, isso normalmente se manifesta como a necessidade de gravar dados no ClickHouse e, ao ler os dados, garantir que as linhas inseridas mais recentemente sejam retornadas.
+Isso pode ser alcançado de várias maneiras (em ordem de preferência):
+
+1. **Ler/gravar no mesmo nó** - Se você estiver usando o protocolo nativo ou uma [sessão para fazer a gravação/leitura via HTTP](/pt-BR/concepts/features/interfaces/http#default-database), deverá estar conectado à mesma réplica: nesse cenário, como você está lendo diretamente do nó em que grava, sua leitura sempre será consistente.
+2. **Sincronizar réplicas manualmente** - Se você gravar em uma réplica e ler de outra, poderá executar `SYSTEM SYNC REPLICA LIGHTWEIGHT` antes da leitura.
+3. **Habilitar a consistência sequencial** - por meio da configuração da consulta [`select_sequential_consistency = 1`](/pt-BR/reference/settings/session-settings#select_sequential_consistency). No OSS, a configuração `insert_quorum = 'auto'` também deve ser especificada.
+
+<br />
+
+Veja [aqui](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree#consistency) mais detalhes sobre como habilitar essas configurações.
+
+> O uso de consistência sequencial aumentará a carga no ClickHouse Keeper. O resultado pode
+> significar inserts e leituras mais lentos. O SharedMergeTree, usado no ClickHouse Cloud como o principal motor de tabela, [gera menos sobrecarga e escala melhor](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree#consistency) com consistência sequencial. No OSS, você deve usar essa abordagem com cautela e medir a carga do Keeper.
+
+<div id="transactional-acid-support">
+  ## Suporte transacional (ACID)
+</div>
+
+Usuários que estão migrando do PostgreSQL podem estar acostumados ao seu sólido suporte às propriedades ACID (Atomicidade, Consistência, Isolamento e Durabilidade), o que o torna uma opção confiável para bancos de dados transacionais. A atomicidade no PostgreSQL garante que cada transação seja tratada como uma única unidade, que ou é concluída por completo ou é totalmente revertida, evitando atualizações parciais. A consistência é mantida por meio da aplicação de restrições, gatilhos e regras que garantem que todas as transações do banco de dados resultem em um estado válido. Os níveis de isolamento, de Read Committed a Serializable, são suportados no PostgreSQL, permitindo controle refinado sobre a visibilidade das alterações feitas por transações simultâneas. Por fim, a durabilidade é obtida por meio de write-ahead logging (WAL), garantindo que, depois de confirmada, uma transação continue assim mesmo em caso de falha do sistema.
+
+Essas propriedades são comuns em bancos de dados OLTP que atuam como fonte da verdade.
+
+Embora isso seja poderoso, também traz limitações inerentes e torna desafiador operar em escala de PB. O ClickHouse abre mão de parte dessas propriedades para oferecer consultas analíticas rápidas em escala, ao mesmo tempo em que mantém alta taxa de transferência de gravação.
+
+O ClickHouse oferece propriedades ACID em [configurações limitadas](/pt-BR/concepts/features/operations/insert/transactions) - mais simplesmente ao usar uma instância não replicada do motor de tabela MergeTree com uma partição. Você não deve esperar essas propriedades fora desses casos e deve garantir que elas não sejam um requisito.
+
+<div id="compression">
+  ## Compressão
+</div>
+
+Como o ClickHouse usa armazenamento orientado por colunas, a compressão costuma ser significativamente melhor do que no Postgres. Isso fica ilustrado a seguir, na comparação dos requisitos de armazenamento de todas as tabelas do Stack Overflow em ambos os bancos de dados:
+
+```sql title="Query (Postgres)"
+SELECT
+    schemaname,
+    tablename,
+    pg_total_relation_size(schemaname || '.' || tablename) AS total_size_bytes,
+    pg_total_relation_size(schemaname || '.' || tablename) / (1024 * 1024 * 1024) AS total_size_gb
+FROM
+    pg_tables s
+WHERE
+    schemaname = 'public';
+```
+
+```sql title="Query (ClickHouse)"
+SELECT
+        `table`,
+        formatReadableSize(sum(data_compressed_bytes)) AS compressed_size
+FROM system.parts
+WHERE (database = 'stackoverflow') AND active
+GROUP BY `table`
+```
+
+```response title="Response"
+┌─table───────┬─compressed_size─┐
+│ posts       │ 25.17 GiB       │
+│ users       │ 846.57 MiB      │
+│ badges      │ 513.13 MiB      │
+│ comments    │ 7.11 GiB        │
+│ votes       │ 1.28 GiB        │
+│ posthistory │ 40.44 GiB       │
+│ postlinks   │ 79.22 MiB       │
+└─────────────┴─────────────────┘
+```
+
+Mais detalhes sobre como otimizar e medir a compressão podem ser encontrados [aqui](/pt-BR/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
+
+<div id="data-type-mappings">
+  ## Mapeamentos de tipos de dados
+</div>
+
+A tabela a seguir mostra os tipos de dados do ClickHouse equivalentes aos do Postgres.
+
+| Tipo de dado do Postgres | Tipo do ClickHouse                                                                                                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATE`                   | [Date](/pt-BR/reference/data-types/date)                                                                                                                                                     |
+| `TIMESTAMP`              | [DateTime](/pt-BR/reference/data-types/datetime)                                                                                                                                             |
+| `REAL`                   | [Float32](/pt-BR/reference/data-types/float)                                                                                                                                                 |
+| `DOUBLE`                 | [Float64](/pt-BR/reference/data-types/float)                                                                                                                                                 |
+| `DECIMAL, NUMERIC`       | [Decimal](/pt-BR/reference/data-types/decimal)                                                                                                                                               |
+| `SMALLINT`               | [Int16](/pt-BR/reference/data-types/int-uint)                                                                                                                                                |
+| `INTEGER`                | [Int32](/pt-BR/reference/data-types/int-uint)                                                                                                                                                |
+| `BIGINT`                 | [Int64](/pt-BR/reference/data-types/int-uint)                                                                                                                                                |
+| `SERIAL`                 | [UInt32](/pt-BR/reference/data-types/int-uint)                                                                                                                                               |
+| `BIGSERIAL`              | [UInt64](/pt-BR/reference/data-types/int-uint)                                                                                                                                               |
+| `TEXT, CHAR, BPCHAR`     | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `INTEGER`                | Nullable([Int32](/pt-BR/reference/data-types/int-uint))                                                                                                                                      |
+| `ARRAY`                  | [Array](/pt-BR/reference/data-types/array)                                                                                                                                                   |
+| `FLOAT4`                 | [Float32](/pt-BR/reference/data-types/float)                                                                                                                                                 |
+| `BOOLEAN`                | [Bool](/pt-BR/reference/data-types/boolean)                                                                                                                                                  |
+| `VARCHAR`                | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `BIT`                    | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `BIT VARYING`            | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `BYTEA`                  | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `NUMERIC`                | [Decimal](/pt-BR/reference/data-types/decimal)                                                                                                                                               |
+| `GEOGRAPHY`              | [Point](/pt-BR/reference/data-types/geo#point), [Ring](/pt-BR/reference/data-types/geo#ring), [Polygon](/pt-BR/reference/data-types/geo#polygon), [MultiPolygon](/pt-BR/reference/data-types/geo#multipolygon) |
+| `GEOMETRY`               | [Point](/pt-BR/reference/data-types/geo#point), [Ring](/pt-BR/reference/data-types/geo#ring), [Polygon](/pt-BR/reference/data-types/geo#polygon), [MultiPolygon](/pt-BR/reference/data-types/geo#multipolygon) |
+| `INET`                   | [IPv4](/pt-BR/reference/data-types/ipv4), [IPv6](/pt-BR/reference/data-types/ipv6)                                                                                                                 |
+| `MACADDR`                | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `CIDR`                   | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |
+| `HSTORE`                 | [Map(K, V)](/pt-BR/reference/data-types/map), [Map](/pt-BR/reference/data-types/map)(K,[Variant](/pt-BR/reference/data-types/variant))                                                                   |
+| `UUID`                   | [UUID](/pt-BR/reference/data-types/uuid)                                                                                                                                                     |
+| `ARRAY<T>`               | [ARRAY(T)](/pt-BR/reference/data-types/array)                                                                                                                                                |
+| `JSON`                   | [String](/pt-BR/reference/data-types/string), [Variant](/pt-BR/reference/data-types/variant), [Nested](/pt-BR/reference/data-types/nested-data-structures/index), [Tuple](/pt-BR/reference/data-types/tuple)   |
+| `JSON`                   | [String](/pt-BR/reference/data-types/string), [Variant](/pt-BR/reference/data-types/variant), [Nested](/pt-BR/reference/data-types/nested-data-structures), [Tuple](/pt-BR/reference/data-types/tuple)         |
+| `JSONB`                  | [String](/pt-BR/reference/data-types/string)                                                                                                                                                 |

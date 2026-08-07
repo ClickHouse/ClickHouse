@@ -1,0 +1,16 @@
+after inserts
+all_1_1_1	id	UInt64	[]	\N	\N	\N
+all_1_1_1	val	UInt64	[]	\N	\N	\N
+all_2_2_1	id	UInt64	[]	\N	\N	\N
+all_2_2_1	val	UInt64	[]	\N	\N	\N
+after opitmize final
+all_1_2_2	id	UInt64	['TDigest','Uniq','MinMax']	1500	0	1499
+all_1_2_2	val	UInt64	['TDigest','Uniq','MinMax']	500	0	499
+after inserts
+all_1_1_1	id	UInt64	['TDigest','Uniq','MinMax']	1000	0	999
+all_1_1_1	val	UInt64	['TDigest','Uniq','MinMax']	1000	0	999
+all_2_2_1	id	UInt64	['TDigest','Uniq','MinMax']	1000	500	1499
+all_2_2_1	val	UInt64	['TDigest','Uniq','MinMax']	1	42	42
+after opitmize final
+all_1_2_2	id	UInt64	['TDigest','Uniq','MinMax']	1500	0	1499
+all_1_2_2	val	UInt64	['TDigest','Uniq','MinMax']	500	0	499

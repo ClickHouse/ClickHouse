@@ -1,0 +1,16 @@
+---
+title: جدول المحتويات
+---
+
+| Page                                                                             | Description                                                                                            |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [اختيار المفتاح الأساسي](/ar/concepts/best-practices/choosing-a-primary-key)        | كيفية اختيار المفاتيح الأساسية بما يحقق أقصى query performance ويقلل overhead التخزين إلى الحد الأدنى. |
+| [اختيار أنواع البيانات](/ar/concepts/best-practices/select-data-type)               | اختر أنواع البيانات المثلى لتقليل memory usage وتحسين Compression وتسريع queries.                      |
+| [استخدام materialized views](/ar/concepts/best-practices/use-materialized-views)    | استفد من materialized views لإجراء aggregate مسبق للبيانات وتسريع queries التحليلية بشكل كبير.         |
+| [تقليل JOINs وتحسينها](/ar/concepts/best-practices/minimize-optimize-joins)         | أفضل الممارسات لاستخدام إمكانات `JOIN` في ClickHouse بكفاءة.                                           |
+| [اختيار مفتاح partitioning](/ar/concepts/best-practices/partitioning-keys)          | اختر استراتيجيات partitioning التي تتيح data pruning بكفاءة وتسريع تنفيذ query.                        |
+| [اختيار strategy للإدراج](/ar/concepts/best-practices/selecting-an-insert-strategy) | حسّن throughput استيعاب البيانات وقلّل استهلاك الموارد باستخدام patterns إدراج مناسبة.                 |
+| [فهارس تخطي البيانات](/ar/concepts/best-practices/using-data-skipping-indices)      | طبّق secondary indices بشكل استراتيجي لتخطي data blocks غير ذات الصلة وتسريع queries المفلترة.         |
+| [تجنّب mutations](/ar/concepts/best-practices/avoid-mutations)                      | صمّم schemas وسير العمل بما يلغي عمليات `UPDATE`/`DELETE` المكلفة لتحقيق أداء أفضل.                    |
+| [تجنّب OPTIMIZE FINAL](/ar/concepts/best-practices/avoid-optimize-final)            | تجنّب اختناقات الأداء عبر فهم الحالات التي يكون فيها `OPTIMIZE FINAL` أكثر ضررًا من نفعه.              |
+| [استخدم JSON حيثما كان مناسبًا](/ar/concepts/best-practices/json-type)              | وازن بين المرونة والأداء عند العمل مع بيانات JSON شبه المهيكلة في ClickHouse.                          |

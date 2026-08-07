@@ -1,0 +1,80 @@
+---
+title: 2つのクエリが同じ結果セットを返すかどうかを検証する方法
+description: ハッシュ関数と比較手法を使って、2つの ClickHouse クエリが同一の結果セットを返すことを検証する方法を学びます。
+date: 2023-05-04
+tags: ['関数']
+keywords: ['検証', '結果セット', 'ハッシュ関数']
+---
+
+<div id="question">
+  ## 質問
+</div>
+
+2つのクエリが同じ結果セットを返すことは、どのように確認できますか？
+
+<div id="answer">
+  ## 回答
+</div>
+
+以下の方法を利用できます。
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- クエリ1をここに記述
+            -- SELECT ...
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- クエリ2をここに記述
+            -- SELECT ...
+        )
+    ) AS q2_resultset_hash
+SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
+```
+
+この例では、[CTE](/ja/reference/statements/select/with) を使って、これら 2 つのクエリにおける各行の [cityHash](/ja/reference/functions/regular-functions/hash-functions#cityhash64) 値の合計を計算し、2 つの結果セットが同一であれば `1` を返します。
+
+整数のシーケンスデータと Pretty フォーマットを使用した例:
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number DESC
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number ASC
+        )
+    ) AS q2_resultset_hash
+SELECT q1_resultset_hash = q2_resultset_hash AS Q1_equals_Q2
+FORMAT Pretty
+```
+
+次が返されます。
+
+```
+┏━━━━━━━━━━━━━━┓
+┃ Q1_equals_Q2 ┃
+┡━━━━━━━━━━━━━━┩
+│            1 │
+└──────────────┘
+```
+
+これは多くの場面で便利ですが、あらゆる型の結果セットの等価性を検証する万能策とは言えず、利用にはいくつか注意点があります。たとえば、いずれかの行に `NULL` 値が含まれている場合、上記の方法は機能しません。

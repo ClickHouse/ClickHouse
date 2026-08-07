@@ -1,0 +1,44 @@
+---
+slug: /cloud/managed-postgres/upgrades
+sidebarTitle: '升级'
+title: '升级'
+description: 'ClickHouse Managed Postgres 中 PostgreSQL 版本升级的工作机制'
+keywords: ['Managed Postgres 升级', 'Postgres 版本', '次版本升级', '主版本升级', '维护窗口']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
+
+Managed Postgres 可处理 PostgreSQL 版本升级，帮助您的实例保持安全并及时更新。支持次版本升级和主版本升级，且对业务影响降至最低。
+
+<div id="maintenance-updates">
+  ## 维护更新
+</div>
+
+PostgreSQL 实例的常规维护包括以下内容：
+
+* 次要版本升级 (例如从 17.4 升级到 17.5) ，包括缺陷修复以及 PostgreSQL 引擎安全补丁。
+* 托管服务功能。对原生 CDC、可观测性、pg&#95;clickhouse 和其他扩展的改进。
+* 操作系统和系统组件补丁。包括安全修复、性能优化以及其他改进。
+
+这些操作通过故障转移完成，通常只会导致短暂的连接中断，往往仅持续几秒钟。
+
+对于启用了[standbys](/zh/products/managed-postgres/high-availability)的实例，升级会先应用到待机实例，然后再执行故障转移，以尽量减少停机时间。
+
+<div id="maintenance-windows">
+  ## 维护窗口
+</div>
+
+默认维护窗口为周日 UTC 时间 14:00 至 16:00。
+预计在该时间窗口内，停机时间不超过 1 分钟。
+
+对于 Enterprise 层级的组织，Managed Postgres 支持维护窗口，可将升级和其他维护操作安排在对工作负载影响最小的时间进行。用于配置维护窗口的 UI 和 API 支持即将推出。在此之前，请联系 [support](https://clickhouse.com/support/program) 为您的实例设置维护窗口。
+
+<div id="major-version-upgrades">
+  ## 主版本升级
+</div>
+
+通过 UI 和 API 进行主版本升级 (例如从 17.x 升级到 18.x) 的功能即将推出。
+在此之前，如需升级您的 Managed Postgres 实例，请联系[support](https://clickhouse.com/support/program)。

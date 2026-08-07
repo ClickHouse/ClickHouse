@@ -1,0 +1,183 @@
+---
+sidebarTitle: 'Lightdash'
+slug: /integrations/lightdash
+keywords: ['ClickHouse', 'lightdash', '데이터 시각화', 'BI', '시맨틱 레이어', 'dbt', '셀프서비스 분석', '연결']
+description: 'Lightdash는 dbt를 기반으로 구축된 현대적인 오픈소스 BI 도구로, 팀이 시맨틱 레이어를 통해 ClickHouse 데이터를 탐색하고 시각화할 수 있도록 지원합니다. dbt 기반의 빠르고 거버넌스가 적용된 분석을 위해 Lightdash를 ClickHouse에 연결하는 방법을 알아보십시오.'
+title: 'Lightdash'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ko/components/Image.jsx";
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Lightdash는 현대적인 데이터 팀을 위해 구축된 **AI 우선 BI 플랫폼**으로, dbt의 개방성과 ClickHouse의 성능을 결합합니다. ClickHouse를 Lightdash에 연결하면 팀은 dbt 시맨틱 레이어를 기반으로 하는 **AI 기반 셀프서비스 분석 환경**을 활용할 수 있으며, 모든 질문에 거버넌스가 적용된 일관된 메트릭으로 답할 수 있습니다.
+
+개발자들은 개방형 아키텍처, 버전 관리되는 YAML 모델, 그리고 GitHub부터 IDE까지 기존 워크플로에 바로 녹아드는 통합 기능 덕분에 Lightdash를 선호합니다.
+
+이 파트너십은 **ClickHouse의 속도**와 **Lightdash의 개발자 경험**을 결합해, AI를 활용한 인사이트 탐색, 시각화, 자동화를 그 어느 때보다 쉽게 만듭니다.
+
+<div id="build-an-interactive-dashboard">
+  ## Lightdash와 ClickHouse로 인터랙티브 대시보드 만들기
+</div>
+
+이 가이드에서는 **Lightdash**를 **ClickHouse**에 연결해 dbt 모델을 탐색하고 인터랙티브 대시보드를 만드는 방법을 설명합니다.
+아래 예시는 ClickHouse 데이터를 기반으로 한 완성된 대시보드를 보여줍니다.
+
+<Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="Lightdash 대시보드 예시" border />
+
+<Steps>
+  <Step>
+    ### 연결 정보 수집
+
+    Lightdash와 ClickHouse 간 연결을 설정할 때는 다음 정보가 필요합니다.
+
+    * **Host:** ClickHouse 데이터베이스가 실행 중인 주소
+    * **User:** ClickHouse 데이터베이스 사용자명
+    * **Password:** ClickHouse 데이터베이스 비밀번호
+    * **DB name:** ClickHouse 데이터베이스 이름
+    * **Schema:** dbt가 프로젝트를 컴파일하고 실행할 때 사용하는 기본 스키마(schema) (`profiles.yml`에서 확인할 수 있음)
+    * **Port:** ClickHouse HTTPS 인터페이스 포트(기본값: `8443`)
+    * **Secure:** 보안 연결을 위해 HTTPS/SSL을 사용하려면 이 옵션을 활성화합니다
+    * **Retries:** 실패한 ClickHouse 쿼리를 Lightdash가 다시 시도하는 횟수(기본값: `3`)
+    * **Start of week:** 보고 주간이 시작되는 요일을 선택합니다. 기본값은 웨어하우스 설정을 따릅니다
+
+    <ConnectionDetails />
+
+    ***
+  </Step>
+
+  <Step>
+    ### ClickHouse용 dbt 프로필 구성하기
+
+    Lightdash에서는 기존 **dbt 프로젝트**를 기반으로 연결을 설정합니다.
+    ClickHouse에 연결하려면 로컬 `~/.dbt/profiles.yml` 파일에 유효한 ClickHouse 대상 구성이 포함되어 있는지 확인하세요.
+
+    예시는 다음과 같습니다:
+
+    <Image size="md" img="/images/integrations/data-visualization/lightdash_01.webp" alt="lightdash-clickhouse 프로젝트용 profiles.yml 구성 예시" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ### ClickHouse에 연결된 Lightdash 프로젝트 생성하기
+
+    dbt 프로필이 ClickHouse용으로 구성되면 **dbt 프로젝트**도 Lightdash에 연결해야 합니다.
+
+    이 과정은 모든 데이터 웨어하우스에서 동일하므로 여기서는 자세히 다루지 않겠습니다. dbt 프로젝트를 가져오는 방법은 공식 Lightdash 가이드를 참조하십시오:
+
+    [dbt 프로젝트 가져오기 → Lightdash Docs](https://docs.lightdash.com/get-started/setup-lightdash/connect-project#2-import-a-dbt-project?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    dbt 프로젝트를 연결한 후에는 Lightdash가 `profiles.yml` 파일에서 ClickHouse 구성을 자동으로 감지합니다. 연결 테스트가 성공하면 dbt 모델을 탐색하고 ClickHouse 기반 대시보드를 만들 수 있습니다.
+
+    ***
+  </Step>
+
+  <Step>
+    ### Lightdash에서 ClickHouse 데이터를 탐색하세요
+
+    연결되면 Lightdash가 dbt 모델을 자동으로 동기화하고 다음 항목을 제공합니다:
+
+    * YAML에 정의된 **차원** 및 **측정값**
+    * 메트릭, 조인, Explore와 같은 **시맨틱 레이어 로직**
+    * 실시간 ClickHouse 쿼리를 기반으로 하는 **대시보드**
+
+    이제 대시보드를 만들고, 인사이트를 공유하고, **Ask AI**를 사용해 ClickHouse를 기반으로 직접 시각화를 생성할 수도 있습니다. SQL을 수동으로 작성할 필요는 없습니다.
+
+    ***
+  </Step>
+
+  <Step>
+    ### Lightdash에서 메트릭과 차원 정의하기
+
+    Lightdash에서는 모든 **메트릭**과 **차원**을 dbt 모델 `.yml` 파일에서 직접 정의합니다. 이렇게 하면 비즈니스 로직을 버전 관리할 수 있고, 일관성과 투명성도 확보됩니다.
+
+    <Image size="md" img="/images/integrations/data-visualization/lightdash_03.webp" alt=".yml 파일에 메트릭을 정의한 예시" border />
+
+    <br />
+
+    이를 YAML에 정의하면 팀 전체가 대시보드와 분석 전반에서 동일한 정의를 사용할 수 있습니다. 예를 들어 `total_order_count`, `total_revenue`, `avg_order_value`와 같은 재사용 가능한 메트릭을 dbt 모델 바로 옆에 만들 수 있으므로, UI에서 중복 정의할 필요가 없습니다.
+
+    이러한 항목을 정의하는 방법을 자세히 알아보려면 다음 Lightdash 가이드를 참조하십시오.
+
+    * [메트릭 생성 방법](https://docs.lightdash.com/guides/how-to-create-metrics?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+    * [차원 생성 방법](https://docs.lightdash.com/guides/how-to-create-dimensions?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    ***
+  </Step>
+
+  <Step>
+    ### 테이블에서 데이터 쿼리하기
+
+    dbt 프로젝트를 Lightdash에 연결하고 동기화하면 **테이블**(또는 &quot;explores&quot;)에서 직접 데이터를 탐색할 수 있습니다.
+    각 테이블은 하나의 dbt 모델을 나타내며, YAML에서 정의한 메트릭과 차원을 포함합니다.
+
+    **Explore** 페이지는 5개의 주요 영역으로 구성됩니다.
+
+    1. **차원 및 메트릭** — 선택한 테이블에서 사용할 수 있는 모든 필드
+    2. **필터** — 쿼리에서 반환되는 데이터를 제한합니다
+    3. **차트** — 쿼리 결과를 시각화합니다
+    4. **결과** — ClickHouse 데이터베이스에서 반환된 원시 데이터를 확인합니다
+    5. **SQL** — 결과를 생성한 SQL 쿼리를 확인합니다
+
+    <Image size="lg" img="/images/integrations/data-visualization/lightdash_04.webp" alt="차원, 필터, 차트, 결과, SQL이 표시된 Lightdash Explore 화면" border />
+
+    여기에서는 필드를 끌어다 놓고, 필터를 추가하고, 테이블, 막대 차트, 시계열 등의 시각화로 전환하면서 대화형으로 쿼리를 만들고 조정할 수 있습니다.
+
+    explore와 테이블에서 쿼리하는 방법을 더 자세히 알아보려면 다음 문서를 참조하십시오.
+    [테이블과 Explore 페이지 소개 → Lightdash Docs](https://docs.lightdash.com/get-started/exploring-data/using-explores#an-intro-to-tables-and-the-explore-page?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    ***
+  </Step>
+
+  <Step>
+    ### 대시보드 만들기
+
+    데이터를 탐색하고 시각화를 저장한 후에는 이를 **대시보드**로 묶어 팀과 공유할 수 있습니다.
+
+    Lightdash의 대시보드는 완전한 대화형 방식으로 동작하므로 필터를 적용하고, 탭을 추가하고, 실시간 ClickHouse 쿼리로 구동되는 차트를 볼 수 있습니다.
+
+    또한 **대시보드 내에서 바로** 새 차트를 만들 수 있어 프로젝트를 체계적으로 정리하고 복잡함을 줄이는 데 도움이 됩니다. 이렇게 만든 차트는 **해당 대시보드 전용**이므로 프로젝트의 다른 곳에서는 재사용할 수 없습니다.
+
+    대시보드 전용 차트를 만들려면 다음과 같이 하십시오:
+
+    1. **Add tile**을 클릭합니다
+    2. **New chart**를 선택합니다
+    3. 차트 빌더에서 시각화를 만듭니다
+    4. 저장하면 대시보드 하단에 표시됩니다
+
+    <Image size="lg" img="/images/integrations/data-visualization/lightdash_05.webp" alt="Lightdash 대시보드 내에서 차트 만들기 및 정리하기" border />
+
+    대시보드를 만들고 정리하는 방법에 대한 자세한 내용은 여기에서 확인하십시오:
+    [대시보드 만들기 → Lightdash 문서](https://docs.lightdash.com/get-started/exploring-data/dashboards?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+
+    ***
+  </Step>
+
+  <Step>
+    ### Ask AI: dbt 기반 셀프서비스 분석
+
+    Lightdash의 **AI Agents**를 사용하면 데이터를 진정한 셀프서비스 방식으로 탐색할 수 있습니다.
+    쿼리를 작성하는 대신 *“월간 매출 성장률은 어땠나요?”*처럼 자연어로 질문하기만 하면 됩니다. 그러면 AI Agent가 정확성과 일관성을 보장하기 위해 dbt에서 정의한 메트릭과 모델을 참조하여 적절한 시각화를 자동으로 생성합니다.
+
+    이는 dbt에서 사용하는 것과 동일한 시맨틱 레이어를 기반으로 하므로 모든 답변에 거버넌스가 적용되고, 설명 가능하며, 빠르게 제공됩니다. 이 모든 기능은 ClickHouse를 기반으로 합니다.
+
+    <Image size="lg" img="/images/integrations/data-visualization/lightdash_06.webp" alt="dbt 메트릭 기반 자연어 쿼리를 보여주는 Lightdash Ask AI 인터페이스" border />
+
+    <Tip>
+      여기에서 AI Agents에 대해 자세히 알아보세요: [AI Agents → Lightdash Docs](https://docs.lightdash.com/guides/ai-agents?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="learn-more">
+  ## 자세히 알아보기
+</div>
+
+dbt 프로젝트를 Lightdash에 연결하는 방법을 더 알아보려면 [Lightdash 문서 → ClickHouse 설정](https://docs.lightdash.com/get-started/setup-lightdash/connect-project#clickhouse?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)를 참조하십시오.

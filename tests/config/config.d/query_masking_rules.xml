@@ -1,0 +1,14 @@
+<!-- Config for test server -->
+<clickhouse>
+    <query_masking_rules>
+        <rule_topsecret>
+            <regexp>TOPSECRET.TOPSECRET</regexp>
+            <replace>[hidden]</replace>
+        </rule_topsecret>
+        <rule_passwords_in_tests>
+            <name>Detect passwords in tests</name>
+            <regexp>(?i)P@ssw0rd</regexp>
+            <throw_on_match>true</throw_on_match>
+        </rule_passwords_in_tests>
+    </query_masking_rules>
+</clickhouse>

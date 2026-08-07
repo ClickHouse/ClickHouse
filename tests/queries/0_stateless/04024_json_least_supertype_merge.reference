@@ -1,0 +1,25 @@
+basic: merged type
+json	JSON
+basic: count
+0
+basic: subcolumn read
+Alice	1
+Bob	2
+basic: alias read
+Alice
+Bob
+typed paths: merged type
+json	JSON(a UInt64)
+typed paths: count
+0
+limits: merged type
+json	JSON(max_dynamic_types=20, max_dynamic_paths=200)
+limits: count
+0
+skip: merged type
+json	JSON(SKIP common)
+regexp: merged type
+json	JSON(SKIP REGEXP \'internal_.*\')
+old analyzer
+0
+0

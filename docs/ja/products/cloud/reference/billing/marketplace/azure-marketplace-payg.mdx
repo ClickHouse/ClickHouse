@@ -1,0 +1,132 @@
+---
+slug: /cloud/billing/marketplace/azure-marketplace-payg
+title: 'Azure Marketplace PAYG'
+description: 'Azure Marketplace（PAYG）経由でClickHouse Cloudに申し込みます。'
+keywords: ['azure', 'マーケットプレイス', '請求', 'PAYG']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+[Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) のPAYG (従量課金制) 公開オファーを通じて、ClickHouse Cloud の利用を開始しましょう。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* 課金管理者によって購入権限が有効になっている Azure プロジェクト。
+* Azure Marketplace で ClickHouse Cloud を申し込むには、購入権限を持つアカウントでログインし、適切なプロジェクトを選択する必要があります。
+
+1. [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) にアクセスし、ClickHouse Cloud を検索します。マーケットプレイスでオファーを購入できるよう、ログインしていることを確認してください。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-1.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+2. 製品ページで、**Get It Now** をクリックします。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-2.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+3. 次の画面で、名前、メールアドレス、所在地情報を入力する必要があります。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-3.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+4. 次の画面で、**Subscribe** をクリックします。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-4.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+5. 次の画面で、サブスクリプション、リソースグループ、リソースグループの場所を選択します。リソースグループの場所は、ClickHouse Cloud でサービスを起動する予定の場所と同じである必要はありません。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-5.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+6. また、サブスクリプション名を入力し、利用可能なオプションから請求期間を選択する必要があります。**Recurring billing** はオンまたはオフに設定できます。これを &quot;off&quot; に設定すると、請求期間の終了後に契約が終了し、リソースは削除されます。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-6.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+7. **&quot;Review + subscribe&quot;** をクリックします。
+
+8. 次の画面で、内容に問題がないことを確認して **Subscribe** をクリックします。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-7.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+9. この時点では ClickHouse Cloud の Azure サブスクリプションへの申し込みは完了していますが、ClickHouse Cloud 上のアカウント設定はまだ完了していないことに注意してください。次の手順は必須かつ重要です。ClickHouse Cloud を Azure サブスクリプションに紐付けることで、Azure Marketplace 経由で正しく課金されるようになります。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-8.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+10. Azure の設定が完了すると、**Configure account now** ボタンが有効になるはずです。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-9.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+11. **Configure account now** をクリックします。
+
+<br />
+
+以下のように、アカウント設定の詳細が記載されたメールを受信します。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-10.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+12. ClickHouse Cloud のサインアップまたはサインインページにリダイレクトされます。ClickHouse Cloud に移動したら、既存のアカウントでログインするか、新しいアカウントを登録できます。この手順は非常に重要です。これにより、ClickHouse Cloud の組織を Azure Marketplace の課金に紐付けられるようになります。
+
+13. 新規ユーザーの場合は、会社に関する基本情報も入力する必要があることに注意してください。以下のスクリーンショットを参照してください。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+**Complete sign up** をクリックすると、ClickHouse Cloud 内の組織に移動します。そこで課金画面を確認して Azure Marketplace 経由で課金されていることを確認し、サービスを作成できます。
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp" size="md" alt="ClickHouse Cloud サインアップ情報フォーム" border />
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp" size="md" alt="ClickHouse Cloud 登録情報フォーム" border />
+
+<br />
+
+14. 問題が発生した場合は、[サポートチーム](https://clickhouse.com/support/program)までお気軽にご連絡ください。

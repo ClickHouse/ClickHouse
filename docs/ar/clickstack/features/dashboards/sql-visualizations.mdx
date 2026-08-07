@@ -1,0 +1,290 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/sql-visualizations
+title: 'التصورات المستندة إلى SQL'
+sidebarTitle: 'التصورات المستندة إلى SQL'
+description: 'إنشاء تصورات باستخدام استعلامات SQL في ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'لوحات المعلومات', 'تصور', 'sql', 'observability']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يدعم ClickStack التصورات المستندة إلى استعلامات SQL الخام. ويمنحك هذا تحكمًا كاملًا في منطق الاستعلام، مع الحفاظ على التكامل مع النطاقات الزمنية وعوامل التصفية وعرض المخططات على مستوى لوحة المعلومات.
+
+تكون التصورات المستندة إلى SQL مفيدة عندما تحتاج إلى تجاوز الإمكانات المضمنة في Chart Explorer — على سبيل المثال، لضم الجداول أو إنشاء تجميعات معقدة لا تدعمها أداة إنشاء المخططات.
+
+<div id="creating-a-raw-sql-chart">
+  ## إنشاء تصور مستند إلى SQL
+</div>
+
+لإنشاء تصور مستند إلى SQL، افتح محرر بلاطة لوحة المعلومات وحدد علامة التبويب **SQL**.
+
+<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="زر SQL Editor" size="lg" />
+
+ومن هناك:
+
+1. حدد **اتصال ClickHouse** لتشغيل الاستعلام من خلاله.
+2. ويمكنك اختياريًا تحديد **مصدر** — ما يتيح تطبيق عوامل التصفية على مستوى لوحة المعلومات على تصورك عبر الماكرو `$__filters`.
+3. اكتب استعلام SQL في المحرر، باستخدام معلمات الاستعلام ووحدات الماكرو للتكامل مع النطاق الزمني للوحة المعلومات وعوامل التصفية.
+4. انقر زر **play** لمعاينة النتائج، ثم **Save**.
+
+<div id="query-parameters">
+  ## معلمات الاستعلام
+</div>
+
+تتيح [معلمات الاستعلام](/ar/reference/syntax#defining-and-using-query-parameters) لاستعلام SQL الخاص بك الإشارة إلى النطاق الزمني الحالي ومستوى الدقة الحالي في لوحة المعلومات. وهي تستخدم صيغة الاستعلامات ذات المعلمات في ClickHouse: `{paramName:Type}`.
+
+<div id="available-parameters">
+  ### المعلمات المتاحة
+</div>
+
+تعتمد المعلمات المتاحة على نوع المخطط:
+
+**المخططات الخطية ومخطط الأعمدة المتراكم:**
+
+| المعلمة                         | النوع | الوصف                                                         |
+| ------------------------------- | ----- | ------------------------------------------------------------- |
+| `{startDateMilliseconds:Int64}` | Int64 | بداية النطاق الزمني للوحة المعلومات (بالمللي ثانية منذ epoch) |
+| `{endDateMilliseconds:Int64}`   | Int64 | نهاية النطاق الزمني للوحة المعلومات (بالمللي ثانية منذ epoch) |
+| `{intervalSeconds:Int64}`       | Int64 | حجم الفئة الزمنية بالثواني (استنادًا إلى مستوى التفصيل)       |
+| `{intervalMilliseconds:Int64}`  | Int64 | حجم الفئة الزمنية بالمللي ثانية (استنادًا إلى مستوى التفصيل)  |
+
+**مخططات الجدول والدائري والرقمي:**
+
+| المعلمة                         | النوع | الوصف                                                         |
+| ------------------------------- | ----- | ------------------------------------------------------------- |
+| `{startDateMilliseconds:Int64}` | Int64 | بداية النطاق الزمني للوحة المعلومات (بالمللي ثانية منذ epoch) |
+| `{endDateMilliseconds:Int64}`   | Int64 | نهاية النطاق الزمني للوحة المعلومات (بالمللي ثانية منذ epoch) |
+
+<div id="macros">
+  ## وحدات الماكرو
+</div>
+
+وحدات الماكرو هي اختصارات تُستبدل بتعبيرات شائعة في ClickHouse SQL. وتبدأ بالبادئة `$__`، ويجري استبدالها قبل إرسال الاستعلام إلى ClickHouse.
+
+<div id="time-boundary-macros">
+  ### وحدات ماكرو حدود الوقت
+</div>
+
+تعيد وحدات الماكرو هذه تعبيرًا في ClickHouse يمثّل وقت بداية لوحة المعلومات أو وقت انتهائها. ولا تأخذ أي وسيطات.
+
+| الماكرو          | يتم توسيعه إلى                                                        | نوع العمود |
+| ---------------- | --------------------------------------------------------------------- | ---------- |
+| `$__fromTime`    | `toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))` | DateTime   |
+| `$__toTime`      | `toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))`   | DateTime   |
+| `$__fromTime_ms` | `fromUnixTimestamp64Milli({startDateMilliseconds:Int64})`             | DateTime64 |
+| `$__toTime_ms`   | `fromUnixTimestamp64Milli({endDateMilliseconds:Int64})`               | DateTime64 |
+| `$__interval_s`  | `{intervalSeconds:Int64}`                                             | Int64      |
+
+<div id="time-filter-macros">
+  ### وحدات الماكرو لتصفية الوقت
+</div>
+
+تُنشئ وحدات الماكرو هذه جزءًا من عبارة `WHERE` لتصفية عمود وفقًا للنطاق الزمني في لوحة المعلومات.
+
+| Macro                                 | Description                                                                  |
+| ------------------------------------- | ---------------------------------------------------------------------------- |
+| `$__timeFilter(column)`               | يصفّي عمود `DateTime` وفقًا للنطاق الزمني في لوحة المعلومات                  |
+| `$__timeFilter_ms(column)`            | يصفّي عمود `DateTime64` (بالملي ثانية) وفقًا للنطاق الزمني في لوحة المعلومات |
+| `$__dateFilter(column)`               | يصفّي عمود `Date` وفقًا للنطاق الزمني في لوحة المعلومات                      |
+| `$__dateTimeFilter(dateCol, timeCol)` | يصفّي باستخدام عمودي `Date` و`DateTime` منفصلين                              |
+| `$__dt(dateCol, timeCol)`             | اسم مستعار لـ `$__dateTimeFilter`                                            |
+
+**مثال على التوسيع** لـ `$__timeFilter(TimestampTime)`:
+
+```sql
+TimestampTime >= toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))
+AND TimestampTime <= toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))
+```
+
+<div id="time-interval-macros">
+  ### وحدات ماكرو للفواصل الزمنية
+</div>
+
+تُجمِّع وحدات الماكرو هذه عمود طابع زمني ضمن فواصل زمنية تتوافق مع مستوى الدقة في لوحة المعلومات. وتُستخدم عادةً في عبارتي `SELECT` و`GROUP BY` لمخططات السلاسل الزمنية. وهي متاحة فقط لتصورات Line وStacked-bar.
+
+| Macro                        | Description                                                            |
+| ---------------------------- | ---------------------------------------------------------------------- |
+| `$__timeInterval(column)`    | يُجمِّع عمود `DateTime` ضمن فواصل زمنية بقيمة `intervalSeconds`        |
+| `$__timeInterval_ms(column)` | يُجمِّع عمود `DateTime64` ضمن فواصل زمنية بقيمة `intervalMilliseconds` |
+
+**مثال على التوسيع** لـ `$__timeInterval(TimestampTime)`:
+
+```sql
+toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} second)
+```
+
+<div id="dashboard-filter-macro">
+  ### ماكرو تصفية لوحة المعلومات
+</div>
+
+| الماكرو      | الوصف                                                               |
+| ------------ | ------------------------------------------------------------------- |
+| `$__filters` | يُستبدل بشروط التصفية على مستوى لوحة المعلومات (يتطلب تحديد مصدر) |
+
+عند تحديد **مصدر** في المخطط وتفعيل عوامل تصفية لوحة المعلومات، يتم توسيع `$__filters` ليصبح شروط SQL `WHERE` المقابلة. وعند عدم تحديد أي مصدر أو عدم تطبيق أي عوامل تصفية، يتم توسيعه إلى `(1=1)`، لذا يكون تضمينه في عبارة `WHERE` آمنًا دائمًا.
+
+<div id="how-results-are-plotted">
+  ## كيفية عرض نتائج الاستعلام بيانيًا
+</div>
+
+يربط ClickStack تلقائيًا أعمدة النتائج بعناصر الرسم البياني استنادًا إلى أنواع الأعمدة. وتختلف قواعد هذا الربط باختلاف نوع الرسم البياني.
+
+<div id="line-and-stacked-bar-charts">
+  ### المخططات الخطية ومخططات الأعمدة المتراكمة
+</div>
+
+| الدور               | نوع العمود                    | الوصف                                                                 |
+| ------------------- | ----------------------------- | --------------------------------------------------------------------- |
+| **الطابع الزمني**   | أول عمود `Date` أو `DateTime` | يُستخدم بوصفه المحور السيني.                                          |
+| **قيمة السلسلة**    | جميع الأعمدة الرقمية          | يُرسَم كل عمود رقمي كسلسلة منفصلة. وعادةً ما تكون هذه قيمًا مُجمَّعة. |
+| **أسماء المجموعات** | أعمدة String أو Map أو Array  | اختياري. تُرسَم الصفوف التي تختلف فيها قيم المجموعات كسلاسل منفصلة.   |
+
+<div id="pie-chart">
+  ### المخطط الدائري
+</div>
+
+| الدور             | نوع العمود                   | الوصف                                          |
+| ----------------- | ---------------------------- | ---------------------------------------------- |
+| **قيمة الشريحة**  | أول عمود رقمي                | يحدد حجم كل شريحة.                             |
+| **تسمية الشريحة** | أعمدة String أو Map أو Array | اختياري. تتحول كل قيمة فريدة إلى تسمية لشريحة. |
+
+<div id="number-chart">
+  ### مخطط عددي
+</div>
+
+| الدور   | نوع العمود    | الوصف                                         |
+| ------- | ------------- | --------------------------------------------- |
+| **رقم** | أول عمود رقمي | تُعرَض القيمة من الصف الأول في أول عمود رقمي. |
+
+<div id="table-chart">
+  ### مخطط جدولي
+</div>
+
+تُعرض جميع أعمدة النتائج مباشرةً كأعمدة في الجدول.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<Info>
+  **مطلوب الوصول إلى جدول النظام**
+
+  ستحتاج إلى تحديد `otel_v2.otel_logs` أو `otel_v2.otel_traces` إذا كنت تشغّل الأمثلة التالية على [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).
+</Info>
+
+<div id="example-line-chart">
+  ### مخطط خطي — عدد السجلات عبر الزمن حسب الخدمة
+</div>
+
+يحصي هذا الاستعلام أحداث السجل لكل خدمة، ويجمعها ضمن فترات زمنية تتوافق مع درجة الدقة في لوحة المعلومات.
+
+```sql
+SELECT
+  toStartOfInterval(TimestampTime, INTERVAL {intervalSeconds:Int64} second) AS ts,
+  ServiceName,
+  count() AS count
+FROM otel_logs
+WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+  AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+  AND $__filters
+GROUP BY ServiceName, ts
+ORDER BY ts ASC
+```
+
+* يُستخدَم `ts` ‏(DateTime) كطابع زمني للمحور السيني.
+* تُرسَم `count` ‏(رقمية) باعتبارها قيمة السلسلة.
+* يُنشئ `ServiceName` ‏(نصي) خطًا منفصلًا لكل خدمة.
+
+<div id="example-line-chart-macros">
+  ### مخطط خطي — باستخدام الماكرو
+</div>
+
+الاستعلام نفسه مكتوب باستخدام الماكرو اختصارًا:
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  ServiceName,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filters
+GROUP BY ServiceName, ts
+ORDER BY ts ASC
+```
+
+<div id="example-stacked-bar">
+  ### مخطط أعمدة مكدّس — عدد الأخطاء حسب مستوى الخطورة
+</div>
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  lower(SeverityText),
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND lower(SeverityText) IN ('error', 'warn')
+  AND $__filters
+GROUP BY SeverityText, ts
+ORDER BY ts ASC
+```
+
+<div id="example-table">
+  ### مخطط جدولي — أبطأ 10 نقاط نهاية
+</div>
+
+```sql
+SELECT
+  SpanName AS endpoint,
+  avg(Duration) / 1000 AS avg_duration_ms,
+  count() AS request_count
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+  AND $__filters
+GROUP BY SpanName
+ORDER BY avg_duration_ms DESC
+LIMIT 10
+```
+
+<div id="example-pie">
+  ### مخطط دائري — توزيع الطلبات حسب الخدمة
+</div>
+
+```sql
+SELECT
+  ServiceName,
+  count() AS request_count
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+  AND $__filters
+GROUP BY ServiceName
+```
+
+* `request_count` (رقمي) يحدّد حجم كل شريحة.
+* `ServiceName` (سلسلة نصية) يحدّد تسمية كل شريحة.
+
+<div id="example-number">
+  ### مخطط عددي — إجمالي عدد الأخطاء
+</div>
+
+```sql
+SELECT
+  count() AS total_errors
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND SeverityText = 'error'
+  AND $__filters
+```
+
+تُعرض القيمة الرقمية الوحيدة `total_errors` من الصف الأول.
+
+<div id="notes">
+  ## ملاحظات
+</div>
+
+* تُنفَّذ التصورات المستندة إلى SQL مع تفعيل وضع `readonly` — ولا يُسمح إلا باستعلامات `SELECT`.
+* يجب أن تكون التصورات المستندة إلى SQL عبارة عن استعلام SQL واحد فقط - فالاستعلامات المتعددة غير مدعومة.
+* يوفّر محرر SQL اقتراحات للإكمال التلقائي لكلٍّ من معلمات الاستعلام ووحدات الماكرو.
+* يجب تحديد مصدر لتطبيق عوامل تصفية لوحة المعلومات على التصورات المستندة إلى SQL. وينبغي أن يطابق المصدر الجدول الذي يُجرى عليه الاستعلام لضمان دقة التصفية.

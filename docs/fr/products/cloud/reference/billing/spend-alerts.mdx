@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Alertes de dépenses'
+slug: /cloud/manage/billing/spend-alerts
+title: "Configurer les alertes de dépenses de l'organisation"
+description: "Configurez des alertes de dépenses pour surveiller l'utilisation de ClickHouse Cloud en fonction de seuils pendant une période de facturation."
+keywords: ['facturation', 'alertes de dépenses', "seuils d'utilisation", 'notifications', 'surveillance des coûts', "facturation de l'organisation"]
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Les alertes de dépenses vous avertissent lorsque la consommation de votre organisation atteint les seuils configurés au cours d’une période de facturation, afin d’éviter des frais imprévus. Elles envoient uniquement des notifications ; pour les seuils qui déclenchent une facturation automatique, consultez [Seuils de paiement](/fr/products/cloud/reference/billing/payment-thresholds).
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Vous devez disposer du rôle **Organization Admin** ou **Billing Admin** pour configurer et afficher les alertes de dépenses.
+
+<div id="how-spend-alerts-work">
+  ## Fonctionnement des alertes de dépenses
+</div>
+
+* Les alertes sont basées sur la consommation brute pendant une période de facturation et sont réinitialisées au début de chaque nouveau cycle.
+* Les alertes sont évaluées toutes les heures, en fonction de la consommation brute calculée à ce moment-là ; une alerte se déclenche donc une fois le seuil dépassé.
+
+<Info>
+  **Les alertes de dépenses ne plafonnent pas la consommation**
+
+  Atteindre 100 % de votre alerte de dépenses ne restreint ni ne plafonne votre consommation — les dépenses continuent de s’accumuler au-delà du seuil de 100 %.
+</Info>
+
+<div id="set-up-spend-alert">
+  ## Configurer une alerte de dépenses
+</div>
+
+<Steps>
+  <Step>
+    ### Ouvrir la boîte de dialogue des alertes de dépenses
+
+    1. Accédez à **Organization &gt; Billing** dans la console ClickHouse Cloud.
+    2. Cliquez sur **Actions &gt; Add spend alerts**.
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Page Billing avec le menu Actions ouvert et Add spend alerts mis en évidence" size="lg" />
+  </Step>
+
+  <Step>
+    ### Configurer et enregistrer l’alerte
+
+    1. Saisissez un montant d’alerte de dépenses en dollars ou en crédits par période de facturation.
+    2. Sélectionnez vos canaux de notification : **Email**, **UI** et/ou **Slack**.
+    3. Cliquez sur **Save**.
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.webp" alt="Boîte de dialogue des alertes de dépenses de l’organisation avec limite de dépenses, alertes de seuil automatiques et canaux de notification" size="md" />
+  </Step>
+</Steps>
+
+<div id="threshold-alerts">
+  ## Alertes de seuil automatiques
+</div>
+
+Trois alertes sont automatiquement créées et déclenchées en fonction du montant configuré pour votre alerte de dépenses :
+
+| Seuil    | Déclenchement                               | Exemple (alerte à 10 $) |
+| -------- | ------------------------------------------- | ----------------------- |
+| **50%**  | La moitié des dépenses est atteinte         | 5 $                     |
+| **75%**  | Les trois quarts des dépenses sont atteints | 7,50 $                  |
+| **100%** | Le montant total des dépenses est atteint   | 10 $                    |
+
+<div id="notification-channels">
+  ## Canaux de notification
+</div>
+
+| Canal      | Description                                                                                                    |
+| ---------- | -------------------------------------------------------------------------------------------------------------- |
+| **E-mail** | Envoie des alertes à l’adresse e-mail configurée. Cliquez sur l’icône d’édition pour modifier le destinataire. |
+| **UI**     | Affiche les alertes dans la console ClickHouse Cloud.                                                          |
+| **Slack**  | Envoie des alertes à un canal Slack. Cliquez sur l’icône d’édition pour le configurer.                         |

@@ -1,0 +1,83 @@
+---
+description: 'Documentación de Clickhouse-disks'
+sidebarTitle: 'clickhouse-disks'
+slug: /operations/utilities/clickhouse-disks
+title: 'Clickhouse-disks'
+doc_type: 'reference'
+---
+
+Una utilidad que ofrece operaciones similares a las de un sistema de archivos para los discos de ClickHouse. Puede funcionar tanto en modo interactivo como en modo no interactivo.
+
+<div id="program-wide-options">
+  ## Opciones globales del programa
+</div>
+
+* `--config-file, -C` -- ruta del archivo de configuración de ClickHouse; el valor predeterminado es `/etc/clickhouse-server/config.xml`.
+* `--save-logs` -- registra el progreso de los comandos invocados en `/var/log/clickhouse-server/clickhouse-disks.log`.
+* `--log-level` -- qué [tipo](/es/reference/settings/server-settings/settings#logger) de eventos se registra; el valor predeterminado es `none`.
+* `--disk` -- qué disco usar para los comandos `mkdir, move, read, write, remove`. El valor predeterminado es `default`.
+* `--query, -q` -- consulta única que puede ejecutarse sin iniciar el modo interactivo
+* `--help, -h` -- imprime todas las opciones y comandos con su descripción
+
+<div id="lazy-initialization">
+  ## Inicialización diferida
+</div>
+
+Todos los discos disponibles en la configuración se inicializan de forma diferida. Esto significa que el objeto correspondiente a un disco se inicializa solo cuando dicho disco se utiliza en algún comando. Esto se hace para que la utilidad sea más robusta y para evitar acceder a discos descritos en la configuración pero que el usuario no utiliza y que podrían fallar durante la inicialización. Sin embargo, debe haber un disco que se inicialice al arrancar `clickhouse-disks`. Este disco se especifica con el parámetro `--disk` en la línea de comandos (el valor predeterminado es `default`).
+
+<div id="default-disks">
+  ## Discos predeterminados
+</div>
+
+Tras iniciarse, hay dos discos que no están especificados en la configuración, pero que están disponibles para su inicialización.
+
+1. **Disco `local`**: Este disco está diseñado para imitar el sistema de archivos local desde el que se inició la utilidad `clickhouse-disks`. Su ruta inicial es el directorio desde el que se inició `clickhouse-disks`, y está montado en el directorio raíz del sistema de archivos.
+
+2. **Disco `default`**: Este disco está montado en el sistema de archivos local en el directorio especificado por el parámetro `clickhouse/path` en la configuración (el valor predeterminado es `/var/lib/clickhouse`). Su ruta inicial está establecida en `/`.
+
+<div id="clickhouse-disks-state">
+  ## Estado de clickhouse-disks
+</div>
+
+Para cada disco que se añade, la utilidad guarda el directorio actual (como en un sistema de archivos habitual). El usuario puede cambiar el directorio actual y pasar de un disco a otro.
+
+El estado se refleja en el indicador &quot;`disk_name`:`path_name`&quot;
+
+<div id="commands">
+  ## Comandos
+</div>
+
+En este archivo de documentación, todos los argumentos posicionales obligatorios se representan como `<parameter>`, y los argumentos con nombre, como `[--parameter value]`. Todos los parámetros posicionales también pueden indicarse como parámetros con nombre con el nombre correspondiente.
+
+* `cd (change-dir, change_dir) [--disk disk] <path>`
+  Cambia el directorio a la ruta `path` del disco `disk` (el valor predeterminado es el disco actual). No se cambia de disco.
+* `copy (cp) [--disk-from disk_1] [--disk-to disk_2] <path-from> <path-to>`.
+  Copia recursivamente los datos desde `path-from` en el disco `disk_1` (el valor predeterminado es el disco actual (parámetro `disk` en modo no interactivo))
+  a `path-to` en el disco `disk_2` (el valor predeterminado es el disco actual (parámetro `disk` en modo no interactivo)).
+* `current_disk_with_path (current, current_disk, current_path)`
+  Imprime el estado actual con el formato:
+  `Disk: "current_disk" Path: "current path on current disk"`
+* `help [<command>]`
+  Imprime un mensaje de ayuda sobre el comando `command`. Si no se especifica `command`, imprime información sobre todos los comandos.
+* `move (mv) <path-from> <path-to>`.
+  Mueve un archivo o directorio de `path-from` a `path-to` dentro del disco actual.
+* `remove (rm, delete) <path>`.
+  Elimina `path` de forma recursiva en el disco actual.
+* `link (ln) <path-from> <path-to>`.
+  Crea un enlace físico de `path-from` a `path-to` en el disco actual.
+* `list (ls) [--recursive] <path>`
+  Muestra los archivos en `path` del disco actual. De forma predeterminada, no es recursivo.
+* `list-disks (list_disks, ls-disks, ls_disks)`.
+  Muestra los nombres de los discos.
+* `mkdir [--recursive] <path>` en el disco actual.
+  Crea un directorio. De forma predeterminada, no es recursivo.
+* `read (r) <path-from> [--path-to path]`
+  Lee un archivo desde `path-from` hacia `path` (`stdout` si no se proporciona).
+* `read-bitmap <path-from> [--values]`
+  Inspecciona un archivo sidecar de bitmap de eliminación (`.rbm`) en `path-from`. Imprime el valor mágico y la versión, la validez del CRC, la cardinalidad (número de filas eliminadas) y el rango de filas. Con `--values`, también vuelca todos los bits activados (los desplazamientos de las filas eliminadas) en orden ascendente.
+* `read-checksums <path>`
+  Lee un archivo `checksums.txt` de una parte de datos de `MergeTree` en el disco actual y lo imprime en `stdout` como una tabla legible para humanos, separada por tabulaciones, con las columnas `name`, `file_size`, `file_hash`, `uncompressed_size` y `uncompressed_hash`. Las dos últimas columnas solo están presentes para archivos comprimidos.
+* `switch-disk [--path path] <disk>`
+  Cambia al disco `disk` en la ruta `path` (si no se especifica `path`, el valor predeterminado es la ruta anterior en el disco `disk`).
+* `write (w) [--path-from path] <path-to>`.
+  Escribe un archivo desde `path` (`stdin` si no se proporciona `path`; la entrada debe finalizar con Ctrl+D) en `path-to`.

@@ -1,0 +1,181 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/opentelemetry
+toc_max_heading_level: 2
+description: 'Ингестия данных в ClickStack с помощью OpenTelemetry — стек обсервабилити ClickHouse'
+title: 'Ингестия через OpenTelemetry'
+doc_type: 'guide'
+keywords: ['clickstack', 'opentelemetry', 'трассировки', 'обсервабилити', 'телеметрия']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Все данные поступают в ClickStack через экземпляр **OpenTelemetry (OTel) collector**, который служит основной точкой входа для журналов, метрик, трассировок и данных сеансов. Для этого экземпляра мы рекомендуем использовать официальный [дистрибутив ClickStack](#installing-otel-collector) для collector.
+
+<Tip>
+  Также доступна управляемая версия ClickStack — см. [Управляемый ClickStack](/ru/clickstack/getting-started/managed).
+</Tip>
+
+Пользователи отправляют данные в этот collector из [language SDKs](/ru/clickstack/ingesting-data/sdks/index) или через агенты сбора данных, которые собирают инфраструктурные метрики и журналы (например, OTel collector в роли [agent](/ru/clickstack/ingesting-data/collector#collector-roles) или другие технологии, такие как [Fluentd](https://www.fluentd.org/) или [Vector](https://vector.dev/)). Для команд, которым нужен управляемый конвейер OpenTelemetry, [Bindplane](/ru/clickstack/integration-partners/bindplane) предлагает решение с поддержкой OpenTelemetry и встроенным пунктом назначения ClickStack, упрощая сбор, обработку и маршрутизацию телеметрии.
+
+<div id="sending-otel-data">
+  ## Отправка данных OpenTelemetry
+</div>
+
+<Tabs>
+  <Tab title="Управляемый ClickStack">
+    ### Установка коллектора ClickStack OpenTelemetry
+
+    Чтобы отправлять данные в Управляемый ClickStack, OTel collector следует развернуть в роли [шлюза](/ru/clickstack/ingesting-data/collector#collector-roles). Инструментирование, совместимое с OTel, будет отправлять события в этот коллектор через OTLP по HTTP или gRPC.
+
+    <Info>
+      **Мы рекомендуем использовать коллектор ClickStack OpenTelemetry**
+
+      Это позволит вам воспользоваться стандартизированной ингестией, строго заданными схемами и готовой совместимостью с интерфейсом ClickStack (HyperDX). Использование схемы по умолчанию включает автоматическое определение источников и предварительно настроенные сопоставления столбцов.
+    </Info>
+
+    Дополнительные сведения см. в разделе [&quot;Развертывание коллектора&quot;](/ru/clickstack/ingesting-data/collector).
+
+    ### Отправка данных в коллектор
+
+    Чтобы отправлять данные в Управляемый ClickStack, настройте инструментирование OpenTelemetry на следующие конечные точки, предоставляемые OpenTelemetry Collector:
+
+    * **HTTP (OTLP):** `http://localhost:4318`
+    * **gRPC (OTLP):** `localhost:4317`
+
+    Для [language SDKs](/ru/clickstack/ingesting-data/sdks/index) и библиотек телеметрии, поддерживающих OpenTelemetry, вы можете просто задать в приложении переменную окружения `OTEL_EXPORTER_OTLP_ENDPOINT`:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    ```
+
+    Если вы разворачиваете [дистрибутив contrib для OTel collector](https://github.com/open-telemetry/opentelemetry-collector-contrib) в роли agent, можно использовать экспортёр OTLP для отправки данных в коллектор ClickStack. Ниже показан пример конфигурации agent, которая обрабатывает этот [структурированный файл журнала](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz).
+
+    ```yaml
+    # clickhouse-agent-config.yaml
+    receivers:
+      filelog:
+        include:
+          - /opt/data/logs/access-structured.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            timestamp:
+              parse_from: attributes.time_local
+              layout: '%Y-%m-%d %H:%M:%S'
+    exporters:
+      # HTTP setup
+      otlphttp/hdx:
+        endpoint: 'http://localhost:4318'
+        compression: gzip
+     
+      # gRPC setup (alternative)
+      otlp/hdx:
+        endpoint: 'localhost:4317'
+        compression: gzip
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 10000
+    service:
+      telemetry:
+        metrics:
+          address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
+      pipelines:
+        logs:
+          receivers: [filelog]
+          processors: [batch]
+          exporters: [otlphttp/hdx]
+    ```
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    Коллектор ClickStack OpenTelemetry входит в состав большинства дистрибутивов ClickStack, включая:
+
+    * [All-in-One](/ru/clickstack/deployment/all-in-one)
+    * [Docker Compose](/ru/clickstack/deployment/docker-compose)
+    * [Helm](/ru/clickstack/deployment/helm)
+
+    ### Установка коллектора ClickStack OpenTelemetry
+
+    Коллектор ClickStack OTel также можно развернуть автономно, независимо от других компонентов стека.
+
+    Если вы используете дистрибутив [HyperDX-only](/ru/clickstack/deployment/hyperdx-only), вы сами отвечаете за доставку данных в ClickHouse. Это можно сделать следующим образом:
+
+    * Запустить собственный OpenTelemetry Collector и настроить его на отправку данных в ClickHouse — см. ниже.
+    * Отправлять данные напрямую в ClickHouse с помощью альтернативных инструментов, таких как [Vector](https://vector.dev/), [Fluentd](https://www.fluentd.org/) и т. д., или даже стандартного [дистрибутива OTel contrib collector](https://github.com/open-telemetry/opentelemetry-collector-contrib).
+
+    <Info>
+      **Мы рекомендуем использовать коллектор ClickStack OpenTelemetry**
+
+      Это позволяет воспользоваться стандартизованной ингестией, принудительно применяемыми схемами и готовой совместимостью с интерфейсом HyperDX. Использование схемы по умолчанию включает автоматическое определение источников и предварительно настроенные сопоставления столбцов.
+    </Info>
+
+    Подробнее см. в разделе [&quot;Развертывание коллектора&quot;](/ru/clickstack/ingesting-data/collector).
+
+    ### Отправка данных в коллектор
+
+    Чтобы отправлять данные в ClickStack, укажите в своей OpenTelemetry-инструментации следующие конечные точки, предоставляемые OpenTelemetry Collector:
+
+    * **HTTP (OTLP):** `http://localhost:4318`
+    * **gRPC (OTLP):** `localhost:4317`
+
+    Для [language SDKs](/ru/clickstack/ingesting-data/sdks/index) и библиотек телеметрии с поддержкой OpenTelemetry вы можете просто задать в приложении переменную окружения `OTEL_EXPORTER_OTLP_ENDPOINT`:
+
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    ```
+
+    Кроме того, требуется заголовок авторизации, содержащий ключ API для ингестии ClickStack. Этот ключ можно найти в приложении HyperDX в разделе `Team Settings → API Keys`.
+
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Ключи ингестии" size="lg" />
+
+    Для language SDKs это можно задать либо в функции `init`, либо через переменную окружения `OTEL_EXPORTER_OTLP_HEADERS`, например:
+
+    ```shell
+    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+    ```
+
+    Агенты также должны включать этот заголовок Authorization в любой обмен по OTLP. Например, при развертывании [contrib-дистрибутива OTel collector](https://github.com/open-telemetry/opentelemetry-collector-contrib) в роли агента можно использовать экспортер OTLP. Ниже показан пример конфигурации агента, использующего этот [структурированный файл журнала](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-structured.log.gz). Обратите внимание, что необходимо указать ключ авторизации — см. `<YOUR_API_INGESTION_KEY>`.
+
+    ```yaml
+    # clickhouse-agent-config.yaml
+    receivers:
+      filelog:
+        include:
+          - /opt/data/logs/access-structured.log
+        start_at: beginning
+        operators:
+          - type: json_parser
+            timestamp:
+              parse_from: attributes.time_local
+              layout: '%Y-%m-%d %H:%M:%S'
+    exporters:
+      # HTTP setup
+      otlphttp/hdx:
+        endpoint: 'http://localhost:4318'
+        headers:
+          authorization: <YOUR_API_INGESTION_KEY>
+        compression: gzip
+     
+      # gRPC setup (alternative)
+      otlp/hdx:
+        endpoint: 'localhost:4317'
+        headers:
+          authorization: <YOUR_API_INGESTION_KEY>
+        compression: gzip
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 10000
+    service:
+      telemetry:
+        metrics:
+          address: 0.0.0.0:9888 # Modified as 2 collectors running on same host
+      pipelines:
+        logs:
+          receivers: [filelog]
+          processors: [batch]
+          exporters: [otlphttp/hdx]
+    ```
+  </Tab>
+</Tabs>

@@ -1,0 +1,242 @@
+---
+description: 'يستبدل جميع الصفوف التي لها نفس المفتاح الأساسي (أو، على نحو أدق،
+  التي لها نفس [مفتاح الفرز](/reference/engines/table-engines/mergetree-family/mergetree))
+  بصف واحد (ضمن جزء بيانات واحد) يخزّن مزيجًا من حالات الدوال التجميعية.'
+sidebarTitle: 'AggregatingMergeTree'
+slug: /engines/table-engines/mergetree-family/aggregatingmergetree
+title: 'محرك الجدول AggregatingMergeTree'
+doc_type: 'reference'
+---
+
+يرث هذا المحرك من [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)، مع تعديل منطق دمج أجزاء البيانات. يستبدل ClickHouse جميع الصفوف التي لها نفس المفتاح الأساسي (أو، على نحو أدق، التي لها نفس [مفتاح الفرز](/ar/reference/engines/table-engines/mergetree-family/mergetree)) بصف واحد (ضمن جزء بيانات واحد) يخزّن مزيجًا من حالات الدوال التجميعية.
+
+يمكنك استخدام جداول `AggregatingMergeTree` في التجميع التدريجي للبيانات، بما في ذلك العروض المُجسَّدة المُجمَّعة.
+
+يمكنك الاطّلاع على مثال لكيفية استخدام AggregatingMergeTree والدوال التجميعية في الفيديو أدناه:
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="حالات التجميع في ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+يعالج هذا المحرك جميع الأعمدة ذات الأنواع التالية:
+
+* [`AggregateFunction`](/ar/reference/data-types/aggregatefunction)
+* [`SimpleAggregateFunction`](/ar/reference/data-types/simpleaggregatefunction)
+
+يكون استخدام `AggregatingMergeTree` مناسبًا إذا كان يخفّض عدد الصفوف بعدة مراتب.
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = AggregatingMergeTree()
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[TTL expr]
+[SETTINGS name=value, ...]
+```
+
+للاطلاع على وصف معلمات الطلب، راجع [وصف الطلب](/ar/reference/statements/create/table).
+
+**بنود الاستعلام**
+
+عند إنشاء جدول `AggregatingMergeTree`، تكون [البنود](/ar/reference/engines/table-engines/mergetree-family/mergetree) نفسها مطلوبة كما عند إنشاء جدول `MergeTree`.
+
+<details markdown="1">
+  <summary>الطريقة المهجورة لإنشاء جدول</summary>
+
+  <Note>
+    لا تستخدم هذه الطريقة في المشاريع الجديدة، وإن أمكن، انقل المشاريع القديمة إلى الطريقة الموضحة أعلاه.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] AggregatingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+  ```
+
+  جميع المعلمات لها المعنى نفسه كما في `MergeTree`.
+</details>
+
+<div id="select-and-insert">
+  ## SELECT and INSERT
+</div>
+
+لإدراج البيانات، استخدم استعلام [INSERT SELECT](/ar/reference/statements/insert-into) مع الدوال التجميعية ذات اللاحقة `-State`.
+عند تحديد البيانات من جدول `AggregatingMergeTree`، استخدم عبارة `GROUP BY` ونفس الدوال التجميعية المستخدمة عند إدراج البيانات، لكن باستخدام اللاحقة `-Merge`.
+
+في نتائج استعلام `SELECT`، تكون للقيم من النوع `AggregateFunction` تمثيلات ثنائية خاصة بالتنفيذ في جميع صيغ الإخراج في ClickHouse. على سبيل المثال، إذا فرّغت البيانات إلى صيغة `TabSeparated` باستخدام استعلام `SELECT`، فيمكن بعد ذلك إعادة تحميل هذا التفريغ باستخدام استعلام `INSERT`.
+
+<div id="example-of-an-aggregated-materialized-view">
+  ## مثال على عرض مادي مجمَّع
+</div>
+
+يفترض المثال التالي أن لديك قاعدة بيانات باسم `test`. أنشئها إن لم تكن موجودة بالفعل باستخدام الأمر أدناه:
+
+```sql
+CREATE DATABASE test;
+```
+
+أنشئ الآن الجدول `test.visits` الذي يحتوي على البيانات الخام:
+
+```sql
+CREATE TABLE test.visits
+ (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Sign Nullable(Int32),
+    UserID Nullable(Int32)
+) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
+```
+
+بعد ذلك، ستحتاج إلى جدول `AggregatingMergeTree` يخزّن `AggregationFunction`s لتتبع إجمالي عدد الزيارات وعدد المستخدمين الفريدين.
+
+أنشئ عرضاً مُجسَّداً من نوع `AggregatingMergeTree` يراقب جدول `test.visits`، ويستخدم النوع [`AggregateFunction`](/ar/reference/data-types/aggregatefunction):
+
+```sql
+CREATE TABLE test.agg_visits (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Visits AggregateFunction(sum, Nullable(Int32)),
+    Users AggregateFunction(uniq, Nullable(Int32))
+)
+ENGINE = AggregatingMergeTree() ORDER BY (StartDate, CounterID);
+```
+
+أنشئ طريقة عرض مُجسَّدة تملأ `test.agg_visits` من `test.visits`:
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    sumState(Sign) AS Visits,
+    uniqState(UserID) AS Users
+FROM test.visits
+GROUP BY StartDate, CounterID;
+```
+
+أدخل البيانات في جدول `test.visits`:
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
+```
+
+يتم إدراج البيانات في كلٍّ من `test.visits` و`test.agg_visits`.
+
+للحصول على البيانات المجمَّعة، نفِّذ استعلامًا مثل `SELECT ... GROUP BY ...` من الـ materialized view `test.visits_mv`:
+
+```sql
+SELECT
+    StartDate,
+    sumMerge(Visits) AS Visits,
+    uniqMerge(Users) AS Users
+FROM test.visits_mv
+GROUP BY StartDate
+ORDER BY StartDate;
+```
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │      9 │     2 │
+└─────────────────────────┴────────┴───────┘
+```
+
+أضف سجلَّين آخرَين إلى `test.visits`، لكن هذه المرة استخدم طابعاً زمنياً مختلفاً لأحد السجلَّين:
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
+```
+
+شغِّل استعلام `SELECT` مرةً أخرى، وسيُعيد الناتج الآتي:
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │     16 │     3 │
+│ 2022-11-26 07:00:31.000 │      5 │     1 │
+└─────────────────────────┴────────┴───────┘
+```
+
+في بعض الحالات، قد ترغب في تجنب التجميع المسبق للصفوف عند وقت الإدراج لنقل تكلفة التجميع من وقت الإدراج
+إلى وقت الدمج. في العادة، يكون من الضروري تضمين الأعمدة التي لا تشكّل جزءًا من التجميع في جملة `GROUP BY`
+الخاصة بتعريف الـ materialized view لتفادي حدوث خطأ. غير أنه يمكنك الاستفادة من الدالة [`initializeAggregation`](/ar/reference/functions/regular-functions/other-functions#initializeAggregation)
+مع الإعداد `optimize_on_insert = 0` (وهو مُفعَّل افتراضيًا) لتحقيق ذلك. في هذه الحالة، لم يعد استخدام `GROUP BY`
+ضروريًا:
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    initializeAggregation('sumState', Sign) AS Visits,
+    initializeAggregation('uniqState', UserID) AS Users
+FROM test.visits;
+```
+
+<Note>
+  عند استخدام `initializeAggregation`، تُنشأ حالة تجميع لكل `row` على حدة من دون إجراء تجميع.
+  وينتج عن كل `row` مصدر `row` واحدة في العرض المادي، بينما يحدث التجميع الفعلي لاحقًا عندما يدمج
+  `AggregatingMergeTree` الأجزاء. ولا يصحّ ذلك إلا إذا كانت `optimize_on_insert = 0`.
+</Note>
+
+<div id="tuple-element-aggregation">
+  ## تجميع عناصر Tuple
+</div>
+
+عند تمكين الإعداد `allow_tuple_element_aggregation`، تُسطَّح أعمدة `Tuple` تكراريًا بحيث يشارك كل عنصر نهائي في التجميع بشكل مستقل. وهذا يعني أن الأعمدة الفرعية `AggregateFunction` أو `SimpleAggregateFunction` داخل `Tuple` تُجمَّع وفقًا لوظائفها الخاصة، تمامًا كما لو كانت أعمدة من المستوى الأعلى.
+
+تُستبعَد الأعمدة الفرعية التابعة لـ `Tuple` في مفتاح الفرز من التجميع. أمّا الأعمدة الفرعية غير التجميعية فتُعامَل كأعمدة عادية (تُحتفَظ بقيمتها الأولى).
+
+<Note>
+  هذا الإعداد غير قابل للتغيير ويجب تحديده عند إنشاء الجدول.
+</Note>
+
+```sql
+CREATE TABLE agg_tuples
+(
+    key UInt32,
+    metrics Tuple(
+        total_visits SimpleAggregateFunction(sum, UInt64),
+        unique_users SimpleAggregateFunction(max, UInt64)
+    )
+) ENGINE = AggregatingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO agg_tuples VALUES (1, (100, 5));
+INSERT INTO agg_tuples VALUES (1, (200, 8));
+INSERT INTO agg_tuples VALUES (2, (50, 3));
+
+OPTIMIZE TABLE agg_tuples FINAL;
+
+SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY key;
+```
+
+```text
+┌─key─┬─metrics.total_visits─┬─metrics.unique_users─┐
+│   1 │                  300 │                    8 │
+│   2 │                   50 │                    3 │
+└─────┴──────────────────────┴──────────────────────┘
+```
+
+يُجمَّع `total_visits` باستخدام `sum` (100 + 200 = 300)، في حين يُجمَّع `unique_users` باستخدام `max` (max(5, 8) = 8).
+
+<div id="related-content">
+  ## محتوى مرتبط
+</div>
+
+* مدونة: [استخدام مُركِّبات التجميع في ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

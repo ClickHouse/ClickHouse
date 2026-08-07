@@ -1,0 +1,31 @@
+---
+sidebarTitle: '快速入门'
+title: '快速入门一览'
+description: '浏览快速入门指南，帮助您快速上手 ClickHouse'
+keywords: ['快速入门', '浏览', '入门', '教程']
+mode: 'custom'
+---
+
+import { QuickStartsGrid } from '/snippets/zh/components/QuickStartsGrid/QuickStartsGrid.jsx'
+import { quickStartsData } from '/snippets/zh/components/QuickStartsGrid/quickstarts-data.jsx'
+
+{/* 精选快速入门 - 每项都包含一个快速入门 ID 和一张横幅图片（标题直接渲染在图片上） */}
+
+export const featuredQuickstarts = [
+  { id: 'create-your-first-service-on-cloud' },
+  { id: 'insert-data-using-clickhouse-client' },
+  { id: 'obtain-your-cloud-connection-details' }
+];
+
+
+<div className="relative overflow-hidden">
+  <div className="absolute top-0 left-0 right-0 opacity-80">
+    <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="装饰性背景图。" />
+
+    <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="装饰性背景图。" />
+  </div>
+
+  {/* 渲染 QuickStartsGrid 组件 */}
+
+  <QuickStartsGrid quickStartsData={quickStartsData} featured={featuredQuickstarts} />
+</div>

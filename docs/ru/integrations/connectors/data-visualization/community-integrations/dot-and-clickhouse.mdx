@@ -1,0 +1,82 @@
+---
+sidebarTitle: 'Dot'
+slug: /integrations/dot
+keywords: ['clickhouse', 'dot', 'AI', 'чат-бот', 'mysql', 'интеграция', 'интерфейс', 'виртуальный помощник']
+description: 'AI Chatbot | Dot — это интеллектуальный виртуальный помощник для работы с данными, который отвечает на вопросы о бизнес-данных, находит определения и связанные с ними ресурсы данных и даже может помогать с моделированием данных на базе ClickHouse.'
+title: 'Dot'
+doc_type: 'guide'
+integration:
+   - support_level: 'community'
+   - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Dot](https://www.getdot.ai/) — это ваш **ИИ-аналитик данных**.
+Он напрямую подключается к ClickHouse, поэтому вы можете задавать вопросы о данных на естественном языке, изучать данные, проверять гипотезы и находить ответы на вопросы «почему» — прямо в Slack, Microsoft Teams, ChatGPT или во встроенном веб-интерфейсе.
+
+<div id="pre-requisites">
+  ## Предварительные требования
+</div>
+
+* База данных ClickHouse — самоуправляемая или в [ClickHouse Cloud](https://clickhouse.com/cloud)
+* Учетная запись [Dot](https://www.getdot.ai/)  
+
+<div id="connecting-dot-to-clickhouse">
+  ## Подключение Dot к ClickHouse
+</div>
+
+<Image size="md" img="/images/integrations/data-visualization/dot_01.webp" alt="Настройка подключения ClickHouse в Dot (светлый режим)" border />
+
+<br />
+
+1. В интерфейсе Dot перейдите в **Settings → Connections**.
+2. Нажмите **Add new connection** и выберите **ClickHouse**.
+3. Укажите сведения о подключении:
+   * **Host**: имя хоста сервера ClickHouse или конечная точка ClickHouse Cloud
+   * **Port**: `8443` (HTTPS в ClickHouse Cloud) или `8123` (HTTP в самоуправляемом развертывании)
+   * **Username / Password**: пользователь с правами на чтение
+   * **Database**: при необходимости укажите схему по умолчанию
+4. Нажмите **Connect**.
+
+<Image img="/images/integrations/data-visualization/dot_02.webp" alt="Подключение ClickHouse" size="sm" />
+
+Dot использует **query-pushdown**: ClickHouse выполняет ресурсоемкие вычисления на своей стороне, а Dot обеспечивает точные и надежные ответы.
+
+<div id="highlights">
+  ## Основные возможности
+</div>
+
+Dot делает данные доступными в формате диалога:
+
+* **Задавайте вопросы на естественном языке**: Получайте ответы без написания SQL.
+* **Анализ причин**: Задавайте уточняющие вопросы, чтобы лучше понимать тренды и аномалии.
+* **Работает там, где вам удобно**: Slack, Microsoft Teams, ChatGPT или веб-приложение.
+* **Надежные результаты**: Dot проверяет запросы по вашим схемам и определениям, чтобы свести ошибки к минимуму.
+* **Масштабируемость**: Благодаря query-pushdown Dot сочетает свой интеллект со скоростью ClickHouse.
+
+<div id="security">
+  ## Безопасность и управление
+</div>
+
+Dot готов к использованию в корпоративной среде:
+
+* **Разрешения и роли**: Наследует механизмы управления доступом пользователей ClickHouse
+* **Защита на уровне строк**: Поддерживается, если настроена в ClickHouse
+* **TLS / SSL**: Включены по умолчанию для ClickHouse Cloud; для самоуправляемых развертываний настройте вручную
+* **Управление и валидация**: Среда обучения/валидации помогает снизить риск галлюцинаций
+* **Соответствие требованиям**: Сертифицировано по SOC 2 Type I
+
+<div id="additional-resources">
+  ## Дополнительные ресурсы
+</div>
+
+* Сайт Dot: [https://www.getdot.ai/](https://www.getdot.ai/)
+* Документация: [https://docs.getdot.ai/](https://docs.getdot.ai/)
+* Приложение Dot: [https://app.getdot.ai/](https://app.getdot.ai/)
+
+Теперь вы можете использовать **ClickHouse + Dot** для анализа данных в диалоговом режиме, сочетая ИИ-ассистента Dot с быстрым и масштабируемым аналитическим движком ClickHouse.

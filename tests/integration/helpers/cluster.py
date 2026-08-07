@@ -1,0 +1,6593 @@
+import base64
+import errno
+import http.client
+import json
+import logging
+import os
+import os.path as p
+import platform
+import pprint
+import pwd
+import random
+import re
+import shlex
+import shutil
+import socket
+import stat
+import subprocess
+import time
+import traceback
+import urllib.parse
+import uuid
+from contextlib import contextmanager
+from functools import cache
+from pathlib import Path
+from typing import Any, List, Sequence, Tuple, Union
+
+import requests
+import urllib3
+
+temp_dir = "../../ci/tmp"
+
+try:
+    # Please, add modules that required for specific tests only here.
+    # So contributors will be able to run most tests locally
+    # without installing tons of unneeded packages that may be not so easy to install.
+    import asyncio
+    import ssl
+
+    import psycopg2
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+    import pymongo
+    import pymysql
+    import nats
+    from filelock import FileLock, Timeout
+    from confluent_kafka.avro.cached_schema_registry_client import CachedSchemaRegistryClient
+    # Not an easy dep
+    import cassandra.cluster
+    from cassandra.policies import RoundRobinPolicy
+
+except Exception as e:
+    logging.warning(f"Cannot import some modules, some tests may not work: {e}")
+
+import docker
+from dict2xml import dict2xml
+from docker.models.containers import Container
+from kazoo.exceptions import KazooException
+from minio import Minio
+
+from . import pytest_xdist_logging_to_separate_files
+from .client import Client, QueryRuntimeException
+from .config_cluster import (
+    dremio_pass,
+    dremio_user,
+    minio_access_key,
+    minio_secret_key,
+    mongo_pass,
+    mongo_user,
+    mysql_pass,
+    mysql_user,
+    nats_pass,
+    nats_user,
+    odbc_mysql_db,
+    odbc_mysql_uid,
+    odbc_psql_db,
+    odbc_psql_user,
+    pg_db,
+    pg_pass,
+    pg_user,
+)
+from .kazoo_client import KazooClientWithImplicitRetries
+from .random_settings import write_random_settings_config
+from .retry_decorator import retry
+from .test_tools import exec_query_with_retry
+
+HELPERS_DIR = p.dirname(__file__)
+CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
+LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "tests/integration/compose/")
+DEFAULT_ENV_NAME = ".env"
+
+
+def find_default_config_path():
+    path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
+    if path is not None:
+        return path
+    path = p.join(CLICKHOUSE_ROOT_DIR, "programs/server")
+    if p.exists(p.join(path, "config.xml")):
+        return path
+    path = "/etc/clickhouse-server/"
+    if p.exists(p.join(path, "config.xml")):
+        return path
+    raise RuntimeError("Cannot find config.xml. Please set CLICKHOUSE_TESTS_BASE_CONFIG_DIR")
+
+DEFAULT_BASE_CONFIG_DIR = find_default_config_path()
+
+DEFAULT_THREAD_FUZZER_SETTINGS = {
+    "THREAD_FUZZER_CPU_TIME_PERIOD_US" : "1000",
+    "THREAD_FUZZER_SLEEP_PROBABILITY" : "0.1",
+    "THREAD_FUZZER_SLEEP_TIME_US_MAX" : "100000",
+    "THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY" : "1",
+    "THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY" : "0.001",
+    "THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX" : "10000",
+    "THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY" : "0.01",
+    "THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY" : "0.01"
+}
+
+DOCKER_BASE_TAG = os.environ.get("DOCKER_BASE_TAG", "latest")
+
+SANITIZER_SIGN = "=================="
+
+CLICKHOUSE_START_COMMAND = (
+    "clickhouse server --config-file=/etc/clickhouse-server/{main_config_file}"
+)
+
+CLICKHOUSE_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.log"
+
+CLICKHOUSE_ERROR_LOG_FILE = "/var/log/clickhouse-server/clickhouse-server.err.log"
+
+# Minimum version we use in integration tests to check compatibility with old releases
+# Keep in mind that we only support upgrading between releases that are at most 1 year different.
+# This means that this minimum need to be, at least, 1 year older than the current release
+CLICKHOUSE_CI_MIN_TESTED_VERSION = "25.3"
+
+# `Nullable(Tuple)` experimental feature is introduced in 26.1. This has lead to changes in the output return type
+# of many aggregate functions from `Tuple(...)` to `Nullable(Tuple(...))`. This version can be used as baseline to do
+# compatibility checks for features that are affected by this experimental feature.
+CLICKHOUSE_CI_PRE_NULLABLE_TUPLE_VERSION = "25.12"
+
+ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
+
+NET_LOCK_PATH = "/tmp/docker_net.lock"
+try:
+    os.remove(NET_LOCK_PATH)
+except Exception:
+    pass
+
+
+# to create docker-compose env file
+def _create_env_file(path, variables):
+    logging.debug("Env %s stored in %s", variables, path)
+    with open(path, "w") as f:
+        for var, value in list(variables.items()):
+            f.write("=".join([var, value]) + "\n")
+    return path
+
+
+def run_and_check(
+    args: Union[Sequence[str], str],
+    env=None,
+    shell=False,
+    input=None,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    timeout=300,
+    nothrow=False,
+    detach=False,
+) -> str:
+    if shell:
+        if isinstance(args, str):
+            shell_args = args
+        else:
+            shell_args = next(a for a in args)
+    else:
+        shell_args = " ".join(args)
+
+    logging.debug("Command:[%s]", shell_args)
+    if detach:
+        subprocess.Popen(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+            shell=shell,
+        )
+        return ""
+
+    try:
+        res = subprocess.run(
+            args,
+            input=input,
+            stdout=stdout,
+            stderr=stderr,
+            env=env,
+            shell=shell,
+            timeout=timeout,
+            check=False,
+        )
+        out = res.stdout.decode("utf-8", "ignore")
+        err = res.stderr.decode("utf-8", "ignore")
+    except subprocess.TimeoutExpired as ex:
+        out = (ex.stdout or b"").decode("utf-8", "ignore")
+        err = (ex.stderr or b"").decode("utf-8", "ignore")
+        raise Exception(
+            f"Command [{shell_args}] timed out after {timeout}s\nstdout:\n{out}\nstderr:\n{err}"
+        ) from ex
+    # check_call(...) from subprocess does not print stderr, so we do it manually
+    for outline in out.splitlines():
+        logging.debug("Stdout:%s", outline)
+    for errline in err.splitlines():
+        logging.debug("Stderr:%s", errline)
+    if res.returncode != 0:
+        logging.debug("Exitcode:%s", res.returncode)
+        if env:
+            logging.debug("Env:%s", env)
+        if not nothrow:
+            raise Exception(
+                f"Command [{shell_args}] return non-zero code {res.returncode}: {res.stderr.decode('utf-8')}"
+            )
+    return out
+
+
+def is_port_free(port: int) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", port))
+            return True
+    except socket.error:
+        return False
+
+
+class PortPoolManager:
+    """
+    Thread/process-safe port pool manager using a JSON file and filelock.
+    Ensures only one worker modifies ports.json at a time.
+    """
+
+    PORTS_FILE = Path("/tmp/ports.json")
+    LOCK_FILE = PORTS_FILE.with_suffix(".lock")
+    START_PORT = 30000
+    END_PORT = 50000
+
+    @classmethod
+    def get_port(cls):
+        lock = FileLock(str(cls.LOCK_FILE))
+
+        try:
+            with lock.acquire(timeout=5):
+                return cls._allocate_port()
+        except Timeout:
+            # Force unlock if lock file is stale
+            print(f"[WARN] Lock timeout exceeded, removing {cls.LOCK_FILE}")
+            try:
+                os.remove(cls.LOCK_FILE)
+            except FileNotFoundError:
+                pass
+            # Retry once after force unlock
+            with lock:
+                return cls._allocate_port()
+
+    @classmethod
+    def _allocate_port(cls):
+        if cls.PORTS_FILE.exists():
+            with open(cls.PORTS_FILE, "r", encoding="utf-8") as f:
+                ports = json.load(f)
+        else:
+            ports = {"used_ports": []}
+
+        used_ports = ports["used_ports"]
+
+        for port in range(cls.START_PORT, cls.END_PORT):
+            if port in used_ports:
+                continue
+            if is_port_free(port):
+                used_ports.append(port)
+                ports_data = {
+                    "used_ports": used_ports,
+                }
+                with open(cls.PORTS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(ports_data, f, indent=2)
+                return port
+
+        raise Exception(f"No free ports available in range {cls.START_PORT} - {cls.END_PORT}")
+
+
+def docker_exec(*args: str) -> Tuple[str, ...]:
+    "Function to ease the `docker exec -i...`"
+    return ("docker", "exec", "-i", *args)
+
+
+def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
+    """
+    Retry if `func()` throws, `num` times.
+
+    :param func: func to run
+    :param num: number of retries
+
+    :throws StopIteration
+    """
+    i = 0
+    while i <= num:
+        try:
+            func(*args, **kwargs)
+            time.sleep(delay)
+        except exception:  # pylint: disable=broad-except
+            i += 1
+            continue
+        return
+    raise StopIteration("Function did not finished successfully")
+
+
+def subprocess_check_call(
+    args: Union[Sequence[str], str],
+    detach: bool = False,
+    nothrow: bool = False,
+    **kwargs,
+) -> str:
+    # Uncomment for debugging
+    # logging.info('run:' + ' '.join(args))
+    return run_and_check(args, detach=detach, nothrow=nothrow, **kwargs)
+
+
+def get_docker_compose_path():
+    return LOCAL_DOCKER_COMPOSE_DIR
+
+
+def check_kafka_is_available(kafka_id, kafka_port):
+    p = subprocess.Popen(
+        docker_exec(
+            kafka_id,
+            "/usr/bin/kafka-broker-api-versions",
+            "--bootstrap-server",
+            f"INSIDE://localhost:{kafka_port}",
+        ),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+
+def check_kerberos_kdc_is_available(kerberos_kdc_id):
+    p = subprocess.Popen(
+        docker_exec(kerberos_kdc_id, "/etc/rc.d/init.d/krb5kdc", "status"),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+
+def check_postgresql_java_client_is_available(postgresql_java_client_id):
+    p = subprocess.Popen(
+        docker_exec(postgresql_java_client_id, "java", "-version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+def check_postgresql_dotnet_client_is_available(docker_id):
+    p = subprocess.Popen(
+        docker_exec(docker_id, "dotnet", "--version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+def check_mysql_dotnet_client_is_available(postgresql_java_client_id):
+    p = subprocess.Popen(
+        docker_exec(postgresql_java_client_id, "dotnet", "--version"),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+    return p.returncode == 0
+
+
+def run_rabbitmqctl(rabbitmq_id, cookie, command, timeout=90):
+    try:
+        subprocess.check_output(
+            docker_exec(
+                "-e",
+                f"RABBITMQ_ERLANG_COOKIE={cookie}",
+                rabbitmq_id,
+                "rabbitmqctl",
+                command,
+            ),
+            stderr=subprocess.STDOUT,
+            timeout=timeout,
+        )
+    except subprocess.CalledProcessError as e:
+        # Raised if the command returns a non-zero exit code
+        error_message = (
+            f"rabbitmqctl {command} failed with return code {e.returncode}. "
+            f"Output: {e.output.decode(errors='replace')}"
+        )
+        raise RuntimeError(error_message)
+    except subprocess.TimeoutExpired as e:
+        # Raised if the command times out
+        output = (
+            f". Output: {e.stdout.decode(errors='replace')}"
+            if e.stdout is not None
+            else ""
+        )
+        raise RuntimeError(f"rabbitmqctl {command} timed out{output}")
+
+
+def check_rabbitmq_is_available(rabbitmq_id, cookie):
+    run_rabbitmqctl(rabbitmq_id, cookie, "await_startup", 5)
+    return True
+
+
+def rabbitmq_debuginfo(rabbitmq_id, cookie):
+    p = subprocess.Popen(
+        docker_exec(
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
+            rabbitmq_id,
+            "rabbitmq-diagnostics",
+            "status",
+        ),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+
+    p = subprocess.Popen(
+        docker_exec(
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
+            rabbitmq_id,
+            "rabbitmq-diagnostics",
+            "listeners",
+        ),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+
+    p = subprocess.Popen(
+        docker_exec(
+            "-e",
+            f"RABBITMQ_ERLANG_COOKIE={cookie}",
+            rabbitmq_id,
+            "rabbitmq-diagnostics",
+            "environment",
+        ),
+        stdout=subprocess.PIPE,
+    )
+    p.communicate()
+
+
+async def check_nats_is_available(cluster):
+    nc = await nats_connect_ssl(cluster, max_reconnect_attempts=1)
+    available = nc.is_connected
+    await nc.close()
+    return available
+
+
+async def nats_connect_ssl(cluster, **connect_options):
+    ssl_ctx = cluster.nats_ssl_context
+    if not ssl_ctx:
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+    nc = await nats.connect(
+        "tls://localhost:{}".format(cluster.nats_port),
+        user=nats_user,
+        password=nats_pass,
+        tls=ssl_ctx,
+        **connect_options,
+    )
+    return nc
+
+
+def get_instances_dir(name):
+    instances_dir_name = "_instances"
+
+    run_id = os.environ.get("INTEGRATION_TESTS_RUN_ID", "")
+
+    if name:
+        instances_dir_name += "-" + name
+
+    if run_id:
+        instances_dir_name += "-" + shlex.quote(run_id)
+
+    return instances_dir_name
+
+
+def extract_test_name(base_path):
+    """Extracts the name of the test based to a path to its test*.py file
+    Must be unique in each test directory (because it's used to make instances dir and to stop docker containers from previous run)
+    """
+    name = p.basename(base_path)
+    if name == "test.py":
+        name = ""
+    elif name.startswith("test_") and name.endswith(".py"):
+        name = name[len("test_") : (len(name) - len(".py"))]
+    return name
+
+
+def find_binary(name):
+    def is_executable(path):
+        return os.access(path, os.X_OK) and os.path.isfile(path)
+
+    if is_executable(name):
+        return name
+    paths = os.environ.get("PATH").split(":")
+    for path in paths:
+        bin_path = os.path.join(path, name)
+        if is_executable(bin_path):
+            return bin_path
+
+    # maybe it wasn't in PATH
+    bin_path = os.path.join("/usr/local/bin", name)
+    if is_executable(bin_path):
+        return bin_path
+    bin_path = os.path.join("/usr/bin", name)
+    if is_executable(bin_path):
+        return bin_path
+
+    # Default binary path if CLICKHOUSE_ROOT_DIR contains build
+    bin_path = os.path.join(CLICKHOUSE_ROOT_DIR, f"build/programs/{name}")
+    if is_executable(bin_path):
+        return bin_path
+
+    raise RuntimeError(f"{name} was not found in PATH")
+
+
+class ClickHouseCluster:
+    """ClickHouse cluster with several instances and (possibly) ZooKeeper.
+
+    Add instances with several calls to add_instance(), then start them with the start() call.
+
+    Directories for instances are created in the directory of base_path. After cluster is started,
+    these directories will contain logs, database files, docker-compose config, ClickHouse configs etc.
+    """
+
+    def __init__(
+        self,
+        base_path,
+        name=None,
+        base_config_dir=None,
+        server_bin_path=None,
+        client_bin_path=None,
+        zookeeper_config_path=None,
+        keeper_config_dir=None,
+        custom_dockerd_host=None,
+        zookeeper_keyfile=None,
+        zookeeper_certfile=None,
+        with_spark=False,
+        custom_keeper_configs=[],
+        enable_thread_fuzzer=False,
+        thread_fuzzer_settings={},
+        azurite_default_port=0,
+        server_binaries=[],
+        with_dolor=False,
+    ):
+        for param in list(os.environ.keys()):
+            logging.debug("ENV %40s %s" % (param, os.environ[param]))
+        self.base_path = base_path
+        self.base_dir = p.dirname(base_path)
+        self.name = name if name is not None else extract_test_name(base_path)
+
+        self.base_config_dir = base_config_dir or DEFAULT_BASE_CONFIG_DIR
+        self.server_bin_path = p.realpath(
+            server_bin_path
+            or os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", None)
+            or find_binary("clickhouse")
+        )
+        self.client_bin_path = p.realpath(
+            client_bin_path
+            or os.environ.get("CLICKHOUSE_TESTS_CLIENT_BIN_PATH", None)
+            or find_binary("clickhouse-client")
+        )
+        self.zookeeper_config_path = (
+            p.join(self.base_dir, zookeeper_config_path)
+            if zookeeper_config_path
+            else p.join(HELPERS_DIR, "zookeeper_config.xml")
+        )
+
+        self.keeper_config_dir = (
+            p.join(self.base_dir, keeper_config_dir)
+            if keeper_config_dir
+            else HELPERS_DIR
+        )
+
+        self.custom_keeper_configs_paths = None
+        if len(custom_keeper_configs) > 0:
+            self.custom_keeper_configs_paths = [
+                p.abspath(p.join(self.base_dir, c)) for c in custom_keeper_configs
+            ]
+
+        project_name = (
+            pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
+        )
+        # docker-compose removes everything non-alphanumeric from project names so we do it too.
+        self.project_name = re.sub(r"[^a-z0-9]", "", project_name.lower())
+        self.instances_dir_name = get_instances_dir(self.name)
+        xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
+        if xdist_worker:
+            self.project_name += f"-{xdist_worker}"
+            self.instances_dir_name += f"-{xdist_worker}"
+
+        self.docker_net_lock = None
+
+        self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
+        self.docker_logs_path = p.join(self.instances_dir, "docker.log")
+        self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
+        self.env_variables = {}
+        # Problems with glibc 2.36+ [1]
+        #
+        #    [1]: https://github.com/ClickHouse/ClickHouse/issues/43426#issuecomment-1368512678
+        self.env_variables["ASAN_OPTIONS"] = "use_sigaltstack=0"
+        # In integration tests we spawn multiple servers, so let's aim to not more then 5GiB
+        self.env_variables["TSAN_OPTIONS"] = "use_sigaltstack=0 memory_limit_mb=5120"
+        self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
+        self.env_variables["CLICKHOUSE_NATS_TLS_SECURE"] = "0"
+
+        if enable_thread_fuzzer:
+            for key, value in DEFAULT_THREAD_FUZZER_SETTINGS.items():
+                thread_fuzzer_settings.setdefault(key, value)
+            for key, value in thread_fuzzer_settings.items():
+                self.env_variables[key] = value
+
+        self.up_called = False
+
+        custom_dockerd_host = custom_dockerd_host or os.environ.get(
+            "CLICKHOUSE_TESTS_DOCKERD_HOST"
+        )
+        self.docker_api_version = os.environ.get("DOCKER_API_VERSION")
+
+        self.docker_logs_proc = None  # type: Optional[subprocess.Popen]
+
+        self.with_dolor = with_dolor
+
+        self.base_cmd = ["docker", "compose"]
+        if custom_dockerd_host:
+            self.base_cmd += ["--host", custom_dockerd_host]
+        self.base_cmd += ["--env-file", self.env_file]
+        self.base_cmd += ["--project-name", self.project_name]
+
+        self.base_zookeeper_cmd = None
+        self.base_minio_cmd = []
+        self.base_mysql57_cmd = []
+        self.base_mysql8_cmd = []
+        self.base_kafka_cmd = []
+        self.base_kafka_sasl_cmd = []
+        self.base_kerberized_kafka_cmd = []
+        self.base_kerberos_kdc_cmd = []
+        self.base_rabbitmq_cmd = []
+        self.base_nats_cmd = []
+        self.base_cassandra_cmd = []
+        self.base_jdbc_bridge_cmd = []
+        self.base_postgres_cmd = []
+        self.base_mongo_cmd = []
+        self.base_redis_cmd = []
+        self.base_azurite_cmd = []
+        self.base_nginx_cmd = []
+        self.base_prometheus_cmd = []
+        self.pre_zookeeper_commands = []
+        self.instances: dict[str, ClickHouseInstance] = {}
+        self.with_arrowflight = False
+        self.arrowflight_host = "arrowflight1"
+        self._arrowflight_port = 0
+        self._arrowflight_auth_port = 0
+        self.with_zookeeper = False
+        self.with_zookeeper_secure = False
+        self.with_mysql_client = False
+        self.with_mysql57 = False
+        self.with_mysql8 = False
+        self.with_mysql_cluster = False
+        self.with_dremio26 = False
+        self.with_postgres = False
+        self.with_postgres_cluster = False
+        self.with_postgresql_java_client = False
+        self.with_postgresql_dotnet_client = False
+        self.with_mysql_dotnet_client = False
+        self.with_kafka = False
+        self.with_kafka_sasl = False
+        self.with_kerberized_kafka = False
+        self.with_kerberos_kdc = False
+        self.with_rabbitmq = False
+        self.with_nats = False
+        self.with_odbc_drivers = False
+        self.with_mongo = False
+        self.with_net_trics = False
+        self.with_redis = False
+        self.with_cassandra = False
+        self.with_ldap = False
+        self.with_jdbc_bridge = False
+        self.with_nginx = False
+        self.with_hive = False
+        self.with_coredns = False
+        self.with_ytsaurus = False
+        self.with_letsencrypt_pebble = False
+
+        # available when with_minio == True
+        self.with_minio = False
+        self.minio_dir = os.path.join(self.instances_dir, "minio")
+        self.minio_certs_dir = None  # source for certificates
+        self.minio_data_dir = p.join(self.minio_dir, "data")
+        self.minio_host = "minio1"
+        self.minio_ip = None
+        self.minio_bucket = "root"
+        self.minio_bucket_2 = "root2"
+        self.minio_bucket_db_disk = "root-db-disk"
+        self.minio_s3_port = 9000
+        self.minio_port = 9001
+        self.minio_client = None  # type: Minio
+        self.minio_redirect_host = "proxy1"
+        self.minio_redirect_ip = None
+        self.minio_redirect_port = 8080
+        self.minio_docker_id = self.get_instance_docker_id(self.minio_host)
+        self.resolver_logs_dir = os.path.join(self.instances_dir, "resolver")
+        # Make it cleaner
+        self.minio_access_key = minio_access_key
+        self.minio_secret_key = minio_secret_key
+
+        self.spark_session = None
+        self.with_iceberg_catalog = False
+        self._iceberg_rest_catalog_port = None
+        self._iceberg_minio_port = None
+        self.with_glue_catalog = False
+        self._glue_catalog_port = None
+        self.with_hms_catalog = False
+        self._hms_catalog_port = None
+
+        self.with_azurite = False
+        self.azurite_container = "azurite-container"
+        self.blob_service_client = None
+        # When using plugins for Spark, it expects Azurite to run on port 10000
+        self._azurite_port = azurite_default_port
+        self.azurite_host = "azurite1"
+        self.azurite_ip = None
+        self.azurite_account = "devstoreaccount1"
+        self.azurite_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+        self.azure_container_name = "cont"
+
+        # available when with_kafka == True
+        self.kafka_host = "kafka1"
+        self.kafka_dir = os.path.join(self.instances_dir, "kafka")
+        self._kafka_port = 0
+        self.kafka_docker_id = None
+        self.schema_registry_host = "schema-registry"
+        self._schema_registry_port = 0
+        self.schema_registry_auth_host = "schema-registry-auth"
+        self._schema_registry_auth_port = 0
+        self.kafka_docker_id = self.get_instance_docker_id(self.kafka_host)
+
+        self.coredns_host = "coredns"
+
+        self.kafka_sasl_host = "kafka_sasl"
+        self.kafka_sasl_dir = os.path.join(self.instances_dir, "kafka_sasl")
+        self._kafka_sasl_port = 0
+        self.kafka_sasl_docker_id = None
+        self.kafka_sasl_docker_id = self.get_instance_docker_id(self.kafka_sasl_host)
+
+        # available when with_kerberozed_kafka == True
+        # reuses kafka_dir
+        self.kerberized_kafka_host = "kerberized_kafka1"
+        self._kerberized_kafka_port = 0
+        self.kerberized_kafka_docker_id = self.get_instance_docker_id(
+            self.kerberized_kafka_host
+        )
+
+        # available when with_kerberos_kdc == True
+        self.kerberos_kdc_host = "kerberoskdc"
+        self.keberos_kdc_docker_id = self.get_instance_docker_id(self.kerberos_kdc_host)
+
+        # available when with_mongo == True
+        self.mongo_host = "mongo1"
+        self._mongo_port = 0
+        self.mongo_no_cred_host = "mongo_no_cred"
+        self._mongo_no_cred_port = 0
+        self.mongo_secure_host = "mongo_secure"
+        self._mongo_secure_port = 0
+
+        # available when with_cassandra == True
+        self.cassandra_host = "cassandra1"
+        self.cassandra_port = 9042
+        self.cassandra_ip = None
+        self.cassandra_id = self.get_instance_docker_id(self.cassandra_host)
+
+        # available when with_ldap == True
+        self.ldap_host = "openldap"
+        self.ldap_container = None
+        self.ldap_port = 1389
+        self._ldap_external_port = 0
+        self.ldap_id = self.get_instance_docker_id(self.ldap_host)
+
+        # available when with_rabbitmq == True
+        self.rabbitmq_host = "rabbitmq1"
+        self.rabbitmq_ip = None
+        self.rabbitmq_port = 5672
+        self.rabbitmq_secure_port = 5671
+        self.rabbitmq_management_port = 15672
+        self.rabbitmq_dir = p.abspath(p.join(self.instances_dir, "rabbitmq"))
+        self.rabbitmq_cookie_file = os.path.join(self.rabbitmq_dir, "erlang.cookie")
+        self.rabbitmq_logs_dir = os.path.join(self.rabbitmq_dir, "logs")
+        self.rabbitmq_cookie = "CLICKHOUSETESTCOOKIE"
+
+        self.nats_host = "nats1"
+        self._nats_port = 0
+        self.nats_docker_id = None
+        self.nats_dir = p.abspath(p.join(self.instances_dir, "nats"))
+        self.nats_cert_dir = os.path.join(self.nats_dir, "cert")
+        self.nats_ssl_context = None
+
+        # available when with_nginx == True
+        self.nginx_host = "nginx"
+        self.nginx_ip = None
+        self._nginx_port = None
+        self.nginx_id = self.get_instance_docker_id(self.nginx_host)
+
+        # available when with_redis == True
+        self.redis_host = "redis1"
+        self._redis_port = 0
+
+        # available when with_postgres == True
+        self.postgres_host = "postgres1"
+        self.postgres_ip = None
+        self.postgres_conn = None
+        self.postgres2_host = "postgres2"
+        self.postgres2_ip = None
+        self.postgres2_conn = None
+        self.postgres3_host = "postgres3"
+        self.postgres3_ip = None
+        self.postgres3_conn = None
+        self.postgres4_host = "postgres4"
+        self.postgres4_ip = None
+        self.postgres4_conn = None
+        self.postgres_port = 5432
+        self.postgres_dir = p.abspath(p.join(self.instances_dir, "postgres"))
+        self.postgres_logs_dir = os.path.join(self.postgres_dir, "postgres1")
+        self.postgres2_logs_dir = os.path.join(self.postgres_dir, "postgres2")
+        self.postgres3_logs_dir = os.path.join(self.postgres_dir, "postgres3")
+        self.postgres4_logs_dir = os.path.join(self.postgres_dir, "postgres4")
+        self.postgres_id = self.get_instance_docker_id(self.postgres_host)
+
+        # available when with_postgresql_java_client = True
+        self.postgresql_java_client_host = "java"
+        self.postgresql_java_client_docker_id = self.get_instance_docker_id(
+            self.postgresql_java_client_host
+        )
+
+        # available when with_postgresql_dotnet_client = True
+        self.postgresql_dotnet_client_host = "postgresql-dotnet-client"
+        self.postgresql_dotnet_client_docker_id = self.get_instance_docker_id(
+            self.postgresql_dotnet_client_host
+        )
+
+        # available when with_mysql_dotnet_client = True
+        self.mysql_dotnet_client_host = "dotnet"
+        self.mysql_dotnet_client_docker_id = self.get_instance_docker_id(
+            self.mysql_dotnet_client_host
+        )
+
+        # available when with_mysql_client == True
+        self.mysql_client_host = "mysql_client"
+        self.mysql_client_container = None
+
+        # available when with_mysql57 == True
+        self.mysql57_host = "mysql57"
+        self.mysql57_port = 3306
+        self.mysql57_ip = None
+        self.mysql57_dir = p.abspath(p.join(self.instances_dir, "mysql"))
+        self.mysql57_logs_dir = os.path.join(self.mysql57_dir, "logs")
+
+        # available when with_mysql8 == True
+        self.mysql8_host = "mysql80"
+        self.mysql8_port = 3306
+        self.mysql8_ip = None
+        self.mysql8_dir = p.abspath(p.join(self.instances_dir, "mysql8"))
+        self.mysql8_logs_dir = os.path.join(self.mysql8_dir, "logs")
+
+        # available when with_mysql_cluster == True
+        self.mysql2_host = "mysql2"
+        self.mysql3_host = "mysql3"
+        self.mysql4_host = "mysql4"
+        self.mysql2_ip = None
+        self.mysql3_ip = None
+        self.mysql4_ip = None
+        self.mysql_cluster_dir = p.abspath(p.join(self.instances_dir, "mysql"))
+        self.mysql_cluster_logs_dir = os.path.join(self.mysql8_dir, "logs")
+
+        # available when with_dremio26 == True
+        self.dremio26_host = "dremio26"
+        self.dremio26_port = 32010
+        self.dremio26_rest_port = 9047
+        self.dremio26_ip = None
+        self.dremio26_dir = p.abspath(p.join(self.instances_dir, "dremio26"))
+        self.dremio26_logs_dir = os.path.join(self.dremio26_dir, "logs")
+
+        # available when with_zookeper_secure == True
+        self.zookeeper_secure_port = 2281
+        self.zookeeper_keyfile = zookeeper_keyfile
+        self.zookeeper_certfile = zookeeper_certfile
+
+        # available when with_zookeper == True
+        self.use_keeper = True
+        self.zookeeper_port = 2181
+        self.keeper_instance_dir_prefix = p.join(
+            p.abspath(self.instances_dir), "keeper"
+        )  # if use_keeper = True
+        self.zookeeper_instance_dir_prefix = p.join(self.instances_dir, "zk")
+        self.zookeeper_dirs_to_create = []
+
+        # available when with_jdbc_bridge == True
+        self.jdbc_bridge_host = "bridge1"
+        self.jdbc_bridge_ip = None
+        self.jdbc_bridge_port = 9019
+        self.jdbc_driver_dir = p.abspath(p.join(self.instances_dir, "jdbc_driver"))
+        self.jdbc_driver_logs_dir = os.path.join(self.jdbc_driver_dir, "logs")
+
+        # available when with_prometheus == True
+        self.with_prometheus = False
+        self.prometheus_host = "prometheus"
+        self.prometheus_port = {"writer": 9090, "reader": 9091, "receiver": 9092}
+        self.prometheus_ip = {"writer": None, "reader": None, "receiver": None}
+        self.prometheus_logs_dir = "prometheus_{}/logs"
+        self.prometheus_servers = set()
+        self.prometheus_remote_write_handlers = []
+        self.prometheus_remote_read_handlers = []
+
+        # available when with_ytsaurus = True
+        self._ytsaurus_port = None
+        self._ytsaurus_internal_ports_list = None
+        self.ytsaurus_internal_ports_list_size = 20
+
+        # available when with_letsencrypt_pebble = True
+        self._letsencrypt_pebble_api_port = 14000
+        self._letsencrypt_pebble_management_port = 15000
+
+        self.docker_client: docker.DockerClient = None
+        self.is_up = False
+        self.env = os.environ.copy()
+        logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
+        if p.exists(self.instances_dir):
+            shutil.rmtree(self.instances_dir, ignore_errors=True)
+            logging.debug(f"Removed :{self.instances_dir}")
+
+        if with_spark:
+            pass
+
+            # (
+            #     pyspark.sql.SparkSession.builder.appName("spark_test")
+            #     # The jars are now linked to "$SPARK_HOME/jars" and we don't
+            #     # need packages to be downloaded once and once again
+            #     # .config(
+            #     #     "spark.jars.packages",
+            #     #     "org.apache.hudi:hudi-spark3.3-bundle_2.12:0.13.0,io.delta:delta-core_2.12:2.2.0,org.apache.iceberg:iceberg-spark-runtime-3.3_2.12:1.1.0",
+            #     # )
+            #     .master("local")
+            #     .getOrCreate()
+            #     .stop()
+            # )
+
+        self.port_pool = PortPoolManager()
+        # For La Casa Del Dolor to run upgrades
+        self.server_binaries = server_binaries
+
+    def compose_cmd(self, *args: str) -> List[str]:
+        return ["docker", "compose", "--project-name", self.project_name, *args]
+
+    @property
+    def nginx_port(self):
+        if self._nginx_port:
+            return self._nginx_port
+        self._nginx_port = self.port_pool.get_port()
+        return self._nginx_port
+
+    @property
+    def kafka_port(self):
+        if self._kafka_port:
+            return self._kafka_port
+        self._kafka_port = self.port_pool.get_port()
+        return self._kafka_port
+
+    @property
+    def schema_registry_port(self):
+        if self._schema_registry_port:
+            return self._schema_registry_port
+        self._schema_registry_port = self.port_pool.get_port()
+        return self._schema_registry_port
+
+    @property
+    def schema_registry_auth_port(self):
+        if self._schema_registry_auth_port:
+            return self._schema_registry_auth_port
+        self._schema_registry_auth_port = self.port_pool.get_port()
+        return self._schema_registry_auth_port
+
+    @property
+    def kafka_sasl_port(self):
+        if self._kafka_sasl_port:
+            return self._kafka_sasl_port
+        self._kafka_sasl_port = self.port_pool.get_port()
+        return self._kafka_sasl_port
+
+    @property
+    def kerberized_kafka_port(self):
+        if self._kerberized_kafka_port:
+            return self._kerberized_kafka_port
+        self._kerberized_kafka_port = self.port_pool.get_port()
+        return self._kerberized_kafka_port
+
+    @property
+    def azurite_port(self):
+        if self._azurite_port:
+            return self._azurite_port
+        self._azurite_port = self.port_pool.get_port()
+        return self._azurite_port
+
+    @property
+    def mongo_port(self):
+        if self._mongo_port:
+            return self._mongo_port
+        self._mongo_port = self.port_pool.get_port()
+        return self._mongo_port
+
+    @property
+    def mongo_no_cred_port(self):
+        if self._mongo_no_cred_port:
+            return self._mongo_no_cred_port
+        self._mongo_no_cred_port = self.port_pool.get_port()
+        return self._mongo_no_cred_port
+
+    @property
+    def mongo_secure_port(self):
+        if self._mongo_secure_port:
+            return self._mongo_secure_port
+        self._mongo_secure_port = self.port_pool.get_port()
+        return self._mongo_secure_port
+
+    @property
+    def iceberg_rest_catalog_port(self):
+        if self._iceberg_rest_catalog_port:
+            return self._iceberg_rest_catalog_port
+        self._iceberg_rest_catalog_port = self.port_pool.get_port()
+        return self._iceberg_rest_catalog_port
+
+    @property
+    def iceberg_minio_port(self):
+        if self._iceberg_minio_port:
+            return self._iceberg_minio_port
+        self._iceberg_minio_port = self.port_pool.get_port()
+        return self._iceberg_minio_port
+
+    @property
+    def glue_catalog_port(self):
+        if self._glue_catalog_port:
+            return self._glue_catalog_port
+        self._glue_catalog_port = self.port_pool.get_port()
+        return self._glue_catalog_port
+
+    @property
+    def hms_catalog_port(self):
+        if self._hms_catalog_port:
+            return self._hms_catalog_port
+        self._hms_catalog_port = self.port_pool.get_port()
+        return self._hms_catalog_port
+
+    @property
+    def redis_port(self):
+        if self._redis_port:
+            return self._redis_port
+        self._redis_port = self.port_pool.get_port()
+        return self._redis_port
+
+    @property
+    def ldap_external_port(self):
+        if self._ldap_external_port:
+            return self._ldap_external_port
+        self._ldap_external_port = self.port_pool.get_port()
+        return self._ldap_external_port
+
+    @property
+    def nats_port(self):
+        if self._nats_port:
+            return self._nats_port
+        self._nats_port = self.port_pool.get_port()
+        return self._nats_port
+
+    @property
+    def arrowflight_port(self):
+        if self._arrowflight_port:
+            return self._arrowflight_port
+        self._arrowflight_port = self.port_pool.get_port()
+        return self._arrowflight_port
+
+    @property
+    def arrowflight_auth_port(self):
+        if self._arrowflight_auth_port:
+            return self._arrowflight_auth_port
+        self._arrowflight_auth_port = self.port_pool.get_port()
+        return self._arrowflight_auth_port
+
+    @property
+    def ytsaurus_port(self):
+        if not self._ytsaurus_port:
+            self._ytsaurus_port = self.port_pool.get_port()
+        return self._ytsaurus_port
+
+    @property
+    def letsencrypt_pebble_api_port(self):
+        if not self._letsencrypt_pebble_api_port:
+            self._letsencrypt_pebble_api_port = self.port_pool.get_port()
+        return self._letsencrypt_pebble_api_port
+
+    @property
+    def letsencrypt_pebble_management_port(self):
+        if not self._letsencrypt_pebble_management_port:
+            self._letsencrypt_pebble_management_port = self.port_pool.get_port()
+        return self._letsencrypt_pebble_management_port
+
+    @property
+    def ytsaurus_internal_ports_list(self):
+        if not self._ytsaurus_internal_ports_list:
+            self._ytsaurus_internal_ports_list = []
+            for _ in range(self.ytsaurus_internal_ports_list_size):
+                self._ytsaurus_internal_ports_list.append(self.port_pool.get_port())
+        return self._ytsaurus_internal_ports_list
+
+    def print_all_docker_pieces(self):
+        try:
+            timeout = int(os.environ.get("DOCKER_DIAG_TIMEOUT", "120"))
+        except Exception:
+            timeout = 120
+        timeout = max(5, min(timeout, 600))
+
+        def _try_list(cmd):
+            try:
+                return subprocess.check_output(
+                    cmd,
+                    shell=True,
+                    universal_newlines=True,
+                    timeout=timeout,
+                )
+            except Exception as ex:
+                logging.debug(
+                    "Failed to run docker diagnostic command [%s] with timeout=%ss: %s",
+                    cmd,
+                    timeout,
+                    ex,
+                )
+                return ""
+
+        res_networks = _try_list(
+            f"docker network ls --filter name='{self.project_name}*'"
+        )
+        if res_networks:
+            logging.debug(
+                f"Docker networks for project {self.project_name} are {res_networks}"
+            )
+
+        res_containers = _try_list(
+            f"docker container ls -a --filter name='{self.project_name}*'"
+        )
+        if res_containers:
+            logging.debug(
+                f"Docker containers for project {self.project_name} are {res_containers}"
+            )
+
+        res_volumes = _try_list(
+            f"docker volume ls --filter name='{self.project_name}*'"
+        )
+        if res_volumes:
+            logging.debug(
+                f"Docker volumes for project {self.project_name} are {res_volumes}"
+            )
+
+    def cleanup(self):
+        logging.debug("Cleanup called")
+        self.print_all_docker_pieces()
+
+        if (
+            os.environ
+            and "DISABLE_CLEANUP" in os.environ
+            and os.environ["DISABLE_CLEANUP"] == "1"
+        ):
+            logging.warning("Cleanup is disabled")
+            return
+
+        # Just in case kill unstopped containers from previous launch
+        try:
+            unstopped_containers = self.get_running_containers()
+            logging.debug(f"Unstopped containers: {unstopped_containers}")
+            if len(unstopped_containers):
+                logging.debug(
+                    f"Trying to kill unstopped containers: {unstopped_containers}"
+                )
+                for id in unstopped_containers:
+                    run_and_check(f"docker kill {id}", shell=True, nothrow=True)
+                    run_and_check(f"docker rm {id}", shell=True, nothrow=True)
+                unstopped_containers = self.get_running_containers()
+                if unstopped_containers:
+                    logging.debug(f"Left unstopped containers: {unstopped_containers}")
+                else:
+                    logging.debug("Unstopped containers killed.")
+            else:
+                logging.debug(f"No running containers for project: {self.project_name}")
+        except Exception as ex:
+            logging.debug(f"Got exception removing containers {str(ex)}")
+
+        # # Just in case remove unused networks
+        try:
+            logging.debug("Trying to prune unused networks...")
+
+            list_networks = subprocess.check_output(
+                f"docker network ls -q --filter name='{self.project_name}'",
+                shell=True,
+                universal_newlines=True,
+                timeout=30,
+            ).splitlines()
+            if list_networks:
+                logging.debug(f"Trying to remove networks: {list_networks}")
+                run_and_check(f"docker network rm {' '.join(list_networks)}")
+                logging.debug(f"Networks removed: {list_networks}")
+        except:
+            pass
+
+        # We used to remove unused images, but it is too aggressive and causes issues in
+        # CI because of races between pulling and pruning.
+        # https://github.com/ClickHouse/ClickHouse/issues/80470#issuecomment-3631989064
+        # try:
+        #     logging.debug("Trying to prune unused images...")
+
+        #     run_and_check(["docker", "image", "prune", "-f"])
+        #     logging.debug("Images pruned")
+        # except:
+        #     pass
+
+        # Remove unused volumes
+        try:
+            logging.debug("Trying to prune unused volumes...")
+
+            result = run_and_check(["docker volume ls | wc -l"], shell=True)
+            if int(result) > 1:
+                run_and_check(["docker", "volume", "prune", "-f", "--all"])
+            logging.debug(f"Volumes pruned: {result}")
+        except:
+            pass
+
+    def get_docker_handle(self, docker_id) -> Container:
+        exception = None
+        for i in range(20):
+            try:
+                return self.docker_client.containers.get(docker_id)
+            except Exception as ex:
+                logging.debug(f"Got exception getting docker handle {ex}")
+                time.sleep(0.5)
+                exception = ex
+        raise exception
+
+    def get_client_cmd(self):
+        cmd = self.client_bin_path
+        if p.basename(cmd) == "clickhouse":
+            cmd += " client"
+        return cmd
+
+    # Returns the list of currently running docker containers corresponding to this ClickHouseCluster.
+    def get_running_containers(self):
+        # docker-compose names containers using the following formula:
+        # container_name = project_name + '-' + instance_name + '-1'
+        # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
+        # https://stackoverflow.com/questions/48767760/how-to-make-docker-container-ls-f-name-filter-by-exact-name
+        filter_name = f"^/{self.project_name}-.*-1$"
+        # We want the command "docker container list" to show only containers' ID and their names, separated by colon.
+        format = "{{.ID}}:{{.Names}}"
+        containers = run_and_check(
+            f"docker container list --all --filter name='{filter_name}' --format '{format}'",
+            shell=True,
+        )
+        containers = dict(line.split(":", 1) for line in containers.splitlines())
+        return containers
+
+    def copy_file_from_container_to_container(
+        self, src_node, src_path, dst_node, dst_path
+    ):
+        fname = os.path.basename(src_path)
+        run_and_check(
+            [f"docker cp {src_node.docker_id}:{src_path} {self.instances_dir}"],
+            shell=True,
+        )
+        run_and_check(
+            [f"docker cp {self.instances_dir}/{fname} {dst_node.docker_id}:{dst_path}"],
+            shell=True,
+        )
+
+    def setup_zookeeper_secure_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        logging.debug("Setup ZooKeeper Secure")
+        zookeeper_docker_compose_path = p.join(
+            docker_compose_yml_dir, "docker_compose_zookeeper_secure.yml"
+        )
+        env_variables["ZOO_SECURE_CLIENT_PORT"] = str(self.zookeeper_secure_port)
+        env_variables["ZK_FS"] = "bind"
+        for i in range(1, 4):
+            zk_data_path = os.path.join(
+                self.zookeeper_instance_dir_prefix + str(i), "data"
+            )
+            zk_log_path = os.path.join(
+                self.zookeeper_instance_dir_prefix + str(i), "log"
+            )
+            env_variables["ZK_DATA" + str(i)] = zk_data_path
+            env_variables["ZK_DATA_LOG" + str(i)] = zk_log_path
+            self.zookeeper_dirs_to_create += [zk_data_path, zk_log_path]
+            logging.debug(f"DEBUG ZK: {self.zookeeper_dirs_to_create}")
+
+        self.with_zookeeper_secure = True
+        self.base_cmd.extend(["--file", zookeeper_docker_compose_path])
+        self.base_zookeeper_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            zookeeper_docker_compose_path,
+        )
+        return self.base_zookeeper_cmd
+
+    def setup_zookeeper_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        logging.debug("Setup ZooKeeper")
+        zookeeper_docker_compose_path = p.join(
+            docker_compose_yml_dir, "docker_compose_zookeeper.yml"
+        )
+
+        env_variables["ZK_FS"] = "bind"
+        for i in range(1, 4):
+            zk_data_path = os.path.join(
+                self.zookeeper_instance_dir_prefix + str(i), "data"
+            )
+            zk_log_path = os.path.join(
+                self.zookeeper_instance_dir_prefix + str(i), "log"
+            )
+            env_variables["ZK_DATA" + str(i)] = zk_data_path
+            env_variables["ZK_DATA_LOG" + str(i)] = zk_log_path
+            self.zookeeper_dirs_to_create += [zk_data_path, zk_log_path]
+            logging.debug(f"DEBUG ZK: {self.zookeeper_dirs_to_create}")
+
+        self.with_zookeeper = True
+        self.base_cmd.extend(["--file", zookeeper_docker_compose_path])
+        self.base_zookeeper_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            zookeeper_docker_compose_path,
+        )
+        return self.base_zookeeper_cmd
+
+    def setup_keeper_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        logging.debug("Setup Keeper")
+        keeper_docker_compose_path = p.join(
+            docker_compose_yml_dir, "docker_compose_keeper.yml"
+        )
+
+        binary_path = self.server_bin_path
+        binary_dir = os.path.dirname(self.server_bin_path)
+
+        # always prefer clickhouse-keeper standalone binary
+        if os.path.exists(
+            os.path.join(binary_dir, "clickhouse-keeper")
+        ) and not os.path.islink(os.path.join(binary_dir, "clickhouse-keeper")):
+            binary_path = os.path.join(binary_dir, "clickhouse-keeper")
+            keeper_cmd_prefix = "clickhouse-keeper"
+        else:
+            if binary_path.endswith("-server"):
+                binary_path = binary_path[: -len("-server")]
+            keeper_cmd_prefix = "clickhouse keeper"
+
+        env_variables["keeper_binary"] = binary_path
+        env_variables["keeper_cmd_prefix"] = keeper_cmd_prefix
+        env_variables["image"] = "clickhouse/integration-test:" + DOCKER_BASE_TAG
+        env_variables["user"] = str(os.getuid())
+        env_variables["keeper_fs"] = "bind"
+        for i in range(1, 4):
+            keeper_instance_dir = self.keeper_instance_dir_prefix + f"{i}"
+            logs_dir = os.path.join(keeper_instance_dir, "log")
+            configs_dir = os.path.join(keeper_instance_dir, "config")
+            coordination_dir = os.path.join(keeper_instance_dir, "coordination")
+            env_variables[f"keeper_logs_dir{i}"] = logs_dir
+            env_variables[f"keeper_config_dir{i}"] = configs_dir
+            env_variables[f"keeper_db_dir{i}"] = coordination_dir
+            self.zookeeper_dirs_to_create += [logs_dir, configs_dir, coordination_dir]
+
+        self.with_zookeeper = True
+        self.base_cmd.extend(["--file", keeper_docker_compose_path])
+        self.base_zookeeper_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            keeper_docker_compose_path,
+        )
+        return self.base_zookeeper_cmd
+
+    def setup_mysql_client_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mysql_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_mysql_client.yml"),
+            ]
+        )
+        self.base_mysql_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_mysql_client.yml"),
+        )
+
+        return self.base_mysql_client_cmd
+
+    def setup_mysql57_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mysql57 = True
+        env_variables["MYSQL_HOST"] = self.mysql57_host
+        env_variables["MYSQL_PORT"] = str(self.mysql57_port)
+        env_variables["MYSQL_ROOT_HOST"] = "%"
+        env_variables["MYSQL_LOGS"] = self.mysql57_logs_dir
+        env_variables["MYSQL_LOGS_FS"] = "bind"
+        env_variables["MYSQL_DOCKER_USER"] = str(os.getuid())
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql.yml")]
+        )
+        self.base_mysql57_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_mysql.yml"),
+        )
+
+        return self.base_mysql57_cmd
+
+    def setup_mysql8_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mysql8 = True
+        env_variables["MYSQL8_HOST"] = self.mysql8_host
+        env_variables["MYSQL8_PORT"] = str(self.mysql8_port)
+        env_variables["MYSQL8_ROOT_HOST"] = "%"
+        env_variables["MYSQL8_LOGS"] = self.mysql8_logs_dir
+        env_variables["MYSQL8_LOGS_FS"] = "bind"
+        env_variables["MYSQL8_DOCKER_USER"] = str(os.getuid())
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_mysql_8_0.yml")]
+        )
+        self.base_mysql8_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_mysql_8_0.yml"),
+        )
+
+        return self.base_mysql8_cmd
+
+    def setup_mysql_cluster_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mysql_cluster = True
+        env_variables["MYSQL_CLUSTER_PORT"] = str(self.mysql8_port)
+        env_variables["MYSQL_CLUSTER_ROOT_HOST"] = "%"
+        env_variables["MYSQL_CLUSTER_LOGS"] = self.mysql_cluster_logs_dir
+        env_variables["MYSQL_CLUSTER_LOGS_FS"] = "bind"
+        env_variables["MYSQL_CLUSTER_DOCKER_USER"] = str(os.getuid())
+
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_mysql_cluster.yml"),
+            ]
+        )
+        self.base_mysql_cluster_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_mysql_cluster.yml"),
+        )
+
+        return self.base_mysql_cluster_cmd
+
+    def setup_dremio26_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_dremio26 = True
+        env_variables["DREMIO26_HOST"] = self.dremio26_host
+        env_variables["DREMIO26_PORT"] = str(self.dremio26_port)
+        env_variables["DREMIO26_REST_PORT"] = str(self.dremio26_rest_port)
+        env_variables["DREMIO26_ROOT_HOST"] = "%"
+        env_variables["DREMIO26_LOGS"] = self.dremio26_logs_dir
+        env_variables["DREMIO26_LOGS_FS"] = "bind"
+        env_variables["DREMIO26_DOCKER_USER"] = str(os.getuid())
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_dremio_26_0.yml")]
+        )
+        self.base_dremio26_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_dremio_26_0.yml"),
+        )
+
+        return self.base_dremio26_cmd
+
+    def setup_postgres_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_postgres.yml")]
+        )
+        env_variables["POSTGRES_PORT"] = str(self.postgres_port)
+        env_variables["POSTGRES_DIR"] = self.postgres_logs_dir
+        env_variables["POSTGRES_LOGS_FS"] = "bind"
+
+        self.with_postgres = True
+        self.base_postgres_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgres.yml"),
+        )
+        return self.base_postgres_cmd
+
+    def setup_postgres_cluster_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_postgres_cluster = True
+        env_variables["POSTGRES_PORT"] = str(self.postgres_port)
+        env_variables["POSTGRES2_DIR"] = self.postgres2_logs_dir
+        env_variables["POSTGRES3_DIR"] = self.postgres3_logs_dir
+        env_variables["POSTGRES4_DIR"] = self.postgres4_logs_dir
+        env_variables["POSTGRES_LOGS_FS"] = "bind"
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_postgres_cluster.yml"),
+            ]
+        )
+        self.base_postgres_cluster_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgres_cluster.yml"),
+        )
+
+    def setup_postgresql_java_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_postgresql_java_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"
+                ),
+            ]
+        )
+        self.base_postgresql_java_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_postgresql_java_client.yml"),
+        )
+
+    def setup_postgresql_dotnet_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_postgresql_dotnet_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir,
+                    "docker_compose_postgresql_dotnet_client.yml",
+                ),
+            ]
+        )
+        self.base_postgresql_dotnet_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(
+                docker_compose_yml_dir,
+                "docker_compose_postgresql_dotnet_client.yml",
+            ),
+        )
+
+    def setup_mysql_dotnet_client_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_mysql_dotnet_client = True
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"
+                ),
+            ]
+        )
+        self.base_mysql_dotnet_client_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_mysql_dotnet_client.yml"),
+        )
+
+    def setup_kafka_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_kafka = True
+        env_variables["KAFKA_HOST"] = self.kafka_host
+        env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_port)
+        env_variables["SCHEMA_REGISTRY_DIR"] = instance.path + "/"
+        env_variables["SCHEMA_REGISTRY_EXTERNAL_PORT"] = str(self.schema_registry_port)
+        env_variables["SCHEMA_REGISTRY_AUTH_EXTERNAL_PORT"] = str(
+            self.schema_registry_auth_port
+        )
+        if is_arm():
+            env_variables["KAFKA_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_SCHEMA_REGISTRY_IMAGE_TAG"] = "7.9.0"
+            env_variables["KAFKA_ZOOKEEPER_IMAGE_TAG"] = "3.8"
+            # The `zookeeper:3.4.9` image put `clientPort=2181` into zoo.cfg itself,
+            # but starting from 3.5 the only way to set it is the `;<port>` suffix in
+            # ZOO_SERVERS. Without it the client port is not bound and Kafka cannot
+            # connect.
+            env_variables["KAFKA_ZOOKEEPER_SERVERS"] = (
+                "server.1=kafka_zookeeper:2888:3888;2181"
+            )
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka.yml")]
+        )
+        self.base_kafka_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_kafka.yml"),
+        )
+        return self.base_kafka_cmd
+
+    def setup_kafka_sasl_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_kafka_sasl = True
+        env_variables["KAFKA_HOST"] = self.kafka_sasl_host
+        env_variables["KAFKA_EXTERNAL_PORT"] = str(self.kafka_sasl_port)
+        env_variables["KAFKA_DIR"] = instance.path + "/"
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_kafka_sasl.yml")]
+        )
+        self.base_kafka_sasl_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_kafka_sasl.yml"),
+        )
+        return self.base_kafka_sasl_cmd
+
+    def setup_kerberized_kafka_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.with_kerberized_kafka = True
+        env_variables["KERBERIZED_KAFKA_DIR"] = instance.path + "/"
+        env_variables["KERBERIZED_KAFKA_HOST"] = self.kerberized_kafka_host
+        env_variables["KERBERIZED_KAFKA_EXTERNAL_PORT"] = str(
+            self.kerberized_kafka_port
+        )
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_kerberized_kafka.yml"),
+            ]
+        )
+        self.base_kerberized_kafka_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_kerberized_kafka.yml"),
+        )
+        return self.base_kerberized_kafka_cmd
+
+    def setup_kerberos_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_kerberos_kdc = True
+        env_variables["KERBEROS_KDC_DIR"] = self.instances_dir + "/"
+        env_variables["KERBEROS_KDC_HOST"] = self.kerberos_kdc_host
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_kerberos_kdc.yml"),
+            ]
+        )
+        self.base_kerberos_kdc_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_kerberos_kdc.yml"),
+        )
+        return self.base_kerberos_kdc_cmd
+
+    def setup_redis_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_redis = True
+        env_variables["REDIS_HOST"] = self.redis_host
+        env_variables["REDIS_EXTERNAL_PORT"] = str(self.redis_port)
+        env_variables["REDIS_INTERNAL_PORT"] = "6379"
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_redis.yml")]
+        )
+        self.base_redis_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_redis.yml"),
+        )
+        return self.base_redis_cmd
+
+    def setup_rabbitmq_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_rabbitmq = True
+        env_variables["RABBITMQ_HOST"] = self.rabbitmq_host
+        env_variables["RABBITMQ_PORT"] = str(self.rabbitmq_port)
+        env_variables["RABBITMQ_SECURE_PORT"] = str(self.rabbitmq_secure_port)
+        env_variables["RABBITMQ_MANAGEMENT_PORT"] = str(self.rabbitmq_management_port)
+        env_variables["RABBITMQ_LOGS"] = self.rabbitmq_logs_dir
+        env_variables["RABBITMQ_LOGS_FS"] = "bind"
+        env_variables["RABBITMQ_COOKIE_FILE"] = self.rabbitmq_cookie_file
+        env_variables["RABBITMQ_COOKIE_FILE_FS"] = "bind"
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_rabbitmq.yml")]
+        )
+        self.base_rabbitmq_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_rabbitmq.yml"),
+        )
+        return self.base_rabbitmq_cmd
+
+    def setup_nats_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_nats = True
+        env_variables["NATS_HOST"] = self.nats_host
+        env_variables["NATS_INTERNAL_PORT"] = "4444"
+        env_variables["NATS_EXTERNAL_PORT"] = str(self.nats_port)
+        env_variables["NATS_CERT_DIR"] = self.nats_cert_dir
+        env_variables["NATS_USER"] = nats_user
+        env_variables["NATS_PASSWORD"] = nats_pass
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_nats.yml")]
+        )
+        self.base_nats_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_nats.yml"),
+        )
+        return self.base_nats_cmd
+
+    def setup_mongo_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_mongo = True
+        env_variables["MONGO_HOST"] = self.mongo_host
+        env_variables["MONGO_EXTERNAL_PORT"] = str(self.mongo_port)
+        env_variables["MONGO_INTERNAL_PORT"] = "27017"
+        env_variables["MONGO_NO_CRED_EXTERNAL_PORT"] = str(self.mongo_no_cred_port)
+        env_variables["MONGO_NO_CRED_INTERNAL_PORT"] = "27017"
+        env_variables["MONGO_SECURE_EXTERNAL_PORT"] = str(self.mongo_secure_port)
+        env_variables["MONGO_SECURE_INTERNAL_PORT"] = "27017"
+        env_variables["MONGO_SECURE_CONFIG_DIR"] = (
+            instance.path + "/" + "mongo_secure_config"
+        )
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_mongo.yml")]
+        )
+        self.base_mongo_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_mongo.yml"),
+        )
+        return self.base_mongo_cmd
+
+    def setup_arrowflight_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_arrowflight = True
+        env_variables["ARROWFLIGHT_EXTERNAL_PORT"] = str(self.arrowflight_port)
+        env_variables["ARROWFLIGHT_AUTH_EXTERNAL_PORT"] = str(
+            self.arrowflight_auth_port
+        )
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml")]
+        )
+        self.base_arrowflight_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_arrowflight.yml"),
+        )
+        return self.base_arrowflight_cmd
+
+    def setup_coredns_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_coredns = True
+        env_variables["COREDNS_CONFIG_DIR"] = instance.path + "/" + "coredns_config"
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_coredns.yml")]
+        )
+
+        self.base_coredns_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_coredns.yml"),
+        )
+
+        return self.base_coredns_cmd
+
+    def setup_minio_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_minio = True
+        cert_d = p.join(self.minio_dir, "certs")
+        env_variables["MINIO_CERTS_DIR"] = cert_d
+        env_variables["MINIO_DATA_DIR"] = self.minio_data_dir
+        env_variables["MINIO_PORT"] = str(self.minio_port)
+        env_variables["SSL_CERT_FILE"] = p.join(self.base_dir, cert_d, "public.crt")
+        env_variables["RESOLVER_LOGS"] = self.resolver_logs_dir
+        env_variables["RESOLVER_LOGS_FS"] = "bind"
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_minio.yml")]
+        )
+        self.base_minio_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_minio.yml"),
+        )
+        return self.base_minio_cmd
+
+    def setup_glue_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_glue_catalog = True
+        env_variables["GLUE_CATALOG_PORT"] = str(self.glue_catalog_port)
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
+            ]
+        )
+        self.base_glue_catalog_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
+        )
+        return self.base_glue_catalog_cmd
+
+    def setup_hms_catalog_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_hms_catalog = True
+        env_variables["HMS_CATALOG_PORT"] = str(self.hms_catalog_port)
+        env_variables["ICEBERG_HMS_CORE_SITE"] = p.join(
+            docker_compose_yml_dir, "hms_core_site_minio1.xml"
+        )
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"
+                ),
+            ]
+        )
+
+        self.base_iceberg_hms_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_iceberg_hms_catalog.yml"),
+        )
+        return self.base_iceberg_hms_cmd
+
+    def setup_iceberg_catalog_cmd(
+        self, instance, env_variables, docker_compose_yml_dir, extra_parameters=None
+    ):
+        self.with_iceberg_catalog = True
+        file_name = "docker_compose_iceberg_rest_catalog.yml"
+        if extra_parameters is not None and extra_parameters["docker_compose_file_name"] != "":
+            file_name = extra_parameters["docker_compose_file_name"]
+        env_variables["ICEBERG_REST_CATALOG_PORT"] = str(self.iceberg_rest_catalog_port)
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, file_name
+                ),
+            ]
+        )
+        self.base_iceberg_catalog_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, file_name),
+        )
+        return self.base_iceberg_catalog_cmd
+
+    def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_azurite = True
+        env_variables["AZURITE_PORT"] = str(self.azurite_port)
+        env_variables["AZURITE_STORAGE_ACCOUNT_URL"] = (
+            f"http://azurite1:{env_variables['AZURITE_PORT']}/devstoreaccount1"
+        )
+        env_variables["AZURITE_CONNECTION_STRING"] = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"BlobEndpoint={env_variables['AZURITE_STORAGE_ACCOUNT_URL']};"
+        )
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_azurite.yml")]
+        )
+        self.base_azurite_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_azurite.yml"),
+        )
+        return self.base_azurite_cmd
+
+    def setup_cassandra_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_cassandra = True
+        env_variables["CASSANDRA_PORT"] = str(self.cassandra_port)
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_cassandra.yml")]
+        )
+        self.base_cassandra_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_cassandra.yml"),
+        )
+        return self.base_cassandra_cmd
+
+    def setup_ldap_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_ldap = True
+        env_variables["LDAP_EXTERNAL_PORT"] = str(self.ldap_external_port)
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_ldap.yml")]
+        )
+        self.base_ldap_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_ldap.yml"),
+        )
+        return self.base_ldap_cmd
+
+    def setup_jdbc_bridge_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_jdbc_bridge = True
+        env_variables["JDBC_DRIVER_LOGS"] = self.jdbc_driver_logs_dir
+        env_variables["JDBC_DRIVER_FS"] = "bind"
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_jdbc_bridge.yml")]
+        )
+        self.base_jdbc_bridge_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_jdbc_bridge.yml"),
+        )
+        return self.base_jdbc_bridge_cmd
+
+    def setup_nginx_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_nginx = True
+
+        env_variables["NGINX_EXTERNAL_PORT"] = str(self.nginx_port)
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_nginx.yml")]
+        )
+        self.base_nginx_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_nginx.yml"),
+        )
+        return self.base_nginx_cmd
+
+    def setup_hive(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_hive = True
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_hive.yml")]
+        )
+        self.base_hive_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_hive.yml"),
+        )
+        return self.base_hive_cmd
+
+    def setup_ytsaurus(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_ytsaurus = True
+        env_variables["YTSAURUS_PROXY_PORT"] = str(self.ytsaurus_port)
+        env_variables["YTSAURUS_INTERNAL_PORTS_LIST"] = " ".join(
+            str(port) for port in self.ytsaurus_internal_ports_list
+        )
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml")]
+        )
+        self.base_ytsaurus_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml"),
+        )
+        return self.base_ytsaurus_cmd
+
+    def setup_letsencrypt_pebble(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_letsencrypt_pebble = True
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_letsencrypt_pebble.yml")]
+        )
+        self.base_letsencrypt_pebble_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_letsencrypt_pebble.yml"),
+        )
+        return self.base_letsencrypt_pebble_cmd
+
+    def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir, prometheus_server):
+        if prometheus_server in self.prometheus_servers:
+            return self.base_prometheus_cmd
+
+        prefix = f"PROMETHEUS_{prometheus_server.upper()}"
+        env_variables[f"{prefix}_HOST"] = f"{self.prometheus_host}_{prometheus_server}"
+        env_variables[f"{prefix}_PORT"] = str(self.prometheus_port[prometheus_server])
+        env_variables[f"{prefix}_LOGS"] = p.abspath(p.join(self.instances_dir, self.prometheus_logs_dir.format(prometheus_server)))
+        env_variables[f"{prefix}_LOGS_FS"] = "bind"
+        docker_compose_path = p.join(docker_compose_yml_dir, f"docker_compose_prometheus_{prometheus_server}.yml")
+        self.base_cmd.extend(["--file", docker_compose_path])
+
+        if not self.prometheus_servers:
+            self.base_prometheus_cmd = self.compose_cmd()
+        self.base_prometheus_cmd.extend(["--env-file", instance.env_file, "--file", docker_compose_path])
+
+        self.prometheus_servers.add(prometheus_server)
+        self.with_prometheus = True
+        return self.base_prometheus_cmd
+
+    def setup_prometheus_remote_write_handler(self, instance, env_variables, handler_port, handler_path):
+        self.prometheus_remote_write_handlers.append((instance.hostname, handler_port, handler_path))
+        handler_urls = []
+        for host, port, path in self.prometheus_remote_write_handlers:
+            handler_urls.append(f"http://{host}:{port}/{path.strip('/')}")
+        env_variables["PROMETHEUS_REMOTE_WRITE_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'}}" for url in handler_urls]) + ']'
+
+    def setup_prometheus_remote_read_handler(self, instance, env_variables, handler_port, handler_path):
+        self.prometheus_remote_read_handlers.append((instance.hostname, handler_port, handler_path))
+        handler_urls = []
+        for host, port, path in self.prometheus_remote_read_handlers:
+            handler_urls.append(f"http://{host}:{port}/{path.strip('/')}")
+        env_variables["PROMETHEUS_REMOTE_READ_HANDLERS"] = '[' + ', '.join([f"{{'url': '{url}'}}" for url in handler_urls]) + ']'
+
+    def add_instance(
+        self,
+        name,
+        base_config_dir=None,
+        main_configs=None,
+        user_configs=None,
+        dictionaries=None,
+        macros=None,
+        with_zookeeper=False,
+        with_zookeeper_secure=False,
+        with_mysql_client=False,
+        with_mysql57=False,
+        with_mysql8=False,
+        with_mysql_cluster=False,
+        with_dremio26=False,
+        with_kafka=False,
+        with_kafka_sasl=False,
+        with_kerberized_kafka=False,
+        with_kerberos_kdc=False,
+        with_secrets=False,
+        with_rabbitmq=False,
+        with_nats=False,
+        clickhouse_path_dir=None,
+        with_odbc_drivers=False,
+        with_postgres=False,
+        with_postgres_cluster=False,
+        with_postgresql_java_client=False,
+        with_postgresql_dotnet_client=False,
+        with_mysql_dotnet_client=False,
+        clickhouse_log_file=CLICKHOUSE_LOG_FILE,
+        clickhouse_error_log_file=CLICKHOUSE_ERROR_LOG_FILE,
+        with_arrowflight=False,
+        with_mongo=False,
+        with_nginx=False,
+        with_redis=False,
+        with_minio=False,
+        # The config is defined in tests/integration/helpers/remote_database_disk.xml
+        # However, some tests cannot use with_remote_database_disk by their configs: e.g using secure keeper
+        # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in ASAN build (i.e. if not explicitly set to false)
+        with_remote_database_disk=None,
+        with_azurite=False,
+        with_cassandra=False,
+        with_ldap=False,
+        with_jdbc_bridge=False,
+        with_hive=False,
+        with_coredns=False,
+        with_prometheus_writer=False,
+        with_prometheus_reader=False,
+        with_prometheus_receiver=False,
+        with_iceberg_catalog=False,
+        with_glue_catalog=False,
+        with_hms_catalog=False,
+        with_ytsaurus=False,
+        with_letsencrypt_pebble=False,
+        handle_prometheus_remote_write=None,
+        handle_prometheus_remote_read=None,
+        use_old_analyzer=None,
+        use_distributed_plan=None,
+        hostname=None,
+        env_variables=None,
+        instance_env_variables=False,
+        image="clickhouse/integration-test",
+        tag=None,
+        # keep the docker container running when clickhouse server is stopped
+        stay_alive=False,
+        ipv4_address=None,
+        ipv6_address=None,
+        with_installed_binary=False,
+        external_dirs=None,
+        tmpfs=None,
+        mem_limit=None,
+        cpu_limit=None,
+        pids_limit=None,
+        zookeeper_docker_compose_path=None,
+        minio_certs_dir=None,
+        minio_data_dir=None,
+        use_keeper=True,
+        keeper_randomize_feature_flags=True,
+        keeper_required_feature_flags=[],
+        main_config_name="config.xml",
+        users_config_name="users.xml",
+        metrika_xml=None,
+        copy_common_configs=True,
+        config_root_name="clickhouse",
+        extra_configs=[],
+        extra_args="",
+        randomize_settings=True,
+        use_docker_init_flag=False,
+        clickhouse_start_cmd=CLICKHOUSE_START_COMMAND,
+        extra_parameters=None,
+    ) -> "ClickHouseInstance":
+        """Add an instance to the cluster.
+
+        name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
+        base_config_dir - a directory with config.xml and users.xml files which will be copied to /etc/clickhouse-server/ directory
+        main_configs - a list of config files that will be added to config.d/ directory
+        user_configs - a list of config files that will be added to users.d/ directory
+        with_zookeeper - if True, add ZooKeeper configuration to configs and ZooKeeper instances to the cluster.
+        with_zookeeper_secure - if True, add ZooKeeper Secure configuration to configs and ZooKeeper instances to the cluster.
+        extra_configs - config files cannot put into config.d and users.d
+        """
+
+        if self.is_up:
+            raise Exception("Can't add instance %s: cluster is already up!" % name)
+
+        if name in self.instances:
+            raise Exception(
+                f"Can't add instance '{name}': there is already an instance with the same name in [{self.instances.keys()}]"
+            )
+
+        if tag is None:
+            tag = DOCKER_BASE_TAG
+        else:
+            if with_remote_database_disk:
+                raise Exception(
+                    f"Can't add instance '{name}': not support remote database disk with the old version {tag}"
+                )
+            with_remote_database_disk = False
+
+        if not self.with_dolor and with_remote_database_disk is None:
+            with_remote_database_disk = int(os.getenv("CLICKHOUSE_USE_DATABASE_DISK", "0"))
+
+        if with_remote_database_disk:
+            logging.debug(f"Instance {name}, with_remote_database_disk enabled")
+            with_minio = True
+
+        if not env_variables:
+            env_variables = {}
+        self.use_keeper = use_keeper
+        self.keeper_randomize_feature_flags = keeper_randomize_feature_flags
+        self.keeper_required_feature_flags = keeper_required_feature_flags
+
+        # Code coverage files will be placed in database directory
+        # (affect only WITH_COVERAGE=1 build)
+        env_variables["LLVM_PROFILE_FILE"] = (
+            "/debug/it-%4m.profraw"
+        )
+
+        clickhouse_start_command = clickhouse_start_cmd
+        if clickhouse_log_file:
+            clickhouse_start_command += " --log-file=" + clickhouse_log_file
+        if clickhouse_error_log_file:
+            clickhouse_start_command += " --errorlog-file=" + clickhouse_error_log_file
+        logging.debug(f"clickhouse_start_command: {clickhouse_start_command}")
+
+        instance = ClickHouseInstance(
+            cluster=self,
+            base_path=self.base_dir,
+            name=name,
+            base_config_dir=(
+                base_config_dir if base_config_dir else self.base_config_dir
+            ),
+            custom_main_configs=main_configs or [],
+            custom_user_configs=user_configs or [],
+            custom_dictionaries=dictionaries or [],
+            macros=macros or {},
+            with_zookeeper=with_zookeeper,
+            zookeeper_config_path=self.zookeeper_config_path,
+            with_arrowflight=with_arrowflight,
+            with_mysql_client=with_mysql_client,
+            with_mysql57=with_mysql57,
+            with_mysql8=with_mysql8,
+            with_mysql_cluster=with_mysql_cluster,
+            with_dremio26=with_dremio26,
+            with_kafka=with_kafka,
+            with_kafka_sasl=with_kafka_sasl,
+            with_kerberized_kafka=with_kerberized_kafka,
+            with_kerberos_kdc=with_kerberos_kdc,
+            with_rabbitmq=with_rabbitmq,
+            with_nats=with_nats,
+            with_nginx=with_nginx,
+            with_secrets=with_secrets
+            or with_kerberos_kdc
+            or with_kerberized_kafka
+            or with_kafka_sasl,
+            with_mongo=with_mongo,
+            with_redis=with_redis,
+            with_minio=with_minio,
+            with_remote_database_disk=with_remote_database_disk,
+            with_azurite=with_azurite,
+            with_jdbc_bridge=with_jdbc_bridge,
+            with_hive=with_hive,
+            with_coredns=with_coredns,
+            with_cassandra=with_cassandra,
+            with_ldap=with_ldap,
+            with_iceberg_catalog=with_iceberg_catalog,
+            with_glue_catalog=with_glue_catalog,
+            with_hms_catalog=with_hms_catalog,
+            use_old_analyzer=use_old_analyzer,
+            use_distributed_plan=use_distributed_plan,
+            server_bin_path=self.server_bin_path,
+            clickhouse_path_dir=clickhouse_path_dir,
+            with_odbc_drivers=with_odbc_drivers,
+            with_postgres=with_postgres,
+            with_postgres_cluster=with_postgres_cluster,
+            with_postgresql_java_client=with_postgresql_java_client,
+            with_postgresql_dotnet_client=with_postgresql_dotnet_client,
+            with_mysql_dotnet_client=with_mysql_dotnet_client,
+            clickhouse_start_command=clickhouse_start_command,
+            clickhouse_start_extra_args=extra_args,
+            main_config_name=main_config_name,
+            users_config_name=users_config_name,
+            metrika_xml=metrika_xml,
+            copy_common_configs=copy_common_configs,
+            hostname=hostname,
+            env_variables=env_variables,
+            instance_env_variables=instance_env_variables,
+            image=image,
+            tag=tag,
+            stay_alive=stay_alive,
+            ipv4_address=ipv4_address,
+            ipv6_address=ipv6_address,
+            with_installed_binary=with_installed_binary,
+            external_dirs=external_dirs,
+            tmpfs=tmpfs or [],
+            mem_limit=mem_limit,
+            cpu_limit=cpu_limit,
+            pids_limit=pids_limit,
+            config_root_name=config_root_name,
+            extra_configs=extra_configs,
+            randomize_settings=randomize_settings,
+            use_docker_init_flag=use_docker_init_flag,
+            extra_parameters=extra_parameters,
+        )
+
+        docker_compose_yml_dir = get_docker_compose_path()
+        docker_compose_net = p.join(docker_compose_yml_dir, "docker_compose_net.yml")
+
+        self.instances[name] = instance
+        if not self.with_net_trics and (
+            ipv4_address is not None or ipv6_address is not None
+        ):
+            # docker compose v2 does not accept more than one argument `-f net.yml`
+            self.with_net_trics = True
+            self.base_cmd.extend(["--file", docker_compose_net])
+
+        self.base_cmd.extend(["--file", instance.docker_compose_path])
+
+        cmds = []
+        if with_zookeeper_secure and not self.with_zookeeper_secure:
+            cmds.append(
+                self.setup_zookeeper_secure_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_zookeeper and not self.with_zookeeper:
+            if self.use_keeper:
+                cmds.append(
+                    self.setup_keeper_cmd(
+                        instance, env_variables, docker_compose_yml_dir
+                    )
+                )
+            else:
+                cmds.append(
+                    self.setup_zookeeper_cmd(
+                        instance, env_variables, docker_compose_yml_dir
+                    )
+                )
+
+        if with_mysql_client and not self.with_mysql_client:
+            cmds.append(
+                self.setup_mysql_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_mysql57 and not self.with_mysql57:
+            cmds.append(
+                self.setup_mysql57_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_mysql8 and not self.with_mysql8:
+            cmds.append(
+                self.setup_mysql8_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_mysql_cluster and not self.with_mysql_cluster:
+            cmds.append(
+                self.setup_mysql_cluster_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_dremio26 and not self.with_dremio26:
+            cmds.append(
+                self.setup_dremio26_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_postgres and not self.with_postgres:
+            cmds.append(
+                self.setup_postgres_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_postgres_cluster and not self.with_postgres_cluster:
+            cmds.append(
+                self.setup_postgres_cluster_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_postgresql_java_client and not self.with_postgresql_java_client:
+            cmds.append(
+                self.setup_postgresql_java_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_postgresql_dotnet_client and not self.with_postgresql_dotnet_client:
+            cmds.append(
+                self.setup_postgresql_dotnet_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_mysql_dotnet_client and not self.with_mysql_dotnet_client:
+            cmds.append(
+                self.setup_mysql_dotnet_client_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_odbc_drivers and not self.with_odbc_drivers:
+            self.with_odbc_drivers = True
+            if not self.with_mysql8:
+                cmds.append(
+                    self.setup_mysql8_cmd(
+                        instance, env_variables, docker_compose_yml_dir
+                    )
+                )
+
+            if not self.with_postgres:
+                cmds.append(
+                    self.setup_postgres_cmd(
+                        instance, env_variables, docker_compose_yml_dir
+                    )
+                )
+
+        if with_kafka and not self.with_kafka:
+            cmds.append(
+                self.setup_kafka_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_kafka_sasl and not self.with_kafka_sasl:
+            cmds.append(
+                self.setup_kafka_sasl_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_kerberized_kafka and not self.with_kerberized_kafka:
+            cmds.append(
+                self.setup_kerberized_kafka_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_kerberos_kdc and not self.with_kerberos_kdc:
+            cmds.append(
+                self.setup_kerberos_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_rabbitmq and not self.with_rabbitmq:
+            cmds.append(
+                self.setup_rabbitmq_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_nats and not self.with_nats:
+            cmds.append(
+                self.setup_nats_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_nginx and not self.with_nginx:
+            cmds.append(
+                self.setup_nginx_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_mongo and not self.with_mongo:
+            cmds.append(
+                self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_arrowflight and not self.with_arrowflight:
+            cmds.append(
+                self.setup_arrowflight_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_coredns and not self.with_coredns:
+            cmds.append(
+                self.setup_coredns_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_redis and not self.with_redis:
+            cmds.append(
+                self.setup_redis_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        # Iceberg/Glue/HMS catalogs use the standard MinIO (minio1) for S3 storage.
+        if with_iceberg_catalog or with_glue_catalog or with_hms_catalog:
+            with_minio = True
+
+        if with_minio and not self.with_minio:
+            cmds.append(
+                self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_iceberg_catalog and not self.with_iceberg_catalog:
+            cmds.append(
+                self.setup_iceberg_catalog_cmd(
+                    instance, env_variables, docker_compose_yml_dir, extra_parameters
+                )
+            )
+
+        if with_glue_catalog and not self.with_glue_catalog:
+            cmds.append(
+                self.setup_glue_catalog_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_hms_catalog and not self.with_hms_catalog:
+            cmds.append(
+                self.setup_hms_catalog_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_azurite and not self.with_azurite:
+            cmds.append(
+                self.setup_azurite_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if minio_certs_dir is not None:
+            if self.minio_certs_dir is None:
+                self.minio_certs_dir = minio_certs_dir
+            else:
+                raise Exception("Overwriting minio certs dir")
+
+        if minio_data_dir is not None:
+            if self.minio_data_dir is None:
+                self.minio_data_dir = minio_data_dir
+            else:
+                raise Exception("Overwriting minio data dir")
+
+        if with_cassandra and not self.with_cassandra:
+            cmds.append(
+                self.setup_cassandra_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_ldap and not self.with_ldap:
+            cmds.append(
+                self.setup_ldap_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_jdbc_bridge and not self.with_jdbc_bridge:
+            cmds.append(
+                self.setup_jdbc_bridge_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_hive:
+            cmds.append(
+                self.setup_hive(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_ytsaurus:
+            cmds.append(
+                self.setup_ytsaurus(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_letsencrypt_pebble:
+            cmds.append(
+                self.setup_letsencrypt_pebble(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_prometheus_writer:
+            cmds.append(
+                self.setup_prometheus_cmd(instance, env_variables, docker_compose_yml_dir, 'writer')
+            )
+        if with_prometheus_reader:
+            cmds.append(
+                self.setup_prometheus_cmd(instance, env_variables, docker_compose_yml_dir, 'reader')
+            )
+        if with_prometheus_receiver:
+            cmds.append(
+                self.setup_prometheus_cmd(instance, env_variables, docker_compose_yml_dir, 'receiver')
+            )
+        if handle_prometheus_remote_write:
+            self.setup_prometheus_remote_write_handler(instance, env_variables, *handle_prometheus_remote_write)
+        if handle_prometheus_remote_read:
+            self.setup_prometheus_remote_read_handler(instance, env_variables, *handle_prometheus_remote_read)
+
+        ### !!!! This is the last step after combining all cmds, don't put anything after
+        if self.with_net_trics:
+            for cmd in cmds:
+                # Again, adding it only once
+                if docker_compose_net not in cmd:
+                    cmd.extend(["--file", docker_compose_net])
+
+        logging.debug(
+            "Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
+                self.name,
+                self.project_name,
+                name,
+                tag,
+                self.base_cmd,
+                docker_compose_yml_dir,
+            )
+        )
+        return instance
+
+    def get_instance_docker_id(self, instance_name):
+        # According to how docker-compose names containers.
+        return self.project_name + "-" + instance_name + "-1"
+
+    def _replace(self, path, what, to):
+        with open(path, "r") as p:
+            data = p.read()
+        data = data.replace(what, to)
+        with open(path, "w") as p:
+            p.write(data)
+
+    def restart_instance_with_ip_change(self, node, new_ip):
+        if "::" in new_ip:
+            if node.ipv6_address is None:
+                raise Exception("You should specify ipv6_address in add_node method")
+            self._replace(node.docker_compose_path, node.ipv6_address, new_ip)
+            node.ipv6_address = new_ip
+        else:
+            if node.ipv4_address is None:
+                raise Exception("You should specify ipv4_address in add_node method")
+            self._replace(node.docker_compose_path, node.ipv4_address, new_ip)
+            node.ipv4_address = new_ip
+        run_and_check(self.base_cmd + ["stop", node.name])
+        run_and_check(self.base_cmd + ["rm", "--force", "--stop", node.name])
+        run_and_check(
+            self.base_cmd + ["up", "--force-recreate", "--no-deps", "-d", node.name]
+        )
+        node.ip_address = self.get_instance_ip(node.name)
+        node.ipv6_address = self.get_instance_global_ipv6(node.name)
+        node.client = Client(node.ip_address, command=self.client_bin_path)
+
+        logging.info("Restart node with ip change")
+        # In builds with sanitizer the server can take a long time to start
+        node.wait_for_start(start_timeout=180.0, connection_timeout=600.0)  # seconds
+        res = node.client.query("SELECT 30")
+        logging.debug(f"Read '{res}'")
+        assert "30\n" == res
+        logging.info("Restarted")
+
+        return node
+
+    def restart_service(self, service_name):
+        run_and_check(self.base_cmd + ["restart", service_name])
+
+    def get_instance_ip(self, instance_name):
+        logging.debug("get_instance_ip instance_name={}".format(instance_name))
+        docker_id = self.get_instance_docker_id(instance_name)
+        # for cont in self.docker_client.containers.list():
+        # logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
+        handle = self.docker_client.containers.get(docker_id)
+        return list(handle.attrs["NetworkSettings"]["Networks"].values())[0][
+            "IPAddress"
+        ]
+
+    def get_instance_global_ipv6(self, instance_name):
+        logging.debug("get_instance_ip instance_name={}".format(instance_name))
+        docker_id = self.get_instance_docker_id(instance_name)
+        # for cont in self.docker_client.containers.list():
+        # logging.debug("CONTAINERS LIST: ID={} NAME={} STATUS={}".format(cont.id, cont.name, cont.status))
+        handle = self.docker_client.containers.get(docker_id)
+        return list(handle.attrs["NetworkSettings"]["Networks"].values())[0][
+            "GlobalIPv6Address"
+        ]
+
+    def get_container_id(self, instance_name):
+        return self.get_instance_docker_id(instance_name)
+        # docker_id = self.get_instance_docker_id(instance_name)
+        # handle = self.docker_client.containers.get(docker_id)
+        # return handle.attrs['Id']
+
+    def get_container_logs(self, instance_name):
+        container_id = self.get_container_id(instance_name)
+        return self.docker_client.api.logs(container_id).decode()
+
+    def query_zookeeper(self, query, node=ZOOKEEPER_CONTAINERS[0], nothrow=False):
+        cmd = f'clickhouse keeper-client -p {self.zookeeper_port} -q "{query}"'
+        container_id = self.get_container_id(node)
+        return self.exec_in_container(container_id, cmd, nothrow=nothrow, use_cli=False)
+
+    def exec_in_container(
+        self,
+        container_id: str,
+        cmd: Sequence[str],
+        detach: bool = False,
+        nothrow: bool = False,
+        use_cli: bool = True,
+        get_exec_id: bool = False,
+        **kwargs: Any,
+    ) -> str:
+        if use_cli:
+            assert not get_exec_id
+            logging.debug(
+                f"run container_id:{container_id} detach:{detach} nothrow:{nothrow} cmd: {cmd}"
+            )
+            exec_cmd = ["docker", "exec"]
+            timeout = kwargs.pop("timeout", None)
+            if "user" in kwargs:
+                exec_cmd += ["-u", kwargs["user"]]
+            if "privileged" in kwargs:
+                exec_cmd += ["--privileged"]
+
+            env = None
+            if "environment" in kwargs:
+                env = kwargs.pop("environment", None)
+                for k, v in env.items():
+                    exec_cmd += ["--env", k + "=" + v]
+
+            exec_cmd += [container_id]
+            exec_cmd += list(cmd)
+            extra_kwargs = {}
+            if env is not None:
+                extra_kwargs["env"] = env
+            if timeout is not None:
+                extra_kwargs["timeout"] = timeout
+
+            result = subprocess_check_call(
+                exec_cmd, detach=detach, nothrow=nothrow, **extra_kwargs
+            )
+            return result
+        else:
+            assert self.docker_client is not None
+            exec_id = self.docker_client.api.exec_create(container_id, cmd, **kwargs)
+            output = self.docker_client.api.exec_start(exec_id, detach=detach)
+
+            exit_code = self.docker_client.api.exec_inspect(exec_id)["ExitCode"]
+            if exit_code:
+                container_info = self.docker_client.api.inspect_container(container_id)
+                image_id = container_info.get("Image")
+                image_info = self.docker_client.api.inspect_image(image_id)
+                logging.debug("Command failed in container %s: ", container_id)
+                pprint.pprint(container_info)
+                logging.debug("")
+                logging.debug("Container %s uses image %s: ", container_id, image_id)
+                pprint.pprint(image_info)
+                logging.debug("")
+                message = (
+                    f'Cmd "{" ".join(cmd)}" failed in container {container_id}. '
+                    f"Return code {exit_code}. Output: {output}"
+                )
+                if nothrow:
+                    logging.debug(message)
+                else:
+                    raise Exception(message)
+            if not detach:
+                assert not get_exec_id
+                return output.decode()
+            return exec_id if get_exec_id else output
+
+    def copy_file_to_container(self, container_id, local_path, dest_path):
+        with open(local_path, "rb") as fdata:
+            data = fdata.read()
+            encoded_payload = base64.b64encode(data)
+            encoded_payload = str(encoded_payload, "utf-8")
+            self.exec_in_container(
+                container_id,
+                [
+                    "bash",
+                    "-c",
+                    f"mkdir -p $(dirname {dest_path}) && echo {encoded_payload} | base64 --decode > {dest_path}.tmp && mv {dest_path}.tmp {dest_path}",
+                ],
+            )
+
+    def copy_file_from_container(self, container_id, src_path, local_path):
+        result = self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "base64 {}".format(src_path),
+            ],
+        )
+
+        if result:
+            decoded_data = base64.b64decode(result)
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            with open(local_path + ".tmp", "wb") as f:
+                f.write(decoded_data)
+            os.rename(local_path + ".tmp", local_path)
+        else:
+            raise RuntimeError(f"Failed to read or empty content from {src_path} in container {container_id}")
+
+    def file_exists_in_container(self, container_id, path):
+        try:
+            self.exec_in_container(
+                container_id,
+                ["bash", "-c", f"test -f {path}"]
+            )
+            return True
+        except Exception:
+            return False
+
+    def get_files_list_in_container(self, container_id, path):
+        result = self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                f"find {path} -type f"
+            ],
+        )
+
+        files = result.strip().splitlines() if result else []
+        return files
+
+    def move_file_in_container(self, container_id, old_path, new_path):
+        self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "mv {} {}".format(old_path, new_path),
+            ],
+        )
+
+    def remove_file_from_container(self, container_id, path):
+        self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "rm {}".format(path),
+            ],
+        )
+
+    def remove_directory_from_container(self, container_id, path):
+        self.exec_in_container(
+            container_id,
+            [
+                "bash",
+                "-c",
+                "rm -rf {}".format(path),
+            ],
+        )
+
+    def wait_for_url(
+        self, url="http://localhost:8123/ping", conn_timeout=2, interval=2, timeout=60
+    ):
+        if not url.startswith("https") and not url.startswith("http"):
+            url = "http://" + url
+        if interval <= 0:
+            interval = 2
+        if timeout <= 0:
+            timeout = 60
+
+        attempts = 1
+        errors = []
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                requests.get(
+                    url, allow_redirects=True, timeout=conn_timeout, verify=False
+                ).raise_for_status()
+                logging.debug(
+                    "{} is available after {} seconds".format(url, time.time() - start)
+                )
+                return
+            except Exception as ex:
+                logging.debug(
+                    "{} Attempt {} failed, retrying in {} seconds".format(
+                        ex, attempts, interval
+                    )
+                )
+                attempts += 1
+                errors += [str(ex)]
+                time.sleep(interval)
+
+        run_and_check(["docker", "ps", "--all"])
+        logging.error("Can't connect to URL:{}".format(errors))
+        raise Exception(
+            "Cannot wait URL {}(interval={}, timeout={}, attempts={})".format(
+                url, interval, timeout, attempts
+            )
+        )
+
+    def wait_mysql_client_to_start(self, timeout=180):
+        start = time.time()
+        errors = []
+        self.mysql_client_container = self.get_docker_handle(
+            self.get_instance_docker_id(self.mysql_client_host)
+        )
+
+        while time.time() - start < timeout:
+            try:
+                info = self.mysql_client_container.client.api.inspect_container(
+                    self.mysql_client_container.name
+                )
+                if info["State"]["Health"]["Status"] == "healthy":
+                    logging.debug("Mysql Client Container Started")
+                    return
+                time.sleep(1)
+            except Exception as ex:
+                errors += [str(ex)]
+                time.sleep(1)
+
+        run_and_check(["docker", "ps", "--all"])
+        logging.error("Can't connect to MySQL Client:{}".format(errors))
+        raise Exception("Cannot wait MySQL Client container")
+
+    def wait_mysql57_to_start(self, timeout=180):
+        self.mysql57_ip = self.get_instance_ip("mysql57")
+        start = time.time()
+        errors = []
+        while time.time() - start < timeout:
+            try:
+                conn = pymysql.connect(
+                    user=mysql_user,
+                    password=mysql_pass,
+                    host=self.mysql57_ip,
+                    port=self.mysql57_port,
+                )
+                conn.close()
+                logging.debug("Mysql Started")
+                return
+            except Exception as ex:
+                errors += [str(ex)]
+                time.sleep(0.5)
+
+        run_and_check(["docker", "ps", "--all"])
+        logging.error("Can't connect to MySQL:{}".format(errors))
+        raise Exception("Cannot wait MySQL container")
+
+    def wait_mysql8_to_start(self, timeout=180):
+        self.mysql8_ip = self.get_instance_ip("mysql80")
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                conn = pymysql.connect(
+                    user=mysql_user,
+                    password=mysql_pass,
+                    host=self.mysql8_ip,
+                    port=self.mysql8_port,
+                )
+                conn.close()
+                logging.debug("Mysql 8 Started")
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to MySQL 8 " + str(ex))
+                time.sleep(0.5)
+
+        run_and_check(["docker", "ps", "--all"])
+        raise Exception("Cannot wait MySQL 8 container")
+
+    def wait_mysql_cluster_to_start(self, timeout=180):
+        self.mysql2_ip = self.get_instance_ip(self.mysql2_host)
+        self.mysql3_ip = self.get_instance_ip(self.mysql3_host)
+        self.mysql4_ip = self.get_instance_ip(self.mysql4_host)
+        start = time.time()
+        errors = []
+        while time.time() - start < timeout:
+            try:
+                for ip in [self.mysql2_ip, self.mysql3_ip, self.mysql4_ip]:
+                    conn = pymysql.connect(
+                        user=mysql_user,
+                        password=mysql_pass,
+                        host=ip,
+                        port=self.mysql8_port,
+                    )
+                    conn.close()
+                    logging.debug(f"Mysql Started {ip}")
+                return
+            except Exception as ex:
+                errors += [str(ex)]
+                time.sleep(0.5)
+
+        run_and_check(["docker", "ps", "--all"])
+        logging.error("Can't connect to MySQL:{}".format(errors))
+        raise Exception("Cannot wait MySQL container")
+
+    def wait_dremio26_to_start(self, timeout=180):
+        # Data payload for the request
+        user_data = {
+            "userName": dremio_user,
+            "firstName": "FirstName",
+            "lastName": "LastName",
+            "email": "dremio@localhost",
+            "password": dremio_pass
+        }
+
+        headers = {
+            'Content-Type': 'application/json',
+            # The Authorization header for the FIRST user creation must be '_dremionull'
+            'Authorization': '_dremionull'
+        }
+
+        self.dremio26_ip = self.get_instance_ip("dremio26")
+        start = time.time()
+
+        while time.time() - start < timeout:
+            try:
+                response = requests.put(f"http://{self.dremio26_ip}:{self.dremio26_rest_port}/apiv2/bootstrap/firstuser", headers=headers, data=json.dumps(user_data), timeout=10)
+                if response.status_code == 200:
+                    logging.debug("Dremio 26 Started")
+                    return
+                raise Exception(f"Failed to create user for Dremio 26 (Status Code: {response.status_code}): {response.text}")
+            except Exception as ex:
+                logging.debug("Can't connect to Dremio 26 " + str(ex))
+                time.sleep(0.5)
+
+        run_and_check(["docker", "ps", "--all"])
+        raise Exception("Cannot wait Dremio 26 container")
+
+    def wait_ytsaurus_to_start(self):
+        self.wait_for_url(
+            url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=300
+        )
+
+    def wait_letsencrypt_pebble_to_start(self):
+        self.wait_for_url(
+            url=f"https://10.5.11.2:{self.letsencrypt_pebble_api_port}/dir", timeout=30
+        )
+
+    def wait_postgres_to_start(self, timeout=260):
+        self.postgres_ip = self.get_instance_ip(self.postgres_host)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                self.postgres_conn = psycopg2.connect(
+                    host=self.postgres_ip,
+                    port=self.postgres_port,
+                    database=pg_db,
+                    user=pg_user,
+                    password=pg_pass,
+                )
+                self.postgres_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgres_conn.autocommit = True
+                logging.debug("Postgres Started")
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to Postgres " + str(ex))
+                time.sleep(0.5)
+
+        raise Exception("Cannot wait Postgres container")
+
+    def wait_postgres_cluster_to_start(self, timeout=180):
+        self.postgres2_ip = self.get_instance_ip(self.postgres2_host)
+        self.postgres3_ip = self.get_instance_ip(self.postgres3_host)
+        self.postgres4_ip = self.get_instance_ip(self.postgres4_host)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                self.postgres2_conn = psycopg2.connect(
+                    host=self.postgres2_ip,
+                    port=self.postgres_port,
+                    database=pg_db,
+                    user=pg_user,
+                    password=pg_pass,
+                )
+                self.postgres2_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgres2_conn.autocommit = True
+                logging.debug("Postgres Cluster host 2 started")
+                break
+            except Exception as ex:
+                logging.debug("Can't connect to Postgres host 2" + str(ex))
+                time.sleep(0.5)
+        while time.time() - start < timeout:
+            try:
+                self.postgres3_conn = psycopg2.connect(
+                    host=self.postgres3_ip,
+                    port=self.postgres_port,
+                    database=pg_db,
+                    user=pg_user,
+                    password=pg_pass,
+                )
+                self.postgres3_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgres3_conn.autocommit = True
+                logging.debug("Postgres Cluster host 3 started")
+                break
+            except Exception as ex:
+                logging.debug("Can't connect to Postgres host 3" + str(ex))
+                time.sleep(0.5)
+        while time.time() - start < timeout:
+            try:
+                self.postgres4_conn = psycopg2.connect(
+                    host=self.postgres4_ip,
+                    port=self.postgres_port,
+                    database=pg_db,
+                    user=pg_user,
+                    password=pg_pass,
+                )
+                self.postgres4_conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+                self.postgres4_conn.autocommit = True
+                logging.debug("Postgres Cluster host 4 started")
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to Postgres host 4" + str(ex))
+                time.sleep(0.5)
+
+        raise Exception("Cannot wait Postgres container")
+
+    def wait_postgresql_java_client(self, timeout=180):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_postgresql_java_client_is_available(
+                    self.postgresql_java_client_docker_id
+                ):
+                    logging.debug("PostgreSQL Java Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find PostgreSQL Java Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait PostgreSQL Java Client container")
+
+    def wait_postgresql_dotnet_client(self, timeout=180):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_postgresql_dotnet_client_is_available(
+                    self.postgresql_dotnet_client_docker_id
+                ):
+                    logging.debug("PostgreSQL C# Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find PostgreSQL C# Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait PostgreSQL C# Client container")
+
+    def wait_mysql_dotnet_client(self, timeout=30):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_mysql_dotnet_client_is_available(
+                    self.mysql_dotnet_client_docker_id
+                ):
+                    logging.debug("MySQL C# Client is available")
+                    return True
+                time.sleep(0.5)
+            except Exception as ex:
+                logging.debug("Can't find MySQL C# Client" + str(ex))
+                time.sleep(0.5)
+        raise Exception("Cannot wait MySQL C# Client container")
+
+    def wait_rabbitmq_to_start(self, timeout=120):
+        self.print_all_docker_pieces()
+        self.rabbitmq_ip = self.get_instance_ip(self.rabbitmq_host)
+
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                if check_rabbitmq_is_available(
+                    self.rabbitmq_docker_id, self.rabbitmq_cookie
+                ):
+                    logging.debug("RabbitMQ is available")
+                    return True
+            except Exception as ex:
+                logging.debug("RabbitMQ await_startup failed, %s:", ex)
+                time.sleep(1)
+
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                with open(os.path.join(self.rabbitmq_dir, "docker.log"), "w+") as f:
+                    subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                        self.base_rabbitmq_cmd + ["logs"], stdout=f
+                    )
+                rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
+            except Exception as ex:
+                logging.debug("Unable to get logs from docker: %s:", ex)
+                time.sleep(0.5)
+
+        raise RuntimeError("Cannot wait RabbitMQ container")
+
+    def reset_rabbitmq(self, timeout=120):
+        try:
+            resp = requests.get(f"http://{self.rabbitmq_ip}:{self.rabbitmq_management_port}/api/overview",
+                                auth=("root", "clickhouse"))
+            logging.debug(f"RabbitMQ statistics:\n{json.dumps(resp.json(), indent=2)}")
+        except:
+            pass
+        logging.debug("Resetting RabbitMQ by restarting container")
+        run_and_check(
+            f"docker stop --time {timeout} {self.rabbitmq_docker_id}",
+            shell=True,
+            nothrow=True,
+            timeout=timeout
+        )
+        run_and_check(
+            f"docker rm -f -v {self.rabbitmq_docker_id}",
+            shell=True,
+            nothrow=True,
+        )
+        subprocess_check_call(
+            self.base_rabbitmq_cmd + ["up", "-d", "--renew-anon-volumes"],
+            timeout=timeout,
+        )
+        self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
+        self.wait_rabbitmq_to_start(timeout)
+
+    def run_rabbitmqctl(self, command):
+        run_rabbitmqctl(self.rabbitmq_docker_id, self.rabbitmq_cookie, command)
+
+    def wait_nats_is_available(self, max_retries=5):
+        retries = 0
+        while True:
+            if asyncio.run(
+                check_nats_is_available(self)
+            ):
+                break
+            else:
+                retries += 1
+                if retries > max_retries:
+                    raise Exception("NATS is not available")
+                logging.debug("Waiting for NATS to start up")
+                time.sleep(1)
+
+    def wait_zookeeper_secure_to_start(self, timeout=20):
+        logging.debug("Wait ZooKeeper Secure to start")
+        self.wait_zookeeper_nodes_to_start(ZOOKEEPER_CONTAINERS, timeout)
+
+    def wait_zookeeper_to_start(self, timeout: float = 180) -> None:
+        logging.debug("Wait ZooKeeper to start")
+        self.wait_zookeeper_nodes_to_start(ZOOKEEPER_CONTAINERS, timeout)
+
+    def wait_zookeeper_nodes_to_start(
+        self,
+        nodes: List[str],
+        timeout: float = 60,
+    ) -> None:
+        start = time.time()
+        err = Exception("")
+        while time.time() - start < timeout:
+            try:
+                for node in nodes:
+                    # Use low retries/timeout per attempt since the outer loop
+                    # already retries. This avoids kazoo's internal thread join
+                    # hanging indefinitely (a known kazoo bug where
+                    # ConnectionHandler.stop joins the connection thread
+                    # without a timeout).
+                    conn = self.get_kazoo_client(node, timeout=5.0, retries=1)
+                    conn.get_children("/")
+                    conn.stop()
+                logging.debug("All instances of ZooKeeper started: %s", nodes)
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to ZooKeeper %s: %s", node, ex)
+                err = ex
+                time.sleep(0.5)
+
+        raise Exception(
+            "Cannot wait ZooKeeper container (probably it's a `iptables-nft` issue, you may try to `sudo iptables -P FORWARD ACCEPT`)"
+        ) from err
+
+    def wait_kafka_is_available(self, kafka_docker_id, kafka_port, max_retries=120):
+        retries = 0
+        while True:
+            if check_kafka_is_available(kafka_docker_id, kafka_port):
+                return
+            else:
+                retries += 1
+                if retries > max_retries:
+                    break
+                logging.debug("Waiting for Kafka to start up")
+                time.sleep(1)
+
+        try:
+            with open(os.path.join(self.kafka_dir, "docker.log"), "w+") as f:
+                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                    self.base_kafka_cmd + ["logs"], stdout=f
+                )
+        except Exception:
+            logging.debug("Unable to get logs from docker.")
+        raise Exception("Kafka is not available")
+
+    def wait_kerberos_kdc_is_available(self, kerberos_kdc_docker_id, max_retries=50):
+        retries = 0
+        while True:
+            if check_kerberos_kdc_is_available(kerberos_kdc_docker_id):
+                break
+            else:
+                retries += 1
+                if retries > max_retries:
+                    raise Exception("Kerberos KDC is not available")
+                logging.debug("Waiting for Kerberos KDC to start up")
+                time.sleep(1)
+
+    def wait_mongo_to_start(self, timeout=30, secure=False):
+        connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
+            host="localhost",
+            port=self.mongo_port,
+            user=mongo_user,
+            password=urllib.parse.quote_plus(mongo_pass),
+        )
+        if secure:
+            connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
+        connection = pymongo.MongoClient(connection_str)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                connection.list_database_names()
+                logging.debug(
+                    f"Connected to Mongo dbs: {connection.list_database_names()}"
+                )
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to Mongo " + str(ex))
+                time.sleep(1)
+
+    def wait_custom_minio_to_start(self, buckets, host, port, timeout=180):
+        ip = self.get_instance_ip(host)
+        minio_client = Minio(
+            f"{ip}:{port}",
+            access_key=minio_access_key,
+            secret_key=minio_secret_key,
+            secure=False,
+            http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
+        )
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                minio_client.list_buckets()
+
+                logging.debug("Connected to Minio.")
+
+                if all(minio_client.bucket_exists(bucket) for bucket in buckets):
+                    return
+
+                time.sleep(1)
+            except Exception as ex:
+                logging.debug("Can't connect to Minio: %s", str(ex))
+                time.sleep(1)
+
+        raise Exception("Can't wait Minio to start")
+
+    def wait_minio_to_start(self, timeout=180, secure=False):
+        self.minio_ip = self.get_instance_ip(self.minio_host)
+        self.minio_redirect_ip = self.get_instance_ip(self.minio_redirect_host)
+
+        os.environ["SSL_CERT_FILE"] = p.join(
+            self.base_dir, self.minio_dir, "certs", "public.crt"
+        )
+        minio_client = Minio(
+            f"{self.minio_ip}:{self.minio_port}",
+            access_key=minio_access_key,
+            secret_key=minio_secret_key,
+            secure=secure,
+            http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
+        )  # disable SSL check as we test ClickHouse and not Python library
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                minio_client.list_buckets()
+
+                logging.debug("Connected to Minio.")
+
+                buckets = [
+                    self.minio_bucket,
+                    self.minio_bucket_2,
+                    self.minio_bucket_db_disk,
+                ]
+
+                for bucket in buckets:
+                    if minio_client.bucket_exists(bucket):
+                        delete_object_list = map(
+                            lambda x: x.object_name,
+                            minio_client.list_objects_v2(bucket, recursive=True),
+                        )
+                        errors = minio_client.remove_objects(bucket, delete_object_list)
+                        for error in errors:
+                            logging.error(
+                                f"Error occurred when deleting object {error}"
+                            )
+                        minio_client.remove_bucket(bucket)
+                    minio_client.make_bucket(bucket)
+                    logging.debug("S3 bucket '%s' created", bucket)
+
+                self.minio_client = minio_client
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to Minio: %s", str(ex))
+                time.sleep(1)
+
+        try:
+            with open(os.path.join(self.minio_dir, "docker.log"), "w+") as f:
+                subprocess.check_call(  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                    self.base_minio_cmd + ["logs"], stdout=f
+                )
+        except Exception:
+            logging.debug("Unable to get logs from docker.")
+
+        raise Exception("Can't wait Minio to start")
+
+    def create_minio_buckets(self, buckets, set_public_policy=False):
+        """Create additional buckets on the standard MinIO (minio1).
+
+        Must be called after wait_minio_to_start() which sets self.minio_client.
+        """
+        assert self.minio_client is not None, (
+            "create_minio_buckets called before wait_minio_to_start"
+        )
+        for bucket in buckets:
+            if self.minio_client.bucket_exists(bucket):
+                delete_object_list = map(
+                    lambda x: x.object_name,
+                    self.minio_client.list_objects_v2(bucket, recursive=True),
+                )
+                errors = self.minio_client.remove_objects(bucket, delete_object_list)
+                for error in errors:
+                    logging.error(f"Error occurred when deleting object {error}")
+                self.minio_client.remove_bucket(bucket)
+            self.minio_client.make_bucket(bucket)
+            logging.info("S3 bucket '%s' created on standard MinIO", bucket)
+
+        if set_public_policy:
+            for bucket in buckets:
+                policy = json.dumps(
+                    {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Principal": {"AWS": "*"},
+                                "Action": ["s3:*"],
+                                "Resource": [
+                                    f"arn:aws:s3:::{bucket}",
+                                    f"arn:aws:s3:::{bucket}/*",
+                                ],
+                            }
+                        ],
+                    }
+                )
+                self.minio_client.set_bucket_policy(bucket, policy)
+                logging.info("Public policy set on S3 bucket '%s'", bucket)
+
+    def wait_azurite_to_start(self, timeout=180):
+        from azure.storage.blob import BlobServiceClient
+
+        self.azurite_ip = self.get_instance_ip(self.azurite_host)
+        connection_string = (
+            f"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;"
+            f"AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;"
+            f"BlobEndpoint=http://127.0.0.1:{self.env_variables['AZURITE_PORT']}/devstoreaccount1;"
+        )
+        time.sleep(1)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                blob_service_client = BlobServiceClient.from_connection_string(
+                    connection_string
+                )
+                logging.debug(blob_service_client.get_account_information())
+                containers = [
+                    c
+                    for c in blob_service_client.list_containers(
+                        name_starts_with=self.azurite_container
+                    )
+                    if c.name == self.azurite_container
+                ]
+                if len(containers) > 0:
+                    for c in containers:
+                        blob_service_client.delete_container(c)
+
+                container_client = blob_service_client.get_container_client(
+                    self.azurite_container
+                )
+                if container_client.exists():
+                    logging.debug(
+                        f"azurite container '{self.azurite_container}' exist, deleting all blobs"
+                    )
+                    for b in container_client.list_blobs():
+                        container_client.delete_blob(b.name)
+                else:
+                    logging.debug(
+                        f"azurite container '{self.azurite_container}' doesn't exist, creating it"
+                    )
+                    container_client.create_container()
+
+                self.blob_service_client = blob_service_client
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to Azurite: %s", str(ex))
+                time.sleep(1)
+
+        raise Exception("Can't wait Azurite to start")
+
+    def wait_schema_registry_to_start(self, timeout=180):
+        for port in self.schema_registry_port, self.schema_registry_auth_port:
+            reg_url = "http://localhost:{}".format(port)
+            arg = {"url": reg_url}
+            sr_client = CachedSchemaRegistryClient(arg)
+
+            start = time.time()
+            sr_started = False
+            while time.time() - start < timeout:
+                try:
+                    sr_client._send_request(sr_client.url)
+                    logging.debug("Connected to SchemaRegistry")
+                    # don't care about possible auth errors
+                    sr_started = True
+                    break
+                except Exception as ex:
+                    logging.debug(("Can't connect to SchemaRegistry: %s", str(ex)))
+                    time.sleep(1)
+
+            if not sr_started:
+                raise Exception("Can't wait Schema Registry to start")
+
+    def wait_cassandra_to_start(self, timeout=180):
+        self.cassandra_ip = self.get_instance_ip(self.cassandra_host)
+        cass_client = cassandra.cluster.Cluster(
+            [self.cassandra_ip],
+            port=self.cassandra_port,
+            load_balancing_policy=RoundRobinPolicy(),
+        )
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                logging.info(
+                    f"Check Cassandra Online {self.cassandra_id} {self.cassandra_ip} {self.cassandra_port}"
+                )
+                self.exec_in_container(
+                    self.cassandra_id,
+                    [
+                        "bash",
+                        "-c",
+                        f"/opt/cassandra/bin/cqlsh -u cassandra -p cassandra -e 'describe keyspaces' {self.cassandra_ip} {self.cassandra_port}",
+                    ],
+                    user="root",
+                )
+                logging.info("Cassandra Online")
+                cass_client.connect()
+                logging.info("Connected Clients to Cassandra")
+                return
+            except Exception as ex:
+                logging.warning("Can't connect to Cassandra: %s", str(ex))
+                time.sleep(1)
+
+        raise Exception("Can't wait Cassandra to start")
+
+    def wait_ldap_to_start(self, timeout=180):
+        self.ldap_container = self.get_docker_handle(self.ldap_id)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                logging.info(f"Check LDAP Online {self.ldap_host} {self.ldap_port}")
+                self.exec_in_container(
+                    self.ldap_id,
+                    [
+                        "bash",
+                        "-c",
+                        "test -f /tmp/.openldap-initialized"
+                        f"&& /opt/bitnami/openldap/bin/ldapsearch -x -H ldap://{self.ldap_host}:{self.ldap_port} -D cn=admin,dc=example,dc=org -w clickhouse -b dc=example,dc=org"
+                        f'| grep -c -E "member: cn=j(ohn|ane)doe"'
+                        f"| grep 2 >> /dev/null",
+                    ],
+                    user="root",
+                )
+                logging.info("LDAP Online")
+                return
+            except Exception as ex:
+                logging.warning("Can't connect to LDAP: %s", str(ex))
+                time.sleep(1)
+
+        raise Exception("Can't wait LDAP to start")
+
+    def wait_prometheus_to_start(self):
+        for prometheus_server in self.prometheus_servers:
+            ip = self.get_instance_ip(f"{self.prometheus_host}_{prometheus_server}")
+            self.prometheus_ip[prometheus_server] = ip
+            self.wait_for_url(f"http://{ip}:{self.prometheus_port[prometheus_server]}/api/v1/status/runtimeinfo")
+
+    def wait_arrowflight_to_start(self):
+        time.sleep(5) # TODO
+
+    def login_to_ecr(self):
+        if Path(f"{temp_dir}/ecr_token.json").exists():
+            with open(f"{temp_dir}/ecr_token.json", "r") as f:
+                tokens = json.load(f)
+
+            registries = set()
+            for i in self.instances.values():
+                registries.add(i.image.split("/", 1)[0])
+
+            for instance_registry in registries:
+                for region in tokens.keys():
+                    if region in instance_registry:
+                        user, password = (
+                            base64.b64decode(tokens[region])
+                            .decode("utf-8")
+                            .split(":", 1)
+                        )
+                        logging.info(
+                            f"Logging into {instance_registry}"
+                        )
+                        run_and_check(
+                            ["docker", "login", instance_registry, "-u", user, "--password-stdin"],
+                            input=password.encode(),
+                        )
+
+    def start(self, connection_timeout=None):
+        pytest_xdist_logging_to_separate_files.setup()
+        logging.info("Running tests in {}".format(self.base_path))
+        logging.debug(f"Cluster start called. is_up={self.is_up}")
+        self.print_all_docker_pieces()
+
+        if self.is_up:
+            return
+
+        if not os.path.exists(self.instances_dir):
+            os.mkdir(self.instances_dir)
+        else:
+            logging.warning(
+                "Instance directory already exists. Did you call cluster.start() for second time?"
+            )
+            # Remove and recreate so that create_dir() gets a clean slate.
+            # This happens when --dist=each causes module-scoped fixtures to be torn down
+            # and re-set-up within the same pytest session (e.g. tests from different modules
+            # interleave on the same xdist worker). cluster.shutdown() does not remove
+            # instances_dir, and ClickHouseCluster.__init__ only removes it at import time,
+            # so without this cleanup create_dir() would fail with FileExistsError.
+            shutil.rmtree(self.instances_dir, ignore_errors=True)
+            os.mkdir(self.instances_dir)
+
+        if self.with_net_trics:
+            # Tests might share same subnet, check file docker_compose_net.yml
+            logging.info(f"Attempting to acquire lock at {NET_LOCK_PATH}...")
+            self.docker_net_lock = FileLock(NET_LOCK_PATH)
+            try:
+                self.docker_net_lock.acquire(timeout=60*10)
+                logging.info(f"Lock acquired at {NET_LOCK_PATH}")
+            except Timeout:
+                raise Exception(
+                    f"Could not acquire the lock {NET_LOCK_PATH} within 10 minutes. "
+                    f"Another process may be holding it for too long, or it might be stale."
+                )
+
+        try:
+            self.cleanup()
+        except Exception:
+            logging.warning("Cleanup failed:{e}")
+
+        try:
+            for instance in list(self.instances.values()):
+                logging.debug(f"Setup directory for instance: {instance.name}")
+                instance.create_dir()
+
+            _create_env_file(os.path.join(self.env_file), self.env_variables)
+            self.docker_client = docker.DockerClient(
+                base_url=os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock"),
+                version=self.docker_api_version,
+                timeout=600,
+            )
+
+            common_opts = ["--verbose", "up", "-d"]
+
+            images_pull_cmd = self.base_cmd + ["pull"]
+            # sometimes dockerhub/proxy can be flaky
+
+            def logging_pulling_images(**kwargs):
+                if "exception" in kwargs:
+                    logging.info(
+                        "Got exception pulling images: %s", kwargs["exception"]
+                    )
+
+            self.login_to_ecr()
+            retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(run_and_check, images_pull_cmd, timeout=180)
+
+            def logging_compose_up(**kwargs):
+                if "exception" in kwargs:
+                    logging.info(
+                        "Got exception in docker compose up: %s", kwargs["exception"]
+                    )
+
+            if self.with_zookeeper_secure and self.base_zookeeper_cmd:
+                logging.debug("Setup ZooKeeper Secure")
+                logging.debug(
+                    f"Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}"
+                )
+                for i in range(1, 3):
+                    if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
+                        shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}", ignore_errors=True)
+                for dir in self.zookeeper_dirs_to_create:
+                    os.makedirs(dir)
+                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
+                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
+                )
+                self.up_called = True
+
+                self.wait_zookeeper_secure_to_start()
+                for command in self.pre_zookeeper_commands:
+                    self.run_kazoo_commands_with_retries(command, repeats=5)
+
+            if self.with_zookeeper and self.base_zookeeper_cmd:
+                logging.debug("Setup ZooKeeper")
+                logging.debug(
+                    f"Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}"
+                )
+                if self.use_keeper:
+                    for i in range(1, 4):
+                        if os.path.exists(self.keeper_instance_dir_prefix + f"{i}"):
+                            shutil.rmtree(self.keeper_instance_dir_prefix + f"{i}", ignore_errors=True)
+                else:
+                    for i in range(1, 3):
+                        if os.path.exists(self.zookeeper_instance_dir_prefix + f"{i}"):
+                            shutil.rmtree(self.zookeeper_instance_dir_prefix + f"{i}", ignore_errors=True)
+
+                for dir in self.zookeeper_dirs_to_create:
+                    os.makedirs(dir)
+
+                if self.use_keeper:  # TODO: remove hardcoded paths from here
+                    nuraft_streaming_mode = (
+                        random.randint(0, 1)
+                        if self.keeper_randomize_feature_flags
+                        else 0
+                    )
+                    for i in range(1, 4):
+                        current_keeper_config_dir = os.path.join(
+                            f"{self.keeper_instance_dir_prefix}{i}", "config"
+                        )
+                        if self.custom_keeper_configs_paths is None:
+                            shutil.copy(
+                                os.path.join(
+                                    self.keeper_config_dir, f"keeper_config{i}.xml"
+                                ),
+                                current_keeper_config_dir,
+                            )
+
+                            extra_configs_dir = os.path.join(
+                                current_keeper_config_dir, f"keeper_config{i}.d"
+                            )
+                            os.mkdir(extra_configs_dir)
+                            feature_flags_config = os.path.join(
+                                extra_configs_dir, "feature_flags.yaml"
+                            )
+
+                            indentation = 4 * " "
+
+                            def get_feature_flag_value(feature_flag):
+                                if not self.keeper_randomize_feature_flags:
+                                    return 1
+
+                                if feature_flag in self.keeper_required_feature_flags:
+                                    return 1
+
+                                return random.randint(0, 1)
+
+                            with open(feature_flags_config, "w") as ff_config:
+                                ff_config.write("keeper_server:\n")
+                                ff_config.write(f"{indentation}feature_flags:\n")
+                                indentation *= 2
+
+                                for feature_flag in [
+                                    "filtered_list",
+                                    "multi_read",
+                                    "check_not_exists",
+                                    "create_if_not_exists",
+                                    "remove_recursive",
+                                    "multi_watches",
+                                    "check_stat",
+                                    "try_remove",
+                                    "list_with_stat_and_data",
+                                ]:
+                                    ff_config.write(
+                                        f"{indentation}{feature_flag}: {get_feature_flag_value(feature_flag)}\n"
+                                    )
+
+                                if self.keeper_randomize_feature_flags:
+                                    indentation = 4 * " "
+                                    ff_config.write(
+                                        f"{indentation}coordination_settings:\n"
+                                    )
+                                    indentation *= 2
+                                    ff_config.write(
+                                        f"{indentation}nuraft_streaming_mode: {nuraft_streaming_mode}\n"
+                                    )
+                        else:
+                            basename = os.path.basename(
+                                self.custom_keeper_configs_paths[i - 1]
+                            )
+                            shutil.copy(
+                                self.custom_keeper_configs_paths[i - 1],
+                                current_keeper_config_dir,
+                            )
+                            os.rename(
+                                os.path.join(current_keeper_config_dir, basename),
+                                os.path.join(
+                                    current_keeper_config_dir, f"keeper_config{i}.xml"
+                                ),
+                            )
+
+                retry(log_function=logging_compose_up, retries=3, delay=3, jitter=2)(
+                    run_and_check, self.base_zookeeper_cmd + common_opts, env=self.env
+                )
+                self.up_called = True
+
+                self.wait_zookeeper_to_start()
+                for command in self.pre_zookeeper_commands:
+                    self.run_kazoo_commands_with_retries(command, repeats=5)
+
+            for instance in list(self.instances.values()):
+                if instance.with_remote_database_disk:
+                    logging.debug(
+                        f"Setup with_remote_database_disk, instance {instance.name}"
+                    )
+                    config_file_path = os.path.join(
+                        HELPERS_DIR, "remote_database_disk.xml"
+                    )
+                    with open(config_file_path, "r") as config_source_file:
+                        data = config_source_file.read()
+                    data = data.format(
+                        host=self.minio_host,
+                        port=str(self.minio_port),
+                        bucket=self.minio_bucket_db_disk,
+                        shard="{shard}",
+                        replica="{replica}",
+                    )
+                    instance_config_dir = os.path.join(instance.path, "configs")
+                    target_config_file_path = os.path.join(
+                        instance_config_dir,
+                        "config.d",
+                        "remote_database_disk.xml",
+                    )
+                    with open(target_config_file_path, "w") as config_target_file:
+                        config_target_file.write(data)
+
+            if self.with_mysql_client and self.base_mysql_client_cmd:
+                logging.debug("Setup MySQL Client")
+                subprocess_check_call(self.base_mysql_client_cmd + common_opts)
+                self.wait_mysql_client_to_start()
+
+            if self.with_mysql57 and self.base_mysql57_cmd:
+                logging.debug("Setup MySQL")
+                if os.path.exists(self.mysql57_dir):
+                    shutil.rmtree(self.mysql57_dir, ignore_errors=True)
+                os.makedirs(self.mysql57_logs_dir, exist_ok=True)
+                os.chmod(self.mysql57_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_mysql57_cmd + common_opts + ["--renew-anon-volumes"])
+                self.up_called = True
+                self.wait_mysql57_to_start()
+
+            if self.with_mysql8 and self.base_mysql8_cmd:
+                logging.debug("Setup MySQL 8")
+                if os.path.exists(self.mysql8_dir):
+                    shutil.rmtree(self.mysql8_dir, ignore_errors=True)
+                os.makedirs(self.mysql8_logs_dir, exist_ok=True)
+                os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_mysql8_cmd + common_opts + ["--renew-anon-volumes"])
+                self.wait_mysql8_to_start()
+
+            if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
+                logging.debug("Setup MySQL")
+                if os.path.exists(self.mysql_cluster_dir):
+                    shutil.rmtree(self.mysql_cluster_dir, ignore_errors=True)
+                os.makedirs(self.mysql_cluster_logs_dir, exist_ok=True)
+                os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                subprocess_check_call(self.base_mysql_cluster_cmd + common_opts + ["--renew-anon-volumes"])
+                self.up_called = True
+                self.wait_mysql_cluster_to_start()
+
+            if self.with_dremio26 and self.base_dremio26_cmd:
+                logging.debug("Setup Dremio 26")
+                if os.path.exists(self.dremio26_dir):
+                    shutil.rmtree(self.dremio26_dir, ignore_errors=True)
+                os.makedirs(self.dremio26_logs_dir, exist_ok=True)
+                os.chmod(self.dremio26_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_dremio26_cmd + common_opts)
+                self.wait_dremio26_to_start()
+
+            if self.with_postgres and self.base_postgres_cmd:
+                logging.debug("Setup Postgres")
+                if os.path.exists(self.postgres_dir):
+                    shutil.rmtree(self.postgres_dir, ignore_errors=True)
+                os.makedirs(self.postgres_logs_dir, exist_ok=True)
+                os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                subprocess_check_call(self.base_postgres_cmd + common_opts)
+                self.up_called = True
+                self.wait_postgres_to_start()
+
+            if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
+                logging.debug("Setup Postgres")
+                os.makedirs(self.postgres2_logs_dir)
+                os.chmod(self.postgres2_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                os.makedirs(self.postgres3_logs_dir)
+                os.chmod(self.postgres3_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                os.makedirs(self.postgres4_logs_dir)
+                os.chmod(self.postgres4_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
+                self.up_called = True
+                self.wait_postgres_cluster_to_start()
+
+            if (
+                self.with_postgresql_java_client
+                and self.base_postgresql_java_client_cmd
+            ):
+                logging.debug("Setup Postgres Java Client")
+                subprocess_check_call(
+                    self.base_postgresql_java_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_postgresql_java_client()
+
+            if (
+                self.with_postgresql_dotnet_client
+                and self.base_postgresql_dotnet_client_cmd
+            ):
+                logging.debug("Setup Postgres C# Client")
+                subprocess_check_call(
+                    self.base_postgresql_dotnet_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_postgresql_dotnet_client()
+
+            if (
+                self.with_mysql_dotnet_client
+                and self.base_mysql_dotnet_client_cmd
+            ):
+                logging.debug("Setup MySQL C# Client")
+                subprocess_check_call(
+                    self.base_mysql_dotnet_client_cmd + common_opts
+                )
+                self.up_called = True
+                self.wait_mysql_dotnet_client()
+
+            if self.with_kafka and self.base_kafka_cmd:
+                logging.debug("Setup Kafka")
+                os.mkdir(self.kafka_dir)
+                subprocess_check_call(
+                    self.base_kafka_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
+                self.wait_schema_registry_to_start()
+
+            if self.with_kafka_sasl and self.base_kafka_sasl_cmd:
+                logging.debug("Setup Kafka with SASL")
+                os.mkdir(self.kafka_sasl_dir)
+                subprocess_check_call(
+                    self.base_kafka_sasl_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+
+            if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
+                logging.debug("Setup kerberized kafka")
+                os.mkdir(self.kafka_dir)
+                run_and_check(
+                    self.base_kerberized_kafka_cmd
+                    + common_opts
+                    + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                self.wait_kafka_is_available(
+                    self.kerberized_kafka_docker_id, self.kerberized_kafka_port, 100
+                )
+
+            if self.with_kerberos_kdc and self.base_kerberos_kdc_cmd:
+                logging.debug("Setup Kerberos KDC")
+                run_and_check(
+                    self.base_kerberos_kdc_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                self.wait_kerberos_kdc_is_available(self.keberos_kdc_docker_id)
+
+            if self.with_rabbitmq and self.base_rabbitmq_cmd:
+                logging.debug("Setup RabbitMQ")
+                os.makedirs(self.rabbitmq_logs_dir)
+                os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                with open(self.rabbitmq_cookie_file, "w") as f:
+                    f.write(self.rabbitmq_cookie)
+                os.chmod(self.rabbitmq_cookie_file, stat.S_IRUSR)
+
+                subprocess_check_call(
+                    self.base_rabbitmq_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                self.rabbitmq_docker_id = self.get_instance_docker_id("rabbitmq1")
+                time.sleep(2)
+                logging.debug("RabbitMQ checking container try")
+                self.wait_rabbitmq_to_start()
+
+            if self.with_nats and self.base_nats_cmd:
+                logging.debug("Setup NATS")
+                os.makedirs(self.nats_cert_dir)
+                env = os.environ.copy()
+                env["NATS_CERT_DIR"] = self.nats_cert_dir
+                run_and_check(
+                    p.join(self.base_dir, "nats_certs.sh"),
+                    env=env,
+                    detach=False,
+                    nothrow=False,
+                )
+
+                self.nats_ssl_context = ssl.create_default_context()
+                self.nats_ssl_context.load_verify_locations(
+                    p.join(self.nats_cert_dir, "ca", "ca-cert.pem")
+                )
+                subprocess_check_call(self.base_nats_cmd + common_opts)
+                self.nats_docker_id = self.get_instance_docker_id("nats1")
+                self.up_called = True
+                self.wait_nats_is_available()
+
+            if self.with_nginx and self.base_nginx_cmd:
+                logging.debug("Setup nginx")
+                subprocess_check_call(
+                    self.base_nginx_cmd + common_opts + ["--renew-anon-volumes"]
+                )
+                self.up_called = True
+                self.nginx_docker_id = self.get_instance_docker_id("nginx")
+
+            if self.with_mongo and self.base_mongo_cmd:
+                logging.debug("Setup Mongo")
+                run_and_check(self.base_mongo_cmd + common_opts)
+                self.up_called = True
+                self.wait_mongo_to_start(30)
+
+            if self.with_coredns and self.base_coredns_cmd:
+                logging.debug("Setup coredns")
+                run_and_check(self.base_coredns_cmd + common_opts)
+                self.up_called = True
+                time.sleep(10)
+
+            if self.with_redis and self.base_redis_cmd:
+                logging.debug("Setup Redis")
+                subprocess_check_call(self.base_redis_cmd + common_opts)
+                self.up_called = True
+                time.sleep(10)
+
+            if self.with_hive and self.base_hive_cmd:
+                logging.debug("Setup hive")
+                subprocess_check_call(self.base_hive_cmd + common_opts)
+                self.up_called = True
+                time.sleep(30)
+
+            if self.with_minio and self.base_minio_cmd:
+                # Copy minio certificates to minio/certs
+                os.mkdir(self.minio_dir)
+                if self.minio_certs_dir is None:
+                    os.mkdir(os.path.join(self.minio_dir, "certs"))
+                    os.mkdir(os.path.join(self.minio_dir, "certs", "CAs"))
+                else:
+                    shutil.copytree(
+                        os.path.join(self.base_dir, self.minio_certs_dir),
+                        os.path.join(self.minio_dir, "certs"),
+                    )
+                os.mkdir(self.minio_data_dir)
+                os.chmod(self.minio_data_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                os.makedirs(self.resolver_logs_dir)
+                os.chmod(self.resolver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                minio_start_cmd = self.base_minio_cmd + common_opts
+
+                logging.info(
+                    "Trying to create Minio instance by command %s",
+                    " ".join(map(str, minio_start_cmd)),
+                )
+                run_and_check(minio_start_cmd)
+                self.up_called = True
+                logging.info("Trying to connect to Minio...")
+                self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
+
+            # Catalogs use the standard MinIO (minio1). Create their
+            # buckets on it before starting the catalog services.
+            if self.with_glue_catalog or self.with_hms_catalog or self.with_iceberg_catalog:
+                catalog_buckets = []
+                if self.with_glue_catalog:
+                    catalog_buckets.append("warehouse-glue")
+                if self.with_hms_catalog:
+                    catalog_buckets.append("warehouse-hms")
+                if self.with_iceberg_catalog:
+                    catalog_buckets.extend(["warehouse-rest", "iceberg-data"])
+                self.create_minio_buckets(catalog_buckets, set_public_policy=True)
+
+                # Some catalogs (Nessie) vend an S3 endpoint to clients via the
+                # REST `loadTable` response. The hostname `minio1` is only
+                # resolvable inside the Docker network, so the host-side
+                # `pyiceberg` client cannot reach it. Re-export the env file
+                # with `MINIO_IP` set to the standard MinIO container's IP
+                # (resolvable from both the host and from other containers in
+                # the same Docker bridge network) so catalog compose files can
+                # vend a host-reachable URL.
+                if self.minio_ip:
+                    self.env_variables["MINIO_IP"] = self.minio_ip
+                    _create_env_file(self.env_file, self.env_variables)
+
+            if self.with_glue_catalog and self.base_glue_catalog_cmd:
+                logging.info("Starting Glue catalog...")
+                subprocess_check_call(self.base_glue_catalog_cmd + common_opts)
+                self.up_called = True
+
+            if self.with_hms_catalog and self.base_iceberg_hms_cmd:
+                logging.info("Starting HMS catalog...")
+                subprocess_check_call(self.base_iceberg_hms_cmd + common_opts)
+                self.up_called = True
+
+            if self.with_iceberg_catalog and self.base_iceberg_catalog_cmd:
+                logging.info("Starting Iceberg catalog...")
+                subprocess_check_call(self.base_iceberg_catalog_cmd + common_opts)
+                self.up_called = True
+
+            if self.with_azurite and self.base_azurite_cmd:
+                azurite_start_cmd = self.base_azurite_cmd + common_opts
+                logging.info(
+                    "Trying to create Azurite instance by command %s",
+                    " ".join(map(str, azurite_start_cmd)),
+                )
+
+                def logging_azurite_initialization(exception, retry_number, sleep_time):
+                    logging.info(
+                        f"Azurite initialization failed with error: {exception}"
+                    )
+
+                retry(
+                    log_function=logging_azurite_initialization,
+                )(run_and_check, azurite_start_cmd)
+                self.up_called = True
+                logging.info("Trying to connect to Azurite")
+                self.wait_azurite_to_start()
+
+            if self.with_cassandra and self.base_cassandra_cmd:
+                subprocess_check_call(self.base_cassandra_cmd + ["up", "-d"])
+                self.up_called = True
+                self.wait_cassandra_to_start()
+
+            if self.with_ldap and self.base_ldap_cmd:
+                ldap_start_cmd = self.base_ldap_cmd + common_opts
+                subprocess_check_call(ldap_start_cmd)
+                self.up_called = True
+                self.wait_ldap_to_start()
+
+            if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
+                os.makedirs(self.jdbc_driver_logs_dir)
+                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                subprocess_check_call(self.base_jdbc_bridge_cmd + ["up", "-d"])
+                self.up_called = True
+                self.jdbc_bridge_ip = self.get_instance_ip(self.jdbc_bridge_host)
+                self.wait_for_url(
+                    f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping"
+                )
+
+            if self.with_prometheus and self.base_prometheus_cmd:
+                for prometheus_server in self.prometheus_servers:
+                    logs_dir = p.abspath(p.join(self.instances_dir, self.prometheus_logs_dir.format(prometheus_server)))
+                    os.makedirs(logs_dir)
+                    os.chmod(logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+
+                prometheus_start_cmd = self.base_prometheus_cmd + common_opts
+
+                logging.info(
+                    "Trying to create Prometheus instances by command %s",
+                    " ".join(map(str, prometheus_start_cmd)),
+                )
+                run_and_check(prometheus_start_cmd)
+                self.up_called = True
+                logging.info("Trying to connect to Prometheus...")
+                self.wait_prometheus_to_start()
+
+            if self.with_ytsaurus and self.base_ytsaurus_cmd:
+                ytsarurus_start_cmd = self.base_ytsaurus_cmd + common_opts
+                run_and_check(ytsarurus_start_cmd)
+                self.wait_ytsaurus_to_start()
+
+            if self.with_letsencrypt_pebble and self.base_letsencrypt_pebble_cmd:
+                letsencrypt_pebble_pull_cmd = self.base_letsencrypt_pebble_cmd + ["pull"]
+                retry(log_function=logging_pulling_images, retries=3, delay=8, jitter=8)(
+                    run_and_check, letsencrypt_pebble_pull_cmd, timeout=180
+                )
+                letsencrypt_pebble_start_cmd = self.base_letsencrypt_pebble_cmd + common_opts
+                run_and_check(letsencrypt_pebble_start_cmd)
+                self.wait_letsencrypt_pebble_to_start()
+
+            if self.with_arrowflight and self.base_arrowflight_cmd:
+                arrowflight_start_cmd = self.base_arrowflight_cmd + common_opts
+
+                logging.info(
+                    "Trying to create Arrowflight instance by command %s",
+                    " ".join(map(str, arrowflight_start_cmd)),
+                )
+                run_and_check(arrowflight_start_cmd)
+
+                logging.error('Trying to connect to Arrowflight...')
+                self.wait_arrowflight_to_start()
+
+            clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
+            logging.debug(
+                (
+                    "Trying to create ClickHouse instance by command %s",
+                    " ".join(map(str, clickhouse_start_cmd)),
+                )
+            )
+            self.up_called = True
+
+            run_and_check(clickhouse_start_cmd)
+            logging.debug("ClickHouse instance created")
+
+            if self.with_dolor:
+                # Copy binaries and start ClickHouse for dolor instances
+                for instance in self.instances.values():
+                    i = 0
+                    for val in self.server_binaries:
+                        subprocess.run(
+                            [
+                                "docker",
+                                "cp",
+                                val,
+                                f"{instance.docker_id}:/usr/bin/clickhouse{i}",
+                            ],
+                            check=True,
+                        )
+                        if i == 0:
+                            # The first binary will be used first
+                            instance.exec_in_container(
+                                [
+                                    "ln",
+                                    "-sf",
+                                    f"/usr/bin/clickhouse{i}",
+                                    "/usr/bin/clickhouse",
+                                ],
+                                user="root",
+                            )
+                        i += 1
+                    self.exec_in_container(
+                        instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
+                    )
+                    instance.exec_in_container(
+                        ["bash", "-c", instance.clickhouse_start_command],
+                        user=str(os.getuid()),
+                        detach=True,
+                    )
+
+            start_timeout = 300.0  # seconds
+            connection_timeout = None
+            try:
+                v = os.environ.get("KEEPER_START_TIMEOUT_SEC")
+                if v:
+                    start_timeout = float(v)
+            except Exception:
+                start_timeout = 300.0
+            try:
+                v = os.environ.get("KEEPER_CONNECT_TIMEOUT_SEC")
+                if v:
+                    connection_timeout = float(v)
+            except Exception:
+                connection_timeout = None
+            for instance in self.instances.values():
+                instance.docker_client = self.docker_client
+                instance.ip_address = self.get_instance_ip(instance.name)
+                instance.ipv6_address = self.get_instance_global_ipv6(instance.name)
+
+                logging.debug(
+                    f"Waiting for ClickHouse start in {instance.name}, ip: {instance.ip_address}..."
+                )
+                instance.wait_for_start(start_timeout, connection_timeout=connection_timeout)
+                logging.debug(f"ClickHouse {instance.name} started")
+
+                instance.client = Client(
+                    instance.ip_address, command=self.client_bin_path
+                )
+
+            self.is_up = True
+            self.save_logs()
+
+        except BaseException as e:
+            logging.debug("Failed to start cluster: ")
+            logging.debug(str(e))
+            logging.debug(traceback.format_exc())
+            self.save_logs()
+            self.shutdown()
+            raise
+
+    def save_logs(self) -> None:
+        # Launch the `docker-compose logs` in background to collect all the logs
+        # into the docker_logs_path file during the run
+        # Create directory log
+        os.makedirs(p.dirname(self.docker_logs_path), exist_ok=True)
+        # Here errors='replace' because docker can sometimes write non-unicode characters to its output.
+        docker_logs_path = open(self.docker_logs_path, "w+", errors="replace")
+        self.docker_logs_proc = subprocess.Popen(
+            self.base_cmd + ["logs", "--follow"],
+            stdout=docker_logs_path,
+            stderr=subprocess.STDOUT,
+            bufsize=0,
+        )
+
+    def shutdown(
+        self,
+        kill=True,
+        ignore_fatal=False,
+        ignore_logical_errors=False,
+        ignore_sanitizer=False,
+    ):
+        sanitizer_assert_instance = None
+        failure_logs = []
+
+        if self.up_called:
+            if kill:
+                try:
+                    # NOTE: no --timeout, rely on stop_grace_period
+                    run_and_check(self.base_cmd + ["stop"])
+                except Exception as e:
+                    logging.debug(
+                        "Kill command failed during shutdown. {}".format(repr(e))
+                    )
+                    logging.debug("Trying to kill forcefully")
+                    run_and_check(self.base_cmd + ["kill"])
+
+            # Check server logs for Fatal messages and sanitizer failures.
+            # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
+            for name, instance in self.instances.items():
+                # Collect exit codes for later inspection
+                if self.with_dolor:
+                    container = self.docker_client.containers.get(instance.docker_id)
+                    res = container.wait()
+                    exit_code = res["StatusCode"]
+                    logging.info(f"The server {name} exited with code: {exit_code}")
+
+                if not ignore_sanitizer and instance.contains_in_log(
+                    SANITIZER_SIGN, from_host=True, filename="stderr.log"
+                ):
+                    sanitizer_assert_instance = instance.grep_in_log(
+                        SANITIZER_SIGN,
+                        from_host=True,
+                        filename="stderr.log",
+                        after=1000,
+                    )
+                    logging.error(
+                        "Sanitizer in instance %s log %s",
+                        name,
+                        sanitizer_assert_instance,
+                    )
+
+                if not ignore_logical_errors:
+                    logical_error_log = instance.grep_in_log("LOGICAL_ERROR", from_host=True)
+                    if logical_error_log and '<Error>' in logical_error_log:
+                        msg = f"Logical error in instance '{name}':\n{logical_error_log}"
+                        failure_logs.append(msg)
+                        logging.error(msg)
+
+                if not ignore_fatal:
+                    fatal_log = instance.grep_in_log("<Fatal>", from_host=True)
+                    if fatal_log and "Child process was terminated by signal 9 (KILL)" not in fatal_log:
+                        msg = f"Crash in instance '{name}':\n{fatal_log}"
+                        failure_logs.append(msg)
+                        logging.error(msg)
+
+            try:
+                subprocess_check_call(self.base_cmd + ["down", "--volumes"])
+            except Exception as e:
+                logging.debug(
+                    "Down + remove orphans failed during shutdown. {}".format(repr(e))
+                )
+
+            # Finish `docker compose logs --follow` process, just in case
+            # It should be already finished because of the `docker compose down`
+            if self.docker_logs_proc is not None:
+                self.docker_logs_proc.kill()
+
+            if not sanitizer_assert_instance:
+                # Search for sinitizer signs in docker.log if it's still empty
+                with open(self.docker_logs_path, "r") as f:
+                    for line in f:
+                        if SANITIZER_SIGN in line:
+                            sanitizer_assert_instance = line.split("|")[0].strip()
+                            break
+        else:
+            logging.warning(
+                "docker compose up was not called. Trying to export docker.log for running containers"
+            )
+
+        self.cleanup()
+
+        if self.with_net_trics:
+            try:
+                if self.docker_net_lock is not None:
+                    self.docker_net_lock.release()
+                else:
+                    logging.debug("docker_net_lock is None, nothing to release")
+            except Exception as e:
+                logging.warning(f"Failed to release lock: {e}")
+
+        self.is_up = False
+
+        self.docker_client = None
+
+        for instance in list(self.instances.values()):
+            instance.docker_client = None
+            instance.ip_address = None
+            instance.ipv6_address = None
+            instance.client = None
+
+        if sanitizer_assert_instance is not None:
+            raise Exception(
+                "Sanitizer assert found for instance {}".format(
+                    sanitizer_assert_instance
+                )
+            )
+
+        if self.spark_session:
+            self.spark_session.stop()
+
+        if failure_logs:
+            raise Exception("\n".join(failure_logs))
+
+    def _pause_container(self, instance_name):
+        subprocess_check_call(self.base_cmd + ["pause", instance_name])
+
+    def _unpause_container(self, instance_name):
+        subprocess_check_call(self.base_cmd + ["unpause", instance_name])
+
+    def _signal_clickhouse_in_container(self, instance_name, signal_name):
+        # Returns True if a `clickhouse` process was signaled inside the
+        # container; False if no such process exists so callers can fall
+        # back to signaling the container's main process.
+        container_id = self.get_container_id(instance_name)
+        result = self.exec_in_container(
+            container_id,
+            ["bash", "-c", "pkill -{} clickhouse; echo $?".format(signal_name)],
+            nothrow=True,
+            user="root",
+        )
+        last_line = (result or "").strip().splitlines()[-1] if result else ""
+        return last_line == "0"
+
+    def _pause_container_using_signal(self, instance_name):
+        # ClickHouse runs as a child of the bash entrypoint at PID 1, and
+        # bash does not propagate uncatchable signals to children, so we
+        # must target the `clickhouse` process directly. For non-ClickHouse
+        # containers (Kafka, MongoDB, etc.) PID 1 is the service itself.
+        if self._signal_clickhouse_in_container(instance_name, "STOP"):
+            return
+        subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGSTOP", instance_name])
+
+    def _unpause_container_using_signal(self, instance_name):
+        if self._signal_clickhouse_in_container(instance_name, "CONT"):
+            return
+        subprocess_check_call(self.base_cmd + ["kill", "--signal=SIGCONT", instance_name])
+
+    def _wait_for_pause_effective(self, instance_name, timeout):
+        """Block until pausing `instance_name` is observably effective for
+        fresh client connections.
+
+        Docker's cgroup freezer (and `SIGSTOP`) suspends user-space tasks
+        asynchronously with respect to in-flight TCP traffic. After
+        `docker compose pause` returns, the kernel can still complete the
+        TCP three-way handshake for new connections — and a short
+        application-level greeting that is already buffered in the socket
+        can still flow back to the client — for a brief window before the
+        freeze fully blocks the server's accept/read/write loop. Tests
+        that assert on connection failure under `pause_container` can
+        therefore see the very first probe succeed, producing chronic
+        flakes (see issues `#103819`, `#103820`).
+
+        Probe strategy: open a fresh TCP connection from the test process
+        directly to `<instance>:9000` on every iteration, send one byte
+        that the ClickHouse native protocol treats as an unexpected
+        first packet (varint `0x05`, `Protocol::Client::TablesStatusRequest`
+        — anything other than `Hello`/`G`/`P`), and wait for the
+        server's response with a tight read timeout. A live ClickHouse
+        server immediately raises `UNEXPECTED_PACKET_FROM_CLIENT` from
+        `TCPHandler::receiveHello` and sends a `Server::Exception`
+        packet back, which we observe within milliseconds. A paused
+        server can complete the kernel-level handshake but cannot run
+        the `TCPHandler` accept/read/write loop in user space, so the
+        read times out and the probe declares the pause effective.
+
+        Why not reuse a sibling ClickHouse node and `remote()`? Each
+        ClickHouse server keeps a per-target connection pool keyed by
+        host/port/user/etc. (see `src/Client/ConnectionPool.h`). A cached
+        native-protocol connection to a paused node has a live kernel
+        socket, so `Connection::forceConnected` short-circuits to a
+        `ping(timeouts)` that can either succeed against stale buffered
+        data or block for `sync_request_timeout` (default 5s) rather than
+        the per-query `handshake_timeout_ms`. The probe ended up reporting
+        the paused node as reachable for its entire budget, even after
+        the freeze was fully in effect. By probing from the test process
+        directly we guarantee a fresh TCP+greeting handshake every
+        attempt and bypass that pool entirely. This was the chronic root
+        cause behind the `pause_container('node1') did not become
+        observably effective within 30.0s` reports on slow sanitizer
+        shards even after `wait_timeout` was raised to 90s.
+
+        For non-ClickHouse containers (Kafka, MongoDB, etc.) we cannot
+        speak the native protocol on port 9000, so we skip the wait. The
+        current Kafka callers do not assert on the timing of the freeze
+        — they wait for log lines that the paused side emits well after
+        the freeze is effective — so the absence of a global probe is
+        benign for them.
+        """
+        if instance_name not in self.instances:
+            return
+        instance = self.instances[instance_name]
+        addr = getattr(instance, "ip_address", None)
+        if not addr:
+            # The instance has not been started yet (or had its IP
+            # resolved). Without a routable address we cannot probe;
+            # fall back to the caller's expectation that the freeze is
+            # effective when `docker compose pause` returns.
+            return
+        port = 9000  # native TCP — the protocol every existing caller relies on
+        deadline = time.time() + timeout
+        last_log = time.time()
+        iter_count = 0
+        last_outcome = "no probe attempted yet"
+        while time.time() < deadline:
+            iter_count += 1
+            sock = None
+            try:
+                # Fresh TCP connect every iteration — required to avoid
+                # any pooling/caching the test process or kernel might do.
+                sock = socket.create_connection((addr, port), timeout=0.5)
+                sock.settimeout(0.5)
+                # ClickHouse native server reads the client `Hello`
+                # packet first; the first byte on the wire is a varint
+                # packet type. `Hello` is `0x00`, so sending `\x00`
+                # would put the server into reading the rest of the
+                # `Hello` body (`client_name`, versions, user, etc.)
+                # and it would not reply until the full handshake is
+                # received — making a live server look identical to a
+                # frozen one. See `TCPHandler::receiveHello` in
+                # `src/Server/TCPHandler.cpp`.
+                #
+                # Instead, send a single-byte varint that is a valid
+                # client packet type but is NOT `Hello` (e.g. `0x05`,
+                # `Protocol::Client::TablesStatusRequest`). The server
+                # immediately raises `UNEXPECTED_PACKET_FROM_CLIENT`
+                # and sends a `Server::Exception` packet back to us
+                # before any further handshake reads, which we observe
+                # within milliseconds. A paused server cannot run the
+                # `TCPHandler` code path at all, so `recv` times out.
+                # We must also avoid `0x47` (`G`) and `0x50` (`P`),
+                # which the server treats as wrong-port HTTP requests.
+                try:
+                    sock.sendall(b"\x05")
+                except (BrokenPipeError, ConnectionResetError) as e:
+                    last_outcome = f"sendall raised {type(e).__name__}"
+                    return
+                try:
+                    data = sock.recv(4)
+                except socket.timeout:
+                    last_outcome = "recv timed out (server unresponsive)"
+                    return
+                if not data:
+                    last_outcome = "EOF on recv"
+                    return
+                last_outcome = f"server replied ({len(data)} bytes)"
+            except (socket.timeout, ConnectionError, OSError) as e:
+                # Kernel-level connect refused/timed out: pause is
+                # observably effective even at the TCP layer.
+                last_outcome = f"connect failed: {type(e).__name__}"
+                return
+            finally:
+                if sock is not None:
+                    try:
+                        sock.close()
+                    except OSError:
+                        pass
+            now = time.time()
+            if now - last_log >= 5.0:
+                logging.warning(
+                    "_wait_for_pause_effective(%s): not yet effective "
+                    "after %.1fs (%d iters); last probe outcome: %s",
+                    instance_name,
+                    now - (deadline - timeout),
+                    iter_count,
+                    last_outcome,
+                )
+                last_log = now
+            time.sleep(0.1)
+        raise Exception(
+            f"pause_container({instance_name!r}) did not become observably "
+            f"effective within {timeout}s — connections to "
+            f"{instance_name}:{port} ({addr}) still succeed after "
+            f"{iter_count} probe iterations; last outcome: {last_outcome}"
+        )
+
+    @contextmanager
+    def pause_container(self, instance_name, wait_for_paused=True, wait_timeout=90.0):
+        """Use it as following:
+        with cluster.pause_container(name):
+            useful_stuff()
+
+        When `instance_name` refers to a ClickHouse instance, this helper
+        blocks until the pause is observably effective for fresh
+        TCP-plus-ClickHouse-handshake connections, removing a chronic
+        race where Docker's cgroup freezer takes effect asynchronously
+        with respect to in-flight traffic. The probe runs from the test
+        process and uses raw sockets — it does not require a sibling
+        ClickHouse instance and bypasses any internal connection pooling
+        a sibling might have. Set `wait_for_paused=False` to opt out and
+        keep the older non-blocking behavior.
+
+        The default `wait_timeout` is 90 seconds. In practice the freeze
+        becomes observable within milliseconds once `docker compose
+        pause` returns — each probe iteration is a fresh TCP connect +
+        one-byte send + read with a 0.5s read timeout, so the probe
+        normally exits on the very first iteration. The 90-second budget
+        is intentional safety margin for unusual conditions (cold
+        cgroups, heavily-overcommitted sanitizer shards, transient
+        kernel-level slowness during heavy CI load); the cost when the
+        freeze is already in effect is negligible.
+
+        Cleanup: once the container has been paused (whether via
+        `docker compose pause` or the `SIGSTOP` fallback), unpausing must
+        always run on context exit — even if `_wait_for_pause_effective`
+        times out. Otherwise a probe failure would leave the container
+        permanently paused and cascade into unrelated test failures in
+        the same suite.
+        """
+        used_signal = False
+        try:
+            self._pause_container(instance_name)
+        except Exception as e:
+            logging.warning(
+                "docker compose pause failed for %s: %s, falling back to SIGSTOP",
+                instance_name,
+                e,
+            )
+            self._pause_container_using_signal(instance_name)
+            used_signal = True
+
+        try:
+            if wait_for_paused:
+                self._wait_for_pause_effective(instance_name, wait_timeout)
+            yield
+        finally:
+            if used_signal:
+                self._unpause_container_using_signal(instance_name)
+            else:
+                self._unpause_container(instance_name)
+
+    @contextmanager
+    def pause_container_using_signal(self, instance_name, wait_for_paused=True, wait_timeout=90.0):
+        """Same semantics as `pause_container`, but always uses the
+        `SIGSTOP`/`SIGCONT` mechanism instead of `docker compose pause`.
+        See `pause_container` for the rationale behind the 90s default.
+        """
+        self._pause_container_using_signal(instance_name)
+        try:
+            if wait_for_paused:
+                self._wait_for_pause_effective(instance_name, wait_timeout)
+            yield
+        finally:
+            self._unpause_container_using_signal(instance_name)
+
+    def open_bash_shell(self, instance_name):
+        os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
+
+    def get_kazoo_client(
+        self, zoo_instance_name, timeout: float = 30.0, retries=10, external_port=None
+    ):
+        use_ssl = False
+        if self.with_zookeeper_secure:
+            port = self.zookeeper_secure_port
+            use_ssl = True
+        elif self.with_zookeeper:
+            port = self.zookeeper_port
+        elif external_port is not None:
+            port = external_port
+        else:
+            raise Exception("Cluster has no ZooKeeper")
+
+        ip = self.get_instance_ip(zoo_instance_name)
+        logging.debug(
+            f"get_kazoo_client: {zoo_instance_name}, ip:{ip}, port:{port}, use_ssl:{use_ssl}"
+        )
+        kazoo_retry = {
+            "max_tries": retries,
+        }
+        zk = KazooClientWithImplicitRetries(
+            hosts=f"{ip}:{port}",
+            timeout=timeout,
+            connection_retry=kazoo_retry,
+            command_retry=kazoo_retry,
+            use_ssl=use_ssl,
+            verify_certs=False,
+            certfile=self.zookeeper_certfile,
+            keyfile=self.zookeeper_keyfile,
+        )
+        zk.start(timeout=timeout)
+        return zk
+
+    def run_kazoo_commands_with_retries(
+        self,
+        kazoo_callback,
+        zoo_instance_name=ZOOKEEPER_CONTAINERS[0],
+        repeats=1,
+        sleep_for=1,
+    ):
+        zk = self.get_kazoo_client(zoo_instance_name)
+        logging.debug(
+            f"run_kazoo_commands_with_retries: {zoo_instance_name}, {kazoo_callback}"
+        )
+        for i in range(repeats - 1):
+            try:
+                kazoo_callback(zk)
+                return
+            except KazooException as e:
+                logging.debug(repr(e))
+                time.sleep(sleep_for)
+        kazoo_callback(zk)
+        zk.stop()
+
+    def add_zookeeper_startup_command(self, command):
+        self.pre_zookeeper_commands.append(command)
+
+    def stop_zookeeper_nodes(self, zk_nodes):
+        for n in zk_nodes:
+            logging.info("Stopping zookeeper node: %s", n)
+            subprocess_check_call(self.base_zookeeper_cmd + ["stop", n])
+
+    def process_integration_nodes(self, integration: str, nodes: list, action: str):
+        base_cmd = getattr(self, f"base_{integration}_cmd")
+        # One `docker compose` invocation for all nodes: concurrent compose commands on
+        # the same project race on shared project state and can silently drop a node's
+        # action. compose parallelizes the services internally.
+        logging.info("%sing %s nodes: %s", action.capitalize(), integration, nodes)
+        subprocess_check_call(base_cmd + [action] + list(nodes))
+        logging.info("%sed %s nodes: %s", action.capitalize(), integration, nodes)
+
+    # Faster than waiting for clean stop
+    def kill_zookeeper_nodes(self, zk_nodes):
+        self.process_integration_nodes("zookeeper", zk_nodes, "kill")
+
+    def start_zookeeper_nodes(self, zk_nodes):
+        self.process_integration_nodes("zookeeper", zk_nodes, "start")
+
+    def query_all_nodes(self, sql, *args, **kwargs):
+        return {
+            name: instance.query(sql, ignore_error=True, *args, **kwargs)
+            for name, instance in self.instances.items()
+        }
+
+
+DOCKER_COMPOSE_TEMPLATE = """---
+services:
+    {name}:
+        image: {image}:{tag}
+        hostname: {hostname}
+        volumes:
+            - {instance_config_dir}:/etc/clickhouse-server/
+            - {db_dir}:/var/lib/clickhouse/
+            - {logs_dir}:/var/log/clickhouse-server/
+            - /etc/passwd:/etc/passwd:ro
+            - {HELPERS_DIR}/../integration-tests-entrypoint.sh:/integration-tests-entrypoint.sh
+            - {CLICKHOUSE_ROOT_DIR}:/debug:rw
+            {dev_mount}
+            {metrika_xml}
+            {binary_volume}
+            {external_dirs_volumes}
+            {odbc_ini_path}
+            {keytab_path}
+            {krb5_conf}
+            {lakehouses_path}
+        entrypoint: /integration-tests-entrypoint.sh {entrypoint_cmd}
+        # Increase it to allow jeprof to dump the profile report and gdb collect stacktraces
+        #
+        # NOTE: it has been proven that 5m is not enough slightly, but anyway
+        # this should not be a problem, since in
+        # integration-tests-entrypoint.sh we have "timeout" of 1 minute, and
+        # later we will attach with gdb to collect stacktraces, and once it
+        # will be done it will exit.
+        stop_grace_period: 10m
+        tmpfs: {tmpfs}
+        {mem_limit}
+        {cpu_limit}
+        {pids_limit}
+        cap_add:
+            - SYS_PTRACE
+            - NET_ADMIN
+            - IPC_LOCK
+            - SYS_NICE
+            # for umount/mount on fly
+            - SYS_ADMIN
+        depends_on: {depends_on}
+        user: '{user}'
+        env_file:
+            - {env_file}
+        security_opt:
+            - label:disable
+            - seccomp:unconfined
+        privileged: {privileged}
+        dns_opt:
+            - attempts:2
+            - timeout:1
+            - inet6
+            - rotate
+        {ports_mappings}
+        {networks}
+            {app_net}
+                {ipv4_address}
+                {ipv6_address}
+                {net_aliases}
+                    {net_alias1}
+        init: {init_flag}
+"""
+
+
+class ClickHouseInstance:
+    def __init__(
+        self,
+        cluster,
+        base_path,
+        name,
+        base_config_dir,
+        custom_main_configs,
+        custom_user_configs,
+        custom_dictionaries,
+        macros,
+        with_zookeeper,
+        zookeeper_config_path,
+        with_arrowflight,
+        with_mysql_client,
+        with_mysql57,
+        with_mysql8,
+        with_mysql_cluster,
+        with_dremio26,
+        with_kafka,
+        with_kafka_sasl,
+        with_kerberized_kafka,
+        with_kerberos_kdc,
+        with_rabbitmq,
+        with_nats,
+        with_nginx,
+        with_secrets,
+        with_mongo,
+        with_redis,
+        with_minio,
+        with_remote_database_disk,
+        with_azurite,
+        with_jdbc_bridge,
+        with_hive,
+        with_coredns,
+        with_cassandra,
+        with_ldap,
+        with_iceberg_catalog,
+        with_glue_catalog,
+        with_hms_catalog,
+        use_old_analyzer,
+        use_distributed_plan,
+        server_bin_path,
+        clickhouse_path_dir,
+        with_odbc_drivers,
+        with_postgres,
+        with_postgres_cluster,
+        with_postgresql_java_client,
+        with_postgresql_dotnet_client,
+        with_mysql_dotnet_client,
+        clickhouse_start_command=CLICKHOUSE_START_COMMAND,
+        clickhouse_start_extra_args="",
+        main_config_name="config.xml",
+        users_config_name="users.xml",
+        metrika_xml=None,
+        copy_common_configs=True,
+        hostname=None,
+        env_variables=None,
+        instance_env_variables=False,
+        image="clickhouse/integration-test",
+        tag="latest",
+        stay_alive=False,
+        ipv4_address=None,
+        ipv6_address=None,
+        with_installed_binary=False,
+        external_dirs=None,
+        tmpfs=None,
+        mem_limit=None,
+        cpu_limit=None,
+        pids_limit=None,
+        config_root_name="clickhouse",
+        extra_configs=[],
+        randomize_settings=True,
+        use_docker_init_flag=False,
+        extra_parameters=None,
+    ):
+        self.name = name
+        self.base_cmd = cluster.base_cmd
+        self.docker_id = cluster.get_instance_docker_id(self.name)
+        self.cluster = cluster  # type: ClickHouseCluster
+        self.hostname = hostname if hostname is not None else self.name
+
+        self.external_dirs = external_dirs
+        self.tmpfs = tmpfs or []
+        if mem_limit is not None:
+            self.mem_limit = f"mem_limit: {mem_limit}"
+        else:
+            self.mem_limit = "mem_limit: 12g"
+
+        if cpu_limit is None:
+            self.cpu_limit = "cpus: 5"
+        elif cpu_limit == False:
+            self.cpu_limit = ""
+        else:
+            self.cpu_limit = f"cpus: {cpu_limit}"
+
+        if pids_limit is not None:
+            self.pids_limit = f"pids_limit: {pids_limit}"
+        else:
+            self.pids_limit = "pids_limit: 5000"
+
+        self.base_config_dir = (
+            p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
+        )
+        self.custom_main_config_paths = [
+            p.abspath(p.join(base_path, c)) for c in custom_main_configs
+        ]
+        self.custom_user_config_paths = [
+            p.abspath(p.join(base_path, c)) for c in custom_user_configs
+        ]
+        self.custom_dictionaries_paths = [
+            p.abspath(p.join(base_path, c)) for c in custom_dictionaries
+        ]
+        self.custom_extra_config_paths = [
+            p.abspath(p.join(base_path, c)) for c in extra_configs
+        ]
+        self.clickhouse_path_dir = (
+            p.abspath(p.join(base_path, clickhouse_path_dir))
+            if clickhouse_path_dir
+            else None
+        )
+        self.secrets_dir = p.abspath(p.join(base_path, "secrets"))
+        self.macros = macros if macros is not None else {}
+        if with_remote_database_disk:
+            if "shard" not in self.macros:
+                self.macros["shard"] = "default"
+            if "replica" not in self.macros:
+                self.macros["replica"] = self.name
+        self.with_zookeeper = with_zookeeper
+        self.zookeeper_config_path = zookeeper_config_path
+
+        self.server_bin_path = server_bin_path
+
+        self.with_mysql_client = with_mysql_client
+        self.with_mysql57 = with_mysql57
+        self.with_mysql8 = with_mysql8
+        self.with_mysql_cluster = with_mysql_cluster
+        self.with_dremio26 = with_dremio26
+        self.with_postgres = with_postgres
+        self.with_postgres_cluster = with_postgres_cluster
+        self.with_postgresql_java_client = with_postgresql_java_client
+        self.with_postgresql_dotnet_client = with_postgresql_dotnet_client
+        self.with_mysql_dotnet_client = with_mysql_dotnet_client
+        self.with_kafka = with_kafka
+        self.with_kafka_sasl = with_kafka_sasl
+        self.with_kerberized_kafka = with_kerberized_kafka
+        self.with_kerberos_kdc = with_kerberos_kdc
+        self.with_rabbitmq = with_rabbitmq
+        self.with_nats = with_nats
+        self.with_nginx = with_nginx
+        self.with_secrets = with_secrets
+        self.with_mongo = with_mongo
+        self.mongo_secure_config_dir = p.abspath(
+            p.join(base_path, "mongo_secure_config")
+        )
+        self.with_arrowflight = with_arrowflight
+        self.with_redis = with_redis
+        self.with_minio = with_minio
+        self.with_remote_database_disk = with_remote_database_disk
+        self.with_azurite = with_azurite
+        self.with_cassandra = with_cassandra
+        self.with_ldap = with_ldap
+        self.with_jdbc_bridge = with_jdbc_bridge
+        self.with_hive = with_hive
+        self.with_coredns = with_coredns
+        self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
+        self.use_old_analyzer = use_old_analyzer
+        self.use_distributed_plan = use_distributed_plan
+        self.randomize_settings = randomize_settings
+
+        self.main_config_name = main_config_name
+        self.users_config_name = users_config_name
+        if metrika_xml:
+            self.metrika_xml = p.abspath(p.join(base_path, metrika_xml))
+        else:
+            self.metrika_xml = None
+        self.copy_common_configs = copy_common_configs
+
+        clickhouse_start_command_with_conf = clickhouse_start_command.replace(
+            "{main_config_file}", self.main_config_name
+        )
+
+        self.clickhouse_start_command = "{} -- {}".format(
+            clickhouse_start_command_with_conf, clickhouse_start_extra_args
+        )
+        self.clickhouse_start_command_in_daemon = "{} --daemon -- {}".format(
+            clickhouse_start_command_with_conf, clickhouse_start_extra_args
+        )
+        # NOTE: as a child command we have only clickhouse, so it is OK to assume so
+        # and there is no other way to kill clickhouse properly (easily), since
+        # clickhosue is spawned with --daemon, and it is not a child neither in
+        # the same session.
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
+            self.clickhouse_start_command_in_daemon
+        )
+
+        self.path = p.join(self.cluster.instances_dir, name)
+        self.docker_compose_path = p.join(self.path, "docker-compose.yml")
+        self.env_variables = env_variables or {}
+        self.instance_env_variables = instance_env_variables
+        self.env_file = self.cluster.env_file
+        if with_odbc_drivers:
+            self.odbc_ini_path = self.path + "/odbc.ini:/etc/odbc.ini"
+            self.with_mysql8 = True
+        else:
+            self.odbc_ini_path = ""
+
+        if with_kerberized_kafka or with_kerberos_kdc:
+            if with_kerberos_kdc:
+                base_secrets_dir = self.cluster.instances_dir
+            else:
+                base_secrets_dir = os.path.dirname(self.docker_compose_path)
+            self.keytab_path = "- " + base_secrets_dir + "/secrets:/tmp/keytab"
+            self.krb5_conf = (
+                "- " + base_secrets_dir + "/secrets/krb.conf:/etc/krb5.conf:ro"
+            )
+        else:
+            self.keytab_path = ""
+            self.krb5_conf = ""
+
+        # Use a common path for data lakes on the filesystem
+        self.lakehouses_path = (
+            "- /var/lib/clickhouse/user_files/lakehouses:/var/lib/clickhouse/user_files/lakehouses"
+            if self.cluster.with_dolor
+            else ""
+        )
+
+        self.docker_client = None
+        self.ip_address = None
+        self.client = None
+        self.image = image
+        self.tag = tag
+        self.stay_alive = stay_alive
+        self.ipv4_address = ipv4_address
+        self.ipv6_address = ipv6_address
+        self.with_installed_binary = with_installed_binary
+        self.is_up = False
+        self.config_root_name = config_root_name
+        self.docker_init_flag = use_docker_init_flag
+
+    def is_built_with_sanitizer(self, sanitizer_name=""):
+        build_opts = self.query(
+            "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
+        )
+        return "-fsanitize={}".format(sanitizer_name) in build_opts
+
+    def is_debug_build(self):
+        build_opts = self.query(
+            "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'"
+        )
+        return "NDEBUG" not in build_opts
+
+    def is_built_with_llvm_coverage(self):
+        with_coverage = self.query(
+            "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
+        )
+        return "ON" in with_coverage.upper()
+
+    def is_built_with_thread_sanitizer(self):
+        return self.is_built_with_sanitizer("thread")
+
+    def is_built_with_address_sanitizer(self):
+        return self.is_built_with_sanitizer("address")
+
+    def is_built_with_memory_sanitizer(self):
+        return self.is_built_with_sanitizer("memory")
+
+    # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
+    def query(
+        self,
+        sql,
+        stdin=None,
+        timeout=None,
+        settings=None,
+        user=None,
+        password=None,
+        database=None,
+        host=None,
+        ignore_error=False,
+        query_id=None,
+        parse=False,
+    ):
+        sql_for_log = ""
+        if len(sql) > 1000:
+            sql_for_log = sql[:1000]
+        else:
+            sql_for_log = sql
+        logging.debug("Executing query %s on %s", sql_for_log, self.name)
+        return self.client.query(
+            sql,
+            stdin=stdin,
+            timeout=timeout,
+            settings=settings,
+            user=user,
+            password=password,
+            database=database,
+            ignore_error=ignore_error,
+            query_id=query_id,
+            host=host,
+            parse=parse,
+        )
+
+    def query_with_retry(
+        self,
+        sql,
+        stdin=None,
+        timeout=None,
+        settings=None,
+        user=None,
+        password=None,
+        database=None,
+        host=None,
+        ignore_error=False,
+        retry_count=20,
+        sleep_time=0.5,
+        check_callback=lambda x: True,
+        parse=False,
+    ):
+        # logging.debug(f"Executing query {sql} on {self.name}")
+        result = None
+        exception_msg = ""
+        for i in range(retry_count):
+            try:
+                result = self.query(
+                    sql,
+                    stdin=stdin,
+                    timeout=timeout,
+                    settings=settings,
+                    user=user,
+                    password=password,
+                    database=database,
+                    host=host,
+                    ignore_error=ignore_error,
+                    parse=parse,
+                )
+                if check_callback(result):
+                    return result
+                time.sleep(sleep_time)
+            except QueryRuntimeException as ex:
+                exception_msg = f"{type(ex).__name__}: {str(ex)}"
+                # Container is down, this is likely due to server crash.
+                if "No route to host" in str(ex):
+                    raise
+                time.sleep(sleep_time)
+            except Exception as ex:
+                # logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                exception_msg = f"{type(ex).__name__}: {str(ex)}"
+                time.sleep(sleep_time)
+
+        if result is not None:
+            return result
+        raise Exception(f"Can't execute query {sql}\n{exception_msg}")
+
+    # As query() but doesn't wait response and returns response handler
+    def get_query_request(self, sql, *args, **kwargs):
+        logging.debug(f"Executing query {sql} on {self.name}")
+        return self.client.get_query_request(sql, *args, **kwargs)
+
+    # Connects to the instance via clickhouse-client, sends a query (1st argument), expects an error and return its code
+    def query_and_get_error(
+        self,
+        sql,
+        stdin=None,
+        timeout=None,
+        settings=None,
+        user=None,
+        password=None,
+        database=None,
+        query_id=None,
+    ):
+        logging.debug(f"Executing query {sql} on {self.name}")
+        return self.client.query_and_get_error(
+            sql,
+            stdin=stdin,
+            timeout=timeout,
+            settings=settings,
+            user=user,
+            password=password,
+            database=database,
+            query_id=query_id,
+        )
+
+    def query_and_get_error_with_retry(
+        self,
+        sql,
+        stdin=None,
+        timeout=None,
+        settings=None,
+        user=None,
+        password=None,
+        database=None,
+        retry_count=20,
+        sleep_time=0.5,
+    ):
+        logging.debug(f"Executing query {sql} on {self.name}")
+        result = None
+        for i in range(retry_count):
+            try:
+                result = self.client.query_and_get_error(
+                    sql,
+                    stdin=stdin,
+                    timeout=timeout,
+                    settings=settings,
+                    user=user,
+                    password=password,
+                    database=database,
+                )
+                time.sleep(sleep_time)
+
+                if result is not None:
+                    return result
+            except QueryRuntimeException as ex:
+                logging.debug("Retry {} got exception {}".format(i + 1, ex))
+                time.sleep(sleep_time)
+
+        raise Exception("Query {} did not fail".format(sql))
+
+    # The same as query_and_get_error but ignores successful query.
+    def query_and_get_answer_with_error(
+        self,
+        sql,
+        stdin=None,
+        timeout=None,
+        settings=None,
+        user=None,
+        password=None,
+        database=None,
+        query_id=None,
+    ):
+        logging.debug(f"Executing query {sql} on {self.name}")
+        return self.client.query_and_get_answer_with_error(
+            sql,
+            stdin=stdin,
+            timeout=timeout,
+            settings=settings,
+            user=user,
+            password=password,
+            database=database,
+            query_id=query_id,
+        )
+
+    # Connects to the instance via HTTP interface, sends a query and returns the answer
+    def http_query(
+        self,
+        sql,
+        data=None,
+        method=None,
+        params=None,
+        user=None,
+        password=None,
+        port=8123,
+        timeout=None,
+        retry_strategy=None,
+        content=False,
+    ):
+        output, error = self.http_query_and_get_answer_with_error(
+            sql,
+            data=data,
+            method=method,
+            params=params,
+            user=user,
+            password=password,
+            port=port,
+            timeout=timeout,
+            retry_strategy=retry_strategy,
+            content=content,
+        )
+
+        if error:
+            raise Exception("ClickHouse HTTP server returned " + error)
+
+        return output
+
+    # Connects to the instance via HTTP interface, sends a query, expects an error and return the error message
+    def http_query_and_get_error(
+        self,
+        sql,
+        data=None,
+        method=None,
+        params=None,
+        user=None,
+        password=None,
+        port=8123,
+        timeout=None,
+        retry_strategy=None,
+    ):
+        output, error = self.http_query_and_get_answer_with_error(
+            sql,
+            data=data,
+            method=method,
+            params=params,
+            user=user,
+            password=password,
+            port=port,
+            timeout=timeout,
+            retry_strategy=retry_strategy,
+        )
+
+        if not error:
+            raise Exception(
+                "ClickHouse HTTP server is expected to fail, but succeeded: " + output
+            )
+
+        return error
+
+    def append_hosts(self, name, ip):
+        self.exec_in_container(
+            (["bash", "-c", "echo '{}' {} >> /etc/hosts".format(ip, name)]),
+            privileged=True,
+            user="root",
+        )
+
+    def set_hosts(self, hosts):
+        entries = ["127.0.0.1 localhost", "::1 localhost"]
+        for host in hosts:
+            entries.append(f"{host[0]} {host[1]}")
+
+        self.exec_in_container(
+            ["bash", "-c", 'echo -e "{}" > /etc/hosts'.format("\\n".join(entries))],
+            privileged=True,
+            user="root",
+        )
+
+    # Connects to the instance via HTTP interface, sends a query and returns both the answer and the error message
+    # as a tuple (output, error).
+    def http_query_and_get_answer_with_error(
+        self,
+        sql,
+        data=None,
+        method=None,
+        params=None,
+        user=None,
+        password=None,
+        port=8123,
+        timeout=None,
+        retry_strategy=None,
+        content=False,
+    ):
+        logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
+        if params is None:
+            params = {}
+        else:
+            params = params.copy()
+
+        if sql is not None:
+            params["query"] = sql
+
+        auth = None
+        if user and password:
+            auth = requests.auth.HTTPBasicAuth(user, password)
+        elif user:
+            auth = requests.auth.HTTPBasicAuth(user, "")
+        url = f"http://{self.ip_address}:{port}/?" + urllib.parse.urlencode(params)
+
+        if retry_strategy is None:
+            requester = requests
+        else:
+            adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
+            requester = requests.Session()
+            requester.mount("https://", adapter)
+            requester.mount("http://", adapter)
+
+        if method is None:
+            method = "POST" if data else "GET"
+
+        r = requester.request(method, url, data=data, auth=auth, timeout=timeout)
+        # Force encoding to UTF-8
+        r.encoding = "UTF-8"
+
+        if r.ok:
+            return (r.content if content else r.text, None)
+
+        code = r.status_code
+        return (None, str(code) + " " + http.client.responses[code] + ": " + r.text)
+
+    # Connects to the instance via HTTP interface, sends a query and returns the answer
+    # @param url - URI without leading slash
+    def http_request(self, url, method="GET", params=None, data=None, headers=None, *args, **kwargs):
+        logging.debug(f"Sending HTTP request '{url}' to {self.name}")
+        url = f"http://{self.ip_address}:8123/{url}"
+        return requests.request(
+            method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
+        )
+
+    def stop_clickhouse(self, stop_wait_sec=30, kill=False):
+        if not self.stay_alive:
+            raise Exception(
+                "clickhouse can be stopped only with stay_alive=True instance"
+            )
+
+        try:
+            ps_clickhouse = self.exec_in_container(
+                ["bash", "-c", "ps --no-header -C clickhouse"], nothrow=True, user="root"
+            )
+            if not ps_clickhouse:
+                logging.warning("ClickHouse process already stopped")
+                return False
+
+            # Under LLVM coverage the server runs several times slower and writes its
+            # .profraw only on a graceful shutdown (the libprofile atexit handler, or
+            # dumpCoverageReportIfPossible() on the forced-shutdown path). Escalating to
+            # SIGKILL loses everything this process executed. So for a graceful stop give
+            # the server a much larger window to finish shutting down (and flush coverage)
+            # before the force-kill below. We detect a coverage build from
+            # system.build_options (cached; the server is confirmed up at this point),
+            # which is reliable - unlike LLVM_PROFILE_FILE, which is set for every
+            # container regardless of build. restart_clickhouse() delegates here, so it
+            # is covered too.
+            if not kill and stop_wait_sec < 180:
+                if getattr(self, "_built_with_llvm_coverage", None) is None:
+                    try:
+                        self._built_with_llvm_coverage = self.is_built_with_llvm_coverage()
+                    except Exception as e:
+                        logging.warning(f"Could not detect LLVM coverage build: {e}")
+                        self._built_with_llvm_coverage = False
+                if self._built_with_llvm_coverage:
+                    stop_wait_sec = 180
+
+            self.exec_in_container(
+                ["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "-15")],
+                user="root",
+            )
+
+            start_time = time.time()
+            while time.time() <= start_time + stop_wait_sec:
+                pid = self.get_process_pid("clickhouse")
+                if pid is None:
+                    return True
+                else:
+                    time.sleep(1)
+
+            # Some sanitizer report in progress?
+            while self.get_process_pid("llvm-symbolizer") is not None:
+                time.sleep(1)
+
+            pid = self.get_process_pid("clickhouse")
+            if pid is not None:
+                logging.warning(
+                    f"Force kill clickhouse in stop_clickhouse. ps:{pid}"
+                )
+                self.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
+                    ],
+                    user="root",
+                )
+                self.stop_clickhouse(kill=True)
+            else:
+                ps_all = self.exec_in_container(
+                    ["bash", "-c", "ps aux"], nothrow=True, user="root"
+                )
+                logging.warning(
+                    f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}"
+                )
+        except Exception as e:
+            logging.warning(f"Stop ClickHouse raised an error {e}")
+
+    def start_clickhouse(
+        self,
+        start_wait_sec=60,
+        retry_start=True,
+        expected_to_fail=False,
+        environment=None,
+        wait_start=True,
+        daemon=False
+    ):
+        if not self.stay_alive:
+            raise Exception(
+                "ClickHouse can be started again only with stay_alive=True instance"
+            )
+        start_time = time.time()
+        time_to_sleep = 0.5
+        exec_id = None
+
+        while start_time + start_wait_sec >= time.time():
+            # sometimes after SIGKILL (hard reset) server may refuse to start for some time
+            # for different reasons.
+            pid = self.get_process_pid("clickhouse")
+            if pid is None:
+                logging.debug("No clickhouse process running. Start new one.")
+                exec_id = self.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        (
+                            self.clickhouse_start_command_in_daemon
+                            if daemon
+                            else self.clickhouse_start_command
+                        ),
+                    ],
+                    user=str(os.getuid()),
+                    detach=True,
+                    use_cli=False,
+                    get_exec_id=True,
+                    environment=environment,
+                )
+                if not wait_start:
+                    return exec_id
+                if expected_to_fail:
+                    self.wait_start_failed(start_wait_sec + start_time - time.time())
+                    return
+                time.sleep(1)
+                continue
+            else:
+                logging.debug("Clickhouse process running.")
+                if expected_to_fail:
+                    raise Exception("ClickHouse was expected not to be running.")
+                try:
+                    self.wait_start(start_wait_sec + start_time - time.time())
+                    return exec_id
+                except Exception:
+                    logging.warning(
+                        f"Current start attempt failed. Will kill {pid} just in case."
+                    )
+                    self.exec_in_container(
+                        ["bash", "-c", f"kill -9 {pid}"], user="root", nothrow=True
+                    )
+                    if not retry_start:
+                        raise
+                    time.sleep(time_to_sleep)
+
+        raise Exception("Cannot start ClickHouse, see additional info in logs")
+
+    def stop_clickhouse_client(self, signal="INT"):
+        client_pid = self.get_process_pid("clickhouse client")
+        self.exec_in_container(
+            ["bash", "-c", f"kill -{signal} {client_pid}"],
+            user="root",
+        )
+
+    def wait_start(self, start_wait_sec):
+        start_time = time.time()
+        last_err = None
+        while True:
+            try:
+                pid = self.get_process_pid("clickhouse")
+                if pid is None:
+                    raise Exception("ClickHouse server is not running. Check logs.")
+                exec_query_with_retry(self, "select 20", retry_count=10, silent=True)
+                return
+            except QueryRuntimeException as err:
+                last_err = err
+                pid = self.get_process_pid("clickhouse")
+                if pid is not None:
+                    logging.warning(f"ERROR {err}")
+                else:
+                    raise Exception("ClickHouse server is not running. Check logs.")
+            if time.time() > start_time + start_wait_sec:
+                break
+        logging.error(
+            "No time left to start. But process is still running. Will dump threads."
+        )
+        ps_clickhouse = self.exec_in_container(
+            ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
+        )
+        logging.info(f"PS RESULT:\n{ps_clickhouse}")
+        pid = self.get_process_pid("clickhouse")
+        if pid is not None:
+            self.exec_in_container(
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
+                user="root",
+            )
+        if last_err is not None:
+            raise last_err
+
+    def wait_start_failed(self, start_wait_sec):
+        start_time = time.time()
+        while time.time() <= start_time + start_wait_sec:
+            pid = self.get_process_pid("clickhouse")
+            if pid is None:
+                return
+            time.sleep(1)
+        logging.error(
+            "No time left to shutdown. Process is still running. Will dump threads."
+        )
+        ps_clickhouse = self.exec_in_container(
+            ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
+        )
+        logging.info(f"PS RESULT:\n{ps_clickhouse}")
+        pid = self.get_process_pid("clickhouse")
+        if pid is not None:
+            self.exec_in_container(
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
+                user="root",
+            )
+        raise Exception(
+            "ClickHouse server is still running, but was expected to shutdown. Check logs."
+        )
+
+    def restart_clickhouse(self, stop_start_wait_sec=60, kill=False, daemon=False):
+        self.stop_clickhouse(stop_start_wait_sec, kill)
+        self.start_clickhouse(stop_start_wait_sec, daemon=daemon)
+
+    def exec_in_container(
+        self,
+        cmd: Sequence[str],
+        detach: bool = False,
+        nothrow: bool = False,
+        **kwargs: Any,
+    ) -> str:
+        return self.cluster.exec_in_container(
+            self.docker_id, cmd, detach, nothrow, **kwargs
+        )
+
+    def rotate_logs(self):
+        self.exec_in_container(
+            ["bash", "-c", f"kill -HUP {self.get_process_pid('clickhouse server')}"],
+            user="root",
+        )
+
+    def give_user_files_permissions(self):
+        self.exec_in_container(
+            ["bash", "-c", f"chown -R {str(os.getuid())}:{str(os.getgid())} /var/lib/clickhouse/user_files"],
+            user="root",
+        )
+
+    def contains_in_log(
+        self,
+        substring,
+        from_host=False,
+        filename="clickhouse-server.log",
+        exclusion_substring="",
+    ):
+        if from_host:
+            # We check first file exists but want to look for all rotated logs as well
+            result = subprocess_check_call(
+                [
+                    "bash",
+                    "-c",
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
+                ]
+            )
+        else:
+            result = self.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
+                ]
+            )
+        return len(result) > 0
+
+    def grep_in_log(
+        self, substring, from_host=False, filename="clickhouse-server.log", after=None, only_latest=False
+    ):
+        logging.debug("grep in log called %s", substring)
+        if after is not None:
+            after_opt = "-A{}".format(after)
+        else:
+            after_opt = ""
+        if from_host:
+            # We check fist file exists but want to look for all rotated logs as well
+            result = subprocess_check_call(
+                [
+                    "bash",
+                    "-c",
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}{"" if only_latest else "*"} || true',
+                ]
+            )
+        else:
+            result = self.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}{"" if only_latest else "*"} || true',
+                ]
+            )
+        logging.debug("grep result %s", result)
+        return result
+
+    def count_log_lines(
+        self,
+        filename="/var/log/clickhouse-server/clickhouse-server.log",
+    ):
+        result = self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                'wc -l {}'.format(
+                    filename,
+                ),
+            ]
+        )
+        separator = result.find(" ")
+        assert separator > 0, f"no separator in wc output: '{result}'"
+        wc_count = result[:separator]
+        assert wc_count.isdigit(), f"Line count is not a number: {wc_count}"
+        return int(wc_count)
+
+    def count_in_log(self, substring):
+        result = self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                'grep -a "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(
+                    substring
+                ),
+            ]
+        )
+        return result
+
+    def wait_for_log_line(
+        self,
+        regexp,
+        filename="/var/log/clickhouse-server/clickhouse-server.log",
+        timeout=30,
+        repetitions=1,
+        look_behind_lines=10000,
+    ):
+        start_time = time.time()
+        result = self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"timeout {timeout} stdbuf -o0 -e0 tail -Fn{look_behind_lines} {shlex.quote(filename)} | stdbuf -o0 -e0 tee -a {filename}.wait_for_log_line | grep -Em {repetitions} {shlex.quote(regexp)}",
+            ]
+        )
+
+        # if repetitions>1 grep will return success even if not enough lines were collected,
+        if repetitions > 1 and len(result.splitlines()) < repetitions:
+            logging.debug(
+                "wait_for_log_line: those lines were found during {} seconds:".format(
+                    timeout
+                )
+            )
+            logging.debug(result)
+            raise Exception(
+                "wait_for_log_line: Not enough repetitions: {} found, while {} expected".format(
+                    len(result.splitlines()), repetitions
+                )
+            )
+
+        wait_duration = time.time() - start_time
+
+        logging.debug(
+            '{} log line(s) matching "{}" appeared in a {:.3f} seconds'.format(
+                repetitions, regexp, wait_duration
+            )
+        )
+        return wait_duration
+
+    def path_exists(self, path):
+        return (
+            self.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "echo $(if [ -e '{}' ]; then echo 'yes'; else echo 'no'; fi)".format(
+                        path
+                    ),
+                ]
+            )
+            == "yes\n"
+        )
+
+    def copy_file_to_container(self, local_path, dest_path):
+        return self.cluster.copy_file_to_container(
+            self.docker_id, local_path, dest_path
+        )
+
+    def copy_file_from_container(self, dest_path, local_path):
+        return self.cluster.copy_file_from_container(
+            self.docker_id, dest_path, local_path
+        )
+
+    def file_exists_in_container(self, path):
+        return self.cluster.file_exists_in_container(
+            self.docker_id, path
+        )
+
+    def get_files_list_in_container(self, path):
+        return self.cluster.get_files_list_in_container(
+            self.docker_id, path
+        )
+
+    def move_file_in_container(self, old_path, new_path):
+        return self.cluster.move_file_in_container(self.docker_id, old_path, new_path)
+
+    def remove_file_from_container(self, path):
+        return self.cluster.remove_file_from_container(self.docker_id, path)
+
+    def get_process_pid(self, process_name):
+        output = self.exec_in_container(["bash", "-c", f"pgrep -f '^[^ ]*{process_name}'"], nothrow=True)
+        if output:
+            try:
+                pid = int(output.split("\n")[0].strip())
+                return pid
+            except:
+                return None
+        return None
+
+    def restart_with_original_version(
+        self,
+        stop_start_wait_sec=300,
+        callback_onstop=None,
+        signal=15,
+        clear_data_dir=False,
+    ):
+        begin_time = time.time()
+        if not self.stay_alive:
+            raise Exception("Cannot restart not stay alive container")
+        self.exec_in_container(
+            ["bash", "-c", "pkill -{} clickhouse".format(signal)], user="root"
+        )
+        retries = int(stop_start_wait_sec / 0.5)
+        local_counter = 0
+        # wait stop
+        while local_counter < retries:
+            if not self.get_process_pid("clickhouse server"):
+                break
+            time.sleep(0.5)
+            local_counter += 1
+
+        # force kill if server hangs
+        if self.get_process_pid("clickhouse server"):
+            # server can die before kill, so don't throw exception, it's expected
+            self.exec_in_container(
+                ["bash", "-c", "pkill -{} clickhouse".format(9)],
+                nothrow=True,
+                user="root",
+            )
+
+        if callback_onstop:
+            callback_onstop(self)
+
+        if clear_data_dir:
+            self.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "rm -rf /var/lib/clickhouse/metadata && rm -rf /var/lib/clickhouse/data",
+                ],
+                user="root",
+            )
+
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "echo 'restart_with_original_version: From version' && /usr/bin/clickhouse server --version && echo 'To version' && /usr/share/clickhouse_original server --version",
+            ]
+        )
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
+            ],
+            user="root",
+        )
+        self.exec_in_container(
+            ["bash", "-c", self.clickhouse_start_command_in_daemon],
+            user=str(os.getuid()),
+        )
+
+        # wait start
+        time_left = begin_time + stop_start_wait_sec - time.time()
+        if time_left <= 0:
+            raise Exception("No time left during restart")
+        else:
+            self.wait_start(time_left)
+
+    def restart_with_latest_version(
+        self,
+        stop_start_wait_sec=300,
+        callback_onstop=None,
+        signal=15,
+        fix_metadata=False,
+    ):
+        begin_time = time.time()
+        if not self.stay_alive:
+            raise Exception("Cannot restart not stay alive container")
+        self.exec_in_container(
+            ["bash", "-c", "pkill -{} clickhouse".format(signal)], user="root"
+        )
+        retries = int(stop_start_wait_sec / 0.5)
+        local_counter = 0
+        # wait stop
+        while local_counter < retries:
+            if not self.get_process_pid("clickhouse server"):
+                break
+            time.sleep(0.5)
+            local_counter += 1
+
+        # force kill if server hangs
+        if self.get_process_pid("clickhouse server"):
+            # server can die before kill, so don't throw exception, it's expected
+            self.exec_in_container(
+                ["bash", "-c", "pkill -{} clickhouse".format(9)],
+                nothrow=True,
+                user="root",
+            )
+
+        if callback_onstop:
+            callback_onstop(self)
+        self.exec_in_container(
+            ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
+            user="root",
+        )
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse",
+            ],
+            user="root",
+        )
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' && /usr/share/clickhouse_fresh server --version",
+            ]
+        )
+        if fix_metadata:
+            # Versions older than 20.7 might not create .sql file for system and default database
+            # Create it manually if upgrading from older version
+            self.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "if [ ! -f /var/lib/clickhouse/metadata/system.sql ]; then echo 'ATTACH DATABASE system ENGINE=Ordinary' > /var/lib/clickhouse/metadata/system.sql; fi",
+                ]
+            )
+            self.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE default ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
+                ]
+            )
+        self.exec_in_container(
+            ["bash", "-c", self.clickhouse_start_command_in_daemon],
+            user=str(os.getuid()),
+        )
+
+        # wait start
+        time_left = begin_time + stop_start_wait_sec - time.time()
+        if time_left <= 0:
+            raise Exception("No time left during restart")
+        else:
+            self.wait_start(time_left)
+
+    def get_docker_handle(self) -> Container:
+        return self.cluster.get_docker_handle(self.docker_id)
+
+    def stop(self):
+        self.get_docker_handle().stop()
+
+    def start(self):
+        self.get_docker_handle().start()
+
+    def wait_for_start(self, start_timeout=180.0, connection_timeout=None):
+        # Wait until TCP port is ready. Usually it means that ClickHouse is ready to accept queries.
+        ports = [9000]
+        try:
+            ports_env = os.environ.get("CH_WAIT_START_PORTS", "").strip()
+            if ports_env:
+                parts = [p.strip() for p in ports_env.split(",") if p.strip()]
+                ports = [int(p) for p in parts if p.isdigit()]
+                if not ports:
+                    ports = [9000]
+        except Exception:
+            ports = [9000]
+        self.wait_until_any_port_is_ready(ports, timeout=start_timeout, connection_timeout=connection_timeout)
+        self.is_up = True
+
+    def wait_until_any_port_is_ready(self, ports, timeout=None, connection_timeout=None):
+        if not ports:
+            raise Exception("No ports to check")
+        if timeout is None or timeout <= 0:
+            raise Exception("Invalid timeout: {}".format(timeout))
+        start_time = time.time()
+        last_exc = None
+        for port in ports:
+            remaining = start_time + timeout - time.time()
+            if remaining <= 0:
+                break
+            try:
+                self.wait_until_port_is_ready(port, timeout=remaining, connection_timeout=connection_timeout)
+                return
+            except Exception as e:
+                last_exc = e
+                exited = False
+                try:
+                    h = self.get_docker_handle()
+                    h.reload()
+                    exited = h.status == "exited"
+                except Exception:
+                    pass
+                if exited:
+                    raise
+        if last_exc:
+            raise last_exc
+        raise Exception("Timed out while waiting for instance '{}' to start".format(self.name))
+
+    # Waits until a specified port is ready for connections.
+    def wait_until_port_is_ready(self, port, timeout=None, connection_timeout=None):
+        handle = self.get_docker_handle()
+
+        if timeout is None or timeout <= 0:
+            raise Exception("Invalid timeout: {}".format(timeout))
+
+        if connection_timeout is not None and connection_timeout < timeout:
+            raise Exception(
+                "Connection timeout {} should be greater then start timeout {}".format(
+                    connection_timeout, timeout
+                )
+            )
+
+        start_time = time.time()
+        prev_rows_in_log = 0
+
+        def has_new_rows_in_log():
+            nonlocal prev_rows_in_log
+            try:
+                rows_in_log = int(self.count_in_log(".*").strip())
+                res = rows_in_log > prev_rows_in_log
+                prev_rows_in_log = rows_in_log
+                return res
+            except ValueError:
+                return False
+
+        while True:
+            handle.reload()
+            status = handle.status
+            if status == "exited":
+                raise Exception(
+                    f"Instance `{self.name}' failed to start. Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                )
+
+            deadline = start_time + timeout
+            # It is possible that server starts slowly.
+            # If container is running, and there is some progress in log, check connection_timeout.
+            if connection_timeout and status == "running" and has_new_rows_in_log():
+                deadline = start_time + connection_timeout
+
+            current_time = time.time()
+            if current_time >= deadline:
+                raise Exception(
+                    f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
+                    f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                )
+
+            socket_timeout = min(timeout, deadline - current_time)
+
+            # Repeatedly poll the instance address until there is something that listens there.
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(socket_timeout)
+                sock.connect((self.ip_address, port))
+                return
+            except socket.timeout:
+                continue
+            except socket.error as e:
+                if (
+                    e.errno == errno.ECONNREFUSED
+                    or e.errno == errno.EHOSTUNREACH
+                    or e.errno == errno.ENETUNREACH
+                ):
+                    time.sleep(0.1)
+                else:
+                    raise
+            finally:
+                sock.close()
+
+    def dict_to_xml(self, dictionary):
+        xml_str = dict2xml(
+            dictionary, wrap=self.config_root_name, indent="  ", newlines=True
+        )
+        return xml_str
+
+    def get_machine_name(self):
+        return platform.machine()
+
+    @property
+    def odbc_drivers(self):
+        if self.odbc_ini_path:
+            return {
+                "SQLite3": {
+                    "DSN": "sqlite3_odbc",
+                    "Database": "/tmp/sqliteodbc",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libsqlite3odbc.so",
+                    "Setup": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libsqlite3odbc.so",
+                },
+                "MySQL": {
+                    "DSN": "mysql_odbc",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libmyodbc.so",
+                    "Database": odbc_mysql_db,
+                    "Uid": odbc_mysql_uid,
+                    "Pwd": mysql_pass,
+                    "Server": self.cluster.mysql8_host,
+                },
+                "PostgreSQL": {
+                    "DSN": "postgresql_odbc",
+                    "Database": odbc_psql_db,
+                    "UserName": odbc_psql_user,
+                    "Password": pg_pass,
+                    "Port": str(self.cluster.postgres_port),
+                    "Servername": self.cluster.postgres_host,
+                    "Protocol": "9.3",
+                    "ReadOnly": "No",
+                    "RowVersioning": "No",
+                    "ShowSystemTables": "No",
+                    "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/psqlodbca.so",
+                    "Setup": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libodbcpsqlS.so",
+                    "ConnSettings": "",
+                },
+            }
+        else:
+            return {}
+
+    def _create_odbc_config_file(self):
+        with open(self.odbc_ini_path.split(":")[0], "w") as f:
+            for driver_setup in list(self.odbc_drivers.values()):
+                f.write("[{}]\n".format(driver_setup["DSN"]))
+                for key, value in list(driver_setup.items()):
+                    if key != "DSN":
+                        f.write(key + "=" + value + "\n")
+
+    @contextmanager
+    def with_replace_config(self, path, replacement, reload_before=False, reload_after=False):
+        """Create a copy of existing config (if exists) and revert on leaving the context"""
+        _directory, filename = os.path.split(path)
+        basename, extension = os.path.splitext(filename)
+        id = uuid.uuid4()
+        backup_path = f"/tmp/{basename}_{id}{extension}"
+        self.exec_in_container(
+            ["bash", "-c", f"test ! -f {path} || mv --no-clobber {path} {backup_path}"]
+        )
+        self.exec_in_container(
+            ["bash", "-c", "echo '{}' > {}".format(replacement, path)]
+        )
+        if reload_before:
+            self.query("SYSTEM RELOAD CONFIG")
+        try:
+            yield
+        finally:
+            self.exec_in_container(
+                ["bash", "-c", f"test ! -f {backup_path} || mv {backup_path} {path}"]
+            )
+            if reload_after:
+                self.query("SYSTEM RELOAD CONFIG")
+
+    def replace_config(self, path_to_config, replacement):
+        self.exec_in_container(
+            ["bash", "-c", "echo '{}' > {}".format(replacement, path_to_config)]
+        )
+
+    def replace_in_config(self, path_to_config, replace, replacement):
+        # Do `sed 's/{replace}/{replacement}/g'`, but with some hacks to make it work when {replace}
+        # and {replacement} have quotes or slashes.
+        for d in "/|#-=+@^*~":
+            if d not in replace and d not in replacement:
+                delimiter = d
+                break
+        else:
+            raise Exception("Couldn't find a suitable delimiter")
+        replace = shlex.quote(replace)
+        replacement = shlex.quote(replacement)
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"sed -i 's{delimiter}'{replace}'{delimiter}'{replacement}'{delimiter}g' {path_to_config}",
+            ]
+        )
+
+    def create_dir(self):
+        """Create the instance directory and all the needed files there."""
+
+        os.makedirs(self.path)
+
+        instance_config_dir = p.abspath(p.join(self.path, "configs"))
+        os.makedirs(instance_config_dir)
+
+        logging.debug(
+            f"Copy common default production configuration from {self.base_config_dir}. Files: {self.main_config_name}, {self.users_config_name}"
+        )
+
+        shutil.copyfile(
+            p.join(self.base_config_dir, self.main_config_name),
+            p.join(instance_config_dir, self.main_config_name),
+        )
+        shutil.copyfile(
+            p.join(self.base_config_dir, self.users_config_name),
+            p.join(instance_config_dir, self.users_config_name),
+        )
+
+        logging.debug("Create directory for configuration generated in this helper")
+        # used by all utils with any config
+        conf_d_dir = p.abspath(p.join(instance_config_dir, "conf.d"))
+        os.mkdir(conf_d_dir)
+
+        logging.debug("Create directory for common tests configuration")
+        # used by server with main config.xml
+        self.config_d_dir = p.abspath(p.join(instance_config_dir, "config.d"))
+        os.mkdir(self.config_d_dir)
+        users_d_dir = p.abspath(p.join(instance_config_dir, "users.d"))
+        os.mkdir(users_d_dir)
+        dictionaries_dir = p.abspath(p.join(instance_config_dir, "dictionaries"))
+        os.mkdir(dictionaries_dir)
+        extra_conf_dir = p.abspath(p.join(instance_config_dir, "extra_conf.d"))
+        os.mkdir(extra_conf_dir)
+
+        def write_embedded_config(name, dest_dir, fix_log_level=False):
+            with open(p.join(HELPERS_DIR, name), "r") as f:
+                data = f.read()
+                data = data.replace("clickhouse", self.config_root_name)
+                if fix_log_level:
+                    data = data.replace("<level>test</level>", "<level>trace</level>")
+                with open(p.join(dest_dir, name), "w") as r:
+                    r.write(data)
+
+        logging.debug("Copy common configuration from helpers")
+        # The file is named with 0_ prefix to be processed before other configuration overloads.
+        if self.copy_common_configs:
+            write_embedded_config(
+                "0_common_instance_config.xml",
+                self.config_d_dir,
+                self.with_installed_binary,
+            )
+
+        if not self.cluster.with_dolor:
+            write_embedded_config("0_common_instance_users.xml", users_d_dir)
+            if self.with_installed_binary:
+                # Ignore CPU overload in this case
+                write_embedded_config(
+                    "0_common_min_cpu_busy_time.xml", self.config_d_dir
+                )
+
+        use_old_analyzer = os.environ.get("CLICKHOUSE_USE_OLD_ANALYZER") is not None
+        use_distributed_plan = (
+            os.environ.get("CLICKHOUSE_USE_DISTRIBUTED_PLAN") is not None
+        )
+
+        # If specific version was used there can be no
+        # enable_analyzer setting, so do this only if it was
+        # explicitly requested.
+        if self.tag:
+            use_old_analyzer = False
+        if self.tag != "latest":
+            use_distributed_plan = False
+        # Prefer specified in the test option:
+        if self.use_old_analyzer is not None:
+            use_old_analyzer = self.use_old_analyzer
+        if self.use_distributed_plan is not None:
+            use_distributed_plan = self.use_distributed_plan
+
+        write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
+        write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
+        write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
+
+        if use_old_analyzer:
+            write_embedded_config("0_common_enable_old_analyzer.xml", users_d_dir)
+
+        if use_distributed_plan:
+            write_embedded_config("0_common_enable_distributed_plan.xml", users_d_dir)
+
+        if len(self.custom_dictionaries_paths):
+            write_embedded_config("0_common_enable_dictionaries.xml", self.config_d_dir)
+
+        if (
+            self.randomize_settings
+            and self.image == "clickhouse/integration-test"
+            and self.tag == DOCKER_BASE_TAG
+            and self.base_config_dir == DEFAULT_BASE_CONFIG_DIR
+        ):
+            # If custom main config is used, do not apply random settings to it
+            write_random_settings_config(Path(users_d_dir) / "0_random_settings.xml")
+
+        version_parts = self.tag.split(".")
+        if version_parts[0].isdigit() and version_parts[1].isdigit():
+            {"major": int(version_parts[0]), "minor": int(version_parts[1])}
+
+        logging.debug("Generate and write macros file")
+        macros = self.macros.copy()
+        macros["instance"] = self.name
+        with open(p.join(conf_d_dir, "macros.xml"), "w") as macros_config:
+            macros_config.write(self.dict_to_xml({"macros": macros}))
+
+        # Put ZooKeeper config
+        if self.with_zookeeper:
+            shutil.copy(self.zookeeper_config_path, conf_d_dir)
+
+        if self.with_secrets:
+            if self.with_kerberos_kdc:
+                base_secrets_dir = self.cluster.instances_dir
+            else:
+                base_secrets_dir = self.path
+            from_dir = self.secrets_dir
+            to_dir = p.abspath(p.join(base_secrets_dir, "secrets"))
+            logging.debug(f"Copy secret from {from_dir} to {to_dir}")
+            shutil.copytree(
+                self.secrets_dir,
+                p.abspath(p.join(base_secrets_dir, "secrets")),
+                dirs_exist_ok=True,
+            )
+
+        if self.with_mongo and os.path.exists(self.mongo_secure_config_dir):
+            shutil.copytree(
+                self.mongo_secure_config_dir,
+                p.abspath(p.join(self.path, "mongo_secure_config")),
+            )
+
+        if self.with_coredns:
+            shutil.copytree(
+                self.coredns_config_dir, p.abspath(p.join(self.path, "coredns_config"))
+            )
+
+        metrika_xml = ""
+        if self.metrika_xml:
+            metrika_xml_path = p.join(instance_config_dir, "metrika.xml")
+            shutil.copy(self.metrika_xml, metrika_xml_path)
+            metrika_xml = f"- {metrika_xml_path}:/etc/metrika.xml:ro"
+
+        # Copy config.d configs
+        logging.debug(
+            f"Copy custom test config files {self.custom_main_config_paths} to {self.config_d_dir}"
+        )
+        for path in self.custom_main_config_paths:
+            shutil.copy(path, self.config_d_dir)
+
+        # Copy users.d configs
+        for path in self.custom_user_config_paths:
+            shutil.copy(path, users_d_dir)
+
+        # Copy dictionaries configs to configs/dictionaries
+        for path in self.custom_dictionaries_paths:
+            shutil.copy(path, dictionaries_dir)
+        for path in self.custom_extra_config_paths:
+            shutil.copy(path, extra_conf_dir)
+
+        db_dir = p.abspath(p.join(self.path, "database"))
+        logging.debug(f"Setup database dir {db_dir}")
+        if self.clickhouse_path_dir is not None:
+            logging.debug(f"Database files taken from {self.clickhouse_path_dir}")
+            shutil.copytree(self.clickhouse_path_dir, db_dir)
+            logging.debug(
+                f"Database copied from {self.clickhouse_path_dir} to {db_dir}"
+            )
+        else:
+            os.mkdir(db_dir)
+
+        logs_dir = p.abspath(p.join(self.path, "logs"))
+        logging.debug(f"Setup logs dir {logs_dir}")
+        os.mkdir(logs_dir)
+        self.logs_dir = logs_dir
+
+        depends_on = []
+
+        if self.with_mysql_client:
+            depends_on.append(self.cluster.mysql_client_host)
+
+        if self.with_mysql57:
+            depends_on.append("mysql57")
+
+        if self.with_mysql8:
+            depends_on.append("mysql80")
+
+        if self.with_mysql_cluster:
+            depends_on.append("mysql80")
+            depends_on.append("mysql2")
+            depends_on.append("mysql3")
+            depends_on.append("mysql4")
+
+        if self.with_dremio26:
+            depends_on.append("dremio26")
+
+        if self.with_postgres_cluster:
+            depends_on.append("postgres2")
+            depends_on.append("postgres3")
+            depends_on.append("postgres4")
+
+        if self.with_kafka:
+            depends_on.append("kafka1")
+            depends_on.append("schema-registry")
+
+        if self.with_kafka_sasl:
+            depends_on.append("kafka_sasl")
+
+        if self.with_kerberized_kafka:
+            depends_on.append("kerberized_kafka1")
+
+        if self.with_kerberos_kdc:
+            depends_on.append("kerberoskdc")
+
+        if self.with_ldap:
+            depends_on.append("openldap")
+
+        if self.with_rabbitmq:
+            depends_on.append("rabbitmq1")
+
+        if self.with_nats:
+            depends_on.append("nats1")
+
+        if self.with_zookeeper:
+            depends_on += list(ZOOKEEPER_CONTAINERS)
+
+        if self.with_minio:
+            depends_on.append("minio1")
+
+        if self.with_azurite:
+            depends_on.append("azurite1")
+
+        if self.with_arrowflight:
+            depends_on.append("arrowflight1")
+
+        # In case the environment variables are exclusive, we don't want it to be in the cluster's env file.
+        # Instead, a separate env file will be created for the instance and needs to be filled with cluster's env variables.
+        if self.instance_env_variables is True:
+            # Create a dictionary containing cluster & instance env variables.
+            # Instance env variables will override cluster's.
+            temp_env_variables = self.cluster.env_variables.copy()
+            temp_env_variables.update(self.env_variables)
+            self.env_variables = temp_env_variables
+        else:
+            self.cluster.env_variables.update(self.env_variables)
+
+        odbc_ini_path = ""
+        if self.odbc_ini_path:
+            self._create_odbc_config_file()
+            odbc_ini_path = "- " + self.odbc_ini_path
+
+        if self.cluster.with_dolor:
+            entrypoint_cmd = "bash -c 'coproc tail -f /dev/null; wait $!'"
+        if self.stay_alive:
+            entrypoint_cmd = self.clickhouse_stay_alive_command
+        else:
+            entrypoint_cmd = self.clickhouse_start_command
+
+        logging.debug("Entrypoint cmd: {}".format(entrypoint_cmd))
+
+        networks = app_net = ipv4_address = ipv6_address = net_aliases = net_alias1 = ""
+        if (
+            self.ipv4_address is not None
+            or self.ipv6_address is not None
+            or self.hostname != self.name
+        ):
+            networks = "networks:"
+            app_net = "default:"
+            if self.ipv4_address is not None:
+                ipv4_address = "ipv4_address: " + self.ipv4_address
+            if self.ipv6_address is not None:
+                ipv6_address = f'ipv6_address: "{self.ipv6_address}"'
+            if self.hostname != self.name:
+                net_aliases = "aliases:"
+                net_alias1 = "- " + self.hostname
+
+        if self.cluster.with_dolor:
+            binary_volume = ""
+        elif not self.with_installed_binary:
+            binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse:ro"
+        else:
+            binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh:ro"
+
+        external_dirs_volumes = ""
+        if self.external_dirs:
+            for external_dir in self.external_dirs:
+                external_dir_abs_path = p.abspath(
+                    p.join(self.cluster.instances_dir, external_dir.lstrip("/"))
+                )
+                logging.info(f"external_dir_abs_path={external_dir_abs_path}")
+                os.makedirs(external_dir_abs_path, exist_ok=True)
+                external_dirs_volumes += (
+                    "- " + external_dir_abs_path + ":" + external_dir + "\n"
+                )
+
+        # The current implementation of `self.env_variables` is not exclusive. Meaning the variables
+        # are shared with all nodes within the same cluster, even if it is specified for a single node.
+        # In order not to break the existing tests, the `self.instance_env_variables` option was added as a workaround.
+        # IMHO, it would be better to make `self.env_variables` exclusive by default and remove the `self.instance_env_variables` option.
+        if self.instance_env_variables:
+            self.env_file = p.abspath(p.join(self.path, ".env"))
+            _create_env_file(self.env_file, self.env_variables)
+
+        port_lines = []
+        # KEEPER_PUBLISH_CLIENT: publish keeper client port 9181 to host for keeper-bench on host
+
+        if os.environ.get("KEEPER_PUBLISH_CLIENT") == "1":
+            base = int(os.environ.get("KEEPER_PUBLISH_CLIENT_BASE") or "19181")
+            m = re.search(r"keeper(\d+)", str(self.name or ""), re.I)
+            if m:
+                idx = int(m.group(1))
+                host_port = base + (idx - 1)
+                port_lines.append(f'"{host_port}:9181"')
+                self.keeper_client_host_port = host_port
+        # KEEPER_PUBLISH_CONTROL: publish keeper control port for a chosen node
+        try:
+            publish_ctl = (os.environ.get("KEEPER_PUBLISH_CONTROL", "") or "").strip()
+            ctrl_port = (os.environ.get("KEEPER_CONTROL_PORT", "") or "").strip()
+            publish_node = (os.environ.get("KEEPER_PUBLISH_NODE", "keeper1") or "keeper1").strip()
+            host_port = (os.environ.get("KEEPER_PUBLISH_HOST_PORT", ctrl_port) or "").strip()
+            if publish_ctl == "1" and ctrl_port.isdigit() and host_port.isdigit():
+                if self.hostname == publish_node or self.name == publish_node:
+                    port_lines.append(f'"{host_port}:{ctrl_port}"')
+        except Exception:
+            pass
+        ports_mappings = ("ports:\n            - " + "\n            - ".join(port_lines)) if port_lines else ""
+
+        is_priv = os.environ.get("KEEPER_PRIVILEGED", "") == "1"
+
+        with open(self.docker_compose_path, "w") as docker_compose:
+            docker_compose.write(
+                DOCKER_COMPOSE_TEMPLATE.format(
+                    image=self.image,
+                    tag=self.tag,
+                    name=self.name,
+                    hostname=self.hostname,
+                    binary_volume=binary_volume,
+                    instance_config_dir=instance_config_dir,
+                    config_d_dir=self.config_d_dir,
+                    db_dir=db_dir,
+                    external_dirs_volumes=external_dirs_volumes,
+                    metrika_xml=metrika_xml,
+                    tmpfs=str(self.tmpfs),
+                    mem_limit=self.mem_limit,
+                    cpu_limit=self.cpu_limit,
+                    pids_limit=self.pids_limit,
+                    logs_dir=logs_dir,
+                    depends_on=str(depends_on),
+                    user=os.getuid(),
+                    env_file=self.env_file,
+                    odbc_ini_path=odbc_ini_path,
+                    keytab_path=self.keytab_path,
+                    krb5_conf=self.krb5_conf,
+                    lakehouses_path=self.lakehouses_path,
+                    entrypoint_cmd=entrypoint_cmd,
+                    networks=networks,
+                    app_net=app_net,
+                    ipv4_address=ipv4_address,
+                    ipv6_address=ipv6_address,
+                    net_aliases=net_aliases,
+                    net_alias1=net_alias1,
+                    init_flag="true" if self.docker_init_flag else "false",
+                    HELPERS_DIR=HELPERS_DIR,
+                    CLICKHOUSE_ROOT_DIR=CLICKHOUSE_ROOT_DIR,
+                    privileged="true" if is_priv else "false",
+                    dev_mount=(
+                        "- /dev:/dev" if is_priv else ""
+                    ),
+                    ports_mappings=ports_mappings,
+                )
+            )
+
+    def wait_for_path_exists(self, path, seconds):
+        while seconds > 0:
+            seconds -= 1
+            if self.path_exists(path):
+                return
+            time.sleep(1)
+
+    def get_backuped_s3_objects(self, disk, backup_name):
+        path = f"/var/lib/clickhouse/disks/{disk}/shadow/{backup_name}/store"
+        self.wait_for_path_exists(path, 10)
+        return self.get_s3_objects(path)
+
+    def get_s3_objects(self, path):
+        command = [
+            "find",
+            path,
+            "-type",
+            "f",
+            "-exec",
+            "grep",
+            "-o",
+            "r[01]\\{64\\}-file-[[:lower:]]\\{32\\}",
+            "{}",
+            ";",
+        ]
+
+        return self.exec_in_container(command).split("\n")
+
+    def get_s3_data_objects(self, path):
+        command = [
+            "find",
+            path,
+            "-type",
+            "f",
+            "-name",
+            "*.bin",
+            "-exec",
+            "grep",
+            "-o",
+            "r[01]\\{64\\}-file-[[:lower:]]\\{32\\}",
+            "{}",
+            ";",
+        ]
+        return self.exec_in_container(command).split("\n")
+
+    def get_table_objects(self, table, database=None):
+        objects = []
+        database_query = ""
+        if database:
+            database_query = f"AND database='{database}'"
+        data_paths = self.query(
+            f"""
+            SELECT arrayJoin(data_paths)
+            FROM system.tables
+            WHERE name='{table}'
+            {database_query}
+            """
+        )
+        paths = data_paths.split("\n")
+        for path in paths:
+            if path:
+                objects = objects + self.get_s3_data_objects(path)
+        return objects
+
+    def create_format_schema(self, file_name, content):
+        self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "echo '{}' > {}".format(
+                    content, "/var/lib/clickhouse/format_schemas/" + file_name
+                ),
+            ]
+        )
+
+
+class ClickHouseKiller(object):
+    def __init__(self, clickhouse_node):
+        self.clickhouse_node = clickhouse_node
+
+    def __enter__(self):
+        self.clickhouse_node.stop_clickhouse(kill=True)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.clickhouse_node.start_clickhouse()
+
+
+@cache
+def is_arm():
+    return platform.machine().lower() in ("arm64", "aarch64")

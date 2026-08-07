@@ -1,0 +1,226 @@
+---
+sidebarTitle: '概述'
+description: '将对象存储无缝接入 ClickHouse Cloud。'
+slug: /integrations/clickpipes/object-storage/abs/overview
+title: '将 Azure Blob 存储接入 ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ABS ClickPipe 提供了一种完全托管且高弹性的方式，可将 Azure Blob 存储中的数据摄取到 ClickHouse Cloud。它支持**一次性**和**持续摄取**两种模式，并具备精确一次语义。
+
+ABS ClickPipes 既可通过 ClickPipes UI 手动部署和管理，也可使用 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式进行部署和管理。
+
+<div id="supported-formats">
+  ## 支持的格式
+</div>
+
+* [JSON](/zh/reference/formats/JSON/JSON)
+* [CSV](/zh/reference/formats/CSV/CSV)
+* [TSV](/zh/reference/formats/TabSeparated/TabSeparated)
+* [Parquet](/zh/reference/formats/Parquet/Parquet)
+* [Avro](/zh/reference/formats/Avro/Avro)
+
+<div id="features">
+  ## 功能
+</div>
+
+<div id="one-time-ingestion">
+  ### 一次性摄取
+</div>
+
+ABS ClickPipe 会以单个批次操作，将指定容器中所有匹配某个模式的文件加载到 ClickHouse 目标表。摄取任务完成后，ClickPipe 会自动停止。该一次性摄取模式提供精确一次语义，确保每个文件都能被可靠处理且不会重复。
+
+<div id="continuous-ingestion">
+  ### 持续摄取
+</div>
+
+启用持续摄取后，ClickPipes 会持续从指定路径摄取数据。为了确定摄取顺序，ABS ClickPipe 依赖文件隐含的[词典序](#continuous-ingestion-lexicographical-order)。
+
+<div id="continuous-ingestion-lexicographical-order">
+  #### 词典序
+</div>
+
+ABS ClickPipe 假定文件会按词典序添加到容器中，并依赖这种隐含顺序按顺序摄取文件。这意味着任何新文件**都必须**按词典序排在上一个已摄取文件之后。例如，名为 `file1`、`file2` 和 `file3` 的文件会按顺序被摄取；但如果向容器中添加一个新的 `file 0`，它将被**忽略**，因为该文件名按词典序并不大于上一个已摄取的文件。
+
+在此模式下，ABS ClickPipe 会对指定路径中的**所有文件**执行初始加载，然后以可配置的时间间隔轮询新文件 (默认情况下为 30 秒) 。**无法**从某个特定文件或某个时间点开始摄取——ClickPipes 始终会加载指定路径中的所有文件。
+
+<div id="file-pattern-matching">
+  ### 文件模式匹配
+</div>
+
+对象存储 ClickPipes 采用 POSIX 标准进行文件模式匹配。所有模式均区分大小写，并匹配容器名称之后的**完整路径**。为了获得更好的性能，请尽量使用尽可能具体的模式 (例如，使用 `data-2024-*.csv` 而不是 `*.csv`) 。
+
+<div id="supported-patterns">
+  #### 支持的模式
+</div>
+
+| 模式             | 说明                                  | 示例                  | 匹配项                                                               |
+| -------------- | ----------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `?`            | 精确匹配 **一个** 字符 (不包括 `/`)            | `data-?.csv`        | `data-1.csv`, `data-a.csv`, `data-x.csv`                          |
+| `*`            | 匹配 **零个或多个** 字符 (不包括 `/`)           | `data-*.csv`        | `data-1.csv`, `data-001.csv`, `data-report.csv`, `data-.csv`      |
+| `**` <br /> 递归 | 匹配 **零个或多个** 字符 (包括 `/`) 。支持递归遍历目录。 | `logs/**/error.log` | `logs/error.log`, `logs/2024/error.log`, `logs/2024/01/error.log` |
+
+**示例：**
+
+* `https://storageaccount.blob.core.windows.net/container/folder/*.csv`
+* `https://storageaccount.blob.core.windows.net/container/logs/**/data.json`
+* `https://storageaccount.blob.core.windows.net/container/file-?.parquet`
+* `https://storageaccount.blob.core.windows.net/container/data-2024-*.csv.gz`
+
+<div id="unsupported-patterns">
+  #### 不支持的模式
+</div>
+
+| 模式          | 描述           | 示例                     | 替代方案                            |
+| ----------- | ------------ | ---------------------- | ------------------------------- |
+| `{abc,def}` | 花括号展开——多个备选项 | `{logs,data}/file.csv` | 为每个路径分别创建 ClickPipes。           |
+| `{N..M}`    | 数字范围展开       | `file-{1..100}.csv`    | 使用 `file-*.csv` 或 `file-?.csv`。 |
+
+**示例：**
+
+* `https://storageaccount.blob.core.windows.net/container/{documents-01,documents-02}.json`
+* `https://storageaccount.blob.core.windows.net/container/file-{1..100}.csv`
+* `https://storageaccount.blob.core.windows.net/container/{logs,metrics}/data.parquet`
+
+<div id="exactly-once-semantics">
+  ### 精确一次语义
+</div>
+
+在摄取大型数据集时，可能会出现各种故障，从而导致部分插入或数据重复。对象存储 ClickPipes 能够应对插入失败，并提供精确一次语义。这是通过使用临时“暂存”表实现的。数据会先插入暂存表中。如果此次插入出现问题，可以截断暂存表，并从干净状态重新尝试插入。只有当插入完成并成功后，暂存表中的分区才会被移动到目标表。要进一步了解这一策略，请参阅[这篇博客文章](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3)。
+
+<div id="virtual-columns">
+  ### 虚拟列
+</div>
+
+要跟踪已摄取了哪些文件，请将 `_file` 虚拟列加入列映射列表。`_file` 虚拟列包含源对象的文件名，可用于查询哪些文件已经处理完毕。
+
+<div id="access-control">
+  ## 访问控制
+</div>
+
+<div id="permissions">
+  ### 权限
+</div>
+
+ABS ClickPipe 仅支持私有容器，**不**支持公开容器。
+
+容器的存储桶策略必须允许 [`s3:GetObject`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html) 和 [`s3:ListBucket`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html) 操作。
+
+<div id="authentication">
+  ### 身份验证
+</div>
+
+<Note>
+  目前暂不支持 Microsoft Entra ID 身份验证 (包括托管标识) 。
+</Note>
+
+Azure Blob 存储身份验证使用[连接字符串](https://docs.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string)，同时支持访问密钥和共享访问签名 (SAS) 。
+
+<div id="access-key">
+  #### 访问密钥
+</div>
+
+要使用[账户访问密钥](https://docs.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage)进行身份验证，请提供采用以下格式的连接字符串：
+
+```bash
+DefaultEndpointsProtocol=https;AccountName=storage-account-name;AccountKey=account-access-key;EndpointSuffix=core.windows.net
+```
+
+您可以在 Azure 门户的 **Storage Account &gt; Access keys** 中找到您的存储帐户名称和访问密钥。
+
+<div id="sas">
+  #### 共享访问签名 (SAS)
+</div>
+
+要使用 [共享访问签名 (SAS) ](https://docs.microsoft.com/en-us/azure/storage/common/storage-sas-overview) 进行身份验证，请提供包含 SAS 令牌的连接字符串：
+
+```bash
+BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSignature=sas-token
+```
+
+在 Azure 门户的 **Storage Account &gt; Shared access signature** 中生成一个 SAS 令牌，并为要摄取的容器和 blobs 配置适当的权限 (`Read`、`List`) 。
+
+<div id="network-access">
+  ### 网络访问
+</div>
+
+ABS ClickPipes 分别通过两条不同的网络路径进行元数据发现和数据摄取：对应为 ClickPipes 服务和 ClickHouse Cloud 服务。如果你想额外增加一层网络安全 (例如出于合规原因) ，则**必须同时为这两条路径配置网络访问**。
+
+<Warning>
+  如果你的 Azure Blob 存储容器与 ClickHouse Cloud 服务位于同一 Azure 区域，基于 IP 的访问控制**将不起作用**。当这两个服务位于同一区域时，流量会通过 Azure 的内部网络路由，而不是公共互联网。
+</Warning>
+
+* 对于**基于 IP 的访问控制**，你的 Azure Storage 防火墙中的 [IP 网络规则](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) 必须允许 [此处](/zh/integrations/clickpipes/home#list-of-static-ips) 列出的 ClickPipes 服务所在区域的静态 IP，以及 ClickHouse Cloud 服务的[静态 IP](/zh/products/cloud/guides/data-sources/cloud-endpoints-api)。要获取你的 ClickHouse Cloud 区域的静态 IP，请打开终端并运行：
+
+  ```bash
+  # 将 <your-region> 替换为你的 ClickHouse Cloud 区域
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.azure[] | select(.region == "<your-region>") | .egress_ips[]'
+  ```
+
+<div id="advanced-settings">
+  ## 高级设置
+</div>
+
+ClickPipes 提供了开箱即用的默认值，能够满足大多数使用场景的需求。如果您的场景需要进一步细调，可以调整以下设置：
+
+| Setting                              | Default value | Description                                                                                        |
+| ------------------------------------ | ------------- | -------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB          | 单次插入批次中要处理的字节数。                                                                                    |
+| `Max file count`                     | 100           | 单次插入批次中要处理的最大文件数。                                                                                  |
+| `Max threads`                        | auto(3)       | 文件处理的[最大并发线程数](/zh/reference/settings/session-settings#max_threads)。                                  |
+| `Max insert threads`                 | 1             | 文件处理的[最大并发 insert 线程数](/zh/reference/settings/session-settings#max_insert_threads)。                   |
+| `Min insert block size bytes`        | 1GB           | 可插入表中的[块最小字节大小](/zh/reference/settings/session-settings#min_insert_block_size_bytes)。                 |
+| `Max download threads`               | 4             | [最大并发下载线程数](/zh/reference/settings/session-settings#max_download_threads)。                            |
+| `Object storage polling interval`    | 30s           | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                     |
+| `Parallel distributed insert select` | 2             | [并行分布式 insert select 设置](/zh/reference/settings/session-settings#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false         | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings#parallel_view_processing)方式推送到已附加的视图。           |
+| `Use cluster function`               | true          | 是否在多个节点之间并行处理文件。                                                                                   |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 的高级设置" size="lg" border />
+
+<div id="scaling">
+  ### 扩缩容
+</div>
+
+对象存储 ClickPipes 会根据[已配置的垂直自动扩缩容设置](/zh/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling)确定的最小 ClickHouse 服务规格进行扩缩容。ClickPipe 的大小会在创建管道时确定。此后对 ClickHouse 服务设置的更改不会影响 ClickPipe 的大小。
+
+如需提高大型摄取作业的吞吐量，我们建议在创建 ClickPipe 之前先对 ClickHouse 服务进行扩缩容。
+
+<div id="known-limitations">
+  ## 已知限制
+</div>
+
+<div id="file-size">
+  ### 文件大小
+</div>
+
+ClickPipes 只会尝试摄取大小 **不超过 10GB** 的对象。如果文件大于 10GB，系统会将错误信息追加到 ClickPipes 的专用错误表中。
+
+<div id="latency">
+  ### 延迟
+</div>
+
+对于包含超过 100,000 个文件的容器，Azure Blob 存储的 `LIST` 操作在检测新文件时，除了默认轮询间隔外，还会带来额外延迟：
+
+* **&lt; 100k 个文件**: ~30 秒 (默认轮询间隔)
+* **100k 个文件**: ~40-45 秒
+* **250k 个文件**: ~55-70 秒
+* **500k+ 个文件**: 可能超过 90 秒
+
+对于[持续摄取](#continuous-ingestion)，ClickPipes 必须扫描容器，找出在词法顺序上大于上一个已摄取文件的新文件。我们建议将文件分散到更小的容器中，或使用分层目录结构，以减少每次列表操作需要处理的文件数量。
+
+<div id="view-support">
+  ### 视图支持
+</div>
+
+目标表上的 materialized view 也受支持。ClickPipes 不仅会为目标表创建暂存表，也会为其依赖的所有 materialized view 创建暂存表。
+
+我们不会为非物化视图创建暂存表。这意味着，如果你的目标表有一个或多个下游 materialized view，这些 materialized view 应避免通过基于目标表的视图来查询数据。否则，你可能会发现 materialized view 中会缺失数据。
+
+<div id="dependencies">
+  ### 依赖项
+</div>
+
+在 ClickPipe 运行期间，如果对目标表、其 materialized views (包括级联 materialized views) ，或这些 materialized views 的目标表进行任何更改，都会导致可重试错误。要对这些依赖项进行 schema 变更，应先暂停 ClickPipe，应用更改，然后再恢复运行。

@@ -1,0 +1,42 @@
+---
+sidebarTitle: 'توليد الصور'
+slug: /cloud/features/ai-ml/agents/builder/image-generation
+title: 'توليد الصور'
+description: 'أنشئ الصور وحرّرها في ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'توليد الصور', 'DALL-E', 'Flux', 'Stable Diffusion']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge />
+
+يتيح توليد الصور للوكيل إنشاء صور جديدة انطلاقًا من موجّه نصي، أو تحرير الصور التي حمّلها المستخدم. ويختار الوكيل بين التوليد والتحرير بناءً على الطلب والسياق المتاح.
+
+<div id="enable-it">
+  ## تمكين توليد الصور
+</div>
+
+تُضاف ميزة توليد الصور عبر النافذة المنبثقة **Add Tools** في Agent Builder (وليس في قسم **Capabilities**). انقر على **Add Tools** أسفل لوحة Agent Builder، ثم أضف إحدى أدوات نماذج الصور — مثل **OpenAI Image Tools** أو **DALL-E-3** أو **Stable Diffusion**. سيختار الوكيل الأداة المناسبة بناءً على الطلب، أو يمكنك تقييد اختياره من خلال التعليمات.
+
+<Image img="/images/cloud/agent-builder/tools-modal.webp" alt="النافذة المنبثقة Agent Tools تعرض تكاملات نماذج الصور، بما في ذلك OpenAI Image Tools وDALL-E-3 وStable Diffusion، إلى جانب أدوات أخرى تابعة لجهات خارجية" size="md" />
+
+<div id="generation">
+  ## التوليد
+</div>
+
+عندما يطلب المستخدم صورة، يستدعي الوكيل أداة التوليد باستخدام موجّه ويُرجع الصورة الناتجة مضمّنةً مباشرةً. ويحتفظ الوكيل بمرجع إلى الصورة في سياقه كي يتمكن من وصفها أو إعادة استخدامها ضمن المحادثة نفسها.
+
+<div id="editing">
+  ## التحرير
+</div>
+
+إذا حمّل المستخدم صورة وطلب إجراء تعديل عليها — كتغيير لون، أو إضافة عنصر، أو توسيع التكوين — يستدعي الوكيل إصدار التحرير من الأداة. ويستبدل الناتج الجزء المعني أو يوسّع الصورة الأصلية حسب الطلب.
+
+<div id="notes">
+  ## ملاحظات
+</div>
+
+* لا تُخضَع الصور المُنشأة تلقائيًا لتحليل Vision مستقل. إذا كنت بحاجة إلى أن يقوم الوكيل *بتفسير* صورة، فاستخدم [Vision](/ar/products/cloud/features/ai-ml/agents/builder/vision) مع صورة يحمّلها المستخدم.
+* تنطبق سياسات المحتوى الخاصة بالمزوّد. تُرجِع المطالبات التي تنتهك سياسة المزوّد خطأً بدلًا من صورة.

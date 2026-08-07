@@ -1,0 +1,42 @@
+None
+1	10
+2	20
+3	30
+4	40
+R1: x == 1
+1	10
+R1, R2: (x == 1) OR (x == 2)
+1	10
+2	20
+R1, R2: (x == 2) FROM ANOTHER
+2	20
+R1, R2, R3: (x == 1) OR (x == 2) OR (x == 3)
+1	10
+2	20
+3	30
+R1, R2, R3, R4: ((x == 1) OR (x == 2) OR (x == 3)) AND (x <= 2)
+1	10
+2	20
+R1, R2, R3, R4, R5: ((x == 1) OR (x == 2) OR (x == 3)) AND (x <= 2) AND (y >= 20)
+2	20
+2	20
+R1, R2, R3, R4, R5: (x == 2) AND (y >= 20) FROM AFTER_RP
+2	20
+R1, R2, R3, R4, R5: (x == 2) AND (y >= 20) FROM ANOTHER
+2	20
+R2, R3, R4, R5: ((x == 2) OR (x == 3)) AND (x <= 2) AND (y >= 20)
+2	20
+R3, R4, R5: (x == 3) AND (x <= 2) AND (y >= 20)
+R4, R5: (x <= 2) AND (y >= 20)
+2	20
+R5: (x >= 2)
+2	20
+3	30
+4	40
+Policy not applicable
+None
+1	10
+2	20
+3	30
+4	40
+No problematic policy, select works

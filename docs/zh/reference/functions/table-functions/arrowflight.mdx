@@ -1,0 +1,68 @@
+---
+description: '允许读取和写入通过 Apache Arrow Flight 服务器公开的数据。'
+sidebarTitle: 'arrowFlight'
+slug: /sql-reference/table-functions/arrowflight
+title: 'arrowFlight'
+doc_type: 'reference'
+---
+
+允许读取和写入通过 [Apache Arrow Flight](/zh/concepts/features/interfaces/arrowflight) 服务器公开的数据。
+
+**语法**
+
+```sql
+arrowFlight('host:port', 'dataset_name' [, 'username', 'password'])
+```
+
+**参数**
+
+* `host:port` — Arrow Flight server 的地址。如果省略端口，则使用默认端口 `8815`。[String](/zh/reference/data-types/string)。
+* `dataset_name` — Arrow Flight server 上可用的数据集或描述符名称。[String](/zh/reference/data-types/string)。
+* `username` — 用于基本 HTTP 身份验证的用户名。[String](/zh/reference/data-types/string)。
+* `password` — 用于基本 HTTP 身份验证的密码。[String](/zh/reference/data-types/string)。
+
+如果未指定 `username` 和 `password`，则不会使用身份验证 (仅当 Arrow Flight server 允许匿名访问时才有效) 。
+
+该函数还支持[命名集合](/zh/concepts/features/configuration/server-config/named-collections)——支持的参数列表请参见 [ArrowFlight 表引擎](/zh/reference/engines/table-engines/integrations/arrowflight#named-collections)。
+
+**返回值**
+
+一个表示远程数据集的表对象。schema 会根据 Arrow Flight server 自动推断。
+
+**设置**
+
+* `arrow_flight_request_descriptor_type` — 控制数据集名称发送到 Flight server 的方式。取值：`path` (默认) 或 `command`。详情请参见 [ArrowFlight 表引擎](/zh/reference/engines/table-engines/integrations/arrowflight#settings)。
+
+**示例**
+
+从远程 Arrow Flight server 读取：
+
+```sql title="Query"
+SELECT * FROM arrowFlight('127.0.0.1:9005', 'sample_dataset') ORDER BY id;
+```
+
+```text title="Response"
+┌─id─┬─name────┬─value─┐
+│  1 │ foo     │ 42.1  │
+│  2 │ bar     │ 13.3  │
+│  3 │ baz     │ 77.0  │
+└────┴─────────┴───────┘
+```
+
+向远程 Arrow Flight 服务器插入数据：
+
+```sql
+INSERT INTO FUNCTION arrowFlight('127.0.0.1:9005', 'sample_dataset') VALUES (4, 'qux', 99.9);
+```
+
+使用命名集合：
+
+```sql
+SELECT * FROM arrowFlight(named_collection_name);
+```
+
+**另请参阅**
+
+* [ArrowFlight 表引擎](/zh/reference/engines/table-engines/integrations/arrowflight)
+* [Arrow Flight 接口](/zh/concepts/features/interfaces/arrowflight)
+* [Apache Arrow Flight SQL 规范](https://arrow.apache.org/docs/format/FlightSql.html)

@@ -1,0 +1,428 @@
+---
+title: 'AWS PrivateLink'
+description: 'Este documento descreve como se conectar ao ClickHouse Cloud por meio do AWS PrivateLink.'
+slug: /manage/security/aws-privatelink
+keywords: ['PrivateLink']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<ScalePlanFeatureBadge feature="AWS PrivateLink" />
+
+Você pode usar o [AWS PrivateLink](https://aws.amazon.com/privatelink/) para estabelecer conectividade segura entre VPCs, serviços da AWS, seus sistemas on-premise e o ClickHouse Cloud sem expor o tráfego à internet pública. Este documento descreve as etapas para se conectar ao ClickHouse Cloud usando o AWS PrivateLink.
+
+Para restringir o acesso aos seus serviços do ClickHouse Cloud exclusivamente por meio de endereços do AWS PrivateLink, siga as instruções fornecidas pelo ClickHouse Cloud em [IP Access Lists](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+<Note>
+  O ClickHouse Cloud oferece suporte a [PrivateLink entre regiões](https://aws.amazon.com/about-aws/whats-new/2024/11/aws-privatelink-across-region-connectivity/) nas seguintes regiões:
+
+  * sa-east-1
+  * il-central-1
+  * me-south-1
+  * mx-central-1
+  * eu-central-2
+  * eu-north-1
+  * eu-south-2
+  * eu-west-3
+  * eu-south-1
+  * eu-west-2
+  * eu-west-1
+  * eu-central-1
+  * ca-west-1
+  * ca-central-1
+  * ap-northeast-1
+  * ap-southeast-2
+  * ap-southeast-1
+  * ap-northeast-2
+  * ap-northeast-3
+  * ap-south-1
+  * ap-southeast-4
+  * ap-southeast-3
+  * ap-south-2
+  * ap-east-1
+  * af-south-1
+  * us-west-2
+  * us-west-1
+  * us-east-2
+  * us-east-1
+    Considerações sobre preços: a AWS cobrará dos usuários pela transferência de dados entre regiões. Consulte os preços [aqui](https://aws.amazon.com/privatelink/pricing/).
+</Note>
+
+**Conclua as etapas a seguir para habilitar o AWS PrivateLink**:
+
+1. Obtenha o &quot;Service name&quot; do Endpoint.
+2. Crie o endpoint da AWS.
+3. Adicione o &quot;Endpoint ID&quot; à organização do ClickHouse Cloud.
+4. Adicione o &quot;Endpoint ID&quot; à lista de permissões do serviço do ClickHouse.
+
+Encontre exemplos de Terraform [aqui](https://github.com/ClickHouse/terraform-provider-clickhouse/tree/main/examples/).
+
+<div id="considerations">
+  ## Considerações importantes
+</div>
+
+O ClickHouse tenta agrupar seus serviços para reutilizar o mesmo [endpoint de serviço](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-overview) publicado na mesma região da AWS. No entanto, esse agrupamento não é garantido, especialmente se você distribuir seus serviços entre várias organizações do ClickHouse.
+Se você já tiver o PrivateLink configurado para outros serviços na sua organização do ClickHouse, muitas vezes poderá pular a maior parte das etapas graças a esse agrupamento e seguir diretamente para a etapa final: adicionar o &quot;Endpoint ID&quot; do ClickHouse à lista de permissões do serviço ClickHouse.
+
+<div id="prerequisites">
+  ## Pré-requisitos para este processo
+</div>
+
+Antes de começar, você precisará de:
+
+1. Sua conta da AWS.
+2. [Chave de API do ClickHouse](/pt-BR/products/cloud/features/admin-features/api/openapi) com as permissões necessárias para criar e gerenciar endpoints privados no lado do ClickHouse.
+
+<div id="steps">
+  ## Passos
+</div>
+
+Siga estes passos para conectar seus serviços no ClickHouse Cloud por meio do AWS PrivateLink.
+
+<div id="obtain-endpoint-service-info">
+  ### Obtenha o endpoint &quot;Service name&quot;
+</div>
+
+<div id="option-1-clickhouse-cloud-console">
+  #### Opção 1: console do ClickHouse Cloud
+</div>
+
+No console do ClickHouse Cloud, abra o serviço ao qual você deseja se conectar via PrivateLink e, em seguida, acesse o menu **Settings**.
+
+<Image img="/images/cloud/security/aws-privatelink-pe-create.webp" size="md" alt="Endpoints privados" border />
+
+Anote o `Service name` e o `DNS name` e siga para a [próxima etapa](#create-aws-endpoint).
+
+<div id="option-2-api">
+  #### Opção 2: API
+</div>
+
+Primeiro, defina as seguintes variáveis de ambiente antes de executar qualquer comando:
+
+```shell
+REGION=<Your region code using the AWS format, for example: us-west-2>
+PROVIDER=aws
+KEY_ID=<Your ClickHouse key ID>
+KEY_SECRET=<Your ClickHouse key secret>
+ORG_ID=<Your ClickHouse organization ID>
+SERVICE_NAME=<Your ClickHouse service name>
+```
+
+Obtenha o `INSTANCE_ID` do seu ClickHouse filtrando por região, provedor e nome do serviço:
+
+```shell
+INSTANCE_ID=$(curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services" | \
+jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\" and .name==\"${SERVICE_NAME:?}\") | .id " -r)
+```
+
+Obtenha `endpointServiceId` e `privateDnsHostname` para sua configuração do PrivateLink:
+
+```bash
+curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}/privateEndpointConfig" | \
+jq .result
+```
+
+Este comando deve retornar algo parecido com:
+
+```result
+{
+  "endpointServiceId": "com.amazonaws.vpce.us-west-2.vpce-svc-xxxxxxxxxxxxxxxxx",
+  "privateDnsHostname": "xxxxxxxxxx.us-west-2.vpce.aws.clickhouse.cloud"
+}
+```
+
+Anote o `endpointServiceId` e o `privateDnsHostname` [siga para a próxima etapa](#create-aws-endpoint).
+
+<div id="create-aws-endpoint">
+  ### Criar endpoint da AWS
+</div>
+
+<Warning>
+  Esta seção aborda detalhes específicos do ClickHouse para configurar o ClickHouse por meio do AWS PrivateLink. As etapas específicas da AWS são fornecidas apenas como referência para indicar onde procurar, mas podem mudar ao longo do tempo sem aviso prévio da AWS. Considere a configuração da AWS de acordo com o seu caso de uso específico.
+
+  Observe que o ClickHouse não é responsável por configurar os endpoints de VPC da AWS necessários, as regras de Security Group nem os registros DNS.
+
+  Se você ativou anteriormente &quot;private DNS names&quot; ao configurar o PrivateLink e está enfrentando dificuldades para configurar novos serviços via PrivateLink, entre em contato com o suporte do ClickHouse. Para qualquer outro problema relacionado a tarefas de configuração da AWS, entre em contato diretamente com o suporte da AWS.
+</Warning>
+
+<div id="option-1-aws-console">
+  #### Opção 1: Console da AWS
+</div>
+
+Abra o Console da AWS e vá para **VPC** → **Endpoints** → **Create endpoints**.
+
+Selecione **Endpoint services that use NLBs and GWLBs** e use `Service name`<sup>console</sup> ou `endpointServiceId`<sup>API</sup> obtido na etapa [Obtain Endpoint &quot;Service name&quot; ](#obtain-endpoint-service-info), no campo **Service Name**. Clique em **Verify service**:
+
+<Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="Configurações do endpoint do AWS PrivateLink" border />
+
+Se quiser estabelecer uma conexão entre regiões via PrivateLink, marque a caixa de seleção &quot;Cross region endpoint&quot; e especifique a região do serviço. A região do serviço é aquela em que a instância do ClickHouse está em execução.
+
+Se você receber o erro &quot;Service name couldn&#39;t be verified.&quot;, entre em contato com o Suporte ao Cliente para solicitar a adição de novas regiões à lista de regiões compatíveis.
+
+Em seguida, selecione sua VPC e sub-redes:
+
+<Image img="/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp" size="md" alt="Selecione a VPC e as sub-redes" border />
+
+Como etapa opcional, atribua Security groups/Tags:
+
+<Note>
+  Certifique-se de que as portas `443`, `8443`, `9440`, `3306` estejam liberadas no Security Group.
+</Note>
+
+Após criar o endpoint da VPC, anote o valor de `Endpoint ID`; você precisará dele em uma próxima etapa.
+
+<Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="ID do endpoint da VPC" border />
+
+<div id="option-2-aws-cloudformation">
+  #### Opção 2: AWS CloudFormation
+</div>
+
+Em seguida, você precisa criar um endpoint da VPC usando `Service name`<sup>console</sup> ou `endpointServiceId`<sup>API</sup> obtido na etapa [Obter endpoint &quot;Service name&quot; ](#obtain-endpoint-service-info).
+Certifique-se de usar os IDs de sub-rede, os grupos de segurança e o ID da VPC corretos.
+
+```response
+Resources:
+  ClickHouseInterfaceEndpoint:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: false
+      ServiceName: <Service name(endpointServiceId), pls see above>
+      VpcId: vpc-vpc_id
+      SubnetIds:
+        - subnet-subnet_id1
+        - subnet-subnet_id2
+        - subnet-subnet_id3
+      SecurityGroupIds:
+        - sg-security_group_id1
+        - sg-security_group_id2
+        - sg-security_group_id3
+```
+
+Depois de criar o endpoint da VPC, anote o valor de `Endpoint ID`; você vai precisar dele em um próximo passo.
+
+<div id="option-3-terraform">
+  #### Opção 3: Terraform
+</div>
+
+`service_name` abaixo corresponde a `Service name`<sup>console</sup> ou `endpointServiceId`<sup>API</sup> obtido na etapa [Obter o endpoint &quot;Service name&quot; ](#obtain-endpoint-service-info)
+
+```json
+resource "aws_vpc_endpoint" "this" {
+  vpc_id            = var.vpc_id
+  service_name      = "<pls see comment above>"
+  vpc_endpoint_type = "Interface"
+  security_group_ids = [
+    Var.security_group_id1,var.security_group_id2, var.security_group_id3,
+  ]
+  subnet_ids          = [var.subnet_id1,var.subnet_id2,var.subnet_id3]
+  private_dns_enabled = false
+  service_region      = "(Optional) If specified, the VPC endpoint will connect to the service in the provided region. Define it for multi-regional PrivateLink connections."
+}
+```
+
+Após criar o endpoint da VPC, anote o valor de `Endpoint ID`; você precisará dele em um próximo passo.
+
+<div id="set-private-dns-name-for-endpoint">
+  #### Defina o nome DNS privado do endpoint
+</div>
+
+<Note>
+  Há várias formas de configurar o DNS. Configure-o de acordo com o seu caso de uso específico.
+</Note>
+
+Você precisa apontar o &quot;DNS name&quot;, obtido na etapa [Obtain Endpoint &quot;Service name&quot; ](#obtain-endpoint-service-info), para as interfaces de rede do AWS Endpoint. Isso garante que os serviços/componentes dentro da sua VPC/rede consigam resolvê-lo corretamente.
+
+<div id="add-endpoint-id-to-services-allow-list">
+  ### Adicione o &quot;Endpoint ID&quot; à lista de permissões do serviço ClickHouse
+</div>
+
+<div id="option-1-clickhouse-cloud-console">
+  #### Opção 1: console do ClickHouse Cloud
+</div>
+
+Para adicionar, navegue até o console do ClickHouse Cloud, abra o serviço ao qual você deseja se conectar via PrivateLink e depois vá para **Configurações**. Clique em **Set up private endpoint** para abrir as configurações de endpoints privados. Insira o `Endpoint ID` obtido na etapa [Create AWS Endpoint](#create-aws-endpoint). Clique em &quot;Create endpoint&quot;.
+
+<Note>
+  Se você quiser permitir acesso a partir de uma conexão PrivateLink existente, use o menu suspenso de endpoint existente.
+</Note>
+
+<Image img="/images/cloud/security/aws-privatelink-pe-filters.webp" size="md" alt="Filtro de endpoints privados" border />
+
+Para remover, navegue até o console do ClickHouse Cloud, localize o serviço e depois vá para **Configurações** do serviço. Localize o endpoint que deseja remover. Remova-o da lista de endpoints.
+
+<div id="option-2-api">
+  #### Opção 2: API
+</div>
+
+Você precisa adicionar um Endpoint ID à lista de permissões de cada instância que deve ficar disponível via PrivateLink.
+
+Defina a variável de ambiente `ENDPOINT_ID` usando os dados da etapa [Criar AWS Endpoint](#create-aws-endpoint).
+
+Defina as seguintes variáveis de ambiente antes de executar qualquer comando:
+
+```bash
+REGION=<Your region code using the AWS format, for example: us-west-2>
+PROVIDER=aws
+KEY_ID=<Your ClickHouse key ID>
+KEY_SECRET=<Your ClickHouse key secret>
+ORG_ID=<Your ClickHouse organization ID>
+SERVICE_NAME=<Your ClickHouse service name>
+```
+
+Para adicionar um ID do endpoint a uma lista de permissões:
+
+```bash
+cat <<EOF | tee pl_config.json
+{
+  "privateEndpointIds": {
+    "add": [
+      "${ENDPOINT_ID:?}"
+    ]
+  }
+}
+EOF
+
+curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+-X PATCH -H "Content-Type: application/json" \
+"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" \
+-d @pl_config.json | jq
+```
+
+Para remover um ID de endpoint de uma lista de permissões:
+
+```bash
+cat <<EOF | tee pl_config.json
+{
+  "privateEndpointIds": {
+    "remove": [
+      "${ENDPOINT_ID:?}"
+    ]
+  }
+}
+EOF
+
+curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+-X PATCH -H "Content-Type: application/json" \
+"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" \
+-d @pl_config.json | jq
+```
+
+<div id="accessing-an-instance-using-privatelink">
+  ### Acessando uma instância usando PrivateLink
+</div>
+
+Cada serviço com o Private Link habilitado tem um endpoint público e outro privado. Para se conectar via Private Link, você precisa usar um endpoint privado, que será `privateDnsHostname`<sup>API</sup> ou `DNS Name`<sup>console</sup>, obtido em [Obter endpoint &quot;Service name&quot;](#obtain-endpoint-service-info).
+
+<div id="getting-private-dns-hostname">
+  #### Como obter o hostname DNS privado
+</div>
+
+<div id="option-1-clickhouse-cloud-console-3">
+  ##### Opção 1: console do ClickHouse Cloud
+</div>
+
+No console do ClickHouse Cloud, acesse **Settings**. Clique no botão **Set up private endpoint**. No painel lateral aberto, copie o **DNS Name**.
+
+<Image img="/images/cloud/security/aws-privatelink-pe-dns-name.webp" size="md" alt="Nome DNS do endpoint privado" border />
+
+<div id="option-2-api-3">
+  ##### Opção 2: API
+</div>
+
+Defina as seguintes variáveis de ambiente antes de executar quaisquer comandos:
+
+```bash
+KEY_ID=<Your ClickHouse key ID>
+KEY_SECRET=<Your ClickHouse key secret>
+ORG_ID=<Your ClickHouse organization ID>
+INSTANCE_ID=<Your ClickHouse service name>
+```
+
+Você pode obter `INSTANCE_ID` na [etapa](#option-2-api).
+
+```bash
+curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}/privateEndpointConfig" | \
+jq .result
+```
+
+Isso deve retornar algo como:
+
+```result
+{
+  "endpointServiceId": "com.amazonaws.vpce.us-west-2.vpce-svc-xxxxxxxxxxxxxxxxx",
+  "privateDnsHostname": "xxxxxxxxxx.us-west-2.vpce.aws.clickhouse.cloud"
+}
+```
+
+Neste exemplo, a conexão usando o valor do nome de host `privateDnsHostname` será roteada pelo PrivateLink, mas a conexão usando o nome de host `endpointServiceId` será roteada pela Internet.
+
+<div id="troubleshooting">
+  ## Solução de problemas
+</div>
+
+<div id="multiple-privatelinks-in-one-region">
+  ### Vários PrivateLinks em uma região
+</div>
+
+Na maioria dos casos, você só precisa criar um único serviço de endpoint para cada VPC. Esse endpoint pode encaminhar solicitações da VPC para vários serviços do ClickHouse Cloud.
+Consulte [aqui](#considerations)
+
+<div id="connection-to-private-endpoint-timed-out">
+  ### A conexão com o endpoint privado expirou
+</div>
+
+* Anexe o Security Group ao endpoint da VPC.
+* Verifique as regras de `inbound` no Security Group anexado ao Endpoint e libere as portas do ClickHouse.
+* Verifique as regras de `outbound` no Security Group anexado à VM usada para o teste de conectividade e permita conexões às portas do ClickHouse.
+
+<div id="private-hostname-not-found-address-of-host">
+  ### Hostname privado: endereço do host não encontrado
+</div>
+
+* Verifique sua configuração de DNS
+
+<div id="connection-reset-by-peer">
+  ### Conexão redefinida pelo host remoto
+</div>
+
+* Muito provavelmente, o Endpoint ID não foi adicionado à lista de permissões do serviço; consulte o [passo](#add-endpoint-id-to-services-allow-list)
+
+<div id="checking-endpoint-filters">
+  ### Verificando os filtros de endpoint
+</div>
+
+Defina as seguintes variáveis de ambiente antes de executar qualquer comando:
+
+```bash
+KEY_ID=<Key ID>
+KEY_SECRET=<Key secret>
+ORG_ID=<please set ClickHouse organization ID>
+INSTANCE_ID=<Instance ID>
+```
+
+Você pode obter `INSTANCE_ID` na [etapa](#option-2-api).
+
+```shell
+curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+-X GET -H "Content-Type: application/json" \
+"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" | \
+jq .result.privateEndpointIds
+```
+
+<div id="connecting-to-a-remote-database">
+  ### Como se conectar a um banco de dados remoto
+</div>
+
+Digamos que você esteja tentando usar as table functions [MySQL](/pt-BR/reference/functions/table-functions/mysql) ou [PostgreSQL](/pt-BR/reference/functions/table-functions/postgresql) no ClickHouse Cloud e se conectar ao seu banco de dados hospedado em uma VPC da Amazon Web Services (AWS). O AWS PrivateLink não pode ser usado para habilitar essa conexão com segurança. O PrivateLink é uma conexão unidirecional. Ele permite que sua rede interna ou VPC da Amazon se conecte com segurança ao ClickHouse Cloud, mas não permite que o ClickHouse Cloud se conecte à sua rede interna.
+
+De acordo com a [documentação do AWS PrivateLink](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html):
+
+> Use o AWS PrivateLink quando houver uma configuração cliente/servidor na qual você queira permitir que uma ou mais VPCs consumidoras tenham acesso unidirecional a um serviço específico ou a um conjunto de instâncias na VPC do provedor de serviços. Somente os clientes na VPC consumidora podem iniciar uma conexão com o serviço na VPC do provedor de serviços.
+
+Para isso, configure seus Security Groups da AWS para permitir conexões do ClickHouse Cloud com seu serviço de banco de dados interno/privado. Consulte os [endereços IP de egress padrão das regiões do ClickHouse Cloud](/pt-BR/products/cloud/guides/data-sources/cloud-endpoints-api), juntamente com os [endereços IP estáticos disponíveis](https://api.clickhouse.cloud/static-ips.json).

@@ -1,0 +1,1999 @@
+---
+title: 'Проектирование схемы для обсервабилити'
+description: 'Проектирование схемы для обсервабилити'
+keywords: ['обсервабилити', 'журналы', 'трассировки', 'метрики', 'OpenTelemetry', 'Grafana', 'OTel']
+slug: /use-cases/observability/schema-design
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Мы рекомендуем пользователям всегда создавать собственную схему для журналов и трассировок по следующим причинам:
+
+* **Выбор первичного ключа** - В схемах по умолчанию используется `ORDER BY`, оптимизированный под определённые паттерны доступа. Маловероятно, что ваши паттерны доступа будут им соответствовать.
+* **Извлечение структуры** - Возможно, вы захотите извлечь новые столбцы из существующих, например из столбца `Body`. Это можно сделать с помощью материализованных столбцов (а в более сложных случаях — с помощью materialized view). Для этого требуется изменить схему.
+* **Оптимизация Maps** - В схемах по умолчанию для хранения атрибутов используется тип Map. Эти столбцы позволяют хранить произвольные метаданные. Хотя это важная возможность, поскольку метаданные событий часто заранее не определены и потому иначе не могут быть сохранены в строго типизированной базе данных, такой как ClickHouse, доступ к ключам Map и их значениям менее эффективен, чем доступ к обычному столбцу. Мы решаем это, изменяя схему и вынося наиболее часто используемые ключи Map в столбцы верхнего уровня — см. [&quot;Извлечение структуры с помощью SQL&quot;](#extracting-structure-with-sql). Для этого требуется изменить схему.
+* **Упрощение доступа к ключам Map** - Доступ к ключам в Map требует более многословного синтаксиса. Это можно упростить с помощью псевдонимов. См. [&quot;Использование псевдонимов&quot;](#using-aliases), чтобы упростить запросы.
+* **Вторичные индексы** - В схеме по умолчанию используются вторичные индексы для ускорения доступа к Maps и текстовых запросов. Обычно они не требуются и занимают дополнительное место на диске. Их можно использовать, но следует проверить, действительно ли они нужны. См. [&quot;Вторичные / индексы пропуска данных&quot;](#secondarydata-skipping-indices).
+* **Использование кодеков** - Возможно, вы захотите настроить кодеки для столбцов, если понимаете характер ожидаемых данных и у вас есть подтверждение, что это улучшает сжатие.
+
+*Ниже мы подробно описываем каждый из перечисленных выше сценариев использования.*
+
+**Важно:** Хотя пользователям рекомендуется расширять и изменять свою схему для достижения оптимального сжатия и производительности запросов, им следует по возможности придерживаться именования схемы OTel для основных столбцов. Плагин ClickHouse Grafana предполагает наличие некоторых базовых столбцов OTel для упрощения построения запросов, например Timestamp и SeverityText. Требуемые столбцы для журналов и трассировок задокументированы здесь [[1]](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)[[2]](https://grafana.com/docs/grafana/latest/explore/logs-integration/) и [здесь](https://grafana.com/docs/grafana/latest/explore/trace-integration/#data-frame-structure) соответственно. При желании вы можете изменить имена этих столбцов, переопределив значения по умолчанию в конфигурации плагина.
+
+<Tip>
+  **ClickStack поставляется с оптимизированной схемой по умолчанию**
+
+  **ClickStack предоставляет готовые схемы для журналов, трассировок и метрик**, в которых используются новейшие возможности ClickHouse (текстовые индексы для полнотекстового поиска и поиска по ключам Map, материализованные столбцы и массивы ALIAS для фильтрации с прямым чтением, поиск строк по номеру блока) и которые по результатам бенчмарков обеспечивают высокую производительность «из коробки» для рабочих нагрузок журналирования и трассировки. Используйте их как ориентир при разработке собственной схемы.
+
+  * Канонический DDL: [Таблицы и схемы, используемые ClickStack](/ru/clickstack/ingesting-data/schemas).
+  * Рецепты оптимизации: [Настройка производительности ClickStack](/ru/clickstack/managing/performance-tuning). Многие рекомендации на этой странице (материализованные столбцы, индекс пропуска данных, выбор первичного ключа, проекции, materialized view) напрямую применимы и к самостоятельной настройке.
+</Tip>
+
+<div id="extracting-structure-with-sql">
+  ## Извлечение структуры с помощью SQL
+</div>
+
+При приёме структурированных и неструктурированных журналов пользователям часто требуется возможность:
+
+* **Извлекать столбцы из строковых блобов**. Запросы к ним будут выполняться быстрее, чем использование строковых операций во время выполнения запроса.
+* **Извлекать ключи из Map**. Схема по умолчанию помещает произвольные атрибуты в столбцы типа Map. Этот тип позволяет работать без схемы, и поэтому пользователям не нужно заранее определять столбцы для атрибутов при описании журналов и трассировок — а это часто невозможно при сборе журналов из Kubernetes, если нужно сохранить labels подов для последующего поиска. Доступ к ключам Map и их значениям медленнее, чем выполнение запросов по обычным столбцам ClickHouse. Поэтому часто имеет смысл извлекать ключи из Map в столбцы корневой таблицы.
+
+Рассмотрим следующие запросы:
+
+Предположим, мы хотим посчитать, какие URL-пути получают больше всего POST-запросов, используя структурированные журналы. JSON-блоб хранится в столбце `Body` как String. Кроме того, он также может храниться в столбце `LogAttributes` как `Map(String, String)`, если пользователь включил json&#95;parser в коллекторе.
+
+```sql
+SELECT LogAttributes
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+LogAttributes: {'status':'200','log.file.name':'access-structured.log','request_protocol':'HTTP/1.1','run_time':'0','time_local':'2019-01-22 00:26:14.000','size':'30577','user_agent':'Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)','referer':'-','remote_user':'-','request_type':'GET','request_path':'/filter/27|13 ,27|  5 ,p53','remote_addr':'54.36.149.41'}
+```
+
+Предполагая, что `LogAttributes` доступен, вот запрос, который позволяет подсчитать, какие URL-пути сайта получают больше всего POST-запросов:
+
+```sql
+SELECT path(LogAttributes['request_path']) AS path, count() AS c
+FROM otel_logs
+WHERE ((LogAttributes['request_type']) = 'POST')
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productModelImages │ 10866 │
+│ /site/productAdditives   │ 10866 │
+└──────────────────────────┴───────┘
+
+5 строк в наборе. Затрачено: 0.735 сек. Обработано 10.36 миллиона строк, 4.65 ГБ (14.10 миллиона строк/с., 6.32 ГБ/с.)
+Пиковое использование памяти: 153.71 МиБ.
+```
+
+Обратите внимание на использование здесь синтаксиса Map, например `LogAttributes['request_path']`, и [функции `path`](/ru/reference/functions/regular-functions/url-functions#path) для удаления параметров запроса из URL.
+
+Если пользователь не включил парсинг JSON в коллекторе, `LogAttributes` будет пустым, поэтому нам придется использовать [JSON-функции](/ru/reference/functions/regular-functions/json-functions), чтобы извлечь столбцы из String `Body`.
+
+<Info>
+  **Предпочитайте парсинг в ClickHouse**
+
+  Как правило, мы рекомендуем пользователям выполнять парсинг JSON структурированных журналов в ClickHouse. Мы уверены, что ClickHouse — самая быстрая реализация парсинга JSON. Однако мы понимаем, что вы можете захотеть отправлять журналы в другие источники и не выносить эту логику в SQL.
+</Info>
+
+```sql
+SELECT path(JSONExtractString(Body, 'request_path')) AS path, count() AS c
+FROM otel_logs
+WHERE JSONExtractString(Body, 'request_type') = 'POST'
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productAdditives   │ 10866 │
+│ /site/productModelImages │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.668 sec. Processed 10.37 million rows, 5.13 GB (15.52 million rows/s., 7.68 GB/s.)
+Peak memory usage: 172.30 MiB.
+```
+
+Теперь рассмотрим то же для неструктурированных журналов:
+
+```sql
+SELECT Body, LogAttributes
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           151.233.185.144 - - [22/Jan/2019:19:08:54 +0330] "GET /image/105/brand HTTP/1.1" 200 2653 "https://www.zanbil.ir/filter/b43,p56" "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36" "-"
+LogAttributes: {'log.file.name':'access-unstructured.log'}
+```
+
+В случае неструктурированных журналов для аналогичного запроса требуется использовать регулярные выражения с помощью функции `extractAllGroupsVertical`.
+
+```sql
+SELECT
+        path((groups[1])[2]) AS path,
+        count() AS c
+FROM
+(
+        SELECT extractAllGroupsVertical(Body, '(\\w+)\\s([^\\s]+)\\sHTTP/\\d\\.\\d') AS groups
+        FROM otel_logs
+        WHERE ((groups[1])[1]) = 'POST'
+)
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productModelImages │ 10866 │
+│ /site/productAdditives   │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 1.953 sec. Processed 10.37 million rows, 3.59 GB (5.31 million rows/s., 1.84 GB/s.)
+```
+
+Повышенная сложность и стоимость запросов для разбора неструктурированных журналов (обратите внимание на разницу в производительности) — вот почему мы рекомендуем по возможности всегда использовать структурированные журналы.
+
+<Info>
+  **Рассмотрите Dictionaries**
+
+  Приведённый выше запрос можно оптимизировать, используя словари регулярных выражений. Подробнее см. в разделе [Using Dictionaries](#using-dictionaries).
+</Info>
+
+Оба этих сценария можно реализовать в ClickHouse, перенеся приведённую выше логику запроса на этап вставки. Ниже мы рассмотрим несколько подходов и покажем, в каких случаях каждый из них уместен.
+
+<Info>
+  **OTel или ClickHouse для обработки?**
+
+  Вы также можете выполнять обработку с помощью процессоров и операторов OTel коллектор, как описано [здесь](/ru/guides/use-cases/observability/build-your-own/integrating-opentelemetry#processing---filtering-transforming-and-enriching). В большинстве случаев ClickHouse будет значительно эффективнее по ресурсам и быстрее, чем процессоры коллектор. Основной недостаток выполнения всей обработки событий в SQL — привязка вашего решения к ClickHouse. Например, вы можете захотеть отправлять обработанные журналы из OTel коллектор в другие пункты назначения, например в S3.
+</Info>
+
+<div id="materialized-columns">
+  ### Материализованные столбцы
+</div>
+
+Материализованные столбцы — это самый простой способ извлекать структуру из других столбцов. Значения таких столбцов всегда вычисляются во время вставки и не могут быть указаны в запросах INSERT.
+
+<Info>
+  **Накладные расходы**
+
+  Материализованные столбцы требуют дополнительного места в хранилище, поскольку при вставке их значения извлекаются в новые столбцы на диске.
+</Info>
+
+Материализованные столбцы поддерживают любые выражения ClickHouse и позволяют использовать любые аналитические функции для [обработки строк](/ru/reference/functions/regular-functions/string-functions) (включая [регулярные выражения и поиск](/ru/reference/functions/regular-functions/string-search-functions)) и [URL](/ru/reference/functions/regular-functions/url-functions), выполнять [преобразования типов](/ru/reference/functions/regular-functions/type-conversion-functions), [извлекать значения из JSON](/ru/reference/functions/regular-functions/json-functions) и [математические операции](/ru/reference/functions/regular-functions/math-functions).
+
+Мы рекомендуем материализованные столбцы для базовой обработки. Они особенно полезны для извлечения значений из Map, выноса их в столбцы верхнего уровня и преобразования типов. Чаще всего они наиболее полезны в очень простых схемах или в сочетании с materialized view. Рассмотрим следующую схему для журналов, в которой JSON был извлечён коллектором в столбец `LogAttributes`:
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
+        `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
+        `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
+```
+
+Эквивалентную схему для извлечения данных из `Body` типа String с помощью JSON-функций можно найти [здесь](https://pastila.nl/?005cbb97/513b174a7d6114bf17ecc657428cf829#gqoOOiomEjIiG6zlWhE+Sg==).
+
+Наши три материализованных столбца извлекают страницу запроса, тип запроса и домен реферера. Они обращаются к ключам в map и применяют функции к их значениям. В результате следующий запрос выполняется значительно быстрее:
+
+```sql
+SELECT RequestPage AS path, count() AS c
+FROM otel_logs
+WHERE RequestType = 'POST'
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productAdditives   │ 10866 │
+│ /site/productModelImages │ 10866 │
+└──────────────────────────┴───────┘
+
+5 строк в наборе. Прошло: 0.173 сек. Обработано 10.37 миллиона строк, 418.03 МБ (60.07 миллиона строк/с., 2.42 ГБ/с.)
+Пиковое использование памяти: 3.16 МиБ.
+```
+
+<Note>
+  Материализованные столбцы по умолчанию не включаются в результат `SELECT *`. Это сделано для сохранения инварианта: результат `SELECT *` всегда можно вставить обратно в таблицу с помощью INSERT. Это поведение можно отключить, установив `asterisk_include_materialized_columns=1`; его также можно включить в Grafana (см. `Additional Settings -> Custom Settings` в конфигурации источника данных).
+</Note>
+
+<div id="materialized-views">
+  ## Materialized views
+</div>
+
+[Materialized views](/ru/concepts/features/materialized-views/index) дают более широкие возможности для применения SQL-фильтрации и преобразований к журналам и трассировкам.
+
+Materialized Views позволяют перенести вычислительные затраты с этапа выполнения запроса на этап вставки. Materialized view в ClickHouse — это просто триггер, который запускает запрос на блоках данных по мере их вставки в таблицу. Результаты этого запроса вставляются во вторую, «целевую», таблицу.
+
+<Image img="/images/use-cases/observability/observability-10.webp" alt="Materialized view" size="md" />
+
+<Info>
+  **Обновления в реальном времени**
+
+  Materialized views в ClickHouse обновляются в реальном времени по мере поступления данных в таблицу, на которой они основаны, и работают скорее как постоянно обновляемые индексы. В отличие от этого, в других базах данных materialized views обычно представляют собой статические снимки запроса, которые нужно обновлять (аналогично ClickHouse Refreshable Materialized Views).
+</Info>
+
+Теоретически запрос, связанный с materialized view, может быть любым, включая агрегацию, хотя [для JOIN существуют ограничения](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins). Для задач преобразования и фильтрации, необходимых для журналов и трассировок, можно считать, что возможен любой оператор `SELECT`.
+
+Следует помнить, что запрос — это всего лишь триггер, который выполняется над строками, вставляемыми в таблицу (исходную таблицу), а результаты отправляются в новую таблицу (целевую таблицу).
+
+Чтобы не сохранять данные дважды (в исходной и целевой таблицах), мы можем изменить движок исходной таблицы на [Null table engine](/ru/reference/engines/table-engines/special/null), сохранив исходную схему. Наши OTel collectors продолжат отправлять данные в эту таблицу. Например, для журналов таблица `otel_logs` будет выглядеть так:
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+) ENGINE = Null
+```
+
+Движок таблицы Null — это мощная оптимизация: считайте, что это `/dev/null`. Эта таблица не хранит данные, но все подключённые materialized view по-прежнему будут выполняться для вставляемых строк, прежде чем те будут отброшены.
+
+Рассмотрим следующий запрос. Он преобразует наши строки в формат, который мы хотим сохранить, извлекая все столбцы из `LogAttributes` (предполагается, что это поле задаётся коллектором с помощью оператора `json_parser`), устанавливая `SeverityText` и `SeverityNumber` (на основе нескольких простых условий и определения [этих столбцов](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitytext)). В этом случае мы также выбираем только те столбцы, которые, как мы знаем, будут заполнены, игнорируя такие столбцы, как `TraceId`, `SpanId` и `TraceFlags`.
+
+```sql
+SELECT
+        Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status'] AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddr,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+Timestamp:      2019-01-22 00:26:14
+ServiceName:
+Status:         200
+RequestProtocol: HTTP/1.1
+RunTime:        0
+Size:           30577
+UserAgent:      Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)
+Referer:        -
+RemoteUser:     -
+RequestType:    GET
+RequestPath:    /filter/27|13 ,27|  5 ,p53
+RemoteAddr:     54.36.149.41
+RefererDomain:
+RequestPage:    /filter/27|13 ,27|  5 ,p53
+SeverityText:   INFO
+SeverityNumber:  9
+
+1 row in set. Elapsed: 0.027 sec.
+```
+
+Мы также извлекаем столбец `Body` — на случай, если позднее будут добавлены дополнительные атрибуты, не охваченные нашим SQL. Этот столбец хорошо сжимается в ClickHouse и будет запрашиваться редко, поэтому не влияет на производительность запросов. Наконец, мы приводим Timestamp к типу DateTime (для экономии места — см. [«Оптимизация типов»](#optimizing-types)) с помощью приведения типа.
+
+<Info>
+  **Условные выражения**
+
+  Обратите внимание на использование [условных выражений](/ru/reference/functions/regular-functions/conditional-functions) выше для извлечения `SeverityText` и `SeverityNumber`. Они чрезвычайно полезны для построения сложных условий и проверки того, заданы ли значения в maps — здесь мы наивно предполагаем, что все ключи существуют в `LogAttributes`. Рекомендуем хорошо с ними ознакомиться: при парсинге логов они очень выручают, наряду с функциями для обработки [NULL-значений](/ru/reference/functions/regular-functions/functions-for-nulls)!
+</Info>
+
+Нам потребуется таблица для хранения этих результатов. Приведённая ниже целевая таблица соответствует указанному выше запросу:
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+Выбранные здесь типы основаны на оптимизациях, описанных в разделе [«Оптимизация типов»](#optimizing-types).
+
+<Note>
+  Обратите внимание, насколько сильно мы изменили схему. На практике у вас, скорее всего, будут и столбцы Trace, которые тоже стоит сохранить, а также столбец `ResourceAttributes` (обычно в нём содержатся метаданные Kubernetes). Grafana может использовать столбцы Trace, чтобы связывать журналы и трейсы — см. [&quot;Использование Grafana&quot;](/ru/guides/use-cases/observability/build-your-own/grafana).
+</Note>
+
+Ниже мы создаём materialized view `otel_logs_mv`, которое выполняет приведённый выше запрос SELECT для таблицы `otel_logs` и отправляет результаты в `otel_logs_v2`.
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT
+        Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+Это показано ниже:
+
+<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+
+Если теперь перезапустить конфигурацию коллектор, использованную в [&quot;Экспорт в ClickHouse&quot;](/ru/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse), данные появятся в `otel_logs_v2` в нужном нам формате. Обратите внимание на использование типизированных функций извлечения из JSON.
+
+```sql
+SELECT *
+FROM otel_logs_v2
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+Timestamp:      2019-01-22 00:26:14
+ServiceName:
+Status:         200
+RequestProtocol: HTTP/1.1
+RunTime:        0
+Size:           30577
+UserAgent:      Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)
+Referer:        -
+RemoteUser:     -
+RequestType:    GET
+RequestPath:    /filter/27|13 ,27|  5 ,p53
+RemoteAddress:  54.36.149.41
+RefererDomain:
+RequestPage:    /filter/27|13 ,27|  5 ,p53
+SeverityText:   INFO
+SeverityNumber:  9
+
+1 row in set. Elapsed: 0.010 sec.
+```
+
+Ниже показано эквивалентное materialized view, в котором столбцы извлекаются из столбца `Body` с помощью JSON-функций:
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT  Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        JSONExtractUInt(Body, 'status') AS Status,
+        JSONExtractString(Body, 'request_protocol') AS RequestProtocol,
+        JSONExtractUInt(Body, 'run_time') AS RunTime,
+        JSONExtractUInt(Body, 'size') AS Size,
+        JSONExtractString(Body, 'user_agent') AS UserAgent,
+        JSONExtractString(Body, 'referer') AS Referer,
+        JSONExtractString(Body, 'remote_user') AS RemoteUser,
+        JSONExtractString(Body, 'request_type') AS RequestType,
+        JSONExtractString(Body, 'request_path') AS RequestPath,
+        JSONExtractString(Body, 'remote_addr') AS remote_addr,
+        domain(JSONExtractString(Body, 'referer')) AS RefererDomain,
+        path(JSONExtractString(Body, 'request_path')) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+<div id="beware-types">
+  ### Будьте осторожны с типами
+</div>
+
+Приведённые выше materialized view опираются на неявное приведение типов — особенно при использовании map `LogAttributes`. ClickHouse часто автоматически приводит извлечённое значение к типу целевой таблицы, что позволяет упростить синтаксис. Однако мы рекомендуем всегда проверять свои view: выполнять оператор `SELECT` из view вместе с оператором [`INSERT INTO`](/ru/reference/statements/insert-into) для целевой таблицы с той же схемой. Это поможет убедиться, что типы обрабатываются корректно. Особое внимание стоит обратить на следующие случаи:
+
+* Если ключ отсутствует в map, будет возвращена пустая строка. Для числовых значений её нужно преобразовать в подходящее значение. Это можно сделать с помощью [условных функций](/ru/reference/functions/regular-functions/conditional-functions), например `if(LogAttributes['status'] = ", 200, LogAttributes['status'])`, или [функций приведения типов](/ru/reference/functions/regular-functions/type-conversion-functions), если допустимы значения по умолчанию, например `toUInt8OrDefault(LogAttributes['status'] )`
+* Некоторые типы приводятся не всегда — например, строковые представления чисел не будут приведены к значениям enum.
+* Функции извлечения JSON возвращают значения по умолчанию для своего типа, если значение не найдено. Убедитесь, что эти значения действительно подходят!
+
+<Info>
+  **Избегайте Nullable**
+
+  Избегайте использования [Nullable](/ru/reference/data-types/nullable) в ClickHouse для данных обсервабилити. В журнале и трассировке редко требуется различать пустое значение и null. Эта возможность создаёт дополнительные накладные расходы на хранение и негативно влияет на производительность запросов. Подробнее см. [здесь](/ru/guides/clickhouse/data-modelling/schema-design#optimizing-types).
+</Info>
+
+<div id="choosing-a-primary-ordering-key">
+  ## Выбор первичного ключа (ключа сортировки)
+</div>
+
+После того как вы извлекли нужные столбцы, можно переходить к оптимизации ключа сортировки/первичного ключа.
+
+При выборе ключа сортировки можно руководствоваться несколькими простыми правилами. Иногда они могут противоречить друг другу, поэтому рассматривайте их именно в таком порядке. В ходе этого процесса вы можете определить несколько вариантов ключа; обычно достаточно 4–5 столбцов:
+
+1. Выбирайте столбцы, которые соответствуют вашим типичным фильтрам и сценариям доступа. Если вы обычно начинаете расследование в обсервабилити с фильтрации по конкретному столбцу, например по имени пода, этот столбец будет часто использоваться в секциях `WHERE`. При прочих равных отдавайте приоритет таким столбцам при включении в ключ по сравнению с теми, которые используются реже.
+2. Предпочитайте столбцы, которые при фильтрации позволяют исключить большую долю всех строк, тем самым уменьшая объем данных, которые нужно читать. Имена сервисов и коды состояния часто хорошо подходят на эту роль — во втором случае только если вы фильтруете по значениям, исключающим большую часть строк. Например, фильтрация по кодам 200 в большинстве систем будет соответствовать большей части строк, тогда как ошибки 500 затронут лишь небольшое подмножество.
+3. Предпочитайте столбцы, которые, вероятно, будут сильно коррелировать с другими столбцами в таблице. Это поможет сделать так, чтобы эти значения тоже хранились рядом, что улучшит сжатие.
+4. Операции `GROUP BY` и `ORDER BY` для столбцов, входящих в ключ сортировки, можно сделать более эффективными с точки зрения памяти.
+
+<br />
+
+После того как подмножество столбцов для ключа сортировки определено, их нужно объявить в определенном порядке. Этот порядок может существенно влиять как на эффективность фильтрации по вторичным столбцам ключа в запросах, так и на коэффициент сжатия файлов данных таблицы. В общем случае **столбцы ключа лучше располагать в порядке возрастания мощности**. При этом нужно учитывать, что фильтрация по столбцам, расположенным позже в ключе сортировки, будет менее эффективной, чем по тем, которые стоят раньше в кортеже. Учитывайте этот компромисс и ваши сценарии доступа. И самое главное — тестируйте разные варианты. Чтобы лучше понять ключи сортировки и способы их оптимизации, рекомендуем [эту статью](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes).
+
+<Info>
+  **Сначала структура**
+
+  Мы рекомендуем определяться с ключами сортировки после того, как вы структурировали свои журналы. Не используйте ключи из map атрибутов или выражения извлечения JSON в качестве ключа сортировки. Убедитесь, что ключи сортировки представлены в вашей таблице как корневые столбцы.
+</Info>
+
+<div id="using-maps">
+  ## Использование Map
+</div>
+
+В предыдущих примерах показано, как использовать синтаксис `map['key']` для доступа к значениям в столбцах типа `Map(String, String)`. Помимо нотации map для доступа к вложенным ключам, в ClickHouse также доступны специализированные [функции для map](/ru/reference/functions/regular-functions/tuple-map-functions#mapKeys), которые позволяют фильтровать или выбирать данные из этих столбцов.
+
+Например, следующий запрос определяет все уникальные ключи, доступные в столбце `LogAttributes`, с помощью [функции `mapKeys`](/ru/reference/functions/regular-functions/tuple-map-functions#mapKeys), а затем [функции `groupArrayDistinctArray`](/ru/reference/functions/aggregate-functions/combinators) (комбинатора).
+
+```sql
+SELECT groupArrayDistinctArray(mapKeys(LogAttributes))
+FROM otel_logs
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+groupArrayDistinctArray(mapKeys(LogAttributes)): ['remote_user','run_time','request_type','log.file.name','referer','request_path','status','user_agent','remote_addr','time_local','size','request_protocol']
+
+1 row in set. Elapsed: 1.139 sec. Processed 5.63 million rows, 2.53 GB (4.94 million rows/s., 2.22 GB/s.)
+Peak memory usage: 71.90 MiB.
+```
+
+<Info>
+  **Избегайте точек**
+
+  Мы не рекомендуем использовать точки в именах столбцов Map и в будущем можем отказаться от их поддержки. Используйте `_`.
+</Info>
+
+<div id="using-aliases">
+  ## Использование псевдонимов
+</div>
+
+Запросы к типам Map выполняются медленнее, чем запросы к обычным столбцам — см. [&quot;Ускорение запросов&quot;](#accelerating-queries). Кроме того, их синтаксис сложнее, и писать такие запросы может быть неудобно. Чтобы решить эту проблему, мы рекомендуем использовать столбцы ALIAS.
+
+Столбцы ALIAS вычисляются во время выполнения запроса и не хранятся в таблице. Поэтому INSERT значения в столбец этого типа невозможен. С помощью псевдонимов можно ссылаться на ключи Map, упрощать синтаксис и прозрачно обращаться к элементам Map как к обычным столбцам. Рассмотрим следующий пример:
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
+        `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
+        `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
+        `RemoteAddr` IPv4 ALIAS LogAttributes['remote_addr']
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, Timestamp)
+```
+
+У нас есть несколько материализованных столбцов и столбец `ALIAS` `RemoteAddr`, который обращается к map `LogAttributes`. Теперь мы можем запрашивать значения `LogAttributes['remote_addr']` через этот столбец, тем самым упрощая запрос, то есть
+
+```sql
+SELECT RemoteAddr
+FROM default.otel_logs
+LIMIT 5
+```
+
+```response
+┌─RemoteAddr────┐
+│ 54.36.149.41  │
+│ 31.56.96.51   │
+│ 31.56.96.51   │
+│ 40.77.167.129 │
+│ 91.99.72.15   │
+└───────────────┘
+
+5 rows in set. Elapsed: 0.011 sec.
+```
+
+Кроме того, добавить `ALIAS` с помощью команды `ALTER TABLE` очень просто. Эти столбцы сразу становятся доступными, например:
+
+```sql
+ALTER TABLE default.otel_logs
+        (ADD COLUMN `Size` String ALIAS LogAttributes['size'])
+
+SELECT Size
+FROM default.otel_logs_v3
+LIMIT 5
+```
+
+```response
+┌─Size──┐
+│ 30577 │
+│ 5667  │
+│ 5379  │
+│ 1696  │
+│ 41483 │
+└───────┘
+
+5 rows in set. Elapsed: 0.014 sec.
+```
+
+<Info>
+  **Столбцы ALIAS по умолчанию исключаются**
+
+  По умолчанию `SELECT *` не включает столбцы ALIAS. Это поведение можно отключить, задав `asterisk_include_alias_columns=1`.
+</Info>
+
+<div id="optimizing-types">
+  ## Оптимизация типов
+</div>
+
+Для ClickHouse применимы [общие рекомендации по оптимизации типов](/ru/guides/clickhouse/data-modelling/schema-design#optimizing-types).
+
+<div id="using-codecs">
+  ## Использование кодеков
+</div>
+
+Помимо оптимизаций типов, при попытке оптимизировать сжатие для схем обсервабилити в ClickHouse вы можете следовать [общим рекомендациям по выбору кодеков](/ru/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec).
+
+В целом кодек `ZSTD` хорошо подходит для датасетов журнала и трасс. Увеличение уровня сжатия относительно значения по умолчанию, равного 1, может улучшить сжатие. Однако это следует проверять на практике, поскольку более высокие значения увеличивают нагрузку на CPU во время вставки. Обычно прирост от увеличения этого значения невелик.
+
+Кроме того, хотя временные метки выигрывают от дельта-кодирования с точки зрения сжатия, если этот столбец используется в первичном ключе/ключе сортировки, это может приводить к снижению производительности запросов. Мы рекомендуем оценить соответствующий компромисс между степенью сжатия и производительностью запросов.
+
+<div id="using-dictionaries">
+  ## Использование словарей
+</div>
+
+[Словари](/ru/reference/statements/create/dictionary) — одна из [ключевых возможностей](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) ClickHouse: они предоставляют хранящееся в памяти представление данных в формате [ключ-значение](https://en.wikipedia.org/wiki/Key%E2%80%93value_database), поступающих из различных внутренних и внешних [источников](/ru/reference/statements/create/dictionary/sources/overview#dictionary-sources), оптимизированное для запросов с поиском по ключу со сверхнизкой задержкой.
+
+<Image img="/images/use-cases/observability/observability-12.webp" alt="Обсервабилити и словари" size="md" />
+
+Это удобно в самых разных сценариях: от обогащения принимаемых данных на лету без замедления процесса ингестии до общего повышения производительности запросов, особенно при использовании JOIN.
+Хотя JOIN в сценариях обсервабилити требуются редко, словари всё равно могут быть полезны для обогащения — как во время вставки, так и во время выполнения запроса. Ниже мы приводим примеры обоих вариантов.
+
+<Info>
+  **Ускорение JOIN**
+
+  Пользователи, которым интересно ускорить JOIN с помощью словарей, могут найти дополнительные сведения [здесь](/ru/concepts/features/dictionaries/index).
+</Info>
+
+<div id="insert-time-vs-query-time">
+  ### При вставке vs при выполнении запроса
+</div>
+
+Словари можно использовать для обогащения датасетов как при выполнении запроса, так и при вставке. У каждого из этих подходов есть свои плюсы и минусы. Кратко:
+
+* **При вставке** - Обычно этот подход подходит, если значение обогащения не меняется и хранится во внешнем источнике, который можно использовать для заполнения словаря. В этом случае обогащение строки при вставке позволяет избежать обращения к словарю во время выполнения запроса. Плата за это — снижение производительности вставки и дополнительные затраты на хранение, поскольку обогащённые значения будут сохраняться в виде столбцов.
+* **При выполнении запроса** - Если значения в словаре часто меняются, обращения к словарю во время выполнения запроса обычно более уместны. Это позволяет избежать обновления столбцов (и перезаписи данных) при изменении сопоставленных значений. Однако за такую гибкость приходится платить дополнительными затратами на обращение к словарю во время выполнения запроса. Обычно эти затраты заметны, если поиск по ключу требуется для многих строк, например при использовании поиска по ключу по словарю в условии фильтрации. Для обогащения результатов, то есть в `SELECT`, эти накладные расходы обычно несущественны.
+
+Мы рекомендуем пользователям ознакомиться с основами словарей. Словари предоставляют таблицу поиска в памяти, из которой значения можно получать с помощью специальных [функций](/ru/reference/functions/regular-functions/ext-dict-functions#dictGetAll).
+
+Примеры простого обогащения смотрите в руководстве по словарям [здесь](/ru/concepts/features/dictionaries/index). Ниже мы сосредоточимся на распространённых задачах обогащения в обсервабилити.
+
+<div id="using-ip-dictionaries">
+  ### Использование IP-словарей
+</div>
+
+Геообогащение журналов и трасс значениями широты и долготы по IP-адресам — типичное требование для обсервабилити. Этого можно добиться с помощью структурированного словаря `ip_trie`.
+
+Мы используем общедоступный [набор данных DB-IP с геоданными до уровня города](https://github.com/sapics/ip-location-db#db-ip-database-update-monthly), предоставляемый [DB-IP.com](https://db-ip.com/) на условиях [лицензии CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+Из [README](https://github.com/sapics/ip-location-db#csv-format) видно, что данные имеют следующую структуру:
+
+```csv
+| ip_range_start | ip_range_end | country_code | state1 | state2 | city | postcode | latitude | longitude | timezone |
+```
+
+С учётом этой структуры давайте для начала посмотрим на данные с помощью табличной функции [url()](/ru/reference/functions/table-functions/url):
+
+```sql
+SELECT *
+FROM url('https://raw.githubusercontent.com/sapics/ip-location-db/master/dbip-city/dbip-city-ipv4.csv.gz', 'CSV', '\n           \tip_range_start IPv4, \n       \tip_range_end IPv4, \n         \tcountry_code Nullable(String), \n     \tstate1 Nullable(String), \n           \tstate2 Nullable(String), \n           \tcity Nullable(String), \n     \tpostcode Nullable(String), \n         \tlatitude Float64, \n          \tlongitude Float64, \n         \ttimezone Nullable(String)\n   \t')
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+ip_range_start: 1.0.0.0
+ip_range_end:   1.0.0.255
+country_code:   AU
+state1:         Queensland
+state2:         ᴺᵁᴸᴸ
+city:           South Brisbane
+postcode:       ᴺᵁᴸᴸ
+latitude:       -27.4767
+longitude:      153.017
+timezone:       ᴺᵁᴸᴸ
+```
+
+Чтобы упростить задачу, давайте используем движок таблицы [`URL()`](/ru/reference/engines/table-engines/special/url), чтобы создать в ClickHouse объект таблицы с именами наших полей и проверить общее количество строк:
+
+```sql
+CREATE TABLE geoip_url(
+        ip_range_start IPv4,
+        ip_range_end IPv4,
+        country_code Nullable(String),
+        state1 Nullable(String),
+        state2 Nullable(String),
+        city Nullable(String),
+        postcode Nullable(String),
+        latitude Float64,
+        longitude Float64,
+        timezone Nullable(String)
+) ENGINE=URL('https://raw.githubusercontent.com/sapics/ip-location-db/master/dbip-city/dbip-city-ipv4.csv.gz', 'CSV')
+
+select count() from geoip_url;
+```
+
+```response
+┌─count()─┐
+│ 3261621 │ -- 3,26 миллиона
+└─────────┘
+```
+
+Поскольку наш словарь `ip_trie` требует, чтобы диапазоны IP-адресов были заданы в нотации CIDR, нам потребуется преобразовать `ip_range_start` и `ip_range_end`.
+
+CIDR для каждого диапазона можно легко вычислить с помощью следующего запроса:
+
+```sql
+WITH
+        bitXor(ip_range_start, ip_range_end) AS xor,
+        if(xor != 0, ceil(log2(xor)), 0) AS unmatched,
+        32 - unmatched AS cidr_suffix,
+        toIPv4(bitAnd(bitNot(pow(2, unmatched) - 1), ip_range_start)::UInt64) AS cidr_address
+SELECT
+        ip_range_start,
+        ip_range_end,
+        concat(toString(cidr_address),'/',toString(cidr_suffix)) AS cidr    
+FROM
+        geoip_url
+LIMIT 4;
+```
+
+```response
+┌─ip_range_start─┬─ip_range_end─┬─cidr───────┐
+│ 1.0.0.0        │ 1.0.0.255    │ 1.0.0.0/24 │
+│ 1.0.1.0        │ 1.0.3.255    │ 1.0.0.0/22 │
+│ 1.0.4.0        │ 1.0.7.255    │ 1.0.4.0/22 │
+│ 1.0.8.0        │ 1.0.15.255   │ 1.0.8.0/21 │
+└────────────────┴──────────────┴────────────┘
+
+4 строки в наборе. Elapsed: 0.259 sec.
+```
+
+<Note>
+  В приведённом выше запросе много всего происходит. Если интересно, прочитайте это отличное [объяснение](https://clickhouse.com/blog/geolocating-ips-in-clickhouse-and-grafana#using-bit-functions-to-convert-ip-ranges-to-cidr-notation). В противном случае просто примите, что этот код вычисляет CIDR для диапазона IP-адресов.
+</Note>
+
+Для наших целей понадобятся только диапазон IP-адресов, код страны и координаты, поэтому давайте создадим новую таблицу и вставим в неё наши Geo IP-данные:
+
+```sql
+CREATE TABLE geoip
+(
+        `cidr` String,
+        `latitude` Float64,
+        `longitude` Float64,
+        `country_code` String
+)
+ENGINE = MergeTree
+ORDER BY cidr
+
+INSERT INTO geoip
+WITH
+        bitXor(ip_range_start, ip_range_end) as xor,
+        if(xor != 0, ceil(log2(xor)), 0) as unmatched,
+        32 - unmatched as cidr_suffix,
+        toIPv4(bitAnd(bitNot(pow(2, unmatched) - 1), ip_range_start)::UInt64) as cidr_address
+SELECT
+        concat(toString(cidr_address),'/',toString(cidr_suffix)) as cidr,
+        latitude,
+        longitude,
+        country_code    
+FROM geoip_url
+```
+
+Чтобы выполнять в ClickHouse быстрые IP lookup-операции с низкой задержкой, мы будем использовать словари для хранения в памяти сопоставления ключ -&gt; атрибуты для наших GeoIP-данных. ClickHouse предоставляет `ip_trie` [структуру словаря](/ru/reference/statements/create/dictionary/layouts/ip-trie), чтобы сопоставлять наши сетевые префиксы (CIDR-блоки) с координатами и кодами стран. Следующий запрос задаёт словарь с этой структурой и использует указанную выше таблицу в качестве источника.
+
+```sql
+CREATE DICTIONARY ip_trie (
+   cidr String,
+   latitude Float64,
+   longitude Float64,
+   country_code String
+)
+primary key cidr
+source(clickhouse(table 'geoip'))
+layout(ip_trie)
+lifetime(3600);
+```
+
+Мы можем выбрать строки из словаря и убедиться, что этот набор данных доступен для поиска по ключу:
+
+```sql
+SELECT * FROM ip_trie LIMIT 3
+```
+
+```response
+┌─cidr───────┬─latitude─┬─longitude─┬─country_code─┐
+│ 1.0.0.0/22 │  26.0998 │   119.297 │ CN           │
+│ 1.0.0.0/24 │ -27.4767 │   153.017 │ AU           │
+│ 1.0.4.0/22 │ -38.0267 │   145.301 │ AU           │
+└────────────┴──────────┴───────────┴──────────────┘
+
+3 rows in set. Elapsed: 4.662 sec.
+```
+
+<Info>
+  **Периодическое обновление**
+
+  Словари в ClickHouse периодически обновляются на основе данных базовой таблицы и параметра lifetime, указанного выше. Чтобы обновить наш словарь Geo IP и отразить в нём последние изменения в наборе данных DB-IP, достаточно повторно вставить данные из удалённой таблицы geoip&#95;url в нашу таблицу `geoip`, применив преобразования.
+</Info>
+
+Теперь, когда данные Geo IP загружены в наш словарь `ip_trie` (который для удобства тоже называется `ip_trie`), мы можем использовать его для геолокации по IP-адресу. Это можно сделать с помощью [функции `dictGet()`](/ru/reference/functions/regular-functions/ext-dict-functions) следующим образом:
+
+```sql
+SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.242.48.167', 'IPv4')) AS ip_details
+```
+
+```response
+┌─ip_details──────────────┐
+│ ('PT',38.7944,-9.34284) │
+└─────────────────────────┘
+
+1 строка в наборе. Elapsed: 0.003 sec.
+```
+
+Обратите внимание на скорость получения данных. Это позволяет нам обогащать журналы. В данном случае мы выбираем **выполнять обогащение на этапе выполнения запроса**.
+
+Возвращаясь к нашему исходному набору данных журналов, мы можем использовать описанное выше, чтобы агрегировать журналы по странам. Далее предполагается, что мы используем схему, полученную из ранее созданного materialized view, в которой есть извлечённый столбец `RemoteAddress`.
+
+```sql
+SELECT dictGet('ip_trie', 'country_code', tuple(RemoteAddress)) AS country,
+        formatReadableQuantity(count()) AS num_requests
+FROM default.otel_logs_v2
+WHERE country != ''
+GROUP BY country
+ORDER BY count() DESC
+LIMIT 5
+```
+
+```response
+┌─country─┬─num_requests────┐
+│ IR      │ 7.36 million    │
+│ US      │ 1.67 million    │
+│ AE      │ 526.74 thousand │
+│ DE      │ 159.35 thousand │
+│ FR      │ 109.82 thousand │
+└─────────┴─────────────────┘
+
+5 rows in set. Elapsed: 0.140 sec. Processed 20.73 million rows, 82.92 MB (147.79 million rows/s., 591.16 MB/s.)
+Peak memory usage: 1.16 MiB.
+```
+
+Поскольку сопоставление IP-адреса с географическим местоположением может меняться, пользователям, скорее всего, важно знать, откуда поступил запрос в момент, когда он был сделан, а не каково текущее географическое местоположение того же адреса. По этой причине здесь, вероятно, предпочтительнее обогащение на этапе индексации. Это можно сделать с помощью материализованных столбцов, как показано ниже, или в `SELECT` materialized view:
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+        `Country` String MATERIALIZED dictGet('ip_trie', 'country_code', tuple(RemoteAddress)),
+        `Latitude` Float32 MATERIALIZED dictGet('ip_trie', 'latitude', tuple(RemoteAddress)),
+        `Longitude` Float32 MATERIALIZED dictGet('ip_trie', 'longitude', tuple(RemoteAddress))
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Info>
+  **Периодическое обновление**
+
+  Пользователи, скорее всего, захотят, чтобы словарь IP-обогащения периодически обновлялся по мере поступления новых данных. Это можно настроить с помощью предложения `LIFETIME` словаря, благодаря которому словарь будет периодически перезагружаться из базовой таблицы. О том, как обновлять базовую таблицу, см. [&quot;Refreshable Materialized views&quot;](/ru/concepts/features/materialized-views/refreshable-materialized-view).
+</Info>
+
+Указанные выше страны и координаты позволяют визуализировать данные не только с группировкой и фильтрацией по странам. Для примера см. [&quot;Visualizing geo data&quot;](/ru/guides/use-cases/observability/build-your-own/grafana#visualizing-geo-data).
+
+<div id="using-regex-dictionaries-user-agent-parsing">
+  ### Использование словарей на основе регулярных выражений (разбор user-agent)
+</div>
+
+Разбор [строк user-agent](https://en.wikipedia.org/wiki/User_agent) — классическая задача для регулярных выражений и распространённое требование для наборов данных на основе логов и трасс. ClickHouse обеспечивает эффективный разбор user-agent с помощью словарей на основе дерева регулярных выражений.
+
+Словари на основе дерева регулярных выражений в ClickHouse open-source определяются с использованием типа источника словаря YAMLRegExpTree, который задаёт путь к YAML-файлу, содержащему дерево регулярных выражений. Если вы хотите использовать собственный словарь регулярных выражений, подробные сведения о требуемой структуре приведены [здесь](/ru/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source). Ниже мы сосредоточимся на разборе user-agent с помощью [uap-core](https://github.com/ua-parser/uap-core) и загрузим наш словарь в поддерживаемом CSV-формате. Этот подход совместим с OSS и ClickHouse Cloud.
+
+<Note>
+  В примерах ниже мы используем снимки актуальных на июнь 2024 года регулярных выражений uap-core для разбора user-agent. Последний файл, который периодически обновляется, можно найти [здесь](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml). Вы можете выполнить шаги, описанные [здесь](/ru/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values), чтобы загрузить данные в используемый ниже CSV-файл.
+</Note>
+
+Создайте следующие таблицы движка Memory. В них хранятся регулярные выражения для разбора устройств, браузеров и операционных систем.
+
+```sql
+CREATE TABLE regexp_os
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+
+CREATE TABLE regexp_browser
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+
+CREATE TABLE regexp_device
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+```
+
+Эти таблицы можно заполнить данными из следующих общедоступных CSV-файлов с помощью табличной функции url:
+
+```sql
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+```
+
+После заполнения наших таблиц в памяти мы можем загрузить словари регулярных выражений. Обратите внимание, что значения ключей нужно указать в виде столбцов — это будут атрибуты, которые мы сможем извлекать из User-Agent.
+
+```sql
+CREATE DICTIONARY regexp_os_dict
+(
+        regexp String,
+        os_replacement String default 'Other',
+        os_v1_replacement String default '0',
+        os_v2_replacement String default '0',
+        os_v3_replacement String default '0',
+        os_v4_replacement String default '0'
+)
+PRIMARY KEY regexp
+SOURCE(CLICKHOUSE(TABLE 'regexp_os'))
+LIFETIME(MIN 0 MAX 0)
+LAYOUT(REGEXP_TREE);
+
+CREATE DICTIONARY regexp_device_dict
+(
+        regexp String,
+        device_replacement String default 'Other',
+        brand_replacement String,
+        model_replacement String
+)
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_device'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+
+CREATE DICTIONARY regexp_browser_dict
+(
+        regexp String,
+        family_replacement String default 'Other',
+        v1_replacement String default '0',
+        v2_replacement String default '0'
+)
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_browser'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+```
+
+После загрузки этих словарей мы можем указать пример user-agent и протестировать новые возможности извлечения данных из словаря:
+
+```sql
+WITH 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:127.0) Gecko/20100101 Firefox/127.0' AS user_agent
+SELECT
+        dictGet('regexp_device_dict', ('device_replacement', 'brand_replacement', 'model_replacement'), user_agent) AS device,
+        dictGet('regexp_browser_dict', ('family_replacement', 'v1_replacement', 'v2_replacement'), user_agent) AS browser,
+        dictGet('regexp_os_dict', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), user_agent) AS os
+```
+
+```response
+┌─device────────────────┬─browser───────────────┬─os─────────────────────────┐
+│ ('Mac','Apple','Mac') │ ('Firefox','127','0') │ ('Mac OS X','10','15','0') │
+└───────────────────────┴───────────────────────┴────────────────────────────┘
+
+1 строка в наборе. Elapsed: 0.003 sec.
+```
+
+Поскольку правила, связанные с user-agent, меняются редко, а словарь нужно обновлять только при появлении новых браузеров, операционных систем и устройств, имеет смысл выполнять это извлечение при вставке.
+
+Эту задачу можно решить либо с помощью материализованного столбца, либо с помощью materialized view. Ниже мы изменим materialized view, использованное ранее:
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2
+AS SELECT
+        Body,
+        CAST(Timestamp, 'DateTime') AS Timestamp,
+        ServiceName,
+        LogAttributes['status'] AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(CAST(Status, 'UInt64') > 500, 'CRITICAL', CAST(Status, 'UInt64') > 400, 'ERROR', CAST(Status, 'UInt64') > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(CAST(Status, 'UInt64') > 500, 20, CAST(Status, 'UInt64') > 400, 17, CAST(Status, 'UInt64') > 300, 13, 9) AS SeverityNumber,
+        dictGet('regexp_device_dict', ('device_replacement', 'brand_replacement', 'model_replacement'), UserAgent) AS Device,
+        dictGet('regexp_browser_dict', ('family_replacement', 'v1_replacement', 'v2_replacement'), UserAgent) AS Browser,
+        dictGet('regexp_os_dict', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), UserAgent) AS Os
+FROM otel_logs
+```
+
+Для этого нужно изменить схему целевой таблицы `otel_logs_v2`:
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+ `Body` String,
+ `Timestamp` DateTime,
+ `ServiceName` LowCardinality(String),
+ `Status` UInt8,
+ `RequestProtocol` LowCardinality(String),
+ `RunTime` UInt32,
+ `Size` UInt32,
+ `UserAgent` String,
+ `Referer` String,
+ `RemoteUser` String,
+ `RequestType` LowCardinality(String),
+ `RequestPath` String,
+ `remote_addr` IPv4,
+ `RefererDomain` String,
+ `RequestPage` String,
+ `SeverityText` LowCardinality(String),
+ `SeverityNumber` UInt8,
+ `Device` Tuple(device_replacement LowCardinality(String), brand_replacement LowCardinality(String), model_replacement LowCardinality(String)),
+ `Browser` Tuple(family_replacement LowCardinality(String), v1_replacement LowCardinality(String), v2_replacement LowCardinality(String)),
+ `Os` Tuple(os_replacement LowCardinality(String), os_v1_replacement LowCardinality(String), os_v2_replacement LowCardinality(String), os_v3_replacement LowCardinality(String))
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp, Status)
+```
+
+После перезапуска коллектора и приёма структурированных журналов, как описано в предыдущих шагах, мы можем выполнить запрос с использованием недавно извлечённых столбцов Device, Browser и Os.
+
+```sql
+SELECT Device, Browser, Os
+FROM otel_logs_v2
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Device:  ('Spider','Spider','Desktop')
+Browser: ('AhrefsBot','6','1')
+Os:     ('Other','0','0','0')
+```
+
+<Info>
+  **Tuple для сложных структур**
+
+  Обратите внимание на использование типа Tuple в этих столбцах user-agent. Для сложных структур, где иерархия известна заранее, рекомендуется использовать Tuple. Подстолбцы обеспечивают ту же производительность, что и обычные столбцы (в отличие от ключей Map), при этом позволяя использовать неоднородные типы.
+</Info>
+
+<div id="further-reading">
+  ### Дополнительные материалы
+</div>
+
+Чтобы увидеть больше примеров и подробнее ознакомиться со словарями, рекомендуем следующие статьи:
+
+* [Продвинутые темы словарей](/ru/concepts/features/dictionaries/index#advanced-dictionary-topics)
+* [&quot;Использование словарей для ускорения запросов&quot;](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
+* [Словари](/ru/reference/statements/create/dictionary)
+
+<div id="accelerating-queries">
+  ## Ускорение запросов
+</div>
+
+ClickHouse поддерживает ряд способов ускорения запросов. Приведённые ниже методы стоит рассматривать только после выбора подходящего основного/сортировочного ключа, чтобы оптимизировать наиболее распространённые сценарии доступа к данным и добиться максимального сжатия. Обычно именно это даёт наибольший прирост производительности при минимальных усилиях.
+
+<div id="using-materialized-views-incremental-for-aggregations">
+  ### Использование Materialized views (incremental) для агрегаций
+</div>
+
+В предыдущих разделах мы рассмотрели использование Materialized views для преобразования и фильтрации данных. Однако Materialized views также можно использовать для предварительного вычисления агрегаций при вставке и сохранения результата. Этот результат можно обновлять данными из последующих вставок, что фактически позволяет заранее вычислять агрегации уже на этапе вставки.
+
+Основная идея в том, что результат часто представляет собой более компактное представление исходных данных (в случае агрегаций — частичный скетч). В сочетании с более простым запросом для чтения результатов из целевой таблицы это ускоряет выполнение запросов по сравнению с вычислением тех же значений на исходных данных.
+
+Рассмотрим следующий запрос, в котором мы вычисляем общий трафик по часам, используя наши структурированные журналы:
+
+```sql
+SELECT toStartOfHour(Timestamp) AS Hour,
+        sum(toUInt64OrDefault(LogAttributes['size'])) AS TotalBytes
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.666 sec. Processed 10.37 million rows, 4.73 GB (15.56 million rows/s., 7.10 GB/s.)
+Пиковое потребление памяти: 1.40 MiB.
+```
+
+Можно представить, что это типичный линейный график, который пользователи строят в Grafana. Этот запрос, конечно, очень быстрый — набор данных содержит всего 10 млн строк, а ClickHouse действительно быстр! Однако если масштабировать это до миллиардов и триллионов строк, в идеале хотелось бы сохранить такую производительность запроса.
+
+<Note>
+  Этот запрос был бы в 10 раз быстрее, если бы мы использовали таблицу `otel_logs_v2`, полученную из нашей ранее созданной materialized view, которая извлекает ключ size из Map `LogAttributes`. Здесь мы используем исходные данные только в иллюстративных целях и рекомендуем использовать предыдущую view, если такой запрос встречается часто.
+</Note>
+
+Нам нужна таблица, которая будет принимать результаты, если мы хотим вычислять это во время вставки с помощью Materialized view. Эта таблица должна хранить только 1 строку на каждый час. Если для уже существующего часа поступает обновление, остальные столбцы должны быть объединены с существующей строкой для этого часа. Чтобы такое слияние инкрементальных состояний происходило, для остальных столбцов необходимо хранить частичные состояния.
+
+Для этого в ClickHouse нужен специальный тип движка: SummingMergeTree. Он заменяет все строки с одинаковым ключом сортировки одной строкой, содержащей суммарные значения для числовых столбцов. Следующая таблица будет объединять все строки с одинаковой датой, суммируя все числовые столбцы.
+
+```sql
+CREATE TABLE bytes_per_hour
+(
+  `Hour` DateTime,
+  `TotalBytes` UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY Hour
+```
+
+Чтобы продемонстрировать работу нашего materialized view, предположим, что таблица `bytes_per_hour` пуста и в неё ещё не поступали данные. Наш materialized view выполняет приведённый выше `SELECT` для данных, вставляемых в `otel_logs` (это выполняется по блокам заданного размера), а результаты отправляются в `bytes_per_hour`. Синтаксис показан ниже:
+
+```sql
+CREATE MATERIALIZED VIEW bytes_per_hour_mv TO bytes_per_hour AS
+SELECT toStartOfHour(Timestamp) AS Hour,
+       sum(toUInt64OrDefault(LogAttributes['size'])) AS TotalBytes
+FROM otel_logs
+GROUP BY Hour
+```
+
+Здесь ключевую роль играет clause `TO`, указывающий, куда будут отправлены результаты, то есть в `bytes_per_hour`.
+
+Если перезапустить наш OTel collector и повторно отправить журналы, table `bytes_per_hour` будет постепенно заполняться результатами приведённого выше запроса. После завершения мы можем проверить размер `bytes_per_hour` — у нас должна быть 1 строка на каждый час:
+
+```sql
+SELECT count()
+FROM bytes_per_hour
+FINAL
+```
+
+```response
+┌─count()─┐
+│     113 │
+└─────────┘
+
+1 строка в наборе. Elapsed: 0.039 sec.
+```
+
+Здесь мы фактически сократили число строк с 10 млн (в `otel_logs`) до 113, сохранив результат нашего запроса. Ключевой момент в том, что если в таблицу `otel_logs` вставляются новые записи журнала, новые значения будут отправляться в `bytes_per_hour` для соответствующего часа, где они будут автоматически асинхронно объединяться в фоновом режиме — поскольку в `bytes_per_hour` хранится только одна строка на каждый час, эта таблица всегда остается и компактной, и актуальной.
+
+Поскольку слияние строк происходит асинхронно, на момент выполнения запроса у пользователя может оказаться более одной строки на час. Чтобы гарантировать, что все ожидающие строки будут слиты во время выполнения запроса, у нас есть два варианта:
+
+* Использовать [модификатор `FINAL`](/ru/reference/statements/select/from#final-modifier) у имени таблицы (что мы и сделали для запроса подсчета выше).
+* Выполнить агрегацию по ключу сортировки, используемому в нашей итоговой таблице, то есть по Timestamp, и суммировать метрики.
+
+Обычно второй вариант эффективнее и гибче (таблицу можно использовать и для других задач), но первый может быть проще для некоторых запросов. Ниже мы покажем оба:
+
+```sql
+SELECT
+        Hour,
+        sum(TotalBytes) AS TotalBytes
+FROM bytes_per_hour
+GROUP BY Hour
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.008 sec.
+```
+
+```sql
+SELECT
+        Hour,
+        TotalBytes
+FROM bytes_per_hour
+FINAL
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.005 sec.
+```
+
+Это ускорило наш запрос с 0,6 с до 0,008 с — более чем в 75 раз!
+
+<Note>
+  На более крупных наборах данных и при более сложных запросах выигрыш может быть еще больше. Примеры см. [здесь](https://github.com/ClickHouse/clickpy).
+</Note>
+
+<div id="a-more-complex-example">
+  #### Более сложный пример
+</div>
+
+В приведенном выше примере выполняется простое агрегирование количества по часам с использованием [SummingMergeTree](/ru/reference/engines/table-engines/mergetree-family/summingmergetree). Для статистики, выходящей за рамки простых сумм, нужен другой движок целевой таблицы: [AggregatingMergeTree](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
+
+Предположим, мы хотим вычислить число уникальных IP-адресов (или уникальных пользователей) в день. Вот запрос для этого:
+
+```sql
+SELECT toStartOfHour(Timestamp) AS Hour, uniq(LogAttributes['remote_addr']) AS UniqueUsers
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+```response
+┌────────────────Hour─┬─UniqueUsers─┐
+│ 2019-01-26 16:00:00 │     4763    │
+│ 2019-01-22 00:00:00 │     536     │
+└─────────────────────┴─────────────┘
+
+113 rows in set. Elapsed: 0.667 sec. Processed 10.37 million rows, 4.73 GB (15.53 million rows/s., 7.09 GB/s.)
+```
+
+Для сохранения значения мощности с возможностью инкрементального обновления требуется AggregatingMergeTree.
+
+```sql
+CREATE TABLE unique_visitors_per_hour
+(
+  `Hour` DateTime,
+  `UniqueUsers` AggregateFunction(uniq, IPv4)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY Hour
+```
+
+Чтобы ClickHouse понимал, что будут храниться состояния агрегатных функций, мы задаём для столбца `UniqueUsers` тип [`AggregateFunction`](/ru/reference/data-types/aggregatefunction), указывая функцию, из которой формируются частичные состояния (uniq), и тип исходного столбца (IPv4). Как и в случае с SummingMergeTree, строки с одинаковым значением ключа `ORDER BY` будут объединяться (Hour в приведённом выше примере).
+
+Соответствующее materialized view использует предыдущий запрос:
+
+```sql
+CREATE MATERIALIZED VIEW unique_visitors_per_hour_mv TO unique_visitors_per_hour AS
+SELECT toStartOfHour(Timestamp) AS Hour,
+        uniqState(LogAttributes['remote_addr']::IPv4) AS UniqueUsers
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+Обратите внимание, что к именам наших агрегатных функций мы добавляем суффикс `State`. Это гарантирует, что будет возвращаться агрегатное состояние функции, а не итоговый результат. Оно содержит дополнительную информацию, которая позволяет этому частичному состоянию объединяться с другими состояниями.
+
+После повторной загрузки данных из-за перезапуска Collector мы можем убедиться, что в таблице `unique_visitors_per_hour` доступно 113 строк.
+
+```sql
+SELECT count()
+FROM unique_visitors_per_hour
+FINAL
+```
+
+```response
+┌─count()─┐
+│   113   │
+└─────────┘
+
+1 row in set. Elapsed: 0.009 sec.
+```
+
+В нашем итоговом запросе нужно использовать суффикс Merge у функций (поскольку в столбцах хранятся промежуточные состояния агрегации):
+
+```sql
+SELECT Hour, uniqMerge(UniqueUsers) AS UniqueUsers
+FROM unique_visitors_per_hour
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+```response
+┌────────────────Hour─┬─UniqueUsers─┐
+│ 2019-01-26 16:00:00 │      4763   │
+│ 2019-01-22 00:00:00 │      536    │
+└─────────────────────┴─────────────┘
+
+113 rows in set. Elapsed: 0.027 sec.
+```
+
+Обратите внимание: здесь мы используем `GROUP BY`, а не `FINAL`.
+
+<div id="using-materialized-views-incremental--for-fast-lookups">
+  ### Использование materialized views (incremental)  для быстрого поиска
+</div>
+
+При выборе ключа сортировки в ClickHouse следует учитывать типичные паттерны доступа и включать в него столбцы, которые часто используются в секциях фильтрации и агрегации. В сценариях обсервабилити это может быть ограничением, поскольку у пользователей паттерны доступа более разнообразны и их нельзя выразить одним набором столбцов. Это хорошо видно на примере, встроенном в схемы OTel по умолчанию. Рассмотрим схему по умолчанию для трасс:
+
+```sql
+CREATE TABLE otel_traces
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `ParentSpanId` String CODEC(ZSTD(1)),
+        `TraceState` String CODEC(ZSTD(1)),
+        `SpanName` LowCardinality(String) CODEC(ZSTD(1)),
+        `SpanKind` LowCardinality(String) CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `SpanAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Duration` Int64 CODEC(ZSTD(1)),
+        `StatusCode` LowCardinality(String) CODEC(ZSTD(1)),
+        `StatusMessage` String CODEC(ZSTD(1)),
+        `Events.Timestamp` Array(DateTime64(9)) CODEC(ZSTD(1)),
+        `Events.Name` Array(LowCardinality(String)) CODEC(ZSTD(1)),
+        `Events.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+        `Links.TraceId` Array(String) CODEC(ZSTD(1)),
+        `Links.SpanId` Array(String) CODEC(ZSTD(1)),
+        `Links.TraceState` Array(String) CODEC(ZSTD(1)),
+        `Links.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+        INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
+        INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_span_attr_key mapKeys(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_span_attr_value mapValues(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_duration Duration TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId)
+```
+
+Эта схема оптимизирована для фильтрации по `ServiceName`, `SpanName` и `Timestamp`. Однако при трассировке пользователям также нужна возможность выполнять поиск по конкретному `TraceId` и получать связанные с этим трейсом спаны. Хотя это поле входит в ключ упорядочивания, его расположение в конце означает, что [фильтрация будет менее эффективной](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently), и, вероятно, при извлечении одного трейса потребуется сканировать значительные объёмы данных.
+
+OTel collector также устанавливает materialized view и связанную с ней таблицу, чтобы решить эту проблему. Таблица и представление показаны ниже:
+
+```sql
+CREATE TABLE otel_traces_trace_id_ts
+(
+        `TraceId` String CODEC(ZSTD(1)),
+        `Start` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `End` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        INDEX idx_trace_id TraceId TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (TraceId, toUnixTimestamp(Start))
+
+CREATE MATERIALIZED VIEW otel_traces_trace_id_ts_mv TO otel_traces_trace_id_ts
+(
+        `TraceId` String,
+        `Start` DateTime64(9),
+        `End` DateTime64(9)
+)
+AS SELECT
+        TraceId,
+        min(Timestamp) AS Start,
+        max(Timestamp) AS End
+FROM otel_traces
+WHERE TraceId != ''
+GROUP BY TraceId
+```
+
+Представление фактически гарантирует, что в таблице `otel_traces_trace_id_ts` хранятся минимальная и максимальная временные метки для трассировки. Эта таблица, упорядоченная по `TraceId`, позволяет эффективно извлекать эти временные метки. Эти диапазоны временных меток, в свою очередь, можно использовать при выполнении запросов к основной таблице `otel_traces`. Точнее, при получении трассировки по её идентификатору Grafana использует следующий запрос:
+
+```sql
+WITH 'ae9226c78d1d360601e6383928e4d22d' AS trace_id,
+        (
+        SELECT min(Start)
+          FROM default.otel_traces_trace_id_ts
+          WHERE TraceId = trace_id
+        ) AS trace_start,
+        (
+        SELECT max(End) + 1
+          FROM default.otel_traces_trace_id_ts
+          WHERE TraceId = trace_id
+        ) AS trace_end
+SELECT
+        TraceId AS traceID,
+        SpanId AS spanID,
+        ParentSpanId AS parentSpanID,
+        ServiceName AS serviceName,
+        SpanName AS operationName,
+        Timestamp AS startTime,
+        Duration * 0.000001 AS duration,
+        arrayMap(key -> map('key', key, 'value', SpanAttributes[key]), mapKeys(SpanAttributes)) AS tags,
+        arrayMap(key -> map('key', key, 'value', ResourceAttributes[key]), mapKeys(ResourceAttributes)) AS serviceTags
+FROM otel_traces
+WHERE (traceID = trace_id) AND (startTime >= trace_start) AND (startTime <= trace_end)
+LIMIT 1000
+```
+
+Здесь CTE определяет минимальную и максимальную временные метки для идентификатора trace ID `ae9226c78d1d360601e6383928e4d22d`, а затем использует их, чтобы отфильтровать основную таблицу `otel_traces` по связанным с ним спанам.
+
+Этот же подход можно применять и для похожих сценариев доступа. Мы рассматриваем аналогичный пример в разделе «Моделирование данных» [здесь](/ru/concepts/features/materialized-views/incremental-materialized-view#lookup-table).
+
+<div id="using-projections">
+  ### Использование проекций
+</div>
+
+Проекции ClickHouse позволяют задавать для таблицы несколько секций `ORDER BY`.
+
+В предыдущих разделах мы рассматривали, как materialized view можно использовать в ClickHouse для предварительного вычисления агрегаций, преобразования строк и оптимизации запросов обсервабилити для разных сценариев доступа.
+
+Мы приводили пример, в котором materialized view отправляет строки в целевую таблицу с другим ключом сортировки, чем у исходной таблицы, принимающей вставки, чтобы оптимизировать поиск по trace ID.
+
+Проекции можно использовать для решения той же задачи, позволяя пользователю оптимизировать запросы по столбцу, который не входит в первичный ключ.
+
+Теоретически эту возможность можно использовать, чтобы задать для таблицы несколько ключей сортировки, но у этого есть один существенный недостаток: дублирование данных. В частности, данные нужно будет записывать в порядке основного первичного ключа, а также в порядке, заданном для каждой проекции. Это замедлит вставки и потребует больше места на диске.
+
+<Info>
+  **Проекции и materialized view**
+
+  Проекции предоставляют многие из тех же возможностей, что и materialized view, но использовать их следует с осторожностью, поскольку во многих случаях предпочтительнее именно materialized view. Важно понимать их недостатки и когда их уместно применять. Например, хотя проекции можно использовать для предварительного вычисления агрегаций, для этого мы рекомендуем использовать Materialized views.
+</Info>
+
+<Image img="/images/use-cases/observability/observability-13.webp" alt="Обсервабилити и проекции" size="md" />
+
+Рассмотрим следующий запрос, который фильтрует нашу таблицу `otel_logs_v2` по кодам ошибок 500. Вероятно, это распространенный сценарий для журналирования, когда пользователи хотят фильтровать данные по кодам ошибок:
+
+```sql
+SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+FROM otel_logs_v2
+WHERE Status = 500
+FORMAT `Null`
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.177 sec. Processed 10.37 million rows, 685.32 MB (58.66 million rows/s., 3.88 GB/s.)
+пиковое потребление памяти: 56.54 MiB.
+```
+
+<Info>
+  **Используйте Null для оценки производительности**
+
+  Здесь мы не выводим результаты с помощью `FORMAT Null`. Это заставляет систему прочитать все результаты, но не возвращать их, и тем самым предотвращает досрочное завершение запроса из-за LIMIT. Это нужно лишь для того, чтобы показать, сколько времени занимает сканирование всех 10 млн строк.
+</Info>
+
+Приведённый выше запрос требует линейного сканирования при выбранном ключе сортировки `(ServiceName, Timestamp)`. Хотя мы могли бы добавить `Status` в конец ключа сортировки, чтобы повысить производительность этого запроса, можно также добавить проекцию.
+
+```sql
+ALTER TABLE otel_logs_v2 (
+  ADD PROJECTION status
+  (
+     SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent ORDER BY Status
+  )
+)
+
+ALTER TABLE otel_logs_v2 MATERIALIZE PROJECTION status
+```
+
+Обратите внимание: сначала нужно создать проекцию, а затем материализовать её. Эта команда приводит к тому, что данные хранятся на диске дважды — в двух разных порядках. Проекцию также можно определить при создании данных, как показано ниже, и она будет автоматически обновляться при вставке данных.
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+        PROJECTION status
+        (
+           SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+           ORDER BY Status
+        )
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+Важно отметить, что если проекция создаётся через `ALTER`, то после выполнения команды `MATERIALIZE PROJECTION` она создаётся асинхронно. Ход этой операции можно проверить с помощью следующего запроса, дождавшись значения `is_done=1`.
+
+```sql
+SELECT parts_to_do, is_done, latest_fail_reason
+FROM system.mutations
+WHERE (`table` = 'otel_logs_v2') AND (command LIKE '%MATERIALIZE%')
+```
+
+```response
+┌─parts_to_do─┬─is_done─┬─latest_fail_reason─┐
+│           0 │     1   │                    │
+└─────────────┴─────────┴────────────────────┘
+
+1 строка в наборе. Elapsed: 0.008 sec.
+```
+
+Если повторить приведённый выше запрос, можно увидеть, что производительность значительно выросла ценой дополнительного объёма хранилища (о том, как это измерить, см. [&quot;Измерение размера таблицы и степени сжатия&quot;](#measuring-table-size--compression)).
+
+```sql
+SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+FROM otel_logs_v2
+WHERE Status = 500
+FORMAT `Null`
+```
+
+```response
+0 rows in set. Elapsed: 0.031 sec. Processed 51.42 thousand rows, 22.85 MB (1.65 million rows/s., 734.63 MB/s.)
+Пиковое потребление памяти: 27.85 MiB.
+```
+
+В приведённом выше примере мы указываем в проекции столбцы, использованные в предыдущем запросе. Это означает, что на диске как часть проекции будут храниться только эти столбцы, отсортированные по Status. Если же вместо этого использовать здесь `SELECT *`, будут сохранены все столбцы. Это позволит большему числу запросов (использующих любое подмножество столбцов) воспользоваться проекцией, но потребует дополнительного места на диске. О том, как измерить дисковое пространство и степень сжатия, см. [&quot;Измерение размера таблицы и степени сжатия&quot;](#measuring-table-size--compression).
+
+<div id="secondarydata-skipping-indices">
+  ### Вторичные индексы / индексы пропуска данных
+</div>
+
+Как бы хорошо ни был настроен первичный ключ в ClickHouse, некоторые запросы неизбежно потребуют полного сканирования таблицы. Хотя это можно частично компенсировать с помощью materialized view (а для некоторых запросов — и проекций), они требуют дополнительного сопровождения, а пользователи должны знать об их наличии, чтобы действительно их задействовать. Если в традиционных реляционных базах данных эта задача решается вторичными индексами, то в столбцовых базах данных, таких как ClickHouse, они неэффективны. Вместо этого ClickHouse использует индексы &quot;Skip&quot;, которые могут значительно повысить производительность запросов, позволяя базе данных пропускать большие фрагменты данных, в которых нет подходящих значений.
+
+Схемы OTel по умолчанию используют вторичные индексы в попытке ускорить доступ к map. Хотя, по нашему опыту, они в целом неэффективны, и мы не рекомендуем копировать их в свою пользовательскую схему, индексы пропуска всё же могут быть полезны.
+
+Прежде чем пытаться применять их, вам следует прочитать и понять [руководство по вторичным индексам](/ru/concepts/features/performance/skip-indexes/skipping-indexes).
+
+**В целом они эффективны, когда существует сильная корреляция между первичным ключом и целевым непервичным столбцом/выражением, а пользователи ищут редкие значения, то есть такие, которые встречаются лишь в небольшом числе гранул.**
+
+<div id="text-index-for-full-text-search">
+  ### Текстовый индекс для полнотекстового поиска
+</div>
+
+ClickHouse предоставляет специализированный [текстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes) для полнотекстового поиска.
+Этот индекс создаёт обратный индекс по токенизированным текстовым данным, обеспечивая быстрый поиск по токенам.
+
+Текстовые индексы доступны начиная с версии ClickHouse 26.2.
+
+Их можно определять для столбцов следующих типов в таблицах MergeTree: [String](/ru/reference/data-types/string), [FixedString](/ru/reference/data-types/fixedstring), [Array(String)](/ru/reference/data-types/array), [Array(FixedString)](/ru/reference/data-types/array) и [Map](/ru/reference/data-types/map) (через map-функции [mapKeys](/ru/reference/functions/regular-functions/tuple-map-functions#mapKeys) и [mapValues](/ru/reference/functions/regular-functions/tuple-map-functions#mapValues)).
+
+Текстовый индекс требует аргумента `tokenizer` в своём определении. При необходимости также можно указать функцию предобработки, чтобы преобразовать входную строку перед токенизацией.
+
+Для поиска по индексу рекомендуется использовать функции `hasAnyTokens` и `hasAllTokens`.
+Некоторые традиционные функции поиска по строкам также автоматически оптимизируются при наличии текстового индекса.
+Подробности и список поддерживаемых функций см. в документации [здесь](/ru/reference/engines/table-engines/mergetree-family/textindexes#using-a-text-index) и [здесь](/ru/reference/engines/table-engines/mergetree-family/textindexes#functions-example-hasanytokens-hasalltokens).
+
+В примерах ниже мы используем набор данных со структурированными журналами.
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY Timestamp
+SETTINGS index_granularity = 8192
+```
+
+Мы также можем использовать `hasAnyTokens` без текстового индекса, но тогда запрос выполнит медленное полное сканирование столбца Body:
+
+```sql
+SELECT count()
+FROM otel_logs
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: ff0b866c-6df7-47be-9e36-795ef3888169
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.584 sec. Processed 19.95 million rows, 3.08 GB (34.15 million rows/s., 5.27 GB/s.)
+```
+
+<div id="adding-a-text-index">
+  #### Добавление текстового индекса
+</div>
+
+Текстовый индекс для столбца Body можно добавить при создании таблицы:
+
+```sql
+CREATE TABLE otel_logs_index_body
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+         INDEX idx_body Body TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 100000000
+)
+ENGINE = MergeTree
+ORDER BY Timestamp
+SETTINGS index_granularity = 8192
+```
+
+или добавлен позднее с помощью `ALTER TABLE`:
+
+```sql
+ALTER TABLE otel_logs ADD INDEX idx_body Body TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 100000000;
+ALTER TABLE otel_logs MATERIALIZE INDEX idx_body;
+```
+
+Если мы снова выполним тот же запрос SELECT, будет выполнен поиск по текстовому индексу.
+Объем обрабатываемых данных уменьшится с гигабайт до мегабайт, а производительность повысится примерно в 45 раз.
+
+```sql
+SELECT count()
+FROM otel_logs_index_body
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: ebc31a94-92b3-48aa-860a-939d7e788ef4
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.013 sec. Processed 20.41 million rows, 20.41 MB (1.59 billion rows/s., 1.59 GB/s.)
+Пиковое потребление памяти: 15.23 MiB.
+```
+
+<div id="using-a-preprocessor">
+  #### Использование препроцессора
+</div>
+
+В этом наборе данных столбец Body содержит строку в формате JSON с несколькими парами ключ-значение (например, `msg`, `id`, `ctx`, `attr` и т. д.).
+
+Предположим, что нас интересует поиск только по полю `msg`.
+Вместо индексации всей JSON-строки мы можем определить препроцессор, чтобы извлекать только значение `msg` перед токенизацией.
+
+Например:
+
+```sql
+ INDEX idx_text Body TYPE text(tokenizer = splitByNonAlpha,
+                               preprocessor = JSONExtract(Body, 'msg', 'String'))
+```
+
+В этом примере препроцессор:
+
+* уменьшает объём текста, который подвергается токенизации и индексированию,
+* уменьшает размер индекса,
+* снижает вероятность ложных срабатываний и
+* повышает производительность запросов.
+
+```sql
+SELECT count()
+FROM otel_logs_text_body_preprocessed
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: f6a5cd9c-665f-4e4f-82f2-d6a4408a68a8
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 13.54 million rows, 13.54 MB (2.45 billion rows/s., 2.45 GB/s.)
+Пиковое потребление памяти: 1.95 MiB.
+```
+
+По сравнению с индексом без предварительной обработки производительность повышается примерно в 2 раза.
+
+Использование препроцессора также уменьшает размер индекса с гигабайтов до нескольких сотен килобайт — примерно до 0,01 % от исходного размера
+
+```sql
+SELECT
+    `table`,
+    formatReadableSize(data_compressed_bytes) AS compressed_size,
+    formatReadableSize(data_uncompressed_bytes) AS uncompressed_size
+FROM system.data_skipping_indices
+WHERE startsWith(`table`, 'otel_logs')
+```
+
+```response
+Query id: 730e4b77-e697-40b3-a24d-67219ec42075
+
+   ┌─table───────────────────────────────────┬─compressed_size─┬─uncompressed_size─┐
+1. │ otel_logs_text_index_body_preprocessed  │ 423.98 KiB      │ 424.29 KiB        │
+2. │ otel_logs_text_index_body               │ 2.76 GiB        │ 2.78 GiB          │
+   └─────────────────────────────────────────┴─────────────────┴───────────────────┘
+```
+
+**Другие индексы для текстового поиска
+
+Подробнее о вторичных индексах пропуска можно узнать [здесь](/ru/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-functions).
+
+<details markdown="1">
+  <summary>Bloom-фильтры для полнотекстового поиска</summary>
+
+  <Note>
+    Индексы `ngrambf_v1` и `tokenbf_v1` больше не рекомендуются для полнотекстового поиска.
+  </Note>
+
+  Индексы на основе n-грамм и токенов [`ngrambf_v1`](/ru/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types) и [`tokenbf_v1`](/ru/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types) можно использовать для ускорения поиска по столбцам типа String с операторами `LIKE`, `IN` и hasToken. Важно учитывать, что индекс на основе токенов формирует токены, используя неалфавитно-цифровые символы в качестве разделителей. Это означает, что при выполнении запроса можно сопоставлять только целые токены (или слова). Для более точного сопоставления можно использовать [N-граммный bloom-фильтр](/ru/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types), который разбивает строки на n-граммы заданного размера и тем самым позволяет выполнять сопоставление на уровне частей слов.
+
+  Чтобы оценить токены, которые будут сформированы и, соответственно, использованы для сопоставления, можно воспользоваться функцией `tokens`:
+
+  ```sql
+  SELECT tokens('https://www.zanbil.ir/m/filter/b113')
+  ```
+
+  ```response
+  ┌─tokens────────────────────────────────────────────┐
+  │ ['https','www','zanbil','ir','m','filter','b113'] │
+  └───────────────────────────────────────────────────┘
+
+  1 row in set. Elapsed: 0.008 sec.
+  ```
+
+  Функция `ngram` предоставляет аналогичные возможности, при этом размер n-граммы можно указать вторым параметром:
+
+  ```sql
+  SELECT ngrams('https://www.zanbil.ir/m/filter/b113', 3)
+  ```
+
+  ```response
+  ┌─ngrams('https://www.zanbil.ir/m/filter/b113', 3)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ ['htt','ttp','tps','ps:','s:/','://','//w','/ww','www','ww.','w.z','.za','zan','anb','nbi','bil','il.','l.i','.ir','ir/','r/m','/m/','m/f','/fi','fil','ilt','lte','ter','er/','r/b','/b1','b11','113'] │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  1 row in set. Elapsed: 0.008 sec.
+  ```
+
+  В рамках данного примера мы используем набор данных структурированных журналов. Предположим, нам нужно подсчитать записи журнала, в которых столбец `Referer` содержит `ultra`.
+
+  ```sql
+  SELECT count()
+  FROM otel_logs_v2
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─count()─┐
+  │  114514 │
+  └─────────┘
+
+  1 строка в наборе. Elapsed: 0.177 sec. Обработано 10.37 млн строк, 908.49 МБ (58.57 млн строк/с., 5.13 ГБ/с.)
+  ```
+
+  Здесь нам нужно выполнить сопоставление по n-граммам размером 3. Поэтому создадим индекс `ngrambf_v1`.
+
+  ```sql
+  CREATE TABLE otel_logs_bloom
+  (
+          `Body` String,
+          `Timestamp` DateTime,
+          `ServiceName` LowCardinality(String),
+          `Status` UInt16,
+          `RequestProtocol` LowCardinality(String),
+          `RunTime` UInt32,
+          `Size` UInt32,
+          `UserAgent` String,
+          `Referer` String,
+          `RemoteUser` String,
+          `RequestType` LowCardinality(String),
+          `RequestPath` String,
+          `RemoteAddress` IPv4,
+          `RefererDomain` String,
+          `RequestPage` String,
+          `SeverityText` LowCardinality(String),
+          `SeverityNumber` UInt8,
+          INDEX idx_span_attr_value Referer TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1
+  )
+  ENGINE = MergeTree
+  ORDER BY (Timestamp)
+  ```
+
+  Индекс `ngrambf_v1(3, 10000, 3, 7)` принимает четыре параметра. Последний из них (значение 7) представляет собой seed. Остальные задают размер n-граммы (3), значение `m` (размер фильтра) и количество хеш-функций `k` (7). Параметры `k` и `m` требуют настройки и определяются исходя из количества уникальных n-грамм/токенов и вероятности того, что фильтр вернёт истинно отрицательный результат — то есть подтвердит отсутствие значения в грануле. Для подбора этих значений рекомендуем воспользоваться [соответствующими функциями](/ru/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter).
+
+  При правильной настройке прирост производительности может быть весьма значительным:
+
+  ```sql
+  SELECT count()
+  FROM otel_logs_bloom
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─count()─┐
+  │   182   │
+  └─────────┘
+
+  1 row in set. Elapsed: 0.077 sec. Processed 4.22 million rows, 375.29 MB (54.81 million rows/s., 4.87 GB/s.)
+  Peak memory usage: 129.60 KiB.
+  ```
+
+  <Info>
+    **Только в качестве примера**
+
+    Приведённое выше служит исключительно для иллюстрации. Мы рекомендуем пользователям извлекать структуру из своих журналов при вставке, а не пытаться оптимизировать текстовый поиск с помощью bloom-фильтров на основе токенов. Однако в некоторых случаях у пользователей есть трассировки стека или другие большие строки типа String, для которых текстовый поиск может быть полезен из-за менее детерминированной структуры.
+  </Info>
+
+  Общие рекомендации по использованию bloom-фильтров:
+
+  Цель bloom-фильтра — фильтровать [гранулы](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design), тем самым исключая необходимость загружать все значения столбца и выполнять линейное сканирование. Оператор `EXPLAIN` с параметром `indexes=1` позволяет определить количество пропущенных гранул. Рассмотрим результаты для исходной таблицы `otel_logs_v2` и таблицы `otel_logs_bloom` с n-граммным bloom-фильтром.
+
+  ```sql
+  EXPLAIN indexes = 1
+  SELECT count()
+  FROM otel_logs_v2
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─explain────────────────────────────────────────────────────────────┐
+  │ Expression ((Project names + Projection))                          │
+  │   Aggregating                                                      │
+  │       Expression (Before GROUP BY)                                 │
+  │       Filter ((WHERE + Change column names to column identifiers)) │
+  │       ReadFromMergeTree (default.otel_logs_v2)                     │
+  │       Indexes:                                                     │
+  │               PrimaryKey                                           │
+  │               Condition: true                                      │
+  │               Parts: 9/9                                           │
+  │               Granules: 1278/1278                                  │
+  └────────────────────────────────────────────────────────────────────┘
+
+  10 rows in set. Elapsed: 0.016 sec.
+  ```
+
+  ```sql
+  EXPLAIN indexes = 1
+  SELECT count()
+  FROM otel_logs_bloom
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─explain────────────────────────────────────────────────────────────┐
+  │ Expression ((Project names + Projection))                          │
+  │   Aggregating                                                      │
+  │       Expression (Before GROUP BY)                                 │
+  │       Filter ((WHERE + Change column names to column identifiers)) │
+  │       ReadFromMergeTree (default.otel_logs_bloom)                  │
+  │       Indexes:                                                     │
+  │               PrimaryKey                                           │ 
+  │               Condition: true                                      │
+  │               Parts: 8/8                                           │
+  │               Granules: 1276/1276                                  │
+  │               Skip                                                 │
+  │               Name: idx_span_attr_value                            │
+  │               Description: ngrambf_v1 GRANULARITY 1                │
+  │               Parts: 8/8                                           │
+  │               Granules: 517/1276                                   │
+  └────────────────────────────────────────────────────────────────────┘
+  ```
+
+  Bloom filter ускоряет запросы, как правило, только в том случае, если его размер меньше размера самого столбца. Если он больше, прирост производительности, скорее всего, будет незначительным. Сравните размер фильтра с размером столбца с помощью следующих запросов:
+
+  ```sql
+  SELECT
+          name,
+          formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+          formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+          round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE (`table` = 'otel_logs_bloom') AND (name = 'Referer')
+  GROUP BY name
+  ORDER BY sum(data_compressed_bytes) DESC
+  ```
+
+  ```response
+  ┌─name────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  │ Referer │ 56.16 MiB       │ 789.21 MiB        │ 14.05 │
+  └─────────┴─────────────────┴───────────────────┴───────┘
+
+  1 строка в наборе. Elapsed: 0.018 sec.
+  ```
+
+  ```sql
+  SELECT
+          `table`,
+          formatReadableSize(data_compressed_bytes) AS compressed_size,
+          formatReadableSize(data_uncompressed_bytes) AS uncompressed_size
+  FROM system.data_skipping_indices
+  WHERE `table` = 'otel_logs_bloom'
+  ```
+
+  ```response
+  ┌─table───────────┬─compressed_size─┬─uncompressed_size─┐
+  │ otel_logs_bloom │ 12.03 MiB       │ 12.17 MiB         │
+  └─────────────────┴─────────────────┴───────────────────┘
+
+  1 row in set. Elapsed: 0.004 sec.
+  ```
+
+  В приведённых выше примерах видно, что вторичный индекс bloom filter занимает 12 МБ — почти в 5 раз меньше сжатого размера самого столбца (56 МБ).
+
+  Bloom-фильтры могут потребовать тщательной настройки. Рекомендуем ознакомиться с примечаниями [здесь](/ru/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter) — они помогут подобрать оптимальные параметры. Bloom-фильтры также могут быть ресурсоёмкими при вставке и слиянии данных. Перед добавлением bloom-фильтров в производственную среду необходимо оценить их влияние на производительность операций вставки.
+</details>
+
+<div id="extracting-from-maps">
+  ### Извлечение из Map
+</div>
+
+Тип Map широко распространен в схемах OTel. В нем и ключи, и значения должны быть одного типа — этого достаточно для метаданных, таких как метки Kubernetes. Имейте в виду: при запросе по вложенному ключу Map загружается весь столбец целиком. Если в Map много ключей, это может заметно ухудшить производительность запроса, поскольку с диска придется читать больше данных, чем если бы этот ключ был вынесен в отдельный столбец.
+
+Если вы часто запрашиваете определенный ключ, подумайте о том, чтобы вынести его в отдельный столбец верхнего уровня. Обычно такая задача возникает уже после развертывания, по мере появления типичных паттернов доступа, и ее бывает сложно предвидеть до выхода в production. О том, как изменить схему после развертывания, см. в разделе [&quot;Управление изменениями схемы&quot;](/ru/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes).
+
+<div id="measuring-table-size--compression">
+  ## Измерение размера таблицы и степени сжатия
+</div>
+
+Одна из основных причин, по которой ClickHouse используют для обсервабилити, — эффективное сжатие.
+
+Помимо существенного снижения затрат на хранение, меньший объем данных на диске означает меньше операций ввода-вывода, а также более быстрые запросы и вставки. Снижение объема операций ввода-вывода с лихвой компенсирует нагрузку на CPU, создаваемую любым алгоритмом сжатия. Поэтому, если вы хотите ускорить запросы ClickHouse, в первую очередь следует сосредоточиться на улучшении сжатия данных.
+
+Подробности об измерении степени сжатия можно найти [здесь](/ru/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).

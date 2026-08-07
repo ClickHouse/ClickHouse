@@ -1,0 +1,122 @@
+---
+alias: []
+description: 'CSVフォーマットに関するドキュメント'
+input_format: true
+keywords: ['CSVWithNames']
+output_format: true
+slug: /interfaces/formats/CSVWithNames
+title: 'CSVWithNames'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | 別名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 説明
+</div>
+
+[TabSeparatedWithNames](/ja/reference/formats/TabSeparated/TabSeparatedWithNames) と同様に、カラム名を含むヘッダー行も出力されます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+<div id="inserting-data">
+  ### データの挿入
+</div>
+
+<Tip>
+  [version](https://github.com/ClickHouse/ClickHouse/releases) 23.1 以降、ClickHouse は `CSV` フォーマット使用時に CSVファイルのヘッダーを自動的に検出するため、`CSVWithNames` や `CSVWithNamesAndTypes` を使用する必要はありません。
+</Tip>
+
+次の `football.csv` という名前の CSVファイルを使用します。
+
+```csv
+date,season,home_team,away_team,home_team_goals,away_team_goals
+2022-04-30,2021,Sutton United,Bradford City,1,4
+2022-04-30,2021,Swindon Town,Barrow,2,1
+2022-04-30,2021,Tranmere Rovers,Oldham Athletic,2,0
+2022-05-02,2021,Salford City,Mansfield Town,2,2
+2022-05-02,2021,Port Vale,Newport County,1,2
+2022-05-07,2021,Barrow,Northampton Town,1,3
+2022-05-07,2021,Bradford City,Carlisle United,2,0
+2022-05-07,2021,Bristol Rovers,Scunthorpe United,7,0
+2022-05-07,2021,Exeter City,Port Vale,0,1
+2022-05-07,2021,Harrogate Town A.F.C.,Sutton United,0,2
+2022-05-07,2021,Hartlepool United,Colchester United,0,2
+2022-05-07,2021,Leyton Orient,Tranmere Rovers,0,1
+2022-05-07,2021,Mansfield Town,Forest Green Rovers,2,2
+2022-05-07,2021,Newport County,Rochdale,0,2
+2022-05-07,2021,Oldham Athletic,Crawley Town,3,3
+2022-05-07,2021,Stevenage Borough,Salford City,4,2
+2022-05-07,2021,Walsall,Swindon Town,0,3
+```
+
+テーブルを作成します：
+
+```sql
+CREATE TABLE football
+(
+    `date` Date,
+    `season` Int16,
+    `home_team` LowCardinality(String),
+    `away_team` LowCardinality(String),
+    `home_team_goals` Int8,
+    `away_team_goals` Int8
+)
+ENGINE = MergeTree
+ORDER BY (date, home_team);
+```
+
+`CSVWithNames` フォーマットでデータを挿入します:
+
+```sql
+INSERT INTO football FROM INFILE 'football.csv' FORMAT CSVWithNames;
+```
+
+<div id="reading-data">
+  ### データの読み込み
+</div>
+
+`CSVWithNames`フォーマットを使用してデータを読み込みます。
+
+```sql
+SELECT *
+FROM football
+FORMAT CSVWithNames
+```
+
+出力は、ヘッダー行が1行だけのCSVになります：
+
+```csv
+"date","season","home_team","away_team","home_team_goals","away_team_goals"
+"2022-04-30",2021,"Sutton United","Bradford City",1,4
+"2022-04-30",2021,"Swindon Town","Barrow",2,1
+"2022-04-30",2021,"Tranmere Rovers","Oldham Athletic",2,0
+"2022-05-02",2021,"Port Vale","Newport County",1,2
+"2022-05-02",2021,"Salford City","Mansfield Town",2,2
+"2022-05-07",2021,"Barrow","Northampton Town",1,3
+"2022-05-07",2021,"Bradford City","Carlisle United",2,0
+"2022-05-07",2021,"Bristol Rovers","Scunthorpe United",7,0
+"2022-05-07",2021,"Exeter City","Port Vale",0,1
+"2022-05-07",2021,"Harrogate Town A.F.C.","Sutton United",0,2
+"2022-05-07",2021,"Hartlepool United","Colchester United",0,2
+"2022-05-07",2021,"Leyton Orient","Tranmere Rovers",0,1
+"2022-05-07",2021,"Mansfield Town","Forest Green Rovers",2,2
+"2022-05-07",2021,"Newport County","Rochdale",0,2
+"2022-05-07",2021,"Oldham Athletic","Crawley Town",3,3
+"2022-05-07",2021,"Stevenage Borough","Salford City",4,2
+"2022-05-07",2021,"Walsall","Swindon Town",0,3
+```
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
+
+<Note>
+  設定 [`input_format_with_names_use_header`](/ja/reference/settings/formats#input_format_with_names_use_header) が `1` の場合、
+  入力データのカラムは名前に基づいてテーブルのカラムにマッピングされ、設定 [input&#95;format&#95;skip&#95;unknown&#95;fields](/ja/reference/settings/formats#input_format_skip_unknown_fields) が `1` に設定されていれば、不明な名前のカラムはスキップされます。
+  それ以外の場合、最初の行はスキップされます。
+</Note>

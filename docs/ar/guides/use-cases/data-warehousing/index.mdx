@@ -1,0 +1,78 @@
+---
+description: 'استخدم ClickHouse للاستعلام عن البيانات المخزنة بتنسيقات الجداول المفتوحة، مثل Apache Iceberg وDelta Lake وApache Hudi وApache Paimon، وتسريع تحليلها.'
+slug: /use-cases/data-lake
+title: 'بحيرة البيانات'
+keywords: ['بحيرة البيانات', 'lakehouse', 'iceberg', 'delta lake', 'hudi', 'paimon', 'glue', 'unity', 'rest', 'OneLake', 'BigLake']
+doc_type: 'landing-page'
+---
+
+يتكامل ClickHouse مع تنسيقات الجداول المفتوحة، بما في ذلك [Apache Iceberg](/ar/reference/engines/table-engines/integrations/iceberg) و[Delta Lake](/ar/reference/engines/table-engines/integrations/deltalake) و[Apache Hudi](/ar/reference/engines/table-engines/integrations/hudi) و[Apache Paimon](/ar/reference/functions/table-functions/paimon). ويتيح ذلك للمستخدمين ربط ClickHouse بالبيانات المخزنة مسبقًا بهذه التنسيقات عبر تخزين الكائنات، بما يجمع بين القدرات التحليلية لـ ClickHouse والبنية التحتية الحالية لبحيرة البيانات لديهم.
+
+<div id="why-clickhouse-uses-lake-formats">
+  ## لماذا تستخدم ClickHouse مع تنسيقات الجداول المفتوحة؟
+</div>
+
+<div id="querying-data-in-place">
+  ### الاستعلام عن البيانات الموجودة في موضعها الأصلي
+</div>
+
+يمكن لـ ClickHouse الاستعلام عن تنسيقات الجداول المفتوحة مباشرةً من تخزين الكائنات من دون تكرار البيانات. ويمكن للمؤسسات التي تعتمد Iceberg أو Delta Lake أو Hudi أو Paimon كمعيار موحّد توجيه ClickHouse إلى الجداول الحالية لديها، واستخدام لهجة SQL الخاصة به ووظائفه التحليلية وقارئ Parquet الأصلي عالي الكفاءة فورًا. وفي الوقت نفسه، تتيح أدوات مثل [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local) و[chDB](/ar/products/chdb/index) إجراء تحليل استكشافي مخصص عبر أكثر من 70 تنسيق ملفات في التخزين البعيد، مما يتيح للمستخدمين استكشاف مجموعات بيانات بحيرة البيانات تفاعليًا من دون أي إعداد للبنية التحتية.
+
+يمكن للمستخدمين تحقيق ذلك إما عبر القراءة المباشرة باستخدام [دوال الجداول ومحركات الجداول](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly)، أو من خلال [الاتصال بكتالوج بيانات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+<div id="real-time-with-clickhouse">
+  ### أحمال العمل التحليلية في الوقت الفعلي مع ClickHouse
+</div>
+
+بالنسبة إلى أحمال العمل التي تتطلب تزامنًا عاليًا واستجابات بزمن وصول منخفض، يمكن للمستخدمين تحميل البيانات من تنسيقات الجداول المفتوحة إلى محرك [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) في ClickHouse. يوفّر ذلك طبقة تحليلات في الوقت الفعلي فوق البيانات القادمة من بحيرة بيانات، بما يدعم لوحات المعلومات والتقارير التشغيلية وغيرها من أحمال العمل الحساسة لزمن الوصول التي تستفيد من التخزين العمودي وإمكانات الفهرسة في MergeTree.
+
+راجع دليل البدء الخاص بـ [تسريع التحليلات باستخدام MergeTree](/ar/guides/use-cases/data-warehousing/getting-started/accelerating-analytics).
+
+<div id="capabilities">
+  ## الصلاحيات
+</div>
+
+<div id="read-data-directly">
+  ### قراءة البيانات مباشرةً
+</div>
+
+يوفّر ClickHouse [دوال الجداول](/ar/reference/functions/table-functions/index) و[المحرّكات](/ar/reference/engines/table-engines/integrations/index) لقراءة تنسيقات الجداول المفتوحة مباشرةً من تخزين الكائنات. وتتيح دوال مثل [`iceberg()`](/ar/reference/functions/table-functions/iceberg) و[`deltaLake()`](/ar/reference/functions/table-functions/deltalake) و[`hudi()`](/ar/reference/functions/table-functions/hudi) و[`paimon()`](/ar/reference/functions/table-functions/paimon) للمستخدمين الاستعلام عن جداول بتنسيقات الجداول المفتوحة من داخل عبارة SQL من دون أي إعداد مسبق. وتتوفر إصدارات من هذه الدوال لمعظم خدمات تخزين الكائنات الشائعة، مثل S3 وAzure Blob Storage وGCS. كما تتوفر لهذه الدوال محرّكات جداول مكافئة يمكن استخدامها لإنشاء جداول داخل ClickHouse تشير إلى تخزين الكائنات الأساسي لتنسيقات الجداول المفتوحة، مما يجعل الاستعلام أكثر سهولة.
+
+راجع دليل البدء الخاص بنا حول [الاستعلام مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly)، أو [الاتصال بكتالوج بيانات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+<div id="expose-catalogs-as-databases">
+  ### إتاحة الكتالوجات كقواعد بيانات
+</div>
+
+باستخدام محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، يمكن للمستخدمين ربط ClickHouse بكتالوج خارجي وإتاحته كقاعدة بيانات. وتظهر الجداول المسجّلة في الكتالوج كجداول داخل ClickHouse، مما يتيح استخدام كامل إمكانات ClickHouse SQL والدوال التحليلية بشكل شفاف. وهذا يعني أنه يمكن للمستخدمين إجراء الاستعلامات والربط والتجميع عبر الجداول التي يديرها الكتالوج كما لو كانت جداول ClickHouse أصلية، مع الاستفادة من تحسين الاستعلامات في ClickHouse، والتنفيذ المتوازي، وإمكانات القراءة.
+
+تشمل الكتالوجات المدعومة ما يلي:
+
+| الكتالوج                 | الدليل                                                                           |
+| ------------------------ | -------------------------------------------------------------------------------- |
+| AWS Glue                 | [دليل Glue Catalog](/ar/guides/use-cases/data-warehousing/glue-catalog)             |
+| BigLake Metastore        | [دليل BigLake Metastore](/ar/guides/use-cases/data-warehousing/biglake-catalog)     |
+| Databricks Unity Catalog | [دليل Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog)           |
+| Iceberg REST Catalog     | [دليل REST Catalog](/ar/guides/use-cases/data-warehousing/rest-catalog)             |
+| Lakekeeper               | [دليل Lakekeeper Catalog](/ar/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| Project Nessie           | [دليل Nessie Catalog](/ar/guides/use-cases/data-warehousing/nessie-catalog)         |
+| Microsoft OneLake        | [دليل OneLake Catalog](/ar/guides/use-cases/data-warehousing/onelake-catalog)       |
+
+راجع دليل البدء الخاص بـ [الاتصال بالكتالوجات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+<div id="write-back-to-lakehouse-formats">
+  ### إعادة الكتابة إلى تنسيقات الجداول المفتوحة
+</div>
+
+يدعم ClickHouse إعادة كتابة البيانات إلى تنسيقات الجداول المفتوحة، ويكون ذلك مناسبًا في سيناريوهات مثل:
+
+* **من الوقت الفعلي إلى التخزين طويل الأمد** - تمر البيانات عبر ClickHouse بوصفه طبقة للتحليلات في الوقت الفعلي، ويحتاج المستخدمون إلى ترحيل النتائج إلى Iceberg أو تنسيقات أخرى لتخزين طويل الأمد يتسم بالمتانة والكفاءة من حيث التكلفة.
+* **ETL العكسي** - يُجري المستخدمون التحويلات داخل ClickHouse باستخدام العروض المادية أو الاستعلامات المجدولة، ويرغبون في حفظ النتائج في تنسيقات الجداول المفتوحة لتستخدمها أدوات أخرى ضمن منظومة البيانات.
+
+راجع دليل البدء [للكتابة إلى بحيرات البيانات](/ar/guides/use-cases/data-warehousing/getting-started/writing-data).
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+هل أنت مستعد لتجربته؟ يوضح [دليل البدء](/ar/guides/use-cases/data-warehousing/getting-started/overview) كيفية الاستعلام عن تنسيقات الجداول المفتوحة مباشرةً، والاتصال بالكتالوج، وتحميل البيانات إلى MergeTree لتحليلات سريعة، ثم كتابة النتائج مرة أخرى — كل ذلك ضمن سير عمل متكامل من البداية إلى النهاية.

@@ -1,0 +1,51 @@
+---
+sidebarTitle: 'Интеграция Dataflow с ClickHouse'
+slug: /integrations/google-dataflow/dataflow
+description: 'Вы можете загружать данные в ClickHouse с помощью Google Dataflow'
+title: 'Интеграция Google Dataflow с ClickHouse'
+doc_type: 'guide'
+keywords: ['Google Dataflow ClickHouse', 'интеграция ClickHouse с Dataflow', 'Apache Beam ClickHouse', 'коннектор ClickHouseIO', 'интеграция Google Cloud с ClickHouse']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Google Dataflow](https://cloud.google.com/dataflow) — это полностью управляемый сервис для потоковой и пакетной обработки данных. Он поддерживает конвейеры, написанные на Java и Python, и построен на Apache Beam SDK.
+
+Google Dataflow можно использовать с ClickHouse двумя основными способами, и в обоих случаях применяется [`ClickHouseIO Apache Beam connector`](/ru/integrations/connectors/data-ingestion/etl-tools/apache-beam).
+Это:
+
+* [Java-раннер](#1-java-runner)
+* [Готовые шаблоны](#2-predefined-templates)
+
+<div id="1-java-runner">
+  ## Java-раннер
+</div>
+
+[Java-раннер](/ru/integrations/connectors/data-ingestion/GCP/google-dataflow/java-runner) позволяет создавать собственные конвейеры Dataflow с использованием интеграции `ClickHouseIO` из Apache Beam SDK. Этот подход обеспечивает полную гибкость и контроль над логикой конвейера, позволяя адаптировать ETL-процесс под конкретные требования.
+Однако этот вариант требует знания Java и знакомства с фреймворком Apache Beam.
+
+<div id="key-features">
+  ### Ключевые особенности
+</div>
+
+* Широкие возможности настройки.
+* Идеально подходит для сложных или продвинутых сценариев использования.
+* Требует написания кода и понимания API Beam.
+
+<div id="2-predefined-templates">
+  ## Готовые шаблоны
+</div>
+
+ClickHouse предлагает [готовые шаблоны](/ru/integrations/connectors/data-ingestion/GCP/google-dataflow/templates) для конкретных сценариев использования, например пакетного импорта из BigQuery или стриминговой ингестии из Pub/Sub в ClickHouse. Эти шаблоны готовы к работе и упрощают процесс интеграции, поэтому они хорошо подходят, если вы предпочитаете решение без написания кода.
+
+<div id="key-features">
+  ### Ключевые особенности
+</div>
+
+* Не требует написания кода на Beam.
+* Быстрая и простая настройка для несложных сценариев использования.
+* Подходит даже при минимальном опыте программирования.
+
+Оба подхода полностью совместимы с Google Cloud и экосистемой ClickHouse, обеспечивая гибкость с учетом вашего уровня технической подготовки и требований проекта.

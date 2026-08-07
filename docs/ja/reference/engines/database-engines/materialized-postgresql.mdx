@@ -1,0 +1,330 @@
+---
+description: 'PostgreSQL データベース内のテーブルから ClickHouse データベースを作成します。'
+sidebarTitle: 'MaterializedPostgreSQL'
+slug: /engines/database-engines/materialized-postgresql
+title: 'MaterializedPostgreSQL'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Note>
+  ClickHouse Cloud ユーザーには、PostgreSQL から ClickHouse へのレプリケーションに [ClickPipes](/ja/integrations/clickpipes/home) を使用することを推奨します。これは、PostgreSQL 向けの高性能な CDC (変更データキャプチャ) をネイティブでサポートしています。
+</Note>
+
+PostgreSQL データベースのテーブルを取り込んだ ClickHouse データベースを作成します。まず、`MaterializedPostgreSQL` エンジンのデータベースが PostgreSQL データベースのスナップショットを作成し、必要なテーブルを読み込みます。必要なテーブルには、指定したデータベース内の任意のスキーマにある任意のテーブルの部分集合を含めることができます。スナップショットの作成とあわせて、データベースエンジンは LSN を取得し、テーブルの初期ダンプが完了すると WAL から更新の取り込みを開始します。データベースの作成後に PostgreSQL データベースへ新たに追加されたテーブルは、自動的にはレプリケーションに追加されません。これらは `ATTACH TABLE db.table` クエリで手動で追加する必要があります。
+
+レプリケーションは PostgreSQL Logical Replication Protocol を用いて実装されています。このプロトコルでは DDL はレプリケートできませんが、レプリケーションを破壊する変更 (カラム型の変更、カラムの追加・削除) が発生したかどうかは把握できます。こうした変更が検出されると、該当するテーブルは更新を受信しなくなります。この場合は、`ATTACH` / `DETACH PERMANENTLY` クエリを使用してテーブル全体を再読み込みする必要があります。DDL がレプリケーションを破壊しない場合 (たとえばカラム名の変更など) は、テーブルは引き続き更新を受信します (挿入は位置ベースで行われます) 。
+
+<Note>
+  このデータベースエンジンは Experimental です。使用するには、設定ファイルで `allow_experimental_database_materialized_postgresql` を 1 に設定するか、`SET` コマンドを使用します。
+
+  ```sql
+  SET allow_experimental_database_materialized_postgresql=1
+  ```
+</Note>
+
+<div id="creating-a-database">
+  ## データベースの作成
+</div>
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SETTINGS ...]
+```
+
+**エンジンパラメータ**
+
+* `host:port` — PostgreSQL サーバーのエンドポイント。
+* `database` — PostgreSQL データベースの名前。
+* `user` — PostgreSQL ユーザー。
+* `password` — ユーザーのパスワード。
+
+<div id="example-of-use">
+  ## 使用例
+</div>
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
+
+SHOW TABLES FROM postgres_db;
+
+┌─name───┐
+│ table1 │
+└────────┘
+
+SELECT * FROM postgres_db.postgres_table;
+```
+
+<div id="dynamically-adding-table-to-replication">
+  ## レプリケーションに新しいテーブルを動的に追加する
+</div>
+
+`MaterializedPostgreSQL` データベースを作成しても、対応する PostgreSQL データベース内の新しいテーブルは自動では検出されません。こうしたテーブルは手動で追加できます。
+
+```sql
+ATTACH TABLE postgres_database.new_table;
+```
+
+<Warning>
+  バージョン 22.1 より前では、テーブルをレプリケーションに追加すると、削除されない一時的なレプリケーションスロット (`{db_name}_ch_replication_slot_tmp` という名前) が残っていました。22.1 より前の ClickHouse バージョンでテーブルを Attach する場合は、必ずこれを手動で削除してください (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`) 。削除しないと、ディスク使用量が増加します。この問題は 22.1 で修正されています。
+</Warning>
+
+<div id="dynamically-removing-table-from-replication">
+  ## テーブルをレプリケーション対象から動的に外す
+</div>
+
+特定のテーブルをレプリケーション対象から外すことができます。
+
+```sql
+DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
+```
+
+<div id="schema">
+  ## PostgreSQL スキーマ
+</div>
+
+PostgreSQL の[スキーマ](https://www.postgresql.org/docs/9.1/ddl-schemas.html)は、3 つの方法で設定できます (バージョン 21.12 以降) 。
+
+1. `MaterializedPostgreSQL` データベースエンジン 1 つにつき 1 つのスキーマ。設定 `materialized_postgresql_schema` を使用する必要があります。
+   テーブルには、テーブル名だけでアクセスします:
+
+```sql
+CREATE DATABASE postgres_database
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_schema = 'postgres_schema';
+
+SELECT * FROM postgres_database.table1;
+```
+
+2. 1 つの `MaterializedPostgreSQL` データベースエンジンに対して、指定したテーブルのセットを含むスキーマを任意の数だけ指定できます。設定 `materialized_postgresql_tables_list` を使用する必要があります。各テーブルは、対応するスキーマとあわせて記述します。
+   テーブルには、スキーマ名とテーブル名を併せて使用してアクセスします:
+
+```sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_tables_list = 'schema1.table1,schema2.table2,schema1.table3',
+         materialized_postgresql_tables_list_with_schema = 1;
+
+SELECT * FROM database1.`schema1.table1`;
+SELECT * FROM database1.`schema2.table2`;
+```
+
+ただし、この場合、`materialized_postgresql_tables_list` 内のすべてのテーブルは、スキーマ名を付けて記述する必要があります。
+`materialized_postgresql_tables_list_with_schema = 1` が必要です。
+
+警告: この場合、テーブル名にドットは使用できません。
+
+3. 1 つの `MaterializedPostgreSQL` データベースエンジンに対して、完全なテーブルセットを含む任意の数のスキーマ。設定 `materialized_postgresql_schema_list` を使用する必要があります。
+
+```sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_schema_list = 'schema1,schema2,schema3';
+
+SELECT * FROM database1.`schema1.table1`;
+SELECT * FROM database1.`schema1.table2`;
+SELECT * FROM database1.`schema2.table2`;
+```
+
+警告: この場合、テーブル名にドットは使用できません。
+
+<div id="requirements">
+  ## 要件
+</div>
+
+1. PostgreSQL の設定ファイルで、[wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) の値を `logical` に設定し、`max_replication_slots` パラメータの値を少なくとも `2` にする必要があります。
+
+2. 各レプリケートテーブルには、以下のいずれかの [replica identity](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY) が必要です。
+
+* 主キー (デフォルト)
+
+* 索引
+
+```bash
+postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
+postgres# CREATE unique INDEX postgres_table_index on postgres_table(a, c, e);
+postgres# ALTER TABLE postgres_table REPLICA IDENTITY USING INDEX postgres_table_index;
+```
+
+主キーが常に最初に確認されます。主キーが存在しない場合は、replica identity 索引 として定義された索引が確認されます。
+索引を replica identity として使用する場合、そのような索引は1つのテーブルに1つだけでなければなりません。
+特定のテーブルでどの種類が使用されているかは、次のコマンドで確認できます。
+
+```bash
+postgres# SELECT CASE relreplident
+          WHEN 'd' THEN 'default'
+          WHEN 'n' THEN 'nothing'
+          WHEN 'f' THEN 'full'
+          WHEN 'i' THEN 'index'
+       END AS replica_identity
+FROM pg_class
+WHERE oid = 'postgres_table'::regclass;
+```
+
+<Note>
+  [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) の値のレプリケーションはサポートされていません。代わりに、データ型のデフォルト値が使用されます。
+</Note>
+
+<div id="settings">
+  ## 設定
+</div>
+
+<div id="materialized-postgresql-tables-list">
+  ### `materialized_postgresql_tables_list`
+</div>
+
+[MaterializedPostgreSQL](/ja/reference/engines/database-engines/materialized-postgresql)データベースエンジンでレプリケートする、PostgreSQLデータベースのテーブルをカンマ区切りで指定します。
+
+各テーブルでは、レプリケートするカラムの一部を角括弧で指定できます。カラムの指定を省略した場合は、そのテーブルのすべてのカラムがレプリケートされます。
+
+```sql
+    materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
+```
+
+デフォルト値: 空のリスト — PostgreSQL データベース全体がレプリケートされます。
+
+<div id="materialized-postgresql-schema">
+  ### `materialized_postgresql_schema`
+</div>
+
+デフォルト値: 空文字列。 (デフォルトのスキーマが使用されます)
+
+<div id="materialized-postgresql-schema-list">
+  ### `materialized_postgresql_schema_list`
+</div>
+
+デフォルト値: 空のリスト。 (デフォルトのスキーマが使用されます)
+
+<div id="materialized-postgresql-max-block-size">
+  ### `materialized_postgresql_max_block_size`
+</div>
+
+データを PostgreSQL データベースのテーブルに書き出す前に、メモリに蓄積する行数を設定します。
+
+設定可能な値:
+
+* 正の整数。
+
+デフォルト値: `65536`.
+
+<div id="materialized-postgresql-replication-slot">
+  ### `materialized_postgresql_replication_slot`
+</div>
+
+ユーザーが作成したレプリケーションスロットです。`materialized_postgresql_snapshot` と一緒に使用する必要があります。
+
+<div id="materialized-postgresql-snapshot">
+  ### `materialized_postgresql_snapshot`
+</div>
+
+[PostgreSQLテーブルの初期ダンプ](/ja/reference/engines/database-engines/materialized-postgresql)の取得元となるスナップショットを識別するテキスト文字列です。`materialized_postgresql_replication_slot`とあわせて使用する必要があります。
+
+```sql
+    CREATE DATABASE database1
+    ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+    SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
+
+    SELECT * FROM database1.table1;
+```
+
+必要に応じて、設定はDDLクエリで変更できます。ただし、`materialized_postgresql_tables_list` 設定は変更できません。この設定内のテーブル一覧を更新するには、`ATTACH TABLE` クエリを使用します。
+
+```sql
+    ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
+```
+
+<div id="materialized_postgresql_use_unique_replication_consumer_identifier">
+  ### `materialized_postgresql_use_unique_replication_consumer_identifier`
+</div>
+
+レプリケーションには一意の consumer 識別子を使用します。デフォルトは `0` です。
+`1` に設定すると、同じ `PostgreSQL` テーブルを参照する複数の `MaterializedPostgreSQL` テーブルを設定できます。
+
+<div id="notes">
+  ## 注記
+</div>
+
+<div id="logical-replication-slot-failover">
+  ### 論理レプリケーションスロットのフェイルオーバー
+</div>
+
+プライマリに存在する論理レプリケーションスロットは、スタンバイレプリカでは利用できません。
+そのため、フェイルオーバーが発生すると、新しいプライマリ (以前の物理スタンバイ) は、以前のプライマリに存在していたスロットを認識できません。これにより、PostgreSQL からのレプリケーションが中断されます。
+この問題を回避するには、レプリケーションスロットを自分で管理し、永続的なレプリケーションスロットを定義します (詳細は[こちら](https://patroni.readthedocs.io/en/latest/SETTINGS.html)を参照してください) 。スロット名は `materialized_postgresql_replication_slot` 設定で渡す必要があり、そのスロットは `EXPORT SNAPSHOT` オプション付きで export されている必要があります。スナップショット識別子は `materialized_postgresql_snapshot` 設定で渡す必要があります。
+
+これは、実際に必要な場合にのみ使用してください。明確な必要性がない場合や、理由を十分に理解していない場合は、テーブルエンジン にレプリケーションスロットの作成と管理を任せるほうが適切です。
+
+**例 ([@bchrobot](https://github.com/bchrobot) 提供)&#x20;**
+
+1. PostgreSQL でレプリケーションスロットを設定します。
+
+   ```yaml
+   apiVersion: "acid.zalan.do/v1"
+   kind: postgresql
+   metadata:
+     name: acid-demo-cluster
+   spec:
+     numberOfInstances: 2
+     postgresql:
+       parameters:
+         wal_level: logical
+     patroni:
+       slots:
+         clickhouse_sync:
+           type: logical
+           database: demodb
+           plugin: pgoutput
+   ```
+
+2. レプリケーションスロットの準備ができるまで待ってから、transaction を開始し、transaction スナップショット識別子を export します。
+
+   ```sql
+   BEGIN;
+   SELECT pg_export_snapshot();
+   ```
+
+3. ClickHouse でデータベースを作成します。
+
+   ```sql
+   CREATE DATABASE demodb
+   ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+   SETTINGS
+     materialized_postgresql_replication_slot = 'clickhouse_sync',
+     materialized_postgresql_snapshot = '0000000A-0000023F-3',
+     materialized_postgresql_tables_list = 'table1,table2,table3';
+   ```
+
+4. ClickHouse DB へのレプリケーションを確認したら、PostgreSQL の transaction を終了します。フェイルオーバー後もレプリケーションが継続することを確認してください。
+
+   ```bash
+   kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
+   ```
+
+<div id="required-permissions">
+  ### 必要な権限
+</div>
+
+1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- 作成権限。
+
+2. [CREATE&#95;REPLICATION&#95;SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- レプリケーション権限。
+
+3. [pg&#95;drop&#95;replication&#95;slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- レプリケーション権限、またはスーパーユーザー権限。
+
+4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- publication の所有者 (MaterializedPostgreSQL エンジン自体の `username`) 。
+
+`2` と `3` のコマンドを実行せず、これらの権限を持たずに済ませることも可能です。設定 `materialized_postgresql_replication_slot` と `materialized_postgresql_snapshot` を使用してください。ただし、十分に注意してください。
+
+テーブルへのアクセス:
+
+1. pg&#95;publication
+
+2. pg&#95;replication&#95;slots
+
+3. pg&#95;publication&#95;tables

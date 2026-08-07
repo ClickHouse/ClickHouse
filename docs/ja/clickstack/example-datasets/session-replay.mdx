@@ -1,0 +1,198 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/session-replay-demo
+title: 'セッションリプレイデモ'
+description: 'ClickStack のセッションリプレイ向けに Web アプリをインストルメントする方法を示すインタラクティブなデモアプリ'
+doc_type: 'guide'
+keywords: ['ClickStack', 'セッションリプレイ', 'Browser SDK', 'デモ', 'オブザーバビリティ', 'インストルメンテーション']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<Info>
+  **要点**
+
+  このガイドでは、ClickStack Browser SDK を使用して、セッションリプレイ用に Web アプリケーションをインストルメントする手順を説明します。事前生成済みのデータを読み込む他のサンプルデータセットとは異なり、このデモでは、実際に操作しながらセッションデータを生成できる対話型アプリケーションを使用します。
+
+  所要時間: 10～15 分
+</Info>
+
+<div id="overview">
+  ## 概要
+</div>
+
+[セッションリプレイのデモアプリケーション](https://github.com/ClickHouse/clickstack-session-replay-demo) は、プレーンな JavaScript で構築されたドキュメントエクスプローラーです。セッションリプレイのインストルメンテーションがいかに最小限で済むかを示しており、script タグ 1 つと初期化呼び出し 1 回だけで、すべてのユーザー操作を自動的に取得できます。
+
+このリポジトリには 2 つのブランチが含まれています。
+
+* **`main`** — 完全にインストルメントされており、すぐに使用できます
+* **`pre-instrumented`** — インストルメンテーションを加えていないクリーンなバージョンで、どこに追加すべきかを示すコードコメントが付いています
+
+このガイドでは、まず `main` ブランチを使ってセッションリプレイの動作を確認し、その後でインストルメンテーションコードを順に見ていきます。これにより、同じパターンを自分のアプリケーションにも適用できます。
+
+セッションリプレイとは何か、また ClickStack においてどのような位置づけなのかについては、[Session Replay](/ja/clickstack/features/session-replay) 機能ページを参照してください。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* Docker と Docker Compose がインストールされていること
+* ポート 3000、4317、4318、8080 が使用可能であること
+
+<div id="running-the-demo">
+  ## デモを実行する
+</div>
+
+<Steps>
+  <Step>
+    ### リポジトリをクローンする
+
+    ```shell
+    git clone https://github.com/ClickHouse/clickstack-session-replay-demo
+    cd clickstack-session-replay-demo
+    ```
+  </Step>
+
+  <Step>
+    ### ClickStack を起動する
+
+    ```shell
+    docker-compose up -d clickstack
+    ```
+  </Step>
+
+  <Step>
+    ### API キーを取得する
+
+    1. [http://localhost:8080](http://localhost:8080) で HyperDX を開きます
+    2. 必要に応じて、アカウントを作成するかログインします
+    3. **Team Settings → API Keys** に移動します
+    4. **インジェスト API キー** をコピーします
+
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
+
+    5. 環境変数として設定します。
+
+    ```shell
+    export CLICKSTACK_API_KEY='your-api-key-here'
+    ```
+  </Step>
+
+  <Step>
+    ### デモアプリケーションを起動する
+
+    ```shell
+    docker-compose --profile demo up demo-app
+    ```
+
+    <Note>
+      このコマンドは、`CLICKSTACK_API_KEY` 変数を export したのと同じターミナルで実行してください。
+    </Note>
+
+    ブラウザで [http://localhost:3000](http://localhost:3000) を開き、アプリを操作します。トピックを検索し、カテゴリで絞り込み、コード例を表示し、項目をブックマークしてください。
+
+    <Image img="/images/clickstack/session-replay/demo-app.webp" alt="Session replay demo app" />
+
+    すべての操作は ClickStack Browser SDK によって自動的に記録されます。
+  </Step>
+
+  <Step>
+    ### セッションリプレイを表示する
+
+    [http://localhost:8080](http://localhost:8080) の HyperDX に戻り、左側のサイドバーから **Client Sessions** に移動します。
+
+    <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Session replay search" />
+
+    継続時間とイベント数とともに、セッションが一覧に表示されるはずです。▶️ ボタンをクリックすると再生できます。
+
+    <Image img="/images/clickstack/session-replay/session-replay.webp" alt="Session replay" />
+
+    タイムラインの詳細度を調整するには、**Highlighted** モードと **All Events** モードを切り替えます。
+  </Step>
+</Steps>
+
+<div id="instrumentation">
+  ## インストルメンテーション
+</div>
+
+このデモアプリケーションでは、セッションリプレイを有効にするのに必要なコードがごくわずかであることがわかります。必要なのは、アプリケーションに次の2点を追加するだけです。
+
+**1. SDK を追加する (`app/public/index.html`) :**
+
+```html
+<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+```
+
+**2. ClickStackを初期化する (`app/public/js/app.js`) :**
+
+```javascript
+window.HyperDX.init({
+  url: 'http://localhost:4318',
+  apiKey: window.CLICKSTACK_API_KEY,
+  service: 'clickhouse-session-replay-demo',
+  consoleCapture: true,
+  advancedNetworkCapture: true,
+});
+```
+
+それ以外はすべて通常のアプリケーションコードです。SDK は、ユーザー操作、コンソールログ、ネットワークリクエスト、エラーをすべて自動的に取得するため、追加のインストルメンテーションは必要ありません。
+
+<div id="try-it-yourself">
+  ### 実際に試す
+</div>
+
+アプリを最初からインストルメントするには、`pre-instrumented` ブランチに切り替えます。
+
+```shell
+git checkout pre-instrumented
+```
+
+このブランチには、ClickStack のインストルメンテーションがまったく施されていない同じアプリケーションが含まれています。`app/public/index.html` と `app/public/js/app.js` のコードコメントには、上記 2 つのコードスニペットを正確にどこへ追加すればよいかが示されています。追加したら、デモアプリを再起動してください。すると、あなたの操作が ClickStack に表示されるようになります。
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="sessions-not-appearing">
+  ### HyperDX にセッションが表示されない
+</div>
+
+1. ブラウザのコンソールでエラーが出ていないか確認します
+2. ClickStack が起動していることを確認します: `docker-compose ps`
+3. API キーが設定されていることを確認します: `echo $CLICKSTACK_API_KEY`
+4. Client Sessions ビューで時間範囲を調整します (**過去 15 分**を試してください)
+5. ブラウザを強制再読み込みします: `Cmd+Shift+R` (Mac) または `Ctrl+Shift+R` (Windows/Linux)
+
+<div id="401-errors">
+  ### 401 Unauthorized エラー
+</div>
+
+API キーが正しく設定されていません。次の点を確認してください。
+
+1. ターミナルで `export CLICKSTACK_API_KEY='your-key'` を実行してエクスポートした
+2. エクスポートした**同じターミナル**でデモアプリを起動した
+3. キーを HyperDX UI から取得した (ランダムに生成した文字列ではない)
+
+<div id="cleanup">
+  ## クリーンアップ
+</div>
+
+サービスを停止します:
+
+```bash
+docker-compose down
+```
+
+すべてのデータを削除：
+
+```bash
+docker-compose down -v
+```
+
+<div id="learn-more">
+  ## さらに詳しく
+</div>
+
+* [セッションリプレイ](/ja/clickstack/features/session-replay) — 機能概要、SDK オプション、プライバシー管理
+* [Browser SDK リファレンス](/ja/clickstack/ingesting-data/sdks/browser) — SDK の全オプションと高度な設定
+* [ClickStack 入門](/ja/clickstack/getting-started/index) — ClickStack をデプロイし、最初のデータを取り込む
+* [すべてのサンプルデータセット](/ja/clickstack/example-datasets/index) — その他のサンプルデータセットとガイド

@@ -1,0 +1,100 @@
+---
+title: 如何使用 ClickHouse 将 MySQL 数据导出为 Parquet、CSV 或 JSON
+description: "了解如何使用 `clickhouse-local` 工具，快速高效地将 MySQL 数据导出为 Parquet、CSV 或 JSON 等格式。"
+date: 2023-03-21
+tags: ['数据格式', '数据导出']
+keywords: ['MySQL', 'Parquet', 'CSV', 'JSON']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="exporting-mysql-data-to-parquet-csv-or-json-using-clickhouse">
+  ## 使用 ClickHouse 将 MySQL 数据导出为 Parquet、CSV 或 JSON
+</div>
+
+`clickhouse-local` 工具可让你快速、轻松地从 MySQL 读取数据，并将其输出为多种不同格式，包括 Parquet、CSV 和 JSON。我们将：
+
+* 使用 [`mysql` 表函数](/zh/reference/functions/table-functions/mysql)读取数据
+* 使用 `INTO OUTFILE _filename_ FORMAT` 子句，并指定所需的输出格式
+
+`clickhouse-local` 工具是 ClickHouse 可执行文件的一部分。可使用以下命令下载：
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+<div id="export-mysql-to-parquet">
+  ## 将 MySQL 导出为 Parquet
+</div>
+
+`mysql` 表函数会根据发送到 MySQL 实例的查询结果创建一张表。例如：
+
+```bash
+SELECT *
+FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+);
+```
+
+我们可以使用 `INTO OUTFILE` 将此查询的输出写入文件。使用 `FORMAT` 指定要创建文件的格式。下面我们将导出一个 MySQL 表的全部内容，并将其写入一个 Parquet 文件：
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.parquet'"
+```
+
+<Note>
+  由于输出文件名带有 `.parquet` 扩展名，ClickHouse 会默认我们要使用 Parquet 格式，因此这里省略了 `FORMAT Parquet` 子句。
+</Note>
+
+<div id="export-mysql-to-csv">
+  ## 将 MySQL 导出为 CSV
+</div>
+
+这与导出为 Parquet 时相同，只不过这次我们在文件名中使用 `.csv` 扩展名。ClickHouse 会识别出我们需要逗号分隔的输出格式，并据此将数据写入文件：
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.csv'"
+```
+
+<div id="export-mysql-to-json">
+  ## 将 MySQL 导出为 JSON
+</div>
+
+要将 MySQL 导出为 JSON，只需把文件扩展名改为 `jsonl` 或 `ndjson`：
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.ndjson'"
+```
+
+`clickhouse-local` 工具看似简单，却非常强大，着实令人印象深刻。你可以轻松地从 MySQL 这样的数据库中读取数据，并将其输出为[各种不同的输出格式](/zh/reference/formats/index)。

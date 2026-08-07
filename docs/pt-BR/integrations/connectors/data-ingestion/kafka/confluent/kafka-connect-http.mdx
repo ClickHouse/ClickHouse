@@ -1,0 +1,243 @@
+---
+sidebarTitle: 'conector HTTP Sink para Confluent Platform'
+slug: /integrations/kafka/cloud/confluent/http
+description: 'Usando o conector HTTP Sink com Kafka Connect e ClickHouse'
+title: 'Conector HTTP Sink da Confluent'
+doc_type: 'guide'
+keywords: ['Conector HTTP Sink da Confluent', 'HTTP Sink ClickHouse', 'conector HTTP do Kafka
+', 'integração HTTP do ClickHouse', 'Confluent Cloud HTTP Sink']
+---
+
+import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O conector HTTP Sink é agnóstico quanto a tipos de dados e, portanto, não requer um esquema do Kafka, além de oferecer suporte a tipos de dados específicos do ClickHouse, como Map e Array. Essa flexibilidade adicional traz um pequeno aumento na complexidade da configuração.
+
+Abaixo, descrevemos uma instalação simples, extraindo mensagens de um único tópico do Kafka e inserindo linhas em uma tabela do ClickHouse.
+
+<Note>
+  O HTTP Connector é distribuído sob a [Confluent Enterprise License](https://docs.confluent.io/kafka-connect-http/current/overview.html#license).
+</Note>
+
+<div id="quick-start-steps">
+  ### Passos de início rápido
+</div>
+
+<div id="1-gather-your-connection-details">
+  #### 1. Reúna os detalhes da conexão
+</div>
+
+<ConnectionDetails />
+
+<div id="2-run-kafka-connect-and-the-http-sink-connector">
+  #### 2. Execute o Kafka Connect e o conector HTTP sink
+</div>
+
+Você tem duas opções:
+
+* **Autogerenciado:** Baixe o pacote da Confluent e instale-o localmente. Siga as instruções de instalação do conector, conforme documentado [aqui](https://docs.confluent.io/kafka-connect-http/current/overview.html).
+  Se você usar o método de instalação `confluent-hub`, seus arquivos de configuração locais serão atualizados.
+
+* **Confluent Cloud:** Uma versão totalmente gerenciada do HTTP Sink está disponível para quem usa o Confluent Cloud para hospedar o Kafka. Isso exige que seu ambiente ClickHouse esteja acessível a partir da Confluent Cloud.
+
+<Note>
+  Os exemplos a seguir usam o Confluent Cloud.
+</Note>
+
+<div id="3-create-destination-table-in-clickhouse">
+  #### 3. Criar tabela de destino no ClickHouse
+</div>
+
+Antes do teste de conectividade, vamos começar criando uma tabela de teste no ClickHouse Cloud; essa tabela receberá os dados do Kafka:
+
+```sql
+CREATE TABLE default.my_table
+(
+    `side` String,
+    `quantity` Int32,
+    `symbol` String,
+    `price` Int32,
+    `account` String,
+    `userid` String
+)
+ORDER BY tuple()
+```
+
+<div id="4-configure-http-sink">
+  #### 4. Configure o HTTP Sink
+</div>
+
+Crie um tópico do Kafka e uma instância do conector HTTP Sink:
+
+<Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="Interface do Confluent Cloud mostrando como criar um conector HTTP Sink" border />
+
+<br />
+
+Configure o conector HTTP Sink:
+
+* Informe o nome do tópico que você criou
+* Autenticação
+  * `HTTP Url` - URL do ClickHouse Cloud com uma consulta `INSERT` especificada: `<protocol>://<clickhouse_host>:<clickhouse_port>?query=INSERT%20INTO%20<database>.<table>%20FORMAT%20JSONEachRow`. **Observação**: a consulta deve ser codificada.
+  * `Endpoint Authentication type` - BASIC
+  * `Auth username` - nome de usuário do ClickHouse
+  * `Auth password` - senha do ClickHouse
+
+<Note>
+  Esta `HTTP Url` é propensa a erros. Certifique-se de escapar tudo corretamente para evitar problemas.
+</Note>
+
+<Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="Interface do Confluent Cloud mostrando as configurações de autenticação do conector HTTP Sink" border />
+
+<br />
+
+* Configuração
+  * `Input Kafka record value format` - Depende dos seus dados de origem, mas, na maioria dos casos, será JSON ou Avro. Assumimos `JSON` nas configurações a seguir.
+  * Na seção `advanced configurations`:
+    * `HTTP Request Method` - Defina como POST
+    * `Request Body Format` - json
+    * `Batch batch size` - De acordo com as recomendações do ClickHouse, defina esse valor como **no mínimo 1000**.
+    * `Batch json as array` - true
+    * `Retry on HTTP codes` - 400-500, mas ajuste conforme necessário; por exemplo, isso pode mudar se você tiver um proxy HTTP na frente do ClickHouse.
+    * `Maximum Reties` - o padrão (10) é adequado, mas fique à vontade para ajustar se quiser tentativas de repetição mais robustas.
+
+<Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="Interface do Confluent Cloud mostrando opções avançadas de configuração do conector HTTP Sink" border />
+
+<div id="5-testing-the-connectivity">
+  #### 5. Testando a conectividade
+</div>
+
+Crie uma mensagem em um tópico configurado no seu HTTP Sink
+
+<Image img="/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp" size="md" alt="Interface do Confluent Cloud mostrando como criar uma mensagem de teste em um tópico do Kafka" border />
+
+<br />
+
+e verifique se a mensagem criada foi gravada na sua instância do ClickHouse.
+
+<div id="troubleshooting">
+  ### Solução de problemas
+</div>
+
+<div id="http-sink-doesnt-batch-messages">
+  #### O HTTP Sink não agrupa mensagens em lote
+</div>
+
+Da [documentação do Sink](https://docs.confluent.io/kafka-connectors/http/current/overview.html#http-sink-connector-for-cp):
+
+> O conector HTTP Sink não agrupa em lote solicitações de mensagens que contêm valores de header do Kafka diferentes.
+
+1. Verifique se os registros do Kafka têm a mesma chave.
+2. Ao adicionar parâmetros à URL da API HTTP, cada registro pode resultar em uma URL exclusiva. Por esse motivo, o agrupamento em lote é desativado ao usar parâmetros de URL adicionais.
+
+<div id="400-bad-request">
+  #### 400 requisição inválida
+</div>
+
+<div id="cannot_parse_quoted_string">
+  ##### CANNOT_PARSE_QUOTED_STRING
+</div>
+
+Se o HTTP Sink falhar e exibir a seguinte mensagem ao inserir um objeto JSON em uma coluna `String`:
+
+```response
+Code: 26. DB::ParsingException: Cannot parse JSON string: expected opening quote: (while reading the value of key key_name): While executing JSONEachRowRowInputFormat: (at row 1). (CANNOT_PARSE_QUOTED_STRING)
+```
+
+Defina a configuração `input_format_json_read_objects_as_strings=1` na URL como uma string codificada `SETTINGS%20input_format_json_read_objects_as_strings%3D1`
+
+<div id="load-the-github-dataset-optional">
+  ### Carregue o conjunto de dados do GitHub (opcional)
+</div>
+
+Observe que este exemplo preserva os campos `Array` do conjunto de dados do GitHub. Pressupomos que, nos exemplos, você tenha um tópico `github` vazio e use o [kcat](https://github.com/edenhill/kcat) para inserir mensagens no Kafka.
+
+<div id="1-prepare-configuration">
+  ##### 1. Preparar a configuração
+</div>
+
+Siga [estas instruções](https://docs.confluent.io/cloud/current/cp-component/connect-cloud-config.html#set-up-a-local-connect-worker-with-cp-install) para configurar o Connect de acordo com o seu tipo de instalação, observando as diferenças entre um cluster standalone e um distribuído. Se estiver usando o Confluent Cloud, a configuração distribuída é a aplicável.
+
+O parâmetro mais importante é o `http.api.url`. A [interface HTTP](/pt-BR/concepts/features/interfaces/http) do ClickHouse exige que você codifique a instrução INSERT como um parâmetro na URL. Isso deve incluir o formato (`JSONEachRow`, neste caso) e o banco de dados de destino. O formato deve ser compatível com os dados do Kafka, que serão convertidos em uma string no payload HTTP. Esses parâmetros devem ser escapados na URL. Um exemplo desse formato para o conjunto de dados do GitHub (supondo que você esteja executando o ClickHouse localmente) é mostrado abaixo:
+
+```response
+<protocol>://<clickhouse_host>:<clickhouse_port>?query=INSERT%20INTO%20<database>.<table>%20FORMAT%20JSONEachRow
+
+http://localhost:8123?query=INSERT%20INTO%20default.github%20FORMAT%20JSONEachRow
+```
+
+Os seguintes parâmetros adicionais são relevantes para usar o HTTP Sink com o ClickHouse. Uma lista completa de parâmetros pode ser encontrada [aqui](https://docs.confluent.io/kafka-connect-http/current/connector_config.html):
+
+* `request.method` - Defina como **POST**
+* `retry.on.status.codes` - Defina como 400-500 para repetir a tentativa em qualquer código de erro. Ajuste conforme os erros esperados nos dados.
+* `request.body.format` - Na maioria dos casos, será JSON.
+* `auth.type` - Defina como BASIC se você usar segurança com o ClickHouse. Outros mecanismos de autenticação compatíveis com o ClickHouse não são compatíveis no momento.
+* `ssl.enabled` - defina como true se estiver usando SSL.
+* `connection.user` - nome de usuário do ClickHouse.
+* `connection.password` - senha do ClickHouse.
+* `batch.max.size` - O número de linhas a serem enviadas em um único lote. Certifique-se de definir um número adequadamente alto. De acordo com as [recomendações](/pt-BR/reference/statements/insert-into#performance-considerations) do ClickHouse, um valor de 1000 deve ser considerado o mínimo.
+* `tasks.max` - O conector HTTP Sink oferece suporte à execução de uma ou mais tarefas. Isso pode ser usado para aumentar o desempenho. Junto com o tamanho do lote, esse é o principal meio de melhorar o desempenho.
+* `key.converter` - defina de acordo com os tipos das suas chaves.
+* `value.converter` - defina com base no tipo de dados no seu tópico. Esses dados não precisam de um esquema. O formato aqui deve ser consistente com o FORMAT especificado no parâmetro `http.api.url`. A opção mais simples é usar JSON e o conversor org.apache.kafka.connect.json.JsonConverter. Também é possível tratar o valor como uma string, por meio do conversor org.apache.kafka.connect.storage.StringConverter, embora isso exija que o usuário extraia um valor na instrução insert usando funções. O [formato Avro](/pt-BR/reference/formats/Avro/Avro) também é compatível com o ClickHouse ao usar o conversor io.confluent.connect.avro.AvroConverter.
+
+Uma lista completa de configurações, incluindo como configurar um proxy, tentativas e SSL avançado, pode ser encontrada [aqui](https://docs.confluent.io/kafka-connect-http/current/connector_config.html).
+
+Exemplos de arquivos de configuração para os dados de amostra do GitHub podem ser encontrados [aqui](https://github.com/ClickHouse/clickhouse-docs/tree/main/docs/integrations/data-ingestion/kafka/code/connectors/http_sink), considerando que o Connect esteja em execução no modo standalone e que o Kafka esteja hospedado no Confluent Cloud.
+
+<div id="2-create-the-clickhouse-table">
+  ##### 2. Criar a tabela no ClickHouse
+</div>
+
+Verifique se a tabela foi criada. Abaixo, é mostrado um exemplo de um conjunto de dados mínimo do GitHub usando MergeTree padrão.
+
+```sql
+CREATE TABLE github
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4,'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
+
+```
+
+<div id="3-add-data-to-kafka">
+  ##### 3. Adicione dados ao Kafka
+</div>
+
+Insira mensagens no Kafka. A seguir, usamos [kcat](https://github.com/edenhill/kcat) para inserir 10 mil mensagens.
+
+```bash
+head -n 10000 github_all_columns.ndjson | kcat -b <host>:<port> -X security.protocol=sasl_ssl -X sasl.mechanisms=PLAIN -X sasl.username=<username>  -X sasl.password=<password> -t github
+```
+
+Uma consulta simples à tabela de destino &quot;Github&quot; deve confirmar a inserção dos dados.
+
+```sql
+SELECT count() FROM default.github;
+
+| count\(\) |
+| :--- |
+| 10000 |
+
+```

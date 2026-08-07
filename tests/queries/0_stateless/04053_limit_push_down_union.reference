@@ -1,0 +1,98 @@
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Union
+      Limit
+        Expression ((Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          ReadFromSystemNumbers
+      Limit
+        Expression ((Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          ReadFromSystemNumbers
+---
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Union
+      Limit
+        Expression ((Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          ReadFromSystemNumbers
+      Limit
+        Expression ((Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          ReadFromSystemNumbers
+---
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Union
+      Limit
+        Expression ((Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          ReadFromSystemNumbers
+      Limit
+        Expression ((Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          ReadFromSystemNumbers
+      Limit
+        Expression ((Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+          ReadFromSystemNumbers
+---
+5
+---
+3
+---
+Expression (Project names)
+  Limit (LIMIT WITH TIES)
+    Sorting (Sorting for ORDER BY)
+      Union
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+          ReadFromSystemNumbers
+        Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+          ReadFromSystemNumbers
+---
+Expression (Project names)
+  Limit
+    Filling
+      Sorting (Sorting for ORDER BY)
+        Union
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+            ReadFromSystemNumbers
+          Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))))
+            ReadFromSystemNumbers
+---
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Union
+      Expression ((Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+        ReadFromSystemNumbers
+      Expression ((Projection + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+        ReadFromSystemNumbers
+---
+Expression ((Project names + Projection))
+  Limit
+    TotalsHaving
+      Aggregating
+        Union
+          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+            ReadFromSystemNumbers
+          Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+            ReadFromSystemNumbers
+---
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[0],
+		[1],
+		[2],
+		[3],
+		[4]
+	],
+
+	"rows": 5,
+
+	"rows_before_limit_at_least": 300
+}
+---
+10

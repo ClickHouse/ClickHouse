@@ -1,0 +1,60 @@
+a	Array(String)	NO		\N	
+agg	AggregateFunction(uniq, UInt64)	NO		\N	
+b	Bool	NO		\N	
+d	Date	NO		\N	
+d32	Date32	NO		\N	
+dec128	Decimal(38, 2)	NO		\N	
+dec128_native	Decimal(35, 30)	NO		\N	
+dec128_text	Decimal(35, 31)	NO		\N	
+dec256	Decimal(76, 2)	NO		\N	
+dec256_native	Decimal(65, 2)	NO		\N	
+dec256_text	Decimal(66, 2)	NO		\N	
+dec32	Decimal(9, 2)	NO		\N	
+dec64	Decimal(18, 2)	NO		\N	
+dt	DateTime	NO		\N	
+dt64	DateTime64(3)	NO		\N	
+dt64_3_tz1	DateTime64(3, \'UTC\')	NO		\N	
+dt64_3_tz2	DateTime64(3, \'Asia/Shanghai\')	NO		\N	
+dt64_6	DateTime64(6, \'UTC\')	NO		\N	
+dt64_9	DateTime64(9, \'UTC\')	NO		\N	
+dt_tz1	DateTime(\'UTC\')	NO		\N	
+dt_tz2	DateTime(\'Europe/Amsterdam\')	NO		\N	
+enm	Enum8(\'hallo\' = 1, \'welt\' = 2)	NO		\N	
+f32	Float32	NO		\N	
+f64	Float64	NO		\N	
+fs	FixedString(3)	NO		\N	
+i128	Int128	NO		\N	
+i16	Int16	NO		\N	
+i256	Int256	NO		\N	
+i32	Int32	NO		\N	
+i64	Int64	NO		\N	
+i8	Int8	NO		\N	
+ip4	IPv4	NO		\N	
+ip6	IPv6	NO		\N	
+lfs	LowCardinality(FixedString(3))	NO		\N	
+lnfs	LowCardinality(Nullable(FixedString(3)))	YES		\N	
+lns	LowCardinality(Nullable(String))	YES		\N	
+ls	LowCardinality(String)	NO		\N	
+m	Map(Int32, String)	NO		\N	
+m_complex	Map(Int32, Map(Int32, LowCardinality(Nullable(String))))	NO		\N	
+mpg	MultiPolygon	NO		\N	
+ndt64	Nullable(DateTime64(3))	YES		\N	
+ndt64_tz	Nullable(DateTime64(3, \'Asia/Shanghai\'))	YES		\N	
+nested.col1	Array(String)	NO		\N	
+nested.col2	Array(UInt32)	NO		\N	
+nfs	Nullable(FixedString(3))	YES		\N	
+ns	Nullable(String)	YES		\N	
+o	JSON	NO		\N	
+p	Point	NO		\N	
+pg	Polygon	NO		\N	
+r	Ring	NO		\N	
+s	String	NO		\N	
+sagg	SimpleAggregateFunction(sum, Float64)	NO		\N	
+t	Tuple(Int32, String, Nullable(String), LowCardinality(String), LowCardinality(Nullable(String)), Tuple(Int32, String))	NO		\N	
+ui128	UInt128	NO		\N	
+ui16	UInt16	NO		\N	
+ui256	UInt256	NO		\N	
+ui32	UInt32	NO		\N	
+ui64	UInt64	NO		\N	
+ui8	UInt8	NO		\N	
+uuid	UUID	NO		\N	

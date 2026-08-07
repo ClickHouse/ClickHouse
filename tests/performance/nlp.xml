@@ -1,0 +1,16 @@
+<test>
+    <settings>
+        <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
+    </settings>
+
+    <create_query>CREATE TABLE hits_100m_words (words Array(String), UserID UInt64) ENGINE Memory</create_query>
+    <fill_query>INSERT INTO hits_100m_words SELECT splitByNonAlpha(SearchPhrase) AS words, UserID FROM hits_100m_single WHERE length(words) > 0</fill_query>
+
+    <query>SELECT splitByNonAlpha(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT splitByWhitespace(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+
+    <query>SELECT arrayMap(x -> stem('ru', x), words) FROM hits_100m_words FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS hits_100m_words</drop_query>
+    <drop_query>DROP TABLE IF EXISTS hits_100m_words_ws</drop_query>
+</test>

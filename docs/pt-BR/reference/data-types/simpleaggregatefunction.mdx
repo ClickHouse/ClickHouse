@@ -1,0 +1,93 @@
+---
+description: 'Documentação do tipo de dado SimpleAggregateFunction'
+sidebarTitle: 'SimpleAggregateFunction'
+slug: /sql-reference/data-types/simpleaggregatefunction
+title: 'Tipo de dado SimpleAggregateFunction'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+O tipo de dado `SimpleAggregateFunction` armazena o estado intermediário de uma
+função de agregação, mas não seu estado completo, como faz o tipo
+[`AggregateFunction`](/pt-BR/reference/data-types/aggregatefunction).
+
+Essa otimização pode ser aplicada a funções para as quais a seguinte propriedade
+vale:
+
+> o resultado de aplicar uma função `f` a um conjunto de linhas `S1 UNION ALL S2` pode
+> ser obtido aplicando `f` separadamente a partes do conjunto de linhas e, em seguida,
+> aplicando `f` novamente aos resultados: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`.
+
+Essa propriedade garante que resultados parciais de agregação são suficientes para calcular
+o resultado combinado, portanto não é necessário armazenar nem processar dados extras. Por
+exemplo, o resultado das funções `min` ou `max` não exige etapas adicionais para
+calcular o resultado final a partir das etapas intermediárias, enquanto a função `avg`
+exige manter o controle de uma soma e de uma contagem, que serão divididas para obter a
+média em uma etapa final de `Merge`, que combina os estados intermediários.
+
+Valores de funções de agregação geralmente são produzidos ao chamar uma função de agregação
+com o combinador [`-SimpleState`](/pt-BR/reference/functions/aggregate-functions/combinators#-simplestate) anexado ao nome da função.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+SimpleAggregateFunction(aggregate_function_name, types_of_arguments...)
+```
+
+**Parâmetros**
+
+* `aggregate_function_name` - O nome de uma função de agregação.
+* `Type` - Tipos dos argumentos da função de agregação.
+
+<div id="supported-functions">
+  ## Funções compatíveis
+</div>
+
+As seguintes funções de agregação são compatíveis:
+
+* [`any`](/pt-BR/reference/functions/aggregate-functions/any)
+* [`any_respect_nulls`](/pt-BR/reference/functions/aggregate-functions/any)
+* [`anyLast`](/pt-BR/reference/functions/aggregate-functions/anyLast)
+* [`anyLast_respect_nulls`](/pt-BR/reference/functions/aggregate-functions/anyLast)
+* [`min`](/pt-BR/reference/functions/aggregate-functions/min)
+* [`max`](/pt-BR/reference/functions/aggregate-functions/max)
+* [`sum`](/pt-BR/reference/functions/aggregate-functions/sum)
+* [`sumWithOverflow`](/pt-BR/reference/functions/aggregate-functions/sumWithOverflow)
+* [`groupBitAnd`](/pt-BR/reference/functions/aggregate-functions/groupBitAnd)
+* [`groupBitOr`](/pt-BR/reference/functions/aggregate-functions/groupBitOr)
+* [`groupBitXor`](/pt-BR/reference/functions/aggregate-functions/groupBitXor)
+* [`groupArrayArray`](/pt-BR/reference/functions/aggregate-functions/groupArrayArray)
+* [`groupUniqArrayArray`](/pt-BR/reference/functions/aggregate-functions/groupUniqArray)
+* [`groupUniqArrayArrayMap`](/pt-BR/reference/functions/aggregate-functions/combinators#-map)
+* [`sumMap` (`sumMappedArrays`)](/pt-BR/reference/functions/aggregate-functions/sumMap)
+* [`minMap` (`minMappedArrays`)](/pt-BR/reference/functions/aggregate-functions/minMap)
+* [`maxMap` (`maxMappedArrays`)](/pt-BR/reference/functions/aggregate-functions/maxMap)
+
+<Note>
+  Os valores de `SimpleAggregateFunction(func, Type)` têm o mesmo `Type`,
+  portanto, ao contrário do tipo `AggregateFunction`, não é necessário aplicar
+  os combinadores `-Merge`/`-State`.
+
+  O tipo `SimpleAggregateFunction` tem desempenho melhor que `AggregateFunction`
+  para as mesmas funções de agregação.
+</Note>
+
+<div id="example">
+  ## Exemplo
+</div>
+
+```sql
+CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE=AggregatingMergeTree ORDER BY id;
+```
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Como usar combinadores de agregação no ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)    - Blog: [Como usar combinadores de agregação no ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+* Tipo [AggregateFunction](/pt-BR/reference/data-types/aggregatefunction).

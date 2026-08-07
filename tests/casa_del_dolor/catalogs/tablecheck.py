@@ -1,0 +1,253 @@
+import logging
+import re
+import traceback
+import random
+from pyspark.sql import SparkSession
+from pyspark.sql.types import (
+    StructType,
+    CharType,
+    VarcharType,
+    StringType,
+    BinaryType,
+    ArrayType,
+    MapType,
+    TimestampType,
+    DateType,
+    FloatType,
+    DoubleType,
+    DecimalType,
+)
+
+try:
+    from pyspark.sql.types import TimestampNTZType
+
+    # Excluded from cross-engine comparison for the same reason as TimestampType
+    _TEMPORAL_NTZ_TYPES = (TimestampNTZType,)
+except ImportError:
+    _TEMPORAL_NTZ_TYPES = ()
+
+from .laketables import SparkTable, LakeFormat
+from integration.helpers.client import Client
+
+# Row-hash placeholder for SQL NULL, so rows with a NULL in a compared column are
+# still compared instead of silently dropped (Spark CONCAT/COLLECT_LIST and ClickHouse
+# `||`/groupArray both discard NULL row hashes). ASCII so string ordering stays identical
+# across engines; the compared types are numeric/bool/array-of-those, which never produce
+# this literal, so it cannot collide with a real value.
+_NULL_SENTINEL = "<NULL>"
+
+
+class SparkAndClickHouseCheck:
+
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+    def _check_type_valid_for_comparison(self, dtype) -> bool:
+        if isinstance(dtype, ArrayType):
+            return not isinstance(
+                dtype.elementType, ArrayType
+            ) and self._check_type_valid_for_comparison(dtype.elementType)
+        if isinstance(
+            dtype,
+            (
+                FloatType,
+                DoubleType,
+                MapType,
+                StructType,
+                StringType,
+                BinaryType,
+                CharType,
+                VarcharType,
+                TimestampType,
+                DateType,
+            )
+            + _TEMPORAL_NTZ_TYPES,
+        ):
+            # Map type is not comparable in Spark, Struct is complicated.
+            # TIMESTAMP_NTZ is excluded like TimestampType: its string form differs
+            # between Spark and ClickHouse (fractional seconds, precision), so hashing
+            # it across engines yields spurious mismatches.
+            return False
+        return True
+
+    def _clickhouse_engine_matches(self, client, table: SparkTable):
+        expected_by_format = {
+            LakeFormat.Iceberg: "Iceberg",
+            LakeFormat.DeltaLake: "DeltaLake",
+            LakeFormat.Paimon: "Paimon",
+        }
+        expected = expected_by_format.get(table.lake_format)
+        # Read the declared engine from the DDL rather than system.tables.engine:
+        # with lazy_load_tables, system.tables reports StorageTableProxy's name
+        # ("TableProxy") until the table is first materialized, which is not an
+        # engine swap. SHOW CREATE reflects the real (possibly REPLACEd) engine
+        # without forcing a load.
+        ddl = client.query(f"SHOW CREATE TABLE {table.get_clickhouse_path()};")
+        ddl = ddl if isinstance(ddl, str) else ""
+        match = re.search(r"ENGINE\s*=\s*([A-Za-z0-9_]+)", ddl)
+        if not match:
+            # Could not determine the engine: proceed with the check rather than
+            # silently skip it. An unparseable SHOW CREATE shape is a diagnostic
+            # gap, not evidence that the engine is wrong.
+            return True, ddl.strip()
+        engine = match.group(1)
+        if expected is None:
+            return True, engine
+        return engine.startswith(expected), engine
+
+    def check_table(self, cluster, spark: SparkSession, table: SparkTable) -> bool:
+        try:
+            clickhouse_predicate = ""
+            spark_predicate = ""
+            extra_predicate = ""
+            snapshots = []
+            timestamps = []
+
+            client = Client(
+                host=(
+                    cluster.instances["node0"].ip_address
+                    if hasattr(cluster, "instances")
+                    else "localhost"
+                ),
+                port=9000,
+                command=cluster.client_bin_path,
+            )
+
+            engine_ok, ch_engine = self._clickhouse_engine_matches(client, table)
+            if not engine_ok:
+                self.logger.warning(
+                    f"Skipping check for {table.get_clickhouse_path()}: ClickHouse engine is '{ch_engine}', but the descriptor expects {table.lake_format.name}"
+                )
+                return True
+
+            # There is multithreading, so time travel is now required
+            if table.lake_format == LakeFormat.Iceberg:
+                result = spark.sql(
+                    f"SELECT snapshot_id, committed_at FROM {table.get_table_full_path()}.snapshots;"
+                ).collect()
+                snapshots = [r.snapshot_id for r in result]
+                timestamps = [r.committed_at for r in result]
+            elif table.lake_format == LakeFormat.DeltaLake:
+                result = spark.sql(
+                    f"DESCRIBE HISTORY {table.get_table_full_path()};"
+                ).collect()
+                snapshots = [r.version for r in result]
+
+            if len(snapshots) > 0 and (
+                len(timestamps) == 0 or random.randint(1, 2) == 1
+            ):
+                next_snapshot = random.choice(snapshots)
+                clickhouse_predicate = f" SETTINGS {'iceberg_snapshot_id' if table.lake_format == LakeFormat.Iceberg else 'delta_lake_snapshot_version'} = {next_snapshot}"
+                spark_predicate = f" VERSION AS OF {next_snapshot}"
+                extra_predicate = f" on snapshot {next_snapshot}"
+            elif len(timestamps) > 0:
+                next_time = random.choice(timestamps)
+                clickhouse_predicate = f" SETTINGS iceberg_timestamp_ms = {int(next_time.timestamp() * 1000)}"
+                spark_predicate = f" TIMESTAMP AS OF '{next_time}'"
+                extra_predicate = f" on timestamp {next_time}"
+
+            # Start by checking counts
+            spark_query = spark.sql(
+                f"SELECT count(*) c FROM {table.get_table_full_path()}{spark_predicate};"
+            ).collect()
+            spark_count = spark_query[0]["c"]
+            ch_count_str = client.query(
+                f"SELECT count(*) FROM {table.get_clickhouse_path()}{clickhouse_predicate};"
+            )
+            if not isinstance(ch_count_str, str) or ch_count_str == "":
+                self.logger.error(
+                    f"No count received for {table.get_clickhouse_path()}"
+                )
+                return False
+            ch_count = int(ch_count_str.rstrip())
+            if spark_count != ch_count:
+                self.logger.error(
+                    f"The row count for table {table.get_clickhouse_path()}{extra_predicate} doesn't match between Spark: {spark_count} and ClickHouse: {ch_count}"
+                )
+                return False
+
+            order_by_cols = [
+                v
+                for v in table.columns.values()
+                if self._check_type_valid_for_comparison(v.spark_type)
+            ]
+            if len(order_by_cols) == 0:
+                self.logger.info(
+                    f"No columns valid to compare for {table.get_clickhouse_path()}"
+                )
+                return True
+            self.logger.info(
+                f"Comparing hashes for table {table.get_clickhouse_path()} for column(s) {','.join([col.column_name for col in order_by_cols])}{extra_predicate}"
+            )
+
+            # Spark hash
+            # Convert all columns to string and concatenate, wrapping each in COALESCE so a
+            # NULL keeps the row (otherwise CONCAT yields NULL and COLLECT_LIST drops it).
+            # Decimals: match ClickHouse `toString`, which trims trailing zeros only in the
+            # fractional part and drops a bare decimal point. A blunt TRIM TRAILING '0' would
+            # also strip significant zeros (e.g. "10" -> "1"), causing false mismatches.
+            def spark_col_expr(col) -> str:
+                s = f"CAST({col.column_name} AS STRING)"
+                if isinstance(col.spark_type, DecimalType):
+                    s = (
+                        f"CASE WHEN {s} LIKE '%.%' "
+                        f"THEN TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM {s})) ELSE {s} END"
+                    )
+                return f"COALESCE({s}, '{_NULL_SENTINEL}')"
+
+            spark_strings = {
+                col.column_name: spark_col_expr(col) for col in order_by_cols
+            }
+            concat_cols = ", '||', ".join([col.column_name for col in order_by_cols])
+            # Generate hash using SQL
+            query = f"""
+            SELECT MD5(CONCAT_WS('', COLLECT_LIST(row_hash))) as table_hash
+            FROM (
+                SELECT MD5(CONCAT({concat_cols})) as row_hash
+                FROM (SELECT {', '.join([f'{v} AS {k}' for k, v in spark_strings.items()])}
+                      FROM {table.get_table_full_path()}{spark_predicate}) x
+                ORDER BY {', '.join([f'{k} ASC NULLS FIRST' for k in spark_strings.keys()])}
+            );
+            """
+            result = spark.sql(query).collect()
+            spark_hash = result[0]["table_hash"]
+
+            # ClickHouse hash
+            # Convert all columns to string and concatenate
+            # ClickHouse arrays as strings don't have a space after the comma, add it
+            # Wrap in coalesce with the same sentinel as the Spark side so NULL rows are kept
+            # and compared rather than dropped by groupArray.
+            clickhouse_strings = {
+                col.column_name: (
+                    f"coalesce('[' || arrayStringConcat(arrayMap(x -> toString(x), {col.column_name}), ', ') || ']', '{_NULL_SENTINEL}')"
+                    if isinstance(col.spark_type, (ArrayType))
+                    else f"coalesce(toString({col.column_name}), '{_NULL_SENTINEL}')"
+                )
+                for col in order_by_cols
+            }
+            concat_cols = " || '||' || ".join(
+                [col.column_name for col in order_by_cols]
+            )
+            # Generate hash for each row in ClickHouse
+            clickhouse_hash = client.query(f"""
+            SELECT lower(hex(MD5(arrayStringConcat(groupArray(row_hash), '')))) as table_hash
+            FROM (
+                SELECT lower(hex(MD5({concat_cols}))) as row_hash
+                FROM (SELECT {', '.join([f'{v} AS {k}' for k, v in clickhouse_strings.items()])}
+                      FROM {table.get_clickhouse_path()}) x
+                ORDER BY {', '.join([f'{k} ASC NULLS FIRST' for k in clickhouse_strings.keys()])}
+            ){clickhouse_predicate};
+            """)
+            if not isinstance(clickhouse_hash, str) or clickhouse_hash == "":
+                self.logger.error(f"No hash found for {table.get_clickhouse_path()}")
+                return False
+            if spark_hash != clickhouse_hash.rstrip():
+                self.logger.error(
+                    f"The hash for table {table.get_clickhouse_path()}{extra_predicate} doesn't match between Spark and ClickHouse"
+                )
+                return False
+        except Exception as e:
+            # If an error happens, ignore it, but log it
+            traceback.print_exc()
+            self.logger.exception(e)
+        return True

@@ -1,0 +1,92 @@
+---
+title: "ClickHouseからデータをファイルにエクスポートする方法"
+description: "`INTO OUTFILE`、Fileテーブルエンジン、コマンドラインでのリダイレクトなど、ClickHouseからデータをエクスポートするさまざまな方法を学びます。"
+date: 2023-03-22
+tags: ['データエクスポート']
+keywords: ['データのエクスポート', 'INTO OUTFILE', 'Fileテーブルエンジン']
+---
+
+{frontMatter.description}
+
+{/* 省略 */}
+
+<div id="using-into-outfile-clause">
+  ## INTO OUTFILE 句を使う
+</div>
+
+クエリに [INTO OUTFILE](/ja/reference/statements/select/into-outfile) 句を追加します。
+
+たとえば:
+
+```sql
+SELECT * FROM table INTO OUTFILE 'file'
+```
+
+デフォルトでは、ClickHouse はファイル名の拡張子から、出力フォーマットと圧縮方式を判定します。たとえば、`nyc_taxi` のすべての行は、Parquet フォーマットで `nyc_taxi.parquet` にエクスポートされます。
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.parquet'
+```
+
+また、次のファイルは圧縮済みのタブ区切りファイルになります。
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.tsv.gz'
+```
+
+ClickHouseがファイル拡張子からフォーマットを判別できない場合、出力データの出力フォーマットは既定で[TabSeparated](/ja/reference/formats/index)になります。[出力フォーマット](/ja/reference/formats/index)を指定するには、[FORMAT句](/ja/reference/statements/select/format)を使用します。
+
+たとえば:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.txt'
+FORMAT CSV
+```
+
+<div id="using-a-file-engine-table">
+  ## Fileテーブルエンジンを使用する
+</div>
+
+別の方法として、[File](/ja/reference/engines/table-engines/special/file) テーブルエンジンを使用できます。この場合、ClickHouse はファイルにデータを保存します。ファイルに対して直接クエリの実行やデータの挿入を行えます。
+
+たとえば:
+
+```sql
+CREATE TABLE my_table (
+   x UInt32,
+   y String,
+   z DateTime
+)
+ENGINE = File(Parquet)
+```
+
+数行を挿入します:
+
+```sql
+INSERT INTO my_table VALUES
+   (1, 'Hello', now()),
+   (2, 'World', now()),
+   (3, 'Goodbye', now())
+```
+
+このファイルは、ClickHouse server の `data` フォルダに保存されます。具体的には、`/data/default/my_table` 配下の `data.Parquet` という名前のファイルです。
+
+<Note>
+  `File` テーブルエンジンは、ファイルシステム上のファイルを作成してクエリするのに非常に便利ですが、`File` テーブルは `MergeTree` テーブルではないため、`MergeTree` が持つ利点をすべて利用できるわけではない点に注意してください。ClickHouse から使いやすいフォーマットでデータをエクスポートするときは、手軽さを重視して `File` を使用してください。
+</Note>
+
+<div id="using-command-line-redirection">
+  ## コマンドラインでのリダイレクトを使用する
+</div>
+
+```bash
+$ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
+```
+
+[clickhouse-client](/ja/concepts/features/interfaces/cli) をご覧ください。

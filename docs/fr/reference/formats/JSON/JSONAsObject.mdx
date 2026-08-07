@@ -1,0 +1,75 @@
+---
+alias: []
+description: 'Documentation sur le format JSONAsObject'
+input_format: true
+keywords: ['JSONAsObject']
+output_format: false
+slug: /interfaces/formats/JSONAsObject
+title: 'JSONAsObject'
+doc_type: 'référence'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Dans ce format, un objet JSON unique est interprété comme une seule valeur [JSON](/fr/reference/data-types/newjson). Si l’entrée contient plusieurs objets JSON (séparés par des virgules), ils sont interprétés comme des lignes distinctes. Si les données d’entrée sont entourées de `[]`, elles sont interprétées comme un tableau de JSON.
+
+Ce format ne peut être analysé que pour une table comportant un seul champ de type [JSON](/fr/reference/data-types/newjson). Les colonnes restantes doivent être définies comme [`DEFAULT`](/fr/reference/statements/create/table#default) ou [`MATERIALIZED`](/fr/reference/statements/create/view#materialized-view).
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+<div id="basic-example">
+  ### Exemple de base
+</div>
+
+```sql title="Query"
+CREATE TABLE json_as_object (json JSON) ENGINE = Memory;
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_object FORMAT JSONEachRow;
+```
+
+```response title="Response"
+{"json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
+{"json":{}}
+{"json":{"any json stucture":"1"}}
+```
+
+<div id="an-array-of-json-objects">
+  ### Un tableau d’objets JSON
+</div>
+
+```sql title="Query"
+CREATE TABLE json_square_brackets (field JSON) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsObject [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+SELECT * FROM json_square_brackets FORMAT JSONEachRow;
+```
+
+```response title="Response"
+{"field":{"id":"1","name":"name1"}}
+{"field":{"id":"2","name":"name2"}}
+```
+
+<div id="columns-with-default-values">
+  ### Colonnes avec des valeurs par défaut
+</div>
+
+```sql title="Query"
+CREATE TABLE json_as_object (json JSON, time DateTime MATERIALIZED now()) ENGINE = Memory;
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}};
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {};
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"any json stucture":1}
+SELECT time, json FROM json_as_object FORMAT JSONEachRow
+```
+
+```response title="Response"
+{"time":"2024-09-16 12:18:10","json":{}}
+{"time":"2024-09-16 12:18:13","json":{"any json stucture":"1"}}
+{"time":"2024-09-16 12:18:08","json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
+```
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>

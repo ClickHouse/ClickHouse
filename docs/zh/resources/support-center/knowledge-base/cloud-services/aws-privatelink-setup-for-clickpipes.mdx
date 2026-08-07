@@ -1,0 +1,93 @@
+---
+title: 通过 AWS PrivateLink 向 ClickPipes 暴露私有 RDS 的配置
+description: 通过 AWS PrivateLink 向 ClickPipes 暴露私有 RDS 的配置步骤。
+date: 2024-11-27
+tags: ['安全与身份验证', 'Cloud 管理']
+keywords: ['AWS PrivateLink', '私有 RDS', 'ClickPipes']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="aws-privatelink-setup-to-expose-private-rds-for-clickpipes">
+  ## 通过 AWS PrivateLink 向 ClickPipes 暴露私有 RDS 的配置
+</div>
+
+通过 AWS PrivateLink 向 ClickPipes 暴露私有 RDS 的配置步骤，也支持跨区域访问。
+
+<Info>
+  此方法使用 AWS Endpoint Service，主要适用于跨区域访问。如果您需要同一区域访问，
+  则建议改为[创建 VPC 资源](/zh/integrations/clickpipes/aws-privatelink#vpc-resource)。
+</Info>
+
+<div id="private-link-creation">
+  ## 创建 Private Link
+</div>
+
+按照以下步骤为您的 RDS 实例创建 **VPC endpoint service**。如果您有多个
+需要端点服务的 RDS 实例，请对每个实例重复这些步骤 (或者不同实例可能使用不同的监听端口) ：
+
+1. 找到您的 VPC 并[创建 NLB](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/create-network-load-balancer.html)
+   * 进入目标 VPC，并创建一个 Network Load Balancer (NLB) 。请注意，NLB 应为内部 (私有) 类型，而不是面向互联网 (公有) 类型。
+
+2. 配置目标组
+   * 目标组应指向 RDS 实例的端点 IP 和端口 (PostgreSQL 通常为 5432，MySQL 通常为 3306) 。
+
+<Note>
+  如果您希望自动使用新的 RDS 端点 IP 更新目标组，可以使用 AWS Lambda 函数或其他自动化工具。
+  可用于此目的的 Terraform 模块之一是[这个](https://github.com/MaterializeInc/terraform-aws-rds-privatelink)。
+</Note>
+
+* **重要**：在 DB Cluster/Aurora 场景中，请确保使用的 RDS 实例端点只能是**写入端点**，而不是通用端点。
+  * 请确保使用 TCP 协议，以避免由 NLB 终止 TLS。
+
+3. 设置监听端口
+   * 负载均衡器的监听端口必须与目标组使用的端口一致 (PostgreSQL 通常为 5432，MySQL 通常为 3306) 。
+
+4. 创建 VPC Endpoint Service
+   * 在 VPC 中，创建一个指向 NLB 的端点服务。
+   * 启用对来自特定账户的连接请求的接受。
+
+5. 授权 ClickPipes 使用 Endpoint Service
+   * 向 ClickPipes 账户授予请求此端点服务的权限。
+     * 添加以下主体 ID 以配置允许的主体：
+       ```
+       arn:aws:iam::072088201116:root
+       ```
+
+6. 在 NLB 上禁用 “Enforce Security Group Inbound Rules on Private Link Traffic” (如果 NLB 关联了安全组 (Security Group) )
+   * 进入 NLB 的设置页面；如果 NLB 关联了安全组 (Security Group) ，请禁用 “Enforce Security Group Inbound Rules on Private Link Traffic” 设置。
+   * 如果使用 Terraform，请将 NLB 的 `enforce_security_group_inbound_rules_on_private_link_traffic` 属性设置为 `off`
+   * 此设置是**必需的**，否则将无法允许来自 ClickPipes VPC 到 NLB 的流量。
+
+7. **可选**：如果您的数据库区域与 ClickPipes 区域不同，请启用跨区域支持
+   * 在 VPC 控制台的 `Endpoint Services` 下，选择您的端点服务。
+   * 点击 `Actions` 按钮，然后选择 `Modify supported Regions`。
+   * 添加您希望允许访问该端点服务的区域。ClickPipes 区域列表请[参见此处](/zh/integrations/clickpipes/home#list-of-static-ips)。
+
+8. **MySQL 推荐设置**
+   * 如果您使用的是 MySQL，建议在源数据库中将 `skip_name_resolve=1` 设置为参数。
+     由于 NLB 会反复执行健康检查，MySQL 可能会阻止来自 NLB 的主机。设置此参数可以完全
+     避免 DNS 主机名查找，因此不会阻止 NLB 主机。如果使用 RDS，则需要重启
+     实例。
+
+<div id="initiating-connection">
+  ## 发起连接
+</div>
+
+完成后，您可以按照指南[发起连接](/zh/integrations/clickpipes/aws-privatelink#creating-clickpipe)。
+
+当 Console 中的状态显示为 `Ready` 后，您就可以按照下一节创建 ClickPipe。
+
+<div id="creating-clickpipes">
+  ## 创建 ClickPipes
+</div>
+
+使用上一步获取的 DNS 名称来[创建 ClickPipe](/zh/integrations/clickpipes/postgres/index)。
+
+<div id="dynamically-updating-the-rds-endpoint-ip">
+  ## 动态更新 RDS 端点 IP
+</div>
+
+当 RDS 端点 IP 发生变化时 (例如因重启、故障转移或更新) ，你需要用新的 IP 更新 NLB 目标组。你可以使用 AWS Lambda 函数或其他自动化工具将这一过程自动化。

@@ -1,0 +1,352 @@
+---
+title: '直接查询开放表格式'
+sidebarTitle: '直接查询'
+slug: /use-cases/data-lake/getting-started/querying-directly
+description: '使用 ClickHouse 表函数，无需预先配置即可直接读取对象存储中的 Iceberg、Delta Lake、Hudi 和 Paimon 表。'
+toc_max_heading_level: 2
+keywords: ['数据湖', '湖仓', 'Iceberg', 'Delta Lake', 'Hudi', 'Paimon', '表函数']
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+ClickHouse 提供表函数，可直接查询存储在对象存储中的开放表格式数据。无需连接外部 catalog，而是直接在原位置查询数据，类似于 AWS Athena 从 S3 读取数据的方式。
+
+你可以在函数调用中直接传入存储路径和凭证，其余工作由 ClickHouse 处理。所有 ClickHouse SQL 语法和函数均可用，查询还可受益于 ClickHouse 的并行执行能力以及[高效的原生 Parquet 读取器](https://clickhouse.com/blog/clickhouse-and-parquet-a-foundation-for-fast-lakehouse-analytics)。
+
+<Info>
+  **Server、local 或 chDB**
+
+  本指南中的步骤可以通过现有的 ClickHouse server 安装来执行。对于即席查询，你也可以改用 [clickhouse-local](/zh/concepts/features/tools-and-utilities/clickhouse-local)，无需运行 server 即可完成相同的工作流。稍作调整后，也可以使用 ClickHouse 的进程内发行版 [chDB](/zh/products/chdb/index) 完成这一过程。
+</Info>
+
+以下示例使用存储在 S3 上各种湖仓格式中的 [hits](/zh/get-started/sample-datasets/star-schema) 数据集。对于每种湖格式，针对各个对象存储提供商都提供了专用函数。
+
+<Tabs>
+  <Tab title="Apache Iceberg">
+    [`iceberg`](/zh/reference/functions/table-functions/iceberg) 表函数 (`icebergS3` 的别名) 可直接从对象存储中读取 Iceberg 表。针对每种存储后端，均有对应的变体：`icebergS3`、`icebergAzure`、`icebergHDFS` 和 `icebergLocal`。
+
+    **示例语法：**
+
+    ```sql
+    icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    icebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **GCS 支持**
+
+      这些函数的 S3 版本也可用于 Google Cloud Storage (GCS)。
+    </Info>
+
+    **示例：**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 329万
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 163万
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.375 sec. Processed 100.00 million rows, 9.98 GB (29.63 million rows/s., 2.96 GB/s.)
+    Peak memory usage: 10.48 GiB.
+    ```
+
+    ### 集群 Variant
+
+    [`icebergS3Cluster`](/zh/reference/functions/table-functions/icebergCluster) 函数可将读取操作分布到 ClickHouse 集群中的多个节点上。发起节点与所有节点建立连接，并动态分发数据文件。每个工作线程节点按需请求并处理任务，直至所有文件读取完毕。`icebergCluster` 是 `icebergS3Cluster` 的别名。此外，Azure ([`icebergAzureCluster`](/zh/reference/functions/table-functions/icebergCluster)) 和 HDFS ([`icebergHDFSCluster`](/zh/reference/functions/table-functions/icebergCluster)) 也有对应的变体版本。
+
+    **示例语法：**
+
+    ```sql
+    icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+    -- icebergCluster 是 icebergS3Cluster 的别名
+
+    icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    **示例 (ClickHouse Cloud) ：**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3Cluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/'
+    )
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### 表引擎
+
+    除了在每次查询中使用表函数外，您也可以使用 [`Iceberg` 表引擎](/zh/reference/engines/table-engines/integrations/iceberg) 创建持久化表。数据仍存储在对象存储中，按需读取，不会复制到 ClickHouse 中。其优势在于，表定义保存在 ClickHouse 中，可在用户和会话之间共享，无需每个用户单独指定存储路径和凭据。每种存储后端均有对应的引擎变体：`IcebergS3` (或 `Iceberg` 别名) 、`IcebergAzure`、`IcebergHDFS` 和 `IcebergLocal`。
+
+    表引擎和表函数均支持[数据缓存](/zh/reference/engines/table-engines/integrations/iceberg#data-cache)，其缓存机制与 S3、AzureBlobStorage 和 HDFS 存储引擎相同。此外，[metadata cache](/zh/reference/engines/table-engines/integrations/iceberg#metadata-cache) 会将 manifest 文件信息存储在内存中，以减少对 Iceberg 元数据的重复读取。该缓存默认通过 `use_iceberg_metadata_files_cache` 设置启用。
+
+    **示例语法：**
+
+    表引擎 `Iceberg` 是 `IcebergS3` 的别名。
+
+    ```sql
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **GCS 支持**
+
+      该表引擎的 S3 变体可用于 Google Cloud Storage (GCS)。
+    </Info>
+
+    **示例：**
+
+    ```sql
+    CREATE TABLE hits_iceberg
+        ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 2.737 sec. Processed 100.00 million rows, 9.98 GB (36.53 million rows/s., 3.64 GB/s.)
+    峰值内存占用: 10.53 GiB.
+    ```
+
+    有关支持的功能 (包括分区裁剪、schema 演进、时间旅行、缓存等) ，请参阅[支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix#format-support)。如需完整参考信息，请查阅 [`iceberg` 表函数](/zh/reference/functions/table-functions/iceberg)和 [`Iceberg` 表引擎](/zh/reference/engines/table-engines/integrations/iceberg)文档。
+  </Tab>
+
+  <Tab title="Delta Lake">
+    [`deltaLake`](/zh/reference/functions/table-functions/deltalake) 表函数 (`deltaLakeS3` 的别名) 用于从对象存储中读取 Delta Lake 表。其他后端也有对应的变体：`deltaLakeAzure` 和 `deltaLakeLocal`。
+
+    **示例语法：**
+
+    ```sql
+    deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+
+    deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    deltaLakeLocal(path, [,format])
+    ```
+
+    <Info>
+      **GCS 支持**
+
+      这些函数的 S3 变体也可用于 Google Cloud Storage (GCS)。
+    </Info>
+
+    **示例：**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 329万
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 163万
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.878 sec. Processed 100.00 million rows, 14.82 GB (25.78 million rows/s., 3.82 GB/s.)
+    Peak memory usage: 9.16 GiB.
+    ```
+
+    ### 集群 Variant
+
+    [`deltaLakeCluster`](/zh/reference/functions/table-functions/deltalakeCluster) 函数将读取操作分布到 ClickHouse 集群的多个节点上。发起节点将数据文件动态分发给工作线程节点以进行并行处理。`deltaLakeS3Cluster` 是 `deltaLakeCluster` 的别名。此外，还提供 Azure 变体 ([`deltaLakeAzureCluster`](/zh/reference/functions/table-functions/deltalakeCluster)) 。
+
+    **示例语法：**
+
+    ```sql
+    deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    -- deltaLakeS3Cluster 是 deltaLakeCluster 的别名
+
+    deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    <Info>
+      **支持 GCS**
+
+      这些函数的 S3 变体可用于 Google Cloud Storage (GCS)。
+    </Info>
+
+    **示例 (ClickHouse Cloud) ：**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLakeCluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/'
+    )
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### 表引擎
+
+    如果使用 S3 兼容存储，可以使用 [`DeltaLake` 表引擎](/zh/reference/engines/table-engines/integrations/deltalake) 创建持久化表，从而避免在每次查询中重复使用表函数。数据仍存储在对象存储中，按需读取，不会复制到 ClickHouse 中。其优势在于，表定义存储在 ClickHouse 中，可在用户和会话之间共享，无需每位用户单独指定存储路径和凭据。
+
+    表引擎和表函数均支持[数据缓存](/zh/reference/engines/table-engines/integrations/deltalake#data-cache)，采用与 S3、AzureBlobStorage 和 HDFS 存储引擎相同的缓存机制。
+
+    **示例语法：**
+
+    ```sql
+    CREATE TABLE delta_table
+        ENGINE = DeltaLake(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    <Info>
+      **GCS 支持**
+
+      此表引擎支持 Google Cloud Storage (GCS)。
+    </Info>
+
+    **示例：**
+
+    ```sql
+    CREATE TABLE hits_delta
+        ENGINE = DeltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+
+    SELECT
+        URL,
+        count() AS cnt
+    FROM hits_delta
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.608 sec. Processed 100.00 million rows, 14.82 GB (27.72 million rows/s., 4.11 GB/s.)
+    Peak memory usage: 9.27 GiB.
+    ```
+
+    有关支持的功能 (包括存储后端、缓存等) ，请参阅[支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix#format-support)。如需完整参考，请参阅 [`deltaLake` 表函数](/zh/reference/functions/table-functions/deltalake)和 [`DeltaLake` 表引擎](/zh/reference/engines/table-engines/integrations/deltalake)文档。
+  </Tab>
+
+  <Tab title="Apache Hudi">
+    [`hudi`](/zh/reference/functions/table-functions/hudi) 表函数用于从 S3 读取 Hudi 表。
+
+    **语法：**
+
+    ```sql
+    hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### 集群版本
+
+    [`hudiCluster`](/zh/reference/functions/table-functions/hudiCluster) 函数会将读取操作分发到 ClickHouse 集群中的多个节点。发起节点会将数据文件动态分派给各个工作节点，以进行并行处理。
+
+    ```sql
+    hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### 表引擎
+
+    除了在每次查询时都使用表函数之外，您还可以通过 [`Hudi` 表引擎](/zh/reference/engines/table-engines/integrations/hudi) 创建持久化表。数据仍存储在对象存储中，并按需读取——不会将任何数据复制到 ClickHouse。其优势在于，表定义保存在 ClickHouse 中，可在不同用户和会话之间共享，无需每位用户都单独指定存储路径和凭证。
+
+    **语法：**
+
+    ```sql
+    CREATE TABLE hudi_table
+        ENGINE = Hudi(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    有关支持的功能 (包括存储后端等) ，请参阅[支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix#format-support)。如需查看完整参考信息，请参阅[`hudi` 表函数](/zh/reference/functions/table-functions/hudi)和[`Hudi` 表引擎](/zh/reference/engines/table-engines/integrations/hudi)文档。
+  </Tab>
+
+  <Tab title="Apache Paimon">
+    <ExperimentalBadge />
+
+    [`paimon`](/zh/reference/functions/table-functions/paimon) 表函数 (`paimonS3` 的别名) 可从对象存储中读取 Paimon 表。针对每种存储后端，都有相应的版本：`paimonS3`、`paimonAzure`、`paimonHDFS` 和 `paimonLocal`。
+
+    **语法：**
+
+    ```sql
+    paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+
+    paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFS(path_to_table, [,format] [,compression_method])
+
+    paimonLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    ### 集群变体
+
+    [`paimonS3Cluster`](/zh/reference/functions/table-functions/paimonCluster) 函数将读操作分发到 ClickHouse 集群中的多个节点。发起节点会动态地将数据文件分派给各个工作节点进行并行处理。`paimonCluster` 是 `paimonS3Cluster` 的别名。Azure ([`paimonAzureCluster`](/zh/reference/functions/table-functions/paimonCluster)) 和 HDFS ([`paimonHDFSCluster`](/zh/reference/functions/table-functions/paimonCluster)) 也提供了相应的变体。
+
+    ```sql
+    paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    -- paimonCluster 是 paimonS3Cluster 的别名
+
+    paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+    ```
+
+    ### 表引擎
+
+    Paimon 目前在 ClickHouse 中没有专门的表引擎。请使用上述表函数查询 Paimon 表。
+
+    有关支持的功能 (包括存储后端等) ，请参阅[支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix#format-support)。如需查看完整参考信息，请参阅[`paimon` 表函数](/zh/reference/functions/table-functions/paimon)文档。
+  </Tab>
+</Tabs>

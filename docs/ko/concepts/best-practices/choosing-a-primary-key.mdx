@@ -1,0 +1,181 @@
+---
+slug: /best-practices/choosing-a-primary-key
+sidebarTitle: '기본 키 선택하기'
+title: '기본 키 선택하기'
+description: 'ClickHouse에서 기본 키를 선택하는 방법을 설명하는 페이지'
+keywords: ['기본 키']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+> 이 페이지에서는 &quot;순서 지정 키&quot;와 &quot;기본 키&quot;를 같은 의미로 사용합니다. 엄밀히 말하면 [ClickHouse에서는 두 개념이 다릅니다](/ko/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key). 하지만 이 문서에서는 두 용어를 서로 바꿔 사용해도 되며, 순서 지정 키는 테이블 `ORDER BY`에 지정된 컬럼을 의미합니다.
+
+ClickHouse의 기본 키는 Postgres와 같은 OLTP 데이터베이스에서 익숙한 유사한 개념과 [매우 다르게](/ko/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse) 동작합니다.
+
+ClickHouse에서 효과적인 기본 키를 선택하는 것은 쿼리 성능과 스토리지 효율성에 매우 중요합니다. ClickHouse는 데이터를 여러 파트로 구성하며, 각 파트에는 자체적인 희소 기본 키 인덱스가 있습니다. 이 인덱스는 스캔해야 하는 데이터 양을 줄여 쿼리 속도를 크게 높입니다. 또한 기본 키는 디스크에서 데이터의 물리적 순서를 결정하므로 압축 효율성에도 직접적인 영향을 미칩니다. 데이터가 최적으로 정렬되어 있으면 더 효과적으로 압축되며, 그 결과 I/O가 줄어 성능이 더욱 향상됩니다.
+
+1. 순서 지정 키를 선택할 때는 쿼리 필터, 즉 `WHERE` 절에서 자주 사용되는 컬럼을 우선적으로 고려하십시오. 특히 많은 수의 행을 제외할 수 있는 컬럼이 중요합니다.
+2. 테이블의 다른 데이터와 상관관계가 높은 컬럼도 유리합니다. 데이터가 연속적으로 저장되면 `GROUP BY` 및 `ORDER BY` 작업에서 압축률과 메모리 효율성이 향상되기 때문입니다.
+
+<br />
+
+순서 지정 키를 선택하는 데 도움이 되는 몇 가지 간단한 규칙을 적용할 수 있습니다. 아래 기준은 때때로 서로 충돌할 수 있으므로, 순서대로 고려하십시오. **이 과정을 통해 여러 후보 키를 식별할 수 있으며, 일반적으로 4~5개면 충분합니다**:
+
+<Info>
+  **중요**
+
+  순서 지정 키는 테이블 생성 시 정의해야 하며, 나중에 추가할 수 없습니다. projections라는 기능을 사용하면 데이터 삽입 후(또는 전)에도 테이블에 추가 정렬을 적용할 수 있습니다. 다만 이 경우 데이터가 중복된다는 점에 유의하십시오. 자세한 내용은 [여기](/ko/reference/statements/alter/projection)를 참조하십시오.
+</Info>
+
+<div id="example">
+  ## 예시
+</div>
+
+다음 `posts_unordered` 테이블(table)을 살펴보겠습니다. 이 테이블에는 Stack Overflow 게시물당 1개의 행이 있습니다.
+
+이 테이블에는 기본 키(기본 키)가 없습니다. 이는 `ORDER BY tuple()`로 나타납니다.
+
+```sql
+CREATE TABLE posts_unordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 
+  'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime,
+  `Score` Int32,
+  `ViewCount` UInt32,
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime,
+  `LastActivityDate` DateTime,
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16,
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense`LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime,
+  `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+사용자가 가장 흔한 접근 패턴으로 2024년 이후에 제출된 질문 수를 계산하려고 한다고 가정해 보겠습니다.
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.055 sec. Processed 59.82 million rows, 361.34 MB (1.09 billion rows/s., 6.61 GB/s.)
+```
+
+이 쿼리에서 읽은 행 수와 바이트 수를 확인하세요. 기본 키가 없으면 쿼리는 전체 데이터셋을 스캔해야 합니다.
+
+`EXPLAIN indexes=1`를 사용하면 인덱스가 없어 전체 테이블 스캔이 수행됨을 확인할 수 있습니다.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain───────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                 │
+│   Aggregating                                             │
+│     Expression (Before GROUP BY)                          │
+│       Expression                                          │
+│         ReadFromMergeTree (stackoverflow.posts_unordered) │
+└───────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.003 sec.
+```
+
+동일한 데이터를 포함하는 테이블 `posts_ordered`가 있고, `ORDER BY`가 `(PostTypeId, toDate(CreationDate))`로 정의되어 있다고 가정합니다. 즉,
+
+```sql
+CREATE TABLE posts_ordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 
+  'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+...
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+`PostTypeId`의 카디널리티는 8이므로, 순서 지정 키의 첫 번째 항목으로 가장 적절한 선택입니다. 날짜 세분화 수준의 필터링만으로도 충분할 가능성이 높고(datetime 필터에도 계속 도움이 됨), 따라서 키의 두 번째 구성 요소로 `toDate(CreationDate)`를 사용합니다. 또한 날짜는 16비트로 표현할 수 있으므로 인덱스 크기도 더 작아져 필터링 속도가 빨라집니다.
+
+다음 애니메이션은 Stack Overflow posts 테이블에서 최적화된 희소 기본 키 인덱스가 생성되는 방식을 보여줍니다. 개별 행에 인덱스를 생성하는 대신, 행 block을 대상으로 인덱스를 생성합니다.
+
+<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="기본 키" />
+
+같은 쿼리를 이 순서 지정 키를 사용하는 테이블에서 다시 실행하면 다음과 같습니다.
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.013 sec. Processed 196.53 thousand rows, 1.77 MB (14.64 million rows/s., 131.78 MB/s.)
+```
+
+이제 이 쿼리는 희소 인덱스를 활용하여 읽는 데이터 양을 크게 줄이고 실행 시간을 4배까지 단축합니다. 읽은 행 수와 바이트 수가 줄어든 점에 주목하십시오.
+
+인덱스 사용 여부는 `EXPLAIN indexes=1`로 확인할 수 있습니다.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain─────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                                                   │
+│   Aggregating                                                                               │
+│     Expression (Before GROUP BY)                                                            │
+│       Expression                                                                            │
+│         ReadFromMergeTree (stackoverflow.posts_ordered)                                     │
+│         Indexes:                                                                            │
+│           PrimaryKey                                                                        │
+│             Keys:                                                                           │
+│               PostTypeId                                                                    │
+│               toDate(CreationDate)                                                          │
+│             Condition: and((PostTypeId in [1, 1]), (toDate(CreationDate) in [19723, +Inf))) │
+│             Parts: 14/14                                                                    │
+│             Granules: 39/7578                                                               │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.004 sec.
+```
+
+또한 희소 인덱스가 예시 쿼리와 일치하는 항목을 포함할 수 없는 모든 행 블록을 어떻게 가지치기하는지 시각화합니다:
+
+<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="기본 키" />
+
+<Note>
+  테이블의 모든 컬럼은 키 자체에 포함되는지 여부와 관계없이 지정된 정렬 키(순서 지정 키)의 값을 기준으로 정렬됩니다. 예를 들어 `CreationDate`가 키로 사용되면 다른 모든 컬럼의 값 순서도 `CreationDate` 컬럼의 값 순서를 따릅니다. 여러 개의 정렬 키를 지정할 수도 있으며, 이 경우 `SELECT` 쿼리의 `ORDER BY` 절과 동일한 의미로 정렬됩니다.
+</Note>
+
+기본 키(기본 키) 선택에 대한 완전한 고급 가이드는 [여기](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)에서 확인할 수 있습니다.
+
+정렬 키가 압축을 개선하고 저장소를 더욱 최적화하는 방식에 대해 더 자세히 알아보려면 [ClickHouse의 Compression](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) 및 [컬럼 Compression 코덱](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)에 대한 공식 가이드를 살펴보십시오.

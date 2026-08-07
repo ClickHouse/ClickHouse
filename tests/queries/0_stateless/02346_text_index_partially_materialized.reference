@@ -1,0 +1,58 @@
+hasAnyToken and hasAllToken functions
+-- fully materialized
+200
+200
+---- use text index reader for all parts
+1
+1
+---- verify all parts have a materialized index
+1
+-- partially materialized
+200
+200
+---- use text index reader for parts have a materialized index
+1
+1
+---- verify some parts do not have a materialized index
+1
+hasPhrase function - without positions
+-- fully materialized
+200
+---- use text index reader for all parts
+1
+---- verify all parts have a materialized index
+1
+-- partially materialized
+200
+---- use text index reader for parts have a materialized index
+1
+---- verify some parts do not have a materialized index
+1
+hasPhrase function - with positions
+-- fully materialized
+200
+---- use text index reader for all parts
+1
+---- verify all parts have a materialized index
+1
+-- partially materialized
+200
+---- use text index reader for parts have a materialized index
+1
+---- verify some parts do not have a materialized index
+1
+hasPhrase function - with positions - part merge
+-- before merge
+3
+[1,4]
+[1,2,5]
+[3]
+[6]
+[7]
+-- after merge (must match before)
+1
+[1,4]
+[1,2,5]
+[3]
+[6]
+[7]

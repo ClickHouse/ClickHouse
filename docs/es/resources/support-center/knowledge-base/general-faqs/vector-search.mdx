@@ -1,0 +1,80 @@
+---
+date: 2023-10-26
+title: ¿Se puede usar ClickHouse para la búsqueda vectorial?
+description: Aprende a usar ClickHouse para la búsqueda vectorial, incluido el almacenamiento de embeddings y las búsquedas con funciones de distancia como la similitud de coseno.
+tags: ['Casos de uso', 'Conceptos']
+keywords: ['Búsqueda vectorial']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="clickhouse-for-vector-search">
+  ## ¡ClickHouse para búsqueda vectorial!
+</div>
+
+Sí, ClickHouse puede realizar búsquedas vectoriales.
+
+Las principales ventajas de usar ClickHouse para la búsqueda vectorial, frente a bases de datos vectoriales más especializadas, incluyen:
+
+* Usar las capacidades de filtrado y búsqueda de texto completo de ClickHouse para refinar tu conjunto de datos antes de realizar una búsqueda.
+* Realizar análisis sobre tus conjuntos de datos.
+* Ejecutar un `JOIN` con tus datos existentes.
+* Evitar tener que gestionar otra base de datos más y complicar tu infraestructura.
+
+Aquí tienes un breve tutorial sobre cómo usar ClickHouse para la búsqueda vectorial.
+
+<div id="1-create-embeddings">
+  ## 1. Crear embeddings
+</div>
+
+Tus datos (documentos, imágenes o datos estructurados) deben convertirse en *embeddings*. Recomendamos crear embeddings con la [API de Embeddings de OpenAI](https://platform.openai.com/docs/api-reference/embeddings) o con la biblioteca de Python de código abierto [SentenceTransformers](https://www.sbert.net/).
+
+Puedes entender un embedding como un gran vector de números de coma flotante que representa tus datos. [Consulta esta guía de OpenAI para obtener más información sobre los embeddings](https://platform.openai.com/docs/guides/embeddings/what-are-embeddings).
+
+<div id="2-store-the-embeddings">
+  ## 2. Almacenar los embeddings
+</div>
+
+Una vez generados los embeddings, debes almacenarlos en ClickHouse. Cada embedding debe almacenarse en una fila independiente y puede incluir metadatos para filtrado, agregaciones o análisis. Aquí tienes un ejemplo de una tabla que puede almacenar imágenes con descripciones:
+
+```sql
+CREATE TABLE images
+(
+	`_file` LowCardinality(String),
+	`caption` String,
+	`image_embedding` Array(Float32)
+)
+ENGINE = MergeTree;
+```
+
+<div id="3-search-for-related-embeddings">
+  ## 3. Buscar embeddings relacionados
+</div>
+
+Supongamos que quieres buscar imágenes de perros en tu conjunto de datos. Puedes usar una función de distancia como `cosineDistance` para usar el embedding de una imagen de perro y buscar imágenes relacionadas:
+
+```sql
+SELECT
+    _file,
+	caption,
+	cosineDistance(
+        -- Un embedding de tu imagen "de entrada" de un perro
+        [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
+        image_embedding
+    ) AS score
+FROM images
+ORDER BY score ASC
+LIMIT 10
+```
+
+Esta consulta devuelve los nombres de `_file` y la `caption` de las 10 imágenes con más probabilidades de estar relacionadas con la imagen de perro que proporcionaste.
+
+<div id="further-reading">
+  ## Más información
+</div>
+
+Si quieres seguir un tutorial más detallado sobre búsqueda vectorial con ClickHouse, consulta:
+
+* [Búsqueda vectorial exacta y aproximada](/es/reference/engines/table-engines/mergetree-family/annindexes)

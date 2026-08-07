@@ -1,0 +1,146 @@
+---
+slug: /use-cases/observability/clickstack/text-to-chart
+title: 'Text-to-Chart'
+sidebarTitle: 'Text-to-Chart'
+description: 'AI 搭載の Text-to-Chart 機能を使って、ClickStack で自然言語のプロンプトからチャートを生成します。'
+doc_type: 'guide'
+keywords: ['clickstack', 'text-to-chart', 'AI', 'visualization', 'Chart Explorer', 'natural language', 'オブザーバビリティ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickStack の Text-to-Chart 機能では、表示したい内容をプレーンテキストで説明するだけで可視化を作成できます。メトリクス、フィルタ、グループ化フィールドを手動で選択する代わりに、&quot;過去 24 時間のサービス別エラー率&quot; のようなプロンプトを入力すると、ClickStack が対応するチャートを自動的に生成します。
+
+この機能は、大規模言語モデル (LLM) を使用してテキストプロンプトをクエリに変換し、その後 [Chart Explorer](/ja/clickstack/features/dashboards/overview#navigate-chart-explorer) で可視化を作成します。設定済みのデータソースであれば、どのデータソースでも利用できます。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+Text-to-Chart を使用するには、[Anthropic APIキー](https://console.anthropic.com/) が必要です。ClickStack の起動時に `ANTHROPIC_API_KEY` 環境変数を設定してください。
+
+オープンソース環境でデプロイする場合は、キーを環境変数として渡します。設定方法はデプロイタイプによって異なります。
+
+<Tabs>
+  <Tab title="Docker（All-in-One またはローカルモード）">
+    ```bash
+    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+    ```
+  </Tab>
+
+  <Tab title="Docker（HyperDX のみ）">
+    ```bash
+    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx-local
+    ```
+  </Tab>
+
+  <Tab title="Docker Compose">
+    変数を `.env` ファイルに追加するか、`docker-compose.yaml` に直接設定してください。
+
+    ```yaml
+    services:
+      app:
+        environment:
+          ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    ```
+  </Tab>
+
+  <Tab title="Helm">
+    `--set` を使用してキーを渡します。
+
+    ```bash
+    helm install my-hyperdx hyperdx/hdx-oss-v2 \
+      --set env[0].name=ANTHROPIC_API_KEY \
+      --set env[0].value=<YOUR_KEY>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="using-text-to-chart">
+  ## Text-to-Chart を使う
+</div>
+
+<Steps>
+  <Step>
+    ### Chart Explorer に移動する
+
+    HyperDX の左側のメニューから **Chart Explorer** を選択します。
+  </Step>
+
+  <Step>
+    ### データソースを選択する
+
+    可視化したいデータソースを選択します。たとえば **Logs**、**Traces**、**Metrics** などです。
+
+    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart explorer" />
+  </Step>
+
+  <Step>
+    ### テキスト プロンプトを入力する
+
+    Chart Explorer の上部にある **AI Assistant** の入力欄に、作成したいチャートの内容を自然言語で入力します。たとえば次のように入力します。
+
+    * `Show error rates by service over the last 24 hours`
+    * `Latency breakdown by endpoint`
+    * `Count of events over time grouped by severity`
+
+    ClickStack はプロンプトをクエリに変換し、自動的に可視化を表示します。
+
+    <Image img="/images/clickstack/text-to-chart/text-to-chart.webp" alt="Text to chart" />
+  </Step>
+</Steps>
+
+<div id="demo-data">
+  ## デモデータで試す
+</div>
+
+Text-to-Chart を手早く試すには、[ローカルモード](/ja/clickstack/deployment/local-mode-only)の Dockerイメージと、[リモートのデモデータセット](/ja/clickstack/example-datasets/remote-demo-data)を使うのが最も簡単です。
+
+```bash
+docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-local:latest
+```
+
+`localhost:8080` にアクセスします。デモデータに接続するには、**Team Settings** に移動し、次の内容で新しい接続を作成します。
+
+* **Connection Name**: `Demo`
+* **Host**: `https://sql-clickhouse.clickhouse.com`
+* **Username**: `otel_demo`
+* **Password**: 空のままにします
+
+<Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="接続を作成" />
+
+続いて、各ログソース — **Logs**、**Traces**、**Metrics**、**Sessions** — が `otel_v2` データベースを使用するように変更します。ログソースの設定方法の詳細については、[リモートのデモデータセットガイド](/ja/clickstack/example-datasets/remote-demo-data)を参照してください。
+
+接続したら、**Chart Explorer** を開き、利用可能なログ、トレース、メトリクスに対してプロンプトを試してみてください。
+
+<div id="example-prompts">
+  ## プロンプトの例
+</div>
+
+以下のプロンプトは、オブザーバビリティ データを扱う際の一般的なユースケースを示しています。
+
+| プロンプト                                             | データソース | 説明                         |
+| ------------------------------------------------- | ------ | -------------------------- |
+| `Error count by service over time`                | ログ     | サービスごとのエラー発生頻度の推移をチャート化します |
+| `Average request duration grouped by endpoint`    | トレース   | エンドポイントごとのレイテンシの傾向を表示します   |
+| `P99 latency by service`                          | トレース   | サービスごとのテールレイテンシを特定します      |
+| `Count of 5xx status codes over the last 6 hours` | ログ     | 過去 6 時間のサーバーエラーの傾向を追跡します   |
+
+プロンプトでは、設定済みのデータソースで利用可能な任意のカラムや属性を参照できます。プロンプトが具体的であるほど、生成されるチャートの精度は高くなります。
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+* Text-to-Chart は現在、LLMプロバイダーとして Anthropic のみをサポートしています。OpenAI を含む追加のプロバイダーへの対応は、今後のリリースで予定されています。
+* データソースとしてサポートされているのは、ログとトレースのみです。Prometheus メトリクスにはまだ対応していません。
+* チャートの精度は、プロンプトの明確さと基盤となるデータの構造に依存します。生成されたチャートが期待どおりでない場合は、プロンプトを言い換えるか、カラム名を明示的に指定してみてください。
+
+<div id="further-reading">
+  ## 参考資料
+</div>
+
+* [テキストからチャートへ: ClickStack でよりすばやく可視化する方法](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — この機能を紹介するブログ記事
+* [ダッシュボードと可視化](/ja/clickstack/features/dashboards/overview) — Chart Explorer を使ったチャートの手動作成
+* [検索](/ja/clickstack/features/search) — 全文検索とプロパティ検索の構文
+* [設定](/ja/clickstack/managing/config) — ClickStack のすべての環境変数

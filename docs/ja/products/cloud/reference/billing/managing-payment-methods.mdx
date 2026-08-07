@@ -1,0 +1,149 @@
+---
+sidebarTitle: '支払い方法の管理'
+slug: /manage/manage/billing/managing-payment-methods
+title: '支払い方法の管理'
+description: 'マーケットプレイスサブスクリプションを管理し、バックアップ用クレジットカードを追加する'
+keywords: ['請求']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このドキュメントでは、クレジットカード課金とマーケットプレイス課金の切り替え、バックアップ用クレジットカードの追加、複数の組織間でのマーケットプレイスサブスクリプションの共有など、ClickHouse Cloud における組織の課金方法を管理・更新する方法について説明します。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* 支払い方法を更新するには、その組織で Admin または Billing ロールを持っている必要があります。
+* 利用可能なマーケットプレイスサブスクリプションは、Admin または Billing ロールを持つ他の組織で有効なものに限られます。
+* 別の組織のマーケットプレイスサブスクリプションを共有するには、現在の組織と、そのマーケットプレイスサブスクリプションを所有する組織の両方で、Admin または Billing ロールを持っている必要があります。
+* マーケットプレイスサブスクリプション経由で課金する組織内のすべてのサービスは、マーケットプレイスと同じクラウドプロバイダー (AWS、GCP、または Azure) 上にある必要があります。
+
+<Note>
+  別の組織のクレジットカードを共有することはできません。
+  現在の支払い方法がクレジットカードで、それを更新する場合は、新しいカード情報を入力する必要があります。
+</Note>
+
+<div id="add-update-cc-payment-method">
+  ## クレジットカードの支払い方法を追加または更新する
+</div>
+
+現在、組織の請求にクレジットカードを使用している場合は、Billing ページからカード情報を更新できます。
+
+<div id="steps-add-update">
+  ### クレジットカードを追加または更新する手順
+</div>
+
+1. ClickHouse Cloudコンソールの **Billing** に移動します。
+2. クレジットカードを追加する場合は、ページ上部にある **支払い方法を追加** ボタンをクリックします。
+
+<Image img="/images/cloud/reference/billing/01-add-payment-method.webp" alt="支払い方法を追加" size="lg" />
+
+3. クレジットカードを編集する場合は、ページ上部にある **クレジットカードを編集** ボタンをクリックします。
+
+<Image img="/images/cloud/reference/billing/02-edit-credit-card.webp" alt="クレジットカードを編集" size="lg" />
+
+4. どちらの場合も、画面の案内に従ってクレジットカードの請求先住所の詳細を追加または更新します。
+
+<div id="configure-billing-to-existing-mp-sub">
+  ## 組織の請求先を既存のマーケットプレイスサブスクリプションに設定する
+</div>
+
+複数の組織がある場合は、次のことができます。
+
+* 組織の請求先を、クレジットカード請求から、他のいずれかの組織ですでに有効になっているマーケットプレイスサブスクリプションに切り替える。
+* 組織で現在使用しているマーケットプレイスサブスクリプションを、別の組織で使用しているものに変更する。
+
+<div id="steps-switch-org-already-active">
+  ### 組織の請求を、他の組織ですでに有効なマーケットプレイスサブスクリプションに切り替える手順
+</div>
+
+1. ClickHouse Cloudコンソールの **Billing** ページに移動します。
+2. **支払い方法** の横にある編集アイコンをクリックします。
+
+<Image img="/images/cloud/reference/billing/03-edit-payment-method.webp" alt="支払い方法を編集" size="lg" />
+
+3. **支払い方法を編集** ダイアログに、現在のクレジットカードがプライマリの支払い方法として表示されます。
+4. クレジットカードの下に、他の組織で利用中の対象マーケットプレイスサブスクリプションが表示されます。各エントリには、マーケットプレイスの種類 (例: AWS Marketplace) と、関連付けられている組織名が表示されます。
+5. この組織の利用料金の請求先にするマーケットプレイスサブスクリプションを選択します。
+6. **支払い方法を更新** をクリックして確定します。
+
+<div id="steps-switch-org-different-org">
+  ### 組織で現在使用しているマーケットプレイスサブスクリプションを、別の組織で使用しているものに変更する手順
+</div>
+
+1. ClickHouse Cloudコンソールの **Billing** ページに移動します。
+2. **支払い方法** の横にある編集アイコンをクリックします。
+
+<Image img="/images/cloud/reference/billing/04-edit-payment-method.webp" alt="支払い方法を編集" size="lg" />
+
+3. **支払い方法の編集** ダイアログに、現在のマーケットプレイスサブスクリプションが支払い方法として表示されます。
+4. 現在のマーケットプレイスサブスクリプションの下に、他の組織で利用可能なマーケットプレイスサブスクリプションが表示されます。各エントリには、マーケットプレイスの種類 (例: AWS Marketplace) と、紐付けられている組織名が表示されます。
+5. この組織の利用料金の請求先にする新しいマーケットプレイスサブスクリプションを選択します。
+6. 確認のため、**支払い方法を更新** をクリックします。
+
+<div id="add-backup-cc-to-marketplace-org">
+  ## マーケットプレイス組織にバックアップ用クレジットカードを追加する
+</div>
+
+組織の主な支払い方法がマーケットプレイスサブスクリプションである場合、バックアップ用の支払い方法としてクレジットカードを追加できます。バックアップ用クレジットカードに請求が発生するのは、利用料金をマーケットプレイスサブスクリプションに請求できない場合のみです (たとえば、サブスクリプションがキャンセルされた、または有効期限切れになった場合) 。
+
+<Note>
+  ClickHouse Cloud を利用するには、組織に少なくとも 1 つの有効な支払い方法 (マーケットプレイスサブスクリプションまたはクレジットカード) が設定されている必要があります。請求コンプライアンスの詳細は[こちら](/ja/products/cloud/reference/billing/billing-compliance#billing-compliance)を参照してください。
+</Note>
+
+<div id="steps-add-backup-cc">
+  ### バックアップ用クレジットカードを追加する手順
+</div>
+
+1. ClickHouse Cloudコンソール の **Billing** ページに移動します。
+2. Billing ページの上部には、プライマリの支払い方法としてマーケットプレイスサブスクリプション、バックアップの支払い方法として **None** が表示されます。
+3. バックアップの支払い方法を設定するには、**add credit card** ボタンをクリックします。
+
+<Image img="/images/cloud/reference/billing/05-add-backup.webp" alt="Add backup credit card" size="lg" />
+
+4. 画面の案内に従って、クレジットカードの請求先住所情報を追加または更新します。保存すると、**Billing** ページにプライマリのマーケットプレイスサブスクリプションとあわせて、バックアップ用クレジットカードが表示されます。
+
+<Note>
+  バックアップ用クレジットカードを設定すると、ボタンをクリックしてクレジットカード情報を編集し、それをプライマリの支払い方法に設定することもできます。
+  ただし、これを行うと、そのクレジットカードが組織で唯一の支払い方法となり、マーケットプレイスサブスクリプションは ClickHouse Cloud から完全に削除されます。
+  その場合は、[&quot;Set up marketplace billing from your cloud provider&quot;](#set-up-marketplace-billing-from-cp) セクションの手順に従って再設定するために、マーケットプレイスのアカウントに戻る必要があります。
+</Note>
+
+<div id="set-up-marketplace-billing-from-cp">
+  ## クラウドプロバイダーからマーケットプレイス課金を設定する
+</div>
+
+ClickHouse Cloud コンソールを介さずに、クラウドマーケットプレイスから直接、組織のマーケットプレイスサブスクリプションを設定または更新することもできます。これは、別のマーケットプレイス課金アカウント上の新しいサブスクリプションを通じて、ClickHouse 組織の課金先を切り替えたい場合に便利です。
+
+マーケットプレイスとサブスクリプションの種類に応じて、以下の手順に従ってください。
+
+* [AWS Marketplace PAYG](/ja/products/cloud/reference/billing/marketplace/aws-marketplace-payg)
+* [AWS Marketplace Committed Contract](/ja/products/cloud/reference/billing/marketplace/aws-marketplace-committed)
+* [GCP Marketplace PAYG](/ja/products/cloud/reference/billing/marketplace/gcp-marketplace-payg)
+* [GCP Marketplace Committed Contract](/ja/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)
+* [Azure Marketplace PAYG](/ja/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [Azure Marketplace Committed Contract](/ja/products/cloud/reference/billing/marketplace/azure-marketplace-committed)
+
+この手順を完了すると、選択した組織の課金は新しいマーケットプレイスサブスクリプションに紐づけられ、ClickHouse Cloud コンソールの Billing ページに更新内容が反映されます。
+
+<div id="support">
+  ## サポート
+</div>
+
+問題が発生した場合は、[サポートチームまでお気軽にお問い合わせください](https://clickhouse.com/support/program)。
+
+<div id="faqs">
+  ## よくある質問
+</div>
+
+<div id="what-happens-to-my-usage-charges-if-i-switch-billing-methods-mid-billing-cycle">
+  ### 請求期間の途中で請求方法を切り替えた場合、利用料金はどうなりますか？
+</div>
+
+切り替え先によって異なります。
+
+Marketplace 請求からクレジットカード請求に切り替える場合: 請求期間の開始から切り替え時点までの利用分は Marketplace に送られます。切り替え時点から請求期間の終了までの残りの利用分は、請求期間の終了時にクレジットカードに請求されます。
+
+クレジットカード請求から Marketplace 請求に切り替える場合: 請求期間全体のうち、まだ請求されていないすべての利用分が Marketplace に送られます。

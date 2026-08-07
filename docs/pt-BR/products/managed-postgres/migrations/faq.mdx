@@ -1,0 +1,54 @@
+---
+slug: /cloud/managed-postgres/migrations/faq
+sidebarTitle: 'FAQ'
+title: 'FAQ sobre migrações do Managed Postgres'
+description: 'Perguntas frequentes sobre migração de dados para o ClickHouse Managed Postgres.'
+keywords: ['postgres', 'migração', 'faq', 'Managed Postgres', 'replicação lógica', 'enum', 'restrição de unicidade']
+doc_type: 'reference'
+---
+
+import PrivatePreviewBadge from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
+
+Muitas dúvidas sobre como funciona a replicação do Postgres — incluindo colunas `TOAST`, slots de replicação, publicações, alterações de esquema e mapeamentos de tipos de dados — são abordadas no [FAQ do ClickPipes for Postgres](/pt-BR/integrations/clickpipes/postgres/faq). As informações de lá também se aplicam às migrações do Managed Postgres.
+
+<div id="invalid-enum-value">
+  ### Estou vendo um erro de &quot;valor de entrada inválido para enum&quot; durante a replicação
+</div>
+
+Esse erro ocorre quando o Postgres de origem tem um valor de enum que não existe no Managed Postgres de destino. A replicação lógica não propaga automaticamente os comandos `ALTER TYPE ... ADD VALUE`, então novos valores de enum adicionados na origem após a configuração inicial do esquema farão com que as inserções falhem no destino.
+
+Para corrigir isso, adicione o valor ausente ao tipo enum no Postgres de destino:
+
+```sql
+ALTER TYPE your_enum_type ADD VALUE 'new_value';
+```
+
+Substitua `your_enum_type` pelo nome do seu tipo Enum e `'new_value'` pelo valor ausente na mensagem de erro.
+
+<div id="unique-constraint-violation">
+  ### Estou recebendo um erro de violação de restrição de unicidade durante a replicação
+</div>
+
+Violações de restrição de unicidade podem ocorrer durante a replicação lógica quando a ordem da replicação causa um conflito com uma restrição de unicidade já existente no destino. Isso pode acontecer em workloads de CDC que envolvem a reprodução de operações que violam temporariamente a unicidade antes que uma atualização posterior resolva o problema.
+
+Para desbloquear a replicação, remova a restrição de unicidade no Postgres de destino:
+
+```sql
+ALTER TABLE your_table DROP CONSTRAINT your_constraint_name;
+```
+
+Você pode encontrar o nome da restrição executando:
+
+```sql
+SELECT conname, conrelid::regclass
+FROM pg_constraint
+WHERE contype = 'u';
+```
+
+Adicione novamente a constraint durante a transição final, quando a replicação estiver concluída e a origem não estiver mais ativa:
+
+```sql
+ALTER TABLE your_table ADD CONSTRAINT your_constraint_name UNIQUE (column1, column2);
+```

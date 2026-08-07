@@ -1,0 +1,429 @@
+---
+sidebarTitle: 'Apache Flink'
+slug: /integrations/apache-flink
+description: 'Introduction to Apache Flink with ClickHouse'
+keywords: ['clickhouse', 'Apache Flink', 'migrating', 'data', 'stream processing']
+title: 'Flink Connector'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge/>
+
+This is the official [Apache Flink Sink Connector](https://github.com/ClickHouse/flink-connector-clickhouse) supported by ClickHouse. It is built using Flink's [AsyncSinkBase](https://cwiki.apache.org/confluence/display/FLINK/FLIP-171%3A+Async+Sink) and the official ClickHouse [java client](https://github.com/ClickHouse/clickhouse-java).
+
+The connector supports Apache Flink's DataStream API. Table API support is [planned for a future release](https://github.com/ClickHouse/flink-connector-clickhouse/issues/42).
+
+## Requirements {#requirements}
+
+- Java 11+ (for Flink 1.17+) or 17+ (for Flink 2.0+)
+- Apache Flink 1.17+
+
+## Flink version compatibility matrix {#flink-compatibility-matrix}
+
+The connector is split into two artifacts to support both Flink 1.17+ and Flink 2.0+. Choose the artifact that matches your desired Flink version:
+
+| Flink Version | Artifact                         | ClickHouse Java Client Version | Required Java |
+|---------------|----------------------------------|--------------------------------|---------------|
+| latest        | flink-connector-clickhouse-2.0.0 | 0.9.5                          | Java 17+      |
+| 2.0.1         | flink-connector-clickhouse-2.0.0 | 0.9.5                          | Java 17+      |
+| 2.0.0         | flink-connector-clickhouse-2.0.0 | 0.9.5                          | Java 17+      |
+| 1.20.2        | flink-connector-clickhouse-1.17  | 0.9.5                          | Java 11+      |
+| 1.19.3        | flink-connector-clickhouse-1.17  | 0.9.5                          | Java 11+      |
+| 1.18.1        | flink-connector-clickhouse-1.17  | 0.9.5                          | Java 11+      |
+| 1.17.2        | flink-connector-clickhouse-1.17  | 0.9.5                          | Java 11+      |
+
+<Note>
+The connector has not been tested against Flink versions earlier than 1.17.2
+</Note>
+
+## Installation & setup {#installation--setup}
+### Import as a dependency {#import-as-a-dependency}
+#### For Flink 2.0+ {#flink-2}
+
+<Tabs>
+<Tab title="Maven">
+
+```maven
+<dependency>
+    <groupId>com.clickhouse.flink</groupId>
+    <artifactId>flink-connector-clickhouse-2.0.0</artifactId>
+    <version>{{ stable_version }}</version>
+    <classifier>all</classifier>
+</dependency>
+```
+</Tab>
+<Tab title="Gradle">
+
+```gradle
+dependencies {
+    implementation("com.clickhouse.flink:flink-connector-clickhouse-2.0.0:{{ stable_version }}")
+}
+```
+</Tab>
+<Tab title="SBT">
+
+```sbt
+libraryDependencies += "com.clickhouse.flink" % "flink-connector-clickhouse-2.0.0" % {{ stable_version }} classifier "all"
+```
+
+</Tab>
+</Tabs>
+
+#### For Flink 1.17+ {#flink-117}
+<Tabs>
+<Tab title="Maven">
+
+```maven
+<dependency>
+    <groupId>com.clickhouse.flink</groupId>
+    <artifactId>flink-connector-clickhouse-1.17</artifactId>
+    <version>{{ stable_version }}</version>
+    <classifier>all</classifier>
+</dependency>
+```
+</Tab>
+<Tab title="Gradle">
+
+```gradle
+dependencies {
+    implementation("com.clickhouse.flink:flink-connector-clickhouse-1.17:{{ stable_version }}")
+}
+```
+</Tab>
+<Tab title="SBT">
+
+```sbt
+libraryDependencies += "com.clickhouse.flink" % "flink-connector-clickhouse-1.17" % {{ stable_version }} classifier "all"
+```
+
+</Tab>
+</Tabs>
+
+### Download the binary {#download-the-binary}
+
+The name pattern of the binary JAR is:
+
+```bash
+flink-connector-clickhouse-${flink_version}-${stable_version}-all.jar
+```
+
+where:
+- `flink_version` is one of `2.0.0` or `1.17`
+- `stable_version` is a [stable artifact release version](https://github.com/ClickHouse/flink-connector-clickhouse/releases)
+
+You can find all available released JAR files in the [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/flink/).
+
+## Using the DataStream API {#using-the-datastream-api}
+### Snippet {#datastream-snippet}
+
+Let's say you want to insert raw CSV data into ClickHouse:
+
+<Tabs>
+<Tab title="Java">
+
+```java
+public static void main(String[] args) {
+    // Configure ClickHouseClient
+    ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+
+    // Create an ElementConverter
+    ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
+
+    // Create the sink and set the format using `setClickHouseFormat`
+    ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
+            convertorString,
+            MAX_BATCH_SIZE,
+            MAX_IN_FLIGHT_REQUESTS,
+            MAX_BUFFERED_REQUESTS,
+            MAX_BATCH_SIZE_IN_BYTES,
+            MAX_TIME_IN_BUFFER_MS,
+            MAX_RECORD_SIZE_IN_BYTES,
+            clickHouseClientConfig
+    );
+
+    csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+
+    // Finally, connect your DataStream to the sink.
+    final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+    Path csvFilePath = new Path(fileFullName);
+    FileSource<String> csvSource = FileSource
+            .forRecordStreamFormat(new TextLineInputFormat(), csvFilePath)
+            .build();
+
+    env.fromSource(
+            csvSource,
+            WatermarkStrategy.noWatermarks(),
+            "GzipCsvSource"
+    ).sinkTo(csvSink);
+}
+```
+
+</Tab>
+</Tabs>
+
+More examples and snippets can be found in our tests:
+- [flink-connector-clickhouse-1.17](https://github.com/ClickHouse/flink-connector-clickhouse/tree/main/flink-connector-clickhouse-1.17/src/test/java/org/apache/flink/connector/clickhouse/sink)
+- [flink-connector-clickhouse-2.0.0](https://github.com/ClickHouse/flink-connector-clickhouse/tree/main/flink-connector-clickhouse-2.0.0/src/test/java/org/apache/flink/connector/clickhouse/sink)
+
+### Quick start example {#datastream-quick-start}
+
+We have created maven-based example for an easy start with the ClickHouse Sink:
+
+- [Flink 1.17+](https://github.com/ClickHouse/flink-connector-clickhouse/tree/main/examples/maven/flink-v1.7/covid)
+- [Flink 2.0.0+](https://github.com/ClickHouse/flink-connector-clickhouse/tree/main/examples/maven/flink-v2/covid)
+
+For more detailed instructions, see the [Example Guide](https://github.com/ClickHouse/flink-connector-clickhouse/blob/main/examples/README.md)
+
+### DataStream API connection options {#datastream-api-connection-options}
+#### ClickHouse client options {#client-options}
+
+| Parameters                  | Description                                                                                                                                        | Default Value | Required |
+|-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|---------------|----------|
+| `url`                       | Fully qualified Clickhouse URL                                                                                                                     | N/A           | Yes      |
+| `username`                  | ClickHouse database username                                                                                                                       | N/A           | Yes      |
+| `password`                  | ClickHouse database password                                                                                                                       | N/A           | Yes      |
+| `database`                  | ClickHouse database name                                                                                                                           | N/A           | Yes      |
+| `table`                     | ClickHouse table name                                                                                                                              | N/A           | Yes      |
+| `options`                   | Map of Java client configuration options                                                                                                           | Empty map     | No       |
+| `serverSettings`            | Map of ClickHouse server session settings                                                                                                          | Empty map     | No       |
+| `enableJsonSupportAsString` | ClickHouse server setting to expect a JSON formatted String for the [JSON data type](/reference/data-types/newjson) | true          | No       |
+
+`options` and `serverSettings` should be passed to the client as `Map<String, String>`. An empty map for either will use client or server defaults, respectively.
+
+<Note>
+All available Java client options are listed in [ClientConfigProperties.java](https://github.com/ClickHouse/clickhouse-java/blob/main/client-v2/src/main/java/com/clickhouse/client/api/ClientConfigProperties.java) and [this documentation page](/integrations/language-clients/java/client#configuration).
+
+All available server session settings are listed in [this documentation page](/reference/settings/session-settings).
+</Note>
+
+For example:
+
+<Tabs>
+<Tab title="Java">
+
+```java
+Map<String, String> javaClientOptions = Map.of(
+    ClientConfigProperties.CA_CERTIFICATE.getKey(), "<my_CA_cert>",
+    ClientConfigProperties.SSL_CERTIFICATE.getKey(), "<my_SSL_cert>",
+    ClientConfigProperties.CLIENT_NETWORK_BUFFER_SIZE.getKey(), "30000",
+    ClientConfigProperties.HTTP_MAX_OPEN_CONNECTIONS.getKey(), "5"
+);
+
+Map<String, String> serverSettings = Map.of(
+    "insert_deduplicate", "1"
+);
+
+ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
+    url,
+    username,
+    password,
+    database,
+    tableName,
+    javaClientOptions,
+    serverSettings,
+    false // enableJsonSupportAsString
+);
+```
+</Tab>
+</Tabs>
+
+#### Sink options {#sink-options}
+
+The following options come directly from Flink's `AsyncSinkBase`:
+
+| Parameters             | Description                                                                                                 | Default Value | Required |
+|------------------------|-------------------------------------------------------------------------------------------------------------|---------------|----------|
+| `maxBatchSize`         | Maximum number of records inserted in a single batch                                                        | N/A           | Yes      |
+| `maxInFlightRequests`  | The maximum number of in flight requests allowed before the sink applies backpressure                       | N/A           | Yes      |
+| `maxBufferedRequests`  | The maximum number of records that may be buffered in the sink before backpressure is applied               | N/A           | Yes      |
+| `maxBatchSizeInBytes`  | The maximum size (in bytes) a batch may become. All batches sent will be smaller than or equal to this size | N/A           | Yes      |
+| `maxTimeInBufferMS`    | The maximum time a record may stay in the sink before being flushed                                         | N/A           | Yes      |
+| `maxRecordSizeInBytes` | The maximum record size that the sink will accept, records larger than this will be automatically rejected  | N/A           | Yes      |
+
+## Supported data types {#supported-data-types}
+
+The table below provides a quick reference for converting data types when inserting from Flink into ClickHouse.
+
+### Inserting data from Flink into ClickHouse {#inserting-data-from-flink-into-clickhouse}
+
+[//]: # (TODO: add a "Flink SQL Type" column once table api support is added )
+
+| Java Type           | ClickHouse Type   | Supported | Serialization Method          |
+|---------------------|-------------------|-----------|-------------------------------| 
+| `byte`/`Byte`       | `Int8`            | ✅         | `DataWriter.writeInt8`        |
+| `short`/`Short`     | `Int16`           | ✅         | `DataWriter.writeInt16`       |
+| `int`/`Integer`     | `Int32`           | ✅         | `DataWriter.writeInt32`       |
+| `long`/`Long`       | `Int64`           | ✅         | `DataWriter.writeInt64`       |
+| `BigInteger`        | `Int128`          | ✅         | `DataWriter.writeInt128`      |
+| `BigInteger`        | `Int256`          | ✅         | `DataWriter.writeInt256`      |
+| `short`/`Short`     | `UInt8`           | ✅         | `DataWriter.writeUInt8`       |
+| `int`/`Integer`     | `UInt8`           | ✅         | `DataWriter.writeUInt8 `      |
+| `int`/`Integer`     | `UInt16`          | ✅         | `DataWriter.writeUInt16`      |
+| `long`/`Long`       | `UInt32`          | ✅         | `DataWriter.writeUInt32`      |
+| `long`/`Long`       | `UInt64`          | ✅         | `DataWriter.writeUInt64`      |
+| `BigInteger`        | `UInt64`          | ✅         | `DataWriter.writeUInt64`      |
+| `BigInteger`        | `UInt128`         | ✅         | `DataWriter.writeUInt128`     |
+| `BigInteger`        | `UInt256`         | ✅         | `DataWriter.writeUInt256`     |
+| `BigDecimal`        | `Decimal`         | ✅         | `DataWriter.writeDecimal`     |
+| `BigDecimal`        | `Decimal32`       | ✅         | `DataWriter.writeDecimal`     |
+| `BigDecimal`        | `Decimal64`       | ✅         | `DataWriter.writeDecimal`     |
+| `BigDecimal`        | `Decimal128`      | ✅         | `DataWriter.writeDecimal`     |
+| `BigDecimal`        | `Decimal256`      | ✅         | `DataWriter.writeDecimal`     |
+| `float`/`Float`     | `Float`           | ✅         | `DataWriter.writeFloat32`     |
+| `double`/`Double`   | `Double`          | ✅         | `DataWriter.writeFloat64`     |
+| `boolean`/`Boolean` | `Boolean`         | ✅         | `DataWriter.writeBoolean`     |
+| `String`            | `String`          | ✅         | `DataWriter.writeString`      |
+| `String`            | `FixedString`     | ✅         | `DataWriter.writeFixedString` |
+| `LocalDate`         | `Date`            | ✅         | `DataWriter.writeDate`        |
+| `LocalDate`         | `Date32`          | ✅         | `DataWriter.writeDate32`      |
+| `LocalDateTime`     | `DateTime`        | ✅         | `DataWriter.writeDateTime`    |
+| `ZonedDateTime`     | `DateTime`        | ✅         | `DataWriter.writeDateTime`    |
+| `LocalDateTime`     | `DateTime64`      | ✅         | `DataWriter.writeDateTime64`  |
+| `ZonedDateTime`     | `DateTime64`      | ✅         | `DataWriter.writeDateTime64`  |
+| `int`/`Integer`     | `Time`            | ❌         | N/A                           |
+| `long`/`Long`       | `Time64`          | ❌         | N/A                           |
+| `byte`/`Byte`       | `Enum8`           | ✅         | `DataWriter.writeInt8`        |
+| `int`/`Integer`     | `Enum16`          | ✅         | `DataWriter.writeInt16`       |
+| `java.util.UUID`    | `UUID`            | ✅         | `DataWriter.writeIntUUID`     |
+| `String`            | `JSON`            | ✅         | `DataWriter.writeJSON`        |
+| `Array<Type>`       | `Array<Type>`     | ✅         | `DataWriter.writeArray`       |
+| `Map<K,V>`          | `Map<K,V>`        | ✅         | `DataWriter.writeMap`         |
+| `Tuple<Type,..>`    | `Tuple<T1,T2,..>` | ✅         | `DataWriter.writeTuple`       |
+| `Object`            | `Variant`         | ❌         | N/A                           |
+
+Notes:
+* A `ZoneId` must be provided when performing date operations.
+* [Precision and scale](/reference/data-types/decimal#decimal-value-ranges) must be provided when performing decimal operations.
+* In order for ClickHouse to parse a Java String as JSON, you need to enable `enableJsonSupportAsString` in `ClickHouseClientConfig`.
+* The connector requires an `ElementConvertor` to map elements in the input DataStream to ClickHouse payloads. To this end, the connector provides `ClickHouseConvertor` and `POJOConvertor`, which you can use to implement this mapping using the `DataWriter` serialization methods above.
+
+## Supported input formats {#supported-input-formats}
+
+You can find the list of available ClickHouse input formats in [this documentation page](/reference/formats/index#formats-overview) and [ClickHouseFormat.java](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-data/src/main/java/com/clickhouse/data/ClickHouseFormat.java).
+
+To specify the format the connector should use to serialize your DataStream to ClickHouse payloads, use the `setClickHouseFormat` function. For example:
+
+```java
+ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
+        convertorString,
+        MAX_BATCH_SIZE,
+        MAX_IN_FLIGHT_REQUESTS,
+        MAX_BUFFERED_REQUESTS,
+        MAX_BATCH_SIZE_IN_BYTES,
+        MAX_TIME_IN_BUFFER_MS,
+        MAX_RECORD_SIZE_IN_BYTES,
+        clickHouseClientConfig
+);
+csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
+```
+
+<Note>
+By default, the connector will use either [RowBinaryWithDefaults](/reference/formats/RowBinary/RowBinaryWithDefaults) or [RowBinary](/reference/formats/RowBinary/RowBinary) if `setSupportDefault` in `ClickHouseClientConfig` is explicitly set to true or false, respectively.
+</Note>
+
+## Metrics {#metrics}
+
+The connector exposes the following additional metrics on top of Flink's existing metrics:
+
+| Metric                                  | Description                                                                                                                                                                                                                                                                                | Type      | Status |
+|-----------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|--------|
+| `numBytesSend`                          | Total number of bytes sent to ClickHouse in the request payload. _Note: this metric measures the serialized data size sent over the network and might differ from ClickHouse's `written_bytes` in `system.query_log`, which reflects the actual bytes written to storage after processing_ | Counter   | ✅      |
+| `numRecordSend`                         | Total number of records sent to ClickHouse                                                                                                                                                                                                                                                 | Counter   | ✅      |
+| `numRequestSubmitted`                   | Total number of requests sent (actual number of flushes performed)                                                                                                                                                                                                                         | Counter   | ✅      |
+| `numOfDroppedBatches`                   | Total number of batches dropped due to non-retryable failures                                                                                                                                                                                                                              | Counter   | ✅      |
+| `numOfDroppedRecords`                   | Total number of records dropped due to non-retryable failures                                                                                                                                                                                                                              | Counter   | ✅      |
+| `totalBatchRetries`                     | Total number of batch retries due to retryable failures                                                                                                                                                                                                                                    | Counter   | ✅      |
+| `writeLatencyHistogram`                 | Histogram of successful write latency distribution (ms)                                                                                                                                                                                                                                    | Histogram | ✅      |
+| `writeFailureLatencyHistogram`          | Histogram of failed write latency distribution (ms)                                                                                                                                                                                                                                        | Histogram | ✅      |
+| `triggeredByMaxBatchSizeCounter`        | Total number of flushes triggered by reaching `maxBatchSize`                                                                                                                                                                                                                               | Counter   | ✅      |
+| `triggeredByMaxBatchSizeInBytesCounter` | Total number of flushes triggered by reaching `maxBatchSizeInBytes`                                                                                                                                                                                                                        | Counter   | ✅      |
+| `triggeredByMaxTimeInBufferMSCounter`   | Total number of flushes triggered by reaching `maxTimeInBufferMS`                                                                                                                                                                                                                          | Counter   | ✅      |
+| `actualRecordsPerBatch`                 | Histogram of actual batch size distribution                                                                                                                                                                                                                                                | Histogram | ✅      |
+| `actualBytesPerBatch`                   | Histogram of actual bytes per batch distribution                                                                                                                                                                                                                                           | Histogram | ✅      |
+
+[//]: # (| actualTimeInBuffer           | Histogram of actual time in buffer before flush distribution       | Histogram | ❌      |)
+
+## Limitations {#limitations}
+
+* The sink currently provides an at-least-once delivery guarantee. Work toward exactly-once semantics is being tracked [here](https://github.com/ClickHouse/flink-connector-clickhouse/issues/106).
+* The sink does not yet support a dead-letter queue (DLQ) for buffering unprocessable records. In the meantime, the connector will attempt to re-insert records that fail and drop them if unsuccessful. This feature is being tracked [here](https://github.com/ClickHouse/flink-connector-clickhouse/issues/105).
+* The sink does not yet support creation via Flink's Table API or Flink SQL. This feature is being tracked [here](https://github.com/ClickHouse/flink-connector-clickhouse/issues/42).
+
+## ClickHouse version compatibility and security {#compatibility-and-security}
+
+- The connector is tested against a range of recent ClickHouse versions, including latest and head, via a daily CI workflow. The tested versions are updated periodically as new ClickHouse releases become active. See [here](https://github.com/ClickHouse/flink-connector-clickhouse/blob/main/.github/workflows/tests-nightly.yaml#L15) for the versions the connector is tested against daily.
+- See the [ClickHouse security policy](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#security-change-log-and-support) for known security vulnerabilities and how to report a vulnerability.
+- We recommend upgrading the connector continuously to not miss security fixes and new improvements.
+- If you have an issue with migration, please create a GitHub [issue](https://github.com/ClickHouse/flink-connector-clickhouse/issues) and we will respond!
+
+## Advanced and recommended usage {#advanced-and-recommended-usage}
+
+- For optimal performance, ensure your DataStream element type is **not** a Generic type - see [here for Flink's type distinction](https://nightlies.apache.org/flink/flink-docs-release-2.2/docs/dev/datastream/fault-tolerance/serialization/types_serialization/#flinks-typeinformation-class). Non-generic elements will avoid the serialization overhead incurred by Kryo and improve throughput to ClickHouse.
+- We recommend setting `maxBatchSize` to at least 1000 and ideally between 10,000 to 100,000. See [this guide on bulk inserts](/concepts/features/operations/insert/bulkinserts) for more information.
+- To do OLTP-style deduplication or upsert to ClickHouse, refer to [this documentation page](/concepts/features/operations/insert/deduplication#options-for-deduplication). _Note: this is not to be confused with batch deduplication that happens on retries._
+
+## Troubleshooting {#troubleshooting}
+
+### CANNOT_READ_ALL_DATA {#cannot_read_all_data}
+
+The following error may occur:
+
+```text
+com.clickhouse.client.api.ServerException: Code: 33. DB::Exception: Cannot read all data. Bytes read: 9205. Bytes expected: 1100022.: (at row 9) : While executing BinaryRowInputFormat. (CANNOT_READ_ALL_DATA)
+```
+
+**Cause**: Most commonly, the CANNOT_READ_ALL_DATA error means that your ClickHouse table schema has diverged from your Flink record schema. This can happen when one or the other is changed in a backwards incompatible way.
+
+**Solution**: Update the schema in either (or both) your ClickHouse table or connector input data type so they are compatible. If needed, refer to the [type mapping](#inserting-data-from-flink-into-clickhouse) for how to resolve Java types to ClickHouse types. _Note: if there are still records in flight, you will need to reset Flink state when you restart the connector._
+
+### Low throughput {#low_throughput}
+
+You may experience that the connector's throughput does not scale with the job's parallelism (Flink task count) when writing to ClickHouse.
+
+**Cause**: ClickHouse's background [part merging process](/concepts/core-concepts/merges) may be slowing down inserts. This can happen when the configured batch size is too small, the connector is flushing too frequently, or a combination of the two.
+
+**Solution**: Monitor the `numRequestSubmitted` and `actualRecordsPerBatch` metrics to help determine how to tune your batch size (`maxBatchSize`) and how frequently to flush. Also, see [Advanced and recommended usage](#advanced-and-recommended-usage) for batch sizing recommendations.
+
+[//]: # (TODO: uncomment this section once https://github.com/ClickHouse/flink-connector-clickhouse/issues/121 is closed)
+[//]: # (### I see duplicate batches of rows in my ClickHouse table {#duplicate_batches})
+
+[//]: # ()
+[//]: # (**Cause**: If one or more records in a Flink batch fails to insert into ClickHouse because of a retryable failure, the connector will retry the **entire batch**. If [insert deduplication]&#40;https://clickhouse.com/docs/guides/developer/deduplicating-inserts-on-retries#query-level-insert-deduplication&#41; is disabled, this may result in duplicate records landing in your ClickHouse table. Otherwise, it's possible that the deduplication window or window duration may be too small and is expiring blocks before the connector retries them.)
+
+[//]: # ()
+[//]: # (**Solution**:)
+
+[//]: # (- If your table is using a `Replicated*MergeTree` table engine:)
+
+[//]: # (  1. ensure the server session setting `insert_deduplicate=1` &#40;see the [example]&#40;#client-options&#41; above for how to set it, if necessary&#41;. Note that `insert_deduplicate` is on by default for replicated tables.)
+
+[//]: # (  2. if necessary, increase either/both the `MergeTree` table settings [`replicated_deduplication_window`]&#40;https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window&#41; or [`replicated_deduplication_window_seconds`]&#40;https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window_seconds&#41;.)
+
+[//]: # (- If your table is using a non-replicated `*MergeTree` table engine, increase the `MergeTree` table setting [`non_replicated_deduplication_window`]&#40;https://clickhouse.com/docs/operations/settings/merge-tree-settings#non_replicated_deduplication_window&#41;.)
+
+[//]: # ()
+[//]: # (_Note 1: this solution relies on [synchronous inserts]&#40;https://clickhouse.com/docs/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default&#41;, which is recommended for use with the Flink connector. Please ensure server session setting `async_insert=0`._)
+
+[//]: # ()
+[//]: # (_Note 2: a large number for `&#40;non_&#41;replicated_deduplication_window` may slow down inserts because more entries need to be compared._)
+
+### I am missing rows in my ClickHouse table {#missing_rows}
+
+**Cause**: The batch(es) were dropped either because of a non-retryable failure or they could not be inserted in the configured number of retries (settable via `ClickHouseClientConfig.setNumberOfRetries()`). _Note: by default, the connector will attempt to re-insert a batch up to 3 times before dropping it._
+
+**Solution**: Inspect the TaskManager logs and/or stack trace(s) for the root cause.
+
+## Contributing and support {#contributing-and-support}
+
+If you'd like to contribute to the project or report any issues, we welcome your input!
+Visit our [GitHub repository](https://github.com/ClickHouse/flink-connector-clickhouse) to open an issue, suggest
+improvements, or submit a pull request.
+
+Contributions are welcome! Please check the [contribution guide](https://github.com/ClickHouse/flink-connector-clickhouse/blob/main/CONTRIBUTING.md) in the repository before starting.
+Thank you for helping improve the ClickHouse Flink connector!

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<clickhouse>
+  <merge_tree>
+    <max_suspicious_broken_parts_bytes>0</max_suspicious_broken_parts_bytes>
+  </merge_tree>
+</clickhouse>

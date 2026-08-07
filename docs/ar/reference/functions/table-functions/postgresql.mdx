@@ -1,0 +1,168 @@
+---
+description: 'يسمح بتنفيذ استعلامات `SELECT` و`INSERT` على البيانات المخزنة على خادم PostgreSQL بعيد.'
+sidebarTitle: 'postgresql'
+slug: /sql-reference/table-functions/postgresql
+title: 'postgresql'
+doc_type: 'reference'
+---
+
+يسمح بتنفيذ استعلامات `SELECT` و`INSERT` على البيانات المخزنة على خادم PostgreSQL بعيد.
+
+<div id="syntax">
+  ## الصياغة
+</div>
+
+```sql
+postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+```
+
+<div id="arguments">
+  ## الوسيطات
+</div>
+
+| الوسيطة       | الوصف                                                               |
+| ------------- | ------------------------------------------------------------------- |
+| `host:port`   | عنوان خادم PostgreSQL.                                              |
+| `database`    | اسم قاعدة البيانات البعيدة.                                         |
+| `table`       | اسم الجدول البعيد.                                                  |
+| `user`        | مستخدم PostgreSQL.                                                  |
+| `password`    | كلمة مرور المستخدم.                                                 |
+| `schema`      | مخطط جدول غير `default`. اختياري.                                   |
+| `on_conflict` | استراتيجية معالجة التعارض. مثال: `ON CONFLICT DO NOTHING`. اختياري. |
+
+يمكن أيضًا تمرير الوسيطات باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). في هذه الحالة، يجب تحديد `host` و`port` كلٌّ منهما على حدة. ويُنصح بهذا النهج في بيئة الإنتاج.
+
+<div id="returned_value">
+  ## القيمة المعادة
+</div>
+
+كائن جدول يحتوي على الأعمدة نفسها الموجودة في جدول PostgreSQL الأصلي.
+
+<Note>
+  في استعلام `INSERT`، وللتمييز بين دالة الجدول `postgresql(...)` واسم الجدول المصحوب بقائمة أسماء الأعمدة، يجب استخدام الكلمتين المفتاحيتين `FUNCTION` أو `TABLE FUNCTION`. راجع الأمثلة أدناه.
+</Note>
+
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
+
+تُنفَّذ استعلامات `SELECT` على جانب PostgreSQL بصيغة `COPY (SELECT ...) TO STDOUT` داخل معاملة PostgreSQL للقراءة فقط، مع إجراء commit بعد كل استعلام `SELECT`.
+
+تُنفَّذ عبارات `WHERE` البسيطة مثل `=`, `!=`, `>`, `>=`, `<`, `<=` و`IN` على خادم PostgreSQL.
+
+تُنفَّذ جميع عمليات الربط والتجميع والفرز وشروط `IN [ array ]` وقيد sampling الخاص بـ `LIMIT` في ClickHouse فقط بعد اكتمال الاستعلام على PostgreSQL.
+
+تُنفَّذ استعلامات `INSERT` على جانب PostgreSQL بصيغة `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` داخل معاملة PostgreSQL، مع auto-commit بعد كل تعليمة `INSERT`.
+
+تُحوَّل أنواع Array في PostgreSQL إلى مصفوفات في ClickHouse.
+
+<Note>
+  انتبه، في PostgreSQL قد يحتوي عمود من نوع بيانات المصفوفة مثل Integer[] على مصفوفات بأبعاد مختلفة في صفوف مختلفة، لكن في ClickHouse لا يُسمح إلا بأن تكون المصفوفات متعددة الأبعاد ذات الأبعاد نفسها في جميع الصفوف.
+</Note>
+
+يدعم عدة نُسخ متماثلة يجب إدراجها باستخدام `|`. على سبيل المثال:
+
+```sql
+SELECT name FROM postgresql(`postgres{1|2|3}:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+أو
+
+```sql
+SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+يدعم تحديد أولوية النسخ المتماثلة لمصدر القاموس في PostgreSQL. وكلما كان الرقم في map أكبر، كانت الأولوية أقل. وأعلى أولوية هي `0`.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+جدول في PostgreSQL:
+
+```text
+postgres=# CREATE TABLE "public"."test" (
+"int_id" SERIAL,
+"int_nullable" INT NULL DEFAULT NULL,
+"float" FLOAT NOT NULL,
+"str" VARCHAR(100) NOT NULL DEFAULT '',
+"float_nullable" FLOAT NULL DEFAULT NULL,
+PRIMARY KEY (int_id));
+
+CREATE TABLE
+
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
+INSERT 0 1
+
+postgresql> SELECT * FROM test;
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+(1 row)
+```
+
+اختيار البيانات من ClickHouse باستخدام الوسيطات المباشرة:
+
+```sql
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
+```
+
+أو باستخدام [المجموعات المُسمّاة](/ar/concepts/features/configuration/server-config/named-collections):
+
+```sql
+CREATE NAMED COLLECTION mypg AS
+        host = 'localhost',
+        port = 5432,
+        database = 'test',
+        user = 'postgresql_user',
+        password = 'password';
+SELECT * FROM postgresql(mypg, table='test') WHERE str IN ('test');
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
+```
+
+الإدراج:
+
+```sql
+INSERT INTO TABLE FUNCTION postgresql('localhost:5432', 'test', 'test', 'postgrsql_user', 'password') (int_id, float) VALUES (2, 3);
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password');
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+│      2 │         ᴺᵁᴸᴸ │     3 │      │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
+```
+
+استخدام مخطط غير افتراضي:
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
+```
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [محرك جداول PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql)
+* [استخدام PostgreSQL كمصدر للقاموس](/ar/reference/statements/create/dictionary/sources/postgresql)
+
+<div id="replicating-or-migrating-postgres-data-with-peerdb">
+  ### نسخ بيانات Postgres أو ترحيلها باستخدام PeerDB
+</div>
+
+> إلى جانب دوال الجداول، يمكنك دائمًا استخدام [PeerDB](https://docs.peerdb.io/introduction) من ClickHouse لإعداد مسار بيانات مستمر من Postgres إلى ClickHouse. تُعد PeerDB أداةً مصممةً خصيصًا لنسخ البيانات من Postgres إلى ClickHouse باستخدام التقاط بيانات التغيير (CDC).

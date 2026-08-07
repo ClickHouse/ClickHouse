@@ -1,0 +1,42 @@
+---
+title: Comment résoudre l’erreur TOO MANY PARTS lors d’un INSERT...SELECT ?
+description: "Résolvez l’erreur TOO_MANY_PARTS dans ClickHouse lors d’un `INSERT...SELECT` en ajustant des paramètres avancés afin d’obtenir des blocs plus volumineux et en augmentant les seuils de partition."
+date: 2023-07-21
+tags: ['Paramètres', 'Erreurs et exceptions']
+---
+
+<div id="question">
+  ## Question
+</div>
+
+Lors de l’exécution d’une instruction `INSERT...SELECT`, j’obtiens l’erreur « Too many parts » (TOO&#95;MANY&#95;PARTS).
+
+Comment puis-je résoudre ce problème ?
+
+<div id="answer">
+  ## Réponse
+</div>
+
+Vous trouverez ci-dessous quelques paramètres à ajuster pour éviter cette erreur. Il s&#39;agit d&#39;un réglage avancé de ClickHouse, et ces valeurs ne doivent être définies qu&#39;après avoir bien compris les spécifications du service ClickHouse Cloud ou du cluster on-prem sur lequel elles seront utilisées. Ne considérez donc pas ces valeurs comme une solution « universelle ».
+
+[max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings#settings-max_insert_block_size) = `100_000_000` (par défaut `1_048_576`)
+
+Passer d&#39;environ 1 M à 100 M permettrait de former des blocs plus volumineux
+
+Remarque : ce paramètre s&#39;applique uniquement lorsque le serveur forme les blocs, c.-à-d. lors d&#39;un INSERT via l&#39;interface HTTP, et non avec clickhouse-client
+
+[min&#95;insert&#95;block&#95;size&#95;rows](/fr/reference/settings/session-settings#min-insert-block-size-rows) = `100_000_000` (par défaut `1_048_576`)
+
+Passer d&#39;environ 1 M à 100 M permettrait de former des blocs plus volumineux.
+
+[min&#95;insert&#95;block&#95;size&#95;bytes](/fr/reference/settings/session-settings#min-insert-block-size-bytes) = `500_000_000` (par défaut `268_435_456`)
+
+Passer de 268,44 MB à 500 MB permettrait de former des blocs plus volumineux.
+
+[parts&#95;to&#95;delay&#95;insert](/fr/reference/settings/merge-tree-settings#parts-to-delay-insert) = `500` (par défaut `150`)
+
+Augmentez cette valeur afin que les INSERT ne soient pas artificiellement ralentis lorsque le nombre de parts actives dans une seule partition est atteint.
+
+[parts&#95;to&#95;throw&#95;insert](/fr/reference/settings/merge-tree-settings#parts-to-throw-insert) = `1500` (par défaut `3000`)
+
+Augmenter cette valeur affecterait généralement les performances des requêtes sur la table, mais cela resterait acceptable pour une migration de données.

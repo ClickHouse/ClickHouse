@@ -1,0 +1,65 @@
+---
+description: 'Log 引擎家族文档'
+sidebarTitle: 'Log 家族'
+slug: /engines/table-engines/log-family/
+title: 'Log 引擎家族'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="log-table-engine-family">
+  # Log 表引擎家族
+</div>
+
+<CloudNotSupportedBadge />
+
+这些引擎适用于这样的场景：需要快速写入大量小表 (最多约 100 万行) ，并在之后将其作为整体读取。
+
+该家族包含以下引擎：
+
+| Log 引擎                                                             |
+| ------------------------------------------------------------------ |
+| [StripeLog](/zh/reference/engines/table-engines/log-family/stripelog) |
+| [Log](/zh/reference/engines/table-engines/log-family/log)             |
+| [TinyLog](/zh/reference/engines/table-engines/log-family/tinylog)     |
+
+`Log` 家族表引擎可以将数据存储到 [HDFS](/zh/reference/engines/table-engines/integrations/hdfs) 或 [S3](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) 分布式文件系统中。
+
+<Warning>
+  **此引擎并非用于日志数据。**
+
+  尽管名称如此，*Log 表引擎并不是用来存储日志数据的。它们只适用于需要快速写入的小数据量场景。
+</Warning>
+
+<div id="common-properties">
+  ## 通用属性
+</div>
+
+引擎：
+
+* 将数据存储在磁盘上。
+
+* 写入时将数据追加到文件末尾。
+
+* 支持并发数据访问锁。
+
+  在执行 `INSERT` 查询期间，表会被锁定，其他读写数据的查询都必须等待表解锁。如果没有数据写入查询，则可以并发执行任意数量的数据读取查询。
+
+* 不支持 [mutations](/zh/reference/statements/alter/index#mutations)。
+
+* 不支持索引。
+
+  这意味着对于数据范围的 `SELECT` 查询，效率不高。
+
+* 不以原子方式写入数据。
+
+  如果写入过程中发生故障，例如服务器异常关闭，可能会导致表中的数据损坏。
+
+<div id="differences">
+  ## 差异
+</div>
+
+`TinyLog` 引擎是该家族中最简单的一种，功能最弱，效率也最低。`TinyLog` 引擎不支持在单个查询中通过多个线程并行读取数据。与该家族中其他支持单个查询并行读取的引擎相比，它的读取速度更慢；并且由于它将每一列存储在单独的文件中，因此占用的文件描述符几乎与 `Log` 引擎一样多。仅建议在简单场景中使用它。
+
+`Log` 和 `StripeLog` 引擎支持并行读取数据。读取数据时，ClickHouse 会使用多个线程，每个线程处理一个单独的数据块。`Log` 引擎为表中的每一列使用单独的文件。`StripeLog` 则将所有数据存储在一个文件中。因此，`StripeLog` 引擎占用的文件描述符更少，但 `Log` 引擎在读取数据时效率更高。

@@ -1,0 +1,442 @@
+---
+slug: /use-cases/observability/clickstack/integrations/kafka-metrics
+title: 'Supervision des métriques Kafka avec ClickStack'
+sidebarTitle: 'Métriques Kafka'
+description: 'Supervision des métriques Kafka avec ClickStack'
+doc_type: 'guide'
+keywords: ['Kafka', 'métriques', 'OTEL', 'ClickStack', 'JMX']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **En bref**
+
+  Surveillez les métriques de performance d’Apache Kafka dans ClickStack à l’aide du OTel JMX Metric Gatherer. Comprend un jeu de données de démonstration et un tableau de bord préconfiguré.
+</Info>
+
+<div id="existing-kafka">
+  ## Intégration avec un déploiement Kafka existant
+</div>
+
+Surveillez votre déploiement Kafka existant en exécutant le conteneur OpenTelemetry JMX Metric Gatherer afin de collecter des métriques et de les envoyer à ClickStack via OTLP.
+
+Si vous souhaitez d’abord tester cette intégration sans modifier votre configuration existante, passez à la [section sur le jeu de données de démonstration](#demo-dataset).
+
+<div id="prerequisites">
+  ##### Prérequis
+</div>
+
+* Instance ClickStack en cours de fonctionnement
+* Installation existante de Kafka (version 2.0 ou plus récente) avec JMX activé
+* Accès réseau entre ClickStack et Kafka (port JMX 9999, port Kafka 9092)
+* JAR OpenTelemetry JMX Metric Gatherer (instructions de téléchargement ci-dessous)
+
+<Steps>
+  <Step>
+    #### Obtenir la clé API ClickStack
+
+    Le JMX Metric Gatherer envoie des données vers l’endpoint OTLP de ClickStack, qui nécessite une authentification.
+
+    1. Ouvrez HyperDX à l’URL de votre instance ClickStack (par exemple, http://localhost:8080)
+    2. Créez un compte ou connectez-vous si nécessaire
+    3. Accédez à **Team Settings → API Keys**
+    4. Copiez votre **Ingestion API Key**
+
+    <Image img="/images/clickstack/api-key.webp" alt="Clé API ClickStack" />
+
+    5. Définissez-la comme variable d’environnement :
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    ```
+  </Step>
+
+  <Step>
+    #### Téléchargez JMX Metric Gatherer pour OpenTelemetry
+
+    Téléchargez le fichier JAR de JMX Metric Gatherer :
+
+    ```bash
+    curl -L -o opentelemetry-jmx-metrics.jar \
+      https://github.com/open-telemetry/opentelemetry-java-contrib/releases/download/v1.32.0/opentelemetry-jmx-metrics.jar
+    ```
+  </Step>
+
+  <Step>
+    #### Vérifiez que JMX est activé pour Kafka
+
+    Assurez-vous que JMX est activé sur vos brokers Kafka. Pour les déploiements Docker :
+
+    ```yaml
+    services:
+      kafka:
+        image: confluentinc/cp-kafka:latest
+        environment:
+          JMX_PORT: 9999
+          KAFKA_JMX_HOSTNAME: kafka
+          # ... other Kafka configuration
+        ports:
+          - "9092:9092"
+          - "9999:9999"
+    ```
+
+    Pour les déploiements sans Docker, définissez ces paramètres au démarrage de Kafka :
+
+    ```bash
+    export JMX_PORT=9999
+    ```
+
+    Vérifiez que JMX est accessible :
+
+    ```bash
+    netstat -an | grep 9999
+    ```
+  </Step>
+
+  <Step>
+    #### Déployer JMX Metric Gatherer avec Docker Compose
+
+    Cet exemple présente une configuration complète avec Kafka, JMX Metric Gatherer et ClickStack. Ajustez les noms des services et les endpoints pour qu’ils correspondent à votre déploiement existant :
+
+    ```yaml
+    services:
+      clickstack:
+        image: clickhouse/clickstack-all-in-one:latest
+        ports:
+          - "8080:8080"
+          - "4317:4317"
+          - "4318:4318"
+        networks:
+          - monitoring
+
+      kafka:
+        image: confluentinc/cp-kafka:latest
+        hostname: kafka
+        container_name: kafka
+        environment:
+          KAFKA_NODE_ID: 1
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT'
+          KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092'
+          KAFKA_PROCESS_ROLES: 'broker,controller'
+          KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+          KAFKA_LISTENERS: 'PLAINTEXT://kafka:9092,CONTROLLER://kafka:29093'
+          KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+          KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+          JMX_PORT: 9999
+          KAFKA_JMX_HOSTNAME: kafka
+          KAFKA_JMX_OPTS: '-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=kafka -Dcom.sun.management.jmxremote.rmi.port=9999'
+        ports:
+          - "9092:9092"
+          - "9999:9999"
+        networks:
+          - monitoring
+
+      kafka-jmx-exporter:
+        image: eclipse-temurin:11-jre
+        depends_on:
+          - kafka
+          - clickstack
+        environment:
+          - CLICKSTACK_API_KEY=${CLICKSTACK_API_KEY}
+        volumes:
+          - ./opentelemetry-jmx-metrics.jar:/app/opentelemetry-jmx-metrics.jar
+        command: >
+          sh -c "java
+          -Dotel.jmx.service.url=service:jmx:rmi:///jndi/rmi://kafka:9999/jmxrmi
+          -Dotel.jmx.target.system=kafka
+          -Dotel.metrics.exporter=otlp
+          -Dotel.exporter.otlp.protocol=http/protobuf
+          -Dotel.exporter.otlp.endpoint=http://clickstack:4318
+          -Dotel.exporter.otlp.headers=authorization=\${CLICKSTACK_API_KEY}
+          -Dotel.resource.attributes=service.name=kafka,kafka.broker.id=broker-0
+          -Dotel.jmx.interval.milliseconds=10000
+          -jar /app/opentelemetry-jmx-metrics.jar"
+        networks:
+          - monitoring
+
+    networks:
+      monitoring:
+        driver: bridge
+    ```
+
+    **Paramètres de configuration clés :**
+
+    * `service:jmx:rmi:///jndi/rmi://kafka:9999/jmxrmi` - URL de connexion JMX (utilisez le hostname de votre instance Kafka)
+    * `otel.jmx.target.system=kafka` - Active les metrics spécifiques à Kafka
+    * `http://clickstack:4318` - endpoint HTTP OTLP (utilisez le hostname de votre instance ClickStack)
+    * `authorization=\${CLICKSTACK_API_KEY}` - API key pour l&#39;authentification (obligatoire)
+    * `service.name=kafka,kafka.broker.id=broker-0` - resource attributes pour le filtrage
+    * `10000` - Intervalle de collecte en millisecondes (10 secondes)
+  </Step>
+
+  <Step>
+    #### Vérifier les métriques dans HyperDX
+
+    Connectez-vous à HyperDX et vérifiez que les métriques remontent bien :
+
+    1. Accédez à Chart Explorer
+    2. Recherchez `kafka.message.count` ou `kafka.partition.count`
+    3. Les métriques doivent apparaître toutes les 10 secondes
+
+    **Métriques clés à vérifier :**
+
+    * `kafka.message.count` - Nombre total de messages traités
+    * `kafka.partition.count` - Nombre total de partitions
+    * `kafka.partition.under_replicated` - Doit être égal à 0 dans un cluster sain
+    * `kafka.network.io` - Débit réseau
+    * `kafka.request.time.*` - Percentiles de latence des requêtes
+
+    Pour générer de l&#39;activité et faire remonter davantage de métriques :
+
+    ```bash
+    # Create a test topic
+    docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
+
+    # Send test messages
+    echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
+    ```
+
+    <Note>
+      Lorsque vous exécutez des commandes du client Kafka (kafka-topics, kafka-console-producer, etc.) depuis le conteneur Kafka, faites-les précéder de `unset JMX_PORT &&` afin d&#39;éviter les conflits de port JMX.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## Jeu de données de démonstration
+</div>
+
+Pour les utilisateurs qui souhaitent tester l’intégration Kafka Metrics avant de configurer leurs systèmes de production, nous fournissons un jeu de données pré-généré avec des schémas réalistes de métriques Kafka.
+
+<Steps>
+  <Step>
+    #### Télécharger l’exemple de jeu de données de métriques
+
+    Téléchargez les fichiers de métriques pré-générés (29 heures de métriques Kafka avec des schémas réalistes) :
+
+    ```bash
+    # Télécharger les métriques gauge (nombre de partitions, tailles des files d’attente, latences, consumer lag)
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/kafka-metrics-gauge.csv
+
+    # Télécharger les métriques sum (débits de messages, débits en octets, nombre de requêtes)
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/kafka-metrics-sum.csv
+    ```
+
+    Le jeu de données inclut des schémas réalistes pour un cluster Kafka e-commerce à un seul broker :
+
+    * **06:00-08:00: Pic matinal** - Forte montée du trafic à partir du niveau nocturne de référence
+    * **10:00-10:15: Vente flash** - Pic spectaculaire à 3,5 fois le trafic normal
+    * **11:30: Événement de déploiement** - Pic de consumer lag multiplié par 12 avec des partitions sous-répliquées
+    * **14:00-15:30: Pic d’achats** - Trafic soutenu à 2,8 fois le niveau de référence
+    * **17:00-17:30: Pic de fin de journée** - Pic de trafic secondaire
+    * **18:45: Rééquilibrage du consumer** - Pic de lag multiplié par 6 pendant le rééquilibrage
+    * **20:00-22:00: Baisse en soirée** - Forte baisse jusqu’aux niveaux nocturnes
+  </Step>
+
+  <Step>
+    #### Démarrer ClickStack
+
+    Démarrez une instance ClickStack :
+
+    ```bash
+    docker run -d --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### Charger les métriques dans ClickStack
+
+    Chargez les métriques directement dans ClickHouse :
+
+    ```bash
+    # Charger les métriques gauge (nombre de partitions, tailles des files d’attente, latences, consumer lag)
+    cat kafka-metrics-gauge.csv | docker exec -i clickstack-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_gauge FORMAT CSVWithNames"
+
+    # Charger les métriques sum (débits de messages, débits en octets, nombre de requêtes)
+    cat kafka-metrics-sum.csv | docker exec -i clickstack-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_sum FORMAT CSVWithNames"
+    ```
+  </Step>
+
+  <Step>
+    #### Vérifier les métriques dans HyperDX
+
+    Une fois chargées, le moyen le plus rapide de visualiser vos métriques est d’utiliser le tableau de bord préconfiguré.
+
+    Rendez-vous dans la section [Tableaux de bord et visualisation](#dashboards) pour importer le tableau de bord et afficher toutes les métriques Kafka d’un seul coup.
+
+    <Info>
+      **Affichage du fuseau horaire**
+
+      HyperDX affiche les horodatages dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)**. Réglez votre intervalle de temps sur **2025-11-04 16:00:00 - 2025-11-07 16:00:00** pour être sûr de voir les métriques de démonstration, où que vous soyez. Une fois les métriques visibles, vous pouvez réduire l’intervalle à une période de 24 heures pour obtenir des visualisations plus claires.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## Tableaux de bord et visualisations
+</div>
+
+Pour vous aider à démarrer la supervision de Kafka avec ClickStack, nous fournissons les visualisations essentielles pour les métriques Kafka.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  </Step>
+
+  <Step>
+    #### Importer le tableau de bord préconfiguré
+
+    1. Ouvrez HyperDX et accédez à la section Dashboards
+    2. Cliquez sur **Import Dashboard** dans l’angle supérieur droit, dans le menu à trois points
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Bouton d’importation du tableau de bord" />
+
+    3. Téléversez le fichier `kafka-metrics-dashboard.json`, puis cliquez sur **Finish Import**
+
+    <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="Boîte de dialogue de fin d’importation" />
+  </Step>
+
+  <Step>
+    #### Afficher le tableau de bord
+
+    Le tableau de bord sera créé avec toutes les visualisations préconfigurées :
+
+    <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="Tableau de bord des métriques Kafka" />
+
+    <Note>
+      Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Par défaut, aucun intervalle de temps ne sera défini pour le tableau de bord importé.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+<div id="no-metrics">
+  ### Aucune métrique ne s’affiche dans HyperDX
+</div>
+
+**Vérifiez que la clé d’API est définie et transmise au conteneur :**
+
+```bash
+# Check environment variable
+echo $CLICKSTACK_API_KEY
+
+# Verify it's in the container
+docker exec <jmx-exporter-container> env | grep CLICKSTACK_API_KEY
+```
+
+S’il n’est pas défini, définissez-le et redémarrez :
+
+```bash
+export CLICKSTACK_API_KEY=your-api-key-here
+docker compose up -d kafka-jmx-exporter
+```
+
+**Vérifiez si les métriques parviennent à ClickHouse :**
+
+```bash
+docker exec <clickstack-container> clickhouse-client --query "
+SELECT DISTINCT MetricName 
+FROM otel_metrics_sum 
+WHERE ServiceName = 'kafka' 
+LIMIT 10
+"
+```
+
+Si vous ne voyez aucun résultat, vérifiez les logs du JMX exporter :
+
+```bash
+docker compose logs kafka-jmx-exporter | grep -i "error\|connection" | tail -10
+```
+
+**Générez de l’activité Kafka pour alimenter les métriques :**
+
+```bash
+# Create a test topic
+docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
+
+# Send test messages
+echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
+```
+
+<div id="auth-errors">
+  ### Erreurs d’authentification
+</div>
+
+Si vous voyez `Authorization failed` ou `401 Unauthorized` :
+
+1. Vérifiez la clé API dans l’interface utilisateur HyperDX (Paramètres → Clés API → Clé API d’ingestion)
+2. Exportez-la de nouveau, puis redémarrez :
+
+```bash
+export CLICKSTACK_API_KEY=your-correct-api-key
+docker compose down
+docker compose up -d
+```
+
+<div id="port-conflicts">
+  ### Conflits de ports avec les commandes du client Kafka
+</div>
+
+Lorsque vous exécutez des commandes Kafka depuis le conteneur Kafka, il se peut que le message suivant s’affiche :
+
+```bash
+Error: Port already in use: 9999
+```
+
+Faites précéder les commandes de `unset JMX_PORT &&` :
+
+```bash
+docker exec kafka bash -c "unset JMX_PORT && kafka-topics --list --bootstrap-server kafka:9092"
+```
+
+<div id="network-issues">
+  ### Problèmes de connectivité réseau
+</div>
+
+Si les logs du JMX exporter indiquent `Connection refused` :
+
+Vérifiez que tous les conteneurs se trouvent sur le même réseau Docker :
+
+```bash
+docker compose ps
+docker network inspect <network-name>
+```
+
+Tester la connectivité :
+
+```bash
+# From JMX exporter to ClickStack
+docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null > /dev/tcp/clickstack/4318' && echo 'Connected' || echo 'Failed'"
+```
+
+<div id="next-steps">
+  ## Prochaines étapes
+</div>
+
+* Configurez des [alertes](/fr/clickstack/features/alerts) pour les métriques critiques (partitions sous-répliquées, hausse du consumer lag, pics de latence des requêtes)
+* Créez des tableaux de bord supplémentaires pour des cas d&#39;utilisation spécifiques (débit par topic, surveillance des groupes de consommateurs)
+* Surveillez plusieurs brokers Kafka en ajoutant des instances JMX Metric Gatherer supplémentaires avec des attributs de ressource `kafka.broker.id` uniques
+
+<div id="going-to-production">
+  ## Mise en production
+</div>
+
+Ce guide envoie les métriques directement du JMX Metric Gatherer au point de terminaison OTLP de ClickStack, ce qui convient bien aux tests et aux petits déploiements.
+
+Pour les environnements de production, déployez votre propre OpenTelemetry Collector en tant qu’agent pour recevoir les métriques du JMX Exporter et les transmettre à ClickStack. Cela apporte le traitement par lots, la résilience et une gestion centralisée de la configuration.
+
+Consultez [Ingestion avec OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour connaître les schémas de déploiement en production et voir des exemples de configuration du collecteur.

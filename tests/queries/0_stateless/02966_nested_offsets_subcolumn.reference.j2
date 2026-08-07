@@ -1,0 +1,11 @@
+{% for engine in ['Memory', 'Log', 'TinyLog', 'MergeTree ORDER BY (a) SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 2000'] -%}
+--- {{ engine }} ---
+4500
+4500	4500
+4500
+4500	4500
+94500
+94500	94500
+94500
+94500	94500
+{% endfor -%}

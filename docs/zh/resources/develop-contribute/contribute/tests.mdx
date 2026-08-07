@@ -1,0 +1,694 @@
+---
+description: '用于测试 ClickHouse 并运行测试套件的指南'
+sidebarTitle: '测试'
+slug: /development/tests
+title: '测试 ClickHouse'
+doc_type: 'guide'
+---
+
+<div id="test-types">
+  ## 测试类型
+</div>
+
+ClickHouse 中有以下几类测试：
+
+* [功能测试](#functional-tests) - 一组查询和脚本，包含以下几个相互重叠的子集
+  * [快速测试](#running-fast-tests) - 最小子集
+  * [无状态测试](#running-stateless-tests)，不需要向数据库填充数据
+  * 不能并行运行的顺序测试
+* [集成测试](#integration-tests)，由 `pytest` 在集群中运行
+* [单元测试](#unit-tests)
+* [性能测试](#performance-tests)
+* [构建测试](#build-tests)
+* [Sanitizers](#sanitizers)
+* [Fuzzers](#fuzzing)
+  以及其他一些测试，详见下文各节。
+
+<div id="functional-tests">
+  ## 功能测试
+</div>
+
+功能测试是最简单、也最方便使用的测试方式。
+ClickHouse 的大多数功能都可以通过功能测试进行验证，而且对于 ClickHouse 代码中任何能够用这种方式测试的变更，都必须使用功能测试。
+
+每个功能测试都会向正在运行的 ClickHouse 服务器发送一条或多条查询，并将结果与参考结果进行比对。
+
+测试位于 `./tests/queries` 目录中。
+
+每个测试都属于以下两种类型之一：`.sql` 和 `.sh`。
+
+* `.sql` 测试是通过管道传给 `clickhouse-client` 的简单 SQL 脚本。
+* `.sh` 测试是自行执行的脚本。
+
+通常应优先使用 SQL 测试，而不是 `.sh` 测试。
+只有在必须测试某些无法仅通过纯 SQL 覆盖的功能时，才应使用 `.sh` 测试，例如将某些输入数据通过管道传给 `clickhouse-client`，或测试 `clickhouse-local`。
+
+<Note>
+  测试 data types `DateTime` 和 `DateTime64` 时，一个常见错误是以为服务器会使用某个特定时区 (例如 “UTC”) 。实际并非如此：CI 测试运行中的时区
+  会被刻意随机化。最简单的解决办法是为测试值显式指定时区，例如 `toDateTime64(val, 3, 'Europe/Amsterdam')`。
+</Note>
+
+<div id="running-a-test-locally">
+  ### 在本地运行测试
+</div>
+
+在本地启动 ClickHouse 服务器，并监听默认端口 (9000) 。
+例如，要运行测试 `01428_hash_set_nan_key`，请切换到仓库目录并运行以下命令：
+
+```sh
+PATH=<path to clickhouse-client>:$PATH tests/clickhouse-test 01428_hash_set_nan_key
+```
+
+测试结果 (`stderr` 和 `stdout`) 会写入文件 `01428_hash_set_nan_key.[stderr|stdout]`，这些文件位于对应测试文件旁边 (对于 `queries/0_stateless/foo.sql`，输出将位于 `queries/0_stateless/foo.stdout`) 。
+
+有关 `clickhouse-test` 的所有选项，请参见 `tests/clickhouse-test --help`。
+你可以运行所有测试，也可以通过为测试名称提供过滤器来运行部分测试：`./clickhouse-test substring`。
+此外，还有一些选项可用于并行运行测试或按随机顺序运行测试。
+
+<div id="running-fast-tests">
+  ### 运行快速测试
+</div>
+
+你可能需要一台性能较强的机器来运行部分测试 (称为 &quot;快速测试&quot;) 。以下配置已在配备 100 GB 存储的 `t3.2xlarge` AWS amd64 Ubuntu 实例上验证可用。
+
+1. 安装前置条件，然后重新登录。
+
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker "$USER"
+```
+
+2. 获取源代码。
+
+```sh
+git clone --single-branch https://github.com/ClickHouse/ClickHouse
+cd ClickHouse
+```
+
+3. 构建代码并运行&quot;快速测试&quot;。
+
+```sh
+python -m ci.praktika run fast
+```
+
+你应该会看到
+
+```sh
+Failed: 0, Passed: 7394, Skipped: 1795
+```
+
+如果你想让该进程在无人值守的情况下运行，可以使用 `nohup` 或 `disown`，这样即使 `ssh` 连接断开后也会继续运行。
+
+<div id="running-stateless-tests">
+  ### 运行无状态测试
+</div>
+
+运行无状态测试可能需要一台性能较强的机器。以下内容已在配备 200 GB 存储的 AWS amd64 Ubuntu `m7i.8xlarge` 实例上验证可用。
+
+1. 安装前置条件并重新登录。
+
+```sh
+sudo apt-get update
+sudo apt-get install docker.io
+sudo usermod -aG docker "$USER"
+sudo tee /etc/docker/daemon.json <<'EOF'
+{
+  "ipv6": true,
+  "ip6tables": true
+}
+EOF
+sudo systemctl restart docker
+```
+
+2. 获取源代码。
+
+```sh
+git clone --single-branch https://github.com/ClickHouse/ClickHouse
+cd ClickHouse
+```
+
+3. 编译代码。
+
+```sh
+python -m ci.praktika run build_debug
+cp ci/tmp/build/programs/clickhouse ci/tmp
+```
+
+4. 运行可并行执行的无状态测试。
+
+```sh
+python -m ci.praktika run functional
+```
+
+你将会看到
+
+```sh
+Failed: 0, Passed: 8497, Skipped: 103
+```
+
+注意：`python -m ci.praktika run` 命令会运行一个特定的持续集成 job。有关 ClickHouse CI 的更多信息，请参阅[这里](/zh/resources/develop-contribute/contribute/continuous-integration#running-stateless-tests)。
+
+<div id="adding-a-new-test">
+  ### 添加新测试
+</div>
+
+要添加新测试，首先在 `queries/0_stateless` 目录中创建一个 `.sql` 或 `.sh` 文件。
+然后使用 `clickhouse-client < 12345_test.sql > 12345_test.reference` 或 `./12345_test.sh > ./12345_test.reference` 生成对应的 `.reference` 文件。
+
+测试应仅在预先自动创建的 `test` database 中对表执行 create、drop、select 等操作。
+也可以使用临时表。
+
+要在本地搭建与 CI 相同的环境，请安装测试配置 (它们会使用 Zookeeper 的模拟实现，并调整一些设置)
+
+```sh
+cd <repository>/tests/config
+sudo ./install.sh
+```
+
+<Note>
+  测试应当
+
+  * 尽量精简：只创建最低限度所需的表、列和复杂度，
+  * 尽量快速：耗时不要超过几秒钟 (最好在 1 秒以内) ，
+  * 保证正确且具备确定性：当且仅当被测功能未正常工作时才失败，
+  * 保持隔离/无状态：不要依赖环境和时序，
+  * 尽量覆盖全面：涵盖零值、NULL、空集、异常等边界情况 (负向测试请使用语法 `-- { serverError xyz }` 和 `-- { clientError xyz }`) ，
+  * 在测试结束时清理表 (以防有残留) ，
+  * 确保其他测试没有覆盖相同内容 (即先 `grep`) 。
+</Note>
+
+<div id="templated-tests-with-jinja">
+  ### 使用 Jinja 的模板测试
+</div>
+
+只需在文件名后加上 `.j2` 后缀，`.sql` 测试就可以写成 [Jinja2](https://jinja.palletsprojects.com/) 模板，因此 `foo.sql` 会变成 `foo.sql.j2`。在运行测试之前，`clickhouse-test` 会先将模板渲染成普通的 `.sql` 脚本，再执行生成的结果。
+
+当测试需要以细微变化重复同一查询时，这种方式非常有用：可以通过循环从一个简洁的模板生成这些查询，而不必手动逐条编写。最常用的构造包括：
+
+* `{% for ... %} ... {% endfor %}`：用于重复一个块，
+* `{{ expression }}`：用于将一个值插入输出中，
+* `-%}` 和 `{%-`：用于去掉相邻空白，使生成的脚本保持整洁。
+
+例如，下面这个模板：
+
+```sql
+{% for type in ['UInt8', 'UInt16', 'UInt32'] -%}
+SELECT toTypeName(0::{{ type }});
+{% endfor -%}
+```
+
+渲染结果为：
+
+```sql
+SELECT toTypeName(0::UInt8);
+SELECT toTypeName(0::UInt16);
+SELECT toTypeName(0::UInt32);
+```
+
+预期输出既可以是一个普通的 `<name>.reference` 文件，其中包含完全展开后的结果；也可以是一个 `<name>.reference.j2` 模板，`clickhouse-test` 会在比较前以相同方式先将其渲染出来。如果预期输出也呈现重复模式，请使用模板形式。更多示例请参见 `tests/queries/0_stateless/` 中现有的 `*.sql.j2` 文件。
+
+<div id="restricting-test-runs">
+  ### 限制测试运行
+</div>
+
+一个测试可以带有零个或多个*标签*，用于指定该测试在 CI 中可运行的上下文限制。
+
+对于 `.sql` 测试，标签放在第一行，并以 SQL 注释的形式写出：
+
+```sql
+-- Tags: no-fasttest, no-replicated-database
+-- no-fasttest: <provide_a_reason_for_the_tag_here>
+-- no-replicated-database: <provide_a_reason_here>
+
+SELECT 1
+```
+
+对于 `.sh` 测试，标签写在第二行的注释中：
+
+```bash
+#!/usr/bin/env bash
+# Tags: no-fasttest, no-replicated-database
+# - no-fasttest: <provide_a_reason_for_the_tag_here>
+# - no-replicated-database: <provide_a_reason_here>
+```
+
+可用标签列表：
+
+| Tag name                       | 作用                                                | 使用示例                                                          |
+| ------------------------------ | ------------------------------------------------- | ------------------------------------------------------------- |
+| `disabled`                     | 不运行该测试                                            |                                                               |
+| `long`                         | 测试执行时间从 1 分钟延长到 10 分钟                             |                                                               |
+| `deadlock`                     | 测试会在循环中长时间运行                                      |                                                               |
+| `race`                         | 与 `deadlock` 相同。优先使用 `deadlock`                   |                                                               |
+| `shard`                        | 要求 server 监听 `127.0.0.*`                          |                                                               |
+| `distributed`                  | 与 `shard` 相同。优先使用 `shard`                         |                                                               |
+| `global`                       | 与 `shard` 相同。优先使用 `shard`                         |                                                               |
+| `zookeeper`                    | 运行该测试需要 Zookeeper 或 ClickHouse Keeper             | 测试使用 `ReplicatedMergeTree`                                    |
+| `replica`                      | 与 `zookeeper` 相同。优先使用 `zookeeper`                 |                                                               |
+| `no-fasttest`                  | 该测试不会在 [快速测试](#test-types) 下运行                    | 测试使用 `MySQL` 表 engine，而该 engine 在快速测试中被禁用                     |
+| `fasttest-only`                | 该测试仅在 [快速测试](#test-types) 下运行                     |                                                               |
+| `no-[asan, tsan, msan, ubsan]` | 在启用 [sanitizers](#sanitizers) 的构建中禁用该测试           | 测试在 QEMU 下运行，而 QEMU 无法与 sanitizers 配合使用                       |
+| `no-replicated-database`       | 当默认 database 使用 `ReplicatedDatabaseEngine` 时禁用该测试 |                                                               |
+| `no-ordinary-database`         | 当默认 database engine 为 `Ordinary` 时禁用该测试           |                                                               |
+| `no-parallel`                  | 禁止其他测试与该测试并行运行                                    | 测试会读取 `system` 表，不变量可能会被破坏                                    |
+| `no-parallel-replicas`         | 在启用并行副本时禁用该测试                                     |                                                               |
+| `no-debug`                     | 在 Debug 构建中禁用该测试                                  |                                                               |
+| `no-release`                   | 在 Release 构建中禁用该测试                                |                                                               |
+| `no-darwin`                    | 在 macOS (Darwin) 上禁用该测试                           | 测试依赖 Linux 特有功能，例如 distributed queries、`procfs` 或 HTTP server |
+
+还支持以下选项：`no-polymorphic-parts`、`no-random-settings`、`no-random-merge-tree-settings`、`no-backward-compatibility-check`、`no-cpu-x86_64`、`no-cpu-aarch64`、`no-cpu-ppc64le`、`no-s3-storage`。
+
+除上述设置外，你还可以使用 `system.build_options` 中的 `USE_*` 标志来标识是否使用特定的 ClickHouse feature。
+例如，如果测试使用了 MySQL 表，则应添加 `use-mysql` 标签。
+
+<div id="specifying-limits-for-random-settings">
+  ### 为随机设置指定限制
+</div>
+
+测试可以为在测试运行期间可随机化的设置指定允许的最小值和最大值。
+
+对于 `.sh` 测试，如果指定了标签，则将限制写在标签所在行旁边的注释中；如果未指定标签，则写在第二行：
+
+```bash
+#!/usr/bin/env bash
+# Tags: no-fasttest
+# 随机设置限制：max_block_size=(1000, 10000); index_granularity=(100, None)
+```
+
+对于 `.sql` 测试，标签以 SQL 注释的形式写在 `tags` 所在行的下一行，或写在第一行：
+
+```sql
+-- Tags: no-fasttest
+-- Random settings limits: max_block_size=(1000, 10000); index_granularity=(100, None)
+SELECT 1
+```
+
+如果只需指定一个限制，另一个可以使用 `None`。
+
+<div id="choosing-the-test-name">
+  ### 选择测试名称
+</div>
+
+测试名称以五位数字前缀开头，后面跟一个描述性名称，例如 `00422_hash_function_constexpr.sql`。
+要确定这个前缀，请先找出该目录中现有的最大前缀，再在其基础上加一。
+
+```sh
+ls tests/queries/0_stateless/[0-9]*.reference | tail -n 1
+```
+
+与此同时，可能还会新增一些使用相同数字前缀的测试，但这没关系，也不会带来任何问题，之后你也不需要再修改它。
+
+<div id="checking-for-an-error-that-must-occur">
+  ### 检查必须发生的错误
+</div>
+
+有时，你可能想测试某个错误查询是否会触发服务器错误。为此，我们在 SQL 测试中支持使用特殊注释，形式如下：
+
+```sql
+SELECT x; -- { serverError 49 }
+```
+
+此测试用于确保 server 返回代码为 49 的错误，表示未知列 `x`。
+如果没有报错，或报错内容不符，测试就会失败。
+如果你想确保错误发生在客户端，请改用 `clientError` 注解。
+
+不要检查错误消息的具体措辞，因为它将来可能会变化，从而导致测试无谓地失败。
+只检查错误代码。
+如果现有错误代码还不足以满足你的需求，可以考虑新增一个。
+
+<div id="testing-a-distributed-query">
+  ### 测试分布式查询
+</div>
+
+如果你想在 功能测试 中使用分布式查询，可以使用 `remote` 表函数，并通过 `127.0.0.{1..2}` 地址让服务器查询自身；或者使用服务器配置文件中预定义的测试集群，例如 `test_shard_localhost`。
+请记得在测试名称中加入 `shard` 或 `distributed` 字样，这样它才能在相应配置的 CI 环境中运行，即在服务器已配置为支持分布式查询的环境中运行。
+
+<div id="working-with-temporary-files">
+  ### 使用临时 File
+</div>
+
+有时在 shell 测试中，你可能需要动态创建一个文件来使用。
+请注意，某些 CI 检查会并行运行测试，因此如果你在脚本中创建或删除临时 File 时未使用唯一名称，可能会导致部分 CI 检查 (如 Flaky) 失败。
+为避免这种情况，你应使用环境变量 `$CLICKHOUSE_TEST_UNIQUE_NAME` 为临时 File 指定一个当前测试专用的唯一名称。
+这样你就可以确保，无论是在设置阶段创建文件，还是在清理阶段删除文件，操作的都只是当前测试正在使用的文件，而不是其他并行运行测试所使用的文件。
+
+<div id="known-bugs">
+  ## 已知问题
+</div>
+
+如果我们发现某些可以通过功能测试轻松复现的问题，就会将预先编写好的功能测试放在 `tests/queries/bugs` 目录中。
+这些问题修复后，相应的测试会移到 `tests/queries/0_stateless`。
+
+<div id="integration-tests">
+  ## 集成测试
+</div>
+
+集成测试可用于测试集群配置下的 ClickHouse，以及 ClickHouse 与 MySQL、Postgres、MongoDB 等其他服务器之间的交互。
+这类测试可用于模拟网络分区、丢包等情况。
+这些测试在 Docker 环境下运行，并会创建多个包含不同软件的容器。
+
+有关如何运行这些测试，请参见 `tests/integration/README.md`。
+
+请注意，ClickHouse 与第三方驱动程序的集成情况不在测试范围内。
+此外，我们目前也没有针对自有 JDBC 和 ODBC 驱动程序的集成测试。
+
+<div id="unit-tests">
+  ## 单元测试
+</div>
+
+当你想测试的不是整个 ClickHouse，而是某个独立的库或类时，单元测试就很有用。
+你可以通过 `ENABLE_TESTS` CMake 选项启用或禁用测试的构建。
+单元测试 (以及其他测试程序) 位于代码各处的 `tests` 子目录中。
+要运行单元测试，请输入 `ninja test`。
+有些测试使用 `gtest`，但也有一些只是普通程序，在测试失败时会返回非零退出码。
+
+如果代码已经由功能测试覆盖，就不一定还需要单元测试 (而且功能测试通常更简单，也更容易使用) 。
+
+你可以通过直接调用可执行文件来运行单个 gtest 检查，例如：
+
+```bash
+$ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
+```
+
+<div id="performance-tests">
+  ## 性能测试
+</div>
+
+性能测试可用于衡量并比较 ClickHouse 某个相对独立部分在合成查询上的性能。
+性能测试位于 `tests/performance/`。
+每个测试都由一个 `.xml` 文件表示，其中包含测试用例的描述。
+测试通过 `docker/test/performance-comparison` 工具运行。调用方法请参见 readme 文件。
+
+每个测试会在循环中运行一个或多个查询 (可能包含多种参数组合) 。
+
+如果你想提升 ClickHouse 在某种场景下的性能，并且这些改进可以通过简单查询观察到，强烈建议编写性能测试。
+此外，在添加或修改相对独立且不太偏门的 SQL 函数时，也建议编写性能测试。
+在测试过程中使用 `perf top` 或其他 `perf` 工具始终是有意义的。
+
+<div id="test-tools-and-scripts">
+  ## 测试工具和脚本
+</div>
+
+`tests` 目录中的一些程序并不是现成的测试用例，而是测试工具。
+例如，对于 `Lexer`，有一个工具 `src/Parsers/tests/lexer`，它只是对 stdin 进行标记化，并将带颜色的结果输出到 stdout。
+你可以将这类工具用作代码示例，也可用于探索和手动测试。
+
+<div id="miscellaneous-tests">
+  ## 杂项测试
+</div>
+
+`tests/external_models` 中有一些针对机器学习模型的测试。
+这些测试没有持续更新，必须迁移到集成测试中。
+
+另外还有一个单独用于测试 quorum insert 的测试。
+该测试会在不同服务器上运行一个 ClickHouse 集群，并模拟各种故障场景：网络分区、丢包 (发生在 ClickHouse 节点之间、ClickHouse 与 ZooKeeper 之间、ClickHouse server 与客户端之间等) 、`kill -9`、`kill -STOP` 和 `kill -CONT`，类似于 [Jepsen](https://aphyr.com/tags/Jepsen)。随后，测试会检查所有已确认的 insert 都已写入，而所有被拒绝的 insert 都没有写入。
+
+<div id="manual-testing">
+  ## 手动测试
+</div>
+
+开发新功能时，通常也应进行手动测试。
+可以按以下步骤操作：
+
+构建 ClickHouse。通过终端运行 ClickHouse：切换到 `programs/clickhouse-server` 目录，然后执行 `./clickhouse-server`。默认情况下，它会使用当前目录中的配置 (`config.xml`、`users.xml`，以及 `config.d` 和 `users.d` 目录中的文件) 。要连接到 ClickHouse 服务器，请运行 `programs/clickhouse-client/clickhouse-client`。
+
+请注意，所有 clickhouse 工具 (server、client 等) 都只是指向同一个名为 `clickhouse` 的 binary 的符号链接。
+你可以在 `programs/clickhouse` 找到这个 binary。
+此外，所有工具也都可以用 `clickhouse tool` 的形式调用，而不是 `clickhouse-tool`。
+
+或者，你也可以安装 ClickHouse 软件包：可以使用 ClickHouse repository 中的稳定版本发布包，也可以在 ClickHouse 源码根目录中通过 `./release` 自行构建软件包。
+然后使用 `sudo clickhouse start` 启动 server (或使用 stop 停止 server) 。
+日志可在 `/etc/clickhouse-server/clickhouse-server.log` 中查看。
+
+如果系统中已经安装了 ClickHouse，你可以构建一个新的 `clickhouse` binary，并替换现有的 binary：
+
+```bash
+$ sudo clickhouse stop
+$ sudo cp ./clickhouse /usr/bin/
+$ sudo clickhouse start
+```
+
+你也可以先停止系统的 clickhouse-server，再用相同的配置运行你自己的实例，只是将日志输出到终端：
+
+```bash
+$ sudo clickhouse stop
+$ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```
+
+gdb 示例：
+
+```bash
+$ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```
+
+如果系统中的 clickhouse-server 已在运行，而你又不想停止它，可以在 `config.xml` 中修改端口号 (或在 `config.d` 目录中的某个文件里覆盖这些设置) ，指定合适的数据路径，然后运行它。
+
+`clickhouse` 可执行文件几乎没有依赖，可在多种 Linux 发行版上运行。
+如果你想在服务器上快速粗略地测试自己的改动，只需用 `scp` 将刚构建好的 `clickhouse` 可执行文件传到服务器上，然后按照上面的示例运行即可。
+
+<div id="build-tests">
+  ## 构建测试
+</div>
+
+构建测试用于检查构建在各种替代配置以及某些其他系统上是否正常。
+这些测试也都是自动化的。
+
+示例：
+
+* 为 Darwin x86&#95;64 (macOS) 交叉编译
+* 为 FreeBSD x86&#95;64 交叉编译
+* 为 Linux AArch64 交叉编译
+* 在 Ubuntu 上使用系统软件包中的库进行构建 (不推荐)
+* 以库的共享链接方式进行构建 (不推荐)
+
+例如，使用系统软件包进行构建并不是一种好的做法，因为我们无法保证系统中具体会有哪些版本的软件包。
+但 Debian 维护者确实需要这样做。
+因此，我们至少必须支持这种构建变体。
+另一个例子是，共享链接是常见的问题来源，但一些爱好者需要它。
+
+虽然我们无法在所有构建变体上运行所有测试，但我们至少希望检查各种构建变体没有损坏。
+为此，我们使用构建测试。
+
+我们还会测试是否存在过长而无法编译，或需要过多 RAM 的编译单元。
+
+我们还会测试是否存在过大的栈帧。
+
+<div id="testing-for-protocol-compatibility">
+  ## 测试协议兼容性
+</div>
+
+当我们扩展 ClickHouse 网络协议时，会手动测试旧版 `clickhouse-client` 是否能与新版 `clickhouse-server` 兼容，以及新版 `clickhouse-client` 是否能与旧版 `clickhouse-server` 兼容 (只需运行相应软件包中的二进制文件即可) 。
+
+我们还会通过集成测试自动验证一些场景：
+
+* 旧版本 ClickHouse 写入的数据能否被新版本成功读取；
+* 在由不同 ClickHouse 版本组成的集群中，分布式查询能否正常工作。
+
+<div id="help-from-the-compiler">
+  ## 来自编译器的帮助
+</div>
+
+ClickHouse 的主要代码 (位于 `src` 目录中) 在构建时会启用 `-Wall -Wextra -Werror`，以及一些额外的警告选项。
+不过，第三方库不会启用这些选项。
+
+Clang 还提供了更多有用的警告；你可以通过 `-Weverything` 查看它们，并从中挑选一些加入默认构建。
+
+无论是在开发环境还是生产环境中，我们始终使用 clang 来构建 ClickHouse。
+你可以在自己的机器上以调试模式构建 (这样能省一点笔记本电量) ，但请注意，由于控制流和过程间分析更完善，编译器在 `-O3` 下能够生成更多警告。
+使用 clang 以调试模式构建时，会使用 `libc++` 的调试版本，从而在运行时捕获更多错误。
+
+<div id="sanitizers">
+  ## Sanitizers
+</div>
+
+<Note>
+  如果在本地运行时，进程 (ClickHouse server 或客户端) 在启动时崩溃，可能需要禁用地址空间布局随机化：`sudo sysctl kernel.randomize_va_space=0`
+</Note>
+
+<div id="address-sanitizer">
+  ### AddressSanitizer
+</div>
+
+我们会在每次提交时使用 ASan 运行功能测试、integration 测试、压力测试和单元测试。
+
+<div id="thread-sanitizer">
+  ### 线程 Sanitizer
+</div>
+
+我们会在每次提交后使用 TSan 运行功能测试、集成测试、压力测试和单元测试。
+
+<div id="memory-sanitizer">
+  ### Memory sanitizer
+</div>
+
+对于每次提交，我们都会在 MSan 环境下运行功能测试、集成测试、压力测试和单元测试。
+
+<div id="undefined-behaviour-sanitizer">
+  ### 未定义行为检测器
+</div>
+
+我们会在每次提交时都使用 UBSan 运行功能、集成、压力和单元测试。
+某些第三方库的代码未经过 UB 检查。
+
+<div id="valgrind-memcheck">
+  ### Valgrind (memcheck)
+</div>
+
+我们过去会在夜间使用 Valgrind 运行功能测试，但现在已经不这么做了。
+这通常需要几个小时。
+目前已知 `re2` 库中有一个误报，参见[这篇文章](https://research.swtch.com/sparse)。
+
+<div id="fuzzing">
+  ## 模糊测试
+</div>
+
+ClickHouse 的模糊测试同时使用 [libFuzzer](https://llvm.org/docs/LibFuzzer.html) 和随机 SQL 查询实现。
+所有模糊测试都应结合 sanitizer (Address 和 Undefined) 运行。
+
+libFuzzer 用于对库代码进行隔离式模糊测试。
+Fuzzer 作为测试代码的一部分实现，并带有 &quot;&#95;fuzzer&quot; 名称后缀。
+Fuzzer 示例见 `src/Parsers/fuzzers/lexer_fuzzer.cpp`。
+libFuzzer 专用的配置、字典和语料库存放在 `tests/fuzz`。
+我们建议你为每个处理用户输入的功能编写模糊测试。
+
+默认不会构建 Fuzzer。
+要构建 Fuzzer，必须同时设置 `-DENABLE_FUZZING=1` 和 `-DENABLE_TESTS=1` 选项。
+我们建议在构建 Fuzzer 时禁用 Jemalloc。
+用于将 ClickHouse 模糊测试集成到
+Google OSS-Fuzz 的配置可在 `docker/fuzz` 中找到。
+
+我们还使用简单的模糊测试来生成随机 SQL 查询，并检查 server 在执行这些查询时不会崩溃。
+你可以在 `00746_sql_fuzzy.pl` 中找到它。
+此测试应持续运行 (隔夜及更长时间) 。
+
+我们还使用了基于 AST 的高级查询 Fuzzer，能够发现大量边界情况。
+它会对查询 AST 进行随机置换和替换。
+它会记住之前测试中的 AST 节点，并在后续测试中按随机顺序处理时将其用于模糊测试。
+你可以在[这篇博客文章](https://clickhouse.com/blog/fuzzing-click-house)中进一步了解这个 Fuzzer。
+
+<div id="stress-test">
+  ## 压力测试
+</div>
+
+压力测试也是模糊测试的一种。
+它会在单台服务器上，以随机顺序并行运行所有功能测试。
+测试结果不会被检查。
+
+需要检查的是：
+
+* 服务器不会崩溃，也不会触发调试器或 sanitizer 陷阱；
+* 不会发生死锁；
+* 数据库结构保持一致；
+* 服务器在测试结束后能够成功停止，并且再次启动时不会出现异常。
+
+共有五个变体 (Debug、ASan、TSan、MSan、UBSan) 。
+
+<div id="thread-fuzzer">
+  ## Thread Fuzzer
+</div>
+
+Thread Fuzzer (请勿与 Thread Sanitizer 混淆) 是另一种模糊测试，可将线程执行顺序随机化。
+它有助于发现更多边缘情况。
+
+<div id="security-audit">
+  ## 安全审计
+</div>
+
+我们的安全团队从安全角度对 ClickHouse 的功能做了一个基本概述。
+
+<div id="static-analyzers">
+  ## 静态分析器
+</div>
+
+我们会在每次提交时运行 `clang-tidy`。
+同时也启用了 `clang-static-analyzer` 检查。
+`clang-tidy` 还用于执行一些风格检查。
+
+我们评估过 `clang-tidy`、`Coverity`、`cppcheck`、`PVS-Studio`、`tscancode` 和 `CodeQL`。
+你可以在 `tests/instructions/` 目录中找到使用说明。
+
+如果你使用 `CLion` 作为 IDE，可以直接利用其中的一些 `clang-tidy` 检查。
+
+我们还使用 `shellcheck` 对 shell 脚本进行静态分析。
+
+<div id="hardening">
+  ## 加固
+</div>
+
+在调试构建中，我们使用自定义分配器，对用户态分配启用 ASLR。
+
+我们还会手动保护那些在分配后预期应为只读的内存区域。
+
+在调试构建中，我们还会使用定制版 libc，以确保不会调用任何“有害”的函数 (如已废弃、不安全或非线程安全的函数) 。
+
+调试断言被广泛使用。
+
+在调试构建中，如果抛出带有“logical error”代码的异常 (这意味着存在 bug) ，程序会立即终止。
+这样既可以在发布构建中使用异常，又能在调试构建中将其视为断言。
+
+调试版本的 jemalloc 用于调试构建。
+调试版本的 libc++ 用于调试构建。
+
+<div id="runtime-integrity-checks">
+  ## 运行时完整性检查
+</div>
+
+存储在磁盘上的数据会计算校验和。
+MergeTree 表中的数据会同时以三种方式计算校验和* (压缩数据块、未压缩数据块、跨数据块的总校验和) 。
+客户端与服务器之间或服务器之间通过网络传输的数据也会计算校验和。
+复制可确保各个副本上的数据在比特级别完全一致。
+
+这样做是为了防范硬件故障 (存储介质上的位腐化、服务器 RAM 中的位翻转、网络控制器 RAM 中的位翻转、网络交换机 RAM 中的位翻转、客户端 RAM 中的位翻转、传输线路上的位翻转) 。
+请注意，位翻转很常见，而且即使使用 ECC RAM 并有 TCP 校验和，也很可能发生 (如果你管理着数千台服务器，并且每天处理 PB 级数据) 。
+[观看视频 (俄语) ](https://www.youtube.com/watch?v=ooBAQIe0KlQ)。
+
+ClickHouse 提供了诊断功能，可帮助运维工程师定位故障硬件。
+
+* 而且这并不会拖慢速度。
+
+<div id="code-style">
+  ## 代码风格
+</div>
+
+代码风格规则见[此处](/zh/resources/develop-contribute/contribute/style)。
+
+要检查一些常见的风格问题，可以使用 `utils/check-style` 脚本。
+
+如果要强制代码符合规范，可以使用 `clang-format`。
+`.clang-format` 文件位于源码根目录。
+它基本符合我们当前的代码风格。
+但不建议对现有文件直接运行 `clang-format`，因为这可能会让格式变得更糟。
+你也可以使用 `clang-format-diff` 工具，可在 clang 的源码仓库中找到。
+
+或者，也可以尝试使用 `uncrustify` 工具重新格式化代码。
+配置文件 `uncrustify.cfg` 位于源码根目录。
+相比 `clang-format`，它的测试还不够充分。
+
+`CLion` 自带代码格式化工具，但需要调整为符合我们的代码风格。
+
+<div id="test-coverage">
+  ## 测试覆盖率
+</div>
+
+我们也会跟踪测试覆盖率，但仅统计功能测试，且只针对 clickhouse-server。
+这项工作每天都会进行。
+
+<div id="tests-for-tests">
+  ## 针对测试的测试
+</div>
+
+有一项用于检查不稳定测试的自动化机制。
+它会将所有新增测试运行 100 次 (功能测试) 或 10 次 (集成测试) 。
+只要测试有一次失败，就会被视为不稳定。
+
+<div id="test-automation">
+  ## 测试自动化
+</div>
+
+我们使用 [GitHub Actions](https://github.com/features/actions) 运行测试。
+
+构建作业和测试会在 Sandbox 中针对每次提交运行。
+生成的软件包和测试结果会发布到 GitHub，并可通过直链下载。
+制品会保留数个月。
+当你在 GitHub 上提交拉取请求时，我们会将其标记为 &quot;can be tested&quot;，然后由我们的 CI 系统为你构建 ClickHouse 软件包 (release、debug、启用 address sanitizer 等) 。

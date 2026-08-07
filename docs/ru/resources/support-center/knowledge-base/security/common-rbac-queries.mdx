@@ -1,0 +1,53 @@
+---
+title: Типовые запросы RBAC
+description: "Запросы, которые помогут grant пользователям определенные разрешения."
+date: 2023-09-28
+tags: ['Безопасность и аутентификация', 'Управление Cloud']
+keywords: ['RBAC', 'Запросы']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Введение
+</div>
+
+Ниже приведены типовые запросы для выдачи пользователям определённых разрешений.
+
+<div id="how-do-i-grant-the-same-permissions-as-the-current-user-to-another-user">
+  ## Как выдать другому пользователю те же разрешения, что и текущему пользователю?
+</div>
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-based-on-the-grants-of-the-current-user">
+  ## Как выдать пользователю определённое разрешение на основе привилегий текущего пользователя?
+</div>
+
+В приведённом ниже примере `another_user` сможет выполнять команды `SELECT` для всех баз данных и таблиц текущего пользователя.
+
+```sql
+GRANT CURRENT GRANTS(SELECT ON *.*) TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-for-a-specific-database-based-on-the-grants-of-the-current-user">
+  ## Как предоставить пользователю определённое разрешение для конкретной базы данных, исходя из привилегий текущего пользователя?
+</div>
+
+В приведённом ниже примере `another_user` сможет выполнять команды `INSERT` для всех таблиц в `my_database`.
+
+```sql
+GRANT INSERT ON my_database.* TO another_user;
+```
+
+<div id="how-do-i-give-access-to-all-grants-for-a-specific-user-based-on-the-default-user">
+  ## Как предоставить конкретному пользователю все привилегии пользователя по умолчанию?
+</div>
+
+```sql
+GRANT default_role TO another_user;
+```

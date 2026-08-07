@@ -1,0 +1,443 @@
+---
+description: 'محرك جدول يُخزّن سلاسل زمنية، أي مجموعة من القيم المرتبطة
+  بالطوابع الزمنية والوسوم (أو التسميات).'
+sidebarTitle: 'TimeSeries'
+slug: /engines/table-engines/special/time_series
+title: 'محرك الجدول TimeSeries'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+محرك جدول يخزّن سلسلة زمنية، أي مجموعة من القيم المرتبطة بطوابع زمنية ووسوم (أو تسميات):
+
+```sql
+metric_name1[tag1=value1, tag2=value2, ...] = {timestamp1: value1, timestamp2: value2, ...}
+metric_name2[...] = ...
+```
+
+<Info>
+  هذه ميزة تجريبية، وقد تتغير مستقبلًا على نحو غير متوافق مع الإصدارات السابقة.
+  فعِّل استخدام محرك الجدول TimeSeries
+  باستخدام الإعداد [allow&#95;experimental&#95;time&#95;series&#95;table](/ar/reference/settings/session-settings#allow_experimental_time_series_table).
+  أدخِل الأمر `set allow_experimental_time_series_table = 1`.
+</Info>
+
+<div id="syntax">
+  ## الصياغة
+</div>
+
+```sql
+CREATE TABLE name [(columns)] ENGINE=TimeSeries
+[SETTINGS var1=value1, ...]
+[SAMPLES db.samples_table_name | [SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]]
+[TAGS db.tags_table_name | [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]]
+[METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
+```
+
+<Note>
+  للكلمة المفتاحية `SAMPLES` اسم مستعار هو `DATA`، وقد أُبقي عليه للحفاظ على التوافق مع الإصدارات السابقة.
+</Note>
+
+<div id="usage">
+  ## الاستخدام
+</div>
+
+من الأسهل البدء بالإعدادات الافتراضية لكل شيء (يُسمح بإنشاء جدول `TimeSeries` من دون تحديد قائمة بالأعمدة):
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+```
+
+بعد ذلك، يمكن استخدام هذا الجدول مع البروتوكولات التالية (يجب تعيين منفذ في تهيئة الخادم):
+
+* [prometheus remote-write](/ar/concepts/features/interfaces/prometheus#remote-write)
+* [prometheus remote-read](/ar/concepts/features/interfaces/prometheus#remote-read)
+
+<div id="outer-columns">
+  ### الأعمدة الخارجية
+</div>
+
+تُنشأ أعمدة جدول TimeSeries تلقائيًا. وهذه هي الأعمدة الخارجية؛ فهي لا تخزّن أي بيانات، وإنما توفّر فقط واجهة لـ SELECT/INSERT. وتُخزَّن البيانات الفعلية في [الجداول الهدف](#target-tables). وفيما يلي قائمة الأعمدة الخارجية:
+
+| Name            | Type                                             | Description                                                                                                                                                                                                     |
+| --------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_name`   | `String`                                         | اسم المقياس                                                                                                                                                                                                     |
+| `tags`          | `Map(String, String)`                            | خريطة الوسوم (التسميات) للسلسلة الزمنية                                                                                                                                                                           |
+| `time_series`   | `Array(Tuple(DateTime64(3), Float64))` افتراضيًا | مصفوفة من أزواج (timestamp، value) لسلسلة زمنية. ويمكن اشتقاق نوعَي عنصر timestamp والعنصر scalar في Tuple من تعريف `INNER COLUMNS` الخاص بـ samples (راجع [تحديد الأعمدة الخارجية](#specifying-outer-columns)) |
+| `metric_family` | `String`                                         | اسم عائلة المقياس (للبيانات الوصفية للمقاييس)                                                                                                                                                                  |
+| `type`          | `String`                                         | نوع المقياس (مثل &quot;counter&quot; و&quot;gauge&quot;)                                                                                                                                                        |
+| `unit`          | `String`                                         | وحدة المقياس                                                                                                                                                                                                    |
+| `help`          | `String`                                         | وصف المقياس                                                                                                                                                                                                     |
+
+مثال:
+
+```sql
+INSERT INTO my_table (metric_name, tags, time_series) VALUES
+    ('cpu_usage', {'job': 'node_exporter', 'instance': 'host1:9100'},
+     [(toDateTime64('2024-01-01 00:00:00', 3), 0.5), (toDateTime64('2024-01-01 00:01:00', 3), 0.7)])
+```
+
+يُسمح بأن تكون القيمة `metric_name` فارغة عند الإدخال، ما يعني أن اسم المقياس يُحدَّد في `tags` ضمن `__name__`، على سبيل المثال:
+
+```sql
+INSERT INTO my_table (tags, time_series) VALUES
+    ({'__name__': 'cpu_usage', 'job': 'test'},
+     [(toDateTime64('2024-01-01 00:00:00', 3), 0.5)])
+```
+
+لإدراج البيانات الوصفية للمقاييس، أدرِجها في الأعمدة `metric_family` و`type` و`unit` و`help`:
+
+```sql
+INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit, help) VALUES
+    ('http_requests_total', {'method': 'GET'}, [(now64(), 100.0)],
+     'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
+```
+
+<div id="specifying-outer-columns">
+  ### تحديد الأعمدة الخارجية
+</div>
+
+يمكن إدراج العمود الخارجي `time_series` صراحةً في عبارة `CREATE TABLE` لاستبدال نوعه الافتراضي `Array(Tuple(DateTime64(3), Float64))`. يستخرج ClickHouse نوعَي الطابع الزمني والقيمة القياسية من الـ tuple ويُمرّرهما إلى جدول العينات الداخلي:
+
+```sql
+CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
+```
+
+وهذا يعادل التصريح مباشرةً بأنواع أعمدة الطابع الزمني والقيمة في عبارة `INNER COLUMNS` الخاصة بجدول samples:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp UInt32, value Float32)
+```
+
+إذا استُخدمت الصيغتان كلتاهما ضمن عبارة `CREATE TABLE` نفسها، فيجب أن تتطابق الأنواع المُعلنة.
+
+<div id="target-tables">
+  ## الجداول الهدف
+</div>
+
+لا يحتوي جدول `TimeSeries` على بيانات خاصة به، إذ يُخزَّن كل شيء في جداوله الهدف.
+وهذا يشبه طريقة عمل [العرض المادي](/ar/reference/statements/create/view#materialized-view)،
+مع فارق أن العرض المادي له جدول هدف واحد،
+بينما يحتوي جدول `TimeSeries` على ثلاثة جداول هدف باسم [samples](#samples-table) و[tags](#tags-table) و[metrics](#metrics-table).
+
+يمكن تحديد الجداول الهدف صراحةً في استعلام `CREATE TABLE`
+أو يمكن لمحرك جدول `TimeSeries` إنشاء الجداول الهدف الداخلية تلقائيًا.
+
+تُحوَّل الصفوف المُدرجة في جدول `TimeSeries`، وتُقسَّم إلى كتل، ثم تُدرج في هذه الجداول الهدف الثلاثة.
+
+الجداول الهدف هي كما يلي:
+
+<div id="samples-table">
+  ### جدول العينات
+</div>
+
+يحتوي جدول *samples* على سلاسل زمنية مرتبطة بمعرّف معيّن.
+
+يجب أن يحتوي جدول *samples* على الأعمدة التالية:
+
+| الاسم       | إلزامي؟ | النوع الافتراضي | الأنواع الممكنة        | الوصف                                  |
+| ----------- | ------- | --------------- | ---------------------- | -------------------------------------- |
+| `id`        | [x]     | `UUID`          | أيّ نوع                | يحدّد مجموعة من أسماء المقاييس والوسوم |
+| `timestamp` | [x]     | `DateTime64(3)` | `DateTime64(X)`        | نقطة زمنية                             |
+| `value`     | [x]     | `Float64`       | `Float32` أو `Float64` | قيمة مرتبطة بـ `timestamp`             |
+
+<div id="tags-table">
+  ### جدول الوسوم
+</div>
+
+يحتوي جدول *tags* على المعرّفات المحسوبة لكل توليفة من اسم مقياس والوسوم.
+
+يجب أن يحتوي جدول *tags* على الأعمدة التالية:
+
+| Name                 | Mandatory? | Default type                          | Possible types                                                                                                          | Description                                                                                                                                                       |
+| -------------------- | ---------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | [x]        | `UUID`                                | any (must match the type of `id` in the [samples](#samples-table) table)                                                | يعرّف `id` توليفة من اسم مقياس والوسوم. ويحدّد تعبير DEFAULT كيفية حساب هذا المعرّف                                                                               |
+| `metric_name`        | [x]        | `LowCardinality(String)`              | `String` or `LowCardinality(String)`                                                                                    | اسم المقياس                                                                                                                                                       |
+| `<tag_value_column>` | [ ]        | `String`                              | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))`                                              | قيمة وسم معيّن، ويُحدَّد اسم الوسم واسم العمود المقابل له في الإعداد [tags&#95;to&#95;columns](#settings)                                                         |
+| `tags`               | [x]        | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | خريطة الوسوم مع استبعاد الوسم `__name__` الذي يحتوي على اسم المقياس، واستبعاد الوسوم التي أُدرجت أسماؤها في الإعداد [tags&#95;to&#95;columns](#settings)          |
+| `all_tags`           | [ ]        | `Map(String, String)`                 | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | عمود مؤقت، ويمثل كل صف فيه خريطة لجميع الوسوم مع استبعاد الوسم `__name__` فقط الذي يحتوي على اسم المقياس. والغرض الوحيد من هذا العمود هو استخدامه أثناء حساب `id` |
+| `min_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | أدنى طابع زمني للسلسلة الزمنية ذات `id` هذا. يُنشأ العمود إذا كانت قيمة [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) هي `true`                    |
+| `max_time`           | [ ]        | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | أقصى طابع زمني للسلسلة الزمنية ذات `id` هذا. يُنشأ العمود إذا كانت قيمة [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) هي `true`                    |
+
+<div id="metrics-table">
+  ### جدول المقاييس
+</div>
+
+يحتوي جدول *metrics* على بعض المعلومات حول المقاييس التي جُمعت، وأنواعها وأوصافها.
+
+يجب أن يحتوي جدول *metrics* على الأعمدة التالية:
+
+| الاسم                | إلزامي؟ | النوع الافتراضي          | الأنواع الممكنة                      | الوصف                                                                                                                                                                                       |
+| -------------------- | ------- | ------------------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_family_name` | [x]     | `String`                 | `String` أو `LowCardinality(String)` | اسم عائلة المقياس                                                                                                                                                                           |
+| `type`               | [x]     | `LowCardinality(String)` | `String` أو `LowCardinality(String)` | نوع عائلة المقياس، ويكون إحدى القيم التالية: &quot;counter&quot; أو &quot;gauge&quot; أو &quot;summary&quot; أو &quot;stateset&quot; أو &quot;histogram&quot; أو &quot;gaugehistogram&quot; |
+| `unit`               | [x]     | `LowCardinality(String)` | `String` أو `LowCardinality(String)` | الوحدة المستخدمة في المقياس                                                                                                                                                                 |
+| `help`               | [x]     | `String`                 | `String` أو `LowCardinality(String)` | وصف المقياس                                                                                                                                                                                 |
+
+<div id="creation">
+  ## الإنشاء
+</div>
+
+توجد عدة طرق لإنشاء جدول باستخدام محرك الجدول `TimeSeries`.
+أبسط تعليمة
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+```
+
+سينشئ فعليًا الجدول التالي (يمكنك التأكد من ذلك بتنفيذ `SHOW CREATE TABLE my_table`):
+
+```sql
+CREATE TABLE my_table
+(
+    `metric_name` String,
+    `tags` Map(String, String),
+    `time_series` Array(Tuple(DateTime64(3), Float64)),
+    `metric_family` String,
+    `type` String,
+    `unit` String,
+    `help` String
+)
+ENGINE = TimeSeries
+SAMPLES INNER COLUMNS
+(
+    `id` UUID,
+    `timestamp` DateTime64(3),
+    `value` Float64
+)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+TAGS INNER COLUMNS
+(
+    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `metric_name` LowCardinality(String),
+    `tags` Map(LowCardinality(String), String),
+    `all_tags` Map(String, String) EPHEMERAL,
+    `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+)
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
+METRICS INNER COLUMNS
+(
+    `metric_family_name` String,
+    `type` LowCardinality(String),
+    `unit` LowCardinality(String),
+    `help` String
+)
+METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
+```
+
+لذا جرى إنشاء الأعمدة تلقائيًا، وهناك أيضًا ثلاثة جداول هدف داخلية لها تعريفات أعمدة خاصة بها
+مخزّنة في عبارات `INNER COLUMNS`.
+
+تحمل الجداول الهدف الداخلية أسماء مثل `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`، و`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+ولكل جدول هدف مجموعة الأعمدة الخاصة به:
+
+```sql
+CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` UUID,
+    `timestamp` DateTime64(3),
+    `value` Float64
+)
+ENGINE = MergeTree
+ORDER BY (id, timestamp)
+```
+
+```sql
+CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `metric_name` LowCardinality(String),
+    `tags` Map(LowCardinality(String), String),
+    `all_tags` Map(String, String) EPHEMERAL,
+    `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+)
+ENGINE = AggregatingMergeTree
+PRIMARY KEY metric_name
+ORDER BY (metric_name, id)
+```
+
+```sql
+CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `metric_family_name` String,
+    `type` LowCardinality(String),
+    `unit` LowCardinality(String),
+    `help` String
+)
+ENGINE = ReplacingMergeTree
+ORDER BY metric_family_name
+```
+
+<div id="create-as">
+  ## إنشاء جدول AS من جدول موجود
+</div>
+
+تنسخ العبارة `CREATE TABLE new_table AS existing_table` من `existing_table` ما يلي:
+
+* `SETTINGS`
+* `INNER COLUMNS` لكل نوع
+* `INNER ENGINE` لكل نوع
+
+لا يُسمح بهذه العبارة إذا كان `existing_table` يحتوي على أهداف خارجية.
+يُعاد توليد قائمة الأعمدة الخارجية ولا تُنسخ.
+
+<div id="adjusting-column-types">
+  ## ضبط أنواع الأعمدة
+</div>
+
+يمكنك ضبط أنواع الأعمدة في الجداول الهدف الداخلية باستخدام عبارة `INNER COLUMNS`. على سبيل المثال، لتخزين الطوابع الزمنية بالميكروثانية والقيم كـ `Float32`:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
+```
+
+يمكن استخدام الجملة نفسها لتحديد ترميزات الضغط وخصائص الأعمدة الأخرى:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
+```
+
+<div id="id-column">
+  ## العمود `id`
+</div>
+
+يحتوي العمود `id` على معرّفات، ويُحتسب كل معرّف استنادًا إلى تركيبة من اسم المقياس والوسوم.
+يمكن تخصيص النوع وتعبير `DEFAULT` المستخدم لتوليد المعرّفات عبر البند `TAGS INNER COLUMNS`:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
+```
+
+يجب أن يكون نوع العمود `id` واحدًا من `UUID` أو `UInt64` أو `UInt128` أو `FixedString(16)`. إذا لم يتم تحديد التعبير `DEFAULT`، فسيختاره ClickHouse تلقائيًا بناءً على نوع `id`. يجب أن تتطابق أنواع `id` المُعلنة في الجدولين الداخليين `samples` و`tags`.
+
+يوفّر الإعداد `id_generator` مستوى التخصيص نفسه من دون استخدام العبارة `INNER COLUMNS`:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS id_generator = 'sipHash64(metric_name, all_tags)'
+```
+
+إذا كان هذا الإعداد مُعيَّنًا، فسيُستخدم لتوليد `id` حتى إذا كانت قيمة `DEFAULT` الخاصة بالعمود تحتوي على تعبير مختلف.
+
+<div id="tags-and-all-tags">
+  ## العمودان `tags` و`all_tags`
+</div>
+
+هناك عمودان يحتويان على قيم خريطة للوسوم، هما `tags` و`all_tags`. في هذا المثال، يشيران إلى المعنى نفسه، لكن قد يختلفان
+إذا استُخدم الإعداد `tags_to_columns`. يتيح هذا الإعداد تحديد وسم معيّن لتخزينه في عمود منفصل بدلًا من تخزينه
+في خريطة داخل العمود `tags`:
+
+```sql
+CREATE TABLE my_table
+ENGINE = TimeSeries 
+SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
+```
+
+ستضيف هذه العبارة العمودين `instance` و`job` إلى جدول [الوسوم](#tags-table) الهدف الداخلي.
+في هذه الحالة، لن يحتوي العمود `tags` على الوسمين `instance` و`job`،
+لكن العمود `all_tags` سيحتوي عليهما. العمود `all_tags` مؤقت، والغرض الوحيد منه هو استخدامه في تعبير DEFAULT
+للعمود `id`.
+
+<div id="inner-table-engines">
+  ## محركات الجداول الخاصة بالجداول الهدف الداخلية
+</div>
+
+تستخدم الجداول الهدف الداخلية، افتراضيًا، محركات الجداول التالية:
+
+* يستخدم جدول [العينات](#samples-table) محرك [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree);
+* يستخدم جدول [الوسوم](#tags-table) محرك [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree) لأن البيانات نفسها تُدرج في هذا الجدول غالبًا عدة مرات، لذا نحتاج إلى طريقة
+  لإزالة التكرارات، وكذلك لأن التجميع مطلوب للعمودين `min_time` و `max_time`;
+* يستخدم جدول [المقاييس](#metrics-table) محرك [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) لأن البيانات نفسها تُدرج في هذا الجدول غالبًا عدة مرات، لذا نحتاج إلى طريقة
+  لإزالة التكرارات.
+
+كما يمكن استخدام محركات جداول أخرى للجداول الهدف الداخلية إذا تم تحديد ذلك:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES ENGINE=ReplicatedMergeTree
+TAGS ENGINE=ReplicatedAggregatingMergeTree
+METRICS ENGINE=ReplicatedReplacingMergeTree
+```
+
+<div id="external-target-tables">
+  ## الجداول الهدف الخارجية
+</div>
+
+يمكن إعداد جدول `TimeSeries` لاستخدام جدول أُنشئ يدويًا:
+
+```sql
+CREATE TABLE samples_for_my_table
+(
+    `id` UUID,
+    `timestamp` DateTime64(3),
+    `value` Float64
+)
+ENGINE = MergeTree
+ORDER BY (id, timestamp);
+
+CREATE TABLE tags_for_my_table ...
+
+CREATE TABLE metrics_for_my_table ...
+
+CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
+```
+
+يجب أن تتطابق أنواع أعمدة الجداول الخارجية (`id` و`timestamp` و`value` وأعمدة `<tag_value_column>` المدرجة في [`tags_to_columns`](#settings)) مع ما كان جدول `TimeSeries` سيُنشئه داخليًا في الحالة العادية (راجع [جدول العينات](#samples-table) و[جدول الوسوم](#tags-table) و[جدول المقاييس](#metrics-table) للاطلاع على قيود الأنواع). ويُبلَّغ عن أي عدم تطابق في الأنواع عند تنفيذ `CREATE`.
+
+يُحدَّد تعبير مولِّد المعرّف لهدف وسوم خارجي عند وقت INSERT بالترتيب التالي: الإعداد [`id_generator`](#settings) (إذا كان معيَّنًا)، ثم `DEFAULT` المعرَّف في عمود `id` للجدول الخارجي (إن وجد)، ثم المولِّد القياسي المشتق من نوع `id`. لذلك، يتجاوز هذا الإعداد أي قيمة `DEFAULT` معرَّفة في الجدول الخارجي — راجع [عمود `id`](#id-column) للتفاصيل.
+
+<div id="altering-settings">
+  ## تعديل الإعدادات
+</div>
+
+يمكن تغيير إعدادَين بعد `CREATE`:
+
+* `id_generator`
+* `filter_by_min_time_and_max_time`
+
+```sql
+ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(metric_name, all_tags)';
+ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+```
+
+لاحظ أن تغيير `id_generator` بعد وجود بيانات بالفعل في جدول Tags قد يؤدي إلى إنشاء معرّفات مختلفة لنفس تركيبة metric+tag — إذ تحتفظ الصفوف القديمة بمعرّفاتها القديمة، بينما تستخدم الصفوف الجديدة المولِّد الجديد.
+
+ولا يمكن تغيير الإعدادات الأخرى باستخدام `ALTER ... MODIFY SETTING` لأنها تكون مدمجة في مخطط الجداول الداخلية عند `CREATE`.
+
+<div id="settings">
+  ## الإعدادات
+</div>
+
+فيما يلي قائمة بالإعدادات التي يمكن تحديدها عند تعريف جدول `TimeSeries`:
+
+| الاسم                                | النوع      | الافتراضي          | الوصف                                                                                                                                                                                                                       |
+| ------------------------------------ | ---------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id_generator`                       | Expression | يعتمد على نوع `id` | تعبير يحسب معرّف (بصمة) السلسلة الزمنية من وسومها. إذا لم يتم تعيينه، فسيُستخدم التعبير الافتراضي للعمود `id`. وإذا كان التعبير الافتراضي للعمود `id` غير معيّن أيضًا، فسيُختار التعبير تلقائيًا                            |
+| `tags_to_columns`                    | خريطة        | {}                 | قيمة خريطة تحدد الوسوم التي يجب وضعها في أعمدة منفصلة في جدول [tags](#tags-table). الصياغة: `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                                      |
+| `use_all_tags_column_to_generate_id` | Bool       | true               | عند إنشاء تعبير لحساب معرّف سلسلة زمنية، يتيح هذا الخيار استخدام العمود `all_tags` في هذا الحساب                                                                                                                            |
+| `store_min_time_and_max_time`        | Bool       | true               | إذا تم تعيينه إلى true، فسيخزّن الجدول `min_time` و`max_time` لكل سلسلة زمنية                                                                                                                                               |
+| `aggregate_min_time_and_max_time`    | Bool       | true               | عند إنشاء جدول `tags` الداخلي الهدف، يتيح هذا الخيار استخدام `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` بدلًا من `Nullable(DateTime64(3))` فقط كنوع للعمود `min_time`، وينطبق الأمر نفسه على العمود `max_time` |
+| `filter_by_min_time_and_max_time`    | Bool       | true               | إذا تم تعيينه إلى true، فسيستخدم الجدول العمودين `min_time` و`max_time` لتصفية السلاسل الزمنية                                                                                                                              |
+
+<div id="functions">
+  # الدوال
+</div>
+
+فيما يلي قائمة بالدوال التي تقبل جدول `TimeSeries` كوسيطة:
+
+* [timeSeriesSamples](/ar/reference/functions/table-functions/timeSeriesSamples)
+* [timeSeriesTags](/ar/reference/functions/table-functions/timeSeriesTags)
+* [timeSeriesMetrics](/ar/reference/functions/table-functions/timeSeriesMetrics)

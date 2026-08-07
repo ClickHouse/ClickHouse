@@ -1,0 +1,303 @@
+---
+title: 'Onboarding de BYOC para AWS'
+slug: /cloud/reference/byoc/onboarding/aws
+sidebarTitle: 'Onboarding de BYOC para AWS'
+keywords: ['BYOC', 'nube', 'tu propia nube', 'AWS']
+description: 'Despliega ClickHouse en tu propia infraestructura en la nube'
+doc_type: 'reference'
+---
+
+<div id="onboarding-process">
+  ## Proceso de onboarding
+</div>
+
+Los clientes pueden iniciar el proceso de onboarding poniéndose en contacto con [nosotros](https://clickhouse.com/cloud/bring-your-own-cloud). Deben disponer de una cuenta de AWS dedicada y conocer la región que van a utilizar. Actualmente, solo permitimos lanzar servicios BYOC en las regiones compatibles con ClickHouse Cloud.
+
+<div id="prepare-an-aws-account">
+  ### Prepare una cuenta de AWS
+</div>
+
+Se recomienda a los clientes preparar una cuenta de AWS específica para alojar la implementación de ClickHouse BYOC y así garantizar un mejor aislamiento. Sin embargo, también es posible usar una cuenta compartida y una VPC existente. Consulta los detalles en *Configurar la infraestructura de BYOC* más abajo.
+
+Con esta cuenta y el correo electrónico inicial del administrador de la organización, puedes ponerte en contacto con el soporte de ClickHouse.
+
+<div id="initialize-byoc-setup">
+  ### Inicializar la configuración de BYOC
+</div>
+
+La configuración inicial de BYOC puede realizarse mediante una plantilla de CloudFormation o un módulo de Terraform. Ambos enfoques crean el mismo rol de IAM, lo que permite a los controladores de BYOC de ClickHouse Cloud administrar su infraestructura. Tenga en cuenta que los recursos de S3, VPC y de cómputo necesarios para ejecutar ClickHouse no se incluyen en esta configuración inicial.
+
+<div id="cloudformation-template">
+  #### Plantilla de CloudFormation
+</div>
+
+[Plantilla de CloudFormation de BYOC](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)
+
+<div id="terraform-module">
+  #### Módulo de Terraform
+</div>
+
+[Módulo de Terraform para BYOC](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz)
+
+```hcl
+module "clickhouse_onboarding" {
+  source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
+  byoc_env = "production"
+}
+```
+
+<div id="set-up-byoc-infrastructure">
+  ### Configurar la infraestructura de BYOC
+</div>
+
+Después de crear la pila de CloudFormation, se le pedirá que configure la infraestructura, incluidos S3, la VPC y el cluster de EKS, desde la Cloud Console. Determinadas configuraciones deben definirse en esta etapa, ya que no podrán cambiarse más adelante. En concreto:
+
+* **La región que desea usar**: puede elegir cualquiera de las [regiones públicas](/es/products/cloud/reference/supported-regions) disponibles para ClickHouse Cloud.
+* **El rango CIDR de la VPC para BYOC**: de forma predeterminada, usamos `10.0.0.0/16` como rango CIDR de la VPC de BYOC. Si planeva usar peering de VPC con otra cuenta, asegúrese de que los rangos CIDR no se superpongan. Asigne un rango CIDR adecuado para BYOC, con un tamaño mínimo de `/22` para dar cabida a los workloads necesarios.
+* **Zonas de disponibilidad para la VPC de BYOC**: si planea usar peering de VPC, alinear las zonas de disponibilidad entre las cuentas de origen y de BYOC puede ayudar a reducir los costos del tráfico entre zonas de disponibilidad. En AWS, los sufijos de las zonas de disponibilidad (`a, b, c`) pueden representar distintos ID de zona física según la cuenta. Consulte la [guía de AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) para más detalles.
+
+<div id="customer-managed-vpc">
+  #### VPC administrada por el cliente
+</div>
+
+De forma predeterminada, ClickHouse Cloud aprovisionará una VPC dedicada para ofrecer un mejor aislamiento en tu despliegue BYOC. Sin embargo, también puedes usar una VPC existente en tu cuenta. Esto requiere una configuración específica y debe coordinarse a través de soporte de ClickHouse.
+
+**Configura tu VPC existente**
+
+1. Asigna al menos 3 subredes privadas en 3 zonas de disponibilidad distintas para que ClickHouse Cloud las use.
+2. Asegúrate de que cada subred tenga un rango CIDR mínimo de `/23` (p. ej., 10.0.0.0/23) para proporcionar suficientes direcciones IP para el despliegue de ClickHouse.
+3. Agrega la etiqueta `kubernetes.io/role/internal-elb=1` a cada subred para habilitar la configuración correcta del balanceador de carga.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-subnet-1.webp" alt="Subred de VPC de BYOC" />
+
+<br />
+
+<br />
+
+<img src="/images/cloud/reference/byoc-subnet-2.webp" alt="Etiquetas de subred de VPC de BYOC" />
+
+<br />
+
+4. Configura el endpoint de gateway de S3
+   Si tu VPC aún no tiene configurado un endpoint de gateway de S3, tendrás que crear uno para habilitar una comunicación segura y privada entre tu VPC y Amazon S3. Este endpoint permite que tus servicios de ClickHouse accedan a S3 sin pasar por la Internet pública. Consulta la captura de pantalla a continuación para ver una configuración de ejemplo.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-s3-endpoint.webp" alt="Endpoint de S3 de BYOC" />
+
+<br />
+
+**Contacta con soporte de ClickHouse**
+Crea un ticket de soporte con la siguiente información:
+
+* Tu ID de cuenta de AWS
+* La región de AWS donde quieres desplegar el servicio
+* Tu ID de VPC
+* Los ID de las subredes privadas que has asignado para ClickHouse
+* Las zonas de disponibilidad en las que se encuentran estas subredes
+
+<div id="optional-setup-vpc-peering">
+  ### Opcional: Configurar el peering de VPC
+</div>
+
+Para crear o eliminar el peering de VPC para ClickHouse BYOC, siga estos pasos:
+
+<div id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
+  #### Paso 1: Habilite el balanceador de carga privado para ClickHouse BYOC
+</div>
+
+Póngase en contacto con el soporte de ClickHouse para habilitar el balanceador de carga privado.
+
+<div id="step-2-create-a-peering-connection">
+  #### Paso 2 Crear una conexión de peering
+</div>
+
+1. Vaya al panel de VPC en la cuenta BYOC de ClickHouse.
+2. Seleccione Peering Connections.
+3. Haga clic en Create Peering Connection
+4. Establezca VPC Requester como el ID de la VPC de ClickHouse.
+5. Establezca VPC Accepter como el ID de la VPC de destino. (Seleccione otra cuenta si corresponde)
+6. Haga clic en Create Peering Connection.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC Crear una conexión de peering" />
+
+<br />
+
+<div id="step-3-accept-the-peering-connection-request">
+  #### Paso 3: Aceptar la solicitud de conexión de peering
+</div>
+
+Ve a la cuenta de peering; en la página (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request), el cliente puede aprobar esta solicitud de peering de la VPC.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC Aceptar conexión de peering" />
+
+<br />
+
+<div id="step-4-add-destination-to-clickhouse-vpc-route-tables">
+  #### Paso 4 Añada el destino a las tablas de enrutamiento de la VPC de ClickHouse
+</div>
+
+En la cuenta BYOC de ClickHouse,
+
+1. Seleccione Route Tables en el panel de VPC.
+2. Busque el ID de la VPC de ClickHouse. Edite cada tabla de enrutamiento asociada a las subredes privadas.
+3. Haga clic en el botón Edit en la pestaña Routes.
+4. Haga clic en Add another route.
+5. Introduzca el rango CIDR de la VPC de destino en Destination.
+6. Seleccione “Peering Connection” y el ID de la conexión de emparejamiento en Target.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC Añadir tabla de enrutamiento" />
+
+<br />
+
+<div id="step-5-add-destination-to-the-target-vpc-route-tables">
+  #### Paso 5 Añadir el destino a las tablas de rutas de la VPC de destino
+</div>
+
+En la cuenta de AWS del peering,
+
+1. Seleccione Route Tables en el panel de VPC.
+2. Busque el ID de la VPC de destino.
+3. Haga clic en el botón Edit en la pestaña Routes.
+4. Haga clic en Add another route.
+5. Introduzca el rango CIDR de la VPC de ClickHouse en Destination.
+6. Seleccione “Peering Connection” y el ID de la conexión de peering en Target.
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC Añadir tabla de rutas" />
+
+<br />
+
+<div id="step-6-edit-security-group-to-allow-peered-vpc-access">
+  #### Paso 6: Edita el Security Group para permitir el acceso desde la VPC emparejada
+</div>
+
+En la cuenta de ClickHouse BYOC, debes actualizar la configuración del Security Group para permitir el tráfico desde tu VPC emparejada. Ponte en contacto con Soporte de ClickHouse para solicitar que se agreguen reglas de entrada que incluyan los rangos CIDR de tu VPC emparejada.
+
+***
+
+El servicio de ClickHouse ya debería ser accesible desde la VPC emparejada.
+
+Para acceder a ClickHouse de forma privada, se aprovisionan un balanceador de carga privado y un endpoint para proporcionar conectividad segura desde la VPC emparejada del usuario. El endpoint privado sigue el formato del endpoint público con el sufijo `-private`. Por ejemplo:
+
+* **Endpoint público**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+* **Endpoint privado**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+
+Opcionalmente, después de verificar que el emparejamiento funciona, puedes solicitar la eliminación del balanceador de carga público de ClickHouse BYOC.
+
+<div id="upgrade-process">
+  ## Proceso de actualización
+</div>
+
+Actualizamos periódicamente el software, incluidas las actualizaciones de versión de la base de datos ClickHouse, ClickHouse Operator, EKS y otros componentes.
+
+Aunque procuramos que las actualizaciones se realicen sin interrupciones (por ejemplo, mediante actualizaciones progresivas y reinicios graduales), algunas, como los cambios de versión de ClickHouse y las actualizaciones de nodos de EKS, pueden afectar al servicio. Los clientes pueden especificar una ventana de mantenimiento (por ejemplo, todos los martes a la 1:00 a. m. PDT), lo que garantiza que dichas actualizaciones se realicen únicamente durante el periodo programado.
+
+<Note>
+  Las ventanas de mantenimiento no se aplican a las correcciones de seguridad y de vulnerabilidades. Estas se gestionan como actualizaciones fuera de ciclo, con comunicación oportuna para coordinar un momento adecuado y minimizar el impacto operativo.
+</Note>
+
+<div id="cloudformation-iam-roles">
+  ## Roles de IAM de CloudFormation
+</div>
+
+<div id="bootstrap-iam-role">
+  ### Rol Bootstrap de IAM
+</div>
+
+El rol Bootstrap de IAM tiene los siguientes permisos:
+
+* **Operaciones de EC2 y VPC**: Necesarias para configurar la VPC y los clústeres de EKS.
+* **Operaciones de S3 (p. ej., `s3:CreateBucket`)**: Necesarias para crear buckets para el almacenamiento BYOC de ClickHouse.
+* **Permisos de `route53:*`**: Necesarios para que el DNS externo configure registros en Route 53.
+* **Operaciones de IAM (p. ej., `iam:CreatePolicy`)**: Necesarias para que los controladores creen roles adicionales (consulta la siguiente sección para obtener más detalles).
+* **Operaciones de EKS**: Limitadas a recursos con nombres que comienzan con el prefijo `clickhouse-cloud`.
+
+<div id="additional-iam-roles-created-by-the-controller">
+  ### Roles de IAM adicionales creados por el controlador
+</div>
+
+Además del rol `ClickHouseManagementRole` creado mediante CloudFormation, el controlador creará varios roles adicionales.
+
+Estos roles son asumidos por aplicaciones que se ejecutan dentro del clúster de EKS del cliente:
+
+* **Rol de State Exporter**
+  * Componente de ClickHouse que informa sobre el estado del servicio a ClickHouse Cloud.
+  * Requiere permiso para escribir en una cola de SQS propiedad de ClickHouse Cloud.
+* **Controlador de balanceador de carga**
+  * Controlador estándar de balanceador de carga de AWS.
+  * Controlador CSI de EBS para administrar volúmenes de los servicios de ClickHouse.
+* **External-DNS**
+  * Propaga configuraciones de DNS a Route 53.
+* **Cert-Manager**
+  * Aprovisiona certificados TLS para dominios de servicio BYOC.
+* **Cluster Autoscaler**
+  * Ajusta el tamaño del grupo de nodos según sea necesario.
+
+Los roles **K8s-control-plane** y **k8s-worker** deben ser asumidos por los servicios de AWS EKS.
+
+Por último, **`data-plane-mgmt`** permite que un componente del plano de control de ClickHouse Cloud reconcilie los recursos personalizados necesarios, como `ClickHouseCluster` y el Istio Virtual Service/Gateway.
+
+<div id="network-boundaries">
+  ## Límites de red
+</div>
+
+Esta sección describe los distintos tipos de tráfico de red hacia y desde la VPC BYOC del cliente:
+
+* **Entrante**: Tráfico que entra en la VPC BYOC del cliente.
+* **Saliente**: Tráfico que se origina en la VPC BYOC del cliente y se envía a un destino externo.
+* **Público**: Un endpoint de red accesible desde internet pública.
+* **Privado**: Un endpoint de red accesible solo a través de conexiones privadas, como peering de VPC, VPC Private Link o Tailscale.
+
+**El Ingreso de Istio se despliega detrás de un AWS NLB para aceptar tráfico de clientes de ClickHouse.**
+
+*Entrante, Público (puede ser Privado)*
+
+La puerta de enlace de Ingreso de Istio termina TLS. El certificado, aprovisionado por CertManager con Let&#39;s Encrypt, se almacena como un secreto dentro del clúster de EKS. El tráfico entre Istio y ClickHouse está [cifrado por AWS](https://docs.aws.amazon.com/whitepapers/latest/logical-separation/encrypting-data-at-rest-and--in-transit.html#:~:text=All%20network%20traffic%20between%20AWS,supported%20Amazon%20EC2%20instance%20types), ya que ambos residen en la misma VPC.
+
+De forma predeterminada, el ingreso es accesible públicamente con filtrado mediante una lista de IP permitidas. Los clientes pueden configurar peering de VPC para hacerlo privado y deshabilitar las conexiones públicas. Recomendamos encarecidamente configurar un [filtro de IP](/es/products/cloud/guides/security/connectivity/setting-ip-filters) para restringir el acceso.
+
+<div id="troubleshooting-access">
+  ### Acceso para diagnóstico
+</div>
+
+*Entrante, público (puede ser privado)*
+
+Los ingenieros de ClickHouse Cloud requieren acceso para diagnóstico a través de Tailscale. Para las implementaciones BYOC, se les proporciona autenticación just-in-time basada en certificados.
+
+<div id="billing-scraper">
+  ### Recolector de facturación
+</div>
+
+*Saliente, privado*
+
+El recolector de facturación recopila datos de facturación de ClickHouse y los envía a un bucket de S3 de ClickHouse Cloud.
+
+Se ejecuta como un sidecar junto al contenedor del servidor de ClickHouse y recopila periódicamente métricas de CPU y memoria. Las solicitudes dentro de la misma región se enrutan a través de los endpoints de servicio de gateway de la VPC.
+
+<div id="alerts">
+  ### Alertas
+</div>
+
+*De salida, pública*
+
+AlertManager está configurado para enviar alertas a ClickHouse Cloud cuando el clúster de ClickHouse del cliente presenta problemas.
+
+Las métricas y los logs se almacenan dentro de la VPC BYOC del cliente. Actualmente, los logs se almacenan localmente en EBS. En una futura actualización, se almacenarán en LogHouse, un servicio de ClickHouse dentro de la VPC BYOC. Las métricas utilizan una pila de Prometheus y Thanos, almacenada localmente en la VPC BYOC.
+
+<div id="service-state">
+  ### Estado del servicio
+</div>
+
+*saliente*
+
+State Exporter envía información sobre el estado del servicio de ClickHouse a una cola de SQS de ClickHouse Cloud.

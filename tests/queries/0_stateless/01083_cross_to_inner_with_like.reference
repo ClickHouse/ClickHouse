@@ -1,0 +1,9 @@
+SELECT *
+FROM n, r
+WHERE and(equals(n.k, r.k), equals(r.name, \'A\'))
+SELECT *
+FROM n, r
+WHERE and(equals(n.k, r.k), like(r.name, \'A%\'))
+SELECT *
+FROM n, r
+WHERE and(equals(n.k, r.k), notLike(r.name, \'A%\'))

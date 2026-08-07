@@ -1,0 +1,280 @@
+---
+sidebarTitle: '기능 및 구성'
+slug: /integrations/dbt/features-and-configurations
+description: '사용 가능한 기능과 일반 구성에 대한 설명'
+keywords: ['clickhouse', 'dbt', '기능']
+title: '기능 및 구성'
+doc_type: 'guide'
+---
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+이 섹션에서는 ClickHouse에서 dbt와 함께 사용할 수 있는 일부 기능에 대한 문서를 제공합니다.
+
+<div id="profile-yml-configurations">
+  ## Profile.yml 구성
+</div>
+
+dbt에서 ClickHouse에 연결하려면 `profiles.yml` 파일에 [프로필](https://docs.getdbt.com/docs/core/connect-data-platform/connection-profiles)을 추가해야 합니다. ClickHouse 프로필은 다음 구문을 따릅니다.
+
+```yaml
+your_profile_name:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+
+      # Optional
+      schema: [default] # ClickHouse database for dbt models
+      driver: [http] # http or native.  If not set this will be autodetermined based on port setting
+      host: [localhost] 
+      port: [8123]  # If not set, defaults to 8123, 8443, 9000, 9440 depending on the secure and driver settings 
+      user: [default] # User for all database operations
+      password: [<empty string>] # Password for the user
+      cluster: [<empty string>] # If set, certain DDL/table operations will be executed with the `ON CLUSTER` clause using this cluster. 분산 머티리얼라이제이션 require this setting to work. See the following ClickHouse 클러스터 section for more details.
+      verify: [True] # Validate TLS certificate if using TLS/SSL
+      secure: [False] # Use TLS (native protocol) or HTTPS (http protocol)
+      client_cert: [null] # Path to a TLS client certificate in .pem format
+      client_cert_key: [null] # Path to the private key for the TLS client certificate
+      retries: [1] # Number of times to retry a "retriable" database exception (such as a 503 'Service Unavailable' error)
+      compression: [<empty string>] # Use gzip compression if truthy (http), or compression type for a native connection
+      connect_timeout: [10] # Timeout in seconds to establish a connection to ClickHouse
+      send_receive_timeout: [300] # Timeout in seconds to receive data from the ClickHouse server
+      cluster_mode: [False] # Use specific settings designed to improve operation on Replicated databases (recommended for ClickHouse Cloud)
+      use_lw_deletes: [False] # Use the strategy `delete+insert` as the default incremental strategy.
+      check_exchange: [True] # Validate that clickhouse support the atomic EXCHANGE TABLES command.  (Not needed for most ClickHouse versions)
+      local_suffix: [_local] # Table suffix of local tables on shards for 분산 머티리얼라이제이션.
+      local_db_prefix: [<empty string>] # Database prefix of local tables on shards for 분산 머티리얼라이제이션. If empty, it uses the same database as the distributed table.
+      allow_automatic_deduplication: [False] # Enable ClickHouse automatic deduplication for Replicated tables
+      tcp_keepalive: [False] # Native client only, specify TCP keepalive configuration. Specify custom keepalive settings as [idle_time_sec, interval_sec, probes].
+      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection.
+      custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
+      database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
+      threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [쓰기 후 읽기 일관성](#read-after-write-consistency) section.
+      
+      # Native (clickhouse-driver) connection settings
+      sync_request_timeout: [5] # Timeout for server ping
+      compress_block_size: [1048576] # Compression block size if compression is enabled
+```
+
+<div id="schema-vs-database">
+  ### 스키마와 데이터베이스
+</div>
+
+dbt 모델 릴레이션 식별자 `database.schema.table`은 ClickHouse와 호환되지 않습니다. ClickHouse는 `schema`를 지원하지 않기 때문입니다.
+따라서 `schema.table`과 같은 단순화된 방식을 사용하며, 여기서 `schema`는 ClickHouse 데이터베이스를 의미합니다. `default` 데이터베이스 사용은 권장되지 않습니다.
+
+<div id="set-statement-warning">
+  ### SET 문 경고
+</div>
+
+많은 환경에서는 모든 DBT 쿼리 전반에 걸쳐 ClickHouse 설정을 유지하기 위해 SET 문을 사용하는 방식이 신뢰할 수 없으며,
+예기치 않은 실패를 일으킬 수 있습니다. 특히 로드 밸런서를 통해 HTTP 연결을 사용해
+여러 노드에 쿼리를 분산하는 경우(예: ClickHouse Cloud)에는 이런 문제가 자주 발생하며, 일부 상황에서는
+네이티브 ClickHouse 연결에서도 발생할 수 있습니다. 따라서 필요한 ClickHouse 설정은
+간혹 권장되기도 했던 pre-hook &quot;SET&quot; 문에 의존하지 말고, 모범 사례로 DBT 프로필의
+&quot;custom&#95;settings&quot; 속성에서 구성할 것을 권장합니다.
+
+<div id="setting-quote_columns">
+  ### `quote_columns` 설정
+</div>
+
+경고를 방지하려면 `dbt_project.yml`에서 `quote_columns` 값을 명시적으로 설정하세요. 자세한 내용은 [quote&#95;columns 문서](https://docs.getdbt.com/reference/resource-configs/quote_columns)를 확인하세요.
+
+```yaml
+seeds:
+  +quote_columns: false  #CSV 컬럼 헤더에 공백이 있는 경우 `true`로 설정
+```
+
+<div id="about-the-clickhouse-cluster">
+  ### ClickHouse 클러스터 정보
+</div>
+
+ClickHouse 클러스터를 사용할 때는 다음 두 가지를 고려해야 합니다:
+
+* `cluster` 설정 지정
+* 특히 `threads`를 2개 이상 사용하는 경우 쓰기 후 읽기 일관성 보장
+
+<div id="cluster-setting">
+  #### 클러스터 설정
+</div>
+
+프로필의 `cluster` 설정을 사용하면 dbt-clickhouse를 ClickHouse 클러스터에서 실행할 수 있습니다. 프로필에 `cluster`가 설정되어 있으면, **기본적으로 모든 모델이 `ON CLUSTER` 절을 포함해 생성됩니다**. 단, **Replicated** 엔진을 사용하는 경우는 예외입니다. 여기에는 다음이 포함됩니다.
+
+* 데이터베이스 생성
+* 뷰 머티리얼라이제이션
+* 테이블 및 증분 머티리얼라이제이션
+* 분산 머티리얼라이제이션
+
+Replicated 엔진은 내부적으로 복제를 관리하도록 설계되어 있으므로 `ON CLUSTER` 절을 **포함하지 않습니다**.
+
+특정 모델에서 클러스터 기반 생성을 **사용하지 않으려면** `disable_on_cluster` config를 추가하십시오:
+
+```sql
+{{ config(
+        engine='MergeTree',
+        materialized='table',
+        disable_on_cluster='true'
+    )
+}}
+
+```
+
+table 및 incremental 머티리얼라이제이션에서 비복제 엔진을 사용하는 경우 `cluster` 설정의 영향을 받지 않습니다 (모델은
+연결된 노드에만 생성됩니다).
+
+**호환성**
+
+모델이 `cluster` 설정 없이 생성된 경우, dbt-clickhouse는 이 상황을 감지하고 해당 모델에 대해서는 `on cluster` 절 없이 모든 DDL/DML을
+실행합니다.
+
+<div id="read-after-write-consistency">
+  #### 쓰기 후 읽기 일관성
+</div>
+
+dbt는 삽입 후 읽기 일관성 모델에 의존합니다. 모든 작업이 항상 동일한 레플리카로 전달된다고 보장할 수 없다면, 이 모델은 레플리카가 2개 이상인 ClickHouse 클러스터와 호환되지 않습니다. 일반적인 dbt 사용 중에는 문제가 드러나지 않을 수도 있지만, 클러스터 구성에 따라 이러한 보장을 확보할 수 있는 몇 가지 전략이 있습니다:
+
+* ClickHouse Cloud 클러스터를 사용하는 경우, 프로필의 `custom_settings` 속성에 `select_sequential_consistency: 1`만 설정하면 됩니다. 이 설정에 대한 자세한 내용은 [여기](/ko/reference/settings/session-settings#select_sequential_consistency)에서 확인할 수 있습니다.
+* 자체 호스팅 클러스터를 사용하는 경우, 모든 dbt 요청이 동일한 ClickHouse 레플리카로 전송되도록 하십시오. 상단에 로드 밸런서가 있다면, 항상 동일한 레플리카에 연결될 수 있도록 `replica aware routing`/`sticky sessions` 메커니즘을 사용해 보십시오. ClickHouse Cloud 이외의 클러스터에서 `select_sequential_consistency = 1` 설정을 추가하는 것은 [권장되지 않습니다](/ko/reference/settings/session-settings#select_sequential_consistency).
+
+<div id="additional-clickhouse-macros">
+  ## ClickHouse 추가 매크로
+</div>
+
+<div id="model-materialization-utility-macros">
+  ### 모델 머티리얼라이즈 유틸리티 매크로
+</div>
+
+다음 매크로는 ClickHouse 전용 테이블과 뷰를 더 쉽게 생성할 수 있도록 제공됩니다:
+
+* `engine_clause` -- `engine` 모델 구성 속성을 사용해 ClickHouse 테이블 엔진을 지정합니다. dbt-clickhouse는
+  기본적으로 `MergeTree` 엔진을 사용합니다.
+* `partition_cols` -- `partition_by` 모델 구성 속성을 사용해 ClickHouse 파티션 키를 지정합니다. 기본적으로는
+  파티션 키가 지정되지 않습니다.
+* `order_cols` -- `order_by` 모델 구성을 사용해 ClickHouse ORDER BY/정렬 키를 지정합니다. 지정하지 않으면
+  ClickHouse는 빈 tuple()을 사용하며 테이블은 정렬되지 않은 상태가 됩니다.
+* `primary_key_clause` -- `primary_key` 모델 구성 속성을 사용해 ClickHouse 프라이머리 키를 지정합니다. 기본적으로
+  프라이머리 키가 설정되며, ClickHouse는 ORDER BY 절을 프라이머리 키로 사용합니다.
+* `on_cluster_clause` -- `cluster` profile 속성을 사용해 특정 dbt 작업에 `ON CLUSTER` 절을 추가합니다:
+  분산 머티리얼라이제이션, 뷰 생성, 데이터베이스 생성.
+* `ttl_config` -- `ttl` 모델 구성 속성을 사용해 ClickHouse 테이블 TTL 표현식을 지정합니다. 기본적으로 TTL은
+  지정되지 않습니다.
+
+<div id="s3source-helper-macro">
+  ### s3Source 헬퍼 매크로
+</div>
+
+`s3source` 매크로는 ClickHouse S3 테이블
+함수를 사용해 S3에서 ClickHouse 데이터를 직접 조회하는 과정을 간소화합니다. 이 매크로는
+이름이 지정된 구성 딕셔너리의 값을 사용해 S3 테이블 함수의 매개변수를
+채워 넣는 방식으로 동작합니다(딕셔너리 이름은 반드시
+`s3`로 끝나야 합니다). 이 매크로는
+먼저 프로필 `vars`에서 딕셔너리를 찾고, 그다음 모델 구성에서 찾습니다. 딕셔너리에는
+S3 테이블 함수의 매개변수를 채우는 데 사용되는 다음
+키를 포함할 수 있습니다:
+
+| Argument Name                     | 설명                                                                                                                                                 |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| bucket                            | 버킷 기준 URL입니다. 예: `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi`. 프로토콜이 지정되지 않으면 `https://`를 사용하는 것으로 간주합니다.                  |
+| path                              | 테이블 쿼리에 사용할 S3 경로입니다. 예: `/trips_4.gz`. S3 와일드카드를 지원합니다.                                                                                           |
+| fmt                               | 참조된 S3 객체에 대해 예상되는 ClickHouse 입력 형식(예: `TSV` 또는 `CSVWithNames`)입니다.                                                                                |
+| structure                         | 버킷의 데이터 컬럼 구조로, `['id UInt32', 'date DateTime', 'value String']`와 같은 이름/데이터 유형 쌍 목록입니다. 지정하지 않으면 ClickHouse가 구조를 추론합니다.                            |
+| aws&#95;access&#95;key&#95;id     | S3 액세스 키 ID입니다.                                                                                                                                    |
+| aws&#95;secret&#95;access&#95;key | S3 시크릿 키입니다.                                                                                                                                       |
+| role&#95;arn                      | S3 객체에 안전하게 액세스하는 데 사용할 ClickhouseAccess IAM role의 ARN입니다. 자세한 내용은 이 [문서](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 참조하십시오. |
+| compression                       | S3 객체에 사용되는 압축 방식입니다. 지정하지 않으면 ClickHouse가 파일 이름을 기준으로 압축 방식을 판단하려고 시도합니다.                                                                         |
+
+이 매크로의 사용 예시는
+[S3 test file](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)을
+참조하십시오.
+
+<div id="cross-database-macro-support">
+  ### 교차 데이터베이스 매크로 지원
+</div>
+
+dbt-clickhouse는 현재 `dbt Core`에 포함된 교차 데이터베이스 매크로 대부분을 지원하지만, 다음과 같은 예외가 있습니다:
+
+* ClickHouse에서 `split_part` SQL 함수는 splitByChar 함수를 사용해 구현됩니다. 이 함수는 &quot;split&quot; 구분자로 상수 문자열을 사용해야 하므로, 이 매크로에 사용되는 `delimeter` 매개변수는 컬럼 이름이 아니라 문자열로 해석됩니다.
+* 마찬가지로, ClickHouse의 `replace` SQL 함수는 `old_chars` 및 `new_chars` 매개변수에 상수 문자열이 필요하므로, 이 매크로를 호출할 때 해당 매개변수는 컬럼 이름이 아니라 문자열로 해석됩니다.
+
+<div id="catalog-support">
+  ## 카탈로그 지원
+</div>
+
+<div id="dbt-catalog-integration-status">
+  ### dbt 카탈로그 통합 상태
+</div>
+
+dbt Core v1.10부터 카탈로그 통합 지원이 도입되어, 어댑터가 Apache Iceberg와 같은 오픈 테이블 포맷을 관리하는 외부 카탈로그에 모델을 구체화할 수 있게 되었습니다. **이 기능은 아직 dbt-clickhouse에 네이티브로 구현되지 않았습니다.** 이 기능 구현의 진행 상황은 [GitHub issue #489](https://github.com/ClickHouse/dbt-clickhouse/issues/489)에서 확인할 수 있습니다.
+
+<div id="clickhouse-catalog-support">
+  ### ClickHouse 카탈로그 지원
+</div>
+
+ClickHouse는 최근 Apache Iceberg 테이블과 데이터 카탈로그를 네이티브로 지원하기 시작했습니다. 대부분의 기능은 아직 `experimental` 상태이지만, 최신 ClickHouse 버전을 사용하면 이미 활용할 수 있습니다.
+
+* [Iceberg 테이블 엔진](/ko/reference/engines/table-engines/integrations/iceberg)과 [iceberg 테이블 함수](/ko/reference/functions/table-functions/iceberg)를 사용하면 **객체 스토리지**(S3, Azure Blob Storage, Google Cloud Storage)에 저장된 **Iceberg 테이블에 대해 쿼리**할 수 있습니다.
+
+* 또한 ClickHouse는 [DataLakeCatalog 데이터베이스 엔진](/ko/reference/engines/database-engines/datalake)을 제공하며, 이를 통해 AWS Glue Catalog, Databricks Unity Catalog, Hive Metastore, REST 카탈로그를 포함한 **외부 데이터 카탈로그에 연결**할 수 있습니다. 이를 통해 데이터를 중복 저장하지 않고도 외부 카탈로그의 오픈 테이블 포맷 데이터(Iceberg, Delta Lake)를 직접 쿼리할 수 있습니다.
+
+<div id="workarounds-iceberg-catalogs">
+  ### Iceberg 및 카탈로그 사용을 위한 우회 방법
+</div>
+
+앞서 설명한 도구를 사용해 ClickHouse 클러스터에 이미 정의해 두었다면, dbt 프로젝트에서 Iceberg 테이블 또는 카탈로그의 데이터를 읽을 수 있습니다. dbt의 `source` 기능을 활용하면 dbt 프로젝트에서 이러한 테이블을 참조할 수 있습니다. 예를 들어, REST 카탈로그의 테이블에 접근하려면 다음과 같이 하십시오:
+
+1. **외부 카탈로그를 가리키는 데이터베이스를 생성합니다:**
+
+```sql
+-- REST 카탈로그 예시
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE iceberg_catalog
+ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
+SETTINGS 
+    catalog_type = 'rest', 
+    storage_endpoint = 'http://minio:9000/lakehouse', 
+    warehouse = 'demo'
+```
+
+2. **dbt에서 카탈로그 데이터베이스와 해당 테이블을 소스로 정의합니다:** 이때 테이블은 ClickHouse에 이미 존재해야 합니다.
+
+```yaml
+version: 2
+
+sources:
+  - name: external_catalog
+    database: iceberg_catalog
+    tables:
+      - name: orders
+      - name: customers
+```
+
+3. **dbt 모델에서 카탈로그 테이블을 사용하세요:**
+
+```sql
+SELECT 
+    o.order_id,
+    c.customer_name,
+    o.order_date
+FROM {{ source('external_catalog', 'orders') }} o
+INNER JOIN {{ source('external_catalog', 'customers') }} c
+    ON o.customer_id = c.customer_id
+```
+
+<div id="benefits-workarounds">
+  ### 우회 방법 관련 참고 사항
+</div>
+
+이러한 우회 방법의 장점은 다음과 같습니다:
+
+* 네이티브 dbt 카탈로그 통합을 기다리지 않아도 다양한 external table 타입과 external 카탈로그에 즉시 액세스할 수 있습니다.
+* 네이티브 카탈로그 지원이 제공되면 원활하게 마이그레이션할 수 있습니다.
+
+하지만 현재는 몇 가지 제한 사항이 있습니다:
+
+* **수동 설정:** Iceberg 테이블과 카탈로그 데이터베이스는 dbt에서 참조하기 전에 ClickHouse에서 수동으로 생성해야 합니다.
+* **카탈로그 수준 DDL 없음:** dbt는 external 카탈로그에서 Iceberg 테이블을 생성하거나 삭제하는 등의 카탈로그 수준 작업을 관리할 수 없습니다. 따라서 현재는 dbt connector를 통해 이를 생성할 수 없습니다. Iceberg() 엔진으로 테이블을 생성하는 기능은 향후 추가될 수 있습니다.
+* **쓰기 작업:** 현재 Iceberg/Data Catalog 테이블에 대한 쓰기 작업은 제한적입니다. 사용 가능한 옵션을 확인하려면 ClickHouse 문서를 참조하십시오.

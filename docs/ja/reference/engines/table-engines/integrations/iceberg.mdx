@@ -1,0 +1,416 @@
+---
+description: 'このエンジンは、Amazon S3、Azure、HDFS、またはローカルに保存された既存の Apache Iceberg
+  テーブルに対する読み取り専用インテグレーションを提供します。'
+sidebarTitle: 'Iceberg'
+slug: /engines/table-engines/integrations/iceberg
+title: 'Iceberg テーブルエンジン'
+doc_type: 'reference'
+---
+
+<Warning>
+  ClickHouse で Iceberg データを扱うには、[Iceberg テーブル関数](/ja/reference/functions/table-functions/iceberg)の使用を推奨します。現在、Iceberg テーブル関数は必要な機能を十分に備えており、Iceberg テーブルに対する部分的な読み取り専用インターフェイスを提供します。
+
+  Iceberg テーブルエンジンも利用できますが、いくつかの制限がある可能性があります。ClickHouse は、外部でスキーマが変更されるテーブルをサポートするようにはもともと設計されていないため、そのことが Iceberg テーブルエンジンの動作に影響する場合があります。その結果、通常のテーブルでは利用できる一部の機能が使えなかったり、正しく動作しなかったりすることがあります。特に、古いアナライザを使用している場合はその傾向が顕著です。
+
+  互換性を最大限に確保するため、Iceberg テーブルエンジンのサポート改善を進めている間は、Iceberg テーブル関数の使用をお勧めします。
+</Warning>
+
+このエンジンは、Amazon S3、Azure、HDFS、またはローカルに保存された既存の Apache [Iceberg](https://iceberg.apache.org/) テーブルに対する読み取り専用インテグレーションを提供します。
+
+<div id="create-table">
+  ## テーブルの作成
+</div>
+
+Icebergテーブルは、ストレージ上にあらかじめ存在している必要があります。このコマンドでは、新しいテーブルを作成するためのDDLパラメータは指定できません。
+
+```sql
+CREATE TABLE iceberg_table_s3
+    ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression], [,extra_credentials])
+
+CREATE TABLE iceberg_table_azure
+    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+CREATE TABLE iceberg_table_hdfs
+    ENGINE = IcebergHDFS(path_to_table, [,format] [,compression_method])
+
+CREATE TABLE iceberg_table_local
+    ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+```
+
+<div id="engine-arguments">
+  ## エンジン引数
+</div>
+
+引数の説明は、それぞれ `S3`、`AzureBlobStorage`、`HDFS`、`File` エンジンの引数の説明に対応しています。
+`format` は、Icebergテーブル内のデータファイルのフォーマットを表します。
+
+`IcebergS3` では、オプションの `extra_credentials` パラメータを使用して、ClickHouse Cloud でロールベースアクセスを行うための `role_arn` を渡すことができます。設定手順については、[Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
+
+エンジンパラメータは、[Named Collections](/ja/concepts/features/configuration/server-config/named-collections) を使用して指定できます
+
+<div id="example">
+  ### 例
+</div>
+
+```sql
+CREATE TABLE iceberg_table ENGINE=IcebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+named collections を使用する場合:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <iceberg_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+        </iceberg_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table')
+
+```
+
+<div id="aliases">
+  ## 別名
+</div>
+
+`Iceberg` テーブルエンジンは、`disk` 設定からストレージバックエンドを自動検出し、それに応じて `IcebergS3`、`IcebergAzure`、または `IcebergLocal` を使い分けます。`disk` が指定されていない場合は、デフォルトで `IcebergS3` 実装が使用されます。
+
+<div id="data-types">
+  ## データ型
+</div>
+
+次の表は、スキーマ推論時に (読み取り用として) Iceberg のデータ型が ClickHouse のデータ型にどのように対応付けられるかを示しています。
+
+<div id="primitive-types">
+  ### 基本データ型
+</div>
+
+| Iceberg 型          | ClickHouse 型           | 注記                                |
+| ------------------ | ---------------------- | --------------------------------- |
+| `boolean`          | `Bool`                 |                                   |
+| `int`              | `Int32`                |                                   |
+| `long`, `bigint`   | `Int64`                |                                   |
+| `float`            | `Float32`              |                                   |
+| `double`           | `Float64`              |                                   |
+| `date`             | `Date32`               |                                   |
+| `time`             | `Int64`                | 午前0時からのマイクロ秒数                     |
+| `timestamp`        | `DateTime64(6)`        | マイクロ秒、タイムゾーンなし                    |
+| `timestamptz`      | `DateTime64(6, 'UTC')` | マイクロ秒、UTC タイムゾーン                  |
+| `timestamp_ns`     | `DateTime64(9)`        | ナノ秒、タイムゾーンなし (Iceberg v3 以降のみ)    |
+| `timestamptz_ns`   | `DateTime64(9, 'UTC')` | ナノ秒、UTC タイムゾーン (Iceberg v3 以降のみ)  |
+| `string`, `binary` | `String`               |                                   |
+| `uuid`             | `UUID`                 |                                   |
+| `fixed(N)`         | `FixedString(N)`       |                                   |
+| `decimal(P, S)`    | `Decimal(P, S)`        |                                   |
+
+<div id="complex-types">
+  ### 複雑な型
+</div>
+
+| Iceberg 型 | ClickHouse 型 |
+| --------- | ------------ |
+| `list`    | `Array`      |
+| `map`     | `Map`        |
+| `struct`  | `Tuple`      |
+
+<div id="schema-evolution">
+  ## スキーマの進化
+</div>
+
+ClickHouse は、時間の経過とともにスキーマが変化した Iceberg テーブル の読み取りをサポートしています。これには、カラムが追加、削除、並べ替えされたテーブルや、カラムが required から Nullable に変更されたテーブルが含まれます。さらに、次の型変換がサポートされています。
+
+* int -&gt; long
+* float -&gt; double
+* decimal(P, S) -&gt; decimal(P&#39;, S) where P&#39; &gt; P.
+
+現在のところ、ネストされた構造や、Array および Map 内の要素の型を変更することはできません。
+
+動的なスキーマ推論を使用して作成したテーブルで、作成後にスキーマが変更されたものを読み取るには、テーブルの作成時に allow&#95;dynamic&#95;metadata&#95;for&#95;data&#95;lakes = true を設定します。
+
+<div id="partition-pruning">
+  ## パーティションプルーニング
+</div>
+
+ClickHouse は、Iceberg テーブルに対する SELECT クエリでパーティションプルーニングをサポートしており、無関係なデータファイルをスキップすることでクエリパフォーマンスを最適化できます。パーティションプルーニングを有効にするには、`use_iceberg_partition_pruning = 1` を設定します。Iceberg のパーティションプルーニングの詳細については、https://iceberg.apache.org/spec/#partitioning を参照してください
+
+<div id="time-travel">
+  ## タイムトラベル
+</div>
+
+ClickHouse は Iceberg テーブルでのタイムトラベルをサポートしており、特定のタイムスタンプまたはスナップショット ID を指定して過去のデータをクエリできます。
+
+<div id="deleted-rows">
+  ## 削除された行があるテーブルの処理
+</div>
+
+ClickHouse は、以下の削除方式を使用する Iceberg テーブルの読み取りをサポートしています。
+
+* [位置削除](https://iceberg.apache.org/spec/#position-delete-files)
+* [等価削除](https://iceberg.apache.org/spec/#equality-delete-files) (バージョン 25.8+ でサポート)
+
+以下の削除方式は **サポートされていません**。
+
+* [削除ベクトル](https://iceberg.apache.org/spec/#deletion-vectors) (v3 で導入)
+
+<div id="basic-usage">
+  ### 基本的な使い方
+</div>
+
+```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_timestamp_ms = 1714636800000
+```
+
+```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_snapshot_id = 3547395809148285433
+```
+
+注: 同一のクエリで `iceberg_timestamp_ms` パラメータと `iceberg_snapshot_id` パラメータを同時に指定することはできません。
+
+<div id="important-considerations">
+  ### 重要な注意点
+</div>
+
+* **スナップショット** は通常、次の場合に作成されます:
+  * 新しいデータがテーブルに書き込まれたとき
+  * 何らかのデータのコンパクションが実行されたとき
+
+* **スキーマ変更では通常、スナップショットは作成されません** - このため、スキーマ進化を経たテーブルでタイムトラベルを使用する場合には、重要な挙動の違いが生じます。
+
+<div id="example-scenarios">
+  ### シナリオ例
+</div>
+
+CH はまだ Iceberg テーブルへの書き込みをサポートしていないため、すべてのシナリオは Spark で記述しています。
+
+<div id="scenario-1">
+  #### シナリオ 1: 新しいスナップショットがない場合のスキーマ変更
+</div>
+
+次の一連の操作を考えてみましょう。
+
+```sql
+ -- 2つのカラムを持つテーブルを作成する
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+  order_number int, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+-- テーブルにデータを挿入する
+  INSERT INTO spark_catalog.db.time_travel_example VALUES 
+    (1, 'Mars')
+
+  ts1 = now() // 擬似コードの例
+
+-- テーブルに新しいカラムを追加する
+  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+ 
+  ts2 = now()
+
+-- テーブルにデータを挿入する
+  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+
+   ts3 = now()
+
+-- 各タイムスタンプでテーブルをクエリする
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+
++------------+------------+-----+
+|order_number|product_code|price|
++------------+------------+-----+
+|           1|        Mars| NULL|
+|           2|       Venus|100.0|
++------------+------------+-----+
+```
+
+異なるタイムスタンプでのクエリ結果:
+
+* ts1 と ts2: 元の 2 つのカラムのみが表示されます
+* ts3: 3 つのカラムすべてが表示され、最初の行の price は NULL になります
+
+<div id="scenario-2">
+  #### シナリオ 2: 過去と現在のスキーマの違い
+</div>
+
+現在時点でのタイムトラベルクエリでは、現在のテーブルとは異なるスキーマが表示されることがあります。
+
+```sql
+-- テーブルを作成する
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
+  order_number int, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+-- テーブルに初期データを挿入する
+  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+
+-- テーブルを変更して新しいカラムを追加する
+  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+
+  ts = now();
+
+-- タイムスタンプ構文を使用して現時点のテーブルをクエリする
+
+  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+
+    +------------+------------+
+    |order_number|product_code|
+    +------------+------------+
+    |           2|       Venus|
+    +------------+------------+
+
+-- 現時点のテーブルをクエリする
+  SELECT * FROM spark_catalog.db.time_travel_example_2;
+    +------------+------------+-----+
+    |order_number|product_code|price|
+    +------------+------------+-----+
+    |           2|       Venus| NULL|
+    +------------+------------+-----+
+```
+
+これは、`ALTER TABLE` では新しいスナップショットが作成されず、現在のテーブルについては Spark がスナップショットではなく最新のメタデータファイルから `schema_id` の値を取得するためです。
+
+<div id="scenario-3">
+  #### シナリオ 3: 過去のスキーマと現在のスキーマの違い
+</div>
+
+2 つ目は、タイムトラベルを行っても、テーブルにまだ一度もデータが書き込まれていない時点の状態は取得できないということです:
+
+```sql
+-- テーブルを作成する
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
+  order_number int, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2');
+
+  ts = now();
+
+-- 特定のタイムスタンプ時点のテーブルをクエリする
+  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- エラーで終了: ts より古いスナップショットが見つかりません。
+```
+
+ClickHouse では、この挙動は Spark と共通です。Spark の Select クエリを ClickHouse の Select クエリに置き換えて考えても、同じように機能します。
+
+<div id="metadata-file-resolution">
+  ## メタデータファイルの解決
+</div>
+
+ClickHouse で `Iceberg` テーブルエンジンを使用する場合、システムは Iceberg テーブルの構造を記述した適切な metadata.json ファイルを特定する必要があります。この解決処理は、次のように行われます。
+
+<div id="candidate-search">
+  ### 候補の検索
+</div>
+
+1. **パスの直接指定**:
+
+* `iceberg_metadata_file_path` を設定すると、システムはこの値を Iceberg テーブル の directory path と組み合わせて、その正確な path を使用します。
+* この設定が指定されている場合、他のすべての解決設定は無視されます。
+
+2. **table UUID の照合**:
+
+* `iceberg_metadata_table_uuid` が指定されている場合、システムは次のように動作します:
+  * `metadata` directory 内の `.metadata.json` ファイルのみを対象にします
+  * 指定した UUID と一致する `table-uuid` フィールドを含むファイルに絞り込みます (大文字と小文字は区別しません)
+
+3. **デフォルトの検索**:
+
+* 上記のどちらの設定も指定されていない場合、`metadata` directory 内のすべての `.metadata.json` ファイルが候補になります
+
+<div id="most-recent-file">
+  ### 最新のファイルの選択
+</div>
+
+上記のルールを使用して候補ファイルを特定した後、システムはその中から最も新しいものを判定します。
+
+* `iceberg_recent_metadata_file_by_last_updated_ms_field` が有効な場合:
+  * `last-updated-ms` の値が最も大きいファイルが選択されます
+
+* それ以外の場合:
+  * バージョン番号が最も大きいファイルが選択されます
+  * (バージョンは、`V.metadata.json` または `V-uuid.metadata.json` 形式のファイル名では `V` として表されます)
+
+**注**: 特に明記されていない限り、ここで言及している設定はすべて engine レベルの設定であり、以下のように table の作成時に指定する必要があります。
+
+```sql
+CREATE TABLE example_table ENGINE = Iceberg(
+    's3://bucket/path/to/iceberg_table'
+) SETTINGS iceberg_metadata_table_uuid = '6f6f6407-c6a5-465f-a808-ea8900e35a38';
+```
+
+**注**: Icebergカタログは通常メタデータの解決を担いますが、ClickHouse の `Iceberg` テーブルエンジンは S3 に保存されたファイルを Icebergテーブルとして直接解釈するため、これらの解決ルールを理解しておくことが重要です。
+
+<div id="data-cache">
+  ## データキャッシュ
+</div>
+
+`Iceberg` テーブルエンジンおよびテーブル関数は、`S3`、`AzureBlobStorage`、`HDFS` ストレージと同様にデータキャッシュをサポートしています。[こちら](/ja/reference/engines/table-engines/integrations/s3#data-cache)を参照してください。
+
+<div id="metadata-cache">
+  ## メタデータキャッシュ
+</div>
+
+`Iceberg` テーブルエンジンとテーブル関数は、マニフェストファイル、マニフェストリスト、metadata JSON の情報を保存するメタデータキャッシュをサポートしています。キャッシュはメモリ上に保存されます。この機能は設定 `use_iceberg_metadata_files_cache` で制御されており、デフォルトで有効です。
+
+<div id="async-metadata-prefetch">
+  ## 非同期メタデータプリフェッチ
+</div>
+
+非同期メタデータプリフェッチは、`iceberg_metadata_async_prefetch_period_ms` を設定することで、`Iceberg` テーブルの作成時に有効化できます。0 (デフォルト) に設定されている場合、またはメタデータキャッシュが有効になっていない場合は、非同期プリフェッチは無効になります。
+この機能を有効にするには、0 以外のミリ秒単位の値を指定する必要があります。これは、プリフェッチサイクル間の間隔を表します。
+
+有効にすると、サーバーはリモートのカタログを定期的に確認し、新しいメタデータバージョンを検出するバックグラウンド処理を実行します。続いてそれを解析し、スナップショットを再帰的にたどりながら、アクティブなマニフェストリストファイルとマニフェストファイルを取得します。
+メタデータキャッシュにすでにあるファイルは、再度ダウンロードされません。各プリフェッチサイクルの終了時点で、最新のメタデータスナップショットがメタデータキャッシュで利用可能になります。
+
+```sql
+CREATE TABLE example_table ENGINE = Iceberg(
+    's3://bucket/path/to/iceberg_table'
+) SETTINGS
+    iceberg_metadata_async_prefetch_period_ms = 60000;
+```
+
+読み取り操作における非同期メタデータ先読みを最大限に活用するには、`iceberg_metadata_staleness_ms` パラメータをクエリまたはセッションのパラメータとして指定する必要があります。デフォルトでは (0 - 未指定) 、各クエリのコンテキストで、サーバーはリモートカタログから最新のメタデータを取得します。
+メタデータの古さに対する許容値を指定すると、サーバーはリモートカタログにアクセスせずに、キャッシュされたメタデータスナップショットを使用できるようになります。cache にメタデータのバージョンがあり、それが指定した古さの window 内にダウンロードされていれば、そのバージョンがクエリの処理に使用されます。
+そうでない場合は、リモートカタログから最新バージョンが取得されます。
+
+```sql
+SELECT count() FROM icebench_table WHERE ...
+SETTINGS iceberg_metadata_staleness_ms=120000
+```
+
+**注記**: 非同期メタデータの先読みは `ICEBERG_SCEDULE_POOL` で実行されます。これは、アクティブな `Iceberg` テーブルに対するバックグラウンド処理用のサーバー側 threadpool です。この threadpool のサイズは、`iceberg_background_schedule_pool_size` サーバー設定パラメータ (デフォルトは 10) で制御されます。
+
+**注記**: 現時点では、非同期先読みが有効な場合、メタデータキャッシュのサイズは、すべてのアクティブなテーブルの最新のメタデータスナップショット全体を保持できるだけ十分であることが想定されています。
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [Iceberg テーブル関数](/ja/reference/functions/table-functions/iceberg)

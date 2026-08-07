@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <replace_long_file_name_to_hash>0</replace_long_file_name_to_hash>
+    </merge_tree>
+</clickhouse>

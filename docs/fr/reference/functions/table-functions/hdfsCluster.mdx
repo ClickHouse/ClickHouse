@@ -1,0 +1,72 @@
+---
+description: "Permet de traiter en parallèle des fichiers HDFS depuis de nombreux nœuds d’un cluster spécifié."
+sidebarTitle: 'hdfsCluster'
+slug: /sql-reference/table-functions/hdfsCluster
+title: 'hdfsCluster'
+doc_type: 'reference'
+---
+
+Permet de traiter en parallèle des fichiers HDFS depuis de nombreux nœuds d’un cluster spécifié. Sur le nœud initiateur, cela crée une connexion à tous les nœuds du cluster, développe les astérisques dans le chemin de fichier HDFS et attribue dynamiquement chaque fichier. Sur le nœud worker, celui-ci demande à l’initiateur la tâche suivante à traiter, puis la traite. Cette opération se répète jusqu’à ce que toutes les tâches soient terminées.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+hdfsCluster(cluster_name, URI, format, structure)
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+| Argument       | Description                                                                                                                                                                                                                                                                                                                                                       |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name` | Nom d&#39;un cluster servant à construire un ensemble d&#39;adresses et de paramètres de connexion pour les serveurs distants et locaux.                                                                                                                                                                                                                          |
+| `URI`          | URI d&#39;un fichier ou d&#39;un ensemble de fichiers. Prend en charge les caractères génériques suivants en mode readonly : `*`, `**`, `?`, `{'abc','def'}` et `{N..M}`, où `N` et `M` sont des nombres, `abc` et `def` des chaînes. Pour plus d&#39;informations, voir [Wildcards In Path](/fr/reference/engines/table-engines/integrations/s3#wildcards-in-path). |
+| `format`       | Le [format](/fr/reference/formats/index) du fichier.                                                                                                                                                                                                                                                                                                                 |
+| `structure`    | Structure de la table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                      |
+
+<div id="returned_value">
+  ## Valeur renvoyée
+</div>
+
+Une table ayant la structure spécifiée pour lire les données du fichier spécifié.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+1. Supposons que nous ayons un cluster ClickHouse nommé `cluster_simple`, ainsi que plusieurs fichiers avec les URI suivantes sur HDFS :
+
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;3&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
+
+2. Exécutez une requête pour obtenir le nombre de lignes dans ces fichiers :
+
+```sql
+SELECT count(*)
+FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
+```
+
+3. Exécutez une requête pour obtenir le nombre de lignes dans tous les fichiers de ces deux répertoires :
+
+```sql
+SELECT count(*)
+FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
+```
+
+<Note>
+  Si votre liste de fichiers contient des plages de nombres avec des zéros en tête, utilisez la syntaxe avec des accolades pour chaque chiffre séparément, ou utilisez `?`.
+</Note>
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+* [moteur HDFS](/fr/reference/engines/table-engines/integrations/hdfs)
+* [fonction de table HDFS](/fr/reference/functions/table-functions/hdfs)

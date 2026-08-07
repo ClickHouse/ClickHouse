@@ -1,0 +1,79 @@
+---
+description: 'cume_dist 윈도 함수에 대한 문서'
+sidebarTitle: 'cume_dist'
+slug: /sql-reference/window-functions/cume_dist
+title: 'cume_dist'
+doc_type: 'reference'
+---
+
+값 집합 내에서 값의 누적 분포, 즉 현재 행의 값보다 작거나 같은 값을 가진 행의 백분율을 계산합니다. 파티션 내에서 값의 상대적 순위를 파악하는 데 사용할 수 있습니다.
+
+**구문**
+
+```sql
+cume_dist ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+FROM table_name
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+```
+
+기본값이면서 필수인 윈도우 프레임 정의는 `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`입니다.
+
+윈도 함수 구문에 대한 자세한 내용은 다음을 참조하십시오: [윈도우 함수 - 구문](/ko/reference/functions/window-functions/index#syntax).
+
+**반환 값**
+
+* 현재 행의 상대 순위입니다. 반환 타입은 [0, 1] 범위의 Float64입니다. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+다음 예시는 팀 내 급여의 누적 분포를 계산합니다:
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       cume_dist() OVER (ORDER BY salary DESC) AS cume_dist
+FROM salaries;
+```
+
+```response title="Response"
+   ┌─player──────────┬─salary─┬───────────cume_dist─┐
+1. │ Robert George   │ 195000 │  0.2857142857142857 │
+2. │ Gary Chen       │ 195000 │  0.2857142857142857 │
+3. │ Charles Juarez  │ 190000 │ 0.42857142857142855 │
+4. │ Douglas Benson  │ 150000 │  0.8571428571428571 │
+5. │ Michael Stanley │ 150000 │  0.8571428571428571 │
+6. │ Scott Harrison  │ 150000 │  0.8571428571428571 │
+7. │ James Henderson │ 140000 │                   1 │
+   └─────────────────┴────────┴─────────────────────┘
+```
+
+**구현 상세**
+
+`cume_dist()` 함수는 다음 공식을 사용해 상대적 위치를 계산합니다.
+
+```text
+cume_dist = (number of rows ≤ current row value) / (total number of rows in partition)
+```
+
+동일한 값을 가진 행들(peers)에는 동일한 누적 분포 값이 부여되며, 이 값은 해당 peer 그룹에서 가장 높은 위치에 대응합니다.

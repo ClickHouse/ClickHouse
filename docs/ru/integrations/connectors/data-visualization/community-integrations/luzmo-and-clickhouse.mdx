@@ -1,0 +1,72 @@
+---
+sidebarTitle: 'Luzmo'
+slug: /integrations/luzmo
+keywords: ['clickhouse', 'Luzmo', 'подключение', 'интеграция', 'интерфейс', 'встроенная']
+description: 'Luzmo — платформа встроенной аналитики с нативной интеграцией с ClickHouse, созданная специально для программных продуктов и SaaS-приложений.'
+title: 'Интеграция Luzmo с ClickHouse'
+sidebar: 'integrations'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<div id="1-setup-a-clickhouse-connection">
+  ## 1. Настройка подключения к ClickHouse
+</div>
+
+Чтобы подключиться к ClickHouse, перейдите на страницу **Connections**, выберите **New Connection**, затем выберите ClickHouse в модальном окне New Connection.
+
+<Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="Интерфейс Luzmo с диалоговым окном Create a New Connection, в котором выбран ClickHouse" border />
+
+Вам будет предложено указать **host**, **username** и **password**:
+
+<Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="Форма настройки подключения Luzmo с полями host, username и password для ClickHouse" border />
+
+* **Host**: хост, на котором доступна ваша база данных ClickHouse. Обратите внимание, что здесь допускается только `https`, чтобы безопасно передавать данные по сети. URL хоста должен иметь следующую структуру: `https://url-to-clickhouse-db:port/database`
+  По умолчанию плагин подключается к базе данных `default` через порт 443. Если указать базу данных после символа `/`, можно настроить, к какой базе данных выполнять подключение.
+* **Username**: имя пользователя, которое будет использоваться для подключения к вашему кластеру ClickHouse.
+* **Password**: пароль для подключения к вашему кластеру ClickHouse
+
+Примеры см. в нашей документации для разработчиков, где описано, как [создать подключение к ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) через наш API.
+
+<div id="2-add-datasets">
+  ## 2. Добавьте наборы данных
+</div>
+
+После подключения ClickHouse вы можете добавить наборы данных, как описано [здесь](https://academy.luzmo.com/article/ldx3iltg). Вы можете выбрать один или несколько наборов данных, доступных в ClickHouse, и [связать](https://academy.luzmo.com/article/gkrx48x5) их в Luzmo, чтобы использовать вместе в одной панели мониторинга. Также рекомендуем ознакомиться со статьёй о [подготовке данных для аналитики](https://academy.luzmo.com/article/u492qov0).
+
+Чтобы узнать, как добавлять наборы данных с помощью нашего API, см. [этот пример в документации для разработчиков](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody).
+
+Теперь вы можете использовать свои наборы данных, чтобы создавать красивые (встраиваемые) панели мониторинга или даже использовать ИИ-аналитика данных ([Luzmo IQ](https://luzmo.com/iq)), который может отвечать на вопросы ваших клиентов.
+
+<Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="Пример панели мониторинга Luzmo с несколькими визуализациями данных из ClickHouse" border />
+
+<div id="usage-notes">
+  ## Примечания по использованию
+</div>
+
+1. Коннектор Luzmo ClickHouse использует интерфейс HTTP API (обычно доступный на порту 8123) для подключения.
+2. Если вы используете таблицы с движком таблицы `Distributed`, некоторые диаграммы Luzmo могут не работать, когда `distributed_product_mode` установлено в `deny`. Однако это происходит только в том случае, если вы связываете таблицу с другой таблицей и используете эту связь в диаграмме. В таком случае установите для `distributed_product_mode` другое значение, подходящее для вашего кластера ClickHouse. Если вы используете ClickHouse Cloud, этот параметр можно спокойно игнорировать.
+3. Чтобы доступ к вашему экземпляру ClickHouse имело, например, только приложение Luzmo, настоятельно рекомендуется **внести в белый список** [диапазон статических IP-адресов Luzmo](https://academy.luzmo.com/article/u9on8gbm). Мы также рекомендуем использовать техническую учетную запись только для чтения.
+4. В настоящее время коннектор ClickHouse поддерживает следующие типы данных:
+
+   | Тип ClickHouse | Тип Luzmo |
+   | -------------- | --------- |
+   | UInt           | numeric   |
+   | Int            | numeric   |
+   | Float          | numeric   |
+   | Decimal        | numeric   |
+   | Date           | datetime  |
+   | DateTime       | datetime  |
+   | String         | hierarchy |
+   | Enum           | hierarchy |
+   | FixedString    | hierarchy |
+   | UUID           | hierarchy |
+   | Bool           | hierarchy |

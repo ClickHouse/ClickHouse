@@ -1,0 +1,14 @@
+<test>
+    <create_query>
+        CREATE TABLE test_set (k UInt32, x UInt32, INDEX idx (x) TYPE set(10) GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 111;
+    </create_query>
+    <fill_query>SYSTEM STOP MERGES</fill_query>
+    <fill_query>INSERT INTO test_set SELECT number, number DIV 100 + rand() % 7 FROM numbers(3000000) SETTINGS max_insert_threads = 4;</fill_query>
+
+    <query>
+        SELECT count() FROM test_set WHERE x = 1234 SETTINGS max_threads = 8;
+    </query>
+
+    <drop_query>SYSTEM START MERGES</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_set</drop_query>
+</test>

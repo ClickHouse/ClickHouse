@@ -1,0 +1,135 @@
+---
+sidebarTitle: 'Explo'
+slug: /integrations/explo
+keywords: ['clickhouse', 'Explo', '接続', '統合', 'UI']
+description: 'Exploは、データに関する質問を簡単に行える、使いやすいオープンソースのUIツールです。'
+title: 'ExploをClickHouseに接続する'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+あらゆるプラットフォーム向けの顧客向け分析。美しい可視化を実現するために設計され、シンプルさを追求して構築されています。
+
+<div id="goal">
+  ## 目標
+</div>
+
+このガイドでは、ClickHouse のデータを Explo に接続して、結果を可視化します。グラフは次のようになります。
+
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+
+<p />
+
+<Tip>
+  **データを追加する**
+
+  使用するデータセットがない場合は、サンプルの 1 つを追加できます。このガイドでは [UK Price Paid](/ja/get-started/sample-datasets/uk-price-paid) データセットを使用しているため、それを選ぶとよいでしょう。同じドキュメントカテゴリには、ほかにもいくつかサンプルがあります。
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. 接続情報を確認する
+</div>
+
+<ConnectionDetails />
+
+<div id="2--connect-explo-to-clickhouse">
+  ## 2.  Explo を ClickHouse に接続する
+</div>
+
+1. Explo アカウントにサインアップします。
+
+2. 左側のサイドバーにある Explo の **Data** タブをクリックします。
+
+<Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="Data Tab" border />
+
+3. 右上の **Connect Data Source** をクリックします。
+
+<Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="Connect Data Source" border />
+
+4. **Getting Started** ページで情報を入力します
+
+<Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Getting Started" border />
+
+5. **ClickHouse** を選択します
+
+<Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="Clickhouse" border />
+
+6. **ClickHouse の認証情報** を入力します。
+
+<Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="Credentials" border />
+
+7. **Security** を設定します
+
+<Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="Security" border />
+
+8. ClickHouse 側で、**Explo の IP アドレスを許可リストに追加** します。
+   `54.211.43.19, 52.55.98.121, 3.214.169.94, and 54.156.141.148`
+
+<div id="3-create-a-dashboard">
+  ## 3. ダッシュボードを作成する
+</div>
+
+1. 左側のナビゲーションバーにある **Dashboard** タブを開きます。
+
+<Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="ダッシュボード" border />
+
+2. 右上の **Create Dashboard** をクリックし、ダッシュボード名を入力します。これでダッシュボードの作成は完了です。
+
+<Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="ダッシュボードを作成" border />
+
+3. 次のような画面が表示されます。
+
+<Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Explo Dashboard" border />
+
+<div id="4-run-a-sql-query">
+  ## 4. SQLクエリを実行する
+</div>
+
+1. スキーマのタイトルの下にある右側のサイドバーでテーブル名を確認します。次に、dataset editor に以下のコマンドを入力してください。
+   `SELECT * FROM YOUR_TABLE_NAME
+   LIMIT 100`
+
+<Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo Dashboard" border />
+
+2. run をクリックし、preview タブに移動してデータを確認します。
+
+<Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo Dashboard" border />
+
+<div id="5-build-a-chart">
+  ## 5. チャートを作成
+</div>
+
+1. 左側の棒グラフアイコンを画面にドラッグします。
+
+<Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo Dashboard" border />
+
+2. データセットを選択します。すると、次のような画面が表示されます。
+
+<Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo Dashboard" border />
+
+3. 次のように、X Axis に **county**、Y Axis Section に **Price** を設定します。
+
+<Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo Dashboard" border />
+
+4. 次に、集計方法を **AVG** に変更します。
+
+<Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo Dashboard" border />
+
+5. これで、郡ごとの住宅の平均価格が表示されます。
+
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+
+<div id="learn-more">
+  ## 詳細情報
+</div>
+
+Explo の詳細やダッシュボードの作成方法については、<a href="https://docs.explo.co/" target="_blank">Explo のドキュメントをご覧ください</a>。

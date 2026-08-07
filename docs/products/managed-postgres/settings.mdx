@@ -1,0 +1,38 @@
+---
+slug: /cloud/managed-postgres/settings
+sidebarTitle: 'Settings'
+title: 'Settings'
+description: 'Configure PostgreSQL and PgBouncer parameters and manage instance settings for Managed Postgres'
+keywords: ['postgres configuration', 'postgresql settings', 'pgbouncer']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
+
+You can modify configuration parameters and manage instance settings for your Managed Postgres instance through the **Settings** tab in the sidebar.
+
+## Service actions and scaling {#service-actions}
+
+<Image img="/images/managed-postgres/service-actions.webp" alt="Service actions and scaling" size="md" border/>
+
+The **Service actions** toolbar provides controls for managing your Managed Postgres instance:
+
+- **Reset password**: Update the superuser password (only when the instance is `Running`)
+- **Restart**: Restart the database instance (only when the instance is `Running`)
+- **Delete**: Delete the instance
+
+The **Scaling** section allows you to change the instance types of your primary and standbys to increase or decrease computing resources and storage capacity. 
+See [scaling page](/products/managed-postgres/scaling) for more details.
+
+## Changing configuration parameters {#changing-configuration}
+
+<Image img="/images/managed-postgres/postgres-parameters.webp" alt="Postgres parameters configuration" size="md" border/>
+
+To modify a parameter, select the **Edit parameters** button. Select the parameters you need to modify and change their values accordingly. Once you're satisfied with your changes, press the **Save Changes** button.
+
+All changes made to the configuration parameters are typically persisted to the instance within one minute. Some parameters require a database restart to take effect. These changes will be applied after the next restart, which you can trigger manually from the **Service actions** toolbar.
+
+Refer to the official [documentation](https://www.postgresql.org/docs/current/runtime-config.html) on the configuration parameters. The list of parameters available to set will be extended soon. In the meantime, contact [support](https://clickhouse.com/support/program) to request a parameter not currently supported.

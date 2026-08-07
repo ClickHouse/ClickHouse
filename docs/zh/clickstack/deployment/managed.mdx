@@ -1,0 +1,396 @@
+---
+slug: /use-cases/observability/clickstack/deployment/clickstack-clickhouse-cloud
+title: '托管'
+toc_max_heading_level: 2
+description: '部署托管 ClickStack'
+doc_type: 'guide'
+keywords: ['ClickStack', '部署', '设置', '配置', '可观测性']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+import JSONSupport from '/snippets/zh/_json_support.mdx';
+import ExampleOTelConfig from '/snippets/zh/clickstack/_config_example_otel.mdx';
+
+import SetupManagedIngestion from '/snippets/zh/clickstack/_setup_managed_ingestion.mdx';
+import NavigateClickStackUI from '/snippets/zh/clickstack/_navigate_managed.mdx';
+import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
+
+本**指南适用于现有的 ClickHouse Cloud 用户**。如果你刚开始使用 ClickHouse Cloud，我们建议先阅读面向托管 ClickStack 的 [入门](/zh/clickstack/getting-started/managed) 指南。
+
+在这种部署模式下，ClickHouse 和 ClickStack UI (HyperDX) 都托管在 ClickHouse Cloud 中，从而将用户需要自行托管的组件数量降至最低。
+
+除了减少基础设施管理，这种部署模式还能确保身份验证与 ClickHouse Cloud SSO/SAML 集成。与自托管部署不同，你也无需部署 MongoDB 实例来存储应用状态，例如仪表盘、保存的搜索、用户设置和告警。用户还可受益于：
+
+* 计算资源与存储分离的自动扩缩容
+* 基于对象存储的低成本、近乎无限的数据保留
+* 能够使用仓库独立隔离读写工作负载
+* 集成式身份验证
+* 自动化备份
+* 安全与合规功能
+* 无缝升级
+
+在这种模式下，数据摄取完全由用户负责。你可以通过自行托管的 OpenTelemetry collector、客户端库直接摄取、ClickHouse 原生表引擎 (如 Kafka 或 S3) 、ETL 管道，或 ClickPipes (ClickHouse Cloud 的托管摄取服务) 将数据摄取到托管 ClickStack 中。这种方式是运行 ClickStack 最简单、性能也最好的方式。
+
+<div id="suitable-for">
+  ### 适用场景
+</div>
+
+此部署模式尤其适用于以下场景：
+
+1. 您已在 ClickHouse Cloud 中存有可观测性数据，并希望使用 ClickStack 进行可视化。
+2. 您运营的是大规模可观测性部署，需要借助运行在 ClickHouse Cloud 上的 ClickStack 所提供的专用性能和可扩展性。
+3. 您已在使用 ClickHouse Cloud 进行分析，并希望借助 ClickStack 插桩库为应用接入可观测性数据采集——将数据发送到同一个集群。在这种情况下，我们建议使用[仓库](/zh/products/cloud/features/infrastructure/warehouses)来隔离可观测性工作负载的计算资源。
+
+<div id="setup-steps">
+  ## 设置步骤
+</div>
+
+以下指南默认您已创建 ClickHouse Cloud 服务。如果您尚未创建服务，请参阅托管 ClickStack 的 [入门](/zh/clickstack/getting-started/managed) 指南。完成后，您的服务将处于与本指南相同的状态，也就是说，已启用 ClickStack，并可接收可观测性数据。
+
+<Tabs>
+  <Tab title="创建新服务">
+    <br />
+
+    <Steps>
+      <Step>
+        ### 创建新服务
+
+        在 ClickHouse Cloud 首页中，选择 `New service` 以创建新服务。
+
+        <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="服务 服务" border />
+      </Step>
+
+      <Step>
+        ### 指定您的提供商、区域和资源
+
+        <ProviderSelection />
+      </Step>
+
+      <Step>
+        ### 配置摄取
+
+        服务预配完成后，确保已选中该服务，然后在左侧菜单中点击 &quot;ClickStack&quot;。
+
+        <SetupManagedIngestion />
+      </Step>
+
+      <Step>
+        ### 前往 ClickStack UI
+
+        <NavigateClickStackUI />
+
+        <br />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="使用现有服务">
+    <br />
+
+    <Steps>
+      <Step>
+        ### 选择服务
+
+        在 ClickHouse Cloud 首页中，选择要为其启用托管 ClickStack 的服务。
+
+        <Warning>
+          **资源估算**
+
+          本指南假设您已预配足够的资源，以处理计划使用 ClickStack 摄取和查询的可观测性数据量。要估算所需资源，请参阅[资源估算](/zh/clickstack/managing/estimating-resources)指南。
+
+          如果您的 ClickHouse 服务已经承载现有工作负载，例如实时应用分析，我们建议使用 [ClickHouse Cloud 的仓库功能](/zh/products/cloud/features/infrastructure/warehouses) 创建一个子服务，以隔离可观测性工作负载。这样既能确保现有应用不受影响，又能让两个服务都能访问这些数据集。
+        </Warning>
+
+        <Image img="/images/clickstack/select_service.webp" alt="选择服务" size="lg" />
+      </Step>
+
+      <Step>
+        ### 前往 ClickStack UI
+
+        在左侧导航菜单中选择 &#39;ClickStack&#39;。系统会将你重定向到 ClickStack UI，并根据你的 ClickHouse Cloud 权限自动完成身份验证。
+
+        如果你的服务中已存在任何 OpenTelemetry 表，系统会自动检测到它们，并创建相应的数据源。
+
+        <Info>
+          **自动检测数据源**
+
+          自动检测依赖于 ClickStack 版 OpenTelemetry collector 提供的标准 OpenTelemetry 表 schema。系统会为拥有最完整表集合的数据库创建相应的源。如有需要，还可以将其他表添加为[单独的数据源](/zh/clickstack/managing/config#datasource-settings)。
+        </Info>
+
+        如果自动检测成功，你将进入搜索视图，并可立即开始探索你的数据。
+
+        <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
+
+        如果这一步成功，那就大功告成了——你已经全部就绪 🎉；否则请继续设置摄取。
+      </Step>
+
+      <Step>
+        ### 设置摄取
+
+        如果自动检测失败，或您没有现有的表，系统将提示您配置摄取。
+
+        <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="在 ClickStack UI 中配置摄取" size="lg" />
+
+        选择 &quot;Start Ingestion&quot;，系统将提示您选择摄取来源。托管 ClickStack 支持 OpenTelemetry 和 [Vector](https://vector.dev/) 作为主要摄取来源。此外，用户也可以通过任意 [ClickHouse Cloud 支持的集成](/zh/integrations/home)，使用自定义 schema 将数据直接发送至 ClickHouse。
+
+        <Image img="/images/clickstack/select-source-clickstack-ui.webp" size="lg" alt="选择数据源 - ClickStack UI" border />
+
+        <Info>
+          **强烈推荐使用 OpenTelemetry**
+
+          强烈建议使用 OpenTelemetry 作为摄取格式。
+          它提供了最简单、最优化的体验，并且内置了专为与 ClickStack 高效配合而设计的 schema。
+        </Info>
+
+        <Tabs>
+          <Tab title="OpenTelemetry">
+            要将 OpenTelemetry 数据发送到托管 ClickStack，建议使用 OpenTelemetry Collector。该 collector 充当 gateway，接收来自应用程序 (以及其他 collector) 的 OpenTelemetry 数据，并将其转发到 ClickHouse Cloud。
+
+            如果你还没有正在运行的 collector，请按以下步骤启动一个。如果你已有现成的 collector，也提供了一个 configuration 示例。
+
+            ### 启动 collector
+
+            以下内容假定你采用推荐方式：使用 **ClickStack 发行版的 OpenTelemetry Collector**。它包含额外的处理能力，并专门针对 ClickHouse Cloud 进行了优化。如果你想使用自己的 OpenTelemetry Collector，请参阅[“配置现有 collector。”](#configure-existing-collectors)
+
+            为了快速开始，请复制并运行下方所示的 Docker 命令。
+
+            <Image img="/images/clickstack/otel-collector-start-clickstack-ui.webp" size="md" alt="OTel collector source" />
+
+            **请将此命令中的服务 credentials 替换为你在创建服务时记录的信息。**
+
+            <Info>
+              **部署到 production**
+
+              虽然此命令使用 `default` 用户连接托管 ClickStack，但在[进入 production](/zh/clickstack/managing/production#create-a-database-ingestion-user-managed)并修改配置时，你应创建一个专用用户。
+            </Info>
+
+            运行这一条命令即可启动 ClickStack collector，并在 4317 (gRPC) 和 4318 (HTTP) 端口上暴露 OTLP 端点。如果你已经有 OpenTelemetry instrumentation 和 agent，便可立即开始将 telemetry data 发送到这些端点。
+
+            ### 配置现有 collector
+
+            你也可以配置自己现有的 OpenTelemetry Collectors，或使用你自己的 collector 发行版。
+
+            <Info>
+              **需要 ClickHouse exporter**
+
+              如果你使用自己的发行版，例如 [contrib image](https://github.com/open-telemetry/opentelemetry-collector-contrib)，请确保其中包含 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)。
+            </Info>
+
+            为此，系统提供了一个 OpenTelemetry Collector configuration 示例，它使用了经过适当设置的 ClickHouse exporter，并暴露 OTLP receivers。该 configuration 与 ClickStack 发行版所期望的 interfaces 和行为保持一致。
+
+            <ExampleOTelConfig />
+
+            <Image img="/images/clickstack/advanced-otel-collector-clickstack-ui.webp" size="lg" alt="Advanced OTel collector source" />
+
+            有关配置 OpenTelemetry collector 的更多详细信息，请参阅[“使用 OpenTelemetry 进行摄取。”](/zh/clickstack/ingesting-data/opentelemetry)
+
+            ### 开始摄取 (可选)
+
+            如果你已有要使用 OpenTelemetry 进行 instrument 的应用程序或基础设施，请前往“连接应用程序”中的相关指南。
+
+            要为应用程序添加 instrument 以收集链路追踪和日志，请使用[受支持的语言 SDK](/zh/clickstack/ingesting-data/sdks/index)。它们会将数据发送到充当 gateway 的 OpenTelemetry Collector，以便摄取到托管 ClickStack。
+
+            日志可以通过以 agent 模式运行的 [OpenTelemetry Collectors 进行收集](/zh/clickstack/integration-examples/host-logs)，并将数据转发到同一个 collector。对于 Kubernetes Monitoring，请遵循[专门指南](/zh/clickstack/integration-examples/kubernetes)。对于其他 integrations，请参阅我们的[快速入门指南](/zh/clickstack/integration-examples/index)。
+
+            <br />
+          </Tab>
+
+          <Tab title="Vector">
+            [Vector](https://vector.dev) 是一个高性能、供应商中立的可观测性数据管道，凭借其灵活性和较低的资源占用，尤其适合用于日志摄取。
+
+            将 Vector 与 ClickStack 搭配使用时，用户需要自行定义 schema。这些 schema 可以遵循 OpenTelemetry 约定，也可以完全自定义，用来表示用户定义的事件结构。
+
+            <Info>
+              **必须包含时间戳**
+
+              对于托管 ClickStack，唯一的硬性要求是数据中必须包含一个**时间戳列** (或等效的时间字段) ，该列可在 ClickStack UI 中配置数据源时声明。
+            </Info>
+
+            以下内容假设你已经运行了一个 Vector 实例，并且已预先配置好摄取管道来传送数据。
+
+            ### 创建数据库和表
+
+            Vector 要求在开始数据摄取之前，先定义好表和 schema。
+
+            首先创建一个数据库。可通过 [ClickHouse Cloud 控制台](/zh/products/cloud/features/sql-console-features/sql-console) 完成此操作。
+
+            例如，为日志创建一个数据库：
+
+            ```sql
+            CREATE DATABASE IF NOT EXISTS logs
+            ```
+
+            然后创建一个表，使其 schema 与日志数据的结构一致。下面的示例假设使用经典的 Nginx 访问日志格式：
+
+            ```sql
+            CREATE TABLE logs.nginx_logs
+            (
+                `time_local` DateTime,
+                `remote_addr` IPv4,
+                `remote_user` LowCardinality(String),
+                `request` String,
+                `status` UInt16,
+                `body_bytes_sent` UInt64,
+                `http_referer` String,
+                `http_user_agent` String,
+                `http_x_forwarded_for` LowCardinality(String),
+                `request_time` Float32,
+                `upstream_response_time` Float32,
+                `http_host` String
+            )
+            ENGINE = MergeTree
+            ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+            ```
+
+            你的表必须与 Vector 生成的输出 schema 保持一致。请根据你的数据按需调整 schema，并遵循推荐的 [schema 最佳实践](/zh/concepts/best-practices/select-data-type)。
+
+            我们强烈建议你先了解 [Primary keys](/zh/concepts/core-concepts/primary-indexes) 在 ClickHouse 中的工作机制，并根据你的访问模式选择排序键。有关如何选择主键，请参阅 [ClickStack 专用](/zh/clickstack/managing/performance-tuning#choosing-a-primary-key) 指南。
+
+            创建好表后，复制所示的配置片段。按需调整输入，以使用你现有的管道，以及目标表和数据库。凭据应已预先填入。
+
+            <Image img="/images/clickstack/vector-config-clickstack-ui.webp" size="lg" alt="Vector 配置" />
+
+            有关使用 Vector 摄取数据的更多示例，请参阅 [&quot;使用 Vector 进行摄取&quot;](/zh/clickstack/ingesting-data/vector)，或查看 [Vector ClickHouse sink 文档](https://vector.dev/docs/reference/configuration/sinks/clickhouse/)，了解高级选项。
+
+            <br />
+          </Tab>
+        </Tabs>
+      </Step>
+
+      <Step>
+        ### 前往 ClickStack UI
+
+        完成摄取设置并开始发送数据后，选择 &quot;Next&quot;。
+
+        <Tabs>
+          <Tab title="OpenTelemetry">
+            如果你已按照本指南摄取 OpenTelemetry 数据，系统会自动创建数据源，无需进一步设置。你可以立即开始使用 ClickStack。系统会将你引导至搜索视图，并自动选中一个数据源，以便你立即开始查询。
+
+            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
+
+            就这样——一切已准备就绪 🎉。
+
+            <br />
+          </Tab>
+
+          <Tab title="Vector">
+            如果你是通过 Vector 或其他来源摄取数据，系统会提示你配置数据源。
+
+            <Image img="/images/clickstack/create-vector-datasource.webp" alt="创建数据源 - vector" size="lg" />
+
+            上述配置假定使用的是 Nginx 风格的 schema，并将 `time_local` 列用作时间戳。在可能的情况下，这应当是主键中声明的时间戳列。**此列为必填项**。
+
+            我们还建议更新 `Default SELECT`，以显式定义日志视图中返回哪些列。如果还有其他可用字段，例如服务名称、日志级别或 body 列，也可以一并配置。如果时间戳显示列与表主键中使用并在上方配置的列不同，也可以对其进行覆盖。
+
+            在上面的示例中，数据中不存在 `Body` 列。相反，它是通过一个 SQL expression 定义的，用于根据现有字段重建一条 Nginx 日志行。
+
+            如需了解其他可用选项，请参阅[配置参考](/zh/clickstack/managing/config#hyperdx)。
+
+            配置好数据源后，点击 &quot;Save&quot; 并开始探索你的数据。
+
+            <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI" />
+
+            <br />
+          </Tab>
+        </Tabs>
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="additional-tasks">
+  ## 其他任务
+</div>
+
+<div id="configure-access">
+  ### 授予对托管 ClickStack 的访问权限
+</div>
+
+1. 在 ClickHouse Cloud 控制台中打开您的服务
+2. 前往 **设置** → **SQL 控制台访问**
+3. 为每位用户设置合适的权限级别：
+   * **服务管理员 → 完全访问** - 启用告警所必需
+   * **服务只读 → 只读** - 可查看可观测性数据并创建仪表盘
+   * **无访问权限** - 无法访问 HyperDX
+
+<Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud 只读" size="md" />
+
+<Warning>
+  **告警需要管理员权限**
+
+  要启用告警，至少需要有一位具备 **服务管理员** 权限的用户 (在 **SQL 控制台访问** 下拉菜单中对应为 **完全访问**) 至少登录一次 HyperDX。这样会在数据库中预配一个专门用于运行告警查询的用户。
+</Warning>
+
+<div id="clickstack-read-only-compute">
+  ### 搭配只读计算资源使用 ClickStack
+</div>
+
+ClickStack UI 可以完全在只读的 ClickHouse Cloud 服务上运行。如果你希望将摄取工作负载与查询工作负载隔离开来，推荐采用这种设置。
+
+<div id="how-clickstack-selects-compute">
+  #### ClickStack 如何选择 计算资源
+</div>
+
+ClickStack UI 始终连接到它在 ClickHouse Cloud 控制台中启动时所在的 ClickHouse 服务。
+
+这意味着：
+
+* 如果你从只读服务打开 ClickStack，ClickStack UI 发出的所有查询都会在该只读 计算资源 上运行。
+* 如果你从读写服务打开 ClickStack，ClickStack 则会改用该 计算资源。
+
+无需在 ClickStack 内进行任何额外配置来强制启用只读行为。
+
+<div id="recommended-setup">
+  #### 推荐配置
+</div>
+
+要在只读计算资源上运行 ClickStack：
+
+1. 在仓库中创建或找到一个配置为只读的 ClickHouse Cloud 服务。
+2. 在 ClickHouse Cloud 控制台中，选择该只读服务。
+3. 在左侧导航菜单中启动 ClickStack。
+
+启动后，ClickStack UI 会自动绑定到该只读服务。
+
+<div id="adding-data-sources">
+  ### 添加更多数据源
+</div>
+
+ClickStack 原生支持 OpenTelemetry，但并不局限于 OpenTelemetry——如果需要，也可以使用你自己的表 schema。
+
+下面说明如何添加自动配置之外的其他数据源。
+
+<div id="using-otel-schemas">
+  #### 使用 OpenTelemetry schema
+</div>
+
+如果你使用 OTel collector 在 ClickHouse 中创建数据库和表，请在创建数据源表单中保留所有默认值，并在 `Table` 字段中填写 `otel_logs`，以创建日志数据源。其余设置应会自动识别，然后即可点击 `Save New Source`。
+
+<Image img="/images/use-cases/observability/hyperdx_cloud_datasource.webp" alt="ClickHouse Cloud HyperDX 数据源" size="lg" />
+
+要为链路追踪和 OTel 指标创建数据源，你可以从顶部菜单中选择 `创建新数据源`。
+
+<Image img="/images/use-cases/observability/hyperdx_create_new_source.webp" alt="ClickStack 创建新数据源" size="lg" />
+
+在这里，先选择所需的数据源类型，再选择对应的表。例如，对于链路追踪，请选择表 `otel_traces`。所有设置都应自动识别。
+
+<Image img="/images/use-cases/observability/hyperdx_create_trace_datasource.webp" alt="ClickStack 创建链路追踪数据源" size="lg" />
+
+<Info>
+  **关联来源**
+
+  请注意，ClickStack 中的不同数据源 (例如日志和链路追踪) 可以彼此关联。要启用此功能，需要在每个数据源上进行额外配置。例如，你可以在日志数据源中指定对应的链路追踪数据源；反之，也可以在链路追踪数据源中指定对应的日志数据源。更多详情，请参见 [“关联来源”](/zh/clickstack/managing/config#correlated-sources)。
+</Info>
+
+<div id="using-custom-schemas">
+  #### 使用自定义 schema
+</div>
+
+如果要将 ClickStack 连接到已有数据的现有服务，可根据需要填写 database 和表设置。如果各表符合适用于 ClickHouse 的 OpenTelemetry schema，系统会自动检测这些设置。
+
+如果使用自定义 schema，我们建议创建一个日志数据源，并确保指定了必需字段。更多详情请参阅[&quot;日志数据源设置&quot;](/zh/clickstack/managing/config#logs)。
+
+<JSONSupport />

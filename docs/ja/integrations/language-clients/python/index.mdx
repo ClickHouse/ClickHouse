@@ -1,0 +1,141 @@
+---
+keywords: ['clickhouse', 'python', 'client', 'connect', '統合']
+slug: /integrations/python
+description: 'Python から ClickHouse に接続するための ClickHouse Connect プロジェクト群'
+title: 'ClickHouse Connect を使用した Python インテグレーション'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-connect'
+---
+
+import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+
+<div id="introduction">
+  ## はじめに
+</div>
+
+ClickHouse Connect は、幅広い Python アプリケーションとの相互運用性を提供する中核的なデータベースドライバーです。
+
+* 主なインターフェイスは、`clickhouse_connect.driver` パッケージ内の `Client` オブジェクトです。この中核パッケージには、ClickHouse サーバーとの通信に使用される各種ヘルパークラスやユーティリティ関数に加え、insert クエリや select クエリを高度に管理するための「コンテキスト」実装も含まれています。
+* `clickhouse_connect.datatypes` パッケージは、実験的ではないすべての ClickHouse データ型について、基本実装とそのサブクラスを提供します。主な機能は、ClickHouse データを ClickHouse の &quot;Native&quot; バイナリ列指向フォーマットへシリアライゼーションおよびデシリアライゼーションすることで、ClickHouse とクライアントアプリケーション間の転送を最も効率的に行えるようにすることです。
+* `clickhouse_connect.cdriver` パッケージ内の Cython/C クラスは、pure Python と比べて大幅に高い性能が得られるよう、最も一般的なシリアライゼーションとデシリアライゼーションの一部を最適化しています。
+* `clickhouse_connect.cc_sqlalchemy` パッケージには [SQLAlchemy](https://www.sqlalchemy.org/) dialect があり、`datatypes` および `dbi` パッケージをベースに構築されています。この実装は、`JOIN` を含む `SELECT` クエリ (`INNER`、`LEFT OUTER`、`FULL OUTER`、`CROSS`) 、`WHERE` 句、`ORDER BY`、`LIMIT`/`OFFSET`、`DISTINCT` 操作、`WHERE` 条件付きの論理削除ステートメント、テーブルリフレクション、および基本的な DDL 操作 (`CREATE TABLE`、`CREATE`/`DROP DATABASE`) を含む SQLAlchemy Core の機能をサポートします。高度な ORM 機能や高度な DDL 機能には対応していませんが、ClickHouse の OLAP 指向データベースに対する、ほとんどの分析ワークロードに適した堅牢なクエリ機能を提供します。
+* 中核ドライバーと [ClickHouse Connect SQLAlchemy](/ja/integrations/language-clients/python/sqlalchemy) 実装は、ClickHouse を Apache Superset に接続するための推奨方法です。`ClickHouse Connect` データベース接続、または `clickhousedb` SQLAlchemy dialect 接続文字列を使用してください。
+
+このドキュメントは、clickhouse-connect release 0.9.2 時点の内容です。
+
+<Note>
+  公式の ClickHouse Connect Python ドライバーは、ClickHouse サーバーとの通信に HTTP プロトコルを使用します。これにより HTTP ロードバランサーを利用でき、ファイアウォールやプロキシのあるエンタープライズ環境でも適切に動作しますが、native TCP ベースのプロトコルと比べると圧縮率と性能はやや低く、クエリのキャンセルのような一部の高度な機能には対応していません。用途によっては、native TCP ベースのプロトコルを使用する [Community Python drivers](/ja/integrations/language-clients/third-party/client-libraries) のいずれかを検討してもよいでしょう。
+</Note>
+
+<div id="requirements-and-compatibility">
+  ## 要件と互換性
+</div>
+
+|       Python |    |       プラットフォーム¹ |    |   ClickHouse |    | SQLAlchemy² |    | Apache Superset |    | Pandas |    | Polars |    |
+| -----------: | :- | --------------: | :- | -----------: | :- | ----------: | :- | --------------: | :- | -----: | :- | -----: | :- |
+| 2.x, &lt;3.9 | ❌  |     Linux (x86) | ✅  |    &lt;25.x³ | 🟡 |  &lt;1.4.40 | ❌  |         &lt;1.4 | ❌  |   ≥1.5 | ✅  |    1.x | ✅  |
+|        3.9.x | ✅  | Linux (Aarch64) | ✅  |        25.x³ | 🟡 |     ≥1.4.40 | ✅  |           1.4.x | ✅  |    2.x | ✅  |        |    |
+|       3.10.x | ✅  |     macOS (x86) | ✅  | 25.3.x (LTS) | ✅  |        ≥2.x | ✅  |           1.5.x | ✅  |        |    |        |    |
+|       3.11.x | ✅  |     macOS (ARM) | ✅  | 25.6.x (安定版) | ✅  |             |    |           2.0.x | ✅  |        |    |        |    |
+|       3.12.x | ✅  |         Windows | ✅  | 25.7.x (安定版) | ✅  |             |    |           2.1.x | ✅  |        |    |        |    |
+|       3.13.x | ✅  |                 |    | 25.8.x (LTS) | ✅  |             |    |           3.0.x | ✅  |        |    |        |    |
+|              |    |                 |    | 25.9.x (安定版) | ✅  |             |    |                 |    |        |    |        |    |
+
+¹ClickHouse Connect は、一覧に記載されたプラットフォームで明示的にテストされています。さらに、優れた [`cibuildwheel`](https://cibuildwheel.readthedocs.io/en/stable/) プロジェクトでサポートされているすべてのアーキテクチャ向けに、未検証のバイナリホイール (C 最適化あり) もビルドされています。加えて、ClickHouse Connect は pure Python としても動作するため、ソースからのインストールであれば最近の Python 環境なら動作するはずです。
+
+²SQLAlchemy のサポートは Core 機能 (クエリ、基本的な DDL) に限定されます。ORM 機能はサポートされていません。詳しくは [SQLAlchemy インテグレーションサポート](/ja/integrations/language-clients/python/sqlalchemy) のドキュメントを参照してください。
+
+³ClickHouse Connect は、公式なサポート対象外のバージョンでも通常は問題なく動作します。
+
+<div id="installation">
+  ## インストール
+</div>
+
+ClickHouse Connect は、pip を使用して [PyPI](https://pypi.org/project/clickhouse-connect/) からインストールできます。
+
+`pip install clickhouse-connect`
+
+ClickHouse Connect は、ソースからインストールすることもできます。
+
+* [GitHub リポジトリ](https://github.com/ClickHouse/clickhouse-connect) を `git clone` します。
+* (任意) C/Cython の最適化をビルドして有効にするには、`pip install cython` を実行します
+* プロジェクトのルートディレクトリに移動して、`pip install .` を実行します
+
+<div id="support-policy">
+  ## サポートポリシー
+</div>
+
+問題を報告する前に、ClickHouse Connect を最新バージョンにアップデートしてください。問題は [GitHub project](https://github.com/ClickHouse/clickhouse-connect/issues) に報告してください。今後の ClickHouse Connect のリリースは、リリース時点で現在サポート対象となっている ClickHouse のバージョンとの互換性を持つよう設計されています。現在サポート対象の ClickHouse サーバー のバージョンは [こちら](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md) で確認できます。どのバージョンの ClickHouse サーバー を使うべきか迷った場合は、[こちら](/ja/resources/support-center/knowledge-base/setup-installation/production#how-to-choose-between-clickhouse-releases) の解説を参照してください。CI のテストマトリクスでは、最新の 2 つの LTS リリースと最新の 3 つの stable リリースを対象にテストを実施しています。ただし、HTTP プロトコルを使用していること、および ClickHouse の各リリース間で破壊的変更が最小限であることから、ClickHouse Connect は一般に公式サポート範囲外の server バージョンでも問題なく動作します。ただし、一部の高度なデータ型では互換性が異なる場合があります。
+
+<div id="basic-usage">
+  ## 基本的な使い方
+</div>
+
+<div id="gather-your-connection-details">
+  ### 接続情報を確認する
+</div>
+
+<ConnectionDetails />
+
+<div id="establish-a-connection">
+  ### 接続する
+</div>
+
+ClickHouse に接続する方法として、次の 2 つの例を示します。
+
+* localhost 上の ClickHouse サーバーに接続する。
+* ClickHouse Cloud サービスに接続する。
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost">
+  #### ClickHouse Connect クライアントのインスタンスを使用して、localhost 上の ClickHouseサーバーに接続します:
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host='localhost', username='default', password='password')
+```
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service">
+  #### ClickHouse Connect クライアントインスタンスを使用して ClickHouse Cloud サービスに接続します。
+</div>
+
+<Tip>
+  先ほど取得した接続情報を使用します。ClickHouse Cloud サービスでは TLS が必要なため、ポート 8443 を使用してください。
+</Tip>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host='HOSTNAME.clickhouse.cloud', port=8443, username='default', password='your password')
+```
+
+<div id="interact-with-your-database">
+  ### データベースを操作する
+</div>
+
+ClickHouse SQL コマンドを実行するには、クライアントの `command` メソッドを使用します。
+
+```python
+client.command('CREATE TABLE new_table (key UInt32, value String, metric Float64) ENGINE MergeTree ORDER BY key')
+```
+
+バッチデータを挿入するには、行と値の二次元配列を指定して、クライアントの `insert` メソッドを使用します：
+
+```python
+row1 = [1000, 'String Value 1000', 5.233]
+row2 = [2000, 'String Value 2000', -107.04]
+data = [row1, row2]
+client.insert('new_table', data, column_names=['key', 'value', 'metric'])
+```
+
+ClickHouse SQL を使用してデータを取得するには、クライアントの `query` メソッドを使用します。
+
+```python
+result = client.query('SELECT max(key), avg(metric) FROM new_table')
+print(result.result_rows)
+# 出力: [(2000, -50.9035)]
+```

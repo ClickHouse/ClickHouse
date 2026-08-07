@@ -1,0 +1,92 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hierarchical
+title: '계층형 딕셔너리'
+sidebarTitle: '계층형'
+description: '부모-자식 키 관계로 계층형 딕셔너리를 구성합니다.'
+doc_type: 'reference'
+---
+
+<div id="hierarchical-dictionaries">
+  ## 계층형 딕셔너리
+</div>
+
+ClickHouse는 [숫자 키](/ko/reference/statements/create/dictionary/attributes#numeric-key)를 사용하는 계층형 딕셔너리를 지원합니다.
+
+다음과 같은 계층 구조를 살펴보십시오:
+
+```text
+0 (Common parent)
+│
+├── 1 (United States of America)
+│   │
+│   └── 2 (California)
+│       │
+│       └── 3 (San Francisco)
+│
+└── 4 (Great Britain)
+    │
+    └── 5 (London)
+```
+
+이 계층 구조는 다음과 같은 딕셔너리 테이블로 표현할 수 있습니다.
+
+| region&#95;id | parent&#95;region | region&#95;name          |
+| ------------- | ----------------- | ------------------------ |
+| 1             | 0                 | United States of America |
+| 2             | 1                 | California               |
+| 3             | 2                 | San Francisco            |
+| 4             | 0                 | Great Britain            |
+| 5             | 4                 | London                   |
+
+이 테이블에는 각 요소의 가장 가까운 상위 요소 키를 담고 있는 `parent_region` 컬럼이 있습니다.
+
+ClickHouse는 외부 딕셔너리 속성에 대한 계층형 속성을 지원합니다. 이 속성을 사용하면 위에서 설명한 것과 비슷한 방식으로 계층형 딕셔너리를 구성할 수 있습니다.
+
+[dictGetHierarchy](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) 함수는 요소의 상위 체인을 가져올 수 있게 해줍니다.
+
+이 예시에서 딕셔너리의 구조는 다음과 같을 수 있습니다.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY regions_dict
+    (
+        region_id UInt64,
+        parent_region UInt64 DEFAULT 0 HIERARCHICAL,
+        region_name String DEFAULT ''
+    )
+    PRIMARY KEY region_id
+    SOURCE(...)
+    LAYOUT(HASHED())
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <dictionary>
+        <structure>
+            <id>
+                <name>region_id</name>
+            </id>
+
+            <attribute>
+                <name>parent_region</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+                <hierarchical>true</hierarchical>
+            </attribute>
+
+            <attribute>
+                <name>region_name</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+
+        </structure>
+    </dictionary>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

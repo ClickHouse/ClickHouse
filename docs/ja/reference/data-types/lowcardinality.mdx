@@ -1,0 +1,71 @@
+---
+description: '文字列カラム向けの LowCardinality 最適化に関するドキュメント'
+sidebarTitle: 'LowCardinality(T)'
+slug: /sql-reference/data-types/lowcardinality
+title: 'LowCardinality(T)'
+doc_type: 'reference'
+---
+
+他のデータ型の内部表現を辞書エンコード形式に変更します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+LowCardinality(data_type)
+```
+
+**パラメータ**
+
+* `data_type` — [String](/ja/reference/data-types/string)、[FixedString](/ja/reference/data-types/fixedstring)、[Date](/ja/reference/data-types/date)、[DateTime](/ja/reference/data-types/datetime)、および [Decimal](/ja/reference/data-types/decimal) を除く数値型。`LowCardinality` は一部のデータ型では効率的でないため、[allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ja/reference/settings/session-settings#allow_suspicious_low_cardinality_types) 設定の説明を参照してください。
+
+<div id="description">
+  ## 説明
+</div>
+
+`LowCardinality` は、データの格納方法と処理ルールを変更するスーパー構造です。ClickHouse は `LowCardinality` カラムに [辞書符号化](https://en.wikipedia.org/wiki/Dictionary_coder) を適用します。辞書符号化されたデータを扱うことで、多くのアプリケーションで [SELECT](/ja/reference/statements/select/index) クエリのパフォーマンスが大幅に向上します。
+
+`LowCardinality` データ型の効率は、データの多様性に依存します。辞書に含まれる異なる値が 10,000 未満であれば、ClickHouse は多くの場合、データの読み取りと格納で高い効率を発揮します。辞書に含まれる異なる値が 100,000 を超える場合は、通常のデータ型を使用する場合と比べて、ClickHouse のパフォーマンスが低下することがあります。
+
+文字列を扱う場合は、[Enum](/ja/reference/data-types/enum) の代わりに `LowCardinality` の使用を検討してください。`LowCardinality` はより柔軟に使用でき、多くの場合、同等以上の効率を発揮します。
+
+<div id="example">
+  ## 例
+</div>
+
+`LowCardinality` カラムを持つテーブルを作成します。
+
+```sql
+CREATE TABLE lc_t
+(
+    `id` UInt16,
+    `strings` LowCardinality(String)
+)
+ENGINE = MergeTree()
+ORDER BY id
+```
+
+<div id="related-settings-and-functions">
+  ## 関連する設定と関数
+</div>
+
+設定:
+
+* [low&#95;cardinality&#95;max&#95;dictionary&#95;size](/ja/reference/settings/session-settings#low_cardinality_max_dictionary_size)
+* [low&#95;cardinality&#95;use&#95;single&#95;dictionary&#95;for&#95;part](/ja/reference/settings/session-settings#low_cardinality_use_single_dictionary_for_part)
+* [low&#95;cardinality&#95;allow&#95;in&#95;native&#95;format](/ja/reference/settings/session-settings#low_cardinality_allow_in_native_format)
+* [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ja/reference/settings/session-settings#allow_suspicious_low_cardinality_types)
+* [output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/ja/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary)
+
+関数:
+
+* [toLowCardinality](/ja/reference/functions/regular-functions/type-conversion-functions#toLowCardinality)
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [スキーマとCodecsによるClickHouseの最適化](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+* ブログ: [ClickHouseで時系列データを扱う](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+* [Stringの最適化 (ロシア語のビデオプレゼンテーション) ](https://youtu.be/rqf-ILRgBdY?list=PL0Z2YDlm0b3iwXCpEFiOOYmwXzVmjJfEt). [英語のスライド](https://github.com/ClickHouse/clickhouse-presentations/raw/master/meetup19/string_optimization.pdf)

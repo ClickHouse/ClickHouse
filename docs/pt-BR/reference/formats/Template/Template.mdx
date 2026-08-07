@@ -1,0 +1,259 @@
+---
+alias: []
+description: 'Documentação do formato Template'
+input_format: true
+keywords: ['Template']
+output_format: true
+slug: /interfaces/formats/Template
+title: 'Template'
+doc_type: 'guide'
+---
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✔     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+Para os casos em que você precisa de mais opções de personalização do que os outros formatos padrão oferecem,
+o formato `Template` permite que o usuário especifique sua própria string de formato personalizada com marcadores para valores,
+além de definir regras de escape para os dados.
+
+Ele usa as seguintes configurações:
+
+| Configuração                                                                                                           | Descrição                                                                                                              |
+| ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [`format_template_row`](#format_template_row)                                                                          | Especifica o caminho para o arquivo que contém strings de formato para linhas.                                         |
+| [`format_template_resultset`](#format_template_resultset)                                                              | Especifica o caminho para o arquivo que contém strings de formato para linhas                                          |
+| [`format_template_rows_between_delimiter`](#format_template_rows_between_delimiter)                                    | Especifica o delimitador entre linhas, que é impresso (ou esperado) após cada linha, exceto a última (`\n` por padrão) |
+| `format_template_row_format`                                                                                           | Especifica a string de formato para linhas [em linha](#inline_specification).                                          |
+| `format_template_resultset_format`                                                                                     | Especifica a string de formato do conjunto de resultados [em linha](#inline_specification).                            |
+| Algumas configurações de outros formatos (por exemplo, `output_format_json_quote_64bit_integers` ao usar escape `JSON` |                                                                                                                        |
+
+<div id="settings-and-escaping-rules">
+  ## Configurações e regras de escape
+</div>
+
+<div id="format_template_row">
+  ### format_template_row
+</div>
+
+A configuração `format_template_row` especifica o caminho para o arquivo que contém strings de formato das linhas com a seguinte sintaxe:
+
+```text
+delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N
+```
+
+Onde:
+
+| Parte da sintaxe | Descrição                                                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `delimiter_i`    | Um delimitador entre valores (o símbolo `$` pode ser escapado como `$$`)                                                    |
+| `column_i`       | O nome ou índice de uma coluna cujos valores devem ser selecionados ou inseridos (se estiver vazio, a coluna será ignorada) |
+| `serializeAs_i`  | Uma regra de escape para os valores da coluna.                                                                              |
+
+As seguintes regras de escape são suportadas:
+
+| Regra de escape      | Descrição                                      |
+| -------------------- | ---------------------------------------------- |
+| `CSV`, `JSON`, `XML` | Semelhantes aos formatos de mesmo nome         |
+| `Escaped`            | Semelhante a `TSV`                             |
+| `Quoted`             | Semelhante a `Values`                          |
+| `Raw`                | Sem escape, semelhante a `TSVRaw`              |
+| `None`               | Sem regra de escape — veja a observação abaixo |
+
+<Note>
+  Se uma regra de escape for omitida, `None` será usada. `XML` é adequado apenas para saída.
+</Note>
+
+Vamos ver um exemplo. Dada a seguinte string de formato:
+
+```text
+Search phrase: ${s:Quoted}, count: ${c:Escaped}, ad price: $$${p:JSON};
+```
+
+Os valores a seguir serão impressos (ao usar `SELECT`) ou esperados (ao usar `INPUT`),
+entre os delimitadores das colunas `Search phrase:`, `, count:`, `, ad price: $` e `;`, respectivamente:
+
+* `s` (com a regra de escape `Quoted`)
+* `c` (com a regra de escape `Escaped`)
+* `p` (com a regra de escape `JSON`)
+
+Por exemplo:
+
+* Ao fazer `INSERT`, a linha abaixo corresponde ao template esperado e leria os valores `bathroom interior design`, `2166`, `$3` nas colunas `Search phrase`, `count`, `ad price`.
+* Ao fazer `SELECT`, a linha abaixo é a saída, supondo que os valores `bathroom interior design`, `2166`, `$3` já estejam armazenados em uma tabela nas colunas `Search phrase`, `count`, `ad price`.
+
+```yaml
+Search phrase: 'bathroom interior design', count: 2166, ad price: $3;
+```
+
+<div id="format_template_rows_between_delimiter">
+  ### format_template_rows_between_delimiter
+</div>
+
+A configuração `format_template_rows_between_delimiter` especifica o delimitador entre as linhas, que é impresso (ou esperado) após cada linha, exceto a última (`\n` por padrão)
+
+<div id="format_template_resultset">
+  ### format_template_resultset
+</div>
+
+A configuração `format_template_resultset` especifica o caminho para o arquivo que contém uma string de formato para o conjunto de resultados.
+
+A string de formato para o conjunto de resultados tem a mesma sintaxe de uma string de formato para linhas.
+Ela permite especificar um prefixo, um sufixo e uma forma de imprimir algumas informações adicionais, e contém os seguintes placeholders em vez de nomes de colunas:
+
+* `data` são as linhas com dados no formato `format_template_row`, separadas por `format_template_rows_between_delimiter`. Esse placeholder deve ser o primeiro placeholder na string de formato.
+* `totals` é a linha com os valores totais no formato `format_template_row` (ao usar WITH TOTALS).
+* `min` é a linha com os valores mínimos no formato `format_template_row` (quando `extremes` está definido como 1).
+* `max` é a linha com os valores máximos no formato `format_template_row` (quando `extremes` está definido como 1).
+* `rows` é o número total de linhas de saída.
+* `rows_before_limit` é o número mínimo de linhas que teria havido sem LIMIT. É gerado apenas se a consulta contiver LIMIT. Se a consulta contiver GROUP BY, `rows_before_limit_at_least` será o número exato de linhas que teria havido sem LIMIT.
+* `time` é o tempo de execução da requisição em segundos.
+* `rows_read` é o número de linhas lidas.
+* `bytes_read` é o número de bytes (não compactados) lidos.
+
+Os placeholders `data`, `totals`, `min` e `max` não devem ter uma regra de escape especificada (ou `None` deve ser especificado explicitamente). Os placeholders restantes podem ter qualquer regra de escape especificada.
+
+<Note>
+  Se a configuração `format_template_resultset` for uma string vazia, `${data}` será usado como valor padrão.
+</Note>
+
+Para consultas INSERT, o formato permite omitir algumas colunas ou campos se houver prefixo ou sufixo (veja o exemplo).
+
+<div id="inline_specification">
+  ### especificação inline
+</div>
+
+Muitas vezes, é difícil ou até impossível implantar as configurações de formato
+(definidas por `format_template_row`, `format_template_resultset`) do formato Template em um diretório em todos os nós de um cluster.
+Além disso, o formato pode ser tão simples que não precisa ser colocado em um arquivo.
+
+Nesses casos, `format_template_row_format` (para `format_template_row`) e `format_template_resultset_format` (para `format_template_resultset`) podem ser usados para definir a string de template diretamente na consulta,
+em vez de usar um caminho para o arquivo que a contém.
+
+<Note>
+  As regras para strings de formato e sequências de escape são as mesmas de:
+
+  * [`format_template_row`](#format_template_row) ao usar `format_template_row_format`.
+  * [`format_template_resultset`](#format_template_resultset) ao usar `format_template_resultset_format`.
+</Note>
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Vamos ver dois exemplos de como podemos usar o formato `Template`: primeiro para selecionar dados e depois para inserir dados.
+
+<div id="selecting-data">
+  ### Selecionar dados
+</div>
+
+```sql title="Query"
+SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase ORDER BY c DESC LIMIT 5 FORMAT Template SETTINGS
+format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format', format_template_rows_between_delimiter = '\n    '
+```
+
+```text title="/some/path/resultset.format"
+<!DOCTYPE HTML>
+<html> <head> <title>Search phrases</title> </head>
+ <body>
+  <table border="1"> <caption>Search phrases</caption>
+    <tr> <th>Search phrase</th> <th>Count</th> </tr>
+    ${data}
+  </table>
+  <table border="1"> <caption>Max</caption>
+    ${max}
+  </table>
+  <b>Processed ${rows_read:XML} rows in ${time:XML} sec</b>
+ </body>
+</html>
+```
+
+```text title="/some/path/row.format"
+<tr> <td>${0:XML}</td> <td>${1:XML}</td> </tr>
+```
+
+```html title="Response"
+<!DOCTYPE HTML>
+<html> <head> <title>Search phrases</title> </head>
+ <body>
+  <table border="1"> <caption>Search phrases</caption>
+    <tr> <th>Search phrase</th> <th>Count</th> </tr>
+    <tr> <td></td> <td>8267016</td> </tr>
+    <tr> <td>bathroom interior design</td> <td>2166</td> </tr>
+    <tr> <td>clickhouse</td> <td>1655</td> </tr>
+    <tr> <td>spring 2014 fashion</td> <td>1549</td> </tr>
+    <tr> <td>freeform photos</td> <td>1480</td> </tr>
+  </table>
+  <table border="1"> <caption>Max</caption>
+    <tr> <td></td> <td>8873898</td> </tr>
+  </table>
+  <b>Processed 3095973 rows in 0.1569913 sec</b>
+ </body>
+</html>
+```
+
+<div id="inserting-data">
+  ### Inserção de dados
+</div>
+
+```text
+Some header
+Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
+Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
+Total rows: 2
+```
+
+```sql
+INSERT INTO UserActivity SETTINGS
+format_template_resultset = '/some/path/resultset.format', format_template_row = '/some/path/row.format'
+FORMAT Template
+```
+
+```text title="/some/path/resultset.format"
+Some header\n${data}\nTotal rows: ${:CSV}\n
+```
+
+```text title="/some/path/row.format"
+Page views: ${PageViews:CSV}, User id: ${UserID:CSV}, Useless field: ${:CSV}, Duration: ${Duration:CSV}, Sign: ${Sign:CSV}
+```
+
+`PageViews`, `UserID`, `Duration` e `Sign` dentro dos placeholders são nomes de colunas da tabela. Os valores após `Useless field` nas linhas e após `\nTotal rows:` no sufixo serão ignorados.
+Todos os delimitadores nos dados de entrada devem ser estritamente iguais aos delimitadores das strings de formato especificadas.
+
+<div id="in-line-specification">
+  ### Especificação inline
+</div>
+
+Cansado de formatar tabelas markdown manualmente? Neste exemplo, veremos como usar o formato `Template` e as configurações de especificação inline para realizar uma tarefa simples: selecionar com `SELECT` os nomes de alguns formatos do ClickHouse na tabela `system.formats` e formatá-los como uma tabela markdown. Isso pode ser feito facilmente usando o formato `Template` e as configurações `format_template_row_format` e `format_template_resultset_format`.
+
+Nos exemplos anteriores, especificamos as strings de formato do conjunto de resultados e das linhas em arquivos separados, com os caminhos para esses arquivos definidos usando as configurações `format_template_resultset` e `format_template_row`, respectivamente. Aqui, vamos fazer isso inline porque nosso template é trivial, consistindo apenas em alguns `|` e `-` para montar a tabela markdown. Vamos especificar nossa string de template do conjunto de resultados usando a configuração `format_template_resultset_format`. Para criar o cabeçalho da tabela, adicionamos `|ClickHouse Formats|\n|---|\n` antes de `${data}`. Usamos a configuração `format_template_row_format` para especificar a string de template ``|`{0:XML}`|`` para nossas linhas. O formato `Template` inserirá nossas linhas no placeholder `${data}` com o formato especificado. Neste exemplo, temos apenas uma coluna, mas, se você quisesse adicionar mais, poderia fazer isso acrescentando `{1:XML}`, `{2:XML}`... etc. à string de template da linha, escolhendo a regra de escape mais adequada. Neste exemplo, optamos pela regra de escape `XML`.
+
+```sql title="Query"
+WITH formats AS
+(
+ SELECT * FROM system.formats
+ ORDER BY rand()
+ LIMIT 5
+)
+SELECT * FROM formats
+FORMAT Template
+SETTINGS
+ format_template_row_format='|`${0:XML}`|',
+ format_template_resultset_format='|ClickHouse Formats|\n|---|\n${data}\n'
+```
+
+Olha só! Evitamos o trabalho de ter que adicionar manualmente todos aqueles `|` e `-` para montar essa tabela em markdown:
+
+```response title="Response"
+|ClickHouse Formats|
+|---|
+|`BSONEachRow`|
+|`CustomSeparatedWithNames`|
+|`Prometheus`|
+|`DWARF`|
+|`Avro`|
+```

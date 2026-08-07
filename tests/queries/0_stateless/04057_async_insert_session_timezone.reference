@@ -1,0 +1,36 @@
+== DateTime (no explicit timezone) ==
+--- TCP sync
+946666800
+--- TCP async
+946666800
+--- HTTP sync
+946666800
+--- HTTP async
+946666800
+== DateTime('America/New_York') ==
+--- TCP sync
+946706400
+--- TCP async
+946706400
+--- HTTP sync
+946706400
+--- HTTP async
+946706400
+== DateTime64(3) ==
+--- TCP sync
+946666800
+--- TCP async
+946666800
+--- HTTP sync
+946666800
+--- HTTP async
+946666800
+== DateTime64(3, 'America/New_York') ==
+--- TCP sync
+946706400
+--- TCP async
+946706400
+--- HTTP sync
+946706400
+--- HTTP async
+946706400

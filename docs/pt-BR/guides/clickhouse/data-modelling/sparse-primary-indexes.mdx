@@ -1,0 +1,1509 @@
+---
+sidebarTitle: 'Índices primários'
+description: 'Neste guia, vamos nos aprofundar na indexação do ClickHouse.'
+title: 'Uma introdução prática aos índices primários no ClickHouse'
+slug: /guides/best-practices/sparse-primary-indexes
+show_related_blogs: true
+doc_type: 'guide'
+keywords: ['índice primário', 'indexação', 'desempenho', 'otimização de consultas', 'boas práticas']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+Neste guia, vamos nos aprofundar na indexação no ClickHouse. Vamos ilustrar e discutir em detalhes:
+
+* [como a indexação no ClickHouse difere da indexação em sistemas tradicionais de gerenciamento de bancos de dados relacionais](#an-index-design-for-massive-data-scales)
+* [como o ClickHouse cria e usa o índice primário esparso de uma tabela](#a-table-with-a-primary-key)
+* [quais são algumas das melhores práticas de indexação no ClickHouse](#using-multiple-primary-indexes)
+
+Se quiser, você pode executar por conta própria, na sua máquina, todas as instruções SQL e consultas do ClickHouse apresentadas neste guia.
+Para instalar o ClickHouse e ver as instruções iniciais, consulte o [Quick Start](/pt-BR/get-started/setup/install).
+
+<Note>
+  Este guia se concentra nos índices primários esparsos do ClickHouse.
+
+  Para os [secondary data skipping indexes](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) do ClickHouse, consulte o [Tutorial](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes).
+</Note>
+
+<div id="data-set">
+  ### Conjunto de dados
+</div>
+
+Ao longo deste guia, usaremos um conjunto de dados de exemplo anonimizado de tráfego web.
+
+* Usaremos um subconjunto de 8,87 milhões de linhas (eventos) do conjunto de dados de exemplo.
+* O tamanho dos dados não compactados é de 8,87 milhões de eventos e cerca de 700 MB. Esse volume é compactado para 200 MB quando armazenado no ClickHouse.
+* Em nosso subconjunto, cada linha contém três colunas que indicam um usuário da internet (coluna `UserID`) que clicou em uma URL (coluna `URL`) em um momento específico (coluna `EventTime`).
+
+Com essas três colunas, já podemos formular algumas consultas típicas de análise da web, como:
+
+* &quot;Quais são as 10 URLs mais clicadas por um usuário específico?&quot;
+* &quot;Quais são os 10 usuários que mais clicaram em uma URL específica?&quot;
+* &quot;Quais são os horários mais populares (por exemplo, dias da semana) em que um usuário clica em uma URL específica?&quot;
+
+<div id="test-machine">
+  ### Máquina de teste
+</div>
+
+Todos os números de desempenho fornecidos neste documento são baseados na execução local do ClickHouse 22.2.1 em um MacBook Pro com chip Apple M1 Pro e 16 GB de RAM.
+
+<div id="a-full-table-scan">
+  ### Varredura completa da tabela
+</div>
+
+Para ver como uma consulta é executada sobre nosso conjunto de dados sem chave primária, criamos uma tabela (com o table engine MergeTree) executando a seguinte instrução SQL DDL:
+
+```sql
+CREATE TABLE hits_NoPrimaryKey
+(
+    `UserID` UInt32,
+    `URL` String,
+    `EventTime` DateTime
+)
+ENGINE = MergeTree
+PRIMARY KEY tuple();
+```
+
+Em seguida, insira um subconjunto do conjunto de dados hits na tabela com a seguinte instrução SQL `insert`.
+Isso usa a [função de tabela URL](/pt-BR/reference/functions/table-functions/url) para carregar um subconjunto do conjunto de dados completo hospedado remotamente em clickhouse.com:
+
+```sql
+INSERT INTO hits_NoPrimaryKey SELECT
+   intHash32(UserID) AS UserID,
+   URL,
+   EventTime
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz', 'TSV', 'WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8')
+WHERE URL != '';
+```
+
+A resposta é:
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 145.993 sec. Processed 8.87 million rows, 18.40 GB (60.78 thousand rows/s., 126.06 MB/s.)
+```
+
+A saída de resultados do ClickHouse client mostra que a instrução acima inseriu 8,87 milhões de linhas na tabela.
+
+Por fim, para simplificar as discussões mais adiante neste guia e tornar os diagramas e resultados reproduzíveis, [otimizamos](/pt-BR/reference/statements/optimize) a tabela usando a palavra-chave FINAL:
+
+```sql
+OPTIMIZE TABLE hits_NoPrimaryKey FINAL;
+```
+
+<Note>
+  Em geral, não é necessário nem recomendado otimizar uma tabela imediatamente
+  após carregar dados nela. O motivo de isso ser necessário neste exemplo ficará claro.
+</Note>
+
+Agora executamos nossa primeira consulta de análise da web. A seguir, calculamos as 10 URLs mais clicadas pelo internauta com UserID 749927693:
+
+```sql
+SELECT URL, count(URL) AS Count
+FROM hits_NoPrimaryKey
+WHERE UserID = 749927693
+GROUP BY URL
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+A resposta é:
+
+```response highlight={15}
+┌─URL────────────────────────────┬─Count─┐
+│ http://auto.ru/chatay-barana.. │   170 │
+│ http://auto.ru/chatay-id=371...│    52 │
+│ http://public_search           │    45 │
+│ http://kovrik-medvedevushku-...│    36 │
+│ http://forumal                 │    33 │
+│ http://korablitz.ru/L_1OFFER...│    14 │
+│ http://auto.ru/chatay-id=371...│    14 │
+│ http://auto.ru/chatay-john-D...│    13 │
+│ http://auto.ru/chatay-john-D...│    10 │
+│ http://wot/html?page/23600_m...│     9 │
+└────────────────────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.022 sec.
+Processed 8.87 million rows,
+70.45 MB (398.53 million rows/s., 3.17 GB/s.)
+```
+
+A saída de resultados do clickhouse client indica que o ClickHouse executou uma varredura completa da tabela! Cada uma das 8,87 milhões de linhas da nossa tabela foi lida pelo ClickHouse. Isso não escala.
+
+Para tornar isso (muito) mais eficiente e (muito) mais rápido, precisamos usar uma tabela com uma chave primária adequada. Isso permitirá que o ClickHouse crie automaticamente (com base nas colunas da chave primária) um índice primário esparso, que poderá então ser usado para acelerar significativamente a execução da nossa consulta de exemplo.
+
+<div id="clickhouse-index-design">
+  ## Design de índices no ClickHouse
+</div>
+
+<div id="an-index-design-for-massive-data-scales">
+  ### Um design de índices para grandes escalas de dados
+</div>
+
+Nos sistemas tradicionais de gerenciamento de bancos de dados relacionais, o índice primário conteria uma entrada por linha da tabela. Isso faria com que o índice primário tivesse 8,87 milhões de entradas para nosso conjunto de dados. Esse tipo de índice permite localizar rapidamente linhas específicas, resultando em alta eficiência para consultas de lookup e atualizações pontuais. A busca por uma entrada em uma estrutura de dados `B(+)-Tree` tem complexidade de tempo média `O(log n)`; mais precisamente, `log_b n = log_2 n / log_2 b`, em que `b` é o fator de ramificação da `B(+)-Tree` e `n` é o número de linhas indexadas. Como `b` normalmente fica entre algumas centenas e alguns milhares, as `B(+)-Trees` são estruturas muito rasas, e são necessárias poucas operações de seek em disco para localizar registros. Com 8,87 milhões de linhas e um fator de ramificação de 1000, são necessárias, em média, 2,3 operações de seek em disco. Essa capacidade tem um custo: sobrecarga adicional de disco e memória, custos de inserção mais altos ao adicionar novas linhas à tabela e novas entradas ao índice e, às vezes, rebalanceamento da B-Tree.
+
+Considerando os desafios associados aos índices B-Tree, os motores de tabela do ClickHouse utilizam uma abordagem diferente. A [família de motores MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index) do ClickHouse foi projetada e otimizada para lidar com volumes massivos de dados. Essas tabelas foram projetadas para receber milhões de inserções de linhas por segundo e armazenar volumes muito grandes (centenas de petabytes) de dados. Os dados são gravados rapidamente em uma tabela [parte por parte](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage), com regras aplicadas para mesclar as partes em segundo plano. No ClickHouse, cada parte tem seu próprio índice primário. Quando as partes são mescladas, os índices primários da parte mesclada também são mesclados. Na escala extremamente grande para a qual o ClickHouse foi projetado, é fundamental ser altamente eficiente em termos de disco e memória. Por isso, em vez de indexar cada linha, o índice primário de uma parte tem uma entrada de índice (conhecida como &#39;mark&#39;) por grupo de linhas (chamado de &#39;granule&#39;) - essa técnica é chamada de **índice esparso**.
+
+A indexação esparsa é possível porque o ClickHouse armazena em disco as linhas de uma parte ordenadas pelas colunas da chave primária. Em vez de localizar diretamente linhas individuais (como um índice baseado em B-Tree), o índice primário esparso permite identificar rapidamente (por meio de uma busca binária nas entradas do índice) grupos de linhas que podem corresponder à consulta. Os grupos localizados de linhas potencialmente correspondentes (grânulos) são então transmitidos em paralelo para o mecanismo do ClickHouse a fim de encontrar as correspondências. Esse design de índice permite que o índice primário seja pequeno (ele pode, e deve, caber completamente na memória principal), ao mesmo tempo que ainda acelera significativamente o tempo de execução das consultas: especialmente no caso de consultas de intervalo, típicas em cenários de análise de dados.
+
+A seguir, mostramos em detalhes como o ClickHouse constrói e usa seu índice primário esparso. Mais adiante neste artigo, discutiremos algumas boas práticas para escolher, remover e ordenar as colunas da tabela usadas para construir o índice (colunas da chave primária).
+
+<div id="a-table-with-a-primary-key">
+  ### Uma tabela com chave primária
+</div>
+
+Crie uma tabela com uma chave primária composta pelas colunas UserID e URL:
+
+```sql highlight={8}
+CREATE TABLE hits_UserID_URL
+(
+    `UserID` UInt32,
+    `URL` String,
+    `EventTime` DateTime
+)
+ENGINE = MergeTree
+PRIMARY KEY (UserID, URL)
+ORDER BY (UserID, URL, EventTime)
+SETTINGS index_granularity_bytes = 0, compress_primary_key = 0;
+```
+
+[//]: # "<details open>"
+
+<Accordion title="Detalhes da instrução DDL">
+  <p>
+    Para simplificar as discussões mais adiante neste guia, bem como tornar os diagramas e resultados reproduzíveis, a instrução DDL:
+
+    <ul>
+      <li>
+        Especifica uma chave de ordenação composta para a tabela por meio de uma cláusula <code>ORDER BY</code>.
+      </li>
+
+      <li>
+        Controla explicitamente quantas entradas o índice primário terá por meio das seguintes configurações:
+
+        <ul>
+          <li>
+            <code>index&#95;granularity</code>: definido explicitamente com seu valor padrão de 8192. Isso significa que, para cada grupo de 8192 linhas, o índice primário terá uma entrada de índice. Por exemplo, se a tabela contiver 16384 linhas, o índice terá duas entradas de índice.
+          </li>
+
+          <li>
+            <code>index&#95;granularity&#95;bytes</code>: definido como 0 para desabilitar a <a href="/pt-BR/resources/changelogs/oss/2019#experimental-features-1" target="_blank">granularidade adaptativa do índice</a>. Isso significa que o ClickHouse cria automaticamente uma entrada de índice para um grupo de n linhas se qualquer uma destas condições for verdadeira:
+
+            <ul>
+              <li>
+                Se <code>n</code> for menor que 8192 e o tamanho combinado dos dados dessas <code>n</code> linhas for maior ou igual a 10 MB (o valor padrão de <code>index&#95;granularity&#95;bytes</code>).
+              </li>
+
+              <li>
+                Se o tamanho combinado dos dados de <code>n</code> linhas for menor que 10 MB, mas <code>n</code> for 8192.
+              </li>
+            </ul>
+          </li>
+
+          <li>
+            <code>compress&#95;primary&#95;key</code>: definido como 0 para desabilitar a <a href="https://github.com/ClickHouse/ClickHouse/issues/34437" target="_blank">compressão do índice primário</a>. Isso nos permitirá, se desejado, inspecionar seu conteúdo mais adiante.
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </p>
+</Accordion>
+
+A chave primária na instrução DDL acima faz com que o índice primário seja criado com base nas duas colunas de chave especificadas.
+
+<br />
+
+Em seguida, insira os dados:
+
+```sql
+INSERT INTO hits_UserID_URL SELECT
+   intHash32(UserID) AS UserID,
+   URL,
+   EventTime
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz', 'TSV', 'WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8')
+WHERE URL != '';
+```
+
+A resposta é assim:
+
+```response
+0 rows in set. Elapsed: 149.432 sec. Processed 8.87 million rows, 18.40 GB (59.38 thousand rows/s., 123.16 MB/s.)
+```
+
+<br />
+
+E otimize a tabela:
+
+```sql
+OPTIMIZE TABLE hits_UserID_URL FINAL;
+```
+
+<br />
+
+Podemos usar a consulta a seguir para obter metadados sobre nossa tabela:
+
+```sql
+SELECT
+    part_type,
+    path,
+    formatReadableQuantity(rows) AS rows,
+    formatReadableSize(data_uncompressed_bytes) AS data_uncompressed_bytes,
+    formatReadableSize(data_compressed_bytes) AS data_compressed_bytes,
+    formatReadableSize(primary_key_bytes_in_memory) AS primary_key_bytes_in_memory,
+    marks,
+    formatReadableSize(bytes_on_disk) AS bytes_on_disk
+FROM system.parts
+WHERE (table = 'hits_UserID_URL') AND (active = 1)
+FORMAT Vertical;
+```
+
+A resposta é:
+
+```response
+part_type:                   Wide
+path:                        ./store/d9f/d9f36a1a-d2e6-46d4-8fb5-ffe9ad0d5aed/all_1_9_2/
+rows:                        8.87 million
+data_uncompressed_bytes:     733.28 MiB
+data_compressed_bytes:       206.94 MiB
+primary_key_bytes_in_memory: 96.93 KiB
+marks:                       1083
+bytes_on_disk:               207.07 MiB
+
+1 rows in set. Elapsed: 0.003 sec.
+```
+
+A saída do cliente do ClickHouse mostra:
+
+* Os dados da tabela são armazenados em [formato wide](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) em um diretório específico no disco, o que significa que haverá um arquivo de dados (e um arquivo de marcação) para cada coluna da tabela dentro desse diretório.
+* A tabela tem 8,87 milhões de linhas.
+* O tamanho dos dados não compactados de todas as linhas somadas é 733.28 MB.
+* O tamanho compactado em disco de todas as linhas somadas é 206.94 MB.
+* A tabela tem um índice primário com 1083 entradas (chamadas de &#39;marcas&#39;), e o tamanho do índice é 96.93 KB.
+* No total, os dados da tabela, os arquivos de marcação e o arquivo de índice primário ocupam juntos 207.07 MB em disco.
+
+<div id="data-is-stored-on-disk-ordered-by-primary-key-columns">
+  ### Os dados são armazenados em disco ordenados pelas colunas da chave primária
+</div>
+
+A tabela que criamos acima tem
+
+* uma [chave primária](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) composta `(UserID, URL)` e
+* uma [chave de ordenação](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key) composta `(UserID, URL, EventTime)`.
+
+<Note>
+  - Se tivéssemos especificado apenas a chave de ordenação, a chave primária seria implicitamente definida como igual à chave de ordenação.
+
+  - Para otimizar o uso de memória, especificamos explicitamente uma chave primária que contém apenas as colunas usadas nos filtros das nossas consultas. O índice primário baseado na chave primária é carregado integralmente na memória principal.
+
+  - Para manter a consistência nos diagramas do guia e maximizar a taxa de compressão, definimos uma chave de ordenação separada que inclui todas as colunas da tabela (se, em uma coluna, dados semelhantes ficarem próximos uns dos outros, por exemplo, por meio da ordenação, esses dados serão comprimidos melhor).
+
+  - A chave primária precisa ser um prefixo da chave de ordenação se ambas forem especificadas.
+</Note>
+
+As linhas inseridas são armazenadas em disco em ordem lexicográfica (crescente) pelas colunas da chave primária (e pela coluna adicional `EventTime` da chave de ordenação).
+
+<Note>
+  O ClickHouse permite inserir várias linhas com valores idênticos nas colunas da chave primária. Nesse caso (veja a linha 1 e a linha 2 no diagrama abaixo), a ordem final é determinada pela chave de ordenação especificada e, portanto, pelo valor da coluna `EventTime`.
+</Note>
+
+O ClickHouse é um <a href="/pt-BR/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">sistema de gerenciamento de banco de dados orientado a colunas</a>. Como mostrado no diagrama abaixo
+
+* na representação em disco, há um único arquivo de dados (*.bin) por coluna da tabela, no qual todos os valores dessa coluna são armazenados em formato <a href="/pt-BR/get-started/about/distinctive-features#data-compression" target="_blank">compactado</a>, e
+* as 8,87 milhões de linhas são armazenadas em disco em ordem lexicográfica crescente pelas colunas da chave primária (e pelas colunas adicionais da chave de ordenação), ou seja, neste caso
+  * primeiro por `UserID`,
+  * depois por `URL`,
+  * e por fim por `EventTime`:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-01.webp" size="lg" alt="Sparse Primary Indices 01" />
+
+`UserID.bin`, `URL.bin` e `EventTime.bin` são os arquivos de dados em disco onde os valores das colunas `UserID`, `URL` e `EventTime` são armazenados.
+
+<Note>
+  * Como a chave primária define a ordem lexicográfica das linhas em disco, uma tabela pode ter apenas uma chave primária.
+
+  * Estamos numerando as linhas a partir de 0 para manter o alinhamento com o esquema interno de numeração de linhas do ClickHouse, que também é usado em mensagens de log.
+</Note>
+
+<div id="data-is-organized-into-granules-for-parallel-data-processing">
+  ### Os dados são organizados em grânulos para processamento paralelo de dados
+</div>
+
+Para fins de processamento de dados, os valores das colunas de uma tabela são divididos logicamente em grânulos.
+Um grânulo é o menor conjunto de dados indivisível transmitido por streaming ao ClickHouse para processamento.
+Isso significa que, em vez de ler linhas individuais, o ClickHouse sempre lê (de forma contínua e em paralelo) um grupo inteiro (grânulo) de linhas.
+
+<Note>
+  Os valores das colunas não são armazenados fisicamente dentro dos grânulos: eles são apenas uma organização lógica dos valores das colunas para processamento de consultas.
+</Note>
+
+O diagrama a seguir mostra como os (valores das colunas de) 8,87 milhões de linhas da nossa tabela
+são organizados em 1083 grânulos, como resultado da instrução DDL da tabela conter a configuração `index_granularity` (definida com o valor padrão de 8192).
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-02.webp" size="lg" alt="Índices primários esparsos 02" />
+
+As primeiras 8192 linhas (com base na ordem física em disco) (seus valores de coluna) pertencem logicamente ao grânulo 0; as 8192 linhas seguintes (seus valores de coluna) pertencem ao grânulo 1; e assim por diante.
+
+<Note>
+  * O último grânulo (grânulo 1082) &quot;contém&quot; menos de 8192 linhas.
+
+  * Mencionamos no início deste guia, em &quot;Detalhes da instrução DDL&quot;, que desativamos a [granularidade adaptativa do índice](/pt-BR/resources/changelogs/oss/2019#experimental-features-1) (para simplificar as discussões neste guia, bem como tornar os diagramas e os resultados reproduzíveis).
+
+    Portanto, todos os grânulos (exceto o último) da nossa tabela de exemplo têm o mesmo tamanho.
+
+  * Para tabelas com granularidade adaptativa do índice (a granularidade do índice é adaptativa por [padrão](/pt-BR/reference/settings/merge-tree-settings#index_granularity_bytes)), o tamanho de alguns grânulos pode ser menor que 8192 linhas, dependendo do tamanho dos dados das linhas.
+
+  * Marcamos alguns valores de coluna das nossas colunas de chave primária (`UserID`, `URL`) em laranja.
+    Esses valores de coluna marcados em laranja são os valores das colunas de chave primária da primeira linha de cada grânulo.
+    Como veremos abaixo, esses valores de coluna marcados em laranja serão as entradas no índice primário da tabela.
+
+  * Estamos numerando os grânulos a partir de 0 para manter o alinhamento com o esquema de numeração interno do ClickHouse, que também é usado nas mensagens de log.
+</Note>
+
+<div id="the-primary-index-has-one-entry-per-granule">
+  ### O índice primário tem uma entrada por grânulo
+</div>
+
+O índice primário é criado com base nos grânulos mostrados no diagrama acima. Esse índice é um arquivo de array linear não compactado (primary.idx), que contém as chamadas marcas numéricas do índice, começando em 0.
+
+O diagrama abaixo mostra que o índice armazena os valores das colunas da chave primária (os valores marcados em laranja no diagrama acima) da primeira linha de cada grânulo.
+Em outras palavras: o índice primário armazena os valores das colunas da chave primária de cada 8192ª linha da tabela (com base na ordem física das linhas definida pelas colunas da chave primária).
+Por exemplo:
+
+* a primeira entrada do índice (&#39;marca 0&#39; no diagrama abaixo) armazena os valores das colunas da chave da primeira linha do grânulo 0 do diagrama acima;
+* a segunda entrada do índice (&#39;marca 1&#39; no diagrama abaixo) armazena os valores das colunas da chave da primeira linha do grânulo 1 do diagrama acima; e assim por diante.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-03a.webp" size="lg" alt="Índices primários esparsos 03a" />
+
+No total, o índice tem 1083 entradas para nossa tabela com 8,87 milhões de linhas e 1083 grânulos:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-03b.webp" size="lg" alt="Índices primários esparsos 03b" />
+
+<Note>
+  * Para tabelas com [granularidade adaptativa do índice](/pt-BR/resources/changelogs/oss/2019#experimental-features-1), há também uma marca adicional &quot;final&quot; armazenada no índice primário, que registra os valores das colunas da chave primária da última linha da tabela. Mas, como desativamos a granularidade adaptativa do índice (para simplificar a discussão neste guia e também tornar os diagramas e os resultados reproduzíveis), o índice da nossa tabela de exemplo não inclui essa marca final.
+
+  * O arquivo do índice primário é carregado completamente na memória principal. Se o arquivo for maior que o espaço livre de memória disponível, o ClickHouse gerará um erro.
+</Note>
+
+<Accordion title="Inspecionando o conteúdo do índice primário">
+  <p>
+    Em um cluster ClickHouse autogerenciado, podemos usar a <a href="/pt-BR/reference/functions/table-functions/file" target="_blank">table function file</a> para inspecionar o conteúdo do índice primário da nossa tabela de exemplo.
+
+    Para isso, primeiro precisamos copiar o arquivo do índice primário para o <a href="/pt-BR/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a> de um nó do cluster ativo:
+
+    <ul>
+      <li>Passo 1: Obter o caminho da parte que contém o arquivo do índice primário</li>
+      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
+
+      retorna `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` na máquina de teste.
+
+      <li>Passo 2: Obter user&#95;files&#95;path</li>
+      O <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">user&#95;files&#95;path padrão</a> no Linux é
+      `/var/lib/clickhouse/user_files/`
+
+      e, no Linux, você pode verificar se ele foi alterado: `$ grep user_files_path /etc/clickhouse-server/config.xml`
+
+      Na máquina de teste, o caminho é `/Users/tomschreiber/Clickhouse/user_files/`
+
+      <li>Passo 3: Copiar o arquivo do índice primário para o user&#95;files&#95;path</li>
+
+      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
+    </ul>
+
+    <br />
+
+    Agora podemos inspecionar o conteúdo do índice primário via SQL:
+
+    <ul>
+      <li>Obter o número de entradas</li>
+      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
+      retorna `1083`
+
+      <li>Obter as duas primeiras marcas do índice</li>
+      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
+
+      retorna
+
+      `240923, http://showtopics.html%3...<br/>
+            4073710, http://mk.ru&pos=3_0`
+
+      <li>Obter a última marca do índice</li>
+      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
+      retorna
+      `4292714039 │ http://sosyal-mansetleri...`
+    </ul>
+
+    <br />
+
+    Isso corresponde exatamente ao nosso diagrama do conteúdo do índice primário da nossa tabela de exemplo:
+  </p>
+</Accordion>
+
+As entradas da chave primária são chamadas de marcas do índice porque cada entrada do índice marca o início de um intervalo específico de dados. Especificamente para a tabela de exemplo:
+
+* Marcas de índice de UserID:
+
+  Os valores `UserID` armazenados no índice primário estão em ordem crescente.<br />
+  Assim, a &#39;marca 1&#39; no diagrama acima indica que os valores de `UserID` de todas as linhas da tabela no grânulo 1 e em todos os grânulos seguintes são garantidamente maiores ou iguais a 4.073.710.
+
+[Como veremos mais adiante](#the-primary-index-is-used-for-selecting-granules), essa ordenação global permite que o ClickHouse <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">use um algoritmo de busca binária</a> sobre as marcas do índice da primeira coluna da chave quando uma consulta filtra pela primeira coluna da chave primária.
+
+* Marcas de índice de URL:
+
+  A cardinalidade bastante semelhante das colunas da chave primária `UserID` e `URL`
+  significa que, em geral, as marcas de índice de todas as colunas-chave após a primeira só indicam um intervalo de dados enquanto o valor da coluna-chave anterior permanecer o mesmo para todas as linhas da tabela em pelo menos o grânulo atual.<br />
+  Por exemplo, como os valores de UserID da marca 0 e da marca 1 são diferentes no diagrama acima, o ClickHouse não pode presumir que todos os valores de URL de todas as linhas da tabela no grânulo 0 sejam maiores ou iguais a `'http://showtopics.html%3...'`. No entanto, se os valores de UserID da marca 0 e da marca 1 fossem os mesmos no diagrama acima (ou seja, se o valor de UserID permanecesse o mesmo para todas as linhas da tabela dentro do grânulo 0), o ClickHouse poderia presumir que todos os valores de URL de todas as linhas da tabela no grânulo 0 sejam maiores ou iguais a `'http://showtopics.html%3...'`.
+
+  Discutiremos em mais detalhes, adiante, as consequências disso para o desempenho da execução de consultas.
+
+<div id="the-primary-index-is-used-for-selecting-granules">
+  ### O índice primário serve para selecionar grânulos
+</div>
+
+Agora podemos executar nossas consultas com a ajuda do índice primário.
+
+O exemplo a seguir calcula as 10 URLs mais clicadas para o UserID 749927693.
+
+```sql
+SELECT URL, count(URL) AS Count
+FROM hits_UserID_URL
+WHERE UserID = 749927693
+GROUP BY URL
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+A resposta é:
+
+```response highlight={15}
+┌─URL────────────────────────────┬─Count─┐
+│ http://auto.ru/chatay-barana.. │   170 │
+│ http://auto.ru/chatay-id=371...│    52 │
+│ http://public_search           │    45 │
+│ http://kovrik-medvedevushku-...│    36 │
+│ http://forumal                 │    33 │
+│ http://korablitz.ru/L_1OFFER...│    14 │
+│ http://auto.ru/chatay-id=371...│    14 │
+│ http://auto.ru/chatay-john-D...│    13 │
+│ http://auto.ru/chatay-john-D...│    10 │
+│ http://wot/html?page/23600_m...│     9 │
+└────────────────────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.005 sec.
+Processed 8.19 thousand rows,
+740.18 KB (1.53 million rows/s., 138.59 MB/s.)
+```
+
+A saída do cliente ClickHouse agora mostra que, em vez de fazer uma varredura completa da tabela, apenas 8,19 mil linhas foram processadas pelo ClickHouse.
+
+Se o <a href="/pt-BR/reference/settings/server-settings/settings#logger" target="_blank">logging de trace</a> estiver habilitado, o arquivo de log do servidor ClickHouse mostra que o ClickHouse estava executando uma <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">busca binária</a> nas 1083 marcas do índice UserID, para identificar grânulos que possivelmente podem conter linhas com o valor `749927693` na coluna UserID. Isso requer 19 passos, com complexidade de tempo média de `O(log2 n)`:
+
+```response highlight={2,7}
+...Executor): Key condition: (column 0 in [749927693, 749927693])
+...Executor): Running binary search on index range for part all_1_9_2 (1083 marks)
+...Executor): Found (LEFT) boundary mark: 176
+...Executor): Found (RIGHT) boundary mark: 177
+...Executor): Found continuous range in 19 steps
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              1/1083 marks by primary key, 1 marks to read from 1 ranges
+...Reading ...approx. 8192 rows starting from 1441792
+```
+
+Podemos ver, no log de trace acima, que uma das 1083 marcas existentes atendeu à consulta.
+
+<Accordion title="Detalhes do Log de Trace">
+  <p>
+    A marca 176 foi identificada (a &#39;marca do limite esquerdo encontrada&#39; é inclusiva, e a &#39;marca do limite direito encontrada&#39; é exclusiva) e, portanto, todas as 8192 linhas do grânulo 176 (que começa na linha 1.441.792 — veremos isso mais adiante neste guia) são então lidas pelo ClickHouse para encontrar as linhas reais com o valor `749927693` na coluna UserID.
+  </p>
+</Accordion>
+
+Também podemos reproduzir isso usando a <a href="/pt-BR/reference/statements/explain" target="_blank">cláusula EXPLAIN</a> na nossa consulta de exemplo:
+
+```sql
+EXPLAIN indexes = 1
+SELECT URL, count(URL) AS Count
+FROM hits_UserID_URL
+WHERE UserID = 749927693
+GROUP BY URL
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+A resposta é semelhante a:
+
+```response highlight={17}
+┌─explain───────────────────────────────────────────────────────────────────────────────┐
+│ Expression (Projection)                                                               │
+│   Limit (preliminary LIMIT (without OFFSET))                                          │
+│     Sorting (Sorting for ORDER BY)                                                    │
+│       Expression (Before ORDER BY)                                                    │
+│         Aggregating                                                                   │
+│           Expression (Before GROUP BY)                                                │
+│             Filter (WHERE)                                                            │
+│               SettingQuotaAndLimits (Set limits and quota after reading from storage) │
+│                 ReadFromMergeTree                                                     │
+│                 Indexes:                                                              │
+│                   PrimaryKey                                                          │
+│                     Keys:                                                             │
+│                       UserID                                                          │
+│                     Condition: (UserID in [749927693, 749927693])                     │
+│                     Parts: 1/1                                                        │
+│                     Granules: 1/1083                                                  │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+
+16 rows in set. Elapsed: 0.003 sec.
+```
+
+A saída do cliente mostra que um dos 1083 grânulos foi selecionado como possivelmente contendo linhas com o valor 749927693 na coluna UserID.
+
+<Info>
+  **Conclusão**
+
+  Quando uma consulta filtra por uma coluna que faz parte de uma chave composta e é a primeira coluna da chave, o ClickHouse executa o algoritmo de busca binária sobre as marcas do índice dessa coluna-chave.
+</Info>
+
+<br />
+
+Como discutido acima, o ClickHouse usa seu índice primário esparso para selecionar rapidamente (via busca binária) grânulos que possam conter linhas correspondentes a uma consulta.
+
+Este é o **primeiro estágio (seleção de grânulos)** da execução de consultas no ClickHouse.
+
+No **segundo estágio (leitura de dados)**, o ClickHouse localiza os grânulos selecionados para transmitir todas as linhas deles ao mecanismo do ClickHouse, a fim de encontrar as linhas que realmente correspondem à consulta.
+
+Abordamos esse segundo estágio em mais detalhes na seção a seguir.
+
+<div id="mark-files-are-used-for-locating-granules">
+  ### Arquivos de marcação são usados para localizar grânulos
+</div>
+
+O diagrama a seguir ilustra uma parte do arquivo de índice primário da nossa tabela.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-04.webp" size="lg" alt="Índices Primários Esparsos 04" />
+
+Como discutido acima, por meio de uma busca binária nas 1083 marcas de UserID do índice, a marca 176 foi identificada. Portanto, o grânulo 176 correspondente pode conter linhas com o valor 749.927.693 na coluna UserID.
+
+<Accordion title="Detalhes da seleção de grânulos">
+  <p>
+    O diagrama acima mostra que a marca 176 é a primeira entrada do índice em que tanto o valor mínimo de UserID do grânulo 176 associado é menor que 749.927.693 quanto o valor mínimo de UserID do grânulo 177, da marca seguinte (marca 177), é maior que esse valor. Portanto, apenas o grânulo 176 correspondente à marca 176 pode conter linhas com o valor 749.927.693 na coluna UserID.
+  </p>
+</Accordion>
+
+Para confirmar (ou não) se algumas linhas no grânulo 176 contêm o valor 749.927.693 na coluna UserID, todas as 8192 linhas pertencentes a esse grânulo precisam ser transmitidas ao ClickHouse.
+
+Para isso, o ClickHouse precisa conhecer a localização física do grânulo 176.
+
+No ClickHouse, as localizações físicas de todos os grânulos da nossa tabela são armazenadas em arquivos de marcação. Assim como ocorre com os arquivos de dados, há um arquivo de marcação para cada coluna da tabela.
+
+O diagrama a seguir mostra os três arquivos de marcação `UserID.mrk`, `URL.mrk` e `EventTime.mrk`, que armazenam as localizações físicas dos grânulos das colunas `UserID`, `URL` e `EventTime` da tabela.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="Índices Primários Esparsos 05" />
+
+Já vimos que o índice primário é um arquivo de array simples, não compactado (`primary.idx`), que contém marcas de índice numeradas a partir de 0.
+
+Da mesma forma, um arquivo de marcação também é um arquivo de array simples, não compactado (`*.mrk`), contendo marcas numeradas a partir de 0.
+
+Depois que o ClickHouse identifica e seleciona a marca de índice de um grânulo que pode conter linhas correspondentes a uma consulta, é possível realizar uma busca posicional no array nos arquivos de marcação para obter as localizações físicas do grânulo.
+
+Cada entrada do arquivo de marcação para uma coluna específica armazena duas localizações na forma de offsets:
+
+* O primeiro offset (`block_offset` no diagrama acima) localiza o <a href="/pt-BR/resources/develop-contribute/introduction/architecture#block" target="_blank">bloco</a> no arquivo de dados da coluna <a href="/pt-BR/get-started/about/distinctive-features#data-compression" target="_blank">compactado</a> que contém a versão compactada do grânulo selecionado. Esse bloco compactado pode conter alguns grânulos compactados. O bloco compactado localizado é descompactado na memória principal durante a leitura.
+
+* O segundo offset (`granule_offset` no diagrama acima), do arquivo de marcação, fornece a localização do grânulo dentro dos dados do bloco descompactado.
+
+Todas as 8192 linhas pertencentes ao grânulo descompactado localizado são então transmitidas ao ClickHouse para processamento adicional.
+
+<Note>
+  * Para tabelas com [formato wide](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) e sem [granularidade adaptativa do índice](/pt-BR/resources/changelogs/oss/2019#experimental-features-1), o ClickHouse usa arquivos de marcação `.mrk`, como mostrado acima, que contêm entradas com dois endereços de 8 bytes por entrada. Essas entradas são localizações físicas de grânulos que têm todos o mesmo tamanho.
+
+  A granularidade do índice é adaptativa por [padrão](/pt-BR/reference/settings/merge-tree-settings#index_granularity_bytes), mas, para a nossa tabela de exemplo, desativamos a granularidade adaptativa do índice (para simplificar as discussões neste guia e também para tornar os diagramas e os resultados reproduzíveis). Nossa tabela usa formato wide porque o tamanho dos dados é maior que [min&#95;bytes&#95;for&#95;wide&#95;part](/pt-BR/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (que é 10 MB por padrão para clusters autogerenciados).
+
+  * Para tabelas com formato wide e com granularidade adaptativa do índice, o ClickHouse usa arquivos de marcação `.mrk2`, que contêm entradas semelhantes às dos arquivos de marcação `.mrk`, mas com um terceiro valor adicional por entrada: o número de linhas do grânulo ao qual a entrada atual está associada.
+
+  * Para tabelas com [formato compact](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage), o ClickHouse usa arquivos de marcação `.mrk3`.
+</Note>
+
+<Info>
+  **Por que usar arquivos de marcação**
+
+  Por que o índice primário não contém diretamente as localizações físicas dos grânulos correspondentes às marcas do índice?
+
+  Porque, na escala muito grande para a qual o ClickHouse foi projetado, é importante ter máxima eficiência no uso de disco e memória.
+
+  O arquivo de índice primário precisa caber na memória principal.
+
+  Na nossa consulta de exemplo, o ClickHouse usou o índice primário e selecionou um único grânulo que possivelmente pode conter linhas correspondentes à consulta. Somente para esse grânulo o ClickHouse precisa então das localizações físicas para transmitir as linhas correspondentes para processamento posterior.
+
+  Além disso, essas informações de offset são necessárias apenas para as colunas UserID e URL.
+
+  Informações de offset não são necessárias para colunas que não são usadas na consulta, como `EventTime`.
+
+  Na nossa consulta de exemplo, o ClickHouse precisa apenas dos dois offsets de localização física do grânulo 176 no arquivo de dados UserID (UserID.bin) e dos dois offsets de localização física do grânulo 176 no arquivo de dados URL (URL.bin).
+
+  A indireção fornecida pelos arquivos de marcação evita armazenar, diretamente no índice primário, entradas com as localizações físicas de todos os 1083 grânulos das três colunas, evitando assim manter dados desnecessários (potencialmente não utilizados) na memória principal.
+</Info>
+
+O diagrama a seguir e o texto abaixo ilustram como, na nossa consulta de exemplo, o ClickHouse localiza o grânulo 176 no arquivo de dados UserID.bin.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-06.webp" size="lg" alt="Índices primários esparsos 06" />
+
+Discutimos anteriormente neste guia que o ClickHouse selecionou a marca 176 do índice e, portanto, o grânulo 176 como possivelmente contendo linhas correspondentes à nossa consulta.
+
+Agora, o ClickHouse usa o número da marca selecionada (176) do índice para fazer uma busca posicional em Array no arquivo de marcação UserID.mrk, a fim de obter os dois offsets para localizar o grânulo 176.
+
+Como mostrado, o primeiro offset localiza o bloco compactado dentro do arquivo de dados UserID.bin que, por sua vez, contém a versão compactada do grânulo 176.
+
+Depois que o bloco localizado é descompactado na memória principal, o segundo offset do arquivo de marcação pode ser usado para localizar o grânulo 176 dentro dos dados descompactados.
+
+O ClickHouse precisa localizar (e transmitir todos os valores de) o grânulo 176 tanto do arquivo de dados UserID.bin quanto do arquivo de dados URL.bin para executar a nossa consulta de exemplo (as 10 URLs mais clicadas pelo usuário da internet com UserID 749.927.693).
+
+O diagrama acima mostra como o ClickHouse está localizando o grânulo no arquivo de dados UserID.bin.
+
+Em paralelo, o ClickHouse faz o mesmo para o grânulo 176 do arquivo de dados URL.bin. Os dois grânulos correspondentes são alinhados e transmitidos ao mecanismo do ClickHouse para processamento posterior, isto é, agregando e contando os valores de URL por grupo para todas as linhas em que o UserID é 749.927.693, antes de finalmente retornar os 10 maiores grupos de URL em ordem decrescente de contagem.
+
+<div id="using-multiple-primary-indexes">
+  ## Como usar vários índices primários
+</div>
+
+<a name="filtering-on-key-columns-after-the-first" />
+
+<div id="secondary-key-columns-can-not-be-inefficient">
+  ### Colunas secundárias da chave podem (não) ser ineficientes
+</div>
+
+Quando uma consulta filtra por uma coluna que faz parte de uma chave composta e é a primeira coluna da chave, [o ClickHouse executa o algoritmo de busca binária sobre as marcas de índice da coluna da chave](#the-primary-index-is-used-for-selecting-granules).
+
+Mas o que acontece quando uma consulta filtra por uma coluna que faz parte de uma chave composta, mas não é a primeira coluna da chave?
+
+<Note>
+  Discutimos um cenário em que uma consulta explicitamente não filtra pela primeira coluna da chave, mas por uma coluna secundária da chave.
+
+  Quando uma consulta filtra tanto pela primeira coluna da chave quanto por qualquer coluna da chave após a primeira, o ClickHouse executa a busca binária sobre as marcas de índice da primeira coluna da chave.
+</Note>
+
+<br />
+
+<br />
+
+<a name="query-on-url" />
+
+Usamos uma consulta que calcula os 10 usuários que mais clicaram na URL &quot;http://public&#95;search&quot;:
+
+```sql
+SELECT UserID, count(UserID) AS Count
+FROM hits_UserID_URL
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+A resposta é: <a name="query-on-url-slow" />
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.086 sec.
+Processed 8.81 million rows,
+799.69 MB (102.11 million rows/s., 9.27 GB/s.)
+```
+
+A saída do cliente indica que o ClickHouse quase executou uma varredura completa da tabela, apesar de a [coluna URL fazer parte da chave primária composta](#a-table-with-a-primary-key)! O ClickHouse lê 8,81 milhões de linhas das 8,87 milhões de linhas da tabela.
+
+Se [trace&#95;logging](/pt-BR/reference/settings/server-settings/settings#logger) estiver habilitado, o arquivo de log do servidor ClickHouse mostra que o ClickHouse usou uma <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">busca por exclusão genérica</a> nas 1083 marcas de índice de URL para identificar os grânulos que possivelmente podem conter linhas com um valor na coluna URL igual a &quot;http://public&#95;search&quot;:
+
+```response highlight={3,6}
+...Executor): Key condition: (column 1 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): Used generic exclusion search over index for part all_1_9_2
+              with 1537 steps
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              1076/1083 marks by primary key, 1076 marks to read from 5 ranges
+...Executor): Reading approx. 8814592 rows with 10 streams
+```
+
+Podemos ver no trace de exemplo acima que 1076 (por meio das marcas) dos 1083 grânulos foram selecionados como possivelmente contendo linhas com um valor de URL correspondente.
+
+Isso faz com que 8,81 milhões de linhas sejam processadas em streaming pelo mecanismo do ClickHouse (em paralelo, usando 10 streams), a fim de identificar as linhas que realmente contêm o valor de URL &quot;http://public&#95;search&quot;.
+
+No entanto, como veremos mais adiante, apenas 39 dos 1076 grânulos selecionados realmente contêm linhas correspondentes.
+
+Embora o índice primário baseado na chave primária composta (UserID, URL) tenha sido muito útil para acelerar consultas que filtram linhas com um valor específico de UserID, ele não está ajudando de forma significativa a acelerar a consulta que filtra linhas com um valor específico de URL.
+
+A razão para isso é que a coluna URL não é a primeira coluna da chave e, portanto, o ClickHouse está usando um algoritmo de busca por exclusão genérica (em vez de busca binária) nas marcas de índice da coluna URL, e **a eficácia desse algoritmo depende da diferença de cardinalidade** entre a coluna URL e a coluna de chave anterior, UserID.
+
+Para ilustrar isso, daremos alguns detalhes sobre como a busca por exclusão genérica funciona.
+
+<a name="generic-exclusion-search-algorithm" />
+
+<div id="generic-exclusion-search-algorithm">
+  ### Algoritmo de busca por exclusão genérica
+</div>
+
+A seguir, mostramos como o <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1438" target="_blank">algoritmo de busca por exclusão genérica do ClickHouse</a> funciona quando os grânulos são selecionados por meio de uma coluna secundária e a coluna-chave predecessora tem cardinalidade mais baixa ou mais alta.
+
+Como exemplo para ambos os casos, vamos assumir:
+
+* uma consulta que procura linhas com valor de URL = &quot;W3&quot;.
+* uma versão abstrata da nossa tabela hits com valores simplificados para UserID e URL.
+* a mesma chave primária composta (UserID, URL) para o índice. Isso significa que as linhas são ordenadas primeiro pelos valores de UserID. As linhas com o mesmo valor de UserID são então ordenadas por URL.
+* um tamanho de grânulo de dois, ou seja, cada grânulo contém duas linhas.
+
+Marcamos em laranja, nos diagramas abaixo, os valores das colunas-chave das primeiras linhas da tabela de cada grânulo..
+
+**A coluna-chave predecessora tem cardinalidade mais baixa**<a name="generic-exclusion-search-fast" />
+
+Suponha que UserID tivesse baixa cardinalidade. Nesse caso, seria provável que o mesmo valor de UserID estivesse distribuído por várias linhas da tabela, grânulos e, portanto, marcas de índice. Para marcas de índice com o mesmo UserID, os valores de URL das marcas de índice ficam ordenados em ordem crescente (porque as linhas da tabela são ordenadas primeiro por UserID e depois por URL). Isso permite uma filtragem eficiente, como descrito abaixo:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-07.webp" size="lg" alt="Sparse Primary Indices 06" />
+
+Há três cenários diferentes para o processo de seleção de grânulos em nossos dados de amostra abstratos no diagrama acima:
+
+1. A marca de índice 0, para a qual o **valor de URL é menor que W3 e o valor de URL da marca de índice imediatamente seguinte também é menor que W3**, pode ser excluída porque as marcas 0 e 1 têm o mesmo valor de UserID. Observe que essa pré-condição de exclusão garante que o grânulo 0 seja composto inteiramente por valores de UserID U1, de modo que o ClickHouse também possa assumir que o valor máximo de URL no grânulo 0 é menor que W3 e excluir o grânulo.
+
+2. A marca de índice 1, para a qual o **valor de URL é menor (ou igual) a W3 e o valor de URL da marca de índice imediatamente seguinte é maior (ou igual) a W3**, é selecionada porque isso significa que o grânulo 1 possivelmente contém linhas com URL W3.
+
+3. As marcas de índice 2 e 3, para as quais o **valor de URL é maior que W3**, podem ser excluídas, já que as marcas de índice de um índice primário armazenam os valores das colunas-chave da primeira linha da tabela de cada grânulo, e as linhas da tabela são ordenadas em disco pelos valores das colunas-chave; portanto, os grânulos 2 e 3 não podem conter o valor de URL W3.
+
+**A coluna-chave predecessora tem cardinalidade mais alta**<a name="generic-exclusion-search-slow" />
+
+Quando o UserID tem alta cardinalidade, é improvável que o mesmo valor de UserID esteja distribuído por várias linhas da tabela e grânulos. Isso significa que os valores de URL das marcas de índice não aumentam monotonicamente:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-08.webp" size="lg" alt="Sparse Primary Indices 06" />
+
+Como podemos ver no diagrama acima, todas as marcas mostradas cujos valores de URL são menores que W3 acabam sendo selecionadas para transmitir as linhas do grânulo associado ao engine do ClickHouse.
+
+Isso acontece porque, embora todas as marcas de índice no diagrama se enquadrem no cenário 1 descrito acima, elas não satisfazem a pré-condição de exclusão mencionada de que *a marca de índice imediatamente seguinte tem o mesmo valor de UserID da marca atual* e, portanto, não podem ser excluídas.
+
+Por exemplo, considere a marca de índice 0, para a qual o **valor de URL é menor que W3 e o valor de URL da marca de índice imediatamente seguinte também é menor que W3**. Ela *não* pode ser excluída porque a marca de índice imediatamente seguinte, 1, *não* tem o mesmo valor de UserID da marca atual 0.
+
+Em última análise, isso impede que o ClickHouse faça suposições sobre o valor máximo de URL no grânulo 0. Em vez disso, ele precisa assumir que o grânulo 0 potencialmente contém linhas com valor de URL W3 e é forçado a selecionar a marca 0.
+
+O mesmo cenário vale para as marcas 1, 2 e 3.
+
+<Info>
+  **Conclusão**
+
+  O <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">algoritmo de busca por exclusão genérica</a> que o ClickHouse usa no lugar do <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">algoritmo de busca binária</a> quando uma consulta filtra por uma coluna que faz parte de uma chave composta, mas não é a primeira coluna da chave, é mais eficaz quando a coluna de chave anterior tem cardinalidade menor.
+</Info>
+
+No nosso conjunto de dados de exemplo, ambas as colunas de chave (UserID, URL) têm cardinalidade alta e semelhante e, como explicado, o algoritmo de busca por exclusão genérica não é muito eficaz quando a coluna de chave anterior à coluna URL tem cardinalidade mais alta ou semelhante.
+
+<div id="note-about-data-skipping-index">
+  ### Observação sobre índice de salto de dados
+</div>
+
+Devido à cardinalidade igualmente alta de UserID e URL, nossa [consulta filtrando por URL](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient) também não se beneficiaria muito da criação de um [índice secundário de salto de dados](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes) na coluna URL
+da nossa [tabela com chave primária composta (UserID, URL)](#a-table-with-a-primary-key).
+
+Por exemplo, estas duas instruções criam e preenchem um índice de salto de dados [minmax](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) na coluna URL da nossa tabela:
+
+```sql
+ALTER TABLE hits_UserID_URL ADD INDEX url_skipping_index URL TYPE minmax GRANULARITY 4;
+ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
+```
+
+O ClickHouse então criou um índice adicional que armazena — para cada grupo de 4 [grânulos](#data-is-organized-into-granules-for-parallel-data-processing) consecutivos (observe a cláusula `GRANULARITY 4` na instrução `ALTER TABLE` acima) — os valores mínimo e máximo de URL:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-13a.webp" size="lg" alt="Índices Primários Esparsos 13a" />
+
+A primeira entrada do índice (&#39;marca 0&#39; no diagrama acima) armazena os valores mínimo e máximo de URL das [linhas pertencentes aos primeiros 4 grânulos da nossa tabela](#data-is-organized-into-granules-for-parallel-data-processing).
+
+A segunda entrada do índice (&#39;marca 1&#39;) armazena os valores mínimo e máximo de URL das linhas pertencentes aos 4 grânulos seguintes da nossa tabela, e assim por diante.
+
+(O ClickHouse também criou um [arquivo de marcas](#mark-files-are-used-for-locating-granules) especial para o índice de data skipping, para [localizar](#mark-files-are-used-for-locating-granules) os grupos de grânulos associados às marcas do índice.)
+
+Devido à cardinalidade igualmente alta de UserID e URL, esse índice secundário de data skipping não ajuda a excluir grânulos da seleção quando nossa [consulta filtrando por URL](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient) é executada.
+
+É muito provável que o valor específico de URL que a consulta procura (ou seja, &#39;http://public&#95;search&#39;) esteja entre o valor mínimo e o máximo armazenados pelo índice para cada grupo de grânulos, fazendo com que o ClickHouse seja forçado a selecionar esse grupo de grânulos (porque ele pode conter linhas que correspondam à consulta).
+
+<div id="a-need-to-use-multiple-primary-indexes">
+  ### A necessidade de usar vários índices primários
+</div>
+
+Como consequência, se quisermos acelerar significativamente nossa consulta de exemplo que filtra linhas por uma URL específica, precisamos usar um índice primário otimizado para essa consulta.
+
+Se, além disso, quisermos manter o bom desempenho da nossa consulta de exemplo que filtra linhas por um UserID específico, precisamos usar vários índices primários.
+
+A seguir, mostramos algumas formas de fazer isso.
+
+<a name="multiple-primary-indexes" />
+
+<div id="options-for-creating-additional-primary-indexes">
+  ### Opções para criar índices primários adicionais
+</div>
+
+Se quisermos acelerar significativamente nossas duas consultas de exemplo — a que filtra linhas com um `UserID` específico e a que filtra linhas com uma `URL` específica — precisaremos usar vários índices primários por meio de uma destas três opções:
+
+* Criar uma **segunda tabela** com uma chave primária diferente.
+* Criar uma **visão materializada** na tabela existente.
+* Adicionar uma **projeção** à tabela existente.
+
+As três opções duplicam efetivamente nossos dados de exemplo em uma tabela adicional para reorganizar o índice primário da tabela e a ordem de ordenação das linhas.
+
+No entanto, elas diferem no grau de transparência dessa tabela adicional para o usuário no que diz respeito ao roteamento de consultas e instruções INSERT.
+
+Ao criar uma **segunda tabela** com uma chave primária diferente, as consultas precisam ser enviadas explicitamente para a versão da tabela mais adequada a cada consulta, e os novos dados precisam ser inseridos explicitamente em ambas as tabelas para mantê-las sincronizadas:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-09a.webp" size="lg" alt="Sparse Primary Indices 09a" />
+
+Com uma **visão materializada**, a tabela adicional é criada implicitamente, e os dados são mantidos sincronizados automaticamente entre as duas tabelas:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-09b.webp" size="lg" alt="Sparse Primary Indices 09b" />
+
+Já a **projeção** é a opção mais transparente porque, além de manter automaticamente sincronizada com as alterações nos dados a tabela adicional criada implicitamente (e oculta), o ClickHouse escolhe automaticamente a versão da tabela mais eficiente para as consultas:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-09c.webp" size="lg" alt="Sparse Primary Indices 09c" />
+
+A seguir, discutimos essas três opções para criar e usar vários índices primários com mais detalhes e exemplos reais.
+
+<a name="multiple-primary-indexes-via-secondary-tables" />
+
+<div id="option-1-secondary-tables">
+  ### Opção 1: Tabelas secundárias
+</div>
+
+<a name="secondary-table" />
+
+Estamos criando uma nova tabela adicional em que invertimos a ordem das colunas da chave (em relação à tabela original) na chave primária:
+
+```sql highlight={8}
+CREATE TABLE hits_URL_UserID
+(
+    `UserID` UInt32,
+    `URL` String,
+    `EventTime` DateTime
+)
+ENGINE = MergeTree
+PRIMARY KEY (URL, UserID)
+ORDER BY (URL, UserID, EventTime)
+SETTINGS index_granularity_bytes = 0, compress_primary_key = 0;
+```
+
+Insira as 8,87 milhões de linhas da nossa [tabela original](#a-table-with-a-primary-key) na tabela adicional:
+
+```sql
+INSERT INTO hits_URL_UserID
+SELECT * FROM hits_UserID_URL;
+```
+
+A resposta é assim:
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 2.898 sec. Processed 8.87 million rows, 838.84 MB (3.06 million rows/s., 289.46 MB/s.)
+```
+
+E, por fim, otimize a tabela:
+
+```sql
+OPTIMIZE TABLE hits_URL_UserID FINAL;
+```
+
+Como alteramos a ordem das colunas na chave primária, as linhas inseridas agora são armazenadas em disco em uma ordem lexicográfica diferente (em comparação com nossa [tabela original](#a-table-with-a-primary-key)) e, portanto, os 1083 grânulos dessa tabela também contêm valores diferentes dos de antes:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-10.webp" size="lg" alt="Índices Primários Esparsos 10" />
+
+Esta é a chave primária resultante:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-11.webp" size="lg" alt="Índices Primários Esparsos 11" />
+
+Agora, ela pode ser usada para acelerar significativamente a execução da nossa consulta de exemplo, que filtra pela coluna URL para calcular os 10 principais usuários que clicaram com mais frequência na URL &quot;http://public&#95;search&quot;:
+
+```sql highlight={2}
+SELECT UserID, count(UserID) AS Count
+FROM hits_URL_UserID
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+A resposta é:
+
+<a name="query-on-url-fast" />
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.017 sec.
+Processed 319.49 thousand rows,
+11.38 MB (18.41 million rows/s., 655.75 MB/s.)
+```
+
+Agora, em vez de [quase fazer uma varredura completa da tabela](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns), ClickHouse executou essa consulta de maneira muito mais eficiente.
+
+Com o índice primário da [tabela original](#a-table-with-a-primary-key), em que UserID era a primeira coluna-chave e URL a segunda, ClickHouse usou uma [busca por exclusão genérica](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) sobre as marcas do índice para executar essa consulta, e isso não foi muito eficaz devido à cardinalidade alta e semelhante de UserID e URL.
+
+Com URL como a primeira coluna no índice primário, ClickHouse agora está executando <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">busca binária</a> sobre as marcas do índice.
+O log de trace correspondente no arquivo de log do servidor ClickHouse confirma isso:
+
+```response highlight={3,8}
+...Executor): Key condition: (column 0 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): Running binary search on index range for part all_1_9_2 (1083 marks)
+...Executor): Found (LEFT) boundary mark: 644
+...Executor): Found (RIGHT) boundary mark: 683
+...Executor): Found continuous range in 19 steps
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              39/1083 marks by primary key, 39 marks to read from 1 ranges
+...Executor): Reading approx. 319488 rows with 2 streams
+```
+
+O ClickHouse selecionou apenas 39 marcas do índice, em vez de 1076 quando foi usada a busca por exclusão genérica.
+
+Observe que a tabela adicional está otimizada para acelerar a execução da nossa consulta de exemplo com filtro por URLs.
+
+Assim como o [mau desempenho](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient) dessa consulta com nossa [tabela original](#a-table-with-a-primary-key), nossa [consulta de exemplo com filtro por `UserIDs`](#the-primary-index-is-used-for-selecting-granules) também não será executada com muita eficiência na nova tabela adicional, porque `UserID` agora é a segunda coluna da chave no índice primário dessa tabela e, portanto, o ClickHouse usará busca por exclusão genérica para selecionar grânulos, o que [não é muito eficaz para a cardinalidade igualmente alta](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) de `UserID` e `URL`.
+Abra a caixa de detalhes para ver mais informações.
+
+<Accordion title="A consulta com filtro por UserIDs agora tem mau desempenho">
+  <p>
+    ```sql
+    SELECT URL, count(URL) AS Count
+    FROM hits_URL_UserID
+    WHERE UserID = 749927693
+    GROUP BY URL
+    ORDER BY Count DESC
+    LIMIT 10;
+    ```
+
+    A resposta é:
+
+    ```response highlight={15}
+    ┌─URL────────────────────────────┬─Count─┐
+    │ http://auto.ru/chatay-barana.. │   170 │
+    │ http://auto.ru/chatay-id=371...│    52 │
+    │ http://public_search           │    45 │
+    │ http://kovrik-medvedevushku-...│    36 │
+    │ http://forumal                 │    33 │
+    │ http://korablitz.ru/L_1OFFER...│    14 │
+    │ http://auto.ru/chatay-id=371...│    14 │
+    │ http://auto.ru/chatay-john-D...│    13 │
+    │ http://auto.ru/chatay-john-D...│    10 │
+    │ http://wot/html?page/23600_m...│     9 │
+    └────────────────────────────────┴───────┘
+
+    10 rows in set. Elapsed: 0.024 sec.
+    Processed 8.02 million rows,
+    73.04 MB (340.26 million rows/s., 3.10 GB/s.)
+    ```
+
+    Log do servidor:
+
+    ```response highlight={2,5}
+    ...Executor): Key condition: (column 1 in [749927693, 749927693])
+    ...Executor): Used generic exclusion search over index for part all_1_9_2
+                  with 1453 steps
+    ...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+                  980/1083 marks by primary key, 980 marks to read from 23 ranges
+    ...Executor): Reading approx. 8028160 rows with 10 streams
+    ```
+  </p>
+</Accordion>
+
+Agora temos duas tabelas, otimizadas respectivamente para acelerar consultas com filtro por `UserIDs` e consultas com filtro por URLs:
+
+<div id="option-2-materialized-views">
+  ### Opção 2: Visões materializadas
+</div>
+
+Crie uma [visão materializada](/pt-BR/reference/statements/create/view) na tabela existente.
+
+```sql
+CREATE MATERIALIZED VIEW mv_hits_URL_UserID
+ENGINE = MergeTree()
+PRIMARY KEY (URL, UserID)
+ORDER BY (URL, UserID, EventTime)
+POPULATE
+AS SELECT * FROM hits_UserID_URL;
+```
+
+A resposta fica assim:
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 2.935 sec. Processed 8.87 million rows, 838.84 MB (3.02 million rows/s., 285.84 MB/s.)
+```
+
+<Note>
+  * trocamos a ordem das colunas da chave (em comparação com nossa [tabela original](#a-table-with-a-primary-key)) na chave primária da visão
+  * a visão materializada usa uma **tabela criada implicitamente**, cuja ordem das linhas e cujo índice primário são baseados na definição de chave primária fornecida
+  * a tabela criada implicitamente é listada pela consulta `SHOW TABLES` e tem um nome que começa com `.inner`
+  * também é possível primeiro criar explicitamente a tabela subjacente de uma visão materializada; em seguida, a visão pode apontar para essa tabela por meio da [cláusula](/pt-BR/reference/statements/create/view) `TO [db].[table]`
+  * usamos a palavra-chave `POPULATE` para preencher imediatamente a tabela criada implicitamente com todas as 8,87 milhões de linhas da tabela de origem [hits&#95;UserID&#95;URL](#a-table-with-a-primary-key)
+  * se novas linhas forem inseridas na tabela de origem hits&#95;UserID&#95;URL, essas linhas também serão inseridas automaticamente na tabela criada implicitamente
+  * na prática, a tabela criada implicitamente tem a mesma ordem de linhas e o mesmo índice primário da [tabela secundária que criamos explicitamente](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables):
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12b-1.webp" size="lg" alt="Sparse Primary Indices 12b1" />
+
+  O ClickHouse armazena os [arquivos de dados das colunas](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), os [arquivos de marcação](#mark-files-are-used-for-locating-granules) (*.mrk2) e o [índice primário](#the-primary-index-has-one-entry-per-granule) (primary.idx) da tabela criada implicitamente em uma pasta especial dentro do diretório de dados do servidor ClickHouse:
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12b-2.webp" size="md" alt="Sparse Primary Indices 12b2" />
+</Note>
+
+A tabela criada implicitamente (e seu índice primário) que dá suporte à visão materializada agora pode ser usada para acelerar significativamente a execução da nossa consulta de exemplo que filtra pela coluna URL:
+
+```sql highlight={2}
+SELECT UserID, count(UserID) AS Count
+FROM mv_hits_URL_UserID
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+A resposta é:
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.026 sec.
+Processed 335.87 thousand rows,
+13.54 MB (12.91 million rows/s., 520.38 MB/s.)
+```
+
+Como, na prática, a tabela criada implicitamente (e seu índice primário) que dá suporte à visão materializada é idêntica à [tabela secundária que criamos explicitamente](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), a consulta é executada efetivamente da mesma forma que com a tabela criada explicitamente.
+
+O log de trace correspondente no arquivo de log do servidor ClickHouse confirma que o ClickHouse está executando uma busca binária sobre as marcas do índice:
+
+```response highlight={3,6}
+...Executor): Key condition: (column 0 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): Running binary search on index range ...
+...
+...Executor): Selected 4/4 parts by partition key, 4 parts by primary key,
+              41/1083 marks by primary key, 41 marks to read from 4 ranges
+...Executor): Reading approx. 335872 rows with 4 streams
+```
+
+<div id="option-3-projections">
+  ### Opção 3: Projeções
+</div>
+
+Crie uma projeção na tabela existente:
+
+```sql
+ALTER TABLE hits_UserID_URL
+    ADD PROJECTION prj_url_userid
+    (
+        SELECT *
+        ORDER BY (URL, UserID)
+    );
+```
+
+Em seguida, materialize a projeção:
+
+```sql
+ALTER TABLE hits_UserID_URL
+    MATERIALIZE PROJECTION prj_url_userid;
+```
+
+<Note>
+  * a projeção cria uma **tabela oculta** cuja ordem das linhas e cujo índice primário são baseados na cláusula `ORDER BY` definida na projeção
+  * a tabela oculta não é listada pela consulta `SHOW TABLES`
+  * usamos a palavra-chave `MATERIALIZE` para preencher imediatamente a tabela oculta com todas as 8,87 milhões de linhas da tabela de origem [hits&#95;UserID&#95;URL](#a-table-with-a-primary-key)
+  * se novas linhas forem inseridas na tabela de origem hits&#95;UserID&#95;URL, essas linhas também serão inseridas automaticamente na tabela oculta
+  * uma consulta sempre aponta (sintaticamente) para a tabela de origem hits&#95;UserID&#95;URL, mas, se a ordem das linhas e o índice primário da tabela oculta permitirem uma execução mais eficiente da consulta, essa tabela oculta será usada
+  * observe que as projeções não tornam mais eficientes as consultas que usam `ORDER BY`, mesmo que o `ORDER BY` corresponda à cláusula `ORDER BY` da projeção (consulte https://github.com/ClickHouse/ClickHouse/issues/47333)
+  * Na prática, a tabela oculta criada implicitamente tem a mesma ordem das linhas e o mesmo índice primário que a [tabela secundária que criamos explicitamente](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables):
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12c-1.webp" size="lg" alt="Sparse Primary Indices 12c1" />
+
+  O ClickHouse armazena os [arquivos de dados das colunas](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), os [arquivos de marcação](#mark-files-are-used-for-locating-granules) (*.mrk2) e o [índice primário](#the-primary-index-has-one-entry-per-granule) (primary.idx) da tabela oculta em uma pasta especial (marcada em laranja na captura de tela abaixo), ao lado dos arquivos de dados, arquivos de marcação e arquivos de índice primário da tabela de origem:
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12c-2.webp" size="sm" alt="Sparse Primary Indices 12c2" />
+</Note>
+
+A tabela oculta (e seu índice primário) criada pela projeção agora pode ser usada (implicitamente) para acelerar significativamente a execução da nossa consulta de exemplo, que filtra pela coluna URL. Observe que, sintaticamente, a consulta aponta para a tabela de origem da projeção.
+
+```sql highlight={2}
+SELECT UserID, count(UserID) AS Count
+FROM hits_UserID_URL
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+A resposta é:
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.029 sec.
+Processed 319.49 thousand rows, 1
+1.38 MB (11.05 million rows/s., 393.58 MB/s.)
+```
+
+Como, na prática, a tabela oculta (e seu índice primário) criada pela projeção é idêntica à [tabela secundária que criamos explicitamente](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), a consulta é executada efetivamente da mesma forma que com a tabela criada explicitamente.
+
+O log de trace correspondente no arquivo de log do servidor ClickHouse confirma que o ClickHouse está executando uma busca binária sobre as marcas do índice:
+
+```response highlight={3,5,8}
+...Executor): Key condition: (column 0 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): Running binary search on index range for part prj_url_userid (1083 marks)
+...Executor): ...
+...Executor): Choose complete Normal projection prj_url_userid
+...Executor): projection required columns: URL, UserID
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              39/1083 marks by primary key, 39 marks to read from 1 ranges
+...Executor): Reading approx. 319488 rows with 2 streams
+```
+
+<div id="summary">
+  ### Resumo
+</div>
+
+O índice primário da nossa [tabela com chave primária composta (UserID, URL)](#a-table-with-a-primary-key) foi muito útil para acelerar uma [consulta com filtro em UserID](#the-primary-index-is-used-for-selecting-granules). Mas esse índice não ajuda de forma significativa a acelerar uma [consulta com filtro em URL](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient), embora a coluna URL faça parte da chave primária composta.
+
+E vice-versa:
+O índice primário da nossa [tabela com chave primária composta (URL, UserID)](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables) acelerava uma [consulta com filtro em URL](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient), mas não ajudava muito em uma [consulta com filtro em UserID](#the-primary-index-is-used-for-selecting-granules).
+
+Devido à cardinalidade igualmente alta das colunas de chave primária UserID e URL, uma consulta que filtra pela segunda coluna da chave [não se beneficia muito de a segunda coluna da chave estar no índice](#generic-exclusion-search-algorithm).
+
+Portanto, faz sentido remover a segunda coluna da chave do índice primário (resultando em menor consumo de memória pelo índice) e, em vez disso, [usar vários índices primários](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#using-multiple-primary-indexes).
+
+No entanto, se as colunas de uma chave primária composta tiverem grandes diferenças de cardinalidade, [é vantajoso para as consultas](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) ordenar as colunas da chave primária por cardinalidade em ordem crescente.
+
+Quanto maior a diferença de cardinalidade entre as colunas da chave, mais a ordem dessas colunas na chave importa. Vamos demonstrar isso na próxima seção.
+
+<div id="ordering-key-columns-efficiently">
+  ## Ordenando com eficiência as colunas da chave
+</div>
+
+<a name="test" />
+
+Em uma chave primária composta, a ordem das colunas da chave pode influenciar significativamente:
+
+* a eficiência da filtragem em colunas de chave secundária nas consultas; e
+* a taxa de compressão dos arquivos de dados da tabela.
+
+Para demonstrar isso, usaremos uma versão do nosso [conjunto de dados de amostra de tráfego da web](#data-set),
+em que cada linha contém três colunas que indicam se o acesso de um &#39;usuário&#39; da internet (coluna `UserID`) a uma URL (coluna `URL`) foi marcado como tráfego de bot (coluna `IsRobot`).
+
+Usaremos uma chave primária composta contendo as três colunas mencionadas acima, que pode ser usada para acelerar consultas típicas de análise da web que calculam:
+
+* quanto do tráfego para uma URL específica (em porcentagem) vem de bots; ou
+* qual é o grau de confiança de que um usuário específico é (ou não) um bot (qual porcentagem do tráfego desse usuário é, ou não, considerada tráfego de bot).
+
+Usamos esta consulta para calcular as cardinalidades das três colunas que queremos usar como colunas de chave em uma chave primária composta (observe que estamos usando a [table function URL](/pt-BR/reference/functions/table-functions/url) para consultar dados TSV ad hoc sem precisar criar uma tabela local). Execute esta consulta no `clickhouse client`:
+
+```sql
+SELECT
+    formatReadableQuantity(uniq(URL)) AS cardinality_URL,
+    formatReadableQuantity(uniq(UserID)) AS cardinality_UserID,
+    formatReadableQuantity(uniq(IsRobot)) AS cardinality_IsRobot
+FROM
+(
+    SELECT
+        c11::UInt64 AS UserID,
+        c15::String AS URL,
+        c20::UInt8 AS IsRobot
+    FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+    WHERE URL != ''
+)
+```
+
+A resposta é:
+
+```response
+┌─cardinality_URL─┬─cardinality_UserID─┬─cardinality_IsRobot─┐
+│ 2.39 million    │ 119.08 thousand    │ 4.00                │
+└─────────────────┴────────────────────┴─────────────────────┘
+
+1 row in set. Elapsed: 118.334 sec. Processed 8.87 million rows, 15.88 GB (74.99 thousand rows/s., 134.21 MB/s.)
+```
+
+Podemos ver que há uma grande diferença entre as cardinalidades, especialmente entre as colunas `URL` e `IsRobot` e, portanto, a ordem dessas colunas em uma chave primária composta é importante tanto para acelerar com eficiência as consultas que filtram por essas colunas quanto para alcançar taxas de compressão ideais para os arquivos de dados das colunas da tabela.
+
+Para demonstrar isso, vamos criar duas versões de tabela para nossos dados de análise de tráfego de bots:
+
+* uma tabela `hits_URL_UserID_IsRobot` com a chave primária composta `(URL, UserID, IsRobot)`, em que ordenamos as colunas da chave por cardinalidade em ordem decrescente
+* uma tabela `hits_IsRobot_UserID_URL` com a chave primária composta `(IsRobot, UserID, URL)`, em que ordenamos as colunas da chave por cardinalidade em ordem crescente
+
+Crie a tabela `hits_URL_UserID_IsRobot` com a chave primária composta `(URL, UserID, IsRobot)`:
+
+```sql highlight={8}
+CREATE TABLE hits_URL_UserID_IsRobot
+(
+    `UserID` UInt32,
+    `URL` String,
+    `IsRobot` UInt8
+)
+ENGINE = MergeTree
+PRIMARY KEY (URL, UserID, IsRobot);
+```
+
+E popule-a com 8,87 milhões de linhas:
+
+```sql
+INSERT INTO hits_URL_UserID_IsRobot SELECT
+    intHash32(c11::UInt64) AS UserID,
+    c15 AS URL,
+    c20 AS IsRobot
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+WHERE URL != '';
+```
+
+Esta é a resposta:
+
+```response
+0 rows in set. Elapsed: 104.729 sec. Processed 8.87 million rows, 15.88 GB (84.73 thousand rows/s., 151.64 MB/s.)
+```
+
+Em seguida, crie a tabela `hits_IsRobot_UserID_URL` com a chave primária composta por `(IsRobot, UserID, URL)`:
+
+```sql highlight={8}
+CREATE TABLE hits_IsRobot_UserID_URL
+(
+    `UserID` UInt32,
+    `URL` String,
+    `IsRobot` UInt8
+)
+ENGINE = MergeTree
+PRIMARY KEY (IsRobot, UserID, URL);
+```
+
+E popule-a com as mesmas 8,87 milhões de linhas que usamos para preencher a tabela anterior:
+
+```sql
+INSERT INTO hits_IsRobot_UserID_URL SELECT
+    intHash32(c11::UInt64) AS UserID,
+    c15 AS URL,
+    c20 AS IsRobot
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+WHERE URL != '';
+```
+
+A resposta é:
+
+```response
+0 rows in set. Elapsed: 95.959 sec. Processed 8.87 million rows, 15.88 GB (92.48 thousand rows/s., 165.50 MB/s.)
+```
+
+<div id="efficient-filtering-on-secondary-key-columns">
+  ### Filtragem eficiente em colunas secundárias da chave
+</div>
+
+Quando uma consulta filtra por pelo menos uma coluna que faz parte de uma chave composta e é a primeira coluna da chave, [o ClickHouse executa o algoritmo de busca binária sobre as marcas de índice da coluna da chave](#the-primary-index-is-used-for-selecting-granules).
+
+Quando uma consulta filtra (apenas) por uma coluna que faz parte de uma chave composta, mas não é a primeira coluna da chave, [o ClickHouse usa o algoritmo de busca por exclusão genérica sobre as marcas de índice da coluna da chave](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient).
+
+No segundo caso, a ordem das colunas da chave na chave primária composta é importante para a eficácia do [algoritmo de busca por exclusão genérica](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444).
+
+Esta é uma consulta que filtra pela coluna `UserID` da tabela em que ordenamos as colunas da chave `(URL, UserID, IsRobot)` por cardinalidade em ordem decrescente:
+
+```sql
+SELECT count(*)
+FROM hits_URL_UserID_IsRobot
+WHERE UserID = 112304
+```
+
+A resposta é:
+
+```response highlight={6}
+┌─count()─┐
+│      73 │
+└─────────┘
+
+1 row in set. Elapsed: 0.026 sec.
+Processed 7.92 million rows,
+31.67 MB (306.90 million rows/s., 1.23 GB/s.)
+```
+
+Esta é a mesma consulta na tabela em que ordenamos as colunas da chave `(IsRobot, UserID, URL)` por cardinalidade em ordem crescente:
+
+```sql
+SELECT count(*)
+FROM hits_IsRobot_UserID_URL
+WHERE UserID = 112304
+```
+
+A resposta é:
+
+```response highlight={6}
+┌─count()─┐
+│      73 │
+└─────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+Processed 20.32 thousand rows,
+81.28 KB (6.61 million rows/s., 26.44 MB/s.)
+```
+
+Podemos ver que a execução da consulta é significativamente mais eficiente e rápida na tabela em que ordenamos as colunas da chave por cardinalidade em ordem crescente.
+
+Isso acontece porque o [algoritmo de busca por exclusão genérica](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444) funciona melhor quando os [grânulos](#the-primary-index-is-used-for-selecting-granules) são selecionados por meio de uma coluna secundária da chave, cuja coluna predecessora na chave tem menor cardinalidade. Ilustramos isso em detalhes em uma [seção anterior](#generic-exclusion-search-algorithm) deste guia.
+
+<div id="optimal-compression-ratio-of-data-files">
+  ### Taxa de compressão ideal dos arquivos de dados
+</div>
+
+Esta consulta compara a taxa de compressão da coluna `UserID` entre as duas tabelas que criamos acima:
+
+```sql
+SELECT
+    table AS Table,
+    name AS Column,
+    formatReadableSize(data_uncompressed_bytes) AS Uncompressed,
+    formatReadableSize(data_compressed_bytes) AS Compressed,
+    round(data_uncompressed_bytes / data_compressed_bytes, 0) AS Ratio
+FROM system.columns
+WHERE (table = 'hits_URL_UserID_IsRobot' OR table = 'hits_IsRobot_UserID_URL') AND (name = 'UserID')
+ORDER BY Ratio ASC
+```
+
+Esta é a resposta:
+
+```response
+┌─Table───────────────────┬─Column─┬─Uncompressed─┬─Compressed─┬─Ratio─┐
+│ hits_URL_UserID_IsRobot │ UserID │ 33.83 MiB    │ 11.24 MiB  │     3 │
+│ hits_IsRobot_UserID_URL │ UserID │ 33.83 MiB    │ 877.47 KiB │    39 │
+└─────────────────────────┴────────┴──────────────┴────────────┴───────┘
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+
+Podemos ver que a taxa de compressão da coluna `UserID` é significativamente maior na tabela em que ordenamos as colunas da chave `(IsRobot, UserID, URL)` por cardinalidade em ordem crescente.
+
+Embora exatamente os mesmos dados estejam armazenados em ambas as tabelas (inserimos as mesmas 8,87 milhões de linhas nas duas tabelas), a ordem das colunas da chave na chave primária composta influencia significativamente quanto espaço em disco os dados <a href="/pt-BR/get-started/about/distinctive-features#data-compression" target="_blank">comprimidos</a> nos [arquivos de dados de coluna](#data-is-stored-on-disk-ordered-by-primary-key-columns) da tabela exigem:
+
+* na tabela `hits_URL_UserID_IsRobot`, com a chave primária composta `(URL, UserID, IsRobot)`, em que ordenamos as colunas da chave por cardinalidade em ordem decrescente, o arquivo de dados `UserID.bin` ocupa **11.24 MiB** de espaço em disco
+* na tabela `hits_IsRobot_UserID_URL`, com a chave primária composta `(IsRobot, UserID, URL)`, em que ordenamos as colunas da chave por cardinalidade em ordem crescente, o arquivo de dados `UserID.bin` ocupa apenas **877.47 KiB** de espaço em disco
+
+Ter uma boa taxa de compressão para os dados de uma coluna da tabela em disco não só economiza espaço, como também torna mais rápidas as consultas (especialmente as analíticas) que exigem a leitura de dados dessa coluna, pois é necessário menos I/O para mover os dados da coluna do disco para a memória principal (o cache de arquivos do sistema operacional).
+
+A seguir, ilustramos por que, para a taxa de compressão das colunas de uma tabela, é vantajoso ordenar as colunas da chave primária por cardinalidade em ordem crescente.
+
+O diagrama abaixo mostra a ordem das linhas em disco para uma chave primária em que as colunas da chave são ordenadas por cardinalidade em ordem crescente:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-14a.webp" size="lg" alt="Sparse Primary Indices 14a" />
+
+Vimos que [os dados de linha da tabela são armazenados em disco ordenados pelas colunas da chave primária](#data-is-stored-on-disk-ordered-by-primary-key-columns).
+
+No diagrama acima, as linhas da tabela (seus valores de coluna em disco) são primeiro ordenadas pelo valor de `cl`, e as linhas que têm o mesmo valor de `cl` são ordenadas pelo valor de `ch`. E, como a primeira coluna-chave `cl` tem baixa cardinalidade, é provável que existam linhas com o mesmo valor de `cl`. Por isso, também é provável que os valores de `ch` estejam ordenados (localmente — para linhas com o mesmo valor de `cl`).
+
+Se, em uma coluna, dados semelhantes ficarem próximos uns dos outros, por exemplo por meio de ordenação, esses dados serão comprimidos melhor.
+Em geral, um algoritmo de compressão se beneficia do comprimento das sequências de dados (quanto mais dados ele vê, melhor para a compressão)
+e da localidade (quanto mais semelhantes os dados forem, melhor será a taxa de compressão).
+
+Em contraste com o diagrama acima, o diagrama abaixo mostra a ordem das linhas em disco para uma chave primária em que as colunas da chave são ordenadas por cardinalidade em ordem decrescente:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-14b.webp" size="lg" alt="Sparse Primary Indices 14b" />
+
+Agora, as linhas da tabela são ordenadas primeiro pelo valor de `ch`, e as linhas que têm o mesmo valor de `ch` são ordenadas pelo valor de `cl`.
+Mas, como a primeira coluna-chave `ch` tem alta cardinalidade, é improvável que existam linhas com o mesmo valor de `ch`. E, por causa disso, também é improvável que os valores de `cl` estejam ordenados (localmente — para linhas com o mesmo valor de `ch`).
+
+Portanto, os valores de `cl` provavelmente estarão em ordem aleatória e, consequentemente, terão baixa localidade e uma taxa de compressão ruim, respectivamente.
+
+<div id="summary">
+  ### Resumo
+</div>
+
+Tanto para a filtragem eficiente em consultas com colunas secundárias da chave quanto para a taxa de compressão dos arquivos de dados de colunas de uma tabela, é vantajoso ordenar as colunas de uma chave primária por cardinalidade em ordem crescente.
+
+<div id="identifying-single-rows-efficiently">
+  ## Identificando linhas individuais com eficiência
+</div>
+
+Embora, em geral, [não](/pt-BR/resources/support-center/knowledge-base/general-faqs/key-value) seja o melhor caso de uso para o ClickHouse,
+às vezes aplicações baseadas em ClickHouse precisam identificar linhas individuais em uma tabela do ClickHouse.
+
+Uma solução intuitiva para isso pode ser usar uma coluna [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier) com um valor único por linha e, para recuperar linhas rapidamente, usar essa coluna como coluna de chave primária.
+
+Para a recuperação mais rápida, a coluna UUID [precisaria ser a primeira coluna da chave](#the-primary-index-is-used-for-selecting-granules).
+
+Já discutimos que, como [os dados das linhas de uma tabela do ClickHouse são armazenados em disco em ordem pelas colunas da chave primária](#data-is-stored-on-disk-ordered-by-primary-key-columns), ter uma coluna de cardinalidade muito alta (como uma coluna UUID) em uma chave primária ou em uma chave primária composta, antes de colunas com cardinalidade mais baixa, [prejudica a taxa de compressão de outras colunas da tabela](#optimal-compression-ratio-of-data-files).
+
+Um meio-termo entre a recuperação mais rápida e a compressão ideal dos dados é usar uma chave primária composta em que o UUID seja a última coluna da chave, após colunas de chave de cardinalidade baixa (ou mais baixa), usadas para garantir uma boa taxa de compressão para algumas colunas da tabela.
+
+<div id="a-concrete-example">
+  ### Um exemplo concreto
+</div>
+
+Um exemplo concreto é o serviço de paste em plaintext [https://pastila.nl](https://pastila.nl), que Alexey Milovidov desenvolveu e sobre o qual [publicou um post no blog](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/).
+
+A cada alteração na área de texto, os dados são salvos automaticamente em uma linha de uma tabela do ClickHouse (uma linha por alteração).
+
+E uma forma de identificar e recuperar (uma versão específica de) o conteúdo colado é usar um hash do conteúdo como UUID da linha da tabela que contém esse conteúdo.
+
+O diagrama a seguir mostra
+
+* a ordem de inserção das linhas quando o conteúdo muda (por exemplo, devido às teclas pressionadas ao digitar o texto na área de texto) e
+* a ordem em disco dos dados das linhas inseridas quando `PRIMARY KEY (hash)` é usado:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-15a.webp" size="lg" alt="Sparse Primary Indices 15a" />
+
+Como a coluna `hash` é usada como coluna de chave primária,
+
+* linhas específicas podem ser recuperadas [muito rapidamente](#the-primary-index-is-used-for-selecting-granules), mas
+* as linhas da tabela (os dados de suas colunas) são armazenadas em disco em ordem crescente pelos valores de hash (únicos e aleatórios). Portanto, os valores da coluna de conteúdo também são armazenados em ordem aleatória, sem localidade de dados, o que resulta em uma **taxa de compressão subótima para o arquivo de dados da coluna de conteúdo**.
+
+Para melhorar significativamente a taxa de compressão da coluna de conteúdo e, ao mesmo tempo, continuar permitindo a recuperação rápida de linhas específicas, o pastila.nl usa dois hashes (e uma chave primária composta) para identificar uma linha específica:
+
+* um hash do conteúdo, como discutido acima, que é distinto para dados distintos, e
+* um [hash sensível à localidade (fingerprint)](https://en.wikipedia.org/wiki/Locality-sensitive_hashing) que **não** muda com pequenas alterações nos dados.
+
+O diagrama a seguir mostra
+
+* a ordem de inserção das linhas quando o conteúdo muda (por exemplo, devido às teclas pressionadas ao digitar o texto na área de texto) e
+* a ordem em disco dos dados das linhas inseridas quando a `PRIMARY KEY (fingerprint, hash)` composta é usada:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-15b.webp" size="lg" alt="Sparse Primary Indices 15b" />
+
+Agora, as linhas em disco são ordenadas primeiro por `fingerprint` e, para linhas com o mesmo valor de fingerprint, o valor de `hash` determina a ordem final.
+
+Como dados que diferem apenas em pequenas alterações recebem o mesmo valor de fingerprint, dados semelhantes agora são armazenados em disco próximos uns dos outros na coluna de conteúdo. E isso é muito bom para a taxa de compressão da coluna de conteúdo, já que, em geral, um algoritmo de compressão se beneficia da localidade dos dados (quanto mais semelhantes forem os dados, melhor será a taxa de compressão).
+
+A contrapartida é que dois campos (`fingerprint` e `hash`) são necessários para recuperar uma linha específica, a fim de utilizar de forma ideal o índice primário que resulta da `PRIMARY KEY (fingerprint, hash)` composta.

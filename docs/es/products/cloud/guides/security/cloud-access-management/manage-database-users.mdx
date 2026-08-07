@@ -1,0 +1,189 @@
+---
+sidebarTitle: 'Gestionar usuarios de base de datos'
+slug: /cloud/security/manage-database-users
+title: 'Gestionar usuarios de base de datos'
+description: 'Esta página describe cómo los administradores pueden agregar usuarios de base de datos, gestionar sus asignaciones y eliminar usuarios de base de datos'
+doc_type: 'guide'
+keywords: ['usuarios de base de datos', 'gestión de acceso', 'seguridad', 'permisos', 'gestión de usuarios']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Esta guía muestra dos formas de gestionar usuarios de base de datos: desde la Consola SQL y directamente en la base de datos.
+
+<div id="sql-console-passwordless-authentication">
+  ### Autenticación sin contraseña en Consola SQL
+</div>
+
+Los usuarios de Consola SQL se crean para cada sesión y se autentican mediante certificados X.509 que se rotan automáticamente. El usuario se elimina cuando finaliza la sesión. Al generar listas de acceso para auditorías, vaya a la pestaña Settings del servicio en la consola y tenga en cuenta el acceso a Consola SQL, además de los usuarios de base de datos que existen en la base de datos. Si hay roles personalizados configurados, el acceso del usuario aparece en el rol cuyo nombre termina con el username del usuario.
+
+<div id="sql-console-users-and-roles">
+  ## Usuarios y roles de la Consola SQL
+</div>
+
+Los roles básicos de la Consola SQL pueden asignarse a usuarios con permisos Service Read Only y Service Admin. Para obtener más información, consulta [Manage SQL Console Role Assignments](/es/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). En esta guía se muestra cómo crear un rol personalizado para un usuario de la Consola SQL.
+
+Para crear un rol personalizado para un usuario de la Consola SQL y asignarle un rol general, ejecuta los siguientes comandos. La dirección de correo electrónico debe coincidir con la dirección de correo electrónico del usuario en la consola.
+
+<Steps>
+  <Step>
+    #### Crear `database_developer` y otorgar permisos
+
+    Crea el rol `database_developer` y otórgale permisos `SHOW`, `CREATE`, `ALTER` y `DELETE`.
+
+    ```sql
+    CREATE ROLE OR REPLACE database_developer;
+    GRANT SHOW ON * TO database_developer;
+    GRANT CREATE ON * TO database_developer;
+    GRANT ALTER ON * TO database_developer;
+    GRANT DELETE ON * TO database_developer;
+    ```
+  </Step>
+
+  <Step>
+    #### Crear el rol de usuario de la Consola SQL
+
+    Crea un rol para el usuario de la Consola SQL my.user@domain.com y asígnale el rol database&#95;developer.
+
+    ```sql
+    CREATE ROLE OR REPLACE `sql-console-role:my.user@domain.com`;
+    GRANT database_developer TO `sql-console-role:my.user@domain.com`;
+    ```
+  </Step>
+
+  <Step>
+    #### El usuario recibe el nuevo rol cuando usa la Consola SQL
+
+    Al usuario se le asignará el rol asociado a su dirección de correo electrónico cada vez que use la Consola SQL.
+  </Step>
+</Steps>
+
+<div id="database-authentication">
+  ## Autenticación de la base de datos
+</div>
+
+<div id="database-user-id--password">
+  ### ID y contraseña del usuario de base de datos
+</div>
+
+Use el método SHA256&#95;hash al [crear cuentas de usuario](/es/reference/statements/create/user) para proteger las contraseñas. Las contraseñas de la base de datos de ClickHouse deben tener un mínimo de 12 caracteres y cumplir los requisitos de complejidad: letras mayúsculas, letras minúsculas, números y/o caracteres especiales.
+
+<Tip>
+  **Genere contraseñas de forma segura**
+
+  Dado que los usuarios con privilegios inferiores a los de administrador no pueden establecer su propia contraseña, pida al usuario que genere el hash de su contraseña con un generador
+  como [este](https://tools.keycdn.com/sha256-online-generator) antes de proporcionárselo al administrador para configurar la cuenta.
+</Tip>
+
+```sql
+CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
+```
+
+<div id="database-ssh">
+  ### Usuario de base de datos con autenticación SSH
+</div>
+
+Para configurar la autenticación SSH para un usuario de base de datos de ClickHouse Cloud.
+
+1. Usa ssh-keygen para crear un par de claves.
+2. Usa la clave pública para crear el usuario.
+3. Asigna roles y/o permisos al usuario.
+4. Usa la clave privada para autenticarte con el servicio.
+
+Para obtener una guía detallada con ejemplos, consulta [Cómo conectarse a ClickHouse Cloud usando claves SSH](/es/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) en nuestra base de conocimientos.
+
+<div id="database-permissions">
+  ## Permisos de la base de datos
+</div>
+
+Configure lo siguiente en los servicios y las bases de datos mediante la sentencia SQL [GRANT](/es/reference/statements/grant).
+
+| Role    | Description                                                                |
+| :------ | :------------------------------------------------------------------------- |
+| Default | Acceso administrativo completo a los servicios                             |
+| Custom  | Configure mediante la sentencia SQL [`GRANT`](/es/reference/statements/grant) |
+
+* Los roles de base de datos son aditivos. Esto significa que, si un usuario es miembro de dos roles, tendrá el nivel de acceso más alto concedido por cualquiera de ellos. No pierde acceso al añadir roles.
+* Los roles de base de datos pueden concederse a otros roles, lo que da lugar a una estructura jerárquica. Los roles heredan todos los permisos de aquellos roles de los que son miembros.
+* Los roles de base de datos son únicos para cada servicio y pueden aplicarse a varias bases de datos dentro del mismo servicio.
+
+La siguiente ilustración muestra las distintas formas en que se pueden conceder permisos a un usuario.
+
+<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="Una ilustración que muestra las distintas formas en que se pueden conceder permisos a un usuario" size="md" background="black" />
+
+<div id="initial-settings">
+  ### Configuración inicial
+</div>
+
+Las bases de datos tienen una cuenta llamada `default` que se añade automáticamente y recibe `default&#95;role` al crear el servicio. Al usuario que crea el servicio se le muestra la contraseña aleatoria generada automáticamente que se asigna a la cuenta `default` cuando se crea el servicio. La contraseña no vuelve a mostrarse después de la configuración inicial, pero cualquier usuario con permisos de Service Admin en la consola puede cambiarla más adelante. Esta cuenta, o una cuenta con privilegios de Service Admin en la consola, puede configurar usuarios de base de datos y roles adicionales en cualquier momento.
+
+<Note>
+  Para cambiar la contraseña asignada a la cuenta `default` en la consola, ve al menú Services de la izquierda, accede al servicio, ve a la pestaña Settings y haz clic en el botón Reset password.
+</Note>
+
+Recomendamos crear una nueva cuenta de usuario asociada a una persona y otorgarle `default&#95;role`. Así, las actividades realizadas por los usuarios quedan asociadas a sus ID de usuario y la cuenta `default` se reserva para actividades de tipo break-glass.
+
+```sql
+  CREATE USER userID IDENTIFIED WITH sha256_hash by 'hashed_password';
+  GRANT default_role to userID;
+```
+
+Puede usar un generador de hash SHA256 o una función como `hashlib` en Python para convertir una contraseña de 12 o más caracteres con la complejidad adecuada en una cadena SHA256 y proporcionársela al administrador del sistema como contraseña. Esto garantiza que el administrador no vea ni manipule contraseñas en texto sin formato.
+
+<div id="database-access-listings-with-sql-console-users">
+  ### Listados de acceso a bases de datos con usuarios de la consola SQL
+</div>
+
+El siguiente proceso puede utilizarse para generar un listado completo de acceso en la consola SQL y en las bases de datos de su organización.
+
+<Steps>
+  <Step>
+    #### Obtener una lista de todos los permisos de la base de datos
+
+    Ejecute las siguientes consultas para obtener una lista de todos los permisos de la base de datos.
+
+    ```sql
+    SELECT grants.user_name,
+    grants.role_name,
+    users.name AS role_member,
+    grants.access_type,
+    grants.database,
+    grants.table
+    FROM system.grants LEFT OUTER JOIN system.role_grants ON grants.role_name = role_grants.granted_role_name
+    LEFT OUTER JOIN system.users ON role_grants.user_name = users.name
+
+    UNION ALL
+
+    SELECT grants.user_name,
+    grants.role_name,
+    role_grants.role_name AS role_member,
+    grants.access_type,
+    grants.database,
+    grants.table
+    FROM system.role_grants LEFT OUTER JOIN system.grants ON role_grants.granted_role_name = grants.role_name
+    WHERE role_grants.user_name is null;
+    ```
+  </Step>
+
+  <Step>
+    #### Asociar la lista de permisos a los usuarios de Console con acceso a la consola SQL
+
+    Asocie esta lista con los usuarios de Console que tienen acceso a la consola SQL.
+
+    a. Vaya a Console.
+
+    b. Seleccione el servicio correspondiente.
+
+    c. Seleccione Configuración a la izquierda.
+
+    d. Desplácese hasta la sección de acceso a la consola SQL.
+
+    e. Haga clic en el enlace del número de usuarios con acceso a la base de datos `There are # users with access to this service.` para ver el listado de usuarios.
+  </Step>
+</Steps>
+
+<div id="warehouse-users">
+  ## Usuarios del warehouse
+</div>
+
+Los usuarios del warehouse se comparten entre los servicios del mismo warehouse. Para obtener más información, consulta los [controles de acceso del warehouse](/es/products/cloud/features/infrastructure/warehouses#access-controls).

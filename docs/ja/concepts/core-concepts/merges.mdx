@@ -1,0 +1,196 @@
+---
+slug: /merges
+title: 'パーツのマージ'
+description: 'ClickHouse におけるパーツのマージとは'
+keywords: ['マージ']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="what-are-part-merges-in-clickhouse">
+  ## ClickHouse におけるパーツマージとは何ですか？
+</div>
+
+<br />
+
+ClickHouse が[高速](/ja/get-started/about/why-clickhouse-is-so-fast)なのは、クエリだけでなく insert でも同様です。これは、[LSM trees](https://en.wikipedia.org/wiki/Log-structured_merge-tree) に似た仕組みで動作する[ストレージ層](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf)によるものです。
+
+① [MergeTree engine](/ja/reference/engines/table-engines/mergetree-family/index) ファミリーのテーブルへの insert では、ソート済みで不変の[データパーツ](/ja/concepts/core-concepts/parts)が作成されます。
+
+② すべてのデータ処理は、**バックグラウンドでのパーツマージ**にオフロードされます。
+
+その結果、データの書き込みは軽量で、[非常に効率的](/ja/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-are-isolated-from-each-other)になります。
+
+テーブルごとのパーツ数を制御し、上記の ② を実現するために、ClickHouse はバックグラウンドで小さなパーツを大きなパーツへ継続的にマージし ([パーティションごと](/ja/concepts/core-concepts/partitions#per-partition-merges)) 、圧縮サイズがおよそ [~150 GB](/ja/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) に達するまでこれを続けます。
+
+次の図は、このバックグラウンドマージのプロセスを概略的に示したものです。
+
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="パーツマージ" />
+
+<br />
+
+パーツの `merge level` は、マージのたびに 1 ずつ増加します。レベル `0` は、そのパーツが新規作成されたもので、まだマージされていないことを意味します。より大きなパーツにマージされたパーツは[inactive](/ja/reference/system-tables/parts)としてマークされ、最終的には[設定可能な](/ja/reference/settings/merge-tree-settings#old_parts_lifetime)時間の経過後に削除されます (デフォルトは 8 分) 。時間の経過とともに、これによりマージ済みパーツの**ツリー**が形成されます。これが [merge tree](/ja/reference/engines/table-engines/mergetree-family/index) テーブルという名前の由来です。
+
+<div id="monitoring-merges">
+  ## マージの監視
+</div>
+
+[テーブルパーツとは](/ja/concepts/core-concepts/parts)の例では、ClickHouse がすべてのテーブルパーツを [parts](/ja/reference/system-tables/parts) システムテーブルで追跡していることを[示しました](/ja/concepts/core-concepts/parts#monitoring-table-parts)。この例のテーブルにあるアクティブな各パーツについて、マージレベルと保存されている行数を取得するために、次のクエリを使用しました。
+
+```sql
+SELECT
+    name,
+    level,
+    rows
+FROM system.parts
+WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple') AND active
+ORDER BY name ASC;
+```
+
+[前述のドキュメント](/ja/concepts/core-concepts/parts#monitoring-table-parts)のクエリ結果から、この例のテーブルにはアクティブなパーツが4つあり、各パーツは最初に挿入されたパーツを1回マージして作成されたことがわかります。
+
+```response
+   ┌─name────────┬─level─┬────rows─┐
+1. │ all_0_5_1   │     1 │ 6368414 │
+2. │ all_12_17_1 │     1 │ 6442494 │
+3. │ all_18_23_1 │     1 │ 5977762 │
+4. │ all_6_11_1  │     1 │ 6459763 │
+   └─────────────┴───────┴─────────┘
+```
+
+[クエリを実行すると](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results)、4 つのパーツがその後 1 つの最終的なパーツにマージされたことがわかります (テーブルへのそれ以上の insert がない場合) :
+
+```response
+   ┌─name───────┬─level─┬─────rows─┐
+1. │ all_0_23_2 │     2 │ 25248433 │
+   └────────────┴───────┴──────────┘
+```
+
+ClickHouse 24.10 では、新しい[マージダッシュボード](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)が組み込みの[監視ダッシュボード](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)に追加されました。これは OSS と Cloud の両方で `/merges` HTTP ハンドラー経由で利用でき、この例のテーブルで発生するすべてのパーツマージを可視化できます。
+
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="パーツマージ" />
+
+<br />
+
+上のダッシュボードの録画では、最初のデータ挿入から単一パーツへの最終的なマージまで、プロセス全体を確認できます。
+
+① アクティブなパーツ数。
+
+② ボックスで視覚的に表したパーツマージ (サイズはパーツの大きさを反映) 。
+
+③ [書き込み増幅](https://en.wikipedia.org/wiki/Write_amplification)。
+
+<div id="concurrent-merges">
+  ## 並行マージ
+</div>
+
+1 台の ClickHouse サーバーは、複数のバックグラウンド[マージスレッド](/ja/reference/settings/server-settings/settings#background_pool_size)を使用して、パーツの並行マージを実行します。
+
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="パーツマージ" />
+
+<br />
+
+各マージスレッドは、次のループを実行します。
+
+① 次にマージするパーツを決定し、それらをメモリに読み込みます。
+
+② メモリ内のパーツを、より大きなパーツへマージします。
+
+③ マージ後のパーツをディスクに書き込みます。
+
+① に戻る
+
+CPU コア数と RAM 容量を増やすことで、バックグラウンドマージのスループットを高められる点に注意してください。
+
+<div id="memory-optimized-merges">
+  ## メモリ最適化されたマージ
+</div>
+
+ClickHouse では、[前の例](/ja/concepts/core-concepts/merges#concurrent-merges)で示したように、マージ対象のすべてのパーツを必ずしも一度にメモリへ読み込むわけではありません。いくつかの[要因](https://github.com/ClickHouse/ClickHouse/blob/bf37120c925ed846ae5cd72cd51e6340bebd2918/src/Storages/MergeTree/MergeTreeSettings.cpp#L210)に応じて、メモリ消費を抑えるために (そのぶんマージ速度は低下します) 、いわゆる[垂直マージ](https://github.com/ClickHouse/ClickHouse/blob/bf37120c925ed846ae5cd72cd51e6340bebd2918/src/Storages/MergeTree/MergeTreeSettings.cpp#L209)では、パーツを一括で処理するのではなく、ブロックの chunk ごとに読み込んでマージします。
+
+<div id="merge-mechanics">
+  ## マージの仕組み
+</div>
+
+以下の図は、ClickHouse における単一のバックグラウンド[マージスレッド](/ja/concepts/core-concepts/merges#concurrent-merges)が、パーツをどのようにマージするかを示しています (デフォルトでは、[垂直マージ](/ja/concepts/core-concepts/merges#memory-optimized-merges)は使用しません) ：
+
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="パーツマージ" />
+
+<br />
+
+パーツマージは、いくつかのステップで実行されます：
+
+**① 解凍と読み込み**：マージ対象のパーツに含まれる[圧縮済みバイナリカラムファイル](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)を解凍し、メモリに読み込みます。
+
+**② マージ**：データを、より大きなカラムファイルへマージします。
+
+**③ 索引作成**：マージ後のカラムファイルに対して、新しい[スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)が生成されます。
+
+**④ 圧縮と保存**：新しいカラムファイルと索引は[圧縮](/ja/reference/statements/create/table#column_compression_codec)され、マージ後のデータパーツを表す新しい[ディレクトリ](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)に保存されます。
+
+また、セカンダリのデータスキッピングインデックス、カラム STATISTICS、チェックサム、min-max 索引 などの[data parts 内の追加メタデータ](/ja/concepts/core-concepts/parts)も、マージ後のカラムファイルに基づいて再作成されます。ここでは簡略化のため、これらの詳細は省略しています。
+
+ステップ②の仕組みは、使用する[MergeTree エンジン](/ja/reference/engines/table-engines/mergetree-family/index)によって異なります。これは、エンジンごとにマージの処理方法が異なるためです。たとえば、古くなった行が集計されたり、置き換えられたりすることがあります。前述のとおり、このアプローチでは**すべてのデータ処理をバックグラウンドマージにオフロード**するため、書き込み処理を軽量かつ効率的に保ち、**超高速な書き込み**を実現できます。
+
+次に、MergeTree family に属する各エンジンのマージの仕組みを簡単に見ていきます。
+
+<div id="standard-merges">
+  ### 標準マージ
+</div>
+
+以下の図は、標準的な[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree)テーブルでパーツがどのようにマージされるかを示しています。
+
+<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="パーツマージ" />
+
+<br />
+
+上図のDDLステートメントは、ソートキーが `(town, street)` の `MergeTree` テーブルを作成します。つまり、ディスク上のデータはこれらのカラムでソートされ、それに応じてスパースプライマリインデックスが生成されることを[意味します](/ja/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)。
+
+① 圧縮解除され、あらかじめソートされたテーブルのカラムが、テーブルのソートキーで定義された全体のソート順を維持したまま ② マージされ、③ 新しいスパースプライマリインデックスが生成され、④ マージ後のカラムファイルと索引が圧縮されて、ディスク上の新しいデータパーツとして保存されます。
+
+<div id="replacing-merges">
+  ### Replacing マージ
+</div>
+
+[ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) テーブルのパートマージは、[標準的なマージ](/ja/concepts/core-concepts/merges#standard-merges) と同様に動作しますが、各行については最新バージョンのみが保持され、古いバージョンは破棄されます。
+
+<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="パーツマージ" />
+
+<br />
+
+上の図の DDL ステートメントは、ソートキー `(town, street, id)` を持つ `ReplacingMergeTree` テーブルを作成しています。これは、ディスク上のデータがこれらのカラム順にソートされ、それに応じてスパースプライマリインデックスが生成されることを意味します。
+
+② のマージ処理は、標準的な `MergeTree` テーブルと同様に動作し、グローバルなソート順を維持しながら、解凍済みで事前にソートされたカラムを結合します。
+
+ただし、`ReplacingMergeTree` では同じソートキーを持つ重複行が削除され、その行を含むパートの作成タイムスタンプに基づいて最新の行だけが保持されます。
+
+<br />
+
+<div id="summing-merges">
+  ### 加算マージ
+</div>
+
+数値データは、[SummingMergeTree](/ja/reference/engines/table-engines/mergetree-family/summingmergetree) テーブルのパーツのマージ時に自動的に集計されます。
+
+<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="パーツマージ" />
+
+<br />
+
+上の図の DDLステートメントでは、`town` をソートキーとする `SummingMergeTree` テーブルを定義しています。これは、ディスク上のデータがこのカラムでソートされ、それに対応するスパースプライマリインデックスが作成されることを意味します。
+
+② のマージ処理では、ClickHouse は同じソートキーを持つすべての行を 1 つの行に置き換え、数値カラムの値を合計します。
+
+<div id="aggregating-merges">
+  ### 集計マージ
+</div>
+
+前述の `SummingMergeTree` テーブルの例は、[AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) テーブルの特化版であり、パートのマージ時に [90+](/ja/reference/functions/aggregate-functions/reference-index) の任意の集計関数を適用することで、[データの自動インクリメンタル変換](https://www.youtube.com/watch?v=QDAJTKZT8y4) を可能にします。
+
+<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="パーツマージ" />
+
+<br />
+
+上の図の DDL ステートメントは、`town` をソートキーとする `AggregatingMergeTree` テーブルを作成し、このカラムに基づいてデータがディスク上で順序付けられ、対応するスパースプライマリインデックスが生成されるようにします。
+
+② のマージ中、ClickHouse は同じソートキーを持つすべての行を、[部分集計状態](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#-multi-core-parallelization) を格納した 1 行に置き換えます (たとえば、`avg()` に対する `sum` と `count`) 。これらの状態により、インクリメンタルなバックグラウンドマージを通じて正確な結果が保証されます。

@@ -1,0 +1,253 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/telemetrygen
+title: 'Generar datos sintéticos de OpenTelemetry con telemetrygen'
+sidebarTitle: 'Datos sintéticos con telemetrygen'
+description: 'Usa telemetrygen para enviar logs, traces y métricas sintéticos variados a un collector de OpenTelemetry de ClickStack'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'telemetrygen', 'datos sintéticos', 'OpenTelemetry', 'prueba', 'logs', 'traces', 'métricas', 'observabilidad']
+---
+
+[`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen) es el generador de datos de OpenTelemetry Collector Contrib. Emite logs, traces y métricas OTLP sintéticos, y expone indicadores que te permiten definir la forma de los datos: varios servicios, severidades de logs, estados de spans y spans hijo, y distintos tipos de métricas. Úsalo para confirmar que un collector de OpenTelemetry de ClickStack está aceptando datos y que en la UI de ClickStack se muestren eventos variados y realistas.
+
+Esta guía asume que el collector ya se está ejecutando con endpoints OTLP en `4317` (gRPC) y `4318` (HTTP).
+
+<Tabs>
+  <Tab title="ClickStack gestionado">
+    <Steps>
+      <Step>
+        ### Requisitos previos
+
+        Esta guía asume que ha completado la [guía de primeros pasos de Managed ClickStack](/es/clickstack/deployment/managed) y que tiene un collector de OpenTelemetry en ejecución, con los endpoints OTLP gRPC (`4317`) y HTTP (`4318`) accesibles desde la máquina en la que ejecuta `telemetrygen`. Si [protegió el collector](/es/clickstack/ingesting-data/collector#securing-the-collector) con un `OTLP_AUTH_TOKEN`, tenga ese valor a mano.
+      </Step>
+
+      <Step>
+        ### Instalar telemetrygen
+
+        Ejecute `telemetrygen` desde su imagen de Docker (no requiere instalación). Defina un pequeño envoltorio para que los comandos de abajo sigan siendo legibles; `--add-host` permite que el contenedor pueda acceder a un collector que esté escuchando en el host:
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=host.docker.internal:4317
+        ```
+
+        O bien, instala el binario con Go y apunta a `localhost`:
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        export OTEL_ENDPOINT=localhost:4317
+        ```
+      </Step>
+
+      <Step>
+        ### Configurar variables de entorno
+
+        Exporte el token de autenticación si el collector está protegido:
+
+        ```shell
+        export OTLP_AUTH_TOKEN=<your_otlp_auth_token>
+        ```
+
+        <Info>
+          **Colector sin protección**
+
+          El ClickStack OpenTelemetry collector no requiere autenticación de forma predeterminada. Si no has seguido [Protección del collector](/es/clickstack/ingesting-data/collector#securing-the-collector) para configurar un `OTLP_AUTH_TOKEN`, elimina la línea `--otlp-header` del helper siguiente.
+        </Info>
+
+        Define un pequeño helper `tg` para que cada comando solo especifique lo que cambia (servicio, severidad, estado y atributos):
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${OTLP_AUTH_TOKEN}\"" \
+          --rate 5 --duration 30s "$@"; }
+        ```
+      </Step>
+
+      <Step>
+        ### Generar logs
+
+        Envía los logs como una combinación realista de niveles de severidad entre servicios: en su mayoría informativos, con alguna advertencia y algún error, en lugar de un flujo uniforme:
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        Los indicadores de log más útiles:
+
+        * `--service` establece `service.name` para que los eventos se atribuyan a un servicio.
+        * `--severity-text` y `--severity-number` establecen el nivel (`severity-number` va del 1 al 24).
+        * `--body` establece el mensaje del log.
+        * `--otlp-attributes` establece atributos a nivel de recurso (`key="value"`, `key=true` o `key=<integer>`).
+        * `--telemetry-attributes` establece atributos por registro.
+      </Step>
+
+      <Step>
+        ### Generar trazas
+
+        Envía trazas con varios spans desde varios servicios en buen estado y una dependencia con fallos. Esto le da al mapa de servicios una forma realista: en su mayor parte saludable, con un servicio que presenta errores, y además puebla las vistas de errores:
+
+        ```shell
+        # Healthy services: the bulk of the traffic, all spans Ok
+        for svc in frontend checkout cart; do
+          tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes "http.route=\"/$svc\""
+        done
+
+        # One slow dependency returning errors
+        tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.route="/charge"'
+        ```
+
+        Los indicadores de traza más útiles:
+
+        * `--child-spans` genera esa cantidad de spans secundarios por traza, lo que aporta una profundidad real a cada traza.
+        * `--span-duration` establece cuánto dura cada span (por ejemplo, `120ms`, `2s`).
+        * `--status-code` puede ser `Unset`, `Error` u `Ok` (o `0`, `1`, `2`). Usa `Error` para probar las vistas de error.
+        * `--span-links` añade enlaces entre spans.
+        * `--workers` ejecuta varios generadores en paralelo para lograr un volumen mayor y más variado.
+      </Step>
+
+      <Step>
+        ### Generar métricas
+
+        Envía los tres tipos de métricas más comunes para que los dashboards tengan contadores, gauges y una distribución. A diferencia de algunos generadores, `telemetrygen` respeta `--duration` para las métricas, así que no hace falta detenerlo manualmente:
+
+        ```shell
+        tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+        tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+        tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+        ```
+
+        `--metric-type` acepta `Gauge`, `Sum`, `Histogram` o `ExponentialHistogram`. `--otlp-metric-name` asigna un nombre a la serie para que puedas encontrarla en la UI, y `--aggregation-temporality` es `delta` o `cumulative`.
+      </Step>
+
+      <Step>
+        ### Verificar en ClickStack
+
+        Abra la UI de ClickStack desde la consola de ClickHouse Cloud. En la vista `Búsqueda`, establezca el intervalo de tiempo en `Last 15 minutes` y cambie la fuente entre `Logs` y `Traces`. Filtre por `ServiceName` para ver los servicios `frontend`, `checkout`, `cart` y `payment`, y por `SeverityText` para encontrar las líneas de registro de advertencia y error. Abra un trace de `payment` para ver los spans secundarios y el estado de error. Abra el `Chart Explorer`, seleccione `Metrics` y cree un gráfico con uno de los nombres de métricas que configuró arriba (por ejemplo, `http.server.requests`) para verificar la ingestión de métricas.
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    <Steps>
+      <Step>
+        ### Requisitos previos
+
+        En esta guía se asume que has iniciado Open Source ClickStack siguiendo las [instrucciones para la imagen todo en uno](/es/clickstack/getting-started/oss) y que se puede acceder a los endpoints OTLP (`4317` gRPC y `4318` HTTP). También necesitas la API key de ingesta desde la UI de HyperDX, en `Configuración del equipo > API Keys`.
+      </Step>
+
+      <Step>
+        ### Instala telemetrygen
+
+        Ejecuta `telemetrygen` desde su imagen de Docker (no requiere instalación). Define un pequeño envoltorio para que los comandos de abajo sigan siendo legibles; `--add-host` permite que el contenedor se conecte a un collector que está escuchando en el host:
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=host.docker.internal:4317
+        ```
+
+        O instala el binario con Go y usa `localhost` como destino:
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        export OTEL_ENDPOINT=localhost:4317
+        ```
+      </Step>
+
+      <Step>
+        ### Establecer variables de entorno
+
+        Exporta la API key de ingesta:
+
+        ```shell
+        export CLICKSTACK_API_KEY=<your_ingestion_api_key>
+        ```
+
+        Defina un pequeño helper `tg` para que en cada comando solo se especifique lo que cambia (servicio, severidad, status, atributos):
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${CLICKSTACK_API_KEY}\"" \
+          --rate 5 --duration 30s "$@"; }
+        ```
+      </Step>
+
+      <Step>
+        ### Generar logs
+
+        Envía logs con una combinación realista de niveles de severidad entre servicios, mayoritariamente informativos, con alguna advertencia y algún error en lugar de un flujo uniforme:
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+      </Step>
+
+      <Step>
+        ### Generar trazas
+
+        Envía trazas con varios spans desde varios servicios en buen estado y una dependencia con fallos. Esto le da al mapa de servicios una forma realista, mayoritariamente sana, con un servicio que genera errores, y puebla las vistas de errores:
+
+        ```shell
+        # Healthy services: the bulk of the traffic, all spans Ok
+        for svc in frontend checkout cart; do
+          tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes "http.route=\"/$svc\""
+        done
+
+        # One slow dependency returning errors
+        tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.route="/charge"'
+        ```
+      </Step>
+
+      <Step>
+        ### Generar métricas
+
+        Envíe los tres tipos de métricas más comunes para que los gráficos incluyan un counter, un gauge y una distribución:
+
+        ```shell
+        tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+        tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+        tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+        ```
+
+        `--metric-type` acepta `Gauge`, `Sum`, `Histogram` o `ExponentialHistogram`.
+      </Step>
+
+      <Step>
+        ### Verificar en ClickStack
+
+        Visita [http://localhost:8080](http://localhost:8080) para abrir la UI de ClickStack. En la vista `Búsqueda`, establece el intervalo de tiempo en `Last 15 minutes` y cambia la fuente entre `Logs` y `Traces`. Filtra por `ServiceName` para ver los servicios `frontend`, `checkout`, `cart` y `payment`, y por `SeverityText` para encontrar las líneas de log de advertencia y error. Abre una traza de `payment` para ver los spans hijos y el estado de error. Abre el `Chart Explorer`, selecciona `Metrics` y crea un gráfico con uno de los nombres de métricas que configuraste arriba (por ejemplo, `http.server.requests`) para verificar la ingestión de métricas.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

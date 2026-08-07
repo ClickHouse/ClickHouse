@@ -1,0 +1,40 @@
+---
+slug: /use-cases/observability/clickstack/event_patterns
+title: 'Padrões de eventos com ClickStack'
+sidebarTitle: 'Padrões de eventos'
+description: 'Padrões de eventos com ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'padrões de eventos', 'análise de logs', 'correspondência de padrões', 'observabilidade']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O recurso Padrões de eventos no ClickStack permite entender rapidamente grandes volumes de logs ou traces ao agrupar automaticamente mensagens semelhantes. Assim, em vez de examinar milhões de eventos individuais, você só precisa revisar um pequeno número de grupos relevantes.
+
+<Image img="/images/use-cases/observability/event_patterns.webp" alt="Event patterns" size="lg" />
+
+Isso torna muito mais fácil identificar quais erros ou avisos são novos, quais são recorrentes e quais estão causando picos repentinos no volume de logs. Como os padrões são gerados dinamicamente, você não precisa definir expressões regulares nem manter regras de parsing - o ClickStack se adapta automaticamente aos seus eventos, independentemente do formato.
+
+Além da resposta a incidentes, essa visão de alto nível também ajuda a identificar fontes de logs com muito ruído, que podem ser ajustadas para reduzir custos, descobrir os diferentes tipos de logs que um serviço produz e responder mais rapidamente se o sistema já está emitindo os sinais que você procura.
+
+<div id="accessing-event-patterns">
+  ## Acessando padrões de eventos
+</div>
+
+Os padrões de eventos estão disponíveis diretamente no painel **Busca** do ClickStack.
+
+No seletor **Modo de análise**, no canto superior esquerdo, escolha **Padrões de eventos** para alternar da tabela de resultados padrão para uma visualização agrupada de eventos semelhantes.
+
+<Image img="/images/use-cases/observability/event_patterns_highlight.webp" alt="Padrões de eventos" size="lg" />
+
+Isso oferece uma alternativa à **Tabela de resultados** padrão, que permite percorrer cada log ou trace individualmente.
+
+<div id="recommendations">
+  ## Recomendações
+</div>
+
+Padrões de eventos são mais eficazes quando aplicados a **subconjuntos menores** dos seus dados. Por exemplo, filtrar os dados para um único serviço antes de habilitar o Padrões de eventos geralmente revela mensagens mais relevantes e interessantes do que aplicar o recurso a milhares de serviços de uma só vez.
+
+Eles também são particularmente úteis para resumir mensagens de erro, em que erros repetidos com IDs ou payloads variados são agrupados em clusters concisos.
+
+Para ver um exemplo em funcionamento, confira como o Padrões de eventos é usado no [Remote Demo Dataset](/pt-BR/clickstack/example-datasets/remote-demo-data#identify-error-patterns).

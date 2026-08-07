@@ -1,0 +1,218 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/bindplane
+title: 'Bindplaneを使用してOpenTelemetryをClickStackに送信する'
+sidebarTitle: 'Bindplane'
+description: 'Bindplaneでcollectorを一元管理し、テレメトリーをClickStackにルーティングする'
+doc_type: 'guide'
+keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector管理']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **要点**
+
+  このガイドでは、Bindplane のネイティブな ClickStack 宛先を使って、テレメトリーを ClickStack にルーティングする方法を説明します。主な内容は次のとおりです。
+
+  * Bindplane で ClickStack を宛先として設定する
+  * テレメトリーを処理してルーティングするための構成を作成する
+  * 構成を OTel collector にリモートでデプロイし、データ収集を開始する
+  * ClickStack でテレメトリーを表示する
+
+  このインテグレーションでは、ClickStack の高性能なインジェストと Bindplane の一元化された collector 管理を組み合わせることで、運用負荷を増やすことなくオブザーバビリティをスケールしやすくします。
+
+  所要時間: 10～15 分
+</Info>
+
+<div id="what-is-bindplane">
+  ## Bindplane とは何ですか？
+</div>
+
+Bindplane は、OpenTelemetry Collector を一元管理するための OpenTelemetry ネイティブなテレメトリー パイプラインです。視覚的な設定編集、安全なロールアウト、パイプラインインテリジェンスを提供することで、大規模な collector 群の運用を簡素化します。
+
+<div id="why-bindplane-clickstack">
+  ## なぜ Bindplane + ClickStack なのか？
+</div>
+
+大規模環境では、OpenTelemetry Collector の管理運用がボトルネックになりがちです。ClickStack は非常に大規模なインジェストを処理できることを実証しており、実際に顧客は毎秒数 GB のテレメトリーを取り込み、数百 PB を保存しています。課題はクエリ性能そのものではなく、ClickHouse にデータを送り込む collector インフラストラクチャをいかに確実に運用するかへと移っています。
+
+Bindplane は、次の機能によってこの課題を解決します。
+
+* 数千台から 100 万台超までの OpenTelemetry Collector を一元管理
+* 安全にワンクリックでロールアウトできる、視覚的な設定編集
+* データが ClickStack に到達する前に、一貫して適用される自動リソース検出とエンリッチメント
+* ファンアウトルーティングにより、同じテレメトリーストリームを ClickStack と他の宛先に同時に送信
+* collector の健全性、スループット、エンドツーエンドのパフォーマンスを含む、パイプライン全体の可視性
+
+<Tip>
+  **主なポイント**
+
+  * **ClickStack は、非常に大規模なインジェスト、ストレージ、高速な分析クエリに対応します**
+  * **Bindplane は、インジェストパイプラインと collector の運用の複雑さを管理します**
+</Tip>
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* ClickStack インスタンスが稼働していること (ローカル、Server、または ClickHouse Cloud)
+* Bindplane アカウント ([`app.bindplane.com` でアカウントを作成](https://app.bindplane.com))
+* Bindplane OTel Collector がインストールされていること ([Install Your First Collector](https://docs.bindplane.com/readme/install-your-first-collector) を参照)
+* Bindplane collector から ClickStack の OTLP endpoint へのネットワーク接続
+* ClickStack API Ingestion Key (ClickStack Team Settings &gt; API Keys で確認できます。詳細は[こちらのドキュメント](/ja/clickstack/ingesting-data/opentelemetry#sending-otel-data)を参照)
+* 必要なネットワークポートが開放されていること (HTTP/s は `4318`、gRPC は `4317`)
+
+<div id="integrate-bindplane-clickstack">
+  ## ClickStack と Bindplane を統合する
+</div>
+
+<Steps>
+  <Step>
+    #### ClickStack を宛先として設定する
+
+    1. Bindplane アカウントにログインします
+    2. **Library** に移動します
+    3. **Add Destination** をクリックします
+    4. 利用可能な宛先の一覧から **ClickStack** を選択します
+    5. 接続を設定します。
+       * **Protocol**: HTTP または gRPC を選択します (デフォルト: ポート `4318` の HTTP)
+       * **Hostname**: ClickStack の OTLPエンドポイントのホスト名または IP アドレスを入力します
+       * **Port**: ポート番号を入力します (HTTP は `4318`、gRPC は `4317`)
+       * **API Ingestion Key**: ClickStack の API Ingestion Key を入力します
+    6. 宛先に名前を付けます (例: &quot;ClickStack Production&quot;)
+    7. **Save** をクリックして宛先を作成します
+
+    <Tip>
+      **重要なポイント**
+
+      ClickStack の宛先は HTTP と gRPC の両方をサポートしています。大量データを扱う場合は、より高いパフォーマンスを得るため、圧縮 (gzip、zstd、snappy) を有効にした gRPC の使用を推奨します。
+    </Tip>
+  </Step>
+
+  <Step>
+    #### 構成を作成する
+
+    ClickStack の宛先を設定したら、テレメトリーを処理してルーティングするための構成を作成します。
+
+    1. **Configurations** → **Create Configuration** に移動します
+    2. 構成に名前を付けます (例: &quot;ClickStack Pipeline&quot;)
+    3. デプロイ対象に応じて **Collector Type** と **Platform** を選択します
+    4. ソースを追加します。
+       * **Add Source** をクリックして、80 種類以上の利用可能なソースから選択します
+       * テスト用途では、トラフィックをシミュレートするテレメトリー生成ソースを追加できます
+       * 本番環境では、実際のテレメトリー (logs、metrics、traces) のソースを追加します
+    5. ClickStack の宛先を追加します。
+       * **Add Destination** をクリックします
+       * 前の手順で作成した ClickStack の宛先を選択します
+       * 送信するテレメトリーの種類を選択します (Logs、Metrics、Traces、またはすべて)
+
+    <Tip>
+      **重要なポイント**
+
+      ClickStack に届く前にテレメトリーを整形するため、filtering、sampling、masking、enrichment、batching などのプロセッサを追加できます。これにより、一貫性のある構造化データを ClickHouse に送れます。
+    </Tip>
+  </Step>
+
+  <Step>
+    #### プロセッサを追加する (任意)
+
+    Bindplane は、パイプラインインテリジェンスとプロセッサの推奨機能を提供します。次の目的でプロセッサを追加できます。
+
+    * **Filter**: 不要なテレメトリーを除外してデータ量を削減する
+    * **Sample**: 大量の traces に sampling 戦略を適用する
+    * **Enrich**: リソース属性、labels、メタデータを追加する
+    * **Transform**: テレメトリーの構造や内容を変更する
+    * **Batch**: 効率的に送信できるようバッチサイズを最適化する
+
+    これらのプロセッサは、データが ClickStack に届く前に、collector フリート全体に一貫して適用されます。
+  </Step>
+
+  <Step>
+    #### collector をデプロイして rollout を開始する
+
+    1. 構成に collector (BDOT Collector) を追加します。
+       * Bindplane の **Agents** に移動します
+       * [Bindplane のインストール手順](https://docs.bindplane.com/readme/install-your-first-collector)に従って、対象システムに Bindplane collector をインストールします
+       * 接続されると、collector 一覧に collector が表示されます
+
+    2. collector に構成を割り当てます。
+       * 使用する collector を選択します
+       * それらに ClickStack の構成を割り当てます
+
+    3. rollout を開始します。
+       * **Start Rollout** をクリックして構成をデプロイします
+       * Bindplane は rollout 前に構成を検証します
+       * Bindplane UI で rollout の状態を監視します
+
+    <Tip>
+      **重要なポイント**
+
+      Bindplane では、検証付きの安全なワンクリック rollout を実行できます。Bindplane インターフェイスを通じて、collector の正常性、スループット、error をリアルタイムで監視できます。
+    </Tip>
+
+    <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Bindplane 経由で ClickStack に送られるテレメトリーシグナル" size="lg" />
+  </Step>
+
+  <Step>
+    #### ClickStack でテレメトリーを確認する
+
+    構成が rollout されると、管理対象の collector フリートから ClickStack へテレメトリーが流れ始めます。
+
+    1. ClickStack インスタンス (HyperDX UI) にログインします
+    2. **Logs**、**Metrics**、または **Traces** のエクスプローラーに移動します
+    3. Bindplane 管理下の collector から送られてくるテレメトリーデータが表示されるはずです
+    4. ClickStack に到着するデータは、すでに Bindplane のプロセッサによって enrich され、構造化されています
+
+    <Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="Bindplane 経由で ClickStack に送られるテレメトリーシグナル" size="lg" />
+  </Step>
+</Steps>
+
+<div id="advanced-configuration">
+  ## 詳細設定
+</div>
+
+<div id="fan-out-routing">
+  ### ファンアウトルーティング
+</div>
+
+Bindplane はファンアウトルーティングをサポートしており、同じテレメトリーストリームを複数の宛先へ同時に送信できます。次のことが可能です。
+
+* ログ、メトリクス、トレースを ClickStack に送信し、長期保存と分析に利用する
+* 同じデータを他のオブザーバビリティプラットフォームにもルーティングし、リアルタイムのアラートに活用する
+* 特定のテレメトリーを SIEM プラットフォームに転送し、セキュリティ分析に利用する
+
+これは、Bindplane の構成に複数の宛先を追加することで設定できます。
+
+<div id="compression">
+  ### 圧縮とパフォーマンス
+</div>
+
+大量データを扱う環境では、ClickStack の宛先で圧縮を設定してください。
+
+* **HTTP**: gzip、deflate、snappy、zstd、または none をサポート (デフォルト: gzip)
+* **gRPC**: gzip、snappy、zstd、または none をサポート (デフォルト: gzip)
+
+圧縮を有効にすると、ClickStack にテレメトリーを送信する際の帯域幅使用量を削減できます。特に大規模環境では重要です。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+これで、Bindplane から ClickStack へテレメトリーが送られるようになったので、次のことができます。
+
+* **ダッシュボードを作成する**: ClickStack (HyperDX) で、ログ、メトリクス、トレースの可視化を作成する
+* **アラートを設定する**: 重要な状態に対するアラートを ClickStack で設定する
+* **デプロイメントをスケールする**: オブザーバビリティのニーズの拡大に応じて、collector とログソースを追加する
+* **パイプラインを最適化する**: Bindplane のパイプラインインテリジェンスを使用して、最適化の余地を特定する
+
+<div id="read-more">
+  ## さらに詳しく
+</div>
+
+* [Bindplane ドキュメントの ClickStack インテグレーション](https://docs.bindplane.com/integrations/destinations/clickstack)
+
+{/* - [Bindplaneブログの「Bindplane + ClickStack インテグレーション: OpenTelemetry (OTel) を ClickStack に送信」](tbd) -- 公開後にリンクを追加 */}

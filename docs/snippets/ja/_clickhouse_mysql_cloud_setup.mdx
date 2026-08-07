@@ -1,0 +1,129 @@
+---
+title: ClickHouse MySQL Cloud セットアップ
+---
+
+<Steps>
+  <Step>
+    #### `Connect your app` を選択
+
+    ClickHouse Cloud サービスを作成したら、`Connect your app` 画面でドロップダウンから MySQL を選択します。
+
+    <Image size="lg" img="/images/_snippets/mysql1.webp" alt="MySQL インターフェイスの選択用ドロップダウンが表示された ClickHouse Cloud の認証情報画面" border />
+  </Step>
+
+  <Step>
+    #### MySQL インターフェイスを有効にする
+
+    このサービス専用の MySQL インターフェイスを有効にするには、スイッチをオンにします。
+    これにより、このサービスでポート `3306` が公開され、固有の MySQL ユーザー名を含む MySQL 接続画面が表示されます。
+
+    <Image size="lg" img="/images/_snippets/mysql2.webp" alt="MySQL インターフェイスを有効にするトグルと接続情報が表示された ClickHouse Cloud 画面" border />
+
+    または、既存のサービスで MySQL インターフェイスを有効にするには、次の手順に従います。
+  </Step>
+
+  <Step>
+    #### `Connect` を選択
+
+    サービスが `Running` 状態であることを確認してから、MySQL インターフェイスを有効にしたいサービスをクリックします。
+    左側のメニューから「Connect」を選択します。
+
+    <Image size="lg" img="/images/_snippets/mysql3.webp" alt="Connect オプションが強調表示された ClickHouse Cloud サービスの接続画面" border />
+  </Step>
+
+  <Step>
+    #### `MySQL` を選択
+
+    `Connect With` ドロップダウンから `MySQL` を選択します。
+
+    <Image size="md" img="/images/_snippets/mysql4.webp" alt="MySQL オプションの選択を表示した ClickHouse Cloud 接続画面" border />
+  </Step>
+
+  <Step>
+    #### MySQL インターフェイスを有効にする
+
+    このサービス専用の MySQL インターフェイスを有効にするには、スイッチをオンにします。
+    これにより、このサービスでポート `3306` が公開され、固有の MySQL ユーザー名を含む MySQL 接続画面が表示されます。
+  </Step>
+</Steps>
+
+<Image size="md" img="/images/_snippets/mysql5.webp" alt="接続情報が表示され、MySQL インターフェイスが有効になっている ClickHouse Cloud 接続画面" border />
+
+<div id="creating-multiple-mysql-users-in-clickhouse-cloud">
+  ## ClickHouse Cloud で読み取り専用の MySQL ユーザーを作成する
+</div>
+
+ClickHouse Cloud では、デフォルトユーザーと同じパスワードを共有する `mysql4<subdomain>` ユーザーが自動的に作成されます。
+`<subdomain>` の部分は、ClickHouse Cloud のホスト名の先頭部分に対応します。
+
+このユーザー名形式は、安全な接続を確立するものの、TLS ハンドシェイクに [SNI (Server Name Indication)](https://www.cloudflare.com/learning/ssl/what-is-sni) 情報を含めないツールとの互換性のために必要です。
+SNI 情報がないと、システムは適切な内部ルーティングを実行できないため、ユーザー名に埋め込まれたサブドメイン情報が必要なルーティング情報を補います。
+MySQL コンソールクライアントは、その一例です。
+
+<Tip>
+  ベストプラクティスとして、新しい読み取り専用の MySQL ユーザーを作成することを推奨します。
+</Tip>
+
+<Note>
+  ClickHouse Cloud のホスト名が `foobar.us-east1.aws.clickhouse.cloud` の場合、`<subdomain>` の部分は `foobar` で、カスタム MySQL ユーザー名は `mysql4foobar_team1` のようになります。
+</Note>
+
+<Steps>
+  <Step>
+    #### 読み取り専用の設定プロファイルを作成する
+
+    読み取り専用ユーザーに適用する [設定プロファイル](/ja/reference/statements/create/settings-profile) を作成し、
+    `readonly` 設定を `1` にします。
+
+    ```sql
+    CREATE SETTINGS PROFILE readonly_profile SETTINGS readonly = 1
+    ```
+  </Step>
+
+  <Step>
+    #### 新しい読み取り専用の MySQL ユーザーを作成する
+
+    次の形式の名前で [ユーザーを作成](/ja/reference/statements/create/user) します。
+
+    ```sql
+    mysql4<subdomain>_<username>
+    ```
+
+    新しいユーザーに `readonly_profile` を適用し、パスワードがダブル SHA1 フォーマットであることを確認してください。例:
+
+    ```sql
+    CREATE USER mysql4foobar_readonly
+    IDENTIFIED WITH double_sha1_password BY 'YourPassword42$'
+    SETTINGS PROFILE 'readonly_profile';
+    ```
+  </Step>
+
+  <Step>
+    #### 新しいユーザーに必要なテーブルへのアクセス権限を付与する
+
+    必要なテーブルまたはデータベースを操作できるように、新しいユーザーに必要な権限を [付与](/ja/reference/statements/grant) します。
+    たとえば、`system.query_log` のみにアクセスを許可する場合は次のとおりです。
+
+    ```sql
+    GRANT SELECT ON system.query_log TO mysql4foobar_readonly;
+    ```
+
+    <Note>
+      読み取り専用ユーザーには、アクセスさせたいテーブルに対して `SELECT` 権限のみを付与してください。
+    </Note>
+
+    新しく作成したユーザーは、MySQL インターフェイスを使用して ClickHouse Cloud サービスに接続する際に利用できます。
+  </Step>
+</Steps>
+
+<div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
+  ### ClickHouse Cloud で複数の MySQLユーザーをトラブルシューティングする
+</div>
+
+新しい MySQLユーザーを作成し、MySQL CLI クライアント経由で接続した際に次のエラーが表示される場合:
+
+```
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 54
+```
+
+この場合、ユーザー名が[上記](#creating-multiple-mysql-users-in-clickhouse-cloud)で説明した `mysql4<subdomain>_<username>` 形式に従っていることを確認してください。

@@ -1,0 +1,8 @@
+<clickhouse>
+    <merge_tree>
+        <deduplicate_merge_projection_mode>throw</deduplicate_merge_projection_mode>
+    </merge_tree>
+    <replicated_merge_tree>
+        <deduplicate_merge_projection_mode>throw</deduplicate_merge_projection_mode>
+    </replicated_merge_tree>
+</clickhouse>

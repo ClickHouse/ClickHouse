@@ -1,0 +1,99 @@
+---
+description: 'ClickHouse 中 QBit 数据类型的文档，该类型支持针对近似向量搜索进行细粒度量化'
+keywords: ['qbit', 'data type']
+sidebarTitle: 'QBit'
+slug: /sql-reference/data-types/qbit
+title: 'QBit 数据类型'
+doc_type: 'reference'
+---
+
+`QBit` 数据类型会重新组织向量的存储方式，以加快近似向量搜索。它不是将每个向量的元素存储在一起，而是将所有向量中相同二进制位位置的值分组存储。
+这样既能以全精度存储向量，又能让你在搜索时选择细粒度的量化级别：读取更少的位可减少 I/O 并加快计算，读取更多的位则可获得更高精度。你既能享受量化在减少数据传输和计算量方面带来的速度优势，又能在需要时使用全部原始数据。
+
+要声明一个 `QBit` 类型的列，请使用以下语法：
+
+```sql
+column_name QBit(element_type, dimension)
+```
+
+* `element_type` – 每个向量元素的数据类型。允许的类型包括 `BFloat16`、`Float32` 和 `Float64`
+* `dimension` – 每个向量中的元素个数
+
+<div id="creating-qbit">
+  ## 创建 QBit
+</div>
+
+在表的列定义中使用 `QBit` 类型：
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]), (2, [9, 10, 11, 12, 13, 14, 15, 16]);
+SELECT vec FROM test ORDER BY id;
+```
+
+```text
+┌─vec──────────────────────┐
+│ [1,2,3,4,5,6,7,8]        │
+│ [9,10,11,12,13,14,15,16] │
+└──────────────────────────┘
+```
+
+<div id="converting-arrays-to-qbit">
+  ## 将数组转换为 QBit
+</div>
+
+当数组长度与 `QBit` 的维度一致时，数组会转换为 `QBit`。数组的元素类型不必与 `QBit` 的元素类型一致。任何数值类型的元素都会自动转换为 `QBit` 的元素类型。因此，你可以将现有的嵌入向量列直接迁移到 `QBit` 列中：
+
+```sql
+CREATE TABLE embeddings (id UInt32, embedding Array(Float32)) ENGINE = Memory;
+INSERT INTO embeddings VALUES (1, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]), (2, [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]);
+
+CREATE TABLE vectors (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO vectors SELECT id, embedding FROM embeddings;
+
+SELECT * FROM vectors ORDER BY id;
+```
+
+```text
+┌─id─┬─vec───────────────────────────────┐
+│  1 │ [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8] │
+│  2 │ [0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1] │
+└────┴───────────────────────────────────┘
+```
+
+这种转换也可以显式地通过 `CAST` 实现，例如 `CAST(embedding AS QBit(Float32, 8))`。
+
+<div id="qbit-subcolumns">
+  ## QBit 子列
+</div>
+
+`QBit` 实现了一种子列访问模式，使您可以访问已存储向量中的各个位平面。每个比特位都可以通过 `.N` 语法访问，其中 `N` 表示该比特位的位置：
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [0, 0, 0, 0, 0, 0, 0, 0]);
+INSERT INTO test VALUES (1, [-0, -0, -0, -0, -0, -0, -0, -0]);
+SELECT bin(vec.1) FROM test;
+```
+
+```text
+┌─bin(tupleElement(vec, 1))─┐
+│ 00000000                  │
+│ 11111111                  │
+└───────────────────────────┘
+```
+
+可访问的子列数量取决于元素类型：
+
+* `BFloat16`：16 个子列 (1-16)
+* `Float32`：32 个子列 (1-32)
+* `Float64`：64 个子列 (1-64)
+
+<div id="vector-search-functions">
+  ## 向量搜索函数
+</div>
+
+以下是用于向量相似搜索、且使用 `QBit` 数据类型的距离函数：
+
+* [`L2DistanceTransposed`](/zh/reference/functions/regular-functions/distance-functions#L2DistanceTransposed)
+* [`cosineDistanceTransposed`](/zh/reference/functions/regular-functions/distance-functions#cosineDistanceTransposed)

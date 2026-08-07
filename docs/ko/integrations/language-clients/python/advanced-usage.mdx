@@ -1,0 +1,173 @@
+---
+sidebarTitle: '고급 사용법'
+keywords: ['ClickHouse', 'Python', '고급', 'raw', '비동기', '스레딩']
+description: 'ClickHouse Connect의 고급 사용법'
+slug: /integrations/language-clients/python/advanced-usage
+title: '고급 사용법'
+doc_type: '참고'
+---
+
+<div id="raw-api">
+  ## Raw API
+</div>
+
+ClickHouse 데이터와 네이티브 또는 서드파티 데이터 타입 및 구조 간 변환이 필요하지 않은 사용 사례를 위해, ClickHouse Connect 클라이언트는 ClickHouse 연결을 직접 사용할 수 있는 메서드를 제공합니다.
+
+<div id="client-rawquery-method">
+  ### Client `raw_query` 메서드
+</div>
+
+`Client.raw_query` 메서드를 사용하면 클라이언트 connection을 통해 ClickHouse HTTP 쿼리 인터페이스를 직접 사용할 수 있습니다. 반환값은 가공되지 않은 `bytes` 객체입니다. 이 메서드는 최소한의 인터페이스로 매개변수 바인딩, 오류 처리, 재시도, 설정 관리를 제공하는 편리한 래퍼입니다.
+
+| 매개변수              | 유형               | 기본값    | 설명                                                                                                                                                           |
+| ----------------- | ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| query             | str              | *필수*   | 유효한 모든 ClickHouse 쿼리                                                                                                                                         |
+| parameters        | dict or iterable | *None* | [매개변수 설명](/ko/integrations/language-clients/python/driver-api#parameters-argument)을 참조하십시오.                                                                     |
+| settings          | dict             | *None* | [설정 설명](/ko/integrations/language-clients/python/driver-api#settings-argument)을 참조하십시오.                                                                         |
+| fmt               | str              | *None* | 반환되는 bytes에 사용할 ClickHouse 출력 형식입니다. 지정하지 않으면 ClickHouse는 TSV를 사용합니다.                                                                                        |
+| use&#95;database  | bool             | True   | 쿼리 Context에 ClickHouse Connect 클라이언트에 할당된 데이터베이스를 사용합니다.                                                                                                     |
+| external&#95;data | ExternalData     | *None* | 쿼리와 함께 사용할 파일 또는 binary 데이터를 포함하는 ExternalData 객체입니다. [고급 쿼리(External Data)](/ko/integrations/language-clients/python/advanced-querying#external-data)를 참조하십시오. |
+
+반환된 `bytes` 객체는 호출자가 직접 처리해야 합니다. `Client.query_arrow`는 ClickHouse `Arrow` 출력 형식을 사용하는 이 메서드의 얇은 래퍼일 뿐이라는 점에 유의하십시오.
+
+<div id="client-rawstream-method">
+  ### Client `raw_stream` 메서드
+</div>
+
+`Client.raw_stream` 메서드는 `raw_query` 메서드와 동일한 API를 사용하지만, `bytes` 객체의 제너레이터 또는 스트림 소스로 활용할 수 있는 `io.IOBase` 객체를 반환합니다. 현재는 `query_arrow_stream` 메서드에서 사용됩니다.
+
+<div id="client-rawinsert-method">
+  ### Client `raw_insert` 메서드
+</div>
+
+`Client.raw_insert` 메서드를 사용하면 클라이언트 연결을 통해 `bytes` 객체 또는 `bytes` 객체 생성기를 직접 삽입할 수 있습니다. 이 메서드는 삽입 payload를 별도로 처리하지 않으므로 성능이 매우 뛰어납니다. 또한 설정과 삽입 포맷을 지정하는 옵션을 제공합니다:
+
+| 매개변수             | 유형                                     | 기본값        | 설명                                                                                   |
+| ---------------- | -------------------------------------- | ---------- | ------------------------------------------------------------------------------------ |
+| table            | str                                    | *Required* | 단순 테이블 이름 또는 데이터베이스를 포함한 정규화된 테이블 이름                                                 |
+| column&#95;names | Sequence[str]                          | *None*     | 삽입 block의 컬럼 이름입니다. `fmt` 매개변수에 이름이 포함되지 않으면 필요합니다                                   |
+| insert&#95;block | str, bytes, Generator[bytes], BinaryIO | *Required* | 삽입할 데이터입니다. 문자열은 클라이언트 인코딩을 사용해 인코딩됩니다.                                              |
+| settings         | dict                                   | *None*     | [설정 설명](/ko/integrations/language-clients/python/driver-api#settings-argument)을 참조하십시오. |
+| fmt              | str                                    | *None*     | `insert_block` bytes의 ClickHouse 입력 형식입니다. (지정하지 않으면 ClickHouse는 TSV를 사용합니다)         |
+
+호출자는 `insert_block`이 지정한 포맷이며 지정한 Compression method를 사용하도록 보장할 책임이 있습니다. ClickHouse Connect는 파일 업로드와 PyArrow Tables에 이러한 원시 삽입을 사용하며, parsing은 ClickHouse 서버에 위임합니다.
+
+<div id="saving-query-results-as-files">
+  ## 쿼리 결과를 파일로 저장하기
+</div>
+
+`raw_stream` 메서드를 사용하면 ClickHouse에서 로컬 파일 시스템으로 파일을 직접 스트리밍할 수 있습니다. 예를 들어, 쿼리 결과를 CSV 파일로 저장하려면 다음 코드 예시를 사용할 수 있습니다.
+
+```python
+import clickhouse_connect
+
+if __name__ == '__main__':
+    client = clickhouse_connect.get_client()
+    query = 'SELECT number, toString(number) AS number_as_str FROM system.numbers LIMIT 5'
+    fmt = 'CSVWithNames'  # or CSV, or CSVWithNamesAndTypes, or TabSeparated, etc.
+    stream = client.raw_stream(query=query, fmt=fmt)
+    with open("output.csv", "wb") as f:
+        for chunk in stream:
+            f.write(chunk)
+```
+
+위 코드를 실행하면 다음 내용이 담긴 `output.csv` 파일이 생성됩니다:
+
+```csv
+"number","number_as_str"
+0,"0"
+1,"1"
+2,"2"
+3,"3"
+4,"4"
+```
+
+마찬가지로 [TabSeparated](/ko/reference/formats/TabSeparated/TabSeparated) 및 기타 포맷으로도 데이터를 저장할 수 있습니다. 사용 가능한 모든 포맷 옵션의 개요는 [입력 및 출력 데이터 포맷](/ko/reference/formats/index)에서 확인할 수 있습니다.
+
+<div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
+  ## 멀티스레드, 멀티프로세스 및 async/이벤트 기반 사용 사례
+</div>
+
+ClickHouse Connect는 멀티스레드, 멀티프로세스, 이벤트 루프 기반/비동기 애플리케이션에서 잘 작동합니다. 모든 쿼리 및 삽입 처리는 단일 스레드에서 이루어지므로, 작업은 일반적으로 스레드 안전합니다. (일부 작업을 하위 수준에서 병렬로 처리해 단일 스레드에 따른 성능 저하를 완화하는 기능이 향후 개선 사항으로 추가될 수 있지만, 그 경우에도 스레드 안전성은 유지됩니다.)
+
+각 쿼리 또는 삽입 실행은 각각 자체 `QueryContext` 또는 `InsertContext` 객체에 상태를 유지하므로, 이러한 도우미 객체는 스레드 안전하지 않으며 여러 처리 스트림 간에 공유해서는 안 됩니다. context 객체에 대한 추가 설명은 [QueryContexts](/ko/integrations/language-clients/python/advanced-querying#querycontexts) 및 [InsertContexts](/ko/integrations/language-clients/python/advanced-inserting#insertcontexts) 섹션을 참조하십시오.
+
+또한 애플리케이션에서 2개 이상의 쿼리 및/또는 삽입이 동시에 &quot;진행 중&quot;인 경우에는 추가로 고려해야 할 사항이 2가지 있습니다. 첫 번째는 쿼리/삽입에 연결된 ClickHouse &quot;세션&quot;이고, 두 번째는 ClickHouse Connect Client 인스턴스에서 사용하는 HTTP 연결 풀입니다.
+
+<div id="asyncclient-wrapper">
+  ## AsyncClient 래퍼
+</div>
+
+ClickHouse Connect는 일반 `Client`를 위한 비동기 래퍼를 제공하므로 `asyncio` 환경에서도 클라이언트를 사용할 수 있습니다.
+
+`AsyncClient` 인스턴스를 얻으려면 표준 `get_client`와 동일한 매개변수를 받는 `get_async_client` 팩터리 함수를 사용할 수 있습니다:
+
+```python
+import asyncio
+
+import clickhouse_connect
+
+async def main():
+    client = await clickhouse_connect.get_async_client()
+    result = await client.query("SELECT name FROM system.databases LIMIT 1")
+    print(result.result_rows)
+    # 출력:
+    # [('INFORMATION_SCHEMA',)]
+
+asyncio.run(main())
+```
+
+`AsyncClient`는 표준 `Client`와 동일한 메서드와 매개변수를 가지며, 해당되는 경우 코루틴으로 동작합니다. 내부적으로 I/O 작업을 수행하는 `Client`의 메서드는 [run&#95;in&#95;executor](https://docs.python.org/3/library/asyncio-eventloop.html#asyncio.loop.run_in_executor) 호출로 래핑됩니다.
+
+`AsyncClient` 래퍼를 사용하면 I/O 작업이 완료될 때까지 기다리는 동안 실행 스레드와 GIL이 해제되므로 멀티스레드 성능이 향상됩니다.
+
+참고: 일반 `Client`와 달리 `AsyncClient`는 기본적으로 `autogenerate_session_id`를 `False`로 설정합니다.
+
+관련 항목: [run&#95;async 예시](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/run_async.py).
+
+<div id="managing-clickhouse-session-ids">
+  ## ClickHouse 세션 ID 관리
+</div>
+
+각 ClickHouse 쿼리는 ClickHouse &quot;세션&quot; 컨텍스트에서 실행됩니다. 현재 세션은 두 가지 용도로 사용됩니다.
+
+* 여러 쿼리에 특정 ClickHouse 설정을 연결하는 데 사용됩니다([user settings](/ko/reference/settings/session-settings) 참조). 사용자 세션 범위의 설정을 변경하려면 ClickHouse `SET` 명령을 사용합니다.
+* [임시 테이블](/ko/reference/statements/create/table#temporary-tables)을 추적하는 데 사용됩니다.
+
+기본적으로 ClickHouse Connect `Client` 인스턴스로 실행되는 각 쿼리는 해당 클라이언트의 세션 ID를 사용합니다. 단일 클라이언트를 사용할 경우 `SET` SQL 문과 임시 테이블은 예상대로 동작합니다. 하지만 ClickHouse 서버는 동일한 세션 내에서 동시 쿼리를 허용하지 않습니다(시도할 경우 클라이언트에서 `ProgrammingError`가 발생합니다). 동시 쿼리를 실행하는 애플리케이션에서는 다음 패턴 중 하나를 사용하세요.
+
+1. 세션 격리가 필요한 각 스레드/프로세스/이벤트 핸들러마다 별도의 `Client` 인스턴스를 생성합니다. 이렇게 하면 클라이언트별 세션 상태(임시 테이블 및 `SET` 값)가 유지됩니다.
+2. 공유 세션 상태가 필요하지 않다면, `query`, `command`, 또는 `insert`를 호출할 때 `settings` 인수를 통해 각 쿼리에 고유한 `session_id`를 사용합니다.
+3. 공유 클라이언트에서 세션을 비활성화하려면 클라이언트를 생성하기 전에 `autogenerate_session_id=False`로 설정합니다(또는 이를 `get_client`에 직접 전달합니다).
+
+```python
+from clickhouse_connect import common
+import clickhouse_connect
+
+common.set_setting('autogenerate_session_id', False)  # 클라이언트 생성 전에 반드시 설정해야 합니다
+client = clickhouse_connect.get_client(host='somehost.com', user='dbuser', password=1234)
+```
+
+또는 `autogenerate_session_id=False`를 `get_client(...)`에 직접 전달할 수 있습니다.
+
+이 경우 ClickHouse Connect는 `session_id`를 전송하지 않으며, server는 개별 요청을 동일한 세션에 속한 것으로 처리하지 않습니다. 임시 테이블과 세션 수준 설정은 요청 간에 유지되지 않습니다.
+
+<div id="customizing-the-http-connection-pool">
+  ## HTTP 연결 풀 사용자 지정
+</div>
+
+ClickHouse Connect는 서버와의 기본 HTTP 연결을 처리하기 위해 `urllib3` 연결 풀을 사용합니다. 기본적으로 모든 클라이언트 인스턴스는 동일한 연결 풀을 공유하며, 이는 대부분의 사용 사례에 충분합니다. 이 기본 풀은 애플리케이션에서 사용하는 각 ClickHouse 서버에 대해 최대 8개의 HTTP Keep Alive 연결을 유지합니다.
+
+대규모 멀티스레드 애플리케이션에서는 별도의 연결 풀이 더 적합할 수 있습니다. 사용자 지정 연결 풀은 기본 `clickhouse_connect.get_client` 함수에 `pool_mgr` 키워드 인수로 전달할 수 있습니다:
+
+```python
+import clickhouse_connect
+from clickhouse_connect.driver import httputil
+
+big_pool_mgr = httputil.get_pool_manager(maxsize=16, num_pools=12)
+
+client1 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
+client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
+```
+
+위 예시에서 볼 수 있듯이 클라이언트는 풀 관리자를 공유할 수도 있고, 각 클라이언트별로 별도의 풀 관리자를 생성할 수도 있습니다. `PoolManager`를 생성할 때 사용할 수 있는 옵션에 대한 자세한 내용은 [`urllib3` 문서](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior)를 참조하십시오.

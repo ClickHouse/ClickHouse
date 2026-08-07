@@ -1,0 +1,8 @@
+<clickhouse>
+    <proxy>
+        <https>
+            <uri>https://proxy1</uri>
+            <uri>https://proxy2</uri>
+        </https>
+    </proxy>
+</clickhouse>

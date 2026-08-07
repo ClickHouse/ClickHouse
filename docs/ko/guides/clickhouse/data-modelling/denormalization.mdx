@@ -1,0 +1,420 @@
+---
+slug: /data-modeling/denormalization
+title: '데이터 비정규화'
+description: '비정규화를 활용해 쿼리 성능을 개선하는 방법'
+keywords: ['데이터 비정규화', '비정규화', '쿼리 최적화']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+데이터 비정규화는 ClickHouse에서 평탄화된 테이블을 사용해 조인을 피함으로써 쿼리 지연 시간을 최소화하는 기법입니다.
+
+<div id="comparing-normalized-vs-denormalized-schemas">
+  ## 정규화된 스키마와 비정규화된 스키마 비교
+</div>
+
+데이터 비정규화는 특정 쿼리 패턴에 맞게 데이터베이스 성능을 최적화하기 위해 정규화 과정을 의도적으로 되돌리는 작업입니다. 정규화된 데이터베이스에서는 중복을 최소화하고 데이터 무결성을 보장하기 위해 데이터를 서로 관련된 여러 테이블로 분리합니다. 비정규화는 테이블을 결합하고 데이터를 중복 저장하며 계산된 필드를 하나의 테이블 또는 더 적은 수의 테이블에 포함시켜 다시 중복을 도입합니다. 즉, 조인을 쿼리 시점이 아니라 삽입 시점으로 옮기는 것입니다.
+
+이 과정은 쿼리 시점에 복잡한 조인의 필요성을 줄이고 읽기 작업 속도를 크게 높일 수 있으므로, 읽기 비중이 높고 쿼리가 복잡한 애플리케이션에 적합합니다. 다만 중복된 데이터에 변경이 생기면 일관성을 유지하기 위해 모든 인스턴스에 반영해야 하므로, 쓰기 작업과 유지 관리가 더 복잡해질 수 있습니다.
+
+<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="ClickHouse의 비정규화" />
+
+<br />
+
+NoSQL 솔루션에서 널리 쓰이게 된 대표적인 기법 중 하나는 `JOIN` 지원이 없을 때 데이터를 비정규화하는 것으로, 모든 통계나 관련 행을 상위 행의 컬럼과 중첩 객체로 저장하는 방식입니다. 예를 들어 블로그용 예시 스키마에서는 각 게시물의 모든 `Comments`를 객체 `배열`로 저장할 수 있습니다.
+
+<div id="when-to-use-denormalization">
+  ## 비정규화를 사용해야 하는 경우
+</div>
+
+일반적으로 다음과 같은 경우에는 비정규화를 권장합니다:
+
+* 변경이 드문 테이블이거나, 데이터가 분석용 쿼리에서 사용 가능해지기까지 어느 정도 지연을 허용할 수 있는 테이블은 비정규화하십시오. 즉, 데이터를 Batch로 완전히 다시 로드할 수 있는 경우입니다.
+* 다대다 관계는 비정규화하지 마십시오. 이렇게 하면 단일 원본 행이 변경되었을 때 많은 행을 업데이트해야 할 수 있습니다.
+* 카디널리티가 높은 관계는 비정규화하지 마십시오. 한 테이블의 각 행이 다른 테이블의 수천 개 관련 항목과 연결되어 있다면, 이를 `배열`로 표현해야 합니다. 즉, 원시 유형 또는 튜플의 `배열`가 됩니다. 일반적으로 1000개가 넘는 튜플을 담은 배열은 권장되지 않습니다.
+* 모든 컬럼을 중첩 객체로 비정규화하기보다는, materialized view를 사용하여 통계 정보만 비정규화하는 방안을 고려하십시오(아래 참조).
+
+모든 정보를 비정규화할 필요는 없습니다. 자주 접근해야 하는 핵심 정보만 비정규화하면 됩니다.
+
+비정규화 작업은 ClickHouse에서 처리할 수도 있고, 업스트림에서 처리할 수도 있습니다. 예를 들어 [Apache Flink](/ko/integrations/connectors/data-ingestion/apache-flink)를 사용할 수 있습니다.
+
+<div id="avoid-denormalization-on-frequently-updated-data">
+  ## 자주 업데이트되는 데이터에는 비정규화를 피하십시오
+</div>
+
+ClickHouse에서 비정규화는 쿼리 성능을 최적화하는 여러 방법 중 하나이지만, 신중하게 사용해야 합니다. 데이터가 자주 업데이트되고 거의 실시간으로 갱신되어야 한다면 이 접근 방식은 피하는 것이 좋습니다. 주 테이블이 대부분 append only이거나, 예를 들어 매일처럼 주기적으로 배치로 다시 로드할 수 있는 경우에 이 방식을 사용하십시오.
+
+이 접근 방식의 가장 큰 과제는 쓰기 성능과 데이터 업데이트입니다. 더 구체적으로 말하면, 비정규화는 데이터 조인에 대한 책임을 사실상 쿼리 시점에서 수집 시점으로 옮깁니다. 이는 쿼리 성능을 크게 향상시킬 수 있지만 수집 과정을 복잡하게 만들며, 이를 구성하는 데 사용된 행 중 하나라도 변경되면 데이터 파이프라인이 해당 행을 ClickHouse에 다시 삽입해야 한다는 뜻입니다. 즉, 하나의 원본 행 변경으로 인해 ClickHouse의 여러 행을 업데이트해야 할 수 있습니다. 복잡한 스키마에서는 행이 복잡한 조인으로 구성되어 있는 경우, 조인의 중첩된 구성 요소에서 행 하나만 바뀌어도 수백만 개의 행을 업데이트해야 할 수 있습니다.
+
+이를 실시간으로 구현하는 것은 대개 현실적이지 않으며, 다음 두 가지 과제로 인해 상당한 엔지니어링이 필요합니다:
+
+1. 테이블의 행이 변경될 때 올바른 조인 SQL 문을 트리거해야 합니다. 이상적으로는 조인에 포함된 모든 객체를 업데이트해서는 안 되며, 영향을 받은 객체만 업데이트해야 합니다. 올바른 행만 효율적으로 filter하도록 조인을 수정하고, 이를 고처리량 환경에서 구현하려면 외부 도구나 추가 엔지니어링이 필요합니다.
+2. ClickHouse에서의 행 업데이트는 신중하게 관리해야 하며, 이로 인해 복잡성이 추가됩니다.
+
+<br />
+
+따라서 일반적으로는 비정규화된 모든 객체를 주기적으로 다시 로드하는 배치 업데이트 프로세스를 사용합니다.
+
+<div id="practical-cases-for-denormalization">
+  ## 비정규화의 실용적인 사례
+</div>
+
+비정규화가 적절할 수 있는 몇 가지 실용적인 예와, 대체 접근 방식이 더 바람직한 경우를 살펴보겠습니다.
+
+이미 `AnswerCount` 및 `CommentCount` 같은 통계가 포함되도록 비정규화된 `Posts` 테이블을 가정해 보겠습니다. 원본 데이터는 이러한 형태로 제공됩니다. 하지만 실제로는 이 정보가 자주 변경될 가능성이 높기 때문에, 오히려 이를 정규화하는 편이 나을 수 있습니다. 또한 이러한 컬럼 중 상당수는 다른 테이블을 통해서도 확인할 수 있습니다. 예를 들어 게시물의 댓글은 `PostId` 컬럼과 `Comments` 테이블을 통해 확인할 수 있습니다. 이 예시에서는 게시물이 Batch 프로세스로 다시 로드된다고 가정합니다.
+
+또한 `Posts`를 분석용 주 테이블로 간주하므로, 다른 테이블을 `Posts`에 비정규화하는 경우만 고려합니다. 일부 쿼리에서는 반대 방향으로 비정규화하는 것도 적절할 수 있으며, 이 경우에도 앞서와 같은 고려 사항이 적용됩니다.
+
+*다음 각 예시에서는 두 테이블을 조인해 함께 사용해야 하는 쿼리가 존재한다고 가정합니다.*
+
+<div id="posts-and-votes">
+  ### Posts and Votes
+</div>
+
+posts에 대한 투표는 별도의 테이블로 표현됩니다. 이에 대한 최적화된 스키마는 아래에 나와 있으며, 데이터를 로드하기 위한 삽입 명령도 함께 제공됩니다:
+
+```sql
+CREATE TABLE votes
+(
+        `Id` UInt32,
+        `PostId` Int32,
+        `VoteTypeId` UInt8,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `UserId` Int32,
+        `BountyAmount` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (VoteTypeId, CreationDate, PostId)
+
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 26.272 sec. Processed 238.98 million rows, 2.13 GB (9.10 million rows/s., 80.97 MB/s.)
+```
+
+언뜻 보면 이를 posts 테이블에서 비정규화할 후보로 생각할 수 있습니다. 하지만 이 접근 방식에는 몇 가지 문제가 있습니다.
+
+게시물에는 투표가 자주 추가됩니다. 시간이 지나면 게시물당 투표 수는 줄어들 수 있지만, 다음 쿼리를 보면 3만 개의 게시물에 대해 시간당 약 4만 건의 투표가 발생하고 있음을 알 수 있습니다.
+
+```sql
+SELECT round(avg(c)) AS avg_votes_per_hr, round(avg(posts)) AS avg_posts_per_hr
+FROM
+(
+        SELECT
+        toStartOfHour(CreationDate) AS hr,
+        count() AS c,
+        uniq(PostId) AS posts
+        FROM votes
+        GROUP BY hr
+)
+```
+
+```response
+┌─avg_votes_per_hr─┬─avg_posts_per_hr─┐
+│               41759 │         33322 │
+└──────────────────┴──────────────────┘
+```
+
+지연을 허용할 수 있다면 배칭으로 이를 해결할 수 있지만, 이 경우에도 모든 게시물을 주기적으로 다시 로드하지 않는 한(일반적으로는 바람직하지 않음) 업데이트를 처리해야 합니다.
+
+더 까다로운 점은 일부 게시물에 투표 수가 극도로 많다는 것입니다:
+
+```sql
+SELECT PostId, concat('https://stackoverflow.com/questions/', PostId) AS url, count() AS c
+FROM votes
+GROUP BY PostId
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌───PostId─┬─url──────────────────────────────────────────┬─────c─┐
+│ 11227902 │ https://stackoverflow.com/questions/11227902 │ 35123 │
+│   927386 │ https://stackoverflow.com/questions/927386   │ 29090 │
+│ 11227809 │ https://stackoverflow.com/questions/11227809 │ 27475 │
+│   927358 │ https://stackoverflow.com/questions/927358   │ 26409 │
+│  2003515 │ https://stackoverflow.com/questions/2003515  │ 25899 │
+└──────────┴──────────────────────────────────────────────┴───────┘
+```
+
+여기서 핵심은 각 게시물의 집계된 투표 통계만으로도 대부분의 분석에 충분하다는 점입니다. 즉, 모든 투표 정보를 비정규화할 필요는 없습니다. 예를 들어, 현재 `Score` 컬럼은 이러한 통계를 나타내는 값으로, 총 찬성표 수에서 반대표 수를 뺀 값입니다. 이상적으로는 간단한 lookup으로 쿼리 시점에 이러한 통계를 조회할 수 있으면 됩니다( [딕셔너리](/ko/concepts/features/dictionaries/index) 참조).
+
+<div id="users-and-badges">
+  ### Users와 Badges
+</div>
+
+이제 `Users`와 `Badges`를 살펴보겠습니다.
+
+<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="Users와 Badges 스키마" />
+
+<p />
+
+먼저 다음 명령으로 데이터를 삽입합니다.
+
+<p />
+
+```sql
+CREATE TABLE users
+(
+    `Id` Int32,
+    `Reputation` LowCardinality(String),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `DisplayName` String,
+    `LastAccessDate` DateTime64(3, 'UTC'),
+    `AboutMe` String,
+    `Views` UInt32,
+    `UpVotes` UInt32,
+    `DownVotes` UInt32,
+    `WebsiteUrl` String,
+    `Location` LowCardinality(String),
+    `AccountId` Int32
+)
+ENGINE = MergeTree
+ORDER BY (Id, CreationDate)
+```
+
+```sql
+CREATE TABLE badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 26.229 sec. Processed 22.48 million rows, 1.36 GB (857.21 thousand rows/s., 51.99 MB/s.)
+```
+
+```sql
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 18.126 sec. Processed 51.29 million rows, 797.05 MB (2.83 million rows/s., 43.97 MB/s.)
+```
+
+사용자가 배지를 자주 획득할 수는 있지만, 이 데이터셋을 매일보다 더 자주 업데이트해야 할 가능성은 낮습니다. badges와 Users 간의 관계는 일대다입니다. badges를 튜플 목록 형태로 Users에 간단히 비정규화할 수 있을까요? 가능은 하지만, 사용자당 badges의 최대 개수를 빠르게 확인해 보면 이것이 이상적인 방법은 아니라는 점을 알 수 있습니다:
+
+```sql
+SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
+```
+
+```response
+┌─UserId─┬─────c─┐
+│  22656 │ 19334 │
+│   6309 │ 10516 │
+│ 100297 │  7848 │
+│ 157882 │  7574 │
+│  29407 │  6512 │
+└────────┴───────┘
+```
+
+19k개의 객체를 단일 행으로 비정규화하는 것은 현실적으로 어려울 가능성이 높습니다. 이런 관계는 별도의 테이블로 유지하거나 통계를 추가하는 편이 더 적절할 수 있습니다.
+
+> 예를 들어 배지 수와 같은 Badges 통계를 Users에 비정규화하고자 할 수 있습니다. 이 데이터셋에서 삽입 시점에 딕셔너리를 사용할 때 이러한 예시를 살펴봅니다.
+
+<div id="posts-and-postlinks">
+  ### Posts 및 PostLinks
+</div>
+
+`PostLinks`는 사용자가 서로 관련 있거나 중복된 것으로 간주하는 `Posts`를 연결합니다. 다음 쿼리는 스키마와 로드 명령을 보여줍니다:
+
+```sql
+CREATE TABLE postlinks
+(
+  `Id` UInt64,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `PostId` Int32,
+  `RelatedPostId` Int32,
+  `LinkTypeId` Enum('Linked' = 1, 'Duplicate' = 3)
+)
+ENGINE = MergeTree
+ORDER BY (PostId, RelatedPostId)
+
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 4.726 sec. Processed 6.55 million rows, 129.70 MB (1.39 million rows/s., 27.44 MB/s.)
+```
+
+비정규화를 방해할 정도로 링크가 과도하게 많은 게시물은 없음을 확인할 수 있습니다:
+
+```sql
+SELECT PostId, count() AS c
+FROM postlinks
+GROUP BY PostId
+ORDER BY c DESC LIMIT 5
+```
+
+```response
+┌───PostId─┬───c─┐
+│ 22937618 │ 125 │
+│  9549780 │ 120 │
+│  3737139 │ 109 │
+│ 18050071 │ 103 │
+│ 25889234 │  82 │
+└──────────┴─────┘
+```
+
+또한, 이러한 링크는 그리 자주 발생하는 이벤트가 아닙니다:
+
+```sql
+SELECT
+  round(avg(c)) AS avg_votes_per_hr,
+  round(avg(posts)) AS avg_posts_per_hr
+FROM
+(
+  SELECT
+  toStartOfHour(CreationDate) AS hr,
+  count() AS c,
+  uniq(PostId) AS posts
+  FROM postlinks
+  GROUP BY hr
+)
+```
+
+```response
+┌─avg_votes_per_hr─┬─avg_posts_per_hr─┐
+│                54 │                    44     │
+└──────────────────┴──────────────────┘
+```
+
+아래에서는 이를 비정규화의 예시로 사용합니다.
+
+<div id="simple-statistic-example">
+  ### 간단한 통계 예시
+</div>
+
+대부분의 경우 비정규화는 부모 행에 단일 컬럼이나 통계값 하나를 추가하는 작업입니다. 예를 들어 posts에 중복 게시물 수를 보강하려는 경우, 컬럼 하나만 추가하면 됩니다.
+
+```sql
+CREATE TABLE posts_with_duplicate_count
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+   ... -다른 컬럼들
+   `DuplicatePosts` UInt16
+) ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+이 테이블을 채우기 위해 중복 통계를 posts와 조인하는 `INSERT INTO SELECT` 문을 사용합니다.
+
+```sql
+INSERT INTO posts_with_duplicate_count SELECT
+    posts.*,
+    DuplicatePosts
+FROM posts AS posts
+LEFT JOIN
+(
+    SELECT PostId, countIf(LinkTypeId = 'Duplicate') AS DuplicatePosts
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts.Id = postlinks.PostId
+```
+
+<div id="exploiting-complex-types-for-one-to-many-relationships">
+  ### 일대다 관계에 복합 타입 활용하기
+</div>
+
+비정규화를 수행하려면 복합 타입을 활용해야 하는 경우가 많습니다. 일대일 관계를 비정규화할 때 컬럼 수가 적다면, 위에서 설명한 것처럼 원래 타입을 유지한 채 이러한 값을 행으로 간단히 추가할 수 있습니다. 그러나 객체가 더 크면 이런 방식은 대체로 바람직하지 않으며, 일대다 관계에는 적용할 수 없습니다.
+
+복합 객체나 일대다 관계에서는 다음을 사용할 수 있습니다.
+
+* 이름이 지정된 Tuple - 관련 구조를 컬럼 집합으로 표현할 수 있습니다.
+* Array(Tuple) 또는 Nested - 이름이 지정된 튜플의 배열이며, Nested라고도 합니다. 각 항목은 하나의 객체를 나타냅니다. 일대다 관계에 적용할 수 있습니다.
+
+예시로, 아래에서는 `PostLinks`를 `Posts`에 비정규화하는 방법을 보여줍니다.
+
+각 게시물에는 앞서 `PostLinks` 스키마에서 본 것처럼 다른 게시물에 대한 여러 링크가 포함될 수 있습니다. Nested 타입을 사용하면 이러한 연결된 게시물과 중복 게시물을 다음과 같이 표현할 수 있습니다.
+
+```sql
+SET flatten_nested=0
+CREATE TABLE posts_with_links
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+   ... -other columns
+   `LinkedPosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
+   `DuplicatePosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
+) ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+> `flatten_nested=0` 설정을 사용한다는 점에 유의하십시오. 중첩 데이터 평탄화는 비활성화하는 것이 좋습니다.
+
+`OUTER JOIN` 쿼리를 사용한 `INSERT INTO SELECT`로 이 비정규화를 수행할 수 있습니다:
+
+```sql
+INSERT INTO posts_with_links
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts.Id = postlinks.PostId
+```
+
+```response
+0 rows in set. Elapsed: 155.372 sec. Processed 66.37 million rows, 76.33 GB (427.18 thousand rows/s., 491.25 MB/s.)
+Peak memory usage: 6.98 GiB.
+```
+
+> 여기서 걸린 시간에 주목하십시오. 약 2분 만에 6,600만 개의 행을 비정규화했습니다. 뒤에서 살펴보겠지만, 이 작업은 일정에 맞춰 실행하도록 스케줄링할 수 있습니다.
+
+조인 전에 `groupArray` 함수를 사용해 `PostLinks`를 각 `PostId`별 배열로 묶은 점에 주목하십시오. 그런 다음 이 배열을 `LinkedPosts`와 `DuplicatePosts`라는 두 개의 하위 목록으로 필터링하며, 이 과정에서 외부 조인으로 생긴 빈 결과도 제외합니다.
+
+몇 개의 행을 조회해 새로 비정규화된 구조를 확인할 수 있습니다:
+
+```sql
+SELECT LinkedPosts, DuplicatePosts
+FROM posts_with_links
+WHERE (length(LinkedPosts) > 2) AND (length(DuplicatePosts) > 0)
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+LinkedPosts:    [('2017-04-11 11:53:09.583',3404508),('2017-04-11 11:49:07.680',3922739),('2017-04-11 11:48:33.353',33058004)]
+DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',33058004)]
+```
+
+<div id="orchestrating-and-scheduling-denormalization">
+  ## 비정규화 오케스트레이션 및 스케줄링
+</div>
+
+<div id="batch">
+  ### 배치
+</div>
+
+비정규화를 활용하려면 이를 수행하고 조율할 수 있는 변환 프로세스가 필요합니다.
+
+위에서는 데이터가 `INSERT INTO SELECT`를 통해 로드된 후 ClickHouse를 사용해 이 변환을 수행하는 방법을 살펴보았습니다. 이는 주기적인 배치 변환에 적합합니다.
+
+주기적인 배치 로드 프로세스를 수용할 수 있다면, ClickHouse에서 이를 오케스트레이션하는 방법으로 몇 가지 옵션이 있습니다:
+
+* **[갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)** - 갱신 가능 구체화 뷰를 사용하면 쿼리를 주기적으로 실행하도록 예약하고, 그 결과를 대상 테이블로 보낼 수 있습니다. 쿼리가 실행되면 뷰는 대상 테이블이 원자적으로 갱신되도록 보장합니다. 즉, 이 작업을 예약하는 ClickHouse 네이티브 방식을 제공합니다.
+* **외부 도구** - [dbt](https://www.getdbt.com/) 및 [Airflow](https://airflow.apache.org/)와 같은 도구를 사용해 변환을 주기적으로 예약 실행할 수 있습니다. [dbt용 ClickHouse 통합](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index)은 새 버전의 대상 테이블을 생성한 뒤, 현재 쿼리를 처리하는 버전과 이를 원자적으로 교체하여 이 작업이 원자적으로 수행되도록 보장합니다([EXCHANGE](/ko/reference/statements/exchange) 명령 사용).
+
+<div id="streaming">
+  ### 스트리밍
+</div>
+
+또는 [Apache Flink](/ko/integrations/connectors/data-ingestion/apache-flink)와 같은 스트리밍 기술을 사용하여, ClickHouse 외부에서 데이터를 삽입하기 전에 이 작업을 수행할 수 있습니다. 또는 증분 [materialized views](/ko/concepts/features/materialized-views/cascading-materialized-views)를 사용하여 데이터가 삽입되는 시점에 이 과정을 수행할 수도 있습니다.

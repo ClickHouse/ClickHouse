@@ -1,0 +1,76 @@
+bloom filter is off, row groups should be read
+expect rows_read = select count()
+{
+  "data": [
+    {
+      "ipv6": "7afe:b9d4:e754:4e78:8783:37f5:b2ea:9995"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 5,
+    "bytes_read": 128
+  }
+}
+bloom filter is on for ipv6, row groups should also be read since there is only one. Below queries just make sure the data is properly returned
+{
+  "data": [
+    {
+      "ipv6": "7afe:b9d4:e754:4e78:8783:37f5:b2ea:9995"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 5,
+    "bytes_read": 128
+  }
+}
+{
+  "data": [
+    {
+      "ipv6": "7afe:b9d4:e754:4e78:8783:37f5:b2ea:9995"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 5,
+    "bytes_read": 128
+  }
+}
+{
+  "data": [
+    {
+      "toIPv6(ipv6)": "7afe:b9d4:e754:4e78:8783:37f5:b2ea:9995"
+    }
+  ],
+  "rows": 1,
+  "statistics": {
+    "rows_read": 5,
+    "bytes_read": 128
+  }
+}
+non existent ipv6, row group should be skipped
+{
+  "data": [],
+  "rows": 0,
+  "statistics": {
+    "rows_read": 0,
+    "bytes_read": 0
+  }
+}
+{
+  "data": [],
+  "rows": 0,
+  "statistics": {
+    "rows_read": 0,
+    "bytes_read": 0
+  }
+}
+{
+  "data": [],
+  "rows": 0,
+  "statistics": {
+    "rows_read": 5,
+    "bytes_read": 128
+  }
+}

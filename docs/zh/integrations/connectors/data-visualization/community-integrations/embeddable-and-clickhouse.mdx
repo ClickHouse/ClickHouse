@@ -1,0 +1,79 @@
+---
+sidebarTitle: 'Embeddable'
+slug: /integrations/embeddable
+keywords: ['ClickHouse', 'Embeddable', '连接', '集成', 'UI']
+description: 'Embeddable 是一款面向开发者的工具包，可将快速、交互式且完全可定制的分析体验直接嵌入你的应用中。'
+title: '将 Embeddable 连接到 ClickHouse'
+doc_type: '指南'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+在 [Embeddable](https://embeddable.com/) 中，您可以通过代码定义 [数据模型](https://docs.embeddable.com/data-modeling/introduction) 和 [组件](https://docs.embeddable.com/development/introduction) (存储在您自己的代码仓库中) ，并使用我们的 **SDK** 在功能强大的 Embeddable **无代码构建器** 中将它们提供给团队使用。
+
+最终，您将能够直接在自己的产品中交付快速、交互式、面向客户的分析体验；由产品团队设计；由工程团队构建；由面向客户的团队和数据团队维护。这才是它应有的方式。
+
+内置的行级安全控制意味着每位用户始终只能看到其有权查看的数据。而两级完全可配置的缓存机制则让您能够大规模提供快速、实时的分析能力。
+
+<div id="1-gather-your-connection-details">
+  ## 1. 准备好您的连接信息
+</div>
+
+<ConnectionDetails />
+
+<div id="2-create-a-clickhouse-connection-type">
+  ## 2. 创建 ClickHouse 连接类型
+</div>
+
+你可以使用 Embeddable API 添加数据库连接。该连接用于连接到你的 ClickHouse 服务。你可以通过以下 API 调用添加连接：
+
+```javascript title="Query"
+// 出于安全原因，此操作*绝对不能*从客户端调用
+fetch('https://api.embeddable.com/api/v1/connections', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    Authorization: `Bearer ${apiKey}` /* 请妥善保管您的 API Key */,
+  },
+  body: JSON.stringify({
+    name: 'my-clickhouse-db',
+    type: 'clickhouse',
+    credentials: {
+      host: 'my.clickhouse.host',
+      user: 'clickhouse_user',
+      port: 8443,
+      password: '*****',
+    },
+  }),
+});
+```
+
+```text title="Response"
+Status 201 { errorMessage: null }
+```
+
+上述内容表示一个 `CREATE` 操作，但所有 `CRUD` 操作都可用。
+
+点击某个 Embeddable 仪表盘上的 &quot;**Publish**&quot;，即可找到 `apiKey`。
+
+`name` 是用于标识此连接的唯一名称。
+
+* 默认情况下，你的数据模型会查找名为 &quot;default&quot; 的连接，但你也可以为模型提供不同的 `data_source` 名称，以支持将不同的数据模型连接到不同的连接 (只需在模型中指定 data&#95;source 名称) 。
+
+`type` 用于告诉 Embeddable 应使用哪个驱动程序
+
+* 这里应使用 `clickhouse`，但你也可以将多个不同的数据源连接到同一个 Embeddable 工作区，因此也可以使用其他类型，例如：`postgres`、`bigquery`、`mongodb` 等。
+
+`credentials` 是一个 JavaScript 对象，包含驱动程序所需的凭据
+
+* 这些信息会被安全加密，并且仅用于检索你在数据模型中定义的数据。
+  Embeddable 强烈建议你为每个连接创建一个只读数据库用户 (Embeddable 只会从你的数据库中读取，不会写入) 。
+
+为了支持连接到用于 prod、qa、test 等环境的不同数据库 (或为不同客户使用不同的数据库) ，你可以将每个连接分配给一个环境 (参见 [Environments API](https://docs.embeddable.com/data/environments)) 。

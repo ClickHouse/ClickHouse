@@ -1,0 +1,10 @@
+0	1	1	20
+0	1	1	200
+0	1	2	20
+0	1	2	200
+  Aggregating
+  Order: a ASC, c ASC
+        ReadFromMergeTree (default.tab)
+  Aggregating
+  Order: __table1.a ASC, __table1.c ASC
+        ReadFromMergeTree (default.tab)

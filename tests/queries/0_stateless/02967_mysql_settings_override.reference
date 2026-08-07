@@ -1,0 +1,23 @@
+-- Init
+s
+a
+b
+c
+d
+-- Uppercase setting name
+s
+a
+b
+name	value
+send_timeout	22
+name	value
+receive_timeout	33
+-- Lowercase setting name
+s
+a
+b
+c
+name	value
+send_timeout	55
+name	value
+receive_timeout	66

@@ -1,0 +1,4 @@
+CREATE TABLE default.nested_table\n(\n    `id` UInt64,\n    `first` Nested(a Int8, b String)\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 8192
+CREATE TABLE default.nested_table\n(\n    `id` UInt64,\n    `second.c` Array(Int8),\n    `second.d` Array(String),\n    `first` Nested(a Int8, b String)\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 8192
+CREATE TABLE default.nested_table\n(\n    `third` Nested(e Int8, f String),\n    `id` UInt64,\n    `second.c` Array(Int8),\n    `second.d` Array(String),\n    `first` Nested(a Int8, b String)\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 8192
+CREATE TABLE default.nested_table\n(\n    `third` Nested(e Int8, f String),\n    `id` UInt64,\n    `second.c` Array(Int8),\n    `second.d` Array(String),\n    `first` Nested(a Int8, b String),\n    `fourth.g` Array(Int8),\n    `fourth.h` Array(String)\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS index_granularity = 8192

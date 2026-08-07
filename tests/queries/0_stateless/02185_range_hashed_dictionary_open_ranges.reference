@@ -1,0 +1,22 @@
+Source table
+0	\N	5000	Value0
+0	5001	10000	Value1
+0	10001	\N	Value2
+Dictionary convert_null_range_bound_to_open = 1
+0	5001	10000	Value1
+0	0	5000	Value0
+0	10001	18446744073709551615	Value2
+Value0
+Value1
+Value2
+1
+1
+1
+Dictionary convert_null_range_bound_to_open = 0
+0	5001	10000	Value1
+DefaultValue
+Value1
+DefaultValue
+0
+1
+0

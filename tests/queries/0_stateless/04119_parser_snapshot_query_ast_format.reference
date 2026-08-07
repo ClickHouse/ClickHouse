@@ -1,0 +1,28 @@
+--- element: TABLE ---
+SNAPSHOT TABLE db.tbl TO S3(\'s3://bucket/snap/\')
+SNAPSHOT TABLE tbl TO S3(\'s3://bucket/snap/\')
+--- element: ALL ---
+SNAPSHOT ALL TO S3(\'s3://bucket/snap/\')
+--- element: ALL + EXCEPT DATABASE (singular) ---
+SNAPSHOT ALL EXCEPT DATABASE d1 TO S3(\'s3://bucket/snap/\')
+--- element: ALL + EXCEPT DATABASES (plural, list) ---
+SNAPSHOT ALL EXCEPT DATABASES d1,d2,d3 TO S3(\'s3://bucket/snap/\')
+--- element: ALL + EXCEPT TABLE (singular) ---
+SNAPSHOT ALL EXCEPT TABLE x.a TO S3(\'s3://bucket/snap/\')
+--- element: ALL + EXCEPT TABLES (plural, list) ---
+SNAPSHOT ALL EXCEPT TABLES x.a, y.b, z.c TO S3(\'s3://bucket/snap/\')
+--- element: ALL + EXCEPT DATABASES + EXCEPT TABLES ---
+SNAPSHOT ALL EXCEPT DATABASES d1,d2 EXCEPT TABLES t1.a, t2.b TO S3(\'s3://bucket/snap/\')
+--- destination: Disk ---
+SNAPSHOT ALL TO Disk(\'default\', \'/snap/\')
+--- destination: File ---
+SNAPSHOT TABLE db.tbl TO File(\'/tmp/snap/\')
+--- destination: bare identifier (no parameters) ---
+SNAPSHOT ALL TO `Null`
+--- error: missing element (no TABLE/ALL keyword) ---
+--- error: DATABASE keyword is not accepted (only TABLE or ALL) ---
+--- error: missing TO keyword ---
+--- error: missing destination after TO ---
+--- error: EXCEPT DATABASE without a database name ---
+--- error: EXCEPT TABLES without any tables ---
+--- error: TABLE without table name ---

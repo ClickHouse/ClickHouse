@@ -1,0 +1,31 @@
+---
+sidebarTitle: 'クイックスタート'
+title: 'クイックスタート一覧'
+description: 'ClickHouse をすぐに使い始めるためのクイックスタートガイドを紹介します'
+keywords: ['クイックスタート', '一覧', '使い始める', 'チュートリアル']
+mode: 'custom'
+---
+
+import { QuickStartsGrid } from '/snippets/ja/components/QuickStartsGrid/QuickStartsGrid.jsx'
+import { quickStartsData } from '/snippets/ja/components/QuickStartsGrid/quickstarts-data.jsx'
+
+{/* 注目のクイックスタート - 各クイックスタートには ID とバナー画像があります（タイトルは画像内にレンダリングされます） */}
+
+export const featuredQuickstarts = [
+  { id: 'create-your-first-service-on-cloud' },
+  { id: 'insert-data-using-clickhouse-client' },
+  { id: 'obtain-your-cloud-connection-details' }
+];
+
+
+<div className="relative overflow-hidden">
+  <div className="absolute top-0 left-0 right-0 opacity-80">
+    <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="装飾用の背景画像。" />
+
+    <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="装飾用の背景画像。" />
+  </div>
+
+  {/* QuickStartsGrid コンポーネントをレンダリング */}
+
+  <QuickStartsGrid quickStartsData={quickStartsData} featured={featuredQuickstarts} />
+</div>

@@ -1,0 +1,134 @@
+---
+slug: /cloud/manage/postman
+sidebarTitle: 'Postman으로 API에 프로그래밍 방식으로 액세스하기'
+title: 'Postman으로 API에 프로그래밍 방식으로 액세스하기'
+description: '이 가이드는 Postman을 사용해 ClickHouse Cloud API를 테스트하는 방법을 안내합니다'
+doc_type: 'guide'
+keywords: ['api', 'postman', 'rest api', 'Cloud 관리', '통합']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 가이드는 [Postman](https://www.postman.com/product/what-is-postman/)을 사용해 ClickHouse Cloud API를 테스트하는 방법을 안내합니다.
+Postman 애플리케이션은 웹 브라우저에서 사용할 수 있으며, 데스크톱에 다운로드하여 사용할 수도 있습니다.
+
+<div id="create-an-account">
+  ### 계정 만들기
+</div>
+
+* 무료 계정은 [https://www.postman.com](https://www.postman.com)에서 만들 수 있습니다.
+
+<Image img="/images/cloud/manage/postman/postman1.webp" size="md" alt="Postman 사이트" border />
+
+<div id="create-a-workspace">
+  ### 워크스페이스 만들기
+</div>
+
+* 워크스페이스 이름을 지정하고 공개 범위를 설정합니다.
+
+<Image img="/images/cloud/manage/postman/postman2.webp" size="md" alt="워크스페이스 만들기" border />
+
+<div id="create-a-collection">
+  ### 컬렉션 생성
+</div>
+
+* 왼쪽 상단 메뉴에서 &quot;Explore&quot; 아래의 &quot;Import&quot;를 클릭합니다:
+
+<Image img="/images/cloud/manage/postman/postman3.webp" size="md" alt="Explore > Import" border />
+
+* 모달 창이 나타납니다:
+
+<Image img="/images/cloud/manage/postman/postman4.webp" size="md" alt="API URL 입력" border />
+
+* API 주소 &quot;https://api.clickhouse.cloud/v1&quot;를 입력하고 &#39;Enter&#39;를 누릅니다:
+
+* &quot;Import&quot; 버튼을 클릭한 다음 &quot;Postman Collection&quot;을 선택합니다:
+
+<Image img="/images/cloud/manage/postman/postman6.webp" size="md" alt="Collection > Import" border />
+
+<div id="interface-with-the-clickhouse-cloud-api-spec">
+  ### ClickHouse Cloud API 사양과 연동하기
+</div>
+
+* 이제 &quot;ClickHouse Cloud용 API 사양&quot;이 &quot;Collections&quot;(왼쪽 탐색 메뉴)에 표시됩니다.
+
+<Image img="/images/cloud/manage/postman/postman7.webp" size="md" alt="API 가져오기" border />
+
+* &quot;ClickHouse Cloud용 API 사양&quot;을 클릭합니다. 가운데 창에서 &#39;Authorization&#39; 탭을 선택하세요:
+
+<Image img="/images/cloud/manage/postman/postman8.webp" size="md" alt="가져오기 완료" border />
+
+<div id="set-authorization">
+  ### 인증 설정
+</div>
+
+* 드롭다운 메뉴에서 &quot;Basic Auth&quot;를 선택합니다:
+
+<Image img="/images/cloud/manage/postman/postman9.webp" size="md" alt="Basic Auth" border />
+
+* ClickHouse Cloud API keys를 설정할 때 받은 사용자 이름과 비밀번호를 입력합니다:
+
+<Image img="/images/cloud/manage/postman/postman10.webp" size="md" alt="자격 증명" border />
+
+<div id="enable-variables">
+  ### 변수 사용 설정
+</div>
+
+* [변수](https://learning.postman.com/docs/sending-requests/variables/)를 사용하면 Postman에서 값을 저장하고 재사용할 수 있어 API 테스트를 더 쉽게 진행할 수 있습니다.
+
+<div id="set-the-organization-id-and-service-id">
+  #### 조직 ID와 서비스 ID 설정
+</div>
+
+* &quot;Collection&quot;에서 가운데 창의 &quot;Variable&quot; 탭을 클릭합니다(기준 URL은 앞서 API를 가져올 때 이미 설정되어 있습니다).
+* `baseURL` 아래의 빈 &quot;Add new value&quot; 필드를 클릭한 다음, 조직 ID와 서비스 ID를 입력합니다:
+
+<Image img="/images/cloud/manage/postman/postman11.webp" size="md" alt="조직 ID 및 서비스 ID" border />
+
+<div id="test-the-clickhouse-cloud-api-functionalities">
+  ## ClickHouse Cloud API 기능 테스트
+</div>
+
+<div id="test-get-list-of-available-organizations">
+  ### &quot;GET 사용 가능한 조직 목록&quot; 테스트
+</div>
+
+* &quot;ClickHouse Cloud용 OpenAPI spec&quot; 아래에서 폴더 &gt; V1 &gt; organizations를 펼치십시오.
+* &quot;GET 사용 가능한 조직 목록&quot;을 클릭한 다음, 오른쪽의 파란색 &quot;Send&quot; 버튼을 누르십시오.
+
+<Image img="/images/cloud/manage/postman/postman12.webp" size="md" alt="조직 조회 테스트" border />
+
+* 반환된 결과에는 &quot;status&quot;: 200과 함께 조직 상세 정보가 표시되어야 합니다. (&quot;status&quot; 400이 반환되고 조직 정보가 표시되지 않으면 구성이 올바르지 않은 것입니다.)
+
+<Image img="/images/cloud/manage/postman/postman13.webp" size="md" alt="상태" border />
+
+<div id="test-get-organizational-details">
+  ### &quot;GET 조직 세부 정보&quot; 테스트
+</div>
+
+* `organizationid` 폴더 아래에서 &quot;GET 조직 세부 정보&quot;로 이동합니다:
+* 가운데 프레임 메뉴의 Params 아래에서 `organizationid`를 입력해야 합니다.
+
+<Image img="/images/cloud/manage/postman/postman14.webp" size="md" alt="조직 세부 정보 조회 테스트" border />
+
+* 이 값을 중괄호로 감싼 `orgid` 값인 `{{orgid}}`로 수정합니다(앞서 이 값을 설정했다면 해당 값이 포함된 메뉴가 표시됩니다):
+
+<Image img="/images/cloud/manage/postman/postman15.webp" size="md" alt="테스트 제출" border />
+
+* &quot;Save&quot; 버튼을 누른 후, 화면 오른쪽 상단의 파란색 &quot;Send&quot; 버튼을 누릅니다.
+
+<Image img="/images/cloud/manage/postman/postman16.webp" size="md" alt="반환 값" border />
+
+* 반환된 결과에는 &quot;status&quot;: 200과 함께 조직 세부 정보가 표시되어야 합니다. (&quot;status&quot; 400이 표시되고 조직 정보가 반환되지 않으면 구성이 올바르지 않은 것입니다).
+
+<div id="test-get-service-details">
+  ### &quot;GET service details&quot; 테스트
+</div>
+
+* &quot;GET service details&quot;를 클릭하세요.
+* `organizationid` 및 `serviceid`의 값을 각각 `{{orgid}}` 및 `{{serviceid}}`로 수정하세요.
+* &quot;Save&quot;를 누른 다음 오른쪽의 파란색 &quot;Send&quot; 버튼을 누르세요.
+
+<Image img="/images/cloud/manage/postman/postman17.webp" size="md" alt="서비스 목록" border />
+
+* 반환된 결과에는 &quot;status&quot;: 200과 함께 서비스 목록 및 각 서비스의 세부 정보가 표시되어야 합니다. (&quot;status&quot; 400이 표시되고 서비스 정보가 없으면 구성이 올바르지 않은 것입니다.)

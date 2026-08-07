@@ -1,0 +1,133 @@
+---
+description: 'ClickHouse 中 Decimal 数据类型的文档，提供可配置精度的定点运算'
+sidebarTitle: 'Decimal'
+slug: /sql-reference/data-types/decimal
+title: 'Decimal、Decimal(P)、Decimal(P, S)、Decimal32(S)、Decimal64(S)、Decimal128(S)、
+  Decimal256(S)'
+doc_type: 'reference'
+---
+
+有符号定点数，在加法、减法和乘法运算中保持精度。对于除法，小数末位会被截断 (而非四舍五入) 。
+
+<div id="parameters">
+  ## 参数
+</div>
+
+* P - precision。有效范围：[ 1 : 76 ]。决定该数值可具有的十进制位数 (包括小数部分) 。默认情况下，precision 为 10。
+* S - 标度。有效范围：[ 0 : P ]。决定小数部分可具有的十进制位数。
+
+Decimal(P) 等价于 Decimal(P, 0)。同样，语法 Decimal 等价于 Decimal(10, 0)。
+
+根据参数 P 的取值，Decimal(P, S) 是以下类型的同义词：
+
+* P 在 [ 1 : 9 ] 范围内 - 对应 Decimal32(S)
+* P 在 [ 10 : 18 ] 范围内 - 对应 Decimal64(S)
+* P 在 [ 19 : 38 ] 范围内 - 对应 Decimal128(S)
+* P 在 [ 39 : 76 ] 范围内 - 对应 Decimal256(S)
+
+<div id="decimal-value-ranges">
+  ## Decimal 值范围
+</div>
+
+* Decimal(P, S) - ( -1 * 10^(P - S), 1 * 10^(P - S) )
+* Decimal32(S) - ( -1 * 10^(9 - S), 1 * 10^(9 - S) )
+* Decimal64(S) - ( -1 * 10^(18 - S), 1 * 10^(18 - S) )
+* Decimal128(S) - ( -1 * 10^(38 - S), 1 * 10^(38 - S) )
+* Decimal256(S) - ( -1 * 10^(76 - S), 1 * 10^(76 - S) )
+
+例如，Decimal32(4) 可表示从 -99999.9999 到 99999.9999 的数值，步长为 0.0001。
+
+<div id="internal-representation">
+  ## 内部表示
+</div>
+
+在内部，数据以具有相应位宽的普通有符号整数表示。内存中可存储的实际取值范围比上文所述略大一些，只有在从字符串转换时才会检查这些范围。
+
+由于现代 CPU 不原生支持 128 位和 256 位整数，因此 Decimal128 和 Decimal256 上的运算是通过模拟实现的。因此，Decimal128 和 Decimal256 的运行速度明显慢于 Decimal32/Decimal64。
+
+<div id="operations-and-result-type">
+  ## 运算与结果类型
+</div>
+
+Decimal 上的二元运算会得到更宽的结果类型 (与参数顺序无关) 。
+
+* `Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)`
+* `Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)`
+* `Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)`
+* `Decimal256(S1) <op> Decimal<32|64|128>(S2) -> Decimal256(S)`
+
+标度规则：
+
+* 加法、减法：S = max(S1, S2)。
+* 乘法：S = S1 + S2。
+* 除法：S = S1。
+
+对于 Decimal 与整数之间的类似运算，结果为与 Decimal 参数大小相同的 Decimal。
+
+Decimal 与 Float32/Float64 之间的运算未定义。如果需要进行这类运算，可以使用 toDecimal32、toDecimal64、toDecimal128 或 toFloat32、toFloat64 内置函数，显式地将其中一个参数转换类型。请注意，结果会损失精度，而且类型转换的计算开销较高。
+
+某些针对 Decimal 的函数会返回 Float64 类型的结果 (例如 var 或 stddev) 。中间计算仍可能在 Decimal 中进行，这可能导致对于相同的值，Float64 输入与 Decimal 输入得到不同的结果。
+
+<div id="overflow-checks">
+  ## 溢出检查
+</div>
+
+在 Decimal 计算过程中，可能会发生整数溢出。小数部分超出的位数会被直接截去 (不做四舍五入) 。整数部分位数超出则会导致异常。
+
+<Warning>
+  Decimal128 和 Decimal256 尚未实现溢出检查。发生溢出时会返回错误结果，不会抛出异常。
+</Warning>
+
+```sql
+SELECT toDecimal32(2, 4) AS x, x / 3
+```
+
+```text
+┌──────x─┬─divide(toDecimal32(2, 4), 3)─┐
+│ 2.0000 │                       0.6666 │
+└────────┴──────────────────────────────┘
+```
+
+```sql
+SELECT toDecimal32(4.2, 8) AS x, x * x
+```
+
+```text
+DB::Exception: Scale is out of bounds.
+```
+
+```sql
+SELECT toDecimal32(4.2, 8) AS x, 6 * x
+```
+
+```text
+DB::Exception: Decimal math overflow.
+```
+
+溢出检查会降低运算速度。如果可以确定不会发生溢出，那么使用 `decimal_check_overflow` 设置禁用检查是有意义的。禁用检查后，一旦发生溢出，结果将不正确：
+
+```sql
+SET decimal_check_overflow = 0;
+SELECT toDecimal32(4.2, 8) AS x, 6 * x
+```
+
+```text
+┌──────────x─┬─multiply(6, toDecimal32(4.2, 8))─┐
+│ 4.20000000 │                     -17.74967296 │
+└────────────┴──────────────────────────────────┘
+```
+
+溢出检查不仅适用于算术运算，也适用于值比较：
+
+```sql
+SELECT toDecimal32(1, 8) < 100
+```
+
+```text
+DB::Exception: Can't compare.
+```
+
+**另请参阅**
+
+* [isDecimalOverflow](/zh/reference/functions/regular-functions/other-functions#isDecimalOverflow)
+* [countDigits](/zh/reference/functions/regular-functions/other-functions#countDigits)

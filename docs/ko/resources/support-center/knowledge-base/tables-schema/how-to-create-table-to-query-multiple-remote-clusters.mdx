@@ -1,0 +1,175 @@
+---
+title: 여러 원격 클러스터를 쿼리할 수 있는 테이블을 만드는 방법
+description: "여러 원격 클러스터를 쿼리할 수 있는 테이블을 만드는 방법"
+date: 2024-07-03
+tags: ['배포 및 스케일링']
+keywords: ['쿼리', '원격 클러스터']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="question">
+  ## 질문
+</div>
+
+다른 클러스터 또는 인스턴스를 쿼리할 수 있는 테이블은 어떻게 생성합니까?
+
+<div id="answer">
+  ## 답변
+</div>
+
+아래는 기능을 테스트하기 위한 간단한 예시입니다.
+
+이 예시에서는 ClickHouse Cloud를 사용하지만, 자체 호스팅 클러스터에서도 동일하게 적용됩니다.
+대상 노드 또는 로드 밸런서의 URL/호스트/DNS에 맞게 타겟 주소를 변경하십시오.
+
+클러스터 A에서:
+
+```
+./clickhouse client --host clusterA.us-west-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+데이터베이스를 생성합니다:
+
+```
+create database db1;
+```
+
+테이블을 생성합니다:
+
+```
+CREATE TABLE db1.table1_remote1
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+샘플 행을 몇 개 삽입합니다:
+
+```
+insert into db1.table1_remote1
+values
+(1, '2023-09-29 00:01:00', 'a'),
+(2, '2023-09-29 00:02:00', 'b'),
+(3, '2023-09-29 00:03:00', 'c');
+```
+
+클러스터 B에서:
+
+```
+./clickhouse client --host clusterB.us-east-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+데이터베이스를 생성합니다:
+
+```
+create database db1;
+```
+
+테이블을 생성합니다:
+
+```
+CREATE TABLE db1.table1_remote2
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+샘플 행을 삽입하세요:
+
+```
+insert into db1.table1_remote1
+values
+(4, '2023-09-29 00:04:00', 'x'),
+(5, '2023-09-29 00:05:00', 'y'),
+(6, '2023-09-29 00:06:00', 'z');
+```
+
+클러스터 C:
+*이 클러스터는 다른 두 클러스터의 데이터를 수집하는 데 사용되지만, 소스(source)로도 활용할 수 있습니다.
+
+```
+./clickhouse client --host clusterC.us-west-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+데이터베이스를 생성합니다:
+
+```
+create database db1;
+```
+
+remoteSecure()를 사용하여 다른 클러스터에 연결하는 원격 테이블을 생성하십시오.
+원격 클러스터 A 테이블 정의:
+
+```
+CREATE TABLE db1.table1_remote1_main
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+) AS remoteSecure('clusterA.us-west-2.aws.clickhouse.cloud:9440', 'db1.table1_remote1', 'default', 'Password123!');
+```
+
+원격 클러스터 B 테이블 정의:
+
+```
+CREATE TABLE db1.table1_remote2_main
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+) AS remoteSecure('clusterB.us-east-2.aws.clickhouse.cloud:9440', 'db1.table1_remote2', 'default', 'Password123!')
+```
+
+결과를 수집하는 데 사용할 머지 테이블을 생성합니다:
+
+```
+create table db1.table1_merge_remote
+(
+  id UInt32,
+  timestamp_column DateTime,
+  string_column String
+)
+engine = Merge('db1', 'table.\_main');
+```
+
+결과를 확인하십시오:
+
+```
+clickhouse-cloud :) select * from db1.table1_merge_remote;
+
+SELECT *
+FROM db1.table1_merge_remote
+
+Query id: 46b6e741-bbd1-47ed-b40e-69ddb6e0c364
+
+┌─id─┬────timestamp_column─┬─string_column─┐
+│  1 │ 2023-09-29 00:01:00 │ a             │
+│  2 │ 2023-09-29 00:02:00 │ b             │
+│  3 │ 2023-09-29 00:03:00 │ c             │
+└────┴─────────────────────┴───────────────┘
+┌─id─┬────timestamp_column─┬─string_column─┐
+│  4 │ 2023-09-29 00:04:00 │ x             │
+│  5 │ 2023-09-29 00:05:00 │ y             │
+│  6 │ 2023-09-29 00:06:00 │ z             │
+└────┴─────────────────────┴───────────────┘
+
+6 rows in set. Elapsed: 0.275 sec.
+```
+
+자세한 내용은 다음을 참조하십시오:
+
+* [원격 테이블 함수](/ko/reference/functions/table-functions/remote)
+* [Merge 테이블 엔진](/ko/reference/engines/table-engines/special/merge)

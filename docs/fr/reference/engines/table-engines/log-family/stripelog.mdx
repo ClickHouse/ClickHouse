@@ -1,0 +1,105 @@
+---
+description: 'Documentation sur le moteur de table StripeLog'
+slug: /engines/table-engines/log-family/stripelog
+toc_priority: 32
+toc_title: 'StripeLog'
+title: 'Moteur de table StripeLog'
+doc_type: 'référence'
+---
+
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Ce moteur appartient à la famille des moteurs de journalisation. Consultez les propriétés communes des moteurs de journalisation ainsi que leurs différences dans l’article [Famille de moteurs Log](/fr/reference/engines/table-engines/log-family/index).
+
+Utilisez ce moteur lorsque vous devez écrire dans un grand nombre de tables contenant peu de données (moins de 1 million de lignes). Par exemple, cette table peut servir à stocker des lots de données entrants à transformer lorsqu’un traitement atomique est nécessaire. 100 000 instances de ce type de table sont prises en charge sur un serveur ClickHouse. Ce moteur de table est à privilégier par rapport à [Log](/fr/reference/engines/table-engines/log-family/log) lorsqu’un grand nombre de tables est requis. Cela se fait au détriment des performances de lecture.
+
+<div id="table_engines-stripelog-creating-a-table">
+  ## Créer une table
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = StripeLog
+```
+
+Consultez la description détaillée de la requête [CREATE TABLE](/fr/reference/statements/create/table).
+
+<div id="table_engines-stripelog-writing-the-data">
+  ## Écriture des données
+</div>
+
+Le moteur `StripeLog` stocke toutes les colonnes dans un unique fichier. Pour chaque requête `INSERT`, ClickHouse ajoute le bloc de données à la fin du fichier de table, en écrivant les colonnes une par une.
+
+Pour chaque table, ClickHouse écrit les fichiers suivants :
+
+* `data.bin` — Fichier de données.
+* `index.mrk` — Fichier contenant les marques. Les marques contiennent les offsets de chaque colonne de chaque bloc de données inséré.
+
+Le moteur `StripeLog` ne prend pas en charge les opérations `ALTER UPDATE` et `ALTER DELETE`.
+
+<div id="table_engines-stripelog-reading-the-data">
+  ## Lecture des données
+</div>
+
+Le fichier de marques permet à ClickHouse de paralléliser la lecture des données. Cela signifie qu&#39;une requête `SELECT` renvoie les lignes dans un ordre imprévisible. Utilisez la clause `ORDER BY` pour trier les lignes.
+
+<div id="table_engines-stripelog-example-of-use">
+  ## Exemple d’utilisation
+</div>
+
+Création d’une table :
+
+```sql
+CREATE TABLE stripe_log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = StripeLog
+```
+
+Insérer des données :
+
+```sql
+INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+Nous avons utilisé deux requêtes `INSERT` pour créer deux blocs de données dans le fichier `data.bin`.
+
+ClickHouse utilise plusieurs threads lors de la lecture des données. Chaque thread lit un bloc de données distinct et renvoie les lignes obtenues indépendamment, dès qu’il a terminé. Par conséquent, dans la plupart des cas, l’ordre des blocs de lignes dans la sortie ne correspond pas à l’ordre de ces mêmes blocs dans les données d’entrée. Par exemple :
+
+```sql
+SELECT * FROM stripe_log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+┌───────────timestamp─┬─message_type─┬─message───────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message │
+└─────────────────────┴──────────────┴───────────────────────────┘
+```
+
+Tri des résultats (par ordre croissant par défaut) :
+
+```sql
+SELECT * FROM stripe_log_table ORDER BY timestamp
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```

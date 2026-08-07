@@ -1,0 +1,431 @@
+---
+sidebarTitle: 'SQL Console'
+title: 'SQL Console'
+slug: /integrations/sql-clients/sql-console
+description: 'Découvrez SQL Console'
+doc_type: 'guide'
+keywords: ['SQL Console', 'interface de requête', 'interface utilisateur web', 'éditeur SQL', 'Cloud Console']
+integration:
+   - support_level: 'community'
+   - category: 'sql_client'
+---
+
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+La SQL Console est le moyen le plus rapide et le plus simple d’explorer et d’interroger vos bases de données dans ClickHouse Cloud. Vous pouvez utiliser la SQL Console pour :
+
+* Vous connecter à vos services ClickHouse Cloud
+* Afficher, filtrer et trier les données des tables
+* Exécuter des requêtes et visualiser les résultats en quelques clics seulement
+* Partager des requêtes avec les membres de l’équipe et collaborer plus efficacement.
+
+<div id="exploring-tables">
+  ## Explorer les tables
+</div>
+
+<div id="viewing-table-list-and-schema-info">
+  ### Affichage de la liste des tables et des informations sur le schéma
+</div>
+
+Un aperçu des tables de votre instance ClickHouse est disponible dans la barre latérale gauche. Utilisez le sélecteur de base de données en haut de cette barre pour afficher les tables d’une base de données spécifique
+
+<Image img="/images/cloud/sqlconsole/table-list-and-schema.webp" size="lg" border alt="Vue de la liste des tables et du schéma montrant les tables de la base de données dans la barre latérale gauche" />
+
+Vous pouvez également développer les tables de la liste pour afficher les colonnes et les types
+
+<Image img="/images/cloud/sqlconsole/view-columns.webp" size="lg" border alt="Vue d’une table développée montrant les noms de colonnes et les types de données" />
+
+<div id="exploring-table-data">
+  ### Explorer les données d’une table
+</div>
+
+Cliquez sur une table dans la liste pour l’ouvrir dans un nouvel onglet. Dans la Table View, vous pouvez facilement afficher, sélectionner et copier les données. Notez que la structure et la mise en forme sont conservées lors du copier-coller vers des applications de feuille de calcul comme Microsoft Excel et Google Sheets. Vous pouvez naviguer entre les pages de données du tableau (par tranches de 30 lignes) à l’aide des contrôles de navigation dans le pied de page.
+
+<Image img="/images/cloud/sqlconsole/abc.webp" size="lg" border alt="Table View affichant des données pouvant être sélectionnées et copiées" />
+
+<div id="inspecting-cell-data">
+  ### Inspection des données d’une cellule
+</div>
+
+L’outil Cell Inspector permet d’afficher de grandes quantités de données contenues dans une seule cellule. Pour l’ouvrir, faites un clic droit sur une cellule et sélectionnez &#39;Inspect Cell&#39;. Le contenu du Cell Inspector peut être copié en cliquant sur l’icône de copie dans l’angle supérieur droit de l’inspecteur.
+
+<Image img="/images/cloud/sqlconsole/inspecting-cell-content.webp" size="lg" border alt="Boîte de dialogue Cell Inspector affichant le contenu d’une cellule sélectionnée" />
+
+<div id="filtering-and-sorting-tables">
+  ## Filtrage et tri des tables
+</div>
+
+<div id="sorting-a-table">
+  ### Trier une table
+</div>
+
+Pour trier une table dans la SQL Console, ouvrez une table et sélectionnez le bouton &#39;Sort&#39; dans la barre d’outils. Ce bouton ouvre un menu qui vous permet de configurer le tri. Vous pouvez choisir la colonne de tri et définir l’ordre du tri (croissant ou décroissant). Sélectionnez &#39;Apply&#39; ou appuyez sur Entrée pour trier votre table
+
+<Image img="/images/cloud/sqlconsole/sort-descending-on-column.webp" size="lg" border alt="Boîte de dialogue Sort affichant la configuration d’un tri décroissant sur une colonne" />
+
+La SQL Console vous permet également d’ajouter plusieurs tris à une table. Cliquez à nouveau sur le bouton &#39;Sort&#39; pour ajouter un autre tri. Remarque : les tris sont appliqués dans l’ordre dans lequel ils apparaissent dans le volet de tri (de haut en bas). Pour supprimer un tri, cliquez simplement sur le bouton &#39;x&#39; à côté du tri.
+
+<div id="filtering-a-table">
+  ### Filtrer une table
+</div>
+
+Pour filtrer une table dans la SQL Console, ouvrez une table et sélectionnez le bouton &#39;Filter&#39;. Comme pour le tri, ce bouton ouvre un menu qui vous permet de configurer votre filtre. Vous pouvez choisir la colonne sur laquelle filtrer et sélectionner les critères souhaités. La SQL Console affiche automatiquement les options de filtre adaptées au type de données contenu dans la colonne.
+
+<Image img="/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp" size="lg" border alt="Boîte de dialogue de filtre montrant la configuration permettant de filtrer la colonne radio sur la valeur GSM" />
+
+Lorsque votre filtre vous convient, vous pouvez sélectionner &#39;Apply&#39; pour filtrer vos données. Vous pouvez également ajouter d&#39;autres filtres, comme illustré ci-dessous.
+
+<Image img="/images/cloud/sqlconsole/add-more-filters.webp" size="lg" border alt="Boîte de dialogue montrant comment ajouter un filtre supplémentaire sur une plage supérieure à 2000" />
+
+Comme pour le tri, cliquez sur le bouton &#39;x&#39; à côté d&#39;un filtre pour le supprimer.
+
+<div id="filtering-and-sorting-together">
+  ### Filtrage et tri simultanés
+</div>
+
+La SQL Console vous permet de filtrer et de trier une table simultanément. Pour ce faire, ajoutez tous les filtres et critères de tri souhaités en suivant les étapes décrites ci-dessus, puis cliquez sur le bouton « Apply ».
+
+<Image img="/images/cloud/sqlconsole/filtering-and-sorting-together.webp" size="lg" border alt="Interface montrant le filtrage et le tri appliqués simultanément" />
+
+<div id="creating-a-query-from-filters-and-sorts">
+  ### Créer une requête à partir de filtres et de tris
+</div>
+
+La SQL Console peut convertir directement vos tris et vos filtres en requêtes en un clic. Sélectionnez simplement le bouton &#39;Create Query&#39; dans la barre d’outils avec les paramètres de tri et de filtre de votre choix. Après avoir cliqué sur &#39;Create query&#39;, un nouvel onglet de requête s’ouvrira, prérempli avec la commande SQL correspondant aux données contenues dans votre Table View.
+
+<Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="lg" border alt="Interface montrant le bouton Create Query qui génère du SQL à partir de filtres et de tris" />
+
+<Note>
+  Les filtres et les tris ne sont pas obligatoires lors de l’utilisation de la fonctionnalité &#39;Create Query&#39;.
+</Note>
+
+Pour en savoir plus sur l’exécution de requêtes dans la SQL Console, consultez la documentation sur les requêtes (link).
+
+<div id="creating-and-running-a-query">
+  ## Créer et exécuter une requête
+</div>
+
+<div id="creating-a-query">
+  ### Créer une requête
+</div>
+
+Il existe deux façons de créer une nouvelle requête dans la SQL Console.
+
+* Cliquez sur le bouton « + » dans la barre d’onglets
+* Sélectionnez le bouton « New Query » dans la liste des requêtes de la barre latérale gauche
+
+<Image img="/images/cloud/sqlconsole/creating-a-query.webp" size="lg" border alt="Interface montrant comment créer une nouvelle requête à l’aide du bouton + ou du bouton New Query" />
+
+<div id="running-a-query">
+  ### Exécuter une requête
+</div>
+
+Pour exécuter une requête, saisissez une ou plusieurs commandes SQL dans le SQL Editor, puis cliquez sur le bouton « Run » ou utilisez le raccourci `cmd / ctrl + enter`. Pour écrire et exécuter plusieurs commandes de façon séquentielle, veillez à ajouter un point-virgule après chaque commande.
+
+Options d&#39;exécution des requêtes
+Par défaut, un clic sur le bouton Run exécute toutes les commandes contenues dans le SQL Editor. La SQL Console prend en charge deux autres options d&#39;exécution des requêtes :
+
+* Exécuter les commandes sélectionnées
+* Exécuter la commande au niveau du curseur
+
+Pour exécuter les commandes sélectionnées, sélectionnez la commande ou la séquence de commandes souhaitée, puis cliquez sur le bouton « Run » (ou utilisez le raccourci `cmd / ctrl + enter`). Vous pouvez également sélectionner « Run selected » dans le menu contextuel du SQL Editor (accessible par clic droit n&#39;importe où dans l&#39;éditeur) lorsqu&#39;un texte est sélectionné.
+
+<Image img="/images/cloud/sqlconsole/run-selected-query.webp" size="lg" border alt="Interface montrant comment exécuter une partie sélectionnée d'une requête SQL" />
+
+Il existe deux façons d&#39;exécuter la commande à la position actuelle du curseur :
+
+* Sélectionnez « At Cursor » dans le menu étendu des options d&#39;exécution (ou utilisez le raccourci clavier correspondant `cmd / ctrl + shift + enter`
+
+<Image img="/images/cloud/sqlconsole/run-at-cursor-2.webp" size="lg" border alt="Option d'exécution au niveau du curseur dans le menu étendu des options d'exécution" />
+
+* Sélectionnez « Run at cursor » dans le menu contextuel du SQL Editor
+
+<Image img="/images/cloud/sqlconsole/run-at-cursor.webp" size="lg" border alt="Option Run at cursor dans le menu contextuel du SQL Editor" />
+
+<Note>
+  La commande située à la position du curseur clignote en jaune lors de son exécution.
+</Note>
+
+<div id="canceling-a-query">
+  ### Annuler une requête
+</div>
+
+Lorsqu&#39;une requête est en cours d&#39;exécution, le bouton &#39;Run&#39; de la barre d&#39;outils de l&#39;éditeur de requêtes est remplacé par un bouton &#39;Cancel&#39;. Cliquez simplement sur ce bouton ou appuyez sur `Esc` pour annuler la requête. Remarque : les résultats déjà renvoyés restent disponibles après l&#39;annulation.
+
+<Image img="/images/cloud/sqlconsole/cancel-a-query.webp" size="lg" border alt="Bouton 'Cancel' affiché pendant l'exécution d'une requête" />
+
+<div id="saving-a-query">
+  ### Enregistrer une requête
+</div>
+
+Si elle n&#39;a pas encore été nommée, votre requête devrait s&#39;appeler « Untitled Query ». Cliquez sur le nom de la requête pour le modifier. Renommer une requête l&#39;enregistre automatiquement.
+
+<Image img="/images/cloud/sqlconsole/give-a-query-a-name.webp" size="lg" border alt="Interface montrant comment renommer une requête intitulée Untitled Query" />
+
+Vous pouvez également utiliser le bouton d&#39;enregistrement ou le raccourci clavier `cmd / ctrl + s` pour enregistrer une requête.
+
+<Image img="/images/cloud/sqlconsole/save-the-query.webp" size="lg" border alt="Bouton d'enregistrement dans la barre d'outils de l'éditeur de requêtes" />
+
+<div id="using-genai-to-manage-queries">
+  ## Utiliser GenAI pour gérer les requêtes
+</div>
+
+Cette fonctionnalité vous permet de rédiger des requêtes sous forme de questions en langage naturel et de laisser la console de requêtes générer des requêtes SQL à partir du contexte des tables disponibles. GenAI peut également vous aider à déboguer vos requêtes.
+
+Pour en savoir plus sur GenAI, consultez l’[article de blog Announcing GenAI powered query suggestions in ClickHouse Cloud](https://clickhouse.com/blog/announcing-genai-powered-query-suggestions-clickhouse-cloud).
+
+<div id="table-setup">
+  ### Configuration de la table
+</div>
+
+Importons le jeu de données d&#39;exemple UK Price Paid et utilisons-le pour créer quelques requêtes GenAI.
+
+1. Ouvrez un service ClickHouse Cloud.
+
+2. Créez une nouvelle requête en cliquant sur l&#39;icône *+*.
+
+3. Collez et exécutez le code suivant :
+
+   ```sql
+   CREATE TABLE uk_price_paid
+   (
+       price UInt32,
+       date Date,
+       postcode1 LowCardinality(String),
+       postcode2 LowCardinality(String),
+       type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+       is_new UInt8,
+       duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+       addr1 String,
+       addr2 String,
+       street LowCardinality(String),
+       locality LowCardinality(String),
+       town LowCardinality(String),
+       district LowCardinality(String),
+       county LowCardinality(String)
+   )
+   ENGINE = MergeTree
+   ORDER BY (postcode1, postcode2, addr1, addr2);
+   ```
+
+   L&#39;exécution de cette requête devrait prendre environ 1 seconde. Une fois terminée, vous devriez avoir une table vide appelée &#96;uk&#95;price&#95;paid.
+
+4. Créez une nouvelle requête et collez la requête suivante :
+
+   ```sql
+   INSERT INTO uk_price_paid
+   WITH
+      splitByChar(' ', postcode) AS p
+   SELECT
+       toUInt32(price_string) AS price,
+       parseDateTimeBestEffortUS(time) AS date,
+       p[1] AS postcode1,
+       p[2] AS postcode2,
+       transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+       b = 'Y' AS is_new,
+       transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+       addr1,
+       addr2,
+       street,
+       locality,
+       town,
+       district,
+       county
+   FROM url(
+       'http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+       'CSV',
+       'uuid_string String,
+       price_string String,
+       time String,
+       postcode String,
+       a String,
+       b String,
+       c String,
+       addr1 String,
+       addr2 String,
+       street String,
+       locality String,
+       town String,
+       district String,
+       county String,
+       d String,
+       e String'
+   ) SETTINGS max_http_get_redirects=10;
+   ```
+
+Cette requête récupère le jeu de données depuis le site `gov.uk`. Ce fichier fait environ 4 Go ; son exécution prendra donc quelques minutes. Une fois la requête traitée par ClickHouse, vous devriez retrouver l&#39;ensemble du jeu de données dans la table `uk_price_paid`.
+
+<div id="query-creation">
+  #### Création d&#39;une requête
+</div>
+
+Créons une requête en langage naturel.
+
+1. Sélectionnez la table **uk&#95;price&#95;paid**, puis cliquez sur **Create Query**.
+
+2. Cliquez sur **Generate SQL**. Il se peut qu&#39;il vous soit demandé d&#39;accepter que vos requêtes soient envoyées à ChatGPT. Vous devez sélectionner **I agree** pour continuer.
+
+3. Vous pouvez maintenant utiliser ce prompt pour saisir une requête en langage naturel et demander à ChatGPT de la convertir en requête SQL. Dans cet exemple, nous allons saisir :
+
+   > Montrez-moi le prix total et le nombre total de toutes les transactions uk&#95;price&#95;paid par année.
+
+4. La console générera la requête recherchée et l&#39;affichera dans un nouvel onglet. Dans notre exemple, GenAI a créé la requête suivante :
+
+   ```sql
+   -- Montrez-moi le prix total et le nombre total de toutes les transactions uk_price_paid par année.
+   SELECT year(date), sum(price) as total_price, Count(*) as total_transactions
+   FROM uk_price_paid
+   GROUP BY year(date)
+   ```
+
+5. Une fois que vous avez vérifié que la requête est correcte, cliquez sur **Run** pour l&#39;exécuter.
+
+<div id="debugging">
+  ### Débogage
+</div>
+
+Testons maintenant les capacités de débogage de requêtes de GenAI.
+
+1. Créez une nouvelle requête en cliquant sur l’icône *+*, puis collez le code suivant :
+
+   ```sql
+   -- Affiche le prix total et le nombre total de toutes les transactions uk_price_paid pour chaque année.
+   SELECT year(date), sum(pricee) as total_price, Count(*) as total_transactions
+   FROM uk_price_paid
+   GROUP BY year(date)
+   ```
+
+2. Cliquez sur **Run**. La requête échoue, car nous essayons de récupérer des valeurs à partir de `pricee` au lieu de `price`.
+
+3. Cliquez sur **Fix Query**.
+
+4. GenAI tente alors de corriger la requête. Dans ce cas, il a remplacé `pricee` par `price`. Il a également déterminé que `toYear` était une fonction plus adaptée dans ce scénario.
+
+5. Sélectionnez **Apply** pour ajouter les modifications suggérées à votre requête, puis cliquez sur **Run**.
+
+Gardez à l’esprit que GenAI est une fonctionnalité expérimentale. Soyez prudent lorsque vous exécutez des requêtes générées par GenAI sur n’importe quel jeu de données.
+
+<div id="advanced-querying-features">
+  ## Fonctionnalités avancées pour les requêtes
+</div>
+
+<div id="searching-query-results">
+  ### Rechercher dans le résultat de la requête
+</div>
+
+Après l’exécution d’une requête, vous pouvez rapidement rechercher dans le résultat de la requête renvoyé à l’aide du champ de recherche du volet des résultats. Cette fonctionnalité permet de prévisualiser le résultat d’une clause `WHERE` supplémentaire, ou simplement de vérifier que certaines données sont bien incluses dans le résultat de la requête. Après avoir saisi une valeur dans le champ de recherche, le volet des résultats se met à jour et renvoie les enregistrements contenant un champ correspondant à la valeur saisie. Dans cet exemple, nous allons rechercher toutes les occurrences de `breakfast` dans la table `hackernews` pour les commentaires contenant `ClickHouse` (sans tenir compte de la casse) :
+
+<Image img="/images/cloud/sqlconsole/search-hn.webp" size="lg" border alt="Recherche dans les données Hacker News" />
+
+Remarque : tout champ correspondant à la valeur saisie sera renvoyé. Par exemple, le troisième enregistrement de la capture d’écran ci-dessus ne correspond pas à « breakfast » dans le champ `by`, mais c’est bien le cas du champ `text` :
+
+<Image img="/images/cloud/sqlconsole/match-in-body.webp" size="lg" border alt="Correspondance dans le corps" />
+
+<div id="adjusting-pagination-settings">
+  ### Réglage des paramètres de pagination
+</div>
+
+Par défaut, le volet des résultats de la requête affiche tous les enregistrements sur une seule page. Pour les ensembles de résultats plus volumineux, il peut être préférable d’activer la pagination pour en faciliter la consultation. Cela peut se faire à l’aide du sélecteur de pagination situé en bas à droite du volet des résultats de la requête :
+
+<Image img="/images/cloud/sqlconsole/pagination.webp" size="lg" border alt="Options de pagination" />
+
+La sélection d’une taille de page applique immédiatement la pagination à l’ensemble de résultats, et des options de navigation apparaissent au centre du pied du volet des résultats de la requête
+
+<Image img="/images/cloud/sqlconsole/pagination-nav.webp" size="lg" border alt="Navigation de pagination" />
+
+<div id="exporting-query-result-data">
+  ### Exportation des données du résultat de la requête
+</div>
+
+Les résultats de requête peuvent être facilement exportés au format CSV directement depuis la SQL Console. Pour ce faire, ouvrez le menu `•••` à droite de la barre d’outils du volet des résultats, puis sélectionnez &#39;Télécharger au format CSV&#39;.
+
+<Image img="/images/cloud/sqlconsole/download-as-csv.webp" size="lg" border alt="Télécharger au format CSV" />
+
+<div id="visualizing-query-data">
+  ## Visualiser les données de requête
+</div>
+
+Certaines données se prêtent mieux à une interprétation sous forme de graphique. Vous pouvez créer rapidement des visualisations à partir des données du résultat de la requête, directement depuis le SQL Console, en quelques clics seulement. À titre d’exemple, nous utiliserons une requête qui calcule des statistiques hebdomadaires sur les trajets en taxi à New York :
+
+```sql
+SELECT
+   toStartOfWeek(pickup_datetime) AS week,
+   sum(total_amount) AS fare_total,
+   sum(trip_distance) AS distance_total,
+   count(*) AS trip_total
+FROM
+   nyc_taxi
+GROUP BY
+   1
+ORDER BY
+   1 ASC
+```
+
+<Image img="/images/cloud/sqlconsole/tabular-query-results.webp" size="lg" border alt="Résultats tabulaires de la requête" />
+
+Sans visualisation, ces résultats sont difficiles à interpréter. Transformons-les en graphique.
+
+<div id="creating-charts">
+  ### Création de graphiques
+</div>
+
+Pour commencer à créer votre visualisation, sélectionnez l’option &#39;Chart&#39; dans la barre d’outils du volet des résultats de la requête. Un volet de configuration du graphique s’affiche :
+
+<Image img="/images/cloud/sqlconsole/switch-from-query-to-chart.webp" size="lg" border alt="Passer de la requête au graphique" />
+
+Nous allons commencer par créer un simple graphique à barres montrant `trip_total` par `week`. Pour cela, faites glisser le champ `week` sur l’axe des X et le champ `trip_total` sur l’axe des Y :
+
+<Image img="/images/cloud/sqlconsole/trip-total-by-week.webp" size="lg" border alt="Total des trajets par semaine" />
+
+La plupart des types de graphiques prennent en charge plusieurs champs sur les axes numériques. Pour l’illustrer, faites glisser le champ fare&#95;total sur l’axe des Y :
+
+<Image img="/images/cloud/sqlconsole/bar-chart.webp" size="lg" border alt="Graphique à barres" />
+
+<div id="customizing-charts">
+  ### Personnalisation des graphiques
+</div>
+
+La SQL Console prend en charge dix types de graphiques, sélectionnables depuis le sélecteur de type de graphique dans le volet de configuration du graphique. Par exemple, nous pouvons facilement faire passer le type de graphique précédent de Bar à Area :
+
+<Image img="/images/cloud/sqlconsole/change-from-bar-to-area.webp" size="lg" border alt="Passer d’un graphique Bar à Area" />
+
+Les titres des graphiques correspondent au nom de la requête qui fournit les données. Si vous modifiez le nom de la requête, le titre du graphique sera lui aussi mis à jour :
+
+<Image img="/images/cloud/sqlconsole/update-query-name.webp" size="lg" border alt="Mettre à jour le nom de la requête" />
+
+Plusieurs caractéristiques plus avancées du graphique peuvent également être ajustées dans la section &#39;Advanced&#39; du volet de configuration du graphique. Pour commencer, nous allons modifier les paramètres suivants :
+
+* Sous-titre
+* Titres des axes
+* Orientation des libellés de l’axe des x
+
+Notre graphique sera mis à jour en conséquence :
+
+<Image img="/images/cloud/sqlconsole/update-subtitle-etc.webp" size="lg" border alt="Mettre à jour le sous-titre, etc." />
+
+Dans certains cas, il peut être nécessaire d’ajuster indépendamment l’échelle des axes pour chaque champ. Cela peut également être fait dans la section &#39;Advanced&#39; du volet de configuration du graphique en spécifiant des valeurs minimale et maximale pour une plage d’axe. Par exemple, le graphique ci-dessus est satisfaisant, mais pour mettre en évidence la corrélation entre nos champs `trip_total` et `fare_total`, les plages des axes doivent être ajustées :
+
+<Image img="/images/cloud/sqlconsole/adjust-axis-scale.webp" size="lg" border alt="Ajuster l’échelle des axes" />
+
+<div id="sharing-queries">
+  ## Partage des requêtes
+</div>
+
+La SQL Console vous permet de partager des requêtes avec votre équipe. Lorsqu&#39;une requête est partagée, tous les membres de l&#39;équipe peuvent la consulter et la modifier. Les requêtes partagées sont un excellent moyen de collaborer avec votre équipe.
+
+Pour partager une requête, cliquez sur le bouton « Share » dans la barre d&#39;outils des requêtes.
+
+<Image img="/images/cloud/sqlconsole/sql-console-share.webp" size="lg" border alt="Bouton Share dans la barre d'outils des requêtes" />
+
+Une boîte de dialogue s&#39;ouvre, vous permettant de partager la requête avec tous les membres d&#39;une équipe. Si vous avez plusieurs équipes, vous pouvez choisir celle avec laquelle partager la requête.
+
+<Image img="/images/cloud/sqlconsole/sql-console-edit-access.webp" size="lg" border alt="Boîte de dialogue permettant de modifier l'accès à une requête partagée" />
+
+<Image img="/images/cloud/sqlconsole/sql-console-add-team.webp" size="lg" border alt="Interface permettant d'ajouter une équipe à une requête partagée" />
+
+<Image img="/images/cloud/sqlconsole/sql-console-edit-member.webp" size="lg" border alt="Interface permettant de modifier l'accès d'un membre à une requête partagée" />
+
+Dans certains cas, il peut être nécessaire d&#39;ajuster indépendamment l&#39;échelle des axes pour chaque champ. Vous pouvez également le faire dans la section « Advanced » du volet de configuration du graphique en spécifiant les valeurs minimale et maximale d&#39;une plage d&#39;axe. Par exemple, le graphique ci-dessus est satisfaisant, mais pour mettre en évidence la corrélation entre nos champs `trip_total` et `fare_total`, les plages d&#39;axe doivent être légèrement ajustées :
+
+<Image img="/images/cloud/sqlconsole/sql-console-access-queries.webp" size="lg" border alt="Section Partagé avec moi dans la liste des requêtes" />

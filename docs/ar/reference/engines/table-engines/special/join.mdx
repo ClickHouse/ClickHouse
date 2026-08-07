@@ -1,0 +1,201 @@
+---
+description: 'بنية بيانات مُجهَّزة اختيارية لاستخدامها في عمليات JOIN.'
+sidebarTitle: 'Join'
+slug: /engines/table-engines/special/join
+title: 'محرك الجدول Join'
+doc_type: 'reference'
+---
+
+بنية بيانات مُجهَّزة اختيارية لاستخدامها في عمليات [JOIN](/ar/reference/statements/select/join).
+
+<Note>
+  في ClickHouse Cloud، إذا كانت خدمتك قد أُنشئت بإصدار أقدم من 25.4، فستحتاج إلى ضبط التوافق على 25.4 على الأقل باستخدام `SET compatibility=25.4`.
+</Note>
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
+```
+
+راجع الوصف التفصيلي لاستعلام [CREATE TABLE](/ar/reference/statements/create/table).
+
+<div id="engine-parameters">
+  ## معلمات المحرك
+</div>
+
+<div id="join_strictness">
+  ### `join_strictness`
+</div>
+
+`join_strictness` – [درجة صرامة JOIN](/ar/reference/statements/select/join#supported-types-of-join).
+
+<div id="join_type">
+  ### `join_type`
+</div>
+
+`join_type` – [نوع JOIN](/ar/reference/statements/select/join#supported-types-of-join).
+
+<div id="key-columns">
+  ### الأعمدة المفتاحية
+</div>
+
+`k1[, k2, ...]` – الأعمدة المفتاحية من عبارة `USING` التي تُجرى بها عملية `JOIN`.
+
+أدخِل المعلَمين `join_strictness` و`join_type` من دون علامات اقتباس، على سبيل المثال: `Join(ANY, LEFT, col1)`. يجب أن يتطابقا مع عملية `JOIN` التي سيُستخدم الجدول فيها. إذا لم تتطابق المعلَمات، فلن يُصدر ClickHouse استثناءً وقد يعيد بيانات غير صحيحة.
+
+<div id="specifics-and-recommendations">
+  ## تفاصيل وتوصيات
+</div>
+
+<div id="data-storage">
+  ### تخزين البيانات
+</div>
+
+توجد بيانات جدول `Join` دائمًا في RAM. عند إدراج صفوف في جدول، يكتب ClickHouse كتل البيانات إلى الدليل على القرص لكي يمكن استعادتها عند إعادة تشغيل الخادم.
+
+إذا أُعيد تشغيل الخادم بصورة غير سليمة، فقد تُفقد كتلة البيانات الموجودة على القرص أو تتلف. في هذه الحالة، قد تحتاج إلى حذف الملف الذي يحتوي على البيانات التالفة يدويًا.
+
+<div id="selecting-and-inserting-data">
+  ### اختيار البيانات وإدراجها
+</div>
+
+يمكنك استخدام استعلامات `INSERT` لإضافة البيانات إلى جداول المحرك `Join`. إذا أُنشئ الجدول بدرجة الصرامة `ANY`، فسيتم تجاهل البيانات ذات المفاتيح المكررة. أما مع درجة الصرامة `ALL`، فتُضاف جميع الصفوف.
+
+حالات الاستخدام الرئيسية لجداول المحرك `Join` هي كما يلي:
+
+* ضع الجدول في الطرف الأيمن ضمن عبارة `JOIN`.
+* استدعِ الدالة [joinGet](/ar/reference/functions/regular-functions/other-functions#joinGet)، التي تتيح لك استخراج البيانات من الجدول بالطريقة نفسها التي تستخرج بها البيانات من القاموس.
+
+<div id="deleting-data">
+  ### حذف البيانات
+</div>
+
+تُنفَّذ استعلامات `ALTER DELETE` الخاصة بجداول المحرك `Join` على شكل [عمليات تعديل](/ar/reference/statements/alter/index#mutations). وتقرأ عملية التعديل `DELETE` البيانات المُصفّاة وتُعيد كتابة البيانات في الذاكرة وعلى القرص.
+
+<div id="join-limitations-and-settings">
+  ### القيود والإعدادات
+</div>
+
+عند إنشاء جدول، تُطبَّق الإعدادات التالية:
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+[join&#95;use&#95;nulls](/ar/reference/settings/session-settings#join_use_nulls)
+
+<div id="max_rows_in_join">
+  #### `max_rows_in_join`
+</div>
+
+[max&#95;rows&#95;in&#95;join](/ar/reference/settings/session-settings#max_rows_in_join)
+
+<div id="max_bytes_in_join">
+  #### `max_bytes_in_join`
+</div>
+
+[max&#95;bytes&#95;in&#95;join](/ar/reference/settings/session-settings#max_bytes_in_join)
+
+<div id="join_overflow_mode">
+  #### `join_overflow_mode`
+</div>
+
+[join&#95;overflow&#95;mode](/ar/reference/settings/session-settings#join_overflow_mode)
+
+<div id="join_any_take_last_row">
+  #### `join_any_take_last_row`
+</div>
+
+[join&#95;any&#95;take&#95;last&#95;row](/ar/reference/settings/session-settings#join_any_take_last_row)
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+<div id="persistent">
+  #### الاستمرارية
+</div>
+
+تعطّل الاستمرارية لمحركي الجدول Join و[Set](/ar/reference/engines/table-engines/special/set).
+
+تقلّل من عبء عمليات الإدخال/الإخراج. وهي مناسبة للسيناريوهات التي تركّز على الأداء ولا تتطلب الاستمرارية.
+
+القيم الممكنة:
+
+* 1 — مُمكّن.
+* 0 — معطّل.
+
+القيمة الافتراضية: `1`.
+
+لا يمكن استخدام الجداول ذات المحرك `Join` في عمليات `GLOBAL JOIN`.
+
+يسمح المحرك `Join` بتحديد الإعداد [join&#95;use&#95;nulls](/ar/reference/settings/session-settings#join_use_nulls) في عبارة `CREATE TABLE`. ويجب أن تكون قيمة `join_use_nulls` في استعلام [SELECT](/ar/reference/statements/select/index) هي نفسها.
+
+<div id="example">
+  ## أمثلة الاستخدام
+</div>
+
+إنشاء الجدول في الجانب الأيسر:
+
+```sql
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
+```
+
+```sql
+INSERT INTO id_val VALUES (1,11), (2,12), (3,13);
+```
+
+إنشاء جدول `Join` للجانب الأيمن:
+
+```sql
+CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
+```
+
+```sql
+INSERT INTO id_val_join VALUES (1,21), (1,22), (3,23);
+```
+
+ضمّ الجداول:
+
+```sql
+SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
+```
+
+```text
+┌─id─┬─val─┬─id_val_join.val─┐
+│  1 │  11 │              21 │
+│  2 │  12 │               0 │
+│  3 │  13 │              23 │
+└────┴─────┴─────────────────┘
+```
+
+بدلًا من ذلك، يمكنك استرجاع البيانات من جدول `Join` مع تحديد قيمة مفتاح الربط:
+
+```sql
+SELECT joinGet('id_val_join', 'val', toUInt32(1));
+```
+
+```text
+┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
+│                                         21 │
+└────────────────────────────────────────────┘
+```
+
+حذف صف من جدول `Join`:
+
+```sql
+ALTER TABLE id_val_join DELETE WHERE id = 3;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  21 │
+└────┴─────┘
+```

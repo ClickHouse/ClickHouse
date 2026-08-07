@@ -1,0 +1,122 @@
+---
+title: MacOS
+---
+
+import Recommendations from '/snippets/zh/recommendations.mdx';
+
+<div id="install-clickhouse-using-homebrew">
+  # 使用 Homebrew 安装 ClickHouse
+</div>
+
+<Warning>
+  通过 Homebrew Formulae 安装现已弃用，并将于 2026-09-01 停止支持。
+  我们建议改用适用于任何平台的[快速安装](/zh/get-started/setup/self-managed/quick-install)方法。
+</Warning>
+
+<Steps>
+  <Step>
+    ## 查看建议
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## 使用社区 Homebrew formula 安装
+
+    要在 macOS 上使用 [Homebrew](https://brew.sh/) 安装 ClickHouse，可以使用
+    ClickHouse 社区提供的 [homebrew formula](https://formulae.brew.sh/cask/clickhouse)。
+
+    ```bash
+    brew install --cask clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## 修复 macOS 中的开发者验证错误
+
+    如果你使用 `brew` 安装 ClickHouse，可能会遇到 macOS 报出的错误。
+    默认情况下，macOS 不会运行由无法验证身份的开发者创建的应用或工具。
+
+    尝试运行任意 `clickhouse` 命令时，你可能会看到以下错误：
+
+    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="sm" alt="MacOS 开发者验证错误对话框" border />
+
+    要绕过这个验证错误，你需要将该应用从 macOS 的隔离区中移除。可以在系统设置中找到相应选项，也可以使用终端，或者重新安装 ClickHouse。
+
+    ### 系统设置流程
+
+    将 `clickhouse` 可执行文件从隔离区移除的最简单方法是：
+
+    1. 打开**系统设置**。
+
+    2. 进入**隐私与安全**：
+
+       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="MacOS 隐私与安全设置默认视图" border />
+
+    3. 滚动到窗口底部，找到提示：&#95;&quot;clickhouse-macos-aarch64&quot; was blocked from use because it isn&#39;t from an identified developer&quot;。
+
+    4. 点击**Allow Anyway**。
+
+       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="显示 Allow Anyway 按钮的 MacOS 隐私与安全设置" border />
+
+    5. 输入你的 macOS 用户密码。
+
+    现在你应该就可以在终端中运行 `clickhouse` 命令了。
+
+    ### 终端流程
+
+    有时点击 `Allow Anyway` 按钮并不能解决这个问题，这种情况下也可以通过命令行完成这一操作。
+    当然，你也可能只是更喜欢使用命令行！
+
+    首先，找出 Homebrew 安装 `clickhouse` 可执行文件的位置：
+
+    ```shell
+    which clickhouse
+    ```
+
+    这条命令应该会输出类似如下内容：
+
+    ```shell
+    /opt/homebrew/bin/clickhouse
+    ```
+
+    运行 `xattr -d com.apple.quarantine`，后面加上上一条命令输出的路径，即可将 `clickhouse` 从隔离区中移除：
+
+    ```shell
+    xattr -d com.apple.quarantine /opt/homebrew/bin/clickhouse
+    ```
+
+    现在你应该可以运行 `clickhouse` 可执行文件了：
+
+    ```shell
+    clickhouse
+    ```
+
+    这应该会输出类似如下内容：
+
+    ```bash
+    Use one of the following commands:
+    clickhouse local [args]
+    clickhouse client [args]
+    clickhouse benchmark [args]
+    ```
+  </Step>
+
+  <Step>
+    ## 通过重新安装 ClickHouse 修复此问题
+
+    Brew 提供了一个命令行选项，可从一开始就避免将已安装的二进制文件加入隔离区。
+
+    首先，卸载 ClickHouse：
+
+    ```shell
+    brew uninstall clickhouse
+    ```
+
+    然后使用 `--no-quarantine` 重新安装 ClickHouse：
+
+    ```shell
+    brew install --no-quarantine clickhouse
+    ```
+  </Step>
+</Steps>

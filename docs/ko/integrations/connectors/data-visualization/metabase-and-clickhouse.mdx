@@ -1,0 +1,114 @@
+---
+sidebarTitle: 'Metabase'
+slug: /integrations/metabase
+keywords: ['Metabase']
+description: 'Metabase는 데이터에 대해 쉽게 질문할 수 있도록 지원하는 사용하기 쉬운 오픈 소스 UI 도구입니다.'
+title: 'Metabase를 ClickHouse에 연결하기'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+  - website: 'https://github.com/clickhouse/metabase-clickhouse-driver'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Metabase는 데이터를 쉽게 탐색하고 질문할 수 있는 사용하기 쉬운 오픈 소스 UI 도구입니다. Metabase는 Java 애플리케이션으로, <a href="https://www.metabase.com/start/oss/jar" target="_blank">JAR 파일을 다운로드</a>한 뒤 `java -jar metabase.jar`를 실행하기만 하면 됩니다. Metabase는 JDBC 드라이버를 사용해 ClickHouse에 연결하며, 이 드라이버는 다운로드한 후 `plugins` 폴더에 넣어야 합니다:
+
+<div id="goal">
+  ## 목표
+</div>
+
+이 가이드에서는 Metabase를 사용해 ClickHouse 데이터에 몇 가지 질문을 던지고, 그 답을 시각화합니다. 결과 중 하나는 다음과 같습니다.
+
+<Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="ClickHouse 데이터를 보여주는 Metabase 파이 차트 시각화" border />
+
+<p />
+
+<Tip>
+  **데이터 추가**
+
+  사용할 데이터셋이 없다면 예시 중 하나를 추가할 수 있습니다. 이 가이드에서는 [UK Price Paid](/ko/get-started/sample-datasets/uk-price-paid) 데이터셋을 사용하므로, 해당 데이터셋을 선택하면 됩니다. 같은 문서 범주에서 살펴볼 수 있는 다른 예시도 여러 개 있습니다.
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. 연결 정보를 준비합니다
+</div>
+
+<ConnectionDetails />
+
+<div id="2--download-the-clickhouse-plugin-for-metabase">
+  ## 2.  Metabase용 ClickHouse 플러그인 다운로드
+</div>
+
+1. `plugins` 폴더가 없으면 `metabase.jar`를 저장한 위치 아래에 하위 폴더로 생성하십시오.
+
+2. 플러그인은 `clickhouse.metabase-driver.jar`라는 이름의 JAR 파일입니다. 최신 버전의 JAR 파일은 <a href="https://github.com/clickhouse/metabase-clickhouse-driver/release" target="_blank">https://github.com/clickhouse/metabase-clickhouse-driver/releases/latest</a>에서 다운로드하십시오.
+
+3. `clickhouse.metabase-driver.jar`를 `plugins` 폴더에 저장하십시오.
+
+4. 드라이버가 올바르게 로드되도록 Metabase를 시작하거나 다시 시작하십시오.
+
+5. <a href="http://localhost:3000/" target="_blank">http://hostname:3000</a>에서 Metabase에 접속하십시오. 처음 실행하면 환영 화면이 표시되며 여러 질문에 차례대로 답해야 합니다. 데이터베이스를 선택하라는 메시지가 표시되면 &quot;**I&#39;ll add my data later**&quot;를 선택하십시오.
+
+<div id="3--connect-metabase-to-clickhouse">
+  ## 3.  Metabase를 ClickHouse에 연결하기
+</div>
+
+1. 오른쪽 상단의 톱니바퀴 아이콘을 클릭한 다음 **Admin Settings**를 선택하여 <a href="http://localhost:3000/admin/settings/setup" target="_blank">Metabase 관리자 페이지</a>로 이동합니다.
+
+2. **Add a database**를 클릭합니다. 또는 **Databases** 탭에서 **Add database** 버튼을 선택할 수도 있습니다.
+
+3. 드라이버가 정상적으로 설치되었다면 **Database type** 드롭다운 메뉴에 **ClickHouse**가 표시됩니다:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="ClickHouse가 옵션으로 표시된 Metabase 데이터베이스 선택 화면" border />
+
+4. 데이터베이스의 **Display name**을 지정합니다. 이는 Metabase 설정이므로 원하는 이름을 사용하면 됩니다.
+
+5. ClickHouse 데이터베이스의 연결 정보를 입력합니다. ClickHouse 서버가 SSL을 사용하도록 구성되어 있다면 보안 연결을 활성화합니다. 예시는 다음과 같습니다:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="ClickHouse 데이터베이스용 Metabase 연결 정보 양식" border />
+
+6. **Save** 버튼을 클릭하면 Metabase가 데이터베이스를 스캔하여 테이블을 찾습니다.
+
+<div id="4-run-a-sql-query">
+  ## 4. SQL 쿼리 실행하기
+</div>
+
+1. 오른쪽 상단의 **Exit admin** 버튼을 클릭해 **관리자 설정**을 종료하세요.
+
+2. 오른쪽 상단에서 **+ New** 메뉴를 클릭하면 질문하기, SQL 쿼리 실행, 대시보드 만들기 옵션을 확인할 수 있습니다:
+
+   <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="질문, SQL 쿼리, 대시보드를 생성하는 옵션을 보여주는 Metabase New 메뉴" border />
+
+3. 예를 들어, 다음은 `uk_price_paid`라는 테이블에서 실행한 SQL 쿼리로, 1995년부터 2022년까지 연도별 평균 거래 가격을 반환합니다:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="영국 부동산 거래 데이터에 대한 쿼리를 보여주는 Metabase SQL Editor" border />
+
+<div id="5-ask-a-question">
+  ## 5. 질문하기
+</div>
+
+1. **+ New**를 클릭한 다음 **Question**을 선택합니다. 데이터베이스와 테이블부터 시작해 질문을 만들 수 있습니다. 예를 들어, 다음 질문은 `default` 데이터베이스의 `uk_price_paid` 테이블을 대상으로 합니다. 아래는 Greater Manchester 카운티 내에서 도시별 평균 가격을 계산하는 간단한 질문입니다:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="영국 가격 데이터가 있는 Metabase 질문 작성 인터페이스" border />
+
+2. 결과를 표 형식으로 보려면 **Visualize** 버튼을 클릭합니다.
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="도시별 평균 가격의 표 형식 결과를 보여주는 Metabase 시각화" border />
+
+3. 결과 아래에서 **Visualization** 버튼을 클릭하여 시각화를 막대 차트(또는 사용 가능한 다른 옵션)로 변경합니다:
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Greater Manchester의 도시별 평균 가격을 보여주는 Metabase 파이 차트 시각화" border />
+
+<div id="learn-more">
+  ## 더 알아보기
+</div>
+
+Metabase에 대한 자세한 정보와 대시보드를 만드는 방법은 <a href="https://www.metabase.com/docs/latest/" target="_blank">Metabase 문서</a>에서 확인할 수 있습니다.

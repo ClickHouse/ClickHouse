@@ -1,0 +1,183 @@
+---
+slug: /troubleshooting
+sidebarTitle: '故障排查'
+doc_type: 'guide'
+keywords: [
+  'clickhouse 故障排查',
+  'clickhouse 错误',
+  '数据库故障排查',
+  'clickhouse 连接问题',
+  '内存超限',
+  'clickhouse 性能问题',
+  '数据库错误信息',
+  'clickhouse 配置问题',
+  '连接被拒绝错误',
+  'clickhouse 调试',
+  '数据库连接问题',
+  '故障排查指南'
+]
+title: '常见问题排查'
+description: '查找 ClickHouse 常见问题的解决方案，包括查询缓慢、内存错误、连接问题和配置问题。'
+---
+
+遇到 ClickHouse 问题？请在这里查找常见问题的解决方案。
+
+<div id="performance-and-errors">
+  ## 性能和错误
+</div>
+
+查询运行缓慢、发生超时，或出现诸如“Memory limit exceeded”或“Connection refused”之类的特定错误信息。
+
+<Accordion title="查看性能和错误解决方案">
+  ### 查询性能
+
+  * [找出哪些查询占用了最多资源](/zh/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
+  * [完整的查询优化指南](/zh/guides/clickhouse/performance-and-monitoring/query-optimization)
+  * [优化 JOIN 操作](/zh/concepts/best-practices/minimize-optimize-joins)
+  * [运行诊断查询以找出瓶颈](/zh/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+
+  <br />
+
+  ### 数据插入性能
+
+  * [提高数据插入速度](/zh/concepts/features/operations/insert/bulkinserts)
+  * [配置异步插入](/zh/concepts/features/operations/insert/asyncinserts)
+
+  <br />
+
+  ### 高级分析工具
+
+  {/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
+
+  * [检查当前正在运行的进程](/zh/resources/support-center/knowledge-base/monitoring-debugging/which-processes-are-currently-running)
+  * [监控系统性能](/zh/reference/system-tables/processes)
+
+  <br />
+
+  ### 错误信息
+
+  * **“Memory limit exceeded”** → [调试内存限制错误](/zh/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * **“Connection refused”** → [修复连接问题](#connections-and-authentication)
+  * **“Login failures”** → [设置用户、角色和权限](/zh/concepts/features/security/access-rights)
+  * **“SSL certificate errors”** → [修复证书问题](/zh/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * **“Table/database errors”** → [数据库创建指南](/zh/reference/statements/create/database) | [表 UUID 问题](/zh/reference/engines/database-engines/atomic)
+  * **“Network timeouts”** → [网络故障排查](/zh/concepts/features/interfaces/http)
+  * **其他问题** → [跟踪整个集群中的错误](/zh/reference/system-tables/errors)
+</Accordion>
+
+<div id="memory-and-resources">
+  ## 内存与资源
+</div>
+
+如果内存占用过高、发生内存不足崩溃，或者需要帮助确定 ClickHouse 部署规模。
+
+<Accordion title="显示内存解决方案">
+  ### 内存调试与监控：
+
+  * [找出内存占用来源](/zh/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * [检查当前内存使用情况](/zh/reference/system-tables/processes)
+  * [内存分配分析](/zh/concepts/features/performance/allocation-profiling)
+  * [分析内存使用模式](/zh/reference/system-tables/query_log)
+
+  <br />
+
+  ### 内存配置：
+
+  * [配置内存限制](/zh/concepts/features/configuration/settings/memory-overcommit)
+  * [服务器内存设置](/zh/reference/settings/server-settings/settings)
+  * [会话内存设置](/zh/reference/settings/session-settings)
+
+  <br />
+
+  ### 扩缩容与规格规划：
+
+  * [为你的服务选择合适规格](/zh/guides/oss/best-practices/tips)
+  * [配置自动扩缩容](/zh/products/cloud/features/autoscaling/overview)
+</Accordion>
+
+<div id="connections-and-authentication">
+  ## 连接和身份验证
+</div>
+
+无法连接到 ClickHouse、身份验证失败、SSL 证书错误或客户端配置问题。
+
+<Accordion title="查看连接问题解决方案">
+  ### 基本连接问题
+
+  * [修复 HTTP 接口问题](/zh/concepts/features/interfaces/http)
+  * [处理 SSL 证书问题](/zh/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * [用户身份验证设置](/zh/concepts/features/security/access-rights)
+
+  <br />
+
+  ### 客户端接口
+
+  * [ClickHouse 原生客户端](/zh/concepts/features/interfaces/native-clients-interfaces-index)
+  * [MySQL 接口问题](/zh/concepts/features/interfaces/mysql)
+  * [PostgreSQL 接口问题](/zh/concepts/features/interfaces/postgresql)
+  * [gRPC 接口配置](/zh/concepts/features/interfaces/grpc)
+  * [SSH 接口设置](/zh/concepts/features/interfaces/ssh)
+
+  <br />
+
+  ### 网络和数据
+
+  * [网络安全设置](/zh/reference/settings/server-settings/settings)
+  * [数据格式解析问题](/zh/reference/formats/index)
+</Accordion>
+
+<div id="setup-and-configuration">
+  ## 设置与配置
+</div>
+
+有关初始安装、服务器配置、数据库创建、数据摄取问题或复制设置。
+
+<Accordion title="显示设置与配置相关解决方案">
+  ### 初始设置
+
+  * [配置服务器设置](/zh/reference/settings/server-settings/settings)
+  * [设置安全和访问控制](/zh/concepts/features/security/access-rights)
+  * [正确配置硬件](/zh/guides/oss/best-practices/tips)
+
+  <br />
+
+  ### 数据库管理
+
+  * [创建和管理数据库](/zh/reference/statements/create/database)
+  * [选择合适的表引擎](/zh/reference/engines/table-engines/index)
+
+  {/* - [Modify schemas safely](/reference/statements/alter/index) */}
+
+  <br />
+
+  ### 数据操作
+
+  * [优化批量数据插入](/zh/concepts/features/operations/insert/bulkinserts)
+  * [处理数据格式问题](/zh/reference/formats/index)
+  * [配置流式数据管道](/zh/concepts/features/operations/insert/asyncinserts)
+  * [提升 S3 集成性能](/zh/integrations/connectors/data-ingestion/AWS/performance)
+
+  <br />
+
+  ### 高级配置
+
+  * [设置数据复制](/zh/reference/engines/table-engines/mergetree-family/replication)
+  * [配置分布式表](/zh/reference/engines/table-engines/special/distributed)
+
+  {/* - [ClickHouse Keeper setup](/guides/oss/deployment-and-scaling/keeper/index) */}
+
+  * [配置备份与恢复](/zh/concepts/features/backup-restore/overview)
+  * [配置监控](/zh/reference/system-tables/overview)
+</Accordion>
+
+<div id="still-need-help">
+  ## 还需要帮助？
+</div>
+
+如果你仍然找不到解决方案：
+
+1. **咨询 AI** - <button type="button" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>咨询 AI</button> 获取即时答案。
+2. **检查系统表** - [概览](/zh/reference/system-tables/overview)
+3. **查看服务器日志** - 在 ClickHouse 日志中查找错误信息
+4. **向社区寻求帮助** - [加入我们的社区 Slack](https://clickhouse.com/slack)，[GitHub Discussions](https://github.com/ClickHouse/ClickHouse/discussions)
+5. **获取专业支持** - [ClickHouse Cloud 支持](https://clickhouse.com/support)

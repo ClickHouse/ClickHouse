@@ -1,0 +1,95 @@
+-- test FORMAT clause --
+0	Hello & world
+1	Hello & world
+2	Hello & world
+0,"Hello & world"
+1,"Hello & world"
+2,"Hello & world"
+<?xml version='1.0' encoding='UTF-8' ?>
+<result>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+			<column>
+				<name>'Hello &amp; world'</name>
+				<type>String</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+		<row>
+			<number>0</number>
+			<field>Hello &amp; world</field>
+		</row>
+		<row>
+			<number>1</number>
+			<field>Hello &amp; world</field>
+		</row>
+		<row>
+			<number>2</number>
+			<field>Hello &amp; world</field>
+		</row>
+	</data>
+	<rows>3</rows>
+</result>
+{
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "'Hello & world'",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		{
+			"number": "0",
+			"'Hello & world'": "Hello & world"
+		},
+		{
+			"number": "1",
+			"'Hello & world'": "Hello & world"
+		},
+		{
+			"number": "2",
+			"'Hello & world'": "Hello & world"
+		}
+	],
+
+	"rows": 3
+}
+Row 1:
+──────
+number:          0
+'Hello & world': Hello & world
+
+Row 2:
+──────
+number:          1
+'Hello & world': Hello & world
+
+Row 3:
+──────
+number:          2
+'Hello & world': Hello & world
+-- test table function --
+0	Hello & world
+1	Hello & world
+2	Hello & world
+0	Hello & world
+1	Hello & world
+2	Hello & world
+-- test other function --
+0	Hello & world
+-- test table engine --
+0	Hello & world
+1	Hello & world
+2	Hello & world

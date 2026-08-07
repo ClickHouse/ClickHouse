@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'Fivetran'
+slug: /integrations/fivetran
+description: 'Используйте Fivetran, чтобы переносить данные из любого источника в ClickHouse Cloud с автоматическим созданием схемы, дедупликацией и режимом History Mode (SCD Type 2).'
+title: 'Fivetran и ClickHouse Cloud'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://github.com/ClickHouse/clickhouse-fivetran-destination'
+keywords: ['fivetran', 'перенос данных', 'etl', 'пункт назначения ClickHouse', 'автоматизированная платформа данных', 'History Mode', 'SCD Type 2']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="overview">
+  ## Обзор
+</div>
+
+[Fivetran](https://www.fivetran.com) — это автоматизированная платформа для перемещения данных между вашими облачными платформами данных, а также для их загрузки и выгрузки.
+
+[ClickHouse Cloud](https://clickhouse.com/cloud) поддерживается в качестве [пункта назначения Fivetran](https://fivetran.com/docs/destinations/clickhouse), что позволяет загружать данные из различных источников в ClickHouse. Версия ClickHouse с открытым исходным кодом не поддерживается в качестве пункта назначения.
+
+Коннектор назначения совместно разрабатывается и поддерживается ClickHouse и Fivetran. Исходный код доступен на [GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination).
+
+<Note>
+  [Пункт назначения ClickHouse Cloud](https://fivetran.com/docs/destinations/clickhouse) сейчас находится в статусе **бета**, но мы работаем над тем, чтобы вскоре сделать его общедоступным.
+</Note>
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/sWe5JHW3lAs"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="key-features">
+  ## Ключевые возможности
+</div>
+
+* **Совместимо с ClickHouse Cloud**: используйте свою базу данных ClickHouse Cloud в качестве пункта назначения Fivetran.
+* **Модель развертывания SaaS**: полностью управляется Fivetran, поэтому вам не нужно управлять собственной инфраструктурой.
+* **History Mode (SCD Type 2)**: сохраняет полную историю всех версий записей для анализа состояния на определенный момент времени и аудита.
+* **Настраиваемые размеры батчей**: вы можете адаптировать Fivetran под свой сценарий использования, настроив размеры батчей для записи, выборки, мутаций и жесткого удаления в JSON-файле конфигурации.
+
+<div id="limitations">
+  ## Ограничения
+</div>
+
+* Миграции схемы пока не поддерживаются, но мы работаем над этим.
+* Добавление, удаление или изменение столбцов первичного ключа не поддерживается.
+* Пользовательские настройки ClickHouse в командах `CREATE TABLE` не поддерживаются.
+* Ролевые гранты поддерживаются не полностью. При проверке привилегий коннектор учитывает только привилегии, выданные пользователю напрямую. Вместо этого используйте [прямые гранты](/ru/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants).
+
+<div id="related-pages">
+  ## Связанные страницы
+</div>
+
+* [Технический справочник](/ru/integrations/connectors/data-ingestion/etl-tools/fivetran/reference): сопоставления типов, движки таблиц, столбцы метаданных и расширенные конфигурации
+* [Устранение неполадок и лучшие практики](/ru/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting): распространённые ошибки, советы по оптимизации и отладке запросов
+* [Пункт назначения Fivetran для ClickHouse на GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination)
+
+<div id="setup-guide">
+  ## Руководство по настройке
+</div>
+
+* Если вам нужны конфигурации и общие технические сведения, см. [технический справочник](/ru/integrations/connectors/data-ingestion/etl-tools/fivetran/reference).
+* Подробное руководство см. в [руководстве по настройке](https://fivetran.com/docs/destinations/clickhouse/setup-guide) в документации Fivetran.
+
+<div id="contact-us">
+  ## Контакты и поддержка
+</div>
+
+Для Fivetran ClickHouse пункта назначения используется модель разделённой ответственности:
+
+* **ClickHouse** разрабатывает и поддерживает код коннектора пункта назначения.
+* **Fivetran** размещает коннектор и отвечает за перемещение данных, планирование конвейеров и коннекторы источников.
+
+Поддержку Fivetran ClickHouse пункта назначения оказывают и Fivetran, и ClickHouse. По общим вопросам рекомендуем обращаться в Fivetran, поскольку они лучше всего разбираются в платформе Fivetran. По любым вопросам или проблемам, связанным с ClickHouse, наша служба поддержки будет рада помочь. Создайте [тикет в поддержку](/ru/resources/about/support), чтобы задать вопрос или сообщить о проблеме.

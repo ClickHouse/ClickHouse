@@ -1,0 +1,76 @@
+---
+sidebarTitle: '移除 SAML 单点登录'
+slug: /cloud/security/saml-removal
+title: '移除 SAML 单点登录'
+description: '如何在 ClickHouse Cloud 中移除 SAML 单点登录'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SAML', 'SSO', '单点登录', 'IdP']
+---
+
+客户可能因更换身份提供商等原因，需要从组织中移除 SAML 集成。SAML 用户与其他类型的用户身份相互独立。请按照以下说明切换到其他身份验证方法。
+
+<Warning>
+  此操作无法撤销。移除 SAML 集成后，SAML 用户将失效且无法恢复。请仔细按照以下说明操作，以确保你仍能访问该组织。
+</Warning>
+
+<div id="before-you-begin">
+  ## 开始之前
+</div>
+
+组织中必须有一位使用其他身份验证方法的管理员用户，以便在移除 SAML 后将用户重新邀请回组织。执行这些步骤需要一位拥有 Admin 权限的 ClickHouse Cloud 用户。
+
+<Steps>
+  <Step>
+    ### 启用邀请
+
+    登录 [ClickHouse Cloud](https://console.clickhouse.cloud)，然后提交一张支持工单，subject 为 `Enable invitations for SAML organization`。这是为了申请启用通过 SAML 以外的方法添加用户的能力。
+  </Step>
+
+  <Step>
+    ### 记录需要重新邀请的用户
+
+    点击左下角的组织名称，然后选择 `Users and Roles`。查看每位用户的 `Provider` 列；凡是显示为 `Signed in with SSO` 的用户，都需要在移除 SAML 后重新邀请回组织。
+
+    请确保用户知晓：移除 SAML 后，他们必须先接受新的邀请，才能访问该账户。
+  </Step>
+</Steps>
+
+<div id="add-non-saml-users">
+  ## 将非 SAML 用户添加到组织
+</div>
+
+<Steps>
+  <Step>
+    ### 邀请用户
+
+    点击左下角的组织名称，然后选择 `Users and Roles`。按照[邀请用户](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users)中的说明进行操作。
+  </Step>
+
+  <Step>
+    ### 用户接受邀请
+
+    用户在接受邀请之前，应先完全退出所有 SAML 登录会话。使用 Google 或 Microsoft 社交登录接受邀请时，用户应点击 `Continue with Google` 或 `Continue with Microsoft` 按钮。使用电子邮件和密码的用户应前往 https://console.clickhouse.cloud/?with=email 登录并接受邀请。
+
+    <Note>
+      为确保用户不会因 SAML 配置而被自动重定向，最佳做法是复制接受邀请的链接，并将其粘贴到单独的浏览器或隐私/无痕浏览会话中完成接受邀请。
+    </Note>
+  </Step>
+
+  <Step>
+    ### 保存查询和仪表盘
+
+    用户使用新身份登录后，应先退出登录，然后再使用其 SAML 账户重新登录，以便将已保存的查询或仪表盘共享给新身份。他们应在新身份下另存一份副本，以完成该过程。
+  </Step>
+</Steps>
+
+<div id="remove-saml">
+  ## 移除 SAML
+</div>
+
+请仔细确认以下事项均已完成：
+
+* 组织中至少有一名使用非 SAML 登录的用户被赋予 Admin 角色
+* 所有必需用户均已通过其他身份验证方法重新邀请加入
+* 所有已保存的查询和仪表盘均已迁移到非 SAML 用户名下
+
+如果以上事项均已完成，请前往“组织设置”选项卡，切换 `Enable SAML single sign-on` 设置。此时会显示一条警告。点击 `Disable`。然后前往“用户和角色”选项卡，移除 SAML 用户。

@@ -1,0 +1,243 @@
+---
+description: 'создает временное хранилище, заполняющее столбцы значениями.'
+keywords: ['значения', 'табличная функция']
+sidebarTitle: 'values'
+slug: /sql-reference/table-functions/values
+title: 'values'
+doc_type: 'reference'
+---
+
+Табличная функция `Values` позволяет создавать временное хранилище, заполняющее
+столбцы значениями. Она полезна для быстрого тестирования или генерации примерных данных.
+
+<Note>
+  Values — регистронезависимая функция. То есть допустимы оба варианта: `VALUES` и `values`.
+</Note>
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+Базовый синтаксис табличной функции `VALUES` выглядит так:
+
+```sql
+VALUES([structure,] values...)
+```
+
+Обычно используется так:
+
+```sql
+VALUES(
+    ['column1_name Type1, column2_name Type2, ...'],
+    (value1_row1, value2_row1, ...),
+    (value1_row2, value2_row2, ...),
+    ...
+)
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+* `column1_name Type1, ...` (необязательно). [String](/ru/reference/data-types/string)
+  задаёт имена столбцов и типы. Если этот аргумент опущен, столбцы будут
+  называться `c1`, `c2` и т. д.
+* `(value1_row1, value2_row1)`. [Tuple](/ru/reference/data-types/tuple)
+  содержит значения любого типа.
+
+<Note>
+  Tuple, разделённые запятыми, также можно заменить отдельными значениями. В этом случае
+  каждое значение рассматривается как новая строка. Подробности см. в разделе
+  [примеры](#examples).
+</Note>
+
+<div id="returned-value">
+  ## Возвращаемое значение
+</div>
+
+* Возвращает временную таблицу с переданными значениями.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+```sql title="Query"
+SELECT *
+FROM VALUES(
+    'person String, place String',
+    ('Noah', 'Paris'),
+    ('Emma', 'Tokyo'),
+    ('Liam', 'Sydney'),
+    ('Olivia', 'Berlin'),
+    ('Ilya', 'London'),
+    ('Sophia', 'London'),
+    ('Jackson', 'Madrid'),
+    ('Alexey', 'Amsterdam'),
+    ('Mason', 'Venice'),
+    ('Isabella', 'Prague')
+)
+```
+
+```response title="Response"
+    ┌─person───┬─place─────┐
+ 1. │ Noah     │ Paris     │
+ 2. │ Emma     │ Tokyo     │
+ 3. │ Liam     │ Sydney    │
+ 4. │ Olivia   │ Berlin    │
+ 5. │ Ilya     │ London    │
+ 6. │ Sophia   │ London    │
+ 7. │ Jackson  │ Madrid    │
+ 8. │ Alexey   │ Amsterdam │
+ 9. │ Mason    │ Venice    │
+10. │ Isabella │ Prague    │
+    └──────────┴───────────┘
+```
+
+`VALUES` также можно использовать с отдельными значениями, а не с кортежами. Например:
+
+```sql title="Query"
+SELECT *
+FROM VALUES(
+    'person String',
+    'Noah',
+    'Emma',
+    'Liam',
+    'Olivia',
+    'Ilya',
+    'Sophia',
+    'Jackson',
+    'Alexey',
+    'Mason',
+    'Isabella'
+)
+```
+
+```response title="Response"
+    ┌─person───┐
+ 1. │ Noah     │
+ 2. │ Emma     │
+ 3. │ Liam     │
+ 4. │ Olivia   │
+ 5. │ Ilya     │
+ 6. │ Sophia   │
+ 7. │ Jackson  │
+ 8. │ Alexey   │
+ 9. │ Mason    │
+10. │ Isabella │
+    └──────────┘
+```
+
+Или без указания спецификации строки (`'column1_name Type1, column2_name Type2, ...'`
+в [синтаксисе](#syntax)) — в этом случае столбцы будут названы автоматически.
+
+Например:
+
+```sql title="Query"
+-- кортежи в качестве значений
+SELECT *
+FROM VALUES(
+    ('Noah', 'Paris'),
+    ('Emma', 'Tokyo'),
+    ('Liam', 'Sydney'),
+    ('Olivia', 'Berlin'),
+    ('Ilya', 'London'),
+    ('Sophia', 'London'),
+    ('Jackson', 'Madrid'),
+    ('Alexey', 'Amsterdam'),
+    ('Mason', 'Venice'),
+    ('Isabella', 'Prague')
+)
+```
+
+```response title="Response"
+    ┌─c1───────┬─c2────────┐
+ 1. │ Noah     │ Paris     │
+ 2. │ Emma     │ Tokyo     │
+ 3. │ Liam     │ Sydney    │
+ 4. │ Olivia   │ Berlin    │
+ 5. │ Ilya     │ London    │
+ 6. │ Sophia   │ London    │
+ 7. │ Jackson  │ Madrid    │
+ 8. │ Alexey   │ Amsterdam │
+ 9. │ Mason    │ Venice    │
+10. │ Isabella │ Prague    │
+    └──────────┴───────────┘
+```
+
+```sql title="Query"
+-- одиночные значения
+SELECT *
+FROM VALUES(
+    'Noah',
+    'Emma',
+    'Liam',
+    'Olivia',
+    'Ilya',
+    'Sophia',
+    'Jackson',
+    'Alexey',
+    'Mason',
+    'Isabella'
+)
+```
+
+```response title="Response"
+    ┌─c1───────┐
+ 1. │ Noah     │
+ 2. │ Emma     │
+ 3. │ Liam     │
+ 4. │ Olivia   │
+ 5. │ Ilya     │
+ 6. │ Sophia   │
+ 7. │ Jackson  │
+ 8. │ Alexey   │
+ 9. │ Mason    │
+10. │ Isabella │
+    └──────────┘
+```
+
+<div id="sql-standard-values-clause">
+  ## Стандартная SQL-конструкция VALUES
+</div>
+
+Начиная с версии 26.3, ClickHouse также поддерживает стандартную SQL-конструкцию `VALUES` как табличное выражение
+в `FROM`, как в PostgreSQL, MySQL, DuckDB и SQL Server. Этот синтаксис
+внутренне преобразуется с использованием описанной выше табличной функции `values`.
+
+```sql title="Query"
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+```response title="Response"
+┌─id─┬─val─┐
+│  1 │ a   │
+│  2 │ b   │
+│  3 │ c   │
+└────┴─────┘
+```
+
+Его можно использовать в CTE:
+
+```sql title="Query"
+WITH cte AS (SELECT * FROM (VALUES (1, 'one'), (2, 'two')) AS t(id, name))
+SELECT * FROM cte;
+```
+
+И в JOIN:
+
+```sql title="Query"
+SELECT t1.id, t1.val, t2.val2
+FROM (VALUES (1, 'a'), (2, 'b')) AS t1(id, val)
+JOIN (VALUES (1, 'x'), (2, 'y')) AS t2(id, val2) ON t1.id = t2.id;
+```
+
+<Note>
+  Псевдонимы столбцов после `AS t(col1, col2, ...)` соответствуют стандартному синтаксису SQL для
+  именования столбцов производных таблиц. Если они опущены, столбцы получают имена `c1`, `c2` и т. д.
+</Note>
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [Формат Values](/ru/reference/formats/Values)

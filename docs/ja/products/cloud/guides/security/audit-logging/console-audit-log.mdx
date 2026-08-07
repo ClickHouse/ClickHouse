@@ -1,0 +1,69 @@
+---
+sidebarTitle: 'コンソール監査ログ'
+slug: /cloud/security/audit-logging/console-audit-log
+title: 'コンソール監査ログ'
+description: 'このページでは、Cloud の監査ログを確認する方法について説明します'
+doc_type: 'guide'
+keywords: ['監査ログ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+コンソールでのアクティビティは監査ログに記録されます。組織のAdminまたはDeveloperロールを持っている場合は、ログを確認し、使用中のロギングシステムと統合できます。
+
+<div id="console-audit-log-ui">
+  ## ユーザーインターフェイスからコンソール監査ログにアクセスする
+</div>
+
+<Steps>
+  <Step>
+    ## 組織を選択する
+
+    ClickHouse Cloud で、組織の詳細画面に移動します。
+
+    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="ClickHouse Cloud のアクティビティタブ" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ## 監査を選択する
+
+    左側のメニューで **Audit** タブを選択すると、ClickHouse Cloud 組織に対してどのような変更が行われたか、また、その変更を誰がいつ行ったかを確認できます。
+
+    **Activity** ページには、組織に関して記録されたイベントの一覧を含むテーブルが表示されます。デフォルトでは、この一覧は逆時系列順 (最新のイベントが先頭) にソートされています。テーブルの並び順は、カラムヘッダーをクリックして変更できます。テーブルの各項目には、次のフィールドが含まれます。
+
+    * **Activity:** イベントを説明するテキスト
+    * **User:** イベントを開始したユーザー
+    * **IP Address:** 該当する場合、このフィールドにはイベントを開始したユーザーの IP アドレスが表示されます
+    * **Time:** イベントのタイムスタンプ
+
+    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="ClickHouse Cloud の Activity テーブル" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ## 検索バーを使用する
+
+    検索バーを使用すると、たとえば Service name や IP アドレスなどの条件でイベントを絞り込めます。また、この情報を外部ツールで配布または分析するために、CSV format でエクスポートすることもできます。
+  </Step>
+</Steps>
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="ClickHouse Cloud Activity の CSV エクスポート" border />
+</div>
+
+<div id="console-audit-log-api">
+  ## API 経由でコンソール監査ログにアクセスする
+</div>
+
+ClickHouse Cloud API の `activity` エンドポイントを使用すると、監査イベントをエクスポートできます。詳細については、[API リファレンス](/ja/api-reference/organization/get-list-of-available-organizations)を参照してください。
+
+<div id="log-integrations">
+  ## ログインテグレーション
+</div>
+
+API を使用して、任意のロギングプラットフォームと連携できます。以下のコネクタは標準でサポートされています。
+
+* [Splunk 向け ClickHouse Cloud Audit アドオン](/ja/integrations/connectors/data-integrations/integrations/splunk)

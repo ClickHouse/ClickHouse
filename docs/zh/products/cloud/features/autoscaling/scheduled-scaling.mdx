@@ -1,0 +1,80 @@
+---
+sidebarTitle: '定时扩缩容'
+slug: /cloud/features/autoscaling/scheduled-scaling
+description: '介绍 ClickHouse Cloud 中“定时扩缩容”功能的文章'
+keywords: ['定时扩缩容']
+title: '定时扩缩容'
+doc_type: 'guide'
+---
+
+import PrivatePreviewBadge from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+ClickHouse Cloud 服务会根据 CPU 和内存利用率自动扩缩容，但许多工作负载都呈现出可预测的模式——例如每日的摄取高峰、夜间运行的批次作业，或周末大幅下降的流量。对于这些场景，定时扩缩容可让您精确定义服务应在何时扩容或缩容，而不受实时指标影响。
+
+使用定时扩缩容时，您可以直接在 ClickHouse Cloud 控制台中配置一组基于时间的规则。每条规则都会指定一个时间、一个重复周期 (每天、每周或自定义) 以及目标规模——即副本数 (横向) 或内存层级 (纵向) 。到达预定时间后，ClickHouse Cloud 会自动应用更改，因此您的服务会在需求到来之前就调整到合适的规模，而不是等到事后再被动响应。
+
+这与基于指标的自动扩缩容不同，后者会根据 CPU 和内存压力动态调整。定时扩缩容是确定性的：您可以清楚知道扩缩容会在何时发生，以及会调整到什么规模。这两种方式是互补的——服务既可以有一个基础的扩缩容计划，也仍然能够在该时间窗口内受益于自动扩缩容，以应对工作负载的意外波动。
+
+定时扩缩容目前处于 **私有预览** 阶段。若要为您的组织启用该功能，请联系 ClickHouse 支持团队。
+
+<div id="setting-up-a-scaling-schedule">
+  ## 设置扩缩容计划
+</div>
+
+要配置计划，请在 ClickHouse Cloud 控制台中进入你的服务并前往设置。在这里，选择 **Schedule Override**，然后添加一条新规则。
+
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="ClickHouse Cloud 控制台中的扩缩容计划界面，显示基于时间的扩缩容规则" border />
+
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="在 ClickHouse Cloud 控制台中配置定时扩缩容规则" border />
+
+每条规则都需要：
+
+* **时间：** 扩缩容操作执行的时间 (按你的本地时区)
+* **重复周期：** 规则重复的频率 (例如每个工作日、每周日)
+* **目标规模：** 要扩缩容到的副本数或内存分配量
+
+可以组合多条规则来形成完整的每周计划。例如，你可以设置为在每个工作日上午 6 点扩容到 5 个副本，并在晚上 8 点缩容回 2 个副本。
+
+<div id="use-cases">
+  ## 使用场景
+</div>
+
+**批次处理和 ETL 工作负载：** 在夜间摄取作业开始前先扩容，待其完成后再缩容，避免在白天空闲时段过度配置资源。
+
+**可预测的流量模式：** 对于高峰时段较为固定的服务 (例如工作时段的查询流量) ，可以在负载到来前提前扩容，而不必等待自动扩缩容作出响应。
+
+**周末缩容：** 在周末需求较低时减少副本数量或下调内存层级，并在周一早高峰到来前恢复容量。
+
+**成本控制：** 对于需要控制 ClickHouse Cloud 支出的团队，在已知利用率较低的时段执行定时缩容，无需人工干预即可显著降低资源消耗。
+
+<Note>
+  定时扩缩容操作可能会与同时出现的自动扩缩容建议相互影响——在触发时刻，以预定计划为准。
+</Note>
+
+<div id="handling-bursty-workloads">
+  ## 处理工作负载突增
+</div>
+
+如果您预计工作负载即将出现峰值，可以使用
+[ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview)
+提前扩容您的服务以应对峰值，并在
+需求回落后再将其缩容。
+
+要了解每个副本当前使用的 CPU 核心数和内存，
+可以运行下面的查询：
+
+```sql
+SELECT *
+FROM clusterAllReplicas('default', view(
+    SELECT
+        hostname() AS server,
+        anyIf(value, metric = 'CGroupMaxCPU') AS cpu_cores,
+        formatReadableSize(anyIf(value, metric = 'CGroupMemoryTotal')) AS memory
+    FROM system.asynchronous_metrics
+))
+ORDER BY server ASC
+SETTINGS skip_unavailable_shards = 1
+```

@@ -1,0 +1,172 @@
+---
+description: 'Allows connecting to databases on a remote MySQL server and perform
+  `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.'
+sidebarTitle: 'MySQL'
+slug: /engines/database-engines/mysql
+title: 'MySQL'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Allows to connect to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.
+
+The `MySQL` database engine translate queries to the MySQL server so you can perform operations such as `SHOW TABLES` or `SHOW CREATE TABLE`.
+
+You cannot perform the following queries:
+
+- `RENAME`
+- `CREATE TABLE`
+- `ALTER`
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
+[SETTINGS enable_compression=0]
+```
+
+**Engine Parameters**
+
+- `host:port` — MySQL server address.
+- `database` — Remote database name.
+- `user` — MySQL user.
+- `password` — User password.
+
+**Settings**
+
+### `enable_compression` {#enable-compression}
+
+Enables zlib compression for the MySQL protocol connection. When set to `1`, ClickHouse requests protocol-level compression from the MySQL server.
+
+Default value: `0`.
+
+Example:
+
+```sql
+CREATE DATABASE mysql_db
+ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
+SETTINGS enable_compression = 1;
+```
+
+## Data types support {#data_types-support}
+
+| MySQL                            | ClickHouse                                                   |
+|----------------------------------|--------------------------------------------------------------|
+| UNSIGNED TINYINT                 | [UInt8](/reference/data-types/int-uint)          |
+| TINYINT                          | [Int8](/reference/data-types/int-uint)           |
+| UNSIGNED SMALLINT                | [UInt16](/reference/data-types/int-uint)         |
+| SMALLINT                         | [Int16](/reference/data-types/int-uint)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/reference/data-types/int-uint)         |
+| INT, MEDIUMINT                   | [Int32](/reference/data-types/int-uint)          |
+| UNSIGNED BIGINT                  | [UInt64](/reference/data-types/int-uint)         |
+| BIGINT                           | [Int64](/reference/data-types/int-uint)          |
+| FLOAT                            | [Float32](/reference/data-types/float)           |
+| DOUBLE                           | [Float64](/reference/data-types/float)           |
+| DATE                             | [Date](/reference/data-types/date)               |
+| DATETIME, TIMESTAMP              | [DateTime](/reference/data-types/datetime)       |
+| BINARY                           | [FixedString](/reference/data-types/fixedstring) |
+
+All other MySQL data types are converted into [String](/reference/data-types/string).
+
+[Nullable](/reference/data-types/nullable) is supported.
+
+## Global variables support {#global-variables-support}
+
+For better compatibility you may address global variables in MySQL style, as `@@identifier`.
+
+These variables are supported:
+- `version`
+- `max_allowed_packet`
+
+<Note>
+By now these variables are stubs and don't correspond to anything.
+</Note>
+
+Example:
+
+```sql
+SELECT @@version;
+```
+
+## Examples of use {#examples-of-use}
+
+Table in MySQL:
+
+```text
+mysql> USE test;
+Database changed
+
+mysql> CREATE TABLE `mysql_table` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `float` FLOAT NOT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from mysql_table;
++------+-----+
+| int_id | value |
++------+-----+
+|      1 |     2 |
++------+-----+
+1 row in set (0,00 sec)
+```
+
+Database in ClickHouse, exchanging data with the MySQL server:
+
+```sql
+CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
+```
+
+```sql
+SHOW DATABASES
+```
+
+```text
+┌─name─────┐
+│ default  │
+│ mysql_db │
+│ system   │
+└──────────┘
+```
+
+```sql
+SHOW TABLES FROM mysql_db
+```
+
+```text
+┌─name─────────┐
+│  mysql_table │
+└──────────────┘
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+└────────┴───────┘
+```
+
+```sql
+INSERT INTO mysql_db.mysql_table VALUES (3,4)
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```

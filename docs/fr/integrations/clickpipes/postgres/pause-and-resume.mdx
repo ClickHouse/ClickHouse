@@ -1,0 +1,55 @@
+---
+title: "Mise en pause et reprise d’un ClickPipe Postgres"
+description: "Mise en pause et reprise d’un ClickPipe Postgres"
+sidebarTitle: "Mettre la table en pause"
+slug: /integrations/clickpipes/postgres/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Il existe des situations où il peut être utile de mettre en pause un Postgres ClickPipe. Par exemple, vous pouvez vouloir effectuer des analyses sur des données existantes dans un état figé. Il se peut aussi que vous soyez en train d’effectuer des mises à niveau de Postgres. Voici comment mettre en pause puis reprendre un Postgres ClickPipe.
+
+<div id="pause-clickpipe-steps">
+  ## Étapes pour mettre en pause un Postgres ClickPipe
+</div>
+
+1. Dans l’onglet Sources de données, cliquez sur le Postgres ClickPipe que vous souhaitez mettre en pause.
+2. Accédez à l’onglet **Paramètres**.
+3. Cliquez sur le bouton **Pause**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. Une boîte de dialogue de confirmation devrait s’afficher. Cliquez de nouveau sur Pause.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. Accédez à l’onglet **Métriques**.
+5. Après environ 5 secondes (et également après actualisation de la page), le statut du pipe devrait être **En pause**.
+
+<Warning>
+  Mettre en pause un Postgres ClickPipe n’arrête pas l’augmentation des slots de réplication.
+</Warning>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## Étapes pour reprendre un Postgres ClickPipe
+</div>
+
+1. Dans l’onglet Sources de données, cliquez sur le Postgres ClickPipe que vous souhaitez reprendre. Le statut du miroir doit initialement être **En pause**.
+2. Accédez à l’onglet **Paramètres**.
+3. Cliquez sur le bouton **Reprendre**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. Une boîte de dialogue de confirmation s’affiche. Cliquez de nouveau sur Reprendre.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. Accédez à l’onglet **Métriques**.
+6. Après environ 5 secondes (et également après actualisation de la page), le statut du pipe doit être **En cours d’exécution**.

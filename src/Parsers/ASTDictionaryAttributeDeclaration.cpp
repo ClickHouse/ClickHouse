@@ -1,0 +1,73 @@
+#include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTWithAlias.h>
+#include <Common/quoteString.h>
+#include <IO/Operators.h>
+
+
+namespace DB
+{
+ASTPtr ASTDictionaryAttributeDeclaration::clone() const
+{
+    const auto res = make_intrusive<ASTDictionaryAttributeDeclaration>(*this);
+    res->children.clear();
+
+    if (type)
+    {
+        res->type = type->clone();
+        res->children.push_back(res->type);
+    }
+
+    if (default_value)
+    {
+        res->default_value = default_value;
+        res->children.push_back(res->default_value);
+    }
+
+    if (expression)
+    {
+        res->expression = expression->clone();
+        res->children.push_back(res->expression);
+    }
+
+    return res;
+}
+
+void ASTDictionaryAttributeDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
+
+    if (type)
+    {
+        ostr << ' ';
+        type->format(ostr, settings, state, frame);
+    }
+
+    if (default_value)
+    {
+        ostr << ' ' << "DEFAULT" << ' ';
+        default_value->format(ostr, settings, state, frame);
+    }
+
+    if (expression)
+    {
+        ostr << ' ' << "EXPRESSION" << ' ';
+        auto nested_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expression.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            nested_frame.need_parens = true;
+        expression->format(ostr, settings, state, nested_frame);
+    }
+
+    if (hierarchical)
+        ostr << ' ' << "HIERARCHICAL";
+
+    if (bidirectional)
+        ostr << ' ' << "BIDIRECTIONAL";
+
+    if (injective)
+        ostr << ' ' << "INJECTIVE";
+
+    if (is_object_id)
+        ostr << ' ' << "IS_OBJECT_ID";
+}
+
+}

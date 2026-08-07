@@ -1,0 +1,324 @@
+---
+sidebarTitle: 'CDC de SQL Server para ClickHouse'
+keywords: ['clickhouse', 'Streamkap', 'CDC', 'sql server', 'conectar', 'integrar', 'etl', 'integración de datos', 'captura de cambios de datos']
+slug: /integrations/data-ingestion/etl-tools/sql-server-clickhouse
+description: 'Streaming de datos de SQL Server a ClickHouse para analítica rápida'
+title: 'Streaming de datos de SQL Server a ClickHouse para analítica rápida: guía paso a paso'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+En este artículo, desglosamos un tutorial que te muestra cómo hacer streaming de datos de SQL Server a ClickHouse. ClickHouse es ideal si buscas analítica ultrarrápida para informes y dashboards internos o de cara al cliente. Te guiaremos paso a paso para configurar ambas bases de datos, conectarlas y, por último, usar [Streamkap](https://streamkap.com) para transmitir tus datos. Si SQL Server gestiona tus operaciones diarias, pero necesitas la velocidad y la potencia de ClickHouse para analítica, estás en el lugar adecuado.
+
+<div id="why-stream-data-from-sql-server-to-clickhouse">
+  ## ¿Por qué transmitir datos de SQL Server a ClickHouse?
+</div>
+
+Si estás aquí, probablemente ya conozcas el problema: SQL Server es muy fiable para las transacciones, pero sencillamente no está diseñado para ejecutar consultas analíticas complejas en tiempo real.
+
+Ahí es donde ClickHouse destaca. ClickHouse está diseñado para analítica, con agregaciones e informes ultrarrápidos, incluso sobre conjuntos de datos enormes. Por eso, configurar una pipeline de CDC en streaming para enviar tus datos transaccionales a ClickHouse te permite ejecutar informes a gran velocidad, ideales para operaciones, equipos de producto o dashboards para clientes.
+
+Casos de uso típicos:
+
+* Informes internos sin ralentizar las aplicaciones de producción
+* Dashboards de cara al cliente que deben ser rápidos y estar siempre actualizados
+* Streaming de eventos, como mantener al día los logs de actividad de los usuarios para analítica
+
+<div id="what-youll-need-to-get-started">
+  ## Lo que necesitarás para empezar
+</div>
+
+Antes de entrar en materia, esto es lo que deberías tener preparado:
+
+<div id="prerequisites">
+  ### Requisitos previos
+</div>
+
+* Una instancia de SQL Server en funcionamiento
+
+* Para este tutorial, usamos AWS RDS para SQL Server, pero cualquier instancia moderna de SQL Server sirve.[Configurar AWS SQL Server desde cero.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23setting-up-a-new-rds-sql-server-from-scratch)
+
+* Una instancia de ClickHouse
+
+* Autogestionada o en la nube.[Configurar ClickHouse desde cero.](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23creating-a-new-clickhouse-account)
+
+* Streamkap
+
+* Esta herramienta será la base de tu pipeline de streaming de datos.
+
+<div id="connection-info">
+  ### Información de la conexión
+</div>
+
+Asegúrate de tener:
+
+* La dirección del servidor, el puerto, el nombre de usuario y la contraseña de SQL Server. Se recomienda crear un usuario y un rol independientes para que Streamkap pueda acceder a tu base de datos de SQL Server.[Consulta nuestra documentación sobre la configuración.](https://www.google.com/url?q=https://docs.streamkap.com/docs/sql-server\&sa=D\&source=editors\&ust=1760992472358213\&usg=AOvVaw3jfocCF1VSijgsq1OCpZPj)
+* La dirección del servidor, el puerto, el nombre de usuario y la contraseña de ClickHouse. Las listas de acceso IP de ClickHouse determinan qué servicios pueden conectarse a tu base de datos de ClickHouse.[Sigue las instrucciones aquí.](https://www.google.com/url?q=https://docs.streamkap.com/docs/clickhouse\&sa=D\&source=editors\&ust=1760992472359060\&usg=AOvVaw3H1XqqwvqAso_TQPNBKEhD)
+* Las tablas que quieres sincronizar; por ahora, empieza con una sola
+
+<div id="setting-up-sql-server-as-a-source">
+  ## Configurar SQL Server como origen
+</div>
+
+¡Vamos a ello!
+
+<div id="step-1-creating-a-sql-server-source-in-streamkap">
+  ### Paso 1: Crear un origen de SQL Server en Streamkap
+</div>
+
+Empezaremos por configurar la conexión del origen. Así es como Streamkap sabe de dónde capturar los cambios.
+
+Así se hace:
+
+1. Abre Streamkap y ve a la sección de fuentes.
+2. Crea una fuente nueva.
+
+* Asignále un nombre fácil de reconocer (p. ej., sqlserver-demo-source).
+
+3. Completa los datos de conexión de SQL Server:
+
+* Host (p. ej., your-db-instance.rds.amazonaws.com)
+* Puerto (el puerto predeterminado de SQL Server es 3306)
+* Nombre de usuario y contraseña
+* Nombre de la base de datos
+
+<Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+
+<div id="whats-happening-behind-the-scenes">
+  #### Qué ocurre en segundo plano
+</div>
+
+<Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+
+Cuando configures esto, Streamkap se conectará a tu SQL Server y detectará las tablas. Para esta demo, elegiremos una tabla que ya reciba algunos datos, como eventos o transacciones.
+
+<div id="creating-a-clickhouse-destination">
+  ## Crear un destino de ClickHouse
+</div>
+
+Ahora vamos a configurar el destino al que enviaremos todos estos datos.
+
+<div id="step-2-add-a-clickhouse-destination-in-streamkap">
+  ### Paso 2: Agregar un destino de ClickHouse en Streamkap
+</div>
+
+Al igual que con el origen, crearemos un destino con los datos de conexión de ClickHouse.
+
+<div id="steps">
+  #### Pasos:
+</div>
+
+1. Ve a la sección de destinos de Streamkap.
+2. Añade un nuevo destino y elige ClickHouse como tipo de destino.
+3. Introduce los datos de ClickHouse:
+
+* Host
+* Puerto (el valor predeterminado es 9000)
+* Nombre de usuario y contraseña
+* Nombre de la base de datos
+
+Captura de pantalla de ejemplo: añadir un nuevo destino de ClickHouse en el panel de Streamkap.
+
+<div id="upsert-mode-what-is-that">
+  ### Modo upsert: ¿Qué es esto?
+</div>
+
+Este es un paso importante: queremos usar el modo «upsert» de ClickHouse, que (internamente) utiliza el motor ReplacingMergeTree de ClickHouse. Esto nos permite fusionar los registros entrantes de forma eficiente y gestionar las actualizaciones después de la ingesta, mediante lo que ClickHouse denomina «fusión de partes».
+
+* Esto garantiza que la tabla de destino no se llene de duplicados cuando haya cambios en SQL Server.
+
+<div id="handling-schema-evolution">
+  ### Gestión de la evolución del esquema
+</div>
+
+A veces, ClickHouse y SQL Server no tienen las mismas columnas, especialmente cuando tu aplicación ya está en producción y los desarrolladores siguen añadiendo columnas sobre la marcha.
+
+* La buena noticia es que Streamkap puede gestionar la evolución básica del esquema. Esto significa que, si añades una nueva columna en SQL Server, también aparecerá en ClickHouse.
+
+Solo tienes que seleccionar “evolución del esquema” en la configuración del destino. Siempre puedes ajustarlo más adelante según sea necesario.
+
+<div id="building-the-streaming-pipeline">
+  ## Creación del pipeline de streaming
+</div>
+
+Con el origen y el destino definidos, llega la parte divertida: ¡transmitir los datos en streaming!
+
+<div id="step-3-set-up-the-pipeline-in-streamkap">
+  ### Paso 3: Configura el pipeline en Streamkap
+</div>
+
+<div id="pipeline-setup">
+  #### Configuración del pipeline
+</div>
+
+1. Ve a la pestaña Pipelines en Streamkap.
+
+2. Crea un pipeline nuevo.
+
+3. Selecciona tu origen de SQL Server (`sqlserver-demo-source`).
+
+4. Selecciona tu destino de ClickHouse (`clickhouse-tutorial-destination`).
+
+5. Elige la tabla cuyos datos quieres transmitir; supongamos que es `events`.
+
+6. Configura la captura de cambios de datos (CDC).
+
+* Para esta ejecución, transmitiremos datos nuevos (si quieres, puedes omitir la carga histórica al principio y centrarte en los eventos de CDC).
+
+Captura de pantalla de la configuración del pipeline: selección de origen, destino y tabla.
+
+<div id="should-you-backfill">
+  #### ¿Deberías hacer una carga retroactiva?
+</div>
+
+<Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+
+Puede que te lo preguntes: ¿debería hacer una carga retroactiva de datos antiguos?
+
+En muchos casos de analítica, quizá prefieras simplemente empezar a transmitir los cambios en streaming a partir de ahora, pero siempre puedes volver después y cargar también los datos anteriores.
+
+Por ahora, simplemente elige “no hacer carga retroactiva”, a menos que tengas una necesidad concreta.
+
+<div id="streaming-in-action-what-to-expect">
+  ## Streaming en acción: qué esperar
+</div>
+
+¡Ahora tu pipeline ya está configurado y activo!
+
+<div id="step-4-watch-the-data-stream">
+  ### Paso 4: Observa el flujo de datos
+</div>
+
+Esto es lo que ocurre:
+
+* A medida que llegan nuevos datos a la tabla de origen en SQL Server, el pipeline de Streamkap captura el cambio y lo envía a ClickHouse.
+* ClickHouse (gracias a ReplacingMergeTree y a la combinación de partes) ingiere estas filas y fusiona las actualizaciones.
+* El esquema se mantiene al día: añade columnas en SQL Server y también aparecerán en ClickHouse.
+
+Un dashboard en tiempo real o logs que muestren cómo aumentan los recuentos de filas en ClickHouse y SQL Server en tiempo real.
+
+Puedes ver claramente cómo aumentan las filas en ClickHouse a medida que SQL Server recibe datos.
+
+```sql
+-- Ejemplo: Comprobación de filas en ClickHouse 
+SELECT COUNT(*) FROM analytics.events; |
+```
+
+Es de esperar cierto retraso en escenarios de alta carga, pero en la mayoría de los casos de uso se obtiene streaming casi en tiempo real.
+
+<div id="under-the-hood-whats-streamkap-actually-doing">
+  ## Entre bastidores: ¿qué hace realmente Streamkap?
+</div>
+
+Para que te hagas una idea:
+
+* Streamkap supervisa el registro binario de SQL Server (el mismo registro que se usa para la replicación).
+* En cuanto insertas, actualizas o eliminas una fila en tu tabla, Streamkap captura el evento.
+* Convierte el evento en algo que ClickHouse puede entender y lo envía, aplicando los cambios al instante en tu base de datos analítica.
+
+Esto no es solo ETL: es CDC (captura de cambios de datos) en tiempo real.
+
+<div id="advanced-options">
+  ## Opciones avanzadas
+</div>
+
+<div id="upsert-vs-insert-modes">
+  ### Modos Upsert vs. Insert
+</div>
+
+¿Cuál es la diferencia entre simplemente insertar cada fila (Insert Mode) y asegurarse de que también se reflejen las actualizaciones y eliminaciones (Upsert Mode)?
+
+* Insert Mode: Cada fila nueva se añade; incluso si es una actualización, obtendrás duplicados.
+* Upsert Mode: Las actualizaciones de las filas existentes sobrescriben los datos ya presentes, mucho mejor para mantener los análisis actualizados y limpios.
+
+<div id="handling-schema-changes">
+  ### Gestión de cambios de esquema
+</div>
+
+Las aplicaciones cambian, y tus esquemas también. Con este pipeline:
+
+* ¿Añadir una columna nueva a tu tabla operativa?
+  Streamkap la detectará y la añadirá también en ClickHouse.
+* ¿Eliminar una columna?
+  Según la configuración, puede que necesites una migración, pero la mayoría de las incorporaciones se realizan sin problemas.
+
+<div id="real-world-monitoring-keeping-tabs-on-the-pipeline">
+  ## Supervisión en producción: seguimiento del pipeline
+</div>
+
+<div id="checking-pipeline-health">
+  ### Comprobación del estado del pipeline
+</div>
+
+Streamkap ofrece un panel donde puedes:
+
+* Ver el retraso del pipeline (¿qué tan actualizados están tus datos?)
+* Supervisar el recuento de filas y el rendimiento
+* Recibir alertas si algo no va bien
+
+Ejemplo de panel: gráfico de latencia, recuento de filas e indicadores de estado.
+
+<div id="common-metrics-to-watch">
+  ### Métricas comunes que conviene vigilar
+</div>
+
+* Retraso: ¿Cuánto se ha rezagado ClickHouse respecto a SQL Server?
+* Rendimiento: Filas por segundo
+* Tasa de errores: Debería ser cercana a cero
+
+<div id="going-live-querying-clickhouse">
+  ## Pasar a producción: consultar ClickHouse
+</div>
+
+Ahora que tus datos ya están en ClickHouse, puedes consultarlos con todas esas herramientas de análisis rápidas. Aquí tienes un ejemplo básico:
+
+```sql
+-- Ver los 10 usuarios más activos en la última hora
+SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= now() - INTERVAL 1 HOURGROUP BY user\_idORDER BY actions DESCLIMIT 10;
+```
+
+Combina ClickHouse con herramientas de visualización como Grafana, Superset o Redash para obtener informes completos.
+
+<div id="next-steps-and-deep-dives">
+  ## Próximos pasos y profundizaciones
+</div>
+
+Este recorrido apenas muestra una pequeña parte de lo que puedes hacer. Ahora que ya dominas lo básico, esto es lo siguiente que puedes explorar:
+
+* Configurar flujos filtrados (sincronizar solo algunas tablas/columnas)
+* Hacer streaming desde múltiples orígenes hacia una única base de datos analítica
+* Combinar esto con S3/lagos de datos para almacenamiento en frío
+* Automatizar las migraciones de esquema cuando cambies las tablas
+* Proteger tu pipeline con SSL y reglas de firewall
+
+No pierdas de vista el [blog de Streamkap](https://streamkap.com/blog) para consultar guías más detalladas.
+
+<div id="faq-and-troubleshooting">
+  ## FAQ y solución de problemas
+</div>
+
+P: ¿Esto funciona con bases de datos en la nube?
+R: ¡Sí! En este ejemplo usamos AWS RDS. Solo asegúrate de abrir los puertos adecuados.
+
+P: ¿Y el rendimiento?
+R: ClickHouse es rápido. El cuello de botella suele ser la red o la velocidad del binlog de la base de datos de origen, pero en la mayoría de los casos verás un retraso de menos de un segundo.
+
+P: ¿También admite eliminaciones?
+R: Por supuesto. En modo upsert, las eliminaciones también se marcan y se procesan en ClickHouse.
+
+<div id="wrapping-up">
+  ## Para terminar
+</div>
+
+Aquí tienes una visión completa de cómo llevar tus datos de SQL Server a ClickHouse en streaming con Streamkap. Es una solución rápida, flexible e ideal para equipos que necesitan analítica casi en tiempo real sin sobrecargar sus bases de datos de producción.
+
+¿Listo para probarlo?
+Ve a la [página de registro](https://app.streamkap.com/account/sign-up) y avísanos si quieres que tratemos temas como:
+
+* Upsert vs. Insert y los pormenores de ambos
+* Latencia de extremo a extremo: ¿qué tan rápido puedes obtener tu vista analítica final?
+* Optimización del rendimiento y throughput
+* Dashboards reales sobre esta stack
+
+¡Gracias por leer! ¡Feliz streaming!

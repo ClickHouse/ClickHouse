@@ -1,0 +1,232 @@
+---
+slug: /optimize/prewhere
+sidebarTitle: 'تحسين PREWHERE'
+description: 'يقلّل PREWHERE من عمليات I/O من خلال تجنّب قراءة بيانات الأعمدة غير الضرورية.'
+title: 'كيف يعمل تحسين PREWHERE؟'
+doc_type: 'guide'
+keywords: ['prewhere', 'تحسين الاستعلام', 'الأداء', 'التصفية', 'أفضل الممارسات']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يُعد [عبارة PREWHERE](/ar/reference/statements/select/prewhere) تحسينًا لتنفيذ الاستعلامات في ClickHouse. فهو يقلّل عمليات I/O ويُحسّن سرعة الاستعلام من خلال تجنّب قراءات البيانات غير الضرورية، وتصفية البيانات غير ذات الصلة قبل قراءة الأعمدة غير الداخلة في التصفية من القرص.
+
+يشرح هذا الدليل كيفية عمل PREWHERE، وكيفية قياس أثره، وكيفية ضبطه لتحقيق أفضل أداء.
+
+<div id="query-processing-without-prewhere-optimization">
+  ## معالجة الاستعلام بدون تحسين PREWHERE
+</div>
+
+سنبدأ بتوضيح كيفية معالجة استعلام على جدول [uk&#95;price&#95;paid&#95;simple](/ar/concepts/core-concepts/parts) من دون استخدام PREWHERE:
+
+<Image img="/images/guides/best-practices/prewhere_01.webp" size="md" alt="معالجة الاستعلام بدون تحسين PREWHERE" />
+
+<br />
+
+<br />
+
+① يتضمن الاستعلام عامل تصفية على العمود `town`، وهو جزء من المفتاح الأساسي للجدول، وبالتالي فهو أيضًا جزء من الفهرس الأساسي.
+
+② لتسريع الاستعلام، يحمّل ClickHouse الفهرس الأساسي للجدول إلى الذاكرة.
+
+③ يفحص ClickHouse إدخالات الفهرس لتحديد الحبيبات في العمود `town` التي قد تحتوي على صفوف تطابق الشرط.
+
+④ تُحمَّل هذه الحبيبات التي يُحتمل أن تكون ذات صلة إلى الذاكرة، إلى جانب الحبيبات المتوافقة موضعيًا من أي أعمدة أخرى يحتاج إليها الاستعلام.
+
+⑤ ثم تُطبَّق عوامل التصفية المتبقية أثناء تنفيذ الاستعلام.
+
+كما ترى، من دون PREWHERE، تُحمَّل جميع الأعمدة التي يُحتمل أن تكون ذات صلة قبل التصفية، حتى إن كان عدد قليل فقط من الصفوف يطابق فعليًا.
+
+<div id="how-prewhere-improves-query-efficiency">
+  ## كيف يحسّن PREWHERE كفاءة الاستعلام
+</div>
+
+تُظهر الرسوم المتحركة التالية كيفية معالجة الاستعلام أعلاه عند تطبيق عبارة PREWHERE على جميع شروط الاستعلام.
+
+الخطوات الثلاث الأولى من المعالجة هي نفسها كما في السابق:
+
+<Image img="/images/guides/best-practices/prewhere_02.webp" size="md" alt="معالجة الاستعلام باستخدام تحسين PREWHERE" />
+
+<br />
+
+<br />
+
+① يتضمن الاستعلام عامل تصفية على العمود `town`، وهو جزء من المفتاح الأساسي للجدول، وبالتالي فهو أيضًا جزء من الفهرس الأساسي.
+
+②  وكما في التشغيل من دون عبارة PREWHERE، يحمّل ClickHouse الفهرس الأساسي إلى الذاكرة لتسريع الاستعلام،
+
+③ ثم يفحص إدخالات الفهرس لتحديد أي الحبيبات من العمود `town` قد تحتوي على صفوف تطابق شرط التصفية.
+
+أما الآن، وبفضل عبارة PREWHERE، فتختلف الخطوة التالية: فبدلًا من قراءة جميع الأعمدة ذات الصلة مسبقًا، يصفّي ClickHouse البيانات عمودًا بعمود، ولا يحمّل إلا ما يلزم فعلًا. ويؤدي ذلك إلى تقليل عمليات الإدخال/الإخراج بشكل كبير، خاصةً في الجداول العريضة.
+
+ومع كل خطوة، لا يحمّل إلا الحبيبات التي تحتوي على صف واحد على الأقل اجتاز — أي طابق — عامل التصفية السابق. ونتيجة لذلك، يتناقص عدد الحبيبات التي يجب تحميلها وتقييمها لكل عامل تصفية بشكل مستمر:
+
+**الخطوة 1: التصفية حسب المدينة**<br />
+يبدأ ClickHouse معالجة PREWHERE بقراءة ① الحبيبات المحددة من العمود `town` والتحقق من أيّها يحتوي فعليًا على صفوف تطابق `London`.
+
+في مثالنا، تتطابق جميع الحبيبات المحددة، لذا ② تُحدَّد بعد ذلك الحبيبات المناظرة موضعيًا لعمود التصفية التالي — `date` — للمعالجة:
+
+<Image img="/images/guides/best-practices/prewhere_03.webp" size="md" alt="الخطوة 1: التصفية حسب المدينة" />
+
+<br />
+
+<br />
+
+**الخطوة 2: التصفية حسب التاريخ**<br />
+بعد ذلك، يقرأ ClickHouse ① الحبيبات المحددة من العمود `date` لتقييم عامل التصفية `date > '2024-12-31'`.
+
+في هذه الحالة، تحتوي حبيبتان من أصل ثلاث على صفوف متطابقة، لذا ② لا تُحدَّد لمزيد من المعالجة إلا الحبيبات المناظرة موضعيًا لهما من عمود التصفية التالي — `price` —:
+
+<Image img="/images/guides/best-practices/prewhere_04.webp" size="md" alt="الخطوة 2: التصفية حسب التاريخ" />
+
+<br />
+
+<br />
+
+**الخطوة 3: التصفية حسب السعر**<br />
+أخيرًا، يقرأ ClickHouse ① الحبيبتين المحددتين من العمود `price` لتقييم عامل التصفية الأخير `price > 10_000`.
+
+ولا تحتوي على صفوف متطابقة سوى واحدة من الحبيبتين، لذا ② لا يلزم تحميل سوى الحبيبة المناظرة موضعيًا لها من عمود `SELECT` — `street` — لمزيد من المعالجة:
+
+<Image img="/images/guides/best-practices/prewhere_05.webp" size="md" alt="الخطوة 2: التصفية حسب السعر" />
+
+<br />
+
+<br />
+
+بحلول الخطوة الأخيرة، لا يُحمَّل سوى الحد الأدنى من حبيبات الأعمدة، أي تلك التي تحتوي على صفوف متطابقة. ويؤدي ذلك إلى خفض استخدام الذاكرة، وتقليل عمليات الإدخال/الإخراج على القرص، وتسريع تنفيذ الاستعلام.
+
+<Info>
+  **يقلّل PREWHERE كمية البيانات المقروءة، لا عدد الصفوف المُعالَجة**
+
+  لاحظ أن ClickHouse يعالج العدد نفسه من الصفوف في نسختَي الاستعلام، مع PREWHERE وبدونه. ومع ذلك، عند تطبيق تحسينات PREWHERE، لا يلزم تحميل جميع قيم الأعمدة لكل صف مُعالَج.
+</Info>
+
+<div id="prewhere-optimization-is-automatically-applied">
+  ## يُطبَّق تحسين PREWHERE تلقائيًا
+</div>
+
+يمكن إضافة عبارة PREWHERE يدويًا، كما هو موضح في المثال أعلاه. ومع ذلك، لا حاجة إلى كتابة PREWHERE يدويًا. عندما يكون الإعداد [`optimize_move_to_prewhere`](/ar/reference/settings/session-settings#optimize_move_to_prewhere) مُمكّنًا (true افتراضيًا)، ينقل ClickHouse شروط التصفية تلقائيًا من WHERE إلى PREWHERE، مع إعطاء الأولوية للشروط التي تقلّل حجم البيانات المقروءة بأكبر قدر.
+
+الفكرة هنا هي أن فحص الأعمدة الأصغر يكون أسرع، وبحلول وقت معالجة الأعمدة الأكبر، تكون معظم الحبيبات قد استُبعدت بالفعل عبر التصفية. ونظرًا لأن جميع الأعمدة تحتوي على العدد نفسه من الصفوف، فإن حجم العمود يتحدد أساسًا وفق نوع البيانات؛ فعلى سبيل المثال، يكون عمود `UInt8` أصغر بكثير عادةً من عمود `String`.
+
+يتبع ClickHouse هذه الاستراتيجية افتراضيًا بدءًا من الإصدار [23.2](https://clickhouse.com/blog/clickhouse-release-23-02#multi-stage-prewhere--alexander-gololobov)، إذ يرتّب أعمدة التصفية في PREWHERE للمعالجة متعددة الخطوات ترتيبًا تصاعديًا حسب الحجم غير المضغوط.
+
+واعتبارًا من الإصدار [23.11](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere)، يمكن لإحصاءات الأعمدة الاختيارية تحسين ذلك بدرجة أكبر من خلال اختيار ترتيب معالجة التصفية استنادًا إلى انتقائية البيانات الفعلية، لا إلى حجم العمود فحسب.
+
+<div id="how-to-measure-prewhere-impact">
+  ## كيفية قياس تأثير PREWHERE
+</div>
+
+للتحقق من أن PREWHERE يُحسّن استعلاماتك، يمكنك مقارنة أداء الاستعلام مع تمكين الإعداد `optimize_move_to_prewhere setting` وبدونه.
+
+نبدأ بتشغيل الاستعلام مع تعطيل الإعداد `optimize_move_to_prewhere`:
+
+```sql
+SELECT
+    street
+FROM
+   uk.uk_price_paid_simple
+WHERE
+   town = 'LONDON' AND date > '2024-12-31' AND price < 10_000
+SETTINGS optimize_move_to_prewhere = false;
+```
+
+```txt
+   ┌─street──────┐
+1. │ MOYSER ROAD │
+2. │ AVENUE ROAD │
+3. │ AVENUE ROAD │
+   └─────────────┘
+
+3 rows in set. Elapsed: 0.056 sec. Processed 2.31 million rows, 23.36 MB (41.09 million rows/s., 415.43 MB/s.)
+Peak memory usage: 132.10 MiB.
+```
+
+قرأ ClickHouse **23.36 MB** من بيانات الأعمدة أثناء معالجة 2.31 مليون صف في هذا الاستعلام.
+
+بعد ذلك، نشغّل الاستعلام مع تفعيل الإعداد `optimize_move_to_prewhere`. (لاحظ أن هذا الإعداد اختياري، إذ يكون مفعّلًا افتراضيًا):
+
+```sql
+SELECT
+    street
+FROM
+   uk.uk_price_paid_simple
+WHERE
+   town = 'LONDON' AND date > '2024-12-31' AND price < 10_000
+SETTINGS optimize_move_to_prewhere = true;
+```
+
+```txt
+   ┌─street──────┐
+1. │ MOYSER ROAD │
+2. │ AVENUE ROAD │
+3. │ AVENUE ROAD │
+   └─────────────┘
+
+3 rows in set. Elapsed: 0.017 sec. Processed 2.31 million rows, 6.74 MB (135.29 million rows/s., 394.44 MB/s.)
+Peak memory usage: 132.11 MiB.
+```
+
+تمت معالجة العدد نفسه من الصفوف (2.31 مليون)، ولكن بفضل PREWHERE، قرأ ClickHouse من بيانات الأعمدة أقل بأكثر من ثلاثة أضعاف—6.74 MB فقط بدلًا من 23.36 MB—مما خفّض زمن التشغيل الإجمالي إلى الثلث.
+
+للحصول على فهم أعمق لكيفية تطبيق ClickHouse لـ PREWHERE داخليًا، استخدم EXPLAIN وسجلات التتبّع.
+
+نفحص الخطة المنطقية للاستعلام باستخدام عبارة [EXPLAIN](/ar/reference/statements/explain#explain-plan):
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT
+    street
+FROM
+   uk.uk_price_paid_simple
+WHERE
+   town = 'LONDON' and date > '2024-12-31' and price < 10_000;
+```
+
+```txt
+...
+Prewhere info                                                                                                                                                                                                                                          
+  Prewhere filter column: 
+    and(greater(__table1.date, '2024-12-31'_String), 
+    less(__table1.price, 10000_UInt16), 
+    equals(__table1.town, 'LONDON'_String)) 
+...
+```
+
+نتجاوز هنا معظم مخرجات الخطة لأنها مطوّلة جدًا. وخلاصة ذلك أنها تُظهر أن شروط الأعمدة الثلاثة نُقلت تلقائيًا إلى PREWHERE.
+
+وعند إعادة تنفيذ ذلك بنفسك، سترى أيضًا في خطة الاستعلام أن ترتيب هذه الشروط يستند إلى أحجام أنواع بيانات الأعمدة. وبما أننا لم نفعّل إحصاءات الأعمدة، يستخدم ClickHouse الحجم كخيار احتياطي لتحديد ترتيب معالجة PREWHERE.
+
+وإذا أردت التعمّق أكثر في التفاصيل الداخلية، يمكنك ملاحظة كل خطوة على حدة من خطوات معالجة PREWHERE، وذلك بتوجيه ClickHouse لإرجاع جميع إدخالات السجل على مستوى test أثناء تنفيذ الاستعلام:
+
+```sql
+SELECT
+    street
+FROM
+   uk.uk_price_paid_simple
+WHERE
+   town = 'LONDON' AND date > '2024-12-31' AND price < 10_000
+SETTINGS send_logs_level = 'test';
+```
+
+```txt
+...
+<Trace> ... Condition greater(date, '2024-12-31'_String) moved to PREWHERE
+<Trace> ... Condition less(price, 10000_UInt16) moved to PREWHERE
+<Trace> ... Condition equals(town, 'LONDON'_String) moved to PREWHERE
+...
+<Test> ... Executing prewhere actions on block: greater(__table1.date, '2024-12-31'_String)
+<Test> ... Executing prewhere actions on block: less(__table1.price, 10000_UInt16)
+...
+```
+
+<div id="key-takeaways">
+  ## أهم النقاط
+</div>
+
+* يتجنب PREWHERE قراءة بيانات الأعمدة التي ستُستبعَد لاحقًا بالتصفية، مما يوفر موارد الإدخال/الإخراج والذاكرة.
+* يعمل تلقائيًا عند تفعيل `optimize_move_to_prewhere` (وهو الإعداد الافتراضي).
+* ترتيب التصفية مهم: ينبغي أن تأتي الأعمدة الصغيرة والانتقائية أولًا.
+* استخدم `EXPLAIN` والسجلات للتحقق من تطبيق PREWHERE وفهم تأثيره.
+* يكون PREWHERE أكثر تأثيرًا مع الجداول العريضة وعمليات المسح الكبيرة ذات عوامل التصفية الانتقائية.

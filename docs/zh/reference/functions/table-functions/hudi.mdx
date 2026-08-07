@@ -1,0 +1,54 @@
+---
+description: '为 Amazon
+  S3 中的 Apache Hudi 表提供只读类表接口。'
+sidebarTitle: 'hudi'
+slug: /sql-reference/table-functions/hudi
+title: 'hudi'
+doc_type: '参考'
+---
+
+为 Amazon S3 中的 Apache [Hudi](https://hudi.apache.org/) 表提供只读类表接口。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+| 参数                                           | 描述                                                                                                                                                                                                                                                         |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                                        | 指向 S3 中现有 Hudi 表路径的存储桶 URL。                                                                                                                                                                                                                                |
+| `aws_access_key_id`, `aws_secret_access_key` | AWS ([https://aws.amazon.com/](https://aws.amazon.com/)) 账户用户的长期凭证。你可以使用这些凭证对请求进行身份验证。这些参数是可选的。如果未指定凭证，则将使用 ClickHouse 配置中的凭证。更多信息，请参见 [Using S3 for Data Storage](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)。 |
+| `format`                                     | 文件的[格式](/zh/reference/formats/index)。                                                                                                                                                                                                                         |
+| `structure`                                  | 表的结构。格式为 `'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                                                    |
+| `compression`                                | 该参数为可选项。支持的值：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。默认情况下，会根据文件扩展名自动检测压缩方式。                                                                                                                                                                     |
+| `extra_credentials`                          | 该参数为可选项。用于在 ClickHouse Cloud 中传递基于角色的访问所需的 `role_arn`。配置步骤请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。                                                                                                                 |
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+一个具有指定结构的表，用于读取 S3 中指定 Hudi 表的数据。
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_path` — 文件路径。类型：`LowCardinality(String)`。
+* `_file` — 文件名。类型：`LowCardinality(String)`。
+* `_size` — 文件大小 (以字节为单位) 。类型：`Nullable(UInt64)`。如果文件大小未知，则值为 `NULL`。
+* `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
+* `_etag` — 文件的 etag 值。类型：`LowCardinality(String)`。如果 etag 未知，则值为 `NULL`。
+
+<div id="related">
+  ## 相关内容
+</div>
+
+* [Hudi 引擎](/zh/reference/engines/table-engines/integrations/hudi)
+* [Hudi cluster 表函数](/zh/reference/functions/table-functions/hudiCluster)

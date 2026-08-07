@@ -1,0 +1,108 @@
+---
+sidebarTitle: 'Supabase Postgres'
+description: 'SupabaseインスタンスをClickPipesのソースとして設定する'
+slug: /integrations/clickpipes/postgres/source/supabase
+title: 'Supabaseソース設定ガイド'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'CDC（変更データキャプチャ）', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickPipes で使用できるように Supabase Postgres を設定する方法を説明します。
+
+<Note>
+  ClickPipes は Supabase の IPv6 をネイティブサポートしているため、シームレスにレプリケーションできます。
+</Note>
+
+<div id="creating-a-user-with-permissions-and-replication-slot">
+  ## 権限とレプリケーションスロットを持つユーザーを作成する
+</div>
+
+管理者ユーザーとして Supabase インスタンスに接続し、次のコマンドを実行します。
+
+1. ClickPipes 専用のユーザーを作成します:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 前の手順で作成したユーザーに、スキーマレベルの読み取り専用アクセスを付与します。次の例は `public` スキーマに対する権限を示しています。レプリケートしたいテーブルを含む各スキーマに対して、これらのコマンドを繰り返してください:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. ユーザーにレプリケーション権限を付与します:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. レプリケートしたいテーブルを含む [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) を作成します。パフォーマンスのオーバーヘッドを避けるため、publication には必要なテーブルのみを含めることを強く推奨します。
+
+<Warning>
+  publication に含まれるテーブルには、**主キー** が定義されているか、または **replica identity** が `FULL` に設定されている必要があります。適切な範囲の指定方法については、[Postgres よくある質問](/ja/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) を参照してください。
+</Warning>
+
+* 特定のテーブル用の publication を作成するには:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 特定のスキーマ内のすべてのテーブル用の publication を作成するには:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication には、指定したテーブルから生成された変更イベントの集合が含まれ、後でレプリケーションストリームを取り込むために使用されます。
+
+<div id="increase-max_slot_wal_keep_size">
+  ## `max_slot_wal_keep_size` を増やす
+</div>
+
+<Warning>
+  この手順を実行すると、Supabase のデータベースが再起動し、短時間のダウンタイムが発生する可能性があります。
+
+  [Supabase Docs](https://supabase.com/docs/guides/database/custom-postgres-config#cli-supported-parameters) に従って、Supabase のデータベースの `max_slot_wal_keep_size` パラメータをより大きな値 (少なくとも 100GB または `102400`) に増やすことができます。
+
+  この値のより適切な推奨値については、ClickPipes チームにお問い合わせください。
+</Warning>
+
+<div id="connection-details-to-use-for-supabase">
+  ## Supabase で使用する接続情報
+</div>
+
+Supabase プロジェクトの `Project Settings` -&gt; `Database` (`Configuration` の配下) に移動します。
+
+**重要**: このページで `Display connection pooler` を無効にし、`Connection parameters` セクションで各パラメータを確認またはコピーしてください。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg" size="lg" border alt="Supabase の接続情報の場所" border />
+
+<Info>
+  接続プールは CDC ベースのレプリケーションではサポートされていないため、無効にする必要があります。
+</Info>
+
+<div id="note-on-rls">
+  ## RLS に関する注意
+</div>
+
+ClickPipes の Postgres ユーザーは、データ欠損を招くおそれがあるため、RLS ポリシーによる制限を受けないようにする必要があります。以下のコマンドを実行すると、そのユーザーに対する RLS ポリシーを無効にできます。
+
+```sql
+ALTER USER clickpipes_user BYPASSRLS;
+```
+
+<div id="whats-next">
+  ## 次のステップ
+</div>
+
+これで、[ClickPipe を作成](/ja/integrations/clickpipes/postgres/index)して、Postgres インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。
+ClickPipe の作成時に必要になるため、Postgres インスタンスの設定時に使用した接続情報は必ず控えておいてください。

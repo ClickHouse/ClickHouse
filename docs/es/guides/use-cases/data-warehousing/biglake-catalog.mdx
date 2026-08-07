@@ -1,0 +1,111 @@
+---
+slug: /use-cases/data-lake/biglake-catalog
+sidebarTitle: 'BigLake Metastore'
+title: 'Catálogo de runtime de lakehouse (BigLake Metastore)'
+description: 'En esta guía, le mostraremos los pasos para consultar
+ sus datos en Google Cloud Storage con ClickHouse y el catálogo de runtime de Lakehouse (BigLake Metastore).'
+keywords: ['BigLake', 'GCS', 'Lago de datos', 'Iceberg', 'Google Cloud', 'Catálogo de runtime de lakehouse']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+ClickHouse admite la integración con múltiples catálogos (Unity, Glue, Polaris, etc.). Esta guía le mostrará cómo consultar sus tablas Iceberg en [catálogo de runtime de Lakehouse, también conocido como BigLake Metastore](https://docs.cloud.google.com/biglake/docs/) mediante ClickHouse.
+
+<Note>
+  Como esta funcionalidad está en beta, deberá habilitarla con:
+  `SET allow_database_iceberg = 1;`
+</Note>
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+Antes de crear una conexión de ClickHouse a catálogo de runtime de Lakehouse (BigLake Metastore), asegúrate de contar con lo siguiente:
+
+* Un **proyecto de Google Cloud** con catálogo de runtime de Lakehouse habilitado
+* **Credenciales predeterminadas de la aplicación** (ID de cliente OAuth y secreto de cliente) para una aplicación, creadas a través de [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc)
+* Un **token de actualización** obtenido al completar el flujo de OAuth con los alcances adecuados (por ejemplo, `https://www.googleapis.com/auth/bigquery` y el alcance de almacenamiento para GCS)
+* Una **ruta de warehouse**: un bucket de GCS (y un prefijo opcional) donde se almacenan tus tablas, por ejemplo, `gs://your-bucket` o `gs://your-bucket/prefix`
+
+<div id="creating-a-connection">
+  ## Crear una conexión entre catálogo de runtime de Lakehouse y ClickHouse
+</div>
+
+Con las credenciales de OAuth ya configuradas, cree una base de datos en ClickHouse que utilice el motor de base de datos [DataLakeCatalog](/es/reference/engines/database-engines/datalake):
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE lakehouse_runtime_catalog
+ENGINE = DataLakeCatalog('https://biglake.googleapis.com/iceberg/v1/restcatalog')
+SETTINGS
+    catalog_type = 'biglake',
+    google_adc_client_id = '<client-id>',
+    google_adc_client_secret = '<client-secret>',
+    google_adc_refresh_token = '<refresh-token>',
+    google_adc_quota_project_id = '<gcp-project-id>',
+    warehouse = 'gs://<bucket_name>/<optional-prefix>';
+```
+
+<div id="querying-lakehouse-runtime-tables">
+  ## Consultar tablas del catálogo de runtime de Lakehouse desde ClickHouse
+</div>
+
+Una vez creada la conexión, puedes consultar las tablas registradas en el catálogo de runtime de Lakehouse.
+
+```sql
+USE LAKEHOUSE_RUNTIME_CATALOG;
+
+SHOW TABLES;
+```
+
+Salida de ejemplo:
+
+```response
+┌─name──────────────────────────────────────┐
+│lakehouse_runtime_catalog.my_iceberg_table │   
+└───────────────────────────────────────────┘
+```
+
+```sql
+SELECT count(*) FROM `lakehouse_runtime_catalog.my_iceberg_table`;
+```
+
+<Info>
+  **Comillas invertidas obligatorias**
+
+  Las comillas invertidas son obligatorias porque ClickHouse no admite más de un espacio de nombres.
+</Info>
+
+Para ver la definición de la tabla:
+
+```sql
+SHOW CREATE TABLE `lakehouse_runtime_catalog.my_iceberg_table`;
+```
+
+<div id="loading-data-into-clickhouse">
+  ## Cargar datos desde Lakehouse a ClickHouse
+</div>
+
+Para cargar datos desde una tabla del catálogo de runtime de Lakehouse en una tabla local de ClickHouse y acelerar las consultas repetidas, cree una tabla MergeTree e inserte los datos desde el catálogo:
+
+```sql
+CREATE TABLE clickhouse_table
+(
+    `id` Int64,
+    `event_time` DateTime64(3),
+    `user_id` String,
+    `payload` String
+)
+ENGINE = MergeTree
+ORDER BY (event_time, id);
+
+INSERT INTO local_events
+SELECT * FROM lakehouse_runtime_catalog.`icebench.my_iceberg_table`;
+```
+
+Después de la carga inicial, consulta `clickhouse_table` para reducir la latencia. Vuelve a ejecutar `INSERT INTO ... SELECT` para actualizar los datos de BigLake cuando sea necesario.

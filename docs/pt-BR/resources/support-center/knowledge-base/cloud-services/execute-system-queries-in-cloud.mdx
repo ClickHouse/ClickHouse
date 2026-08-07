@@ -1,0 +1,35 @@
+---
+title: Executar instruções SYSTEM em todos os nós no ClickHouse Cloud
+description: Aprenda a usar `ON CLUSTER` e `clusterAllReplicas` para executar instruções SYSTEM e consultas em todos os nós de um serviço do ClickHouse Cloud.
+date: 2023-03-01
+tags: ['Implantações e escalabilidade']
+keywords: ['clusterAllReplicas']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="answer">
+  ## Resposta
+</div>
+
+Para executar a mesma consulta em todos os nós de um serviço do ClickHouse Cloud, podemos usar [clusterAllReplicas](/pt-BR/reference/functions/table-functions/cluster).
+
+Por exemplo, para obter registros de uma tabela de sistema (local ao nó) de todos os nós, você pode usar:
+
+```sql
+SELECT ... FROM clusterAllReplicas(default, system.TABLE) ...;
+```
+
+Da mesma forma, você pode executar a mesma [instrução SYSTEM](/pt-BR/reference/statements/system) em todos os nós com uma única instrução, ao usar a [cláusula ON CLUSTER](/pt-BR/reference/statements/distributed-ddl):
+
+```sql
+SYSTEM ... ON CLUSTER default;
+```
+
+Por exemplo, para [limpar o cache do sistema de arquivos](/pt-BR/reference/statements/system#drop-filesystem-cache) em todos os nós, você pode usar:
+
+```sql
+SYSTEM DROP FILESYSTEM CACHE ON CLUSTER default;
+```

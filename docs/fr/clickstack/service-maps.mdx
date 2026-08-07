@@ -1,0 +1,52 @@
+---
+slug: /use-cases/observability/clickstack/service-maps
+title: 'Cartes de services'
+sidebarTitle: 'Cartes de services'
+description: 'Visualisez les dépendances entre les services et le flux des requêtes avec les cartes de services de ClickStack.'
+doc_type: 'guide'
+keywords: ['clickstack', 'cartes de services', 'topologie', 'traces', 'dépendances', 'traçage distribué', 'observabilité', 'graphe des requêtes']
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+import { Video } from "/snippets/fr/components/Video/Video.jsx";
+
+<BetaBadge />
+
+Les cartes de services montrent comment vos services interagissent. ClickStack construit le graphe en faisant correspondre les spans client (requêtes sortantes) aux spans serveur (requêtes entrantes) au sein d’une même trace, afin de reconstituer le parcours des requêtes entre les services.
+
+Cliquez sur **Carte de services** dans le panneau de navigation de gauche pour ouvrir le graphe complet. Les services apparaissent une fois que vous [ingérez des données de trace](/fr/clickstack/ingesting-data) avec OpenTelemetry.
+
+<Image img="/images/clickstack/service-maps/service-map-overview.webp" alt="Carte de services montrant les nœuds de service et le flux des requêtes entre eux" size="lg" />
+
+<div id="exploring-the-service-map">
+  ## Exploration de la carte de services
+</div>
+
+Chaque nœud représente un service, identifié par l’attribut de ressource `service.name`. Les arêtes (lignes en pointillés) relient des services lorsqu’un span client dans l’un correspond à un span serveur dans l’autre. La taille des nœuds reflète le volume de trafic relatif, et les nœuds rouges indiquent les services présentant des erreurs dans l’intervalle de temps sélectionné.
+
+La barre d’outils au-dessus de la carte vous permet de filtrer et d’ajuster l’affichage.
+
+**Sélecteur de source** — filtrez la carte pour n’afficher qu’une source de traces spécifique (par ex. « ClickPy Traces »).
+
+<Image img="/images/clickstack/service-maps/source-selector.webp" alt="Sélecteur de source mis en évidence dans la barre d’outils de la carte de services" size="lg" />
+
+**Curseur d’échantillonnage** — ajustez le taux d’échantillonnage pour trouver le bon équilibre entre performances et précision. Des taux plus faibles accélèrent le chargement sur les clusters à fort volume.
+
+<Image img="/images/clickstack/service-maps/sampling.webp" alt="Curseur d’échantillonnage mis en évidence dans la barre d’outils de la carte de services" size="lg" />
+
+**Sélecteur de plage de dates** — définissez la fenêtre temporelle des données de trace utilisées pour créer la carte.
+
+<Image img="/images/clickstack/service-maps/date-selector.webp" alt="Sélecteur de plage de dates mis en évidence dans la barre d’outils de la carte de services" size="lg" />
+
+Utilisez les boutons **+/-** dans le coin inférieur gauche de la carte ou la molette pour zoomer et dézoomer.
+
+<div id="trace-level-service-maps">
+  ## Cartes de services au niveau de la trace
+</div>
+
+Lorsque vous examinez une trace individuelle, une carte de services dédiée montre comment cette requête précise est passée d’un service à l’autre. Cela vous permet de visualiser la topologie d’une requête unique sans quitter le trace waterfall.
+
+<Frame>
+  <Video src="/images/clickstack/service-maps/service-map-demo.mp4" />
+</Frame>

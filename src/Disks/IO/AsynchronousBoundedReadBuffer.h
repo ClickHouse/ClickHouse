@@ -1,0 +1,130 @@
+#pragma once
+
+#include <chrono>
+#include <utility>
+#include <IO/AsynchronousReader.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadSettings.h>
+#include <IO/IReadBufferMetadataProvider.h>
+#include <Interpreters/FilesystemReadPrefetchesLog.h>
+
+namespace Poco { class Logger; }
+
+namespace DB
+{
+
+struct AsyncReadCounters;
+using AsyncReadCountersPtr = std::shared_ptr<AsyncReadCounters>;
+class ReadBufferFromRemoteFSGather;
+
+class AsynchronousBoundedReadBuffer : public ReadBufferFromFileBase, public IReadBufferMetadataProvider
+{
+public:
+    using Impl = ReadBufferFromFileBase;
+    using ImplPtr = std::unique_ptr<Impl>;
+
+    explicit AsynchronousBoundedReadBuffer(
+        ImplPtr impl_,
+        IAsynchronousReader & reader_,
+        size_t buffer_size_,
+        size_t min_bytes_for_seek_,
+        Priority priority_,
+        size_t page_cache_block_size_,
+        bool enable_prefetches_log_,
+        AsyncReadCountersPtr async_read_counters_ = nullptr,
+        FilesystemReadPrefetchesLogPtr prefetches_log_ = nullptr);
+
+    ~AsynchronousBoundedReadBuffer() override;
+
+    String getFileName() const override { return file_name; }
+
+    String getInfoForLog() override;
+
+    off_t seek(off_t offset_, int whence) override;
+
+    void prefetch(Priority priority) override;
+
+    void setReadUntilPosition(size_t position) override; /// [..., position).
+
+    void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
+
+    size_t getFileOffsetOfBufferEnd() const override  { return file_offset_of_buffer_end; }
+
+    off_t getPosition() override { return file_offset_of_buffer_end - available() + bytes_to_ignore; }
+
+    /// Used only for unit test.
+    const ImplPtr & getImpl() { return impl; }
+
+    /// NOTE: readBigAt() does not use the async logic of AsynchronousBoundedReadBuffer; it calls impl's
+    /// (when supported), which is possible because readBigAt is asynchronous on its own. If a (small-object)
+    /// initial prefetch is in flight it is consumed first: the requested range is served from the prefetched
+    /// buffer when covered, otherwise the prefetch is dropped and the read falls back to impl.
+    bool supportsReadAt() override { return impl->supportsReadAt(); }
+
+    /// Reads into `memory` (or prefetch_buffer), not into the pointer set via `ReadBuffer::set`.
+    /// Same reasoning as `AsynchronousReadBufferFromFileDescriptor::supportsExternalBufferMode`.
+    bool supportsExternalBufferMode() const override { return false; }
+
+    size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
+
+    std::optional<Field> getMetadata(const String & name) const override;
+
+private:
+    const ImplPtr impl;
+    const Priority base_priority;
+    const size_t page_cache_block_size;
+    const bool enable_prefetches_log;
+    size_t buffer_size;
+    const size_t min_bytes_for_seek;
+    const String file_name;
+    IAsynchronousReader & reader;
+
+    size_t file_offset_of_buffer_end = 0;
+    std::optional<size_t> read_until_position;
+    /// If nonzero then working_buffer is empty.
+    /// If a prefetch is in flight, the prefetch task has been instructed to ignore this many bytes.
+    size_t bytes_to_ignore = 0;
+
+    Memory<> prefetch_buffer;
+    /// mutable: a pending prefetch may be consumed from the const readBigAt().
+    mutable std::future<IAsynchronousReader::Result> prefetch_future;
+
+    /// When using userspace page cache, we directly use memory owned by the cache instead of
+    /// allocating our own buffers.
+    bool use_page_cache = false;
+    PageCacheCellPtr page_cache_cell;
+
+    const std::string query_id;
+    const std::string current_reader_id;
+
+    LoggerPtr log;
+
+    AsyncReadCountersPtr async_read_counters;
+    FilesystemReadPrefetchesLogPtr prefetches_log;
+
+    struct LastPrefetchInfo
+    {
+        std::chrono::system_clock::time_point submit_time;
+        Priority priority;
+    };
+    mutable LastPrefetchInfo last_prefetch_info;
+
+    bool nextImpl() override;
+
+    void finalize();
+
+    bool hasPendingDataToRead();
+
+    void appendToPrefetchLog(
+        FilesystemPrefetchState state,
+        int64_t size,
+        const std::unique_ptr<Stopwatch> & execution_watch);
+
+    std::future<IAsynchronousReader::Result> readAsync(char * data, size_t size, Priority priority);
+
+    IAsynchronousReader::Result readSync(char * data, size_t size);
+
+    void resetPrefetch(FilesystemPrefetchState state);
+};
+
+}

@@ -1,0 +1,103 @@
+---
+slug: /cloud/billing/marketplace/aws-marketplace-payg
+title: 'AWS Marketplace PAYG'
+description: 'اشترك في ClickHouse Cloud عبر AWS Marketplace ‏(PAYG).'
+keywords: ['aws', 'marketplace', 'الفوترة', 'PAYG']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+ابدأ مع ClickHouse Cloud على [AWS Marketplace](https://aws.amazon.com/marketplace) عبر عرض عام بنظام PAYG (الدفع حسب الاستخدام).
+
+<div id="prerequisites">
+  ## المتطلبات المسبقة
+</div>
+
+* حساب AWS مفعَّل مع صلاحيات الشراء من قِبل مسؤول الفوترة لديك.
+* لإتمام الشراء، يجب أن تكون مسجّل الدخول إلى AWS Marketplace باستخدام هذا الحساب.
+* لربط مؤسسة ClickHouse باشتراكك، يجب أن تكون مسؤولًا عن تلك المؤسسة.
+
+<div id="steps-to-sign-up">
+  ## خطوات التسجيل
+</div>
+
+<Steps>
+  <Step>
+    ### ابحث عن ClickHouse Cloud - Pay as you go
+
+    انتقل إلى [AWS Marketplace](https://aws.amazon.com/marketplace) وابحث عن “ClickHouse Cloud - Pay As You Go”.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-1.webp" alt="البحث عن ClickHouse في AWS Marketplace" border />
+  </Step>
+
+  <Step>
+    ### عرض خيارات الشراء
+
+    انقر على [صفحة العرض](https://aws.amazon.com/marketplace/pp/prodview-p4gwofrqpkltu) ثم على **View purchase options**.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-2.webp" alt="عرض خيارات الشراء في AWS Marketplace" border />
+  </Step>
+
+  <Step>
+    ### الاشتراك
+
+    في الشاشة التالية، انقر على Subscribe.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-3.webp" alt="الاشتراك في AWS Marketplace" border />
+  </Step>
+
+  <Step>
+    ### إعداد حسابك
+
+    في هذه المرحلة، لا يكون الإعداد قد اكتمل بعد، ولن تتم فوترة مؤسسة ClickHouse Cloud الخاصة بك عبر marketplace بعد. ستحتاج الآن إلى النقر على Set up your account ضمن marketplace subscription الخاصة بك لإعادة توجيهك إلى ClickHouse Cloud لإكمال الإعداد.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-4.webp" alt="إعداد حسابك" border />
+
+    بعد إعادة توجيهك إلى ClickHouse Cloud، يمكنك إما تسجيل الدخول باستخدام account موجود، أو التسجيل بحساب جديد. هذه الخطوة مهمة جدًا حتى نتمكن من ربط مؤسسة ClickHouse Cloud الخاصة بك بفوترة AWS Marketplace.
+
+    <Info>
+      **مستخدمو ClickHouse Cloud الجدد**
+
+      إذا كنت مستخدمًا جديدًا لـ ClickHouse Cloud، فاتبع الخطوات أدناه.
+    </Info>
+
+    <Accordion title="خطوات المستخدمين الجدد">
+      إذا كنت مستخدمًا جديدًا لـ ClickHouse Cloud، فانقر على Register في أسفل الصفحة. سيُطلب منك إنشاء مستخدم جديد والتحقق من بريدك الإلكتروني. بعد التحقق من بريدك الإلكتروني، يمكنك مغادرة صفحة تسجيل الدخول إلى ClickHouse Cloud ثم تسجيل الدخول باستخدام username الجديد على https://console.clickhouse.cloud.
+
+      <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-5.webp" size="md" alt="التسجيل في ClickHouse Cloud" />
+
+      <Info>
+        **المستخدمون الجدد**
+
+        ستحتاج أيضًا إلى تقديم بعض المعلومات الأساسية عن نشاطك التجاري. راجع لقطات الشاشة أدناه.
+      </Info>
+
+      <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp" size="md" alt="قبل أن تبدأ" />
+
+      <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp" size="md" alt="قبل أن تبدأ، متابعة" />
+    </Accordion>
+
+    إذا كنت مستخدمًا حاليًا لـ ClickHouse Cloud، فما عليك سوى تسجيل الدخول باستخدام credentials الخاصة بك.
+  </Step>
+
+  <Step>
+    ### إضافة marketplace subscription إلى مؤسسة
+
+    بعد تسجيل الدخول بنجاح، يمكنك إما إنشاء مؤسسة جديدة لتتم فوترة هذه marketplace subscription عليها، أو اختيار مؤسسة حالية لتتم الفوترة عليها عبر هذه subscription.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="إضافة marketplace subscription" border />
+
+    بعد إكمال هذه الخطوة، سيتم ربط مؤسستك باشتراك AWS هذا، وستتم فوترة كل Usage عبر حساب AWS الخاص بك.
+
+    يمكنك التأكد من صفحة billing الخاصة بالمؤسسة في واجهة ClickHouse من أن billing أصبحت الآن مرتبطة بالفعل بـ AWS Marketplace.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-9.webp" size="lg" alt="تأكيد صفحة billing" border />
+  </Step>
+</Steps>
+
+<div id="support">
+  ## الدعم
+</div>
+
+إذا واجهت أي مشكلة، فتواصل مع [فريق الدعم لدينا](https://clickhouse.com/support/program).

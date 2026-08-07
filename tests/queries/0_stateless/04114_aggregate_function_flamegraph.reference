@@ -1,0 +1,20 @@
+--- one argument (trace only), default size=1 ---
+0xfffffffffffffff0;0xfffffffffffffff1 2
+0xfffffffffffffff0;0xfffffffffffffff2 1
+--- two arguments (trace, size) ---
+0xfffffffffffffff0;0xfffffffffffffff1 10
+0xfffffffffffffff0;0xfffffffffffffff1;0xfffffffffffffff3 20
+0xfffffffffffffff0;0xfffffffffffffff4 5
+--- three arguments (trace, size, ptr): alloc/dealloc pairing ---
+0xfffffffffffffff0;0xfffffffffffffff2 20
+--- merge: GROUP BY with two partial aggregates ---
+0xfffffffffffffff0;0xfffffffffffffff1 3
+0xfffffffffffffff0;0xfffffffffffffff1 4
+0xfffffffffffffff0;0xfffffffffffffff2 3
+0xfffffffffffffff0;0xfffffffffffffff2 4
+0xfffffffffffffff0;0xfffffffffffffff3 3
+0xfffffffffffffff0;0xfffffffffffffff3 3
+--- trace containing a zero stops descent (find() breaks on ptr==0) ---
+0xfffffffffffffff0 7
+--- Error paths ---
+--- Introspection-disabled path ---

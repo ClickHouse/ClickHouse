@@ -1,0 +1,253 @@
+---
+description: 'الإعدادات على مستوى الاستعلام'
+sidebarTitle: 'إعدادات الجلسة الخاصة بالاستعلام'
+slug: /operations/settings/query-level
+title: 'إعدادات الجلسة الخاصة بالاستعلام'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+توجد عدة طرق لتشغيل تعليمات SQL بإعدادات محددة.
+تُضبط الإعدادات على شكل طبقات، وتتجاوز كل طبقة لاحقة القيم السابقة لكل إعداد.
+
+<div id="order-of-priority">
+  ## ترتيب الأولوية
+</div>
+
+ترتيب الأولوية لتحديد الإعداد هو:
+
+1. تطبيق إعداد على مستخدم مباشرةً، أو ضمن ملف تعريف الإعدادات
+
+   * SQL (مُوصى به)
+   * إضافة ملف XML أو YAML واحد أو أكثر إلى `/etc/clickhouse-server/users.d`
+
+2. إعدادات الجلسة
+
+   * أرسل `SET setting=value` من وحدة تحكم SQL في ClickHouse Cloud أو من
+     `clickhouse client` في الوضع التفاعلي. وبالمثل، يمكنك استخدام جلسات ClickHouse
+     عبر بروتوكول HTTP. للقيام بذلك، عليك تحديد
+     معلمة HTTP ‏`session_id`.
+
+3. إعدادات الاستعلام
+
+   * عند تشغيل `clickhouse client` في الوضع غير التفاعلي، عيّن معلمة
+     بدء التشغيل `--setting=value`.
+   * عند استخدام واجهة برمجة تطبيقات HTTP، مرِّر معلمات CGI (`URL?setting_1=value&setting_2=value...`).
+   * عرّف الإعدادات في
+     عبارة
+     [SETTINGS](/ar/reference/statements/select/index#settings-in-select-query)
+     في استعلام SELECT. لا تُطبَّق قيمة الإعداد إلا على ذلك الاستعلام
+     وتُعاد إلى القيمة الافتراضية أو السابقة بعد تنفيذ الاستعلام.
+
+<div id="converting-a-setting-to-its-default-value">
+  ## إعادة إعداد إلى قيمته الافتراضية
+</div>
+
+إذا غيّرت إعدادًا وأردت إعادته إلى قيمته الافتراضية، فاضبط القيمة على `DEFAULT`. وتكون الصياغة كما يلي:
+
+```sql
+SET setting_name = DEFAULT
+```
+
+على سبيل المثال، القيمة الافتراضية لـ `async_insert` هي `0`. لنفترض أنك غيّرت قيمتها إلى `1`:
+
+```sql
+SET async_insert = 1;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+الناتج هو:
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+يضبط الأمر التالي قيمته مجددًا إلى 0:
+
+```sql
+SET async_insert = DEFAULT;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+عاد الإعداد الآن إلى قيمته الافتراضية:
+
+```response
+┌─value───┐
+│ 0       │
+└─────────┘
+```
+
+<div id="custom_settings">
+  ## الإعدادات المخصصة
+</div>
+
+بالإضافة إلى [الإعدادات](/ar/reference/settings/session-settings) الشائعة، يمكن للمستخدمين تعريف إعدادات مخصصة.
+تتيح لك الإعدادات المخصصة تمرير **معلمات خاصة بالجلسة** يمكن الإشارة إليها داخل الاستعلامات أو السياسات أو الدوال. ويكون ذلك مفيدًا عندما تحتاج إلى:
+
+* تصفية البيانات استنادًا إلى هوية المستخدم أو المؤسسة
+* تطبيق منطق أعمال مختلف بحسب السياق
+* الاحتفاظ بمعلومات ذات حالة عبر الاستعلامات داخل الجلسة
+
+يجب أن يبدأ اسم الإعداد المخصص بإحدى البادئات المحددة مسبقًا ضمن قائمة تحددها أنت.
+ويمكن تحديد قائمة البادئات باستخدام إعداد الخادم [`custom_settings_prefixes`](/ar/reference/settings/server-settings/settings#custom_settings_prefixes)، والمُعرَّف في ملف تكوين الخادم لديك.
+
+في المثال أدناه، تم اختيار `SQL_` كبادئة مخصصة:
+
+```xml
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
+```
+
+<Note>
+  في ClickHouse Cloud، لا يمكن تحديد بادئة مخصّصة.
+  تبدأ جميع إعدادات المستخدم المخصّصة بالبادئة `SQL_`.
+</Note>
+
+لتعريف إعداد مخصّص، استخدم الأمر `SET`:
+
+```sql
+SET SQL_a = 123;
+```
+
+للحصول على القيمة الحالية لإعداد مخصّص، استخدم الدالة `getSetting()`:
+
+```sql
+SELECT getSetting('SQL_a');
+```
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+تضبط هذه الأمثلة جميعها قيمة الإعداد `async_insert` على `1`،
+وتوضح كيفية الاطلاع على الإعدادات في نظام يعمل.
+
+<div id="using-sql-to-apply-a-setting-to-a-user-directly">
+  ### استخدام SQL لتعيين إعداد لمستخدم مباشرةً
+</div>
+
+ينشئ هذا المستخدم `ingester` مع الإعداد `async_inset = 1`:
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS async_insert = 1
+```
+
+<div id="examine-the-settings-profile-and-assignment">
+  #### افحص ملف تعريف الإعدادات وإسناده
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ ...                                                                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS async_insert = true  │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="using-sql-to-create-a-settings-profile-and-assign-to-a-user">
+  ### استخدام SQL لإنشاء ملف تعريف الإعدادات وتعيينه لمستخدم
+</div>
+
+يؤدي هذا إلى إنشاء ملف التعريف `log_ingest` مع الإعداد `async_inset = 1`:
+
+```sql
+CREATE
+SETTINGS PROFILE log_ingest SETTINGS async_insert = 1
+```
+
+يؤدي هذا إلى إنشاء المستخدم `ingester` وإسناد ملف تعريف الإعدادات `log_ingest` إليه:
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS PROFILE log_ingest
+```
+
+<div id="using-xml-to-create-a-settings-profile-and-user">
+  ### استخدام XML لإنشاء ملف تعريف الإعدادات ومستخدم
+</div>
+
+```xml title=/etc/clickhouse-server/users.d/users.xml highlight={2-6,11}
+<clickhouse>
+    <profiles>
+        <log_ingest>
+            <async_insert>1</async_insert>
+        </log_ingest>
+    </profiles>
+
+    <users>
+        <ingester>
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <profile>log_ingest</profile>
+        </ingester>
+        <default replace="true">
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>
+```
+
+<div id="examine-the-settings-profile-and-assignment-1">
+  #### افحص ملف تعريف الإعدادات والتعيين
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3,5}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ CREATE USER default IDENTIFIED WITH sha256_password                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS PROFILE log_ingest   │
+│ CREATE SETTINGS PROFILE default                                                    │
+│ CREATE SETTINGS PROFILE log_ingest SETTINGS async_insert = true                    │
+│ CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1                             │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="assign-a-setting-to-a-session">
+  ### تعيين إعداد لجلسة
+</div>
+
+```sql
+SET async_insert =1;
+SELECT value FROM system.settings where name='async_insert';
+```
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+<div id="assign-a-setting-during-a-query">
+  ### تعيين إعداد أثناء تنفيذ استعلام
+</div>
+
+```sql highlight={2}
+INSERT INTO YourTable
+SETTINGS async_insert=1
+VALUES (...)
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* راجع صفحة [الإعدادات](/ar/reference/settings/session-settings) للاطّلاع على وصف لإعدادات ClickHouse.
+* [إعدادات الخادم العامة](/ar/reference/settings/server-settings/settings)

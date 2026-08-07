@@ -1,0 +1,122 @@
+---
+alias: []
+description: 'Documentation du format de sortie PNG'
+input_format: false
+keywords: ['PNG']
+output_format: true
+slug: /interfaces/formats/PNG
+title: 'PNG'
+doc_type: 'reference'
+---
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✗      | ✔      | ✗     |
+
+<div id="description">
+  ## Description
+</div>
+
+Affiche le résultat d’une requête sous forme d’image PNG. C’est utile comme outil de visualisation intégré.
+
+La taille de l’image de sortie est définie par les paramètres
+[`output_format_image_width`](/fr/reference/settings/formats#output_format_image_width) et
+[`output_format_image_height`](/fr/reference/settings/formats#output_format_image_height)
+(tous deux définis par défaut sur 1024). Les pixels non couverts par le résultat sont remplis de noir
+(en modes `RGB` et en niveaux de gris) ou de noir transparent (en mode `RGBA`).
+
+Le mode colorimétrique est déterminé automatiquement à partir des noms et des types des colonnes du résultat :
+
+| Colonnes             | Mode                                                        |
+| -------------------- | ----------------------------------------------------------- |
+| `r`, `g`, `b`        | RGB 8 bits                                                  |
+| `r`, `g`, `b`, `a`   | RGBA 8 bits                                                 |
+| `v` de type entier   | niveaux de gris 8 bits                                      |
+| `v` de type `Float*` | niveaux de gris 8 bits (valeurs dans `[0, 1]` → `[0, 255]`) |
+| `v` de type `Bool`   | Binaire (rendu en niveaux de gris 8 bits : `0` ou `255`)    |
+
+Les noms des colonnes sont comparés sans tenir compte de la casse. Si le mode colorimétrique ne peut pas être
+déterminé de manière non ambiguë (par exemple, noms de colonnes inconnus, mélange de `v` avec `r`/`g`/`b`/`a`, ou absence de l’un de `r`/`g`/`b`),
+la requête lève une exception.
+
+Pour les canaux de pixel, les valeurs entières sont limitées à `[0, 255]` et les valeurs à virgule flottante
+à `[0, 1]`, puis mises à l’échelle vers `[0, 255]`.
+
+La position de chaque enregistrement dans l’image est déterminée selon l’un des deux modes suivants :
+
+* **implicite** (par défaut — lorsque ni `x` ni `y` n’est présent). Chaque enregistrement correspond
+  à un seul pixel ; les pixels sont remplis dans l’ordre de balayage : de gauche à droite, de haut en bas.
+* **explicite** (lorsque les colonnes `x` et `y` sont présentes, toutes deux de type entier).
+  Les colonnes `x` et `y` donnent les coordonnées du pixel. Les enregistrements dont les coordonnées sont en dehors
+  de l’image sont ignorés silencieusement. Si plusieurs enregistrements ont les mêmes coordonnées,
+  le dernier prévaut (algorithme du peintre).
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+<div id="implicit-rgb">
+  ### Coordonnées implicites (une ligne par pixel), RVB
+</div>
+
+```sql
+SELECT
+    toUInt8(x * 25) AS r,
+    toUInt8(y * 25) AS g,
+    toUInt8((x + y) * 12) AS b
+FROM
+(
+    SELECT number % 10 AS x, intDiv(number, 10) AS y FROM numbers(100)
+)
+INTO OUTFILE 'gradient.png'
+FORMAT PNG
+SETTINGS output_format_image_width = 10, output_format_image_height = 10;
+```
+
+<div id="explicit-grayscale">
+  ### Coordonnées explicites, niveaux de gris
+</div>
+
+```sql
+SELECT
+    toInt32(x) AS x,
+    toInt32(y) AS y,
+    toUInt8(intensity) AS v
+FROM points
+INTO OUTFILE 'points.png'
+FORMAT PNG
+SETTINGS output_format_image_width = 512, output_format_image_height = 512;
+```
+
+<div id="terminal-mode">
+  ## Affichage des images dans le terminal
+</div>
+
+Par défaut, le format `PNG` écrit les octets bruts de l’image. Le paramètre
+[`output_format_image_terminal_mode`](/fr/reference/settings/formats#output_format_image_terminal_mode)
+fait plutôt afficher l’image directement dans le terminal au moyen d’un protocole d’image intégré :
+
+| Valeur            | Comportement                                                                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| &#96;&#96; (vide) | Écrit les octets bruts de l’image (comportement par défaut).                                                                                            |
+| `iterm`           | Utilise le protocole d’image intégré d’iTerm2.                                                                                                          |
+| `kitty`           | Utilise le protocole graphique de Kitty.                                                                                                                |
+| `sixel`           | Utilise le protocole Sixel. L’image est réduite à une palette fixe 6×6×6 et le canal alpha, le cas échéant, est composé sur un fond noir.               |
+| `auto`            | Si la sortie est un terminal, détecte ses capacités et utilise `iterm`, `kitty` ou `sixel` (dans cet ordre) ; sinon, écrit les octets bruts de l’image. |
+
+```sql
+SELECT toUInt8(x * 25) AS r, toUInt8(y * 25) AS g, toUInt8((x + y) * 12) AS b
+FROM (SELECT number % 10 AS x, intDiv(number, 10) AS y FROM numbers(100))
+FORMAT PNG
+SETTINGS output_format_image_width = 10, output_format_image_height = 10, output_format_image_terminal_mode = 'auto';
+```
+
+<div id="format-settings">
+  ## Paramètres du format
+</div>
+
+| Paramètre                           | Description                                             | Par défaut        |
+| ----------------------------------- | ------------------------------------------------------- | ----------------- |
+| `output_format_image_width`         | Largeur de l’image de sortie en pixels.                 | `1024`            |
+| `output_format_image_height`        | Hauteur de l’image de sortie en pixels.                 | `1024`            |
+| `output_format_image_terminal_mode` | Protocole intégré d’image de terminal (voir ci-dessus). | &#96;&#96; (vide) |

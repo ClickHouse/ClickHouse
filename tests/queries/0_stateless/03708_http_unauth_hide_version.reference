@@ -1,0 +1,4 @@
+HTTP/1.1 401 Unauthorized
+no_version
+HTTP/1.1 404 Not Found
+version_present_after_auth

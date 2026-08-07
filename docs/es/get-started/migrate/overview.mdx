@@ -1,0 +1,32 @@
+---
+sidebarTitle: 'Descripción general'
+slug: /integrations/migration/overview
+keywords: ['clickhouse', 'migrar', 'migración', 'migrando', 'datos']
+title: 'Migración de datos a ClickHouse'
+description: 'Página que describe las opciones disponibles para migrar datos a ClickHouse'
+doc_type: 'guide'
+---
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="https://player.vimeo.com/video/753082620?h=eb566c8c08"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<br />
+
+Hay varias opciones para migrar datos a ClickHouse Cloud, según dónde se encuentren actualmente tus datos:
+
+* [Autogestionado a Cloud](/es/get-started/migrate/oss-to-cloud/clickhouse-to-cloud): usa la función `remoteSecure` para transferir datos
+* [Otro DBMS](/es/get-started/migrate/other-methods/clickhouse-local-etl): usa la herramienta ETL [clickhouse-local] junto con la función de tabla de ClickHouse adecuada para tu DBMS actual
+* [¡Desde cualquier lugar!](/es/get-started/migrate/other-methods/etl-tool-to-clickhouse): usa una de las muchas herramientas ETL/ELT populares que se conectan a todo tipo de fuentes de datos
+* [Almacenamiento de objetos](/es/get-started/migrate/other-methods/object-storage-to-clickhouse): inserta fácilmente datos desde S3 en ClickHouse
+
+En el ejemplo [Migrar desde Redshift](/es/get-started/migrate/redshift/migration-guide), presentamos tres formas distintas de migrar datos a ClickHouse.

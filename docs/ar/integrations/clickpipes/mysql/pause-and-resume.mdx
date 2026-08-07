@@ -1,0 +1,51 @@
+---
+title: 'إيقاف MySQL ClickPipe مؤقتًا واستئنافه'
+description: 'إيقاف MySQL ClickPipe مؤقتًا واستئنافه'
+sidebarTitle: 'إيقاف مؤقت'
+slug: /integrations/clickpipes/mysql/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'إدخال البيانات', 'مزامنة لحظية']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+هناك سيناريوهات قد يكون من المفيد فيها إيقاف MySQL ClickPipe مؤقتًا. على سبيل المثال، قد ترغب في إجراء بعض التحليلات على البيانات الحالية وهي في حالة مستقرة. أو قد تكون بصدد تنفيذ عمليات ترقية على MySQL. إليك كيفية إيقاف MySQL ClickPipe مؤقتًا ثم استئنافها.
+
+<div id="pause-clickpipe-steps">
+  ## خطوات إيقاف MySQL ClickPipe مؤقتًا
+</div>
+
+1. في علامة تبويب مصادر البيانات، انقر على MySQL ClickPipe الذي تريد إيقافه مؤقتًا.
+2. انتقل إلى علامة تبويب **الإعدادات**.
+3. انقر على زر **إيقاف مؤقت**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. من المفترض أن تظهر نافذة تأكيد. انقر على **إيقاف مؤقت** مرة أخرى.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. انتقل إلى علامة تبويب **المقاييس**.
+5. بعد نحو 5 ثوانٍ (وأيضًا عند تحديث الصفحة)، يجب أن تظهر حالة المسار على أنها **موقوف مؤقتًا**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## خطوات استئناف MySQL ClickPipe
+</div>
+
+1. في علامة التبويب **Data Sources**، انقر على MySQL ClickPipe الذي تريد استئنافه. يجب أن تكون حالة المرآة **Paused** في البداية.
+2. انتقل إلى علامة التبويب **Settings**.
+3. انقر على زر **Resume**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. سيظهر مربع حوار للتأكيد. انقر على **Resume** مرة أخرى.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. انتقل إلى علامة التبويب **Metrics**.
+6. خلال نحو 5 ثوانٍ (وأيضًا عند تحديث الصفحة)، يجب أن تصبح حالة المسار **Running**.

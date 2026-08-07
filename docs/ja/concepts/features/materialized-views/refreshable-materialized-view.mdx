@@ -1,0 +1,409 @@
+---
+slug: /materialized-view/refreshable-materialized-view
+title: 'リフレッシャブルmaterialized view'
+description: 'クエリを高速化するためのmaterialized viewの使い方'
+keywords: ['リフレッシャブルmaterialized view', 'リフレッシュ', 'materialized view', 'クエリの高速化', 'クエリ最適化']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+[リフレッシャブルmaterialized view](/ja/reference/statements/create/view#refreshable-materialized-view) は、概念的には従来の OLTP データベースにおける materialized view と似ており、指定したクエリの結果を保存することで高速な取得を可能にし、リソースを大量に消費するクエリを繰り返し実行する必要を減らします。ClickHouse の [インクリメンタルmaterialized view](/ja/concepts/features/materialized-views/incremental-materialized-view) とは異なり、こちらはデータセット全体に対してクエリを定期的に実行する必要があり、その結果はクエリ用のターゲットテーブルに保存されます。理論上、この result set は元のデータセットよりも小さくなるため、後続のクエリをより高速に実行できます。
+
+次の図は、リフレッシャブルmaterialized viewの動作を示しています。
+
+<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="リフレッシャブルmaterialized viewの図" />
+
+次のビデオもご覧いただけます。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/-KhFJSY8yrs?si=VPRSZb20vaYkuR_C" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="when-should-refreshable-materialized-views-be-used">
+  ## リフレッシャブルmaterialized viewはどのような場合に使用すべきですか？
+</div>
+
+ClickHouseのインクリメンタルmaterialized viewは非常に強力で、通常はリフレッシャブルmaterialized viewで用いられるアプローチよりもはるかに高いスケーラビリティを発揮します。特に、単一テーブルに対する集約を実行する必要がある場合は、その傾向が顕著です。データの各ブロックが挿入されるたびにその集約のみを計算し、最終テーブルでインクリメンタルな状態をマージすることで、クエリが実行されるのは常にデータの一部に対してだけになります。この方法はPB級のデータまでスケール可能で、通常はこちらが推奨されます。
+
+ただし、このインクリメンタルな処理が不要、または適用できないユースケースもあります。インクリメンタルなアプローチに適さない問題もあれば、リアルタイム更新を必要とせず、定期的な再構築の方が適しているケースもあります。たとえば、複雑な結合を使用しているためインクリメンタルなアプローチには適さないビューについて、データセット全体を対象に定期的に完全な再計算を行いたい場合があります。
+
+> リフレッシャブルmaterialized viewでは、非正規化のようなタスクを実行するバッチ処理を実行できます。リフレッシャブルmaterialized view間には依存関係を作成でき、あるビューが別のビューの結果に依存し、その完了後にのみ実行されるようにできます。これにより、スケジュールされたワークフローや、[dbt](https://www.getdbt.com/) job のような単純なDAGを置き換えられます。リフレッシャブルmaterialized view間の依存関係の設定方法について詳しくは、[CREATE VIEW](/ja/reference/statements/create/view#refresh-dependencies) の `Dependencies` セクションを参照してください。
+
+<div id="how-do-you-refresh-a-refreshable-materialized-view">
+  ## リフレッシャブルmaterialized viewをリフレッシュするにはどうすればよいですか？
+</div>
+
+リフレッシャブルmaterialized viewは、作成時に定義した間隔で自動的にリフレッシュされます。
+たとえば、次のmaterialized viewは1分ごとにリフレッシュされます。
+
+```sql
+CREATE MATERIALIZED VIEW table_name_mv
+REFRESH EVERY 1 MINUTE TO table_name AS
+...
+```
+
+materialized view を強制的にリフレッシュするには、`SYSTEM REFRESH VIEW` 句を使用できます。
+
+```sql
+SYSTEM REFRESH VIEW table_name_mv;
+```
+
+ビューはキャンセル、停止、開始することもできます。
+詳しくは、[リフレッシャブルmaterialized viewの管理](/ja/reference/statements/system#managing-refreshable-materialized-views)のドキュメントを参照してください。
+
+<div id="when-was-a-refreshable-materialized-view-last-refreshed">
+  ## リフレッシャブルmaterialized view が最後にリフレッシュされたのはいつですか？
+</div>
+
+リフレッシャブルmaterialized view が最後にいつリフレッシュされたかを確認するには、以下のように [`system.view_refreshes`](/ja/reference/system-tables/view_refreshes) システムテーブルをクエリします。
+
+```sql
+SELECT database, view, status,
+       last_success_time, last_refresh_time, next_refresh_time,
+       read_rows, written_rows
+FROM system.view_refreshes;
+```
+
+```text
+┌─database─┬─view─────────────┬─status────┬───last_success_time─┬───last_refresh_time─┬───next_refresh_time─┬─read_rows─┬─written_rows─┐
+│ database │ table_name_mv    │ Scheduled │ 2024-11-11 12:10:00 │ 2024-11-11 12:10:00 │ 2024-11-11 12:11:00 │   5491132 │       817718 │
+└──────────┴──────────────────┴───────────┴─────────────────────┴─────────────────────┴─────────────────────┴───────────┴──────────────┘
+```
+
+<div id="how-can-i-change-the-refresh-rate">
+  ## リフレッシュ間隔を変更するにはどうすればよいですか？
+</div>
+
+リフレッシャブルmaterialized viewのリフレッシュ間隔を変更するには、[`ALTER TABLE...MODIFY REFRESH`](/ja/reference/statements/alter/view#alter-table--modify-refresh-statement)構文を使用します。
+
+```sql
+ALTER TABLE table_name_mv
+MODIFY REFRESH EVERY 30 SECONDS;
+```
+
+それが完了したら、[リフレッシャブルmaterialized view が最後に更新されたのはいつですか？](/ja/concepts/features/materialized-views/refreshable-materialized-view#when-was-a-refreshable-materialized-view-last-refreshed) のクエリを使って、レートが更新されたことを確認できます：
+
+```text
+┌─database─┬─view─────────────┬─status────┬───last_success_time─┬───last_refresh_time─┬───next_refresh_time─┬─read_rows─┬─written_rows─┐
+│ database │ table_name_mv    │ Scheduled │ 2024-11-11 12:22:30 │ 2024-11-11 12:22:30 │ 2024-11-11 12:23:00 │   5491132 │       817718 │
+└──────────┴──────────────────┴───────────┴─────────────────────┴─────────────────────┴─────────────────────┴───────────┴──────────────┘
+```
+
+<div id="using-append-to-add-new-rows">
+  ## `APPEND` を使用して新しい行を追加する
+</div>
+
+`APPEND` 機能を使うと、ビュー全体を置き換えるのではなく、テーブルの末尾に新しい行を追加できます。
+
+この機能の用途の 1 つは、ある時点における値のスナップショットを取得することです。たとえば、[Kafka](https://kafka.apache.org/)、[Redpanda](https://www.redpanda.com/)、またはその他のストリーミングデータプラットフォームからのメッセージストリームが `events` テーブルに取り込まれている状況を考えてみましょう。
+
+```sql
+SELECT *
+FROM events
+LIMIT 10
+```
+
+```response
+Query id: 7662bc39-aaf9-42bd-b6c7-bc94f2881036
+
+┌──────────────────ts─┬─uuid─┬─count─┐
+│ 2008-08-06 17:07:19 │ 0eb  │   547 │
+│ 2008-08-06 17:07:19 │ 60b  │   148 │
+│ 2008-08-06 17:07:19 │ 106  │   750 │
+│ 2008-08-06 17:07:19 │ 398  │   875 │
+│ 2008-08-06 17:07:19 │ ca0  │   318 │
+│ 2008-08-06 17:07:19 │ 6ba  │   105 │
+│ 2008-08-06 17:07:19 │ df9  │   422 │
+│ 2008-08-06 17:07:19 │ a71  │   991 │
+│ 2008-08-06 17:07:19 │ 3a2  │   495 │
+│ 2008-08-06 17:07:19 │ 598  │   238 │
+└─────────────────────┴──────┴───────┘
+```
+
+このデータセットの`uuid`カラムには、`4096`個の値があります。合計数が最も多いものを見つけるには、次のクエリを実行できます。
+
+```sql
+SELECT
+    uuid,
+    sum(count) AS count
+FROM events
+GROUP BY ALL
+ORDER BY count DESC
+LIMIT 10
+```
+
+```response
+┌─uuid─┬───count─┐
+│ c6f  │ 5676468 │
+│ 951  │ 5669731 │
+│ 6a6  │ 5664552 │
+│ b06  │ 5662036 │
+│ 0ca  │ 5658580 │
+│ 2cd  │ 5657182 │
+│ 32a  │ 5656475 │
+│ ffe  │ 5653952 │
+│ f33  │ 5653783 │
+│ c5b  │ 5649936 │
+└──────┴─────────┘
+```
+
+各 `uuid` の件数を 10 秒ごとに取得し、`events_snapshot` という新しいテーブルに保存するとします。`events_snapshot` のスキーマは次のようになります。
+
+```sql
+CREATE TABLE events_snapshot (
+    ts DateTime32,
+    uuid String,
+    count UInt64
+)
+ENGINE = MergeTree
+ORDER BY uuid;
+```
+
+次に、このテーブルにデータを格納するためのリフレッシャブルmaterialized viewを作成できます。
+
+```sql
+CREATE MATERIALIZED VIEW events_snapshot_mv
+REFRESH EVERY 10 SECOND APPEND TO events_snapshot
+AS SELECT
+    now() AS ts,
+    uuid,
+    sum(count) AS count
+FROM events
+GROUP BY ALL;
+```
+
+次に、特定の `uuid` について、`events_snapshot` をクエリして時間ごとの件数を取得できます。
+
+```sql
+SELECT *
+FROM events_snapshot
+WHERE uuid = 'fff'
+ORDER BY ts ASC
+FORMAT PrettyCompactMonoBlock
+```
+
+```response
+┌──────────────────ts─┬─uuid─┬───count─┐
+│ 2024-10-01 16:12:56 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:00 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:10 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:20 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:30 │ fff  │ 5674669 │
+│ 2024-10-01 16:13:40 │ fff  │ 5947912 │
+│ 2024-10-01 16:13:50 │ fff  │ 6203361 │
+│ 2024-10-01 16:14:00 │ fff  │ 6501695 │
+└─────────────────────┴──────┴─────────┘
+```
+
+<div id="examples">
+  ## 例
+</div>
+
+それでは、いくつかの例となるデータセットを使って、リフレッシャブルmaterialized viewの使い方を見ていきましょう。
+
+<div id="stack-overflow">
+  ### Stack Overflow
+</div>
+
+[データの非正規化ガイド](/ja/guides/clickhouse/data-modelling/denormalization)では、Stack Overflow データセットを使ってデータを非正規化するさまざまな手法を紹介しています。データは次のテーブルに格納します: `votes`、`users`、`badges`、`posts`、`postlinks`。
+
+そのガイドでは、次のクエリを使って `postlinks` データセットを `posts` テーブルに非正規化する方法を示しました。
+
+```sql
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts_types_codecs_ordered.Id = postlinks.PostId;
+```
+
+次に、このデータを `posts_with_links` テーブルに一回限りで挿入する方法を示しましたが、本番環境ではこの処理を定期的に実行したいところです。
+
+`posts` テーブルと `postlinks` テーブルは、どちらも更新される可能性があります。そのため、インクリメンタルmaterialized view を使ってこの join を実装しようとするより、このクエリを一定間隔、たとえば1時間ごとに実行するようスケジュールし、その結果を `post_with_links` テーブルに保存するだけで十分な場合があります。
+
+ここで役立つのがリフレッシャブルmaterialized view で、次のクエリで作成できます。
+
+```sql
+CREATE MATERIALIZED VIEW posts_with_links_mv
+REFRESH EVERY 1 HOUR TO posts_with_links AS
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts_types_codecs_ordered.Id = postlinks.PostId;
+```
+
+このviewは、設定どおりにまず直ちに実行され、その後は1時間ごとに実行されるため、ソーステーブルへの更新が確実に反映されます。重要なのは、クエリが再実行されると、結果セットがアトミックかつ透過的に更新されることです。
+
+<Note>
+  ここでの構文はインクリメンタルmaterialized viewと同一ですが、[`REFRESH`](/ja/reference/statements/create/view#refreshable-materialized-view)句を含める点が異なります。
+</Note>
+
+<div id="imdb">
+  ### IMDb
+</div>
+
+[dbt と ClickHouse のインテグレーションガイド](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/index)では、IMDb データセットに `actors`、`directors`、`genres`、`movie_directors`、`movies`、`roles` の各テーブルを取り込みました。
+
+次に、以下のクエリを使用して、各俳優の概要を映画出演数の多い順に集計できます。
+
+```sql
+SELECT
+  id, any(actor_name) AS name, uniqExact(movie_id) AS movies,
+  round(avg(rank), 2) AS avg_rank, uniqExact(genre) AS genres,
+  uniqExact(director_name) AS directors, max(created_at) AS updated_at
+FROM (
+  SELECT
+    imdb.actors.id AS id,
+    concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
+    imdb.movies.id AS movie_id, imdb.movies.rank AS rank, genre,
+    concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
+    created_at
+  FROM imdb.actors
+  INNER JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
+  LEFT JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
+  LEFT JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
+  LEFT JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
+  LEFT JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
+)
+GROUP BY id
+ORDER BY movies DESC
+LIMIT 5;
+```
+
+```text
+┌─────id─┬─name─────────┬─num_movies─┬───────────avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│  45332 │ Mel Blanc    │        909 │ 5.7884792542982515 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers │        672 │  5.540605094212635 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London   │        549 │ 2.8057034230202023 │            18 │            208 │ 2024-11-11 12:01:35 │
+│ 356804 │ Bud Osborne  │        544 │ 1.9575342420755093 │            16 │            157 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi  │        544 │                  0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴──────────────┴────────────┴────────────────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.393 sec. Processed 5.45 million rows, 86.82 MB (13.87 million rows/s., 221.01 MB/s.)
+Peak memory usage: 1.38 GiB.
+```
+
+結果が返るまでにそれほど時間はかかりませんが、さらに高速化し、計算コストも抑えたいとしましょう。
+このデータセットも絶えず更新されると考えてください。新しい俳優や監督が次々に登場し、新作映画も継続的に公開されます。
+
+そこでリフレッシャブルmaterialized viewの出番です。まずは、結果を格納するターゲットテーブルを作成しましょう。
+
+```sql
+CREATE TABLE imdb.actor_summary
+(
+        `id` UInt32,
+        `name` String,
+        `num_movies` UInt16,
+        `avg_rank` Float32,
+        `unique_genres` UInt16,
+        `uniq_directors` UInt16,
+        `updated_at` DateTime
+)
+ENGINE = MergeTree
+ORDER BY num_movies
+```
+
+それでは、ビューを定義します：
+
+```sql
+CREATE MATERIALIZED VIEW imdb.actor_summary_mv
+REFRESH EVERY 1 MINUTE TO imdb.actor_summary AS
+SELECT
+        id,
+        any(actor_name) AS name,
+        uniqExact(movie_id) AS num_movies,
+        avg(rank) AS avg_rank,
+        uniqExact(genre) AS unique_genres,
+        uniqExact(director_name) AS uniq_directors,
+        max(created_at) AS updated_at
+FROM
+(
+        SELECT
+        imdb.actors.id AS id,
+        concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
+        imdb.movies.id AS movie_id,
+        imdb.movies.rank AS rank,
+        genre,
+        concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
+        created_at
+        FROM imdb.actors
+    INNER JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
+    LEFT JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
+    LEFT JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
+    LEFT JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
+    LEFT JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
+)
+GROUP BY id
+ORDER BY num_movies DESC;
+```
+
+このビューは、ソーステーブルへの更新が反映されるよう、設定どおりに直ちに実行され、その後は1分ごとに実行されます。先ほどの俳優の要約を取得するクエリは、構文がよりシンプルになり、実行速度も大幅に向上します！
+
+```sql
+SELECT *
+FROM imdb.actor_summary
+ORDER BY num_movies DESC
+LIMIT 5
+```
+
+```text
+┌─────id─┬─name─────────┬─num_movies─┬──avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│  45332 │ Mel Blanc    │        909 │ 5.7884793 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers │        672 │  5.540605 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London   │        549 │ 2.8057034 │            18 │            208 │ 2024-11-11 12:01:35 │
+│ 356804 │ Bud Osborne  │        544 │ 1.9575342 │            16 │            157 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi  │        544 │         0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴──────────────┴────────────┴───────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.007 sec.
+```
+
+仮に、数多くの映画に出演している新しい俳優 &quot;Clicky McClickHouse&quot; をソースデータに追加するとします！
+
+```sql
+INSERT INTO imdb.actors VALUES (845466, 'Clicky', 'McClickHouse', 'M');
+INSERT INTO imdb.roles SELECT
+        845466 AS actor_id,
+        id AS movie_id,
+        'Himself' AS role,
+        now() AS created_at
+FROM imdb.movies
+LIMIT 10000, 910;
+```
+
+60秒も経たないうちに、Clickyの出演作の多さが反映されるようターゲットテーブルが更新されます:
+
+```sql
+SELECT *
+FROM imdb.actor_summary
+ORDER BY num_movies DESC
+LIMIT 5;
+```
+
+```text
+┌─────id─┬─name────────────────┬─num_movies─┬──avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│ 845466 │ Clicky McClickHouse │        910 │ 1.4687939 │            21 │            662 │ 2024-11-11 12:53:51 │
+│  45332 │ Mel Blanc           │        909 │ 5.7884793 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers        │        672 │  5.540605 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London          │        549 │ 2.8057034 │            18 │            208 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi         │        544 │         0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴─────────────────────┴────────────┴───────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.006 sec.
+```

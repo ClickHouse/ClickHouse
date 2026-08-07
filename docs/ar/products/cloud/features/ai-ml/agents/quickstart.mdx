@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'البدء السريع'
+slug: /cloud/features/ai-ml/agents/quickstart
+title: 'البدء السريع'
+description: 'أنشئ وشغّل أول ClickHouse Agent لك على خدمة في ClickHouse Cloud'
+keywords: ['AI', 'ClickHouse Cloud', 'الوكلاء', 'البدء السريع', 'منشئ الوكلاء']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge />
+
+أنشئ وكيلاً مخصصًا في وحدة تحكم Cloud، ثم شغِّل استعلامًا بلغة طبيعية على خدمتك.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* خدمة في ClickHouse Cloud يمكنك إجراء استعلامات عليها.
+* خيار **إنشاء وكيل** في Agent Builder. إذا لم يكن ظاهرًا، فاطلب من مسؤول المؤسسة منح إذن إنشاء الوكلاء عبر Admin Settings كما هو موضح في [المشاركة والوصول](/ar/products/cloud/features/ai-ml/agents/sharing-and-access).
+
+<div id="build-the-agent">
+  ## أنشئ الوكيل
+</div>
+
+<Steps>
+  <Step>
+    ### شغّل ClickHouse Agents
+
+    من خدمة Cloud الخاصة بك، انقر على **ClickHouse agents** في الشريط الجانبي الأيسر لفتح صفحة إطلاق الوكلاء. ثم انقر على **Launch ClickHouse agents** لفتح Agent Builder.
+
+    <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="تنقّل خدمة Cloud مع تحديد ClickHouse agents (Beta)، مع ظهور صفحة الإطلاق التي تتضمن زر Launch ClickHouse agents" size="lg" />
+  </Step>
+
+  <Step>
+    ### أنشئ الوكيل
+
+    في Agent Builder، انقر على **Create New Agent** أعلى اللوحة اليسرى. ثم املأ الحقول الأساسية:
+
+    * **Name** - معرّف قصير لوكيلك.
+    * **Description** - وصف يوضح الغرض من الوكيل، وسيظهر لزملائك.
+    * **Category** - فئة الوكيل. يمكنك تركها على `General` ما لم تكن لدى مؤسستك فئات مخصّصة.
+    * **Instructions** - الـ system prompt، ويحدّد دور الوكيل، والأسئلة التي ينبغي أن يجيب عنها، وأي قواعد عمل يجب أن يلتزم بها.
+    * **Model** - اختر نموذجًا من القائمة المنسدلة.
+
+    <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="لوحة Agent Builder تعرض القائمة المنسدلة Create New Agent، وحقول النموذج (Name وDescription وCategory وInstructions وModel)، وقسم Capabilities" size="lg" />
+  </Step>
+
+  <Step>
+    ### أضف الإمكانات والأدوات
+
+    توجد إمكانات الوكيل وأدواته في موضعين.
+
+    **Capabilities** في اللوحة الرئيسية — ميزات أصلية مثل [Run Code](/ar/products/cloud/features/ai-ml/agents/builder/code-interpreter)، و[Web Search](/ar/products/cloud/features/ai-ml/agents/builder/web-search)، وFile Context، وArtifacts، و[MCP Servers](/ar/products/cloud/features/ai-ml/agents/builder/mcp-servers)، و[Skills](/ar/products/cloud/features/ai-ml/agents/builder/skills). فعّل ما يحتاجه الوكيل منها.
+
+    <Image img="/images/cloud/agent-builder/capabilities.webp" alt="قسم Capabilities في لوحة Agent Builder يعرض أزرار التبديل الخاصة بـ Run Code وWeb Search وFile Context وArtifacts وMCP Servers وSkills" size="sm" />
+
+    **Tools** خلف زر **Add Tools** أسفل اللوحة — تكاملات خارجية مثل [توليد الصور](/ar/products/cloud/features/ai-ml/agents/builder/image-generation)، و[Vision](/ar/products/cloud/features/ai-ml/agents/builder/vision)، وواجهات برمجة تطبيقات البحث، والخدمات الخارجية.
+
+    <Image img="/images/cloud/agent-builder/tools-button.webp" alt="الجزء السفلي من لوحة Agent Builder مع تمييز زر Add Tools" size="sm" />
+
+    انقر على **Add Tools** لاستعراض الكتالوج:
+
+    <Image img="/images/cloud/agent-builder/tools-modal.webp" alt="نافذة Agent Tools تعرض شبكة من التكاملات الخارجية، بما في ذلك Google وOpenAI Image Tools وWolfram وDALL-E-3 وTavily Search وCalculator وStable Diffusion" size="lg" />
+
+    يتم إعداد [Subagents](/ar/products/cloud/features/ai-ml/agents/builder/subagents) ضمن **Advanced settings** — راجع صفحة Subagents للتفاصيل.
+
+    يمكنك تغيير الإمكانات والأدوات المضافة في أي وقت.
+  </Step>
+
+  <Step>
+    ### شغّل استعلام
+
+    احفظ الوكيل، وافتح conversation جديدة، ثم اختر وكيلك من أداة اختيار الوكيل. اكتب سؤالًا — على سبيل المثال، *&quot;ما أكثر 10 جداول لديّ من حيث عدد الصفوف هذا الأسبوع؟&quot;* — وسيضع الوكيل خطة، ويستدعي الأدوات عند الحاجة، ثم يعرض الإجابة.
+
+    <Image img="/images/cloud/agent-builder/chat-query.webp" alt="محادثة تعرض السؤال 'What are my top 10 tables by row count this week?' وردّ الوكيل — جدول Markdown يرتّب أفضل 10 جداول عبر الخدمات حسب عدد الصفوف، مع Key Observations في الأسفل" size="lg" />
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* [شارك الوكيل](/ar/products/cloud/features/ai-ml/agents/sharing-and-access) مع زملائك.
+* انشره في [السوق](/ar/products/cloud/features/ai-ml/agents/marketplace) بمجرد أن يصبح الوكيل مستقرًا.

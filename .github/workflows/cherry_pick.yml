@@ -1,0 +1,52 @@
+name: CherryPick
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
+concurrency:
+  group: cherry-pick
+  # Never run two cherry-pick jobs at the same time: a new scheduled run waits
+  # for the in-progress one to finish instead of cancelling it.
+  cancel-in-progress: false
+on: # yamllint disable-line rule:truthy
+  schedule:
+    # Every 20 minutes. Offset from round values (e.g. */20 -> :00/:20/:40),
+    # which are popular and get their launches delayed by GitHub.
+    - cron: '9,29,49 * * * *'
+  workflow_dispatch:
+
+jobs:
+  CherryPick:
+    runs-on: [self-hosted, style-checker-aarch64]
+    steps:
+      - name: Set envs
+        # https://docs.github.com/en/actions/learn-github-actions/workflow-commands-for-github-actions#multiline-strings
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/cherry_pick
+          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
+          ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
+          RCSK
+          REPO_OWNER=ClickHouse
+          REPO_NAME=ClickHouse
+          REPO_TEAM=core
+          EOF
+      - name: Check out repository code
+        uses: ClickHouse/checkout@v1
+        with:
+          clear-repository: true
+          token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
+          fetch-depth: 0
+      - name: Debug Info
+        uses: ./.github/actions/debug
+      - name: Cherry pick
+        run: |
+          cd "$GITHUB_WORKSPACE/tests/ci"
+          python3 cherry_pick.py
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps --quiet | xargs --no-run-if-empty docker kill ||:
+          docker ps --all --quiet | xargs --no-run-if-empty docker rm -f ||:
+          sudo rm -fr "$TEMP_PATH"

@@ -1,0 +1,28 @@
+#include <iostream>
+#include <unicode/unistr.h>
+#include <Examples/clickhouse_examples.h>
+
+[[maybe_unused]] static std::string utf8_to_lower(const std::string & input)
+{
+    icu::UnicodeString unicodeInput(input.c_str(), "UTF-8");
+    unicodeInput.toLower();
+    std::string output;
+    unicodeInput.toUTF8String(output);
+    return output;
+}
+
+static std::string utf8_to_upper(const std::string & input)
+{
+    icu::UnicodeString unicodeInput(input.c_str(), "UTF-8");
+    unicodeInput.toUpper();
+    std::string output;
+    unicodeInput.toUTF8String(output);
+    return output;
+}
+
+int mainEntryExampleUtf8UpperLower(int, char **)
+{
+    std::string input = "ır";
+    std::cout << "upper:" << utf8_to_upper(input) << std::endl;
+    return 0;
+}

@@ -1,0 +1,443 @@
+---
+title: Índice
+mode: "custom"
+max-toc-depth: 3
+sidebarTitle: "Inicio"
+"icon": "/images/menu-icon-house.svg"
+---
+
+export const FullWidthDivider = ({ style }) => {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!ref.current) return;
+        const el = ref.current;
+        const update = () => {
+            requestAnimationFrame(() => {
+                el.style.marginLeft = '';
+                el.style.width = '';
+                const elRect = el.getBoundingClientRect();
+                const sidebar = document.getElementById('sidebar');
+                const sidebarRect = sidebar && sidebar.getBoundingClientRect();
+                const leftEdge = (sidebarRect && sidebarRect.width > 0) ? sidebarRect.right : 0;
+                const rightEdge = document.documentElement.clientWidth;
+                const ml = Math.max(0, elRect.left - leftEdge);
+                const mr = Math.max(0, rightEdge - elRect.right);
+                el.style.marginLeft = `-${ml}px`;
+                el.style.width = `calc(100% + ${ml + mr}px)`;
+            });
+        };
+        update();
+        window.addEventListener('resize', update);
+        return () => window.removeEventListener('resize', update);
+    }, []);
+    return <hr ref={ref} className="ch-usecase-divider" style={style} />;
+};
+
+export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, description, body, href, links, icon, showArrow, arrowBottom, extraClassName, logo, logoInvert, overlayImg, fullWidthImage, imageHeight = 'h-48' }) => {
+    const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    const withBase = (p) => p && p.startsWith('/') ? assetBase + p : p;
+    const darkFilename = darkFilenameProp || (filename ? filename.replace('-light.', '-dark.') : null);
+    const cardClassName = `ch-hero-card relative ${arrowBottom ? 'flex flex-col' : 'block'} p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit${fullWidthImage ? ' overflow-hidden' : ''}`;
+
+    const content = (
+        <>
+            {logo && (
+                <div className="absolute top-3 right-3 z-10 flex items-center justify-center w-8 h-8 rounded-md bg-white dark:bg-white/10 shadow-sm border border-[#e5e7eb] dark:border-white/10">
+                    <img src={`${assetBase}/images/${logo}`} alt="" className={`w-5 h-5 object-contain${logoInvert ? ' ch-logo-invert' : ''}`} />
+                </div>
+            )}
+            {icon ? (
+                <div className="mb-6">
+                    {icon}
+                </div>
+            ) : filename ? (
+                <div className={`${overlayImg ? 'relative mb-12' : ''}${fullWidthImage ? ' -mx-4 -mt-4' : ''}`}>
+                    <img
+                        src={`${assetBase}/images/${filename}`}
+                        alt={title}
+                        className={`block dark:hidden w-full ${imageHeight} object-cover pointer-events-none${fullWidthImage ? '' : ' rounded-lg border border-[#d1d5db]'}`}
+                    />
+                    <img
+                        src={`${assetBase}/images/${darkFilename}`}
+                        alt={title}
+                        className={`hidden dark:block w-full ${imageHeight} object-cover pointer-events-none${fullWidthImage ? '' : ' rounded-lg'}`}
+                    />
+                    {overlayImg && (
+                        <img
+                            src={`${assetBase}/images/${overlayImg}`}
+                            alt=""
+                            className="absolute right-4 bottom-0 translate-y-[40%] w-[46%] rounded-xl pointer-events-none z-20 ch-overlay-shadow"
+                        />
+                    )}
+                </div>
+            ) : null}
+            <h3 className={`text-[#111827] dark:text-white text-lg font-semibold leading-[1.3] ${(icon || !filename) ? 'mt-0' : 'mt-5'}`}>
+                {title}
+            </h3>
+            {body ? body : (
+                <span className="block text-[#6b7280] dark:text-[#a1a1aa] mt-2 text-sm font-normal leading-normal min-h-[42px]">{description}</span>
+            )}
+            {links && links.length > 0 && (
+                <ul className="mt-6 list-none p-0">
+                    {links.map((link, index) => (
+                        <li key={index} className={index > 0 ? 'mt-2' : 'mt-0'}>
+                            <a href={link.href} onClick={(e) => { e.preventDefault(); window.location.href = withBase(link.href); }} className="goal-card-link flex items-center justify-between text-[#374151] dark:text-[#FCFF74] text-sm font-medium no-underline gap-1">
+                                <span className="truncate min-w-0">{link.label}</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0${link.external ? ' ch-external-arrow' : ''}`}>
+                                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                                </svg>
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {showArrow && (
+                <>
+                    {arrowBottom && <div className="flex-1" />}
+                    <div className="ch-usecase-arrow flex justify-end mt-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </div>
+                </>
+            )}
+        </>
+    );
+
+    const fullClassName = [cardClassName, extraClassName].filter(Boolean).join(' ');
+    if (links && links.length > 0) {
+        return <div className={fullClassName}>{content}</div>;
+    }
+
+    return <a className={fullClassName} href={href} onClick={(e) => { e.preventDefault(); window.location.href = withBase(href); }}>{content}</a>;
+};
+
+export const QuickstartPill = ({ children }) => {
+    const path = '/es/get-started/quickstarts/create-your-first-service-on-cloud';
+    const withBase = (p) => (typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '') + p;
+    return (
+        <a
+            className="inline-flex items-center gap-2 h-9 px-4 rounded-full text-sm text-gray-700 dark:text-zinc-200 bg-gray-950/[0.03] dark:bg-white/[0.04] border border-gray-950/15 dark:border-white/15 hover:border-gray-950/40 dark:hover:border-white/35 transition-colors no-underline"
+            href={path}
+            onClick={(e) => { e.preventDefault(); window.location.href = withBase(path); }}
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true" className="shrink-0 text-gray-500 dark:text-zinc-300"><path d="M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17ZM109.37,214l10.47-52.38a8,8,0,0,0-5-9.06L62,132.71l84.62-90.66L136.16,94.43a8,8,0,0,0,5,9.06l52.8,19.8Z"></path></svg>
+            <span>{children}</span>
+        </a>
+    );
+};
+
+export const AskAILink = ({ children }) => {
+    const openKapa = () => {
+        if (window.Kapa && typeof window.Kapa.open === 'function') {
+            window.Kapa.open({ mode: 'ai' });
+            return;
+        }
+        let attempts = 0;
+        const iv = setInterval(() => {
+            attempts++;
+            if (window.Kapa && typeof window.Kapa.open === 'function') {
+                clearInterval(iv);
+                window.Kapa.open({ mode: 'ai' });
+            } else if (attempts > 60) {
+                clearInterval(iv);
+            }
+        }, 50);
+    };
+    return (
+        <button
+            type="button"
+            id="home-assistant-entry"
+            onClick={openKapa}
+            className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors bg-transparent border-0 p-0 cursor-pointer"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 18 18" aria-hidden="true" className="shrink-0"><g fill="currentColor"><path d="M5.658,2.99l-1.263-.421-.421-1.263c-.137-.408-.812-.408-.949,0l-.421,1.263-1.263,.421c-.204,.068-.342,.259-.342,.474s.138,.406,.342,.474l1.263,.421,.421,1.263c.068,.204,.26,.342,.475,.342s.406-.138,.475-.342l.421-1.263,1.263-.421c.204-.068,.342-.259,.342-.474s-.138-.406-.342-.474Z" fill="currentColor" data-stroke="none" stroke="none"></path><polygon points="9.5 2.75 11.412 7.587 16.25 9.5 11.412 11.413 9.5 16.25 7.587 11.413 2.75 9.5 7.587 7.587 9.5 2.75" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"></polygon></g></svg>
+            {children}
+        </button>
+    );
+};
+
+export const HighlightedClickHouse = () => {
+    return (
+        <span className="relative inline-block px-8 py-3 -ml-4">
+            <img src="data:image/webp;base64,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" className="block dark:hidden absolute top-0 right-0 bottom-0 left-[10px] w-full h-full object-fill pointer-events-none select-none" alt="" aria-hidden="true" />
+            <img src="data:image/webp;base64,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" className="hidden dark:block absolute top-0 right-0 bottom-0 left-[10px] w-full h-full object-fill pointer-events-none select-none" alt="" aria-hidden="true" />
+            <span className="relative z-10 text-white dark:text-[#1c1c1c]">ClickHouse</span>
+        </span>
+    );
+};
+
+export const McpLink = () => {
+    const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    const handleClick = (e) => {
+        e.preventDefault();
+        const target = document.getElementById('mcp-setup');
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    return (
+        <a
+            href="#mcp-setup"
+            onClick={handleClick}
+            className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
+        >
+            <span
+                aria-hidden="true"
+                className="shrink-0 w-[15px] h-[15px] bg-current ch-mcp-icon"
+                style={{
+                    WebkitMaskImage: `url(${assetBase}/images/icons/icon-mcp.svg)`,
+                    maskImage: `url(${assetBase}/images/icons/icon-mcp.svg)`,
+                }}
+            />
+            Servidor MCP
+        </a>
+    );
+};
+
+export const McpSetup = () => {
+    const jsonConfig = `{
+  "mcpServers": {
+    "clickhouse-docs": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://private-7c7dfe99.mintlify.app/mcp"]
+    }
+  }
+}`;
+    return (
+        <Tabs>
+            <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
+                <p className="mb-2 text-[#9ca3af] text-[13px]">Ejecuta en tu terminal:</p>
+                <CodeBlock language="bash">{`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}</CodeBlock>
+            </Tab>
+            <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
+                <p className="mb-2 text-[#9ca3af] text-[13px]">Añade a <code>claude_desktop_config.json</code>:</p>
+                <CodeBlock language="json">{jsonConfig}</CodeBlock>
+            </Tab>
+            <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
+                <p className="mb-2 text-[#9ca3af] text-[13px]">Añade a <code>.cursor/mcp.json</code>:</p>
+                <CodeBlock language="json">{jsonConfig}</CodeBlock>
+            </Tab>
+            <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
+                <p className="mb-2 text-[#9ca3af] text-[13px]">Añade a <code>~/.codeium/windsurf/mcp_config.json</code>:</p>
+                <CodeBlock language="json">{jsonConfig}</CodeBlock>
+            </Tab>
+        </Tabs>
+    );
+};
+
+export const PageWrapper = ({ children }) => {
+    const [visible, setVisible] = useState(false);
+    useEffect(() => {
+        let id1, id2;
+        id1 = requestAnimationFrame(() => {
+            id2 = requestAnimationFrame(() => setVisible(true));
+        });
+        return () => { cancelAnimationFrame(id1); cancelAnimationFrame(id2); };
+    }, []);
+    return <div className={visible ? 'ch-page-visible' : 'ch-page-hidden'}>{children}</div>;
+};
+
+<style>
+  {`
+          .ch-goal-icon { color: #374151; }
+          .dark .ch-goal-icon { color: #FAFF69; }
+          /* Ocultar la barra lateral inmediatamente en la página de inicio (evita el parpadeo) */
+          #sidebar { display: none !important; }
+          /* Hacer que la barra de navegación ocupe todo el ancho, ya que la barra lateral está oculta */
+          #navbar-transition-maple {
+            width: 100vw !important;
+            left: 0 !important;
+            margin-left: 0 !important;
+            /* Hacer coincidir el relleno derecho de la propia barra de navegación (3rem) */
+            padding-left: 3rem !important;
+            justify-content: flex-start !important;
+          }
+          `}
+</style>
+
+<PageWrapper>
+  <div className="relative">
+    <div className="absolute -top-14 left-0 right-0 opacity-80">
+      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV84MjcpIj4KPHJlY3Qgb3BhY2l0eT0iMC4wMSIgd2lkdGg9IjExNTIiIGhlaWdodD0iMzg4IiBmaWxsPSJ1cmwoI3BhaW50MF9saW5lYXJfMjMxXzgyNykiLz4KPC9nPgo8ZGVmcz4KPGxpbmVhckdyYWRpZW50IGlkPSJwYWludDBfbGluZWFyXzIzMV84MjciIHgxPSI1NzYiIHkxPSIwIiB4Mj0iNTc2IiB5Mj0iMzg4IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CjxzdG9wIHN0b3AtY29sb3I9IiM3MzczNzMiLz4KPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjRDlEOUQ5IiBzdG9wLW9wYWNpdHk9IjAiLz4KPC9saW5lYXJHcmFkaWVudD4KPGNsaXBQYXRoIGlkPSJjbGlwMF8yMzFfODI3Ij4KPHJlY3Qgd2lkdGg9IjExNTIiIGhlaWdodD0iMzg4IiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo=" className="block dark:hidden pointer-events-none w-full h-auto" alt="Imagen de fondo decorativa." />
+
+      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV83MzApIj4KPGcgb3BhY2l0eT0iMC4xMiIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjBfZl8yMzFfNzMwKSI+CjxjaXJjbGUgY3g9Ijg0My41IiBjeT0iLTIzMS41IiByPSIyMDMuNSIgZmlsbD0id2hpdGUiLz4KPC9nPgo8L2c+CjxkZWZzPgo8ZmlsdGVyIGlkPSJmaWx0ZXIwX2ZfMjMxXzczMCIgeD0iNTguMTk4OSIgeT0iLTEwMTYuOCIgd2lkdGg9IjE1NzAuNiIgaGVpZ2h0PSIxNTcwLjYiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0ic2hhcGUiLz4KPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMjkwLjkwMSIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzIzMV83MzAiLz4KPC9maWx0ZXI+CjxjbGlwUGF0aCBpZD0iY2xpcDBfMjMxXzczMCI+CjxyZWN0IHdpZHRoPSIxMTUyIiBoZWlnaHQ9IjM4OCIgZmlsbD0id2hpdGUiLz4KPC9jbGlwUGF0aD4KPC9kZWZzPgo8L3N2Zz4K" className="hidden dark:block pointer-events-none w-full h-auto" alt="Imagen de fondo decorativa." />
+    </div>
+
+    <div className="relative z-10 px-0 py-16 lg:py-12 lg:pb-40 max-w-6xl mx-auto">
+      <div className="flex justify-center mb-8">
+            <QuickstartPill>Guía de inicio rápido: <span className="font-medium text-[#2563eb] dark:text-[#FCFF74]">Empieza con Cloud</span></QuickstartPill>
+        </div>
+
+      <h1 className="block text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
+        Empieza a crear con <HighlightedClickHouse />
+      </h1>
+
+      <div className="mx-auto px-4 -mt-5 text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
+        Documentación de la plataforma de datos más rápida
+      </div>
+
+      <div className="flex items-center justify-center mx-auto mt-8 px-4">
+            <button type="button" id="home-search-entry" className="flex pointer-events-auto items-center text-sm leading-6 h-11 pl-3.5 pr-4 text-gray-500 dark:text-white/50 dark:brightness-[1.1] dark:hover:brightness-[1.25] gap-2 w-full max-w-[560px] bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-gray-950/10 dark:border-white/10 ring-0 dark:ring-0 rounded-lg" aria-label="Abrir búsqueda">
+                <div className="flex items-center gap-2 min-w-0"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search min-w-4 flex-none text-gray-700 hover:text-gray-800 dark:text-gray-400 hover:dark:text-gray-200"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg><div className="truncate min-w-0">Buscar...</div></div>
+            </button>
+        </div>
+
+      <div className="flex items-center justify-center gap-6 my-6">
+        <McpLink />
+
+        <AskAILink>Preguntar a la IA</AskAILink>
+      </div>
+
+      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 mt-24">
+        <HeroCard
+          title="Primeros pasos"
+          description="Soy nuevo aquí, quiero dar mis primeros pasos y aprender más"
+          icon={
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
+            <path d="M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17ZM109.37,214l10.47-52.38a8,8,0,0,0-5-9.06L62,132.71l84.62-90.66L136.16,94.43a8,8,0,0,0,5,9.06l52.8,19.8Z"></path>
+        </svg>
+    }
+          links={[
+        { label: "¿Qué es ClickHouse?", href: "/es/get-started/about/intro" },
+        { label: "Instalación", href: "/es/get-started/setup/cloud" },
+        { label: "Guía de inicio rápido", href: "/es/get-started/quickstarts/home" },
+        { label: "Conceptos de ClickHouse", href: "/es/concepts/core-concepts/index" },
+        { label: "Conjuntos de datos de ejemplo", href: "/es/get-started/sample-datasets/index" },
+        { label: "Guías de migración", href: "/es/get-started/migrate/overview" },
+        { label: "Buenas prácticas", href: "/es/concepts/best-practices/index" },
+    ]}
+        />
+
+        <HeroCard
+          title="Guías"
+          description="Quiero realizar una tarea concreta con ClickHouse"
+          icon={
+        <svg width="24" height="24" viewBox="0 0 23 26" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className="ch-goal-icon">
+            <path d="M10.5468 0.000410874L10.9455 0.0348784L11.0594 0.0463676H11.1391L11.1619 0.0578567L11.3442 0.0808351C12.6542 0.241684 13.9187 0.655294 15.0693 1.32167L15.411 1.52847C16.8188 2.40717 17.9913 3.62092 18.8255 5.0632C19.6597 6.50549 20.1302 8.13224 20.1956 9.80068V9.97301L22.8385 15.0972C22.998 15.4534 23.0207 15.8555 22.9296 16.2346L22.8727 16.4184C22.7092 16.8547 22.3875 17.212 21.9727 17.418L19.2842 18.6588V22.3354C19.2842 22.749 19.1361 23.1511 18.8741 23.4728L18.7602 23.5992C18.4185 23.9439 17.9628 24.1277 17.5071 24.1277H11.9479C11.7213 24.1277 11.504 24.0369 11.3438 23.8753C11.1836 23.7137 11.0936 23.4945 11.0936 23.266C11.0936 23.0375 11.1836 22.8183 11.3438 22.6567C11.504 22.4951 11.7213 22.4043 11.9479 22.4043H17.5071C17.5161 22.4043 17.525 22.4025 17.5333 22.3991C17.5416 22.3956 17.5491 22.3905 17.5555 22.3841C17.5618 22.3777 17.5668 22.3701 17.5703 22.3617C17.5737 22.3534 17.5755 22.3444 17.5755 22.3354V18.1073C17.5755 17.7627 17.7691 17.464 18.0767 17.3261L21.2322 15.867C21.255 15.867 21.2664 15.844 21.2664 15.821C21.2664 15.821 21.2664 15.798 21.2892 15.821L18.5893 10.5934C18.5289 10.4723 18.4977 10.3384 18.4982 10.2028C18.4985 8.26916 17.8435 6.39351 16.6417 4.88686C15.44 3.38021 13.7638 2.33308 11.891 1.9191L11.8796 3.87226C12.4908 4.07696 13.0099 4.49442 13.3437 5.04989C13.6776 5.60537 13.8045 6.26257 13.7017 6.90381C13.5989 7.54504 13.2731 8.12843 12.7827 8.54949C12.2923 8.97055 11.6693 9.20179 11.0252 9.20179C10.3811 9.20179 9.75813 8.97055 9.26771 8.54949C8.77729 8.12843 8.45151 7.54504 8.34872 6.90381C8.24592 6.26257 8.37282 5.60537 8.70668 5.04989C9.04055 4.49442 9.55958 4.07696 10.1708 3.87226V1.72379H10.1139C8.92912 1.72379 7.74437 1.97655 6.66215 2.45909L6.34318 2.61994C4.36348 3.61458 2.85289 5.3569 2.13962 7.46837H4.54328C4.80529 7.46837 5.04452 7.58327 5.2154 7.77858L8.18865 11.3862C8.59946 11.2227 9.04377 11.1633 9.48264 11.2132C9.9215 11.2632 10.3415 11.421 10.7058 11.6728C11.0702 11.9245 11.3677 12.2626 11.5723 12.6573C11.777 13.052 11.8825 13.4914 11.8796 13.9368C11.8731 14.3547 11.7712 14.7655 11.582 15.1373C11.3927 15.5092 11.1211 15.8321 10.7882 16.081C10.4553 16.33 10.0701 16.4983 9.66231 16.573C9.25455 16.6476 8.83522 16.6266 8.43681 16.5116C8.03839 16.3965 7.67159 16.1905 7.36482 15.9094C7.05805 15.6284 6.81954 15.2799 6.66777 14.891C6.51601 14.5021 6.45505 14.0831 6.48964 13.6666C6.52422 13.2501 6.65341 12.8472 6.8672 12.4891L4.13318 9.19175H1.76369C1.58869 10.6683 1.80182 12.1653 2.38167 13.5326C2.96152 14.8998 3.88771 16.0892 5.0673 16.9814C5.31792 17.1652 5.44323 17.464 5.40906 17.7742L4.47493 25.2421C4.44623 25.4691 4.32929 25.6754 4.14983 25.8154C3.97038 25.9555 3.74311 26.0179 3.51802 25.9889C3.29294 25.96 3.08847 25.842 2.94961 25.661C2.81074 25.4801 2.74885 25.2508 2.77756 25.0238L3.64333 18.0384L3.42689 17.8546C2.43295 16.9732 1.62017 15.9036 1.03461 14.7066L0.875129 14.3389C0.0261547 12.4177 -0.2126 10.2786 0.191623 8.21517V8.33006V8.16921C0.670038 5.78467 1.9776 3.65103 3.87844 2.15317C5.77929 0.6553 8.1483 -0.10819 10.5581 0.000410874H10.5468ZM9.17974 12.9257C8.91537 12.9257 8.66184 13.0316 8.47491 13.2202C8.28797 13.4087 8.18295 13.6644 8.18295 13.931C8.18295 14.1977 8.28797 14.4534 8.47491 14.6419C8.66184 14.8304 8.91537 14.9363 9.17974 14.9363C9.4441 14.9363 9.69763 14.8304 9.88457 14.6419C10.0715 14.4534 10.1765 14.1977 10.1765 13.931C10.1765 13.6644 10.0715 13.4087 9.88457 13.2202C9.69763 13.0316 9.4441 12.9257 9.17974 12.9257ZM11.0252 5.45777C10.7608 5.45777 10.5073 5.56368 10.3204 5.75221C10.1334 5.94075 10.0284 6.19645 10.0284 6.46307C10.0284 6.72969 10.1334 6.9854 10.3204 7.17393C10.5073 7.36246 10.7608 7.46837 11.0252 7.46837C11.2896 7.46837 11.5431 7.36246 11.73 7.17393C11.917 6.9854 12.022 6.72969 12.022 6.46307C12.022 6.19645 11.917 5.94075 11.73 5.75221C11.5431 5.56368 11.2896 5.45777 11.0252 5.45777Z"/>
+        </svg>
+    }
+          links={[
+        { label: "Modelado de datos", href: "/es/guides/clickhouse/data-modelling/schema-design" },
+        { label: "Optimización del rendimiento", href: "/es/guides/clickhouse/performance-and-monitoring/query-optimization" },
+        { label: "ClickHouse Cloud", href: "/es/products/cloud/guides" },
+        { label: "Casos de uso", href: "/es/guides/use-cases" }
+    ]}
+        />
+
+        <HeroCard
+          title="Referencia"
+          description="Sé lo que quiero hacer; solo me faltan los detalles"
+          icon={
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
+            <path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm88-29.84q.06-2.16,0-4.32l14.92-18.64a8,8,0,0,0,1.48-7.06,107.21,107.21,0,0,0-10.88-26.25,8,8,0,0,0-6-3.93l-23.72-2.64q-1.48-1.56-3-3L186,40.54a8,8,0,0,0-3.94-6,107.71,107.71,0,0,0-26.25-10.87,8,8,0,0,0-7.06,1.49L130.16,40Q128,40,125.84,40L107.2,25.11a8,8,0,0,0-7.06-1.48A107.6,107.6,0,0,0,73.89,34.51a8,8,0,0,0-3.93,6L67.32,64.27q-1.56,1.49-3,3L40.54,70a8,8,0,0,0-6,3.94,107.71,107.71,0,0,0-10.87,26.25,8,8,0,0,0,1.49,7.06L40,125.84Q40,128,40,130.16L25.11,148.8a8,8,0,0,0-1.48,7.06,107.21,107.21,0,0,0,10.88,26.25,8,8,0,0,0,6,3.93l23.72,2.64q1.49,1.56,3,3L70,215.46a8,8,0,0,0,3.94,6,107.71,107.71,0,0,0,26.25,10.87,8,8,0,0,0,7.06-1.49L125.84,216q2.16.06,4.32,0l18.64,14.92a8,8,0,0,0,7.06,1.48,107.21,107.21,0,0,0,26.25-10.88,8,8,0,0,0,3.93-6l2.64-23.72q1.56-1.48,3-3L215.46,186a8,8,0,0,0,6-3.94,107.71,107.71,0,0,0,10.87-26.25,8,8,0,0,0-1.49-7.06Zm-16.1-6.5a73.93,73.93,0,0,1,0,8.68,8,8,0,0,0,1.74,5.48l14.19,17.73a91.57,91.57,0,0,1-6.23,15L187,173.11a8,8,0,0,0-5.1,2.64,74.11,74.11,0,0,1-6.14,6.14,8,8,0,0,0-2.64,5.1l-2.51,22.58a91.32,91.32,0,0,1-15,6.23l-17.74-14.19a8,8,0,0,0-5-1.75h-.48a73.93,73.93,0,0,1-8.68,0,8,8,0,0,0-5.48,1.74L100.45,215.8a91.57,91.57,0,0,1-15-6.23L82.89,187a8,8,0,0,0-2.64-5.1,74.11,74.11,0,0,1-6.14-6.14,8,8,0,0,0-5.1-2.64L46.43,170.6a91.32,91.32,0,0,1-6.23-15l14.19-17.74a8,8,0,0,0,1.74-5.48,73.93,73.93,0,0,1,0-8.68,8,8,0,0,0-1.74-5.48L40.2,100.45a91.57,91.57,0,0,1,6.23-15L69,82.89a8,8,0,0,0,5.1-2.64,74.11,74.11,0,0,1,6.14-6.14A8,8,0,0,0,82.89,69L85.4,46.43a91.32,91.32,0,0,1,15-6.23l17.74,14.19a8,8,0,0,0,5.48,1.74,73.93,73.93,0,0,1,8.68,0,8,8,0,0,0,5.48-1.74L155.55,40.2a91.57,91.57,0,0,1,15,6.23L173.11,69a8,8,0,0,0,2.64,5.1,74.11,74.11,0,0,1,6.14,6.14,8,8,0,0,0,5.1,2.64l22.58,2.51a91.32,91.32,0,0,1,6.23,15l-14.19,17.74A8,8,0,0,0,199.87,123.66Z"></path>
+        </svg>
+    }
+          links={[
+        { label: "SQL reference", href: "/es/reference/statements" },
+        { label: "Ajustes", href: "/es/reference/settings/index" },
+        { label: "Funciones", href: "/es/reference/functions/regular-functions/overview" },
+        { label: "Motores", href: "/es/reference/engines/engines" },
+        { label: "Tablas del sistema", href: "/es/reference/system-tables" },
+        { label: "Formatos", href: "/es/reference/formats/index" },
+        { label: "Tipos de datos", href: "/es/reference/data-types/index" }
+    ]}
+        />
+
+        <HeroCard
+          title="Nuestras soluciones"
+          description="Quiero conocer las soluciones de ClickHouse"
+          icon={
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
+            <path d="M104,40H56A16,16,0,0,0,40,56v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,104,40Zm0,64H56V56h48v48Zm96-64H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Zm0,64H152V56h48v48ZM104,136H56a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,104,136Zm0,64H56V152h48v48Zm96-64H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,200,136Zm0,64H152V152h48v48Z"/>
+        </svg>
+    }
+          links={[
+        { label: "ClickHouse Cloud", href: "/es/products/cloud/getting-started/cloud-get-started" },
+        { label: "ClickStack", href: "/es/clickstack" },
+        { label: "Managed Postgres", href: "/es/products/managed-postgres/overview" },
+        { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
+        { label: "chDB", href: "/es/products/chdb" },
+        { label: "Kubernetes operator", href: "/es/products/kubernetes-operator/overview" },
+    ]}
+        />
+      </div>
+
+      <FullWidthDivider style={{ margin: '40px 0 40px' }} />
+
+      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">Explorar por caso de uso</h2>
+      <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Descubre cómo ClickHouse impulsa la analítica en tiempo real, la observabilidad, el almacenamiento de datos y la IA agéntica a cualquier escala.</p>
+
+      <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
+        <HeroCard title="Analítica en tiempo real" description="Obtén información instantánea y paneles a escala. Analiza miles de millones de filas en tiempo real con resultados en milisegundos." href="/es/get-started/use-cases/real-time-analytics" showArrow />
+
+        <HeroCard title="Observabilidad" description="Almacena y consulta logs, métricas y trazas a escala con ClickStack, el stack de observabilidad open source impulsado por ClickHouse." href="/es/clickstack/overview" showArrow />
+
+        <HeroCard title="Almacén de datos" description="Analiza y explora datos al instante para obtener información y crear aplicaciones. Escala más rápido al descargar las cargas de trabajo pesadas." href="/es/get-started/use-cases/data-warehousing" showArrow />
+
+        <HeroCard title="Analítica con agentes de IA" description="Permite que los agentes de IA consulten directamente tus datos en tiempo real para ofrecer información conversacional y visualizaciones al instante" href="/es/get-started/use-cases/agentic-analytics" showArrow />
+      </div>
+
+      <FullWidthDivider style={{ margin: '40px 0 40px' }} />
+
+      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">Explorar por producto</h2>
+      <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Explora los productos e integraciones de ClickHouse, desde el servicio Cloud gestionado hasta los proyectos open source.</p>
+
+      <div className="space-y-4 mt-6">
+        {/* Fila 1: ClickHouse Cloud (col-span-2) + 3 tarjetas apiladas (col-span-1) */}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+          <div className="col-span-2">
+            <HeroCard
+              filename="thumbnail-cloud-base.webp"
+              fullWidthImage
+              imageHeight="h-[72px]"
+              title="ClickHouse Cloud"
+              href="/es/products/cloud/getting-started/intro"
+              extraClassName="h-full"
+              body={<>
+              <p className="text-[#6b7280] dark:text-[#a1a1aa] mt-2 text-sm leading-[1.6]">
+                  Esta sección muestra cómo ClickHouse hace que el data warehousing sea rápido, sencillo y predecible. En lugar de lidiar con pipelines frágiles y motores de consulta lentos, centralizas los datos de tus aplicaciones, servicios y herramientas en minutos, no en semanas. A partir de ahí, puedes impulsar dashboards en tiempo real, activar alertas, analizar tendencias históricas y crear productos basados en eventos sobre la misma plataforma.
+              </p>
+          </>}
+              links={[
+              { label: "Cómo ingestar datos desde fuentes comunes con el mínimo esfuerzo", href: "/integrations" },
+              { label: "Buenas prácticas para organizar datos para analítica y crecimiento", href: "/es/guides/clickhouse/data-modelling/schema-design" },
+              { label: "Formas de consultar grandes conjuntos de datos en tiempo real", href: "/es/get-started/use-cases/real-time-analytics" },
+              { label: "Cómo crear dashboards, alertas y funciones basadas en eventos sobre la plataforma", href: "/es/get-started/use-cases/data-warehousing" },
+              { label: "Consejos para mantener los costes bajos sin sacrificar el rendimiento", href: "/es/concepts/best-practices/index" },
+          ]}
+            />
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <HeroCard logo="logo-ch.svg" logoInvert title="ClickStack" description="El stack de observabilidad todo en uno impulsado por ClickHouse, que te ofrece consultas ultrarrápidas y agregaciones potentes sobre logs, métricas, trazas, repeticiones de sesión y errores." href="/es/clickstack/overview" extraClassName="flex-1" showArrow arrowBottom />
+
+            <HeroCard logo="logo-postgres.svg" title="Managed Postgres" description="Servicio de Postgres rápido, escalable y de nivel Enterprise, integrado de forma nativa con ClickHouse. Combina fácilmente Postgres para transacciones y ClickHouse para analítica." href="/es/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
+
+            <HeroCard logo="logo-integration.svg" logoInvert title="Integraciones" description="Más de 100 integraciones para conectar con ClickHouse las herramientas y los servicios que te encantan." href="/es/integrations/home" extraClassName="flex-1" showArrow arrowBottom />
+          </div>
+        </div>
+
+        {/* Fila 2: 3 tarjetas iguales */}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <HeroCard filename="thumbnail-langfuse-light.webp" title="LangFuse" description="Plataforma de ingeniería de LLM de código abierto para observabilidad, métricas, evaluaciones y gestión de prompts." href="https://langfuse.com/docs" showArrow />
+
+          <HeroCard filename="thumbnail-kubernetes-light.webp" title="Operador de Kubernetes" description="Automatiza el despliegue, la configuración y la gestión de clústeres de ClickHouse y ClickHouse Keeper en Kubernetes." href="/es/products/kubernetes-operator/overview" showArrow />
+
+          <HeroCard filename="thumbnail-chdb-light.webp" title="chDB" description="Una base de datos rápida, fiable y escalable integrada en el proceso. Experimenta la potencia de ClickHouse dentro del proceso." href="/es/products/chdb/index" showArrow />
+        </div>
+      </div>
+
+      <FullWidthDivider style={{ margin: '40px 0 0' }} />
+
+      <div id="mcp-setup" className="mt-16 scroll-mt-20">
+        <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">Configura el servidor MCP de la documentación</h2>
+        <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Consulta la documentación de ClickHouse directamente desde tus herramientas de IA mediante el Model Context Protocol.</p>
+
+        <div className="mt-6">
+          <McpSetup />
+        </div>
+      </div>
+    </div>
+  </div>
+</PageWrapper>

@@ -1,0 +1,24 @@
+-- Tags: no-fasttest, long
+
+SET enable_json_type = 1;
+
+drop table if exists test;
+
+{% for create_command in ['create table test (json JSON(max_dynamic_paths=4)) engine=Memory;',
+                          'create table test (json JSON(max_dynamic_paths=4)) engine=MergeTree order by tuple() settings min_rows_for_wide_part=100000000, min_bytes_for_wide_part=1000000000;',
+                          'create table test (json JSON(max_dynamic_paths=4)) engine=MergeTree order by tuple() settings min_rows_for_wide_part=1, min_bytes_for_wide_part=1;'] -%}
+
+{{ create_command }}
+
+insert into table test format JSONAsObject
+{"aa" : {"bb" : 42}, "xx" : 42}
+{"aa" : {"bb" : {"cc" : 1, "dd" : 2, "ee" : 3, "ff" : 4}}, "yy" : 42, "zz" : 42};
+
+select json.^aa from test;
+select json.^a from test;
+select json.^aa.bb from test;
+select json.^aa.b from test;
+
+drop table test;
+
+{% endfor -%}

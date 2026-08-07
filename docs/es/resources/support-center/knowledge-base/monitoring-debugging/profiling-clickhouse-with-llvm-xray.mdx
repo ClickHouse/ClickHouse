@@ -1,0 +1,196 @@
+---
+title: "Perfilado de ClickHouse con XRay de LLVM"
+date: 2024-11-13
+description: "Aprende a perfilar ClickHouse con el perfilador de instrumentación XRay de LLVM, visualizar trazas y analizar el rendimiento."
+tags: ['Rendimiento y optimización', 'Herramientas y utilidades']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="types-of-profilers">
+  ## Tipos de profilers
+</div>
+
+LLVM ya incluye una herramienta que instrumenta el código y nos permite realizar [perfilado por instrumentación](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Instrumentation). A
+diferencia del [muestreo o perfilado estadístico](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Statistical_profilers),
+es muy preciso y no pierde ninguna llamada, a costa de tener que instrumentar el código y de
+consumir más recursos.
+
+En pocas palabras, un profiler por instrumentación introduce código nuevo para rastrear las llamadas a todas las funciones.
+Los profilers estadísticos nos permiten ejecutar el código sin necesidad de hacer cambios, tomando instantáneas
+periódicamente para ver el estado de la aplicación. Por lo tanto, solo se tienen en cuenta las funciones que se están ejecutando cuando se toma la instantánea.
+[perf](https://en.wikipedia.org/wiki/Perf_%28Linux%29) es un profiler estadístico muy conocido.
+
+<div id="profiling-clickhouse-using-xray-integration">
+  ## Perfilado de ClickHouse con la integración de XRay
+</div>
+
+En ClickHouse 25.12, XRay viene integrado para añadir de forma transparente nuevos puntos de instrumentación a las funciones.
+Así, cualquier versión oficial ya incluye esta funcionalidad, que puede activarse bajo demanda sin
+afectar al rendimiento general cuando no está habilitada. La idea es habilitar el menor número posible de
+puntos de instrumentación para obtener información valiosa.
+
+Podemos añadir un nuevo punto de instrumentación de perfil mediante la
+sentencia [SYSTEM INSTRUMENT ADD
+PROFILE](/es/reference/statements/system#instrument-add-profile).
+Las funciones que se van a instrumentar pueden obtenerse de la
+tabla del sistema [system.symbols](/es/reference/system-tables/symbols). Supongamos que
+queremos perfilar la función `sleepForNanoseconds`, que es una función práctica para comprobar cuánto
+tarda en ejecutarse.
+
+```sql
+SYSTEM INSTRUMENT ADD 'sleepForNanoseconds' PROFILE
+```
+
+Luego, lo dejamos en ejecución durante el tiempo que queramos perfilar y lo detenemos.
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+Convertimos los datos recopilados en system.trace&#95;log [al formato de Chrome](/es/reference/system-tables/trace_log#chrome-event-trace-format) para
+visualizarlos en [Perfetto](https://ui.perfetto.dev). Observe el query&#95;id, cpu&#95;id y la traza de pila de
+cada registro.
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="orden temporal" />
+
+<div id="profiling-a-native-application-using-xray">
+  ## Perfilado de una aplicación nativa con XRay
+</div>
+
+La siguiente sección se incluye como referencia para comprender cómo funciona XRay internamente y cómo puede
+utilizarse sin configuración adicional para perfilar una aplicación nativa.
+
+<div id="instrument-the-code">
+  ### Instrumentar el código
+</div>
+
+Supongamos el siguiente código fuente:
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <thread>
+
+void one()
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
+void two()
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+}
+
+int main()
+{
+    printf("Start\n");
+
+    for (int i = 0; i < 10; ++i)
+    {
+        one();
+        two();
+    }
+
+    printf("Finish\n");
+}
+```
+
+Para instrumentar con XRay, debemos añadir algunas opciones como estas:
+
+```bash
+clang++ -o test test.cpp -fxray-instrument -fxray-instruction-threshold=1
+```
+
+* `-fxray-instrument` es necesario para instrumentar el código.
+* `-fxray-instruction-threshold=1` se usa para instrumentar todas las funciones, aunque sean
+  muy pequeñas, como en nuestro ejemplo. De forma predeterminada, instrumenta las funciones con [al menos 200
+  instrucciones](https://llvm.org/docs/XRay.html#instrumenting-your-c-c-objective-c-application).
+
+Podemos comprobar que el código se ha instrumentado correctamente verificando que hay una nueva sección en el
+binario:
+
+```bash
+objdump -h -j xray_instr_map test
+
+test:     file format elf64-x86-64
+
+Sections:
+Idx Name          Size      VMA               LMA               File off  Algn
+ 17 xray_instr_map 000005c0  000000000002f91c  000000000002f91c  0002f91c  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+```
+
+<div id="run-the-process-with-proper-env-var-values-to-collect-the-trace">
+  ### Ejecutar el proceso con los valores adecuados de las variables de entorno para recopilar la traza
+</div>
+
+De forma predeterminada, no se recopilan datos del profiler a menos que se solicite explícitamente. En otras palabras, salvo que
+estemos haciendo perfilado, la sobrecarga es insignificante. Podemos establecer distintos valores para `XRAY_OPTIONS` para
+configurar cuándo el profiler empieza a recopilar datos y cómo lo hace.
+
+```bash
+XRAY_OPTIONS="patch_premain=true xray_mode=xray-basic verbosity=1" ./test
+==74394==XRay: Log file in 'xray-log.test.14imlN'
+Start
+Finish
+==74394==Cleaned up log for TID: 74394
+```
+
+<div id="convert-the-trace">
+  ### Convertir la traza
+</div>
+
+Las trazas de XRay se pueden convertir a varios formatos. El formato `trace_event` es muy útil porque
+es fácil de analizar y ya existen varias herramientas compatibles con él, así que usaremos ese:
+
+```bash
+llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xray-log.test.14imlN | gzip > test-trace.txt.gz
+```
+
+<div id="visualize-the-trace">
+  ### Visualiza la traza
+</div>
+
+Podemos usar interfaces web como [speedscope.app](https://www.speedscope.app/) o
+[Perfetto](https://ui.perfetto.dev).
+
+Aunque Perfetto facilita la visualización de varios hilos y la realización de consultas sobre los datos, speedscope es mejor
+para generar un flamegraph y una vista tipo sándwich de tus datos.
+
+<div id="time-order">
+  #### Orden cronológico
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="time-order" />
+
+<div id="left-heavy">
+  #### Cargado a la izquierda
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="cargado a la izquierda" />
+
+<div id="sandwitch">
+  #### Sándwich
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="sándwich" />
+
+<div id="check-out-the-docs">
+  ## Consulta la documentación
+</div>
+
+* [SYSTEM INSTRUMENT](/es/reference/statements/system#instrument) — Añade
+  o elimina puntos de instrumentación.
+* [system.instrumentation](/es/reference/system-tables/instrumentation)
+  — Inspecciona los puntos instrumentados.
+* [system.symbols](/es/reference/system-tables/symbols) — Inspecciona
+  los símbolos para añadir puntos de instrumentación.
+* [system.trace&#95;log](/es/reference/system-tables/trace_log) — Inspecciona los datos
+  recopilados mediante puntos de instrumentación.
+* [XRay Instrumentation](https://llvm.org/docs/XRay.html)
+* Documentación de [Debugging with XRay](https://llvm.org/docs/XRayExample.html) para obtener más información.

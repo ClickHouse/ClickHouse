@@ -1,0 +1,168 @@
+---
+sidebarTitle: 'استخدام الدالة الجدولية azureBlobStorage'
+slug: /integrations/azure-data-factory/table-function
+description: 'استخدام الدالة الجدولية azureBlobStorage في ClickHouse'
+keywords: ['azure data factory', 'azure', 'microsoft', 'data', 'azureBlobStorage']
+title: 'استخدام الدالة الجدولية azureBlobStorage في ClickHouse'
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تُعد هذه واحدة من أكثر الطرق كفاءةً وبساطةً لنسخ البيانات من
+Azure Blob Storage أو Azure Data Lake Storage إلى ClickHouse. وباستخدام هذه الدالة الجدولية،
+يمكنك توجيه ClickHouse للاتصال مباشرةً بتخزين Azure وقراءة
+البيانات عند الحاجة.
+
+وهي توفّر واجهة شبيهة بالجدول تتيح لك تحديد البيانات وإدراجها
+وتصفيتها مباشرةً من المصدر. هذه الدالة مُحسّنة بدرجة كبيرة وتدعم العديد من تنسيقات الملفات
+شائعة الاستخدام، بما في ذلك `CSV` و`JSON` و`Parquet` و`Arrow`،
+و`TSV` و`ORC` و`Avro` وغيرها. للاطلاع على القائمة الكاملة، راجع [&quot;تنسيقات البيانات&quot;](/ar/reference/formats/index).
+
+في هذا القسم، سنستعرض دليلاً سريعًا للبدء في نقل
+البيانات من Azure Blob Storage إلى ClickHouse، إلى جانب اعتبارات مهمة
+لاستخدام هذه الدالة بفعالية. ولمزيد من التفاصيل والخيارات المتقدمة،
+راجع الوثائق الرسمية:
+[صفحة توثيق الدالة الجدولية `azureBlobStorage`](/ar/reference/functions/table-functions/azureBlobStorage)
+
+<div id="acquiring-azure-blob-storage-access-keys">
+  ## الحصول على مفاتيح الوصول إلى Azure Blob Storage
+</div>
+
+لتمكين ClickHouse من الوصول إلى Azure Blob Storage، ستحتاج إلى سلسلة اتصال تحتوي على مفتاح وصول.
+
+1. في Azure Portal، انتقل إلى **حساب التخزين** الخاص بك.
+
+2. من القائمة الموجودة على الجانب الأيسر، حدِّد **مفاتيح الوصول** ضمن قسم **الأمان +
+   الشبكات**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="إعدادات مخزن بيانات Azure" border />
+
+3. اختر **key1** أو **key2**، ثم انقر فوق الزر **إظهار** بجوار
+   حقل **سلسلة الاتصال**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="مفاتيح الوصول إلى مخزن بيانات Azure" border />
+
+4. انسخ سلسلة الاتصال — ستستخدمها كمعلمة في الدالة الجدولية azureBlobStorage.
+
+<div id="querying-the-data-from-azure-blob-storage">
+  ## الاستعلام عن البيانات من Azure Blob Storage
+</div>
+
+افتح وحدة تحكم استعلامات ClickHouse التي تفضّلها — سواء كانت واجهة الويب الخاصة بـ ClickHouse Cloud،
+أو عميل ClickHouse CLI، أو أي أداة أخرى تستخدمها لتشغيل
+الاستعلامات. وبمجرد أن تصبح سلسلة الاتصال ووحدة تحكم استعلامات ClickHouse
+جاهزتين، يمكنك البدء في الاستعلام عن البيانات مباشرةً من Azure Blob Storage.
+
+في المثال التالي، نستعلم عن جميع البيانات المخزّنة في ملفات JSON الموجودة في
+حاوية باسم data-container:
+
+```sql
+SELECT * FROM azureBlobStorage(
+    '<YOUR CONNECTION STRING>',
+    'data-container',
+    '*.json',
+    'JSONEachRow');
+```
+
+إذا أردت نسخ تلك البيانات إلى جدول ClickHouse محلي (مثلًا، my&#95;table)،
+يمكنك استخدام تعليمة `INSERT INTO ... SELECT` التالية:
+
+```sql
+INSERT INTO my_table
+SELECT * FROM azureBlobStorage(
+    '<YOUR CONNECTION STRING>',
+    'data-container',
+    '*.json',
+    'JSONEachRow');
+```
+
+يتيح لك ذلك جلب البيانات الخارجية إلى ClickHouse بكفاءة دون
+الحاجة إلى خطوات ETL وسيطة.
+
+<div id="simple-example-using-the-environmental-sensors-dataset">
+  ## مثال بسيط باستخدام مجموعة بيانات المستشعرات البيئية
+</div>
+
+كمثال، سننزّل ملفًا واحدًا من مجموعة بيانات المستشعرات البيئية.
+
+1. نزّل [ملفًا تجريبيًا](https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/sensors/monthly/2019-06_bmp180.csv.zst)
+   من [مجموعة بيانات المستشعرات البيئية](/ar/get-started/sample-datasets/environmental-sensors)
+
+2. في Azure Portal، أنشئ حساب تخزين جديدًا إذا لم يكن لديك حساب بالفعل.
+
+<Warning>
+  تأكد من أن **Allow storage account key access** مُمكّن في حساب
+  التخزين لديك، وإلا فلن تتمكن من استخدام مفاتيح الحساب للوصول إلى
+  البيانات.
+</Warning>
+
+3. أنشئ حاوية جديدة في حساب التخزين لديك. في هذا المثال، نسمّيها sensors.
+   يمكنك تخطي هذه الخطوة إذا كنت تستخدم حاوية موجودة.
+
+4. ارفع الملف الذي نزّلته سابقًا `2019-06_bmp180.csv.zst` إلى
+   الحاوية.
+
+5. اتبع الخطوات الموضحة سابقًا للحصول على سلسلة اتصال Azure Blob Storage.
+
+الآن، بعد أن أصبح كل شيء جاهزًا، يمكنك الاستعلام عن البيانات مباشرةً من Azure Blob Storage:
+
+```sql
+    SELECT *
+    FROM azureBlobStorage(
+        '<YOUR CONNECTION STRING>', 
+        'sensors',
+        '2019-06_bmp180.csv.zst', 
+        'CSVWithNames')
+    LIMIT 10
+    SETTINGS format_csv_delimiter = ';'
+```
+
+7. لتحميل البيانات إلى جدول، أنشئ نسخة مبسطة من
+   المخطط المستخدم في مجموعة البيانات الأصلية:
+   ```sql
+   CREATE TABLE sensors
+   (
+       sensor_id UInt16,
+       lat Float32,
+       lon Float32,
+       timestamp DateTime,
+       temperature Float32
+   )
+   ENGINE = MergeTree
+   ORDER BY (timestamp, sensor_id);
+   ```
+
+<Info>
+  لمزيد من المعلومات حول خيارات الإعداد والاستدلال التلقائي للمخطط عند
+  الاستعلام عن مصادر خارجية مثل Azure Blob Storage، راجع [الاستدلال التلقائي
+  للمخطط من بيانات الإدخال](/ar/concepts/features/interfaces/schema-inference)
+</Info>
+
+8. الآن أدخِل البيانات من Azure Blob Storage إلى جدول sensors:
+   ```sql
+   INSERT INTO sensors
+   SELECT sensor_id, lat, lon, timestamp, temperature
+   FROM azureBlobStorage(
+       '<YOUR CONNECTION STRING>', 
+       'sensors',
+       '2019-06_bmp180.csv.zst', 
+       'CSVWithNames')
+   SETTINGS format_csv_delimiter = ';'
+   ```
+
+تمت الآن تعبئة جدول sensors بالبيانات من الملف `2019-06_bmp180.csv.zst`
+المخزَّن في Azure Blob Storage.
+
+<div id="additional-resources">
+  ## موارد إضافية
+</div>
+
+هذه مجرد مقدمة بسيطة لاستخدام الدالة `azureBlobStorage`. للحصول على
+خيارات أكثر تقدمًا وتفاصيل التهيئة، يُرجى الرجوع إلى الوثائق
+الرسمية:
+
+* [دالة الجدول azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage)
+* [تنسيقات بيانات الإدخال والإخراج](/ar/reference/formats/index)
+* [الاستدلال التلقائي للمخطط من بيانات الإدخال](/ar/concepts/features/interfaces/schema-inference)

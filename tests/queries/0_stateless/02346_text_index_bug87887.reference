@@ -1,0 +1,7 @@
+Test Bug 87887
+Test hasToken(text, text):	1
+Test hasToken(text, dummy):	0
+Test Bug 88119
+Test hasToken(text, nullable(text)):	1
+Test hasToken(text, nullable(dummy)):	0
+Test hasToken(text, NULL):	0

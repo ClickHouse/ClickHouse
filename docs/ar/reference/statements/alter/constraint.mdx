@@ -1,0 +1,24 @@
+---
+description: 'وثائق إدارة القيود'
+sidebarTitle: 'CONSTRAINT'
+slug: /sql-reference/statements/alter/constraint
+title: 'إدارة القيود'
+doc_type: 'reference'
+---
+
+يمكن إضافة القيود أو حذفها باستخدام الصيغة التالية:
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
+```
+
+اطّلع على المزيد حول [القيود](/ar/reference/statements/create/table#constraints).
+
+تضيف الاستعلامات البيانات الوصفية الخاصة بالقيود إلى الجدول أو تزيلها منه، لذا تُعالَج على الفور.
+
+<Tip>
+  لن يتم التحقق من القيد على البيانات الموجودة عند إضافته.
+</Tip>
+
+تُنشر جميع التغييرات على الجداول المتماثلة إلى ZooKeeper، وتُطبَّق على النسخ المتماثلة الأخرى أيضًا.

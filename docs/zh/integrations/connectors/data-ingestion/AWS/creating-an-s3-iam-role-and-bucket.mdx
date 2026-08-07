@@ -1,0 +1,155 @@
+---
+title: '如何创建 AWS IAM 用户和 S3 存储桶'
+description: '如何创建 AWS IAM 用户和 S3 存储桶。'
+keywords: ['AWS', 'IAM', 'S3 存储桶']
+slug: /integrations/s3/creating-iam-user-and-s3-bucket
+sidebarTitle: '如何创建 AWS IAM 用户和 S3 存储桶'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+> 本指南将向你展示如何在 AWS 中创建 IAM 用户和 S3 存储桶，
+> 这是将备份保存到 S3 或将 ClickHouse 配置为
+> 在 S3 上存储数据所需的前置步骤
+
+<div id="create-an-aws-iam-user">
+  ## 创建 AWS IAM 用户
+</div>
+
+在此过程中，我们将创建服务账号用户，而不是登录用户。
+
+1. 登录 AWS IAM Management Console。
+
+2. 在 `Users` 选项卡中，选择 `Create user`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-1.webp" alt="AWS IAM Management Console - 添加新用户" />
+
+3. 输入用户名
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-2.webp" alt="AWS IAM Management Console - 添加新用户" />
+
+4. 选择 `Next`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-3.webp" alt="AWS IAM Management Console - 添加新用户" />
+
+5. 选择 `Next`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-4.webp" alt="AWS IAM Management Console - 添加新用户" />
+
+6. 选择 `Create user`
+
+用户现已创建。
+点击新创建的用户。
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-5.webp" alt="AWS IAM Management Console - 添加新用户" />
+
+7. 选择 `Create access key`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-6.webp" alt="AWS IAM Management Console - 添加新用户" />
+
+8. 选择 `Application running outside AWS`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-7.webp" alt="AWS IAM Management Console - 添加新用户" />
+
+9. 选择 `Create access key`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-8.webp" alt="AWS IAM Management Console - 添加新用户" />
+
+10. 将访问密钥和 secret 下载为 .csv 文件，供稍后使用
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-9.webp" alt="AWS IAM Management Console - 添加新用户" />
+
+<div id="create-an-s3-bucket">
+  ## 创建 S3 存储桶
+</div>
+
+1. 在 S3 存储桶 部分，选择 **Create bucket**
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-10.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+
+2. 输入存储桶 名称，其他选项保持默认即可
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-11.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+
+<Note>
+  存储桶 名称必须在整个 AWS 范围内唯一，而不只是组织内唯一，否则会报错。
+</Note>
+
+3. 保持 `Block all Public Access` 为启用状态；无需开启公共访问。
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-12.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+
+4. 在页面底部选择 **Create Bucket**
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-13.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+
+5. 选择该链接，复制 ARN，并保存下来，以便在为存储桶 配置访问策略时使用
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-14.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+
+6. 存储桶 创建完成后，在 S3 buckets 列表中找到新建的 S3 存储桶，并选择其名称，这会进入如下所示的页面：
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-15.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+
+7. 选择 `Create folder`
+
+8. 输入一个文件夹名称，作为 ClickHouse S3 disk 或 Backup 的目标位置，然后在页面底部选择 `Create folder`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-16.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+
+9. 该文件夹现在应已显示在存储桶 列表中
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-17.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+
+10. 选中新文件夹对应的复选框，然后点击 `Copy URL`。保存该 URL，以便在下一节的 ClickHouse Storage configuration 中使用。
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-18.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+
+11. 选择 **Permissions** 选项卡，并点击 **Bucket Policy** 部分中的 **Edit** 按钮
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-19.webp" alt="AWS IAM 管理控制台 - 添加新用户" />
+
+12. 添加存储桶 策略，示例如下
+
+```json
+{
+    "Version": "2012-10-17",
+    "Id": "Policy123456",
+    "Statement": [
+        {
+            "Sid": "abc123",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::782985192762:user/docs-s3-user"
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::ch-docs-s3-bucket",
+                "arn:aws:s3:::ch-docs-s3-bucket/*"
+            ]
+        }
+    ]
+}
+```
+
+<Note>
+  上述策略允许对该存储桶执行所有操作
+</Note>
+
+| 参数        | 描述               | 示例值                                                                                      |
+| --------- | ---------------- | ---------------------------------------------------------------------------------------- |
+| Version   | 策略语言版本，保持原样即可    | 2012-10-17                                                                               |
+| Sid       | 用户自定义的策略 ID      | abc123                                                                                   |
+| Effect    | 用户请求是被允许还是被拒绝    | Allow                                                                                    |
+| Principal | 允许访问的账户或用户       | arn:aws:iam::782985192762:user/docs-s3-user                                              |
+| Action    | 存储桶上允许执行的操作      | s3:*                                                                                     |
+| Resource  | 允许对存储桶中的哪些资源执行操作 | &quot;arn:aws:s3:::ch-docs-s3-bucket&quot;, &quot;arn:aws:s3:::ch-docs-s3-bucket/*&quot; |
+
+<Note>
+  您应与安全团队协作，确定要使用的权限；这些内容可作为起点。
+  有关策略和设置的更多信息，请参阅 AWS 文档：
+  https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
+</Note>
+
+13. 保存策略配置

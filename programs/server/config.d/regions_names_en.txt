@@ -1,0 +1,1 @@
+../../../tests/config/regions_names_en.txt

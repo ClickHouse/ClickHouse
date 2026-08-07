@@ -1,0 +1,129 @@
+---
+slug: /cloud/data-sources/secure-azure
+sidebarTitle: 'Azure 데이터에 안전하게 액세스하기'
+title: 'ClickHouse Cloud를 Azure Blob Storage에 연결하기'
+description: '이 문서에서는 ClickHouse Cloud 고객이 Azure 데이터에 안전하게 액세스하는 방법을 설명합니다'
+keywords: ['ABS', 'azure blob storage']
+doc_type: 'guide'
+---
+
+이 가이드에서는 데이터 수집, 외부 테이블(external table), 기타 통합 시나리오를 위해 ClickHouse Cloud를 Azure Blob Storage에 안전하게 연결하는 방법을 설명합니다.
+
+<div id="overview">
+  ## 개요
+</div>
+
+ClickHouse Cloud는 여러 인증 방법을 사용해 Azure Blob Storage에 연결할 수 있습니다.
+이 가이드는 적절한 방식을 선택하고 연결을 안전하게 구성하는 데 도움이 됩니다.
+
+지원되는 사용 사례는 다음과 같습니다:
+
+* [azureBlobStorage 테이블 함수](/ko/reference/functions/table-functions/azureBlobStorage)를 사용해 Azure Blob Storage에서 데이터 읽기
+* [AzureBlobStorage 테이블 엔진](/ko/reference/engines/table-engines/integrations/azureBlobStorage)을 사용해 외부 테이블 생성
+* ClickPipes를 통한 데이터 수집
+* [Azure Blob Storage에 백업 저장](/ko/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui#azure)
+
+<Warning>
+  **중요한 네트워크 제한 사항**
+
+  ClickHouse Cloud 서비스와 Azure Blob Storage 컨테이너가 동일한 Azure 리전에 배포된 경우 IP 허용 목록이 작동하지 않습니다.
+
+  이는 Azure가 동일 리전 트래픽을 퍼블릭 인터넷과 NAT 게이트웨이를 우회해 내부 네트워크(VNet + Service Endpoints)로 라우팅하기 때문에 발생합니다.
+  그 결과, 퍼블릭 IP 주소 기반의 Azure 스토리지 계정 방화벽 규칙은 적용되지 않습니다.
+
+  다음 경우에는 IP 허용 목록이 작동합니다:
+
+  * ClickHouse Cloud 서비스가 스토리지 계정과 다른 Azure 리전에 있는 경우
+  * ClickHouse Cloud 서비스가 AWS/GCP에 있고 Azure 스토리지에 연결하는 경우
+
+  다음 경우에는 IP 허용 목록이 작동하지 않습니다:
+
+  * ClickHouse Cloud 서비스와 스토리지가 동일한 Azure 리전에 있는 경우. IP 허용 목록 대신 연결 문자열을 통해 [Shared Access Signatures (SAS)](/ko/integrations/clickpipes/object-storage/azure-blob-storage/overview#authentication)를 사용하거나 ABS와 ClickHouse를 서로 다른 리전에 배포하십시오.
+</Warning>
+
+<div id="network-config">
+  ## 네트워크 구성 (교차 리전 전용)
+</div>
+
+<Warning>
+  **교차 리전 전용**
+
+  이 섹션은 ClickHouse Cloud 서비스와 Azure Blob Storage 컨테이너가 서로 다른 Azure 리전에 있거나, ClickHouse Cloud가 AWS/GCP에서 실행되는 경우에만 적용됩니다.
+  동일한 리전에 배포하는 경우에는 대신 SAS 토큰을 사용하십시오.
+</Warning>
+
+<Steps>
+  <Step>
+    ### ClickHouse Cloud egress IP 찾기
+
+    IP 기반 firewall 규칙을 구성하려면 ClickHouse Cloud 리전의 egress IP 주소를 허용 목록에 추가해야 합니다.
+
+    다음 명령을 실행하여 리전별 egress 및 ingress IP 목록을 가져오십시오.
+    아래의 `eastus`를 사용 중인 리전으로 바꿔 다른 리전은 제외하십시오:
+
+    ```bash
+    # Azure 리전용
+    curl https://api.clickhouse.cloud/static-ips.json | jq '.azure[] | select(.region == "westus")'
+    ```
+
+    다음과 비슷한 결과가 표시됩니다:
+
+    ```response
+    {
+      "egress_ips": [
+        "20.14.94.21",
+        "20.150.217.205",
+        "20.38.32.164"
+      ],
+      "ingress_ips": [
+        "4.227.34.126"
+      ],
+      "region": "westus3"
+    }
+    ```
+
+    <Tip>
+      지원되는 Cloud 리전 목록은 [Azure regions](/ko/products/cloud/reference/supported-regions#azure-regions)을 참조하고,
+      사용할 이름은 [Azure regions list](https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1)의 &quot;Programmatic name&quot; 컬럼을 참조하십시오.
+    </Tip>
+
+    자세한 내용은 [&quot;Cloud IP addresses&quot;](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)를 참조하십시오.
+  </Step>
+
+  <Step>
+    ### Azure 스토리지 firewall 구성
+
+    Azure Portal에서 스토리지 계정으로 이동합니다
+
+    1. **Networking** → **Firewalls and virtual networks**로 이동합니다
+    2. **Enabled from selected virtual networks and IP addresses**를 선택합니다
+    3. 이전 단계에서 확인한 각 ClickHouse Cloud egress IP 주소를 Address range 필드에 추가합니다
+
+    <Warning>
+      ClickHouse Cloud 프라이빗 IP(10.x.x.x 주소)는 추가하지 마십시오
+    </Warning>
+
+    4. Save를 클릭합니다
+
+    자세한 내용은 [Configure Azure Storage firewalls docs](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security?tabs=azure-portal)를 참조하십시오.
+  </Step>
+</Steps>
+
+<div id="clickpipes-config">
+  ## ClickPipes 구성
+</div>
+
+Azure Blob Storage와 함께 [ClickPipes](/ko/integrations/clickpipes/home)를 사용하는 경우 ClickPipes UI에서 인증을 구성해야 합니다.
+자세한 내용은 [&quot;첫 번째 Azure ClickPipe 만들기&quot;](/ko/integrations/clickpipes/object-storage/azure-blob-storage/get-started)를 참조하십시오.
+
+<Note>
+  ClickPipes는 외부로 나가는 연결에 별도의 고정 IP 주소를 사용합니다.
+  IP 기반 방화벽 규칙을 사용하는 경우 이러한 IP 주소를 허용 목록에 추가해야 합니다.
+
+  [&quot;고정 IP 목록&quot;](/ko/integrations/clickpipes/home#list-of-static-ips)을 참조하십시오.
+</Note>
+
+<Tip>
+  이 문서 앞부분에서 언급한 동일 리전 IP 허용 목록 제한은 ClickPipes에도 적용됩니다.
+  ClickPipes 서비스와 Azure Blob Storage가 동일한 리전에 있는 경우에는 IP 허용 목록 대신 SAS 토큰 인증을 사용하십시오.
+</Tip>

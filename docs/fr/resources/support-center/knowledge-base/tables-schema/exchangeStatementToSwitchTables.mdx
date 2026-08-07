@@ -1,0 +1,95 @@
+---
+title: Comment utiliser la commande EXCHANGE pour intervertir des tables
+description: "Comment utiliser la commande EXCHANGE pour intervertir des tables"
+date: 2024-11-21
+tags: ['Gestion des données']
+keywords: ['EXCHANGE']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="question">
+  ## Question
+</div>
+
+Comment utiliser la commande [`EXCHANGE`](/fr/reference/statements/exchange) pour échanger les noms de deux tables ?
+
+<div id="answer">
+  ## Réponse
+</div>
+
+La commande `EXCHANGE` est utile lorsque vous devez remplacer une table existante par une autre table temporaire dans laquelle les clés primaires ou d&#39;autres paramètres ont été mis à jour.
+Cela se fait de manière atomique, contrairement à la commande `RENAME`.
+Elle est également utile lorsque vous avez des vues matérialisées déclenchées par une table source et que vous cherchez à éviter de reconstruire la vue.
+
+Vous trouverez ci-dessous un exemple simple de son fonctionnement et de la façon de le tester :
+
+* Créer une base de données d&#39;exemple
+
+```sql
+create database db1;
+```
+
+* Créer une table d’exemple
+
+```sql
+create table db1.table1_exchange
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* Insérer une ligne d’exemple
+
+```sql
+insert into db1.table1_exchange
+values
+(1, 'a');
+```
+
+* Créer un exemple de table temporaire qui fera l’objet d’un EXCHANGE
+
+```sql
+create table db1.table1_exchange_temp
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* Insérer une ligne d’exemple dans la table temporaire
+
+```sql
+insert into db1.table1_exchange_temp
+values
+(2, 'b');
+```
+
+* Exécutez la commande `EXCHANGE` pour permuter les tables
+
+```sql
+exchange tables db1.table1_exchange and db1.table1_exchange_temp;
+```
+
+* Vérifiez que les tables ont bien été échangées et montrez que les lignes ont été permutées
+
+```sql
+select * from db1.table1_exchange;
+```
+
+```text
+┌─id─┬─string_field─┐
+│  2 │ b            │
+└────┴──────────────┘
+
+1 row in set. Elapsed: 0.002 sec. 
+```

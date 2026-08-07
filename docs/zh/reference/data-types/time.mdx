@@ -1,0 +1,150 @@
+---
+description: 'ClickHouse 中 Time 数据类型的文档，该类型存储精确到秒的时间值'
+slug: /sql-reference/data-types/time
+sidebarTitle: 'Time'
+title: 'Time'
+doc_type: 'reference'
+---
+
+数据类型 `Time` 表示由小时、分钟和秒组成的时间。
+它独立于任何日历日期，适用于不需要日、月、年部分的值。
+
+语法：
+
+```sql
+Time
+```
+
+文本表示范围：[-999:59:59, 999:59:59]。
+
+分辨率：1 秒。
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+**表示形式与性能**。
+数据类型 `Time` 在内部存储为一个有符号的 32 位整数，用于编码秒数。
+`Time` 和 `DateTime` 类型的值占用相同的字节数，因此性能相近。
+
+**归一化**。
+将字符串解析为 `Time` 时，会对时间各组成部分进行归一化，但不会校验其有效性。
+例如，`25:70:70` 会被解释为 `26:11:10`。
+
+**负值**。
+支持并保留前导负号。
+负值通常来自对 `Time` 值执行算术运算。
+对于 `Time` 类型，无论是文本输入 (例如 `'-01:02:03'`) 还是数值输入 (例如 `-3723`) ，负值都会被保留。
+
+**饱和**。
+时刻部分会被限制在 [-999:59:59, 999:59:59] 范围内。
+小时数超过 999 (或低于 -999) 的值，在以文本形式表示以及往返转换时，都会显示为 `999:59:59` (或 `-999:59:59`) 。
+
+**时区**。
+`Time` 不支持时区，也就是说，`Time` 值会在不带区域上下文的情况下进行解释。
+为 `Time` 指定时区作为类型参数，或在创建值时指定时区，都会抛出错误。
+同样，尝试对 `Time` 列应用或更改时区也不受支持，并会导致错误。
+`Time` 值不会在不提示的情况下按不同时区重新解释。
+
+<div id="examples">
+  ## 示例
+</div>
+
+**1.** 创建一个带有 `Time` 类型列的表，并向其中插入数据：
+
+```sql
+CREATE TABLE tab
+(
+    `event_id` UInt8,
+    `time` Time
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- 解析 Time
+-- - 从字符串解析，
+-- - 从整数解析（将其视为自 00:00:00 起的秒数）。
+INSERT INTO tab VALUES (1, '14:30:25'), (2, 52225);
+
+SELECT * FROM tab ORDER BY event_id;
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**2.** 按 `Time` 值过滤
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT * FROM tab WHERE time = toTime('14:30:25')
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+`Time` 列的值可在 `WHERE` 谓词中通过字符串值进行过滤。该字符串会自动转换为 `Time`：
+
+```sql
+SELECT * FROM tab WHERE time = '14:30:25'
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**3.** 查看结果类型：
+
+```sql
+SELECT CAST('14:30:25' AS Time) AS column, toTypeName(column) AS type
+```
+
+```text
+   ┌────column─┬─type─┐
+1. │ 14:30:25 │ Time │
+   └───────────┴──────┘
+```
+
+<div id="addition-with-date">
+  ## Date 加法
+</div>
+
+可以将 [Time](/zh/reference/data-types/time) 值与 [Date](/zh/reference/data-types/date) 或 [Date32](/zh/reference/data-types/date32) 值相加，得到 [DateTime](/zh/reference/data-types/datetime) 或 [DateTime64](/zh/reference/data-types/datetime64)：
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') as datetime;
+```
+
+```text
+   ┌────────────datetime─┐
+1. │ 2024-07-15 14:30:25 │
+   └─────────────────────┘
+```
+
+有关所有受支持的组合及结果类型的详细信息，请参阅[日期和时间加法](/zh/reference/operators/index#date-time-addition)。
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)
+* [处理日期和时间的函数](/zh/reference/functions/regular-functions/date-time-functions)
+* [处理数组的函数](/zh/reference/functions/regular-functions/array-functions)
+* [`date_time_input_format` 设置](/zh/reference/settings/formats#date_time_input_format)
+* [`date_time_output_format` 设置](/zh/reference/settings/formats#date_time_output_format)
+* [`timezone` server configuration 参数](/zh/reference/settings/server-settings/settings#timezone)
+* [`session_timezone` 设置](/zh/reference/settings/session-settings#session_timezone)
+* [`DateTime` 数据类型](/zh/reference/data-types/datetime)
+* [`Date` 数据类型](/zh/reference/data-types/date)

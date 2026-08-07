@@ -1,0 +1,161 @@
+---
+sidebarTitle: 'Conformité de la facturation de ClickHouse Cloud'
+slug: /manage/clickhouse-cloud-billing-compliance
+title: 'Conformité de la facturation de ClickHouse Cloud'
+description: 'Page décrivant la conformité de la facturation de ClickHouse Cloud'
+keywords: ['conformité de la facturation', 'paiement à l’utilisation']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="billing-compliance">
+  ## Conformité de la facturation
+</div>
+
+Pour utiliser ClickHouse Cloud, votre organisation doit disposer d’un
+mode de facturation actif et valide. À la fin de votre période d’essai de 30 jours
+ou une fois vos crédits d’essai épuisés, selon la première de ces échéances, vous
+disposez des options de facturation suivantes pour continuer à utiliser ClickHouse Cloud :
+
+| Option de facturation                                 | Description                                                                                         |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [Direct PAYG](#direct-payg)                           | Ajoutez une carte de crédit valide à votre organisation pour passer en Pay-As-You-Go                |
+| [Marketplace PAYG](#cloud-marketplace-payg)           | Configurez un abonnement Pay-As-You-Go via un cloud marketplace pris en charge                      |
+| [Committed spend contract](#committed-spend-contract) | Concluez un contrat d’engagement de dépenses directement ou via un cloud marketplace pris en charge |
+
+Si votre période d’essai prend fin et qu’aucune option de facturation n’a été configurée pour votre organisation,
+tous vos services seront arrêtés. Si aucun mode de facturation n’est toujours
+configuré après deux semaines, toutes vos données seront supprimées.
+
+ClickHouse facture les services au niveau de l’organisation. Si jamais nous ne sommes pas en mesure
+de traiter un paiement à l’aide de votre mode de facturation actuel, vous devrez le remplacer par
+l’une des trois options répertoriées ci-dessus afin d’éviter toute interruption de service. Voir ci-dessous pour plus
+de détails sur la conformité de la facturation en fonction du mode de facturation choisi.
+
+<div id="direct-payg">
+  ### Facturation Pay-As-You-Go avec une carte de crédit
+</div>
+
+Vous pouvez payer votre utilisation de ClickHouse Cloud chaque mois, à terme échu, à l’aide d’une carte de crédit.
+Pour ajouter une carte de crédit, suivez ces [instructions](#add-credit-card).
+
+Votre cycle de facturation mensuel pour ClickHouse commence le jour où le niveau d’organisation
+(Basic, Scale ou Enterprise) est sélectionné, et où le premier service est créé dans
+l’organisation.
+
+La carte de crédit enregistrée est normalement débitée à la fin de votre cycle de facturation
+mensuel, mais les paiements seront accélérés si le montant dû en cours de cycle
+atteint 1 000 USD (plus d’informations sur les seuils de paiement [ici](/fr/products/cloud/reference/billing/payment-thresholds)).
+
+La carte de crédit enregistrée doit être valide, non expirée et disposer d’un
+crédit disponible suffisant pour couvrir le montant total de votre facture. Si, pour une raison quelconque, nous ne pouvons pas prélever
+l’intégralité du montant dû, les restrictions suivantes relatives aux factures impayées
+s’appliqueront immédiatement :
+
+* Vous pouvez uniquement augmenter la capacité jusqu’à 120 GiB par réplique
+* Vous ne pouvez pas redémarrer vos services s’ils sont arrêtés
+* Vous ne pouvez ni démarrer ni créer de nouveaux services
+
+Nous tenterons de traiter le paiement en utilisant le mode de facturation
+configuré pour l’organisation pendant une durée maximale de 30 jours. Si le paiement
+n’aboutit pas après 14 jours, tous les services de l’organisation
+seront arrêtés. Si le paiement n’est toujours pas reçu à la
+fin de cette période de 30 jours et que nous n’avons pas accordé de prolongation, toutes les données et
+tous les services associés à votre organisation seront supprimés.
+
+<div id="cloud-marketplace-payg">
+  ### Facturation à l’usage via la place de marché cloud
+</div>
+
+La facturation Pay-As-You-Go peut également être configurée pour facturer une organisation via l’une de nos places de marché cloud prises en charge
+(AWS, GCP ou Azure). Pour souscrire à la facturation Marketplace PAYG, suivez ces
+[instructions](#marketplace-payg).
+
+Comme pour la facturation via Direct PAYG, votre cycle de facturation mensuel avec ClickHouse
+dans le cadre de Marketplace PAYG commence le jour où le niveau d’organisation (Basic, Scale
+ou Enterprise) est sélectionné et où le premier service est créé au sein de
+l’organisation.
+
+Toutefois, en raison des exigences des places de marché, nous déclarons les frais
+liés à votre utilisation Pay-As-You-Go heure par heure. Vous serez
+facturé conformément aux termes de votre accord avec cette place de marché — généralement
+selon un cycle de facturation mensuel calendaire.
+
+Par exemple, si vous créez le premier service de votre organisation le 18 janvier, votre
+premier cycle de facturation de l’utilisation dans ClickHouse Cloud s’étendra du 18 janvier jusqu’à la
+fin de la journée du 17 février. Toutefois, il est possible que vous receviez votre première facture du
+place de marché cloud au début du mois de février.
+
+Toutefois, si votre place de marché subscription PAYG est annulée ou ne se renouvelle pas
+automatiquement, la facturation basculera sur la carte de crédit enregistrée pour
+l’organisation, le cas échéant. Pour ajouter une carte de crédit, [contactez l’assistance](/fr/resources/about/support)
+pour obtenir de l’aide. Si aucune carte de crédit valide n’a été fournie, les mêmes restrictions liées aux factures impayées
+décrites ci-dessus pour [Direct PAYG](#direct-payg) s’appliqueront — cela
+inclut la suspension du service et, à terme, la suppression des données.
+
+<div id="committed-spend-contract">
+  ### Facturation des contrats d&#39;engagement
+</div>
+
+Vous pouvez acheter des crédits pour votre organisation dans le cadre d&#39;un contrat d&#39;engagement de l&#39;une des manières suivantes :
+
+1. Contacter l&#39;équipe commerciale pour acheter des crédits directement, avec des options de paiement telles que l&#39;ACH
+   ou le virement bancaire. Les modalités de paiement seront précisées dans le bon de commande applicable.
+2. Contacter l&#39;équipe commerciale pour acheter des crédits via un abonnement sur l&#39;une de nos
+   places de marché cloud prises en charge (AWS, GCP ou Azure). Les frais seront déclarés sur la
+   place de marché concernée lors de l&#39;acceptation de l&#39;offre privée, puis conformément
+   aux conditions de l&#39;offre, mais vous serez facturé conformément aux conditions de votre
+   accord avec cette place de marché. Pour payer via une place de marché, suivez ces
+   [instructions](#marketplace-payg).
+
+Les crédits appliqués à une organisation (par exemple via des contrats d&#39;engagement ou des remboursements) sont
+disponibles pendant la durée indiquée dans le bon de commande ou dans l&#39;offre privée acceptée.
+Les crédits sont consommés à compter du jour où ils ont été accordés, selon des périodes de facturation
+basées sur la date à laquelle le premier niveau d&#39;organisation (Basic, Scale ou Enterprise) est
+sélectionné.
+
+Si une organisation n&#39;est **pas** couverte par un contrat d&#39;engagement sur une place de marché cloud et
+épuise ses crédits, ou si ces crédits expirent, l&#39;organisation basculera automatiquement
+vers la facturation Pay-As-You-Go (PAYG). Dans ce cas, nous tenterons de traiter le paiement
+à l&#39;aide de la carte de crédit enregistrée pour l&#39;organisation, le cas échéant.
+
+Si une organisation **est** couverte par un contrat d&#39;engagement sur une place de marché cloud et épuise
+ses crédits, elle basculera également automatiquement vers la facturation PAYG via la même
+place de marché pour le reste de l&#39;abonnement. Toutefois, si l&#39;abonnement n&#39;est pas
+renouvelé et expire, nous tenterons alors de traiter le paiement à l&#39;aide de la
+carte de crédit enregistrée pour l&#39;organisation, le cas échéant.
+
+Dans l&#39;un ou l&#39;autre scénario, si nous ne parvenons pas à débiter la carte de crédit configurée, les
+restrictions relatives aux factures impayées décrites ci-dessus pour la facturation
+[Pay-as-you-go (PAYG)](#direct-payg) par carte de crédit s&#39;appliqueront — y compris la suspension des services.
+Pour plus de détails sur le passage de votre contrat d&#39;engagement à la facturation PAYG, reportez-vous à la section « Surconsommation » de nos [Terms and Conditions](https://clickhouse.com/legal/agreements/terms-of-service).
+Toutefois, pour les clients sous contrat d&#39;engagement, nous vous contacterons au sujet de toute
+facture impayée avant d&#39;entamer la suppression des données. Les données ne sont pas automatiquement
+supprimées après un quelconque délai.
+
+Si vous souhaitez ajouter des crédits supplémentaires avant l&#39;expiration ou l&#39;épuisement
+de vos crédits existants, [contactez-nous](https://clickhouse.com/company/contact).
+
+<div id="add-credit-card">
+  ### Comment payer avec une carte de crédit
+</div>
+
+Accédez à la section Facturation de l’UI ClickHouse Cloud et cliquez sur le bouton &#39;Add Credit Card&#39;
+(illustré ci-dessous) pour finaliser la configuration. Si vous avez des questions, [contactez l’assistance](/fr/resources/about/support).
+
+<Image img="/images/cloud/manage/billing_compliance.webp" size="md" alt="Comment ajouter une carte de crédit" />
+
+<div id="marketplace-payg">
+  ## Comment payer via les places de marché
+</div>
+
+Si vous souhaitez payer via l&#39;une de nos places de marché prises en charge (AWS, GCP ou Azure),
+vous pouvez suivre les étapes [ici](/fr/products/cloud/reference/billing/marketplace/overview).
+Pour toute question portant spécifiquement sur la facturation via la place de marché cloud, contactez directement le fournisseur de services cloud.
+
+Liens utiles pour résoudre les problèmes de facturation via la place de marché :
+
+* [FAQ sur la facturation AWS](https://aws.amazon.com/aws-cost-management/aws-billing/faqs/)
+* [FAQ sur la facturation GCP](https://cloud.google.com/compute/docs/billing-questions)
+* [FAQ sur la facturation Azure](https://learn.microsoft.com/en-us/azure/cost-management-billing/cost-management-billing-faq)

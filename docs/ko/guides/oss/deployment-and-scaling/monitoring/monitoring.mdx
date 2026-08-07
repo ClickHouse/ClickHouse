@@ -1,0 +1,77 @@
+---
+description: '하드웨어 리소스 사용률과 ClickHouse 서버 메트릭을 모니터링할 수 있습니다.'
+keywords: ['모니터링', '관측성', '고급 대시보드', '대시보드', '관측성 대시보드']
+sidebarTitle: '모니터링'
+slug: /operations/monitoring
+title: '모니터링'
+doc_type: '참고'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<Note>
+  이 가이드에서 설명하는 모니터링 데이터는 ClickHouse Cloud에서 확인할 수 있습니다. 아래에서 설명하는 기본 제공 대시보드에 표시될 뿐만 아니라, 기본 및 고급 성능 메트릭도 기본 서비스 콘솔에서 직접 확인할 수 있습니다.
+</Note>
+
+모니터링할 수 있는 항목은 다음과 같습니다.
+
+* 하드웨어 리소스 사용률
+* ClickHouse 서버 메트릭
+
+<div id="built-in-advanced-observability-dashboard">
+  ## 내장 고급 관측성 대시보드
+</div>
+
+<Image img="https://github.com/ClickHouse/ClickHouse/assets/3936029/2bd10011-4a47-4b94-b836-d44557c7fdc1" alt="2023-11-12 오후 6시 08분 58초 스크린샷" size="md" />
+
+ClickHouse에는 `$HOST:$PORT/dashboard`에서 접속할 수 있는 내장 고급 관측성 대시보드 기능이 포함되어 있으며(사용자 및 비밀번호 필요), 다음 메트릭을 표시합니다:
+
+* 초당 쿼리 수
+* CPU 사용량(코어)
+* 실행 중인 쿼리
+* 실행 중인 머지
+* 초당 선택된 바이트 수
+* IO 대기
+* CPU 대기
+* OS CPU 사용량(사용자 공간)
+* OS CPU 사용량(커널)
+* 디스크 읽기
+* 파일 시스템 읽기
+* 메모리(추적됨)
+* 초당 삽입된 행 수
+* 전체 MergeTree 파트 수
+* 파티션당 최대 파트 수
+
+<div id="resource-utilization">
+  ## 리소스 사용 현황
+</div>
+
+ClickHouse는 다음과 같은 하드웨어 리소스의 상태도 자체적으로 모니터링합니다.
+
+* 프로세서의 부하 및 온도
+* 스토리지 시스템, RAM, 네트워크의 사용 현황
+
+이 데이터는 `system.asynchronous_metric_log` 테이블에 수집됩니다.
+
+<div id="clickhouse-server-metrics">
+  ## ClickHouse 서버 메트릭
+</div>
+
+ClickHouse 서버에는 자체 상태를 모니터링하기 위한 내장 기능이 있습니다.
+
+서버 이벤트를 추적하려면 서버 로그를 사용하십시오. 설정 파일의 [logger](/ko/reference/settings/server-settings/settings#logger) 섹션을 참조하십시오.
+
+ClickHouse는 다음을 수집합니다:
+
+* 서버의 컴퓨팅 리소스 사용 방식에 대한 다양한 메트릭
+* 쿼리 처리에 대한 일반적인 통계
+
+메트릭은 [system.metrics](/ko/reference/system-tables/metrics), [system.events](/ko/reference/system-tables/events), [system.asynchronous&#95;metrics](/ko/reference/system-tables/asynchronous_metrics) 테이블에서 확인할 수 있습니다.
+
+ClickHouse를 구성하여 메트릭을 [Graphite](https://github.com/graphite-project)로 내보낼 수 있습니다. ClickHouse 서버 설정 파일의 [Graphite section](/ko/reference/settings/server-settings/settings#graphite)을 참조하십시오. 메트릭 내보내기를 구성하기 전에 공식 [guide](https://graphite.readthedocs.io/en/latest/install.html)를 따라 먼저 Graphite를 설정해야 합니다.
+
+ClickHouse를 구성하여 메트릭을 [Prometheus](https://prometheus.io)로 내보낼 수 있습니다. ClickHouse 서버 설정 파일의 [Prometheus section](/ko/reference/settings/server-settings/settings#prometheus)을 참조하십시오. 메트릭 내보내기를 구성하기 전에 공식 [guide](https://prometheus.io/docs/prometheus/latest/installation/)를 따라 먼저 Prometheus를 설정해야 합니다.
+
+또한 HTTP API를 통해 서버 가용성을 모니터링할 수 있습니다. `/ping`으로 `HTTP GET` 요청을 보내십시오. 서버를 사용할 수 있으면 `200 OK`로 응답합니다.
+
+클러스터 환경에서 서버를 모니터링하려면 [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ko/reference/settings/session-settings#max_replica_delay_for_distributed_queries) 매개변수를 설정하고 HTTP 리소스 `/replicas_status`를 사용해야 합니다. `/replicas_status`에 요청을 보내면 레플리카를 사용할 수 있고 다른 레플리카보다 지연되지 않은 경우 `200 OK`를 반환합니다. 레플리카가 지연된 경우에는 그 차이에 대한 정보와 함께 `503 HTTP_SERVICE_UNAVAILABLE`를 반환합니다.

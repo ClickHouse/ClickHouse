@@ -1,0 +1,2 @@
+SELECT * FROM tabl_1 SETTINGS log_comment = ?;
+SELECT * FROM tabl_2 SETTINGS log_comment = ?;

@@ -1,0 +1,193 @@
+---
+title: "LLVM의 XRay로 ClickHouse 프로파일링하기"
+date: 2024-11-13
+description: "LLVM의 XRay 계측(instrumentation) 프로파일러를 사용하여 ClickHouse를 프로파일링하고, 트레이스를 시각화하며, 성능을 분석하는 방법을 알아봅니다."
+tags: ['성능 및 최적화', '도구 및 유틸리티']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="types-of-profilers">
+  ## 프로파일러의 유형
+</div>
+
+LLVM에는 이미 코드를 계측하여 [계측
+프로파일링](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Instrumentation)을 수행할 수 있는 도구가 포함되어 있습니다. 이는 [샘플링 또는 통계적 프로파일링](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Statistical_profilers)과
+달리, 코드를 계측해야 하고 더 많은 리소스가 필요한 대신 호출을 하나도 놓치지 않아 매우 정확합니다.
+
+간단히 말해, 계측 프로파일러는 모든 함수 호출을 추적하기 위해 새로운 코드를 추가합니다.
+반면 통계적 프로파일러는 코드 변경 없이 실행할 수 있으며, 주기적으로 스냅샷을
+수집해 애플리케이션의 상태를 확인합니다. 따라서 스냅샷이
+수집되는 시점에 실행 중인 함수만 고려됩니다. [perf](https://en.wikipedia.org/wiki/Perf_%28Linux%29)는 매우 널리 알려진
+통계적 프로파일러입니다.
+
+<div id="profiling-clickhouse-using-xray-integration">
+  ## XRay 통합 기능을 사용한 ClickHouse 프로파일링
+</div>
+
+ClickHouse 25.12에서는 함수에 새로운 계측 지점을 손쉽게 추가할 수 있도록 XRay가 통합되어 있습니다.
+따라서 모든 공식 릴리스에는 이 기능이 이미 포함되어 있으며, 활성화하지 않은 경우에는
+전체 성능에 영향을 주지 않으면서 필요할 때만 실행할 수 있습니다. 핵심은 유용한 정보를 얻기 위해
+최소한의 계측 지점만 활성화하는 것입니다.
+
+[SYSTEM INSTRUMENT ADD
+PROFILE](/ko/reference/statements/system#instrument-add-profile)
+SQL 문을 사용해 새로운 프로파일 계측 지점을 추가할 수 있습니다. 계측할 함수는
+[system.symbols](/ko/reference/system-tables/symbols) 시스템 테이블에서 확인할 수 있습니다. 예를 들어,
+실행에 걸리는 시간을 확인하기에 편리한 함수인 `sleepForNanoseconds` 함수를
+프로파일링해 보겠습니다.
+
+```sql
+SYSTEM INSTRUMENT ADD 'sleepForNanoseconds' PROFILE
+```
+
+그런 다음 프로파일링하려는 시간 범위만큼 실행한 후 중지합니다.
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+system.trace&#95;log에 수집된 데이터를 [Chrome
+포맷](/ko/reference/system-tables/trace_log#chrome-event-trace-format)으로 변환한 뒤 [Perfetto](https://ui.perfetto.dev)에서
+시각화합니다. 각 항목에서 query&#95;id, cpu&#95;id, stacktrace를
+확인하십시오.
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="시간 순서" />
+
+<div id="profiling-a-native-application-using-xray">
+  ## XRay를 사용한 네이티브 애플리케이션 프로파일링
+</div>
+
+다음 섹션은 XRay가 내부에서 어떻게 작동하는지, 그리고 기본 제공 기능만으로 네이티브 애플리케이션을 프로파일링하는 데 어떻게 사용할 수 있는지 이해할 수 있도록 참고용으로 남겨두었습니다.
+
+<div id="instrument-the-code">
+  ### 코드 계측하기
+</div>
+
+다음과 같은 소스 코드가 있다고 가정해 보겠습니다:
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <thread>
+
+void one()
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
+void two()
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+}
+
+int main()
+{
+    printf("Start\n");
+
+    for (int i = 0; i < 10; ++i)
+    {
+        one();
+        two();
+    }
+
+    printf("Finish\n");
+}
+```
+
+XRay로 계측하려면 다음과 같이 몇 가지 플래그를 추가해야 합니다:
+
+```bash
+clang++ -o test test.cpp -fxray-instrument -fxray-instruction-threshold=1
+```
+
+* 코드를 계측하려면 `-fxray-instrument`가 필요합니다.
+* `-fxray-instruction-threshold=1`은 예시처럼 매우 작은 함수까지 포함해 모든 함수를 계측하도록 사용합니다. 기본적으로는 [최소 200개의
+  명령어](https://llvm.org/docs/XRay.html#instrumenting-your-c-c-objective-c-application)를 가진 함수만 계측합니다.
+
+바이너리에 새 섹션이 생겼는지 확인하면 코드가 올바르게 계측되었는지 검증할 수 있습니다:
+
+```bash
+objdump -h -j xray_instr_map test
+
+test:     file format elf64-x86-64
+
+Sections:
+Idx Name          Size      VMA               LMA               File off  Algn
+ 17 xray_instr_map 000005c0  000000000002f91c  000000000002f91c  0002f91c  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+```
+
+<div id="run-the-process-with-proper-env-var-values-to-collect-the-trace">
+  ### 트레이스를 수집하려면 적절한 env var 값으로 프로세스를 실행합니다
+</div>
+
+기본적으로는 명시적으로 요청하지 않는 한 프로파일러 데이터가 수집되지 않습니다. 다시 말해,
+프로파일링하지 않는 경우 오버헤드는 거의 무시할 수 있습니다. `XRAY_OPTIONS`에 서로 다른 값을 설정하여
+프로파일러가 언제 수집을 시작할지, 그리고 어떤 방식으로 수집할지를 구성할 수 있습니다.
+
+```bash
+XRAY_OPTIONS="patch_premain=true xray_mode=xray-basic verbosity=1" ./test
+==74394==XRay: Log file in 'xray-log.test.14imlN'
+Start
+Finish
+==74394==Cleaned up log for TID: 74394
+```
+
+<div id="convert-the-trace">
+  ### 트레이스 변환
+</div>
+
+XRay의 트레이스는 여러 포맷으로 변환할 수 있습니다. `trace_event` 포맷은 파싱하기 쉽고
+이미 이를 지원하는 도구도 여러 가지 있으므로, 여기서는 이 포맷을 사용하겠습니다:
+
+```bash
+llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xray-log.test.14imlN | gzip > test-trace.txt.gz
+```
+
+<div id="visualize-the-trace">
+  ### 트레이스 시각화
+</div>
+
+[speedscope.app](https://www.speedscope.app/) 또는
+[Perfetto](https://ui.perfetto.dev) 같은 웹 기반 UI를 사용할 수 있습니다.
+
+Perfetto는 여러 스레드를 시각화하고 데이터를 쿼리하기에 더 편리하지만, speedscope는
+데이터의 플레임 그래프와 샌드위치 뷰를 생성하는 데 더 적합합니다.
+
+<div id="time-order">
+  #### 시간순
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="시간순" />
+
+<div id="left-heavy">
+  #### 왼쪽 편중
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="왼쪽 편중" />
+
+<div id="sandwitch">
+  #### 샌드위치
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="샌드위치" />
+
+<div id="check-out-the-docs">
+  ## 문서 살펴보기
+</div>
+
+* [SYSTEM INSTRUMENT](/ko/reference/statements/system#instrument) — 계측 지점을 추가하거나
+  제거합니다.
+* [system.instrumentation](/ko/reference/system-tables/instrumentation)
+  — 계측 지점을 확인합니다.
+* [system.symbols](/ko/reference/system-tables/symbols) — 계측 지점을 추가할 수 있는
+  심볼을 확인합니다.
+* [system.trace&#95;log](/ko/reference/system-tables/trace_log) — 계측 지점을 사용해
+  수집된 데이터를 확인합니다.
+* [XRay Instrumentation](https://llvm.org/docs/XRay.html)
+* 자세한 내용은 [Debugging with XRay](https://llvm.org/docs/XRayExample.html) 문서를 참조하십시오.

@@ -1,0 +1,123 @@
+---
+title: 'Connect to ClickHouse'
+slug: /cloud/reference/byoc/connect
+sidebarTitle: 'Connect to ClickHouse'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connect to clickhouse', 'load balancer', 'privatelink']
+description: 'Connect to your BYOC ClickHouse services via public, private, or PrivateLink endpoints'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+This page describes the different ways to connect to your ClickHouse services in BYOC. You can choose from public load balancers, private load balancers, or PrivateLink/Private Service Connect endpoints based on your security and networking requirements.
+
+## Public Load Balancer {#public-load-balancer}
+
+A public load balancer provides internet-facing access to your ClickHouse services. This is the default configuration when using a ClickHouse-managed dedicated VPC.
+
+### Overview {#public-load-balancer-overview}
+
+- **Access**: Accessible from the public internet
+- **Use case**: Suitable for applications and users that need to connect from various locations or networks
+- **Security**: Protected by TLS encryption and IP filtering (recommended)
+
+### Connecting via Public Load Balancer {#connecting-via-public-load-balancer}
+
+To connect to your ClickHouse service using the public endpoint:
+
+1. **Obtain your service endpoint** from the ClickHouse Cloud console. The endpoint is displayed in the "Connect" session of your service.
+
+<Image img="/images/cloud/reference/byoc-connect-1.webp" size="lg" alt="BYOC connection" background='black'/>
+
+For example:
+```text
+sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com
+```
+
+### IP Filtering {#public-ip-filtering}
+
+IP filtering (IP Access List) is **strongly recommended** when using a public load balancer to restrict access to authorized IP addresses or CIDR ranges.
+
+For detailed information about IP filtering, see the [IP Access List documentation](/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+## Private Load Balancer {#private-load-balancer}
+
+A private load balancer provides internal access to your ClickHouse services, accessible only from within your connected networks (e.g., peered VPCs). This is the default configuration when using a customer-managed VPC.
+
+### Overview {#private-load-balancer-overview}
+
+- **Access**: Accessible only from within your private network infrastructure
+- **Use case**: Ideal for applications running in the same cloud environment or connected via VPC peering
+- **Security**: Traffic stays within your private network, no public internet exposure
+
+### Connecting via Private Load Balancer {#connecting-via-private-load-balancer}
+
+To connect using the private endpoint:
+
+1. **Enable private load balancer** (if not already enabled). Contact ClickHouse Support if you need to [enable a private load balancer](/products/bring-your-own-cloud/configuration/configurations#load-balancers) for your deployment.
+2. **Ensure network connectivity**:
+   - For VPC peering: Complete the VPC peering setup (see [Private Networking Setup](/products/bring-your-own-cloud/onboarding/network))
+   - For other private networks: Ensure routing is configured to reach the BYOC VPC
+3. **Obtain your private endpoint**: 
+   The private endpoint is available in the ClickHouse Cloud console in the "Connect" section of your service. The private endpoint follows the same format as the public endpoint, but with a `-private` suffix added to the service ID portion. For example:
+   - **Public endpoint**: `sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+   - **Private endpoint**: `sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+
+### IP Filtering {#private-ip-filtering}
+
+Although private load balancers restrict access to internal networks only, you may still set up IP filtering for even finer-grained control over which sources within your private network can connect. IP filtering for private load balancers uses the same configuration mechanism as with public load balancers: define your allowed IP addresses or CIDR ranges, and ClickHouse Cloud will apply these rules appropriately to each endpoint type. The platform automatically distinguishes between public and private CIDR ranges and assigns them to the corresponding load balancer endpoints. See the [IP Access List documentation](/products/cloud/guides/security/connectivity/setting-ip-filters). 
+
+### Security Group Configuration {#security-group-configuration}
+
+For AWS deployments, the private load balancer's security group controls which networks can access the endpoint. By default, only traffic from within the BYOC VPC is allowed.
+
+For more details, see [Private Load Balancer Security Group configuration](/products/bring-your-own-cloud/configuration/configurations#private-load-balancer-security-group).
+
+## PrivateLink or Private Service Connect {#privatelink-or-private-service-connect}
+
+AWS PrivateLink and GCP Private Service Connect provide the most secure connectivity option, allowing you to access ClickHouse services privately without VPC peering or internet gateways.
+
+### Overview {#privatelink-overview}
+
+- **Access**: Private connectivity via cloud provider's managed service
+- **Network isolation**: Traffic never traverses the public internet
+- **Use case**: Enterprise deployments requiring maximum security and network isolation
+- **Benefits**: 
+  - No VPC peering required
+  - Simplified network architecture
+  - Enhanced security and compliance posture
+
+### Connecting via PrivateLink/Private Service Connect {#connecting-via-privatelink}
+
+Complete the PrivateLink or Private Service Connect setup (see [Private Networking Setup](/products/bring-your-own-cloud/onboarding/network)). Once configured, you can connect to your ClickHouse service using a PrivateLink-specific endpoint format. The PrivateLink endpoint includes a `vpce` subdomain to indicate it routes through the VPC endpoint. DNS resolution in your VPC automatically routes traffic through the PrivateLink endpoint.
+
+The PrivateLink endpoint format is similar to the public endpoint, but includes a `vpce` subdomain between the service subdomain and BYOC infrastructure subdomain. For example:
+
+- **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+- **PrivateLink endpoint**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+### Endpoint ID Allowlist {#endpoint-id-allowlist}
+
+In order to use PrivateLink or Private Service Connect, the Endpoint ID of your client connection must be explicitly allowed for each ClickHouse service. Please contact ClickHouse Support and provide your Endpoint IDs so they can be added to the service allowlist.
+
+For detailed setup instructions, see the [Private Networking Setup guide](/products/bring-your-own-cloud/onboarding/network).
+
+## Choosing the Right Connection Method {#choosing-connection-method}
+
+| Connection Method | Security Level | Network Requirements | Use Case |
+|------------------|----------------|---------------------|----------|
+| **Public Load Balancer** | Medium (with IP filtering) | Internet access | Applications/users from various locations |
+| **Private Load Balancer** | High | VPC peering or private network | Applications in same cloud environment |
+| **PrivateLink/Private Service Connect** | Highest | Cloud provider managed service | Enterprise deployments requiring maximum isolation |
+
+## Troubleshooting Connection Issues {#troubleshooting}
+
+If you're experiencing connection issues:
+
+1. **Verify endpoint accessibility**: Ensure you're using the correct endpoint (public vs. private)
+2. **Check IP filters**: For public load balancers, verify your IP address is in the allow list
+3. **Verify network connectivity**: For private connections, ensure VPC peering or PrivateLink is properly configured
+4. **Check security groups**: For private load balancers, verify security group rules allow traffic from your source network
+4. **Check security groups**: For PrivateLink or Private Service Connect, verify the endpoint ID has been added to the allowlist of the ClickHouse service
+5. **Review authentication**: Ensure you're using correct credentials (username and password)
+6. **Contact Support**: If issues persist, contact ClickHouse Support

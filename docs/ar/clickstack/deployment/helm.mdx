@@ -1,0 +1,421 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm
+title: 'Helm'
+description: 'نشر ClickStack باستخدام Helm - حزمة observability من ClickHouse'
+doc_type: 'guide'
+keywords: ['مخطط Helm لـ ClickStack', 'نشر ClickHouse باستخدام Helm', 'تثبيت HyperDX باستخدام Helm', 'حزمة observability على Kubernetes', 'نشر ClickStack على Kubernetes']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import JSONSupport from '/snippets/ar/_json_support.mdx';
+
+<Warning>
+  **إصدار المخطط 2.x**
+
+  توثّق هذه الصفحة مخطط Helm **v2.x** القائم على المخططات الفرعية. إذا كنت لا تزال تستخدم مخطط v1.x ذي القوالب المضمّنة، فراجع [دليل Helm للإصدار v1.x](/ar/clickstack/deployment/helm-v1). وللاطلاع على خطوات الترحيل، راجع [دليل الترقية](/ar/clickstack/deployment/helm-upgrade).
+</Warning>
+
+يمكن العثور على مخطط Helm الخاص بـ ClickStack [هنا](https://github.com/ClickHouse/ClickStack-helm-charts)، وهو الأسلوب **الموصى به** لعمليات النشر في بيئات الإنتاج.
+
+يعتمد مخطط v2.x على **تثبيت من مرحلتين**. تُثبَّت المشغّلات وتعريفات الموارد المخصّصة (CRDs) أولًا عبر مخطط `clickstack-operators`، ثم يأتي بعد ذلك مخطط `clickstack` الرئيسي الذي ينشئ موارد مخصّصة تُدار بواسطة المشغّلات لكل من ClickHouse وMongoDB وOpenTelemetry Collector.
+
+بشكل افتراضي، يوفّر مخطط Helm جميع المكوّنات الأساسية، بما في ذلك:
+
+* **ClickHouse** — يُدار بواسطة [ClickHouse Operator](/ar/products/kubernetes-operator/overview) عبر الموردين المخصّصين `ClickHouseCluster` و`KeeperCluster`
+* **HyperDX** — واجهة observability وواجهة API
+* **OpenTelemetry (OTel) collector** — يُنشر عبر [مخطط Helm الرسمي لـ OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-helm-charts) كمخطط فرعي
+* **MongoDB** — يُدار بواسطة [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes) عبر مورد مخصّص `MongoDBCommunity`
+
+ومع ذلك، يمكن تخصيصه بسهولة ليتكامل مع عملية نشر ClickHouse قائمة — على سبيل المثال، مستضافة على **ClickHouse Cloud**.
+
+يدعم المخطط أفضل ممارسات Kubernetes القياسية، بما في ذلك:
+
+* إعدادات خاصة بكل بيئة عبر `values.yaml`
+* حدود الموارد والتوسّع على مستوى الـ pod
+* إعدادات TLS وIngress
+* إدارة الـ secrets وإعدادات authentication
+* [ملفات manifest إضافية](/ar/clickstack/deployment/helm-additional-manifests) لنشر كائنات Kubernetes عشوائية (NetworkPolicy وHPA وALB Ingress وغيرها) إلى جانب المخطط
+
+<div id="suitable-for">
+  ### مناسب لـ
+</div>
+
+* حالات إثبات المفهوم
+* بيئات الإنتاج
+
+<div id="deployment-steps">
+  ## خطوات النشر
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### المتطلبات الأساسية
+
+    * [Helm](https://helm.sh/) v3+
+    * عنقود Kubernetes (يُوصى بالإصدار v1.20+)
+    * `kubectl` مُعَدّ للتفاعل مع عنقودك
+  </Step>
+
+  <Step>
+    ### أضف مستودع Helm الخاص بـ ClickStack
+
+    أضف مستودع Helm الخاص بـ ClickStack:
+
+    ```shell
+    helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
+    helm repo update
+    ```
+  </Step>
+
+  <Step>
+    ### ثبّت المشغِّلات
+
+    ثبّت مخطط Helm الخاص بالمشغِّل أولًا. سيؤدي ذلك إلى تسجيل تعريفات الموارد المخصّصة (CRDs) التي يتطلبها المخطط الرئيسي:
+
+    ```shell
+    helm install clickstack-operators clickstack/clickstack-operators
+    ```
+
+    انتظر حتى تصبح وحدات المشغّل جاهزة قبل المتابعة:
+
+    ```shell
+    kubectl get pods -l app.kubernetes.io/instance=clickstack-operators
+    ```
+  </Step>
+
+  <Step>
+    ### تثبيت ClickStack
+
+    بمجرد أن تعمل المشغّلات، ثبّت حزمة Helm الرئيسية:
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack
+    ```
+  </Step>
+
+  <Step>
+    ### تحقّق من التثبيت
+
+    تحقّق من التثبيت:
+
+    ```shell
+    kubectl get pods -l "app.kubernetes.io/name=clickstack"
+    ```
+
+    عندما تصبح جميع وحدات التشغيل جاهزة، تابع.
+  </Step>
+
+  <Step>
+    ### إعادة توجيه المنافذ
+
+    تتيح إعادة توجيه المنافذ الوصول إلى HyperDX وإعداده. أمّا المستخدمون الذين ينشرون في بيئة الإنتاج، فينبغي لهم بدلًا من ذلك إتاحة الخدمة عبر مورد دخول Ingress أو موازن حمل، لضمان الوصول الشبكي المناسب، وإنهاء TLS، وقابلية التوسع. تُعد إعادة توجيه المنافذ الأنسب للتطوير المحلي أو للمهام الإدارية لمرة واحدة، وليست مناسبة للبيئات طويلة الأمد أو عالية التوافر.
+
+    ```shell
+    kubectl port-forward \
+      pod/$(kubectl get pod -l app.kubernetes.io/name=clickstack -o jsonpath='{.items[0].metadata.name}') \
+      8080:3000
+    ```
+
+    <Tip>
+      **إعداد نقطة الدخول لبيئة الإنتاج**
+
+      في عمليات النشر المخصّصة لبيئة الإنتاج، اضبط نقطة الدخول مع TLS بدلًا من إعادة توجيه المنافذ. راجع [دليل إعداد نقطة الدخول](/ar/clickstack/deployment/helm-configuration#ingress-setup) للحصول على إرشادات إعداد مفصّلة.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### انتقل إلى واجهة المستخدم
+
+    زُر [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة HyperDX.
+
+    أنشئ مستخدمًا، وأدخل اسم مستخدم وكلمة مرور يستوفيان المتطلبات.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="واجهة HyperDX" size="lg" />
+
+    عند النقر على `Create`، سيتم إنشاء مصادر البيانات لمثيل ClickHouse الذي تم نشره باستخدام مخطط Helm.
+
+    <Info>
+      **تجاوز الاتصال الافتراضي**
+
+      يمكنك تجاوز الاتصال الافتراضي إلى مثيل ClickHouse المدمج. لمزيد من التفاصيل، راجع [&quot;استخدام ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+    </Info>
+  </Step>
+
+  <Step>
+    ### تخصيص القيم (اختياري)
+
+    يمكنك تخصيص الإعدادات باستخدام خيارات `--set`. على سبيل المثال:
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack --set key=value
+    ```
+
+    بدلًا من ذلك، عدّل ملف `values.yaml`. لاسترجاع القيم الافتراضية:
+
+    ```shell
+    helm show values clickstack/clickstack > values.yaml
+    ```
+
+    مثال على التهيئة:
+
+    ```yaml
+    hyperdx:
+      frontendUrl: "https://hyperdx.example.com"
+
+      deployment:
+        replicas: 2
+        resources:
+          limits:
+            cpu: "2"
+            memory: 4Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
+
+      ingress:
+        enabled: true
+        host: hyperdx.example.com
+        tls:
+          enabled: true
+          tlsSecretName: "hyperdx-tls"
+    ```
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack -f values.yaml
+    ```
+  </Step>
+
+  <Step>
+    ### استخدام الأسرار (اختياري)
+
+    يستخدم مخطط الإصدار v2.x سرًا موحدًا (`clickstack-secret`) يُعبَّأ من `hyperdx.secrets` في `values` لديك. تمر جميع متغيرات البيئة الحساسة — بما في ذلك كلمات مرور ClickHouse وMongoDB ومفتاح API الخاص بـ HyperDX — عبر هذا السر الواحد.
+
+    لتجاوز قيم السر:
+
+    ```yaml
+    hyperdx:
+      secrets:
+        HYPERDX_API_KEY: "your-api-key"
+        CLICKHOUSE_PASSWORD: "your-clickhouse-password"
+        CLICKHOUSE_APP_PASSWORD: "your-app-password"
+        MONGODB_PASSWORD: "your-mongodb-password"
+    ```
+
+    لإدارة الأسرار الخارجية (مثلًا باستخدام مشغّل أسرار)، يمكنك الإشارة إلى Kubernetes secret موجود مسبقًا:
+
+    ```yaml
+    hyperdx:
+      useExistingConfigSecret: true
+      existingConfigSecret: "my-external-secret"
+      existingConfigConnectionsKey: "connections.json"
+      existingConfigSourcesKey: "sources.json"
+    ```
+
+    <Tip>
+      **إدارة مفاتيح API**
+
+      للاطلاع على إرشادات تفصيلية لإعداد مفتاح API، بما في ذلك عدة طرق للتهيئة وإجراءات إعادة تشغيل الحاوية، راجع [دليل إعداد مفتاح API](/ar/clickstack/deployment/helm-configuration#api-key-setup).
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="using-clickhouse-cloud">
+  ## استخدام ClickHouse Cloud
+</div>
+
+إذا كنت تستخدم ClickHouse Cloud، فعطّل مثيل ClickHouse المدمج وأدخِل بيانات اعتماد Cloud:
+
+```yaml
+# values-clickhouse-cloud.yaml
+clickhouse:
+  enabled: false
+
+hyperdx:
+  secrets:
+    CLICKHOUSE_PASSWORD: "your-cloud-password"
+    CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
+
+  useExistingConfigSecret: true
+  existingConfigSecret: "clickhouse-cloud-config"
+  existingConfigConnectionsKey: "connections.json"
+  existingConfigSourcesKey: "sources.json"
+```
+
+أنشئ مورد `secret` للاتصال بشكل منفصل:
+
+```bash
+cat <<EOF > connections.json
+[
+  {
+    "name": "ClickHouse Cloud",
+    "host": "https://your-cloud-instance.clickhouse.cloud",
+    "port": 8443,
+    "username": "default",
+    "password": "your-cloud-password"
+  }
+]
+EOF
+
+kubectl create secret generic clickhouse-cloud-config \
+  --from-file=connections.json=connections.json
+
+rm connections.json
+```
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values-clickhouse-cloud.yaml
+```
+
+<Tip>
+  **إعدادات خارجية متقدمة**
+
+  بالنسبة لعمليات النشر في بيئات الإنتاج التي تستخدم إعدادات قائمة على `Secret`، أو OTel collectors خارجية، أو إعدادات بسيطة، راجع [دليل خيارات النشر](/ar/clickstack/deployment/helm-deployment-options).
+</Tip>
+
+<div id="production-notes">
+  ## ملاحظات خاصة ببيئة الإنتاج
+</div>
+
+بشكل افتراضي، يثبّت هذا الـ مخطط كلاً من ClickHouse وMongoDB وOTel collector. ويُوصى في بيئات production بإدارة ClickHouse وOTel collector بشكل منفصل.
+
+لتعطيل ClickHouse وOTel collector:
+
+```yaml
+clickhouse:
+  enabled: false
+
+otel-collector:
+  enabled: false
+```
+
+<Tip>
+  **أفضل الممارسات لبيئة الإنتاج**
+
+  لعمليات النشر في بيئة الإنتاج، بما في ذلك إعداد التوافر العالي، وإدارة الموارد، وإعداد Ingress/TLS، والتهيئات الخاصة بالسحابة (GKE وEKS وAKS)، راجع:
+
+  * [دليل التهيئة](/ar/clickstack/deployment/helm-configuration) - Ingress وTLS وإدارة الأسرار
+  * [عمليات النشر السحابية](/ar/clickstack/deployment/helm-cloud) - الإعدادات الخاصة بالسحابة وقائمة التحقق لبيئة الإنتاج
+</Tip>
+
+<div id="task-configuration">
+  ## تهيئة المهام
+</div>
+
+افتراضيًا، توجد مهمة واحدة في إعداد الحزمة على شكل cronjob، وهي مسؤولة عن التحقق مما إذا كان ينبغي إطلاق التنبيهات. في الإصدار v2.x، نُقلت تهيئة المهام إلى `hyperdx.tasks`:
+
+| المَعلمة                              | الوصف                                                                                                                                                            | الافتراضي          |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `hyperdx.tasks.enabled`               | تمكين/تعطيل مهام cron في العنقود. افتراضيًا، ستشغّل صورة HyperDX مهام cron ضمن العملية نفسها. غيّرها إلى true إذا كنت تفضّل استخدام مهمة cron منفصلة في العنقود. | `false`            |
+| `hyperdx.tasks.checkAlerts.schedule`  | جدول cron لمهمة check-alerts                                                                                                                                     | `*/1 * * * *`      |
+| `hyperdx.tasks.checkAlerts.resources` | طلبات الموارد والحدود لمهمة check-alerts                                                                                                                         | راجع `values.yaml` |
+
+<div id="upgrading-the-chart">
+  ## ترقية مخطط Helm
+</div>
+
+للترقية إلى إصدار أحدث:
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+للتحقق من إصدارات المخطط المتاحة:
+
+```shell
+helm search repo clickstack
+```
+
+<Info>
+  **الترقية من v1.x**
+
+  إذا كنت تُجري الترقية من مخطط inline-template للإصدار v1.x، فراجِع [دليل الترقية](/ar/clickstack/deployment/helm-upgrade) للحصول على إرشادات الترحيل. هذا تغيير غير متوافق — ولا يُدعَم تنفيذ `helm upgrade` مباشرةً على التثبيت الحالي.
+</Info>
+
+<div id="uninstalling-clickstack">
+  ## إزالة تثبيت ClickStack
+</div>
+
+أزِل التثبيت بالترتيب العكسي:
+
+```shell
+helm uninstall my-clickstack            # Remove app + CRs first
+helm uninstall clickstack-operators     # Remove operators + CRDs
+```
+
+**ملاحظة:** لا تتم إزالة PersistentVolumeClaims التي يُنشئها مشغّلا MongoDB وClickHouse عند تنفيذ `helm uninstall`. وهذا سلوك مقصود لتجنّب فقدان البيانات عن طريق الخطأ. لتنظيف PVCs، راجع:
+
+* [وثائق MongoDB Kubernetes Operator](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="checking-logs">
+  ### فحص السجلات
+</div>
+
+```shell
+kubectl logs -l app.kubernetes.io/name=clickstack
+```
+
+<div id="debugging-a-failed-install">
+  ### استكشاف أخطاء التثبيت الفاشل وإصلاحها
+</div>
+
+```shell
+helm install my-clickstack clickstack/clickstack --debug --dry-run
+```
+
+<div id="verifying-deployment">
+  ### التحقق من عملية النشر
+</div>
+
+```shell
+kubectl get pods -l app.kubernetes.io/name=clickstack
+```
+
+<Tip>
+  **موارد إضافية لاستكشاف الأخطاء وإصلاحها**
+
+  للاطلاع على مشكلات Ingress، أو مشكلات TLS، أو استكشاف أخطاء النشر على Cloud وإصلاحها، راجع:
+
+  * [استكشاف أخطاء Ingress وإصلاحها](/ar/clickstack/deployment/helm-configuration#troubleshooting-ingress) - عرض الملفات الثابتة، وإعادة كتابة المسارات، ومشكلات المتصفح
+  * [عمليات النشر السحابية](/ar/clickstack/deployment/helm-cloud#loadbalancer-dns-resolution-issue) - مشكلات GKE OpAMP والمشكلات الخاصة بـ Cloud
+</Tip>
+
+<JSONSupport />
+
+<div id="related-documentation">
+  ## الوثائق ذات الصلة
+</div>
+
+<div id="deployment-guides">
+  ### أدلة النشر
+</div>
+
+* [خيارات النشر](/ar/clickstack/deployment/helm-deployment-options) - ClickHouse خارجي، وOTel collector، وعمليات النشر بالحد الأدنى
+* [دليل التهيئة](/ar/clickstack/deployment/helm-configuration) - مفاتيح API، وsecrets، وإعداد Ingress
+* [عمليات النشر السحابية](/ar/clickstack/deployment/helm-cloud) - إعدادات GKE وEKS وAKS، وأفضل الممارسات لبيئات الإنتاج
+* [دليل الترقية](/ar/clickstack/deployment/helm-upgrade) - الترحيل من v1.x إلى v2.x
+* [ملفات manifest إضافية](/ar/clickstack/deployment/helm-additional-manifests) - نشر كائنات Kubernetes مخصصة إلى جانب مخطط
+
+<div id="v1x-documentation">
+  ### وثائق v1.x
+</div>
+
+* [Helm (v1.x)](/ar/clickstack/deployment/helm-v1) - دليل نشر v1.x
+* [التهيئة (v1.x)](/ar/clickstack/deployment/helm-configuration-v1) - تهيئة v1.x
+* [خيارات النشر (v1.x)](/ar/clickstack/deployment/helm-deployment-options-v1) - خيارات نشر v1.x
+* [عمليات النشر السحابية (v1.x)](/ar/clickstack/deployment/helm-cloud-v1) - تهيئات Cloud لـ v1.x
+
+<div id="additional-resources">
+  ### موارد إضافية
+</div>
+
+* [دليل البدء في ClickStack](/ar/clickstack/getting-started/index) - مقدمة إلى ClickStack
+* [مستودع مخططات Helm الخاص بـ ClickStack](https://github.com/ClickHouse/ClickStack-helm-charts) - الشفرة المصدرية للمخططات ومرجع القيم
+* [وثائق Kubernetes](https://kubernetes.io/docs/) - مرجع Kubernetes
+* [وثائق Helm](https://helm.sh/docs/) - مرجع Helm

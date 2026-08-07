@@ -1,0 +1,126 @@
+---
+slug: /cloud/managed-postgres/monitoring/metrics
+sidebarTitle: 'Référence des métriques'
+title: 'Référence des métriques de Managed Postgres'
+description: 'Liste complète des métriques exposées par l’endpoint Prometheus de Managed Postgres'
+keywords: ['managed postgres', 'métriques', 'prometheus', 'référence', 'observabilité']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-metrics-beta" />
+
+Cette page répertorie toutes les métriques exposées par le
+[endpoint Prometheus de Managed Postgres](/fr/products/managed-postgres/monitoring/prometheus).
+Pour la configuration et l’authentification, consultez la page [endpoint Prometheus].
+
+<div id="common-labels">
+  ## Labels communs
+</div>
+
+Chaque métrique comporte les labels suivants :
+
+| Label                   | Description              |
+| ----------------------- | ------------------------ |
+| `clickhouse_org`        | ID de l&#39;organisation |
+| `postgres_service`      | ID du service Postgres   |
+| `postgres_service_name` | Nom du service Postgres  |
+
+Certaines métriques ajoutent un label pour la dimension selon laquelle elles sont ventilées (par ex.
+`mode` pour les métriques CPU, `state` pour les connexions, `database` pour la
+taille de la base de données). Ces labels sont indiqués à côté de chaque métrique.
+
+<div id="information-metric">
+  ## Métrique d’information
+</div>
+
+`PostgresServiceInfo` est une métrique de type gauge toujours égale à `1`, dont les label portent le
+statut actuel et la version du service. Utilisez-la pour joindre le
+statut à d’autres métriques ou pour déclencher une alerte lorsqu’un service sort de l’état
+`running`.
+
+| Métrique              | Type  | Libellés supplémentaires              | Description                                         |
+| --------------------- | ----- | ------------------------------------- | --------------------------------------------------- |
+| `PostgresServiceInfo` | gauge | `postgres_status`, `postgres_version` | Une série par service ; la valeur est toujours `1`. |
+
+`postgres_status` indique l’état actuel du cycle de vie du service
+(par exemple `running`, `creating`, `stopped`). `postgres_version`
+indique la version majeure de Postgres (par ex. `17`, `18`).
+
+<div id="capacity">
+  ## Capacité
+</div>
+
+Limites statiques provisionnées pour le service. Elles ne changent que lorsque le
+service est redimensionné.
+
+| Métrique                           | Type  | Unité | Description                   |
+| ---------------------------------- | ----- | ----- | ----------------------------- |
+| `PostgresServer_CPUCores`          | gauge | cores | Cœurs CPU alloués au service. |
+| `PostgresServer_MemoryLimitBytes`  | gauge | bytes | Mémoire allouée au service.   |
+| `PostgresServer_StorageLimitBytes` | gauge | bytes | Stockage alloué au service.   |
+
+<div id="resource-utilization">
+  ## Utilisation des ressources
+</div>
+
+| Métrique                               | Type     | label supplémentaires | Description                                                                                                   |
+| -------------------------------------- | -------- | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `PostgresServer_CPUSeconds_Total`      | compteur | `mode`                   | Temps CPU consommé, ventilé par mode : `user`, `system`, `iowait`, `softirq`, `steal`, `irq`, `nice`, `idle`. |
+| `PostgresServer_MemoryUsedPercent`     | gauge    |                          | Mémoire utilisée, en pourcentage de `PostgresServer_MemoryLimitBytes`.                                        |
+| `PostgresServer_MemoryCachePercent`    | gauge    |                          | Mémoire utilisée par le cache et les tampons, en pourcentage de la mémoire totale.                            |
+| `PostgresServer_FilesystemUsedPercent` | gauge    |                          | Espace du système de fichiers utilisé, en pourcentage du stockage total.                                      |
+
+Pour calculer l’utilisation du CPU en pourcentage, calculez le taux de
+`PostgresServer_CPUSeconds_Total` pour les modes qui vous intéressent, puis
+divisez-le par `PostgresServer_CPUCores`.
+
+<div id="io">
+  ## E/S disque et réseau
+</div>
+
+| Métrique                                    | Type     | Unité | Description                                      |
+| ------------------------------------------- | -------- | ----- | ------------------------------------------------ |
+| `PostgresServer_DiskReads_Total`            | compteur | ops   | Opérations de lecture sur disque effectuées.     |
+| `PostgresServer_DiskWrites_Total`           | compteur | ops   | Opérations d&#39;écriture sur disque effectuées. |
+| `PostgresServer_NetworkReceiveBytes_Total`  | compteur | bytes | Octets reçus via le réseau.                      |
+| `PostgresServer_NetworkTransmitBytes_Total` | compteur | bytes | Octets transmis via le réseau.                   |
+
+<div id="database-activity">
+  ## Activité de la base de données
+</div>
+
+Compteurs cumulés depuis le démarrage du service. Utilisez `rate()` ou `irate()` pour
+obtenir des valeurs par seconde.
+
+| Métrique                                      | Type    | Description                         |
+| --------------------------------------------- | ------- | ----------------------------------- |
+| `PostgresServer_TuplesFetched_Total`          | compteur | Lignes récupérées par les requêtes. |
+| `PostgresServer_TuplesInserted_Total`         | compteur | Lignes insérées.                    |
+| `PostgresServer_TuplesUpdated_Total`          | compteur | Lignes mises à jour.                |
+| `PostgresServer_TuplesDeleted_Total`          | compteur | Lignes supprimées.                  |
+| `PostgresServer_TransactionsCommitted_Total`  | compteur | Transactions validées.              |
+| `PostgresServer_TransactionsRolledBack_Total` | compteur | Transactions annulées.              |
+| `PostgresServer_Deadlocks_Total`              | compteur | Interblocages détectés.             |
+
+<div id="connections-cache-size">
+  ## Connexions, cache et taille de la base de données
+</div>
+
+| Métrique                           | Type  | label supplémentaires | Description                                                                                                                                                  |
+| ---------------------------------- | ----- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PostgresServer_ActiveConnections` | gauge | `state`                  | Connexions par état (p. ex. `active`, `idle`).                                                                                                               |
+| `PostgresServer_CacheHitRatio`     | gauge |                          | Taux de réussite du cache tampon : pourcentage de blocs servis depuis le cache par rapport au nombre total de blocs accédés.                                 |
+| `PostgresServer_DatabaseSizeBytes` | gauge | `database`               | Taille sur disque de chaque base de données, en octets. Inclut la base `postgres` par défaut ainsi que toutes les bases de données créées par l’utilisateur. |
+
+<div id="related">
+  ## Pages associées
+</div>
+
+* [Endpoint Prometheus] — configuration, authentification et scraping
+* [Tableau de bord](/fr/products/managed-postgres/monitoring/dashboard) — graphiques intégrés à la console cloud
+* [Guide OpenAPI](/fr/products/managed-postgres/openapi) — création de clé API
+  et récupération des ID d&#39;organisation et de service
+
+[Endpoint Prometheus]: /products/managed-postgres/monitoring/prometheus

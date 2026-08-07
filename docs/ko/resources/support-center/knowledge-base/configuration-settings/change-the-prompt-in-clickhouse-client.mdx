@@ -1,0 +1,164 @@
+---
+title: clickhouse-client에서 프롬프트 변경
+description: "이 문서에서는 clickhouse client와 clickhouse-local 터미널 창의 프롬프트를 :)에서 접두사 뒤에 :)가 붙는 형식으로 변경하는 방법을 설명합니다"
+date: 2023-11-16
+tags: ['설정', '네이티브 클라이언트 및 인터페이스']
+keywords: ['ClickHouse Client', '프롬프트 변경']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* 생략 */}
+
+`clickhouse client` 및 clickhouse-local이 터미널 창에 프롬프트를 표시하는 방식이 마음에 들지 않는다면, 접두사를 추가하도록 변경할 수 있습니다.
+이 문서에서는 프롬프트를 원하는 대로 변경하는 방법을 설명합니다.
+
+기본 프롬프트는 로컬 컴퓨터 이름 뒤에 `:) `가 붙는 형식입니다:
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="기본 ClickHouse client 프롬프트" />
+
+프롬프트에 사용할 수 있는 변수는 다음과 같습니다: `{user}`, `{host}`
+
+프롬프트를 변경하는 방법은 여러 가지가 있으며, 이를 하나씩 살펴보겠습니다.
+
+<div id="--prompt-flag">
+  ## --prompt 플래그
+</div>
+
+플래그를 변경하는 첫 번째 방법은 `--prompt` 플래그를 사용하는 것입니다:
+
+```bash
+clickhouse --prompt 👉
+```
+
+이렇게 하면 스마일 이모지 앞에 손가락 이모지가 추가됩니다:
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="손가락 이모지가 추가된 ClickHouse client 프롬프트" />
+
+<div id="config-file---top-level">
+  ## 구성 파일 - 최상위
+</div>
+
+또는 `config.xml` 파일에서 프롬프트 접두사를 지정할 수 있습니다:
+
+```xml
+<config>
+    <prompt>👉 </prompt>
+</config>
+```
+
+```
+clickhouse
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp" size="md" alt="구성 파일이 적용된 ClickHouse client 프롬프트" />
+
+원하는 이름의 구성 파일을 사용한 뒤 `-C` 플래그로 전달할 수 있습니다:
+
+```xml
+<config>
+    <prompt>🎄 </prompt>
+</config>
+```
+
+```
+clickhouse -C christmas.xml
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp" size="md" alt="크리스마스트리 이모지가 있는 ClickHouse client 프롬프트" />
+
+구성 파일을 YAML로 사용하고 싶다면?
+이 방법도 가능합니다:
+
+```yaml
+prompt: 🟡
+```
+
+```bash
+clickhouse -C christmas.yaml
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="노란 원형 이모지가 표시된 clickhouse client 프롬프트" />
+
+<div id="config-file---connections_credentials">
+  ## 구성 파일 - connections_credentials
+</div>
+
+또는 각 연결 자격 증명에 대해 프롬프트를 지정할 수도 있습니다.
+이는 `clickhouse-client`를 사용할 때만 의미가 있습니다.
+
+```xml
+<config>
+    <connections_credentials>
+        <connection>
+            <n>prod<n>
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>0</secure>
+            <user>default</user>
+            <prompt>\e[31m[PRODUCTION]\e[0m {user}@prod</prompt>
+        </connection>
+        <connection>
+            <n>dev<n>
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>0</secure>
+            <user>default</user>
+            <prompt>\e[32m[DEVELOPMENT]\e[0m {user}@dev</prompt>
+        </connection>
+    </connections_credentials>
+</config>
+```
+
+그런 다음 `dev` 연결을 사용해 접속을 시도할 수 있습니다:
+
+```bash
+clickhouse client -C connections.xml --connection dev
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp" size="md" alt="개발 연결이 설정된 ClickHouse client 프롬프트" />
+
+또는 `prod` 연결:
+
+```bash
+clickhouse client -C connections.xml --connection prod
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="프로덕션 연결이 있는 ClickHouse client 프롬프트" />
+
+그리고 YAML 버전은 다음과 같습니다:
+
+```yaml
+connections_credentials:
+  connection:
+    - name: prod
+      hostname: 127.0.0.1
+      port: 9000
+      secure: 0
+      user: default
+      prompt: "\e[35m[PRODUCTION]\e[0m {user}@{host}"
+    - name: dev
+      hostname: 127.0.0.1
+      port: 9000
+      secure: 0
+      user: default
+      prompt: "\e[34m[DEVELOPMENT]\e[0m {user}@{host}"
+```
+
+`dev` 연결 사용 시:
+
+```bash
+clickhouse client -C connections.yaml --connection dev
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="YAML 기반 개발 연결을 사용하는 ClickHouse client 프롬프트" />
+
+이제 `prod`를 보겠습니다:
+
+```bash
+clickhouse client -C connections.yaml --connection prod
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp" size="md" alt="YAML을 사용한 프로덕션 연결이 포함된 ClickHouse client 프롬프트" />

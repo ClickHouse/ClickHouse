@@ -1,0 +1,32 @@
+---
+sidebarTitle: '概要'
+slug: /integrations/migration/overview
+keywords: ['ClickHouse', '移行', '移行', '移行中', 'データ']
+title: 'ClickHouse へのデータ移行'
+description: 'ClickHouse へのデータ移行に利用できる方法を説明するページ'
+doc_type: 'guide'
+---
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="https://player.vimeo.com/video/753082620?h=eb566c8c08"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<br />
+
+現在データが保存されている場所に応じて、ClickHouse Cloud にデータを移行する方法はいくつかあります：
+
+* [セルフマネージドから Cloud へ](/ja/get-started/migrate/oss-to-cloud/clickhouse-to-cloud): `remoteSecure` 関数を使用してデータを転送します
+* [別の DBMS](/ja/get-started/migrate/other-methods/clickhouse-local-etl): 現在使用している DBMS に適した ClickHouse テーブル関数と [clickhouse-local] ETL ツールを使用します
+* [どこからでも！](/ja/get-started/migrate/other-methods/etl-tool-to-clickhouse): さまざまなデータソースに接続できる一般的な ETL/ELT ツールを使用します
+* [オブジェクトストレージ](/ja/get-started/migrate/other-methods/object-storage-to-clickhouse): S3 から ClickHouse に簡単にデータを挿入できます
+
+[Redshift からの移行](/ja/get-started/migrate/redshift/migration-guide) の例では、ClickHouse にデータを移行する 3 つの方法を紹介しています。

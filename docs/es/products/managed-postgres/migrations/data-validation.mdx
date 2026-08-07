@@ -1,0 +1,30 @@
+---
+slug: /cloud/managed-postgres/migrations/data-validation
+sidebarTitle: 'Validación de datos'
+title: 'Validar la integridad de los datos después de la migración'
+description: 'Aprende a validar la integridad de tus datos después de migrar a ClickHouse Managed Postgres'
+keywords: ['postgres', 'postgresql', 'replicación lógica', 'migración', 'transferencia de datos', 'managed postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.data-validation-beta" />
+
+<div id="data-validation-counts">
+  ## Comparación del recuento de todas las tablas
+</div>
+
+Una forma sencilla de validar que los datos sean correctos después de la migración es comparar el recuento de todas las tablas en las bases de datos de origen y de destino. Puede hacerlo ejecutando la siguiente consulta en ambas bases de datos:
+
+```sql
+SELECT table_name, 
+       (xpath('/row/cnt/text()', xml_count))[1]::text::bigint AS row_count
+FROM (
+  SELECT table_name, 
+         query_to_xml('SELECT count(*) AS cnt FROM ' || quote_ident(table_name), false, true, '') AS xml_count
+  FROM information_schema.tables
+  WHERE table_schema = 'public'
+) t
+ORDER BY table_name;
+```

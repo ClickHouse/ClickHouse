@@ -1,0 +1,89 @@
+---
+description: 'Documentation de la fonction de fenêtrage nonNegativeDerivative'
+sidebarTitle: 'nonNegativeDerivative'
+slug: /sql-reference/window-functions/nonNegativeDerivative
+title: 'nonNegativeDerivative'
+doc_type: 'reference'
+---
+
+Calcule la dérivée non négative de `metric_column` par rapport à `timestamp_column`.
+Il s'agit d'une fonction de fenêtrage propre à ClickHouse, qui ne fait pas partie du SQL standard.
+
+Pour chaque ligne, la dérivée est calculée par rapport à la *ligne précédente dans l'ordre d'évaluation de la fenêtre*, lequel est déterminé par la clause `ORDER BY` de la fenêtre — et non par `timestamp_column`.
+L'argument `timestamp_column` est lu uniquement pour mesurer le temps écoulé entre la ligne courante et la ligne précédente ; il n'ordonne pas les lignes lui-même.
+
+<Warning>
+`nonNegativeDerivative` n'ordonne pas les lignes par `timestamp_column` ; c'est le `ORDER BY` de la fenêtre qui s'en charge.
+Pour que la formule ci-dessous s'applique, `timestamp_column` doit être strictement croissant dans l'ordre d'évaluation de la fenêtre. Il convient donc en général d'ordonner la fenêtre par `timestamp_column` de manière ascendante (par exemple `... OVER (ORDER BY ts ASC)` conjointement avec `nonNegativeDerivative(metric, ts)`).
+Chaque fois que le temps écoulé entre la ligne courante et la ligne précédente est non positif — ce qui se produit avec `ORDER BY timestamp_column DESC` ou en présence de timestamps identiques (en double) — la fonction renvoie `0` pour cette ligne au lieu d'appliquer la formule.
+</Warning>
+
+Le résultat est le taux de variation de la métrique par `INTERVAL`, toute valeur négative étant ramenée à `0`.
+Cela est utile pour les métriques monotoniquement croissantes, telles que les compteurs, où une diminution indique généralement une réinitialisation plutôt qu'un taux réellement négatif.
+
+**Syntaxe**
+
+```sql
+nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name AS ([PARTITION BY grouping_column] [ORDER BY sorting_column] [ROWS or RANGE expression_to_bound_rows_within_the_group])
+```
+
+Pour plus de détails sur la syntaxe des fonctions de fenêtrage, voir : [Fonctions de fenêtrage - Syntaxe](/reference/functions/window-functions/index#syntax).
+
+**Arguments**
+
+- `metric_column` — La colonne dont la dérivée est calculée. [(U)Int*](/reference/data-types/int-uint) ou [Float*](/reference/data-types/float).
+- `timestamp_column` — La colonne utilisée pour mesurer le temps écoulé entre la ligne courante et la ligne précédente dans l'ordre de la fenêtre. Elle n'ordonne pas les lignes ; c'est le `ORDER BY` de la fenêtre qui s'en charge et qui devrait normalement utiliser cette même colonne. [DateTime](/reference/data-types/datetime) ou [DateTime64](/reference/data-types/datetime64).
+- `INTERVAL X UNITS` — Facultatif. L'unité de temps à laquelle le résultat est mis à l'échelle. Par défaut : `INTERVAL 1 SECOND`. Seules les unités de longueur fixe sont prises en charge (`NANOSECOND`, `MICROSECOND`, `MILLISECOND`, `SECOND`, `MINUTE`, `HOUR`, `DAY`, `WEEK`) ; les unités de longueur variable (`MONTH`, `QUARTER`, `YEAR`) déclenchent une exception.
+
+**Valeur renvoyée**
+
+Pour chaque ligne, la valeur est calculée comme suit :
+
+- `0` pour la première ligne ;
+- `0` pour toute ligne dont le temps écoulé depuis la ligne précédente est non positif (c'est-à-dire $\text{timestamp}_i - \text{timestamp}_{i-1} \le 0$, ce qui se produit avec un ordre décroissant ou des timestamps identiques) ;
+- ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}} * \text{interval}$ dans les autres cas.
+
+Si la valeur calculée est négative, elle est ramenée à `0`. Le type de retour est [Float64](/reference/data-types/float).
+
+**Exemple**
+
+L'exemple suivant calcule le taux de variation par seconde d'une mesure de capteur.
+Notez que la troisième ligne passe de `110` à `105`, de sorte que sa dérivée est ramenée à `0`.
+
+```sql title="Query"
+CREATE TABLE sensor_readings
+(
+    `sensor_id` UInt32,
+    `ts`        DateTime,
+    `reading`   Float64
+)
+ENGINE = Memory;
+
+INSERT INTO sensor_readings VALUES
+    (1, '2024-01-01 00:00:00', 100),
+    (1, '2024-01-01 00:00:10', 110),
+    (1, '2024-01-01 00:00:20', 105),
+    (1, '2024-01-01 00:00:30', 130);
+```
+
+```sql title="Query"
+SELECT
+    ts,
+    reading,
+    nonNegativeDerivative(reading, ts) OVER (ORDER BY ts ASC) AS deriv_per_second
+FROM sensor_readings
+ORDER BY ts ASC;
+```
+
+```response title="Response"
+   ┌──────────────────ts─┬─reading─┬─deriv_per_second─┐
+1. │ 2024-01-01 00:00:00 │     100 │                0 │
+2. │ 2024-01-01 00:00:10 │     110 │                1 │
+3. │ 2024-01-01 00:00:20 │     105 │                0 │
+4. │ 2024-01-01 00:00:30 │     130 │              2.5 │
+   └─────────────────────┴─────────┴──────────────────┘
+```

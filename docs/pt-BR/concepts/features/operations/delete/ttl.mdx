@@ -1,0 +1,288 @@
+---
+slug: /guides/developer/ttl
+sidebarTitle: 'TTL (tempo de vida)'
+keywords: ['ttl', 'tempo de vida', 'clickhouse', 'antigo', 'dados']
+description: 'TTL (tempo de vida) refere-se à capacidade de mover, excluir ou fazer rollup de linhas ou colunas após um determinado intervalo de tempo.'
+title: 'Gerencie dados com TTL (tempo de vida)'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="overview-of-ttl">
+  ## Visão geral do TTL
+</div>
+
+TTL (tempo de vida) refere-se à capacidade de mover, excluir ou agregar linhas ou colunas após um determinado intervalo de tempo. Embora a expressão &quot;tempo de vida&quot; sugira que ela se aplica apenas à exclusão de dados antigos, o TTL tem vários casos de uso:
+
+* Remover dados antigos: sem surpresa, você pode excluir linhas ou colunas após um intervalo de tempo especificado
+* Mover dados entre discos: após um certo tempo, você pode mover dados entre volumes de armazenamento — útil para implantar uma arquitetura hot/warm/cold
+* Agregação de dados: agregue seus dados mais antigos em várias agregações e computações úteis antes de excluí-los
+
+<Note>
+  O TTL pode ser aplicado a tabelas inteiras ou a colunas específicas.
+</Note>
+
+<div id="ttl-syntax">
+  ## Sintaxe do TTL
+</div>
+
+A cláusula `TTL` pode aparecer após a definição de uma coluna e/ou no final da definição da tabela. Use a cláusula `INTERVAL` para definir um período de tempo (que deve ser do tipo de dados `Date` ou `DateTime`). Por exemplo, a tabela a seguir tem duas colunas
+com cláusulas `TTL`:
+
+```sql
+CREATE TABLE example1 (
+   timestamp DateTime,
+   x UInt32 TTL timestamp + INTERVAL 1 MONTH,
+   y String TTL timestamp + INTERVAL 1 DAY,
+   z String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+* A coluna x tem TTL de 1 mês a partir da coluna de timestamp
+* A coluna y tem TTL de 1 dia a partir da coluna de timestamp
+* Quando o intervalo termina, a coluna expira. O ClickHouse substitui o valor da coluna pelo valor padrão do respectivo tipo de dado. Se todos os valores da coluna na parte de dados expirarem, o ClickHouse remove essa coluna da parte de dados no sistema de arquivos.
+
+<Note>
+  As regras de TTL podem ser alteradas ou excluídas. Consulte a página [Manipulação de TTL de tabela](/pt-BR/reference/statements/alter/ttl) para mais detalhes.
+</Note>
+
+<Tip>
+  **Boa prática**
+
+  Ao usar TTL no nível da tabela para remover linhas antigas, recomendamos **particionar a tabela por data ou por mês** com base no mesmo campo de tempo usado na expressão TTL.
+
+  O ClickHouse pode remover partições inteiras com muito mais eficiência do que excluir linhas individuais.
+  Quando a chave de partição está alinhada com a expressão TTL, o ClickHouse pode remover partições inteiras de uma só vez quando elas expiram, em vez de reescrever partes de dados para remover linhas expiradas.
+
+  Escolha a granularidade da partição com base no período de TTL:
+
+  * Para TTL de dias/semanas: particione por dia usando `toYYYYMMDD(date_field)`
+  * Para TTL de meses/anos: particione por mês usando `toYYYYMM(date_field)` ou `toStartOfMonth(date_field)`
+</Tip>
+
+<div id="triggering-ttl-events">
+  ## Acionando eventos de TTL
+</div>
+
+A exclusão ou a agregação de linhas expiradas não é imediata — isso só ocorre durante os merges da tabela. Se você tiver uma tabela que não esteja passando por merges ativamente (por qualquer motivo), há duas configurações que acionam eventos de TTL:
+
+* `merge_with_ttl_timeout`: o intervalo mínimo, em segundos, antes de repetir um merge com TTL de exclusão. O padrão é 14400 segundos (4 horas).
+* `merge_with_recompression_ttl_timeout`: o intervalo mínimo, em segundos, antes de repetir um merge com TTL de recompressão (regras que fazem rollup dos dados antes de excluí-los). Valor padrão: 14400 segundos (4 horas).
+
+Assim, por padrão, suas regras de TTL serão aplicadas à tabela pelo menos uma vez a cada 4 horas. Basta modificar as configurações acima se precisar que essas regras sejam aplicadas com mais frequência.
+
+<Note>
+  Não é uma solução ideal (nem algo que recomendamos usar com frequência), mas você também pode forçar um merge usando `OPTIMIZE`:
+
+  ```sql
+  OPTIMIZE TABLE example1 FINAL
+  ```
+
+  `OPTIMIZE` inicia um merge não agendado das partes da tabela, e `FINAL` força uma nova otimização se a tabela já consistir em uma única parte.
+</Note>
+
+<div id="removing-rows">
+  ## Removendo linhas
+</div>
+
+Para remover linhas inteiras de uma tabela após um determinado período, defina a regra de TTL no nível da tabela:
+
+```sql
+CREATE TABLE customers (
+timestamp DateTime,
+name String,
+balance Int32,
+address String
+)
+ENGINE = MergeTree
+ORDER BY timestamp
+TTL timestamp + INTERVAL 12 HOUR
+```
+
+Além disso, é possível definir uma regra de TTL com base no valor do registro.
+Isso pode ser implementado facilmente especificando uma condição `where`.
+É possível usar várias condições:
+
+```sql
+CREATE TABLE events
+(
+    `event` String,
+    `time` DateTime,
+    `value` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (event, time)
+TTL time + INTERVAL 1 MONTH DELETE WHERE event != 'error',
+    time + INTERVAL 6 MONTH DELETE WHERE event = 'error'
+```
+
+<div id="removing-columns">
+  ## Removendo colunas
+</div>
+
+Em vez de excluir a linha inteira, suponha que você queira que apenas as colunas `balance` e `address` expirem. Vamos modificar a tabela `customers` e adicionar um TTL de 2 horas para ambas as colunas:
+
+```sql
+ALTER TABLE customers
+MODIFY COLUMN balance Int32 TTL timestamp + INTERVAL 2 HOUR,
+MODIFY COLUMN address String TTL timestamp + INTERVAL 2 HOUR
+```
+
+<div id="implementing-a-rollup">
+  ## Implementando um rollup
+</div>
+
+Suponha que queiramos excluir linhas após determinado período, mas manter parte dos dados para fins de relatório. Não queremos todos os detalhes — apenas alguns resultados agregados dos dados históricos. Isso pode ser feito adicionando uma cláusula `GROUP BY` à expressão `TTL`, juntamente com algumas colunas na tabela para armazenar os resultados agregados.
+
+Suponha que, na tabela `hits` a seguir, queiramos excluir linhas antigas, mas manter a soma e o valor máximo das colunas `hits` antes de remover as linhas. Precisaremos de um campo para armazenar esses valores e de adicionar uma cláusula `GROUP BY` à cláusula `TTL` que faça o rollup da soma e do valor máximo:
+
+```sql
+CREATE TABLE hits (
+   timestamp DateTime,
+   id String,
+   hits Int32,
+   max_hits Int32 DEFAULT hits,
+   sum_hits Int64 DEFAULT hits
+)
+ENGINE = MergeTree
+PRIMARY KEY (id, toStartOfDay(timestamp), timestamp)
+TTL timestamp + INTERVAL 1 DAY
+    GROUP BY id, toStartOfDay(timestamp)
+    SET
+        max_hits = max(max_hits),
+        sum_hits = sum(sum_hits);
+```
+
+Algumas observações sobre a tabela `hits`:
+
+* As colunas do `GROUP BY` na cláusula `TTL` devem ser um prefixo da `PRIMARY KEY`, e queremos agrupar os resultados pelo início do dia. Por isso, `toStartOfDay(timestamp)` foi adicionado à chave primária
+* Adicionamos dois campos para armazenar os resultados agregados: `max_hits` e `sum_hits`
+* Definir `hits` como valor padrão de `max_hits` e `sum_hits` é necessário para que nossa lógica funcione, com base em como a cláusula `SET` é definida
+
+<div id="implementing-a-hotwarmcold-architecture">
+  ## Implementando uma arquitetura hot/warm/cold
+</div>
+
+<CloudNotSupportedBadge />
+
+<Note>
+  Se você estiver usando o ClickHouse Cloud, as etapas desta lição não se aplicam. Você não precisa se preocupar em mover dados antigos no ClickHouse Cloud.
+</Note>
+
+Uma prática comum ao trabalhar com grandes volumes de dados é mover esses dados conforme eles envelhecem. Veja as etapas para implementar uma arquitetura hot/warm/cold no ClickHouse usando as cláusulas `TO DISK` e `TO VOLUME` do comando `TTL`. (Aliás, não precisa ser necessariamente algo como hot e cold — você pode usar TTL para mover dados conforme o seu caso de uso.)
+
+1. As opções `TO DISK` e `TO VOLUME` se referem aos nomes de discos ou volumes definidos nos seus arquivos de configuração do ClickHouse. Crie um novo arquivo chamado `my_system.xml` (ou qualquer outro nome) que defina seus discos e, em seguida, defina volumes que usem esses discos. Coloque o arquivo XML em `/etc/clickhouse-server/config.d/` para que a configuração seja aplicada ao seu sistema:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <default>
+            </default>
+           <hot_disk>
+              <path>./hot/</path>
+           </hot_disk>
+           <warm_disk>
+              <path>./warm/</path>
+           </warm_disk>
+           <cold_disk>
+              <path>./cold/</path>
+           </cold_disk>
+        </disks>
+        <policies>
+            <default>
+                <volumes>
+                    <default>
+                        <disk>default</disk>
+                    </default>
+                    <hot_volume>
+                        <disk>hot_disk</disk>
+                    </hot_volume>
+                    <warm_volume>
+                        <disk>warm_disk</disk>
+                    </warm_volume>
+                    <cold_volume>
+                        <disk>cold_disk</disk>
+                    </cold_volume>
+                </volumes>
+            </default>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+2. A configuração acima se refere a três discos que apontam para pastas das quais o ClickHouse pode ler e nas quais pode gravar. Os volumes podem conter um ou mais discos — definimos um volume para cada um dos três discos. Vamos ver os discos:
+
+```sql
+SELECT name, path, free_space, total_space
+FROM system.disks
+```
+
+```response
+┌─name────────┬─path───────────┬───free_space─┬──total_space─┐
+│ cold_disk   │ ./data/cold/   │ 179143311360 │ 494384795648 │
+│ default     │ ./             │ 179143311360 │ 494384795648 │
+│ hot_disk    │ ./data/hot/    │ 179143311360 │ 494384795648 │
+│ warm_disk   │ ./data/warm/   │ 179143311360 │ 494384795648 │
+└─────────────┴────────────────┴──────────────┴──────────────┘
+```
+
+3. E... vamos verificar os volumes:
+
+```sql
+SELECT
+    volume_name,
+    disks
+FROM system.storage_policies
+```
+
+```response
+┌─volume_name─┬─disks─────────┐
+│ default     │ ['default']   │
+│ hot_volume  │ ['hot_disk']  │
+│ warm_volume │ ['warm_disk'] │
+│ cold_volume │ ['cold_disk'] │
+└─────────────┴───────────────┘
+```
+
+4. Agora vamos adicionar uma regra `TTL` que move os dados entre os volumes hot, warm e cold:
+
+```sql
+ALTER TABLE my_table
+   MODIFY TTL
+      trade_date TO VOLUME 'hot_volume',
+      trade_date + INTERVAL 2 YEAR TO VOLUME 'warm_volume',
+      trade_date + INTERVAL 4 YEAR TO VOLUME 'cold_volume';
+```
+
+5. A nova regra de `TTL` deve ser aplicada, mas você pode forçá-la para garantir:
+
+```sql
+ALTER TABLE my_table
+    MATERIALIZE TTL
+```
+
+6. Verifique se seus dados foram movidos para os discos esperados usando a tabela `system.parts`:
+
+```sql
+Usando a tabela system.parts, veja em quais discos as partes estão para a tabela crypto_prices:
+
+SELECT
+    name,
+    disk_name
+FROM system.parts
+WHERE (table = 'my_table') AND (active = 1)
+```
+
+A resposta será semelhante a:
+
+```response
+┌─name────────┬─disk_name─┐
+│ all_1_3_1_5 │ warm_disk │
+│ all_2_2_0   │ hot_disk  │
+└─────────────┴───────────┘
+```

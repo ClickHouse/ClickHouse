@@ -1,0 +1,13 @@
+-- { echoOn }
+SELECT * FROM default ORDER BY ALL;
+1
+SELECT * FROM clashing_name ORDER BY ALL;
+7
+SELECT * FROM dependent_defaults ORDER BY ALL;
+7	14	98
+SELECT * FROM regular_column ORDER BY ALL;
+2	7	14
+SELECT * FROM complex_name_backward_compat ORDER BY ALL;
+3	7	21
+SELECT * FROM compound_id ORDER BY ALL;
+(1,2)	8

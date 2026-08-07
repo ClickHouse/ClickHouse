@@ -1,0 +1,30 @@
+---
+slug: /cloud/guides/data-sources
+title: 'Data sources'
+hide_title: true
+description: 'Table of contents page for the ClickHouse Cloud guides section'
+doc_type: 'landing-page'
+keywords: ['cloud guides', 'documentation', 'how-to', 'cloud features', 'tutorials']
+---
+
+## Cloud integrations {#cloud-integrations}
+
+This section contains guides and references for integrating ClickHouse Cloud with external data sources that require additional configuration.
+
+| Page                                                            | Description                                                            |
+|-----------------------------------------------------------------|------------------------------------------------------------------------|
+| [Cloud IP addresses](/products/cloud/guides/data-sources/cloud-endpoints-api)  | Networking information needed for some table functions and connections |
+| [Accessing S3 data securely](/products/cloud/guides/data-sources/accessing-s3-data-securely)     | Access external data sources in AWS S3 using role based access         |
+| [Accessing GCS data securely](/products/cloud/guides/data-sources/secure-gcs)   | Access external data sources in GCS securely using HMAC keys           |
+| [Connecting ClickHouse Cloud to Azure Blob Storage](/products/cloud/guides/data-sources/secure-azure) | Connect ClickHouse Cloud to Azure Blob Storage                         |
+| [Accessing Iceberg data securely](/products/cloud/guides/data-sources/accessing-iceberg-data-securely) | Access Iceberg data securely                                          |
+
+## Additional connections for external data sources {#additional-connections-for-external-data-sources}
+
+### ClickPipes for data ingestion {#clickpipes-for-data-ingestion}
+
+ClickPipes allow customers to easily integrate streaming data from a number of sources. Refer to [ClickPipes](/integrations/clickpipes/home) in our Integrations documentation for additional information.
+
+### Table functions as external data sources {#table-functions-as-external-data-sources}
+
+ClickHouse supports a number of table functions to access external data sources. For more information, refer to [table functions](/reference/functions/table-functions/index) in the SQL reference section.

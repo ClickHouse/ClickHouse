@@ -1,0 +1,9 @@
+Tuple
+{"v":null,"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":0,"b":0}}
+{"v":"string","variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":0,"b":0}}
+{"v":{"a":42,"b":0},"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":42,"b":0}}
+{"v":{"a":44,"b":0},"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":44,"b":0}}
+\N	(0,0)
+string	(0,0)
+(42,0)	(42,0)
+{"a" : 44, "d" : 32}	(0,0)

@@ -1,0 +1,135 @@
+---
+title: 'Regiones de la nube compatibles'
+sidebarTitle: 'Regiones de la nube compatibles'
+keywords: ['aws', 'gcp', 'google cloud', 'azure', 'nube', 'regiones']
+description: 'Regiones compatibles con ClickHouse Cloud'
+slug: /cloud/reference/supported-regions
+doc_type: 'reference'
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="aws-regions">
+  ## Regiones de AWS
+</div>
+
+* ap-northeast-1 (Tokio)
+* ap-northeast-2 (Corea del Sur, Seúl)
+* ap-south-1 (Bombay)
+* ap-southeast-1 (Singapur)
+* ap-southeast-2 (Sídney)
+* eu-central-1 (Fráncfort)
+* eu-west-1 (Irlanda)
+* eu-west-2 (Londres)
+* us-east-1 (Virginia del Norte)
+* us-east-2 (Ohio)
+* us-west-2 (Oregón)
+* il-central-1 (Israel, Tel Aviv)
+
+**Región privada:**
+
+* ca-central-1 (Canadá)
+* af-south-1 (Sudáfrica)
+* eu-north-1 (Estocolmo)
+* sa-east-1 (Sudamérica)
+* ap-southeast-3 (Yakarta)
+* ap-east-1 (Hong Kong)
+* mx-central-1 (México)
+
+<div id="google-cloud-regions">
+  ## Regiones de Google Cloud
+</div>
+
+* asia-southeast1 (Singapur)
+* asia-northeast1 (Tokio)
+* europe-west2 (Londres)
+* europe-west4 (Países Bajos)
+* us-central1 (Iowa)
+* us-east1 (Carolina del Sur)
+
+**región privada:**
+
+* australia-southeast1(Sídney)
+* europe-west3 (Fráncfort)
+* europe-west6 (Zúrich)
+* northamerica-northeast1 (Montréal)
+* us-west1 (Oregón)
+
+<div id="azure-regions">
+  ## Regiones de Azure
+</div>
+
+* West US 3 (Arizona)
+* East US 2 (Virginia)
+* Germany West Central (Frankfurt)
+
+**Región privada:**
+
+* Japan East (Tokyo, Saitama)
+* UAE North (Dubai)
+* Australia East (New South Wales)
+
+<Note>
+  ¿Necesitas desplegar en una región que actualmente no aparece en la lista? [Envía una solicitud](https://clickhouse.com/pricing?modal=open).
+</Note>
+
+<div id="private-regions">
+  ## Regiones privadas
+</div>
+
+<EnterprisePlanFeatureBadge feature="Función de regiones privadas" />
+
+Ofrecemos regiones privadas para nuestros servicios del nivel Enterprise. [Contáctenos](https://clickhouse.com/company/contact) para solicitar una región privada.
+
+Consideraciones clave para las regiones privadas:
+
+* Los servicios no se escalan automáticamente; sin embargo, se admite el escalado vertical y horizontal manual.
+* Los servicios no pueden ponerse en estado inactivo.
+* La página de estado no está disponible para las regiones privadas.
+
+Es posible que se apliquen requisitos adicionales para el cumplimiento de HIPAA (incluida la firma de un BAA). Tenga en cuenta que HIPAA actualmente solo está disponible para servicios del nivel Enterprise.
+
+<div id="hipaa-compliant-regions">
+  ## Regiones compatibles con HIPAA
+</div>
+
+<EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
+
+Los clientes deben firmar un Business Associate Agreement (BAA) y solicitar el onboarding a través de Ventas o Soporte para configurar servicios en regiones compatibles con HIPAA. Las siguientes regiones admiten el cumplimiento de HIPAA:
+
+* AWS af-south-1 (Sudáfrica) **región privada**
+* AWS ca-central-1 (Canadá) **región privada**
+* AWS eu-central-1 (Fráncfort)
+* AWS eu-north-1 (Estocolmo) **región privada**
+* AWS eu-west-1 (Irlanda)
+* AWS eu-west-2 (Londres)
+* AWS sa-east-1 (Sudamérica) **región privada**
+* AWS us-east-1 (Virginia del Norte)
+* AWS us-east-2 (Ohio)
+* AWS us-west-2 (Oregón)
+* GCP europe-west4 (Países Bajos)
+* GCP us-central1 (Iowa)
+* GCP us-east1 (Carolina del Sur)
+
+<div id="pci-compliant-regions">
+  ## Regiones que cumplen con PCI
+</div>
+
+<EnterprisePlanFeatureBadge feature="PCI" support="true" />
+
+Los clientes deben solicitar el onboarding a través de Ventas o Soporte para configurar servicios en regiones que cumplen con PCI. Las siguientes regiones permiten cumplir con PCI:
+
+* AWS af-south-1 (Sudáfrica) **región privada**
+* AWS ca-central-1 (Canadá) **región privada**
+* AWS eu-central-1 (Fráncfort)
+* AWS eu-north-1 (Estocolmo) **región privada**
+* AWS eu-west-1 (Irlanda)
+* AWS eu-west-2 (Londres)
+* AWS mx-central-1 (México) **región privada**
+* AWS sa-east-1 (Sudamérica) **región privada**
+* AWS us-east-1 (Virginia del Norte)
+* AWS us-east-2 (Ohio)
+* AWS us-west-2 (Oregón)
+* GCP europe-west4 (Países Bajos)
+* GCP us-central1 (Iowa)
+* GCP us-east1 (Carolina del Sur)

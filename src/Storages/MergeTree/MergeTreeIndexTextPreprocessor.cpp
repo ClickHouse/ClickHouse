@@ -1,0 +1,191 @@
+#include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
+
+#include <Core/ColumnWithTypeAndName.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <Columns/IColumn_fwd.h>
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/IDataType.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Storages/IndicesDescription.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPrePostProcessorUtils.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_QUERY;
+}
+
+namespace
+{
+
+constexpr char preprocessor_lambda_arg[] = "__text_index_x";
+constexpr char preprocessor_column_name[] = "__text_index_column";
+
+ASTPtr convertASTForIndexColumn(const IndexDescription & index, const ASTPtr & expression_ast, bool replace_index_column)
+{
+    chassert(index.column_names.size() == 1);
+    chassert(index.data_types.size() == 1);
+    chassert(index.expression_list_ast != nullptr);
+    chassert(index.expression_list_ast->children.size() == 1);
+
+    if (expression_ast == nullptr)
+        return nullptr;
+
+    /// Transform a preprocessor AST like `lower(val)` into `arrayMap(x -> lower(x), val)`.
+    /// This is done at the AST level so that ActionsVisitor can build the DAG naturally.
+    if (isArray(index.data_types.front()))
+    {
+        /// Firstly replace the index expression with lambda argument.
+        ASTPtr new_expression = expression_ast->clone();
+        replaceExpressionToIdentifier(new_expression, index.column_names.front(), preprocessor_lambda_arg);
+
+        /// Create the array argument of arrayMap function.
+        auto array_map_arg = replace_index_column
+            ? make_intrusive<ASTIdentifier>(preprocessor_column_name)
+            : index.expression_list_ast->children.front();
+
+        /// Pack preprocessor expression into lambda.
+        return makeASTFunction("arrayMap",
+            makeASTLambda({preprocessor_lambda_arg}, std::move(new_expression)),
+            array_map_arg);
+    }
+
+    if (replace_index_column)
+    {
+        ASTPtr new_expression = expression_ast->clone();
+        replaceExpressionToIdentifier(new_expression, index.column_names.front(), preprocessor_column_name);
+        return new_expression;
+    }
+
+    return expression_ast->clone();
+}
+
+ASTPtr convertASTForConstant(const IndexDescription & index, const ASTPtr & expression_ast)
+{
+    chassert(index.column_names.size() == 1);
+    chassert(index.data_types.size() == 1);
+
+    if (expression_ast == nullptr)
+        return nullptr;
+
+    ASTPtr body = expression_ast->clone();
+    replaceExpressionToIdentifier(body, index.column_names.front(), preprocessor_column_name);
+    return body;
+}
+
+/// Creates and validates an ActionsDAG for a preprocessor expression.
+ActionsDAG createActionsDAGForPreprocessor(
+    const NamesAndTypesList & source_columns,
+    const String & source_name,
+    const DataTypePtr & source_type,
+    ASTPtr expression_ast)
+{
+    if (expression_ast == nullptr)
+        return ActionsDAG();
+
+    auto actions_dag = buildActionsDAGFromAST(expression_ast, source_columns);
+    validateTransformActionsDAG(actions_dag, "preprocessor", source_name);
+
+    const ActionsDAG::NodeRawConstPtrs & outputs = actions_dag.getOutputs();
+    auto output_type = outputs.front()->result_type;
+    auto nested_type = MergeTreeIndexText::getNestedDataType(output_type);
+    WhichDataType which_data_type(nested_type);
+
+    if (!which_data_type.isString() && !which_data_type.isFixedString())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression should return a column of type with base type of String or FixedString, got: {}", output_type->getName());
+
+    auto get_array_dimensions = [](const DataTypePtr & type) -> size_t
+    {
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+            return array_type->getNumberOfDimensions();
+        return 0;
+    };
+
+    if (get_array_dimensions(source_type) != get_array_dimensions(output_type))
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The preprocessor expression must not change the array dimensions of the source column. Source type: '{}', preprocessor result type: '{}'", source_type->getName(), output_type->getName());
+
+    return actions_dag;
+}
+
+}
+
+MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
+    : index_column_type(index_description.data_types.front())
+    /// Use source index columns to execute index and preprocessor expressions.
+    , original_actions(createActionsDAGForPreprocessor(
+        index_description.expression->getRequiredColumnsWithTypes(),
+        index_description.column_names.front(),
+        index_column_type,
+        convertASTForIndexColumn(index_description, expression_ast, false)))
+    /// Assume that index expression is already executed and use a placeholder column to execute preprocessor expression.
+    , actions_for_index_column(createActionsDAGForPreprocessor(
+        {{preprocessor_column_name, index_column_type}},
+        preprocessor_column_name,
+        index_column_type,
+        convertASTForIndexColumn(index_description, expression_ast, true)))
+    /// Take constant string and execute preprocessor expression.
+    , actions_for_constant(createActionsDAGForPreprocessor(
+        {{preprocessor_column_name, std::make_shared<DataTypeString>()}},
+        preprocessor_column_name,
+        std::make_shared<DataTypeString>(),
+        convertASTForConstant(index_description, expression_ast)))
+{
+    if (expression_ast)
+    {
+        /// Detect pure case-folding preprocessors of the exact form lower(col), lowerUTF8(col),
+        /// upper(col), or upperUTF8(col), where col is the index column itself.
+        /// Nested expressions such as lower(trim(col)) are not considered pure case folding
+        /// because the additional transformation would change the dictionary tokens in a way
+        /// that the ILIKE case-insensitive regex can no longer match them correctly.
+        const auto * func = expression_ast->as<ASTFunction>();
+        if (func && (func->name == "lower" || func->name == "lowerUTF8" || func->name == "upper" || func->name == "upperUTF8")
+            && func->arguments && func->arguments->children.size() == 1)
+        {
+            const auto * arg = func->arguments->children.front()->as<ASTIdentifier>();
+            is_lower_or_upper = arg && arg->name() == index_description.column_names.front();
+        }
+    }
+}
+
+std::pair<ColumnPtr, size_t> MergeTreeIndexTextPreprocessor::processColumn(const ColumnWithTypeAndName & column, size_t start_row, size_t n_rows) const
+{
+    ColumnPtr index_column = column.column;
+    if (actions_for_index_column.getActions().empty())
+        return {index_column, start_row};
+
+    chassert(column.type->equals(*index_column_type));
+    chassert(index_column->getDataType() == column.type->getTypeId());
+
+    /// Only copy if needed
+    if (start_row != 0 || n_rows != index_column->size())
+        index_column = index_column->cut(start_row, n_rows);
+
+    return {executeUnaryExpressionActions(actions_for_index_column, index_column, index_column_type, preprocessor_column_name, n_rows), 0};
+}
+
+String MergeTreeIndexTextPreprocessor::processConstant(const String & input) const
+{
+    if (actions_for_constant.getActions().empty())
+        return input;
+
+    auto input_type = std::make_shared<DataTypeString>();
+    ColumnPtr input_column = input_type->createColumnConst(1, Field(input));
+    ColumnPtr output_column = executeUnaryExpressionActions(actions_for_constant, input_column, input_type, preprocessor_column_name, 1);
+    return String{output_column->getDataAt(0)};
+}
+
+}

@@ -1,0 +1,22 @@
+<test>
+    <query>select substringUTF8(materialize('hello world'), 2, 5) from numbers(10000000)</query>
+    <query>select substringUTF8(materialize('hello 世界'), 2, 5) from numbers(10000000)</query>
+
+    <query>select substringIndexUTF8(materialize('www.clickhouse.com'), '.', 2) from numbers(10000000)</query>
+    <query>select substringIndexUTF8(materialize('官网www.clickhouse.com'), '.', 2) from numbers(10000000)</query>
+
+    <query>select reverseUTF8(materialize('hello world')) from numbers(10000000)</query>
+    <query>select reverseUTF8(materialize('hello 世界')) from numbers(10000000)</query>
+
+    <query>select lowerUTF8(materialize('hello world')) from numbers(10000000)</query>
+    <query>select lowerUTF8(materialize('hello 世界')) from numbers(10000000)</query>
+
+    <query>select upperUTF8(materialize('hello world')) from numbers(10000000)</query>
+    <query>select upperUTF8(materialize('hello 世界')) from numbers(10000000)</query>
+
+    <query>select leftPadUTF8(materialize('hello '), 10, ',') from numbers(10000000)</query>
+    <query>select leftPadUTF8(materialize('hello '), 10, '世界') from numbers(10000000)</query>
+
+    <query>select rightPadUTF8(materialize('hello '), 10, ',') from numbers(10000000)</query>
+    <query>select rightPadUTF8(materialize('hello '), 10, '世界') from numbers(10000000)</query>
+</test>

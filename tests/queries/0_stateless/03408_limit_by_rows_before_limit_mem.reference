@@ -1,0 +1,54 @@
+-- Assert total number of groups and records in memory
+10	50
+
+-- Assert rows_before_limit for memory ORDER BY + LIMIT BY + LIMIT, exact
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "val",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "00"],
+		[1, "01"],
+		[2, "02"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 10
+}
+
+-- Assert rows_before_limit for memory HAVING + ORDER BY + LIMIT BY + LIMIT, exact
+{
+	"meta":
+	[
+		{
+			"name": "id",
+			"type": "Int32"
+		},
+		{
+			"name": "val",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, "40"],
+		[1, "41"],
+		[2, "42"]
+	],
+
+	"rows": 3,
+
+	"rows_before_limit_at_least": 7
+}

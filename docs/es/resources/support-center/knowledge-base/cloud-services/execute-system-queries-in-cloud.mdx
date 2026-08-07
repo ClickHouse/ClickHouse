@@ -1,0 +1,35 @@
+---
+title: Ejecutar sentencias SYSTEM en todos los nodos de ClickHouse Cloud
+description: Aprenda a usar `ON CLUSTER` y `clusterAllReplicas` para ejecutar sentencias SYSTEM y consultas en todos los nodos de un servicio de ClickHouse Cloud.
+date: 2023-03-01
+tags: ['Implementaciones y escalado']
+keywords: ['clusterAllReplicas']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+Para ejecutar la misma consulta en todos los nodos de un servicio de ClickHouse Cloud, podemos usar [clusterAllReplicas](/es/reference/functions/table-functions/cluster).
+
+Por ejemplo, para obtener registros de una tabla del sistema (local a cada nodo) en todos los nodos, puedes usar:
+
+```sql
+SELECT ... FROM clusterAllReplicas(default, system.TABLE) ...;
+```
+
+Del mismo modo, puedes ejecutar la misma [sentencia SYSTEM](/es/reference/statements/system) en todos los nodos con una sola sentencia, usando la cláusula [ON CLUSTER](/es/reference/statements/distributed-ddl):
+
+```sql
+SYSTEM ... ON CLUSTER default;
+```
+
+Por ejemplo, para [vaciar la caché del sistema de archivos](/es/reference/statements/system#drop-filesystem-cache) en todos los nodos, puede usar:
+
+```sql
+SYSTEM DROP FILESYSTEM CACHE ON CLUSTER default;
+```

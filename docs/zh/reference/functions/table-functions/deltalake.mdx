@@ -1,0 +1,125 @@
+---
+description: '为 Amazon S3 中的 Delta Lake 表提供只读的类表接口。'
+sidebarTitle: 'deltaLake'
+slug: /sql-reference/table-functions/deltalake
+title: 'deltaLake'
+doc_type: 'reference'
+---
+
+为 Amazon S3、Azure Blob 存储或本地挂载文件系统中的 [Delta Lake](https://github.com/delta-io/delta) 表提供类表接口，支持读取和写入 (自 v25.10 起)
+
+<div id="syntax">
+  ## 语法
+</div>
+
+`deltaLake` 是 `deltaLakeS3` 的别名，保留该名称是出于兼容性考虑。
+
+```sql
+deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+deltaLakeLocal(path, [,format])
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+此表函数的参数分别与 `s3`、`azureBlobStorage`、`HDFS` 和 `file` 表函数的参数相同。
+`format` 参数表示 Delta Lake 表中数据文件所采用的格式。
+
+可选的 `extra_credentials` 参数可用于传递 `role_arn`，以便在 ClickHouse Cloud 中实现基于角色的访问。有关配置步骤，请参见 [安全访问 S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+返回一个具有指定结构的表，用于从指定的 Delta Lake 表中读取数据或向其中写入数据。
+
+<div id="examples">
+  ## 示例
+</div>
+
+<div id="reading-data">
+  ### 读取数据
+</div>
+
+假设有一个位于 S3 存储中的表：`https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`。
+要在 ClickHouse 中读取该表的数据，请运行：
+
+```sql title="Query"
+SELECT
+    URL,
+    UserAgent
+FROM deltaLake('https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/')
+WHERE URL IS NOT NULL
+LIMIT 2
+```
+
+```response title="Response"
+┌─URL───────────────────────────────────────────────────────────────────┬─UserAgent─┐
+│ http://auto.ria.ua/search/index.kz/jobinmoscow/detail/55089/hasimages │         1 │
+│ http://auto.ria.ua/search/index.kz/jobinmoscow.ru/gosushi             │         1 │
+└───────────────────────────────────────────────────────────────────────┴───────────┘
+```
+
+<div id="inserting-data">
+  ### 插入数据
+</div>
+
+假设 S3 存储 `s3://ch-docs-s3-bucket/people_10k/` 中有一个表。
+要向该表插入数据，首先启用该 Experimental 功能：
+
+```sql title="Query"
+SET allow_experimental_delta_lake_writes=1
+```
+
+然后输入：
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>') VALUES (10001, 'John', 'Smith', 'Male', 30)
+```
+
+```response title="Response"
+Query id: 09069b47-89fa-4660-9e42-3d8b1dde9b17
+
+Ok.
+
+1 row in set. Elapsed: 3.426 sec.
+```
+
+你可以再次查询该表，以确认插入是否成功：
+
+```sql title="Query"
+SELECT *
+FROM deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>')
+WHERE (firstname = 'John') AND (lastname = 'Smith')
+```
+
+```response title="Response"
+Query id: 65032944-bed6-4d45-86b3-a71205a2b659
+
+   ┌────id─┬─firstname─┬─lastname─┬─gender─┬─age─┐
+1. │ 10001 │ John      │ Smith    │ Male   │  30 │
+   └───────┴───────────┴──────────┴────────┴─────┘
+```
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_path` — 文件路径。类型：`LowCardinality(String)`。
+* `_file` — 文件名。类型：`LowCardinality(String)`。
+* `_size` — 文件大小 (单位：字节) 。类型：`Nullable(UInt64)`。如果文件大小未知，则该值为 `NULL`。
+* `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则该值为 `NULL`。
+* `_etag` — 文件的 etag。类型：`LowCardinality(String)`。如果 etag 未知，则该值为 `NULL`。
+
+<div id="related">
+  ## 相关
+</div>
+
+* [DeltaLake 引擎](/zh/reference/engines/table-engines/integrations/deltalake)
+* [DeltaLake cluster 表函数](/zh/reference/functions/table-functions/deltalakeCluster)

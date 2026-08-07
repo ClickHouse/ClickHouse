@@ -1,0 +1,224 @@
+---
+sidebarTitle: '使用命令进行备份或恢复'
+slug: /cloud/manage/backups/backup-restore-via-commands
+title: '使用命令创建备份或恢复备份'
+description: '介绍如何使用命令通过你自己的存储桶创建备份或恢复备份的页面'
+doc_type: 'guide'
+keywords: ['备份', '灾难恢复', '数据保护', '恢复', '云功能']
+---
+
+除了可[通过用户界面](/zh/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui)进行备份或恢复外，
+你还可以使用 `BACKUP` 和 `RESTORE` 命令将备份导出到存储桶。
+本指南提供了适用于全部三种 CSP 的命令。
+
+<div id="requirements">
+  ## 要求
+</div>
+
+要将备份导出到您自己的 CSP 存储桶或从中恢复备份，您需要以下信息：
+
+<Tabs>
+  <Tab title="AWS">
+    1. AWS S3 端点，格式为：`s3://<bucket_name>.s3.amazonaws.com/<optional_directory>`
+       例如：`s3://testchbackups.s3.amazonaws.com/`
+       其中：
+       * `testchbackups` 是用于导出备份的 S3 bucket 名称。
+       * `backups` 是可选的子目录。
+    2. AWS 访问密钥和密钥。还支持基于 AWS Role 的身份验证，可按上文所述替代 AWS 访问密钥和密钥使用。
+
+    <br />
+  </Tab>
+
+  <Tab title="GCP">
+    1. GCS 端点，格式为：`https://storage.googleapis.com/<bucket_name>/`
+    2. 访问 HMAC 密钥和 HMAC 密钥。
+
+    <br />
+  </Tab>
+
+  <Tab title="Azure">
+    1. Azure 存储连接字符串。
+    2. 存储账户中的 Azure 容器名称。
+    3. 容器中的 Azure Blob 名称。
+
+    <br />
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_db">
+  ## 备份 / 恢复指定的 DB
+</div>
+
+这里展示如何对*单个*数据库进行备份和恢复。
+有关全量备份和恢复命令，请参阅[备份命令摘要](/zh/concepts/features/backup-restore/overview#command-summary)。
+
+<div id="aws-s3-bucket">
+  ### AWS S3
+</div>
+
+<Tabs>
+  <Tab title="备份">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+
+    其中，`uuid` 是唯一标识符，用于区分每组备份。
+
+    <Note>
+      在此子目录中，每次创建新备份时都需要使用不同的 uuid，否则会收到 `BACKUP_ALREADY_EXISTS` 错误。
+      例如，如果你要执行每日备份，则每天都需要使用新的 uuid。
+    </Note>
+  </Tab>
+
+  <Tab title="恢复">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="google-cloud-storage">
+  ### Google Cloud Storage (GCS)
+</div>
+
+<Tabs>
+  <Tab title="备份">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+
+    其中，`uuid` 是一个唯一标识符，用于标识该备份。
+
+    <Note>
+      在此子目录中，每次创建新备份时都需要使用不同的 uuid，否则会报 `BACKUP_ALREADY_EXISTS` 错误。
+      例如，如果你每天执行备份，就需要每天使用一个新的 uuid。
+    </Note>
+  </Tab>
+
+  <Tab title="恢复">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="azure-blob-storage">
+  ### Azure Blob 存储
+</div>
+
+<Tabs>
+  <Tab title="备份">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<>'
+    )
+    ```
+
+    其中，`uuid` 是用于标识该备份的唯一标识符。
+
+    <Note>
+      在此子目录中，每次新建备份时都需要使用不同的 uuid，否则会收到 `BACKUP_ALREADY_EXISTS` 错误。
+      例如，如果你执行每日备份，则每天都需要使用一个新的 uuid。
+    </Note>
+  </Tab>
+
+  <Tab title="恢复">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<uuid>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_entire_service">
+  ## Backup / 恢复 整个服务
+</div>
+
+如需备份整个服务，请使用以下命令。
+此备份将包含所有用户数据，以及已创建实体、settings profile、角色策略、quotas 和 functions 的系统数据。
+这里列出的是适用于 AWS S3 的示例。
+你也可以结合上述语法，使用这些命令为 GCS 和 Azure Blob 存储执行备份。
+
+<Tabs>
+  <Tab title="备份">
+    ```sql
+    BACKUP 
+        TABLE system.users,
+        TABLE system.roles,
+        TABLE system.settings_profiles,
+        TABLE system.row_policies,
+        TABLE system.quotas,
+        TABLE system.functions,
+        ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+    TO S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+
+    其中，`uuid` 是唯一标识符，用于标识该备份。
+  </Tab>
+
+  <Tab title="恢复">
+    ```sql
+    RESTORE ALL EXCEPT TABLES system.users, system.roles
+    FROM S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backups-faq">
+  ## FAQ
+</div>
+
+<Accordion title="导出到我的云对象存储中的备份会怎样？ClickHouse 会在某个时候清理它们吗？">
+  我们支持您将备份导出到您的 bucket，但备份一旦写入，我们不会清理或删除其中任何内容。您需要自行管理 bucket 中备份的生命周期，包括根据需要删除、归档，或迁移到成本更低的存储，以优化总体成本。
+</Accordion>
+
+<Accordion title="如果我将部分现有备份移动到其他位置，restore 过程会怎样？">
+  如果有任何备份被移动到其他位置，则需要更新 restore 命令，使其指向存储这些备份的新位置。
+</Accordion>
+
+<Accordion title="如果我更改了访问对象存储所需的 credentials，会怎样？">
+  您需要在 UI 中更新变更后的 credentials，这样备份才能重新成功执行。
+</Accordion>
+
+<Accordion title="如果我更改了导出 external backups 的位置，会怎样？">
+  您需要在 UI 中更新新的位置，之后备份将开始写入新位置。旧备份会保留在原始位置。
+</Accordion>
+
+<Accordion title="如何在已启用 external backups 的 service 上禁用它们？">
+  要为某个 service 禁用 external backups，请前往该 service 的设置界面，然后点击 Change external backup。在随后出现的界面中，点击 Remove setup，即可为该 service 禁用 external backups。
+</Accordion>

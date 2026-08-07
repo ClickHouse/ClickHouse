@@ -1,0 +1,85 @@
+Test without utilizing skip indexes for disjunctions
+-- Simple OR condition
+      PrimaryKey
+        Granules: 157/157
+        Name: v1_index
+        Granules: 157/157
+        Name: v2_index
+        Granules: 157/157
+-- Mixed AND/OR condition
+      PrimaryKey
+        Granules: 79/157
+        Name: v1_index
+        Granules: 79/79
+        Name: v2_index
+        Granules: 79/79
+-- Mixed _part_offset / OR condition
+      PrimaryKey
+        Granules: 79/157
+        Name: v1_index
+        Granules: 79/79
+        Name: v2_index
+        Granules: 79/79
+-- No skip index on v3
+      PrimaryKey
+        Granules: 157/157
+        Name: v1_index
+        Granules: 157/157
+        Name: v2_index
+        Granules: 157/157
+Test with utilizing skip indexes for disjunctions
+-- Simple OR condition
+      PrimaryKey
+        Granules: 157/157
+        Name: v1_index
+        Granules: 157/157
+        Name: v2_index
+        Granules: 157/157
+        Name: <Combined skip indexes>
+        Granules: 2/157
+-- Mixed AND/OR condition
+      PrimaryKey
+        Granules: 79/157
+        Name: v1_index
+        Granules: 79/79
+        Name: v2_index
+        Granules: 79/79
+        Name: <Combined skip indexes>
+        Granules: 1/79
+-- Mixed _part_offset / OR condition
+      PrimaryKey
+        Granules: 79/157
+        Name: v1_index
+        Granules: 79/79
+        Name: v2_index
+        Granules: 79/79
+        Name: <Combined skip indexes>
+        Granules: 1/79
+-- No skip index on v3
+      PrimaryKey
+        Granules: 157/157
+        Name: v1_index
+        Granules: 157/157
+        Name: v2_index
+        Granules: 157/157
+        Name: <Combined skip indexes>
+        Granules: 157/157
+-- Complex condition
+      PrimaryKey
+        Granules: 157/157
+        Name: v1_index
+        Granules: 49/157
+        Name: v2_index
+        Granules: 33/49
+        Name: <Combined skip indexes>
+        Granules: 0/33
+6
+Test with composite primary key condition
+      PrimaryKey
+        Granules: 10/10
+        Name: v1_index
+        Granules: 10/10
+        Name: v2_index
+        Granules: 10/10
+        Name: <Combined skip indexes>
+        Granules: 1/10

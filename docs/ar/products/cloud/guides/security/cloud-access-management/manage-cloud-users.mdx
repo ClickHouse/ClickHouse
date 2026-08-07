@@ -1,0 +1,131 @@
+---
+sidebarTitle: 'إدارة مستخدمي السحابة'
+slug: /cloud/security/manage-cloud-users
+title: 'إدارة مستخدمي السحابة'
+description: 'توضح هذه الصفحة كيفية إضافة المسؤولين للمستخدمين وإدارة التعيينات وإزالة المستخدمين'
+doc_type: 'guide'
+keywords: ['مستخدمو السحابة', 'إدارة الوصول', 'الأمان', 'الأذونات', 'إدارة الفريق']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+هذا الدليل مخصّص للمستخدمين الذين لديهم دور Admin في ClickHouse Cloud.
+
+<div id="add-users">
+  ## أضف مستخدمين إلى مؤسستك
+</div>
+
+<div id="invite-users">
+  ### دعوة المستخدمين
+</div>
+
+يمكن للمسؤولين دعوة عدة مستخدمين في الوقت نفسه وتعيين دور واحد أو أكثر عند إرسال الدعوة.
+
+<Steps>
+  <Step>
+    ### الوصول إلى إعدادات المؤسسة واختيار `Users and roles`
+
+    من صفحة الخدمات، اختر اسم مؤسستك. ثم اختر عنصر القائمة `Users and roles` من القائمة المنبثقة.
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### اختيار `Invite members` في الزاوية العلوية اليسرى
+
+    انقر على الزر `Invite members` في الزاوية العلوية اليسرى.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### إدخال عناوين البريد الإلكتروني للأعضاء الجدد وتعيين الأدوار
+
+    أدخل عناوين البريد الإلكتروني في أعلى شاشة الدعوة. ثم اختر دورًا واحدًا أو أكثر لتعيينها للمستخدمين.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### انقر على `Send invites`
+
+    انقر على `Send invites` في أسفل الشاشة. سيتلقى المستخدمون رسالة بريد إلكتروني يمكنهم من خلالها الانضمام إلى المؤسسة. لمزيد من المعلومات حول قبول الدعوات، راجع [إدارة حسابي](/ar/products/cloud/guides/security/cloud-access-management/manage-my-account).
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
+  </Step>
+</Steps>
+
+<div id="add-users-via-saml">
+  ### إضافة المستخدمين عبر موفّر الهوية SAML
+</div>
+
+<EnterprisePlanFeatureBadge feature="SAML SSO" />
+
+إذا كانت مؤسستك مُهيّأة لاستخدام [SAML SSO](/ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup)، فاتبع هذه الخطوات لإضافة مستخدمين إلى مؤسستك.
+
+1. أضف المستخدمين إلى تطبيق SAML لدى موفّر الهوية. لن يظهر المستخدمون في ClickHouse حتى يسجّلوا الدخول مرة واحدة.
+2. عندما يسجّل المستخدم الدخول إلى ClickHouse Cloud، سيُسنَد إليه تلقائيًا الدور الافتراضي المحدد في إعدادات SAML.
+3. اتبع الإرشادات الواردة في `Manage user role assignments` أدناه لمنح الأذونات.
+
+<div id="enforce-saml">
+  ### فرض المصادقة عبر SAML فقط
+</div>
+
+بمجرد أن يكون لديك مستخدم SAML واحد على الأقل داخل المؤسسة ومُعيَّن له دور Admin، أزِل من المؤسسة المستخدمين الذين يستخدمون طرق مصادقة أخرى لفرض المصادقة عبر SAML فقط على مستوى المؤسسة.
+
+<div id="manage-role-assignments">
+  ## إدارة إسناد الأدوار للمستخدمين
+</div>
+
+يمكن للمستخدمين المُسنَد إليهم دور Admin تحديث أذونات المستخدمين الآخرين في أي وقت.
+
+<Steps>
+  <Step>
+    ### الوصول إلى إعدادات المؤسسة واختيار Users and roles
+
+    من صفحة الخدمات، حدِّد اسم مؤسستك. اختر عنصر القائمة `Users and roles` من القائمة المنبثقة.
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### تحديد المستخدم المطلوب تحديثه واختيار Edit
+
+    اختر عنصر القائمة الموجود في نهاية الصف الخاص بالمستخدم الذي تريد تعديل مستوى وصوله. اختر `edit` من القائمة المنبثقة.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### تحديث الأذونات
+
+    انقر داخل مربع `Roles` لتوسيع القائمة. حدِّد مربعات الاختيار لإضافة أدوار للمستخدم أو إزالتها منه. راجع [أدوار Console والأذونات](/ar/products/cloud/reference/security/console-roles) للحصول على قائمة بالأدوار والأذونات المرتبطة بها.
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### حفظ تغييراتك
+
+    احفظ تغييراتك باستخدام الزر `Save changes` أسفل علامة التبويب.
+  </Step>
+</Steps>
+
+<div id="remove-user">
+  ## إزالة مستخدم
+</div>
+
+<Info>
+  **إزالة مستخدمي SAML**
+
+  لن يتمكن مستخدمو SAML الذين أُلغي تعيينهم من تطبيق ClickHouse لدى موفّر الهوية لديك من تسجيل الدخول إلى ClickHouse Cloud. ولن يُزال الحساب من الواجهة تلقائيًا، لذا ستحتاج إلى إزالته يدويًا.
+</Info>
+
+اتبع الخطوات التالية لإزالة مستخدم.
+
+1. حدِّد اسم المؤسسة في الزاوية السفلية اليسرى
+2. انقر على `Users and roles`
+3. انقر على النقاط الثلاث بجوار اسم المستخدم، ثم حدِّد `Remove`
+4. أكِّد الإجراء بالنقر على الزر `Remove user`

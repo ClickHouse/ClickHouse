@@ -1,0 +1,102 @@
+---
+description: 'مرجع سياسة الإخفاء'
+sidebarTitle: 'سياسة الإخفاء'
+slug: /sql-reference/statements/create/masking-policy
+title: 'CREATE MASKING POLICY'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/ar/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+ينشئ سياسة إخفاء تتيح تحويل قيم الأعمدة أو إخفاءها ديناميكيًا لمستخدمين أو أدوار محددة عند الاستعلام عن جدول.
+
+<Tip>
+  توفّر سياسات الإخفاء أمانًا للبيانات على مستوى العمود من خلال تحويل البيانات الحساسة وقت الاستعلام دون تعديل البيانات المخزّنة.
+</Tip>
+
+الصيغة:
+
+```sql
+CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]table
+    UPDATE column1 = expression1 [, column2 = expression2 ...]
+    [WHERE condition]
+    TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}
+    [PRIORITY priority_number]
+```
+
+<div id="update-clause">
+  ## عبارة `UPDATE`
+</div>
+
+تحدّد عبارة `UPDATE` الأعمدة المطلوب إخفاؤها وكيفية تحويلها. يمكنك إخفاء عدة أعمدة ضمن سياسة واحدة.
+
+أمثلة:
+
+* إخفاء بسيط: `UPDATE email = '***masked***'`
+* إخفاء جزئي: `UPDATE email = concat(substring(email, 1, 3), '***@***.***')`
+* إخفاء بالاستناد إلى التجزئة: `UPDATE email = concat('masked_', substring(hex(cityHash64(email)), 1, 8))`
+* أعمدة متعددة: `UPDATE email = '***@***.***', phone = '***-***-****'`
+
+<div id="where-clause">
+  ## عبارة WHERE
+</div>
+
+تتيح عبارة `WHERE` الاختيارية تطبيق الإخفاء المشروط بناءً على قيم الصفوف. ولا يُطبَّق الإخفاء إلا على الصفوف التي تطابق الشرط.
+
+مثال:
+
+```sql
+CREATE MASKING POLICY mask_high_salaries ON employees
+UPDATE salary = 0
+WHERE salary > 100000
+TO analyst;
+```
+
+<div id="to-clause">
+  ## عبارة TO
+</div>
+
+في قسم `TO`، حدِّد المستخدمين والأدوار التي ينبغي تطبيق السياسة عليها.
+
+* `TO user1, user2`: يُطبَّق على مستخدمين/أدوار محددة
+* `TO ALL`: يُطبَّق على جميع المستخدمين
+* `TO ALL EXCEPT user1, user2`: يُطبَّق على جميع المستخدمين باستثناء المحدَّدين
+
+<Note>
+  بخلاف سياسات الصفوف، لا تؤثر سياسات الإخفاء في المستخدمين الذين لا تُطبَّق عليهم السياسة. وإذا لم تنطبق على مستخدم أي سياسة إخفاء، فسيتمكن من رؤية البيانات الأصلية.
+</Note>
+
+<div id="priority-clause">
+  ## عبارة PRIORITY
+</div>
+
+إذا استهدفت عدة سياسات إخفاء العمود نفسه لمستخدم معيّن، فإن عبارة `PRIORITY` يحدّد ترتيب تطبيقها. وتُطبَّق السياسات من الأعلى أولوية إلى الأدنى.
+
+الأولوية الافتراضية هي 0. وتُطبَّق السياسات ذات الأولوية نفسها بترتيب غير محدد.
+
+مثال:
+
+```sql
+-- Applied second (lower priority)
+CREATE MASKING POLICY mask1 ON users
+UPDATE email = 'low@priority.com'
+TO analyst
+PRIORITY 1;
+
+-- Applied first (higher priority)
+CREATE MASKING POLICY mask2 ON users
+UPDATE email = 'high@priority.com'
+TO analyst
+PRIORITY 10;
+
+-- analyst sees 'low@priority.com' because it's applied last
+```
+
+<Info>
+  **اعتبارات الأداء**
+
+  * قد تؤثر سياسات الإخفاء في أداء الاستعلام تبعًا لمدى تعقيد التعبير
+  * قد تُعطَّل بعض التحسينات في الجداول التي تتضمن سياسات إخفاء نشطة
+</Info>

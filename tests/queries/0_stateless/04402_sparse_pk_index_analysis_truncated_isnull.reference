@@ -1,0 +1,177 @@
+b skipped from sparse index	1
+-- { echoOn }
+
+-- Filtering only on the truncated suffix `b`: the only referenced key column is not loaded in the
+-- sparse prefix, so no usable key column remains and no granule is pruned
+-- (Granules: 100/100). This covers the empty-sparse fallback and that the lightweight path (=1)
+-- matches the legacy path (=0); the `!is_key_col_present` branch itself is exercised by the
+-- prefix-constrained cases below.
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_trunc_isnull)
+        Indexes:
+          PrimaryKey
+            Keys:
+              b
+            Condition: (b isNull)
+            Parts: 1/1
+            Granules: 100/100
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_trunc_isnull)
+        Indexes:
+          PrimaryKey
+            Keys:
+              b
+            Condition: (b isNull)
+            Parts: 1/1
+            Granules: 100/100
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+15
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_trunc_isnull)
+        Indexes:
+          PrimaryKey
+            Keys:
+              b
+            Condition: (b isNotNull)
+            Parts: 1/1
+            Granules: 100/100
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_trunc_isnull)
+        Indexes:
+          PrimaryKey
+            Keys:
+              b
+            Condition: (b isNotNull)
+            Parts: 1/1
+            Granules: 100/100
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+85
+-- Constraining the present prefix `a` alongside the truncated-suffix IS NULL/IS NOT NULL: `a` keeps
+-- the loaded sparse key set non-empty, so checkInRange runs and hits the `!is_key_col_present` branch
+-- for the missing `b` column. Pruning still fires on `a` (Granules: 11/100), and the lightweight path
+-- matches the legacy path. The sparse path (=1) is asserted with its own EXPLAIN so pruning is
+-- checked, not just the count.
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_trunc_isnull)
+        Indexes:
+          PrimaryKey
+            Keys:
+              a
+              b
+            Condition: and((b isNull), (a in [90, +Inf)))
+            Parts: 1/1
+            Granules: 11/100
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_trunc_isnull)
+        Indexes:
+          PrimaryKey
+            Keys:
+              a
+              b
+            Condition: and((b isNull), (a in [90, +Inf)))
+            Parts: 1/1
+            Granules: 11/100
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+2
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 0, enable_parallel_replicas = 0;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_trunc_isnull)
+        Indexes:
+          PrimaryKey
+            Keys:
+              a
+              b
+            Condition: and((b isNotNull), (a in [90, +Inf)))
+            Parts: 1/1
+            Granules: 11/100
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Expression ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_trunc_isnull)
+        Indexes:
+          PrimaryKey
+            Keys:
+              a
+              b
+            Condition: and((b isNotNull), (a in [90, +Inf)))
+            Parts: 1/1
+            Granules: 11/100
+            Search Algorithm: generic exclusion search
+          Ranges: 1
+SELECT count() FROM t_sparse_pk_trunc_isnull
+WHERE a >= 90 AND b IS NOT NULL
+SETTINGS use_lightweight_primary_key_index_analysis = 1, enable_parallel_replicas = 0;
+8

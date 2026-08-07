@@ -1,0 +1,66 @@
+---
+title: Comment configurer les paramètres d’un utilisateur dans ClickHouse
+description: Découvrez comment définir des paramètres dans ClickHouse pour des requêtes individuelles, des sessions client ou des utilisateurs spécifiques à l’aide des commandes `SET` et `ALTER USER`.
+date: 2023-03-01
+tags: ['Paramètres']
+keywords: ['SET', 'ALTER', 'Utilisateur', 'Requête', 'Session']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+Il existe plusieurs façons de définir un paramètre pour un utilisateur dans ClickHouse, selon le cas d’utilisation et la durée pendant laquelle vous souhaitez conserver ce paramètre. Examinons quelques scénarios...
+
+<div id="configure-a-setting-for-a-single-query">
+  ## Configurer un paramètre pour une seule requête
+</div>
+
+Une requête `SELECT` peut contenir une clause `SETTINGS` dans laquelle vous pouvez définir autant de paramètres que nécessaire. Ces paramètres s’appliquent uniquement à cette requête. Par exemple :
+
+```sql
+SELECT *
+FROM my_table
+SETTINGS max_threads = 8;
+```
+
+Le nombre maximal de threads sera de 8 pour cette requête précise.
+
+<div id="configure-a-setting-for-a-session">
+  ## Configurer un paramètre pour une session
+</div>
+
+Vous pouvez définir un paramètre pour toute la durée d’une session client à l’aide d’une clause `SET`. C’est pratique pour des tests ad hoc ou lorsque vous souhaitez qu’un paramètre reste actif le temps de quelques requêtes, mais pas au-delà.
+
+```sql
+SET max_threads = 8;
+
+SELECT *
+FROM my_table;
+```
+
+<div id="configure-a-setting-for-a-particular-user">
+  ## Configurer un paramètre pour un utilisateur donné
+</div>
+
+Utilisez `ALTER USER` pour définir un paramètre pour un seul utilisateur. Par exemple :
+
+```sql
+ALTER USER my_user_name SETTINGS max_threads = 8;
+```
+
+Vous pouvez vérifier que cela a fonctionné en vous déconnectant de votre client, puis en vous reconnectant, et enfin en utilisant la fonction `getSetting` :
+
+```sql
+SELECT getSetting('max_threads');
+```
+
+<Note>
+  Spécifier les paramètres de cette manière écrasera les paramètres actuels de l&#39;utilisateur. Autrement dit, si d&#39;autres paramètres étaient appliqués à l&#39;utilisateur mais que vous ne les avez pas indiqués dans l&#39;instruction `ALTER USER`, ils seront perdus.
+
+  Si vous souhaitez conserver vos paramètres, utilisez plutôt `ALTER USER ... MODIFY SETTING ...`
+</Note>

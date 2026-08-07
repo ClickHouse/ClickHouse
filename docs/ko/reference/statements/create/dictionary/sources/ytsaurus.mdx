@@ -1,0 +1,57 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/ytsaurus
+title: 'YTsaurus 딕셔너리 소스'
+sidebarTitle: 'YTsaurus'
+description: 'ClickHouse에서 YTsaurus를 딕셔너리 소스로 설정합니다.'
+doc_type: '참고'
+---
+
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Info>
+  이 기능은 실험적 기능이며, 향후 릴리스에서 이전 버전과 호환되지 않게 변경될 수 있습니다.
+  설정 [`allow_experimental_ytsaurus_dictionary_source`](/ko/reference/settings/session-settings#allow_experimental_ytsaurus_dictionary_source)을 사용하여
+  YTsaurus 딕셔너리 소스를 활성화하십시오.
+</Info>
+
+설정 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(YTSAURUS(
+        http_proxy_urls 'http://localhost:8000'
+        cypress_path '//tmp/test'
+        oauth_token 'password'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <source>
+        <ytsaurus>
+            <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+            <cypress_path>//tmp/test</cypress_path>
+            <oauth_token>password</oauth_token>
+            <check_table_schema>1</check_table_schema>
+        </ytsaurus>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+설정 필드:
+
+| Setting           | Description                |
+| ----------------- | -------------------------- |
+| `http_proxy_urls` | YTsaurus http 프록시의 URL입니다. |
+| `cypress_path`    | 테이블 소스의 Cypress 경로입니다.     |
+| `oauth_token`     | OAuth 토큰입니다.               |

@@ -1,0 +1,259 @@
+---
+description: '이 엔진은 ClickHouse를 RocksDB와 통합할 수 있게 해줍니다'
+sidebarTitle: 'EmbeddedRocksDB'
+slug: /engines/table-engines/integrations/embedded-rocksdb
+title: 'EmbeddedRocksDB 테이블 엔진'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+이 엔진을 사용하면 ClickHouse를 [RocksDB](http://rocksdb.org/)와 연동할 수 있습니다.
+
+<div id="creating-a-table">
+  ## 테이블 생성하기
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(primary_key_name)
+[ SETTINGS name=value, ... ]
+```
+
+엔진 매개변수:
+
+* `ttl` - 값의 수명(time to live)입니다. TTL은 초 단위로 지정합니다. TTL이 0이면 일반 RocksDB 인스턴스가 사용됩니다(TTL 없음).
+* `rocksdb_dir` - 기존 RocksDB 디렉터리의 경로이거나 새로 생성된 RocksDB의 대상 경로입니다. 지정한 `rocksdb_dir`로 테이블을 엽니다.
+* `read_only` - `read_only`를 true로 설정하면 읽기 전용 모드가 사용됩니다. TTL이 있는 스토리지에서는 compaction이 트리거되지 않으므로(수동/자동 모두) 만료된 항목이 제거되지 않습니다.
+* `primary_key_name` – 컬럼 목록에 있는 임의의 컬럼 이름입니다.
+* `기본 키`는 반드시 지정해야 하며, 기본 키는 하나의 컬럼만 지원합니다. 기본 키는 바이너리 형식으로 직렬화되어 `rocksdb key`가 됩니다.
+* 기본 키를 제외한 컬럼은 해당 순서대로 바이너리 형식으로 직렬화되어 `rocksdb` value가 됩니다.
+* key `equals` 또는 `in` 필터링이 있는 쿼리는 `rocksdb`의 다중 key lookup으로 최적화됩니다.
+
+엔진 설정:
+
+* `optimize_for_bulk_insert` – 테이블이 대량 삽입에 최적화됩니다(`insert` pipeline이 memtable에 쓰는 대신 SST 파일을 생성하여 rocksdb 데이터베이스로 가져옵니다). 기본값: `1`.
+* `bulk_insert_block_size` - 대량 삽입으로 생성되는 SST 파일의 최소 크기(행 수 기준)입니다. 기본값: `1048449`.
+
+예시:
+
+```sql
+CREATE TABLE test
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = EmbeddedRocksDB
+PRIMARY KEY key
+```
+
+<div id="metrics">
+  ## 메트릭
+</div>
+
+RocksDB 통계를 제공하는 `system.rocksdb` 테이블도 있습니다:
+
+```sql
+SELECT
+    name,
+    value
+FROM system.rocksdb
+
+┌─name──────────────────────┬─value─┐
+│ no.file.opens             │     1 │
+│ number.block.decompressed │     1 │
+└───────────────────────────┴───────┘
+```
+
+<div id="configuration">
+  ## 구성
+</div>
+
+구성을 사용하여 [RocksDB 옵션](https://github.com/facebook/rocksdb/wiki/Option-String-and-Option-Map)도 변경할 수 있습니다:
+
+```xml
+<rocksdb>
+    <options>
+        <max_background_jobs>8</max_background_jobs>
+    </options>
+    <column_family_options>
+        <num_levels>2</num_levels>
+    </column_family_options>
+    <tables>
+        <table>
+            <name>TABLE</name>
+            <options>
+                <max_background_jobs>8</max_background_jobs>
+            </options>
+            <column_family_options>
+                <num_levels>2</num_levels>
+            </column_family_options>
+        </table>
+    </tables>
+</rocksdb>
+```
+
+기본적으로 단순 근사 count 최적화는 비활성화되어 있어 `count()` 쿼리 성능에 영향을 줄 수 있습니다. 이
+최적화를 활성화하려면 `optimize_trivial_approximate_count_query = 1`로 설정하십시오. 또한 이 설정은 EmbeddedRocksDB 엔진의 `system.tables`에도 영향을 미치며,
+`total_rows`와 `total_bytes`의 근사값을 보려면 이 설정을 활성화해야 합니다.
+
+<div id="supported-operations">
+  ## 지원되는 작업
+</div>
+
+<div id="inserts">
+  ### 삽입
+</div>
+
+새 행이 `EmbeddedRocksDB`에 삽입되면 키가 이미 존재하는 경우 값이 업데이트되고, 그렇지 않으면 새 키가 생성됩니다.
+
+예시:
+
+```sql
+INSERT INTO test VALUES ('some key', 1, 'value', 3.2);
+```
+
+<div id="deletes">
+  ### 삭제
+</div>
+
+행은 `DELETE` 쿼리나 `TRUNCATE`를 사용해 삭제할 수 있습니다.
+
+```sql
+DELETE FROM test WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+ALTER TABLE test DELETE WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+TRUNCATE TABLE test;
+```
+
+<div id="updates">
+  ### 업데이트
+</div>
+
+값은 `ALTER TABLE` 쿼리로 업데이트할 수 있습니다. 기본 키(primary key)는 업데이트할 수 없습니다.
+
+```sql
+ALTER TABLE test UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
+```
+
+<div id="joins">
+  ### 조인
+</div>
+
+EmbeddedRocksDB 테이블에서는 특수한 `Direct JOIN`을 지원합니다.
+이 Direct JOIN은 메모리에 해시 테이블을 생성하지 않고
+EmbeddedRocksDB에서 데이터를 직접 읽어옵니다.
+
+대규모 조인의 경우 Direct JOIN은 해시 테이블을 생성하지 않으므로
+메모리 사용량이 훨씬 낮아질 수 있습니다.
+
+Direct JOIN을 활성화하려면:
+
+```sql
+SET join_algorithm = 'direct, hash'
+```
+
+<Tip>
+  `join_algorithm`이 `direct, hash`로 설정되면, 가능한 경우에는 Direct JOIN을 사용하고
+  그렇지 않으면 hash를 사용합니다.
+</Tip>
+
+<div id="example">
+  #### 예시
+</div>
+
+<div id="create-and-populate-an-embeddedrocksdb-table">
+  ##### EmbeddedRocksDB 테이블 생성 및 데이터 삽입
+</div>
+
+```sql
+CREATE TABLE rdb
+(
+    `key` UInt32,
+    `value` Array(UInt32),
+    `value2` String
+)
+ENGINE = EmbeddedRocksDB
+PRIMARY KEY key
+```
+
+```sql
+INSERT INTO rdb
+    SELECT
+        toUInt32(sipHash64(number) % 10) AS key,
+        [key, key+1] AS value,
+        ('val2' || toString(key)) AS value2
+    FROM numbers_mt(10);
+```
+
+<div id="create-and-populate-a-table-to-join-with-table-rdb">
+  ##### 테이블 `rdb`와 조인할 테이블을 생성하고 데이터를 채웁니다
+</div>
+
+```sql
+CREATE TABLE t2
+(
+    `k` UInt16
+)
+ENGINE = TinyLog
+```
+
+```sql
+INSERT INTO t2 SELECT number AS k
+FROM numbers_mt(10)
+```
+
+<div id="set-the-join-algorithm-to-direct">
+  ##### 조인 알고리즘을 `direct`로 설정하기
+</div>
+
+```sql
+SET join_algorithm = 'direct'
+```
+
+<div id="an-inner-join">
+  ##### INNER JOIN
+</div>
+
+```sql
+SELECT *
+FROM
+(
+    SELECT k AS key
+    FROM t2
+) AS t2
+INNER JOIN rdb ON rdb.key = t2.key
+ORDER BY key ASC
+```
+
+```response
+┌─key─┬─rdb.key─┬─value──┬─value2─┐
+│   0 │       0 │ [0,1]  │ val20  │
+│   2 │       2 │ [2,3]  │ val22  │
+│   3 │       3 │ [3,4]  │ val23  │
+│   6 │       6 │ [6,7]  │ val26  │
+│   7 │       7 │ [7,8]  │ val27  │
+│   8 │       8 │ [8,9]  │ val28  │
+│   9 │       9 │ [9,10] │ val29  │
+└─────┴─────────┴────────┴────────┘
+```
+
+<div id="more-information-on-joins">
+  ### 조인 관련 추가 정보
+</div>
+
+* [`join_algorithm` 설정](/ko/reference/settings/session-settings#join_algorithm)
+* [JOIN 절](/ko/reference/statements/select/join)

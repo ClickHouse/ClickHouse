@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'Fivetran'
+slug: /integrations/fivetran
+description: 'Use o Fivetran para mover dados de qualquer fonte para o ClickHouse Cloud com criação automática de esquema, desduplicação e History Mode (SCD Type 2).'
+title: 'Fivetran and ClickHouse Cloud'
+doc_type: 'guia'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://github.com/ClickHouse/clickhouse-fivetran-destination'
+keywords: ['fivetran', 'movimentação de dados', 'etl', 'destino do ClickHouse', 'plataforma de dados automatizada', 'history mode', 'SCD Type 2']
+---
+
+import ClickHouseSupportedBadge from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+[Fivetran](https://www.fivetran.com) é a plataforma automatizada de movimentação de dados que transfere dados de, para e entre suas plataformas de dados na nuvem.
+
+[ClickHouse Cloud](https://clickhouse.com/cloud) é compatível como [destino do Fivetran](https://fivetran.com/docs/destinations/clickhouse), permitindo carregar dados de várias fontes no ClickHouse. A versão open source do ClickHouse não é compatível como destino.
+
+O conector de destino é desenvolvido e mantido em conjunto pelo ClickHouse e pela Fivetran. O código-fonte está disponível no [GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination).
+
+<Note>
+  O [destino do ClickHouse Cloud](https://fivetran.com/docs/destinations/clickhouse) está atualmente em **Beta**, mas estamos trabalhando para disponibilizá-lo de forma geral em breve.
+</Note>
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/sWe5JHW3lAs"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="key-features">
+  ## Principais recursos
+</div>
+
+* **Compatível com ClickHouse Cloud**: use seu banco de dados no ClickHouse Cloud como destino do Fivetran.
+* **Modelo de implantação SaaS**: totalmente gerenciado pelo Fivetran, sem necessidade de gerenciar sua própria infraestrutura.
+* **History Mode (SCD Type 2)**: preserva o histórico completo de todas as versões dos registros para análises em momentos específicos e trilhas de auditoria.
+* **Tamanhos de lote configuráveis**: você pode adaptar o Fivetran ao seu caso de uso ajustando os tamanhos dos lotes de gravação, seleção, mutation e exclusão definitiva por meio de um arquivo de configuração JSON.
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+* Migrações de esquema ainda não são suportadas, mas estamos trabalhando nisso.
+* Não há suporte para adicionar, remover ou modificar colunas da chave primária.
+* Não há suporte para configurações personalizadas do ClickHouse em instruções `CREATE TABLE`.
+* Concessões baseadas em roles não têm suporte completo. A verificação de concessões do conector considera apenas as concessões diretas do usuário. Use [concessões diretas](/pt-BR/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants).
+
+<div id="related-pages">
+  ## Páginas relacionadas
+</div>
+
+* [Referência técnica](/pt-BR/integrations/connectors/data-ingestion/etl-tools/fivetran/reference): mapeamentos de tipos, motores de tabela, colunas de metadados e configurações avançadas
+* [Solução de problemas e melhores práticas](/pt-BR/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting): erros comuns, dicas de otimização e consultas para depuração
+* [Destino do Fivetran para ClickHouse no GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination)
+
+<div id="setup-guide">
+  ## Guia de instalação
+</div>
+
+* Se você está procurando configurações e detalhes técnicos gerais, consulte a [referência técnica](/pt-BR/integrations/connectors/data-ingestion/etl-tools/fivetran/reference).
+* Para um guia completo, consulte o [guia de instalação](https://fivetran.com/docs/destinations/clickhouse/setup-guide) na documentação da Fivetran.
+
+<div id="contact-us">
+  ## Contato e suporte
+</div>
+
+O destino ClickHouse da Fivetran adota um modelo de responsabilidade compartilhada:
+
+* **ClickHouse** desenvolve e mantém o código do conector de destino.
+* **Fivetran** hospeda o connector e é responsável pela movimentação de dados, pelo agendamento do pipeline e pelos source connectors.
+
+Tanto a Fivetran quanto a ClickHouse oferecem suporte para o destino ClickHouse da Fivetran. Para dúvidas gerais, recomendamos entrar em contato com a Fivetran, pois ela é a especialista na plataforma Fivetran. Para dúvidas ou problemas específicos do ClickHouse, nossa equipe de suporte terá prazer em ajudar. Crie um [ticket de suporte](/pt-BR/resources/about/support) para fazer uma pergunta ou relatar um problema.

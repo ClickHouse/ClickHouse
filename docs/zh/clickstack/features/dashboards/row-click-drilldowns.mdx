@@ -1,0 +1,160 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/row-click-drilldowns
+title: '表格行点击下钻'
+sidebarTitle: '行点击下钻'
+description: '将表格卡片变成排查工作流：点击某一行即可下钻到聚焦的仪表盘，或查看限定在该行范围内的底层日志和链路追踪'
+doc_type: 'guide'
+keywords: ['clickstack', '仪表盘', '下钻', '表', '行点击', '排查', '可观测性']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+表格卡片通常就是一个**清单**：每个服务、主机、端点或错误组各占一行，并用几列对每一项进行评分。行点击操作会把这个清单变成一套排查工作流。你先浏览清单找到关键的那一行，点击它，然后 ClickStack 会将该行的值作为过滤器一路带入。这样打开目标页面时，就已经自动限定到这一个条目，无需再手动重建查询。
+
+一次点击会进入以下两个位置之一：
+
+* **另一个仪表盘**，用于聚焦查看该条目，例如某个服务的详情仪表盘，或者
+* [搜索](/zh/clickstack/features/search)中的**底层事件**，用于查看该行背后的日志或链路追踪。
+
+下面的两个用例都从同一个清单开始 (服务清单) ，并从中分别下钻到各自的目标页面。行点击操作仅适用于表格卡片。它们不同于图表中的[下钻到搜索](/zh/clickstack/features/dashboards/overview#drilldown-to-search)：后者会在你点击折线图或柱状图上的某个点时打开上下文菜单。
+
+<div id="inspect-in-dashboard">
+  ## 在专属仪表盘中查看服务
+</div>
+
+概览表中每个服务占一行，可以回答“哪个服务不健康？”。点击某一行即可打开该服务的专属仪表盘，用来回答“它内部发生了什么？”，并且范围限定在你点击的那个服务。下面这种模式会将服务清单表与 `Service Detail` 仪表盘配合使用。
+
+<Steps>
+  <Step>
+    ### 构建详情仪表盘
+
+    创建一个名为 `Service Detail` 的仪表盘，并在你的链路追踪数据源上添加一个表达式为 `ServiceName` 的[自定义过滤器](/zh/clickstack/features/dashboards/overview#custom-filters)。这个仪表盘级过滤器会把每个卡片的范围都限定到单个服务，因此卡片本身无需在查询里硬编码服务。添加你需要的按服务视图：RED 关键指标 (请求数、错误数、P95 耗时) 、延迟百分位图表 (P50、P95、P99) 、请求速率随时间变化图，以及按 `SpanName` 分组的各端点明细。
+
+    先保存这个仪表盘，这样下一步才能将它选为目标。
+  </Step>
+
+  <Step>
+    ### 构建服务清单
+
+    在概览仪表盘上，基于你的链路追踪数据源添加一个按 `ServiceName` 分组的 **表格** 卡片。为它添加用于衡量各服务的 RED 列，每一列都是一个带别名的序列：
+
+    * `Requests`：span 数量 (速率) 。
+    * `Errors`：错误状态的 span 数量。
+    * `P95 Duration`：`Duration` 的 95 分位数。将该列的数字格式设置为耗时格式，这样它会显示为 `288ms`，而不是原始纳秒值。
+
+    按 `Requests` 降序排序，让最繁忙的服务排在最前面。这个表就是清单：每个服务一行，按 RED 指标打分。
+
+    <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="服务清单表，为每个服务显示 RED 列（Requests、Errors、P95 Duration），按请求量排序，上方还有请求随时间变化的趋势图" size="lg" />
+
+    <Tip>
+      **将分组列放在最前面**
+
+      默认情况下，表格会把分组列 (这里是 `ServiceName`) 显示在右侧，也就是各个序列之后。对于这种清单视图，把每一行的标识放在最前面会更易读。打开卡片的 **Display Settings**，启用 **在左侧显示 Group By 列**，即可将分组列移到最前面。
+    </Tip>
+  </Step>
+
+  <Step>
+    ### 配置行点击动作
+
+    在清单表上，打开 **Row Click Action**，选择 **仪表盘**，然后从仪表盘列表中选择 `Service Detail`。直接选择该仪表盘会按 ID 固定关联。即使之后重命名仪表盘，链接仍然有效；导出再导入仪表盘后，它也仍可继续使用。 (**Template** 选项仅用于为每一行选择不同的仪表盘；参见[设置行点击动作](#set-up)。)
+
+    由于 `Service Detail` 声明了一个 `ServiceName` 自定义过滤器，侧边抽屉会为该表达式预填一个空过滤器。填写它的模板：
+
+    * **表达式**：`ServiceName` (已预填)
+    * **模板**：`{{ServiceName}}`
+
+    点击 **应用** 并保存。这样，点击行中的服务值就会传入仪表盘的 `ServiceName` 过滤器。
+  </Step>
+
+  <Step>
+    ### 点击一行
+
+    将鼠标悬停在某一行上时，表格右侧边缘会显示一个链接入口，并附带说明该操作的提示 (`Open dashboard \"Service Detail\"`) 。点击该行会打开 `Service Detail` 仪表盘，并将其中的 `Service` 过滤器设置为被点击的值，因此所有卡片 (RED 关键指标、延迟百分位数、各端点明细) 都会在一次点击后重新限定到该服务。
+
+    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="在点击某一行后显示的 Service Detail 仪表盘，其中 Service 过滤器已设置为被点击的服务，RED 关键指标、延迟百分位数以及各端点明细都已限定到该服务" size="lg" />
+  </Step>
+</Steps>
+
+<div id="jump-to-traces">
+  ## 从服务跳转到其链路追踪
+</div>
+
+有时，你不需要另一个聚合视图，而是想直接查看原始事件。**搜索** 操作会将点击跳转到 [搜索](/zh/clickstack/features/search) 页面，而不是仪表盘，并打开该行对应的日志或链路追踪，且已自动按该行过滤。
+
+仍然从同一个服务清单表开始，这次将行点击直接指向链路追踪本身，而不是详情仪表盘。
+
+<Steps>
+  <Step>
+    ### 将行点击指向搜索
+
+    在清单表中，打开 **Row Click Action** 并选择 **搜索**。选择你的链路追踪数据源 (这里只会列出日志和 trace 数据源) 。添加一个过滤器：
+
+    * **Expression**: `ServiceName`
+    * **Template**: `{{ServiceName}}`
+
+    点击 **Apply** 并保存。
+  </Step>
+
+  <Step>
+    ### 点击一行
+
+    现在，点击某个服务行会在该链路追踪数据源上打开搜索页面，并按 `ServiceName = <service>` 过滤，因此你会直接看到相同时间范围内仅属于该服务的 spans。
+
+    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="点击行后，搜索页面会在链路追踪数据源上打开，并过滤到被点击的服务" size="lg" />
+  </Step>
+</Steps>
+
+同样的模式也适用于任何条目列表。你可以按某个操作 (`SpanName`) 或某个端点属性对表进行分组，而不是按 `ServiceName`，再用该列为过滤器设置模板，这样每次点击行时，都会打开该操作或端点对应的事件。若要按 map 属性分组，请参阅[验证与限制](#validation)下方关于别名的说明。
+
+<div id="set-up">
+  ## 设置行点击操作
+</div>
+
+行点击操作直接在表格卡片上配置，没有单独的设置页面。添加或编辑一个卡片，并将其可视化类型设置为 **Table**。然后，编辑器工具栏中会出现一个 **Row Click Action** 按钮，位于 **Display Settings** 旁边。该按钮仅在表格卡片上显示，其标签会反映当前操作：`Row Click Action: Default`、`Row Click Action: Search` 或 `Row Click Action: Dashboard`。点击它即可打开侧边抽屉。
+
+<Image img="/images/clickstack/dashboards/row-click-drawer.webp" alt="在 Dashboard 模式下的 Row Click Action 侧边抽屉中，Service Detail 仪表盘被选为目标端，并配置了从点击行中模板化出的 ServiceName 过滤器" size="lg" />
+
+侧边抽屉提供三种操作：
+
+* **Default**：内置行为。点击某一行会打开**搜索**页面，并按该行的 group-by 列值和所选时间范围进行过滤。这就是未设置自定义操作时的默认行为。
+* **Search**：将点击发送到你选择的数据源的**搜索**页面。
+* **Dashboard**：将点击发送到你团队拥有的另一个仪表盘。
+
+对于 **Search** 和 **Dashboard**，你需要选择点击后的落点，并为传递过去的过滤器配置模板：
+
+* **Destination**：选择一个特定的数据源或仪表盘，或者选择 **Template** 并输入一个 [Handlebars](https://handlebarsjs.com/) 模板，按名称匹配可用的数据源或仪表盘。选择特定目标会通过 ID 将其固定。对于单一固定目标，建议优先使用这种方式：它在重命名以及仪表盘导出、导入后仍然有效；对于仪表盘，它还会预填目标端已声明的过滤器。如果目标需要根据每一行动态变化，则使用 **Template**，通过引用某个行列来决定目标 (例如 `Errors-{{ServiceName}}`) 。
+* **Filters**：点击 **Add filter**，然后提供一个 **Expression** (目标端上的某个列或表达式，例如 `ServiceName`) 以及该值对应的 **Template** (例如 `{{ServiceName}}`) 。模板通过 `{{columnName}}` 引用被点击行的列 (哪些列可用，请参见下方说明) 。每个过滤器都会在目标端渲染为一个 `expression IN (value)` 条件，具有相同表达式的过滤器会被合并。当目标端是仪表盘时，侧边抽屉会为该仪表盘已声明的每个过滤器预填一个空过滤器，因此你只需填写模板即可。
+* **WHERE** (可选) ：一个会被渲染到目标端全局过滤器中的 Handlebars 模板，附加在上述逐个过滤器条件之外。将其查询语言设置为 SQL 或 Lucene，以便目标端能够解析它。例如，SQL 模板 `ServiceName = '{{ServiceName}}'` 会将目标端范围限定到被点击行对应的 service。
+
+<Info>
+  **模板引用的是表中的列**
+
+  `{{...}}` 模板是基于表格卡片自身的列解析的：包括 group-by 列，以及每个序列 (按其名称或别名) ，且名称与它们在表中的显示完全一致。它无法访问底层数据源中那些未被表选出的列。某个值必须是表中的一列，才能在点击时被传递过去，因此 `{{ServiceName}}` 能生效，是因为 `ServiceName` 是表的 group-by 列；而带别名的列则需要通过其别名来引用。引用表中不存在的名称会导致点击失败，并报错 `Row has no column '<name>'`。
+</Info>
+
+点击 **Apply** 以验证模板 (ClickStack 会报告所有语法无效的模板) ，然后保存仪表盘以持久保存该操作。
+
+<div id="how-it-resolves">
+  ## 目标端和过滤器如何解析
+</div>
+
+当查看者点击某一行时，ClickStack 会根据该行来解析该操作：
+
+* **目标端。** 选择特定的数据源或仪表盘时，会通过 ID 将其固定。**Template** 目标端会基于被点击的行进行渲染，然后按名称与你团队中的数据源或仪表盘匹配。要成功解析，名称必须唯一：如果两个数据源或两个仪表盘使用相同的渲染后名称，该链接就无法解析到其中任何一个。若渲染后的名称为空，或名称没有匹配项，也会解析失败。
+* **过滤器。** 每个过滤器模板都会基于该行进行渲染，并在目标端转换为 `expression IN (value)` 条件。`Search` 操作会打开限定到所选数据源范围的 `/search`；`Dashboard` 操作会打开相应的仪表盘。在这两种情况下，被点击行的时间范围都会一并带过去。
+
+<Info>
+  **仪表盘目标端需要声明匹配的过滤器**
+
+  只有当目标端仪表盘声明了一个顶层[自定义过滤器](/zh/clickstack/features/dashboards/overview#custom-filters)，并且其表达式与该过滤器的 **Expression** 匹配时，传入仪表盘的过滤器才会生效。如果没有任何已声明的过滤器匹配，该值会在点击时被丢弃，目标端将针对该表达式在未过滤状态下打开。这就是为什么仪表盘模式会预先填充目标端中已声明的过滤器：只要表达式匹配，目标端下拉菜单就会自动填入被点击行的值。
+</Info>
+
+<div id="validation">
+  ## 验证与限制
+</div>
+
+* **仅适用于表格卡片。** **Row Click Action** 按钮只会显示在表格卡片中，包括图表构建器中的表格和[基于 SQL 的](/zh/clickstack/features/dashboards/sql-visualizations)表格。其他类型的卡片不支持行点击操作。
+* **搜索目标必须是日志或链路追踪数据源。** 不提供指标和会话数据源，因为它们无法在搜索页面中查看。
+* **模板名称必须唯一。** 模板目标按名称解析，因此不能将两个同名的数据源或两个同名的仪表盘用作模板目标。
+* **仪表盘目标需要有匹配的已声明过滤器**，携带的值才能生效 (见上文说明) 。
+* **表达式 group-by 列需要别名。** 对表达式进行 group-by (例如 map 属性 `SpanAttributes['http.route']`) 时，生成的结果列名会直接使用原始表达式，这在模板中引用时会很不方便。请在图表构建器中为该列指定别名：在 **Group By** 输入框中，在表达式后添加 `AS <alias>` (例如 `SpanAttributes['http.route'] AS Route`) ，然后在模板中引用 `{{Route}}`。聚合 series 也同样会从其 **Alias** 字段获取别名。像 `ServiceName` 这样的普通列在 group-by 后本身就有清晰的名称，不需要别名。

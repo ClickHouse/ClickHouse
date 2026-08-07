@@ -1,0 +1,259 @@
+---
+title: '仓库'
+slug: /cloud/reference/warehouses
+keywords: ['计算分离', '云', '架构', '计算-计算分离', '仓库', '仓库', 'hydra']
+description: 'ClickHouse Cloud 中的计算-计算分离'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<ScalePlanFeatureBadge feature="Compute-compute separation" />
+
+<div id="what-is-compute-compute-separation">
+  ## 什么是计算-计算分离？
+</div>
+
+在讨论计算-计算分离之前，先了解 ClickHouse Cloud 中的**服务**是什么，会很有帮助。
+
+每个 ClickHouse Cloud 服务都包括：
+
+* 具有专用 CPU 和内存集群的 ClickHouse 计算节点 (称为**副本**)
+* 用于连接该服务的一个端点 (或通过 ClickHouse Cloud UI 控制台创建的多个端点) ，例如 `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`，供本地应用和第三方应用连接
+* 一个对象存储文件夹，服务会在其中存储所有数据以及部分元数据：
+
+<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud 中的单个服务" />
+
+<br />
+
+*图 1 - ClickHouse Cloud 中的单个服务*
+
+除了使用单个服务外，你还可以创建多个可访问同一共享存储的服务，这样就能为特定工作负载分配专用资源，而无需复制数据。
+这一概念称为**计算-计算分离**。
+
+计算-计算分离意味着，每个服务都有自己的一组副本和一个端点，但共用同一个对象存储文件夹，并访问相同的表、视图等。
+这意味着你可以为工作负载选择合适规模的计算资源。有些工作负载只需一个小规格的副本即可满足，而另一些则可能需要完整的高可用性 (HA) 以及多个副本上的数百 GB 内存。
+
+计算-计算分离还可以将读操作与写操作分离，避免它们相互干扰：
+
+<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="ClickHouse Cloud 中的计算分离" />
+
+<br />
+
+*图 2 - ClickHouse Cloud 中的计算分离*
+
+<div id="what-is-a-warehouse">
+  ## 什么是仓库？
+</div>
+
+在 ClickHouse Cloud 中，*仓库* 是一组共享同一份数据的**服务**。
+每个仓库都有一个主节点 (即最先创建的服务) 以及一个或多个次级服务。
+例如，在下面的截图中，你可以看到一个名为 “DWH Prod” 的仓库，它由两个服务组成：
+
+* 主节点 `DWH Prod`
+* 次级服务 `DWH Prod Subservice`
+
+<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="包含主节点和次级服务的仓库示例" background="white" />
+
+<br />
+
+*图 3 - 仓库示例*
+
+仓库中的所有服务共享以下内容：
+
+* 区域 (例如 us-east1)
+* Cloud 服务提供商 (AWS、GCP 或 Azure)
+* ClickHouse 数据库版本
+* ClickHouse Keeper (用于管理副本)
+
+<div id="access-controls">
+  ## 访问控制
+</div>
+
+<div id="database-credentials">
+  ### 数据库凭据
+</div>
+
+由于一个仓库中的所有服务共享同一组表，因此这些服务之间也共享访问控制。
+这意味着，在服务 1 中创建的所有数据库用户，也都可以用相同的权限 (针对表、视图等的授权) 使用服务 2，反之亦然。
+每个服务使用不同的端点，但所有服务共用相同的用户名和密码。换句话说，**使用相同存储的服务之间，用户是共享的**，如下图所示：
+
+<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="共享相同数据的服务之间的用户访问" />
+
+<br />
+
+*图 4 - 用户 Alice 是在服务 1 中创建的，但她可以使用相同的凭据访问所有共享相同数据的服务*
+
+<div id="network-access-control">
+  ### 网络访问控制
+</div>
+
+若要限制其他应用或临时用户对特定服务的访问，可以配置网络限制。
+为此，请在 ClickHouse Cloud 控制台中，进入你希望限制访问的目标服务的服务标签页，然后选择 **设置**。
+
+IP 过滤设置可针对每个服务单独配置，这意味着你可以控制哪些应用可以访问哪些服务。
+这样，你就可以限制用户使用特定服务。
+
+在下面的示例中，Alice 被限制访问仓库中的服务 2：
+
+<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="网络访问控制设置" />
+
+<br />
+
+*图 5 - 由于网络访问控制设置，Alice 无法访问服务 2*
+
+当用户以个人身份连接、而非使用&#95;默认&#95;用户时，也可以使用 ClickHouse 角色和授权来控制其对数据的访问。
+
+<div id="read-vs-read-write">
+  ### 只读与读写服务
+</div>
+
+服务可以是以下类型之一：
+
+* **read-write**
+  * 可以读取和写入 ClickHouse 中的数据
+  * 执行后台合并操作 (例如，数据 insert 后合并 parts) ，这会消耗 CPU 和内存
+  * 可以将数据导出到外部
+* **read-only**
+  * 只能读取数据；不能在 ClickHouse 中写入或修改数据
+  * 除系统表外，不执行后台合并操作，因此其资源可完全集中用于读取查询
+  * 仍然可以将数据导出到外部 (例如，通过表函数) ，但不能更改 ClickHouse 内部的数据
+  * 空闲时会立即休眠；不像读写服务那样，可能因后台合并而持续保持活跃。
+
+有时，你可能希望将某个服务设为只读，以便将关键读取 workload 与写入/合并带来的额外开销隔离开来。
+你可以对第二个服务以及之后创建的任何其他服务这样做；不过，第一个服务始终是读写服务，如下图所示：
+
+<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="仓库中的读写与只读服务" />
+
+<br />
+
+*图 6 - 仓库中的读写与只读服务*
+
+<Note>
+  1. 只读服务目前支持用户管理操作 (CREATE、DROP 等) 。
+  2. [可刷新materialized view](/zh/concepts/features/materialized-views/refreshable-materialized-view) **仅**在仓库中的读写 (RW) 服务上运行。
+  3. 服务的类型 (只读或读写) 在创建时即固定，之后无法在 Cloud Console 中更改。若要在只读与读写访问之间切换，请在仓库中创建一个具有所需类型的新服务。
+</Note>
+
+<div id="scaling">
+  ## 扩缩容
+</div>
+
+仓库中的每个服务都可以根据您的工作负载从以下几个方面进行调整：
+
+* 节点数量 (副本数) 。主节点 (即仓库中最先创建的服务) 应具有 2 个或更多节点。每个次级服务可以有 1 个或更多节点。
+* 节点 (副本) 的大小
+* 服务是否应自动扩缩容 (水平和垂直)
+* 服务是否应在无活动时进入休眠
+
+更多信息，请参阅[“自动扩缩容”](/zh/products/cloud/features/autoscaling/overview)页面。
+
+<div id="changes-in-behavior">
+  ## `clusterAllReplicas` 行为的变化
+</div>
+
+当一个仓库包含多个服务后，`clusterAllReplicas()` 的行为会发生变化。
+使用 `default` 集群名称时，只会以当前服务中的副本为目标，而不会覆盖仓库中的所有服务。
+
+例如，如果你从服务 1 调用 `clusterAllReplicas(default, system, processes)`，则只会返回运行在服务 1 上的进程。
+若要查询仓库中所有服务的数据，请改用 `all_groups.default` 集群名称：
+
+```sql
+SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
+```
+
+<Note>
+  次级单节点服务可以进行垂直扩容，而主节点单节点服务则不能。
+</Note>
+
+<div id="limitations">
+  ## 局限性
+</div>
+
+<div id="workload-isolation-limitations">
+  ### 工作负载隔离的限制
+</div>
+
+某些工作负载无法隔离到特定服务；在某些边缘情况下，一个服务中的某类工作负载会影响同一仓库中的另一项服务。这些情况包括：
+
+* **默认情况下，所有读写服务都会处理后台合并操作。** 将数据插入 ClickHouse 时，数据库会先将数据写入一些暂存分区，然后在后台执行合并。这些合并会消耗内存和 CPU 资源。当两个读写服务共享同一存储时，它们都会执行后台操作。这意味着，可能会出现 Service 1 中发起了一个 `INSERT` 查询，但合并操作却由 Service 2 完成的情况。
+  请注意，只读服务不会执行后台合并，因此不会在这类操作上消耗资源。我们的支持团队可以关闭某个服务上的合并。
+
+* **所有读写服务都会执行 S3Queue 表引擎的插入操作。** 在某个读写服务上创建 S3Queue 表时，仓库中的所有其他读写服务也都可能会从 S3 读取数据并将数据写入数据库。
+
+* **如果启用了空闲机制，一个读写服务上的插入操作可能会阻止另一个读写服务进入空闲状态。** 在某些情况下，
+  一个服务会为另一个服务执行后台合并操作。这些后台操作可能会阻止第二个服务进入空闲状态。后台操作完成后，该服务将进入休眠。只读服务不受影响。
+
+<div id="callouts">
+  ### 实用提示
+</div>
+
+* **ClickHouse 版本**：[升级计划](/zh/products/cloud/features/admin-features/upgrades)由主节点的设置决定。次级服务不能拥有独立于主节点的发布计划。
+
+* **默认情况下，处于休眠/已停止状态的服务可能会阻塞 `CREATE`/`RENAME`/`DROP DATABASE` 查询。** 如果在服务处于休眠或已停止状态时执行这些查询，查询可能会挂起。要绕过此限制，你可以在会话级别或单个查询级别使用 [`settings distributed_ddl_task_timeout=0`](/zh/reference/settings/session-settings#distributed_ddl_task_timeout) 运行数据库管理查询。
+
+例如：
+
+```sql
+CREATE DATABASE db_test_ddl_single_query_setting
+SETTINGS distributed_ddl_task_timeout=0
+```
+
+如果你手动停止了某个服务，则需要再次将其启动，查询才能执行。
+
+* **单副本主节点** 当前默认情况下，次级服务可以有一个副本，而主节点至少必须有 2 个。
+  如需启用单副本主节点，请联系支持团队。此行为将在 2026 年第二季度默认启用。
+* **主节点空闲**：默认已启用主节点自动进入空闲状态。
+
+<div id="pricing">
+  ## 定价
+</div>
+
+仓库中的所有服务 (主节点和次级) 计算资源价格相同。存储只会计费一次——已包含在第一个 (原始) 服务中。
+
+请参阅 [pricing](https://clickhouse.com/pricing) 页面上的定价计算器，它可以根据您的工作负载规模和所选层级帮助估算成本。Usage Breakdown 表会显示各服务的计算资源成本明细。
+
+<div id="backups">
+  ## 备份
+</div>
+
+* 由于同一仓库中的所有服务共享相同的存储，因此只会在主节点 (初始服务) 上执行备份。这样一来，仓库中所有服务的数据都会一并备份。
+* 如果从仓库主节点的备份中执行恢复，系统会将其恢复到一个全新的服务中，而不会连接到现有仓库。恢复完成后，你可以立即向这个新服务添加更多服务。
+
+<div id="setup-warehouses">
+  ## 如何配置仓库
+</div>
+
+<div id="creating-a-warehouse">
+  ### 创建仓库
+</div>
+
+要创建一个仓库，您需要创建第二个服务，并与现有服务共享数据。您可以点击任意现有服务上的加号来完成此操作：
+
+<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="在仓库中创建新服务" />
+
+<br />
+
+*图 7 - 点击加号，在仓库中创建新服务*
+
+在服务创建页面上，原始服务会在下拉列表中默认选为新服务的数据来源。创建完成后，这两个服务将构成一个仓库。
+
+<div id="renaming-a-warehouse">
+  ### 重命名仓库
+</div>
+
+重命名仓库有两种方法：
+
+* 你可以在服务页面右上角选择“按仓库排序”，然后点击仓库名称旁边的铅笔图标
+* 你也可以点击任一服务中的仓库名称，并在该处重命名仓库
+
+<div id="deleting-a-warehouse">
+  ### 删除仓库
+</div>
+
+删除仓库意味着删除所有计算服务和数据 (表、视图、用户等) 。此操作无法撤销。
+你只能通过删除最先创建的服务来删除仓库。为此，请按以下步骤操作：
+
+1. 删除除最先创建的服务外的所有服务；
+2. 删除最先创建的服务 (警告：在此步骤中，仓库中的所有数据都将被删除) 。

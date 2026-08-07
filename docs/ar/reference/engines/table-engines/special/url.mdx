@@ -1,0 +1,138 @@
+---
+description: 'يستعلم البيانات من خادم HTTP/HTTPS بعيد وإليه. هذا المحرك مشابه
+  لمحرك File.'
+sidebarTitle: 'URL'
+slug: /engines/table-engines/special/url
+title: 'محرك جدول URL'
+doc_type: 'مرجع'
+---
+
+يستعلم البيانات من خادم HTTP/HTTPS بعيد وإليه. هذا المحرك مشابه لمحرك [File](/ar/reference/engines/table-engines/special/file).
+
+البنية: `URL(URL [,Format] [,CompressionMethod])`
+
+* يجب أن تتوافق المعلَمة `URL` مع بنية محدد موقع الموارد الموحّد. ويجب أن يشير عنوان URL المحدد إلى خادم يستخدم HTTP أو HTTPS. ولا يتطلب ذلك أي رؤوس إضافية للحصول على استجابة من الخادم.
+
+* يجب أن يكون `Format` من التنسيقات التي يمكن لـ ClickHouse استخدامها في استعلامات `SELECT`، وعند الحاجة، في عمليات `INSERT`. للاطلاع على القائمة الكاملة بالتنسيقات المدعومة، انظر [Formats](/ar/reference/formats/index#formats-overview).
+
+  إذا لم يتم تحديد هذه الوسيطة، يكتشف ClickHouse التنسيق تلقائيًا من لاحقة المعلَمة `URL`. وإذا لم تطابق لاحقة المعلَمة `URL` أيًا من التنسيقات المدعومة، فسيفشل إنشاء الجدول. على سبيل المثال، في تعبير المحرك `URL('http://localhost/test.json')`، يُطبَّق تنسيق `JSON`.
+
+* يحدد `CompressionMethod` ما إذا كان يجب ضغط حمولة HTTP. وإذا كان الضغط مُمكّنًا، فستتضمن حزم HTTP التي يرسلها محرك URL الترويسة &#39;Content-Encoding&#39; للإشارة إلى طريقة الضغط المستخدمة.
+
+لتمكين الضغط، يُرجى أولًا التأكد من أن نقطة نهاية HTTP البعيدة المشار إليها بواسطة المعلَمة `URL` تدعم خوارزمية الضغط المقابلة.
+
+يجب أن تكون قيمة `CompressionMethod` المدعومة واحدة مما يلي:
+
+* gzip or gz
+* deflate
+* brotli or br
+* lzma or xz
+* zstd or zst
+* lz4
+* bz2
+* snappy
+* none
+* auto
+
+إذا لم يتم تحديد `CompressionMethod`، فستكون القيمة الافتراضية هي `auto`. وهذا يعني أن ClickHouse يكتشف طريقة الضغط تلقائيًا من لاحقة المعلَمة `URL`. وإذا طابقت اللاحقة أيًّا من طرق الضغط المذكورة أعلاه، فسيتم تطبيق الضغط المقابل، وإلا فلن يُفعَّل أي ضغط.
+
+على سبيل المثال، في تعبير المحرك `URL('http://localhost/test.gzip')`، تُطبَّق طريقة الضغط `gzip`، أما في `URL('http://localhost/test.fr')`، فلن يُفعَّل أي ضغط لأن اللاحقة `fr` لا تطابق أيًّا من طرق الضغط المذكورة أعلاه.
+
+<div id="using-the-engine-in-the-clickhouse-server">
+  ## الاستخدام
+</div>
+
+تُحوَّل استعلامات `INSERT` و`SELECT` إلى طلبات `POST` و`GET`،
+على التوالي. ولمعالجة طلبات `POST`، يجب أن يدعم الخادم البعيد
+[ترميز النقل المُجزّأ](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
+
+يمكنك تحديد الحد الأقصى لعدد مرات إعادة توجيه HTTP GET باستخدام الإعداد [max&#95;http&#95;get&#95;redirects](/ar/reference/settings/session-settings#max_http_get_redirects).
+
+<div id="example">
+  ## مثال
+</div>
+
+**1.** أنشئ جدول `url_engine_table` على الخادم:
+
+```sql
+CREATE TABLE url_engine_table (word String, value UInt64)
+ENGINE=URL('http://127.0.0.1:12345/', CSV)
+```
+
+**2.** أنشئ خادم HTTP بسيطًا باستخدام أدوات بايثون 3 القياسية،
+ثم شغّله:
+
+```python3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```bash
+$ python3 server.py
+```
+
+**3.** اطلب البيانات:
+
+```sql
+SELECT * FROM url_engine_table
+```
+
+```text
+┌─word──┬─value─┐
+│ Hello │     1 │
+│ World │     2 │
+└───────┴───────┘
+```
+
+<div id="details-of-implementation">
+  ## تفاصيل التنفيذ
+</div>
+
+* يمكن تنفيذ عمليات القراءة والكتابة بالتوازي
+* لا يتم دعم ما يلي:
+  * عمليتا `ALTER` و`SELECT...SAMPLE`.
+  * الفهارس.
+  * النسخ المتماثل.
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — المسار إلى `URL`. النوع: `LowCardinality(String)`.
+* `_file` — اسم مورد `URL`. النوع: `LowCardinality(String)`.
+* `_size` — حجم المورد بالبايت. النوع: `Nullable(UInt64)`. إذا كان الحجم غير معروف، تكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
+* `_headers` - رؤوس استجابة HTTP. النوع: `Map(LowCardinality(String), LowCardinality(String))`.
+
+<div id="resolving-relative-urls">
+  ## حلّ عناوين URL النسبية
+</div>
+
+يتيح الإعداد [url&#95;base](/ar/reference/settings/session-settings#url_base) استخدام عنوان URL نسبي في المحرك `URL`. عند تعيين `url_base`، يُفسَّر عنوان URL الذي يُمرَّر إلى المحرك بالاستناد إليه وفقًا لـ [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). للحصول على وصف كامل لقواعد الحلّ، راجع [وثائق دالة الجدول url](/ar/reference/functions/table-functions/url#resolving-relative-urls).
+
+**مثال**
+
+```sql
+SET url_base = 'http://127.0.0.1:12345/';
+CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.csv', CSV);
+SELECT * FROM url_engine_table;
+```
+
+<div id="storage-settings">
+  ## إعدادات التخزين
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings#engine_url_skip_empty_files) - يسمح بتجاوز الملفات الفارغة أثناء القراءة. يكون معطّلًا افتراضيًا.
+* [enable&#95;url&#95;encoding](/ar/reference/settings/session-settings#enable_url_encoding) - يتيح تمكين/تعطيل فك ترميز/ترميز المسار في uri. يكون مُمكّنًا افتراضيًا.
+* [url&#95;base](/ar/reference/settings/session-settings#url_base) - عنوان URL الأساسي لاستكمال عناوين URL النسبية المُمرَّرة إلى المحرّك.

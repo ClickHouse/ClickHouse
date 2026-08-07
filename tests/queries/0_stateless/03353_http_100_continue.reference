@@ -1,0 +1,27 @@
+=== Test: Basic Expect 100-Continue (not deferred) ===
+✓ Received 100 Continue response
+✓ Received 200 OK response
+=== Test: Without Expect header ===
+✓ No 100 Continue response (expected)
+✓ Received 200 OK response
+=== Test: Deferred 100 Continue (query in body) ===
+✓ No 100 Continue response (expected)
+✓ Timed out (expected)
+=== Test: Deferred 100 Continue (query in URL) ===
+✓ Received 100 Continue response
+✓ Received 200 OK response
+=== Test: Deferred 100 Continue (INSERT data in body) ===
+✓ Received 100 Continue response
+✓ Received 200 OK response
+=== Test: Deferred 100 Continue with TOO_MANY_SIMULTANEOUS_QUERIES ===
+✓ No 100 Continue response (expected)
+✓ No body uploaded (expected)
+✓ Received TOO_MANY_SIMULTANEOUS_QUERIES
+=== Test: Deferred 100 Continue with AUTHENTICATION_FAILED ===
+✓ No 100 Continue response (expected)
+✓ No body uploaded (expected)
+✓ Received AUTHENTICATION_FAILED
+=== Test: Deferred 100 Continue with QUOTA_EXCEEDED ===
+✓ No 100 Continue response (expected)
+✓ No body uploaded (expected)
+✓ Received QUOTA_EXCEEDED

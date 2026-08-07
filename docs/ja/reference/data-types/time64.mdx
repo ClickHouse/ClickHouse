@@ -1,0 +1,154 @@
+---
+description: '小数秒精度の時刻範囲を格納する ClickHouse の Time64 データ型に関するドキュメント'
+slug: /sql-reference/data-types/time64
+sidebarTitle: 'Time64'
+title: 'Time64'
+doc_type: 'reference'
+---
+
+データ型 `Time64` は、小数秒を含む時刻を表します。
+これには暦日の日付部分 (日、月、年) は含まれません。
+`precision` パラメータは小数点以下の桁数を定義し、それに応じてティックサイズも決まります。
+
+ティックサイズ (精度) : 10<sup>-precision</sup> Seconds。有効範囲: 0..9。一般的な値は 3 (ミリ秒) 、6 (マイクロ秒) 、9 (ナノ秒) です。
+
+**構文:**
+
+```sql
+Time64(precision)
+```
+
+内部的には、`Time64` は秒の小数部を表す符号付き 64 ビット十進数 (Decimal64) を格納します。
+ティックの分解能は `precision` パラメータによって決まります。
+`Time64` ではタイムゾーンはサポートされていません。`Time64` にタイムゾーンを指定するとエラーになります。
+
+`DateTime64` とは異なり、`Time64` は日付の部分を格納しません。
+関連項目 [`Time`](/ja/reference/data-types/time)。
+
+テキスト表現の範囲: `precision = 3` の場合は [-999:59:59.000, 999:59:59.999]。一般には、最小値は `-999:59:59`、最大値は `999:59:59` で、小数点以下の桁数は最大 `precision` 桁です (`precision = 9` の場合、最小値は `-999:59:59.999999999` です) 。
+
+<div id="implementation-details">
+  ## 実装の詳細
+</div>
+
+**表現**。
+小数点以下 `precision` 桁の秒の小数部を数える、符号付き `Decimal64` 値です。
+
+**正規化**。
+文字列を `Time64` にパースする際、時刻の部分は正規化され、妥当性は検証されません。
+たとえば、`25:70:70` は `26:11:10` と解釈されます。
+
+**負の値**。
+先頭のマイナス記号はサポートされ、そのまま保持されます。
+負の値は通常、`Time64` 値に対する算術演算によって生じます。
+`Time64` では、テキスト入力 (例: `'-01:02:03.123'`) と数値入力 (例: `-3723.123`) の両方で、負の入力が保持されます。
+
+**飽和**。
+部分への変換時、またはテキストへシリアライズする際には、time-of-day の部分は [-999:59:59.xxx, 999:59:59.xxx] の範囲に制限されます。
+格納される数値はこの範囲を超える場合がありますが、部分の抽出 (時、分、秒) とテキスト表現には、制限後の値が使用されます。
+
+**タイムゾーン**。
+`Time64` はタイムゾーンをサポートしていません。
+`Time64` 型または値の作成時にタイムゾーンを指定すると、エラーになります。
+同様に、`Time64` カラムにタイムゾーンを適用または変更することもサポートされておらず、エラーになります。
+
+<div id="examples">
+  ## 例
+</div>
+
+1. `Time64` 型のカラムを持つテーブルを作成し、データを挿入します。
+
+```sql
+CREATE TABLE tab64
+(
+    `event_id` UInt8,
+    `time` Time64(3)
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Time64 をパース
+-- - 文字列から、
+-- - 00:00:00 からの秒数から（精度に応じた小数部）。
+INSERT INTO tab64 VALUES (1, '14:30:25'), (2, 52225.123), (3, '14:30:25');
+
+SELECT * FROM tab64 ORDER BY event_id;
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+2. │        2 │ 14:30:25.123 │
+3. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
+```
+
+2. `Time64` 値によるフィルタリング
+
+```sql
+SELECT * FROM tab64 WHERE time = toTime64('14:30:25', 3);
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+2. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
+```
+
+```sql
+SELECT * FROM tab64 WHERE time = toTime64(52225.123, 3);
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        2 │ 14:30:25.123 │
+   └──────────┴──────────────┘
+```
+
+注: `toTime64` は数値リテラルを、指定した精度に応じた小数部を持つ秒数として解釈するため、意図した小数点以下の桁数を明示的に指定してください。
+
+3. 結果の型を確認します。
+
+```sql
+SELECT CAST('14:30:25.250' AS Time64(3)) AS column, toTypeName(column) AS type;
+```
+
+```text
+   ┌────────column─┬─type──────┐
+1. │ 14:30:25.250 │ Time64(3) │
+   └───────────────┴───────────┘
+```
+
+<div id="addition-with-date">
+  ## Dateとの加算
+</div>
+
+[Time64](/ja/reference/data-types/time64) の値は [Date](/ja/reference/data-types/date) または [Date32](/ja/reference/data-types/date32) の値に加算でき、`Time64` と同じスケールを持つ [DateTime64](/ja/reference/data-types/datetime64) を生成できます。
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
+```
+
+```text
+   ┌─────────────────────────dt─┬─toTypeName(dt)─┐
+1. │ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+   └────────────────────────────┴────────────────┘
+```
+
+サポートされているすべての組み合わせと結果のデータ型の詳細については、[日付と時刻の加算](/ja/reference/operators/index#date-time-addition)を参照してください。
+
+**関連項目**
+
+* [型変換関数](/ja/reference/functions/regular-functions/type-conversion-functions)
+* [日付と時刻を扱う関数](/ja/reference/functions/regular-functions/date-time-functions)
+* [`date_time_input_format` 設定](/ja/reference/settings/formats#date_time_input_format)
+* [`date_time_output_format` 設定](/ja/reference/settings/formats#date_time_output_format)
+* [`timezone` サーバー設定パラメータ](/ja/reference/settings/server-settings/settings#timezone)
+* [`session_timezone` 設定](/ja/reference/settings/session-settings#session_timezone)
+* [日付と時刻を扱う演算子](/ja/reference/operators/index#operators-for-working-with-dates-and-times)
+* [`Date` データ型](/ja/reference/data-types/date)
+* [`Time` データ型](/ja/reference/data-types/time)
+* [`DateTime` データ型](/ja/reference/data-types/datetime)

@@ -1,0 +1,50 @@
+---
+description: 'Documentação do tipo de dado Date no ClickHouse'
+sidebarTitle: 'Date'
+slug: /sql-reference/data-types/date
+title: 'Date'
+doc_type: 'reference'
+---
+
+Uma data. Armazenada em dois bytes como o número de dias desde 1970-01-01 (sem sinal). Permite armazenar valores desde logo após o início da Era Unix até o limite superior definido por uma constante na etapa de compilação (atualmente, isso vai até o ano de 2149, mas o último ano com suporte completo é 2148).
+
+Intervalo de valores com suporte: [1970-01-01, 2149-06-06].
+
+O valor de data é armazenado sem fuso horário.
+
+**Exemplo**
+
+Criando uma tabela com uma coluna do tipo `Date` e inserindo dados nela:
+
+```sql
+CREATE TABLE dt
+(
+    `timestamp` Date,
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parse Date
+-- - from string,
+-- - from 'small' integer interpreted as number of days since 1970-01-01, and
+-- - from 'big' integer interpreted as number of seconds since 1970-01-01.
+INSERT INTO dt VALUES ('2019-01-01', 1), (17897, 2), (1546300800, 3);
+
+SELECT * FROM dt;
+```
+
+```text
+┌──timestamp─┬─event_id─┐
+│ 2019-01-01 │        1 │
+│ 2019-01-01 │        2 │
+│ 2019-01-01 │        3 │
+└────────────┴──────────┘
+```
+
+**Veja também**
+
+* [Funções para trabalhar com datas e horas](/pt-BR/reference/functions/regular-functions/date-time-functions)
+* [Operadores para trabalhar com datas e horas](/pt-BR/reference/operators/index#operators-for-working-with-dates-and-times)
+* [Tipo de dado `DateTime`](/pt-BR/reference/data-types/datetime)

@@ -1,0 +1,86 @@
+---
+sidebarTitle: 'Console roles and permissions'
+slug: /cloud/security/console-roles
+title: 'Console roles and permissions'
+description: 'This page describes the standard roles and associated permissions in ClickHouse Cloud console'
+doc_type: 'reference'
+keywords: ['console roles', 'permissions', 'access control', 'security', 'rbac']
+---
+
+## Organization roles {#organization-roles}
+Refer to [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) for instructions on assigning organization roles.
+
+ClickHouse has four organization level roles available for user management. Only the admin role has default access to services. All other roles must be combined with service level roles to interact with services.
+
+| Role      | Description                                                                                                                                                                                                                 |
+|-----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Admin          | Perform all administrative activities for an organization and control all settings. This role is assigned to the first user in the organization by default and automatically has Service Admin permissions on all services. |
+| Billing        | View usage and invoices, and manage payment methods.                                         |
+| Org API reader | API permissions to manage organization level settings and users, no service access. |
+| Member         | Sign-in only with the ability to manage personal profile settings. Assigned to SAML SSO users by default. |
+
+## Service roles {#service-roles}
+Refer to [Manage cloud users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users) for instructions on assigning service roles.
+
+Service permissions must be explicitly granted by an admin to users with roles other than the admin role. The service admin role is pre-configured with SQL console admin access, but may be modified to reduce or remove permissions.
+
+| Role                     | Description                                                  |
+|--------------------------|--------------------------------------------------------------|
+| Service reader           | View services and settings.                                  |
+| Service admin            | Manage service settings.                                     |
+| Service API reader       | API permissions to read service settings for all services.   |
+| Service API admin        | API permissions to manage service settings for all services. |
+| Basic service API reader | API permissions to use query API endpoints.                  | 
+
+## SQL console roles {#sql-console-roles}
+Refer to [Manage SQL console role assignments](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) for instructions on assigning SQL console roles.
+
+| Role                  | Description                                                                                    |
+|-----------------------|------------------------------------------------------------------------------------------------|
+| SQL console read only | Read only access to databases within the service.                                              |
+| SQL console admin     | Administrative access to databases within the service equivalent to the Default database role. |
+
+## Console Permissions {#console-permissions}
+
+The table below describes the ClickHouse console and SQL console permissions. More information is linked in the header for each category.
+
+| Permission | Description |
+|---|---|
+| **Organization** ([more info](/products/cloud/guides/security/cloud-access-management/manage-cloud-users)) | Organization-level permissions |
+| control-plane:organization:view | View organization details and read-only metadata. |
+| control-plane:organization:manage | Manage organization settings and users. |
+| **Billing** ([more info](/products/cloud/reference/billing/index)) | Billing and invoice management |
+| control-plane:organization:manage-billing | Manage billing settings, payment methods, and invoices. |
+| control-plane:organization:view-billing | View billing usage and invoices. |
+| **API keys** ([more info](/products/cloud/features/admin-features/api/index)) | Organization API key management |
+| control-plane:organization:view-api-keys | View API keys for the organization. |
+| control-plane:organization:create-api-keys | Create new API keys for the organization. |
+| control-plane:organization:update-api-keys | Update existing API keys and their permissions. |
+| control-plane:organization:delete-api-keys | Revoke or delete API keys. |
+| **Support** ([more info](/products/cloud/features/support)) | Support case management |
+| control-plane:support:manage | Create and manage support cases and interactions with ClickHouse support. |
+| **Service (general)** | General service-level permissions |
+| control-plane:service:view | View service-level metadata, settings, and status. |
+| control-plane:service:manage | Manage service configuration and lifecycle operations. |
+| **Backups** ([more info](/products/cloud/features/backups/overview)) | Service backups and restore points |
+| control-plane:service:view-backups | View backups and restore points for a service. |
+| control-plane:service:manage-backups | Create, manage, and restore service backups. |
+| **IP access list** ([more info](/products/cloud/guides/security/connectivity/setting-ip-filters)) | Manage IP access lists and network filtering |
+| control-plane:service:manage-ip-access-list | Manage IP access lists and network filtering for a service. |
+| **Generative AI** ([more info](/products/cloud/features/ai-ml/ask-ai)) | Configure generative AI features |
+| control-plane:service:manage-generative-ai | Configure and manage generative AI features and settings for a service. |
+| **Query API endpoints** ([more info](/products/cloud/guides/sql-console/query-endpoints)) | Query API endpoints |
+| control-plane:service:view-query-api-endpoints | View Query API endpoints and their configuration. |
+| control-plane:service:manage-query-api-endpoints | Create and manage Query API endpoints. |
+| **Private endpoints** ([more info](/products/cloud/guides/security/connectivity/private-networking/index)) | Private networking and endpoints |
+| control-plane:service:view-private-endpoints | View private endpoint configuration for a service. |
+| control-plane:service:manage-private-endpoints | Create and manage private endpoints and private networking. |
+| **ClickPipes** ([more info](/integrations/clickpipes/home)) | ClickPipes integration |
+| control-plane:service:manage-clickpipes | Manage ClickPipes integration and related settings. Accessing the **Data Sources** tab currently requires `control-plane:service:manage` ("Manage and Delete Selected Services"). |
+| **Scaling** ([more info](/products/cloud/features/autoscaling/overview)) | Scaling and autoscaling configuration |
+| control-plane:service:view-scaling-config | View scaling configuration and autoscaling settings for a service. |
+| control-plane:service:manage-scaling-config | Modify scaling configuration and trigger scaling operations. |
+| **ClickStack** ([more info](/clickstack/overview)) | ClickStack observability integrations |
+| control-plane:service:manage-clickstack-api | Manage ClickStack API access and related integrations. |
+| **SQL console role mapping** ([more info](/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)) | Manage SQL console role assignments |
+| sql-console:database:access | Passwordless access to the database via SQL console (may only be used with sql-console-admin or sql-console-readonly) |

@@ -1,0 +1,494 @@
+---
+slug: /use-cases/observability/clickstack/integrations/mysql-logs
+title: 'supervision des logs MySQL avec ClickStack'
+sidebarTitle: 'Logs MySQL'
+description: 'supervision des logs MySQL avec ClickStack'
+doc_type: 'guide'
+keywords: ['MySQL', 'logs', 'OTEL', 'ClickStack', 'supervision de bases de données', 'requête lente']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **En bref**
+
+  Collectez et visualisez les logs d’erreurs MySQL et les logs de requêtes lentes dans ClickStack à l’aide du receiver OTel `filelog`. Inclut un jeu de données de démonstration et un tableau de bord préconfiguré.
+</Info>
+
+<div id="existing-mysql">
+  ## Intégration avec une instance MySQL existante
+</div>
+
+Cette section explique comment configurer votre instance MySQL existante afin d’envoyer les logs à ClickStack en modifiant la configuration du ClickStack OTel collector.
+
+Si vous souhaitez tester l’intégration des logs MySQL avant de configurer votre propre environnement, vous pouvez utiliser notre configuration préconfigurée et des données d’exemple dans la section [&quot;jeu de données de démonstration&quot;](/fr/clickstack/integration-examples/mysql#demo-dataset).
+
+<div id="prerequisites">
+  ##### Prérequis
+</div>
+
+* Instance ClickStack en fonctionnement
+* Installation MySQL existante (version 5.7 ou ultérieure)
+* Accès aux fichiers de configuration de MySQL pour les modifier
+* Espace disque suffisant pour les fichiers journaux
+
+<Steps>
+  <Step>
+    #### Configurer la journalisation de MySQL
+
+    MySQL prend en charge plusieurs types de journaux. Pour une supervision complète avec OpenTelemetry, nous recommandons d’activer le journal des erreurs et le journal des requêtes lentes.
+
+    Le fichier de configuration `my.cnf` ou `my.ini` se trouve généralement à l’un des emplacements suivants :
+
+    * **Linux (apt/yum)** : `/etc/mysql/my.cnf` ou `/etc/my.cnf`
+    * **macOS (Homebrew)** : `/usr/local/etc/my.cnf` ou `/opt/homebrew/etc/my.cnf`
+    * **Docker** : la configuration est généralement définie via des variables d’environnement ou un fichier de configuration monté
+
+    Ajoutez ou modifiez ces paramètres dans la section `[mysqld]` :
+
+    ```ini
+    [mysqld]
+    # Error log configuration
+    log_error = /var/log/mysql/error.log
+
+    # Slow query log configuration
+    slow_query_log = ON
+    slow_query_log_file = /var/log/mysql/mysql-slow.log
+    long_query_time = 1
+    log_queries_not_using_indexes = ON
+
+    # Optional: General query log (verbose, use with caution in production)
+    # general_log = ON
+    # general_log_file = /var/log/mysql/mysql-general.log
+    ```
+
+    <Note>
+      Le journal des requêtes lentes enregistre les requêtes qui prennent plus de `long_query_time` secondes. Ajustez ce seuil en fonction des exigences de performances de votre application. Si vous le définissez trop bas, cela générera un volume excessif de journaux.
+    </Note>
+
+    Après avoir effectué ces modifications, redémarrez MySQL :
+
+    ```bash
+    # For systemd
+    sudo systemctl restart mysql
+
+    # For Docker
+    docker restart <mysql-container>
+    ```
+
+    Vérifiez que des logs sont bien générés :
+
+    ```bash
+    # Check error log
+    tail -f /var/log/mysql/error.log
+
+    # Check slow query log
+    tail -f /var/log/mysql/mysql-slow.log
+    ```
+  </Step>
+
+  <Step>
+    #### Créer une configuration personnalisée pour l’OTel collector
+
+    ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement. Cette configuration personnalisée est fusionnée avec la configuration de base gérée par HyperDX via OpAMP.
+
+    Créez un fichier nommé `mysql-logs-monitoring.yaml` avec la configuration suivante :
+
+    ```yaml
+    receivers:
+      filelog/mysql_error:
+        include:
+          - /var/log/mysql/error.log
+        start_at: end
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+        operators:
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}[+-]\d{2}:\d{2})\s+(?P<thread_id>\d+)\s+\[(?P<level>[^\]]+)\]\s+(\[(?P<error_code>[^\]]+)\]\s+)?(?P<message>.*)$'
+            
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999-07:00'
+            parse_to: body
+          
+          - type: add
+            field: attributes.source
+            value: "mysql-error"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-production"
+
+      filelog/mysql_slow:
+        include:
+          - /var/log/mysql/mysql-slow.log
+        start_at: end
+        multiline:
+          line_start_pattern: '^# Time:'
+        operators:
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '^# Time: (?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\n# User@Host: (?P<user>[^\[]+)\[(?P<user_host>[^\]]*)\]\s+@\s+(?P<host>[^\[]*)\[(?P<ip>[^\]]*)\].*\n# Query_time: (?P<query_time>[\d.]+)\s+Lock_time: (?P<lock_time>[\d.]+)\s+Rows_sent: (?P<rows_sent>\d+)\s+Rows_examined: (?P<rows_examined>\d+)'
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999Z'
+            parse_to: body
+          
+          - type: add
+            field: attributes.source
+            value: "mysql-slow"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-production"
+
+    service:
+      pipelines:
+        logs/mysql:
+          receivers: [filelog/mysql_error, filelog/mysql_slow]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    Cette configuration :
+
+    * Lit les logs d’erreurs MySQL et les logs de requêtes lentes depuis leurs emplacements standard
+    * Gère les entrées de log sur plusieurs lignes (les requêtes lentes s’étendent sur plusieurs lignes)
+    * Analyse les deux formats de log pour extraire des champs structurés (level, error&#95;code, query&#95;time, rows&#95;examined)
+    * Préserve les horodatages d’origine des logs
+    * Ajoute les attributs `source: mysql-error` et `source: mysql-slow` pour le filtrage dans HyperDX
+    * Achemine les logs vers le ClickHouse exporter via un pipeline dédié
+
+    <Note>
+      Deux receivers sont nécessaires, car les logs d’erreurs MySQL et les logs de requêtes lentes ont des formats complètement différents. Le `time_parser` utilise le format `gotime` pour gérer le format d’horodatage ISO8601 de MySQL avec des décalages de fuseau horaire.
+    </Note>
+  </Step>
+
+  <Step>
+    #### Configurer ClickStack pour charger une configuration personnalisée
+
+    Pour activer une configuration personnalisée du collecteur dans votre déploiement ClickStack existant, montez le fichier de configuration personnalisé à l’emplacement `/etc/otelcol-contrib/custom.config.yaml` et définissez la variable d’environnement `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`.
+
+    Mettez à jour la configuration de déploiement de ClickStack :
+
+    ```yaml
+    services:
+      clickstack:
+        # ... existing configuration ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+          # ... other environment variables ...
+        volumes:
+          - ./mysql-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - /var/log/mysql:/var/log/mysql:ro
+          # ... other volumes ...
+    ```
+
+    <Note>
+      Assurez-vous que le collecteur ClickStack dispose des permissions appropriées pour lire les fichiers de journal MySQL. Utilisez des montages en lecture seule (`:ro`) et appliquez le principe du moindre privilège.
+    </Note>
+  </Step>
+
+  <Step>
+    #### Vérifier les logs dans HyperDX
+
+    Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les logs remontent correctement :
+
+    1. Accédez à la vue Search
+    2. Définissez la source sur Logs
+    3. Filtrez sur `source:mysql-error` ou `source:mysql-slow` pour afficher les logs spécifiques à MySQL
+    4. Vous devriez voir des entrées de log structurées avec des champs tels que `level`, `error_code`, `message` (pour les logs d’erreur) ainsi que `query_time`, `rows_examined`, `query` (pour les logs de requêtes lentes)
+
+    <Image img="/images/clickstack/mysql/search-view.webp" alt="Vue Search" />
+
+    <Image img="/images/clickstack/mysql/log-view.webp" alt="Vue Log" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## Jeu de données de démonstration
+</div>
+
+Pour les utilisateurs qui souhaitent tester l’intégration MySQL logs avant de configurer leurs systèmes de production, nous fournissons un jeu de données d’exemple contenant des logs MySQL pré-générés aux schémas réalistes.
+
+<Steps>
+  <Step>
+    #### Téléchargez le jeu de données d’exemple
+
+    Téléchargez les exemples de fichiers journaux :
+
+    ```bash
+    # Download error log
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/error.log
+
+    # Download slow query log
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/mysql-slow.log
+    ```
+
+    Le jeu de données comprend :
+
+    * Des entrées du journal des erreurs (messages de démarrage, avertissements, erreurs de connexion, messages InnoDB)
+    * Des requêtes lentes avec des caractéristiques de performances réalistes
+    * Des événements du cycle de vie des connexions
+    * Des séquences de démarrage et d’arrêt du serveur de base de données
+  </Step>
+
+  <Step>
+    #### Créer une configuration de test du collecteur
+
+    Créez un fichier nommé `mysql-logs-demo.yaml` avec la configuration suivante :
+
+    ```yaml
+    cat > mysql-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/mysql_error:
+        include:
+          - /tmp/mysql-demo/error.log
+        start_at: beginning  # Read from beginning for demo data
+        multiline:
+          line_start_pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+        operators:
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}[+-]\d{2}:\d{2})\s+(?P<thread_id>\d+)\s+\[(?P<level>[^\]]+)\]\s+(\[(?P<error_code>[^\]]+)\]\s+)?(?P<message>.*)$'
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999-07:00'
+            parse_to: body
+          - type: add
+            field: attributes.source
+            value: "mysql-demo-error"
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-demo"
+
+      filelog/mysql_slow:
+        include:
+          - /tmp/mysql-demo/mysql-slow.log
+        start_at: beginning  # Read from beginning for demo data
+        multiline:
+          line_start_pattern: '^# Time:'
+        operators:
+          - type: regex_parser
+            parse_from: body
+            parse_to: attributes
+            regex: '^# Time: (?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\n# User@Host: (?P<user>[^\[]+)\[(?P<user_host>[^\]]*)\]\s+@\s+(?P<host>[^\[]*)\[(?P<ip>[^\]]*)\].*\n# Query_time: (?P<query_time>[\d.]+)\s+Lock_time: (?P<lock_time>[\d.]+)\s+Rows_sent: (?P<rows_sent>\d+)\s+Rows_examined: (?P<rows_examined>\d+)'
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout_type: gotime
+            layout: '2006-01-02T15:04:05.999999Z'
+            parse_to: body
+          - type: add
+            field: attributes.source
+            value: "mysql-demo-slow"
+          - type: add
+            field: resource["service.name"]
+            value: "mysql-demo"
+
+    service:
+      pipelines:
+        logs/mysql-demo:
+          receivers: [filelog/mysql_error, filelog/mysql_slow]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### Exécuter ClickStack avec la configuration de démonstration
+
+    Exécutez ClickStack avec les logs et la configuration de démonstration :
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/mysql-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/error.log:/tmp/mysql-demo/error.log:ro" \
+      -v "$(pwd)/mysql-slow.log:/tmp/mysql-demo/mysql-slow.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### Vérifier les logs dans HyperDX
+
+    Une fois ClickStack démarré :
+
+    1. Attendez quelques instants que ClickStack soit complètement initialisé (généralement 30 à 60 secondes)
+    2. Ouvrez [HyperDX](http://localhost:8080/) et connectez-vous à votre compte (vous devrez peut-être d’abord en créer un)
+    3. Accédez à la vue Search et définissez la source sur `Logs`
+    4. Définissez l’intervalle de temps sur **2025-11-13 00:00:00 - 2025-11-16 00:00:00**
+    5. Vous devriez voir 40 logs au total (30 logs d’erreur avec `source:mysql-demo-error` + 10 requêtes lentes avec `source:mysql-demo-slow`)
+
+    <Note>
+      Si vous ne voyez pas immédiatement les 40 logs, attendez environ une minute pour que le collecteur termine le traitement. Si les logs n’apparaissent toujours pas après cela, exécutez `docker restart clickstack-demo`, puis vérifiez à nouveau une minute plus tard. Il s’agit d’un problème connu du récepteur filelog d’OpenTelemetry lors du chargement en masse de fichiers préexistants avec `start_at: beginning`. Les déploiements de production utilisant `start_at: end` traitent les logs à mesure qu’ils sont écrits en temps réel et ne rencontrent pas ce problème.
+    </Note>
+
+    <Image img="/images/clickstack/mysql/search-view.webp" alt="Vue Search" />
+
+    <Image img="/images/clickstack/mysql/log-view.webp" alt="Vue Log" />
+
+    <Info>
+      **Affichage du fuseau horaire**
+
+      HyperDX affiche les timestamps dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)**. Cet intervalle de temps étendu vous permet de voir les logs de démonstration où que vous soyez. Une fois les logs visibles, vous pouvez réduire la plage à 24 heures pour obtenir des visualisations plus claires.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## Tableaux de bord et visualisations
+</div>
+
+Pour vous aider à démarrer la supervision de MySQL avec ClickStack, nous fournissons des visualisations essentielles pour les logs MySQL.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  </Step>
+
+  <Step>
+    #### Importer le tableau de bord préconfiguré
+
+    1. Ouvrez HyperDX et accédez à la section Dashboards
+    2. Cliquez sur **Import Dashboard** dans le coin supérieur droit, dans le menu des points de suspension
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Bouton d’importation du tableau de bord" />
+
+    3. Téléversez le fichier `mysql-logs-dashboard.json`, puis cliquez sur **Finish Import**
+
+    <Image img="/images/clickstack/mysql/finish-import.webp" alt="Terminer l’importation" />
+  </Step>
+
+  <Step>
+    #### Afficher le tableau de bord
+
+    Le tableau de bord sera créé avec toutes les visualisations préconfigurées.
+
+    <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="Exemple de tableau de bord" />
+
+    <Note>
+      Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Par défaut, le tableau de bord importé n’aura pas d’intervalle de temps défini.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### La config personnalisée ne se charge pas
+</div>
+
+Vérifiez que la variable d’environnement est définie :
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+Vérifiez que le fichier de configuration personnalisé est bien monté et lisible :
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
+```
+
+<div id="no-logs">
+  ### Aucun log ne s’affiche dans HyperDX
+</div>
+
+Vérifiez que la configuration effective inclut votre receiver filelog :
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+Recherchez des erreurs dans les logs du collector :
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i mysql
+```
+
+Si vous utilisez le jeu de données de démonstration, vérifiez que les fichiers de logs sont accessibles :
+
+```bash
+docker exec <container> cat /tmp/mysql-demo/error.log | wc -l
+docker exec <container> cat /tmp/mysql-demo/mysql-slow.log | wc -l
+```
+
+<div id="no-slow-queries">
+  ### Les logs de requêtes lentes n’apparaissent pas
+</div>
+
+Vérifiez que le log de requêtes lentes est activé dans MySQL :
+
+```sql
+SHOW VARIABLES LIKE 'slow_query_log';
+SHOW VARIABLES LIKE 'long_query_time';
+```
+
+Vérifiez si MySQL enregistre les requêtes lentes :
+
+```bash
+tail -f /var/log/mysql/mysql-slow.log
+```
+
+Générez une requête lente de test :
+
+```sql
+SELECT SLEEP(2);
+```
+
+<div id="logs-not-parsing">
+  ### Les logs ne sont pas analysés correctement
+</div>
+
+Vérifiez que le format des logs MySQL correspond au format attendu. Les motifs d’expression régulière de ce guide sont conçus pour les formats par défaut de MySQL 5.7+ et 8.0+.
+
+Vérifiez quelques lignes de votre journal d’erreurs :
+
+```bash
+head -5 /var/log/mysql/error.log
+```
+
+Format attendu :
+
+```text
+2025-11-14T10:23:45.123456+00:00 0 [System] [MY-010116] [Server] /usr/sbin/mysqld (mysqld 8.0.35) starting as process 1
+```
+
+Si votre format diffère sensiblement, ajustez les motifs d’expression régulière dans la configuration.
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* Configurez des [alertes](/fr/clickstack/features/alerts) pour les événements critiques (échecs de connexion, requêtes lentes dépassant les seuils, pics d’erreurs)
+* Créez des tableaux de bord personnalisés pour analyser les requêtes lentes par modèle de requête
+* Ajustez `long_query_time` en fonction des tendances de performances des requêtes observées
+
+<div id="going-to-production">
+  ## Passage en production
+</div>
+
+Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une mise en route rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.

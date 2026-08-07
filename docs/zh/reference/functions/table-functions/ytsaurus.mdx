@@ -1,0 +1,48 @@
+---
+description: '该表函数可用于从 YTsaurus 集群中读取数据。'
+sidebarTitle: 'ytsaurus'
+slug: /sql-reference/table-functions/ytsaurus
+title: 'ytsaurus'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="ytsaurus-table-function">
+  # ytsaurus 表函数
+</div>
+
+<ExperimentalBadge />
+
+该表函数可用于从 YTsaurus 集群中读取数据。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+ytsaurus(http_proxy_url, cypress_path, oauth_token, format)
+```
+
+<Info>
+  这是一个 Experimental 功能，未来版本中可能会发生不兼容旧版本的变更。
+  可通过 [allow&#95;experimental&#95;ytsaurus&#95;table&#95;function](/zh/reference/settings/session-settings#allow_experimental_ytsaurus_table_engine) 设置启用 YTsaurus 表函数。
+  输入命令 `set allow_experimental_ytsaurus_table_function = 1`。
+</Info>
+
+<div id="arguments">
+  ## 参数
+</div>
+
+* `http_proxy_url` — YTsaurus HTTP 代理的 URL。
+* `cypress_path` — 数据源的 Cypress 路径。
+* `oauth_token` — OAuth 令牌。
+* `format` — 数据源的[格式](/zh/reference/formats/index)。
+
+**返回值**
+
+一个具有指定结构的表，用于读取 YTsaurus 集群中指定 Cypress 路径下的数据。
+
+**另请参阅**
+
+* [YTsaurus 引擎](/zh/reference/engines/table-engines/integrations/ytsaurus)

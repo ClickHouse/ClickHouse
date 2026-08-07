@@ -1,0 +1,57 @@
+---
+description: '指定したクラスター内の多数のノードで Apache Paimon のファイルを並列処理できるようにする、paimon テーブル関数の拡張機能。'
+sidebarTitle: 'paimonCluster'
+slug: /sql-reference/table-functions/paimonCluster
+title: 'paimonCluster'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="paimoncluster-table-function">
+  # paimonCluster テーブル関数
+</div>
+
+<ExperimentalBadge />
+
+これは [paimon](/ja/reference/functions/table-functions/paimon) テーブル関数の拡張です。
+
+指定したクラスター内の多数のノードで、Apache [Paimon](https://paimon.apache.org/) のファイルを並列に処理できます。イニシエーターはクラスター内のすべてのノードへの接続を確立し、各ファイルを動的に振り分けます。ワーカーノードは次に処理するタスクをイニシエーターに問い合わせて処理します。これを、すべてのタスクが完了するまで繰り返します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+paimonS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+* `cluster_name` — リモートおよびローカルのサーバーへのアドレスのセットと接続パラメーターを構築するために使用されるクラスター名。
+* そのほかのすべての引数の説明は、同等の [paimon](/ja/reference/functions/table-functions/paimon) テーブル関数の引数の説明と同じです。
+* オプションの `extra_credentials` パラメーターを使用すると、ClickHouse Cloud でロールベースアクセス用の `role_arn` を渡せます。設定手順については、[Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
+
+**戻り値**
+
+指定した Paimon テーブル内のクラスターからデータを読み取るための、指定された構造を持つテーブル。
+
+<div id="virtual-columns">
+  ## 仮想カラム
+</div>
+
+* `_path` — ファイルのパス。型: `LowCardinality(String)`.
+* `_file` — ファイル名。型: `LowCardinality(String)`.
+* `_size` — ファイルサイズ (バイト単位) 。型: `Nullable(UInt64)`. ファイルサイズが不明な場合、値は `NULL` です。
+* `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`. 時刻が不明な場合、値は `NULL` です。
+* `_etag` — ファイルの etag。型: `LowCardinality(String)`. etag が不明な場合、値は `NULL` です。
+
+**関連項目**
+
+* [Paimon テーブル関数](/ja/reference/functions/table-functions/paimon)

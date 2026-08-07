@@ -1,0 +1,161 @@
+---
+sidebarTitle: 'Postgres から ClickHouse へのデータ取り込み'
+description: 'Postgres を ClickHouse Cloud にシームレスに接続します。'
+slug: /integrations/clickpipes/postgres
+title: Postgres から ClickHouse へのデータ取り込み (CDC（変更データキャプチャ） を使用)
+keywords: ['PostgreSQL', 'ClickPipes', 'CDC', '変更データキャプチャ', 'データベースレプリケーション']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickPipes を使用すると、ソースの Postgres データベースから ClickHouse Cloud にデータを取り込めます。ソースの Postgres データベースは、オンプレミス環境のほか、Amazon RDS、Google Cloud SQL、Azure Database for Postgres、Supabase などのクラウド環境でもホストできます。
+
+Postgres ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムからデプロイおよび管理することもできます。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+開始するには、まず Postgres データベースが正しく設定されていることを確認する必要があります。使用するソース Postgres インスタンスに応じて、以下のいずれかのガイドに従ってください。
+
+1. [Amazon RDS Postgres](/ja/integrations/clickpipes/postgres/source/rds)
+
+2. [Amazon Aurora Postgres](/ja/integrations/clickpipes/postgres/source/aurora)
+
+3. [Supabase Postgres](/ja/integrations/clickpipes/postgres/source/supabase)
+
+4. [Google Cloud SQL Postgres](/ja/integrations/clickpipes/postgres/source/google-cloudsql)
+
+5. [Azure Flexible Server for Postgres](/ja/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+
+6. [Neon Postgres](/ja/integrations/clickpipes/postgres/source/neon-postgres)
+
+7. [Crunchy Bridge Postgres](/ja/integrations/clickpipes/postgres/source/crunchy-postgres)
+
+8. [Generic Postgres Source](/ja/integrations/clickpipes/postgres/source/generic): 他の Postgres プロバイダーを使用している場合、またはセルフホストのインスタンスを使用している場合。
+
+9. [TimescaleDB](/ja/integrations/clickpipes/postgres/source/timescale): マネージドサービスまたはセルフホストのインスタンスで TimescaleDB 拡張機能を使用している場合。
+
+<Warning>
+  PgBouncer、RDS Proxy、Supabase Pooler などの Postgres プロキシは、CDC (変更データキャプチャ)  ベースのレプリケーションではサポートされていません。ClickPipes のセットアップではこれらを使用せず、代わりに実際の Postgres データベースの接続情報を指定してください。
+</Warning>
+
+ソース Postgres データベースの設定が完了したら、ClickPipe の作成に進めます。
+
+<div id="creating-your-clickpipe">
+  ## ClickPipe の作成
+</div>
+
+ClickHouse Cloud アカウントにログインしていることを確認してください。まだアカウントをお持ちでない場合は、[こちら](https://cloud.clickhouse.com/)から登録できます。
+
+[//]: # "   TODO ここで画像を更新"
+
+1. ClickHouse Cloud コンソールで、ご利用の ClickHouse Cloud サービスを開きます。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes サービス" size="lg" border />
+
+2. 左側のメニューで `Data Sources` ボタンを選択し、「Set up a ClickPipe」をクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
+
+3. `Postgres CDC` タイルを選択します。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="Postgres を選択" size="lg" border />
+
+<div id="adding-your-source-postgres-database-connection">
+  ### ソース Postgres データベース接続の追加
+</div>
+
+4. 前提条件の手順で設定したソース Postgres データベースの接続情報を入力します。
+
+<Info>
+  接続情報の入力を始める前に、ファイアウォールルールで ClickPipes IP アドレスを許可リストに追加していることを確認してください。ClickPipes IP アドレスの一覧は[こちら](/ja/integrations/clickpipes/home#list-of-static-ips)で確認できます。
+  詳細については、[このページの上部](#prerequisites)にリンクされているソース Postgres のセットアップガイドを参照してください。
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="接続情報を入力" size="lg" border />
+
+<div id="optional-setting-up-aws-private-link">
+  #### &#x20;(任意) AWS プライベートリンクの設定
+</div>
+
+ソースの Postgres データベースが AWS でホストされている場合は、AWS プライベートリンクを使用して接続できます。データ転送を非公開のままにしたい場合に便利です。
+[接続を設定するためのセットアップガイド](/ja/integrations/clickpipes/aws-privatelink)を参照してください。
+
+<div id="optional-setting-up-ssh-tunneling">
+  #### &#x20;(任意) SSH トンネリングを設定する
+</div>
+
+ソースの Postgres データベースにパブリックアクセスできない場合は、SSH トンネリングの詳細を指定できます。
+
+1. 「Use SSH Tunnelling」トグルを有効にします。
+
+2. SSH の接続情報を入力します。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH トンネリング" size="lg" border />
+
+3. 鍵ベース認証を使用するには、「Revoke and generate key pair」をクリックして新しい鍵ペアを生成し、生成された公開鍵を SSH サーバーの `~/.ssh/authorized_keys` にコピーします。
+
+4. 「Verify Connection」をクリックして、接続を確認します。
+
+<Note>
+  ClickPipes が SSH トンネルを確立できるように、SSH 踏み台ホストのファイアウォールルールで [ClickPipes IP アドレス](/ja/integrations/clickpipes/home#list-of-static-ips) を必ず許可してください。
+</Note>
+
+接続情報の入力が完了したら、「Next」をクリックします。
+
+<div id="configuring-the-replication-settings">
+  ### レプリケーション設定の構成
+</div>
+
+5. 事前準備の手順で作成したレプリケーションスロットを、ドロップダウンリストから選択してください。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="レプリケーションスロットを選択" size="lg" border />
+
+<div id="advanced-settings">
+  #### 詳細設定
+</div>
+
+必要に応じて詳細設定を構成できます。各設定の簡単な説明を以下に示します。
+
+* **Sync interval**: ClickPipes が変更を確認するためにソースデータベースをポーリングする間隔です。この値は宛先の ClickHouse サービスのコストにも影響するため、コストを重視する場合は高めの値 (`3600` より大きい値) に設定することを推奨します。
+* **Parallel threads for initial load**: 初期スナップショットの取得に使用する並列ワーカー数です。テーブル数が多い場合に、初期スナップショットの取得に使う並列ワーカー数を制御するのに役立ちます。この設定はテーブルごとに適用されます。
+* **Pull batch size**: 1 回のバッチで取得する行数です。この設定はベストエフォートで適用されるため、常にそのとおりになるとは限りません。
+* **Snapshot number of rows per partition**: 初期スナップショット時に各パーティションで取得する行数です。テーブル内の行数が非常に多い場合に、各パーティションで取得する行数を制御するのに役立ちます。
+* **Snapshot number of tables in parallel**: 初期スナップショット時に並列で取得するテーブル数です。テーブル数が多い場合に、並列で取得するテーブル数を制御するのに役立ちます。
+
+<div id="configuring-the-tables">
+  ### テーブルの設定
+</div>
+
+6. ここでは、ClickPipe の宛先データベースを選択できます。既存のデータベースを選択することも、新しく作成することもできます。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="宛先データベースを選択" size="lg" border />
+
+7. ソースの Postgres データベースからレプリケートするテーブルを選択できます。テーブルを選択する際には、宛先の ClickHouse データベースでテーブル名を変更したり、特定のカラムを除外したりすることもできます。
+
+<Warning>
+  ClickHouse で、Postgres の主キーとは異なる ordering key を定義する場合は、関連する[注意事項](/ja/integrations/clickpipes/postgres/ordering-keys)を必ず確認してください
+</Warning>
+
+<div id="review-permissions-and-start-the-clickpipe">
+  ### 権限を確認して ClickPipe を開始する
+</div>
+
+8. 権限のドロップダウンから「Full access」ロールを選択し、「Complete Setup」をクリックします。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="権限を確認" size="lg" border />
+
+<div id="whats-next">
+  ## 次は
+</div>
+
+ClickPipe の設定を完了し、PostgreSQL から ClickHouse Cloud へのデータレプリケーションを開始したら、次は最適なパフォーマンスを得るためのデータのクエリ方法やモデル設計に注力できます。要件に最も適した戦略を見極めるには [移行ガイド](/ja/get-started/migrate/postgres/overview) を参照してください。また、CDC (変更データキャプチャ)  (変更データキャプチャ) ワークロードのベストプラクティスについては、[重複排除戦略 (CDC (変更データキャプチャ)  を使用) ](/ja/integrations/clickpipes/postgres/deduplication) と [Ordering Keys](/ja/integrations/clickpipes/postgres/ordering-keys) の各ページを参照してください。
+
+PostgreSQL CDC (変更データキャプチャ)  に関する一般的な質問やトラブルシューティングについては、[Postgres よくある質問ページ](/ja/integrations/clickpipes/postgres/faq) を参照してください。

@@ -1,0 +1,416 @@
+---
+description: 'Ce moteur fournit une intégration en lecture seule avec des tables Apache Iceberg
+  existantes sur Amazon S3, Azure, HDFS et en stockage local.'
+sidebarTitle: 'Iceberg'
+slug: /engines/table-engines/integrations/iceberg
+title: 'Moteur de table Iceberg'
+doc_type: 'reference'
+---
+
+<Warning>
+  Nous recommandons d&#39;utiliser la [Iceberg Table Function](/fr/reference/functions/table-functions/iceberg) pour manipuler des données Iceberg dans ClickHouse. La Iceberg Table Function offre actuellement des fonctionnalités suffisantes, avec une interface partielle en lecture seule pour les tables Iceberg.
+
+  Le Iceberg Table Engine est disponible, mais peut présenter des limitations. ClickHouse n&#39;a pas été conçu à l&#39;origine pour prendre en charge des tables dont le schéma change en externe, ce qui peut affecter le fonctionnement du Iceberg Table Engine. Par conséquent, certaines fonctionnalités qui marchent avec des tables classiques peuvent être indisponibles ou ne pas fonctionner correctement, en particulier avec l&#39;ancien analyseur.
+
+  Pour une compatibilité optimale, nous vous conseillons d&#39;utiliser la Iceberg Table Function pendant que nous continuons à améliorer la prise en charge du Iceberg Table Engine.
+</Warning>
+
+Ce moteur fournit une intégration en lecture seule avec des tables Apache [Iceberg](https://iceberg.apache.org/) existantes sur Amazon S3, Azure, HDFS et en stockage local.
+
+<div id="create-table">
+  ## Créer une table
+</div>
+
+Notez que la table Iceberg doit déjà exister dans le stockage ; cette commande n&#39;accepte pas de paramètres DDL permettant de créer une nouvelle table.
+
+```sql
+CREATE TABLE iceberg_table_s3
+    ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression], [,extra_credentials])
+
+CREATE TABLE iceberg_table_azure
+    ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+CREATE TABLE iceberg_table_hdfs
+    ENGINE = IcebergHDFS(path_to_table, [,format] [,compression_method])
+
+CREATE TABLE iceberg_table_local
+    ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+```
+
+<div id="engine-arguments">
+  ## Arguments du moteur
+</div>
+
+La description de ces arguments est identique à celle des arguments des moteurs `S3`, `AzureBlobStorage`, `HDFS` et `File`.
+`format` désigne le format des fichiers de données de la table Iceberg.
+
+Pour `IcebergS3`, vous pouvez utiliser le paramètre facultatif `extra_credentials` pour transmettre un `role_arn` afin de mettre en place un contrôle d&#39;accès basé sur les rôles dans ClickHouse Cloud. Voir [Sécuriser S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour les étapes de configuration.
+
+Les paramètres du moteur peuvent être spécifiés à l&#39;aide de [collections nommées](/fr/concepts/features/configuration/server-config/named-collections)
+
+<div id="example">
+  ### Exemple
+</div>
+
+```sql
+CREATE TABLE iceberg_table ENGINE=IcebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+Utilisation des collections nommées :
+
+```xml
+<clickhouse>
+    <named_collections>
+        <iceberg_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+        </iceberg_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table')
+
+```
+
+<div id="aliases">
+  ## Alias
+</div>
+
+Le moteur de table `Iceberg` détecte automatiquement le backend de stockage en fonction du paramètre `disk` et redirige vers `IcebergS3`, `IcebergAzure` ou `IcebergLocal` selon le cas. Lorsqu&#39;aucun `disk` n&#39;est spécifié, l&#39;implémentation `IcebergS3` est utilisée par défaut.
+
+<div id="data-types">
+  ## Types de données
+</div>
+
+Le tableau suivant montre comment les types de données Iceberg sont associés aux types de données ClickHouse lors de l’inférence de schéma (à des fins de lecture).
+
+<div id="primitive-types">
+  ### Types primitifs
+</div>
+
+| Type Iceberg       | Type ClickHouse        | Remarques                                                            |
+| ------------------ | ---------------------- | -------------------------------------------------------------------- |
+| `boolean`          | `Bool`                 |                                                                      |
+| `int`              | `Int32`                |                                                                      |
+| `long`, `bigint`   | `Int64`                |                                                                      |
+| `float`            | `Float32`              |                                                                      |
+| `double`           | `Float64`              |                                                                      |
+| `date`             | `Date32`               |                                                                      |
+| `time`             | `Int64`                | Microsecondes depuis minuit                                          |
+| `timestamp`        | `DateTime64(6)`        | Microsecondes, sans fuseau horaire                                   |
+| `timestamptz`      | `DateTime64(6, 'UTC')` | Microsecondes, fuseau horaire UTC                                    |
+| `timestamp_ns`     | `DateTime64(9)`        | Nanosecondes, sans fuseau horaire (uniquement à partir d’Iceberg v3) |
+| `timestamptz_ns`   | `DateTime64(9, 'UTC')` | Nanosecondes, fuseau horaire UTC (uniquement à partir d’Iceberg v3)  |
+| `string`, `binary` | `String`               |                                                                      |
+| `uuid`             | `UUID`                 |                                                                      |
+| `fixed(N)`         | `FixedString(N)`       |                                                                      |
+| `decimal(P, S)`    | `Decimal(P, S)`        |                                                                      |
+
+<div id="complex-types">
+  ### Types complexes
+</div>
+
+| Type dans Iceberg | Type ClickHouse |
+| ----------------- | --------------- |
+| `list`            | `Array`         |
+| `map`             | `Map`           |
+| `struct`          | `Tuple`         |
+
+<div id="schema-evolution">
+  ## Évolution du schéma
+</div>
+
+ClickHouse prend en charge la lecture de tables Iceberg dont le schéma a évolué au fil du temps. Cela inclut les tables où des colonnes ont été ajoutées, supprimées ou réordonnées, ainsi que celles dont des colonnes sont passées de required à Nullable. De plus, les conversions de type suivantes sont prises en charge :
+
+* int -&gt; long
+* float -&gt; double
+* decimal(P, S) -&gt; decimal(P&#39;, S) si P&#39; &gt; P.
+
+À ce jour, il n&#39;est pas possible de modifier les structures imbriquées ni les types des éléments au sein des Array et des Map.
+
+Pour lire une table dont le schéma a changé après sa création avec l&#39;inférence dynamique de schéma, définissez allow&#95;dynamic&#95;metadata&#95;for&#95;data&#95;lakes = true lors de la création de la table.
+
+<div id="partition-pruning">
+  ## Élagage des partitions
+</div>
+
+ClickHouse prend en charge l’élagage des partitions dans les requêtes SELECT sur les tables Iceberg, ce qui permet d’optimiser les performances des requêtes en évitant de lire les fichiers de données non pertinents. Pour activer l’élagage des partitions, définissez `use_iceberg_partition_pruning = 1`. Pour plus d’informations sur l’élagage des partitions dans Iceberg, consultez https://iceberg.apache.org/spec/#partitioning
+
+<div id="time-travel">
+  ## Time travel
+</div>
+
+ClickHouse prend en charge le time travel pour les tables Iceberg, ce qui vous permet d&#39;interroger des données historiques à l&#39;aide d&#39;un horodatage spécifique ou d&#39;un ID d&#39;instantané.
+
+<div id="deleted-rows">
+  ## Traitement des tables avec des lignes supprimées
+</div>
+
+ClickHouse prend en charge la lecture des tables Iceberg utilisant les méthodes de suppression suivantes :
+
+* [Suppressions par position](https://iceberg.apache.org/spec/#position-delete-files)
+* [Suppressions par égalité](https://iceberg.apache.org/spec/#equality-delete-files) (prises en charge à partir de la version 25.8+)
+
+La méthode de suppression suivante n’est **pas prise en charge** :
+
+* [Vecteurs de suppression](https://iceberg.apache.org/spec/#deletion-vectors) (introduits dans la version 3)
+
+<div id="basic-usage">
+  ### Utilisation de base
+</div>
+
+```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_timestamp_ms = 1714636800000
+```
+
+```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_snapshot_id = 3547395809148285433
+```
+
+Remarque : vous ne pouvez pas spécifier les paramètres `iceberg_timestamp_ms` et `iceberg_snapshot_id` dans une même requête.
+
+<div id="important-considerations">
+  ### Points importants à prendre en compte
+</div>
+
+* Les **instantanés** sont généralement créés lorsque :
+  * De nouvelles données sont écrites dans la table
+  * Une compaction des données est effectuée
+
+* **Les changements de schéma ne créent généralement pas d’instantanés** - Cela entraîne des comportements importants lors de l’utilisation du time travel avec des tables ayant fait l’objet d’une évolution du schéma.
+
+<div id="example-scenarios">
+  ### Exemples de scénarios
+</div>
+
+Tous les scénarios utilisent Spark, car CH ne prend pas encore en charge l’écriture dans les tables Iceberg.
+
+<div id="scenario-1">
+  #### Scénario 1 : Modifications de schéma sans nouveaux instantanés
+</div>
+
+Considérez la séquence d’opérations suivante :
+
+```sql
+ -- Create a table with two columns
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+  order_number int, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+-- Insert data into the table
+  INSERT INTO spark_catalog.db.time_travel_example VALUES 
+    (1, 'Mars')
+
+  ts1 = now() // A piece of pseudo code
+
+-- Alter table to add a new column
+  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+ 
+  ts2 = now()
+
+-- Insert data into the table
+  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+
+   ts3 = now()
+
+-- Query the table at each timestamp
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+
++------------+------------+-----+
+|order_number|product_code|price|
++------------+------------+-----+
+|           1|        Mars| NULL|
+|           2|       Venus|100.0|
++------------+------------+-----+
+```
+
+Résultats de la requête à différents horodatages :
+
+* À ts1 &amp; ts2 : seules les deux colonnes d’origine apparaissent
+* À ts3 : les trois colonnes apparaissent, avec NULL comme prix pour la première ligne
+
+<div id="scenario-2">
+  #### Scénario 2 : Différences entre le schéma historique et le schéma actuel
+</div>
+
+Une requête time travel exécutée à l’instant présent peut afficher un schéma différent de celui de la table actuelle :
+
+```sql
+-- Create a table
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
+  order_number int, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+-- Insert initial data into the table
+  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+
+-- Alter table to add a new column
+  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+
+  ts = now();
+
+-- Query the table at a current moment but using timestamp syntax
+
+  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+
+    +------------+------------+
+    |order_number|product_code|
+    +------------+------------+
+    |           2|       Venus|
+    +------------+------------+
+
+-- Query the table at a current moment
+  SELECT * FROM spark_catalog.db.time_travel_example_2;
+    +------------+------------+-----+
+    |order_number|product_code|price|
+    +------------+------------+-----+
+    |           2|       Venus| NULL|
+    +------------+------------+-----+
+```
+
+Cela se produit parce que `ALTER TABLE` ne crée pas de nouvel instantané ; pour la table actuelle, Spark récupère la valeur de `schema_id` à partir du fichier de métadonnées le plus récent, et non d’un instantané.
+
+<div id="scenario-3">
+  #### Scénario 3 : Différences entre le schéma historique et le schéma actuel
+</div>
+
+Le deuxième point est que, lors d’une requête en time travel, vous ne pouvez pas obtenir l’état de la table avant qu’aucune donnée n’y ait été écrite :
+
+```sql
+-- Create a table
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
+  order_number int, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2');
+
+  ts = now();
+
+-- Query the table at a specific timestamp
+  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
+```
+
+Dans ClickHouse, le comportement est identique à celui de Spark. Vous pouvez considérer qu’il suffit de remplacer mentalement les requêtes Select de Spark par des requêtes Select de ClickHouse, et cela fonctionnera de la même manière.
+
+<div id="metadata-file-resolution">
+  ## Résolution du fichier de métadonnées
+</div>
+
+Lors de l’utilisation du moteur de table `Iceberg` dans ClickHouse, le système doit localiser le bon fichier metadata.json, qui décrit la structure de la table Iceberg. Voici comment ce processus de résolution fonctionne :
+
+<div id="candidate-search">
+  ### Recherche des candidats
+</div>
+
+1. **Spécification directe du chemin** :
+
+* Si vous définissez `iceberg_metadata_file_path`, le système utilisera ce chemin exact en le combinant avec le chemin du répertoire de la table Iceberg.
+* Lorsque ce paramètre est défini, tous les autres paramètres de résolution sont ignorés.
+
+2. **Correspondance de l’UUID de la table** :
+
+* Si `iceberg_metadata_table_uuid` est spécifié, le système :
+  * examinera uniquement les fichiers `.metadata.json` du répertoire `metadata`
+  * filtrera les fichiers contenant un champ `table-uuid` correspondant à l’UUID spécifié (sans distinction entre majuscules et minuscules)
+
+3. **Recherche par défaut** :
+
+* Si aucun des paramètres ci-dessus n’est défini, tous les fichiers `.metadata.json` du répertoire `metadata` sont considérés comme des candidats
+
+<div id="most-recent-file">
+  ### Sélection du fichier le plus récent
+</div>
+
+Après avoir identifié les fichiers candidats à l’aide des règles ci-dessus, le système détermine lequel est le plus récent :
+
+* Si `iceberg_recent_metadata_file_by_last_updated_ms_field` est activé :
+  * Le fichier ayant la valeur `last-updated-ms` la plus élevée est sélectionné
+
+* Sinon :
+  * Le fichier ayant le numéro de version le plus élevé est sélectionné
+  * (La version apparaît sous la forme `V` dans les noms de fichier au format `V.metadata.json` ou `V-uuid.metadata.json`)
+
+**Remarque** : Tous les paramètres mentionnés (sauf indication contraire explicite) sont des paramètres au niveau du moteur et doivent être spécifiés lors de la création de la table, comme indiqué ci-dessous :
+
+```sql
+CREATE TABLE example_table ENGINE = Iceberg(
+    's3://bucket/path/to/iceberg_table'
+) SETTINGS iceberg_metadata_table_uuid = '6f6f6407-c6a5-465f-a808-ea8900e35a38';
+```
+
+**Remarque** : Bien que les catalogues Iceberg gèrent généralement la résolution des métadonnées, le moteur de table `Iceberg` de ClickHouse interprète directement les fichiers stockés dans S3 comme des tables Iceberg, d’où l’importance de comprendre ces règles de résolution.
+
+<div id="data-cache">
+  ## Cache de données
+</div>
+
+Le moteur de table `Iceberg` et la fonction de table correspondante prennent en charge le cache de données, comme les stockages `S3`, `AzureBlobStorage` et `HDFS`. Voir [ici](/fr/reference/engines/table-engines/integrations/s3#data-cache).
+
+<div id="metadata-cache">
+  ## Cache de métadonnées
+</div>
+
+Le moteur de table et la fonction de table `Iceberg` prennent en charge un cache de métadonnées qui stocke des informations sur les fichiers manifeste, la liste de manifestes et le JSON de métadonnées. Le cache est stocké en mémoire. Cette fonctionnalité est contrôlée par le paramètre `use_iceberg_metadata_files_cache`, qui est activé par défaut.
+
+<div id="async-metadata-prefetch">
+  ## Préchargement asynchrone des métadonnées
+</div>
+
+Le préchargement asynchrone des métadonnées peut être activé lors de la création d’une table `Iceberg` en définissant `iceberg_metadata_async_prefetch_period_ms`. Si cette valeur est définie sur 0 (valeur par défaut), ou si le cache des métadonnées n’est pas activé, le préchargement asynchrone est désactivé.
+Pour activer cette fonctionnalité, vous devez fournir une valeur non nulle en millisecondes. Elle représente l’intervalle entre les cycles de préchargement.
+
+S’il est activé, le serveur exécutera une opération récurrente en arrière-plan pour lister le catalogue distant et détecter une nouvelle version des métadonnées. Il l’analysera ensuite et parcourra récursivement l’instantané, en récupérant les fichiers de liste de manifests actifs ainsi que les fichiers manifeste.
+Les fichiers déjà présents dans le cache des métadonnées ne seront pas téléchargés à nouveau. À la fin de chaque cycle de préchargement, le dernier instantané des métadonnées est disponible dans le cache des métadonnées.
+
+```sql
+CREATE TABLE example_table ENGINE = Iceberg(
+    's3://bucket/path/to/iceberg_table'
+) SETTINGS
+    iceberg_metadata_async_prefetch_period_ms = 60000;
+```
+
+Afin de tirer pleinement parti du préchargement asynchrone des métadonnées lors des opérations de lecture, le paramètre `iceberg_metadata_staleness_ms` doit être défini comme paramètre de requête ou de session. Par défaut (0 - non spécifié), pour chaque requête, le serveur récupère les métadonnées les plus récentes depuis le catalogue distant.
+En spécifiant une tolérance à l&#39;ancienneté des métadonnées, le serveur est autorisé à utiliser la version en cache de l&#39;instantané des métadonnées sans interroger le catalogue distant. S&#39;il existe une version des métadonnées en cache et qu&#39;elle a été téléchargée dans le délai d&#39;ancienneté indiqué, elle sera utilisée pour traiter la requête.
+Sinon, la version la plus récente sera récupérée depuis le catalogue distant.
+
+```sql
+SELECT count() FROM icebench_table WHERE ...
+SETTINGS iceberg_metadata_staleness_ms=120000
+```
+
+**Remarque** : Le préchargement asynchrone des métadonnées s&#39;exécute dans `ICEBERG_SCEDULE_POOL`, le threadpool côté serveur dédié aux opérations en arrière-plan sur les tables `Iceberg` actives. La taille de ce threadpool est contrôlée par le paramètre de configuration du serveur `iceberg_background_schedule_pool_size` (la valeur par défaut est 10).
+
+**Remarque** : On considère actuellement que la taille du cache de métadonnées est suffisante pour contenir intégralement le dernier instantané de métadonnées de toutes les tables actives, si le préchargement asynchrone est activé.
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [fonction de table Iceberg](/fr/reference/functions/table-functions/iceberg)

@@ -1,0 +1,142 @@
+---
+title: Autenticación y bucket en S3
+---
+
+<Accordion title="Crear buckets de S3 y un usuario de IAM">
+  Este artículo explica los conceptos básicos de cómo configurar un usuario de AWS IAM, crear un bucket de S3 y configurar ClickHouse para usar el bucket como disco S3.
+  Se recomienda trabajar con su equipo de seguridad para determinar los permisos necesarios y considerar estos como punto de partida.
+
+  ### Crear un usuario de AWS IAM
+
+  En los siguientes pasos crearás un usuario de cuenta de servicio (no un usuario de inicio de sesión).
+
+  1. Inicia sesión en la consola de administración de AWS IAM.
+
+  2. En el menú `Users`, selecciona `Create user`
+
+  <Image size="md" img="/images/_snippets/s3/s3-1.webp" alt="Consola de administración de IAM de AWS - Añadir un nuevo usuario" border force />
+
+  3. Introduzca el nombre de usuario, configure el tipo de credencial como `Access key - Programmatic access` y seleccione `Next: Permissions`
+
+  <Image size="md" img="/images/_snippets/s3/s3-2.webp" alt="Configurar el nombre de usuario y el tipo de acceso para el usuario IAM" border force />
+
+  4. No agregues al usuario a ningún grupo; selecciona `Next: Tags`
+
+  <Image size="md" img="/images/_snippets/s3/s3-3.webp" alt="Se omite la asignación de grupo para el usuario de IAM" border force />
+
+  5. Si no necesita agregar ninguna etiqueta, seleccione `Next: Review`
+
+  <Image size="md" img="/images/_snippets/s3/s3-4.webp" alt="Omitir la asignación de etiquetas para el usuario de IAM" border force />
+
+  6. Seleccione `Create User`
+
+  <Note>
+    Se puede ignorar el mensaje de advertencia que indica que el usuario no tiene permisos; en la siguiente sección se le concederán permisos sobre el bucket
+  </Note>
+
+  <Image size="md" img="/images/_snippets/s3/s3-5.webp" alt="Advertencia al crear el usuario de IAM sin permisos" border force />
+
+  7. El usuario ya se ha creado; haz clic en `show` y copia la clave de acceso y la clave secreta.
+
+  <Note>
+    Guarda estas claves en otro lugar; esta es la única vez que la clave de acceso secreta estará disponible.
+  </Note>
+
+  <Image size="md" img="/images/_snippets/s3/s3-6.webp" alt="Ver y copiar las claves de acceso del usuario de IAM" border force />
+
+  8. Haz clic en Cerrar y luego busca al usuario en la página de usuarios.
+
+  <Image size="md" img="/images/_snippets/s3/s3-7.webp" alt="Encontrar al usuario de IAM recién creado en la lista de usuarios" border force />
+
+  9. Copia el ARN (Amazon Resource Name) y guárdalo para usarlo al configurar la política de acceso al bucket.
+
+  <Image size="md" img="/images/_snippets/s3/s3-8.webp" alt="Copiar el ARN del usuario de IAM" border force />
+
+  ### Crear un bucket de S3
+
+  1. En la sección del bucket de S3, seleccione `Create bucket`
+
+  <Image size="md" img="/images/_snippets/s3/s3-9.webp" alt="Inicio del proceso para crear el bucket de S3" border force />
+
+  2. Introduce un nombre para el bucket y deja el resto de opciones con sus valores predeterminados
+
+  <Note>
+    El nombre del bucket debe ser único en todo AWS, no solo dentro de la organización, o se producirá un error.
+  </Note>
+
+  3. Deje `Block all Public Access` activado; no es necesario el acceso público.
+
+  <Image size="md" img="/images/_snippets/s3/s3-a.webp" alt="Configuración de los ajustes del bucket de S3 con el acceso público bloqueado" border force />
+
+  4. Selecciona `Create Bucket` en la parte inferior de la página
+
+  <Image size="md" img="/images/_snippets/s3/s3-b.webp" alt="Finalizar la creación del bucket de S3" border force />
+
+  5. Seleccione el enlace, copie el ARN y guárdelo para usarlo al configurar la política de acceso al bucket.
+
+  6. Una vez creado el bucket, busque el nuevo bucket de S3 en la lista de buckets de S3 y seleccione el enlace
+
+  <Image size="md" img="/images/_snippets/s3/s3-c.webp" alt="Localizar el bucket de S3 recién creado en la lista de buckets" border force />
+
+  7. Selecciona `Create folder`
+
+  <Image size="md" img="/images/_snippets/s3/s3-d.webp" alt="Crear una nueva carpeta en el bucket de S3" border force />
+
+  8. Introduce un nombre para la carpeta que será el destino del disco S3 de ClickHouse y selecciona `Create folder`
+
+  <Image size="md" img="/images/_snippets/s3/s3-e.webp" alt="Configuración del nombre de la carpeta para el uso del disco S3 de ClickHouse" border force />
+
+  9. La carpeta ahora debería verse en la lista de buckets
+
+  <Image size="md" img="/images/_snippets/s3/s3-f.webp" alt="Vista de la carpeta recién creada en el bucket de S3" border force />
+
+  10. Seleccione la casilla de la nueva carpeta y haga clic en `Copy URL` Guarde la URL copiada para usarla en la configuración de almacenamiento de ClickHouse en la siguiente sección.
+
+  <Image size="md" img="/images/_snippets/s3/s3-g.webp" alt="Copiar la URL de la carpeta S3 para la configuración de ClickHouse" border force />
+
+  11. Selecciona la pestaña `Permissions` y haz clic en el botón `Edit` de la sección `Bucket Policy`
+
+  <Image size="md" img="/images/_snippets/s3/s3-h.webp" alt="Acceso a la configuración de la política del bucket de S3" border force />
+
+  12. Añade una política de bucket; a continuación, un ejemplo:
+
+  ```json
+  {
+    "Version" : "2012-10-17",
+    "Id" : "Policy123456",
+    "Statement" : [
+      {
+        "Sid" : "abc123",
+        "Effect" : "Allow",
+        "Principal" : {
+          "AWS" : "arn:aws:iam::921234567898:user/mars-s3-user"
+        },
+        "Action" : "s3:*",
+        "Resource" : [
+          "arn:aws:s3:::mars-doc-test",
+          "arn:aws:s3:::mars-doc-test/*"
+        ]
+      }
+    ]
+  }
+  ```
+
+  ```response
+  |Parámetro | Descripción | Valor de ejemplo |
+  |----------|-------------|----------------|
+  |Version | Versión del intérprete de políticas, dejar tal cual | 2012-10-17 |
+  |Sid | Identificador de política definido por el usuario | abc123 |
+  |Effect | Indica si las solicitudes del usuario serán permitidas o denegadas | Allow |
+  |Principal | Las cuentas o el usuario a los que se les permitirá el acceso | arn:aws:iam::921234567898:user/mars-s3-user |
+  |Action | Qué operaciones están permitidas en el bucket| s3:*|
+  |Resource | Sobre qué recursos del bucket se permitirán las operaciones | "arn:aws:s3:::mars-doc-test", "arn:aws:s3:::mars-doc-test/*" |
+  ```
+
+  <Note>
+    Debe colaborar con su equipo de seguridad para determinar los permisos que se utilizarán; considérelos como punto de partida.
+    Para obtener más información sobre las políticas y la configuración, consulte la documentación de AWS:
+    https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
+  </Note>
+
+  13. Guarde la configuración de la política.
+</Accordion>

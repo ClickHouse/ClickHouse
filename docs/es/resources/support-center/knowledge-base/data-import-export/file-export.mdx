@@ -1,0 +1,92 @@
+---
+title: Cómo exportar datos de ClickHouse a un archivo
+description: Conozca varios métodos para exportar datos de ClickHouse, incluidos `INTO OUTFILE`, el motor de tabla File y la redirección en la línea de comandos.
+date: 2023-03-22
+tags: ['Exportación de datos']
+keywords: ['Exportación de datos', 'INTO OUTFILE', 'Motor de tabla File']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="using-into-outfile-clause">
+  ## Uso de la cláusula INTO OUTFILE
+</div>
+
+Añada la cláusula [INTO OUTFILE](/es/reference/statements/select/into-outfile) a su consulta.
+
+Por ejemplo:
+
+```sql
+SELECT * FROM table INTO OUTFILE 'file'
+```
+
+De forma predeterminada, ClickHouse usa la extensión del nombre de archivo para determinar el formato de salida y la compresión. Por ejemplo, todas las filas de `nyc_taxi` se exportarán a `nyc_taxi.parquet` en formato Parquet:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.parquet'
+```
+
+Y el siguiente será un archivo comprimido separado por tabulaciones:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.tsv.gz'
+```
+
+Si ClickHouse no puede determinar el formato a partir de la extensión del archivo, el formato de salida predeterminado para los datos de salida es [TabSeparated](/es/reference/formats/index). Para especificar el [formato de salida](/es/reference/formats/index), use la [cláusula FORMAT](/es/reference/statements/select/format).
+
+Por ejemplo:
+
+```sql
+SELECT *
+FROM nyc_taxi
+INTO OUTFILE 'taxi_rides.txt'
+FORMAT CSV
+```
+
+<div id="using-a-file-engine-table">
+  ## Uso del motor de tabla File
+</div>
+
+Otra opción es usar el motor de tabla [File](/es/reference/engines/table-engines/special/file), en el que ClickHouse usa el archivo para almacenar los datos. Puede realizar consultas e inserciones directamente sobre el archivo.
+
+Por ejemplo:
+
+```sql
+CREATE TABLE my_table (
+   x UInt32,
+   y String,
+   z DateTime
+)
+ENGINE = File(Parquet)
+```
+
+Inserta unas cuantas filas:
+
+```sql
+INSERT INTO my_table VALUES
+   (1, 'Hello', now()),
+   (2, 'World', now()),
+   (3, 'Goodbye', now())
+```
+
+El archivo se almacena en la carpeta `data` de tu servidor ClickHouse; concretamente, en `/data/default/my_table`, en un archivo llamado `data.Parquet`.
+
+<Note>
+  Usar el motor de tabla `File` es muy práctico para crear y consultar archivos en tu sistema de archivos, pero ten en cuenta que las tablas `File` no son tablas `MergeTree`, por lo que no ofrecen todas las ventajas de `MergeTree`. Usa `File` por comodidad al exportar datos desde ClickHouse en formatos prácticos.
+</Note>
+
+<div id="using-command-line-redirection">
+  ## Uso de la redirección en la línea de comandos
+</div>
+
+```bash
+$ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
+```
+
+Consulte [clickhouse-client](/es/concepts/features/interfaces/cli).

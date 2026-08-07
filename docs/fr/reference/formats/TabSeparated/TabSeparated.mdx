@@ -1,0 +1,197 @@
+---
+alias: ['TSV']
+description: 'Documentation sur le format TSV'
+input_format: true
+keywords: ['TabSeparated', 'TSV']
+output_format: true
+slug: /interfaces/formats/TabSeparated
+title: 'TabSeparated'
+doc_type: 'reference'
+---
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✔      | ✔      | `TSV` |
+
+<div id="description">
+  ## Description
+</div>
+
+Dans le format TabSeparated, les données sont écrites ligne par ligne. Chaque ligne contient des valeurs séparées par des tabulations. Chaque valeur est suivie d’une tabulation, sauf la dernière valeur de la ligne, qui est suivie d’un saut de ligne. Le format suppose partout des sauts de ligne Unix stricts. La dernière ligne doit également se terminer par un saut de ligne. Les valeurs sont écrites au format texte, sans guillemets, avec échappement des caractères spéciaux.
+
+Ce format est également disponible sous le nom `TSV`.
+
+Le format `TabSeparated` est pratique pour traiter des données à l’aide de programmes et de scripts personnalisés. Il est utilisé par défaut dans l’interface HTTP, ainsi qu’en batch mode dans le client en ligne de commande. Ce format permet également de transférer des données entre différents SGBD. Par exemple, vous pouvez récupérer un dump MySQL et l’importer dans ClickHouse, ou inversement.
+
+Le format `TabSeparated` prend en charge la sortie des totaux (lors de l’utilisation de WITH TOTALS) et des valeurs extrêmes (lorsque &#39;extremes&#39; est défini sur 1). Dans ces cas, les totaux et les extrêmes sont affichés après les données principales. Le résultat principal, les totaux et les extrêmes sont séparés les uns des autres par une ligne vide. Exemple :
+
+```sql
+SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
+
+2014-03-17      1406958
+2014-03-18      1383658
+2014-03-19      1405797
+2014-03-20      1353623
+2014-03-21      1245779
+2014-03-22      1031592
+2014-03-23      1046491
+
+1970-01-01      8873898
+
+2014-03-17      1031592
+2014-03-23      1406958
+```
+
+<div id="tabseparated-data-formatting">
+  ## Formatage des données
+</div>
+
+Les nombres entiers sont écrits sous forme décimale. Ils peuvent contenir un caractère `+` supplémentaire au début (ignoré lors de l’analyse et non conservé lors du formatage). Les nombres non négatifs ne peuvent pas contenir de signe moins. À la lecture, une chaîne vide peut être analysée comme zéro, ou (pour les types signés) une chaîne constituée uniquement d’un signe moins peut également être analysée comme zéro. Les nombres qui ne tiennent pas dans le type de données correspondant peuvent être analysés comme une autre valeur, sans message d’erreur.
+
+Les nombres à virgule flottante sont écrits sous forme décimale. Le point est utilisé comme séparateur décimal. La notation exponentielle est prise en charge, ainsi que `inf`, `+inf`, `-inf` et `nan`. Une valeur à virgule flottante peut commencer ou se terminer par un point décimal.
+Lors du formatage, une perte de précision peut se produire pour les nombres à virgule flottante.
+Lors de l’analyse, il n’est pas strictement nécessaire de lire la valeur représentable par la machine la plus proche.
+
+Les dates sont écrites au format YYYY-MM-DD et analysées dans ce même format, mais avec n’importe quels caractères comme séparateurs.
+Les dates avec heure sont écrites au format `YYYY-MM-DD hh:mm:ss` et analysées dans ce même format, mais avec n’importe quels caractères comme séparateurs.
+Tout cela se fait dans le fuseau horaire du système au moment du démarrage du client ou du serveur (selon celui qui formate les données). Pour les dates avec heure, l’heure d’été n’est pas spécifiée. Ainsi, si un dump contient des heures pendant l’heure d’été, le dump ne correspond pas aux données de manière univoque, et l’analyse choisira l’une des deux heures possibles.
+Lors d’une opération de lecture, des dates incorrectes et des dates avec heure peuvent être analysées avec un dépassement naturel ou comme des dates et heures nulles, sans message d’erreur.
+
+Exceptionnellement, l’analyse des dates avec heure est également prise en charge au format Unix timestamp, s’il se compose d’exactement 10 chiffres décimaux. Le résultat ne dépend pas du fuseau horaire. Les formats `YYYY-MM-DD hh:mm:ss` et `NNNNNNNNNN` sont différenciés automatiquement.
+
+Les chaînes sont produites avec des caractères spéciaux précédés d’une barre oblique inverse. Les séquences d’échappement suivantes sont utilisées en sortie : `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. L’analyse prend également en charge les séquences `\a`, `\v` et `\xHH` (séquences d’échappement hexadécimales), ainsi que toute séquence `\c`, où `c` est n’importe quel caractère (ces séquences sont converties en `c`). Ainsi, la lecture des données prend en charge les formats dans lesquels un saut de ligne peut être écrit comme `\n`, comme `\`, ou comme un saut de ligne réel. Par exemple, la chaîne `Hello world` avec un saut de ligne entre les mots au lieu d’un espace peut être analysée sous l’une des formes suivantes :
+
+```text
+Hello\nworld
+
+Hello\
+world
+```
+
+La deuxième variante est prise en charge, car MySQL l&#39;utilise lors de l&#39;écriture de dumps tabulés.
+
+L&#39;ensemble minimal de caractères à échapper lorsque vous transmettez des données au format TabSeparated : tabulation, saut de ligne (LF) et antislash.
+
+Seul un petit nombre de symboles est échappé. Vous pouvez facilement vous retrouver avec une valeur de chaîne dont l&#39;affichage sera corrompu par votre terminal.
+
+Les tableaux sont écrits sous la forme d&#39;une liste de valeurs séparées par des virgules dans `[]`. Les éléments numériques du tableau sont formatés normalement. Les types `Date` et `DateTime` sont écrits entre guillemets simples. Les chaînes sont écrites entre guillemets simples, avec les mêmes règles d&#39;échappement que ci-dessus.
+
+[NULL](/fr/reference/syntax) est formaté conformément au paramètre [format&#95;tsv&#95;null&#95;representation](/fr/reference/settings/formats#format_tsv_null_representation) (la valeur par défaut est `\N`).
+
+Dans les données d&#39;entrée, les valeurs ENUM peuvent être représentées par des noms ou des identifiants. Nous essayons d&#39;abord de faire correspondre la valeur d&#39;entrée au nom ENUM. En cas d&#39;échec, si la valeur d&#39;entrée est un nombre, nous essayons de faire correspondre ce nombre à l&#39;identifiant ENUM.
+Si les données d&#39;entrée ne contiennent que des identifiants ENUM, il est recommandé d&#39;activer le paramètre [input&#95;format&#95;tsv&#95;enum&#95;as&#95;number](/fr/reference/settings/formats#input_format_tsv_enum_as_number) afin d&#39;optimiser l&#39;analyse des ENUM.
+
+Chaque élément des structures [Nested](/fr/reference/data-types/nested-data-structures/index) est représenté sous forme de tableau.
+
+Par exemple :
+
+```sql
+CREATE TABLE nestedt
+(
+    `id` UInt8,
+    `aux` Nested(
+        a UInt8,
+        b String
+    )
+)
+ENGINE = TinyLog
+```
+
+```sql
+INSERT INTO nestedt VALUES ( 1, [1], ['a'])
+```
+
+```sql
+SELECT * FROM nestedt FORMAT TSV
+```
+
+```response
+1  [1]    ['a']
+```
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+<div id="inserting-data">
+  ### Insertion de données
+</div>
+
+À l’aide du fichier TSV suivant, nommé `football.tsv` :
+
+```tsv
+2022-04-30      2021    Sutton United   Bradford City   1       4
+2022-04-30      2021    Swindon Town    Barrow  2       1
+2022-04-30      2021    Tranmere Rovers Oldham Athletic 2       0
+2022-05-02      2021    Port Vale       Newport County  1       2
+2022-05-02      2021    Salford City    Mansfield Town  2       2
+2022-05-07      2021    Barrow  Northampton Town        1       3
+2022-05-07      2021    Bradford City   Carlisle United 2       0
+2022-05-07      2021    Bristol Rovers  Scunthorpe United       7       0
+2022-05-07      2021    Exeter City     Port Vale       0       1
+2022-05-07      2021    Harrogate Town A.F.C.   Sutton United   0       2
+2022-05-07      2021    Hartlepool United       Colchester United       0       2
+2022-05-07      2021    Leyton Orient   Tranmere Rovers 0       1
+2022-05-07      2021    Mansfield Town  Forest Green Rovers     2       2
+2022-05-07      2021    Newport County  Rochdale        0       2
+2022-05-07      2021    Oldham Athletic Crawley Town    3       3
+2022-05-07      2021    Stevenage Borough       Salford City    4       2
+2022-05-07      2021    Walsall Swindon Town    0       3
+```
+
+Insérez les données :
+
+```sql
+INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparated;
+```
+
+<div id="reading-data">
+  ### Lecture des données
+</div>
+
+Lisez les données au format `TabSeparated` :
+
+```sql
+SELECT *
+FROM football
+FORMAT TabSeparated
+```
+
+La sortie sera au format à champs séparés par des tabulations :
+
+```tsv
+2022-04-30      2021    Sutton United   Bradford City   1       4
+2022-04-30      2021    Swindon Town    Barrow  2       1
+2022-04-30      2021    Tranmere Rovers Oldham Athletic 2       0
+2022-05-02      2021    Port Vale       Newport County  1       2
+2022-05-02      2021    Salford City    Mansfield Town  2       2
+2022-05-07      2021    Barrow  Northampton Town        1       3
+2022-05-07      2021    Bradford City   Carlisle United 2       0
+2022-05-07      2021    Bristol Rovers  Scunthorpe United       7       0
+2022-05-07      2021    Exeter City     Port Vale       0       1
+2022-05-07      2021    Harrogate Town A.F.C.   Sutton United   0       2
+2022-05-07      2021    Hartlepool United       Colchester United       0       2
+2022-05-07      2021    Leyton Orient   Tranmere Rovers 0       1
+2022-05-07      2021    Mansfield Town  Forest Green Rovers     2       2
+2022-05-07      2021    Newport County  Rochdale        0       2
+2022-05-07      2021    Oldham Athletic Crawley Town    3       3
+2022-05-07      2021    Stevenage Borough       Salford City    4       2
+2022-05-07      2021    Walsall Swindon Town    0       3
+```
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>
+
+| Paramètre                                                                                                                                  | Description                                                                                                                                                                                                                                                                     | Par défaut |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| [`format_tsv_null_representation`](/fr/reference/settings/formats#format_tsv_null_representation)                                             | Représentation NULL personnalisée au format TSV.                                                                                                                                                                                                                                | `\N`       |
+| [`input_format_tsv_empty_as_default`](/fr/reference/settings/formats#input_format_tsv_empty_as_default)                                       | Traite les champs vides en entrée TSV comme des valeurs par défaut. Pour les expressions par défaut complexes, [input&#95;format&#95;defaults&#95;for&#95;omitted&#95;fields](/fr/reference/settings/formats#input_format_defaults_for_omitted_fields) doit également être activé. | `false`    |
+| [`input_format_tsv_enum_as_number`](/fr/reference/settings/formats#input_format_tsv_enum_as_number)                                           | Traite les valeurs enum insérées dans les formats TSV comme des indices d&#39;enum.                                                                                                                                                                                             | `false`    |
+| [`input_format_tsv_use_best_effort_in_schema_inference`](/fr/reference/settings/formats#input_format_tsv_use_best_effort_in_schema_inference) | Utilise certains ajustements et heuristiques pour inférer le schéma au format TSV. Si cette option est désactivée, tous les champs seront inférés comme des Strings.                                                                                                            | `true`     |
+| [`output_format_tsv_crlf_end_of_line`](/fr/reference/settings/formats#output_format_tsv_crlf_end_of_line)                                     | Si cette option est définie sur `true`, la fin de ligne du format de sortie TSV sera `\r\n` au lieu de `\n`.                                                                                                                                                                    | `false`    |
+| [`input_format_tsv_crlf_end_of_line`](/fr/reference/settings/formats#input_format_tsv_crlf_end_of_line)                                       | Si cette option est définie sur `true`, la fin de ligne du format d&#39;entrée TSV sera `\r\n` au lieu de `\n`.                                                                                                                                                                 | `false`    |
+| [`input_format_tsv_skip_first_lines`](/fr/reference/settings/formats#input_format_tsv_skip_first_lines)                                       | Ignore le nombre spécifié de lignes au début des données.                                                                                                                                                                                                                       | `0`        |
+| [`input_format_tsv_detect_header`](/fr/reference/settings/formats#input_format_tsv_detect_header)                                             | Détecte automatiquement l&#39;en-tête contenant les noms et les types au format TSV.                                                                                                                                                                                            | `true`     |
+| [`input_format_tsv_skip_trailing_empty_lines`](/fr/reference/settings/formats#input_format_tsv_skip_trailing_empty_lines)                     | Ignore les lignes vides finales à la fin des données.                                                                                                                                                                                                                           | `false`    |
+| [`input_format_tsv_allow_variable_number_of_columns`](/fr/reference/settings/formats#input_format_tsv_allow_variable_number_of_columns)       | Autorise un nombre variable de colonnes au format TSV, ignore les colonnes supplémentaires et utilise des valeurs par défaut pour les colonnes manquantes.                                                                                                                      | `false`    |

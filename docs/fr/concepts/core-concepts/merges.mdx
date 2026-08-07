@@ -1,0 +1,196 @@
+---
+slug: /merges
+title: 'Fusions de parts'
+description: 'Que sont les fusions de parts dans ClickHouse'
+keywords: ['fusions']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="what-are-part-merges-in-clickhouse">
+  ## Que sont les fusions de parts dans ClickHouse ?
+</div>
+
+<br />
+
+ClickHouse [est rapide](/fr/get-started/about/why-clickhouse-is-so-fast) non seulement pour les requêtes, mais aussi pour les insertions, grâce à sa [couche de stockage](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf), qui repose sur un principe proche de celui des [arbres LSM](https://en.wikipedia.org/wiki/Log-structured_merge-tree) :
+
+① Les insertions (dans les tables de la famille du [moteur MergeTree](/fr/reference/engines/table-engines/mergetree-family/index)) créent des [parts de données](/fr/concepts/core-concepts/parts) triées et immuables.
+
+② Tout le traitement des données est pris en charge par des **fusions de parts en arrière-plan**.
+
+Les écritures de données sont ainsi légères et [très efficaces](/fr/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-are-isolated-from-each-other).
+
+Pour contrôler le nombre de parts par table et mettre en œuvre le point ② ci-dessus, ClickHouse fusionne en continu ([par partition](/fr/concepts/core-concepts/partitions#per-partition-merges)) les petites parts en parts plus volumineuses en arrière-plan, jusqu&#39;à ce qu&#39;elles atteignent une taille compressée d&#39;environ [~150 GB](/fr/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool).
+
+Le schéma suivant illustre ce processus de fusion en arrière-plan :
+
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="PART MERGES" />
+
+<br />
+
+Le `merge level` d&#39;une part augmente de un à chaque fusion supplémentaire. Un niveau de `0` signifie que la part est nouvelle et n&#39;a pas encore été fusionnée. Les parts fusionnées dans des parts plus grandes sont marquées comme [inactives](/fr/reference/system-tables/parts), puis définitivement supprimées après un délai [configurable](/fr/reference/settings/merge-tree-settings#old_parts_lifetime) (8 minutes par défaut). Au fil du temps, cela crée un **arbre** de parts fusionnées. D&#39;où le nom de table [MergeTree](/fr/reference/engines/table-engines/mergetree-family/index).
+
+<div id="monitoring-merges">
+  ## Suivi des fusions
+</div>
+
+Dans l’exemple [Que sont les parties de table](/fr/concepts/core-concepts/parts), nous avons [montré](/fr/concepts/core-concepts/parts#monitoring-table-parts) que ClickHouse suit toutes les parties de table dans la table système [parts](/fr/reference/system-tables/parts). Nous avons utilisé la requête suivante pour récupérer le niveau de fusion et le nombre de lignes stockées pour chaque partie active de la table d’exemple :
+
+```sql
+SELECT
+    name,
+    level,
+    rows
+FROM system.parts
+WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple') AND active
+ORDER BY name ASC;
+```
+
+Le résultat de la requête [précédemment documentée](/fr/concepts/core-concepts/parts#monitoring-table-parts) montre que la table d’exemple comportait quatre parts actives, chacune issue d’une unique fusion des parts initialement insérées :
+
+```response
+   ┌─name────────┬─level─┬────rows─┐
+1. │ all_0_5_1   │     1 │ 6368414 │
+2. │ all_12_17_1 │     1 │ 6442494 │
+3. │ all_18_23_1 │     1 │ 5977762 │
+4. │ all_6_11_1  │     1 │ 6459763 │
+   └─────────────┴───────┴─────────┘
+```
+
+[En exécutant](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results) la requête montre désormais que les quatre parties ont fusionné en une seule partie finale (tant qu&#39;aucune autre insertion n&#39;est effectuée dans la table) :
+
+```response
+   ┌─name───────┬─level─┬─────rows─┐
+1. │ all_0_23_2 │     2 │ 25248433 │
+   └────────────┴───────┴──────────┘
+```
+
+Avec ClickHouse 24.10, un nouveau [tableau de bord des fusions](https://presentations.clickhouse.com/2024-release-24.10/index.html#17) a été ajouté aux [tableaux de bord de monitoring](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) intégrés. Disponible aussi bien dans OSS que dans Cloud via le handler HTTP `/merges`, il permet de visualiser toutes les fusions de parts de notre table d’exemple :
+
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="PART MERGES" />
+
+<br />
+
+L’enregistrement du tableau de bord ci-dessus montre l’ensemble du processus, des insertions de données initiales jusqu’à la fusion finale en une seule part :
+
+① Nombre de parts actives.
+
+② Fusions de parts, représentées visuellement par des boîtes (leur taille reflète la taille des parts).
+
+③ [Amplification d’écriture](https://en.wikipedia.org/wiki/Write_amplification).
+
+<div id="concurrent-merges">
+  ## Fusions concurrentes
+</div>
+
+Un serveur ClickHouse utilise plusieurs [threads de fusion](/fr/reference/settings/server-settings/settings#background_pool_size) en arrière-plan pour exécuter des fusions de parts concurrentes :
+
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="FUSIONS DE PARTIES" />
+
+<br />
+
+Chaque thread de fusion exécute une boucle :
+
+① Déterminer quelles parts fusionner ensuite, puis charger ces parts en mémoire.
+
+② Fusionner les parts en mémoire en une part plus grande.
+
+③ Écrire la part fusionnée sur disque.
+
+Revenir à ①
+
+Notez que l’augmentation du nombre de cœurs CPU et de la quantité de RAM permet d’augmenter le débit des fusions en arrière-plan.
+
+<div id="memory-optimized-merges">
+  ## Fusions économes en mémoire
+</div>
+
+ClickHouse ne charge pas nécessairement en mémoire, d’un seul coup, toutes les parts à fusionner, comme illustré dans l’[exemple précédent](/fr/concepts/core-concepts/merges#concurrent-merges). Selon plusieurs [facteurs](https://github.com/ClickHouse/ClickHouse/blob/bf37120c925ed846ae5cd72cd51e6340bebd2918/src/Storages/MergeTree/MergeTreeSettings.cpp#L210), et afin de réduire la consommation de mémoire (au détriment de la vitesse de fusion), la [fusion verticale](https://github.com/ClickHouse/ClickHouse/blob/bf37120c925ed846ae5cd72cd51e6340bebd2918/src/Storages/MergeTree/MergeTreeSettings.cpp#L209) charge et fusionne les parts par fragments de blocs, au lieu de tout traiter en une seule fois.
+
+<div id="merge-mechanics">
+  ## Mécanisme des fusions
+</div>
+
+Le schéma ci-dessous illustre comment un seul [thread de fusion](/fr/concepts/core-concepts/merges#concurrent-merges) en arrière-plan dans ClickHouse fusionne des parts (par défaut, sans [fusion verticale](/fr/concepts/core-concepts/merges#memory-optimized-merges)) :
+
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="FUSION DE PARTIES" />
+
+<br />
+
+La fusion des parts s’effectue en plusieurs étapes :
+
+**① Décompression et chargement** : les [fichiers binaires de colonnes compressés](/fr/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) des parts à fusionner sont décompressés et chargés en mémoire.
+
+**② Fusion** : les données sont fusionnées dans des fichiers de colonnes plus volumineux.
+
+**③ Indexation** : un nouvel [index primaire clairsemé](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) est généré pour les fichiers de colonnes fusionnés.
+
+**④ Compression et stockage** : les nouveaux fichiers de colonnes et l’index sont [compressés](/fr/reference/statements/create/table#column_compression_codec) et enregistrés dans un nouveau [répertoire](/fr/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) représentant la part de données fusionnée.
+
+D’autres [métadonnées des parts de données](/fr/concepts/core-concepts/parts), telles que des index secondaires d’élagage de données, des statistiques de colonnes, des sommes de contrôle et des index min-max, sont également recréées à partir des fichiers de colonnes fusionnés. Nous avons omis ces détails par souci de simplicité.
+
+Le mécanisme de l’étape ② dépend du [moteur MergeTree](/fr/reference/engines/table-engines/mergetree-family/index) utilisé, car les différents moteurs ne fusionnent pas les données de la même manière. Par exemple, les lignes peuvent être agrégées ou remplacées si elles sont obsolètes. Comme indiqué plus haut, cette approche **déporte tout le traitement des données vers les fusions en arrière-plan**, ce qui permet des **insertions ultra-rapides** en conservant des opérations d’écriture légères et efficaces.
+
+Nous allons maintenant présenter brièvement le mécanisme de fusion de certains moteurs de la famille MergeTree.
+
+<div id="standard-merges">
+  ### Fusions standards
+</div>
+
+Le diagramme ci-dessous illustre comment les parts d’une table [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) standard sont fusionnées :
+
+<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="FUSIONS DE PARTIES" />
+
+<br />
+
+L’instruction DDL du diagramme ci-dessus crée une table `MergeTree` avec une clé de tri `(town, street)`, ce qui [signifie](/fr/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que les données sur disque sont triées selon ces colonnes et qu’un index primaire clairsemé est généré en conséquence.
+
+Les colonnes de la table, ① décompressées et prétriées, sont ② fusionnées tout en préservant l’ordre de tri global de la table défini par sa clé de tri, ③ un nouvel index primaire clairsemé est généré, et ④ les fichiers de colonnes fusionnés et l’index sont compressés puis stockés sur disque sous la forme d’une nouvelle part de données.
+
+<div id="replacing-merges">
+  ### Fusions de remplacement
+</div>
+
+Les fusions de parts dans une table [ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree) fonctionnent de manière similaire aux [fusions standard](/fr/concepts/core-concepts/merges#standard-merges), mais seule la version la plus récente de chaque ligne est conservée, les versions plus anciennes étant supprimées :
+
+<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="FUSIONS DE PARTIES" />
+
+<br />
+
+L&#39;instruction DDL dans le schéma ci-dessus crée une table `ReplacingMergeTree` avec une clé de tri `(town, street, id)`, ce qui signifie que les données sur disque sont triées selon ces colonnes, avec un index primaire clairsemé généré en conséquence.
+
+L&#39;étape de fusion ② fonctionne de manière similaire à celle d&#39;une table `MergeTree` standard, en combinant des colonnes décompressées et prétriées tout en préservant l&#39;ordre de tri global.
+
+Cependant, `ReplacingMergeTree` supprime les lignes dupliquées ayant la même clé de tri, en ne conservant que la ligne la plus récente selon l&#39;horodatage de création de la part qui la contient.
+
+<br />
+
+<div id="summing-merges">
+  ### Fusions par sommation
+</div>
+
+Les données numériques sont automatiquement agrégées lors des fusions de parties d’une table [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree) :
+
+<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="FUSIONS DE PARTIES" />
+
+<br />
+
+L’instruction DDL du schéma ci-dessus définit une table `SummingMergeTree` avec `town` comme clé de tri, ce qui signifie que les données sur disque sont triées selon cette colonne et qu’un index primaire clairsemé est créé en conséquence.
+
+À l’étape ② de la fusion, ClickHouse remplace toutes les lignes ayant la même clé de tri par une seule ligne, en additionnant les valeurs des colonnes numériques.
+
+<div id="aggregating-merges">
+  ### Fusions avec agrégation
+</div>
+
+L’exemple de table `SummingMergeTree` ci-dessus est une variante spécialisée de la table [AggregatingMergeTree](/fr/reference/engines/table-engines/mergetree-family/aggregatingmergetree), qui permet une [transformation automatique incrémentielle des données](https://www.youtube.com/watch?v=QDAJTKZT8y4) en appliquant l’une des [90+](/fr/reference/functions/aggregate-functions/reference-index) fonctions d’agrégation lors des fusions de parts :
+
+<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="FUSIONS DE PARTIES" />
+
+<br />
+
+L’instruction DDL du schéma ci-dessus crée une table `AggregatingMergeTree` avec `town` comme clé de tri, ce qui garantit que les données sont ordonnées selon cette colonne sur disque et qu’un index primaire clairsemé correspondant est généré.
+
+Lors de l’étape de fusion ②, ClickHouse remplace toutes les lignes ayant la même clé de tri par une seule ligne stockant des [états d’agrégation partiels](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#-multi-core-parallelization) (par ex. un `sum` et un `count` pour `avg()`). Ces états garantissent des résultats exacts grâce aux fusions incrémentielles en arrière-plan.

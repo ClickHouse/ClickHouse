@@ -1,0 +1,196 @@
+---
+alias: []
+description: 'Parquet 포맷 문서'
+input_format: true
+keywords: ['Parquet']
+output_format: true
+slug: /interfaces/formats/Parquet
+title: 'Parquet'
+doc_type: 'reference'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+[Apache Parquet](https://parquet.apache.org/)은 Hadoop 생태계에서 널리 사용되는 열 지향 저장 포맷입니다. ClickHouse는 이 포맷의 읽기 및 쓰기를 지원합니다.
+
+<div id="data-types-matching-parquet">
+  ## 데이터 타입 매핑
+</div>
+
+아래 표는 Parquet 데이터 타입이 ClickHouse [데이터 타입](/ko/reference/data-types/index)과 어떻게 매핑되는지 보여줍니다.
+
+| Parquet 타입(논리, 변환 또는 물리)             | ClickHouse 데이터 타입                                                            |
+| ------------------------------------ | ---------------------------------------------------------------------------- |
+| `BOOLEAN`                            | [Bool](/ko/reference/data-types/boolean)                                        |
+| `UINT_8`                             | [UInt8](/ko/reference/data-types/int-uint)                                      |
+| `INT_8`                              | [Int8](/ko/reference/data-types/int-uint)                                       |
+| `UINT_16`                            | [UInt16](/ko/reference/data-types/int-uint)                                     |
+| `INT_16`                             | [Int16](/ko/reference/data-types/int-uint)/[Enum16](/ko/reference/data-types/enum) |
+| `UINT_32`                            | [UInt32](/ko/reference/data-types/int-uint)                                     |
+| `INT_32`                             | [Int32](/ko/reference/data-types/int-uint)                                      |
+| `UINT_64`                            | [UInt64](/ko/reference/data-types/int-uint)                                     |
+| `INT_64`                             | [Int64](/ko/reference/data-types/int-uint)                                      |
+| `DATE`                               | [Date32](/ko/reference/data-types/date)                                         |
+| `TIMESTAMP`, `TIME`                  | [DateTime64](/ko/reference/data-types/datetime64)                               |
+| `FLOAT`                              | [Float32](/ko/reference/data-types/float)                                       |
+| `DOUBLE`                             | [Float64](/ko/reference/data-types/float)                                       |
+| `INT96`                              | [DateTime64(9, &#39;UTC&#39;)](/ko/reference/data-types/datetime64)             |
+| `BYTE_ARRAY`, `UTF8`, `ENUM`, `BSON` | [String](/ko/reference/data-types/string)                                       |
+| `JSON`                               | [JSON](/ko/reference/data-types/newjson)                                        |
+| `FIXED_LEN_BYTE_ARRAY`               | [FixedString](/ko/reference/data-types/fixedstring)                             |
+| `DECIMAL`                            | [Decimal](/ko/reference/data-types/decimal)                                     |
+| `LIST`                               | [Array](/ko/reference/data-types/array)                                         |
+| `MAP`                                | [Map](/ko/reference/data-types/map)                                             |
+| struct                               | [Tuple](/ko/reference/data-types/tuple)                                         |
+| `FLOAT16`                            | [Float32](/ko/reference/data-types/float)                                       |
+| `UUID`                               | [FixedString(16)](/ko/reference/data-types/fixedstring)                         |
+| `INTERVAL`                           | [FixedString(12)](/ko/reference/data-types/fixedstring)                         |
+| `Point` (GeoParquet)                 | [Point](/ko/reference/data-types/geo#point)                                     |
+| `LineString` (GeoParquet)            | [LineString](/ko/reference/data-types/geo#linestring)                           |
+| `Polygon` (GeoParquet)               | [Polygon](/ko/reference/data-types/geo#polygon)                                 |
+| `MultiLineString` (GeoParquet)       | [MultiLineString](/ko/reference/data-types/geo#multilinestring)                 |
+| `MultiPolygon` (GeoParquet)          | [MultiPolygon](/ko/reference/data-types/geo#multipolygon)                       |
+| 혼합/알 수 없는 geometry (GeoParquet)      | [Geometry](/ko/reference/data-types/geo#geometry)                               |
+
+Parquet 파일을 쓸 때 대응되는 Parquet 타입이 없는 데이터 타입은 가장 가까운 사용 가능한 타입으로 변환됩니다.
+
+| ClickHouse 데이터 타입                                               | Parquet 타입                                          |
+| --------------------------------------------------------------- | --------------------------------------------------- |
+| [IPv4](/ko/reference/data-types/ipv4)                              | `UINT_32`                                           |
+| [IPv6](/ko/reference/data-types/ipv6)                              | `FIXED_LEN_BYTE_ARRAY` (16 bytes)                   |
+| [Date](/ko/reference/data-types/date) (16 bits)                    | `DATE` (32 bits)                                    |
+| [DateTime](/ko/reference/data-types/datetime) (32 bits, seconds)   | `TIMESTAMP` (64 bits, milliseconds)                 |
+| [Int128/UInt128/Int256/UInt256](/ko/reference/data-types/int-uint) | `FIXED_LEN_BYTE_ARRAY` (16/32 bytes, little-endian) |
+| [Point](/ko/reference/data-types/geo#point)                        | `BYTE_ARRAY` (WKB) + GeoParquet metadata            |
+| [LineString](/ko/reference/data-types/geo#linestring)              | `BYTE_ARRAY` (WKB) + GeoParquet metadata            |
+| [Polygon](/ko/reference/data-types/geo#polygon)                    | `BYTE_ARRAY` (WKB) + GeoParquet metadata            |
+| [MultiLineString](/ko/reference/data-types/geo#multilinestring)    | `BYTE_ARRAY` (WKB) + GeoParquet metadata            |
+| [MultiPolygon](/ko/reference/data-types/geo#multipolygon)          | `BYTE_ARRAY` (WKB) + GeoParquet metadata            |
+
+배열은 중첩될 수 있으며, 인수로 `Nullable` 타입 값을 가질 수 있습니다. `Tuple` 및 `Map` 타입도 중첩될 수 있습니다.
+
+ClickHouse 테이블 컬럼의 데이터 타입은 삽입된 Parquet 데이터의 해당 필드와 다를 수 있습니다. 데이터를 삽입할 때 ClickHouse는 먼저 위 표에 따라 데이터 타입을 해석한 다음, 데이터를 ClickHouse 테이블 컬럼에 설정된 데이터 타입으로 [캐스팅](/ko/reference/functions/regular-functions/type-conversion-functions#CAST)합니다. 예를 들어 `UINT_32` Parquet 컬럼은 [IPv4](/ko/reference/data-types/ipv4) ClickHouse 컬럼으로 읽을 수 있습니다.
+
+일부 Parquet 타입에는 밀접하게 대응되는 ClickHouse 타입이 없습니다. 이러한 타입은 다음과 같이 읽습니다.
+
+* `TIME`(하루 중 시간)은 타임스탬프로 읽습니다. 예: `10:23:13.000`은 `1970-01-01 10:23:13.000`이 됩니다.
+* `isAdjustedToUTC=false`인 `TIMESTAMP`/`TIME`은 로컬 wall-clock time입니다(어떤 시간대를 로컬로 간주하는지와 관계없이, 로컬 시간대 기준의 연, 월, 일, 시, 분, 초 및 소수 초 필드). 이는 SQL `TIMESTAMP WITHOUT TIME ZONE`과 같습니다. 하지만 ClickHouse는 이를 UTC 타임스탬프인 것처럼 읽습니다. 예: `2025-09-29 18:42:13.000`(로컬 시계의 표시값을 나타냄)은 `2025-09-29 18:42:13.000`(시점을 나타내는 `DateTime64(3, 'UTC')`)이 됩니다. 이를 String으로 변환하면 올바른 연, 월, 일, 시, 분, 초 및 소수 초가 표시되며, 이후 이를 UTC가 아닌 어떤 로컬 시간대의 값으로 해석할 수 있습니다. 직관과 달리 타입을 `DateTime64(3, 'UTC')`에서 `DateTime64(3)`로 변경해도 도움이 되지 않습니다. 두 타입 모두 시계의 표시값이 아니라 시점을 나타내기 때문입니다. 다만 `DateTime64(3)`는 로컬 시간대를 사용해 잘못 포맷됩니다.
+* `INTERVAL`은 현재 Parquet 파일에 인코딩된 시간 인터벌의 원시 바이너리 표현이 담긴 `FixedString(12)`로 읽습니다.
+
+<div id="geo-types">
+  ## Geo 타입 (GeoParquet)
+</div>
+
+ClickHouse는 [GeoParquet](https://geoparquet.org/) 사양에 따라 지오메트리 컬럼의 읽기 및 쓰기를 지원합니다. 지오메트리 컬럼은 [WKB](https://libgeos.org/specifications/wkb/)로 인코딩된 `BYTE_ARRAY` 페이로드로 저장되며(읽을 때는 WKT), 파일 수준 Parquet 메타데이터의 JSON `geo` 키에는 각 지오메트리 컬럼의 인코딩, 지오메트리 타입, CRS가 설명되어 있습니다.
+
+<div id="read">
+  ### 읽기 동작
+</div>
+
+읽을 때 지오메트리 컬럼은 해당하는 ClickHouse [geo 데이터 타입](/ko/reference/data-types/geo)으로 매핑됩니다.
+
+* `Point`, `LineString`, `Polygon`, `MultiLineString` 또는 `MultiPolygon`으로 선언된 컬럼은 이에 대응하는 ClickHouse geo 타입으로 읽어들입니다.
+* 여러 지오메트리 타입을 포함하거나 타입을 알 수 없는 컬럼은 지원되는 모든 geo 타입을 포괄하는 `Variant`인 [`Geometry`](/ko/reference/data-types/geo#geometry) 타입으로 읽어들입니다.
+* 요청한 컬럼 타입이 `String`이면 GeoParquet 메타데이터는 무시되며, 원시 인코딩된 지오메트리 payload를 그대로 반환합니다. 즉, GeoParquet 컬럼에 선언된 인코딩에 따라 WKB 또는 WKT 바이트를 반환합니다. 이는 설정 [`input_format_parquet_allow_geoparquet_parser`](/ko/reference/settings/formats#input_format_parquet_allow_geoparquet_parser)가 `0`으로 설정된 경우에도 마찬가지입니다.
+
+<div id="write">
+  ### 쓰기 동작
+</div>
+
+쓰기 시 `Point`, `LineString`, `Polygon`, `MultiLineString` 또는 `MultiPolygon` 타입의 최상위 컬럼은 `BYTE_ARRAY`(WKB)로 인코딩되며, 적절한 `geo` JSON 메타데이터가 Parquet 파일 footer에 추가됩니다. 최상위 [`Geometry`](/ko/reference/data-types/geo#geometry) `Variant`도 WKB `BYTE_ARRAY` payload로 인코딩되지만(하위 값은 WKB로 변환되어 `Nullable(String)` 컬럼에 저장됨), 이에 대해서는 `geo` 메타데이터가 출력되지 않으므로 읽을 때 GeoParquet 지오메트리 컬럼으로 인식되지 않습니다. [`Ring`](/ko/reference/data-types/geo#ring)과 같은 다른 geo 관련 타입은 GeoParquet 메타데이터 없이 해당 네이티브 내부 표현으로 기록됩니다. 이 동작은 [`output_format_parquet_geometadata`](/ko/reference/settings/formats#output_format_parquet_geometadata)를 `0`으로 설정해 완전히 비활성화할 수 있으며, 이 경우 지원되는 geo 타입도 네이티브 내부 표현(`Point`는 `Tuple(Float64, Float64)`, `LineString`은 `Array(Point)`, `Polygon`은 `Array(Array(Point))` 등)으로 기록되고 GeoParquet 메타데이터도 출력되지 않습니다.
+
+지오메트리 컬럼은 스키마 루트에 있거나 `Tuple`(`struct`) 내부에 중첩되어 있어야 하며, `Array` 또는 `Map` 내부에 중첩하는 것은 지원되지 않습니다. geo 컬럼에는 `Nullable`도 지원되지 않습니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+<div id="inserting-data">
+  ### 데이터 삽입
+</div>
+
+다음 데이터가 들어 있는 `football.parquet`라는 Parquet 파일을 사용합니다:
+
+```text
+    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
+ 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
+ 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
+ 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
+ 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
+ 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
+ 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
+ 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
+ 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
+ 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
+10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
+11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
+12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
+13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
+14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
+15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
+16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
+17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
+    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
+```
+
+데이터를 삽입하세요:
+
+```sql
+INSERT INTO football FROM INFILE 'football.parquet' FORMAT Parquet;
+```
+
+<div id="reading-data">
+  ### 데이터 읽기
+</div>
+
+다음과 같이 `Parquet` 포맷을 사용해 데이터를 읽습니다:
+
+```sql
+SELECT *
+FROM football
+INTO OUTFILE 'football.parquet'
+FORMAT Parquet
+```
+
+<Tip>
+  Parquet은 터미널에 사람이 읽을 수 있는 형태로 표시되지 않는 바이너리 형식입니다. Parquet 파일로 출력하려면 `INTO OUTFILE`을 사용하십시오.
+</Tip>
+
+Hadoop과 데이터를 주고받으려면 [`HDFS 테이블 엔진`](/ko/reference/engines/table-engines/integrations/hdfs)을 사용할 수 있습니다.
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>
+
+| 설정                                                                             | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 기본값                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `input_format_parquet_case_insensitive_column_matching`                        | Parquet 컬럼을 CH 컬럼과 매칭할 때 대소문자를 무시합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                  | `0`                                                                                                                                                                                                                                                                                                                           |
+| `input_format_parquet_preserve_order`                                          | Parquet 파일을 읽을 때 행 순서가 바뀌지 않도록 합니다. 일반적으로 속도가 훨씬 느려집니다.                                                                                                                                                                                                                                                                                                                                                                                                                | `0`                                                                                                                                                                                                                                                                                                                           |
+| `input_format_parquet_filter_push_down`                                        | Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE/PREWHERE 표현식과 최소/최대 통계를 기반으로 전체 row group을 건너뜁니다.                                                                                                                                                                                                                                                                                                                                                                                | `1`                                                                                                                                                                                                                                                                                                                           |
+| `input_format_parquet_bloom_filter_push_down`                                  | Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE 표현식과 블룸 필터를 기반으로 전체 row group을 건너뜁니다.                                                                                                                                                                                                                                                                                                                                                                                            | `0`                                                                                                                                                                                                                                                                                                                           |
+| `input_format_parquet_allow_missing_columns`                                   | Parquet 입력 형식을 읽는 동안 누락된 컬럼을 허용합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                    | `1`                                                                                                                                                                                                                                                                                                                           |
+| `input_format_parquet_local_file_min_bytes_for_seek`                           | Parquet 입력 형식에서 건너뛰면서 읽는 대신 seek를 수행하기 위해, 로컬 파일 읽기에 필요한 최소 바이트 수입니다.                                                                                                                                                                                                                                                                                                                                                                                                  | `8192`                                                                                                                                                                                                                                                                                                                        |
+| `input_format_parquet_enable_row_group_prefetch`                               | Parquet 파싱 중 row group 프리페치를 활성화합니다. 현재는 단일 스레드 파싱에서만 프리페치를 사용할 수 있습니다.                                                                                                                                                                                                                                                                                                                                                                                                | `1`                                                                                                                                                                                                                                                                                                                           |
+| `input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference` | Parquet 포맷의 스키마 추론 중 지원되지 않는 타입의 컬럼을 건너뜁니다.                                                                                                                                                                                                                                                                                                                                                                                                                            | `0`                                                                                                                                                                                                                                                                                                                           |
+| `input_format_parquet_max_block_size`                                          | Parquet 리더의 최대 블록 크기입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                               | `65409`                                                                                                                                                                                                                                                                                                                       |
+| `input_format_parquet_prefer_block_bytes`                                      | Parquet 리더가 출력하는 블록의 평균 바이트 수입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                      | `16744704`                                                                                                                                                                                                                                                                                                                    |
+| `input_format_parquet_enable_json_parsing`                                     | Parquet 파일을 읽을 때 JSON 컬럼을 ClickHouse JSON Column으로 파싱합니다.                                                                                                                                                                                                                                                                                                                                                                                                              | `1`                                                                                                                                                                                                                                                                                                                           |
+| `input_format_parquet_allow_geoparquet_parser`                                 | Parquet 파일을 읽을 때 GeoParquet `geo` 메타데이터를 인식하고 지오메트리 컬럼을 (컬럼에 선언된 인코딩에 따라 WKB 또는 WKT) ClickHouse geo 데이터 타입으로 디코딩합니다. `0`이면 지오메트리 컬럼은 원시 물리 표현(`String`) 그대로 노출됩니다.                                                                                                                                                                                                                                                                                                     | `1`                                                                                                                                                                                                                                                                                                                           |
+| `output_format_parquet_row_group_size`                                         | 목표 row group 크기(행 수 기준)입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                            | `1000000`                                                                                                                                                                                                                                                                                                                     |
+| `output_format_parquet_row_group_size_bytes`                                   | 압축 전 기준 목표 row group 크기(바이트)입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                       | `536870912`                                                                                                                                                                                                                                                                                                                   |
+| `output_format_parquet_string_as_string`                                       | String 컬럼에 대해 Binary 대신 Parquet String 타입을 사용합니다.                                                                                                                                                                                                                                                                                                                                                                                                                      | `1`                                                                                                                                                                                                                                                                                                                           |
+| `output_format_parquet_fixed_string_as_fixed_byte_array`                       | FixedString 컬럼에 대해 Binary 대신 Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY 타입을 사용합니다.                                                                                                                                                                                                                                                                                                                                                                                       | `1`                                                                                                                                                                                                                                                                                                                           |
+| `output_format_parquet_compression_method`                                     | Parquet 출력 형식의 압축 방식입니다. 지원되는 코덱: snappy, lz4, brotli, zstd, gzip, none(비압축)                                                                                                                                                                                                                                                                                                                                                                                           | `zstd`                                                                                                                                                                                                                                                                                                                        |
+| `output_format_parquet_parallel_encoding`                                      | 여러 스레드에서 Parquet 인코딩을 수행합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                           | `1`                                                                                                                                                                                                                                                                                                                           |
+| `output_format_parquet_data_page_size`                                         | 압축 전 기준 목표 페이지 크기(바이트)입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                             | `1048576`                                                                                                                                                                                                                                                                                                                     |
+| `output_format_parquet_batch_size`                                             | 지정한 행 수마다 페이지 크기를 확인합니다. 평균 값 크기가 몇 KB를 넘는 컬럼이 있으면 값을 줄이는 것을 고려하십시오.                                                                                                                                                                                                                                                                                                                                                                                                   | `1024`                                                                                                                                                                                                                                                                                                                        |
+| `output_format_parquet_write_page_index`                                       | Parquet 파일에 페이지 인덱스를 기록할 수 있도록 합니다.                                                                                                                                                                                                                                                                                                                                                                                                                                    | `1`                                                                                                                                                                                                                                                                                                                           |
+| `output_format_parquet_geometadata`                                            | GeoParquet `geo` 메타데이터를 Parquet 파일 footer에 기록하고 최상위 수준의 ClickHouse geo 컬럼([`Point`](/ko/reference/data-types/geo#point), [`LineString`](/ko/reference/data-types/geo#linestring), [`Polygon`](/ko/reference/data-types/geo#polygon), [`MultiLineString`](/ko/reference/data-types/geo#multilinestring), [`MultiPolygon`](/ko/reference/data-types/geo#multipolygon))을 WKB로 인코딩합니다. `0`이면 해당 컬럼은 네이티브 내부 표현(예: `Point`는 `Tuple(Float64, Float64)`)으로 기록되며 GeoParquet 메타데이터는 생성되지 않습니다. | `1`                                                                                                                                                                                                                                                                                                                           |
+| `input_format_parquet_import_nested`                                           | 더 이상 사용되지 않는 설정이며 아무 동작도 하지 않습니다.                                                                                                                                                                                                                                                                                                                                                                                                                                      | `0`                                                                                                                                                                                                                                                                                                                           |
+| `input_format_parquet_local_time_as_utc`                                       | true                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | isAdjustedToUTC=false인 Parquet 타임스탬프에 대해 스키마 추론 시 사용할 데이터 타입을 결정합니다. true이면 DateTime64(..., &#39;UTC&#39;), false이면 DateTime64(...)를 사용합니다. ClickHouse에는 로컬 wall-clock time을 위한 데이터 타입이 없으므로 어느 쪽도 완전히 올바르지는 않습니다. 직관에 어긋날 수 있지만, 아마 &#39;true&#39; 쪽이 덜 부정확합니다. &#39;UTC&#39; 타임스탬프를 String으로 포맷하면 올바른 로컬 시간 표현이 생성되기 때문입니다. |

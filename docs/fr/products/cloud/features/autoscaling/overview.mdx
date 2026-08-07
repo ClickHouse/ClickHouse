@@ -1,0 +1,51 @@
+---
+sidebarTitle: 'Vue d’ensemble'
+slug: /manage/scaling
+description: 'Présentation de la mise à l’échelle automatique dans ClickHouse Cloud'
+keywords: ['mise à l’échelle automatique', 'mise à l’échelle auto', 'mise à l’échelle', 'horizontale', 'verticale', 'pics']
+title: 'Mise à l’échelle automatique'
+doc_type: 'guide'
+---
+
+import ScalePlanFeatureBadge from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+La mise à l’échelle permet d’ajuster les ressources disponibles pour répondre aux besoins des clients. Les services des niveaux Scale et Enterprise (avec le profil standard 1:4) peuvent être mis à l’échelle horizontalement via des appels programmatiques à l’API, ou en modifiant les paramètres dans l’UI afin d’ajuster les ressources système. Ces services peuvent également faire l’objet d’une **mise à l’échelle verticale automatique** pour répondre aux besoins des applications.
+
+<ScalePlanFeatureBadge feature="Mise à l’échelle verticale automatique" />
+
+<Note>
+  Les niveaux Scale et Enterprise prennent en charge les services à réplica unique comme les services à plusieurs réplicas, tandis que le niveau Basic ne prend en charge que les services à réplica unique. Les services à réplica unique ont une taille fixe et ne permettent pas de mise à l’échelle verticale ou horizontale. Vous pouvez passer au niveau Scale ou Enterprise pour mettre vos services à l’échelle.
+</Note>
+
+<div id="how-scaling-works-in-clickhouse-cloud">
+  ## Comment fonctionne la mise à l&#39;échelle dans ClickHouse Cloud
+</div>
+
+Actuellement, ClickHouse Cloud prend en charge la mise à l&#39;échelle verticale automatique et la mise à l&#39;échelle horizontale manuelle pour les services Scale tier.
+
+Pour les services Enterprise tier, la mise à l&#39;échelle fonctionne comme suit :
+
+* **Mise à l&#39;échelle horizontale** : la mise à l&#39;échelle horizontale manuelle sera disponible pour tous les profils standard et personnalisés du niveau Enterprise.
+* **Mise à l&#39;échelle verticale** :
+  * Les profils standard (1:4) prendront en charge la mise à l&#39;échelle verticale automatique.
+  * Les profils personnalisés (`highMemory` et `highCPU`) ne prennent pas en charge la mise à l&#39;échelle verticale automatique ni la mise à l&#39;échelle verticale manuelle. Toutefois, ces services peuvent faire l&#39;objet d&#39;une mise à l&#39;échelle verticale en contactant le support.
+
+<Note>
+  Dans ClickHouse Cloud, la mise à l&#39;échelle repose sur une approche que nous appelons [&quot;Make Before Break&quot; (MBB)](/fr/products/cloud/features/autoscaling/make-before-break).
+  Elle consiste à ajouter un ou plusieurs réplicas de la nouvelle taille avant de supprimer les anciens, ce qui évite toute perte de capacité pendant les opérations de mise à l&#39;échelle.
+  En supprimant l&#39;intervalle entre le retrait des réplicas existants et l&#39;ajout des nouveaux, MBB rend le processus de mise à l&#39;échelle plus fluide et moins perturbant.
+  Cette approche est particulièrement avantageuse dans les scénarios d&#39;augmentation de capacité, où une forte utilisation des ressources déclenche le besoin de capacité supplémentaire, car supprimer des réplicas prématurément ne ferait qu&#39;aggraver les contraintes sur les ressources.
+  Dans le cadre de cette approche, nous attendons jusqu&#39;à une heure pour laisser les requêtes en cours se terminer sur les anciens réplicas avant de les supprimer.
+  Cela permet de trouver un équilibre entre la nécessité de laisser les requêtes en cours s&#39;achever et celle d&#39;éviter que les anciens réplicas ne restent en place trop longtemps.
+</Note>
+
+<div id="learn-more">
+  ## En savoir plus
+</div>
+
+* [Mise à l’échelle verticale automatique](/fr/products/cloud/features/autoscaling/vertical) — Mise à l’échelle automatique du CPU et de la mémoire en fonction de l’utilisation
+* [Mise à l’échelle horizontale](/fr/products/cloud/features/autoscaling/horizontal) — Mise à l’échelle manuelle des replicas via l’API ou l’UI
+* [Make Before Break (MBB)](/fr/products/cloud/features/autoscaling/make-before-break) — Comment ClickHouse Cloud effectue des opérations de mise à l’échelle de manière transparente
+* [Mise en veille automatique](/fr/products/cloud/features/autoscaling/idling) — Réduction des coûts grâce à la suspension automatique du service
+* [Recommandations de mise à l’échelle](/fr/products/cloud/features/autoscaling/scaling-recommendations) — Comprendre les recommandations de mise à l’échelle
+* [Mise à l’échelle planifiée](/fr/products/cloud/features/autoscaling/scheduled-scaling) — Comprendre la fonctionnalité de mise à l’échelle planifiée, qui vous permet de définir précisément quand votre service doit augmenter ou réduire sa capacité, indépendamment des metrics en temps réel

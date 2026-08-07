@@ -1,0 +1,218 @@
+---
+sidebarTitle: 'Tableau Desktop'
+slug: /integrations/tableau
+keywords: ['clickhouse', 'tableau', 'connect', 'integrate', 'ui']
+description: 'يمكن لـ Tableau استخدام قواعد بيانات وجداول ClickHouse كمصدر بيانات.'
+title: 'ربط Tableau بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+  - website: 'https://github.com/analytikaplus/clickhouse-tableau-connector-jdbc'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+يوفّر ClickHouse موصل Tableau رسميًا، وهو مُدرج في
+[Tableau Exchange](https://exchange.tableau.com/products/1064).
+ويعتمد هذا الموصل على [برنامج تشغيل JDBC](/ar/integrations/language-clients/java/jdbc) المتقدّم الخاص بـ ClickHouse.
+
+باستخدام هذا الموصل، يتيح Tableau استخدام قواعد بيانات ClickHouse وجداولها كمصادر بيانات. لتمكين هذه الإمكانية،
+اتبع دليل الإعداد أدناه.
+
+<div id="setup-required-prior-usage">
+  ## الإعداد المطلوب قبل الاستخدام
+</div>
+
+1. اجمع تفاصيل الاتصال الخاصة بك
+   <ConnectionDetails />
+
+2. نزّل وثبّت <a href="https://www.tableau.com/products/desktop/download" target="_blank">Tableau
+   Desktop</a>.
+
+3. اتبع تعليمات `clickhouse-tableau-connector-jdbc` لتنزيل الإصدار المتوافق
+   من <a href="https://github.com/ClickHouse/clickhouse-java/releases/" target="_blank">ClickHouse برنامج تشغيل JDBC</a>.
+
+<Note>
+  تأكد من تنزيل ملف JAR ‏[clickhouse-jdbc-X.X.X-all-dependencies.jar](https://github.com/ClickHouse/clickhouse-java/releases). هذه الحزمة متاحة بدءًا من الإصدار `0.9.2`.
+</Note>
+
+4. احفظ برنامج تشغيل JDBC في المجلد التالي (بحسب نظام التشغيل لديك، وإذا لم يكن المجلد موجودًا، يمكنك إنشاؤه):
+   * macOS: `~/Library/Tableau/Drivers`
+   * Windows: `C:\Program Files\Tableau\Drivers`
+5. قم بتهيئة مصدر بيانات ClickHouse في Tableau وابدأ في إنشاء مرئيات البيانات!
+
+<div id="configure-a-clickhouse-data-source-in-tableau">
+  ## تكوين مصدر بيانات ClickHouse في Tableau
+</div>
+
+بعد تثبيت برنامج التشغيل `clickhouse-jdbc` وإعداده، لنرَ كيفية تعريف مصدر
+بيانات في Tableau يتصل بقاعدة البيانات **TPCD** في ClickHouse.
+
+1. شغّل Tableau. (إذا كان قيد التشغيل بالفعل، فأعد تشغيله.)
+
+2. من القائمة الجانبية اليسرى، انقر على **More** ضمن قسم **To a Server**. ابحث عن **ClickHouse by ClickHouse** في قائمة الموصّلات المتاحة:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_connecttoserver.webp" alt="شاشة الاتصال في Tableau تعرض قائمة اختيار الموصّل مع تمييز خيار ClickHouse by ClickHouse" border />
+
+<br />
+
+<Note>
+  ألا ترى موصّل **ClickHouse by ClickHouse** في قائمة الموصّلات لديك؟ قد يكون ذلك مرتبطًا بإصدار قديم من Tableau Desktop.
+  لحل هذه المشكلة، فكّر في ترقية تطبيق Tableau Desktop، أو [تثبيت الموصّل يدويًا](#install-the-connector-manually).
+</Note>
+
+3. انقر على **ClickHouse by ClickHouse** وستظهر النافذة التالية:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_connector_details.webp" alt="نافذة تثبيت موصّل Tableau تعرض تفاصيل موصّل ClickHouse JDBC وزر التثبيت" border />
+
+<br />
+
+4. انقر على **Install and Restart Tableau**. ثم أعد تشغيل التطبيق.
+5. بعد إعادة التشغيل، سيظهر الاسم الكامل للموصّل: `ClickHouse JDBC by ClickHouse, Inc.`. وعند النقر عليه، ستظهر النافذة التالية:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_connector_dialog.webp" alt="نافذة اتصال ClickHouse في Tableau تعرض حقول الخادم والمنفذ وقاعدة البيانات واسم المستخدم وكلمة المرور" border />
+
+<br />
+
+6. أدخل تفاصيل الاتصال الخاصة بك:
+
+   | الإعداد        | القيمة                                                   |
+   | -------------- | -------------------------------------------------------- |
+   | الخادم         | **مضيف ClickHouse الخاص بك (من دون أي بادئات أو لواحق)** |
+   | المنفذ         | **8443**                                                 |
+   | قاعدة البيانات | **default**                                              |
+   | اسم المستخدم   | **default**                                              |
+   | كلمة المرور    | ******                                                   |
+
+<Note>
+  عند العمل مع ClickHouse Cloud، يجب تفعيل مربع اختيار SSL لإجراء اتصالات آمنة.
+</Note>
+
+<br />
+
+<Note>
+  اسم قاعدة بيانات ClickHouse لدينا هو **TPCD**، لكن يجب ضبط **Database** على **default** في النافذة أعلاه، ثم
+  اختيار **TPCD** في **Schema** في الخطوة التالية. (يرجّح أن يكون هذا بسبب خطأ في الموصّل، لذا قد
+  يتغير هذا السلوك، ولكن في الوقت الحالي يجب عليك استخدام **default** كقاعدة بيانات.)
+</Note>
+
+7. انقر على زر **Sign In** ويُفترض أن ترى مصنف Tableau جديدًا:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_newworkbook.webp" alt="مصنف Tableau جديد يعرض شاشة الاتصال الأولية مع خيارات اختيار قاعدة البيانات" border />
+
+<br />
+
+8. اختر **TPCD** من القائمة المنسدلة **Schema** ويُفترض أن ترى قائمة الجداول في **TPCD**:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_tpcdschema.webp" alt="اختيار المخطط في Tableau يعرض جداول قاعدة بيانات TPCD بما في ذلك CUSTOMER وLINEITEM وNATION وORDERS وغيرها" border />
+
+<br />
+
+أصبحت الآن جاهزًا لإنشاء بعض المرئيات في Tableau!
+
+<div id="building-visualizations-in-tableau">
+  ## إنشاء المرئيات في Tableau
+</div>
+
+الآن بعد أن أصبح لدينا مصدر بيانات ClickHouse مُعَدًّا في Tableau، لنبدأ بتصور البيانات...
+
+1. اسحب جدول **CUSTOMER** إلى المصنف. لاحظ أن الأعمدة تظهر، لكن جدول البيانات فارغ:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook1.webp" alt="مصنف Tableau مع سحب جدول CUSTOMER إلى اللوحة وعرض رؤوس الأعمدة من دون بيانات" border />
+
+<br />
+
+2. انقر فوق الزر **Update Now**، وسيجري ملء الجدول بـ 100 صف من **CUSTOMER**.
+
+3. اسحب جدول **ORDERS** إلى المصنف، ثم عيّن **Custkey** كحقل العلاقة بين الجدولين:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook2.webp" alt="محرر العلاقات في Tableau يعرض الربط بين جدولي CUSTOMER وORDERS باستخدام الحقل Custkey" border />
+
+<br />
+
+4. أصبح لديك الآن الجدولان **ORDERS** و**LINEITEM** مرتبطين ببعضهما بعضًا ضمن مصدر البيانات، لذا يمكنك استخدام
+   هذه العلاقة للإجابة عن أسئلة حول البيانات. حدِّد علامة التبويب **Sheet 1** في أسفل المصنف.
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook3.webp" alt="ورقة عمل Tableau تعرض الأبعاد والمقاييس من جداول ClickHouse المتاحة للتحليل" border />
+
+<br />
+
+5. لنفترض أنك تريد معرفة عدد العناصر المطلوبة في كل سنة. اسحب **OrderDate** من **ORDERS** إلى قسم
+   **Columns** (الحقل الأفقي)، ثم اسحب **Quantity** من **LINEITEM** إلى **Rows**. سينشئ Tableau
+   المخطط الخطي التالي:
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_workbook4.webp" alt="مخطط خطي في Tableau يعرض الكمية المطلوبة حسب السنة من بيانات ClickHouse" border />
+
+<br />
+
+ليس هذا المخطط الخطي مثيرًا جدًا، لكن مجموعة البيانات أُنشئت بواسطة برنامج نصي وصُممت لاختبار أداء الاستعلامات، لذا
+ستلاحظ أنه لا توجد اختلافات كبيرة في الطلبات المُحاكاة ضمن بيانات TCPD.
+
+6. لنفترض أنك تريد معرفة متوسط قيمة الطلب (بالدولار) حسب الربع السنوي وأيضًا حسب وسيلة الشحن (جوًا، بريدًا، سفينة،
+   شاحنة، إلخ):
+
+   * انقر علامة التبويب **New Worksheet** لإنشاء ورقة جديدة
+   * اسحب **OrderDate** من **ORDERS** إلى **Columns** وغيّره من **Year** إلى **Quarter**
+   * اسحب **Shipmode** من **LINEITEM** إلى **Rows**
+
+ينبغي أن ترى ما يلي:
+
+<Image size="sm" img="/images/integrations/data-visualization/tableau_workbook5.webp" alt="عرض جدولي متقاطع في Tableau مع الأرباع السنوية كأعمدة ووسائل الشحن كصفوف" border />
+
+<br />
+
+7. قيم **Abc** تملأ المساحة فقط إلى أن تسحب مقياسًا إلى الجدول. اسحب **Totalprice** من *
+   *ORDERS** إلى الجدول. لاحظ أن العملية الحسابية الافتراضية هي **SUM** لـ **Totalprices**:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook6.webp" alt="جدول متقاطع في Tableau يعرض مجموع السعر الإجمالي حسب الربع السنوي ووسيلة الشحن" border />
+
+<br />
+
+8. انقر على **SUM** وغيّر **Measure** إلى **Average**. ومن القائمة المنسدلة نفسها، حدِّد **Format** وغيّر
+   **Numbers** إلى **Currency (Standard)**:
+
+<Image size="md" img="/images/integrations/data-visualization/tableau_workbook7.webp" alt="جدول متقاطع في Tableau يعرض متوسط سعر الطلب حسب الربع السنوي ووسيلة الشحن مع تنسيق العملة" border />
+
+<br />
+
+أحسنت! لقد نجحت في ربط Tableau بـ ClickHouse، وفتحت أمامك عالمًا كاملًا من الإمكانات
+لتحليل بيانات ClickHouse وتصورها.
+
+<div id="install-the-connector-manually">
+  ## ثبّت الموصل يدويًا
+</div>
+
+إذا كنت تستخدم إصدارًا قديمًا من Tableau Desktop لا يتضمّن الموصل افتراضيًا، فيمكنك تثبيته يدويًا باتباع الخطوات التالية:
+
+1. نزّل أحدث ملف taco من [Tableau Exchange](https://exchange.tableau.com/products/1064)
+2. ضع ملف taco في
+   * macOS: `~/Documents/My Tableau Repository/Connectors`
+   * Windows: `C:\Users\[Windows User]\Documents\My Tableau Repository\Connectors`
+3. أعد تشغيل Tableau Desktop. إذا تم الإعداد بنجاح، فستجد الموصل ضمن قسم `New Data Source`.
+
+<div id="connection-and-analysis-tips">
+  ## نصائح حول الاتصال والتحليل
+</div>
+
+لمزيد من الإرشادات حول تحسين تكامل Tableau-ClickHouse،
+يُرجى زيارة [نصائح الاتصال](/ar/integrations/connectors/data-visualization/tableau/tableau-connection-tips) و[نصائح التحليل](/ar/integrations/connectors/data-visualization/tableau/tableau-analysis-tips).
+
+<div id="tests">
+  ## الاختبارات
+</div>
+
+يُختبر الموصل باستخدام [إطار عمل TDVT](https://tableau.github.io/connector-plugin-sdk/docs/tdvt)، ويحقق حاليًا معدل تغطية بنسبة 97%.
+
+<div id="summary">
+  ## الخلاصة
+</div>
+
+يمكنك ربط Tableau بـ ClickHouse باستخدام برنامج التشغيل العام لـ ClickHouse عبر ODBC/JDBC. ومع ذلك، يعمل هذا
+الموصل على تبسيط عملية إعداد الاتصال. إذا واجهت أي مشكلات مع الموصل، فلا تتردد في التواصل عبر
+<a href="https://github.com/ClickHouse/clickhouse-tableau-connector-jdbc/issues" target="_blank">GitHub</a>.

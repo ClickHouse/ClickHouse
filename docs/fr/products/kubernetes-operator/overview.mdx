@@ -1,0 +1,52 @@
+---
+position: 1
+slug: /clickhouse-operator/overview
+title: 'ClickHouse Operator'
+keywords: ['kubernetes']
+description: "Page de présentation du ClickHouse Operator, un opérateur Kubernetes qui automatise le déploiement, la configuration et la gestion des clusters ClickHouse et des clusters ClickHouse Keeper sur Kubernetes."
+doc_type: 'guide'
+sidebarTitle: "Vue d’ensemble"
+---
+
+Le ClickHouse Operator est un opérateur Kubernetes qui automatise le déploiement, la configuration et la gestion des clusters ClickHouse et des clusters ClickHouse Keeper sur Kubernetes.
+Il assure une gestion déclarative des clusters via des ressources personnalisées, ce qui permet aux utilisateurs de créer facilement des déploiements ClickHouse hautement disponibles.
+
+Le ClickHouse Operator prend en charge l’ensemble du cycle de vie des clusters ClickHouse, y compris la mise à l’échelle, les mises à niveau et la gestion de la configuration.
+
+<div id="features">
+  ## Fonctionnalités
+</div>
+
+* **Gestion des clusters ClickHouse** : Créez et gérez des clusters ClickHouse
+* **Intégration de ClickHouse Keeper** : Prise en charge intégrée des clusters ClickHouse Keeper pour la coordination distribuée
+* **Provisionnement du stockage** : Persistent volume claims personnalisables avec sélection de la classe de stockage
+* **Haute disponibilité** : Installations tolérantes aux pannes pour les clusters ClickHouse et Keeper
+* **Sécurité** : Fonctionnalités de sécurité intégrées avec prise en charge de TLS/SSL pour sécuriser les communications du cluster
+* **Monitoring** : Intégration des métriques Prometheus pour l’observabilité
+
+<div id="installation">
+  ## Installation
+</div>
+
+Choisissez la méthode d&#39;installation de votre choix :
+
+* [Installation avec des manifestes](/fr/products/kubernetes-operator/install/kubectl) - Installez avec kubectl/kustomize
+* [Installation avec Helm](/fr/products/kubernetes-operator/install/helm) - Installez avec des charts Helm
+* [Installation avec Operator Lifecycle Manager (OLM)](/fr/products/kubernetes-operator/install/olm) - Installez avec OLM
+
+<div id="guides">
+  ## Guides
+</div>
+
+* **[Introduction](/fr/products/kubernetes-operator/guides/introduction)** - Présentation générale des concepts de ClickHouse Operator
+* **[Guide de configuration](/fr/products/kubernetes-operator/guides/configuration)** - Configuration des clusters ClickHouse et Keeper
+* **[Monitoring](/fr/products/kubernetes-operator/guides/monitoring)** - Métriques Prometheus et probes de santé pour l’opérateur
+* **[Mise à l’échelle](/fr/products/kubernetes-operator/guides/scaling)** - Mise à l’échelle des répliques, des shards et du quorum Keeper
+* **[Sécurisation avec TLS](/fr/products/kubernetes-operator/guides/tls)** - Chiffrement de bout en bout des clusters avec cert-manager
+* **[Politiques réseau](/fr/products/kubernetes-operator/guides/network-policies)** - Restreindre le trafic entrant vers les points de terminaison de métriques et de webhook de l’opérateur
+
+<div id="reference">
+  ## Référence
+</div>
+
+* **[Référence de l’API](/fr/products/kubernetes-operator/reference/api-reference)** - Documentation complète de l’API des ressources personnalisées

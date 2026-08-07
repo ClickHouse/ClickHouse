@@ -1,0 +1,352 @@
+---
+title: 'الاستعلام عن تنسيقات الجداول المفتوحة مباشرةً'
+sidebarTitle: 'الاستعلام المباشر'
+slug: /use-cases/data-lake/getting-started/querying-directly
+description: 'استخدم دوال الجداول في ClickHouse لقراءة جداول Iceberg وDelta Lake وHudi وPaimon من التخزين الكائني دون أي إعداد مسبق.'
+toc_max_heading_level: 2
+keywords: ['بحيرة بيانات', 'ليكهاوس', 'iceberg', 'delta lake', 'hudi', 'paimon', 'دوال الجداول']
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+يوفّر ClickHouse دوال الجداول للاستعلام عن البيانات المخزّنة بتنسيقات الجداول المفتوحة مباشرةً من التخزين الكائني. ولا يتطلّب ذلك الاتصال بكتالوج خارجي، إذ يتم الاستعلام عن البيانات في موقعها مباشرةً، على غرار الطريقة التي يقرأ بها AWS Athena من S3.
+
+يمكنك تمرير مسار التخزين وبيانات الاعتماد مباشرةً ضمن استدعاء الدالة، ويتولّى ClickHouse الباقي. تتوفر جميع صيغ ClickHouse SQL ودواله، كما تستفيد الاستعلامات من التنفيذ المتوازي في ClickHouse و[قارئ Parquet الأصلي عالي الكفاءة](https://clickhouse.com/blog/clickhouse-and-parquet-a-foundation-for-fast-lakehouse-analytics).
+
+<Info>
+  **الخادم أو clickhouse-local أو chDB**
+
+  يمكن تنفيذ الخطوات الواردة في هذا الدليل باستخدام تثبيتٍ حالي لخادم ClickHouse. وللاستعلامات المخصّصة، يمكنك بدلًا من ذلك استخدام [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local) وإكمال سير العمل نفسه من دون تشغيل خادم. ومع تعديلات طفيفة، يمكن أيضًا تنفيذ العملية باستخدام توزيع ClickHouse داخل العملية، [chDB](/ar/products/chdb/index).
+</Info>
+
+تستخدم الأمثلة التالية مجموعة البيانات [hits](/ar/get-started/sample-datasets/star-schema) المخزّنة بكل تنسيق من تنسيقات lakehouse على S3. ولكل تنسيق lake، تتوفر دوال مخصّصة لكل موفّر من موفّري التخزين الكائني.
+
+<Tabs>
+  <Tab title="Apache Iceberg">
+    تقرأ دالة الجدول [`iceberg`](/ar/reference/functions/table-functions/iceberg) (اسم مستعار لـ `icebergS3`) جداول Iceberg مباشرةً من وحدة تخزين الكائنات. وتتوفر متغيرات لكل واجهة خلفية للتخزين: `icebergS3` و`icebergAzure` و`icebergHDFS` و`icebergLocal`.
+
+    **مثال على الصياغة:**
+
+    ```sql
+    icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    icebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **دعم GCS**
+
+      يمكن استخدام صيغة S3 من الدوال مع Google Cloud Storage ‏(GCS).
+    </Info>
+
+    **مثال:**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.375 sec. Processed 100.00 million rows, 9.98 GB (29.63 million rows/s., 2.96 GB/s.)
+    Peak memory usage: 10.48 GiB.
+    ```
+
+    ### متغاير المجموعة
+
+    تُوزّع الدالة [`icebergS3Cluster`](/ar/reference/functions/table-functions/icebergCluster) عمليات القراءة على عدة عقد في مجموعة ClickHouse. تُنشئ عقدة المُبادِر اتصالات بجميع العقد وتُوزّع ملفات البيانات ديناميكيًا. تطلب كل عقدة عاملة المهام وتعالجها حتى تُقرأ جميع الملفات. `icebergCluster` هو اسم مستعار لـ `icebergS3Cluster`. كما تتوفر متغيرات لـ Azure ([`icebergAzureCluster`](/ar/reference/functions/table-functions/icebergCluster)) ولـ HDFS ([`icebergHDFSCluster`](/ar/reference/functions/table-functions/icebergCluster)).
+
+    **مثال على الصياغة:**
+
+    ```sql
+    icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+    -- icebergCluster is an alias for icebergS3Cluster
+
+    icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    **مثال (ClickHouse Cloud):**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3Cluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/'
+    )
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### محرك الجدول
+
+    كبديل عن استخدام دالة الجدول في كل استعلام، يمكنك إنشاء جدول دائم باستخدام [محرك جدول `Iceberg`](/ar/reference/engines/table-engines/integrations/iceberg). تبقى البيانات مخزّنة في object storage وتُقرأ عند الطلب، دون نسخ أي بيانات إلى ClickHouse. تكمن الميزة في أن تعريف الجدول يُخزَّن في ClickHouse ويمكن مشاركته بين المستخدمين والجلسات دون الحاجة إلى أن يحدّد كل مستخدم مسار التخزين وبيانات الاعتماد. تتوفر متغيرات المحرك لكل backend تخزين: `IcebergS3` (أو الاسم المستعار `Iceberg`)، و`IcebergAzure`، و`IcebergHDFS`، و`IcebergLocal`.
+
+    يدعم كلٌّ من محرك الجدول ودالة الجدول [تخزين البيانات مؤقتًا](/ar/reference/engines/table-engines/integrations/iceberg#data-cache)، مستخدِمَين آليةَ التخزين المؤقت ذاتها المعتمدة في محركات التخزين S3 وAzureBlobStorage وHDFS. علاوةً على ذلك، تقوم [ذاكرة التخزين المؤقت للبيانات الوصفية](/ar/reference/engines/table-engines/integrations/iceberg#metadata-cache) بتخزين معلومات ملف البيان في الذاكرة، مما يُقلّل من عمليات القراءة المتكررة لبيانات Iceberg الوصفية. هذا التخزين المؤقت مُفعَّل افتراضيًا عبر الإعداد `use_iceberg_metadata_files_cache`.
+
+    **مثال على الصياغة:**
+
+    محرك الجدول `Iceberg` هو اسم مستعار لـ `IcebergS3`.
+
+    ```sql
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **دعم GCS**
+
+      يمكن استخدام إصدار S3 من محرك الجدول مع خدمة Google Cloud Storage ‏(GCS).
+    </Info>
+
+    **مثال:**
+
+    ```sql
+    CREATE TABLE hits_iceberg
+        ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 2.737 sec. Processed 100.00 million rows, 9.98 GB (36.53 million rows/s., 3.64 GB/s.)
+    Peak memory usage: 10.53 GiB.
+    ```
+
+    للاطلاع على الميزات المدعومة، بما فيها تقليص الأقسام، وتطور المخطط، والتنقل عبر الزمن، والتخزين المؤقت، وغيرها، راجع [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix#format-support). للاطلاع على المرجع الكامل، راجع توثيق [دالة الجدول `iceberg`](/ar/reference/functions/table-functions/iceberg) و[محرك الجدول `Iceberg`](/ar/reference/engines/table-engines/integrations/iceberg).
+  </Tab>
+
+  <Tab title="Delta Lake">
+    تقرأ [دالة الجدول `deltaLake`](/ar/reference/functions/table-functions/deltalake) (الاسم البديل لـ `deltaLakeS3`) جداول Delta Lake من تخزين الكائنات. وتتوفر متغيرات لخلفيات أخرى: `deltaLakeAzure` و`deltaLakeLocal`.
+
+    **مثال على الصياغة:**
+
+    ```sql
+    deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+
+    deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    deltaLakeLocal(path, [,format])
+    ```
+
+    <Info>
+      **دعم GCS**
+
+      يمكن استخدام إصدار S3 من هذه الدوال مع Google Cloud Storage ‏(GCS).
+    </Info>
+
+    **مثال:**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3.29 million
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1.63 million
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.878 sec. Processed 100.00 million rows, 14.82 GB (25.78 million rows/s., 3.82 GB/s.)
+    Peak memory usage: 9.16 GiB.
+    ```
+
+    ### متغيّر الكلاستر
+
+    تُوزِّع دالة [`deltaLakeCluster`](/ar/reference/functions/table-functions/deltalakeCluster) عمليات القراءة عبر عقد متعددة في مجموعة ClickHouse. تقوم عقدة المُبادِر بإرسال ملفات البيانات ديناميكيًا إلى عقد العمال لمعالجتها بالتوازي. `deltaLakeS3Cluster` هو اسم مستعار لـ `deltaLakeCluster`. كما يتوفر نوع بديل لـ Azure وهو [`deltaLakeAzureCluster`](/ar/reference/functions/table-functions/deltalakeCluster).
+
+    **مثال على الصياغة:**
+
+    ```sql
+    deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    -- deltaLakeS3Cluster is an alias for deltaLakeCluster
+
+    deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    <Info>
+      **دعم GCS**
+
+      يمكن استخدام إصدار S3 من هذه الدوال مع Google Cloud Storage ‏(GCS).
+    </Info>
+
+    **مثال (ClickHouse Cloud):**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLakeCluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/'
+    )
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### محرك الجدول
+
+    كبديل عن استخدام دالة الجدول في كل استعلام، يمكنك إنشاء جدول دائم باستخدام [محرك جدول `DeltaLake`](/ar/reference/engines/table-engines/integrations/deltalake) عند الاستعانة بتخزين متوافق مع S3. تظل البيانات مخزّنة في object storage وتُقرأ عند الطلب، دون نسخ أي بيانات إلى ClickHouse. وتكمن الميزة في أن تعريف الجدول يُخزَّن في ClickHouse ويمكن مشاركته بين المستخدمين والجلسات دون الحاجة إلى أن يحدد كل مستخدم مسار التخزين وبيانات الاعتماد.
+
+    يدعم كلٌّ من محرك الجدول ودالة الجدول [تخزين البيانات مؤقتًا](/ar/reference/engines/table-engines/integrations/deltalake#data-cache)، مستخدِمَين آلية التخزين المؤقت ذاتها المعتمدة في محركات التخزين S3 وAzureBlobStorage وHDFS.
+
+    **مثال على الصياغة:**
+
+    ```sql
+    CREATE TABLE delta_table
+        ENGINE = DeltaLake(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    <Info>
+      **دعم GCS**
+
+      يمكن استخدام محرك الجدول هذا مع خدمة Google Cloud Storage ‏(GCS).
+    </Info>
+
+    **مثال:**
+
+    ```sql
+    CREATE TABLE hits_delta
+        ENGINE = DeltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+
+    SELECT
+        URL,
+        count() AS cnt
+    FROM hits_delta
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.608 sec. Processed 100.00 million rows, 14.82 GB (27.72 million rows/s., 4.11 GB/s.)
+    Peak memory usage: 9.27 GiB.
+    ```
+
+    للاطلاع على الميزات المدعومة، بما في ذلك خلفيات التخزين والتخزين المؤقت وغيرها، راجع [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix#format-support). للاطلاع على المرجع الكامل، راجع توثيق [دالة الجدول `deltaLake`](/ar/reference/functions/table-functions/deltalake) و[محرك الجدول `DeltaLake`](/ar/reference/engines/table-engines/integrations/deltalake).
+  </Tab>
+
+  <Tab title="Apache Hudi">
+    تقرأ دالة الجدول [`hudi`](/ar/reference/functions/table-functions/hudi) جداول Hudi من S3.
+
+    **البنية:**
+
+    ```sql
+    hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### نسخة العنقود
+
+    توزّع الدالة [`hudiCluster`](/ar/reference/functions/table-functions/hudiCluster) عمليات القراءة عبر عدة عُقد في عنقود ClickHouse. وتتولى العقدة المُبادِرة توزيع ملفات البيانات ديناميكيًا على العُقد العاملة للمعالجة المتوازية.
+
+    ```sql
+    hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### محرك الجدول
+
+    كبديل لاستخدام table function في كل query، يمكنك إنشاء جدول دائم باستخدام [محرك الجدول `Hudi`](/ar/reference/engines/table-engines/integrations/hudi). تظل البيانات مخزنة في object storage وتُقرأ عند الطلب، من دون نسخ أي بيانات إلى ClickHouse. وتمتاز هذه الطريقة بأن table definition يُخزَّن في ClickHouse، ويمكن مشاركته بين المستخدمين والجلسات من دون أن يضطر كل مستخدم إلى تحديد path التخزين وcredentials.
+
+    **الصيغة:**
+
+    ```sql
+    CREATE TABLE hudi_table
+        ENGINE = Hudi(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    للاطلاع على الميزات المدعومة، بما في ذلك أنظمة التخزين الخلفية وغيرها، راجع [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix#format-support). وللاطلاع على المرجع الكامل، راجع توثيق [دالة الجدول `hudi`](/ar/reference/functions/table-functions/hudi) و[محرك الجدول `Hudi`](/ar/reference/engines/table-engines/integrations/hudi).
+  </Tab>
+
+  <Tab title="Apache Paimon">
+    <ExperimentalBadge />
+
+    تقرأ دالة الجدول [`paimon`](/ar/reference/functions/table-functions/paimon) (اسم بديل لـ `paimonS3`) جداول Paimon من تخزين الكائنات. وتتوفر متغيرات لكل نوع من أنواع التخزين: `paimonS3` و`paimonAzure` و`paimonHDFS` و`paimonLocal`.
+
+    **الصيغة:**
+
+    ```sql
+    paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+
+    paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFS(path_to_table, [,format] [,compression_method])
+
+    paimonLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    ### متغيّر العنقود
+
+    توزّع الدالة [`paimonS3Cluster`](/ar/reference/functions/table-functions/paimonCluster) عمليات القراءة عبر عدة عُقد في عنقود ClickHouse. وتُرسل العقدة المُبادِرة ملفات البيانات ديناميكيًا إلى العُقد العاملة من أجل المعالجة المتوازية. ويُعد `paimonCluster` اسمًا مستعارًا لـ `paimonS3Cluster`. وتوجد أيضًا متغيّرات لـ Azure ([`paimonAzureCluster`](/ar/reference/functions/table-functions/paimonCluster)) وHDFS ([`paimonHDFSCluster`](/ar/reference/functions/table-functions/paimonCluster)).
+
+    ```sql
+    paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    -- paimonCluster is an alias for paimonS3Cluster
+
+    paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+    ```
+
+    ### محرك الجدول
+
+    لا يوفّر Paimon حاليًا محرك جدول مخصصًا في ClickHouse. استخدم دوال الجداول المذكورة أعلاه للاستعلام عن جداول Paimon.
+
+    للاطلاع على الميزات المدعومة، بما في ذلك أنظمة التخزين الخلفية وغيرها، راجع [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix#format-support). وللمرجع الكامل، راجع توثيق [دالة الجدول `paimon`](/ar/reference/functions/table-functions/paimon).
+  </Tab>
+</Tabs>

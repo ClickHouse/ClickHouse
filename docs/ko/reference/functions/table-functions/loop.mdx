@@ -1,0 +1,69 @@
+---
+description: 'ClickHouse의 loop 테이블 함수는 쿼리 결과를 무한 반복으로 반환하는 데 사용됩니다.'
+slug: /sql-reference/table-functions/loop
+title: 'loop'
+doc_type: 'reference'
+---
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+SELECT ... FROM loop(database, table);
+SELECT ... FROM loop(database.table);
+SELECT ... FROM loop(table);
+SELECT ... FROM loop(other_table_function(...));
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+| 인수                          | 설명                                                                                                      |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `database`                  | 데이터베이스 이름입니다.                                                                                           |
+| `table`                     | 테이블 이름입니다.                                                                                              |
+| `other_table_function(...)` | 다른 테이블 함수입니다. 예를 들어 `SELECT * FROM loop(numbers(10));`에서 `other_table_function(...)`는 `numbers(10)`입니다. |
+
+<div id="returned_values">
+  ## 반환 값
+</div>
+
+쿼리 결과를 반환하는 무한 루프입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+ClickHouse에서 데이터 조회:
+
+```sql
+SELECT * FROM loop(test_database, test_table);
+SELECT * FROM loop(test_database.test_table);
+SELECT * FROM loop(test_table);
+```
+
+또는 다른 테이블 함수를 사용할 수도 있습니다:
+
+```sql
+SELECT * FROM loop(numbers(3)) LIMIT 7;
+   ┌─number─┐
+1. │      0 │
+2. │      1 │
+3. │      2 │
+   └────────┘
+   ┌─number─┐
+4. │      0 │
+5. │      1 │
+6. │      2 │
+   └────────┘
+   ┌─number─┐
+7. │      0 │
+   └────────┘
+```
+
+```sql
+SELECT * FROM loop(mysql('localhost:3306', 'test', 'test', 'user', 'password'));
+...
+```

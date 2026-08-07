@@ -1,0 +1,694 @@
+---
+sidebarTitle: 'Google Cloud Storage (GCS)'
+slug: /integrations/gcs
+description: 'MergeTree с хранилищем в Google Cloud Storage (GCS)'
+title: 'Интеграция Google Cloud Storage с ClickHouse'
+doc_type: 'guide'
+keywords: ['Google Cloud Storage ClickHouse', 'интеграция GCS с ClickHouse', 'MergeTree с хранилищем в GCS', 'хранилище GCS для ClickHouse', 'Google Cloud ClickHouse']
+---
+
+import BucketDetails from '/snippets/ru/_GCS_authentication_and_bucket.mdx';
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<Note>
+  Если вы используете ClickHouse Cloud в [Google Cloud](https://cloud.google.com), эта страница к вам не относится, поскольку ваши сервисы уже используют [Google Cloud Storage](https://cloud.google.com/storage). Если вы хотите выполнять `SELECT` или `INSERT` данных из GCS, см. [табличную функцию `gcs`](/ru/reference/functions/table-functions/gcs).
+</Note>
+
+ClickHouse учитывает, что GCS — привлекательное решение для хранения данных, если вам нужно разделить хранилище и вычислительные ресурсы. Для этого предусмотрена поддержка использования GCS в качестве хранилища для движка MergeTree. Это позволяет воспользоваться преимуществами GCS с точки зрения масштабируемости и стоимости, сохранив при этом производительность вставки и запросов движка MergeTree.
+
+<div id="gcs-backed-mergetree">
+  ## MergeTree на базе GCS
+</div>
+
+<div id="creating-a-disk">
+  ### Создание диска
+</div>
+
+Чтобы использовать GCS-бакет в качестве диска, его сначала нужно объявить в конфигурации ClickHouse в файле из каталога `conf.d`. Ниже показан пример объявления GCS-диска. Эта конфигурация включает несколько секций для настройки GCS-«диска», кэша и политики, которая указывается в DDL-запросах при создании таблиц на GCS-диске. Каждая из них описана ниже.
+
+<div id="storage_configuration--disks--gcs">
+  #### Конфигурация хранилища &gt; disks &gt; gcs
+</div>
+
+Эта часть конфигурации показана в выделенном разделе и указывает следующее:
+
+* Тип диска — `s3`, поскольку используется API S3.
+* Конечная точка, предоставляемая GCS
+* HMAC-ключ и secret service account
+* Путь к metadata на локальном диске
+
+```xml highlight={5-10}
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <gcs>
+                <support_batch_delete>true</support_batch_delete>
+                <type>s3</type>
+                <endpoint>https://storage.googleapis.com/BUCKET NAME/FOLDER NAME/</endpoint>
+                <access_key_id>SERVICE ACCOUNT HMAC KEY</access_key_id>
+                <secret_access_key>SERVICE ACCOUNT HMAC SECRET</secret_access_key>
+                <metadata_path>/var/lib/clickhouse/disks/gcs/</metadata_path>
+            </gcs>
+        </disks>
+        <policies>
+            <gcs_main>
+                <volumes>
+                    <main>
+                        <disk>gcs</disk>
+                    </main>
+                </volumes>
+            </gcs_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<div id="storage_configuration--disks--cache">
+  #### Конфигурация хранилища &gt; disks &gt; cache
+</div>
+
+В приведённом ниже примере конфигурации для диска `gcs` включён кэш в памяти объёмом 10 Gi.
+
+```xml highlight={12-17}
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <gcs>
+                <support_batch_delete>true</support_batch_delete>
+                <type>s3</type>
+                <endpoint>https://storage.googleapis.com/BUCKET NAME/FOLDER NAME/</endpoint>
+                <access_key_id>SERVICE ACCOUNT HMAC KEY</access_key_id>
+                <secret_access_key>SERVICE ACCOUNT HMAC SECRET</secret_access_key>
+                <metadata_path>/var/lib/clickhouse/disks/gcs/</metadata_path>
+            </gcs>
+            <gcs_cache>
+                <type>cache</type>
+                <disk>gcs</disk>
+                <path>/var/lib/clickhouse/disks/gcs_cache/</path>
+                <max_size>10Gi</max_size>
+            </gcs_cache>
+        </disks>
+        <policies>
+            <gcs_main>
+                <volumes>
+                    <main>
+                        <disk>gcs_cache</disk>
+                    </main>
+                </volumes>
+            </gcs_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<div id="storage_configuration--policies--gcs_main">
+  #### Конфигурация хранилища &gt; policies &gt; gcs_main
+</div>
+
+Политики конфигурации хранилища позволяют выбирать, где будут храниться данные.  Показанная ниже политика позволяет хранить данные на диске `gcs`, указав политику `gcs_main`.  Например, `CREATE TABLE ... SETTINGS storage_policy='gcs_main'`.
+
+```xml highlight={14-20}
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <gcs>
+                <support_batch_delete>true</support_batch_delete>
+                <type>s3</type>
+                <endpoint>https://storage.googleapis.com/BUCKET NAME/FOLDER NAME/</endpoint>
+                <access_key_id>SERVICE ACCOUNT HMAC KEY</access_key_id>
+                <secret_access_key>SERVICE ACCOUNT HMAC SECRET</secret_access_key>
+                <metadata_path>/var/lib/clickhouse/disks/gcs/</metadata_path>
+            </gcs>
+        </disks>
+        <policies>
+            <gcs_main>
+                <volumes>
+                    <main>
+                        <disk>gcs</disk>
+                    </main>
+                </volumes>
+            </gcs_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+Полный список настроек, относящихся к этому описанию диска, можно найти [здесь](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
+
+<div id="creating-a-table">
+  ### Создание таблицы
+</div>
+
+Если ваш диск настроен на использование бакета с доступом на запись, вы сможете создать таблицу, как в примере ниже. Для краткости мы используем только часть столбцов из набора NYC taxi и передаём данные напрямую в таблицу на базе GCS:
+
+```sql highlight={20}
+CREATE TABLE trips_gcs
+(
+   `trip_id` UInt32,
+   `pickup_date` Date,
+   `pickup_datetime` DateTime,
+   `dropoff_datetime` DateTime,
+   `pickup_longitude` Float64,
+   `pickup_latitude` Float64,
+   `dropoff_longitude` Float64,
+   `dropoff_latitude` Float64,
+   `passenger_count` UInt8,
+   `trip_distance` Float64,
+   `tip_amount` Float32,
+   `total_amount` Float32,
+   `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4)
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(pickup_date)
+ORDER BY pickup_datetime
+SETTINGS storage_policy='gcs_main'
+```
+
+```sql
+INSERT INTO trips_gcs SELECT trip_id, pickup_date, pickup_datetime, dropoff_datetime, pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count, trip_distance, tip_amount, total_amount, payment_type FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames') LIMIT 1000000;
+```
+
+В зависимости от оборудования эта последняя вставка 1 млн строк может выполняться несколько минут. Ход выполнения можно проверить в таблице system.processes. При желании можно увеличить число строк до 10 млн и попробовать несколько примеров запросов.
+
+```sql
+SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amount FROM trips_gcs GROUP BY passenger_count;
+```
+
+<div id="handling-replication">
+  ### Настройка репликации
+</div>
+
+Репликацию с дисками GCS можно настроить с помощью движка таблицы `ReplicatedMergeTree`. Подробнее см. в руководстве [по репликации одного сегмента между двумя регионами GCP с использованием GCS](#gcs-multi-region).
+
+<div id="learn-more">
+  ### Подробнее
+</div>
+
+[Cloud Storage XML API](https://cloud.google.com/storage/docs/xml-api/overview) совместим с некоторыми инструментами и библиотеками, работающими с такими сервисами, как Amazon Simple Storage Service (Amazon S3).
+
+Дополнительные сведения о настройке потоков см. в разделе [Оптимизация производительности](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-optimizing-performance).
+
+<div id="gcs-multi-region">
+  ## Использование Google Cloud Storage (GCS)
+</div>
+
+<Tip>
+  В ClickHouse Cloud по умолчанию используется объектное хранилище, поэтому, если вы работаете в ClickHouse Cloud, выполнять эту процедуру не нужно.
+</Tip>
+
+<div id="plan-the-deployment">
+  ### Спланируйте развертывание
+</div>
+
+Это руководство описывает развертывание ClickHouse с репликацией в Google Cloud, где Google Cloud Storage (GCS) используется в качестве типа диска хранения ClickHouse.
+
+В этом руководстве вы развернете узлы сервера ClickHouse на виртуальных машинах Google Cloud Engine, при этом с каждым узлом будет связан отдельный GCS-бакет для хранения данных. Репликация координируется набором узлов ClickHouse Keeper, также развернутых на виртуальных машинах.
+
+Примерные требования для высокой доступности:
+
+* Два узла сервера ClickHouse в двух регионах GCP
+* Два GCS-бакета, развернутые в тех же регионах, что и два узла сервера ClickHouse
+* Три узла ClickHouse Keeper, два из которых развернуты в тех же регионах, что и узлы сервера ClickHouse. Третий может находиться в том же регионе, что и один из первых двух узлов Keeper, но в другой зоне доступности.
+
+Для работы ClickHouse Keeper требуется два узла, поэтому для высокой доступности необходимы три узла.
+
+<div id="prepare-vms">
+  ### Подготовьте виртуальные машины
+</div>
+
+Разверните пять виртуальных машин в трёх регионах:
+
+| Регион | сервер ClickHouse | бакет               | ClickHouse Keeper |
+| ------ | ----------------- | ------------------- | ----------------- |
+| 1      | `chnode1`         | `bucket_regionname` | `keepernode1`     |
+| 2      | `chnode2`         | `bucket_regionname` | `keepernode2`     |
+| 3 `*`  |                   |                     | `keepernode3`     |
+
+`*` Это может быть другая зона доступности в том же регионе, что и 1 или 2.
+
+<div id="deploy-clickhouse">
+  #### Разверните ClickHouse
+</div>
+
+Разверните ClickHouse на двух хостах; в примерах конфигураций они обозначены как `chnode1` и `chnode2`.
+
+Разместите `chnode1` в одном регионе GCP, а `chnode2` — в другом. В этом руководстве для виртуальных машин Compute Engine, а также для бакетов GCS используются регионы `us-east1` и `us-east4`.
+
+<Note>
+  Не запускайте `clickhouse server`, пока не завершите его настройку. Пока что просто установите его.
+</Note>
+
+При выполнении шагов развертывания на узлах сервера ClickHouse сверяйтесь с [инструкциями по установке](/ru/get-started/setup/install).
+
+<div id="deploy-clickhouse-keeper">
+  #### Развертывание ClickHouse Keeper
+</div>
+
+Разверните ClickHouse Keeper на трех хостах; в примерах конфигурации они называются `keepernode1`, `keepernode2` и `keepernode3`. `keepernode1` можно развернуть в том же регионе, что и `chnode1`, `keepernode2` — вместе с `chnode2`, а `keepernode3` — в любом из регионов, но в другой зоне доступности по сравнению с узлом ClickHouse в этом регионе.
+
+При выполнении шагов развертывания на узлах ClickHouse Keeper обратитесь к [инструкции по установке](/ru/get-started/setup/install).
+
+<div id="create-two-buckets">
+  ### Создайте два бакета
+</div>
+
+Два сервера ClickHouse будут размещены в разных регионах для обеспечения высокой доступности. У каждого из них будет GCS-бакет в том же регионе.
+
+В **Cloud Storage &gt; Buckets** выберите **CREATE BUCKET**. В этом руководстве создаются два бакета: один в `us-east1`, другой — в `us-east4`. Бакеты создаются в одном регионе, со стандартным классом хранилища и без публичного доступа. При появлении соответствующего запроса включите запрет публичного доступа. Не создавайте папки — они будут созданы, когда ClickHouse начнет записывать данные в хранилище.
+
+Если вам нужны пошаговые инструкции по созданию бакетов и HMAC-ключа, разверните **Create GCS buckets and an HMAC key** и следуйте инструкциям:
+
+<BucketDetails />
+
+<div id="configure-clickhouse-keeper">
+  ### Настройка ClickHouse Keeper
+</div>
+
+У всех узлов ClickHouse Keeper один и тот же файл конфигурации, за исключением строки `server_id` (первая выделенная строка ниже). Измените файл, указав имена хостов для ваших серверов ClickHouse Keeper, и на каждом сервере задайте `server_id` так, чтобы он соответствовал нужной записи `server` в `raft_configuration`. Поскольку в этом примере для `server_id` задано значение `3`, мы выделили соответствующие строки в `raft_configuration`.
+
+* Измените файл, указав имена хостов, и убедитесь, что они разрешаются с узлов сервера ClickHouse и узлов Keeper
+* Скопируйте файл в нужное место (`/etc/clickhouse-keeper/keeper_config.xml` на каждом из серверов Keeper
+* Измените `server_id` на каждой машине в соответствии с номером её записи в `raft_configuration`
+
+```xml title=/etc/clickhouse-keeper/keeper_config.xml highlight={12,33-37}
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+        <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    <listen_host>0.0.0.0</listen_host>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>3</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>warning</raft_logs_level>
+        </coordination_settings>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>keepernode1.us-east1-b.c.clickhousegcs-374921.internal</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>keepernode2.us-east4-c.c.clickhousegcs-374921.internal</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>keepernode3.us-east5-a.c.clickhousegcs-374921.internal</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+```
+
+<div id="configure-clickhouse-server">
+  ### Настройка сервера ClickHouse
+</div>
+
+<Info>
+  **рекомендуемая практика**
+
+  На некоторых этапах этого руководства вам потребуется поместить файл конфигурации в `/etc/clickhouse-server/config.d/`. Это стандартное расположение в Linux для файлов переопределения конфигурации. Когда вы помещаете эти файлы в этот каталог, ClickHouse объединяет их содержимое с конфигурацией по умолчанию. Размещая такие файлы в каталоге `config.d`, вы избежите потери конфигурации при обновлении.
+</Info>
+
+<div id="networking">
+  #### Сетевые настройки
+</div>
+
+По умолчанию ClickHouse прослушивает только интерфейс loopback; в реплицированной конфигурации требуется сетевое взаимодействие между машинами. Включите прослушивание на всех интерфейсах:
+
+```xml title=/etc/clickhouse-server/config.d/network.xml
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+</clickhouse>
+```
+
+<div id="remote-clickhouse-keeper-servers">
+  #### Удалённые серверы ClickHouse Keeper
+</div>
+
+Репликация координируется ClickHouse Keeper. В этом файле конфигурации узлы ClickHouse Keeper указываются по имени хоста и номеру порта.
+
+* Измените имена хостов в соответствии с именами хостов ваших узлов Keeper
+
+```xml title=/etc/clickhouse-server/config.d/use-keeper.xml
+<clickhouse>
+    <zookeeper>
+        <node index="1">
+            <host>keepernode1.us-east1-b.c.clickhousegcs-374921.internal</host>
+            <port>9181</port>
+        </node>
+        <node index="2">
+            <host>keepernode2.us-east4-c.c.clickhousegcs-374921.internal</host>
+            <port>9181</port>
+        </node>
+        <node index="3">
+            <host>keepernode3.us-east5-a.c.clickhousegcs-374921.internal</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>
+```
+
+<div id="remote-clickhouse-servers">
+  #### Удалённые серверы ClickHouse
+</div>
+
+В этом файле задаются имя хоста и порт каждого сервера ClickHouse в кластере. В файле конфигурации по умолчанию содержатся примеры определений кластеров; чтобы отображались только полностью настроенные кластеры, в запись `remote_servers` добавлен тег `replace="true"`. Благодаря этому при слиянии с конфигурацией по умолчанию секция `remote_servers` заменяется, а не дополняется.
+
+* Измените файл, указав свои имена хостов, и убедитесь, что они разрешаются с узлов сервера ClickHouse
+
+```xml title=/etc/clickhouse-server/config.d/remote-servers.xml
+<clickhouse>
+    <remote_servers replace="true">
+        <cluster_1S_2R>
+            <shard>
+                <replica>
+                    <host>chnode1.us-east1-b.c.clickhousegcs-374921.internal</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>chnode2.us-east4-c.c.clickhousegcs-374921.internal</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster_1S_2R>
+    </remote_servers>
+</clickhouse>
+```
+
+<div id="replica-identification">
+  #### Идентификация реплики
+</div>
+
+В этом файле настраиваются параметры, связанные с путём ClickHouse Keeper. В частности, здесь задаются макросы, используемые для определения того, к какой реплике относятся данные. На одном сервере реплика должна быть указана как `replica_1`, а на другом сервере — `replica_2`. Имена можно изменить: например, если одна реплика хранится в Южной Каролине, а другая — в Северной Виргинии, значениями могут быть `carolina` и `virginia`; просто убедитесь, что на каждой машине они различаются.
+
+```xml title=/etc/clickhouse-server/config.d/macros.xml highlight={8}
+<clickhouse>
+    <distributed_ddl>
+            <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+    <macros>
+        <cluster>cluster_1S_2R</cluster>
+        <shard>1</shard>
+        <replica>replica_1</replica>
+    </macros>
+</clickhouse>
+```
+
+<div id="storage-in-gcs">
+  #### Хранилище в GCS
+</div>
+
+Конфигурация хранилища ClickHouse включает `disks` и `policies`. Настраиваемый ниже диск называется `gcs` и имеет `type` `s3`. Тип — `s3`, потому что ClickHouse обращается к GCS бакету как к AWS S3 бакету. Потребуются две копии этой конфигурации, по одной для каждого узла сервера ClickHouse.
+
+В приведенной ниже конфигурации нужно выполнить следующие подстановки.
+
+Эти подстановки различаются между двумя узлами сервера ClickHouse:
+
+* Для `REPLICA 1 BUCKET` должно быть указано имя бакета в том же регионе, что и сервер
+* Значение `REPLICA 1 FOLDER` должно быть изменено на `replica_1` на одном из серверов и на `replica_2` на другом
+
+Эти подстановки одинаковы для обоих узлов:
+
+* В `access_key_id` должен быть указан HMAC Key, сгенерированный ранее
+* В `secret_access_key` должен быть указан HMAC Secret, сгенерированный ранее
+
+```xml title=/etc/clickhouse-server/config.d/storage.xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <gcs>
+                <support_batch_delete>true</support_batch_delete>
+                <type>s3</type>
+                <endpoint>https://storage.googleapis.com/REPLICA 1 BUCKET/REPLICA 1 FOLDER/</endpoint>
+                <access_key_id>SERVICE ACCOUNT HMAC KEY</access_key_id>
+                <secret_access_key>SERVICE ACCOUNT HMAC SECRET</secret_access_key>
+                <metadata_path>/var/lib/clickhouse/disks/gcs/</metadata_path>
+            </gcs>
+            <cache>
+                <type>cache</type>
+                <disk>gcs</disk>
+                <path>/var/lib/clickhouse/disks/gcs_cache/</path>
+                <max_size>10Gi</max_size>
+            </cache>
+        </disks>
+        <policies>
+            <gcs_main>
+                <volumes>
+                    <main>
+                        <disk>gcs</disk>
+                    </main>
+                </volumes>
+            </gcs_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<div id="start-clickhouse-keeper">
+  ### Запустите ClickHouse Keeper
+</div>
+
+Используйте команды для вашей операционной системы, например:
+
+```bash
+sudo systemctl enable clickhouse-keeper
+sudo systemctl start clickhouse-keeper
+sudo systemctl status clickhouse-keeper
+```
+
+<div id="check-clickhouse-keeper-status">
+  #### Проверка состояния ClickHouse Keeper
+</div>
+
+Отправьте команды в ClickHouse Keeper с помощью `netcat`. Например, `mntr` возвращает состояние кластера ClickHouse Keeper. Если выполнить эту команду на каждом из узлов Keeper, вы увидите, что один из них — leader, а два других — followers:
+
+```bash
+echo mntr | nc localhost 9181
+```
+
+```response highlight={7-9,18-19}
+zk_version      v22.7.2.15-stable-f843089624e8dd3ff7927b8a125cf3a7a769c069
+zk_avg_latency  0
+zk_max_latency  11
+zk_min_latency  0
+zk_packets_received     1783
+zk_packets_sent 1783
+zk_num_alive_connections        2
+zk_outstanding_requests 0
+zk_server_state leader
+zk_znode_count  135
+zk_watch_count  8
+zk_ephemerals_count     3
+zk_approximate_data_size        42533
+zk_key_arena_size       28672
+zk_latest_snapshot_size 0
+zk_open_file_descriptor_count   182
+zk_max_file_descriptor_count    18446744073709551615
+zk_followers    2
+zk_synced_followers     2
+```
+
+<div id="start-clickhouse-server">
+  ### Запустите сервер ClickHouse
+</div>
+
+На `chnode1` и `chnode` выполните:
+
+```bash
+sudo service clickhouse-server start
+```
+
+```bash
+sudo service clickhouse-server status
+```
+
+<div id="verification">
+  ### Проверка
+</div>
+
+<div id="verify-disk-configuration">
+  #### Проверьте конфигурацию дисков
+</div>
+
+`system.disks` должен содержать записи для каждого диска:
+
+* default
+* gcs
+* cache
+
+```sql
+SELECT *
+FROM system.disks
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+name:             cache
+path:             /var/lib/clickhouse/disks/gcs/
+free_space:       18446744073709551615
+total_space:      18446744073709551615
+unreserved_space: 18446744073709551615
+keep_free_space:  0
+type:             s3
+is_encrypted:     0
+is_read_only:     0
+is_write_once:    0
+is_remote:        1
+is_broken:        0
+cache_path:       /var/lib/clickhouse/disks/gcs_cache/
+
+Row 2:
+──────
+name:             default
+path:             /var/lib/clickhouse/
+free_space:       6555529216
+total_space:      10331889664
+unreserved_space: 6555529216
+keep_free_space:  0
+type:             local
+is_encrypted:     0
+is_read_only:     0
+is_write_once:    0
+is_remote:        0
+is_broken:        0
+cache_path:
+
+Row 3:
+──────
+name:             gcs
+path:             /var/lib/clickhouse/disks/gcs/
+free_space:       18446744073709551615
+total_space:      18446744073709551615
+unreserved_space: 18446744073709551615
+keep_free_space:  0
+type:             s3
+is_encrypted:     0
+is_read_only:     0
+is_write_once:    0
+is_remote:        1
+is_broken:        0
+cache_path:
+
+3 rows in set. Elapsed: 0.002 sec.
+```
+
+<div id="verify-that-tables-created-on-the-cluster-are-created-on-both-nodes">
+  #### Убедитесь, что таблицы в кластере созданы на обоих узлах
+</div>
+
+```sql highlight={1,18}
+create table trips on cluster 'cluster_1S_2R' (
+ `trip_id` UInt32,
+ `pickup_date` Date,
+ `pickup_datetime` DateTime,
+ `dropoff_datetime` DateTime,
+ `pickup_longitude` Float64,
+ `pickup_latitude` Float64,
+ `dropoff_longitude` Float64,
+ `dropoff_latitude` Float64,
+ `passenger_count` UInt8,
+ `trip_distance` Float64,
+ `tip_amount` Float32,
+ `total_amount` Float32,
+ `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4))
+ENGINE = ReplicatedMergeTree
+PARTITION BY toYYYYMM(pickup_date)
+ORDER BY pickup_datetime
+SETTINGS storage_policy='gcs_main'
+```
+
+```response
+┌─host───────────────────────────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.us-east4-c.c.gcsqa-375100.internal │ 9000 │      0 │       │                   1 │                1 │
+└────────────────────────────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+┌─host───────────────────────────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode1.us-east1-b.c.gcsqa-375100.internal │ 9000 │      0 │       │                   0 │                0 │
+└────────────────────────────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+
+2 rows in set. Elapsed: 0.641 sec.
+```
+
+<div id="verify-that-data-can-be-inserted">
+  #### Проверьте возможность вставки данных
+</div>
+
+```sql
+INSERT INTO trips SELECT
+    trip_id,
+    pickup_date,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_longitude,
+    pickup_latitude,
+    dropoff_longitude,
+    dropoff_latitude,
+    passenger_count,
+    trip_distance,
+    tip_amount,
+    total_amount,
+    payment_type
+FROM s3('https://ch-nyc-taxi.s3.eu-west-3.amazonaws.com/tsv/trips_{0..9}.tsv.gz', 'TabSeparatedWithNames')
+LIMIT 1000000
+```
+
+<div id="verify-that-the-storage-policy-gcs_main-is-used-for-the-table">
+  #### Убедитесь, что для таблицы используется политика хранения `gcs_main`.
+</div>
+
+```sql
+SELECT
+    engine,
+    data_paths,
+    metadata_path,
+    storage_policy,
+    formatReadableSize(total_bytes)
+FROM system.tables
+WHERE name = 'trips'
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+engine:                          ReplicatedMergeTree
+data_paths:                      ['/var/lib/clickhouse/disks/gcs/store/631/6315b109-d639-4214-a1e7-afbd98f39727/']
+metadata_path:                   /var/lib/clickhouse/store/e0f/e0f3e248-7996-44d4-853e-0384e153b740/trips.sql
+storage_policy:                  gcs_main
+formatReadableSize(total_bytes): 36.42 MiB
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+<div id="verify-in-google-cloud-console">
+  #### Проверьте в консоли Google Cloud
+</div>
+
+Просматривая бакеты, вы увидите, что в каждом из них была создана папка с именем, указанным в файле конфигурации `storage.xml`. Разверните папки, и вы увидите множество файлов, представляющих собой партиции данных.
+
+<div id="bucket-for-replica-one">
+  #### Бакет для первой реплики
+</div>
+
+<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp" size="lg" border alt="Бакет первой реплики в Google Cloud Storage со структурой папок с партициями данных" />
+
+<div id="bucket-for-replica-two">
+  #### Бакет для второй реплики
+</div>
+
+<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp" size="lg" border alt="Бакет второй реплики в Google Cloud Storage, показывающий структуру папок с партициями данных" />

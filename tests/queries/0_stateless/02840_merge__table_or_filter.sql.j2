@@ -1,0 +1,39 @@
+drop table if exists m;
+drop view if exists v1;
+drop view if exists v2;
+drop table if exists d1;
+drop table if exists d2;
+
+create table d1 (key Int, value Int) engine=Memory();
+create table d2 (key Int, value Int) engine=Memory();
+
+insert into d1 values (1, 10);
+insert into d1 values (2, 20);
+
+insert into d2 values (1, 10);
+insert into d2 values (2, 20);
+
+create view v1 as select * from d1;
+create view v2 as select * from d2;
+
+create table m as v1 engine=Merge(currentDatabase(), '^(v1|v2)$');
+
+{# -- FIXME:
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v1') or 0 or 0 settings {{ settings }};
+select _table, key from m where (value = 10 and _table = 'v3') or (value = 20 and _table = 'v3') or 0 or 0 settings {{ settings }};
+#}
+
+-- avoid reorder
+set max_threads=1;
+-- { echoOn }
+{% for settings in [
+    'enable_analyzer=0, convert_query_to_cnf=0',
+    'enable_analyzer=0, convert_query_to_cnf=1',
+    'enable_analyzer=1, convert_query_to_cnf=0',
+    'enable_analyzer=1, convert_query_to_cnf=1'
+] %}
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v1') ORDER BY ALL settings {{ settings }};
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v2') ORDER BY ALL settings {{ settings }};
+select _table, key from m where (value = 10 and _table = 'v1') or (value = 20 and _table = 'v3') settings {{ settings }};
+select _table, key from m where (value = 10 and _table = 'v3') or (value = 20 and _table = 'v3') settings {{ settings }};
+{% endfor %}

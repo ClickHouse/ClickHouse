@@ -1,0 +1,98 @@
+#!/bin/bash
+# Pre-fetches Docker images in parallel before integration tests start.
+#
+# Images that are unavailable for the current architecture (e.g. amd64-only
+# images on arm64 runners) are silently skipped rather than failing the job.
+#
+# Usage:
+#   ci/prefetch-integration-test-images IMAGE [IMAGE ...]
+#
+# Environment variables:
+#   PULL_RETRIES   Number of pull attempts per image (default: 3)
+#   PULL_TIMEOUT   Per-attempt timeout in seconds (default: 300)
+
+set -uo pipefail
+
+PULL_RETRIES="${PULL_RETRIES:-3}"
+PULL_TIMEOUT="${PULL_TIMEOUT:-300}"
+
+images=("$@")
+if [[ ${#images[@]} -eq 0 ]]; then
+    echo "No images to pre-fetch."
+    exit 0
+fi
+
+echo "Pre-fetching ${#images[@]} Docker image(s) in parallel:"
+for img in "${images[@]}"; do
+    echo "  $img"
+done
+
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
+
+pull_one()
+{
+    local image="$1"
+    local fail_file="$2"
+    local attempt out start elapsed
+
+    for ((attempt = 1; attempt <= PULL_RETRIES; attempt++)); do
+        echo "Pulling $image (attempt $attempt/$PULL_RETRIES) ..."
+        start=$SECONDS
+        if out=$(timeout "$PULL_TIMEOUT" docker pull "$image" 2>&1); then
+            elapsed=$((SECONDS - start))
+            echo "Pulled $image in ${elapsed}s"
+            return 0
+        fi
+        elapsed=$((SECONDS - start))
+        # Arch-specific image — not a real failure on this runner.
+        if echo "$out" | grep -q "no matching manifest"; then
+            echo "SKIP $image: no manifest for this architecture (${elapsed}s)"
+            return 0
+        fi
+        echo "Pull of $image failed on attempt $attempt (${elapsed}s elapsed):"
+        echo "$out"
+        if ((attempt < PULL_RETRIES)); then
+            sleep 5
+        fi
+    done
+
+    echo "FAILED to pull $image after $PULL_RETRIES attempt(s)"
+    echo "$image" > "$fail_file"
+    return 1
+}
+
+# Launch all pulls in parallel; each writes its image name to a unique file on failure.
+pids=()
+for image in "${images[@]}"; do
+    # Sanitize image name to a safe filename.
+    safe="${image//[^a-zA-Z0-9._-]/_}"
+    pull_one "$image" "$work_dir/fail_${safe}" &
+    pids+=($!)
+done
+
+# Collect exit statuses.
+any_fail=0
+for pid in "${pids[@]}"; do
+    wait "$pid" || any_fail=1
+done
+
+# Report failures.
+failed=()
+for f in "$work_dir"/fail_*; do
+    [[ -s "$f" ]] && failed+=("$(cat "$f")")
+done
+
+if [[ ${#failed[@]} -gt 0 ]]; then
+    echo "ERROR: Failed to pull the following image(s) after $PULL_RETRIES attempt(s): ${failed[*]}"
+    exit 1
+fi
+
+if [[ $any_fail -ne 0 ]]; then
+    # A pull_one returned non-zero without writing a fail file — shouldn't happen,
+    # but guard against it anyway.
+    echo "ERROR: One or more image pulls failed unexpectedly."
+    exit 1
+fi
+
+echo "All images pre-fetched successfully."

@@ -1,0 +1,5 @@
+<clickhouse>
+    <access_control_improvements>
+        <table_engines_require_grant>true</table_engines_require_grant>
+    </access_control_improvements>
+</clickhouse>

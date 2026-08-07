@@ -1,0 +1,207 @@
+---
+slug: /use-cases/observability/clickstack/api-reference
+title: 'مرجع API'
+description: 'مرجع API لـ ClickStack لإدارة لوحات المعلومات والتنبيهات والمصادر برمجيًا'
+doc_type: 'guide'
+keywords: ['ClickStack', 'observability', 'API', 'REST API', 'لوحات المعلومات', 'التنبيهات', 'HyperDX']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يوفّر ClickStack واجهة برمجة تطبيقات REST لإدارة لوحات المعلومات والتنبيهات ومصادر البيانات برمجيًا. وهذه الواجهة متاحة لكلٍّ من عمليات نشر **Managed ClickStack** ‏(ClickHouse Cloud) و**ClickStack Open Source**، مع اختلاف نقاط النهاية وآلية المصادقة بينهما.
+
+<div id="api-docs">
+  ## وثائق مرجع API
+</div>
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    بالنسبة إلى Managed ClickStack، يتم الوصول إلى API عبر **ClickHouse Cloud API**. تتوفر نقاط نهاية ClickStack في [مواصفات Cloud API](/ar/api-reference/organization/get-list-of-available-organizations#tag/ClickStack).
+
+    نقاط النهاية التالية متاحة:
+
+    | المورد              | العمليات                                            |
+    | ------------------- | --------------------------------------------------- |
+    | **لوحات المعلومات** | إنشاء لوحات المعلومات وعرضها وجلبها وتحديثها وحذفها |
+    | **التنبيهات**       | إنشاء التنبيهات وعرضها وجلبها وتحديثها وحذفها       |
+    | **المصادر**         | عرض مصادر البيانات                                  |
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    بالنسبة إلى ClickStack Open Source، تُحفَظ مواصفات API الكاملة في [مستودع HyperDX](https://github.com/hyperdxio/hyperdx)، ويمكن استعراضها تفاعليًا أو تنزيلها كمواصفات OpenAPI:
+
+    * [مرجع API التفاعلي](https://www.clickhouse.com/docs/clickstack/api-reference)
+    * [تنزيل مواصفات OpenAPI ‏(JSON)](https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json)
+
+    نقاط النهاية التالية متاحة:
+
+    | المورد              | العمليات                                            |
+    | ------------------- | --------------------------------------------------- |
+    | **لوحات المعلومات** | إنشاء لوحات المعلومات وعرضها وجلبها وتحديثها وحذفها |
+    | **التنبيهات**       | إنشاء التنبيهات وعرضها وجلبها وتحديثها وحذفها       |
+    | **المخططات**        | الاستعلام عن بيانات السلاسل الزمنية (POST فقط)      |
+    | **المصادر**         | عرض مصادر البيانات                                  |
+    | **Webhooks**        | عرض Webhooks                                        |
+  </Tab>
+</Tabs>
+
+<div id="authentication">
+  ## المصادقة
+</div>
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    يستخدم Managed ClickStack **مفتاح ClickHouse Cloud API** للمصادقة عبر [مصادقة HTTP الأساسية](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication). لإنشاء مفاتيح API وإدارتها، راجع [إدارة مفاتيح API](/ar/products/cloud/features/admin-features/api/openapi).
+
+    ضمّن معرّف المفتاح والقيمة السرية باستخدام مصادقة HTTP الأساسية:
+
+    ```bash
+    export KEY_ID=<your_key_id>
+    export KEY_SECRET=<your_key_secret>
+
+    curl --user $KEY_ID:$KEY_SECRET \
+      https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+    ```
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    يستخدم ClickStack Open Source **Bearer token** للمصادقة عبر **مفتاح وصول API شخصي**.
+
+    للحصول على مفتاح API:
+
+    1. افتح HyperDX على عنوان URL الخاص بـ ClickStack لديك (على سبيل المثال: http://localhost:8080)
+    2. أنشئ حسابًا أو سجّل الدخول عند الحاجة
+    3. انتقل إلى **Team Settings → API Keys**
+    4. انسخ **مفتاح وصول API الشخصي** الخاص بك
+
+    <Image img="/images/clickstack/api-key-personal.webp" alt="مفتاح API في ClickStack" />
+
+    <Note>
+      يختلف هذا عن **مفتاح API للاستيعاب** الموجود في Team Settings، والذي يُستخدم لمصادقة بيانات القياس عن بُعد المُرسلة إلى مجمّع OpenTelemetry.
+    </Note>
+
+    يعمل خادم API على المنفذ `8000` افتراضيًا (بشكل منفصل عن واجهة المستخدم على المنفذ `8080`). عند استخدام صورة Docker المتكاملة، تأكد من ربط هذا المنفذ صراحةً:
+
+    ```bash
+    docker run -p 8080:8080 -p 8000:8000 -p 4317:4317 -p 4318:4318 docker.hyperdx.io/hyperdx/hyperdx-all-in-one
+    ```
+
+    ضمّن المفتاح في ترويسة `Authorization`:
+
+    ```bash
+    curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+      http://localhost:8000/api/v2/dashboards
+    ```
+  </Tab>
+</Tabs>
+
+<div id="base-url">
+  ## عنوان URL الأساسي وتنسيق الطلب
+</div>
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    تُرسَل جميع طلبات API الخاصة بـ Managed ClickStack إلى ClickHouse Cloud API:
+
+    ```bash
+    https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/<resource>
+    ```
+
+    يمكنك العثور على **Organization ID** الخاص بك في ClickHouse Cloud console ضمن **Organization → Organization details**. ويظهر **Service ID** الخاص بك في عنوان URL الخاص بالخدمة أو في صفحة تفاصيل الخدمة.
+
+    ### مثال: سرد لوحات المعلومات
+
+    ```bash
+    curl --user $KEY_ID:$KEY_SECRET \
+      https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/dashboards
+    ```
+
+    ### مثال: إنشاء تنبيه
+
+    ```bash
+    curl -X POST --user $KEY_ID:$KEY_SECRET \
+      -H "Content-Type: application/json" \
+      -d '{
+        "dashboardId": "<DASHBOARD_ID>",
+        "tileId": "<TILE_ID>",
+        "threshold": 100,
+        "interval": "1h",
+        "source": "tile",
+        "thresholdType": "above",
+        "channel": {
+          "type": "webhook",
+          "webhookId": "<WEBHOOK_ID>"
+        },
+        "name": "Error Spike Alert",
+        "message": "Error rate exceeded 100 in the last hour"
+      }' \
+      https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickstack/alerts
+    ```
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    تُرسَل جميع طلبات API الخاصة بـ Open Source ClickStack إلى خادم HyperDX API على المنفذ `8000`:
+
+    ```bash
+    http://<YOUR_HYPERDX_HOST>:8000/api/v2/<resource>
+    ```
+
+    على سبيل المثال، في عملية نشر محلية افتراضية:
+
+    ```bash
+    http://localhost:8000/api/v2/dashboards
+    ```
+
+    ### مثال: سرد لوحات المعلومات
+
+    ```bash
+    curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+      http://localhost:8000/api/v2/dashboards
+    ```
+
+    ### مثال: إنشاء تنبيه
+
+    ```bash
+    curl -X POST \
+      -H "Authorization: Bearer <YOUR_API_KEY>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "dashboardId": "<DASHBOARD_ID>",
+        "tileId": "<TILE_ID>",
+        "threshold": 100,
+        "interval": "1h",
+        "source": "tile",
+        "thresholdType": "above",
+        "channel": {
+          "type": "webhook",
+          "webhookId": "<WEBHOOK_ID>"
+        },
+        "name": "Error Spike Alert",
+        "message": "Error rate exceeded 100 in the last hour"
+      }' \
+      http://localhost:8000/api/v2/alerts
+    ```
+
+    ### مثال: الاستعلام عن بيانات سلاسل المخطط
+
+    ```bash
+    curl -X POST \
+      -H "Authorization: Bearer <YOUR_API_KEY>" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "startTime": 1647014400000,
+        "endTime": 1647100800000,
+        "granularity": "1h",
+        "series": [
+          {
+            "sourceId": "<SOURCE_ID>",
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "groupBy": []
+          }
+        ]
+      }' \
+      http://localhost:8000/api/v2/charts/series
+    ```
+  </Tab>
+</Tabs>

@@ -1,0 +1,199 @@
+---
+sidebarTitle: 'BigQuery vers ClickHouse'
+slug: /integrations/google-dataflow/templates/bigquery-to-clickhouse
+description: 'Vous pouvez ingérer des données de BigQuery dans ClickHouse à l’aide d’un template Google Dataflow'
+title: 'Template Dataflow BigQuery vers ClickHouse'
+doc_type: 'guide'
+keywords: ['Dataflow', 'BigQuery']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Le template BigQuery vers ClickHouse est un pipeline de traitement par lots qui ingère des données d’une table BigQuery dans une table ClickHouse.
+Le template peut lire l’intégralité de la table ou filtrer des enregistrements spécifiques à l’aide d’une requête SQL fournie.
+
+<div id="pipeline-requirements">
+  ## Exigences du pipeline
+</div>
+
+* La table source BigQuery doit exister.
+* La table ClickHouse cible doit exister.
+* L’hôte ClickHouse doit être accessible depuis les machines worker de Dataflow.
+
+<div id="template-parameters">
+  ## Paramètres du template
+</div>
+
+<br />
+
+<br />
+
+| Nom du paramètre        | Description du paramètre                                                                                                                                                                                                                                                                                                                                                                        | Obligatoire | Remarques                                                                                                                                                                                                                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `jdbcUrl`               | L’URL JDBC ClickHouse au format `jdbc:clickhouse://<host>:<port>/<schema>`.                                                                                                                                                                                                                                                                                                                     | ✅           | N’ajoutez pas le nom d’utilisateur ni le mot de passe comme options JDBC. Toute autre option JDBC peut être ajoutée à la fin de l’URL JDBC. Pour les utilisateurs de ClickHouse Cloud, ajoutez `ssl=true&sslmode=NONE` à `jdbcUrl`.                                                        |
+| `clickHouseUsername`    | Le nom d’utilisateur ClickHouse à utiliser pour l’authentification.                                                                                                                                                                                                                                                                                                                             | ✅           |                                                                                                                                                                                                                                                                                            |
+| `clickHousePassword`    | Le mot de passe ClickHouse à utiliser pour l’authentification.                                                                                                                                                                                                                                                                                                                                  | ✅           |                                                                                                                                                                                                                                                                                            |
+| `clickHouseTable`       | La table ClickHouse cible dans laquelle les données seront insérées.                                                                                                                                                                                                                                                                                                                            | ✅           |                                                                                                                                                                                                                                                                                            |
+| `maxInsertBlockSize`    | La taille maximale de block pour l’insertion, si nous contrôlons la création des blocks pour l’insertion (option ClickHouseIO).                                                                                                                                                                                                                                                                 |             | Une option `ClickHouseIO`.                                                                                                                                                                                                                                                                 |
+| `insertDistributedSync` | Si ce paramètre est activé, l’insert query dans Distributed attend que les données soient envoyées à tous les nœuds du cluster. (option ClickHouseIO).                                                                                                                                                                                                                                          |             | Une option `ClickHouseIO`.                                                                                                                                                                                                                                                                 |
+| `insertQuorum`          | Pour les requêtes INSERT dans une table répliquée, attend l’écriture sur le nombre spécifié de replicas et linéarise l’ajout des données. 0 - désactivé.                                                                                                                                                                                                                                        |             | Une option `ClickHouseIO`. Ce paramètre est désactivé dans les server settings par défaut.                                                                                                                                                                                                 |
+| `insertDeduplicate`     | Pour les requêtes INSERT dans une table répliquée, indique si la deduplication des blocks insérés doit être effectuée.                                                                                                                                                                                                                                                                          |             | Une option `ClickHouseIO`.                                                                                                                                                                                                                                                                 |
+| `maxRetries`            | Nombre maximal de retries par insert.                                                                                                                                                                                                                                                                                                                                                           |             | Une option `ClickHouseIO`.                                                                                                                                                                                                                                                                 |
+| `InputTableSpec`        | La table BigQuery à lire. Spécifiez soit `inputTableSpec`, soit `query`. Lorsque les deux sont définis, le paramètre `query` est prioritaire. Exemple : `<BIGQUERY_PROJECT>:<DATASET_NAME>.<INPUT_TABLE>`.                                                                                                                                                                                      |             | Lit les données directement depuis le stockage BigQuery à l’aide de la [BigQuery Storage Read API](https://cloud.google.com/bigquery/docs/reference/storage). Tenez compte des [limitations de la Storage Read API](https://cloud.google.com/bigquery/docs/reference/storage#limitations). |
+| `outputDeadletterTable` | La table BigQuery destinée aux messages qui n’ont pas pu atteindre la table de sortie. Si une table n’existe pas, elle est créée pendant l’exécution du pipeline. Si elle n’est pas spécifiée, `<outputTableSpec>_error_records` est utilisé. Par exemple, `<PROJECT_ID>:<DATASET_NAME>.<DEADLETTER_TABLE>`.                                                                                    |             |                                                                                                                                                                                                                                                                                            |
+| `query`                 | La requête SQL à utiliser pour lire les données depuis BigQuery. Si le dataset BigQuery se trouve dans un projet différent du job Dataflow, spécifiez le nom complet du dataset dans la requête SQL, par exemple : `<PROJECT_ID>.<DATASET_NAME>.<TABLE_NAME>`. La valeur par défaut est [GoogleSQL](https://cloud.google.com/bigquery/docs/introduction-sql), sauf si `useLegacySql` vaut true. |             | Vous devez spécifier soit `inputTableSpec`, soit `query`. Si vous définissez les deux paramètres, le template utilise le paramètre `query`. Exemple : `SELECT * FROM sampledb.sample_table`.                                                                                                 |
+| `useLegacySql`          | Définissez `true` pour utiliser l’ancien SQL. Ce paramètre s’applique uniquement lors de l’utilisation du paramètre `query`. La valeur par défaut est `false`.                                                                                                                                                                                                                                  |             |                                                                                                                                                                                                                                                                                            |
+| `queryLocation`         | Nécessaire lors de la lecture depuis une vue autorisée sans la permission sur la table sous-jacente. Par exemple, `US`.                                                                                                                                                                                                                                                                         |             |                                                                                                                                                                                                                                                                                            |
+| `queryTempDataset`      | Définissez un dataset existant pour créer la table temporaire qui stockera les résultats de la requête. Par exemple, `temp_dataset`.                                                                                                                                                                                                                                                            |             |                                                                                                                                                                                                                                                                                            |
+| `KMSEncryptionKey`      | Si vous lisez depuis BigQuery en utilisant la source `query`, utilisez cette clé Cloud KMS pour chiffrer toutes les tables temporaires créées. Par exemple, `projects/your-project/locations/global/keyRings/your-keyring/cryptoKeys/your-key`.                                                                                                                                                 |             |                                                                                                                                                                                                                                                                                            |
+
+<Note>
+  Les valeurs par défaut de tous les paramètres `ClickHouseIO` sont disponibles dans le [`Connecteur Apache Beam ClickHouseIO`](/fr/integrations/connectors/data-ingestion/etl-tools/apache-beam#clickhouseiowrite-parameters)
+</Note>
+
+<div id="source-and-target-tables-schema">
+  ## Schéma des tables source et cible
+</div>
+
+Pour charger efficacement le jeu de données BigQuery dans ClickHouse, le pipeline exécute un processus d’inférence des colonnes selon les phases suivantes :
+
+1. Les templates construisent un objet de schéma à partir de la table ClickHouse cible.
+2. Les templates parcourent le jeu de données BigQuery et tentent de faire correspondre les colonnes en fonction de leur nom.
+
+<br />
+
+<Warning>
+  Cela dit, votre jeu de données BigQuery (qu’il s’agisse d’une table ou d’une query) doit avoir exactement les mêmes noms de colonnes que votre table ClickHouse
+  cible.
+</Warning>
+
+<div id="data-types-mapping">
+  ## Correspondance des types de données
+</div>
+
+Les types BigQuery sont convertis en fonction de la définition de votre table ClickHouse. Par conséquent, le tableau ci-dessus indique la
+correspondance recommandée à utiliser dans votre table ClickHouse cible (pour une table/requête BigQuery donnée) :
+
+| Type BigQuery                                                                                                           | Type ClickHouse                                     | Remarques                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [**Type Array**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#array_type)                   | [**Type Array**](/fr/reference/data-types/array)       | Le type interne doit être l&#39;un des types de données primitifs pris en charge répertoriés dans ce tableau.                                                                                                                                                                                                                                                                                                                                                                         |
+| [**Type booléen**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#boolean_type)               | [**Type Bool**](/fr/reference/data-types/boolean)      |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| [**Type Date**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#date_type)                     | [**Type Date**](/fr/reference/data-types/date)         |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| [**Type Datetime**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#datetime_type)             | [**Type Datetime**](/fr/reference/data-types/datetime) | Fonctionne aussi avec `Enum8`, `Enum16` et `FixedString`.                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| [**Type String**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#string_type)                 | [**Type String**](/fr/reference/data-types/string)     | Dans BigQuery, tous les types Int (`INT`, `SMALLINT`, `INTEGER`, `BIGINT`, `TINYINT`, `BYTEINT`) sont des alias de `INT64`. Nous vous recommandons de définir dans ClickHouse la taille d&#39;entier appropriée, car le modèle convertira la colonne en fonction du type de colonne défini (`Int8`, `Int16`, `Int32`, `Int64`).                                                                                                                                                       |
+| [**Numérique - Types entiers**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types) | [**Types entiers**](/fr/reference/data-types/int-uint) | Dans BigQuery, tous les types Int (`INT`, `SMALLINT`, `INTEGER`, `BIGINT`, `TINYINT`, `BYTEINT`) sont des alias de `INT64`. Nous vous recommandons de définir dans ClickHouse la taille d&#39;entier appropriée, car le modèle convertira la colonne en fonction du type de colonne défini (`Int8`, `Int16`, `Int32`, `Int64`). Le modèle convertira également les types entiers non signés s&#39;ils sont utilisés dans la table ClickHouse (`UInt8`, `UInt16`, `UInt32`, `UInt64`). |
+| [**Numérique - Types Float**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types)   | [**Types Float**](/fr/reference/data-types/float)      | Types ClickHouse pris en charge : `Float32` et `Float64`                                                                                                                                                                                                                                                                                                                                                                                                                              |
+
+<div id="running-the-template">
+  ## Exécuter le Template
+</div>
+
+Le template BigQuery vers ClickHouse peut être exécuté via la Google Cloud CLI.
+
+<Note>
+  Veillez à consulter ce document, en particulier les sections ci-dessus, afin de bien comprendre les exigences de configuration et les prérequis du template.
+</Note>
+
+<Tabs>
+  <Tab title="Google Cloud Console">
+    Connectez-vous à votre Google Cloud Console et recherchez DataFlow.
+
+    1. Cliquez sur le bouton `CREATE JOB FROM TEMPLATE`
+       <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="Console DataFlow" />
+    2. Une fois le formulaire du template ouvert, saisissez un nom de job et sélectionnez la région souhaitée.
+       <Image img="/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp" border alt="Formulaire initial du template DataFlow" />
+    3. Dans le champ `DataFlow Template`, saisissez `ClickHouse` ou `BigQuery`, puis sélectionnez le template `BigQuery to ClickHouse`
+       <Image img="/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp" border alt="Sélectionner le template BigQuery to ClickHouse" />
+    4. Une fois sélectionné, le formulaire s’étend pour vous permettre de renseigner des informations supplémentaires :
+       * L’URL JDBC du serveur ClickHouse, au format suivant `jdbc:clickhouse://host:port/schema`.
+       * Le nom d’utilisateur ClickHouse.
+       * Le nom de la table cible ClickHouse.
+
+    <br />
+
+    <Note>
+      L’option de mot de passe ClickHouse est indiquée comme facultative, pour les cas d’usage où aucun mot de passe n’est configuré.
+      Pour l’ajouter, faites défiler la page jusqu’à l’option `Password for ClickHouse Endpoint`.
+    </Note>
+
+    <Image img="/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp" border alt="Formulaire étendu du template BigQuery vers ClickHouse" />
+
+    5. Personnalisez et ajoutez toute configuration liée à BigQuery/ClickHouseIO, comme indiqué dans
+       la section [Template Parameters](#template-parameters)
+  </Tab>
+
+  <Tab title="Google Cloud CLI">
+    ### Installer et configurer la CLI `gcloud`
+
+    * Si ce n’est pas déjà fait, installez la [CLI `gcloud`](https://cloud.google.com/sdk/docs/install).
+    * Suivez la section `Before you begin`
+      dans [ce guide](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates#before-you-begin) pour mettre
+      en place les configurations, paramètres et permissions requis pour exécuter le template DataFlow.
+
+    ### Exécuter la commande
+
+    Utilisez la commande [`gcloud dataflow flex-template run`](https://cloud.google.com/sdk/gcloud/reference/dataflow/flex-template/run)
+    pour exécuter un job Dataflow utilisant le Flex Template.
+
+    Vous trouverez ci-dessous un exemple de commande :
+
+    ```bash
+    gcloud dataflow flex-template run "bigquery-clickhouse-dataflow-$(date +%Y%m%d-%H%M%S)" \
+     --template-file-gcs-location "gs://clickhouse-dataflow-templates/bigquery-clickhouse-metadata.json" \
+     --parameters inputTableSpec="<bigquery table id>",jdbcUrl="jdbc:clickhouse://<clickhouse host>:<clickhouse port>/<schema>?ssl=true&sslmode=NONE",clickHouseUsername="<username>",clickHousePassword="<password>",clickHouseTable="<clickhouse target table>"
+    ```
+
+    ### Détail de la commande
+
+    * **Nom du job :** Le texte qui suit le keyword `run` correspond au nom unique du job.
+    * **Fichier du Template :** Le fichier JSON spécifié par `--template-file-gcs-location` définit la structure du template et
+      les détails des paramètres acceptés. Le file path mentionné est public et prêt à l’emploi.
+    * **Paramètres :** Les paramètres sont séparés par des virgules. Pour les paramètres de type chaîne, mettez les valeurs entre guillemets doubles.
+
+    ### Réponse attendue
+
+    Après avoir exécuté la commande, vous devriez voir une réponse similaire à la suivante :
+
+    ```bash
+    job:
+      createTime: '2025-01-26T14:34:04.608442Z'
+      currentStateTime: '1970-01-01T00:00:00Z'
+      id: 2025-01-26_06_34_03-13881126003586053150
+      location: us-central1
+      name: bigquery-clickhouse-dataflow-20250126-153400
+      projectId: ch-integrations
+      startTime: '2025-01-26T14:34:04.608442Z'
+    ```
+  </Tab>
+</Tabs>
+
+<div id="monitor-the-job">
+  ### Surveiller le job
+</div>
+
+Accédez à l’[onglet Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) dans votre Google Cloud Console pour
+suivre l’état du job. Vous y trouverez les détails du job, notamment sa progression et les éventuelles erreurs :
+
+<Image img="/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp" size="lg" border alt="Console Dataflow affichant un job BigQuery vers ClickHouse en cours d’exécution" />
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+<div id="code-241-dbexception-memory-limit-total-exceeded">
+  ### Erreur : limite de mémoire (totale) dépassée (code 241)
+</div>
+
+Cette erreur se produit lorsque ClickHouse manque de mémoire lors du traitement de lots de données volumineux. Pour résoudre ce problème :
+
+* Augmentez les ressources de l’instance : passez à une instance plus grande pour votre serveur ClickHouse, avec davantage de mémoire afin d’absorber la charge liée au traitement des données.
+* Réduisez la taille des lots : ajustez la taille des lots dans la configuration de votre job Dataflow pour envoyer à ClickHouse de plus petits volumes de données, ce qui réduit la consommation de mémoire par lot. Ces modifications peuvent aider à mieux répartir l’utilisation des ressources lors de l’ingestion des données.
+
+<div id="template-source-code">
+  ## Code source du template
+</div>
+
+Le code source du template est disponible dans :
+
+* [`GoogleCloudPlatform/DataflowTemplates`](https://github.com/GoogleCloudPlatform/DataflowTemplates/tree/main/v2/googlecloud-to-clickhouse) — le dépôt upstream de Google Cloud Platform.
+* [`ClickHouse/DataflowTemplates`](https://github.com/ClickHouse/DataflowTemplates) — le fork de ClickHouse.

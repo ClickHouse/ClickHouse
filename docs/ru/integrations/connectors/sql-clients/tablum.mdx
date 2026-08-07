@@ -1,0 +1,83 @@
+---
+sidebarTitle: 'TABLUM.IO'
+slug: /integrations/tablumio
+description: 'TABLUM.IO — SaaS-платформа для управления данными со встроенной поддержкой ClickHouse.'
+title: 'Подключение TABLUM.IO к ClickHouse'
+doc_type: 'guide'
+keywords: ['tablum', 'SQL-клиент', 'инструмент для работы с базами данных', 'инструмент для запросов', 'настольное приложение']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<div id="open-the-tablumio-startup-page">
+  ## Откройте стартовую страницу TABLUM.IO
+</div>
+
+<Note>
+  Вы можете установить самоуправляемую версию TABLUM.IO в Docker на своём Linux-сервере.
+</Note>
+
+<div id="1-sign-up-or-sign-in-to-the-service">
+  ## 1. Зарегистрируйтесь в сервисе или войдите в него
+</div>
+
+Сначала зарегистрируйтесь в TABLUM.IO, указав свой адрес электронной почты, или войдите через аккаунт Google или Facebook.
+
+<Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="Страница входа в TABLUM.IO" />
+
+<div id="2-add-a-clickhouse-connector">
+  ## 2. Добавьте коннектор ClickHouse
+</div>
+
+Подготовьте сведения о подключении к ClickHouse, перейдите на вкладку **Connector** и укажите URL хоста, порт, имя пользователя, пароль, имя базы данных и имя коннектора. Заполнив эти поля, нажмите **Test connection**, чтобы проверить сведения, а затем нажмите **Save connector for me**, чтобы сохранить коннектор.
+
+<Tip>
+  Убедитесь, что указан правильный порт **HTTP** и переключатель **SSL** установлен в соответствии со сведениями о подключении.
+</Tip>
+
+<Tip>
+  Обычно используется порт 8443 при использовании TLS или 8123, если TLS не используется.
+</Tip>
+
+<Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="Добавление коннектора ClickHouse в TABLUM.IO" />
+
+<div id="3-select-the-connector">
+  ## 3. Выберите коннектор
+</div>
+
+Перейдите на вкладку **Dataset**. В раскрывающемся списке выберите недавно созданный коннектор ClickHouse. На правой панели отобразится список доступных таблиц и схем.
+
+<Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="Выбор коннектора ClickHouse в TABLUM.IO" />
+
+<div id="4-input-a-sql-query-and-run-it">
+  ## 4. Введите SQL-запрос и выполните его
+</div>
+
+Введите запрос в SQL Console и нажмите **Run Query**. Результаты отобразятся в виде таблицы.
+
+<Tip>
+  Щёлкните правой кнопкой мыши по имени столбца, чтобы открыть выпадающее меню с сортировкой, фильтрацией и другими действиями.
+</Tip>
+
+<Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="Выполнение SQL-запроса в TABLUM.IO" />
+
+<Note>
+  С TABLUM.IO вы можете
+
+  * создавать и использовать несколько коннекторов ClickHouse в своей учётной записи TABLUM.IO,
+  * выполнять запросы к любым загруженным данным независимо от источника данных,
+  * делиться результатами, сохраняя их как новую базу данных ClickHouse.
+</Note>
+
+<div id="learn-more">
+  ## Подробнее
+</div>
+
+Дополнительную информацию о TABLUM.IO см. на сайте https://tablum.io.

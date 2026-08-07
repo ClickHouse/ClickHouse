@@ -1,0 +1,112 @@
+---
+title: ClickHouseにおける基本データ型の最適化のヒントとコツ
+description: "ClickHouseにおける基本データ型の最適化のヒントとコツ"
+date: 2024-07-02
+tags: ['パフォーマンスと最適化']
+keywords: ['基本データ型の最適化']
+---
+
+{frontMatter.description}
+
+{{/* truncate */}}
+
+<div id="question">
+  ## 質問
+</div>
+
+ClickHouse でクエリの速度とストレージ効率を最適化するには、どのデータ型を使用すべきですか？
+
+<div id="answer">
+  ## 回答
+</div>
+
+別のシステムからの自動変換を使用する場合や、データ型を選択する際、ユーザーはしばしば「多い方が良い」「より簡単なものを選ぶ」「最も汎用的なものを選ぶ」といったアプローチを取りがちです。数百万件、場合によっては数十億行規模の小規模なデータセットであれば、これでも問題なく機能するでしょう。ユースケースにおけるクエリのパフォーマンス差が小さいような規模であれば、影響が目立たず許容範囲内となる場合もあります。
+
+しかし、データ量が増えて問題が顕在化してくると、これでは対応しきれなくなります。
+
+クエリの実行時間が50msと500msの差は、たとえばウェブUIのようなほとんどのユースケースでは許容範囲内かもしれません。フロントエンドのユーザーにはほとんど気づかれないとしても、一方は他方より10倍遅いことに変わりはありません。
+
+初期テーブルの例：
+
+```
+timestamp Datetime64(9),
+group_id Int64,
+vendor_id String,
+product_id String,
+category1 Int64,
+code_name String,
+paid_status String,
+country_code String,
+description String,
+price Float64,
+attributes Map(String, String)
+```
+
+サンプルデータ：
+
+```
+3456, 0123456789, bd6087b7-6026-4974-9122-bc99faae5d84, "2024-03-01 01:00:01.000", 98, "bear", paid", "us", "corvette model car", 123.45, {"color" : "blue", "size" : "S"}
+156, 0000012345, bd6087b7-6026-4974-9122-bc99faae5d84, "2024-03-01 01:00:02:123", 45, "tiger", "not paid", "uk", "electric car", 53432.10, {"color" : "red", "model" : "X"} 
+...
+```
+
+このデータを最適化できる箇所について、以下に推奨事項を示します。
+
+`timestamp : DateTime64(9)`
+科学的な精度が必要でない限り、精度9 (ナノ秒) はほぼ不要です。表示や並び替えに使われることはあっても、検索クエリや主キーなどでは通常必要ありません。
+
+* **推奨:**
+  PK には、ORDER BY に DateTime を使用します
+  表示や並べ替え用には、追加のカラム、たとえば `timestamp_microseconds : DateTime64(6)` を追加します
+
+`group_id : Int64`
+これは整数と思われます。そのカラムに必要な最大値に収まる、最小の整数型を選択してください。このサンプルデータセットとカラム名から判断すると、100京もの値が必要になる可能性は低く、最大約16,000の値を格納できる Int16 で十分でしょう。
+
+* **推奨**: Int16
+
+`vendor_id : String`
+このカラムは数値のように見えますが、先頭にゼロが付いているため、フォーマットを維持することが重要と思われます。また、文字数も一定のようです。
+
+* **推奨**: FixedString(10)
+
+`product_id : String`
+これは英数字であるため、直感的にはString型と考えがちですが、UUIDでもあります。
+
+* **推奨**: UUID
+
+`category1 : Int64`
+値が小さく、カテゴリ数がおそらく少なく、今後大きく増加する見込みもないか、上限が制限されている場合。255未満
+
+* **推奨**: UInt8
+
+`code_name : String`
+このフィールドは、使用される文字列の種類が限られていると考えられます。
+文字列の値が数百から数千程度になるようなケースでは、低カーディナリティフィールドが効果的です。
+
+* **推奨**: LowCardinality(String)
+
+`paid_status : String`
+&quot;paid&quot; または &quot;not&#95;paid&quot; という文字列値が存在します。取り得る値が2つのみの場合は、ブール型を使用してください。
+
+* **推奨**: Bool
+
+`country_code : String`
+複数の最適化条件を満たすカラムが存在することがあります。この例では、国コードの種類は限られており、いずれも2文字の識別子です。
+
+* **推奨**: LowCardinality(FixedString(2))
+
+`price : Float64`
+精度が固定されている場合、特に財務データや計算においては浮動小数点数の使用は推奨されません。必要な精度に合わせてDecimal型を使用するのが最善です。このユースケースでは、商品の価格が999,999.00を超えることはないと考えられます。
+
+* **推奨値**: Decimal(10,2)
+
+`attributes : map`
+動的なattributeをmapで保持するテーブルでは、キーや値の検索は一般的に低速になります。mapのパフォーマンスを向上させる方法はいくつかあります。ほとんどのレコードに存在するキーはlow cardinalityの別カラムに切り出し、スパースなキーはhigh cardinalityの別カラムに格納することを推奨します。その上でスキップ索引を作成するとより効率的になりますが、クエリの複雑さが増す可能性があります。
+
+* **推奨:** lc&#95;attributes: Map(String, String), hc&#95;attributes: Map(String, String).
+
+クエリによっては、スキップ索引の作成や属性の抽出に利用できる選択肢として、次の方法もあります。
+ARRAY JOIN を使用して materialized view でカラムに抽出する:
+https://clickhouse.com/docs/knowledgebase/using-array-join-to-extract-and-query-attributes
+キーに対してスキップ索引を使用する:
+https://clickhouse.com/docs/knowledgebase/improve-map-performance

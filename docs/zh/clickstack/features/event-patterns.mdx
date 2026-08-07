@@ -1,0 +1,40 @@
+---
+slug: /use-cases/observability/clickstack/event_patterns
+title: 'ClickStack 事件模式'
+sidebarTitle: '事件模式'
+description: 'ClickStack 事件模式'
+doc_type: 'guide'
+keywords: ['clickstack', '事件模式', '日志分析', '模式匹配', '可观测性']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickStack 中的事件模式会自动将相似消息聚类在一起，帮助你快速梳理海量日志或链路追踪。因此，你不必在数百万条单独事件中逐一翻查，只需查看少量有意义的分组即可。
+
+<Image img="/images/use-cases/observability/event_patterns.webp" alt="事件模式" size="lg" />
+
+这样一来，你就更容易发现哪些错误或警告是新出现的，哪些在反复发生，以及哪些导致了日志量的突然激增。由于这些模式是动态生成的，你无需定义正则表达式或维护解析规则——无论事件格式如何，ClickStack 都会自动适配。
+
+除了用于故障响应，这种高层视图还能帮助你识别可精简以降低成本的高噪声日志源，了解某个服务会产生哪些不同类型的日志，并更快判断系统是否已经发出了你关心的信号。
+
+<div id="accessing-event-patterns">
+  ## 访问事件模式
+</div>
+
+在 ClickStack 中，可直接通过 **搜索** 面板访问事件模式。
+
+在左上角的 **分析模式** 选择器中，选择 **事件模式**，即可从标准结果表切换到按相似事件聚类的视图。
+
+<Image img="/images/use-cases/observability/event_patterns_highlight.webp" alt="事件模式" size="lg" />
+
+这提供了默认 **结果表** 之外的另一种查看方式；在 **结果表** 中，你可以滚动浏览每条单独的日志或 trace。
+
+<div id="recommendations">
+  ## 建议
+</div>
+
+当事件模式应用于数据中**范围较小的子集**时，效果最佳。例如，在启用事件模式之前先将范围过滤到单个服务，通常比一次性对数千个服务应用模式，更能发现相关且有价值的消息。
+
+它们在汇总错误消息时也尤其有效：对于反复出现但 ID 或载荷不同的错误，系统会将其归并为简洁的模式类别。
+
+如需查看实际示例，请参阅[远程演示数据集](/zh/clickstack/example-datasets/remote-demo-data#identify-error-patterns)，了解事件模式的使用方式。

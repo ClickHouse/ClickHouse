@@ -1,0 +1,534 @@
+---
+description: '用户自定义函数（UDFs）文档'
+sidebarTitle: 'UDF'
+slug: /sql-reference/functions/udf
+title: '用户自定义函数（UDFs）'
+doc_type: 'reference'
+---
+
+import PrivatePreviewBadge from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="udfs-user-defined-functions">
+  # UDFs 用户自定义函数
+</div>
+
+ClickHouse 支持多种类型的用户自定义函数 (UDFs) ：
+
+* [可执行 UDFs](#executable-user-defined-functions) 会启动外部程序或脚本 (Python、Bash 等) ，并通过 STDIN / STDOUT 以流式方式向其传输数据块。可用于在无需重新编译 ClickHouse 的情况下集成现有代码或工具。与进程内方案相比，它们的单次调用开销更高，因此更适合较重的逻辑，或需要不同运行时的场景。
+* [SQL UDFs](#sql-user-defined-functions) 使用 `CREATE FUNCTION` 通过纯 SQL 定义。它们会被内联/展开到查询计划中 (不存在进程边界) ，因此开销较低，非常适合复用表达式逻辑或简化复杂的计算列。
+* [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) 会在服务器进程内的沙箱中运行编译为 WebAssembly 的代码。与外部可执行程序相比，它们的单次调用开销更低；与原生扩展相比，又具备更好的隔离性，因此适合用可编译为 WASM 的语言 (如 C/C++/Rust) 编写自定义算法。
+
+<div id="executable-user-defined-functions">
+  ## 可执行用户自定义函数
+</div>
+
+<PrivatePreviewBadge />
+
+<Note>
+  此功能目前在 ClickHouse Cloud 中处于私有预览阶段。
+  如需开通，请通过 https://clickhouse.cloud/support 联系 ClickHouse 支持团队。
+</Note>
+
+ClickHouse 可以调用任意外部可执行程序或脚本来处理数据。
+
+可执行用户自定义函数的配置可位于一个或多个 XML 文件中。
+配置路径由 [`user_defined_executable_functions_config`](/zh/reference/settings/server-settings/settings#user_defined_executable_functions_config) 参数指定。
+
+函数配置包含以下设置：
+
+| Parameter                     | Description                                                                                                                                                                                                                                                               | Required | Default Value             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------- |
+| `name`                        | 函数名称                                                                                                                                                                                                                                                                      | 是        | -                         |
+| `command`                     | 要执行的脚本名称；如果 `execute_direct` 为 false，则为要执行的命令                                                                                                                                                                                                                             | 是        | -                         |
+| `argument`                    | 参数描述，包括参数的 `type` 以及可选的 `name`。每个参数都在单独的配置项中描述。如果参数名称是用户自定义函数序列化格式的一部分 (例如 [Native](/zh/reference/formats/Native) 或 [JSONEachRow](/zh/reference/formats/JSON/JSONEachRow)) ，则必须指定名称                                                                                             | 是        | `c` + argument&#95;number |
+| `format`                      | 向命令传递参数时使用的 [格式](/zh/reference/formats/index)。命令输出也应使用相同的格式                                                                                                                                                                                                                  | 是        | -                         |
+| `return_type`                 | 返回值的类型                                                                                                                                                                                                                                                                    | 是        | -                         |
+| `return_name`                 | 返回值名称。如果返回值名称是用户自定义函数序列化格式的一部分 (例如 [Native](/zh/reference/formats/Native) 或 [JSONEachRow](/zh/reference/formats/JSON/JSONEachRow)) ，则必须指定返回值名称                                                                                                                                  | 可选       | `result`                  |
+| `type`                        | 可执行类型。如果 `type` 设置为 `executable`，则会启动单个命令；如果设置为 `executable_pool`，则会创建命令池                                                                                                                                                                                                 | 是        | -                         |
+| `max_command_execution_time`  | 处理数据块的最大执行时间 (秒) 。此设置仅对 `executable_pool` 命令有效                                                                                                                                                                                                                            | 可选       | `10`                      |
+| `command_termination_timeout` | 管道关闭后，命令应在多少秒内结束执行。超过该时间后，会向执行该命令的进程发送 `SIGTERM`                                                                                                                                                                                                                          | 可选       | `10`                      |
+| `command_read_timeout`        | 从命令的 stdout 读取数据的超时时间 (毫秒)                                                                                                                                                                                                                                                | 可选       | `10000`                   |
+| `command_write_timeout`       | 向命令的 stdin 写入数据的超时时间 (毫秒)                                                                                                                                                                                                                                                 | 可选       | `10000`                   |
+| `pool_size`                   | 命令池大小                                                                                                                                                                                                                                                                     | 可选       | `16`                      |
+| `send_chunk_header`           | 控制在向进程发送一块数据之前，是否先发送行数                                                                                                                                                                                                                                                    | 可选       | `false`                   |
+| `execute_direct`              | 如果 `execute_direct` = `1`，则会在 [user&#95;scripts&#95;path](/zh/reference/settings/server-settings/settings#user_scripts_path) 指定的 user&#95;scripts 文件夹中查找 `command`。可使用空白字符分隔符指定额外的脚本参数。例如：`script_name arg1 arg2`。如果 `execute_direct` = `0`，则 `command` 会作为参数传递给 `bin/sh -c` | 可选       | `1`                       |
+| `lifetime`                    | 函数的重载间隔 (秒) 。如果设置为 `0`，则不会重新加载该函数                                                                                                                                                                                                                                         | 可选       | `0`                       |
+| `deterministic`               | 函数是否为确定性的 (即对相同输入返回相同结果)                                                                                                                                                                                                                                                  | 可选       | `false`                   |
+| `stderr_reaction`             | 如何处理命令的 stderr 输出。取值：`none` (忽略) 、`log` (立即记录所有 stderr) 、`log_first` (退出后记录前 4 KiB) 、`log_last` (退出后记录后 4 KiB) 、`throw` (一旦有任何 stderr 输出就立即抛出异常) 。当使用 `log_first` 或 `log_last` 且退出码非零时，stderr 内容会包含在异常消息中                                                                 | 可选       | `log_last`                |
+| `check_exit_code`             | 如果为 true，ClickHouse 会检查命令的退出码。非零退出码会导致异常                                                                                                                                                                                                                                  | 可选       | `true`                    |
+
+命令必须从 `STDIN` 读取参数，并将结果输出到 `STDOUT`。命令必须以迭代方式处理参数。也就是说，处理完一批参数后，它必须等待下一批参数。
+
+<div id="executable-user-defined-functions">
+  ## 可执行用户自定义函数
+</div>
+
+<div id="examples">
+  ## 示例
+</div>
+
+<div id="udf-inline">
+  ### 来自内联脚本的 UDF
+</div>
+
+通过 XML 或 YAML 配置手动创建 `test_function_sum`，并将 `execute_direct` 指定为 `0`。
+
+<Tabs>
+  <Tab title="XML">
+    文件 `test_function.xml` (默认路径设置下为 `/etc/clickhouse-server/test_function.xml`) 。
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_sum</name>
+            <return_type>UInt64</return_type>
+            <argument>
+                <type>UInt64</type>
+                <name>lhs</name>
+            </argument>
+            <argument>
+                <type>UInt64</type>
+                <name>rhs</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
+            <execute_direct>0</execute_direct>
+            <deterministic>true</deterministic>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    文件 `test_function.yaml` (默认路径设置下为 `/etc/clickhouse-server/test_function.yaml`) 。
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_sum
+      return_type: UInt64
+      argument:
+        - type: UInt64
+          name: lhs
+        - type: UInt64
+          name: rhs
+      format: TabSeparated
+      command: 'cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure ''x UInt64, y UInt64'' --query "SELECT x + y FROM table"'
+      execute_direct: 0
+      deterministic: true
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+```sql title="Query"
+SELECT test_function_sum(2, 2);
+```
+
+```text title="Result"
+┌─test_function_sum(2, 2)─┐
+│                       4 │
+└─────────────────────────┘
+```
+
+<div id="udf-python">
+  ### 基于 Python 脚本的 UDF
+</div>
+
+在此示例中，我们将创建一个 UDF，它从 `STDIN` 读取一个值，并将其作为字符串返回。
+
+使用 XML 或 YAML 配置创建 `test_function`。
+
+<Tabs>
+  <Tab title="XML">
+    文件 `test_function.xml` (默认路径设置下为 `/etc/clickhouse-server/test_function.xml`) 。
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_python</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt64</type>
+                <name>value</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_function.py</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    文件 `test_function.yaml` (默认路径设置下为 `/etc/clickhouse-server/test_function.yaml`) 。
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_python
+      return_type: String
+      argument:
+        - type: UInt64
+          name: value
+      format: TabSeparated
+      command: test_function.py
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+在 `user_scripts` 文件夹中创建脚本文件 `test_function.py` (默认路径设置下为 `/var/lib/clickhouse/user_scripts/test_function.py`) 。
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == '__main__':
+    for line in sys.stdin:
+        print("Value " + line, end='')
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_python(toUInt64(2));
+```
+
+```text title="Result"
+┌─test_function_python(2)─┐
+│ Value 2                 │
+└─────────────────────────┘
+```
+
+<div id="udf-stdin">
+  ### 从 `STDIN` 读取两个值，并将它们的和作为 JSON 对象返回
+</div>
+
+使用 XML 或 YAML 配置，以命名参数和 [JSONEachRow](/zh/reference/formats/JSON/JSONEachRow) 格式创建 `test_function_sum_json`。
+
+<Tabs>
+  <Tab title="XML">
+    文件 `test_function.xml` (默认路径设置下为 `/etc/clickhouse-server/test_function.xml`) 。
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_sum_json</name>
+            <return_type>UInt64</return_type>
+            <return_name>result_name</return_name>
+            <argument>
+                <type>UInt64</type>
+                <name>argument_1</name>
+            </argument>
+            <argument>
+                <type>UInt64</type>
+                <name>argument_2</name>
+            </argument>
+            <format>JSONEachRow</format>
+            <command>test_function_sum_json.py</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    文件 `test_function.yaml` (默认路径设置下为 `/etc/clickhouse-server/test_function.yaml`) 。
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_sum_json
+      return_type: UInt64
+      return_name: result_name
+      argument:
+        - type: UInt64
+          name: argument_1
+        - type: UInt64
+          name: argument_2
+      format: JSONEachRow
+      command: test_function_sum_json.py
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+在 `user_scripts` 文件夹中创建脚本文件 `test_function_sum_json.py` (默认路径设置下为 `/var/lib/clickhouse/user_scripts/test_function_sum_json.py`) 。
+
+```python
+#!/usr/bin/python3
+
+import sys
+import json
+
+if __name__ == '__main__':
+    for line in sys.stdin:
+        value = json.loads(line)
+        first_arg = int(value['argument_1'])
+        second_arg = int(value['argument_2'])
+        result = {'result_name': first_arg + second_arg}
+        print(json.dumps(result), end='\n')
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_sum_json(2, 2);
+```
+
+```text title="Result"
+┌─test_function_sum_json(2, 2)─┐
+│                            4 │
+└──────────────────────────────┘
+```
+
+<div id="udf-parameters-in-command">
+  ### 在 `command` 设置中使用参数
+</div>
+
+可执行用户自定义函数可以接收在 `command` 设置中配置的常量参数 (仅适用于 `executable` 类型的用户自定义函数) 。
+此外，还需要启用 `execute_direct` 选项，以避免 shell 参数展开漏洞。
+
+<Tabs>
+  <Tab title="XML">
+    文件 `test_function_parameter_python.xml` (默认路径设置下为 `/etc/clickhouse-server/test_function_parameter_python.xml`) 。
+
+    ```xml title="/etc/clickhouse-server/test_function_parameter_python.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <execute_direct>true</execute_direct>
+            <name>test_function_parameter_python</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt64</type>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_function_parameter_python.py {test_parameter:UInt64}</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    文件 `test_function_parameter_python.yaml` (默认路径设置下为 `/etc/clickhouse-server/test_function_parameter_python.yaml`) 。
+
+    ```yml title="/etc/clickhouse-server/test_function_parameter_python.yaml"
+    functions:
+      type: executable
+      execute_direct: true
+      name: test_function_parameter_python
+      return_type: String
+      argument:
+        - type: UInt64
+      format: TabSeparated
+      command: test_function_parameter_python.py {test_parameter:UInt64}
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+在 `user_scripts` 文件夹中创建脚本文件 `test_function_parameter_python.py` (默认路径设置下为 `/var/lib/clickhouse/user_scripts/test_function_parameter_python.py`) 。
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == "__main__":
+    for line in sys.stdin:
+        print("Parameter " + str(sys.argv[1]) + " value " + str(line), end="")
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_parameter_python(1)(2);
+```
+
+```text title="Result"
+┌─test_function_parameter_python(1)(2)─┐
+│ Parameter 1 value 2                  │
+└──────────────────────────────────────┘
+```
+
+<div id="udf-shell-script">
+  ### 通过 shell 脚本创建 UDF
+</div>
+
+在本示例中，我们将创建一个 shell 脚本，把每个值乘以 2。
+
+<Tabs>
+  <Tab title="XML">
+    文件 `test_function_shell.xml` (默认路径配置下为 `/etc/clickhouse-server/test_function_shell.xml`) 。
+
+    ```xml title="/etc/clickhouse-server/test_function_shell.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_shell</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt8</type>
+                <name>value</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_shell.sh</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    文件 `test_function_shell.yaml` (默认路径配置下为 `/etc/clickhouse-server/test_function_shell.yaml`) 。
+
+    ```yml title="/etc/clickhouse-server/test_function_shell.yaml"
+    functions:
+      type: executable
+      name: test_shell
+      return_type: String
+      argument:
+        - type: UInt8
+          name: value
+      format: TabSeparated
+      command: test_shell.sh
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+在 `user_scripts` 文件夹中创建脚本文件 `test_shell.sh` (默认路径配置下为 `/var/lib/clickhouse/user_scripts/test_shell.sh`) 。
+
+```bash title="/var/lib/clickhouse/user_scripts/test_shell.sh"
+#!/bin/bash
+
+while read read_data;
+    do printf "$(expr $read_data \* 2)\n";
+done
+```
+
+```sql title="Query"
+SELECT test_shell(number) FROM numbers(10);
+```
+
+```text title="Result"
+    ┌─test_shell(number)─┐
+ 1. │ 0                  │
+ 2. │ 2                  │
+ 3. │ 4                  │
+ 4. │ 6                  │
+ 5. │ 8                  │
+ 6. │ 10                 │
+ 7. │ 12                 │
+ 8. │ 14                 │
+ 9. │ 16                 │
+10. │ 18                 │
+    └────────────────────┘
+```
+
+<div id="error-handling">
+  ## 错误处理
+</div>
+
+如果数据无效，某些函数可能会抛出异常。
+此时，查询会被取消，并向客户端返回错误信息。
+对于分布式处理，当其中一台服务器上发生异常时，其他服务器也会尝试中止该查询。
+
+<div id="evaluation-of-argument-expressions">
+  ## 参数表达式的求值
+</div>
+
+在几乎所有编程语言中，对于某些运算符，某个参数可能不会被求值。
+通常是运算符 `&&`、`||` 和 `?:`。
+在 ClickHouse 中，函数 (运算符) 的参数始终都会被求值。
+这是因为系统会一次性对整块列数据进行求值，而不是逐行分别计算。
+
+<div id="performing-functions-for-distributed-query-processing">
+  ## 分布式查询处理中函数的执行
+</div>
+
+在分布式查询处理中，会尽可能多地在远程服务器上完成查询处理的各个阶段，其余阶段 (合并中间结果及之后的所有操作) 则在请求方服务器上完成。
+
+这意味着，函数可能会在不同的服务器上执行。
+例如，在查询 `SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y),` 中：
+
+* 如果 `distributed_table` 至少有两个分片，则函数 &#39;g&#39; 和 &#39;h&#39; 在远程服务器上执行，而函数 &#39;f&#39; 在请求方服务器上执行。
+* 如果 `distributed_table` 只有一个分片，则 &#39;f&#39;、&#39;g&#39; 和 &#39;h&#39; 这几个函数都会在该分片所在的服务器上执行。
+
+函数的结果通常与它在哪台服务器上执行无关。但有时这一点很重要。
+例如，使用字典的函数会使用其运行所在服务器上的字典。
+另一个例子是 `hostName` 函数，它返回其运行所在服务器的名称，以便在 `SELECT` 查询中按服务器进行 `GROUP BY`。
+
+如果查询中的某个函数是在请求方服务器上执行的，但你需要它在远程服务器上执行，可以将其包裹在 &#39;any&#39; 聚合函数中，或者将其添加到 `GROUP BY` 键中。
+
+<div id="sql-user-defined-functions">
+  ## SQL 用户自定义函数
+</div>
+
+可使用 [CREATE FUNCTION](/zh/reference/statements/create/function) 语句基于 Lambda 表达式创建自定义函数。要删除这些函数，请使用 [DROP FUNCTION](/zh/reference/statements/drop#drop-function) 语句。
+
+<div id="webassembly-user-defined-functions">
+  ## WebAssembly 用户自定义函数
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+WebAssembly 用户自定义函数 (WASM UDF) 允许你在 ClickHouse 服务器进程中运行编译为 WebAssembly 的自定义代码。
+
+<div id="quick-start">
+  ### 快速入门
+</div>
+
+在 ClickHouse 配置中启用 Experimental WebAssembly 支持：
+
+```xml
+<clickhouse>
+    <allow_experimental_webassembly_udf>true</allow_experimental_webassembly_udf>
+</clickhouse>
+```
+
+将编译好的 WASM 模块插入系统表：
+
+```sql
+INSERT INTO system.webassembly_modules (name, code)
+SELECT 'my_module', base64Decode('AGFzbQEAAAA...');
+```
+
+使用你的 WASM 模块创建函数：
+
+```sql
+CREATE FUNCTION my_function
+LANGUAGE WASM
+ABI ROW_DIRECT
+FROM 'my_module'
+ARGUMENTS (x UInt32, y UInt32)
+RETURNS UInt32;
+```
+
+在查询中使用此函数：
+
+```sql
+SELECT my_function(10, 20);
+```
+
+<div id="more-information">
+  ### 更多信息
+</div>
+
+更多详情请参阅[WebAssembly 用户自定义函数](/zh/reference/functions/regular-functions/wasm_udf)文档。
+
+<div id="related-content">
+  ## 相关文章
+</div>
+
+* [ClickHouse Cloud 中的用户自定义函数](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

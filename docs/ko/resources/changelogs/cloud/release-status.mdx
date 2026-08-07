@@ -1,0 +1,123 @@
+---
+title: '릴리스 상태 페이지'
+sidebarTitle: '릴리스 상태'
+keywords: ['클라우드', '릴리스 상태', '롤아웃', '버전', '업데이트']
+description: '각 릴리스 채널별 릴리스 상태를 보여주는 페이지'
+slug: /cloud/release-status
+doc_type: '참고'
+---
+
+import ReleaseSchedule from "/snippets/ko/components/ReleaseSchedule/ReleaseSchedule.jsx";
+
+ClickHouse Cloud는 안정성, 새로운 기능에 대한 접근성, 업그레이드 예측 가능성에 관한 다양한 요구를 충족할 수 있도록 여러 릴리스 채널을 제공합니다. 각 채널은 업그레이드 일정이 서로 다르며, 새 릴리스를 즉시 사용하려는 경우와 가장 안정적인 버전을 받기 위해 업그레이드를 미루려는 경우 등 다양한 사용 사례를 지원하도록 설계되었습니다.
+
+<div id="release-channel-details">
+  ## 릴리스 채널 세부 정보
+</div>
+
+<Accordion title="릴리스 채널에 대해 자세히 알아보기">
+  | 채널 이름             | 설명                                                                                                     | 주요 고려 사항                                                                          | 지원 티어                                 |
+  | :---------------- | :----------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------- | :------------------------------------ |
+  | **Fast (조기 릴리스)** | 프로덕션이 아닌 환경에 권장됩니다. 모든 데이터베이스 버전 업그레이드에서 가장 먼저 적용되는 릴리스 채널입니다                                          | 안정성보다 새 기능 사용을 우선합니다.<br />프로덕션 업그레이드에 앞서 비프로덕션 환경에서 릴리스를 테스트할 수 있습니다             | Basic (기본값)<br />Scale, Enterprise 티어 |
+  | **Regular**       | 모든 다중 레플리카 서비스의 기본 릴리스 채널입니다.<br />이 채널의 롤아웃은 일반적으로 Fast 릴리스 채널 시작 후 2주 뒤에 시작됩니다.                      | 기본/전체 서비스군 업그레이드에 적합합니다.<br />서비스는 몇 주에 걸쳐 점진적으로 업그레이드됩니다                         | Scale 및 Enterprise                    |
+  | **Slow (연기됨)**    | 릴리스 일정의 후반부에 서비스를 업그레이드하려는, 보다 신중한 사용자에게 권장됩니다.<br />이 채널의 롤아웃은 일반적으로 Regular 릴리스 채널 시작 후 2주 뒤에 시작됩니다. | 최대 수준의 안정성과 예측 가능성을 제공합니다.<br />Fast/Regular 채널에서 새 릴리스를 더 충분히 테스트해야 하는 경우에 적합합니다 | Enterprise                            |
+
+  <br />
+
+  <br />
+
+  <Note>
+    모든 단일 레플리카 서비스는 자동으로 Fast 릴리스 채널에 등록됩니다.
+  </Note>
+</Accordion>
+
+윈도우는 Enterprise 티어 서비스의 모든 릴리스 채널에서 사용할 수 있습니다. 이 기능을 사용하면 특정 요일의 시간대를 업그레이드 시간대로 구성할 수 있습니다.
+
+<div id="release-schedule">
+  ## 릴리스 일정
+</div>
+
+<Warning>
+  **릴리스 날짜 이해하기**
+
+  아래에 표시된 날짜는 ClickHouse가 각 릴리스 채널에 **롤아웃을 시작하는 시점**을 나타내며, 개별 서비스가 업그레이드되는 시점을 의미하지는 않습니다.
+
+  * 롤아웃은 자동으로 수행되며, 여러 주에 걸쳐 점진적으로 진행됩니다
+  * 윈도우가 구성된 서비스는 채널 롤아웃이 종료된 다음 주의 윈도우 동안 업그레이드됩니다 (월요일 00:00 UTC 시작)
+  * 롤아웃 일시 중지(예: 휴일 중 동결) 또는 상태 모니터링으로 인해 롤아웃 완료가 지연될 수 있습니다
+
+  프로덕션 업그레이드 전에 사전 테스트를 하려면 비프로덕션 서비스에는 Fast 또는 Regular 채널을 사용하고, 프로덕션 서비스에는 Slow 채널을 사용하십시오.
+</Warning>
+
+<ReleaseSchedule
+  releases={[
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
+   version: '26.4',
+   fast_start_date: '2026-06-22',
+   fast_end_date: 'TBD',
+   regular_start_date: 'TBD',
+   regular_end_date: 'TBD',
+   slow_start_date: 'TBD',
+   slow_end_date: 'TBD',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
+   version: '26.2',
+   fast_start_date: '2026-04-03',
+   fast_end_date: '2026-04-14',
+   regular_start_date: '2026-05-06',
+   regular_end_date: '2026-06-17',
+   slow_start_date: '2026-07-01',
+   slow_end_date: 'TBD',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+   fast_delay_note: '윈도우가 설정된 서비스는 2026-04-15부터 업그레이드됩니다.',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+   version: '25.12',
+   fast_start_date: '2026-02-10',
+   fast_end_date: '2026-02-11',
+   regular_start_date: '2026-03-09',
+   regular_end_date: '2026-03-18',
+   slow_start_date: '2026-04-07',
+   slow_end_date: '2026-04-09',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+   regular_delay_note: '윈도우가 있는 서비스는 3월 23일 다음 주의 윈도우 동안 25.12로 업그레이드됩니다',
+   slow_delay_note: '윈도우가 있는 서비스는 4월 13일 다음 주의 윈도우 동안 25.12로 업그레이드됩니다',
+ },
+ {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
+   version: '25.10',
+   fast_start_date: '2025-12-11',
+   fast_end_date: '2025-12-15',
+   regular_start_date: '2026-01-23',
+   regular_end_date: '2026-03-10',
+   slow_start_date: '2026-03-23',
+   slow_end_date: '2026-03-23',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+ },
+ {
+  changelog_link: 'https://clickhouse.com/docs/changelogs/25.8',
+  version: '25.8',
+  fast_start_date: 'Completed',
+  fast_end_date: 'Completed',
+  regular_start_date: '2025-10-29',
+  regular_end_date: '2025-12-19',
+  slow_start_date: '2026-01-27',
+  slow_end_date: '2026-02-04',
+  fast_progress: 'green',
+  regular_progress: 'green',
+  slow_progress: 'green',
+}
+]}
+/>

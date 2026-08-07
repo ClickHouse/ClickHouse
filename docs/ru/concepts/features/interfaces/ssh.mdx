@@ -1,0 +1,123 @@
+---
+description: 'Документация для SSH-интерфейса ClickHouse'
+keywords: ['client', 'ssh', 'putty']
+sidebarTitle: 'SSH-интерфейс'
+slug: /interfaces/ssh
+title: 'SSH-интерфейс с PTY'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<div id="preface">
+  ## Введение
+</div>
+
+Сервер ClickHouse позволяет подключаться к нему напрямую по протоколу SSH. Поддерживается любой клиент.
+
+После создания [пользователя базы данных, идентифицируемого по SSH-ключу](/ru/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys):
+
+```sql
+CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY '<REDACTED>' TYPE 'ssh-ed25519';
+```
+
+Этот ключ можно использовать для подключения к серверу ClickHouse. При этом откроется псевдотерминал (PTY) с интерактивным сеансом clickhouse-client.
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022
+ClickHouse embedded version 25.1.1.1.
+
+ip-10-1-13-116.us-west-2.compute.internal :) SELECT 1;
+
+SELECT 1
+
+Query id: cdd91b7f-215b-4537-b7df-86d19bf63f64
+
+   ┌─1─┐
+1. │ 1 │
+   └───┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Поддерживается также выполнение команд по SSH (в неинтерактивном режиме):
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022 "select 1"
+1
+```
+
+<div id="server-configuration">
+  ## Конфигурация сервера
+</div>
+
+Чтобы включить поддержку SSH-сервера, раскомментируйте или добавьте следующий раздел в `config.xml`:
+
+```xml
+<tcp_ssh_port>9022</tcp_ssh_port>
+<ssh_server>
+   <host_rsa_key>path-to-the-key</host_rsa_key>
+   <!--host_ecdsa_key>path-to-the-key</host_ecdsa_key-->
+   <!--host_ed25519_key>path-to-the-key</host_ed25519_key-->
+</ssh_server>
+```
+
+Ключ хоста — неотъемлемая часть протокола SSH. Открытая часть этого ключа хранится в файле `~/.ssh/known_hosts` на стороне клиента и обычно используется для предотвращения атак типа «злоумышленник посередине». При первом подключении к серверу вы увидите сообщение ниже:
+
+```shell
+The authenticity of host '[localhost]:9022 ([127.0.0.1]:9022)' can't be established.
+RSA key fingerprint is SHA256:3qxVlJKMr/PEKw/hfeg06HAK451Tt0eenhwqQvh58Do.
+This key is not known by any other names
+Are you sure you want to continue connecting (yes/no/[fingerprint])?
+```
+
+Это, по сути, означает: &quot;Вы хотите запомнить открытый ключ этого хоста и продолжить подключение?&quot;.
+
+Вы можете указать SSH-клиенту не проверять хост, передав соответствующий параметр:
+
+```bash
+ssh -o "StrictHostKeyChecking no" user@host
+```
+
+<div id="configuring-embedded-client">
+  ## Настройка встроенного клиента
+</div>
+
+Параметры встроенного клиента можно передавать так же, как и для обычного `clickhouse-client`, но с некоторыми ограничениями.
+Поскольку это протокол SSH, единственный способ передать параметры целевому хосту — использовать переменные окружения.
+
+Например, параметр `format` можно задать следующим образом:
+
+```bash
+> ssh -o SetEnv="format=Pretty" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```
+
+Таким образом можно изменить любую пользовательскую настройку, а также передать большинство стандартных параметров `clickhouse-client` (кроме тех, которые не имеют смысла в этом сценарии.)
+
+Важно:
+
+Если одновременно переданы параметр `query` и SSH-команда, последняя добавляется в список запросов для выполнения:
+
+```bash
+ubuntu ip-10-1-13-116@~$ ssh -o SetEnv="format=Pretty query=\"SELECT 2;\"" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 2 ┃
+   ┡━━━┩
+1. │ 2 │
+   └───┘
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```

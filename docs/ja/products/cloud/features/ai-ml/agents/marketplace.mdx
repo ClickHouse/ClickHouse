@@ -1,0 +1,63 @@
+---
+sidebarTitle: 'マーケットプレイス'
+slug: /cloud/features/ai-ml/agents/marketplace
+title: 'エージェント マーケットプレイス'
+description: 'ClickHouse Cloud 組織内で共有されているエージェントを見つけて利用できます'
+keywords: ['AI', 'ClickHouse Cloud', 'エージェント', 'マーケットプレイス', '共有', '検索']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge />
+
+エージェント マーケットプレイスでは、組織内のほかのユーザーが共有したエージェントを参照、検索、実行できます。管理者が組織全体に公開したエージェントもここに表示されます。左側のサイドバーにある **エージェント マーケットプレイス** オプションから開きます。
+
+<Image img="/images/cloud/agent-builder/marketplace/marketplace.webp" alt="左側のサイドバーでエージェント マーケットプレイス オプションが強調表示されたチャット画面" size="lg" />
+
+<div id="browse">
+  ## 探す
+</div>
+
+エージェントはカテゴリ別に整理されています。たとえば、*General*、*Human Resources*、*Research &amp; Development*、*Finance*、*IT*、*Sales* です。マーケットプレイス上部のタブでカテゴリを切り替えます。各エージェントカードには、名前、アイコン、所属カテゴリが表示されます。
+
+検索バーを使うと、すべてのカテゴリを対象に、名前またはキーワードでエージェントを検索できます。
+
+<Image img="/images/cloud/agent-builder/marketplace/browse.webp" alt="タイトル、検索バー、カテゴリタブ（General、Human Resources、Research and Development、Finance、IT、Sales、After Sales、All）、およびエージェントカードが表示されたエージェント マーケットプレイスの画面" size="lg" />
+
+<div id="open-an-agent">
+  ## エージェントを開く
+</div>
+
+任意のエージェントカードをクリックすると、詳細ビューが開きます。ここでは次の操作を行えます。
+
+* **Start Chat** - エージェントとの新しいチャットを開始します。
+* **Pin** - すばやくアクセスできるよう、エージェントをお気に入りに追加します。
+* **Copy link** - エージェントへの直接リンクを共有します。
+
+<Image img="/images/cloud/agent-builder/marketplace/use-agent.webp" alt="エージェント名、アイコン、Pin、Copy link、Start Chat アクションを表示するエージェント詳細モーダル" size="md" />
+
+<div id="publish-your-own">
+  ## 自分のエージェントを公開する
+</div>
+
+エージェントをマーケットプレイスで見つけられるようにするには、[共有とアクセス](/ja/products/cloud/features/ai-ml/agents/sharing-and-access)パネルで適切な公開範囲に共有します。公開範囲は次のとおりです。
+
+* **Private** - 自分にのみ表示されます。マーケットプレイスには表示されません。
+* **Shared with users or groups** - 指定したユーザーまたはグループに表示されます。相手のマーケットプレイスに表示されます。
+* **組織全体** - 組織内の全員に表示されます。管理者が設定したマーケットプレイス権限の対象となります。
+
+公開する前にエージェントを分類し、わかりやすい説明を記載してください。これらのフィールドは、検索結果とカテゴリ別のブラウズ体験の両方に使われます。
+
+<div id="admin-controls">
+  ## Admin の管理機能
+</div>
+
+組織の Admin は以下を実行できます。
+
+* マーケットプレイスに表示するカテゴリ群を選定する。
+* 個々のエージェントを組織全体ビューに表示する。
+* ロールごとにマーケットプレイスへのアクセスを許可または制限する。
+
+権限モデルについては、[共有とアクセス](/ja/products/cloud/features/ai-ml/agents/sharing-and-access) を参照してください。

@@ -1,0 +1,38 @@
+---
+title: 'Adicionar tabelas específicas a um ClickPipe'
+description: 'Descreve as etapas necessárias para adicionar tabelas específicas a um ClickPipe.'
+sidebarTitle: 'Adicionar tabela'
+slug: /integrations/clickpipes/mysql/add_table
+show_title: false
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Há cenários em que seria útil adicionar tabelas específicas a um pipe. Isso se torna uma necessidade comum à medida que sua carga de trabalho transacional ou analítica cresce.
+
+<div id="add-tables-steps">
+  ## Etapas para adicionar tabelas específicas a um ClickPipe
+</div>
+
+Isso pode ser feito seguindo estas etapas:
+
+1. [Pause](/pt-BR/integrations/clickpipes/mysql/pause-and-resume) o pipe.
+2. Clique em Edit Table settings.
+3. Localize a tabela. Para isso, pesquise por ela na barra de busca.
+4. Selecione a tabela clicando na caixa de seleção.
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+
+5. Clique em update.
+6. Após a atualização bem-sucedida, o pipe terá os status `Setup`, `Snapshot` e `Running`, nessa ordem. A carga inicial da tabela pode ser acompanhada na aba **Tables**.
+
+<Info>
+  O CDC das tabelas existentes é retomado automaticamente após a conclusão do snapshot da nova tabela.
+</Info>

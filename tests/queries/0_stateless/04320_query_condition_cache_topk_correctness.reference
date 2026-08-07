@@ -1,0 +1,59 @@
+--- QCC starts empty
+0
+--- ASC LIMIT 5: ground truth (QCC off)
+7
+1007
+2007
+3007
+4007
+--- ASC LIMIT 5: first run writes a QCC entry under the active TopK filter
+7
+1007
+2007
+3007
+4007
+1
+--- ASC LIMIT 5: second run reads cached granule decisions, must match ground truth
+7
+1007
+2007
+3007
+4007
+--- ASC LIMIT 12: QCC on must match ground truth (needs rows the LIMIT 5 plan dropped)
+7
+1007
+2007
+3007
+4007
+5007
+6007
+7007
+8007
+9007
+10007
+11007
+---
+7
+1007
+2007
+3007
+4007
+5007
+6007
+7007
+8007
+9007
+10007
+11007
+--- DESC LIMIT 5: ground truth (QCC off)
+999007
+998007
+997007
+996007
+995007
+---
+999007
+998007
+997007
+996007
+995007

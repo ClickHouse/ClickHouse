@@ -1,0 +1,12 @@
+Before ALTER:
+123	hello
+456	world
+After ALTER:
+123	hello
+456	world
+Mutations count:
+0
+All data:
+123	hello
+456	world
+789	test

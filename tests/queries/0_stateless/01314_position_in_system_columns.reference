@@ -1,0 +1,6 @@
+x	UInt8	1
+y	String	2
+z	Array(String)	3
+x	UInt8	1
+y	String	2
+z	Array(String)	3

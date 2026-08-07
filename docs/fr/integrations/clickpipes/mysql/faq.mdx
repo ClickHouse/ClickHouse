@@ -1,0 +1,96 @@
+---
+sidebarTitle: 'FAQ'
+description: 'Questions fréquemment posées sur ClickPipes for MySQL.'
+slug: /integrations/clickpipes/mysql/faq
+title: 'FAQ ClickPipes for MySQL'
+doc_type: 'reference'
+keywords: ['FAQ ClickPipes MySQL', 'dépannage ClickPipes MySQL', 'réplication MySQL ClickHouse', 'prise en charge de ClickPipes MySQL', 'CDC MySQL ClickHouse']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="does-the-clickpipe-support-mariadb">
+  ### MySQL ClickPipe prend-il en charge MariaDB ?
+</div>
+
+Oui, MySQL ClickPipe prend en charge MariaDB 10.0 et les versions ultérieures. Sa configuration est très proche de celle de MySQL, avec la réplication GTID utilisée par défaut.
+
+<div id="does-the-clickpipe-support-planetscale-vitess">
+  ### MySQL ClickPipe prend-il en charge PlanetScale, Vitess ou TiDB ?
+</div>
+
+Non, ces solutions ne prennent pas en charge l’API de binlog de MySQL.
+
+<div id="how-is-replication-managed">
+  ### Comment la réplication est-elle gérée ?
+</div>
+
+Nous prenons en charge la réplication `GTID` et `FilePos`. Contrairement à Postgres, il n’y a pas de slot pour gérer l’offset. Vous devez donc configurer votre serveur MySQL avec une période de rétention du binlog suffisante. Si notre offset dans le binlog devient invalide *(par exemple, si le mirror reste en pause trop longtemps ou si un basculement de la base de données se produit lors de l’utilisation de la réplication `FilePos`)*, vous devrez resynchroniser le pipe. Veillez à optimiser les vues matérialisées qui dépendent des tables de destination, car des requêtes inefficaces peuvent ralentir l’ingestion jusqu’à dépasser la période de rétention.
+
+Il est également possible qu’une base de données inactive effectue une rotation du fichier journal sans permettre à ClickPipes d’avancer vers un offset plus récent. Vous devrez peut-être mettre en place une table heartbeat avec des mises à jour planifiées à intervalles réguliers.
+
+Au début d’un chargement initial, nous enregistrons l’offset du binlog à partir duquel démarrer. Cet offset doit toujours être valide lorsque le chargement initial se termine pour que le CDC puisse progresser. Si vous ingérez un grand volume de données, veillez à configurer une période de rétention du binlog adaptée. Pendant la configuration des tables, vous pouvez accélérer le chargement initial en configurant *Use a custom partitioning key for initial load* pour les grandes tables dans les paramètres avancés afin que nous puissions charger une seule table en parallèle.
+
+<div id="binlog-event-exceeded-max-allowed-packet">
+  ### Pourquoi mon pipe échoue-t-il en raison d’une erreur `max_allowed_packet` du binlog ?
+</div>
+
+Si votre pipe échoue avec une erreur du type :
+
+```text
+MySQL execute error: ERROR 1236 (HY000): log event entry exceeded max_allowed_packet;
+Increase max_allowed_packet on source
+```
+
+cela signifie qu’un seul événement binlog (correspondant à une modification de ligne) est plus volumineux que le paramètre [`max_allowed_packet`](https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_max_allowed_packet) de votre serveur MySQL. Comme le serveur ne peut pas envoyer d’événement qui dépasse cette limite, la lecture du flux binlog s’interrompt et CDC ne peut pas continuer.
+
+Cela est le plus souvent dû à des lignes contenant de grandes valeurs `BLOB`, `TEXT` ou `JSON`. Pour résoudre ce problème :
+
+* **Augmentez `max_allowed_packet` côté source.** Définissez-le au-delà de la taille de votre plus grande modification de ligne — le régler au maximum, soit `1G`, est généralement sans risque :
+  ```sql
+  SET GLOBAL max_allowed_packet = 1073741824; -- 1 GiB
+  ```
+  Définissez-le également dans la configuration de votre serveur (par exemple `my.cnf` ou le DB Parameter Group) afin qu’il soit conservé après les redémarrages.
+* **Si une seule ligne dépasse 1G :** resynchronisez le pipe.
+
+<div id="tls-certificate-validation-error">
+  ### Pourquoi est-ce que j’obtiens une erreur de validation de certificat TLS lors de la connexion à MySQL ?
+</div>
+
+Lors de la connexion à MySQL, vous pouvez rencontrer des erreurs de certificat comme `x509: certificate is not valid for any names` ou `x509: certificate signed by unknown authority`. Cela se produit parce que ClickPipes active le chiffrement TLS par défaut.
+
+Vous disposez de plusieurs options pour résoudre ces problèmes :
+
+1. **Définir le champ TLS Host** - Lorsque le nom d’hôte de votre connexion diffère de celui du certificat (cas courant avec AWS PrivateLink via Endpoint Service). Définissez &quot;TLS Host (optional)&quot; pour qu’il corresponde au Common Name (CN) ou au Subject Alternative Name (SAN) du certificat.
+
+2. **Téléverser votre CA racine** - Pour les serveurs MySQL utilisant des autorités de certification internes ou Google Cloud SQL avec la configuration de CA par défaut par instance. Pour plus d’informations sur la manière d’accéder aux certificats Google Cloud SQL, consultez [cette section](/fr/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql).
+
+3. **Configurer le certificat du serveur** - Mettez à jour le certificat SSL de votre serveur afin d’inclure tous les noms d’hôte de connexion et d’utiliser une autorité de certification de confiance.
+
+4. **Ignorer la vérification du certificat** - Pour les déploiements MySQL ou MariaDB auto-hébergés, dont les configurations par défaut génèrent un certificat auto-signé que nous ne pouvons pas valider ([MySQL](https://dev.mysql.com/doc/refman/8.4/en/creating-ssl-rsa-files-using-mysql.html#creating-ssl-rsa-files-using-mysql-automatic), [MariaDB](https://mariadb.com/kb/en/securing-connections-for-client-and-server/#enabling-tls-for-mariadb-server)). S’appuyer sur ce certificat chiffre les données en transit, mais présente un risque d’usurpation d’identité du serveur. Nous recommandons des certificats correctement signés pour les environnements de production, mais cette option est utile pour des tests sur une instance ponctuelle ou pour se connecter à une infrastructure legacy.
+
+<div id="do-you-support-schema-changes">
+  ### Prenez-vous en charge les modifications de schéma ?
+</div>
+
+Veuillez consulter la page [ClickPipes for MySQL: prise en charge de la propagation des modifications de schéma](/fr/integrations/clickpipes/mysql/schema-changes) pour plus d’informations.
+
+<div id="support-on-delete-cascade">
+  ### Prenez-vous en charge la réplication des suppressions en cascade de clés étrangères MySQL `ON DELETE CASCADE` ?
+</div>
+
+En raison de la manière dont MySQL [gère les suppressions en cascade](https://dev.mysql.com/doc/refman/8.0/en/innodb-and-mysql-replication.html), celles-ci ne sont pas inscrites dans le binlog. Il n&#39;est donc pas possible pour ClickPipes (ni pour aucun outil de CDC) de les répliquer. Cela peut entraîner des incohérences dans les données. Il est recommandé d&#39;utiliser plutôt des triggers pour prendre en charge les suppressions en cascade.
+
+<div id="replicate-table-dot">
+  ### Pourquoi ne puis-je pas répliquer ma table contenant un point ?
+</div>
+
+PeerDB présente actuellement une limitation : les points dans les identifiants de table source — c’est-à-dire dans le nom du schéma ou de la table — ne sont pas pris en charge pour la réplication, car PeerDB ne peut alors pas distinguer ce qui relève du schéma et ce qui relève de la table puisqu’il découpe sur le point.
+Des travaux sont en cours pour permettre la saisie séparée du schéma et de la table afin de contourner cette limitation.
+
+<div id="include-excluded-columns">
+  ### Puis-je inclure des colonnes que j’ai initialement exclues de la réplication ?
+</div>
+
+Ce n’est pas encore pris en charge ; vous pouvez sinon [resynchroniser la table](/fr/integrations/clickpipes/mysql/table-resync) dont vous souhaitez inclure les colonnes.

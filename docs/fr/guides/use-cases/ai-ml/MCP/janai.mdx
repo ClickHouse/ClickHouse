@@ -1,0 +1,92 @@
+---
+slug: /use-cases/AI/MCP/janai
+sidebarTitle: 'Intégrer Jan.ai'
+title: 'Utilisation du serveur MCP ClickHouse avec Jan.ai'
+description: 'Ce guide explique comment configurer Jan.ai avec le serveur MCP ClickHouse.'
+keywords: ['AI', 'Jan.ai', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+> Ce guide explique comment utiliser le ClickHouse MCP server avec [Jan.ai](https://jan.ai/docs).
+
+<Steps>
+  <Step>
+    ## Installer Jan.ai
+
+    Jan.ai est une alternative open source à ChatGPT qui fonctionne 100 % hors ligne.
+    Vous pouvez télécharger Jan.ai pour [Mac](https://jan.ai/docs/desktop/mac), [Windows](https://jan.ai/docs/desktop/windows) ou [Linux](https://jan.ai/docs/desktop/linux).
+
+    Il s&#39;agit d&#39;une application native ; une fois téléchargée, vous pouvez donc la lancer.
+  </Step>
+
+  <Step>
+    ## Ajouter un LLM à Jan.ai
+
+    Nous pouvons activer des modèles via le menu des paramètres.
+
+    Pour activer OpenAI, nous devons fournir une API key, comme indiqué ci-dessous :
+
+    <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="Activer les modèles OpenAI" size="md" />
+  </Step>
+
+  <Step>
+    ## Activer les serveurs MCP
+
+    Au moment de la rédaction, les serveurs MCP constituent une fonctionnalité expérimentale dans Jan.ai.
+    Nous pouvons les activer en basculant les fonctionnalités expérimentales :
+
+    <Image img="/images/use-cases/AI_ML/MCP/1_janai_mcp_servers.webp" alt="Activer les serveurs MCP" size="md" />
+
+    Une fois ce bouton bascule activé, `MCP servers` apparaîtra dans le menu de gauche.
+  </Step>
+
+  <Step>
+    ## Configurer le ClickHouse MCP server
+
+    Si nous cliquons sur le menu `MCP servers`, nous verrons une liste de serveurs MCP auxquels nous pouvons nous connecter :
+
+    <Image img="/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp" alt="Liste des serveurs MCP" size="md" />
+
+    Ces serveurs sont tous désactivés par défaut, mais nous pouvons les activer en cliquant sur le bouton bascule.
+
+    Pour installer le ClickHouse MCP server, nous devons cliquer sur l&#39;icône `+`, puis remplir le formulaire avec les informations suivantes :
+
+    <Image img="/images/use-cases/AI_ML/MCP/3_janai_add_mcp_server.webp" alt="Ajouter un serveur MCP" size="md" />
+
+    Une fois cela fait, nous devrons activer le ClickHouse Server s&#39;il ne l&#39;est pas déjà :
+
+    <Image img="/images/use-cases/AI_ML/MCP/4_janai_toggle.webp" alt="Activer le serveur MCP" size="md" />
+
+    Les outils du ClickHouse MCP server seront alors visibles dans la fenêtre de discussion :
+
+    <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="Outils du ClickHouse MCP server" size="md" />
+  </Step>
+
+  <Step>
+    ## Discuter avec le ClickHouse MCP server dans Jan.ai
+
+    Il est temps d&#39;engager une conversation au sujet de données stockées dans ClickHouse !
+    Posons une question :
+
+    <Image img="/images/use-cases/AI_ML/MCP/6_janai_question.webp" alt="Question" size="md" />
+
+    Jan.ai demandera une confirmation avant d&#39;appeler un outil :
+
+    <Image img="/images/use-cases/AI_ML/MCP/7_janai_tool_confirmation.webp" alt="Confirmation de l’outil" size="md" />
+
+    Il affichera ensuite la liste des appels d&#39;outils effectués :
+
+    <Image img="/images/use-cases/AI_ML/MCP/8_janai_tools_called.webp" alt="Outils appelés" size="md" />
+
+    Si nous cliquons sur un appel d&#39;outil, nous pourrons en voir les détails :
+
+    <Image img="/images/use-cases/AI_ML/MCP/9_janai_tools_called_expanded.webp" alt="Outils appelés développés" size="md" />
+
+    Et juste en dessous, nous verrons le résultat :
+
+    <Image img="/images/use-cases/AI_ML/MCP/10_janai_result.webp" alt="Résultat" size="md" />
+  </Step>
+</Steps>

@@ -1,0 +1,93 @@
+---
+alias: []
+description: 'Documentación sobre el formato MySQLDump'
+input_format: true
+keywords: ['MySQLDump']
+output_format: false
+slug: /interfaces/formats/MySQLDump
+title: 'MySQLDump'
+doc_type: 'reference'
+---
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✔       | ✗      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+ClickHouse admite la lectura de [volcados](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html) de MySQL.
+
+Lee todos los datos de las consultas `INSERT` correspondientes a una sola tabla del volcado.
+Si hay más de una tabla, de forma predeterminada lee los datos de la primera.
+
+<Note>
+  Este formato admite la inferencia de esquema: si el volcado contiene una consulta `CREATE` para la tabla especificada, la estructura se infiere a partir de ella; de lo contrario, el esquema se infiere a partir de los datos de las consultas `INSERT`.
+</Note>
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+Dado el siguiente archivo de volcado SQL:
+
+```sql title="dump.sql"
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test` (
+  `x` int DEFAULT NULL,
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test` VALUES (1,NULL),(2,NULL),(3,NULL),(3,NULL),(4,NULL),(5,NULL),(6,7);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test 3` (
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test 3` VALUES (1);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test2` (
+  `x` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test2` VALUES (1),(2),(3);
+```
+
+Podemos ejecutar las siguientes consultas:
+
+```sql title="Query"
+DESCRIBE TABLE file(dump.sql, MySQLDump) 
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ x    │ Nullable(Int32) │              │                    │         │                  │                │
+└──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql title="Query"
+SELECT *
+FROM file(dump.sql, MySQLDump)
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─x─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+<div id="format-settings">
+  ## Configuración del formato
+</div>
+
+Puede especificar el nombre de la tabla de la que se leerán los datos mediante la opción [`input_format_mysql_dump_table_name`](/es/reference/settings/formats#input_format_mysql_dump_table_name).
+Si la opción `input_format_mysql_dump_map_columns` está establecida en `1` y el volcado contiene una consulta `CREATE` para la tabla especificada o nombres de columna en la consulta `INSERT`, las columnas de los datos de entrada se asignarán a las columnas de la tabla por nombre.
+Las columnas con nombres desconocidos se omitirán si la opción [`input_format_skip_unknown_fields`](/es/reference/settings/formats#input_format_skip_unknown_fields) está establecida en `1`.

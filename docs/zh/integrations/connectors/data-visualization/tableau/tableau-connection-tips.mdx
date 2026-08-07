@@ -1,0 +1,70 @@
+---
+sidebarTitle: '连接提示'
+slug: /integrations/tableau/connection-tips
+keywords: ['ClickHouse', 'Tableau', '在线', 'mysql', '连接', '集成', 'UI']
+description: '使用 ClickHouse 官方连接器时的 Tableau 连接技巧。'
+title: '连接提示'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="initial-sql-tab">
+  ## 初始 SQL 选项卡
+</div>
+
+如果在高级选项卡中启用了 *设置会话 ID* 复选框 (默认启用) ，则可以使用[设置](/zh/reference/settings/session-settings)设置会话级别的配置
+
+```text
+SET my_setting=value;
+```
+
+<div id="advanced-tab">
+  ## 高级选项卡
+</div>
+
+在 99% 的情况下，你都不需要用到高级选项卡；而在剩下的 1% 场景中，可以使用以下设置：
+
+* **自定义连接参数**。默认已指定 `socket_timeout`；如果某些提取任务的更新时间非常长，可能需要调整此参数。该参数的值以毫秒为单位。其余参数可在[此处](https://github.com/ClickHouse/clickhouse-jdbc/blob/master/clickhouse-client/src/main/java/com/clickhouse/client/config/ClickHouseClientOption.java)查看，请以逗号分隔后添加到此字段中
+
+* **JDBC 驱动 custom&#95;http&#95;params**。此字段允许你通过向[驱动的 `custom_http_params` 参数](https://github.com/ClickHouse/clickhouse-jdbc#configuration)传值，将某些参数附加到 ClickHouse 连接字符串中。例如，启用 *设置会话 ID* 复选框后，`session_id` 就是通过这种方式指定的
+
+* **JDBC 驱动 `typeMappings`**。此字段允许你[传递从 ClickHouse 数据类型到 JDBC 驱动所使用的 Java 数据类型的映射列表](https://github.com/ClickHouse/clickhouse-jdbc#configuration)。连接器会借助此参数自动将大整数显示为字符串；你也可以通过传入自己的映射集来更改这一行为&#x20;*&#x20;(我也不知道为什么)&#x20;*，用法如下
+  ```text
+  UInt256=java.lang.Double,Int256=java.lang.Double
+  ```
+  有关映射的更多信息，请参阅对应章节
+
+* **JDBC 驱动 URL 参数**。你可以在此字段中传递其余的[驱动参数](https://github.com/ClickHouse/clickhouse-jdbc#configuration)，例如 `jdbcCompliance`。请注意，参数值必须采用 URL Encoded 格式传递；如果在此字段以及高级选项卡前面的字段中同时传递 `custom_http_params` 或 `typeMappings`，则高级选项卡中前两个字段的值优先级更高
+
+* **设置会话 ID** 复选框。此选项用于在 初始 SQL 选项卡中设置会话级设置，并会生成一个包含时间戳和伪随机数的 `session_id`，格式为 `"tableau-jdbc-connector-*{timestamp}*-*{number}*"`
+
+<div id="limited-support-for-uint64-int128-uint256-data-types">
+  ## 对 UInt64、Int128、(U)Int256 数据类型的支持有限
+</div>
+
+默认情况下，驱动程序会将 *UInt64、Int128、(U)Int256* 类型的字段显示为字符串，**但这只是显示，不是转换**。这意味着，当你尝试编写下一个计算字段时，会报错
+
+```text
+LEFT([myUInt256], 2) // 错误！
+```
+
+若要像处理字符串一样处理大型 Integer 字段，必须显式使用 STR() 函数将该字段包裹起来
+
+```text
+LEFT(STR([myUInt256]), 2) // 运行正常！
+```
+
+不过，这类字段最常见的用途，是统计唯一值的数量* (例如 Yandex.Metrica 中的 Watch ID、Visit ID 等 ID) *，或作为指定可视化细粒度的*维度*，因此效果很好。
+
+```text
+COUNTD([myUInt256]) // 同样运行正常！
+```
+
+使用包含 UInt64 字段的表的数据预览 (查看数据) 时，现在不会再报错。

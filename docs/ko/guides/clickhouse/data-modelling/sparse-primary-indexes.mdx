@@ -1,0 +1,1506 @@
+---
+sidebarTitle: '프라이머리 인덱스'
+description: '이 가이드에서는 ClickHouse 인덱싱을 심층적으로 살펴봅니다.'
+title: 'ClickHouse 프라이머리 인덱스 실전 입문'
+slug: /guides/best-practices/sparse-primary-indexes
+show_related_blogs: true
+doc_type: 'guide'
+keywords: ['프라이머리 인덱스', '인덱싱', '성능', '쿼리 최적화', '모범 사례']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="introduction">
+  ## 소개
+</div>
+
+이 가이드에서는 ClickHouse 인덱싱을 심층적으로 살펴봅니다. 구체적으로 다음 내용을 자세히 설명합니다.
+
+* [ClickHouse의 인덱싱이 기존 관계형 데이터베이스 관리 시스템과 어떻게 다른지](#an-index-design-for-massive-data-scales)
+* [ClickHouse가 테이블의 희소 프라이머리 인덱스를 구축하고 활용하는 방법](#a-table-with-a-primary-key)
+* [ClickHouse 인덱싱 모범 사례](#using-multiple-primary-indexes)
+
+원한다면 이 가이드에 나온 모든 ClickHouse SQL 문과 쿼리를 로컬 환경에서 직접 실행해 볼 수 있습니다.
+ClickHouse 설치 및 시작 방법은 [Quick Start](/ko/get-started/setup/install)를 참조하십시오.
+
+<Note>
+  이 가이드는 ClickHouse 희소 프라이머리 인덱스에 중점을 둡니다.
+
+  ClickHouse의 [보조 데이터 스키핑 인덱스](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)는 [Tutorial](/ko/concepts/features/performance/skip-indexes/skipping-indexes)을 참조하십시오.
+</Note>
+
+<div id="data-set">
+  ### 데이터 세트
+</div>
+
+이 가이드 전반에서 익명화된 샘플 웹 트래픽 데이터 세트를 사용합니다.
+
+* 샘플 데이터 세트에서 887만 개 행(이벤트)으로 이루어진 부분 집합을 사용합니다.
+* 비압축 데이터 크기는 887만 개 이벤트, 약 700 MB입니다. 이를 ClickHouse에 저장하면 200 MB로 압축됩니다.
+* 이 부분 집합에서 각 행에는 특정 시점에 URL(`URL` 컬럼)을 클릭한 인터넷 사용자(`UserID` 컬럼)를 나타내는 3개의 컬럼과 시간 정보(`EventTime` 컬럼)가 포함됩니다.
+
+이 3개의 컬럼만으로도 다음과 같은 일반적인 웹 분석 쿼리를 작성할 수 있습니다.
+
+* &quot;특정 사용자가 가장 많이 클릭한 URL 상위 10개는 무엇입니까?&quot;
+* &quot;특정 URL을 가장 자주 클릭한 사용자 상위 10명은 누구입니까?&quot;
+* &quot;사용자가 특정 URL을 클릭하는 가장 빈도가 높은 시간대(예: 요일)는 언제입니까?&quot;
+
+<div id="test-machine">
+  ### 테스트 머신
+</div>
+
+이 문서에 제시된 모든 런타임 수치는 Apple M1 Pro 칩과 16GB RAM을 탑재한 MacBook Pro에서 ClickHouse 22.2.1을 로컬로 실행했을 때를 기준으로 합니다.
+
+<div id="a-full-table-scan">
+  ### 전체 테이블 스캔
+</div>
+
+기본 키(primary key)가 없는 데이터 세트에서 쿼리가 어떻게 실행되는지 살펴보기 위해, 다음 SQL DDL 문을 실행하여 MergeTree 테이블 엔진을 사용하는 테이블을 생성합니다:
+
+```sql
+CREATE TABLE hits_NoPrimaryKey
+(
+    `UserID` UInt32,
+    `URL` String,
+    `EventTime` DateTime
+)
+ENGINE = MergeTree
+PRIMARY KEY tuple();
+```
+
+다음으로, 아래의 SQL 삽입 문을 사용해 hits 데이터셋의 부분 집합을 테이블에 삽입합니다.
+이 예제에서는 clickhouse.com에 원격으로 호스팅된 전체 데이터셋의 부분 집합을 로드하기 위해 [URL 테이블 함수](/ko/reference/functions/table-functions/url)를 사용합니다:
+
+```sql
+INSERT INTO hits_NoPrimaryKey SELECT
+   intHash32(UserID) AS UserID,
+   URL,
+   EventTime
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz', 'TSV', 'WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8')
+WHERE URL != '';
+```
+
+응답은 다음과 같습니다.
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 145.993 sec. Processed 8.87 million rows, 18.40 GB (60.78 thousand rows/s., 126.06 MB/s.)
+```
+
+ClickHouse client의 결과 출력에서 위 SQL 문이 테이블에 887만 개의 행을 삽입했음을 확인할 수 있습니다.
+
+마지막으로, 이 가이드의 이후 설명을 더 간단하게 하고 다이어그램과 결과를 재현 가능하게 하기 위해 FINAL 키워드를 사용해 테이블을 [optimize](/ko/reference/statements/optimize)합니다:
+
+```sql
+OPTIMIZE TABLE hits_NoPrimaryKey FINAL;
+```
+
+<Note>
+  일반적으로는 테이블에 데이터를 적재한 직후 바로 최적화할 필요는 없으며, 그렇게 하는 것도 권장되지 않습니다. 이 예시에서 왜 이것이 필요한지는 곧 분명해집니다.
+</Note>
+
+이제 첫 번째 웹 분석 쿼리를 실행합니다. 다음은 UserID 749927693인 사용자가 가장 많이 클릭한 URL 상위 10개를 계산하는 쿼리입니다:
+
+```sql
+SELECT URL, count(URL) AS Count
+FROM hits_NoPrimaryKey
+WHERE UserID = 749927693
+GROUP BY URL
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+응답은 다음과 같습니다:
+
+```response highlight={15}
+┌─URL────────────────────────────┬─Count─┐
+│ http://auto.ru/chatay-barana.. │   170 │
+│ http://auto.ru/chatay-id=371...│    52 │
+│ http://public_search           │    45 │
+│ http://kovrik-medvedevushku-...│    36 │
+│ http://forumal                 │    33 │
+│ http://korablitz.ru/L_1OFFER...│    14 │
+│ http://auto.ru/chatay-id=371...│    14 │
+│ http://auto.ru/chatay-john-D...│    13 │
+│ http://auto.ru/chatay-john-D...│    10 │
+│ http://wot/html?page/23600_m...│     9 │
+└────────────────────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.022 sec.
+Processed 8.87 million rows,
+70.45 MB (398.53 million rows/s., 3.17 GB/s.)
+```
+
+clickhouse client의 결과 출력은 ClickHouse가 전체 테이블 스캔을 수행했음을 보여줍니다! 테이블의 887만 개 행이 하나도 빠짐없이 ClickHouse로 스트리밍되었습니다. 이렇게 해서는 확장성이 없습니다.
+
+이를 훨씬 더 효율적이고 빠르게 처리하려면, 적절한 기본 키(primary key)가 있는 테이블을 사용해야 합니다. 그러면 ClickHouse가 기본 키의 컬럼을 기반으로 희소 프라이머리 인덱스(sparse primary index)를 자동으로 생성할 수 있으며, 이 인덱스를 사용해 예시 쿼리의 실행 속도를 크게 높일 수 있습니다.
+
+<div id="clickhouse-index-design">
+  ## ClickHouse 인덱스 설계
+</div>
+
+<div id="an-index-design-for-massive-data-scales">
+  ### 대규모 데이터 처리를 위한 인덱스 설계
+</div>
+
+전통적인 관계형 데이터베이스 관리 시스템에서는 프라이머리 인덱스(primary index)에 테이블의 각 행마다 인덱스 항목 하나가 포함됩니다. 이렇게 하면 이 데이터 세트의 프라이머리 인덱스에는 887만 개의 인덱스 항목이 들어가게 됩니다. 이러한 인덱스는 특정 행을 빠르게 찾을 수 있게 해 주므로, 조회 쿼리와 포인트 업데이트를 매우 효율적으로 수행할 수 있습니다. `B(+)-Tree` 데이터 구조에서 인덱스 항목을 검색하는 평균 시간 복잡도는 `O(log n)`입니다. 더 정확히는 `log_b n = log_2 n / log_2 b`이며, 여기서 `b`는 `B(+)-Tree`의 branching factor이고 `n`은 인덱싱된 행 수입니다. `b`는 일반적으로 수백에서 수천 사이이므로 `B(+)-Trees`는 매우 얕은 구조이며, 레코드를 찾는 데 필요한 디스크 탐색 횟수도 적습니다. 887만 개의 행과 branching factor 1000을 가정하면 평균적으로 2.3회의 디스크 탐색이 필요합니다. 하지만 이러한 기능에는 비용이 따릅니다. 추가적인 디스크 및 메모리 오버헤드가 발생하고, 테이블에 새 행을 추가하고 인덱스에 인덱스 항목을 추가할 때 삽입 비용이 더 커지며, 경우에 따라 B-Tree 리밸런싱도 필요합니다.
+
+B-Tree 인덱스의 이러한 한계를 고려해 ClickHouse의 테이블 엔진은 다른 접근 방식을 사용합니다. ClickHouse의 [MergeTree 엔진 계열](/ko/reference/engines/table-engines/mergetree-family/index)은 대규모 데이터 볼륨을 처리하도록 설계되고 최적화되었습니다. 이 테이블은 초당 수백만 개의 행 삽입을 수용하고 매우 큰 규모(수백 페타바이트)의 데이터를 저장하도록 설계되었습니다. 데이터는 [파트 단위로](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) 테이블에 빠르게 기록되며, 백그라운드에서는 파트를 머지하는 규칙이 적용됩니다. ClickHouse에서는 각 파트가 자체 프라이머리 인덱스를 가집니다. 파트가 머지되면 병합된 파트의 프라이머리 인덱스도 함께 머지됩니다. ClickHouse가 대상으로 하는 초대규모 환경에서는 디스크와 메모리를 매우 효율적으로 사용하는 것이 무엇보다 중요합니다. 따라서 모든 행을 인덱싱하는 대신, 파트의 프라이머리 인덱스는 각 행 그룹(「그래뉼」이라고 함)마다 하나의 인덱스 항목(「mark」라고 함)만 가집니다. 이 기법을 **희소 인덱스**라고 합니다.
+
+희소 인덱싱이 가능한 이유는 ClickHouse가 파트의 행을 기본 키 컬럼을 기준으로 정렬해 디스크에 저장하기 때문입니다. 희소 프라이머리 인덱스(sparse primary index)는 단일 행을 직접 찾는 방식(B-Tree 기반 인덱스처럼) 대신, 인덱스 항목에 대한 이진 검색을 통해 쿼리와 일치할 가능성이 있는 행 그룹을 빠르게 식별할 수 있게 해줍니다. 이렇게 찾아낸 일치 가능성이 있는 행 그룹(그래뉼)은 실제 일치 항목을 찾기 위해 병렬로 ClickHouse 엔진에 스트리밍됩니다. 이러한 인덱스 설계 덕분에 프라이머리 인덱스를 작게 유지할 수 있으며(메인 메모리에 완전히 들어가야 하며, 실제로도 그렇게 되어야 합니다), 동시에 쿼리 실행 시간도 크게 단축할 수 있습니다. 특히 데이터 분석 사용 사례에서 일반적인 범위 쿼리에서 효과적입니다.
+
+아래에서는 ClickHouse가 희소 프라이머리 인덱스를 어떻게 구축하고 사용하는지 자세히 설명합니다. 이 글의 뒷부분에서는 인덱스 구축에 사용되는 테이블 컬럼(기본 키 컬럼)을 선택하고, 제거하고, 정렬할 때의 모범 사례도 살펴보겠습니다.
+
+<div id="a-table-with-a-primary-key">
+  ### 기본 키가 있는 테이블
+</div>
+
+UserID와 URL을 키 컬럼으로 갖는 복합 기본 키가 있는 테이블을 생성합니다:
+
+```sql highlight={8}
+CREATE TABLE hits_UserID_URL
+(
+    `UserID` UInt32,
+    `URL` String,
+    `EventTime` DateTime
+)
+ENGINE = MergeTree
+PRIMARY KEY (UserID, URL)
+ORDER BY (UserID, URL, EventTime)
+SETTINGS index_granularity_bytes = 0, compress_primary_key = 0;
+```
+
+[//]: # "<details open>"
+
+<Accordion title="DDL 문 세부 정보">
+  <p>
+    이 가이드의 뒷부분 설명을 단순화하고 다이어그램과 결과를 재현할 수 있도록, 다음 DDL 문을 사용합니다:
+
+    <ul>
+      <li>
+        <code>ORDER BY</code> 절을 통해 테이블의 복합 정렬 키를 지정합니다.
+      </li>
+
+      <li>
+        다음 설정을 통해 프라이머리 인덱스(primary index)의 인덱스 항목 수를 명시적으로 제어합니다:
+
+        <ul>
+          <li>
+            <code>index&#95;granularity</code>: 기본값인 8192로 명시적으로 설정합니다. 즉, 8192행마다 프라이머리 인덱스에 인덱스 항목이 1개 생성됩니다. 예를 들어 테이블에 16384행이 있으면 인덱스에는 인덱스 항목이 2개 생성됩니다.
+          </li>
+
+          <li>
+            <code>index&#95;granularity&#95;bytes</code>: <a href="/ko/resources/changelogs/oss/2019#experimental-features-1" target="_blank">적응형 인덱스 세분화 수준</a>을 비활성화하기 위해 0으로 설정합니다. 적응형 인덱스 세분화 수준이란, 다음 조건 중 하나가 참일 때 ClickHouse가 <code>n</code>개의 행으로 이루어진 그룹마다 인덱스 항목 1개를 자동으로 생성하는 것을 의미합니다:
+
+            <ul>
+              <li>
+                <code>n</code>이 8192보다 작고, 해당 <code>n</code>개 행의 결합된 데이터 크기가 10 MB 이상인 경우(<code>index&#95;granularity&#95;bytes</code>의 기본값).
+              </li>
+
+              <li>
+                <code>n</code>개 행의 결합된 데이터 크기가 10 MB보다 작지만 <code>n</code>이 8192인 경우.
+              </li>
+            </ul>
+          </li>
+
+          <li>
+            <code>compress&#95;primary&#95;key</code>: <a href="https://github.com/ClickHouse/ClickHouse/issues/34437" target="_blank">프라이머리 인덱스 압축</a>을 비활성화하기 위해 0으로 설정합니다. 이렇게 하면 나중에 필요에 따라 그 내용을 확인할 수 있습니다.
+          </li>
+        </ul>
+      </li>
+    </ul>
+  </p>
+</Accordion>
+
+위 DDL 문의 기본 키(primary key)는 지정된 두 개의 키 컬럼을 기반으로 프라이머리 인덱스를 생성합니다.
+
+<br />
+
+다음으로 데이터를 삽입합니다:
+
+```sql
+INSERT INTO hits_UserID_URL SELECT
+   intHash32(UserID) AS UserID,
+   URL,
+   EventTime
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz', 'TSV', 'WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8')
+WHERE URL != '';
+```
+
+응답은 다음과 같습니다:
+
+```response
+0 rows in set. Elapsed: 149.432 sec. Processed 8.87 million rows, 18.40 GB (59.38 thousand rows/s., 123.16 MB/s.)
+```
+
+<br />
+
+그런 다음 테이블을 최적화합니다:
+
+```sql
+OPTIMIZE TABLE hits_UserID_URL FINAL;
+```
+
+<br />
+
+다음 쿼리를 사용하여 테이블의 메타데이터를 확인할 수 있습니다:
+
+```sql
+SELECT
+    part_type,
+    path,
+    formatReadableQuantity(rows) AS rows,
+    formatReadableSize(data_uncompressed_bytes) AS data_uncompressed_bytes,
+    formatReadableSize(data_compressed_bytes) AS data_compressed_bytes,
+    formatReadableSize(primary_key_bytes_in_memory) AS primary_key_bytes_in_memory,
+    marks,
+    formatReadableSize(bytes_on_disk) AS bytes_on_disk
+FROM system.parts
+WHERE (table = 'hits_UserID_URL') AND (active = 1)
+FORMAT Vertical;
+```
+
+응답은 다음과 같습니다.
+
+```response
+part_type:                   Wide
+path:                        ./store/d9f/d9f36a1a-d2e6-46d4-8fb5-ffe9ad0d5aed/all_1_9_2/
+rows:                        8.87 million
+data_uncompressed_bytes:     733.28 MiB
+data_compressed_bytes:       206.94 MiB
+primary_key_bytes_in_memory: 96.93 KiB
+marks:                       1083
+bytes_on_disk:               207.07 MiB
+
+1 rows in set. Elapsed: 0.003 sec.
+```
+
+ClickHouse client의 출력은 다음과 같습니다:
+
+* 테이블 데이터는 디스크의 특정 디렉터리에 [wide format](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)으로 저장되며, 이는 해당 디렉터리 안에 테이블의 각 컬럼마다 데이터 파일 1개(및 마크 파일 1개)가 있음을 의미합니다.
+* 테이블에는 887만 개의 행이 있습니다.
+* 모든 행의 비압축 데이터 크기를 합하면 733.28 MB입니다.
+* 모든 행의 디스크상 압축된 크기를 합하면 206.94 MB입니다.
+* 테이블에는 1083개의 항목(&#39;마크&#39;라고 함)으로 구성된 프라이머리 인덱스가 있으며, 인덱스 크기는 96.93 KB입니다.
+* 전체적으로 테이블의 데이터 파일, 마크 파일, 프라이머리 인덱스 파일이 디스크에서 차지하는 크기는 207.07 MB입니다.
+
+<div id="data-is-stored-on-disk-ordered-by-primary-key-columns">
+  ### 데이터는 프라이머리 키 컬럼 순으로 정렬되어 디스크에 저장됩니다
+</div>
+
+위에서 생성한 테이블에는 다음이 있습니다.
+
+* 복합 [프라이머리 키(primary key)](/ko/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) `(UserID, URL)`와
+* 복합 [정렬 키(sorting key)](/ko/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key) `(UserID, URL, EventTime)`입니다.
+
+<Note>
+  - 정렬 키만 지정한 경우, 프라이머리 키는 암묵적으로 정렬 키와 동일하게 정의됩니다.
+
+  - 메모리 효율을 높이기 위해 쿼리에서 필터링하는 컬럼만 포함하는 프라이머리 키를 명시적으로 지정했습니다. 프라이머리 키를 기반으로 하는 프라이머리 인덱스는 메인 메모리(main memory)에 전체가 로드됩니다.
+
+  - 가이드의 다이어그램 전반에서 일관성을 유지하고 압축률을 최대화하기 위해 테이블의 모든 컬럼을 포함하는 별도의 정렬 키를 정의했습니다(예를 들어 정렬을 통해 한 컬럼에서 유사한 데이터가 서로 가까이 배치되면 해당 데이터는 더 잘 압축됩니다).
+
+  - 둘 다 지정한 경우 프라이머리 키는 정렬 키의 접두사(prefix)여야 합니다.
+</Note>
+
+삽입된 행은 프라이머리 키 컬럼(그리고 정렬 키에 포함된 추가 `EventTime` 컬럼)을 기준으로 사전식 오름차순으로 디스크에 저장됩니다.
+
+<Note>
+  ClickHouse에서는 프라이머리 키 컬럼 값이 동일한 여러 행을 삽입할 수 있습니다. 이 경우(아래 다이어그램의 행 1과 행 2 참조) 최종 순서는 지정된 정렬 키, 즉 `EventTime` 컬럼의 값에 따라 결정됩니다.
+</Note>
+
+ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">컬럼 지향 데이터베이스 관리 시스템</a>입니다. 아래 다이어그램에서 볼 수 있듯이
+
+* 디스크상 표현에서는 테이블 컬럼마다 하나의 데이터 파일(`*.bin`)이 있으며, 해당 컬럼의 모든 값은 <a href="/ko/get-started/about/distinctive-features#data-compression" target="_blank">압축된</a> 포맷으로 저장되고,
+* 887만 개의 행은 프라이머리 키 컬럼(그리고 추가 정렬 키 컬럼)을 기준으로 사전식 오름차순으로 디스크에 저장됩니다. 즉, 이 경우에는
+  * 먼저 `UserID`,
+  * 그다음 `URL`,
+  * 마지막으로 `EventTime` 순입니다.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-01.webp" size="lg" alt="희소 프라이머리 인덱스 01" />
+
+`UserID.bin`, `URL.bin`, `EventTime.bin`은 `UserID`, `URL`, `EventTime` 컬럼의 값이 저장되는 디스크상의 데이터 파일입니다.
+
+<Note>
+  * 프라이머리 키가 디스크상의 행의 사전식 순서를 정의하므로 테이블에는 프라이머리 키를 하나만 둘 수 있습니다.
+
+  * ClickHouse 내부 행 번호 체계와 로깅 메시지에서 사용하는 체계에 맞추기 위해 행 번호는 0부터 시작합니다.
+</Note>
+
+<div id="data-is-organized-into-granules-for-parallel-data-processing">
+  ### 데이터는 병렬 처리를 위해 그래뉼로 구성됩니다
+</div>
+
+데이터 처리를 위해 테이블의 컬럼 값은 논리적으로 그래뉼로 나뉩니다.
+그래뉼은 데이터 처리를 위해 ClickHouse로 스트리밍되는 가장 작은 불가분 데이터 집합입니다.
+즉, ClickHouse는 개별 행을 읽는 대신 항상 행의 전체 그룹(그래뉼)을 읽습니다(스트리밍 방식으로, 병렬로 처리됨).
+
+<Note>
+  컬럼 값이 그래뉼 내부에 물리적으로 저장되는 것은 아닙니다. 그래뉼은 쿼리 처리를 위해 컬럼 값을 논리적으로 구성한 단위일 뿐입니다.
+</Note>
+
+다음 다이어그램은 테이블의 887만 개 행의 (컬럼 값이) 테이블 DDL 구문에 `index_granularity` 설정이 포함된 결과, 1083개의 그래뉼로 구성되는 방식을 보여줍니다(기본값인 8192로 설정됨).
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-02.webp" size="lg" alt="Sparse Primary Indices 02" />
+
+처음 8192개 행(디스크상의 물리적 순서 기준, 해당 컬럼 값)은 논리적으로 그래뉼 0에 속하고, 그다음 8192개 행(해당 컬럼 값)은 그래뉼 1에 속하는 식입니다.
+
+<Note>
+  * 마지막 그래뉼(그래뉼 1082)은 8192개보다 적은 행을 &quot;포함&quot;합니다.
+
+  * 이 가이드의 앞부분 &quot;DDL Statement Details&quot;에서 [adaptive index granularity](/ko/resources/changelogs/oss/2019#experimental-features-1)를 비활성화했다고 언급했습니다(이 가이드의 설명을 단순화하고 다이어그램과 결과를 재현 가능하게 하기 위해서입니다).
+
+    따라서 예시 테이블의 모든 그래뉼(마지막 그래뉼 제외)은 크기가 동일합니다.
+
+  * adaptive index granularity가 있는 테이블의 경우(index granularity는 [default](/ko/reference/settings/merge-tree-settings#index_granularity_bytes)로 adaptive임) 행 데이터 크기에 따라 일부 그래뉼의 크기가 8192개 행보다 작을 수 있습니다.
+
+  * 프라이머리 키 컬럼(`UserID`, `URL`)의 일부 컬럼 값은 주황색으로 표시했습니다.
+    이렇게 주황색으로 표시된 컬럼 값은 각 그래뉼의 첫 번째 행에 있는 프라이머리 키 컬럼 값입니다.
+    아래에서 보겠지만, 이렇게 주황색으로 표시된 컬럼 값이 테이블의 프라이머리 인덱스 항목이 됩니다.
+
+  * ClickHouse 내부 번호 체계에 맞추기 위해 그래뉼 번호는 0부터 시작합니다. 이 번호 체계는 로깅 메시지에도 사용됩니다.
+</Note>
+
+<div id="the-primary-index-has-one-entry-per-granule">
+  ### 프라이머리 인덱스는 그래뉼당 하나의 항목을 가집니다
+</div>
+
+프라이머리 인덱스는 위 다이어그램에 표시된 그래뉼을 기준으로 생성됩니다. 이 인덱스는 0부터 시작하는 이른바 숫자형 인덱스 마크를 포함하는 압축되지 않은 평면 배열 파일(primary.idx)입니다.
+
+아래 다이어그램은 인덱스가 각 그래뉼의 첫 번째 행에 대한 프라이머리 키 컬럼 값(위 다이어그램에서 주황색으로 표시된 값)을 저장한다는 것을 보여줍니다.
+즉, 프라이머리 인덱스는 테이블의 매 8192번째 행에 있는 프라이머리 키 컬럼 값을 저장합니다(프라이머리 키 컬럼으로 정의된 물리적 행 순서 기준).
+예를 들어
+
+* 첫 번째 인덱스 항목(아래 다이어그램의 &#39;mark 0&#39;)은 위 다이어그램의 그래뉼 0의 첫 번째 행에 있는 키 컬럼 값을 저장합니다.
+* 두 번째 인덱스 항목(아래 다이어그램의 &#39;mark 1&#39;)은 위 다이어그램의 그래뉼 1의 첫 번째 행에 있는 키 컬럼 값을 저장하며, 이런 방식으로 계속됩니다.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-03a.webp" size="lg" alt="희소 프라이머리 인덱스 03a" />
+
+총 887만 개의 행과 1083개의 그래뉼로 이루어진 이 테이블의 인덱스에는 1083개의 항목이 있습니다:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-03b.webp" size="lg" alt="희소 프라이머리 인덱스 03b" />
+
+<Note>
+  * [adaptive index granularity](/ko/resources/changelogs/oss/2019#experimental-features-1)을 사용하는 테이블의 경우, 마지막 테이블 행의 프라이머리 키 컬럼 값을 기록하는 추가 &quot;final&quot; 마크 1개도 프라이머리 인덱스에 저장됩니다. 하지만 이 가이드의 설명을 단순화하고 다이어그램과 결과를 재현 가능하게 만들기 위해 adaptive index granularity를 비활성화했으므로, 이 예시 테이블의 인덱스에는 해당 final 마크가 포함되지 않습니다.
+
+  * 프라이머리 인덱스 파일은 전체가 주 메모리(main memory)에 로드됩니다. 파일이 사용 가능한 여유 메모리 공간보다 크면 ClickHouse에서 오류가 발생합니다.
+</Note>
+
+<Accordion title="프라이머리 인덱스 내용 확인">
+  <p>
+    자가 관리형 ClickHouse 클러스터에서는 예시 테이블의 프라이머리 인덱스 내용을 확인하기 위해 <a href="/ko/reference/functions/table-functions/file" target="_blank">file 테이블 함수</a>를 사용할 수 있습니다.
+
+    이를 위해 먼저 실행 중인 클러스터의 노드 하나에서 프라이머리 인덱스 파일을 <a href="/ko/reference/settings/server-settings/settings#user_files_path" target="_blank">user&#95;files&#95;path</a>로 복사해야 합니다:
+
+    <ul>
+      <li>1단계: 프라이머리 인덱스 파일이 들어 있는 part 경로 확인</li>
+      `SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1`
+
+      테스트 머신에서는 `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`가 반환됩니다.
+
+      <li>2단계: user&#95;files&#95;path 확인</li>
+      Linux의 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">기본 user&#95;files&#95;path</a>는
+      `/var/lib/clickhouse/user_files/`
+
+      이며, Linux에서는 다음과 같이 변경 여부를 확인할 수 있습니다: `$ grep user_files_path /etc/clickhouse-server/config.xml`
+
+      테스트 머신에서 이 경로는 `/Users/tomschreiber/Clickhouse/user_files/`입니다.
+
+      <li>3단계: 프라이머리 인덱스 파일을 user&#95;files&#95;path로 복사하기</li>
+
+      `cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
+    </ul>
+
+    <br />
+
+    이제 SQL을 통해 프라이머리 인덱스의 내용을 확인할 수 있습니다:
+
+    <ul>
+      <li>항목 수 확인</li>
+      `SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');`
+      `1083`이 반환됩니다.
+
+      <li>처음 두 개의 인덱스 마크 확인</li>
+      `SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;`
+
+      다음이 반환됩니다.
+
+      `240923, http://showtopics.html%3...<br/>
+                  4073710, http://mk.ru&pos=3_0`
+
+      <li>마지막 인덱스 마크 확인</li>
+      `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
+      다음이 반환됩니다.
+      `4292714039 │ http://sosyal-mansetleri...`
+    </ul>
+
+    <br />
+
+    이는 예시 테이블의 프라이머리 인덱스 내용 다이어그램과 정확히 일치합니다:
+  </p>
+</Accordion>
+
+프라이머리 키 항목은 각 인덱스 항목이 특정 데이터 범위의 시작을 표시하므로 인덱스 마크라고 합니다. 예시 테이블에 적용하면 다음과 같습니다:
+
+* UserID 인덱스 마크:
+
+  프라이머리 인덱스에 저장된 `UserID` 값은 오름차순으로 정렬되어 있습니다.<br />
+  따라서 위 다이어그램의 &#39;mark 1&#39;은 그래뉼 1의 모든 테이블 행과 그 뒤의 모든 그래뉼에서 `UserID` 값이 4,073,710 이상임이 보장된다는 뜻입니다.
+
+[뒤에서 살펴보겠지만](#the-primary-index-is-used-for-selecting-granules), 이러한 전역 정렬 순서 덕분에 ClickHouse는 쿼리가 프라이머리 키의 첫 번째 컬럼을 기준으로 필터링할 때 첫 번째 키 컬럼의 인덱스 마크에 대해 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">이진 검색 알고리즘</a>을 사용할 수 있습니다.
+
+* URL 인덱스 마크:
+
+  프라이머리 키(primary key) 컬럼 `UserID`와 `URL`의 카디널리티가 상당히 비슷하므로,
+  일반적으로 첫 번째 컬럼 다음에 오는 모든 키 컬럼의 인덱스 마크는 현재 그래뉼 내의 모든 테이블 행에서 바로 앞선 키 컬럼의 값이 동일하게 유지될 때에만 데이터 범위를 나타냅니다.<br />
+  예를 들어, 위 그림에서 mark 0과 mark 1의 UserID 값이 서로 다르므로 ClickHouse는 그래뉼 0에 있는 모든 테이블 행의 URL 값이 `'http://showtopics.html%3...'`보다 크거나 같다고 가정할 수 없습니다. 하지만 위 그림에서 mark 0과 mark 1의 UserID 값이 같다면(즉, 그래뉼 0 내의 모든 테이블 행에서 UserID 값이 동일하게 유지된다면), ClickHouse는 그래뉼 0에 있는 모든 테이블 행의 URL 값이 `'http://showtopics.html%3...'`보다 크거나 같다고 가정할 수 있습니다.
+
+  이것이 쿼리 실행 성능에 어떤 영향을 미치는지는 뒤에서 더 자세히 설명하겠습니다.
+
+<div id="the-primary-index-is-used-for-selecting-granules">
+  ### 프라이머리 인덱스는 그래뉼을 선택하는 데 사용됩니다
+</div>
+
+이제 프라이머리 인덱스를 활용해 쿼리를 실행할 수 있습니다.
+
+다음은 UserID 749927693에 대해 가장 많이 클릭된 URL 상위 10개를 계산하는 예입니다.
+
+```sql
+SELECT URL, count(URL) AS Count
+FROM hits_UserID_URL
+WHERE UserID = 749927693
+GROUP BY URL
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+응답은 다음과 같습니다:
+
+```response highlight={15}
+┌─URL────────────────────────────┬─Count─┐
+│ http://auto.ru/chatay-barana.. │   170 │
+│ http://auto.ru/chatay-id=371...│    52 │
+│ http://public_search           │    45 │
+│ http://kovrik-medvedevushku-...│    36 │
+│ http://forumal                 │    33 │
+│ http://korablitz.ru/L_1OFFER...│    14 │
+│ http://auto.ru/chatay-id=371...│    14 │
+│ http://auto.ru/chatay-john-D...│    13 │
+│ http://auto.ru/chatay-john-D...│    10 │
+│ http://wot/html?page/23600_m...│     9 │
+└────────────────────────────────┴───────┘
+
+10 rows in set. Elapsed: 0.005 sec.
+Processed 8.19 thousand rows,
+740.18 KB (1.53 million rows/s., 138.59 MB/s.)
+```
+
+이제 ClickHouse client 출력에는 전체 테이블 스캔을 수행하는 대신 8,190개 행만 ClickHouse로 스트리밍된 것으로 표시됩니다.
+
+<a href="/ko/reference/settings/server-settings/settings#logger" target="_blank">trace 로깅</a>이 활성화되어 있으면 ClickHouse 서버 로그 파일에는 ClickHouse가 `749927693` 값을 가진 UserID 컬럼의 행을 포함할 가능성이 있는 그래뉼을 식별하기 위해 1083개의 UserID 인덱스 마크를 대상으로 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">이진 검색</a>을 수행했음이 표시됩니다. 여기에는 평균 시간 복잡도 `O(log2 n)`으로 19단계가 필요합니다:
+
+```response highlight={2,7}
+...Executor): Key condition: (column 0 in [749927693, 749927693])
+...Executor): Running binary search on index range for part all_1_9_2 (1083 marks)
+...Executor): Found (LEFT) boundary mark: 176
+...Executor): Found (RIGHT) boundary mark: 177
+...Executor): Found continuous range in 19 steps
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              1/1083 marks by primary key, 1 marks to read from 1 ranges
+...Reading ...approx. 8192 rows starting from 1441792
+```
+
+위의 trace log에서 기존 1083개의 마크 중 1개가 쿼리 조건을 만족한 것을 확인할 수 있습니다.
+
+<Accordion title="Trace Log 세부 정보">
+  <p>
+    마크 176이 식별되었으며(&#39;found left boundary mark&#39;는 포함, &#39;found right boundary mark&#39;는 제외), 따라서 그래뉼 176의 8192개 행 전체가(`이 가이드의 뒷부분에서 살펴보겠지만` 이 그래뉼은 1,441,792번째 행에서 시작합니다) `749927693`인 UserID 컬럼 값을 가진 실제 행을 찾기 위해 ClickHouse로 스트리밍됩니다.
+  </p>
+</Accordion>
+
+또한 예시 쿼리에서 <a href="/ko/reference/statements/explain" target="_blank">EXPLAIN 절</a>을 사용해 이를 재현할 수 있습니다:
+
+```sql
+EXPLAIN indexes = 1
+SELECT URL, count(URL) AS Count
+FROM hits_UserID_URL
+WHERE UserID = 749927693
+GROUP BY URL
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+응답은 다음과 같습니다:
+
+```response highlight={17}
+┌─explain───────────────────────────────────────────────────────────────────────────────┐
+│ Expression (Projection)                                                               │
+│   Limit (preliminary LIMIT (without OFFSET))                                          │
+│     Sorting (Sorting for ORDER BY)                                                    │
+│       Expression (Before ORDER BY)                                                    │
+│         Aggregating                                                                   │
+│           Expression (Before GROUP BY)                                                │
+│             Filter (WHERE)                                                            │
+│               SettingQuotaAndLimits (Set limits and quota after reading from storage) │
+│                 ReadFromMergeTree                                                     │
+│                 Indexes:                                                              │
+│                   PrimaryKey                                                          │
+│                     Keys:                                                             │
+│                       UserID                                                          │
+│                     Condition: (UserID in [749927693, 749927693])                     │
+│                     Parts: 1/1                                                        │
+│                     Granules: 1/1083                                                  │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+
+16 rows in set. Elapsed: 0.003 sec.
+```
+
+클라이언트 출력은 1083개의 그래뉼 중 1개가 UserID 컬럼 값이 749927693인 행을 포함할 가능성이 있어 선택되었음을 보여줍니다.
+
+<Info>
+  **결론**
+
+  쿼리가 복합 키의 일부이자 첫 번째 키 컬럼인 컬럼을 기준으로 필터링하면, ClickHouse는 해당 키 컬럼의 인덱스 마크에서 이진 검색 알고리즘을 수행합니다.
+</Info>
+
+<br />
+
+앞서 설명했듯이 ClickHouse는 쿼리와 일치하는 행을 포함할 가능성이 있는 그래뉼을 빠르게 선택하기 위해 희소 프라이머리 인덱스를 사용합니다(이진 검색 사용).
+
+이것이 ClickHouse 쿼리 실행의 **첫 번째 단계(그래뉼 선택)**입니다.
+
+**두 번째 단계(데이터 읽기)**에서는 ClickHouse가 실제로 쿼리와 일치하는 행을 찾기 위해 선택된 그래뉼의 위치를 찾아, 그 안의 모든 행을 ClickHouse 엔진으로 스트리밍합니다.
+
+다음 섹션에서는 이 두 번째 단계를 더 자세히 설명합니다.
+
+<div id="mark-files-are-used-for-locating-granules">
+  ### 그래뉼 위치를 찾는 데 마크 파일을 사용합니다
+</div>
+
+다음 다이어그램은 이 테이블의 프라이머리 인덱스 파일 일부를 보여줍니다.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-04.webp" size="lg" alt="희소 프라이머리 인덱스 04" />
+
+앞서 설명했듯이, 인덱스의 1083개 UserID 마크에 대해 이진 검색을 수행한 결과 마크 176이 식별되었습니다. 따라서 해당 그래뉼 176에는 UserID 컬럼 값이 749.927.693인 행이 포함되어 있을 가능성이 있습니다.
+
+<Accordion title="그래뉼 선택 세부 정보">
+  <p>
+    위 다이어그램은 마크 176이 첫 번째 인덱스 엔트리임을 보여줍니다. 즉, 연결된 그래뉼 176의 최소 UserID 값은 749.927.693보다 작고, 다음 마크(마크 177)에 해당하는 그래뉼 177의 최소 UserID 값은 이 값보다 큽니다. 따라서 UserID 컬럼 값이 749.927.693인 행을 포함할 가능성이 있는 것은 마크 176에 해당하는 그래뉼 176뿐입니다.
+  </p>
+</Accordion>
+
+그래뉼 176의 일부 행에 UserID 컬럼 값 749.927.693이 실제로 포함되어 있는지 여부를 확인하려면, 이 그래뉼에 속한 8192개 행 전체를 ClickHouse로 스트리밍해야 합니다.
+
+이를 위해 ClickHouse는 그래뉼 176의 물리적 위치를 알아야 합니다.
+
+ClickHouse에서는 이 테이블의 모든 그래뉼에 대한 물리적 위치를 마크 파일에 저장합니다. 데이터 파일과 마찬가지로 테이블 컬럼마다 마크 파일이 하나씩 있습니다.
+
+다음 다이어그램은 테이블의 `UserID`, `URL`, `EventTime` 컬럼에 대한 그래뉼의 물리적 위치를 저장하는 세 개의 마크 파일 `UserID.mrk`, `URL.mrk`, `EventTime.mrk`를 보여줍니다.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="희소 프라이머리 인덱스 05" />
+
+앞서 프라이머리 인덱스는 0부터 번호가 매겨진 인덱스 마크를 포함하는 단순한 비압축 배열 파일(primary.idx)이라고 설명했습니다.
+
+마찬가지로 마크 파일도 0부터 번호가 매겨진 마크를 포함하는 단순한 비압축 배열 파일(*.mrk)입니다.
+
+ClickHouse가 쿼리에 일치하는 행을 포함할 가능성이 있는 그래뉼의 인덱스 마크를 식별하고 선택하면, 그래뉼의 물리적 위치를 얻기 위해 마크 파일에서 위치 기반 배열 조회를 수행할 수 있습니다.
+
+특정 컬럼에 대한 각 마크 파일 엔트리에는 오프셋 형태로 두 개의 위치가 저장됩니다.
+
+* 첫 번째 오프셋(위 다이어그램의 &#39;block&#95;offset&#39;)은 선택한 그래뉼의 압축된 버전을 포함하는 <a href="/ko/get-started/about/distinctive-features#data-compression" target="_blank">압축된</a> 컬럼 data file 내의 <a href="/ko/resources/develop-contribute/introduction/architecture#block" target="_blank">block</a> 위치를 가리킵니다. 이 압축 block에는 몇 개의 압축된 그래뉼이 들어 있을 수 있습니다. 찾은 압축 파일 block은 읽는 시점에 메인 메모리로 압축 해제됩니다.
+
+* 두 번째 오프셋(위 다이어그램의 &#39;granule&#95;offset&#39;)은 마크 파일에서 제공되며, 압축 해제된 블록 데이터 내에서 그래뉼의 위치를 나타냅니다.
+
+그런 다음, 찾은 압축 해제된 그래뉼에 속한 8192개 행 전체가 추가 처리를 위해 ClickHouse로 스트리밍됩니다.
+
+<Note>
+  * [wide format](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)을 사용하고 [adaptive index granularity](/ko/resources/changelogs/oss/2019#experimental-features-1)를 사용하지 않는 테이블의 경우, ClickHouse는 위에 표시된 `.mrk` 마크 파일을 사용합니다. 이 파일에는 엔트리마다 길이 8바이트인 주소 두 개가 들어 있습니다. 이 엔트리들은 모두 같은 크기를 가진 그래뉼의 물리적 위치입니다.
+
+  인덱스 세분화 수준은 기본적으로 [default](/ko/reference/settings/merge-tree-settings#index_granularity_bytes)로 adaptive이지만, 이 예시 테이블에서는 adaptive index granularity를 비활성화했습니다(이 가이드의 설명을 단순화하고 다이어그램과 결과를 재현 가능하게 만들기 위함입니다). 이 테이블은 데이터 크기가 [min&#95;bytes&#95;for&#95;wide&#95;part](/ko/reference/settings/merge-tree-settings#min_bytes_for_wide_part)보다 크기 때문에 wide format을 사용합니다(자가 관리형 cluster에서는 기본값이 10 MB입니다).
+
+  * wide format을 사용하고 adaptive index granularity를 사용하는 테이블의 경우, ClickHouse는 `.mrk2` 마크 파일을 사용합니다. 이 파일은 `.mrk` 마크 파일과 유사한 엔트리를 포함하지만, 엔트리마다 현재 엔트리가 연결된 그래뉼의 행 수를 나타내는 세 번째 값이 추가됩니다.
+
+  * [compact format](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)을 사용하는 테이블의 경우, ClickHouse는 `.mrk3` 마크 파일을 사용합니다.
+</Note>
+
+<Info>
+  **왜 마크 파일이 필요한가**
+
+  프라이머리 인덱스에는 인덱스 마크에 해당하는 그래뉼의 물리적 위치가 왜 직접 포함되지 않을까요?
+
+  그 이유는 ClickHouse가 설계된 초대규모 환경에서는 디스크와 메모리를 매우 효율적으로 사용하는 것이 중요하기 때문입니다.
+
+  프라이머리 인덱스 파일은 메인 메모리에 들어가야 합니다.
+
+  예시 쿼리에서 ClickHouse는 프라이머리 인덱스를 사용해 쿼리와 일치하는 행을 포함할 가능성이 있는 단 하나의 그래뉼을 선택했습니다. 그리고 ClickHouse는 그 하나의 그래뉼에 대해서만, 해당 행을 추가 처리하기 위해 스트리밍하는 데 필요한 물리적 위치를 알면 됩니다.
+
+  또한 이 오프셋 정보는 UserID 및 URL 컬럼에 대해서만 필요합니다.
+
+  쿼리에서 사용되지 않는 컬럼(예: `EventTime`)에는 오프셋 정보가 필요하지 않습니다.
+
+  예시 쿼리의 경우 ClickHouse에는 UserID 데이터 파일(UserID.bin)의 그래뉼 176에 대한 2개의 물리적 위치 오프셋과 URL 데이터 파일(URL.bin)의 그래뉼 176에 대한 2개의 물리적 위치 오프셋만 필요합니다.
+
+  마크 파일이 제공하는 간접 참조를 사용하면 프라이머리 인덱스 안에 3개 컬럼 전체의 1083개 그래뉼에 대한 물리적 위치 엔트리를 직접 저장하지 않아도 되므로, 메인 메모리에 불필요한(잠재적으로 사용되지 않을 수도 있는) 데이터를 두지 않아도 됩니다.
+</Info>
+
+다음 다이어그램과 아래 텍스트는 예시 쿼리에서 ClickHouse가 UserID.bin 데이터 파일의 그래뉼 176을 어떻게 찾는지 보여줍니다.
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-06.webp" size="lg" alt="희소 프라이머리 인덱스 06" />
+
+이 가이드의 앞부분에서 ClickHouse가 프라이머리 인덱스 마크 176을 선택했고, 따라서 그래뉼 176이 쿼리와 일치하는 행을 포함할 가능성이 있다고 판단했다는 점을 설명했습니다.
+
+이제 ClickHouse는 인덱스에서 선택한 마크 번호(176)를 사용해 UserID.mrk 마크 파일에서 위치 기반 배열 조회를 수행하고, 그래뉼 176의 위치를 찾는 데 필요한 2개의 오프셋을 가져옵니다.
+
+그림에서 볼 수 있듯이, 첫 번째 오프셋은 UserID.bin 데이터 파일 내에서 그래뉼 176의 압축된 버전을 포함하는 압축 파일 블록의 위치를 가리킵니다.
+
+해당 파일 블록이 메인 메모리로 압축 해제되면, 마크 파일의 두 번째 오프셋을 사용해 압축 해제된 데이터 안에서 그래뉼 176의 위치를 찾을 수 있습니다.
+
+ClickHouse는 예시 쿼리(UserID가 749.927.693인 인터넷 사용자가 가장 많이 클릭한 URL 상위 10개)를 실행하기 위해 UserID.bin 데이터 파일과 URL.bin 데이터 파일 모두에서 그래뉼 176의 위치를 찾고, 그 안의 모든 값을 스트리밍해야 합니다.
+
+위 다이어그램은 ClickHouse가 UserID.bin 데이터 파일의 그래뉼을 어떻게 찾는지 보여줍니다.
+
+이와 동시에 ClickHouse는 URL.bin 데이터 파일의 그래뉼 176에 대해서도 동일한 작업을 수행합니다. 이렇게 각 그래뉼은 서로 정렬된 상태로 ClickHouse 엔진에 스트리밍되어 추가 처리됩니다. 즉, UserID가 749.927.693인 모든 행에 대해 그룹별 URL 값을 집계하고 개수를 계산한 다음, 최종적으로 개수가 많은 순서대로 가장 큰 URL 그룹 10개를 출력합니다.
+
+<div id="using-multiple-primary-indexes">
+  ## 여러 프라이머리 인덱스 사용
+</div>
+
+<a name="filtering-on-key-columns-after-the-first" />
+
+<div id="secondary-key-columns-can-not-be-inefficient">
+  ### 보조 키 컬럼은 비효율적일 수도, 아닐 수도 있습니다
+</div>
+
+쿼리가 복합 키의 일부이면서 첫 번째 키 컬럼인 컬럼을 기준으로 필터링하는 경우, [ClickHouse는 해당 키 컬럼의 인덱스 마크를 대상으로 이진 검색 알고리즘을 실행합니다](#the-primary-index-is-used-for-selecting-granules).
+
+그렇다면 쿼리가 복합 키의 일부인 컬럼으로 필터링하지만, 그 컬럼이 첫 번째 키 컬럼이 아니라면 어떻게 될까요?
+
+<Note>
+  여기서는 쿼리가 첫 번째 키 컬럼으로는 명시적으로 필터링하지 않고, 보조 키 컬럼으로 필터링하는 시나리오를 다룹니다.
+
+  쿼리가 첫 번째 키 컬럼과 그 뒤의 다른 키 컬럼을 모두 기준으로 필터링하는 경우, ClickHouse는 첫 번째 키 컬럼의 인덱스 마크를 대상으로 이진 검색을 실행합니다.
+</Note>
+
+<br />
+
+<br />
+
+<a name="query-on-url" />
+
+&quot;http://public&#95;search&quot; URL을 가장 자주 클릭한 상위 10명의 사용자를 계산하는 쿼리를 사용합니다:
+
+```sql
+SELECT UserID, count(UserID) AS Count
+FROM hits_UserID_URL
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+응답은 다음과 같습니다: <a name="query-on-url-slow" />
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.086 sec.
+Processed 8.81 million rows,
+799.69 MB (102.11 million rows/s., 9.27 GB/s.)
+```
+
+클라이언트 출력은 [URL 컬럼이 복합 기본 키의 일부임에도](#a-table-with-a-primary-key) ClickHouse가 거의 전체 테이블 스캔을 수행했음을 보여줍니다! ClickHouse는 테이블의 887만 행 중 881만 행을 읽습니다.
+
+[trace&#95;logging](/ko/reference/settings/server-settings/settings#logger)이 활성화되어 있으면 ClickHouse 서버 로그 파일에 ClickHouse가 1083개의 URL 인덱스 마크에 대해 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">일반 제외 검색</a>을 사용해 URL 컬럼 값이 &quot;http://public&#95;search&quot;인 행을 포함할 가능성이 있는 그래뉼을 식별했음이 표시됩니다:
+
+```response highlight={3,6}
+...Executor): Key condition: (column 1 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): Used generic exclusion search over index for part all_1_9_2
+              with 1537 steps
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              1076/1083 marks by primary key, 1076 marks to read from 5 ranges
+...Executor): Reading approx. 8814592 rows with 10 streams
+```
+
+위의 샘플 trace 로그에서 1083개의 그래뉼 중 1076개가(마크를 통해) 일치하는 URL 값을 가진 행을 포함할 가능성이 있는 것으로 선택되었음을 확인할 수 있습니다.
+
+그 결과, 실제로 URL 값 &quot;http://public&#95;search&quot;를 포함하는 행을 식별하기 위해 881만 개의 행이 ClickHouse 엔진으로 스트리밍됩니다(10개의 스트림을 사용해 병렬로 처리).
+
+하지만 뒤에서 보겠지만, 선택된 1076개의 그래뉼 중 실제로 일치하는 행을 포함하는 것은 39개뿐입니다.
+
+복합 기본 키(UserID, URL)를 기반으로 하는 프라이머리 인덱스는 특정 UserID 값을 가진 행을 필터링하는 쿼리의 속도를 높이는 데 매우 유용했지만, 특정 URL 값을 가진 행을 필터링하는 쿼리의 속도를 높이는 데는 인덱스가 큰 도움이 되지 않습니다.
+
+그 이유는 URL 컬럼이 첫 번째 키 컬럼이 아니므로 ClickHouse가 URL 컬럼의 인덱스 마크에 대해 이진 검색 대신 일반 제외 검색 알고리즘을 사용하며, **이 알고리즘의 효과는 URL 컬럼과 그 앞선 키 컬럼인 UserID 사이의 카디널리티 차이에 따라 달라지기 때문입니다**.
+
+이를 설명하기 위해 일반 제외 검색이 어떻게 작동하는지 몇 가지 세부 사항을 살펴보겠습니다.
+
+<a name="generic-exclusion-search-algorithm" />
+
+<div id="generic-exclusion-search-algorithm">
+  ### 일반 제외 검색 알고리즘
+</div>
+
+다음은 선행 키 컬럼의 카디널리티가 낮거나 높은 경우, 보조 컬럼을 통해 그래뉼을 선택할 때 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1438" target="_blank">ClickHouse 일반 제외 검색 알고리즘</a>이 어떻게 동작하는지 보여줍니다.
+
+두 경우 모두에 대해 다음을 가정하겠습니다:
+
+* URL 값이 &quot;W3&quot;인 행을 찾는 쿼리
+* UserID와 URL 값을 단순화한 hits 테이블의 추상화된 버전
+* 인덱스에 동일한 복합 기본 키 (UserID, URL)를 사용합니다. 즉, 행은 먼저 UserID 값 기준으로 정렬되며, 같은 UserID 값을 가진 행은 그다음 URL 기준으로 정렬됩니다.
+* 그래뉼 크기는 2이며, 즉 각 그래뉼에는 2개의 행이 포함됩니다.
+
+아래 다이어그램에서는 각 그래뉼의 첫 번째 테이블 행에 대한 키 컬럼 값을 주황색으로 표시했습니다.
+
+**선행 키 컬럼의 카디널리티가 낮은 경우**<a name="generic-exclusion-search-fast" />
+
+UserID의 카디널리티가 낮다고 가정해 보겠습니다. 이 경우 동일한 UserID 값이 여러 테이블 행, 그래뉼, 그리고 인덱스 마크에 걸쳐 분산되어 있을 가능성이 높습니다. 같은 UserID를 가진 인덱스 마크에서는 URL 값이 오름차순으로 정렬됩니다(테이블 행이 먼저 UserID, 다음으로 URL 기준으로 정렬되기 때문입니다). 따라서 아래와 같이 효율적인 필터링이 가능합니다:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-07.webp" size="lg" alt="희소 프라이머리 인덱스 06" />
+
+위 다이어그램의 추상화된 샘플 데이터에 대한 그래뉼 선택 과정에는 세 가지 시나리오가 있습니다:
+
+1. **URL 값이 W3보다 작고, 바로 다음 인덱스 마크의 URL 값도 W3보다 작은** 인덱스 마크 0은 제외할 수 있습니다. 마크 0과 1이 동일한 UserID 값을 가지기 때문입니다. 이 제외 전제조건은 그래뉼 0이 전부 U1 UserID 값으로만 구성되어 있음을 보장하므로, ClickHouse는 그래뉼 0의 최대 URL 값 역시 W3보다 작다고 가정하고 해당 그래뉼을 제외할 수 있습니다.
+
+2. **URL 값이 W3보다 작거나 같고, 바로 다음 인덱스 마크의 URL 값이 W3보다 크거나 같은** 인덱스 마크 1은 선택됩니다. 이는 그래뉼 1에 URL이 W3인 행이 포함되어 있을 수 있음을 의미하기 때문입니다.
+
+3. **URL 값이 W3보다 큰** 인덱스 마크 2와 3은 제외할 수 있습니다. 프라이머리 인덱스의 인덱스 마크는 각 그래뉼의 첫 번째 테이블 행에 대한 키 컬럼 값을 저장하고, 테이블 행은 디스크에서 키 컬럼 값 기준으로 정렬되어 있으므로 그래뉼 2와 3에는 URL 값 W3가 포함될 수 없습니다.
+
+**선행 키 컬럼의 카디널리티가 높은 경우**<a name="generic-exclusion-search-slow" />
+
+UserID의 카디널리티가 높으면 동일한 UserID 값이 여러 테이블 행과 그래뉼에 걸쳐 분산되어 있을 가능성이 낮습니다. 즉, 인덱스 마크의 URL 값은 단조 증가하지 않습니다:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-08.webp" size="lg" alt="희소 프라이머리 인덱스 06" />
+
+위 다이어그램에서 볼 수 있듯이, URL 값이 W3보다 작은 표시된 모든 마크는 연결된 그래뉼의 행을 ClickHouse 엔진으로 스트리밍하기 위해 선택됩니다.
+
+그 이유는 다이어그램의 모든 인덱스 마크가 위에서 설명한 시나리오 1에 해당하더라도, *바로 다음 인덱스 마크가 현재 마크와 동일한 UserID 값을 가진다*는 제외 전제조건을 만족하지 않으므로 제외할 수 없기 때문입니다.
+
+예를 들어, **URL 값이 W3보다 작고, 바로 다음 인덱스 마크의 URL 값도 W3보다 작은** 인덱스 마크 0을 생각해 보겠습니다. 이것은 *제외할 수 없습니다*. 바로 다음 인덱스 마크 1이 현재 마크 0과 동일한 UserID 값을 가지지 *않기* 때문입니다.
+
+결과적으로 ClickHouse는 그래뉼 0의 최대 URL 값에 대해 어떤 가정도 할 수 없습니다. 대신 그래뉼 0에 URL 값이 W3인 행이 포함되어 있을 가능성이 있다고 가정해야 하며, 마크 0을 선택할 수밖에 없습니다.
+
+마크 1, 2, 3에도 동일한 시나리오가 적용됩니다.
+
+<Info>
+  **결론**
+
+  ClickHouse는 쿼리가 복합 키에 포함되어 있지만 첫 번째 키 컬럼은 아닌 컬럼을 필터링할 때 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">이진 검색 알고리즘</a> 대신 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">일반 제외 검색 알고리즘</a>을 사용하며, 이 알고리즘은 앞선 키 컬럼의 카디널리티가 낮을수록 가장 효과적입니다.
+</Info>
+
+샘플 데이터 세트에서는 두 키 컬럼(UserID, URL) 모두 비슷하게 높은 카디널리티를 가지므로, 앞서 설명했듯이 URL 컬럼보다 앞선 키 컬럼의 카디널리티가 더 높거나 비슷한 경우 일반 제외 검색 알고리즘은 그다지 효과적이지 않습니다.
+
+<div id="note-about-data-skipping-index">
+  ### 데이터 스키핑 인덱스에 대한 참고 사항
+</div>
+
+UserID와 URL의 카디널리티가 모두 비슷하게 높기 때문에, [URL로 필터링하는 쿼리](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient) 역시 [(UserID, URL) 복합 기본 키를 사용하는 테이블](#a-table-with-a-primary-key)의 URL 컬럼에 [보조 데이터 스키핑 인덱스](/ko/concepts/features/performance/skip-indexes/skipping-indexes)를 생성해도 큰 이점을 얻지 못합니다.
+
+예를 들어, 다음 두 SQL 문은 테이블의 URL 컬럼에 [minmax](/ko/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) 데이터 스키핑 인덱스를 생성하고 채웁니다.
+
+```sql
+ALTER TABLE hits_UserID_URL ADD INDEX url_skipping_index URL TYPE minmax GRANULARITY 4;
+ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
+```
+
+ClickHouse는 이제 추가 인덱스를 생성했으며, 이 인덱스에는 연속된 4개의 [그래뉼](#data-is-organized-into-granules-for-parallel-data-processing) 그룹마다(위 `ALTER TABLE` 문의 `GRANULARITY 4` 절에 유의하십시오) URL의 최소값과 최대값이 저장됩니다:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-13a.webp" size="lg" alt="희소 프라이머리 인덱스 13a" />
+
+첫 번째 인덱스 항목(위 다이어그램의 &#39;mark 0&#39;)에는 [테이블의 처음 4개 그래뉼에 속한 행](#data-is-organized-into-granules-for-parallel-data-processing)에 대한 URL의 최소값과 최대값이 저장됩니다.
+
+두 번째 인덱스 항목(&#39;mark 1&#39;)에는 테이블의 다음 4개 그래뉼에 속한 행에 대한 URL의 최소값과 최대값이 저장되며, 이후에도 같은 방식으로 계속됩니다.
+
+(ClickHouse는 또한 인덱스 마크와 연결된 그래뉼 그룹을 [찾기](#mark-files-are-used-for-locating-granules) 위한 데이터 스키핑 인덱스용 특수한 [마크 파일](#mark-files-are-used-for-locating-granules)도 생성했습니다.)
+
+UserID와 URL의 카디널리티가 비슷하게 높기 때문에, 이 보조 데이터 스키핑 인덱스는 [URL로 필터링하는 쿼리](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)가 실행될 때 선택 대상에서 그래뉼을 제외하는 데 도움이 되지 않습니다.
+
+쿼리가 찾는 특정 URL 값(즉, &#39;http://public&#95;search&#39;)은 각 그래뉼 그룹에 대해 인덱스에 저장된 최소값과 최대값 사이에 있을 가능성이 매우 높습니다. 따라서 ClickHouse는 해당 그래뉼 그룹을 선택할 수밖에 없습니다(쿼리와 일치하는 행이 포함되어 있을 수 있기 때문입니다).
+
+<div id="a-need-to-use-multiple-primary-indexes">
+  ### 여러 프라이머리 인덱스를 사용해야 하는 이유
+</div>
+
+따라서 특정 URL이 있는 행을 필터링하는 예시 쿼리의 속도를 크게 높이려면, 해당 쿼리에 최적화된 프라이머리 인덱스를 사용해야 합니다.
+
+여기에 더해 특정 UserID가 있는 행을 필터링하는 예시 쿼리의 우수한 성능도 유지하려면, 여러 프라이머리 인덱스를 사용해야 합니다.
+
+다음에서는 이를 구현하는 방법을 설명합니다.
+
+<a name="multiple-primary-indexes" />
+
+<div id="options-for-creating-additional-primary-indexes">
+  ### 추가 프라이머리 인덱스를 생성하는 옵션
+</div>
+
+특정 UserID가 있는 행을 필터링하는 쿼리와 특정 URL이 있는 행을 필터링하는 쿼리, 이 두 예시 쿼리를 모두 크게 가속하려면 다음 세 가지 방법 중 하나로 여러 프라이머리 인덱스를 사용해야 합니다.
+
+* 서로 다른 프라이머리 키를 가진 **두 번째 테이블** 생성
+* 기존 테이블에 **materialized view** 생성
+* 기존 테이블에 **PROJECTION** 추가
+
+세 가지 방법 모두 테이블의 프라이머리 인덱스와 행 정렬 순서를 재구성하기 위해 예시 데이터를 추가 테이블에 사실상 중복 저장합니다.
+
+다만 이 세 가지 방법은 쿼리와 삽입 SQL 문의 라우팅과 관련해, 그 추가 테이블이 사용자에게 얼마나 투명하게 드러나는지에서 차이가 있습니다.
+
+서로 다른 프라이머리 키를 가진 **두 번째 테이블**을 생성하는 경우, 쿼리는 해당 쿼리에 가장 적합한 테이블 버전으로 명시적으로 보내야 하며, 두 테이블의 동기화를 유지하려면 새 데이터도 두 테이블에 모두 명시적으로 삽입해야 합니다:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-09a.webp" size="lg" alt="Sparse Primary Indices 09a" />
+
+**materialized view**를 사용하면 추가 테이블이 암묵적으로 생성되고, 데이터는 두 테이블 간에 자동으로 동기화된 상태로 유지됩니다:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-09b.webp" size="lg" alt="Sparse Primary Indices 09b" />
+
+그리고 **PROJECTION**은 가장 투명한 방법입니다. 암묵적으로 생성된(그리고 숨겨진) 추가 테이블을 데이터 변경 사항과 자동으로 동기화할 뿐만 아니라, ClickHouse가 쿼리에 가장 효과적인 테이블 버전을 자동으로 선택합니다:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-09c.webp" size="lg" alt="Sparse Primary Indices 09c" />
+
+다음에서는 여러 프라이머리 인덱스를 생성하고 사용하는 이 세 가지 방법을 실제 예시와 함께 더 자세히 살펴보겠습니다.
+
+<a name="multiple-primary-indexes-via-secondary-tables" />
+
+<div id="option-1-secondary-tables">
+  ### 옵션 1: 보조 테이블
+</div>
+
+<a name="secondary-table" />
+
+원본 테이블과 비교해 프라이머리 키(primary key)에서 키 컬럼의 순서를 바꾼 새로운 보조 테이블을 생성합니다:
+
+```sql highlight={8}
+CREATE TABLE hits_URL_UserID
+(
+    `UserID` UInt32,
+    `URL` String,
+    `EventTime` DateTime
+)
+ENGINE = MergeTree
+PRIMARY KEY (URL, UserID)
+ORDER BY (URL, UserID, EventTime)
+SETTINGS index_granularity_bytes = 0, compress_primary_key = 0;
+```
+
+[원본 테이블](#a-table-with-a-primary-key)의 887만 개 행을 모두 추가 테이블에 삽입합니다:
+
+```sql
+INSERT INTO hits_URL_UserID
+SELECT * FROM hits_UserID_URL;
+```
+
+응답은 다음과 같습니다.
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 2.898 sec. Processed 8.87 million rows, 838.84 MB (3.06 million rows/s., 289.46 MB/s.)
+```
+
+마지막으로 테이블을 최적화하세요:
+
+```sql
+OPTIMIZE TABLE hits_URL_UserID FINAL;
+```
+
+프라이머리 키에서 컬럼 순서를 바꾸었기 때문에, 삽입된 행은 이제 디스크에 [원래 테이블](#a-table-with-a-primary-key)과는 다른 사전식 순서로 저장되며, 그에 따라 해당 테이블의 1083개 그래뉼 역시 이전과는 다른 값을 포함하게 됩니다:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-10.webp" size="lg" alt="희소 프라이머리 인덱스 10" />
+
+그 결과 생성된 프라이머리 키는 다음과 같습니다:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-11.webp" size="lg" alt="희소 프라이머리 인덱스 11" />
+
+이제 이를 사용하면 URL 컬럼을 필터링 조건으로 사용해 URL &quot;http://public&#95;search&quot;를 가장 자주 클릭한 상위 10명의 사용자를 계산하는 예시 쿼리의 실행 속도를 크게 높일 수 있습니다:
+
+```sql highlight={2}
+SELECT UserID, count(UserID) AS Count
+FROM hits_URL_UserID
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+응답은 다음과 같습니다:
+
+<a name="query-on-url-fast" />
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.017 sec.
+Processed 319.49 thousand rows,
+11.38 MB (18.41 million rows/s., 655.75 MB/s.)
+```
+
+이제 ClickHouse는 [거의 전체 테이블 스캔](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#efficient-filtering-on-secondary-key-columns)을 수행하는 대신, 해당 쿼리를 훨씬 더 효율적으로 실행했습니다.
+
+UserID가 첫 번째, URL이 두 번째 키 컬럼인 [원본 테이블](#a-table-with-a-primary-key)의 프라이머리 인덱스에서는 ClickHouse가 해당 쿼리를 실행할 때 인덱스 마크에 대해 [일반 제외 검색](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm)을 사용했지만, UserID와 URL의 카디널리티가 비슷하게 높아 그다지 효과적이지 않았습니다.
+
+이제 URL이 프라이머리 인덱스의 첫 번째 컬럼이므로, ClickHouse는 인덱스 마크에 대해 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">이진 검색</a>을 수행합니다.
+이에 해당하는 trace 로그는 ClickHouse 서버 로그 파일에서 확인할 수 있습니다:
+
+```response highlight={3,8}
+...Executor): Key condition: (column 0 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): Running binary search on index range for part all_1_9_2 (1083 marks)
+...Executor): Found (LEFT) boundary mark: 644
+...Executor): Found (RIGHT) boundary mark: 683
+...Executor): Found continuous range in 19 steps
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              39/1083 marks by primary key, 39 marks to read from 1 ranges
+...Executor): Reading approx. 319488 rows with 2 streams
+```
+
+ClickHouse는 일반 제외 검색을 사용했을 때의 1076개 대신, 인덱스 마크 39개만 선택했습니다.
+
+추가된 테이블은 URL로 필터링하는 예시 쿼리의 실행 속도를 높이도록 최적화되어 있다는 점에 유의하십시오.
+
+[원래 테이블](#a-table-with-a-primary-key)에서 해당 쿼리의 [성능이 좋지 않았던 것](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)과 마찬가지로, [`UserIDs`로 필터링하는 예시 쿼리](#the-primary-index-is-used-for-selecting-granules)도 새로 추가된 테이블에서는 그다지 효율적으로 실행되지 않습니다. 이제 UserID가 해당 테이블의 프라이머리 인덱스에서 두 번째 키 컬럼이므로, ClickHouse는 그래뉼 선택에 일반 제외 검색을 사용합니다. 그런데 UserID와 URL은 [카디널리티가 비슷하게 높아](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) 이 방식이 그다지 효과적이지 않습니다.
+자세한 내용은 세부 정보 상자를 열어 확인하십시오.
+
+<Accordion title="이제 UserIDs로 필터링하는 쿼리의 성능이 좋지 않습니다">
+  <p>
+    ```sql
+    SELECT URL, count(URL) AS Count
+    FROM hits_URL_UserID
+    WHERE UserID = 749927693
+    GROUP BY URL
+    ORDER BY Count DESC
+    LIMIT 10;
+    ```
+
+    응답은 다음과 같습니다.
+
+    ```response highlight={15}
+    ┌─URL────────────────────────────┬─Count─┐
+    │ http://auto.ru/chatay-barana.. │   170 │
+    │ http://auto.ru/chatay-id=371...│    52 │
+    │ http://public_search           │    45 │
+    │ http://kovrik-medvedevushku-...│    36 │
+    │ http://forumal                 │    33 │
+    │ http://korablitz.ru/L_1OFFER...│    14 │
+    │ http://auto.ru/chatay-id=371...│    14 │
+    │ http://auto.ru/chatay-john-D...│    13 │
+    │ http://auto.ru/chatay-john-D...│    10 │
+    │ http://wot/html?page/23600_m...│     9 │
+    └────────────────────────────────┴───────┘
+
+    10 rows in set. Elapsed: 0.024 sec.
+    Processed 8.02 million rows,
+    73.04 MB (340.26 million rows/s., 3.10 GB/s.)
+    ```
+
+    서버 로그:
+
+    ```response highlight={2,5}
+    ...Executor): Key condition: (column 1 in [749927693, 749927693])
+    ...Executor): Used generic exclusion search over index for part all_1_9_2
+                  with 1453 steps
+    ...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+                  980/1083 marks by primary key, 980 marks to read from 23 ranges
+    ...Executor): Reading approx. 8028160 rows with 10 streams
+    ```
+  </p>
+</Accordion>
+
+이제 테이블이 2개입니다. 각각 `UserIDs`로 필터링하는 쿼리와 URL로 필터링하는 쿼리의 속도를 높이도록 최적화되어 있습니다:
+
+<div id="option-2-materialized-views">
+  ### 옵션 2: Materialized Views
+</div>
+
+기존 테이블에 [materialized view](/ko/reference/statements/create/view)를 생성합니다.
+
+```sql
+CREATE MATERIALIZED VIEW mv_hits_URL_UserID
+ENGINE = MergeTree()
+PRIMARY KEY (URL, UserID)
+ORDER BY (URL, UserID, EventTime)
+POPULATE
+AS SELECT * FROM hits_UserID_URL;
+```
+
+응답은 다음과 같습니다.
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 2.935 sec. Processed 8.87 million rows, 838.84 MB (3.02 million rows/s., 285.84 MB/s.)
+```
+
+<Note>
+  * 뷰의 프라이머리 키에서는 [원본 테이블](#a-table-with-a-primary-key)과 비교해 키 컬럼의 순서를 바꿉니다
+  * materialized view는 **암시적으로 생성된 테이블**을 기반으로 하며, 그 테이블의 행 순서와 프라이머리 인덱스는 지정된 프라이머리 키 정의를 따릅니다
+  * 암시적으로 생성된 테이블은 `SHOW TABLES` 쿼리 결과에 표시되며, 이름은 `.inner`로 시작합니다
+  * 먼저 materialized view의 기반 테이블을 명시적으로 생성한 다음, `TO [db].[table]` [절](/ko/reference/statements/create/view)을 통해 뷰가 해당 테이블을 대상으로 하도록 할 수도 있습니다
+  * 원본 테이블 [hits&#95;UserID&#95;URL](#a-table-with-a-primary-key)의 887만 개 전체 행을 암시적으로 생성된 테이블에 즉시 채우기 위해 `POPULATE` 키워드를 사용합니다
+  * 원본 테이블 hits&#95;UserID&#95;URL에 새 행이 삽입되면, 해당 행도 암시적으로 생성된 테이블에 자동으로 삽입됩니다
+  * 결과적으로 암시적으로 생성된 테이블은 [명시적으로 생성한 보조 테이블](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)과 동일한 행 순서와 프라이머리 인덱스를 갖습니다:
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12b-1.webp" size="lg" alt="희소 프라이머리 인덱스 12b1" />
+
+  ClickHouse는 암시적으로 생성된 테이블의 [컬럼 데이터 파일](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), [마크 파일](#mark-files-are-used-for-locating-granules) (*.mrk2), 그리고 [프라이머리 인덱스](#the-primary-index-has-one-entry-per-granule) (primary.idx)를 ClickHouse 서버의 데이터 디렉터리 내 특수한 폴더에 저장합니다:
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12b-2.webp" size="md" alt="희소 프라이머리 인덱스 12b2" />
+</Note>
+
+이제 materialized view를 뒷받침하는 암시적으로 생성된 테이블(및 그 프라이머리 인덱스)을 사용해 URL 컬럼으로 필터링하는 예시 쿼리의 실행 속도를 크게 높일 수 있습니다:
+
+```sql highlight={2}
+SELECT UserID, count(UserID) AS Count
+FROM mv_hits_URL_UserID
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+응답은 다음과 같습니다:
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.026 sec.
+Processed 335.87 thousand rows,
+13.54 MB (12.91 million rows/s., 520.38 MB/s.)
+```
+
+실제로는 materialized view를 뒷받침하는 암묵적으로 생성된 테이블(및 해당 프라이머리 인덱스(primary index))이 [명시적으로 생성한 보조 테이블(secondary table)](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)과 동일하므로, 쿼리는 명시적으로 생성한 테이블을 사용할 때와 사실상 같은 방식으로 실행됩니다.
+
+이에 해당하는 ClickHouse 서버 로그 파일의 trace 로그를 보면, ClickHouse가 인덱스 마크에 대해 이진 검색을 수행하고 있음을 확인할 수 있습니다:
+
+```response highlight={3,6}
+...Executor): Key condition: (column 0 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): 인덱스 범위에서 이진 검색 실행 중 ...
+...
+...Executor): 파티션 키로 4/4 파트 선택, 프라이머리 키로 4 파트 선택,
+              프라이머리 키로 41/1083 마크 선택, 4개 범위에서 읽을 41 마크
+...Executor): 4개 스트림으로 약 335872 행 읽는 중
+```
+
+<div id="option-3-projections">
+  ### 옵션 3: PROJECTION
+</div>
+
+기존 테이블에 PROJECTION을 생성하세요:
+
+```sql
+ALTER TABLE hits_UserID_URL
+    ADD PROJECTION prj_url_userid
+    (
+        SELECT *
+        ORDER BY (URL, UserID)
+    );
+```
+
+PROJECTION을 구체화합니다:
+
+```sql
+ALTER TABLE hits_UserID_URL
+    MATERIALIZE PROJECTION prj_url_userid;
+```
+
+<Note>
+  * PROJECTION은 PROJECTION에 지정된 `ORDER BY` 절을 기준으로 행 순서와 프라이머리 인덱스를 갖는 **숨겨진 테이블**을 생성합니다
+  * 숨겨진 테이블은 `SHOW TABLES` 쿼리 결과에 표시되지 않습니다
+  * `MATERIALIZE` 키워드를 사용해 원본 테이블 [hits&#95;UserID&#95;URL](#a-table-with-a-primary-key)의 총 887만 행 전체를 숨겨진 테이블에 즉시 채웁니다
+  * 원본 테이블 hits&#95;UserID&#95;URL에 새 행이 삽입되면 해당 행도 자동으로 숨겨진 테이블에 삽입됩니다
+  * 쿼리는 항상 (구문상으로는) 원본 테이블 hits&#95;UserID&#95;URL을 대상으로 하지만, 숨겨진 테이블의 행 순서와 프라이머리 인덱스를 사용하는 편이 더 효율적으로 실행될 수 있다면 대신 그 숨겨진 테이블이 사용됩니다
+  * PROJECTION은 `ORDER BY`를 사용하는 쿼리를 더 효율적으로 만들지는 않는다는 점에 유의하십시오. `ORDER BY`가 PROJECTION의 `ORDER BY` 절과 일치하더라도 마찬가지입니다(https://github.com/ClickHouse/ClickHouse/issues/47333 참조)
+  * 결과적으로, 암묵적으로 생성된 숨겨진 테이블은 [명시적으로 생성한 보조 테이블](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)과 동일한 행 순서와 프라이머리 인덱스를 가집니다:
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12c-1.webp" size="lg" alt="Sparse Primary Indices 12c1" />
+
+  ClickHouse는 숨겨진 테이블의 [컬럼 데이터 파일](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), [마크 파일](#mark-files-are-used-for-locating-granules) (*.mrk2), 그리고 [프라이머리 인덱스](#the-primary-index-has-one-entry-per-granule) (primary.idx)를 원본 테이블의 데이터 파일, 마크 파일, 프라이머리 인덱스 파일 옆에 있는 특수 폴더(아래 스크린샷에서 주황색으로 표시됨)에 저장합니다:
+
+  <Image img="/images/guides/best-practices/sparse-primary-indexes-12c-2.webp" size="sm" alt="Sparse Primary Indices 12c2" />
+</Note>
+
+PROJECTION이 생성한 숨겨진 테이블(및 그 프라이머리 인덱스)은 이제 URL 컬럼으로 필터링하는 예시 쿼리의 실행 속도를 크게 높이는 데 (암묵적으로) 활용될 수 있습니다. 이 쿼리는 구문상으로는 PROJECTION의 원본 테이블을 대상으로 한다는 점에 유의하십시오.
+
+```sql highlight={2}
+SELECT UserID, count(UserID) AS Count
+FROM hits_UserID_URL
+WHERE URL = 'http://public_search'
+GROUP BY UserID
+ORDER BY Count DESC
+LIMIT 10;
+```
+
+응답은 다음과 같습니다.
+
+```response highlight={15}
+┌─────UserID─┬─Count─┐
+│ 2459550954 │  3741 │
+│ 1084649151 │  2484 │
+│  723361875 │   729 │
+│ 3087145896 │   695 │
+│ 2754931092 │   672 │
+│ 1509037307 │   582 │
+│ 3085460200 │   573 │
+│ 2454360090 │   556 │
+│ 3884990840 │   539 │
+│  765730816 │   536 │
+└────────────┴───────┘
+
+10 rows in set. Elapsed: 0.029 sec.
+Processed 319.49 thousand rows, 1
+1.38 MB (11.05 million rows/s., 393.58 MB/s.)
+```
+
+실제로 PROJECTION이 생성한 숨겨진 테이블(및 그 프라이머리 인덱스)은 [명시적으로 생성한 보조 테이블](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)과 동일하므로, 쿼리는 명시적으로 생성한 테이블을 사용할 때와 사실상 같은 방식으로 실행됩니다.
+
+이에 해당하는 ClickHouse 서버 로그 파일의 trace 로그를 보면, ClickHouse가 인덱스 마크에 대해 이진 검색을 수행하고 있음을 확인할 수 있습니다:
+
+```response highlight={3,5,8}
+...Executor): Key condition: (column 0 in ['http://public_search',
+                                           'http://public_search'])
+...Executor): Running binary search on index range for part prj_url_userid (1083 marks)
+...Executor): ...
+...Executor): Choose complete Normal projection prj_url_userid
+...Executor): projection required columns: URL, UserID
+...Executor): Selected 1/1 parts by partition key, 1 parts by primary key,
+              39/1083 marks by primary key, 39 marks to read from 1 ranges
+...Executor): Reading approx. 319488 rows with 2 streams
+```
+
+<div id="summary">
+  ### 요약
+</div>
+
+[복합 기본 키 (UserID, URL)를 사용하는 테이블](#a-table-with-a-primary-key)의 프라이머리 인덱스는 [UserID로 필터링하는 쿼리](#the-primary-index-is-used-for-selecting-granules)의 속도를 높이는 데 매우 유용했습니다. 하지만 URL 컬럼도 복합 기본 키의 일부임에도 불구하고, 이 인덱스는 [URL로 필터링하는 쿼리](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)의 속도를 높이는 데는 큰 도움이 되지 않습니다.
+
+반대로도 마찬가지입니다:
+[복합 기본 키 (URL, UserID)를 사용하는 테이블](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)의 프라이머리 인덱스는 [URL로 필터링하는 쿼리](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)의 속도를 높였지만, [UserID로 필터링하는 쿼리](#the-primary-index-is-used-for-selecting-granules)에는 큰 도움이 되지 않았습니다.
+
+기본 키 컬럼인 UserID와 URL의 카디널리티가 비슷하게 높기 때문에, 두 번째 키 컬럼으로 필터링하는 쿼리는 [두 번째 키 컬럼이 인덱스에 포함되어 있어도 큰 이점을 얻지 못합니다](#generic-exclusion-search-algorithm).
+
+따라서 두 번째 키 컬럼을 프라이머리 인덱스에서 제거해 인덱스의 메모리 사용량을 줄이고, 대신 [여러 프라이머리 인덱스를 사용하는 것](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#using-multiple-primary-indexes)이 합리적입니다.
+
+하지만 복합 기본 키를 구성하는 키 컬럼들의 카디널리티 차이가 크다면, [쿼리 관점에서는](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) 기본 키 컬럼을 카디널리티 오름차순으로 배치하는 것이 유리합니다.
+
+키를 구성하는 컬럼들 간 카디널리티 차이가 클수록, 키에서 해당 컬럼들의 순서는 더욱 중요해집니다. 다음 섹션에서 이를 살펴보겠습니다.
+
+<div id="ordering-key-columns-efficiently">
+  ## 정렬 키 컬럼을 효율적으로 배치하기
+</div>
+
+<a name="test" />
+
+복합 기본 키에서는 키 컬럼의 순서가 다음 두 가지에 큰 영향을 미칠 수 있습니다.
+
+* 쿼리에서 보조 키 컬럼에 대한 필터링 효율성과
+* 테이블 데이터 파일의 압축률입니다.
+
+이를 보여주기 위해 [웹 트래픽 샘플 데이터 세트](#data-set)의 한 버전을 사용하겠습니다.
+이 데이터 세트의 각 행에는 인터넷 &#39;사용자&#39;(`UserID` 컬럼)의 URL(`URL` 컬럼) 접근이 봇 트래픽으로 표시되었는지 여부를 나타내는 세 개의 컬럼(`IsRobot` 컬럼 포함)이 있습니다.
+
+앞서 언급한 세 개의 컬럼을 모두 포함하는 복합 기본 키를 사용하겠습니다. 이 키는 다음과 같은 일반적인 웹 분석 쿼리의 속도를 높이는 데 활용할 수 있습니다.
+
+* 특정 URL에 대한 트래픽 중 몇 퍼센트가 봇에서 발생했는지 또는
+* 특정 사용자가 봇인지 아닌지를 얼마나 확신할 수 있는지(해당 사용자의 트래픽 중 몇 퍼센트가 봇 트래픽으로 간주되거나 간주되지 않는지)
+
+복합 기본 키의 키 컬럼으로 사용하려는 세 개 컬럼의 카디널리티를 계산하기 위해 다음 쿼리를 사용합니다(로컬 테이블을 생성하지 않고 TSV 데이터를 즉석에서 쿼리하기 위해 [URL 테이블 함수](/ko/reference/functions/table-functions/url)를 사용한다는 점에 유의하십시오). 이 쿼리를 `clickhouse client`에서 실행하세요:
+
+```sql
+SELECT
+    formatReadableQuantity(uniq(URL)) AS cardinality_URL,
+    formatReadableQuantity(uniq(UserID)) AS cardinality_UserID,
+    formatReadableQuantity(uniq(IsRobot)) AS cardinality_IsRobot
+FROM
+(
+    SELECT
+        c11::UInt64 AS UserID,
+        c15::String AS URL,
+        c20::UInt8 AS IsRobot
+    FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+    WHERE URL != ''
+)
+```
+
+응답은 다음과 같습니다:
+
+```response
+┌─cardinality_URL─┬─cardinality_UserID─┬─cardinality_IsRobot─┐
+│ 2.39 million    │ 119.08 thousand    │ 4.00                │
+└─────────────────┴────────────────────┴─────────────────────┘
+
+1 row in set. Elapsed: 118.334 sec. Processed 8.87 million rows, 15.88 GB (74.99 thousand rows/s., 134.21 MB/s.)
+```
+
+카디널리티(cardinality) 간에 큰 차이가 있음을 알 수 있으며, 특히 `URL` 컬럼과 `IsRobot` 컬럼의 차이가 큽니다. 따라서 복합 기본 키에서 이들 컬럼의 순서는, 해당 컬럼을 기준으로 필터링하는 쿼리의 성능 향상과 테이블의 컬럼 데이터 파일에 대한 최적의 압축률 달성에 모두 중요합니다.
+
+이를 보여주기 위해 봇 트래픽 분석 데이터용으로 두 가지 테이블 버전을 생성합니다:
+
+* 카디널리티가 높은 순서로 키 컬럼을 정렬한 복합 기본 키 `(URL, UserID, IsRobot)`를 사용하는 테이블 `hits_URL_UserID_IsRobot`
+* 카디널리티가 낮은 순서로 키 컬럼을 정렬한 복합 기본 키 `(IsRobot, UserID, URL)`를 사용하는 테이블 `hits_IsRobot_UserID_URL`
+
+복합 기본 키 `(URL, UserID, IsRobot)`를 사용하는 테이블 `hits_URL_UserID_IsRobot`를 생성합니다:
+
+```sql highlight={8}
+CREATE TABLE hits_URL_UserID_IsRobot
+(
+    `UserID` UInt32,
+    `URL` String,
+    `IsRobot` UInt8
+)
+ENGINE = MergeTree
+PRIMARY KEY (URL, UserID, IsRobot);
+```
+
+그리고 여기에 887만 개의 행을 삽입합니다:
+
+```sql
+INSERT INTO hits_URL_UserID_IsRobot SELECT
+    intHash32(c11::UInt64) AS UserID,
+    c15 AS URL,
+    c20 AS IsRobot
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+WHERE URL != '';
+```
+
+응답은 다음과 같습니다.
+
+```response
+0 rows in set. Elapsed: 104.729 sec. Processed 8.87 million rows, 15.88 GB (84.73 thousand rows/s., 151.64 MB/s.)
+```
+
+다음으로, 복합 기본 키 `(IsRobot, UserID, URL)`를 사용하는 `hits_IsRobot_UserID_URL` 테이블을 생성합니다:
+
+```sql highlight={8}
+CREATE TABLE hits_IsRobot_UserID_URL
+(
+    `UserID` UInt32,
+    `URL` String,
+    `IsRobot` UInt8
+)
+ENGINE = MergeTree
+PRIMARY KEY (IsRobot, UserID, URL);
+```
+
+그리고 이전 테이블을 채울 때 사용했던 것과 동일한 887만 개의 행으로 이 테이블도 채웁니다:
+
+```sql
+INSERT INTO hits_IsRobot_UserID_URL SELECT
+    intHash32(c11::UInt64) AS UserID,
+    c15 AS URL,
+    c20 AS IsRobot
+FROM url('https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz')
+WHERE URL != '';
+```
+
+응답은 다음과 같습니다:
+
+```response
+0 rows in set. Elapsed: 95.959 sec. Processed 8.87 million rows, 15.88 GB (92.48 thousand rows/s., 165.50 MB/s.)
+```
+
+<div id="efficient-filtering-on-secondary-key-columns">
+  ### 보조 키 컬럼에 대한 효율적인 필터링
+</div>
+
+쿼리가 복합 키를 구성하는 컬럼 중 하나 이상으로 필터링하고, 그 컬럼이 첫 번째 키 컬럼인 경우 [ClickHouse는 해당 키 컬럼의 인덱스 마크에 이진 검색 알고리즘을 적용합니다](#the-primary-index-is-used-for-selecting-granules).
+
+쿼리가 복합 키를 구성하는 컬럼 중 첫 번째 키 컬럼이 아닌 컬럼만으로 필터링하는 경우 [ClickHouse는 해당 키 컬럼의 인덱스 마크에 일반 제외 검색 알고리즘을 사용합니다](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient).
+
+두 번째 경우에는 복합 기본 키를 구성하는 키 컬럼의 순서가 [일반 제외 검색 알고리즘](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444)의 효율성에 큰 영향을 줍니다.
+
+다음은 카디널리티가 높은 순서대로 키 컬럼 `(URL, UserID, IsRobot)`을 정렬한 테이블에서 `UserID` 컬럼으로 필터링하는 쿼리입니다:
+
+```sql
+SELECT count(*)
+FROM hits_URL_UserID_IsRobot
+WHERE UserID = 112304
+```
+
+응답은 다음과 같습니다:
+
+```response highlight={6}
+┌─count()─┐
+│      73 │
+└─────────┘
+
+1 row in set. Elapsed: 0.026 sec.
+Processed 7.92 million rows,
+31.67 MB (306.90 million rows/s., 1.23 GB/s.)
+```
+
+다음은 키 컬럼 `(IsRobot, UserID, URL)`을 카디널리티 오름차순으로 정렬한 테이블에서 실행한 동일한 쿼리입니다:
+
+```sql
+SELECT count(*)
+FROM hits_IsRobot_UserID_URL
+WHERE UserID = 112304
+```
+
+응답은 다음과 같습니다.
+
+```response highlight={6}
+┌─count()─┐
+│      73 │
+└─────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+Processed 20.32 thousand rows,
+81.28 KB (6.61 million rows/s., 26.44 MB/s.)
+```
+
+키 컬럼을 카디널리티 오름차순으로 정렬한 테이블에서는 쿼리 실행이 훨씬 더 효율적이고 빠르다는 것을 확인할 수 있습니다.
+
+그 이유는 선행 키 컬럼의 카디널리티가 더 낮을 때 보조 키 컬럼을 통해 [그래뉼](#the-primary-index-is-used-for-selecting-granules)을 선택하면 [일반 제외 검색 알고리즘](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444)이 가장 효율적으로 동작하기 때문입니다. 이 점은 이 가이드의 [이전 섹션](#generic-exclusion-search-algorithm)에서 자세히 설명했습니다.
+
+<div id="optimal-compression-ratio-of-data-files">
+  ### 데이터 파일의 최적 압축률
+</div>
+
+이 쿼리는 앞에서 생성한 두 테이블 사이에서 `UserID` 컬럼의 압축률을 비교합니다:
+
+```sql
+SELECT
+    table AS Table,
+    name AS Column,
+    formatReadableSize(data_uncompressed_bytes) AS Uncompressed,
+    formatReadableSize(data_compressed_bytes) AS Compressed,
+    round(data_uncompressed_bytes / data_compressed_bytes, 0) AS Ratio
+FROM system.columns
+WHERE (table = 'hits_URL_UserID_IsRobot' OR table = 'hits_IsRobot_UserID_URL') AND (name = 'UserID')
+ORDER BY Ratio ASC
+```
+
+응답은 다음과 같습니다:
+
+```response
+┌─Table───────────────────┬─Column─┬─Uncompressed─┬─Compressed─┬─Ratio─┐
+│ hits_URL_UserID_IsRobot │ UserID │ 33.83 MiB    │ 11.24 MiB  │     3 │
+│ hits_IsRobot_UserID_URL │ UserID │ 33.83 MiB    │ 877.47 KiB │    39 │
+└─────────────────────────┴────────┴──────────────┴────────────┴───────┘
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+
+`UserID` 컬럼의 압축률은 키 컬럼 `(IsRobot, UserID, URL)`을 카디널리티 기준 오름차순으로 정렬한 테이블에서 훨씬 더 높다는 것을 확인할 수 있습니다.
+
+두 테이블에는 정확히 동일한 데이터가 저장되어 있지만(두 테이블 모두에 동일한 887만 개의 행을 삽입했습니다), 복합 기본 키(compound primary key)에서 키 컬럼의 순서는 테이블의 <a href="/ko/get-started/about/distinctive-features#data-compression" target="_blank">압축된</a> 데이터가 테이블의 [컬럼 데이터 파일](#data-is-stored-on-disk-ordered-by-primary-key-columns)에서 얼마나 많은 디스크 공간을 필요로 하는지에 큰 영향을 미칩니다:
+
+* 카디널리티 기준 내림차순으로 키 컬럼을 정렬한 복합 기본 키 `(URL, UserID, IsRobot)`를 사용하는 테이블 `hits_URL_UserID_IsRobot`에서는 `UserID.bin` 데이터 파일이 디스크 공간 **11.24 MiB**를 차지합니다
+* 카디널리티 기준 오름차순으로 키 컬럼을 정렬한 복합 기본 키 `(IsRobot, UserID, URL)`를 사용하는 테이블 `hits_IsRobot_UserID_URL`에서는 `UserID.bin` 데이터 파일이 디스크 공간 **877.47 KiB**만 차지합니다
+
+디스크에 저장된 테이블 컬럼 데이터의 압축률이 좋으면 디스크 공간을 절약할 뿐만 아니라, 해당 컬럼의 데이터를 읽어야 하는 쿼리(특히 분석 쿼리)도 더 빨라집니다. 컬럼 데이터를 디스크에서 주 메모리(운영 체제의 파일 캐시)로 옮기는 데 필요한 i/o가 줄어들기 때문입니다.
+
+다음에서는 기본 키 컬럼을 카디널리티 기준 오름차순으로 정렬하는 것이 테이블 컬럼의 압축률에 왜 유리한지 설명합니다.
+
+아래 다이어그램은 키 컬럼이 카디널리티 기준 오름차순으로 정렬된 기본 키의 디스크상 행 순서를 개략적으로 보여줍니다:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-14a.webp" size="lg" alt="희소 프라이머리 인덱스 14a" />
+
+앞에서 [테이블의 행 데이터는 기본 키 컬럼 순서대로 정렬되어 디스크에 저장된다](#data-is-stored-on-disk-ordered-by-primary-key-columns)는 점을 설명했습니다.
+
+위 다이어그램에서 테이블의 행(디스크에 저장된 각 컬럼 값)은 먼저 `cl` 값으로 정렬되고, 같은 `cl` 값을 가진 행들은 `ch` 값으로 정렬됩니다. 그리고 첫 번째 키 컬럼 `cl`은 낮은 카디널리티를 가지므로 같은 `cl` 값을 가진 행이 있을 가능성이 높습니다. 그 결과 `ch` 값도 정렬된 상태가 될 가능성이 높습니다(국소적으로, 즉 같은 `cl` 값을 가진 행들 내에서).
+
+컬럼에서 비슷한 데이터가 예를 들어 정렬을 통해 서로 가깝게 배치되면, 그 데이터는 더 잘 압축됩니다.
+일반적으로 압축 알고리즘은 데이터의 연속 구간 길이(run length)가 길수록(더 많은 데이터를 연속해서 볼수록 압축에 유리함)
+그리고 지역성(locality)이 높을수록(데이터가 더 유사할수록 압축률이 더 높아짐) 이점을 얻습니다.
+
+반대로 아래 다이어그램은 키 컬럼이 카디널리티 기준 내림차순으로 정렬된 기본 키의 디스크상 행 순서를 개략적으로 보여줍니다:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-14b.webp" size="lg" alt="희소 프라이머리 인덱스 14b" />
+
+이제 테이블의 행은 먼저 `ch` 값 기준으로 정렬되며, 동일한 `ch` 값을 가진 행들은 `cl` 값 기준으로 정렬됩니다.
+하지만 첫 번째 키 컬럼인 `ch`의 카디널리티가 높기 때문에, 같은 `ch` 값을 가진 행이 존재할 가능성은 낮습니다. 따라서 `cl` 값도 정렬되어 있을 가능성이 낮습니다(로컬하게는, 즉 같은 `ch` 값을 가진 행 내에서만 해당).
+
+따라서 `cl` 값은 대부분 무작위 순서로 배치될 가능성이 높고, 그 결과 데이터 지역성(locality)과 압축률이 모두 좋지 않습니다.
+
+<div id="summary">
+  ### 요약
+</div>
+
+쿼리에서 보조 키 컬럼을 효율적으로 필터링하고 테이블의 컬럼 데이터 파일 압축률을 높이려면, 기본 키(primary key)의 컬럼을 카디널리티 오름차순으로 정렬하는 것이 유리합니다.
+
+<div id="identifying-single-rows-efficiently">
+  ## 단일 행을 효율적으로 식별하기
+</div>
+
+일반적으로 이는 ClickHouse의 [최적 사용 사례는 아니지만](/ko/resources/support-center/knowledge-base/general-faqs/key-value),
+경우에 따라 ClickHouse 기반 애플리케이션에서 ClickHouse 테이블의 단일 행을 식별해야 할 수 있습니다.
+
+이에 대한 직관적인 해결책으로는 각 행마다 고유한 값을 갖는 [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier) 컬럼을 사용하고, 행을 빠르게 조회하기 위해 해당 컬럼을 기본 키(primary key) 컬럼으로 사용하는 방법이 있습니다.
+
+가장 빠르게 조회하려면 UUID 컬럼이 [첫 번째 키 컬럼이어야 합니다](#the-primary-index-is-used-for-selecting-granules).
+
+앞서 [ClickHouse 테이블의 행 데이터는 기본 키 컬럼 순서대로 디스크에 저장된다](#data-is-stored-on-disk-ordered-by-primary-key-columns)는 점을 살펴보았습니다. 따라서 카디널리티가 매우 높은 컬럼(예: UUID 컬럼)을 기본 키에 포함하거나, 카디널리티가 더 낮은 컬럼보다 앞에 두는 복합 기본 키에 포함하면 [다른 테이블 컬럼의 압축률에 불리합니다](#optimal-compression-ratio-of-data-files).
+
+가장 빠른 조회와 최적의 데이터 압축 사이에서 절충하려면, UUID를 마지막 키 컬럼으로 두고 그 앞에 더 낮은 카디널리티의 키 컬럼을 배치한 복합 기본 키를 사용하는 것이 좋습니다. 이렇게 하면 테이블의 일부 컬럼에서 좋은 압축률을 확보할 수 있습니다.
+
+<div id="a-concrete-example">
+  ### 구체적인 예시
+</div>
+
+구체적인 예시로는 Alexey Milovidov가 개발하고 [블로그에 소개한](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/) 일반 텍스트 붙여넣기 서비스 [https://pastila.nl](https://pastila.nl)이 있습니다.
+
+텍스트 영역이 변경될 때마다 데이터는 ClickHouse 테이블의 행에 자동으로 저장됩니다(변경마다 1개의 행).
+
+붙여넣은 내용을 식별하고 조회하는 한 가지 방법은 내용이 들어 있는 테이블 행의 UUID로 내용의 hash를 사용하는 것입니다(즉, 특정 버전의 내용을 식별하고 조회할 수 있습니다).
+
+다음 다이어그램은 다음을 보여줍니다.
+
+* 내용이 변경될 때 행의 삽입 순서(예를 들어 텍스트 영역에 텍스트를 입력하는 키 입력으로 인해 변경되는 경우)와
+* `PRIMARY KEY (hash)`를 사용할 때 삽입된 행의 데이터가 디스크에 저장되는 순서:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-15a.webp" size="lg" alt="Sparse Primary Indices 15a" />
+
+`hash` 컬럼이 기본 키(primary key) 컬럼으로 사용되기 때문에
+
+* 특정 행은 [매우 빠르게](#the-primary-index-is-used-for-selecting-granules) 조회할 수 있지만,
+* 테이블의 행(해당 컬럼 데이터)은 (고유하고 무작위적인) hash 값의 오름차순으로 정렬되어 디스크에 저장됩니다. 따라서 content 컬럼의 값도 데이터 지역성 없이 무작위 순서로 저장되어 **content 컬럼 데이터 파일의 압축률이 최적 수준에 미치지 못합니다**.
+
+특정 행을 빠르게 조회하는 성능은 유지하면서 content 컬럼의 압축률을 크게 높이기 위해, pastila.nl은 특정 행을 식별할 때 두 개의 hash(및 복합 기본 키(compound primary key))를 사용합니다.
+
+* 앞서 설명한 대로 서로 다른 데이터에 대해 서로 다른 값을 갖는 내용의 hash와
+* 데이터가 조금만 바뀌어도 **변하지 않는** [로컬리티 민감 해시(fingerprint)](https://en.wikipedia.org/wiki/Locality-sensitive_hashing)입니다.
+
+다음 다이어그램은 다음을 보여줍니다.
+
+* 내용이 변경될 때 행의 삽입 순서(예를 들어 텍스트 영역에 텍스트를 입력하는 키 입력으로 인해 변경되는 경우)와
+* 복합 `PRIMARY KEY (fingerprint, hash)`를 사용할 때 삽입된 행의 데이터가 디스크에 저장되는 순서:
+
+<Image img="/images/guides/best-practices/sparse-primary-indexes-15b.webp" size="lg" alt="Sparse Primary Indices 15b" />
+
+이제 디스크의 행은 먼저 `fingerprint`를 기준으로 정렬되고, fingerprint 값이 같은 행들 사이에서는 `hash` 값이 최종 순서를 결정합니다.
+
+작은 변경만 있는 데이터는 동일한 fingerprint 값을 갖게 되므로, 이제 유사한 데이터가 content 컬럼에서 디스크상 서로 가까이 저장됩니다. 이는 content 컬럼의 압축률에 매우 유리합니다. 일반적으로 압축 알고리즘은 데이터 지역성의 이점을 활용하기 때문입니다(데이터가 더 비슷할수록 압축률도 더 좋아집니다).
+
+이 방식에서 감수해야 하는 점은 복합 `PRIMARY KEY (fingerprint, hash)`로 생성되는 프라이머리 인덱스(primary index)를 최적으로 활용하려면 특정 행을 조회할 때 두 개의 필드(`fingerprint`와 `hash`)가 모두 필요하다는 것입니다.

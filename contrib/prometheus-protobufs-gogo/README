@@ -1,0 +1,4 @@
+File "gogoproto/gogo.proto" was downloaded from the "Protocol Buffers for Go with Gadgets" project:
+https://github.com/cosmos/gogoproto/blob/main/gogoproto/gogo.proto
+
+File "gogoproto/gogo.proto" is used in ClickHouse to compile prometheus protobufs.

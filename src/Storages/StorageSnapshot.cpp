@@ -1,0 +1,218 @@
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
+#include <Storages/StorageSnapshot.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/IStorage.h>
+#include <Common/quoteString.h>
+
+#include <base/StringViewHash.h>
+#include <sparsehash/dense_hash_set>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
+}
+
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+{
+}
+
+StorageSnapshot::StorageSnapshot(
+    const IStorage & storage_,
+    StorageMetadataPtr metadata_,
+    DataPtr data_)
+    : storage(storage_)
+    , metadata(std::move(metadata_))
+    , data(std::move(data_))
+{
+}
+
+std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
+{
+    return std::make_shared<StorageSnapshot>(storage, metadata, std::move(data_));
+}
+
+ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
+{
+    auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
+    auto column_names_and_types = getColumns(get_column_options);
+
+    return ColumnsDescription{column_names_and_types};
+}
+
+NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options) const
+{
+    auto all_columns = metadata->getColumns().get(options);
+
+    if (options.virtuals_kind == VirtualsKind::None || metadata->virtuals.empty())
+        return all_columns;
+
+    /// Iterate virtuals directly: skip the `Block` round-trip in `getSampleBlock` and
+    /// the throwaway `NameSet` over every column of the table. There are typically a
+    /// handful of virtuals and many regular columns, so a linear `find` per virtual is
+    /// cheaper than hashing all regular columns up front.
+    auto virtuals_list = metadata->virtuals.getNamesAndTypes(options.virtuals_kind, options.virtuals_place);
+    for (const auto & virtual_column : virtuals_list)
+    {
+        bool already_present = false;
+        for (const auto & existing : all_columns)
+        {
+            if (existing.name == virtual_column.name)
+            {
+                already_present = true;
+                break;
+            }
+        }
+        if (!already_present)
+            all_columns.push_back(virtual_column);
+    }
+
+    return all_columns;
+}
+
+NamesAndTypesList StorageSnapshot::getColumnsByNames(const GetColumnsOptions & options, const Names & names) const
+{
+    NamesAndTypesList res;
+    for (const auto & name : names)
+        res.push_back(getColumn(options, name));
+    return res;
+}
+
+std::optional<NameAndTypePair> StorageSnapshot::tryGetColumn(const GetColumnsOptions & options, const String & column_name) const
+{
+    const auto & columns = metadata->getColumns();
+    if (auto column = columns.tryGetColumn(options, column_name))
+        return column;
+
+    if (options.virtuals_kind != VirtualsKind::None)
+    {
+        auto virtual_column = metadata->virtuals.tryGet(column_name, options.virtuals_kind, options.virtuals_place);
+        if (virtual_column)
+            return NameAndTypePair{virtual_column->name, virtual_column->type};
+    }
+
+    return {};
+}
+
+NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, const String & column_name) const
+{
+    auto column = tryGetColumn(options, column_name);
+    if (!column)
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", column_name);
+
+    return *column;
+}
+
+Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
+{
+    Block res;
+
+    const auto & columns = metadata->getColumns();
+    for (const auto & column_name : column_names)
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, column_name);
+        if (column)
+        {
+            res.insert({column->type->createColumn(), column->type, column_name});
+        }
+        else if (auto virtual_column = metadata->virtuals.tryGet(column_name, VirtualsKind::All, VirtualsMaterializationPlace::All))
+        {
+            /// Virtual columns must be appended after ordinary, because user can
+            /// override them.
+            const auto & type = virtual_column->type;
+            res.insert({type->createColumn(), type, column_name});
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                "Column {} not found in table {}", backQuote(column_name), storage.getStorageID().getNameForLogs());
+        }
+    }
+    return res;
+}
+
+ColumnsDescription StorageSnapshot::getDescriptionForColumns(const Names & column_names) const
+{
+    ColumnsDescription res;
+    const auto & columns = metadata->getColumns();
+    for (const auto & name : column_names)
+    {
+        auto column = columns.tryGetColumnOrSubcolumnDescription(GetColumnsOptions::All, name);
+        if (column)
+        {
+            res.add(*column, "", false, false);
+        }
+        else if (auto virtual_column = metadata->virtuals.tryGet(name, VirtualsKind::All, VirtualsMaterializationPlace::All))
+        {
+            /// Virtual columns must be appended after ordinary, because user can
+            /// override them.
+            res.add({name, virtual_column->type});
+        }
+        else
+        {
+            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                            "Column {} not found in table {}", backQuote(name), storage.getStorageID().getNameForLogs());
+        }
+    }
+
+    return res;
+}
+
+namespace
+{
+    using DenseHashSet = google::dense_hash_set<std::string_view, StringViewHash>;
+}
+
+void StorageSnapshot::check(const Names & column_names) const
+{
+    const auto & columns = metadata->getColumns();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+
+    if (column_names.empty())
+    {
+        auto list_of_columns = listOfColumns(columns.get(options));
+        throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED,
+            "Empty list of columns queried. There are columns: {}", list_of_columns);
+    }
+
+    DenseHashSet unique_names;
+    unique_names.set_empty_key(std::string_view());
+
+    for (const auto & name : column_names)
+    {
+        bool has_column = columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name) || metadata->virtuals.has(name);
+
+        if (!has_column)
+        {
+            auto list_of_columns = listOfColumns(columns.get(options));
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "There is no column with name {} in table {}. There are columns: {}",
+                backQuote(name), storage.getStorageID().getNameForLogs(), list_of_columns);
+        }
+
+        if (unique_names.count(name))
+            throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE, "Column {} queried more than once", name);
+
+        unique_names.insert(name);
+    }
+}
+
+std::optional<ColumnDefault> StorageSnapshot::getDefault(const String & column_name) const
+{
+    if (auto column_default = metadata->getColumns().getDefault(column_name))
+        return column_default;
+
+    return metadata->virtuals.getDefault(column_name);
+}
+
+}

@@ -1,0 +1,19 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data
+description: 'ClickStack のデータインジェスト - ClickHouse オブザーバビリティスタック'
+title: 'データのインジェスト'
+doc_type: 'landing-page'
+keywords: ['ClickStack データインジェスト', 'オブザーバビリティデータのインジェスト
+', 'ClickStack OpenTelemetry', 'ClickHouse オブザーバビリティのインジェスト', 'テレメトリーデータの収集']
+---
+
+マネージド版およびオープンソース版の ClickStack では、オブザーバビリティデータを ClickHouse インスタンスに取り込むための方法が複数用意されています。ログ、メトリクス、トレース、またはセッションデータを収集する場合は、OpenTelemetry (OTel) collector を統一されたインジェストポイントとして使用することも、特定のユースケース向けにプラットフォーム固有のインテグレーションを活用することもできます。
+
+| Section                                                                   | Description                                           |
+| ------------------------------------------------------------------------- | ----------------------------------------------------- |
+| [概要](/ja/clickstack/ingesting-data/overview)                                 | データインジェストの方法とアーキテクチャの概要                               |
+| [OpenTelemetry を使用したデータのインジェスト](/ja/clickstack/ingesting-data/opentelemetry) | OpenTelemetry を使用しており、ClickStack とすばやく統合したいユーザー向け     |
+| [OpenTelemetry collector](/ja/clickstack/ingesting-data/collector)           | ClickStack OpenTelemetry collector の詳細                |
+| [Vector を使用したデータのインジェスト](/ja/clickstack/ingesting-data/vector)               | Vector を使用しており、ClickStack とすばやく統合したいユーザー向け            |
+| [テーブルとスキーマ](/ja/clickstack/ingesting-data/schemas)                           | ClickStack で使用される ClickHouse のテーブルとそのスキーマの概要          |
+| [言語 SDKs](/ja/clickstack/ingesting-data/sdks/index)                          | プログラミング言語をインストルメントし、テレメトリーデータを収集するための ClickStack SDKs |

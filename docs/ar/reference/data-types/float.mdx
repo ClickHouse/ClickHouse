@@ -1,0 +1,174 @@
+---
+description: 'توثيق أنواع البيانات ذات الفاصلة العائمة في ClickHouse: Float32،
+  Float64، وBFloat16'
+sidebarTitle: 'Float32 | Float64 | BFloat16'
+slug: /sql-reference/data-types/float
+title: 'أنواع Float32 | Float64 | BFloat16'
+doc_type: 'reference'
+---
+
+<Note>
+  إذا كنت بحاجة إلى حسابات دقيقة، وخاصةً إذا كنت تعمل مع بيانات مالية أو بيانات أعمال تتطلب دقة عالية، فمن الأفضل استخدام [Decimal](/ar/reference/data-types/decimal) بدلًا من ذلك.
+
+  قد تؤدي [الأعداد ذات الفاصلة العائمة](https://en.wikipedia.org/wiki/IEEE_754) إلى نتائج غير دقيقة، كما هو موضح أدناه:
+
+  ```sql
+  CREATE TABLE IF NOT EXISTS float_vs_decimal
+  (
+     my_float Float64,
+     my_decimal Decimal64(3)
+  )
+  ENGINE=MergeTree
+  ORDER BY tuple();
+
+  # أنشئ 1 000 000 رقم عشوائي بمنزلتين عشريتين وخزّنها بصيغة float وبصيغة decimal
+  INSERT INTO float_vs_decimal SELECT round(randCanonical(), 3) AS res, res FROM system.numbers LIMIT 1000000;
+  ```
+
+  ```sql
+  SELECT sum(my_float), sum(my_decimal) FROM float_vs_decimal;
+
+  ┌──────sum(my_float)─┬─sum(my_decimal)─┐
+  │ 499693.60500000004 │      499693.605 │
+  └────────────────────┴─────────────────┘
+
+  SELECT sumKahan(my_float), sumKahan(my_decimal) FROM float_vs_decimal;
+
+  ┌─sumKahan(my_float)─┬─sumKahan(my_decimal)─┐
+  │         499693.605 │           499693.605 │
+  └────────────────────┴──────────────────────┘
+  ```
+</Note>
+
+الأنواع المكافئة في ClickHouse وC موضحة أدناه:
+
+* `Float32` — `float`.
+* `Float64` — `double`.
+
+لأنواع Float في ClickHouse الأسماء المستعارة التالية:
+
+* `Float32` — `FLOAT`, `REAL`, `SINGLE`.
+* `Float64` — `DOUBLE`, `DOUBLE PRECISION`.
+
+عند إنشاء الجداول، يمكن تحديد معلمات رقمية للأعداد ذات الفاصلة العائمة (مثل `FLOAT(12)` و`FLOAT(15, 22)` و`DOUBLE(12)` و`DOUBLE(4, 18)`)، لكن ClickHouse يتجاهلها.
+
+<div id="using-floating-point-numbers">
+  ## استخدام الأعداد ذات الفاصلة العائمة
+</div>
+
+* قد تؤدي العمليات الحسابية على الأعداد ذات الفاصلة العائمة إلى حدوث خطأ في التقريب.
+
+{/* */}
+
+```sql
+SELECT 1 - 0.9
+
+┌───────minus(1, 0.9)─┐
+│ 0.09999999999999998 │
+└─────────────────────┘
+```
+
+* تعتمد نتيجة الحساب على طريقة إجرائه (نوع المعالج ومعمارية نظام الحاسوب).
+* قد تؤدي حسابات الفاصلة العائمة إلى قيم مثل اللانهاية (`Inf`) و&quot;ليس عددًا&quot; (`NaN`). ينبغي أخذ ذلك في الاعتبار عند معالجة نتائج الحسابات.
+* عند تحليل الأعداد ذات الفاصلة العائمة من النص، قد لا تكون النتيجة أقرب عدد يمكن للآلة تمثيله.
+
+<div id="nan-and-inf">
+  ## NaN و Inf
+</div>
+
+على عكس SQL القياسي، يدعم ClickHouse الفئات التالية من الأعداد ذات الفاصلة العائمة:
+
+* `Inf` – ما لا نهاية.
+
+{/* */}
+
+```sql
+SELECT 0.5 / 0
+
+┌─divide(0.5, 0)─┐
+│            inf │
+└────────────────┘
+```
+
+* `-Inf` — سالب ما لا نهاية.
+
+{/* */}
+
+```sql
+SELECT -0.5 / 0
+
+┌─divide(-0.5, 0)─┐
+│            -inf │
+└─────────────────┘
+```
+
+* `NaN` — ليس عددًا.
+
+{/* */}
+
+```sql
+SELECT 0 / 0
+
+┌─divide(0, 0)─┐
+│          nan │
+└──────────────┘
+```
+
+راجع قواعد فرز `NaN` في قسم [عبارة ORDER BY](/ar/reference/statements/select/order-by).
+
+<div id="nan-values-in-set-semantics">
+  ## قيم NaN في دلالات المجموعات
+</div>
+
+يعرّف معيار IEEE 754 القيمة `NaN` بحيث تُرجع المقارنة القياسية `NaN = NaN` القيمة `false`.
+ويتبع ClickHouse هذه القاعدة مع العامل `=`.
+
+لكن `NaN` ليست قيمة واحدة؛ بل تمثل أي نمط بتات يكون فيه الأسّ مكوّنًا بالكامل من الواحدات وتكون
+المانتيسا غير صفرية. ويمكن أن تنتج العمليات المختلفة ومعماريات CPU المختلفة قيم `NaN`
+ببتات إشارة مختلفة أو بحمولات مختلفة للمانتيسا. على سبيل المثال:
+
+* تنتج `0./0.` قيمة `NaN` يكون بت الإشارة فيها 1 على معظم منصات x86.
+* تنتج القيمة الحرفية `nan` قيمة `NaN` يكون بت الإشارة فيها 0.
+* بعد [PR #98230](https://github.com/ClickHouse/ClickHouse/pull/98230)، يُرجع مسار AArch64 NEON لـ
+  `log` قيمة `NaN` يختلف فيها بت الإشارة عن `log` القياسي في glibc عند المُدخلات السالبة.
+
+تقارن جداول hash في ClickHouse المفاتيح على مستوى البايت، لذا تُرسَل أنماط البتات المختلفة لـ `NaN` إلى
+حاويات مختلفة وتُعامَل على أنها قيم مميزة في العمليات ذات دلالات المجموعات، بما في ذلك
+`DISTINCT` و`GROUP BY` و`uniqExact` و`countDistinct` وequi-`JOIN` على مفتاح `Float`:
+
+```sql
+SELECT countDistinct(arrayJoin([0./0., nan, log(-1.)]));
+-- May return 2 or 3 depending on architecture and build, even though all three inputs are NaN.
+```
+
+يتوافق هذا مع IEEE 754 (فكل قيمة `NaN` لا تساوي أي قيمة أخرى، بما في ذلك نفسها)
+لكن ذلك قد يكون مفاجئًا. إذا كنت بحاجة إلى أن تتعامل العمليات ذات دلالات المجموعات مع جميع قيم `NaN` على أنها متساوية،
+فوحِّد تمثيلها القياسي في الاستعلام:
+
+```sql
+-- Replace every NaN with a single canonical NaN value
+SELECT countDistinct(if(isNaN(x), CAST('nan' AS Float64), x))
+FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
+-- Returns 1.
+
+-- Or exclude NaN values from the set entirely
+SELECT countDistinct(if(isNaN(x), NULL, x))
+FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
+-- Returns 0.
+```
+
+ينطبق النهج نفسه على مفاتيح `DISTINCT` و`GROUP BY` و`JOIN`.
+
+<div id="bfloat16">
+  ## BFloat16
+</div>
+
+`BFloat16` هو نوع بيانات بفاصلة عائمة بعرض 16 بت، يتضمن أسًّا بعرض 8 بت، وإشارة، ومانتيسا بعرض 7 بت.
+وهو مفيد لتطبيقات التعلّم الآلي والذكاء الاصطناعي.
+
+يدعم ClickHouse التحويل بين `Float32` و`BFloat16`،
+ويمكن تنفيذ ذلك باستخدام الدالتين [`toFloat32()`](/ar/reference/functions/regular-functions/type-conversion-functions#toFloat32) أو [`toBFloat16`](/ar/reference/functions/regular-functions/type-conversion-functions#toBFloat16).
+
+<Note>
+  معظم العمليات الأخرى غير مدعومة.
+</Note>

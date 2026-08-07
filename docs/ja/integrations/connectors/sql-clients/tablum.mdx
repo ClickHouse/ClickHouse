@@ -1,0 +1,83 @@
+---
+sidebarTitle: 'TABLUM.IO'
+slug: /integrations/tablumio
+description: 'TABLUM.IO は、ClickHouse を標準でサポートしているデータ管理 SaaS です。'
+title: 'ClickHouse に TABLUM.IO を接続する'
+doc_type: 'guide'
+keywords: ['tablum', 'SQLクライアント', 'データベースツール', 'クエリツール', 'デスクトップアプリ']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<div id="open-the-tablumio-startup-page">
+  ## TABLUM.IO のスタートページを開く
+</div>
+
+<Note>
+  Linux サーバー上の Docker に、TABLUM.IO のセルフホスト版をインストールできます。
+</Note>
+
+<div id="1-sign-up-or-sign-in-to-the-service">
+  ## 1. サービスにサインアップまたはサインインします
+</div>
+
+まず、メールアドレスで TABLUM.IO にサインアップするか、Google または Facebook アカウントでクイックログインします。
+
+<Image img="/images/integrations/sql-clients/tablum-ch-0.webp" size="md" border alt="TABLUM.IO のログインページ" />
+
+<div id="2-add-a-clickhouse-connector">
+  ## 2. ClickHouse コネクタを追加する
+</div>
+
+ClickHouse の接続情報を用意し、**コネクタ** タブに移動して、ホスト URL、ポート、ユーザー名、パスワード、データベース名、コネクタ名を入力します。これらのフィールドの入力が完了したら、**Test connection** ボタンをクリックして接続情報を確認し、その後 **Save connector for me** をクリックして保存します。
+
+<Tip>
+  接続情報に応じて、正しい **HTTP** ポートを指定し、**SSL** モードを切り替えてください。
+</Tip>
+
+<Tip>
+  通常、TLS を使用する場合のポートは 8443、TLS を使用しない場合は 8123 です。
+</Tip>
+
+<Image img="/images/integrations/sql-clients/tablum-ch-1.webp" size="lg" border alt="TABLUM.IO で ClickHouse コネクタを追加する" />
+
+<div id="3-select-the-connector">
+  ## 3. コネクタを選択
+</div>
+
+**Dataset** タブに移動し、ドロップダウンから最近作成した ClickHouse コネクタを選択します。右側のパネルに、利用可能なテーブルとスキーマの一覧が表示されます。
+
+<Image img="/images/integrations/sql-clients/tablum-ch-2.webp" size="lg" border alt="TABLUM.IO で ClickHouse コネクタを選択" />
+
+<div id="4-input-a-sql-query-and-run-it">
+  ## 4. SQL Console でクエリを入力して実行する
+</div>
+
+SQL Console にクエリを入力し、**Run Query** をクリックします。結果はスプレッドシート形式で表示されます。
+
+<Tip>
+  カラム名を右クリックすると、ソート、フィルター、その他の操作が表示されるドロップダウンメニューが開きます。
+</Tip>
+
+<Image img="/images/integrations/sql-clients/tablum-ch-3.webp" size="lg" border alt="TABLUM.IOでSQLクエリを実行する" />
+
+<Note>
+  TABLUM.IO では次のことができます
+
+  * TABLUM.IO アカウント内で複数の ClickHouse コネクタを作成して利用する
+  * データソースに関係なく、読み込まれた任意のデータに対してクエリを実行する
+  * 結果を新しい ClickHouse データベースとして共有する
+</Note>
+
+<div id="learn-more">
+  ## 詳細はこちら
+</div>
+
+TABLUM.IO の詳細は、https://tablum.io をご覧ください。

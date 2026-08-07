@@ -1,0 +1,103 @@
+---
+alias: []
+description: 'CustomSeparated フォーマットの説明'
+input_format: true
+keywords: ['CustomSeparated']
+output_format: true
+slug: /interfaces/formats/CustomSeparated
+title: 'CustomSeparated'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✔  | ✔  |       |
+
+<div id="description">
+  ## 説明
+</div>
+
+[Template](/ja/reference/formats/Template/Template) に似ていますが、すべてのカラム名と型を出力または読み取り、[format&#95;custom&#95;escaping&#95;rule](/ja/reference/settings/formats#format_custom_escaping_rule) 設定のエスケープ規則と、以下の設定で指定された区切り文字を使用します。
+
+* [format&#95;custom&#95;field&#95;delimiter](/ja/reference/settings/formats#format_custom_field_delimiter)
+* [format&#95;custom&#95;row&#95;before&#95;delimiter](/ja/reference/settings/formats#format_custom_row_before_delimiter)
+* [format&#95;custom&#95;row&#95;after&#95;delimiter](/ja/reference/settings/formats#format_custom_row_after_delimiter)
+* [format&#95;custom&#95;row&#95;between&#95;delimiter](/ja/reference/settings/formats#format_custom_row_between_delimiter)
+* [format&#95;custom&#95;result&#95;before&#95;delimiter](/ja/reference/settings/formats#format_custom_result_before_delimiter)
+* [format&#95;custom&#95;result&#95;after&#95;delimiter](/ja/reference/settings/formats#format_custom_result_after_delimiter)
+
+<Note>
+  フォーマット文字列で指定されたエスケープ規則や区切り文字は使用しません。
+</Note>
+
+[TemplateIgnoreSpaces](/ja/reference/formats/Template/TemplateIgnoreSpaces) に似た [`CustomSeparatedIgnoreSpaces`](/ja/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpaces) フォーマットもあります。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+<div id="inserting-data">
+  ### データの挿入
+</div>
+
+`football.txt` という名前の、次の txt ファイルを使用します。
+
+```text
+row('2022-04-30';2021;'Sutton United';'Bradford City';1;4),row('2022-04-30';2021;'Swindon Town';'Barrow';2;1),row('2022-04-30';2021;'Tranmere Rovers';'Oldham Athletic';2;0),row('2022-05-02';2021;'Salford City';'Mansfield Town';2;2),row('2022-05-02';2021;'Port Vale';'Newport County';1;2),row('2022-05-07';2021;'Barrow';'Northampton Town';1;3),row('2022-05-07';2021;'Bradford City';'Carlisle United';2;0),row('2022-05-07';2021;'Bristol Rovers';'Scunthorpe United';7;0),row('2022-05-07';2021;'Exeter City';'Port Vale';0;1),row('2022-05-07';2021;'Harrogate Town A.F.C.';'Sutton United';0;2),row('2022-05-07';2021;'Hartlepool United';'Colchester United';0;2),row('2022-05-07';2021;'Leyton Orient';'Tranmere Rovers';0;1),row('2022-05-07';2021;'Mansfield Town';'Forest Green Rovers';2;2),row('2022-05-07';2021;'Newport County';'Rochdale';0;2),row('2022-05-07';2021;'Oldham Athletic';'Crawley Town';3;3),row('2022-05-07';2021;'Stevenage Borough';'Salford City';4;2),row('2022-05-07';2021;'Walsall';'Swindon Town';0;3)
+```
+
+カスタムの区切り文字を設定します:
+
+```sql
+SET format_custom_row_before_delimiter = 'row(';
+SET format_custom_row_after_delimiter = ')';
+SET format_custom_field_delimiter = ';';
+SET format_custom_row_between_delimiter = ',';
+SET format_custom_escaping_rule = 'Quoted';
+```
+
+データを挿入します:
+
+```sql
+INSERT INTO football FROM INFILE 'football.txt' FORMAT CustomSeparated;
+```
+
+<div id="reading-data">
+  ### データの読み込み
+</div>
+
+カスタムの区切り文字設定を指定します:
+
+```sql
+SET format_custom_row_before_delimiter = 'row(';
+SET format_custom_row_after_delimiter = ')';
+SET format_custom_field_delimiter = ';';
+SET format_custom_row_between_delimiter = ',';
+SET format_custom_escaping_rule = 'Quoted';
+```
+
+`CustomSeparated`フォーマットを使用してデータを読み込みます:
+
+```sql
+SELECT *
+FROM football
+FORMAT CustomSeparated
+```
+
+出力は、設定されたカスタムフォーマットで表示されます。
+
+```text
+row('2022-04-30';2021;'Sutton United';'Bradford City';1;4),row('2022-04-30';2021;'Swindon Town';'Barrow';2;1),row('2022-04-30';2021;'Tranmere Rovers';'Oldham Athletic';2;0),row('2022-05-02';2021;'Port Vale';'Newport County';1;2),row('2022-05-02';2021;'Salford City';'Mansfield Town';2;2),row('2022-05-07';2021;'Barrow';'Northampton Town';1;3),row('2022-05-07';2021;'Bradford City';'Carlisle United';2;0),row('2022-05-07';2021;'Bristol Rovers';'Scunthorpe United';7;0),row('2022-05-07';2021;'Exeter City';'Port Vale';0;1),row('2022-05-07';2021;'Harrogate Town A.F.C.';'Sutton United';0;2),row('2022-05-07';2021;'Hartlepool United';'Colchester United';0;2),row('2022-05-07';2021;'Leyton Orient';'Tranmere Rovers';0;1),row('2022-05-07';2021;'Mansfield Town';'Forest Green Rovers';2;2),row('2022-05-07';2021;'Newport County';'Rochdale';0;2),row('2022-05-07';2021;'Oldham Athletic';'Crawley Town';3;3),row('2022-05-07';2021;'Stevenage Borough';'Salford City';4;2),row('2022-05-07';2021;'Walsall';'Swindon Town';0;3)
+```
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
+
+追加の設定:
+
+| 設定                                                                                                                                                                   | 説明                                                                     | デフォルト   |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------- |
+| [input&#95;format&#95;custom&#95;detect&#95;header](/ja/reference/settings/formats#input_format_custom_detect_header)                                                   | 名前と型を含むヘッダーが存在する場合、それを自動的に検出します。                                       | `true`  |
+| [input&#95;format&#95;custom&#95;skip&#95;trailing&#95;empty&#95;lines](/ja/reference/settings/formats#input_format_custom_skip_trailing_empty_lines)                   | ファイル末尾の空行をスキップします。                                                     | `false` |
+| [input&#95;format&#95;custom&#95;allow&#95;variable&#95;number&#95;of&#95;columns](/ja/reference/settings/formats#input_format_custom_allow_variable_number_of_columns) | CustomSeparated フォーマットで可変数のカラムを許可し、余分なカラムを無視し、不足しているカラムにはデフォルト値を使用します。 | `false` |

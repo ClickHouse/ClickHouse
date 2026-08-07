@@ -1,0 +1,60 @@
+---
+description: 'Расширение табличной функции iceberg, которое позволяет параллельно обрабатывать файлы
+  из Apache Iceberg на множестве узлов в указанном кластере.'
+sidebarTitle: 'icebergCluster'
+slug: /sql-reference/table-functions/icebergCluster
+title: 'icebergCluster'
+doc_type: 'reference'
+---
+
+Это расширение табличной функции [iceberg](/ru/reference/functions/table-functions/iceberg).
+
+Позволяет параллельно обрабатывать файлы из Apache [Iceberg](https://iceberg.apache.org/) на множестве узлов в указанном кластере. На узле-инициаторе создаётся соединение со всеми узлами кластера, и каждый файл динамически распределяется между ними. На узле-воркере запрашивается у инициатора следующая задача для обработки, после чего она обрабатывается. Это повторяется, пока не будут завершены все задачи.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
+
+icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzureCluster(cluster_name, named_collection[, option=value [,..]])
+
+icebergHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+* `cluster_name` — имя кластера, используемое для построения набора адресов и параметров подключения к удалённым и локальным серверам.
+* Описание всех остальных аргументов совпадает с описанием аргументов в эквивалентной табличной функции [iceberg](/ru/reference/functions/table-functions/iceberg).
+* Необязательный параметр `extra_credentials` можно использовать для передачи `role_arn` для ролевого доступа в ClickHouse Cloud. Инструкции по настройке см. в разделе [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).
+
+**Возвращаемое значение**
+
+Таблица с указанной структурой для чтения данных из указанной таблицы Iceberg в кластере.
+
+**Примеры**
+
+```sql
+SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
+
+* `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
+* `_file` — Имя файла. Тип: `LowCardinality(String)`.
+* `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер файла неизвестен, значение — `NULL`.
+* `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
+* `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение — `NULL`.
+
+**См. также**
+
+* [движок Iceberg](/ru/reference/engines/table-engines/integrations/iceberg)
+* [табличная функция Iceberg](/ru/reference/functions/table-functions/iceberg)

@@ -1,0 +1,62 @@
+---
+description: 'Use ClickHouse to query, accelerate, and analyze data in open table formats such as Apache Iceberg, Delta Lake, Apache Hudi, and Apache Paimon.'
+slug: /use-cases/data-lake
+title: 'Data Lake'
+keywords: ['data lake', 'lakehouse', 'iceberg', 'delta lake', 'hudi', 'paimon', 'glue', 'unity', 'rest', 'OneLake', 'BigLake']
+doc_type: 'landing-page'
+---
+
+ClickHouse integrates with open table formats, including [Apache Iceberg](/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/reference/engines/table-engines/integrations/deltalake), [Apache Hudi](/reference/engines/table-engines/integrations/hudi), and [Apache Paimon](/reference/functions/table-functions/paimon). This allows users to connect ClickHouse to data already stored in these formats across object storage, combining the analytical power of ClickHouse with their existing data lake infrastructure.
+
+## Why use ClickHouse with open table formats? {#why-clickhouse-uses-lake-formats}
+
+### Query existing data in place {#querying-data-in-place}
+
+ClickHouse can query open table formats directly in object storage without duplicating data. Organizations standardized on Iceberg, Delta Lake, Hudi, or Paimon can point ClickHouse at existing tables and immediately use its SQL dialect, analytical functions, and efficient native Parquet reader. At the same time, tools like [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) and [chDB](/chdb/index) enable exploratory, ad hoc analysis across more than 70 file formats in remote storage, allowing users to interactively explore data lake datasets with no infrastructure setup.
+
+Users can achieve this with either direct reading, using [table functions and table engines](/guides/use-cases/data-warehousing/getting-started/querying-directly), or by [connecting to a data catalogue](/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+### Real-time analytical workloads with ClickHouse {#real-time-with-clickhouse}
+
+For workloads that demand high concurrency and low-latency responses, users can load data from open table formats into ClickHouse's [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) engine. This provides a real-time analytics layer on top of data that originates in a data lake, supporting dashboards, operational reporting, and other latency-sensitive workloads that benefit from MergeTree columnar storage and indexing capabilities.
+
+See the getting started guide for [accelerating analytics with MergeTree](/guides/use-cases/data-warehousing/getting-started/accelerating-analytics).
+
+## Capabilities {#capabilities}
+
+### Read data directly {#read-data-directly}
+
+ClickHouse provides [table functions](/reference/functions/table-functions/index) and [engines](/reference/engines/table-engines/integrations/index) for reading open table formats directly on object storage. Functions such as [`iceberg()`](/reference/functions/table-functions/iceberg), [`deltaLake()`](/reference/functions/table-functions/deltalake), [`hudi()`](/reference/functions/table-functions/hudi), and [`paimon()`](/reference/functions/table-functions/paimon) allow users to query open table format tables from within a SQL statement without any prior configuration. Versions of these functions exist for most common object stores, such as S3, Azure Blob Storage, and GCS. These functions also have equivalent table engines which can be used to create tables within ClickHouse which reference underlying open table format object storage - thus making querying more convenient.
+
+See our getting started guide for [querying directly](/guides/use-cases/data-warehousing/getting-started/querying-directly), or by [connecting to a data catalogue](/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+### Expose catalogs as databases {#expose-catalogs-as-databases}
+
+Using the [`DataLakeCatalog`](/reference/engines/database-engines/datalake) database engine, users can connect ClickHouse to an external catalog and expose it as a database. Tables registered in the catalog appear as tables within ClickHouse, enabling the full range of ClickHouse SQL syntax and analytical functions to be used transparently. This means users can query, join, and aggregate across catalog-managed tables as if they were native ClickHouse tables, benefiting from ClickHouse's query optimization, parallel execution, and reading capabilities.
+
+Supported catalogs include:
+
+| Catalog | Guide |
+|---------|-------|
+| AWS Glue | [Glue Catalog guide](/guides/use-cases/data-warehousing/glue-catalog) |
+| BigLake Metastore | [BigLake Metastore guide](/guides/use-cases/data-warehousing/biglake-catalog) |
+| Databricks Unity Catalog | [Unity Catalog guide](/guides/use-cases/data-warehousing/unity-catalog) |
+| Iceberg REST Catalog | [REST Catalog guide](/guides/use-cases/data-warehousing/rest-catalog) |
+| Lakekeeper | [Lakekeeper Catalog guide](/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| Project Nessie | [Nessie Catalog guide](/guides/use-cases/data-warehousing/nessie-catalog) |
+| Microsoft OneLake | [OneLake Catalog guide](/guides/use-cases/data-warehousing/onelake-catalog) |
+
+See the getting started guide for [connecting to catalogs](/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+### Write back to open table formats {#write-back-to-lakehouse-formats}
+
+ClickHouse supports writing data back to open table formats, which is relevant in scenarios such as:
+
+- **Real-time to long-term storage** - Data transits through ClickHouse as a real-time analytics layer, and users need to offload results to Iceberg or other formats for durable, cost-effective long-term storage.
+- **Reverse ETL** - Users perform transformations inside ClickHouse using materialized views or scheduled queries and wish to persist the results into open table formats for consumption by other tools in the data ecosystem.
+
+See the getting started guide for [writing to data lakes](/guides/use-cases/data-warehousing/getting-started/writing-data).
+
+## Next steps {#next-steps}
+
+Ready to try it out? The [Getting Started guide](/guides/use-cases/data-warehousing/getting-started/overview) walks through querying open table formats directly, connecting to a catalog, loading data into MergeTree for fast analytics, and writing results back - all in a single end-to-end workflow.

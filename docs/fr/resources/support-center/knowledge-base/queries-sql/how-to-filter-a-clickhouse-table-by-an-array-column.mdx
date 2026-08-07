@@ -1,0 +1,114 @@
+---
+title: Comment filtrer une table ClickHouse à l’aide d’une colonne de type Array ?
+description: "Article de la base de connaissances expliquant comment filtrer une table ClickHouse à l’aide d’une colonne de type Array."
+date: 2024-12-17
+tags: ['Modélisation des données', 'Fonctions']
+keywords: ['Filtre', 'Colonne de type Array']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+Filtrer une table ClickHouse à l’aide d’une colonne de type Array est une tâche courante, et le produit propose de nombreuses [fonctions](/fr/reference/functions/regular-functions/array-functions) pour travailler avec des colonnes de type Array.
+
+Dans cet article, nous allons nous concentrer sur le filtrage d’une table à l’aide d’une colonne de type Array, mais la vidéo ci-dessous présente également de nombreuses autres fonctions liées aux tableaux :
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JKHAdCFtYDg?si=OqS3ry1LFrOlF8Iy" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="example">
+  ## Exemple
+</div>
+
+Nous prendrons comme exemple une table comportant deux colonnes, `tags_string` et `tags_int`, qui contiennent respectivement un tableau de chaînes de caractères et un tableau d’entiers.
+
+* Créez une base de données et une table d’exemple.
+
+```sql
+CREATE DATABASE db1;
+```
+
+* Créer une table d’exemple
+
+```sql
+CREATE TABLE db1.tags_table
+(
+    `id` UInt64,
+    `tags_string` Array(String),
+    `tags_int` Array(UInt64),
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+* Insérez quelques données d’exemple dans la table.
+
+```sql
+INSERT INTO db1.tags_table VALUES (1, ['tag1', 'tag2', 'tag3'], [1, 2, 3]), (2, ['tag2', 'tag3', 'tag4'], [2, 3, 4]), (3, ['tag1', 'tag3', 'tag5'], [1, 3, 5]);
+```
+
+Filtrez la table à l’aide de la fonction `has(arr, elem)` afin de renvoyer les lignes pour lesquelles le tableau `arr` contient l’élément `elem`.
+
+Filtrez la table afin de renvoyer les lignes pour lesquelles le tableau `tags_string` contient l’élément `tag1`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE has(tags_string, 'tag1');
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+Utilisez la fonction `hasAll(arr, elems)` pour renvoyer les lignes dans lesquelles tous les éléments du tableau `elems` sont présents dans le tableau `arr`.
+
+Filtrez la table pour renvoyer les lignes dans lesquelles tous les éléments du tableau `tags_string` sont présents dans le tableau `['tag1', 'tag2']`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAll(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+└────┴────────────────────────┴──────────┘
+```
+
+Utilisez la fonction `hasAny(arr, elems)` pour renvoyer les lignes où au moins un élément du tableau `elems` est présent dans le tableau `arr`.
+
+Appliquez un filtre à la table pour renvoyer les lignes où au moins un élément du tableau `tags_string` est présent dans le tableau `['tag1', 'tag2']`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAny(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+Nous pouvons utiliser une fonction lambda pour filtrer la table à l’aide de la fonction `arrayExists(lambda, arr)`.
+
+Filtrez la table pour renvoyer les lignes dans lesquelles au moins un élément du tableau `tags_int` est supérieur à 3.
+
+```sql
+SELECT * FROM db1.tags_table WHERE arrayExists(x -> x > 3, tags_int);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```

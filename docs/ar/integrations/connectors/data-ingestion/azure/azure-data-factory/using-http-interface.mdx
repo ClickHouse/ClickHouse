@@ -1,0 +1,322 @@
+---
+sidebarTitle: 'استخدام واجهة HTTP'
+slug: /integrations/azure-data-factory/http-interface
+description: 'استخدام واجهة ClickHouse HTTP لنقل البيانات من Azure Data Factory إلى ClickHouse'
+keywords: ['azure data factory', 'azure', 'microsoft', 'data', 'http interface']
+title: 'استخدام واجهة ClickHouse HTTP في Azure Data Factory'
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تُعد [دالة الجدول `azureBlobStorage`](/ar/reference/functions/table-functions/azureBlobStorage)
+طريقة سريعة ومريحة لإدخال البيانات من Azure Blob Storage إلى
+ClickHouse. ومع ذلك، قد لا يكون استخدامها مناسبًا دائمًا للأسباب التالية:
+
+* قد لا تكون بياناتك مخزنة في Azure Blob Storage — فقد تكون، على سبيل المثال، في Azure SQL Database أو Microsoft SQL Server أو Cosmos DB.
+* قد تمنع سياسات الأمان الوصول الخارجي إلى Blob Storage
+  بالكامل — على سبيل المثال، إذا كان حساب التخزين مؤمَّنًا من دون نقطة نهاية عامة.
+
+في مثل هذه السيناريوهات، يمكنك استخدام Azure Data Factory مع
+[واجهة ClickHouse HTTP](/ar/concepts/features/interfaces/http)
+لإرسال البيانات من خدمات Azure إلى ClickHouse.
+
+تعكس هذه الطريقة اتجاه التدفق: فبدلًا من أن يسحب ClickHouse البيانات من
+Azure، يدفع Azure Data Factory البيانات إلى ClickHouse. ويتطلب هذا النهج
+عادةً أن يكون مثيل ClickHouse لديك متاحًا عبر الإنترنت
+العام.
+
+<Info>
+  يمكن تجنب تعريض مثيل ClickHouse لديك للإنترنت من خلال
+  استخدام Self-hosted Integration Runtime الخاص بـ Azure Data Factory. يتيح هذا الإعداد
+  إرسال البيانات عبر شبكة خاصة. ومع ذلك، فإن هذا
+  خارج نطاق هذه المقالة. يمكنك العثور على مزيد من المعلومات في الدليل الرسمي:
+  [إنشاء Self-hosted Integration
+  Runtime وتكوينه](https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime?tabs=data-factory)
+</Info>
+
+<div id="turning-clickhouse-to-a-rest-service">
+  ## تحويل ClickHouse إلى خدمة REST
+</div>
+
+تدعم Azure Data Factory إرسال البيانات إلى الأنظمة الخارجية عبر HTTP بتنسيق JSON.
+يمكننا استخدام هذه الإمكانية لإدخال البيانات مباشرةً إلى ClickHouse
+باستخدام [واجهة ClickHouse HTTP](/ar/concepts/features/interfaces/http).
+يمكنك معرفة المزيد في [وثائق واجهة ClickHouse HTTP](/ar/concepts/features/interfaces/http).
+
+في هذا المثال، نحتاج فقط إلى تحديد جدول الوجهة، وتعريف
+تنسيق بيانات الإدخال على أنه JSON، وتضمين خيارات للسماح بتحليل
+أكثر مرونة لقيم `timestamp`.
+
+```sql
+INSERT INTO my_table
+SETTINGS 
+    date_time_input_format='best_effort',
+    input_format_json_read_objects_as_strings=1
+FORMAT JSONEachRow
+```
+
+لإرسال هذا الاستعلام كجزء من طلب HTTP، ما عليك سوى تمريره
+كسلسلة مُرمَّزة بترميز URL إلى معلمة query في نقطة نهاية ClickHouse الخاصة بك:
+
+```text
+https://your-clickhouse-url.com?query=INSERT%20INTO%20my_table%20SETTINGS%20date_time_input_format%3D%27best_effort%27%2C%20input_format_json_read_objects_as_strings%3D1%20FORMAT%20JSONEachRow%0A
+```
+
+<Info>
+  يمكن لـ Azure Data Factory معالجة هذا الترميز تلقائيًا باستخدام الدالة
+  المضمنة `encodeUriComponent`، لذلك لن تحتاج إلى القيام بذلك يدويًا.
+</Info>
+
+يمكنك الآن إرسال بيانات بتنسيق JSON إلى عنوان URL هذا. يجب أن تتوافق البيانات
+مع بنية الجدول الهدف. إليك مثالًا بسيطًا باستخدام curl، بافتراض وجود
+جدول يحتوي على ثلاثة أعمدة: `col_1` و`col_2` و`col_3`.
+
+```text
+curl \
+    -XPOST "https://your-clickhouse-url.com?query=<our_URL_encded_query>" \
+    --data '{"col_1":9119,"col_2":50.994,"col_3":"2019-06-01 00:00:00"}'
+```
+
+يمكنك أيضًا إرسال مصفوفة JSON من الكائنات، أو JSON Lines (كائنات JSON
+محددة بأسطر جديدة). يستخدم Azure Data Factory تنسيق مصفوفة JSON، وهو ما يعمل
+بشكل مثالي مع مُدخل `JSONEachRow` في ClickHouse.
+
+كما ترى، في هذه الخطوة لا تحتاج إلى القيام بأي شيء خاص من جانب ClickHouse.
+فواجهة HTTP توفّر بالفعل كل ما يلزم لتعمل كنقطة
+نهاية شبيهة بـ REST — ولا يتطلب الأمر أي تهيئة إضافية.
+
+الآن بعد أن جعلنا ClickHouse يعمل كنقطة نهاية REST، فقد حان الوقت
+لتهيئة Azure Data Factory لاستخدامه.
+
+في الخطوات التالية، سننشئ مثيلًا في Azure Data Factory، ونُعد خدمة مرتبطة
+بمثيل ClickHouse لديك، ونعرّف مجموعة بيانات لـ
+[REST sink](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)،
+وننشئ نشاط Copy Data لإرسال البيانات من Azure إلى ClickHouse.
+
+<div id="create-an-azure-data-factory-instance">
+  ## إنشاء مثيل Azure Data Factory
+</div>
+
+يفترض هذا الدليل أن لديك إمكانية الوصول إلى حساب Microsoft Azure، وأنك
+أعددت بالفعل اشتراكًا ومجموعة موارد. إذا كان لديك
+Azure Data Factory مُعدّ بالفعل، فيمكنك تخطي هذه الخطوة بأمان
+والانتقال إلى الخطوة التالية باستخدام خدمتك الحالية.
+
+1. سجّل الدخول إلى [Microsoft Azure Portal](https://portal.azure.com/) وانقر على
+   **إنشاء مورد**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp" size="lg" alt="الصفحة الرئيسية لـ Azure Portal" border />
+
+2. في جزء الفئات على اليسار، حدّد **التحليلات**، ثم انقر على
+   **Data Factory** ضمن قائمة الخدمات الشائعة.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp" size="lg" alt="مورد جديد في Azure Portal" border />
+
+3. حدّد اشتراكك ومجموعة الموارد، وأدخل اسمًا لمثيل Data
+   Factory الجديد، واختر المنطقة، واترك الإصدار على V2.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp" size="lg" alt="Data Factory جديد في Azure Portal" border />
+
+4. انقر على **مراجعة + إنشاء**، ثم انقر على **إنشاء** لبدء عملية النشر.
+
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp" size="lg" alt="تأكيد Data Factory جديد في Azure Portal" border />
+
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp" size="lg" alt="نجاح إنشاء Data Factory جديد في Azure Portal" border />
+
+بمجرد اكتمال عملية النشر بنجاح، يمكنك البدء في استخدام مثيل Azure
+Data Factory الجديد.
+
+<div id="-creating-new-rest-based-linked-service">
+  ## إنشاء خدمة مرتبطة جديدة مستندة إلى REST
+</div>
+
+1. سجّل الدخول إلى Microsoft Azure Portal وافتح مثيل Data Factory الخاص بك.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="الصفحة الرئيسية لـ Azure Portal مع Data Factory" border />
+
+2. في صفحة **Overview** الخاصة بـ Data Factory، انقر على **Launch Studio**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="صفحة Azure Portal Data Factory" border />
+
+3. من القائمة اليمنى، اختر **Manage**، ثم انتقل إلى **Linked services**،
+   وانقر على **+ New** لإنشاء خدمة مرتبطة جديدة.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="زر Azure Data Factory New Linked Service" border />
+
+4. في **شريط البحث New linked service**، اكتب **REST**، ثم اختر **REST**، وانقر على **Continue**
+   لإنشاء مثيل
+   [لموصل REST](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest).
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="بحث Azure Data Factory New Linked Service" border />
+
+5. في جزء تكوين الخدمة المرتبطة، أدخل اسمًا لخدمتك الجديدة،
+   ثم انقر على حقل **Base URL**، وبعد ذلك انقر على **Add dynamic content** (لا يظهر هذا الرابط
+   إلا عند تحديد الحقل).
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="جزء New Lined Service" border />
+
+6. في جزء المحتوى الديناميكي، يمكنك إنشاء عنوان URL مُعلَّم بالمعلمات، ما
+   يتيح لك تحديد الاستعلام لاحقًا عند إنشاء datasets لجداول
+   مختلفة — وهذا يجعل الخدمة المرتبطة قابلة لإعادة الاستخدام.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="عنوان URL الأساسي الفارغ لـ New Linked Service" border />
+
+7. انقر على **&quot;+&quot;** بجانب حقل التصفية وأضف parameter جديدًا، وسمّه
+   `pQuery`، واضبط النوع على String، واضبط القيمة الافتراضية على `SELECT 1`.
+   ثم انقر على **Save**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="Parameters الخاصة بـ New Linked Service" border />
+
+8. في حقل expression، أدخل ما يلي ثم انقر على **OK**. استبدل
+   `your-clickhouse-url.com` بالعنوان الفعلي لمثيل ClickHouse
+   الخاص بك.
+   ```text
+   @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
+   ```
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="حقل Expression الممتلئ لـ New Linked Service" border />
+
+9. بالعودة إلى النموذج الرئيسي، اختر Basic authentication، ثم أدخل username و
+   password المستخدمَين للاتصال بـ واجهة ClickHouse HTTP، ثم انقر على **Test
+   connection**. إذا كان كل شيء مُعدًّا بشكل صحيح، فستظهر لك رسالة
+   نجاح.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="فحص الاتصال لـ New Linked Service" border />
+
+10. انقر على **Create** لإكمال الإعداد.
+    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="قائمة Linked Services" border />
+
+يجب أن ترى الآن خدمتك المرتبطة الجديدة المستندة إلى REST ضمن القائمة.
+
+<div id="creating-a-new-dataset-for-the-clickhouse-http-interface">
+  ## إنشاء مجموعة بيانات جديدة لـ واجهة ClickHouse HTTP
+</div>
+
+الآن وبعد أن أصبح لدينا خدمة مرتبطة مُعَدًّا لواجهة ClickHouse HTTP،
+يمكننا إنشاء مجموعة بيانات ستستخدمها Azure Data Factory لإرسال البيانات إلى
+ClickHouse.
+
+في هذا المثال، سنُدرِج جزءًا صغيرًا من [بيانات المستشعرات
+البيئية](/ar/get-started/sample-datasets/environmental-sensors).
+
+1. افتح وحدة استعلامات ClickHouse التي تفضّلها — وقد تكون ClickHouse Cloud web UI،
+   أو عميل CLI، أو أي واجهة أخرى تستخدمها
+   لتشغيل الاستعلامات — ثم أنشئ target table:
+   ```sql
+   CREATE TABLE sensors
+   (
+       sensor_id UInt16,
+       lat Float32,
+       lon Float32,
+       timestamp DateTime,
+       temperature Float32
+   )
+   ENGINE = MergeTree
+   ORDER BY (timestamp, sensor_id);
+   ```
+
+2. في Azure Data Factory Studio، حدِّد Author في الجزء الأيسر. مرِّر المؤشر
+   فوق العنصر Dataset، وانقر على أيقونة النقاط الثلاث، ثم اختر New dataset.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp" size="lg" alt="عنصر مجموعة بيانات جديدة" border />
+
+3. في شريط البحث، اكتب **REST**، وحدِّد **REST**، ثم انقر **Continue**.
+   أدخل اسمًا لمجموعة البيانات وحدِّد **خدمة مرتبطة** التي أنشأتها
+   في الخطوة السابقة. انقر **OK** لإنشاء مجموعة البيانات.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp" size="lg" alt="صفحة مجموعة بيانات جديدة" border />
+
+4. ينبغي أن ترى الآن مجموعة البيانات التي أنشأتها حديثًا مُدرجة ضمن قسم Datasets
+   في جزء Factory Resources على اليسار. حدِّد مجموعة البيانات لفتح
+   خصائصها. سترى المعلَمة `pQuery` التي جرى تعريفها في
+   خدمة مرتبطة. انقر على حقل النص **Value**. ثم انقر **Add dynamic**
+   content.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp" size="lg" alt="خصائص مجموعة بيانات جديدة" border />
+
+5. في الجزء الذي يُفتح، الصق الاستعلام التالي:
+   ```sql
+   INSERT INTO sensors
+   SETTINGS 
+       date_time_input_format=''best_effort'', 
+       input_format_json_read_objects_as_strings=1 
+   FORMAT JSONEachRow
+   ```
+
+<Danger>
+  يجب استبدال جميع علامات الاقتباس المفردة `'` في الاستعلام بعلامتي اقتباس مفردتين
+  `''`. وهذا مطلوب من محلّل التعبيرات في Azure Data Factory. إذا
+  لم تقم بتهريبها، فقد لا ترى خطأً فورًا — لكنه سيفشل
+  لاحقًا عندما تحاول استخدام مجموعة البيانات أو حفظها. على سبيل المثال، `'best_effort'`
+  يجب كتابتها بالشكل `''best_effort''`.
+</Danger>
+
+<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp" size="xl" alt="استعلام مجموعة بيانات جديدة" border />
+
+6. انقر **OK** لحفظ التعبير. ثم انقر **Test connection**. إذا كان كل شيء
+   مُعَدًّا بشكل صحيح، فسترى رسالة **Connection successful**. انقر **Publish
+   all** أعلى الصفحة لحفظ تغييراتك.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp" size="xl" alt="نجاح اتصال مجموعة البيانات الجديدة" border />
+
+<div id="setting-up-an-example-dataset">
+  ### إعداد مجموعة بيانات تجريبية
+</div>
+
+في هذا المثال، لن نستخدم مجموعة بيانات Environmental Sensors بالكامل،
+بل سنستخدم فقط مجموعة فرعية صغيرة متاحة على
+[Sensors Dataset Sample](https://datasets-documentation.s3.eu-west-3.amazonaws.com/environmental/sensors.csv).
+
+<Info>
+  لإبقاء هذا الدليل مركّزًا، لن نتناول الخطوات التفصيلية لإنشاء
+  مجموعة البيانات المصدر في Azure Data Factory. يمكنك رفع البيانات التجريبية إلى أي
+  خدمة تخزين تختارها — مثل Azure Blob Storage أو Microsoft SQL
+  Server أو حتى بتنسيق ملف آخر يدعمه Azure Data Factory.
+</Info>
+
+ارفع مجموعة البيانات إلى Azure Blob Storage لديك (أو إلى خدمة تخزين أخرى تفضّلها)،
+ثم انتقل في Azure Data Factory Studio إلى جزء Factory Resources.
+أنشئ مجموعة بيانات جديدة تشير إلى البيانات التي رفعتها. انقر على Publish all
+لحفظ تغييراتك.
+
+<div id="creating-the-copy-activity-to-transfer-data-to-clickhouse">
+  ## إنشاء نشاط نسخ لنقل البيانات إلى ClickHouse
+</div>
+
+الآن بعد أن أعددنا مجموعتي بيانات الإدخال والإخراج، يمكننا إعداد نشاط
+**Copy Data** لنقل البيانات من مجموعة البيانات التجريبية إلى
+جدول `sensors` في ClickHouse.
+
+1. افتح **Azure Data Factory Studio**، ثم انتقل إلى **تبويب Author**. في جزء
+   **Factory Resources**، مرّر المؤشر فوق **Pipeline**، وانقر على
+   أيقونة النقاط الثلاث، ثم اختر **New pipeline**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp" size="lg" alt="عنصر مسار معالجة جديد في ADF" border />
+
+2. في جزء **Activities**، وسّع قسم **Move and transform**، ثم
+   اسحب نشاط **Copy data** إلى اللوحة.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp" size="lg" alt="عنصر Copy Data جديد" border />
+
+3. حدّد **تبويب Source**، ثم اختر مجموعة البيانات المصدر التي أنشأتها سابقًا.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp" size="lg" alt="مصدر Copy Data" border />
+
+4. انتقل إلى **تبويب Sink**، ثم اختر مجموعة بيانات ClickHouse التي أنشأتها
+   لجدول sensors. اضبط **Request method** على POST. وتأكد من أن **HTTP compression
+   type** مضبوطة على **None**.
+
+<Warning>
+  لا يعمل ضغط HTTP بشكل صحيح في نشاط Copy Data
+  في Azure Data Factory. فعند تفعيله، يرسل Azure حمولة لا تتجاوز صفر بايت
+  — ويُرجَّح أن يكون ذلك خللًا في الخدمة. احرص على إبقاء الضغط معطّلًا.
+</Warning>
+
+<Info>
+  نوصي بالإبقاء على حجم الدفعة الافتراضي البالغ 10,000، أو حتى زيادته
+  أكثر. لمزيد من التفاصيل، راجع
+  [اختيار استراتيجية الإدراج / الإدراجات الدفعية عند التزامن](/ar/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous).
+</Info>
+
+<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp" size="lg" alt="اختيار POST لمصب Copy Data" border />
+
+5. انقر على **Debug** أعلى اللوحة لتشغيل المسار. بعد انتظار قصير،
+   سيُدرَج النشاط في قائمة الانتظار ثم يُنفَّذ. إذا كان كل شيء مُعدًّا
+   بشكل صحيح، فينبغي أن تنتهي المهمة بحالة **Success**.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp" size="lg" alt="نجاح Debug في Copy Data" border />
+
+6. بعد اكتمال ذلك، انقر على **Publish all** لحفظ تغييرات المسار ومجموعة البيانات.
+
+<div id="additional-resources-1">
+  ## موارد إضافية
+</div>
+
+* [واجهة HTTP](/ar/concepts/features/interfaces/http)
+* [نسخ البيانات وتحويلها من نقطة نهاية REST وإليه باستخدام Azure Data Factory](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest?tabs=data-factory)
+* [اختيار استراتيجية الإدراج](/ar/concepts/best-practices/selecting-an-insert-strategy)
+* [إنشاء Self-hosted Integration Runtime وتكوينه](https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime?tabs=data-factory)

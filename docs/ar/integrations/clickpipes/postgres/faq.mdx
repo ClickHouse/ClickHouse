@@ -1,0 +1,512 @@
+---
+sidebarTitle: 'FAQ'
+description: 'الأسئلة الشائعة حول ClickPipes for Postgres.'
+slug: /integrations/clickpipes/postgres/faq
+title: 'الأسئلة الشائعة حول ClickPipes for Postgres'
+keywords: ['أسئلة شائعة حول Postgres', 'ClickPipes', 'أعمدة TOAST', 'فتحة النسخ المتماثل', 'المنشورات']
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="are-transaction-rollbacks-replicated">
+  ### هل يتم نسخ المعاملات التي تم التراجع عنها إلى ClickHouse؟
+</div>
+
+لا. لا ينسخ CDC إلا المعاملات المُعتمدة. أما المعاملات التي تم التراجع عنها فلا تُرسل مطلقًا إلى ClickHouse.
+
+<div id="retain-data-longer-in-clickhouse">
+  ### هل يمكنني الاحتفاظ بالبيانات في ClickHouse لمدة أطول من الاحتفاظ بها في Postgres المصدر؟
+</div>
+
+نعم. لكلٍّ من Postgres المصدر وClickHouse الوجهة سياسة احتفاظ مستقلة. على سبيل المثال، يمكنك الاحتفاظ بثلاثة أشهر فقط من البيانات في Postgres مع الاحتفاظ بالسجل التاريخي الكامل في ClickHouse. يؤدّي حذف الصفوف القديمة في Postgres إلى إنشاء أحداث DELETE تُنسخ إلى ClickHouse، لذلك إذا كنت تريد الحفاظ على البيانات التاريخية، فعليك إما استبعاد عمليات DELETE من [منشور](/ar/integrations/clickpipes/postgres/faq#ignore-delete-truncate) أو التعامل معها على مستوى الاستعلام.
+
+<div id="data-enrichment">
+  ### كيف يمكنني إثراء البيانات أثناء تدفقها من Postgres إلى ClickHouse؟
+</div>
+
+استخدم [العروض المُجسَّدة](/ar/concepts/features/materialized-views/index) فوق الجداول الوجهة لـ CDC. تعمل العروض المُجسَّدة في ClickHouse كمشغّلات إدراج، لذا يمكن تحويل كل صف يُنسخ من Postgres، أو ضمّه إلى جداول مرجعية، أو إثراؤه بأعمدة إضافية قبل كتابته إلى جدول هدف نهائي.
+
+<div id="multi-region-multi-source">
+  ### هل يمكنني إجراء النسخ المتماثل من عدة مثيلات Postgres إلى خدمة ClickHouse واحدة أو أكثر؟
+</div>
+
+نعم. يمكنك إنشاء ClickPipes منفصلة من مثيلات Postgres مختلفة (بما في ذلك عبر مناطق AWS) إلى خدمة ClickHouse واحدة أو أكثر. على سبيل المثال، يمكنك إرسال البيانات من مثيل Postgres إقليمي إلى عنقود ClickHouse محلي لتحليلات بزمن استجابة منخفض، وفي الوقت نفسه إلى عنقود ClickHouse مركزي في منطقة أخرى لإعداد تقارير مجمّعة. ضع في اعتبارك أن الإعدادات العابرة للمناطق تترتب عليها تكاليف نقل البيانات بين المناطق في AWS، بالإضافة إلى كمون شبكي إضافي.
+
+<div id="how-does-idling-affect-my-postgres-cdc-clickpipe">
+  ### كيف تؤثر حالة الخمول في ClickPipe لـ Postgres CDC الخاص بي؟
+</div>
+
+إذا كانت خدمة ClickHouse Cloud الخاصة بك في حالة خمول، فسيواصل ClickPipe لـ Postgres CDC مزامنة البيانات، وستُفعَّل خدمتك عند فاصل المزامنة التالي لمعالجة البيانات الواردة. وبمجرد اكتمال المزامنة وبدء فترة الخمول، ستعود خدمتك إلى حالة الخمول.
+
+على سبيل المثال، إذا كان فاصل المزامنة مضبوطًا على 30 دقيقة وكان وقت خمول خدمتك مضبوطًا على 10 دقائق، فستُفعَّل خدمتك كل 30 دقيقة وتبقى نشطة لمدة 10 دقائق، ثم تعود إلى حالة الخمول.
+
+<div id="how-are-toast-columns-handled-in-clickpipes-for-postgres">
+  ### كيف يتعامل ClickPipes for Postgres مع أعمدة TOAST؟
+</div>
+
+يُرجى الرجوع إلى صفحة [التعامل مع أعمدة TOAST](/ar/integrations/clickpipes/postgres/toast) لمزيد من المعلومات.
+
+<div id="how-are-generated-columns-handled-in-clickpipes-for-postgres">
+  ### كيف يُتعامَل مع الأعمدة المُولَّدة في ClickPipes for Postgres؟
+</div>
+
+يُرجى الرجوع إلى صفحة [الأعمدة المُولَّدة في Postgres: ملاحظات مهمة وأفضل الممارسات](/ar/integrations/clickpipes/postgres/postgres-generated-columns) لمزيد من المعلومات.
+
+<div id="do-tables-need-to-have-primary-keys-to-be-part-of-postgres-cdc">
+  ### هل يجب أن تحتوي الجداول على مفاتيح أساسية لتكون جزءًا من Postgres CDC؟
+</div>
+
+لكي تتم مزامنة جدول باستخدام ClickPipes for Postgres، يجب أن يكون له إما مفتاح أساسي أو [REPLICA IDENTITY](https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-REPLICA-IDENTITY) مُعرَّفة.
+
+* **المفتاح الأساسي**: أبسط نهج هو تعريف مفتاح أساسي للجدول. يوفّر ذلك معرّفًا فريدًا لكل صف، وهو أمر بالغ الأهمية لتتبّع التحديثات وعمليات الحذف. في هذه الحالة، يمكنك ضبط REPLICA IDENTITY على `DEFAULT` (السلوك الافتراضي).
+* **replica identity**: إذا لم يكن للجدول مفتاح أساسي، فيمكنك تعيين replica identity. ويمكن ضبط replica identity على `FULL`، ما يعني استخدام الصف بالكامل لتحديد التغييرات. وبدلًا من ذلك، يمكنك ضبطها لاستخدام فهرس فريد إذا كان موجودًا على الجدول، ثم تعيين REPLICA IDENTITY إلى `USING INDEX index_name`.
+  لتعيين replica identity إلى FULL، يمكنك استخدام أمر SQL التالي:
+
+```sql
+ALTER TABLE your_table_name REPLICA IDENTITY FULL;
+```
+
+يتيح `REPLICA IDENTITY FULL` أيضًا تكرار أعمدة TOAST غير المتغيرة. المزيد حول ذلك [هنا](/ar/integrations/clickpipes/postgres/toast).
+
+لاحظ أن استخدام `REPLICA IDENTITY FULL` قد يؤثر في الأداء، وقد يؤدي أيضًا إلى زيادة أسرع في WAL، خاصةً للجداول التي لا تحتوي على مفتاح أساسي وتشهد تحديثات أو عمليات حذف متكررة، إذ يتطلب ذلك تسجيل مزيد من البيانات لكل تغيير. إذا كانت لديك أي استفسارات أو كنت بحاجة إلى مساعدة في إعداد المفاتيح الأساسية أو replica identity لجداولك، فيرجى التواصل مع فريق الدعم لدينا للحصول على الإرشادات.
+
+من المهم ملاحظة أنه إذا لم يتم تعريف مفتاح أساسي أو replica identity، فلن يتمكن ClickPipes من تكرار التغييرات لهذا الجدول، وقد تواجه أخطاء أثناء عملية التكرار. لذلك، يُنصح بمراجعة مخططات الجداول لديك والتأكد من أنها تستوفي هذه المتطلبات قبل إعداد ClickPipe.
+
+<div id="do-you-support-partitioned-tables-as-part-of-postgres-cdc">
+  ### هل تدعمون الجداول المُقسَّمة كجزء من Postgres CDC؟
+</div>
+
+نعم، الجداول المُقسَّمة مدعومة تلقائيًا، ما دامت تحتوي على PRIMARY KEY أو REPLICA IDENTITY مُعرَّفَين. ويجب أن يكون كلٌّ من PRIMARY KEY وREPLICA IDENTITY موجودًا في كلٍّ من الجدول الأب وأقسامه. يمكنك قراءة المزيد حول ذلك [هنا](https://blog.peerdb.io/real-time-change-data-capture-for-postgres-partitioned-tables).
+
+<div id="can-i-connect-postgres-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
+  ### هل يمكنني الاتصال بقواعد بيانات Postgres التي لا تحتوي على عنوان IP عام أو الموجودة ضمن شبكات خاصة؟
+</div>
+
+نعم! يوفّر ClickPipes for Postgres طريقتين للاتصال بقواعد البيانات ضمن الشبكات الخاصة:
+
+1. **SSH Tunneling**
+   * مناسب لمعظم حالات الاستخدام
+   * راجع تعليمات الإعداد [هنا](/ar/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)
+   * يعمل في جميع المناطق
+
+2. **AWS PrivateLink**
+   * متاح في ثلاث مناطق AWS:
+     * us-east-1
+     * us-east-2
+     * eu-central-1
+   * للاطلاع على تعليمات الإعداد التفصيلية، راجع [وثائق PrivateLink](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
+   * في المناطق التي لا يتوفر فيها PrivateLink، يُرجى استخدام SSH Tunneling
+
+<div id="how-do-you-handle-updates-and-deletes">
+  ### كيف يتم التعامل مع UPDATEs وDELETEs؟
+</div>
+
+يلتقط ClickPipes for Postgres كلًا من INSERTs وUPDATEs من Postgres كصفوف جديدة بإصدارات مختلفة (باستخدام عمود الإصدار `_peerdb_`) في ClickHouse. ويجري محرك الجدول ReplacingMergeTree إزالة التكرار دوريًا في الخلفية استنادًا إلى مفتاح الترتيب (أعمدة ORDER BY)، مع الاحتفاظ فقط بالصف ذي أحدث إصدار من `_peerdb_`.
+
+تُمرَّر DELETEs من Postgres كصفوف جديدة مُعلَّمة بأنها محذوفة (باستخدام العمود `_peerdb_is_deleted`). ونظرًا لأن عملية إزالة التكرار غير متزامنة، فقد تظهر لك تكرارات بشكل مؤقت. ولمعالجة ذلك، عليك التعامل مع إزالة التكرار على مستوى الاستعلام.
+
+لاحظ أيضًا أنه، افتراضيًا، لا يرسل Postgres قيم الأعمدة التي لا تكون جزءًا من المفتاح الأساسي أو من REPLICA IDENTITY أثناء عمليات DELETE. وإذا كنت تريد التقاط بيانات الصف كاملة أثناء DELETEs، فيمكنك ضبط [REPLICA IDENTITY](https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-REPLICA-IDENTITY) على FULL.
+
+لمزيد من التفاصيل، راجع:
+
+* [أفضل الممارسات لمحرك الجدول ReplacingMergeTree](https://docs.peerdb.io/bestpractices/clickhouse_datamodeling#replacingmergetree-table-engine)
+* [مدونة حول الجوانب الداخلية لـ CDC من Postgres إلى ClickHouse](https://clickhouse.com/blog/postgres-to-clickhouse-data-modeling-tips)
+
+<div id="can-i-update-primary-key-columns-in-postgresql">
+  ### هل يمكنني تحديث أعمدة المفتاح الأساسي في PostgreSQL؟
+</div>
+
+<Warning>
+  لا يمكن، افتراضيًا، إعادة تطبيق تحديثات المفتاح الأساسي في PostgreSQL بشكل صحيح في ClickHouse.
+
+  يرجع هذا القيد إلى أن إزالة التكرار في `ReplacingMergeTree` تعمل استنادًا إلى أعمدة `ORDER BY` (التي تتوافق عادةً مع المفتاح الأساسي). فعند تحديث مفتاح أساسي في PostgreSQL، يظهر هذا التغيير في ClickHouse كصف جديد بمفتاح مختلف، بدلًا من أن يكون تحديثًا للصف الحالي. وقد يؤدي ذلك إلى وجود كلٍّ من قيم المفتاح الأساسي القديمة والجديدة في جدول ClickHouse لديك.
+</Warning>
+
+لاحظ أن تحديث أعمدة المفتاح الأساسي ليس ممارسة شائعة في تصميم قواعد بيانات PostgreSQL، لأن المفاتيح الأساسية يُفترض أن تكون معرّفات غير قابلة للتغيير. وتتجنب معظم التطبيقات تحديثات المفتاح الأساسي بحكم التصميم، مما يجعل هذا القيد نادرًا ما يظهر في حالات الاستخدام المعتادة.
+
+يتوفر إعداد تجريبي يمكنه تمكين التعامل مع تحديثات المفتاح الأساسي، لكنه ينطوي على تأثيرات كبيرة في الأداء، ولا يُنصح باستخدامه في بيئة الإنتاج دون دراسة متأنية.
+
+إذا كانت حالة الاستخدام لديك تتطلب تحديث أعمدة المفتاح الأساسي في PostgreSQL مع انعكاس هذه التغييرات بشكل صحيح في ClickHouse، فيُرجى التواصل مع فريق الدعم لدينا على [db-integrations-support@clickhouse.com](mailto:db-integrations-support@clickhouse.com) لمناقشة متطلباتك المحددة والحلول الممكنة.
+
+<div id="do-you-support-schema-changes">
+  ### هل تدعمون تغييرات المخطط؟
+</div>
+
+يرجى الرجوع إلى صفحة [ClickPipes for Postgres: دعم تمرير تغييرات المخطط](/ar/integrations/clickpipes/postgres/schema-changes) لمزيد من المعلومات.
+
+<div id="what-are-the-costs-for-clickpipes-for-postgres-cdc">
+  ### ما هي تكاليف ClickPipes for Postgres CDC؟
+</div>
+
+للاطلاع على معلومات مفصلة عن الأسعار، يُرجى الرجوع إلى [قسم تسعير ClickPipes for Postgres CDC في صفحة النظرة العامة الرئيسية الخاصة بالفوترة](/ar/products/cloud/reference/billing/clickpipes/index).
+
+<div id="my-replication-slot-size-is-growing-or-not-decreasing-what-might-be-the-issue">
+  ### حجم فتحة النسخ المتماثل لديّ يزداد أو لا ينخفض؛ فما السبب المحتمل؟
+</div>
+
+إذا لاحظت أن حجم فتحة النسخ المتماثل في Postgres يواصل الارتفاع أو لا يعود إلى الانخفاض، فهذا يعني عادةً أن **سجلات WAL (Write-Ahead Log) لا تُستهلك (أو لا تُعاد تطبيقها) بالسرعة الكافية** بواسطة مسار CDC أو عملية النسخ المتماثل لديك. في ما يلي أكثر الأسباب شيوعًا وكيفية التعامل معها.
+
+1. **ارتفاعات مفاجئة في نشاط قاعدة البيانات**
+   * قد تؤدي التحديثات الكبيرة على دفعات، وعمليات الإدراج المجمّعة، أو تغييرات المخطط الكبيرة إلى توليد كمية كبيرة من بيانات WAL بسرعة.
+   * تحتفظ فتحة النسخ المتماثل بسجلات WAL هذه إلى أن يتم استهلاكها، مما يؤدي إلى زيادة مؤقتة في الحجم.
+
+2. **المعاملات طويلة الأمد**
+   * تُجبر المعاملة المفتوحة Postgres على الاحتفاظ بجميع مقاطع WAL التي تم إنشاؤها منذ بدء المعاملة، ما قد يزيد حجم الفتحة بشكل كبير.
+   * اضبط `statement_timeout` و `idle_in_transaction_session_timeout` على قيم معقولة لمنع بقاء المعاملات مفتوحة إلى أجل غير مسمى:
+     ```sql
+     SELECT
+         pid,
+         state,
+         age(now(), xact_start) AS transaction_duration,
+         query AS current_query
+     FROM
+         pg_stat_activity
+     WHERE
+         xact_start IS NOT NULL
+     ORDER BY
+         age(now(), xact_start) DESC;
+     ```
+     استخدم هذا الاستعلام لتحديد المعاملات التي تستغرق وقتًا أطول من المعتاد.
+
+3. **عمليات الصيانة أو الأدوات المساعدة (مثل `pg_repack`)**
+   * يمكن لأدوات مثل `pg_repack` إعادة كتابة جداول كاملة، مما يولّد كميات كبيرة من بيانات WAL خلال فترة قصيرة.
+   * جدوِل هذه العمليات خلال فترات انخفاض حركة المرور، أو راقب استخدام WAL عن كثب أثناء تشغيلها.
+
+4. **VACUUM و VACUUM ANALYZE**
+   * رغم أن هذه العمليات ضرورية لصحة قاعدة البيانات، فإنها قد تولّد حركة WAL إضافية، خاصةً إذا كانت تفحص جداول كبيرة.
+   * فكّر في استخدام معلمات ضبط `autovacuum` أو جدولة عمليات VACUUM اليدوية خلال ساعات انخفاض الحمل.
+
+5. **مستهلك النسخ المتماثل لا يقرأ من الفتحة بشكل نشط**
+   * إذا توقّف مسار CDC لديك (مثل ClickPipes) أو أي مستهلك نسخ متماثل آخر، أو توقّف مؤقتًا، أو تعطّل، فستتراكم بيانات WAL في الفتحة.
+   * تأكد من أن المسار قيد التشغيل باستمرار، وتحقق من السجلات بحثًا عن أخطاء الاتصال أو المصادقة.
+
+للتعمق أكثر في هذا الموضوع، راجع تدوينتنا: [تجاوز المزالق في فك الترميز المنطقي في Postgres](https://blog.peerdb.io/overcoming-pitfalls-of-postgres-logical-decoding#heading-beware-of-replication-slot-growth-how-to-monitor-it).
+
+<div id="how-are-postgres-data-types-mapped-to-clickhouse">
+  ### كيف تُطابَق أنواع بيانات Postgres مع ClickHouse؟
+</div>
+
+يهدف ClickPipes for Postgres إلى تمثيل أنواع بيانات Postgres في ClickHouse بأقرب صورة ممكنة إلى الأنواع الأصلية. توفّر هذه الوثيقة قائمة شاملة بكل نوع من أنواع البيانات وما يقابله: [مصفوفة أنواع البيانات](https://docs.peerdb.io/datatypes/datatype-matrix).
+
+<div id="can-i-define-my-own-data-type-mapping-while-replicating-data-from-postgres-to-clickhouse">
+  ### هل يمكنني تحديد تعيين أنواع البيانات الخاص بي عند نسخ البيانات من Postgres إلى ClickHouse؟
+</div>
+
+في الوقت الحالي، لا ندعم تحديد تعيينات مخصّصة لأنواع البيانات كجزء من الـ pipe. ومع ذلك، تجدر الإشارة إلى أن تعيين أنواع البيانات الافتراضي الذي تستخدمه ClickPipes يعتمد بدرجة كبيرة على الأنواع الأصلية. تُنسخ معظم أنواع الأعمدة في Postgres إلى أقرب ما يمكن من نظيراتها الأصلية في ClickHouse. فعلى سبيل المثال، تُنسخ أنواع مصفوفات الأعداد الصحيحة في Postgres كأنواع مصفوفات أعداد صحيحة في ClickHouse.
+
+<div id="how-are-json-and-jsonb-columns-replicated-from-postgres">
+  ### كيف تُنسَخ أعمدة JSON وJSONB من Postgres؟
+</div>
+
+تُنسَخ أعمدة JSON وJSONB بنوع String في ClickHouse. ونظرًا إلى أن ClickHouse يدعم [JSON type](/ar/reference/data-types/newjson) دعمًا أصليًا، يمكنك إنشاء عرض مُجسَّد على جداول ClickPipes لإجراء هذا التحويل عند الحاجة. أو يمكنك استخدام [JSON functions](/ar/reference/functions/regular-functions/json-functions) مباشرةً على أعمدة String. ونعمل حاليًا على ميزة تنسخ أعمدة JSON وJSONB مباشرةً إلى JSON type في ClickHouse. ومن المتوقع أن تتوفر هذه الميزة خلال الأشهر القليلة المقبلة.
+
+<div id="what-happens-to-inserts-when-a-mirror-is-paused">
+  ### ماذا يحدث لعمليات الإدراج عندما يتم إيقاف mirror مؤقتًا؟
+</div>
+
+عندما توقف mirror مؤقتًا، تُوضَع الرسائل في قائمة الانتظار داخل فتحة النسخ المتماثل على Postgres المصدر، ما يضمن تخزينها مؤقتًا وعدم فقدانها. ومع ذلك، فإن إيقاف mirror مؤقتًا ثم استئنافه سيؤدي إلى إعادة إنشاء الاتصال، وقد يستغرق ذلك بعض الوقت بحسب المصدر.
+
+خلال هذه العملية، يتم إيقاف كلٍّ من عمليتَي المزامنة (سحب البيانات من Postgres وبثّها إلى جدول ClickHouse الخام) والتطبيع (من الجدول الخام إلى الجدول الهدف). ومع ذلك، فإنهما تحتفظان بالحالة اللازمة للاستئناف بشكل موثوق.
+
+* بالنسبة إلى المزامنة، إذا أُلغيت في منتصف الطريق، فلن تتقدم قيمة confirmed&#95;flush&#95;lsn في Postgres، لذا ستبدأ المزامنة التالية من الموضع نفسه الذي بدأت منه المزامنة المُجهضة، مما يضمن اتساق البيانات.
+* بالنسبة إلى التطبيع، يتكفّل ترتيب عمليات insert في ReplacingMergeTree بإزالة التكرار.
+
+باختصار، رغم إنهاء عمليتَي المزامنة والتطبيع أثناء الإيقاف المؤقت، فإن ذلك آمن لأنهما تستطيعان الاستئناف دون فقدان للبيانات أو حدوث أي عدم اتساق.
+
+<div id="can-clickpipe-creation-be-automated-or-done-via-api-or-cli">
+  ### هل يمكن أتمتة إنشاء ClickPipe أو تنفيذه عبر واجهة برمجة تطبيقات أو CLI؟
+</div>
+
+يمكن أيضًا إنشاء Postgres ClickPipe وإدارته عبر نقاط النهاية الخاصة بـ [OpenAPI](/ar/products/cloud/features/admin-features/api/openapi). هذه الميزة ما تزال في مرحلة بيتا، ويمكن العثور على مرجع واجهة برمجة التطبيقات [هنا](/ar/api-reference/organization/get-list-of-available-organizations#tag/beta). كما نعمل حاليًا على دعم Terraform لإنشاء Postgres ClickPipes أيضًا.
+
+<div id="how-do-i-speed-up-my-initial-load">
+  ### كيف أُسرّع التحميل الأولي؟
+</div>
+
+لا يمكنك تسريع تحميل أولي قيد التنفيذ بالفعل. ومع ذلك، يمكنك تحسين عمليات التحميل الأولي المستقبلية من خلال ضبط بعض الإعدادات. افتراضيًا، تُضبط الإعدادات على 4 خيوط متوازية، ويُضبط عدد صفوف اللقطة لكل قسم على 100,000. وهذه إعدادات متقدمة، لكنها تكون كافية عمومًا لمعظم حالات الاستخدام.
+
+بالنسبة إلى إصدارات Postgres 13 أو الأقدم، تكون عمليات فحص نطاق CTID بطيئة جدًا، لذلك لا يستخدمها ClickPipes. وبدلًا من ذلك، نقرأ الجدول بالكامل باعتباره قسمًا واحدًا، ما يجعله فعليًا أحادي الخيط (وبالتالي يتم تجاهل كلٍّ من إعدادَي عدد الصفوف لكل قسم والخيوط المتوازية). لتسريع التحميل الأولي في هذه الحالة، يمكنك زيادة `snapshot number of tables in parallel` أو تحديد عمود تقسيم مخصّص ومفهرس للجداول الكبيرة.
+
+<div id="how-should-i-scope-my-publications-when-setting-up-replication">
+  ### كيف ينبغي أن أحدّد نطاق منشوراتي عند إعداد النسخ المتماثل؟
+</div>
+
+يمكنك إما ترك ClickPipes يدير منشوراتك (وهذا يتطلب أذونات إضافية)، أو إنشاؤها بنفسك. عند استخدام منشورات يديرها ClickPipes، نتولى تلقائيًا إضافة الجداول وإزالتها أثناء تعديل الـ pipe. أما إذا كنت تديرها بنفسك، فاحرص على تحديد نطاق منشوراتك بعناية بحيث تقتصر على الجداول التي تحتاج إلى نسخها، لأن تضمين جداول غير ضرورية سيؤدي إلى إبطاء فك ترميز WAL في Postgres.
+
+إذا أدرجت أي جدول في منشورك، فتأكد من أنه يحتوي إما على مفتاح أساسي أو `REPLICA IDENTITY FULL`. وإذا كانت لديك جداول بلا مفتاح أساسي، فإن إنشاء منشور يشمل جميع الجداول سيؤدي إلى فشل عمليتَي DELETE وUPDATE على تلك الجداول.
+
+لتحديد الجداول التي لا تحتوي على مفاتيح أساسية في قاعدة بياناتك، يمكنك استخدام هذا الاستعلام:
+
+```sql
+SELECT table_schema, table_name
+FROM information_schema.tables
+WHERE
+    (table_catalog, table_schema, table_name) NOT IN (
+        SELECT table_catalog, table_schema, table_name
+        FROM information_schema.table_constraints
+        WHERE constraint_type = 'PRIMARY KEY') AND
+    table_schema NOT IN ('information_schema', 'pg_catalog', 'pgq', 'londiste');
+```
+
+لديك خياران عند التعامل مع الجداول التي لا تحتوي على مفتاح أساسي:
+
+1. **استبعاد الجداول التي لا تحتوي على مفتاح أساسي من ClickPipes**:
+   أنشئ الـ منشور بحيث تقتصر على الجداول التي لديها مفتاح أساسي:
+   ```sql
+   CREATE PUBLICATION clickpipes_publication FOR TABLE table_with_primary_key1, table_with_primary_key2, ...;
+   ```
+
+2. **تضمين الجداول التي لا تحتوي على مفتاح أساسي في ClickPipes**:
+   إذا كنت تريد تضمين الجداول التي لا تحتوي على مفتاح أساسي، فعليك تعديل replica identity الخاصة بها إلى `FULL`. وهذا يضمن عمل عمليتَي UPDATE وDELETE بشكل صحيح:
+   ```sql
+   ALTER TABLE table_without_primary_key1 REPLICA IDENTITY FULL;
+   ALTER TABLE table_without_primary_key2 REPLICA IDENTITY FULL;
+   CREATE PUBLICATION clickpipes_publication FOR TABLE <...>, <...>;
+   ```
+
+<Tip>
+  إذا كنت تنشئ منشور يدويًا بدلًا من ترك ClickPipes يديرها، فلا نوصي بإنشاء منشور `FOR ALL TABLES`، لأن ذلك يؤدي إلى زيادة حركة المرور من Postgres إلى ClickPipes (بسبب إرسال التغييرات الخاصة بجداول أخرى غير موجودة في الـ pipe) ويقلل الكفاءة الإجمالية.
+
+  بالنسبة إلى الـ منشور التي تُنشأ يدويًا، يُرجى إضافة أي جداول تريدها إلى الـ منشور قبل إضافتها إلى الـ pipe.
+</Tip>
+
+<Warning>
+  إذا كنت تُجري النسخ المتماثل من replica للقراءة/hot standby في Postgres، فستحتاج إلى إنشاء الـ منشور الخاصة بك على primary instance، وستنتشر تلقائيًا إلى الـ standby. ولن يتمكن ClickPipe من إدارة الـ منشور في هذه الحالة، لأنك لا تستطيع إنشاء منشور على standby.
+</Warning>
+
+<div id="recommended-max_slot_wal_keep_size-settings">
+  ### إعدادات `max_slot_wal_keep_size` الموصى بها
+</div>
+
+* **كحد أدنى:** اضبط [`max_slot_wal_keep_size`](https://www.postgresql.org/docs/devel/runtime-config-replication.html#GUC-MAX-SLOT-WAL-KEEP-SIZE) للاحتفاظ بما لا يقل عن **بيانات WAL لمدة يومين**.
+* **لقواعد البيانات الكبيرة (ذات حجم معاملات مرتفع):** احتفظ بما لا يقل عن **ضعفين إلى ثلاثة أضعاف** ذروة توليد WAL يوميًا.
+* **للبيئات المقيّدة من حيث التخزين:** اضبط هذه القيمة بحذر **لتجنّب نفاد مساحة القرص** مع ضمان استقرار النسخ المتماثل.
+
+<div id="how-to-calculate-the-right-value">
+  #### كيفية حساب القيمة المناسبة
+</div>
+
+لتحديد الإعداد المناسب، قِس معدل توليد WAL:
+
+<div id="for-postgresql-10">
+  ##### لإصدارات PostgreSQL 10 والأحدث
+</div>
+
+```sql
+SELECT pg_wal_lsn_diff(pg_current_wal_insert_lsn(), '0/0') / 1024 / 1024 AS wal_generated_mb;
+```
+
+<div id="for-postgresql-96-and-below">
+  ##### بالنسبة إلى PostgreSQL 9.6 وما دونه:
+</div>
+
+```sql
+SELECT pg_xlog_location_diff(pg_current_xlog_insert_location(), '0/0') / 1024 / 1024 AS wal_generated_mb;
+```
+
+* شغّل الاستعلام أعلاه في أوقات مختلفة من اليوم، لا سيّما خلال الفترات التي تزداد فيها المعاملات.
+* احسب مقدار WAL الذي يتم توليده خلال كل فترة تمتد 24 ساعة.
+* اضرب هذا الرقم في 2 أو 3 لضمان احتفاظ كافٍ.
+* اضبط `max_slot_wal_keep_size` على القيمة الناتجة بوحدة MB أو GB.
+
+<div id="example">
+  ##### مثال
+</div>
+
+إذا كانت قاعدة البيانات تولّد 100 GB من WAL يوميًا، فاضبط:
+
+```sql
+max_slot_wal_keep_size = 200GB
+```
+
+<div id="im-seeing-a-receivemessage-eof-error-in-the-logs-what-does-it-mean">
+  ### أرى خطأ ReceiveMessage EOF في السجلات. ماذا يعني ذلك؟
+</div>
+
+تُعد `ReceiveMessage` دالة في بروتوكول Postgres لفك الترميز المنطقي، وتقرأ الرسائل من دفق النسخ المتماثل. ويشير خطأ EOF ‏(نهاية الملف) إلى أن الاتصال بخادم Postgres أُغلِق بشكل غير متوقع أثناء محاولة القراءة من دفق النسخ المتماثل.
+
+هذا خطأ يمكن التعافي منه، وليس خطأً جسيمًا على الإطلاق. سيحاول ClickPipes تلقائيًا إعادة الاتصال واستئناف عملية النسخ المتماثل.
+
+قد يحدث ذلك لعدة أسباب:
+
+* **مشكلات الشبكة:** قد تتسبب انقطاعات الشبكة المؤقتة في انقطاع الاتصال.
+* **إعادة تشغيل خادم Postgres:** إذا أُعيد تشغيل خادم Postgres أو تعطّل، فسيُفقد الاتصال.
+
+<div id="my-replication-slot-is-invalidated-what-should-i-do">
+  ### أصبحت فتحة النسخ المتماثل الخاصة بي غير صالحة. ماذا ينبغي أن أفعل؟
+</div>
+
+الطريقة الوحيدة لاستعادة ClickPipe هي تشغيل إعادة مزامنة، ويمكنك القيام بذلك من صفحة Settings.
+
+السبب الأكثر شيوعًا لعدم صلاحية فتحة النسخ المتماثل هو انخفاض قيمة الإعداد `max_slot_wal_keep_size` في قاعدة بيانات PostgreSQL لديك (على سبيل المثال، بضع غيغابايتات). نوصي بزيادة هذه القيمة. [راجِع هذا القسم](/ar/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings) لمعرفة كيفية ضبط `max_slot_wal_keep_size`. ومن الناحية المثالية، ينبغي ضبطه على 200GB على الأقل لمنع فقدان صلاحية فتحة النسخ المتماثل.
+
+في حالات نادرة، لاحظنا حدوث هذه المشكلة حتى عندما لا يكون `max_slot_wal_keep_size` مُعدًّا. وقد يرجع ذلك إلى خطأ نادر ومعقّد في PostgreSQL، رغم أن السبب لا يزال غير واضح.
+
+<div id="i-am-seeing-out-of-memory-ooms-on-clickhouse-while-my-clickpipe-is-ingesting-data-can-you-help">
+  ### أواجه حالات نفاد في الذاكرة (OOMs) على ClickHouse أثناء قيام ClickPipe بإدخال البيانات. هل يمكنكم المساعدة؟
+</div>
+
+أحد الأسباب الشائعة لحالات OOMs على ClickHouse هو أن الخدمة لديك أصغر من المطلوب. وهذا يعني أن إعدادات الخدمة الحالية لا تتضمن موارد كافية (مثل الذاكرة أو CPU) للتعامل بكفاءة مع حمل إدخال البيانات. نوصي بشدة بزيادة موارد الخدمة لتلبية متطلبات إدخال البيانات عبر ClickPipe.
+
+ومن الأسباب الأخرى التي لاحظناها وجود عرض مُجسَّد لاحقة قد تتضمن عمليات join غير مُحسّنة:
+
+* من أساليب التحسين الشائعة لعمليات `JOIN` أنه إذا كان لديك `LEFT JOIN` وكان الجدول الموجود على الجانب الأيمن كبيرًا جدًا، فأعِد كتابة الاستعلام لاستخدام `RIGHT JOIN` وانقل الجدول الأكبر إلى الجانب الأيسر. يتيح ذلك لمُخطِّط الاستعلام العمل بكفاءة أعلى في استخدام الذاكرة.
+
+* ومن أساليب التحسين الأخرى لعمليات `JOIN` تصفية الجداول صراحةً باستخدام `subqueries` أو `CTEs` ثم تنفيذ `JOIN` على هذه الاستعلامات الفرعية. يزوّد هذا مُخطِّط الاستعلام بإشارات تساعده على تصفية الصفوف بكفاءة وتنفيذ `JOIN`.
+
+<div id="i-am-seeing-an-invalid-snapshot-identifier-during-the-initial-load-what-should-i-do">
+  ### أواجه الخطأ `invalid snapshot identifier` أثناء التحميل الأولي. ماذا ينبغي أن أفعل؟
+</div>
+
+يحدث الخطأ `invalid snapshot identifier` عند انقطاع الاتصال بين ClickPipes وقاعدة بيانات Postgres الخاصة بك. وقد يحدث ذلك بسبب انتهاء مهلة البوابة، أو إعادة تشغيل قاعدة البيانات، أو مشكلات عابرة أخرى.
+
+يُوصى بألّا تُجري أي عمليات قد تسبب انقطاعًا، مثل الترقيات أو إعادة التشغيل، على قاعدة بيانات Postgres أثناء تقدّم التحميل الأولي، مع التأكد من أن اتصال الشبكة بقاعدة البيانات مستقر.
+
+لحل هذه المشكلة، يمكنك تشغيل إعادة المزامنة من واجهة مستخدم ClickPipes. سيؤدي ذلك إلى إعادة بدء عملية التحميل الأولي من البداية.
+
+<div id="what-happens-if-i-drop-a-publication-in-postgres">
+  ### ماذا يحدث إذا حذفتُ `منشور` في Postgres؟
+</div>
+
+سيؤدي حذف `منشور` في Postgres إلى قطع اتصال ClickPipe، لأن `منشور` مطلوبة لكي يتمكّن ClickPipe من سحب التغييرات من المصدر. وعند حدوث ذلك، ستتلقى عادةً تنبيهًا بالخطأ يفيد بأن `منشور` لم تعد موجودة.
+
+لاستعادة ClickPipe بعد حذف `منشور`:
+
+1. أنشئ `منشور` جديدة بالاسم نفسه والجداول المطلوبة في Postgres
+2. انقر على زر &#39;Resync tables&#39; في علامة التبويب Settings الخاصة بـ ClickPipe
+
+تكون إعادة المزامنة هذه ضرورية لأن `منشور` التي أُعيد إنشاؤها سيكون لها معرّف كائن (OID) مختلف في Postgres، حتى إذا كان اسمها هو نفسه. وتعمل عملية إعادة المزامنة على تحديث جداول الوجهة واستعادة الاتصال.
+
+بدلًا من ذلك، يمكنك إنشاء pipe جديدة بالكامل إذا كنت تفضّل ذلك.
+
+لاحظ أنه إذا كنت تعمل مع جداول مُقسّمة إلى partition، فتأكّد من إنشاء `منشور` بالإعدادات المناسبة:
+
+```sql
+CREATE PUBLICATION clickpipes_publication
+FOR TABLE <...>, <...>
+WITH (publish_via_partition_root = true);
+```
+
+<div id="what-if-i-am-seeing-unexpected-datatype-errors">
+  ### ماذا لو كنت أرى أخطاء `Unexpected Datatype` أو `Cannot parse type XX ...`
+</div>
+
+يحدث هذا الخطأ عادةً عندما تحتوي قاعدة بيانات Postgres المصدر على نوع بيانات يتعذر ربطه أثناء عملية الإدخال.
+للاطلاع على مشكلة أكثر تحديدًا، راجع الاحتمالات أدناه.
+
+<div id="postgres-invalid-memalloc-bug">
+  ### تظهر لي أخطاء مثل `invalid memory alloc request size <XXX>` أثناء النسخ المتماثل/إنشاء الـslot
+</div>
+
+كان هناك خلل في إصدارات التصحيح 17.5/16.9/15.13/14.18/13.21 من Postgres، وقد يؤدي مع بعض أعباء العمل إلى زيادة أُسية في استخدام الذاكرة، مما يسبب طلب تخصيص ذاكرة يتجاوز 1GB، وهو ما يعتبره Postgres غير صالح. [تم إصلاح](https://github.com/postgres/postgres/commit/d87d07b7ad3b782cb74566cd771ecdb2823adf6a) هذا الخلل، وسيكون الإصلاح متاحًا في سلسلة إصدارات التصحيح التالية من Postgres ‏(17.6...). يُرجى التحقق من مزود Postgres لديك لمعرفة موعد توفر إصدار التصحيح هذا للترقية. وإذا لم تكن الترقية ممكنة على الفور، فستحتاج إلى إعادة مزامنة الـpipe عند ظهور هذا الخطأ.
+
+<div id="ignore-delete-truncate">
+  ### أحتاج إلى الاحتفاظ بسجل تاريخي كامل في ClickHouse، حتى عند حذف البيانات من قاعدة بيانات Postgres المصدر. هل يمكنني تجاهل عمليتَي DELETE وTRUNCATE من Postgres تمامًا في ClickPipes؟
+</div>
+
+نعم! قبل إنشاء Postgres ClickPipe، أنشئ منشور من دون عمليات DELETE. على سبيل المثال:
+
+```sql
+CREATE PUBLICATION <pub_name> FOR TABLES IN SCHEMA <schema_name> WITH (publish = 'insert,update');
+```
+
+ثم عند [إعداد](/ar/integrations/clickpipes/postgres/index#configuring-the-replication-settings) Postgres ClickPipe، تأكد من اختيار اسم الـ منشور هذا.
+
+لاحظ أن ClickPipes تتجاهل عمليات TRUNCATE ولن تُنسخ إلى ClickHouse.
+
+<div id="replicate-table-dot">
+  ### لماذا يتعذّر عليّ إجراء النسخ المتماثل لجدولي الذي يحتوي على نقطة؟
+</div>
+
+توجد حاليًا في PeerDB محدودية تتمثل في أن وجود نقاط داخل معرّفات الجدول المصدر — أي في اسم المخطط أو اسم الجدول — غير مدعوم في النسخ المتماثل، لأن PeerDB لا يستطيع في هذه الحالة تمييز ما إذا كان الجزء يشير إلى المخطط أم إلى الجدول، إذ يفصل عند النقطة.
+ويجري حاليًا العمل على دعم إدخال المخطط والجدول كلٌّ على حدة لتجاوز هذه المحدودية.
+
+<div id="initial-load-issue">
+  ### اكتمل التحميل الأولي، ولكن لا توجد بيانات/توجد بيانات مفقودة في ClickHouse. ما السبب المحتمل؟
+</div>
+
+إذا كان التحميل الأولي قد اكتمل من دون خطأ، ولكن بيانات جدول ClickHouse في الوجهة ما تزال مفقودة، فقد يكون السبب هو تفعيل سياسات RLS ‏(الأمان على مستوى الصفوف) على جداول Postgres المصدر.
+ومن المفيد أيضًا التحقق مما يلي:
+
+* ما إذا كان المستخدم يملك الأذونات الكافية لقراءة جداول المصدر.
+* ما إذا كانت هناك سياسات صفوف على جانب ClickHouse قد تؤدي إلى تصفية بعض الصفوف.
+
+<div id="failover-slot">
+  ### هل يمكنني جعل ClickPipe ينشئ فتحة نسخ متماثل مع تمكين failover؟
+</div>
+
+نعم، بالنسبة إلى Postgres ClickPipe عندما يكون وضع النسخ المتماثل هو CDC أو Snapshot + CDC، يمكنك جعل ClickPipes ينشئ فتحة نسخ متماثل مع تمكين failover، وذلك عبر تبديل المفتاح أدناه في قسم `Advanced Settings` أثناء إنشاء ClickPipe. لاحظ أن إصدار Postgres لديك يجب أن يكون 17 أو أحدث لاستخدام هذه الميزة.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
+
+إذا كان المصدر مُهيّأً وفقًا لذلك، فستظل فتحة النسخ المتماثل محفوظة بعد عمليات failover إلى replica قراءة في Postgres، مما يضمن استمرار نسخ البيانات المتماثل. تعرّف على المزيد [هنا](https://www.postgresql.org/docs/current/logical-replication-failover.html).
+
+<div id="transient-logical-decoding-errors">
+  ### أرى أخطاءً مثل `Internal error encountered during logical decoding of aborted sub-transaction`
+</div>
+
+يشير هذا الخطأ إلى مشكلة عابرة في فك الترميز المنطقي لمعاملة فرعية مُجهَضة، وهو خاص بالتنفيذات المخصّصة من Aurora Postgres. وبما أن الخطأ صادر من الإجراء `ReorderBufferPreserveLastSpilledSnapshot`، فهذا يشير إلى أن فك الترميز المنطقي غير قادر على قراءة اللقطة التي جرى تفريغها إلى القرص. قد يكون من المفيد محاولة زيادة قيمة [`logical_decoding_work_mem`](https://www.postgresql.org/docs/current/runtime-config-resource.html#GUC-LOGICAL-DECODING-WORK-MEM) إلى مستوى أعلى.
+
+<div id="logical-message-processing-errors">
+  ### أرى أخطاءً مثل `error converting new tuple to map` أو `error parsing logical message` أثناء النسخ المتماثل لـ CDC
+</div>
+
+يرسل Postgres معلومات التغييرات على شكل رسائل لها بروتوكول ثابت. تظهر هذه الأخطاء عندما يتلقى ClickPipe رسالة لا يتمكن من تحليلها، سواء بسبب تلف أثناء النقل أو بسبب إرسال رسائل غير صالحة. ومع أن السبب الدقيق يختلف عادةً، فقد لاحظنا عدة حالات من مصادر Neon Postgres. إذا كنت تواجه هذه المشكلة مع Neon أيضًا، فيُرجى فتح تذكرة دعم لديهم. وفي الحالات الأخرى، يُرجى التواصل مع فريق الدعم لدينا للحصول على الإرشاد.
+
+<div id="include-excluded-columns">
+  ### هل يمكنني تضمين الأعمدة التي استبعدتها في البداية من النسخ المتماثل؟
+</div>
+
+لا تزال هذه الإمكانية غير مدعومة. كبديل، يمكنك [إعادة مزامنة الجدول](/ar/integrations/clickpipes/postgres/table-resync) الذي تريد تضمين أعمدته.
+
+<div id="snapshot-no-data-flow">
+  ### ألاحظ أن ClickPipe الخاص بي قد دخل في حالة Snapshot، لكن البيانات لا تتدفق؛ فما السبب المحتمل؟
+</div>
+
+قد يرجع ذلك إلى عدة أسباب، ويكون معظمها مرتبطًا ببعض المتطلبات المسبقة لعملية التقاط اللقطات التي قد تستغرق وقتًا أطول من المعتاد. لمزيد من المعلومات، يُرجى الاطلاع على وثيقتنا حول parallel snapshotting [هنا](/ar/integrations/clickpipes/postgres/parallel-initial-load).
+
+<div id="parallel-snapshotting-taking-time">
+  #### يستغرق التقاط اللقطات المتوازي وقتًا للحصول على التقسيمات
+</div>
+
+يتضمن التقاط اللقطات المتوازي بعض الخطوات الأولية للحصول على التقسيمات المنطقية لجداولك. إذا كانت جداولك صغيرة، فسيكتمل ذلك خلال ثوانٍ، ولكن بالنسبة إلى الجداول الكبيرة جدًا (بحجم تيرابايتات)، فقد يستغرق الأمر وقتًا أطول. يمكنك مراقبة الاستعلامات التي تعمل على مصدر Postgres الخاص بك في علامة التبويب **Source** لمعرفة ما إذا كانت هناك استعلامات طويلة التشغيل مرتبطة بالحصول على التقسيمات اللازمة لالتقاط اللقطات. وبمجرد الحصول على التقسيمات، ستبدأ البيانات بالتدفق.
+
+<div id="replication-slot-creation-transaction-locked">
+  #### إنشاء فتحة النسخ المتماثل محجوب بسبب معاملة
+</div>
+
+ضمن علامة التبويب **Source** في قسم Activity، سترى الاستعلام `CREATE_REPLICATION_SLOT` عالقًا في الحالة `Lock`. وقد يحدث ذلك بسبب معاملة أخرى تحتفظ بأقفال على كائنات يستخدمها Postgres لإنشاء فتحات النسخ المتماثل.
+وللاطّلاع على الاستعلامات المتسببة في الحظر، يمكنك تشغيل الاستعلام أدناه على مصدر Postgres لديك:
+
+```sql
+SELECT
+  blocked.pid AS blocked_pid,
+  blocked.query AS blocked_query,
+  blocking.pid AS blocking_pid,
+  blocking.query AS blocking_query,
+  blocking.state AS blocking_state
+FROM pg_locks blocked_lock
+JOIN pg_stat_activity blocked
+  ON blocked_lock.pid = blocked.pid
+JOIN pg_locks blocking_lock
+  ON blocking_lock.locktype = blocked_lock.locktype
+  AND blocking_lock.database IS NOT DISTINCT FROM blocked_lock.database
+  AND blocking_lock.relation IS NOT DISTINCT FROM blocked_lock.relation
+  AND blocking_lock.page IS NOT DISTINCT FROM blocked_lock.page
+  AND blocking_lock.tuple IS NOT DISTINCT FROM blocked_lock.tuple
+  AND blocking_lock.virtualxid IS NOT DISTINCT FROM blocked_lock.virtualxid
+  AND blocking_lock.transactionid IS NOT DISTINCT FROM blocked_lock.transactionid
+  AND blocking_lock.classid IS NOT DISTINCT FROM blocked_lock.classid
+  AND blocking_lock.objid IS NOT DISTINCT FROM blocked_lock.objid
+  AND blocking_lock.objsubid IS NOT DISTINCT FROM blocked_lock.objsubid
+  AND blocking_lock.pid != blocked_lock.pid
+JOIN pg_stat_activity blocking
+  ON blocking_lock.pid = blocking.pid
+WHERE NOT blocked_lock.granted;
+```
+
+بمجرد تحديد الاستعلام المتسبّب في الحظر، يمكنك أن تقرر إما الانتظار حتى يكتمل أو إلغاءه إذا لم يكن مهمًا. بعد معالجة الاستعلام المتسبّب في الحظر، ينبغي أن يكتمل إنشاء replication slot، مما يتيح بدء snapshot وبدء تدفّق البيانات.

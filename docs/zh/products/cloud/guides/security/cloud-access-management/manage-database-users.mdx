@@ -1,0 +1,189 @@
+---
+sidebarTitle: '管理数据库用户'
+slug: /cloud/security/manage-database-users
+title: '管理数据库用户'
+description: '本页介绍管理员如何添加数据库用户、管理相关分配以及删除数据库用户'
+doc_type: 'guide'
+keywords: ['数据库用户', '访问管理', '安全', '权限', '用户管理']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本指南介绍两种管理数据库用户的方法：在 SQL 控制台中，或直接在数据库中。
+
+<div id="sql-console-passwordless-authentication">
+  ### SQL 控制台无密码身份验证
+</div>
+
+系统会为每个会话创建 SQL 控制台用户，并使用自动轮换的 X.509 证书进行身份验证。会话终止后，该用户会被删除。生成审计用访问列表时，请在控制台中进入该 service 的 Settings 选项卡，除了数据库中现有的数据库用户外，还要留意 SQL 控制台访问。如果配置了自定义角色，用户的访问权限会列在名称以该用户用户名结尾的角色中。
+
+<div id="sql-console-users-and-roles">
+  ## SQL 控制台用户和角色
+</div>
+
+具有 Service Read Only 和 Service Admin 权限的用户可以被分配基础 SQL 控制台角色。更多信息，请参阅 [管理 SQL 控制台角色分配](/zh/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)。本指南演示如何为 SQL 控制台用户创建自定义角色。
+
+要为 SQL 控制台用户创建自定义角色并为其授予一个通用角色，请运行以下命令。电子邮件地址必须与用户在控制台中的电子邮件地址一致。
+
+<Steps>
+  <Step>
+    #### 创建 `database_developer` 并授予权限
+
+    创建 `database_developer` 角色，并授予 `SHOW`、`CREATE`、`ALTER` 和 `DELETE` 权限。
+
+    ```sql
+    CREATE ROLE OR REPLACE database_developer;
+    GRANT SHOW ON * TO database_developer;
+    GRANT CREATE ON * TO database_developer;
+    GRANT ALTER ON * TO database_developer;
+    GRANT DELETE ON * TO database_developer;
+    ```
+  </Step>
+
+  <Step>
+    #### 创建 SQL 控制台用户角色
+
+    为 SQL 控制台用户 my.user@domain.com 创建一个角色，并为其分配 database&#95;developer 角色。
+
+    ```sql
+    CREATE ROLE OR REPLACE `sql-console-role:my.user@domain.com`;
+    GRANT database_developer TO `sql-console-role:my.user@domain.com`;
+    ```
+  </Step>
+
+  <Step>
+    #### 用户使用 SQL 控制台时会被分配该新角色
+
+    用户每次使用 SQL 控制台时，都会被分配与其电子邮件地址关联的角色。
+  </Step>
+</Steps>
+
+<div id="database-authentication">
+  ## 数据库身份验证
+</div>
+
+<div id="database-user-id--password">
+  ### 数据库用户 ID 和密码
+</div>
+
+在[创建用户账户](/zh/reference/statements/create/user)时，请使用 SHA256&#95;哈希 方法来保护密码。ClickHouse 数据库密码必须至少包含 12 个字符，并满足复杂度要求：包含大写字母、小写字母、数字和/或特殊字符。
+
+<Tip>
+  **安全生成密码**
+
+  由于权限低于管理员的用户无法自行设置密码，请让用户先使用哈希生成器对密码进行哈希处理，
+  例如使用[这个工具](https://tools.keycdn.com/sha256-online-generator)，然后再提供给管理员设置账户。
+</Tip>
+
+```sql
+CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
+```
+
+<div id="database-ssh">
+  ### 通过安全外壳 (SSH) 进行身份验证的数据库用户
+</div>
+
+为 ClickHouse Cloud 数据库用户配置 SSH 身份验证。
+
+1. 使用 ssh-keygen 创建密钥对。
+2. 使用公钥创建用户。
+3. 为用户分配角色和/或权限。
+4. 使用私钥对该服务进行身份验证。
+
+如需查看包含示例的详细操作指南，请参阅我们知识库中的 [如何使用 SSH 密钥连接到 ClickHouse Cloud](/zh/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys)。
+
+<div id="database-permissions">
+  ## 数据库权限
+</div>
+
+使用 SQL [GRANT](/zh/reference/statements/grant) 语句在服务和数据库中配置以下权限。
+
+| Role    | Description                                          |
+| :------ | :--------------------------------------------------- |
+| Default | 对服务具有完全管理权限                                          |
+| Custom  | 使用 SQL [`GRANT`](/zh/reference/statements/grant) 语句进行配置 |
+
+* 数据库角色的权限是累加的。这意味着，如果某个用户同时属于两个角色，那么该用户将拥有这两个角色中级别更高的访问权限。添加角色不会导致其失去现有访问权限。
+* 数据库角色可以授予其他角色，从而形成层级结构。角色会继承其所属角色的全部权限。
+* 数据库角色在每个服务内都是唯一的，并且可应用于同一服务中的多个数据库。
+
+下图展示了可向用户授予权限的不同方式。
+
+<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="展示可向用户授予权限的不同方式的示意图" size="md" background="black" />
+
+<div id="initial-settings">
+  ### 初始设置
+</div>
+
+系统会自动创建一个名为 `default` 的账户，并在服务创建时向其授予 default&#95;role。创建服务的用户会看到系统在服务创建时自动生成并分配给 `default` 账户的随机密码。初始设置完成后，该密码将不再显示，但之后任何在控制台中具有 Service Admin 权限的用户都可以更改它。此账户，或控制台中具有 Service Admin 特权的账户，均可随时设置其他数据库用户和角色。
+
+<Note>
+  如需在控制台中更改分配给 `default` 账户的密码，请前往左侧的 Services 菜单，进入相应服务，打开 Settings 选项卡，然后点击 Reset password 按钮。
+</Note>
+
+我们建议创建一个与具体个人关联的新用户账户，并向该用户授予 default&#95;role。这样，用户执行的操作就可以关联到其用户 ID，而 `default` 账户则保留用于紧急处理类操作。
+
+```sql
+  CREATE USER userID IDENTIFIED WITH sha256_hash by 'hashed_password';
+  GRANT default_role to userID;
+```
+
+你可以使用 SHA256 哈希生成器，或 Python 中的 `hashlib` 等代码库函数，将一个长度不少于 12 个字符且复杂度适当的密码转换为 SHA256 字符串，并将其作为密码提供给系统管理员。这样可确保管理员不会看到或接触明文密码。
+
+<div id="database-access-listings-with-sql-console-users">
+  ### 使用 SQL 控制台用户列出数据库访问权限
+</div>
+
+以下流程可用于生成组织内 SQL 控制台和数据库的完整访问权限清单。
+
+<Steps>
+  <Step>
+    #### 获取所有数据库授权列表
+
+    运行以下查询，获取数据库中所有授权的列表。
+
+    ```sql
+    SELECT grants.user_name,
+    grants.role_name,
+    users.name AS role_member,
+    grants.access_type,
+    grants.database,
+    grants.table
+    FROM system.grants LEFT OUTER JOIN system.role_grants ON grants.role_name = role_grants.granted_role_name
+    LEFT OUTER JOIN system.users ON role_grants.user_name = users.name
+
+    UNION ALL
+
+    SELECT grants.user_name,
+    grants.role_name,
+    role_grants.role_name AS role_member,
+    grants.access_type,
+    grants.database,
+    grants.table
+    FROM system.role_grants LEFT OUTER JOIN system.grants ON role_grants.granted_role_name = grants.role_name
+    WHERE role_grants.user_name is null;
+    ```
+  </Step>
+
+  <Step>
+    #### 将授权列表与有权访问 SQL 控制台的 控制台 用户对应起来
+
+    将此列表与有权访问 SQL 控制台的 控制台 用户对应起来。
+
+    a. 前往 控制台。
+
+    b. 选择相应的服务。
+
+    c. 选择左侧的 Settings。
+
+    d. 滚动到 SQL 控制台访问部分。
+
+    e. 点击显示可访问该服务的用户数量的链接 `There are # users with access to this service.`，查看用户列表。
+  </Step>
+</Steps>
+
+<div id="warehouse-users">
+  ## 仓库用户
+</div>
+
+同一仓库中的各个服务共享同一组仓库用户。更多信息，请参阅[仓库访问控制](/zh/products/cloud/features/infrastructure/warehouses#access-controls)。

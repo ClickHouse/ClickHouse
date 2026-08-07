@@ -1,0 +1,11 @@
+SELECT dateDiff('years', toDate('2017-12-31'), toDate('2016-01-01'));
+SELECT dateDiff('quarters', toDate('2017-12-31'), toDate('2016-01-01'));
+SELECT dateDiff('months', toDateTime('2017-12-31'), toDateTime('2016-01-01'));
+SELECT dateDiff('weeks', toDateTime('2017-12-31'), toDateTime('2016-01-01'));
+SELECT dateDiff('days', toDateTime('2017-12-31'), toDateTime('2016-01-01'));
+SELECT dateDiff('hours', toDateTime('2017-12-31', 'UTC'), toDateTime('2016-01-01', 'UTC'));
+SELECT dateDiff('minutes', toDateTime('2017-12-31', 'UTC'), toDateTime('2016-01-01', 'UTC'));
+SELECT dateDiff('seconds', toDateTime('2017-12-31', 'UTC'), toDateTime('2016-01-01', 'UTC'));
+SELECT dateDiff('milliseconds', toDateTime('2017-12-31', 'UTC'), toDateTime('2016-01-01', 'UTC'));
+SELECT dateDiff('microseconds', toDateTime('2017-12-31', 'UTC'), toDateTime('2016-01-01', 'UTC'));
+SELECT dateDiff('nanoseconds', toDateTime('2017-12-31', 'UTC'), toDateTime('2016-01-01', 'UTC'));

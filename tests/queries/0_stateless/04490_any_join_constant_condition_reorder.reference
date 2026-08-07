@@ -1,0 +1,35 @@
+-- ANY INNER JOIN ON constant true: one row per (constant) key
+1	10
+-- plan keeps inner/any with constant key, not cross
+Type: inner | Strictness: any
+Join conditions: 1 = 1
+-- ANY INNER JOIN ON constant false: empty result
+-- ANY LEFT / SEMI / ANTI on constant condition
+1	10
+2	10
+1	10
+2	10
+1	10
+1	20
+-- ALL INNER JOIN ON constant true is still a cartesian product
+1	10
+1	20
+2	10
+2	20
+-- outer join child under ANY INNER ON 1
+2	2	7
+-- comma join child under ANY INNER ON 1
+2	7	1
+-- ANY INNER ON 1 child under comma join
+1	2	7
+1	2	8
+-- chained: ALL INNER then ANY INNER ON 1
+2	2	7
+-- chained: ANY INNER ON 1 then ALL INNER
+1	2	7
+1	2	8
+-- ANY LEFT ON 1 over comma join child
+2	7	1
+2	8	1
+3	7	1
+3	8	1

@@ -1,0 +1,119 @@
+---
+sidebarTitle: '移行ガイド'
+slug: /migrations/snowflake
+description: 'Snowflake から ClickHouse への移行'
+keywords: ['Snowflake']
+title: 'Snowflake から ClickHouse への移行'
+show_related_blogs: false
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+> このガイドでは、Snowflake から ClickHouse へデータを移行する方法を説明します。
+
+Snowflake から ClickHouse へデータを移行するには、
+転送用の中間ストレージとして S3 などのオブジェクトストアを使用する必要があります。移行プロセスでは、
+Snowflake の `COPY INTO` コマンドと ClickHouse の `INSERT INTO SELECT`
+も利用します。
+
+<Steps>
+  <Step>
+    ## Snowflake からデータをエクスポートする
+
+    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="Snowflake から ClickHouse への移行" />
+
+    Snowflake からデータをエクスポートするには、上図のように外部ステージを使用する必要があります。
+
+    以下のスキーマを持つ Snowflake テーブルをエクスポートするとします。
+
+    ```sql
+    CREATE TABLE MYDATASET (
+       timestamp TIMESTAMP,
+       some_text varchar,
+       some_file OBJECT,
+       complex_data VARIANT,
+    ) DATA_RETENTION_TIME_IN_DAYS = 0;
+    ```
+
+    このテーブルのデータを ClickHouse データベースに移行するには、まずデータを外部ステージにコピーする必要があります。データのコピー時には、中間フォーマットとして Parquet を推奨します。型情報を保持でき、精度を維持し、圧縮効率が高く、分析で一般的なネスト構造もネイティブにサポートしているためです。
+
+    以下の例では、Parquet と必要なファイルオプションを表す名前付きファイルフォーマットを Snowflake に作成します。次に、コピー先の dataset を格納する bucket を指定します。最後に、その dataset を bucket にコピーします。
+
+    ```sql
+    CREATE FILE FORMAT my_parquet_format TYPE = parquet;
+
+    -- コピー先の S3 bucket を指定する外部ステージを作成する
+    CREATE OR REPLACE STAGE external_stage
+    URL='s3://mybucket/mydataset'
+    CREDENTIALS=(AWS_KEY_ID='<key>' AWS_SECRET_KEY='<secret>')
+    FILE_FORMAT = my_parquet_format;
+
+    -- すべてのファイルに "mydataset" プレフィックスを適用し、最大ファイルサイズを 150MB に指定する
+    -- カラム名を取得するには `header=true` パラメータが必要
+    COPY INTO @external_stage/mydataset from mydataset max_file_size=157286400 header=true;
+    ```
+
+    データ量が約 5TB、最大ファイルサイズが 150MB の dataset を、同じ AWS `us-east-1` Region にある 2X-Large Snowflake warehouse を使って S3 bucket にコピーする場合、所要時間はおよそ 30 分です。
+  </Step>
+
+  <Step>
+    ## ClickHouse にインポートする
+
+    データが中間 object storage にステージングされたら、以下のように [s3 table function](/ja/reference/functions/table-functions/s3) などの ClickHouse 関数を使用して、テーブルにデータを挿入できます。
+
+    この例では AWS S3 用の [s3 table function](/ja/reference/functions/table-functions/s3) を使用していますが、Google Cloud Storage には [gcs table function](/ja/reference/functions/table-functions/gcs)、Azure Blob Storage には [azureBlobStorage table function](/ja/reference/functions/table-functions/azureBlobStorage) を使用できます。
+
+    次のターゲットテーブルのスキーマを前提とします。
+
+    ```sql
+    CREATE TABLE default.mydataset
+    (
+      `timestamp` DateTime64(6),
+      `some_text` String,
+      `some_file` Tuple(filename String, version String),
+      `complex_data` Tuple(name String, description String),
+    )
+    ENGINE = MergeTree
+    ORDER BY (timestamp)
+    ```
+
+    次に、`INSERT INTO SELECT` コマンドを使用して、S3 から ClickHouse テーブルにデータを挿入できます。
+
+    ```sql
+    INSERT INTO mydataset
+    SELECT
+      timestamp,
+      some_text,
+      JSONExtract(
+        ifNull(some_file, '{}'),
+        'Tuple(filename String, version String)'
+      ) AS some_file,
+      JSONExtract(
+        ifNull(complex_data, '{}'),
+        'Tuple(filename String, description String)'
+      ) AS complex_data,
+    FROM s3('https://mybucket.s3.amazonaws.com/mydataset/mydataset*.parquet')
+    SETTINGS input_format_null_as_default = 1, -- 値が null の場合はカラムにデフォルト値を挿入する
+    input_format_parquet_case_insensitive_column_matching = 1 -- ソースデータとターゲットテーブルのカラム照合で大文字と小文字を区別しない
+    ```
+
+    <Info>
+      **ネストされたカラム構造に関する注記**
+
+      元の Snowflake テーブルスキーマにある `VARIANT` および `OBJECT` カラムは、デフォルトでは JSON 文字列として出力されるため、ClickHouse への挿入時にキャストが必要になります。
+
+      `some_file` のようなネスト構造は、Snowflake によるコピー時に JSON 文字列へ変換されます。このデータをインポートするには、上記のように [JSONExtract function](/ja/reference/functions/regular-functions/json-functions#JSONExtract) を使用して、ClickHouse の挿入時にこれらの構造を Tuples に変換する必要があります。
+    </Info>
+  </Step>
+
+  <Step>
+    ## データのエクスポート成功を確認する
+
+    データが正しく挿入されたかを確認するには、新しいテーブルに対して `SELECT` クエリを実行するだけです。
+
+    ```sql
+    SELECT * FROM mydataset LIMIT 10;
+    ```
+  </Step>
+</Steps>

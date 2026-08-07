@@ -1,0 +1,124 @@
+---
+slug: /shards
+title: 'شظايا الجداول والنسخ المتماثلة'
+description: 'ما هي شظايا الجداول والنسخ المتماثلة في ClickHouse؟'
+keywords: ['شظية', 'شظايا', 'التشذير', 'نسخة متماثلة', 'نسخ متماثلة']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<br />
+
+<Note>
+  لا ينطبق هذا الموضوع على ClickHouse Cloud، حيث تعمل [النسخ المتماثلة المتوازية](/ar/products/cloud/features/infrastructure/parallel-replicas) مثل عدة شظايا في عناقيد ClickHouse التقليدية من نوع shared-nothing، ويحل [التخزين الكائني](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates#shared-object-storage-for-data-availability) محل النسخ المتماثلة، بما يضمن التوافر العالي وتحمّل الأعطال.
+</Note>
+
+<div id="what-are-table-shards-in-clickhouse">
+  ## ما هي شظايا الجداول في ClickHouse؟
+</div>
+
+في مجموعات ClickHouse التقليدية ذات معمارية [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture)، يُستخدم التشذير عندما ① تكون البيانات أكبر من أن يستوعبها خادم واحد، أو ② يكون الخادم الواحد بطيئًا جدًا في معالجة البيانات. يوضّح الشكل التالي الحالة ①، حيث يتجاوز جدول [uk&#95;price&#95;paid&#95;simple](/ar/concepts/core-concepts/parts) سعة جهاز واحد:
+
+<Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+في هذه الحالة، يمكن تقسيم البيانات عبر عدة خوادم ClickHouse على هيئة شظايا جدول:
+
+<Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+تحتوي كل شظية على مجموعة فرعية من البيانات، وتعمل كجدول ClickHouse عادي يمكن الاستعلام عنه بشكل مستقل. لكن الاستعلامات لن تعالج سوى تلك المجموعة الفرعية، وقد يكون ذلك مناسبًا بحسب توزيع البيانات. وعادةً ما يوفّر [جدول موزّع](/ar/reference/engines/table-engines/special/distributed) (غالبًا واحدًا لكل خادم) عرضًا موحّدًا لمجموعة البيانات الكاملة. وهو لا يخزّن البيانات بنفسه، بل يمرّر استعلامات **SELECT** إلى جميع الشظايا، ويجمّع النتائج، ويوجّه عمليات **INSERTS** لتوزيع البيانات بالتساوي.
+
+<div id="distributed-table-creation">
+  ## إنشاء جدول موزّع
+</div>
+
+لتوضيح إعادة توجيه استعلامات **SELECT** ومسار **INSERT**، سنستخدم جدول المثال [ما هي أجزاء الجدول](/ar/concepts/core-concepts/parts) الموزّع على شظيتين عبر خادمي ClickHouse. أولًا، نعرض تعليمة DDL لإنشاء **جدول موزّع** المقابل لهذا الإعداد:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_dist ON CLUSTER test_cluster
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
+```
+
+يجعل البند `ON CLUSTER` عبارة DDL [موزعة](/ar/reference/statements/distributed-ddl)، ويُوجّه ClickHouse إلى إنشاء الجدول على جميع الخوادم المُدرجة في [تعريف العنقود](/ar/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas#configure-clickhouse-servers) `test_cluster`. وتتطلب DDL الموزعة مكوّن [Keeper](https://clickhouse.com/clickhouse/keeper) إضافيًا في [معمارية العنقود](/ar/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).
+
+بالنسبة إلى [معلمات المحرك الموزع](/ar/reference/engines/table-engines/special/distributed#distributed-parameters)، نحدد اسم العنقود (`test_cluster`)، واسم قاعدة البيانات (`uk`) للجدول الهدف المُجزّأ، واسم الجدول الهدف المُجزّأ (`uk_price_paid_simple`)، و**مفتاح التجزئة** لتوجيه INSERT. في هذا المثال، نستخدم الدالة [rand](/ar/reference/functions/regular-functions/random-functions#rand) لإسناد الصفوف إلى الشظايا عشوائيًا. ومع ذلك، يمكن استخدام أي تعبير — حتى التعبيرات المعقدة — كمفتاح تجزئة، بحسب حالة الاستخدام. يوضح القسم التالي كيفية عمل توجيه INSERT.
+
+<div id="insert-routing">
+  ## توجيه INSERT
+</div>
+
+يوضح المخطط أدناه كيفية معالجة عمليات INSERT إلى جدول موزّع في ClickHouse:
+
+<Image img="/images/managing-data/core-concepts/shards_03.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+① يُرسَل INSERT (يتضمن صفًا واحدًا) يستهدف الجدول الموزّع إلى خادم ClickHouse يستضيف الجدول، إما مباشرةً أو عبر موازن تحميل.
+
+② لكل صف من INSERT (صف واحد فقط في مثالنا)، يقيّم ClickHouse مفتاح التجزئة (هنا، rand())، ثم يحسب باقي قسمة النتيجة على عدد خوادم الشظايا، ويستخدم الناتج بوصفه معرّف الخادم الهدف (تبدأ المعرّفات من 0 وتزداد بمقدار 1). بعد ذلك، يُمرَّر الصف ثم ③ يُدرَج في الشظية المقابلة من الجدول على ذلك الخادم.
+
+يشرح القسم التالي كيفية عمل إعادة توجيه SELECT.
+
+<div id="select-forwarding">
+  ## إعادة توجيه `SELECT`
+</div>
+
+يوضح هذا المخطط كيفية معالجة استعلامات `SELECT` باستخدام جدول موزّع في ClickHouse:
+
+<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="المقاطع" />
+
+<br />
+
+① يُرسَل استعلام `SELECT` تجميعي يستهدف الجدول الموزّع إلى خادم ClickHouse المعني، إما مباشرةً أو عبر موازن تحميل.
+
+② يمرّر جدول موزّع الاستعلام إلى جميع الخوادم التي تستضيف شظايا الجدول الهدف، حيث يحسب كل خادم ClickHouse نتيجة التجميع المحلية الخاصة به **بالتوازي**.
+
+بعد ذلك، يجمع خادم ClickHouse الذي يستضيف الجدول الموزّع المستهدف في البداية ③ جميع النتائج المحلية، ثم ④ يدمجها في النتيجة العامة النهائية، و⑤ يعيدها إلى مُرسِل الاستعلام.
+
+<div id="what-are-table-replicas-in-clickhouse">
+  ## ما هي النسخ المتماثلة للجداول في ClickHouse؟
+</div>
+
+يضمن النسخ المتماثل في ClickHouse **تكامل البيانات** و**التبديل عند الفشل** من خلال الاحتفاظ **بنسخ من بيانات الشظايا** على عدة خوادم. ونظرًا إلى أن أعطال الأجهزة أمر لا مفر منه، فإن النسخ المتماثل يمنع فقدان البيانات عبر ضمان وجود عدة نسخ متماثلة لكل شظية. ويمكن توجيه عمليات الكتابة إلى أي نسخة متماثلة، إما مباشرةً أو عبر [جدول موزّع](#distributed-table-creation)، الذي يختار نسخة متماثلة لتنفيذ العملية. وتُمرَّر التغييرات تلقائيًا إلى النسخ المتماثلة الأخرى. وفي حال حدوث عطل أو أثناء الصيانة، تظل البيانات متاحة على النسخ المتماثلة الأخرى، وبمجرد تعافي المضيف المتعطل، يتزامن تلقائيًا ليظل محدَّثًا.
+
+لاحظ أن النسخ المتماثل يتطلب مكوّن [Keeper](https://clickhouse.com/clickhouse/keeper) ضمن [معمارية العنقود](/ar/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).
+
+يوضح المخطط التالي عنقود ClickHouse يضم ستة خوادم، حيث إن الشظيتين `Shard-1` و`Shard-2` من الجدول، اللذين قُدِّما سابقًا، يمتلك كلٌّ منهما ثلاث نسخ متماثلة. ويُرسَل استعلام إلى هذا العنقود:
+
+<Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+تعمل معالجة الاستعلام بصورة مماثلة للإعدادات التي لا تحتوي على نسخ متماثلة، إذ لا ينفّذ الاستعلام سوى نسخة متماثلة واحدة من كل شظية.
+
+> لا تضمن النسخ المتماثلة تكامل البيانات والتبديل عند الفشل فحسب، بل تحسّن أيضًا إنتاجية معالجة الاستعلامات عبر السماح بتشغيل عدة استعلامات بالتوازي على نسخ متماثلة مختلفة.
+
+① يُرسَل الاستعلام الذي يستهدف الجدول الموزّع إلى خادم ClickHouse المعني، إما مباشرةً أو عبر موازن تحميل.
+
+② يمرّر الجدول الموزّع الاستعلام إلى نسخة متماثلة واحدة من كل شظية، حيث يحسب كل خادم ClickHouse يستضيف النسخة المتماثلة المحددة نتيجة استعلامه المحلية بالتوازي.
+
+ويعمل ما تبقّى [بالطريقة نفسها](#select-forwarding) كما في الإعدادات التي لا تحتوي على نسخ متماثلة، لذلك لا يظهر في المخطط أعلاه. ويجمع خادم ClickHouse الذي يستضيف الجدول الموزّع المستهدف في البداية جميع النتائج المحلية، ويدمجها في النتيجة العامة النهائية، ثم يعيدها إلى مُرسِل الاستعلام.
+
+لاحظ أن ClickHouse يتيح ضبط استراتيجية تمرير الاستعلام في الخطوة ②. وافتراضيًا — بخلاف ما هو موضح في المخطط أعلاه — [يفضّل](/ar/reference/settings/session-settings#prefer_localhost_replica) الجدول الموزّع نسخة متماثلة محلية إن كانت متاحة، لكن يمكن استخدام [استراتيجيات](/ar/reference/settings/session-settings#load_balancing) أخرى لموازنة الحمل.
+
+<div id="where-to-find-more-information">
+  ## أين يمكن العثور على مزيد من المعلومات
+</div>
+
+للمزيد من التفاصيل التي تتجاوز هذه المقدمة العامة حول شظايا الجداول والنسخ المتماثلة، راجع [دليل النشر والتوسّع](/ar/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).
+
+كما نوصي بشدة بمشاهدة فيديو الدليل العملي هذا للتعمق أكثر في شظايا ClickHouse ونسخه المتماثلة:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vBjCJtw_Ei0?si=WqopTrnti6usCMRs" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

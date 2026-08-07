@@ -1,0 +1,106 @@
+---
+description: 'Движок `Atomic` поддерживает неблокирующие запросы `DROP TABLE` и `RENAME TABLE`,
+  а также атомарные запросы `EXCHANGE TABLES`. Движок базы данных `Atomic` используется
+  по умолчанию.'
+sidebarTitle: 'Atomic'
+slug: /engines/database-engines/atomic
+title: 'Atomic'
+doc_type: 'reference'
+---
+
+Движок `Atomic` поддерживает неблокирующие запросы [`DROP TABLE`](#drop-detach-table) и [`RENAME TABLE`](#rename-table), а также атомарные запросы [`EXCHANGE TABLES`](#exchange-tables). В ClickHouse с открытым исходным кодом по умолчанию используется движок базы данных `Atomic`.
+
+<Note>
+  В ClickHouse Cloud по умолчанию используется [движок базы данных `Shared`](/ru/products/cloud/features/infrastructure/shared-catalog#shared-database-engine), который также поддерживает
+  описанные выше операции.
+</Note>
+
+<div id="creating-a-database">
+  ## Создание базы данных
+</div>
+
+```sql
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+```
+
+<div id="specifics-and-recommendations">
+  ## Особенности и рекомендации
+</div>
+
+<div id="table-uuid">
+  ### UUID таблицы
+</div>
+
+У каждой таблицы в базе данных `Atomic` есть постоянный [UUID](/ru/reference/data-types/uuid), а её данные хранятся в следующем каталоге:
+
+```text
+/clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
+```
+
+Где `xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy` — UUID таблицы.
+
+По умолчанию UUID генерируется автоматически. Однако при создании таблицы пользователи могут явно указать UUID, хотя делать это не рекомендуется.
+
+Например:
+
+```sql
+CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE = ...;
+```
+
+<Note>
+  Вы можете использовать настройку [show&#95;table&#95;uuid&#95;in&#95;table&#95;create&#95;query&#95;if&#95;not&#95;nil](/ru/reference/settings/session-settings#show_table_uuid_in_table_create_query_if_not_nil), чтобы выводить UUID в запросе `SHOW CREATE`.
+</Note>
+
+<div id="rename-table">
+  ### RENAME TABLE
+</div>
+
+Запросы [`RENAME`](/ru/reference/statements/rename) не изменяют UUID и не перемещают данные таблицы. Они выполняются немедленно и не ждут завершения других запросов, использующих эту таблицу.
+
+<div id="drop-detach-table">
+  ### DROP/DETACH TABLE
+</div>
+
+При использовании `DROP TABLE` данные не удаляются. Движок `Atomic` лишь помечает таблицу как удалённую, перемещая её метаданные в `/clickhouse_path/metadata_dropped/`, и уведомляет фоновый поток. Задержка перед окончательным удалением данных таблицы задаётся настройкой [`database_atomic_delay_before_drop_table_sec`](/ru/reference/settings/server-settings/settings#database_atomic_delay_before_drop_table_sec).
+Вы можете включить синхронный режим с помощью модификатора `SYNC`. Для этого используйте настройку [`database_atomic_wait_for_drop_and_detach_synchronously`](/ru/reference/settings/session-settings#database_atomic_wait_for_drop_and_detach_synchronously). В этом случае `DROP` ожидает завершения выполняющихся `SELECT`, `INSERT` и других запросов, использующих таблицу. Таблица будет удалена, когда она перестанет использоваться.
+
+<div id="exchange-tables">
+  ### EXCHANGE TABLES/DICTIONARIES
+</div>
+
+Запрос [`EXCHANGE`](/ru/reference/statements/exchange) атомарно меняет местами таблицы или словари. Например, вместо этой неатомарной операции:
+
+```sql title="Non-atomic"
+RENAME TABLE new_table TO tmp, old_table TO new_table, tmp TO old_table;
+```
+
+можно использовать базу данных Atomic:
+
+```sql title="Atomic"
+EXCHANGE TABLES new_table AND old_table;
+```
+
+<div id="replicatedmergetree-in-atomic-database">
+  ### ReplicatedMergeTree в базе данных Atomic
+</div>
+
+Для таблиц [`ReplicatedMergeTree`](/ru/reference/engines/table-engines/mergetree-family/replication) рекомендуется не задавать параметры движка для пути в ZooKeeper и имени реплики. В этом случае будут использоваться параметры конфигурации [`default_replica_path`](/ru/reference/settings/server-settings/settings#default_replica_path) и [`default_replica_name`](/ru/reference/settings/server-settings/settings#default_replica_name). Если вы хотите явно указать параметры движка, рекомендуется использовать макрос `{uuid}`. Это гарантирует автоматическое создание уникальных путей в ZooKeeper для каждой таблицы.
+
+<div id="metadata-disk">
+  ### Диск для метаданных
+</div>
+
+Когда в `SETTINGS` указан параметр `disk`, этот диск используется для хранения файлов метаданных таблицы.
+Например:
+
+```sql
+CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+```
+
+Если не указано, по умолчанию используется диск, заданный в `database_disk.disk`.
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* системная таблица [system.databases](/ru/reference/system-tables/databases)

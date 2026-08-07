@@ -1,0 +1,18 @@
+---
+description: 'AWS Glue、Unity、REST、Lakekeeper、Nessie、OneLake などのデータレイクカタログに ClickHouse を接続するためのリファレンスガイドです。'
+slug: /use-cases/data-lake/reference
+title: 'カタログガイド'
+keywords: ['データレイク', 'レイクハウス', 'カタログ', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'landing-page'
+---
+
+ClickHouse は、[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンを通じて、さまざまなデータレイクカタログと連携できます。以下のガイドでは、設定、認証、クエリ例を含め、サポートされている各カタログに ClickHouse を接続する方法を説明します。
+
+| Catalog                                                                      | Description                                                        |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [AWS Glue](/ja/guides/use-cases/data-warehousing/glue-catalog)                  | S3 に保存されたデータを対象に、AWS Glue Data Catalog に登録された Iceberg テーブルをクエリします。 |
+| [Databricks Unity Catalog](/ja/guides/use-cases/data-warehousing/unity-catalog) | Delta Lake および Iceberg テーブル向けに Databricks Unity Catalog に接続します。    |
+| [Iceberg REST Catalog](/ja/guides/use-cases/data-warehousing/rest-catalog)      | Tabular など、Iceberg REST 仕様を実装した任意のカタログを使用します。                      |
+| [Lakekeeper](/ja/guides/use-cases/data-warehousing/lakekeeper-catalog)          | Iceberg テーブル向けに Lakekeeper カタログに接続します。                             |
+| [Project Nessie](/ja/guides/use-cases/data-warehousing/nessie-catalog)          | Git ライクなデータバージョン管理を備えた Nessie Catalog を使用して Iceberg テーブルをクエリします。   |
+| [Microsoft OneLake](/ja/guides/use-cases/data-warehousing/onelake-catalog)      | Microsoft Fabric OneLake 内の Iceberg テーブルをクエリします。                   |

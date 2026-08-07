@@ -1,0 +1,56 @@
+---
+sidebarTitle: '水平スケーリング'
+slug: /cloud/features/autoscaling/horizontal
+description: 'ClickHouse Cloud での手動水平スケーリング'
+keywords: ['水平スケーリング', 'スケーリング', 'レプリカ', '手動スケーリング', 'スパイク', 'バースト']
+title: '水平スケーリング'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<div id="manual-horizontal-scaling">
+  ## 手動水平スケーリング
+</div>
+
+<ScalePlanFeatureBadge feature="手動水平スケーリング" />
+
+ClickHouse Cloudの[public APIs](/api-reference/organization/get-list-of-available-organizations#/paths/~1v1~1organizations~1:organizationId~1services~1:serviceId~1scaling/patch)を使用すると、サービスのスケーリング設定を更新してサービスをスケールしたり、Cloud Console からレプリカ数を調整したりできます。
+
+**Scale** ティアと **Enterprise** ティアでは、単一レプリカのサービスもサポートされています。いったんスケールアウトしたサービスは、最小で単一レプリカまでスケールインできます。ただし、単一レプリカのサービスは可用性が低くなるため、本番環境での利用は推奨されません。
+
+<Note>
+  サービスは水平方向に最大 20 レプリカまでスケールできます。さらにレプリカが必要な場合は、サポートチームまでお問い合わせください。
+</Note>
+
+<div id="horizontal-scaling-via-api">
+  ### API を介した水平スケーリング
+</div>
+
+クラスターを水平スケーリングするには、API 経由で `PATCH` リクエストを送信してレプリカ数を調整します。以下のスクリーンショットは、`3` レプリカのクラスターを `6` レプリカへスケールアウトする API 呼び出しと、それに対応するレスポンスを示しています。
+
+<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="スケーリング PATCH リクエスト" border />
+
+*`numReplicas` を更新する `PATCH` リクエスト*
+
+<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="スケーリング PATCH レスポンス" border />
+
+*`PATCH` リクエストのレスポンス*
+
+すでにスケーリング処理が進行中の状態で、新たなスケーリングリクエストや複数のリクエストを連続して送信した場合、スケーリングサービスは中間状態を無視し、最終的なレプリカ数に収束します。
+
+<div id="horizontal-scaling-via-ui">
+  ### UI による水平スケーリング
+</div>
+
+UI からサービスを水平スケーリングするには、**Settings** ページでそのサービスのレプリカ数を調整します。
+
+<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="スケーリング設定" border />
+
+*ClickHouse Cloud console のサービスのスケーリング設定*
+
+サービスのスケーリングが完了すると、ClickHouse Cloud console のメトリクスダッシュボードに、そのサービスへの割り当てが正しく表示されます。以下のスクリーンショットでは、クラスターは合計メモリ `96 GiB` までスケールしており、これはそれぞれ `16 GiB` のメモリが割り当てられた `6` 個のレプリカに相当します。
+
+<Image img="/images/cloud/manage/scaling-memory-allocation.webp" size="md" alt="スケーリング時のメモリ割り当て" border />

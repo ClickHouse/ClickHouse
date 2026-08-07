@@ -1,0 +1,121 @@
+---
+sidebarTitle: 'Timescale'
+description: 'TimescaleDB拡張機能を使用したPostgresをClickPipesのソースとして設定します'
+slug: /integrations/clickpipes/postgres/source/timescale
+title: 'TimescaleDB拡張機能を使用したPostgresソースのセットアップガイド'
+keywords: ['TimescaleDB']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<div id="background">
+  ## 背景
+</div>
+
+[TimescaleDB](https://github.com/timescale/timescaledb) は Timescale Inc が開発したオープンソースの Postgres 拡張機能で、
+Postgres から移行することなく分析クエリのパフォーマンス向上を図ることを目的としています。これは、
+拡張機能によって管理され、自動的に &quot;chunks&quot; にパーティション化される &quot;ハイパーテーブル&quot; を作成することで実現されます。
+また、ハイパーテーブルは透過的な圧縮とハイブリッドな行・列指向ストレージ (&quot;hypercore&quot; と呼ばれます) もサポートしていますが、これらの
+機能を利用するには proprietary license の拡張機能バージョンが必要です。
+
+Timescale Inc は TimescaleDB 向けに 2 つのマネージドサービスも提供しています。
+
+* `Managed Service for Timescale`
+* `Timescale Cloud`.
+
+TimescaleDB 拡張機能を利用できるマネージドサービスを提供するサードパーティベンダーもありますが、
+ライセンス上の理由から、これらのベンダーがサポートしているのはオープンソース版の拡張機能のみです。
+
+Timescale の ハイパーテーブル は、通常の Postgres テーブルとはいくつかの点で動作が異なります。これにより、
+それらをレプリケートするプロセスにはいくつかの複雑さが生じるため、Timescale ハイパーテーブル のレプリケーション機能は
+**ベストエフォート** と考えるべきです。
+
+<div id="supported-postgres-versions">
+  ## サポート対象の Postgres バージョン
+</div>
+
+ClickPipes は Postgres バージョン 12 以降に対応しています。
+
+<div id="enable-logical-replication">
+  ## 論理レプリケーションを有効にする
+</div>
+
+必要な手順は、TimescaleDB を使用する Postgres インスタンスのデプロイ方法によって異なります。
+
+* マネージドサービスを使用しており、そのプロバイダーがサイドバーに掲載されている場合は、そのプロバイダー向けのガイドに従ってください。
+* TimescaleDB を自分でデプロイしている場合は、汎用ガイドに従ってください。
+
+その他のマネージドサービスについては、論理レプリケーションがまだ有効になっていない場合、有効化を支援してもらうためにプロバイダーへサポートチケットを提出してください。
+
+<Info>
+  Timescale Cloud では論理レプリケーションの有効化がサポートされておらず、これは CDC モードの Postgres パイプに必要です。
+  そのため、Timescale Cloud のユーザーは、Postgres ClickPipe でデータの一度だけロード (`Initial Load Only`) しか実行できません。
+</Info>
+
+<div id="configuration">
+  ## 設定
+</div>
+
+Timescale のハイパーテーブル自体には、挿入されたデータは保存されません。代わりに、データは
+`_timescaledb_internal` スキーマ内にある対応する複数の
+「chunk」テーブルに保存されます。ハイパーテーブルに対してクエリを実行するうえでは、これは
+問題になりません。しかし、論理レプリケーション中は、ハイパーテーブルの変更ではなく、
+chunk テーブルの変更を検出することになります。Postgres ClickPipe には、chunk テーブルから親ハイパーテーブルへの変更を自動的に再マッピングするロジックがありますが、
+これには追加の手順が必要です。
+
+<Info>
+  データの一度だけロード (`Initial Load Only`) のみを実行したい場合は、手順 2 以降をスキップしてください。
+</Info>
+
+1. ClickPipes 専用のユーザーを作成します:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 前の手順で作成したユーザーに、スキーマレベルの読み取り専用アクセス権を付与します。次の例は `public` スキーマに対する権限を示しています。レプリケーションしたいテーブルを含む各スキーマに対して、これらのコマンドを繰り返し実行してください:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. ユーザーにレプリケーション権限を付与します:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. Postgres のスーパーユーザーまたは管理者として、レプリケーションしたいハイパーテーブルを含む [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) を作成します。パイプが基盤となる chunk からの変更を受け取れるようにするため、publication には **`_timescaledb_internal` スキーマ全体も必ず含める必要があります**。パフォーマンス上のオーバーヘッドを避けるため、publication には必要なテーブルだけを含めることを強く推奨します。
+
+<Warning>
+  publication に含まれるすべてのテーブルでは、**主キー**が定義されているか、*または* **replica identity** が `FULL` に設定されている必要があります。スコープ設定に関するガイダンスについては、[Postgres よくある質問](/ja/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)を参照してください。
+</Warning>
+
+```sql
+   -- When adding new tables to the ClickPipe, you'll need to add them to the publication manually as well.
+   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2, TABLES IN SCHEMA _timescaledb_internal;
+```
+
+`clickpipes` publication には、指定したテーブルで発生した変更イベントの集合が含まれ、後でレプリケーションストリームを取り込むために使用されます。
+
+<Info>
+  一部のマネージドサービスでは、管理者ユーザーにスキーマ全体の publication を作成するために必要な権限が付与されていません。その場合は、利用中のプロバイダーにサポートチケットを起票してください。あるいは、この手順 (および以降の手順) をスキップし、代わりにデータを一度だけロードすることもできます。
+</Info>
+
+これらの手順が完了したら、[ClickPipe の作成](/ja/integrations/clickpipes/postgres/index)に進めます。
+
+<div id="configure-network-access">
+  ## ネットワークアクセスを設定する
+</div>
+
+Timescale インスタンスへのトラフィックを制限する場合は、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/home#list-of-static-ips)を許可リストに追加してください。
+この設定手順はプロバイダーによって異なります。お使いのプロバイダーが記載されている場合はサイドバーを参照するか、プロバイダーに
+チケットを起票してください。

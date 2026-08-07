@@ -1,0 +1,44 @@
+---
+alias: []
+description: 'Документация по формату RowBinaryWithNamesAndTypes'
+input_format: true
+keywords: ['RowBinaryWithNamesAndTypes']
+output_format: true
+slug: /interfaces/formats/RowBinaryWithNamesAndTypes
+title: 'RowBinaryWithNamesAndTypes'
+doc_type: 'справочник'
+---
+
+import RowBinaryFormatSettings from '/snippets/ru/common-row-binary-format-settings.mdx';
+
+| Вход | Выход | Псевдоним |
+| ---- | ----- | --------- |
+| ✔    | ✔     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+Аналогично формату [RowBinary](/ru/reference/formats/RowBinary/RowBinary), но с добавленным заголовком:
+
+* количество столбцов (N), закодированное с помощью [`LEB128`](https://en.wikipedia.org/wiki/LEB128).
+* N `String`ов, задающих имена столбцов.
+* N `String`ов, задающих типы столбцов.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="format-settings">
+  ## Настройки формата
+</div>
+
+<RowBinaryFormatSettings />
+
+<Note>
+  Если для настройки [`input_format_with_names_use_header`](/ru/reference/settings/formats#input_format_with_names_use_header) установлено значение 1,
+  столбцы из входных данных будут сопоставлены со столбцами таблицы по именам, а столбцы с неизвестными именами будут пропущены, если для настройки [input&#95;format&#95;skip&#95;unknown&#95;fields](/ru/reference/settings/formats#input_format_skip_unknown_fields) установлено значение 1.
+  В противном случае первая строка будет пропущена.
+  Если для настройки [`input_format_with_types_use_header`](/ru/reference/settings/formats#input_format_with_types_use_header) установлено значение `1`,
+  типы из входных данных будут сопоставлены с типами соответствующих столбцов таблицы. В противном случае вторая строка будет пропущена.
+</Note>

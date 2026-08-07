@@ -1,0 +1,30 @@
+---
+slug: /cloud/managed-postgres/migrations/data-validation
+sidebarTitle: 'Validation des données'
+title: 'Valider la conformité des données après la migration'
+description: 'Découvrez comment valider la conformité de vos données après la migration vers ClickHouse Managed Postgres'
+keywords: ['postgres', 'postgresql', 'réplication logique', 'migration', 'transfert de données', 'managed postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.data-validation-beta" />
+
+<div id="data-validation-counts">
+  ## Comparaison du nombre de lignes de toutes les tables
+</div>
+
+Une manière simple de vérifier l’exactitude de vos données après la migration consiste à comparer le nombre de lignes de toutes les tables des bases de données source et cible. Vous pouvez le faire en exécutant la requête suivante sur les deux bases de données :
+
+```sql
+SELECT table_name, 
+       (xpath('/row/cnt/text()', xml_count))[1]::text::bigint AS row_count
+FROM (
+  SELECT table_name, 
+         query_to_xml('SELECT count(*) AS cnt FROM ' || quote_ident(table_name), false, true, '') AS xml_count
+  FROM information_schema.tables
+  WHERE table_schema = 'public'
+) t
+ORDER BY table_name;
+```

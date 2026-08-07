@@ -1,0 +1,59 @@
+---
+sidebarTitle: 'Middleware'
+slug: /integrations/middleware
+keywords: ['clickhouse', 'middleware', 'observability', 'intégration', 'monitoring']
+description: 'Connectez Middleware à ClickHouse pour surveiller et analyser les métriques et les logs de ClickHouse.'
+title: 'Connecter Middleware à ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import PartnerBadge from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Middleware](https://middleware.io/) est une plateforme cloud d’observability permettant de surveiller l’infrastructure, les logs et les performances des applications.
+
+Vous pouvez connecter ClickHouse à Middleware pour collecter et visualiser la télémétrie de la base de données dans le cadre de vos workflows de monitoring globaux.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Un service ClickHouse actif (Cloud ou autogéré)
+* L’accès aux informations de connexion à votre ClickHouse : hôte, port, nom d’utilisateur et mot de passe
+* Un compte Middleware
+
+<div id="connect-clickhouse-in-middleware">
+  ## Connecter ClickHouse dans Middleware
+</div>
+
+1. Connectez-vous à votre compte Middleware.
+2. Accédez à **Integrations** et recherchez **ClickHouse**.
+3. Sélectionnez l’intégration ClickHouse et saisissez vos informations de connexion :
+   * Hôte
+   * Port
+   * Base de données
+   * Nom d’utilisateur
+   * Mot de passe
+4. Enregistrez l’intégration et lancez un test de connexion.
+
+<div id="verify-data-collection">
+  ## Vérifier la collecte des données
+</div>
+
+Une fois la configuration terminée, assurez-vous que les métriques et/ou les logs de ClickHouse sont visibles dans vos tableaux de bord Middleware.
+
+Si la validation de la connexion échoue, vérifiez que :
+
+* ClickHouse accepte les connexions entrantes depuis Middleware
+* Les paramètres SSL/TLS correspondent à votre point de terminaison ClickHouse
+* Les identifiants et les autorisations de la base de données sont corrects
+
+<div id="additional-resources">
+  ## Ressources supplémentaires
+</div>
+
+* [Site de Middleware](https://middleware.io/)

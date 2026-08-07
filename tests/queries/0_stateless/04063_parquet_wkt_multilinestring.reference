@@ -1,0 +1,9 @@
+=== MultiLineString typed ===
+1	[[(0,0),(1,1),(2,0)],[(3,3),(4,4),(5,3)]]
+2	[[(10,10),(11,11)],[(20,20),(21,21),(22,20)]]
+=== MultiLineString in Mixed column: variantType ===
+1	Point
+2	MultiLineString
+3	MultiLineString
+=== malformed WKT (empty type) ===
+1

@@ -1,0 +1,37 @@
+---
+sidebarTitle: 'Каталоги данных'
+slug: /manage/data-catalogs
+title: 'Каталоги данных'
+description: 'Интеграции с каталогами данных для ClickHouse Cloud'
+doc_type: 'landing-page'
+keywords: ['каталоги данных', 'возможности Cloud', 'озера данных', 'Iceberg', 'интеграции']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+ClickHouse Cloud может напрямую подключаться к каталогам данных для открытых табличных форматов, предоставляя доступ к таблицам в озерах данных без дублирования данных.
+Благодаря этой интеграции таблицы из вашего каталога будут отображаться в ClickHouse как базы данных, доступные для запросов.
+Настройка доступна как через SQL-команду ([DataLakeCatalog](/ru/reference/engines/database-engines/datalake)), так и через интерфейс ClickHouse Cloud на вкладке Data Sources.
+
+Через интерфейс:
+
+* Упрощенная настройка с помощью формы с полями, соответствующими объектам вашего каталога данных
+* Единый интерфейс для активных интеграций с каталогами данных
+* Проверка подключений и учетных данных при сохранении
+
+<Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="Интерфейс ClickHouse Cloud с интеграциями каталогов данных" />
+
+| Название             | Поддерживаемый формат открытых таблиц                   | Метод аутентификации                       | Поддержка                                                                             | Версия |
+| -------------------- | ------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------- | ------ |
+| Каталог AWS Glue     | Iceberg                                                 | IAM/ключи доступа                          | Cloud &amp; [Core](/ru/guides/use-cases/data-warehousing/glue-catalog)                   | 25.10+ |
+| Lakekeeper           | Iceberg                                                 | учетные данные клиента OAuth               | [Core](/ru/guides/use-cases/data-warehousing/lakekeeper-catalog)                         | 25.10+ |
+| Microsoft OneLake    | Iceberg                                                 | Azure Active Directory (AAD)               | Cloud &amp; [Core](/ru/guides/use-cases/data-warehousing/onelake-catalog)                | 25.12+ |
+| Nessie               | Iceberg                                                 | учетные данные клиента OAuth               | [Core](/ru/guides/use-cases/data-warehousing/nessie-catalog)                             | 25.10+ |
+| Polaris/Open Catalog | Iceberg                                                 | учетные данные клиента OAuth               | [Core](/ru/guides/use-cases/data-warehousing/polaris-catalog)                            | 26.1+  |
+| REST-каталог         | Iceberg                                                 | учетные данные клиента OAuth, Bearer-токен | Cloud &amp; [Core](/ru/guides/use-cases/data-warehousing/rest-catalog)                   | 25.10+ |
+| Unity Catalog        | Iceberg (с включенным UniForm и под управлением), Delta | учетные данные клиента OAuth               | Cloud (только Iceberg) &amp; [Core](/ru/guides/use-cases/data-warehousing/unity-catalog) | 25.10+ |
+
+Мы планируем добавить поддержку новых каталогов, включая Horizon и REST-конечную точку для таблиц S3.

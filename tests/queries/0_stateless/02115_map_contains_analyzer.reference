@@ -1,0 +1,4 @@
+SELECT has(__table1.`m.keys`, \'a\') AS `mapContains(m, \'a\')`
+FROM default.t_map_contains AS __table1
+1
+0

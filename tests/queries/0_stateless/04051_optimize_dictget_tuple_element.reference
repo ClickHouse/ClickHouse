@@ -1,0 +1,62 @@
+optimization enabled
+1
+0
+optimization disabled
+1
+dictGet index access
+US
+FR
+JP
+New York
+Paris
+Tokyo
+all three attributes by index
+US	New York	8336000
+FR	Paris	2161000
+JP	Tokyo	13960000
+named access
+US
+FR
+JP
+New York
+Paris
+Tokyo
+dictGetOrDefault
+US
+FR
+JP
+New York
+Paris
+Tokyo
+dictGetOrDefault with missing keys
+DefaultCountry
+DefaultCity
+dictGetOrDefault with missing keys named access
+DefaultCountry
+DefaultCity
+dictGetOrDefault with tuple function default
+FuncCountry
+FuncCity
+dictGetOrDefault with tuple function default named access
+FuncCountry
+FuncCity
+dictGetOrDefault with non-rewritable default
+MCountry
+MCity
+dictGetOrDefault with tuple containing non-constant
+OkCountry
+MatCity
+dictGetOrDefault with CTE alias default
+CTECountry
+CTECity
+dictGetOrDefault with CTE alias default named access
+CTECountry
+CTECity
+shared tupleElement across SELECT and ORDER BY ALL
+New York
+Paris
+Tokyo
+LowCardinality key bail out
+New York
+FR
+dictGetOrDefault default tuple element type mismatch bail out

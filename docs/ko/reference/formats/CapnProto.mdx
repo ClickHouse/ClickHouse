@@ -1,0 +1,131 @@
+---
+alias: []
+description: 'CapnProto 문서'
+input_format: true
+keywords: ['CapnProto']
+output_format: true
+slug: /interfaces/formats/CapnProto
+title: 'CapnProto'
+doc_type: '참고'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+`CapnProto` 포맷은 [`Protocol Buffers`](https://developers.google.com/protocol-buffers/) 포맷 및 [Thrift](https://en.wikipedia.org/wiki/Apache_Thrift)와 유사한 바이너리 메시지 포맷이지만, [JSON](/ko/reference/formats/JSON/JSON)이나 [MessagePack](https://msgpack.org/)과는 다릅니다.
+CapnProto 메시지는 엄격한 타입이 적용되며 자체적으로 구조를 설명하지 않으므로 외부 스키마 설명이 필요합니다. 스키마는 런타임에 적용되며 각 쿼리별로 캐시됩니다.
+
+관련 항목: [포맷 스키마](/ko/reference/formats/index#formatschema).
+
+<div id="data_types-matching-capnproto">
+  ## 데이터 타입 매핑
+</div>
+
+아래 표는 지원되는 데이터 타입과 `INSERT` 및 `SELECT` 쿼리에서 이 데이터 타입이 ClickHouse [데이터 타입](/ko/reference/data-types/index)과 어떻게 매핑되는지 보여줍니다.
+
+| CapnProto 데이터 타입 (`INSERT`)                          | ClickHouse 데이터 타입                                                                                                                 | CapnProto 데이터 타입 (`SELECT`)                          |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `UINT8`, `BOOL`                                      | [UInt8](/ko/reference/data-types/int-uint)                                                                                           | `UINT8`                                              |
+| `INT8`                                               | [Int8](/ko/reference/data-types/int-uint)                                                                                            | `INT8`                                               |
+| `UINT16`                                             | [UInt16](/ko/reference/data-types/int-uint), [Date](/ko/reference/data-types/date)                                                      | `UINT16`                                             |
+| `INT16`                                              | [Int16](/ko/reference/data-types/int-uint)                                                                                           | `INT16`                                              |
+| `UINT32`                                             | [UInt32](/ko/reference/data-types/int-uint), [DateTime](/ko/reference/data-types/datetime)                                              | `UINT32`                                             |
+| `INT32`                                              | [Int32](/ko/reference/data-types/int-uint), [Decimal32](/ko/reference/data-types/decimal)                                               | `INT32`                                              |
+| `UINT64`                                             | [UInt64](/ko/reference/data-types/int-uint)                                                                                          | `UINT64`                                             |
+| `INT64`                                              | [Int64](/ko/reference/data-types/int-uint), [DateTime64](/ko/reference/data-types/datetime), [Decimal64](/ko/reference/data-types/decimal) | `INT64`                                              |
+| `FLOAT32`                                            | [Float32](/ko/reference/data-types/float)                                                                                            | `FLOAT32`                                            |
+| `FLOAT64`                                            | [Float64](/ko/reference/data-types/float)                                                                                            | `FLOAT64`                                            |
+| `TEXT, DATA`                                         | [String](/ko/reference/data-types/string), [FixedString](/ko/reference/data-types/fixedstring)                                          | `TEXT, DATA`                                         |
+| `union(T, Void), union(Void, T)`                     | [Nullable(T)](/ko/reference/data-types/date)                                                                                         | `union(T, Void), union(Void, T)`                     |
+| `ENUM`                                               | [Enum(8/16)](/ko/reference/data-types/enum)                                                                                          | `ENUM`                                               |
+| `LIST`                                               | [Array](/ko/reference/data-types/array)                                                                                              | `LIST`                                               |
+| `STRUCT`                                             | [Tuple](/ko/reference/data-types/tuple)                                                                                              | `STRUCT`                                             |
+| `UINT32`                                             | [IPv4](/ko/reference/data-types/ipv4)                                                                                                | `UINT32`                                             |
+| `DATA`                                               | [IPv6](/ko/reference/data-types/ipv6)                                                                                                | `DATA`                                               |
+| `DATA`                                               | [Int128/UInt128/Int256/UInt256](/ko/reference/data-types/int-uint)                                                                   | `DATA`                                               |
+| `DATA`                                               | [Decimal128/Decimal256](/ko/reference/data-types/decimal)                                                                            | `DATA`                                               |
+| `STRUCT(entries LIST(STRUCT(key Key, value Value)))` | [Map](/ko/reference/data-types/map)                                                                                                  | `STRUCT(entries LIST(STRUCT(key Key, value Value)))` |
+
+* 정수 타입은 입출력 시 서로 변환할 수 있습니다.
+* CapnProto 포맷에서 `Enum`을 사용하려면 [format&#95;capn&#95;proto&#95;enum&#95;comparising&#95;mode](/ko/reference/settings/formats#format_capn_proto_enum_comparising_mode) 설정을 사용하십시오.
+* 배열은 중첩할 수 있으며, `Nullable` 타입 값을 인수로 받을 수 있습니다. `Tuple`과 `Map` 타입도 중첩할 수 있습니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+<div id="inserting-and-selecting-data-capnproto">
+  ### 데이터 삽입 및 조회
+</div>
+
+다음 명령을 사용하여 파일의 CapnProto 데이터를 ClickHouse 테이블에 삽입할 수 있습니다.
+
+```bash
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_schema = 'schema:Message' FORMAT CapnProto"
+```
+
+`schema.capnp` 파일 내용은 다음과 같습니다:
+
+```capnp
+struct Message {
+  SearchPhrase @0 :Text;
+  c @1 :Uint64;
+}
+```
+
+다음 명령을 사용하면 ClickHouse 테이블에서 데이터를 선택하여 `CapnProto` 포맷의 파일로 저장할 수 있습니다:
+
+```bash
+$ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
+```
+
+<div id="using-autogenerated-capn-proto-schema">
+  ### 자동 생성 스키마 사용
+</div>
+
+데이터용 외부 `CapnProto` 스키마가 없어도 자동 생성 스키마를 사용해 `CapnProto` 포맷으로 데이터를 출력하거나 입력할 수 있습니다.
+
+예시:
+
+```sql
+SELECT * FROM test.hits 
+FORMAT CapnProto 
+SETTINGS format_capn_proto_use_autogenerated_schema=1
+```
+
+이 경우 ClickHouse는 함수 [structureToCapnProtoSchema](/ko/reference/functions/regular-functions/other-functions#structureToCapnProtoSchema)를 사용해 테이블 구조를 기반으로 CapnProto 스키마를 자동 생성하고, 이 스키마를 사용해 데이터를 CapnProto 포맷으로 직렬화합니다.
+
+자동 생성된 스키마를 사용해 CapnProto 파일을 읽을 수도 있습니다(이 경우 파일은 동일한 스키마를 사용해 생성되어야 합니다):
+
+```bash
+$ cat hits.bin | clickhouse-client --query "INSERT INTO test.hits SETTINGS format_capn_proto_use_autogenerated_schema=1 FORMAT CapnProto"
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>
+
+설정 [`format_capn_proto_use_autogenerated_schema`](/ko/reference/settings/formats#format_capn_proto_use_autogenerated_schema)는 기본적으로 활성화되어 있으며, [`format_schema`](/ko/reference/formats/index#formatschema)가 설정되지 않은 경우에 적용됩니다.
+
+설정 [`output_format_schema`](/ko/reference/settings/formats#output_format_schema)를 사용하면 입력/출력 시 자동 생성된 스키마를 파일에 저장할 수도 있습니다.
+
+예시:
+
+```sql
+SELECT * FROM test.hits 
+FORMAT CapnProto 
+SETTINGS 
+    format_capn_proto_use_autogenerated_schema=1,
+    output_format_schema='path/to/schema/schema.capnp'
+```
+
+이 경우 자동으로 생성된 `CapnProto` 스키마는 `path/to/schema/schema.capnp` 파일에 저장됩니다.

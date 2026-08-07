@@ -1,0 +1,156 @@
+---
+description: '메모리에 딕셔너리를 저장하는 딕셔너리 레이아웃 유형'
+sidebarTitle: '개요'
+slug: /sql-reference/statements/create/dictionary/layouts
+title: '딕셔너리 레이아웃'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/ko/_snippet_dictionary_in_cloud.mdx';
+
+<div id="storing-dictionaries-in-memory">
+  ## 딕셔너리 레이아웃 유형
+</div>
+
+딕셔너리를 메모리에 저장하는 방식은 여러 가지가 있으며, 각 방식마다 CPU와 RAM 사용량 사이에 절충이 있습니다.
+
+| 레이아웃                                                                                                                          | 설명                                                                                     |
+| ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [flat](/ko/reference/statements/create/dictionary/layouts/flat)                                                                  | 키로 인덱싱된 평면 배열에 데이터를 저장합니다. 가장 빠른 레이아웃이지만 키는 `UInt64`여야 하며, `max_array_size` 범위로 제한됩니다. |
+| [hashed](/ko/reference/statements/create/dictionary/layouts/hashed)                                                              | 데이터를 해시 테이블에 저장합니다. 키 크기 제한이 없고 요소 수에도 제한이 없습니다.                                       |
+| [sparse&#95;hashed](/ko/reference/statements/create/dictionary/layouts/hashed#sparse_hashed)                                     | `hashed`와 유사하지만, 메모리 사용량을 줄이는 대신 CPU를 더 사용합니다.                                         |
+| [complex&#95;key&#95;hashed](/ko/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                       | `hashed`와 유사하며, 복합 키에 사용합니다.                                                           |
+| [complex&#95;key&#95;sparse&#95;hashed](/ko/reference/statements/create/dictionary/layouts/hashed#complex_key_sparse_hashed)     | `sparse_hashed`와 유사하며, 복합 키에 사용합니다.                                                    |
+| [hashed&#95;array](/ko/reference/statements/create/dictionary/layouts/hashed-array)                                              | 해시 테이블로 키를 배열 인덱스에 매핑하고, 속성은 배열에 저장합니다. 속성이 많을 때 메모리 효율이 좋습니다.                         |
+| [complex&#95;key&#95;hashed&#95;array](/ko/reference/statements/create/dictionary/layouts/hashed-array#complex_key_hashed_array) | `hashed_array`와 유사하며, 복합 키에 사용합니다.                                                     |
+| [range&#95;hashed](/ko/reference/statements/create/dictionary/layouts/range-hashed)                                              | 정렬된 범위를 사용하는 해시 테이블입니다. 키 + 날짜/시간 범위 기준 조회를 지원합니다.                                     |
+| [complex&#95;key&#95;range&#95;hashed](/ko/reference/statements/create/dictionary/layouts/range-hashed#complex_key_range_hashed) | `range_hashed`와 유사하며, 복합 키에 사용합니다.                                                     |
+| [cache](/ko/reference/statements/create/dictionary/layouts/cache)                                                                | 고정 크기의 인메모리 캐시입니다. 자주 액세스되는 키만 저장합니다.                                                  |
+| [complex&#95;key&#95;cache](/ko/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                        | `cache`와 유사하며, 복합 키에 사용합니다.                                                            |
+| [ssd&#95;cache](/ko/reference/statements/create/dictionary/layouts/ssd-cache)                                                    | `cache`와 유사하지만, 메모리 내 인덱스를 두고 데이터는 SSD에 저장합니다.                                         |
+| [complex&#95;key&#95;ssd&#95;cache](/ko/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache)          | `ssd_cache`와 유사하며, 복합 키에 사용합니다.                                                        |
+| [direct](/ko/reference/statements/create/dictionary/layouts/direct)                                                              | 메모리에 저장하지 않고, 각 요청마다 소스를 직접 쿼리합니다.                                                     |
+| [complex&#95;key&#95;direct](/ko/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | `direct`와 유사하며, 복합 키에 사용합니다.                                                           |
+| [ip&#95;trie](/ko/reference/statements/create/dictionary/layouts/ip-trie)                                                        | 빠른 IP 프리픽스 조회(CIDR 기반)를 위한 트라이 구조입니다.                                                  |
+
+<Tip>
+  **권장 레이아웃**
+
+  [flat](/ko/reference/statements/create/dictionary/layouts/flat), [hashed](/ko/reference/statements/create/dictionary/layouts/hashed), [complex&#95;key&#95;hashed](/ko/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)는 가장 우수한 쿼리 성능을 제공합니다.
+  캐싱 레이아웃은 성능이 떨어질 가능성이 있고 매개변수 튜닝도 어렵기 때문에 권장하지 않습니다. 자세한 내용은 [cache](/ko/reference/statements/create/dictionary/layouts/cache)를 참조하십시오.
+</Tip>
+
+<div id="specify-dictionary-layout">
+  ## 딕셔너리 레이아웃 지정
+</div>
+
+<CloudDetails />
+
+`LAYOUT` 절(DDL) 또는 설정 파일 정의의 `layout` 설정을 사용해 딕셔너리 레이아웃을 구성할 수 있습니다.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY (...)
+    ...
+    LAYOUT(LAYOUT_TYPE(param value)) -- 레이아웃 설정
+    ...
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <clickhouse>
+        <dictionary>
+            ...
+            <layout>
+                <layout_type>
+                    <!-- 레이아웃 설정 -->
+                </layout_type>
+            </layout>
+            ...
+        </dictionary>
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+전체 DDL 구문은 [CREATE DICTIONARY](/ko/reference/statements/create/dictionary)를 참고하십시오.
+
+레이아웃에 `complex-key*`라는 단어가 없는 딕셔너리는 [UInt64](/ko/reference/data-types/int-uint) 타입의 키를 사용하고, `complex-key*` 딕셔너리는 복합 키(임의의 타입으로 구성 가능)를 사용합니다.
+
+**숫자 키 예시** (`key_column` 컬럼은 [UInt64](/ko/reference/data-types/int-uint) 타입):
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        key_column UInt64,
+        ...
+    )
+    PRIMARY KEY key_column
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <structure>
+        <id>
+            <name>key_column</name>
+        </id>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+**복합 키 예시** (키는 [String](/ko/reference/data-types/string) 타입 요소 1개로 구성됨):
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        country_code String,
+        ...
+    )
+    PRIMARY KEY country_code
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <structure>
+        <key>
+            <attribute>
+                <name>country_code</name>
+                <type>String</type>
+            </attribute>
+        </key>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="improve-performance">
+  ## 딕셔너리 성능 개선
+</div>
+
+딕셔너리 성능을 개선하는 방법은 여러 가지가 있습니다.
+
+* `GROUP BY` 뒤에서 딕셔너리 작업 함수를 호출합니다.
+* 추출할 속성을 injective로 표시합니다.
+  서로 다른 키가 서로 다른 속성 값에 대응할 때 해당 속성을 injective라고 합니다.
+  따라서 `GROUP BY`에서 키로 속성 값을 가져오는 함수를 사용하면, 이 함수는 자동으로 `GROUP BY` 밖으로 분리됩니다.
+
+ClickHouse는 딕셔너리 관련 오류가 발생하면 예외를 생성합니다.
+오류 예시는 다음과 같습니다.
+
+* 접근하는 딕셔너리를 로드할 수 없습니다.
+* `cached` 딕셔너리를 쿼리하는 중 오류가 발생했습니다.
+
+[system.dictionaries](/ko/reference/system-tables/dictionaries) 테이블에서 딕셔너리 목록과 상태를 확인할 수 있습니다.

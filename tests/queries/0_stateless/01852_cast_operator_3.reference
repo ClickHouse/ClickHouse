@@ -1,0 +1,15 @@
+-1
+SELECT CAST(\'-1\', \'Int32\')
+FROM system.one
+-0.1
+SELECT CAST(\'-0.1\', \'Decimal(38, 38)\')
+FROM system.one
+-0.111
+SELECT CAST(\'-0.111\', \'Float64\')
+FROM system.one
+[-1,2,-3]
+SELECT CAST(\'[-1, 2, -3]\', \'Array(Int32)\')
+FROM system.one
+[-1.1,2,-3]
+SELECT CAST(\'[-1.1, 2, -3]\', \'Array(Float64)\')
+FROM system.one

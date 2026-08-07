@@ -1,0 +1,239 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/streamlit-agent
+sidebarTitle: 'دمج Streamlit'
+title: 'كيفية إنشاء AI Agent مدعوم من ClickHouse باستخدام Streamlit'
+description: 'تعرّف على كيفية إنشاء AI Agent قائم على الويب باستخدام Streamlit وخادم MCP الخاص بـ ClickHouse'
+keywords: ['ClickHouse', 'MCP', 'Streamlit', 'Agno', 'AI Agent']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+في هذا الدليل، ستتعلّم كيفية إنشاء AI Agent قائم على الويب باستخدام [Streamlit](https://streamlit.io/)، ويمكنه التفاعل مع [SQL playground الخاصة بـ ClickHouse](https://sql.clickhouse.com/) باستخدام [خادم MCP الخاص بـ ClickHouse](https://github.com/ClickHouse/mcp-clickhouse) و[Agno](https://github.com/agno-agi/agno).
+
+<Info>
+  **تطبيق توضيحي**
+
+  ينشئ هذا المثال تطبيق ويب متكاملًا يوفّر واجهة دردشة للاستعلام عن بيانات ClickHouse.
+  يمكنك العثور على الشفرة المصدرية لهذا المثال في [مستودع الأمثلة](https://github.com/ClickHouse/examples/tree/main/ai/mcp/streamlit).
+</Info>
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* ستحتاج إلى تثبيت بايثون على نظامك.
+  وستحتاج أيضًا إلى تثبيت [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+* ستحتاج إلى مفتاح API من Anthropic، أو مفتاح API من موفّر LLM آخر
+
+يمكنك اتباع الخطوات التالية لإنشاء تطبيق Streamlit الخاص بك.
+
+<Steps>
+  <Step>
+    ## تثبيت المكتبات
+
+    ثبّت المكتبات المطلوبة بتشغيل الأوامر التالية:
+
+    ```bash
+    pip install streamlit agno ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## أنشئ ملف الأدوات المساعدة
+
+    أنشئ ملف `utils.py` يتضمن دالتين مساعدتين. الأولى دالة مولِّد غير متزامنة للتعامل مع
+    استجابات التدفق من وكيل Agno. والثانية دالة لتطبيق الأنماط على تطبيق
+    Streamlit:
+
+    ```python title="utils.py"
+    import streamlit as st
+    from agno.run.response import RunEvent, RunResponse
+
+    async def as_stream(response):
+        async for chunk in response:
+            if isinstance(chunk, RunResponse) and isinstance(chunk.content, str):
+                if chunk.event == RunEvent.run_response:
+                    yield chunk.content
+
+    def apply_styles():
+        st.markdown("""
+      <style>
+      hr.divider {
+      background-color: white;
+      margin: 0;
+      }
+      </style>
+      <hr class='divider' />""", unsafe_allow_html=True)
+    ```
+  </Step>
+
+  <Step>
+    ## إعداد بيانات الاعتماد
+
+    عيّن مفتاح واجهة برمجة تطبيقات Anthropic كمتغير بيئة:
+
+    ```bash
+    export ANTHROPIC_API_KEY="your_api_key_here"
+    ```
+
+    <Info>
+      **استخدام موفّر LLM آخر**
+
+      إذا لم يكن لديك مفتاح API لـ Anthropic، وكنت ترغب في استخدام موفّر LLM آخر،
+      فيمكنك العثور على تعليمات إعداد بيانات الاعتماد في وثائق [Agno &quot;Integrations&quot;](https://docs.agentops.ai/v2/integrations/ag2)
+    </Info>
+  </Step>
+
+  <Step>
+    ## استيراد المكتبات المطلوبة
+
+    ابدأ بإنشاء ملف تطبيق Streamlit الرئيسي (مثل `app.py`) ثم أضف تعليمات الاستيراد:
+
+    ```python
+    from utils import apply_styles
+
+    import streamlit as st
+    from textwrap import dedent
+
+    from agno.models.anthropic import Claude
+    from agno.agent import Agent
+    from agno.tools.mcp import MCPTools
+    from agno.storage.json import JsonStorage
+    from agno.run.response import RunEvent, RunResponse
+    from mcp.client.stdio import stdio_client, StdioServerParameters
+
+    from mcp import ClientSession
+
+    import asyncio
+    import threading
+    from queue import Queue
+    ```
+  </Step>
+
+  <Step>
+    ## عرّف دالة البث الخاصة بـagent
+
+    أضف الدالة الرئيسية لـagent التي تتصل بـ[بيئة SQL التفاعلية الخاصة بـClickHouse](https://sql.clickhouse.com/) وتبثّ الاستجابات:
+
+    ```python
+    async def stream_clickhouse_agent(message):
+        env = {
+                "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+                "CLICKHOUSE_PORT": "8443",
+                "CLICKHOUSE_USER": "demo",
+                "CLICKHOUSE_PASSWORD": "",
+                "CLICKHOUSE_SECURE": "true"
+            }
+        
+        server_params = StdioServerParameters(
+            command="uv",
+            args=[
+            'run',
+            '--with', 'mcp-clickhouse',
+            '--python', '3.13',
+            'mcp-clickhouse'
+            ],
+            env=env
+        )
+        
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                mcp_tools = MCPTools(timeout_seconds=60, session=session)
+                await mcp_tools.initialize()
+                agent = Agent(
+                    model=Claude(id="claude-3-5-sonnet-20240620"),
+                    tools=[mcp_tools],
+                    instructions=dedent("""\
+                        You are a ClickHouse assistant. Help users query and understand data using ClickHouse.
+                        - Run SQL queries using the ClickHouse MCP tool
+                        - Present results in markdown tables when relevant
+                        - Keep output concise, useful, and well-formatted
+                    """),
+                    markdown=True,
+                    show_tool_calls=True,
+                    storage=JsonStorage(dir_path="tmp/team_sessions_json"),
+                    add_datetime_to_instructions=True, 
+                    add_history_to_messages=True,
+                )
+                chunks = await agent.arun(message, stream=True)
+                async for chunk in chunks:
+                    if isinstance(chunk, RunResponse) and chunk.event == RunEvent.run_response:
+                        yield chunk.content
+    ```
+  </Step>
+
+  <Step>
+    ## أضف دوال غلاف متزامنة
+
+    أضف دوال مساعدة للتعامل مع التدفق غير المتزامن في Streamlit:
+
+    ```python
+    def run_agent_query_sync(message):
+        queue = Queue()
+        def run():
+            asyncio.run(_agent_stream_to_queue(message, queue))
+            queue.put(None)  # Sentinel to end stream
+        threading.Thread(target=run, daemon=True).start()
+        while True:
+            chunk = queue.get()
+            if chunk is None:
+                break
+            yield chunk
+
+    async def _agent_stream_to_queue(message, queue):
+        async for chunk in stream_clickhouse_agent(message):
+            queue.put(chunk)
+    ```
+  </Step>
+
+  <Step>
+    ## أنشئ واجهة Streamlit
+
+    أضف مكوّنات واجهة Streamlit ووظائف الدردشة:
+
+    ```python
+    st.title("A ClickHouse-backed AI agent")
+
+    if st.button("💬 New Chat"):
+      st.session_state.messages = []
+      st.rerun()
+
+    apply_styles()
+
+    if "messages" not in st.session_state:
+      st.session_state.messages = []
+
+    for message in st.session_state.messages:
+      with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+    if prompt := st.chat_input("What is up?"):
+      st.session_state.messages.append({"role": "user", "content": prompt})
+      with st.chat_message("user"):
+        st.markdown(prompt)
+      with st.chat_message("assistant"):
+        response = st.write_stream(run_agent_query_sync(prompt))
+      st.session_state.messages.append({"role": "assistant", "content": response})
+    ```
+  </Step>
+
+  <Step>
+    ## تشغيل التطبيق
+
+    لبدء تطبيق الويب الخاص بـ ClickHouse AI Agent، يمكنك تشغيل
+    الأمر التالي من الطرفية:
+
+    ```bash
+    uv run \
+      --with streamlit \
+      --with agno \
+      --with anthropic \
+      --with mcp \
+      streamlit run app.py --server.headless true
+    ```
+
+    سيؤدي ذلك إلى فتح متصفح الويب لديك والانتقال إلى `http://localhost:8501` حيث يمكنك
+    التفاعل مع وكيل الذكاء الاصطناعي الخاص بك وطرح أسئلة عليه حول مجموعات البيانات التجريبية
+    المتاحة في بيئة SQL التفاعلية الخاصة بـ ClickHouse.
+  </Step>
+</Steps>

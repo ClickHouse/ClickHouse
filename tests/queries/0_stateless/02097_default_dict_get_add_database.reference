@@ -1,0 +1,1 @@
+CREATE TABLE db_02097.test_table_default (`data_1` UInt64 DEFAULT dictGetUInt64(\'db_02097.test_dictionary\', \'data_column_1\', toUInt64(0)), `data_2` UInt8 DEFAULT dictGet(db_02097.test_dictionary, \'data_column_2\', toUInt64(0))) ENGINE = TinyLog

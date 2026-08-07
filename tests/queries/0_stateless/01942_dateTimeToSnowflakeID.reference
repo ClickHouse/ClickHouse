@@ -1,0 +1,32 @@
+-- Negative tests
+-- Return type
+UInt64
+UInt64
+-- Standard and twitter epoch
+Row 1:
+──────
+dt:                        2021-08-15 18:57:56
+dt64:                      2021-08-15 18:57:56.492
+dateTimeToSnowflakeID(dt): 6832747188322304000
+dateTime64To⋯akeID(dt64):  6832747190385901568
+dateTimeToSn⋯tter_epoch):  1426981498778550272
+dateTime64To⋯tter_epoch):  1426981500842147840
+-- Different DateTime64 scales
+Row 1:
+──────
+dateTime64To⋯eID(dt64_0): 6832747188322304000
+dateTime64To⋯eID(dt64_1): 6832747190000025600
+dateTime64To⋯eID(dt64_2): 6832747190377512960
+dateTime64To⋯eID(dt64_3): 6832747190385901568
+dateTime64To⋯eID(dt64_4): 6832747190385901568
+-- Idempotency
+Row 1:
+──────
+equals(snowf⋯'), dt64_0): 1
+equals(snowf⋯'), dt64_1): 1
+equals(snowf⋯'), dt64_2): 1
+equals(snowf⋯'), dt64_3): 1
+Row 1:
+──────
+dt64_4:                   2023-11-11 11:11:11.1231
+snowflakeIDT⋯ID(dt64_4)): 2023-11-11 11:11:11.123

@@ -1,0 +1,347 @@
+---
+description: 'Documentação para codificar Mapbox Vector Tiles'
+sidebarTitle: 'Mapbox Vector Tiles'
+slug: /sql-reference/functions/geo/mvt
+title: 'Funções para codificar Mapbox Vector Tiles'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+[Mapbox Vector Tiles](https://github.com/mapbox/vector-tile-spec) (MVT) são tiles codificados em protobuf que clientes de
+mapas web, como MapLibre e Mapbox GL, renderizam nativamente. O ClickHouse pode construir esses tiles inteiramente em SQL
+com um par de funções que trabalham em conjunto:
+
+* `MVTEncodeGeom` — uma função escalar que projeta uma geometria no espaço de pixels local de um tile de slippy map e
+  a recorta aos limites do tile.
+* `MVTEncode` — uma função de agregação que reúne as geometrias projetadas de um grupo nos bytes binários de um
+  tile de camada única.
+
+Duas funções auxiliares, `MVTBoundingBox` e `MVTBoundingBoxMercator`, retornam a caixa delimitadora de um tile para que as linhas possam ser
+restritas a ela na cláusula `WHERE` usando um índice.
+
+Há suporte para geometrias de ponto, linha e polígono, incluindo o tipo `Geometry` e os tipos geo concretos (`Point`,
+`LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
+
+Os bytes resultantes formam um tile completo que pode ser retornado diretamente pela interface HTTP com `FORMAT RawBLOB`.
+
+Essas funções seguem o fluxo de trabalho do PostGIS e também estão disponíveis com seus nomes do PostGIS como aliases: `ST_AsMVTGeom`
+para `MVTEncodeGeom` e `ST_AsMVT` para `MVTEncode`.
+
+<div id="mvtencodegeom">
+  ## MVTEncodeGeom
+</div>
+
+Projeta uma geometria fornecida em coordenadas geográficas (longitude/latitude) para o espaço de pixels local do tile do
+slippy-map identificado por `zoom`, `tile_x` e `tile_y`, recorta-a aos limites do tile, ajusta-a à grade de pixels inteiros
+e retorna a geometria no espaço do tile.
+
+A projeção é Web Mercator em toda a faixa de coordenadas `UInt32`. As coordenadas retornadas têm origem no
+canto superior esquerdo do tile, com o eixo y apontando para baixo, que é a convenção de coordenadas do formato Mapbox Vector
+Tile, de modo que o resultado pode ser usado diretamente em `MVTEncode`. As coordenadas são arredondadas para pixels inteiros, portanto agrupar por
+`MVTEncodeGeom` consolida as geometrias que caem na mesma grade em um único cluster.
+
+Quando `clip` está habilitado (o padrão), a geometria é recortada ao tile expandido em `buffer` pixels (o intervalo
+`[-buffer, extent + buffer]` em cada eixo); geometrias que caem totalmente fora se tornam `NULL`. Este é o equivalente ao
+PostGIS `ST_AsMVTGeom`.
+
+O tipo da geometria de saída depende da entrada: um `Point` retorna um `Point`; um `LineString` ou `MultiLineString` retorna uma
+`MultiLineString`; um `Ring`, `Polygon` ou `MultiPolygon` retorna uma `MultiPolygon` (o recorte pode dividir uma geometria em
+várias partes).
+
+**Sintaxe**
+
+```sql
+MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
+```
+
+**Argumentos**
+
+* `geometry` — Geometria em graus de longitude/latitude. A longitude é limitada a `[-180, 180]` e a latitude ao intervalo do Web Mercator `[-85.05112878, 85.05112878]`. [`Point`](/pt-BR/reference/data-types/geo) / [`LineString`](/pt-BR/reference/data-types/geo) / [`MultiLineString`](/pt-BR/reference/data-types/geo) / [`Ring`](/pt-BR/reference/data-types/geo) / [`Polygon`](/pt-BR/reference/data-types/geo) / [`MultiPolygon`](/pt-BR/reference/data-types/geo) / [`Geometry`](/pt-BR/reference/data-types/geo).
+* `zoom` — Nível de zoom do mapa Slippy, no intervalo `[0, 32]`. [`UInt8`](/pt-BR/reference/data-types/int-uint).
+* `tile_x` — Índice da coluna do tile, no intervalo `[0, 2^zoom - 1]`. [`UInt32`](/pt-BR/reference/data-types/int-uint).
+* `tile_y` — Índice da linha do tile, no intervalo `[0, 2^zoom - 1]`. [`UInt32`](/pt-BR/reference/data-types/int-uint).
+* `extent` — Extensão opcional do tile em pixels por lado, no intervalo `[1, 2147483647]`. O padrão é `4096`, valor padrão do Mapbox Vector Tile. [`UInt32`](/pt-BR/reference/data-types/int-uint).
+* `buffer` — Buffer de recorte opcional em pixels, no intervalo `[0, 2147483647]`. O padrão é `1`. [`UInt32`](/pt-BR/reference/data-types/int-uint).
+* `clip` — flag opcional; quando diferente de zero (o padrão), a geometria é recortada ao tile mais o buffer. [`UInt8`](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+Retorna a geometria no espaço do tile ou `NULL` se ela for totalmente excluída pelo recorte. [`Geometry`](/pt-BR/reference/data-types/geo).
+
+**Exemplo**
+
+```sql
+SELECT MVTEncodeGeom((13.37, 52.52)::Point, 10, 550, 335) AS pixel
+```
+
+```text
+┌─pixel──────┐
+│ (124,3384) │
+└────────────┘
+```
+
+<div id="mvtencode">
+  ## MVTEncode
+</div>
+
+Codifica um grupo de feições em uma camada binária do Mapbox Vector Tile. Esta é a contraparte agregada da função escalar
+`MVTEncodeGeom`. Cada linha de entrada se torna uma feição; há suporte para geometrias de ponto, linha e polígono.
+
+O argumento `geometry` é um `Geometry` de coordenadas no espaço do tile, normalmente produzido por `MVTEncodeGeom`. Linhas cuja
+geometria é `NULL` (por exemplo, recortadas por `MVTEncodeGeom`) são ignoradas. O argumento opcional `properties` é uma
+tupla nomeada cujos nomes dos elementos se tornam as chaves de atributo da feição e cujos tipos dos elementos determinam os tipos
+de valor do tile vetorial.
+
+O resultado são os bytes brutos de um tile de camada única. Um grupo vazio produz um tile vazio. Este é o análogo de
+PostGIS `ST_AsMVT`.
+
+**Sintaxe**
+
+```sql
+MVTEncode(layer_name[, extent[, feature_id_name[, stringify_unsupported]]])(geometry[, properties])
+```
+
+**Parâmetros**
+
+* `layer_name` — Nome da camada do tile vetorial. [`String`](/pt-BR/reference/data-types/string).
+* `extent` — Extensão do tile, em pixels por lado, no intervalo `[1, 2147483647]`. O padrão é `4096`. [`UInt32`](/pt-BR/reference/data-types/int-uint).
+* `feature_id_name` — Nome opcional de um elemento inteiro sem sinal da tupla `properties`, emitido como o `id` da feição MVT (um `UInt64`) em vez de como um atributo. Inteiros com sinal são rejeitados. Um `id` `NULL` é omitido para essa feição. Os parâmetros são posicionais; portanto, para usar `feature_id_name`, é preciso informar `extent`. [`String`](/pt-BR/reference/data-types/string).
+* `stringify_unsupported` — flag opcional (`0`/`1`, padrão `0`); quando `1`, tipos de propriedade sem suporte direto (por exemplo, inteiros grandes, `UUID`, `Decimal`) são codificados como `string_value` textual em vez de gerar um erro. [`UInt8`](/pt-BR/reference/data-types/int-uint).
+
+**Argumentos**
+
+* `geometry` — Geometria no espaço do tile, por exemplo, gerada por `MVTEncodeGeom`. [`Geometry`](/pt-BR/reference/data-types/geo).
+* `properties` — Tupla nomeada opcional de atributos da feição. Os nomes dos elementos se tornam chaves de atributo. [`Tuple`](/pt-BR/reference/data-types/tuple).
+
+**Valor retornado**
+
+Retorna o conteúdo binário de um Mapbox Vector Tile com uma única camada. [`String`](/pt-BR/reference/data-types/string).
+
+<div id="property-types">
+  ### Tipos de propriedade
+</div>
+
+Cada elemento de propriedade é codificado como a variante `Value` do Mapbox Vector Tile correspondente ao seu tipo no ClickHouse:
+
+| Tipo do ClickHouse                                             | Tipo de valor do tile vetorial |
+| -------------------------------------------------------------- | ---------------------------- |
+| `String` / `FixedString`                                       | `string_value`               |
+| `Float32` / `BFloat16`                                         | `float_value`                |
+| `Float64`                                                      | `double_value`               |
+| `Bool`                                                         | `bool_value`                 |
+| `Int8` / `Int16` / `Int32` / `Int64` / `Date32`                | `sint_value`                 |
+| `UInt8` / `UInt16` / `UInt32` / `UInt64` / `Date` / `DateTime` | `uint_value`                 |
+
+Os tipos podem ser encapsulados em `Nullable` e/ou `LowCardinality`. Um valor `NULL` omite esse atributo da feição, pois o
+formato tile vetorial não tem valor nulo. Qualquer outro tipo de propriedade gera uma exceção, a menos que `stringify_unsupported` esteja definido, caso em
+que ele é codificado como `string_value` textual.
+
+Valores de propriedade idênticos são internados no pool compartilhado de valores da camada, de modo que um valor que aparece em muitas feições é
+armazenado apenas uma vez.
+
+<div id="naming-the-properties-tuple">
+  ### Nomeando a tupla de propriedades
+</div>
+
+A tupla de propriedades deve ter nomes de elementos explícitos. Os aliases de coluna dentro de `tuple(...)` **não** são propagados para os nomes dos elementos da tupla,
+portanto nomeie os elementos com um `CAST`:
+
+```sql
+tuple(count(), any(id))::Tuple(cluster_count UInt64, id String)
+```
+
+<div id="clustering">
+  ### Agrupamento
+</div>
+
+O agrupamento é expresso em SQL, não pela função. Como `MVTEncodeGeom` arredonda para pixels inteiros, agrupar pela
+geometria do pixel mescla geometrias coincidentes; agregue o grupo em uma subconsulta e, em seguida, passe uma linha por agrupamento para
+`MVTEncode`:
+
+```sql
+SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)) AS tile
+FROM
+(
+    SELECT MVTEncodeGeom((lon, lat)::Point, 10, 550, 335) AS geom, count() AS cluster_count
+    FROM points
+    GROUP BY geom
+)
+SETTINGS allow_suspicious_types_in_group_by = 1;
+```
+
+Agrupar por um valor `Geometry` exige `allow_suspicious_types_in_group_by = 1`, porque o agrupamento pelo tipo `Geometry`
+baseado em `Variant` é restringido por padrão. Omita o `GROUP BY` interno (e `count()`) para gerar uma feição por linha de entrada
+em vez de feições agrupadas.
+
+<div id="mvtboundingbox">
+  ## MVTBoundingBox
+</div>
+
+Retorna a caixa delimitadora geográfica do tile slippy-map identificado por `zoom`, `tile_x` e `tile_y` como uma tupla
+`(min_lon, min_lat, max_lon, max_lat)` em graus.
+
+Use-a para restringir linhas a um tile enquanto filtra diretamente pelas colunas `longitude`/`latitude` — assim, uma chave primária ou
+índice nessas colunas pode ser usado — em vez de recalcular a projeção Web Mercator para cada linha. A `margin` opcional
+expande a caixa em todos os lados por essa fração do tamanho do tile; defina-a como `buffer / extent` para cobrir o buffer de recorte de
+`MVTEncodeGeom`.
+
+**Sintaxe**
+
+```sql
+MVTBoundingBox(zoom, tile_x, tile_y[, margin])
+```
+
+**Argumentos**
+
+* `zoom` — Nível de zoom do mapa Slippy, no intervalo `[0, 32]`. [`UInt8`](/pt-BR/reference/data-types/int-uint).
+* `tile_x` — Índice da coluna do tile, no intervalo `[0, 2^zoom - 1]`. [`UInt32`](/pt-BR/reference/data-types/int-uint).
+* `tile_y` — Índice da linha do tile, no intervalo `[0, 2^zoom - 1]`. [`UInt32`](/pt-BR/reference/data-types/int-uint).
+* `margin` — Fração opcional do tamanho do tile usada para expandir a caixa em todos os lados. O padrão é `0`. [`Float64`](/pt-BR/reference/data-types/float).
+
+**Valor retornado**
+
+Retorna a caixa delimitadora do tile como uma tupla `(min_lon, min_lat, max_lon, max_lat)` em graus. [`Tuple(Float64, Float64, Float64, Float64)`](/pt-BR/reference/data-types/tuple).
+
+**Exemplo**
+
+```sql
+SELECT MVTBoundingBox(0, 0, 0) AS bbox
+```
+
+```text
+┌─bbox────────────────────────────────────────────┐
+│ (-180,-85.05112877980659,180,85.05112877980659)  │
+└──────────────────────────────────────────────────┘
+```
+
+<div id="mvtboundingboxmercator">
+  ## MVTBoundingBoxMercator
+</div>
+
+A contraparte em Web Mercator de `MVTBoundingBox`. Retorna a
+caixa delimitadora do tile no espaço completo de coordenadas Web Mercator em `UInt32`, usado internamente por `MVTEncodeGeom`, como uma tupla
+`(min_x, min_y, max_x, max_y)`. O eixo y cresce para baixo (norte na parte superior). Destina-se a tabelas que materializam
+colunas de coordenadas Mercator e criam índices sobre elas, em vez de `longitude`/`latitude`.
+
+**Sintaxe**
+
+```sql
+MVTBoundingBoxMercator(zoom, tile_x, tile_y[, margin])
+```
+
+**Argumentos**
+
+Igual a [`MVTBoundingBox`](#mvtboundingbox).
+
+**Valor retornado**
+
+Retorna a caixa delimitadora do tile como uma tupla `(min_x, min_y, max_x, max_y)` em coordenadas Web Mercator. [`Tuple(Float64, Float64, Float64, Float64)`](/pt-BR/reference/data-types/tuple).
+
+**Exemplo**
+
+```sql
+SELECT MVTBoundingBoxMercator(1, 0, 0) AS bbox
+```
+
+```text
+┌─bbox────────────────────────┐
+│ (0,0,2147483648,2147483648)  │
+└──────────────────────────────┘
+```
+
+<div id="restricting-rows-to-a-tile">
+  ## Restringindo linhas a um tile
+</div>
+
+Um tile deve conter apenas a geometria que pertence a ele. Isso é expresso da melhor forma em duas etapas complementares: um predicado barato de caixa delimitadora,
+que usa índice, na cláusula `WHERE` (desempenho), e o recorte feito por `MVTEncodeGeom` (correção).
+O recorte descarta a geometria fora do tile; assim, mesmo um predicado de caixa delimitadora pouco restritivo não deixa vazar geometria de fora do tile para
+o resultado.
+
+```sql
+WITH
+    1 AS buffer,
+    4096 AS extent,
+    MVTBoundingBox({z:UInt8}, {x:UInt32}, {y:UInt32}, buffer / extent) AS bounding_box   -- margin matches the clip buffer
+SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64))
+FROM
+(
+    SELECT MVTEncodeGeom((lon, lat)::Point, {z:UInt8}, {x:UInt32}, {y:UInt32}) AS geom, count() AS cluster_count
+    FROM points
+    WHERE lon BETWEEN bounding_box.1 AND bounding_box.3 AND lat BETWEEN bounding_box.2 AND bounding_box.4   -- index-using prefilter
+    GROUP BY geom
+)
+SETTINGS allow_suspicious_types_in_group_by = 1
+```
+
+O predicado de caixa delimitadora é apenas um pré-filtro aproximado; o limite exato do tile é determinado pelo recorte de
+`MVTEncodeGeom`. Passe `clip => false` (o sétimo argumento) para `MVTEncodeGeom` para desativar o recorte e depender
+apenas do predicado `WHERE`.
+
+<div id="serving-tiles-over-http">
+  ## Disponibilizando tiles via HTTP
+</div>
+
+O ClickHouse não expõe um endpoint de tile por padrão: a interface HTTP só aceita consultas em `/`. Uma URL limpa
+`/tile/{z}/{x}/{y}` é adicionada pelo operador com um [handler de consulta predefinida](/pt-BR/concepts/features/interfaces/http) na
+configuração do servidor. A `url` do handler usa a forma `regex:` para capturar os segmentos do caminho, associá-los aos
+parâmetros da consulta e retornar os bytes com `FORMAT RawBLOB`.
+
+No caso mais simples, a tabela tem uma coluna `Geometry` e o handler retorna uma feição por linha — `MVTEncodeGeom`
+projeta cada geometria no tile solicitado e a recorta, de modo que as linhas fora do tile são descartadas automaticamente:
+
+```xml
+<http_handlers>
+    <rule>
+        <methods>GET</methods>
+        <url><![CDATA[regex:/tile/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)]]></url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>
+                SELECT MVTEncode('shapes')(
+                    MVTEncodeGeom(geom, {z:UInt8}, {x:UInt32}, {y:UInt32}),
+                    tuple(id, name)::Tuple(id UInt32, name String))
+                FROM shapes
+                FORMAT RawBLOB
+            </query>
+            <content_type>application/vnd.mapbox-vector-tile</content_type>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers>
+```
+
+Aqui, `shapes` é uma tabela com uma coluna `geom Geometry` (qualquer combinação de pontos, linhas e polígonos). Um `GET /tile/10/550/335`
+retorna o tile codificado.
+
+Para dados de pontos, isso funciona igualmente bem com colunas simples de `longitude`/`latitude`, construindo o ponto diretamente com
+`MVTEncodeGeom((lon, lat)::Point, …)`. Para agrupar feições coincidentes ou adicionar um pré-filtro de caixa delimitadora com uso de índice
+em tabelas grandes, estenda a consulta interna como mostrado em [Clustering](#clustering) e
+[Restricting rows to a tile](#restricting-rows-to-a-tile).
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+* A projeção Web Mercator limita a latitude a `±85.05112878°` e não lida com entradas que cruzam o antimeridiano.
+
+* **O recorte de polígonos não garante uma saída MVT válida.** O recorte corrige a orientação e o fechamento dos anéis, mas não as autointerseções. Portanto, um anel autointersectante (&quot;gravata-borboleta&quot;) não é reparado: dependendo de como ele intersecta o tile, ele é emitido sem alterações (ainda inválido) ou descartado como `NULL`. Por exemplo, uma gravata-borboleta inteiramente dentro do tile é descartada, enquanto os mesmos quatro cantos, organizados como um anel simples, são mantidos:
+
+```sql
+-- self-intersecting ring -> dropped (NULL)
+SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 50.0), (50.0, 40.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 1
+-- simple ring, same four corners -> kept
+SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 40.0), (50.0, 50.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 0
+```
+
+* **Geometry é recortada antes de ser arredondada para a grade de pixels inteiros.** O PostGIS primeiro ajusta a geometria à grade de pixels inteiros e depois a recorta; `MVTEncodeGeom` primeiro recorta (nas coordenadas projetadas de ponto flutuante) e depois arredonda. Perto da borda de um tile, isso pode descartar uma coordenada que, de outra forma, seria arredondada para o pixel da borda. Por exemplo, com `buffer = 0`, um ponto logo a leste da borda do tile é recortado, embora seja arredondado para o pixel da borda `4096`, que uma abordagem que arredonda primeiro manteria:
+
+```sql
+-- floating-point x ~= 4096.23 is just past the east edge (extent = 4096) -> clipped
+SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0) IS NULL;          -- 1
+-- the same point projected without clipping rounds onto the edge pixel:
+SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0, false);           -- (4096,2664)
+```

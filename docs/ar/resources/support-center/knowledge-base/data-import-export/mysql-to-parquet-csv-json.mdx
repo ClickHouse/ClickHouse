@@ -1,0 +1,100 @@
+---
+title: كيف يمكنني تصدير بيانات MySQL إلى Parquet أو CSV أو JSON باستخدام ClickHouse
+description: "تعرّف على كيفية استخدام أداة `clickhouse-local` لتصدير بيانات MySQL إلى تنسيقات مثل Parquet أو CSV أو JSON بسرعة وكفاءة."
+date: 2023-03-21
+tags: ['تنسيقات البيانات', 'تصدير البيانات']
+keywords: ['MySQL', 'Parquet', 'CSV', 'JSON']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="exporting-mysql-data-to-parquet-csv-or-json-using-clickhouse">
+  ## تصدير بيانات MySQL إلى Parquet أو CSV أو JSON باستخدام ClickHouse
+</div>
+
+تتيح أداة `clickhouse-local` قراءة البيانات من MySQL وإخراجها بسرعة وسهولة إلى العديد من التنسيقات المختلفة، بما في ذلك Parquet وCSV وJSON. سنقوم بما يلي:
+
+* استخدام [دالة الجدول `mysql`](/ar/reference/functions/table-functions/mysql) لقراءة البيانات
+* استخدام عبارة `INTO OUTFILE _filename_ FORMAT` وتحديد تنسيق الإخراج المطلوب
+
+تُعد أداة `clickhouse-local` جزءًا من الملف التنفيذي لـ ClickHouse. نزّلها باستخدام ما يلي:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+<div id="export-mysql-to-parquet">
+  ## تصدير MySQL إلى Parquet
+</div>
+
+تنشئ دالة الجدول ‏`mysql` جدولًا استنادًا إلى نتائج query مُرسَل إلى مثيل MySQL. على سبيل المثال:
+
+```bash
+SELECT *
+FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+);
+```
+
+يمكننا توجيه مخرجات هذا `query` إلى ملف باستخدام `INTO OUTFILE`. استخدم `FORMAT` لتحديد تنسيق الملف المراد إنشاؤه. لنأخذ المحتوى الكامل لجدول في MySQL، ثم نرسل محتواه إلى ملف Parquet:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.parquet'"
+```
+
+<Note>
+  بما أن اسم ملف الإخراج ينتهي بالامتداد `.parquet`، يفترض ClickHouse أننا نريد تنسيق Parquet، لذا لاحظ أننا أغفلنا عبارة `FORMAT Parquet`.
+</Note>
+
+<div id="export-mysql-to-csv">
+  ## تصدير MySQL إلى CSV
+</div>
+
+الأمر مماثل لما يحدث مع Parquet، إلا أننا هذه المرة نستخدم الامتداد `.csv` في اسم الملف. سيتعرّف ClickHouse إلى أننا نريد مخرجات مفصولة بفواصل، وهكذا ستُكتب البيانات في الملف:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.csv'"
+```
+
+<div id="export-mysql-to-json">
+  ## تصدير MySQL إلى JSON
+</div>
+
+للتصدير من MySQL إلى JSON، ما عليك سوى تغيير امتداد اسم الملف إلى `jsonl` أو `ndjson`:
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   mysql(
+    'localhost:3306',
+    'my_sql_database',
+    'my_sql_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.ndjson'"
+```
+
+من المثير للإعجاب مدى بساطة أداة `clickhouse-local` وقوتها في آنٍ واحد. يمكنك بسهولة قراءة البيانات من قاعدة بيانات مثل MySQL وتصديرها بأحد [تنسيقات الإخراج المختلفة](/ar/reference/formats/index).

@@ -1,0 +1,174 @@
+---
+description: 'Documentation des types de données à virgule flottante dans ClickHouse : Float32,
+  Float64 et BFloat16'
+sidebarTitle: 'Float32 | Float64 | BFloat16'
+slug: /sql-reference/data-types/float
+title: 'Types Float32 | Float64 | BFloat16'
+doc_type: 'reference'
+---
+
+<Note>
+  Si vous avez besoin de calculs exacts, en particulier si vous travaillez avec des données financières ou des données d’entreprise exigeant une grande précision, vous devriez envisager d’utiliser [Decimal](/fr/reference/data-types/decimal) à la place.
+
+  Les [nombres à virgule flottante](https://en.wikipedia.org/wiki/IEEE_754) peuvent produire des résultats inexacts, comme illustré ci-dessous :
+
+  ```sql
+  CREATE TABLE IF NOT EXISTS float_vs_decimal
+  (
+     my_float Float64,
+     my_decimal Decimal64(3)
+  )
+  ENGINE=MergeTree
+  ORDER BY tuple();
+
+  # Génère 1 000 000 nombres aléatoires avec 2 décimales et les stocke sous forme de float et de decimal
+  INSERT INTO float_vs_decimal SELECT round(randCanonical(), 3) AS res, res FROM system.numbers LIMIT 1000000;
+  ```
+
+  ```sql
+  SELECT sum(my_float), sum(my_decimal) FROM float_vs_decimal;
+
+  ┌──────sum(my_float)─┬─sum(my_decimal)─┐
+  │ 499693.60500000004 │      499693.605 │
+  └────────────────────┴─────────────────┘
+
+  SELECT sumKahan(my_float), sumKahan(my_decimal) FROM float_vs_decimal;
+
+  ┌─sumKahan(my_float)─┬─sumKahan(my_decimal)─┐
+  │         499693.605 │           499693.605 │
+  └────────────────────┴──────────────────────┘
+  ```
+</Note>
+
+Les types équivalents dans ClickHouse et en C sont indiqués ci-dessous :
+
+* `Float32` — `float`.
+* `Float64` — `double`.
+
+Les types à virgule flottante dans ClickHouse ont les alias suivants :
+
+* `Float32` — `FLOAT`, `REAL`, `SINGLE`.
+* `Float64` — `DOUBLE`, `DOUBLE PRECISION`.
+
+Lors de la création de tables, il est possible de spécifier des paramètres numériques pour les nombres à virgule flottante (par ex. `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), mais ClickHouse les ignore.
+
+<div id="using-floating-point-numbers">
+  ## Utilisation des nombres à virgule flottante
+</div>
+
+* Les calculs avec des nombres à virgule flottante peuvent entraîner une erreur d’arrondi.
+
+{/* */}
+
+```sql
+SELECT 1 - 0.9
+
+┌───────minus(1, 0.9)─┐
+│ 0.09999999999999998 │
+└─────────────────────┘
+```
+
+* Le résultat du calcul dépend de la méthode utilisée (du type de processeur et de l’architecture du système informatique).
+* Les calculs à virgule flottante peuvent produire des valeurs telles que l’infini (`Inf`) et &quot;pas un nombre&quot; (`NaN`). Il faut en tenir compte lors du traitement des résultats.
+* Lors de l’analyse de nombres à virgule flottante à partir de texte, le résultat peut ne pas correspondre au nombre représentable par la machine le plus proche.
+
+<div id="nan-and-inf">
+  ## NaN et Inf
+</div>
+
+Contrairement au SQL standard, ClickHouse prend en charge les catégories suivantes de nombres à virgule flottante :
+
+* `Inf` – l’infini.
+
+{/* */}
+
+```sql
+SELECT 0.5 / 0
+
+┌─divide(0.5, 0)─┐
+│            inf │
+└────────────────┘
+```
+
+* `-Inf` — Moins l’infini.
+
+{/* */}
+
+```sql
+SELECT -0.5 / 0
+
+┌─divide(-0.5, 0)─┐
+│            -inf │
+└─────────────────┘
+```
+
+* `NaN` — n’est pas un nombre.
+
+{/* */}
+
+```sql
+SELECT 0 / 0
+
+┌─divide(0, 0)─┐
+│          nan │
+└──────────────┘
+```
+
+Consultez les règles de tri des `NaN` dans la section [clause ORDER BY](/fr/reference/statements/select/order-by).
+
+<div id="nan-values-in-set-semantics">
+  ## Valeurs `NaN` dans la sémantique d’ensemble
+</div>
+
+La norme IEEE 754 définit `NaN` de sorte que la comparaison scalaire `NaN = NaN` renvoie `false`.
+ClickHouse suit cette règle pour l’opérateur `=`.
+
+Cependant, `NaN` n’est pas une valeur unique ; c’est n’importe quel motif de bits dont l’exposant est entièrement à 1 et dont la
+mantisse est non nulle. Des opérations différentes et des architectures CPU différentes peuvent produire des valeurs `NaN`
+avec des bits de signe différents ou des bits de mantisse différents. Par exemple :
+
+* `0./0.` produit un `NaN` dont le bit de signe vaut 1 sur la plupart des plateformes x86.
+* Le littéral `nan` produit un `NaN` dont le bit de signe vaut 0.
+* Après la [PR #98230](https://github.com/ClickHouse/ClickHouse/pull/98230), le code AArch64 NEON de
+  `log` renvoie un `NaN` dont le bit de signe diffère de celui du `log` scalaire de glibc pour des entrées négatives.
+
+Les tables de hachage de ClickHouse comparent les clés octet par octet. Ainsi, différents motifs de bits `NaN` sont hachés dans
+des compartiments différents et traités comme des valeurs distinctes par les opérations à sémantique d’ensemble, notamment
+`DISTINCT`, `GROUP BY`, `uniqExact`, `countDistinct` et les `JOIN` d’égalité sur une clé `Float` :
+
+```sql
+SELECT countDistinct(arrayJoin([0./0., nan, log(-1.)]));
+-- May return 2 or 3 depending on architecture and build, even though all three inputs are NaN.
+```
+
+Ceci est conforme à la norme IEEE 754 (chaque `NaN` n’est égal à aucune autre valeur, y compris à lui-même),
+mais cela peut être surprenant. Si vous avez besoin que des opérations fondées sur une sémantique d’ensemble traitent toutes les valeurs `NaN` comme égales,
+ramenez-les à une forme canonique dans la requête :
+
+```sql
+-- Replace every NaN with a single canonical NaN value
+SELECT countDistinct(if(isNaN(x), CAST('nan' AS Float64), x))
+FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
+-- Returns 1.
+
+-- Or exclude NaN values from the set entirely
+SELECT countDistinct(if(isNaN(x), NULL, x))
+FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
+-- Returns 0.
+```
+
+La même approche fonctionne pour les clés de `DISTINCT`, `GROUP BY` et `JOIN`.
+
+<div id="bfloat16">
+  ## BFloat16
+</div>
+
+`BFloat16` est un type de données à virgule flottante sur 16 bits, avec un exposant sur 8 bits, un signe et une mantisse sur 7 bits.
+Il est utile pour les applications de machine learning et d&#39;IA.
+
+ClickHouse prend en charge les conversions entre `Float32` et `BFloat16`,
+qui peuvent être effectuées à l&#39;aide des fonctions [`toFloat32()`](/fr/reference/functions/regular-functions/type-conversion-functions#toFloat32) ou [`toBFloat16`](/fr/reference/functions/regular-functions/type-conversion-functions#toBFloat16).
+
+<Note>
+  La plupart des autres opérations ne sont pas prises en charge.
+</Note>

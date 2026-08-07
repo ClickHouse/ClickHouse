@@ -1,0 +1,11 @@
+<clickhouse>
+    <logger>
+        <level>test</level>
+    </logger>
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <level>test</level>
+    </text_log>
+</clickhouse>

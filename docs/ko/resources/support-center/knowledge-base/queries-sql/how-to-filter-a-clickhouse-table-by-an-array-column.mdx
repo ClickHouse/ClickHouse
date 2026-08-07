@@ -1,0 +1,114 @@
+---
+title: 배열 컬럼으로 ClickHouse 테이블을 필터링하려면?
+description: "배열 컬럼으로 ClickHouse 테이블을 필터링하는 방법을 설명하는 기술 자료 문서입니다."
+date: 2024-12-17
+tags: ['데이터 모델링', '함수']
+keywords: ['필터', '배열 컬럼']
+---
+
+{frontMatter.description}
+
+{/* 생략 */}
+
+<div id="introduction">
+  ## 소개
+</div>
+
+배열 컬럼으로 ClickHouse 테이블을 필터링하는 일은 흔하며, ClickHouse는 배열 컬럼을 다루기 위한 다양한 [함수](/ko/reference/functions/regular-functions/array-functions)를 제공합니다.
+
+이 문서에서는 배열 컬럼으로 테이블을 필터링하는 방법에 중점을 두지만, 아래 동영상에서는 이 외에도 다양한 배열 관련 함수를 설명합니다:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JKHAdCFtYDg?si=OqS3ry1LFrOlF8Iy" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="example">
+  ## 예시
+</div>
+
+각각 문자열 배열과 정수 배열을 포함하는 두 개의 컬럼 `tags_string` 및 `tags_int`가 있는 테이블을 예시로 사용하겠습니다.
+
+* 예시용 데이터베이스와 테이블을 생성하세요.
+
+```sql
+CREATE DATABASE db1;
+```
+
+* 샘플 테이블을 생성합니다
+
+```sql
+CREATE TABLE db1.tags_table
+(
+    `id` UInt64,
+    `tags_string` Array(String),
+    `tags_int` Array(UInt64),
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+* 테이블에 샘플 데이터를 삽입하세요.
+
+```sql
+INSERT INTO db1.tags_table VALUES (1, ['tag1', 'tag2', 'tag3'], [1, 2, 3]), (2, ['tag2', 'tag3', 'tag4'], [2, 3, 4]), (3, ['tag1', 'tag3', 'tag5'], [1, 3, 5]);
+```
+
+`has(arr, elem)` 함수를 사용해 `arr` 배열에 `elem` 요소가 포함된 행만 반환되도록 테이블을 필터링합니다.
+
+`tags_string` 배열에 `tag1` 요소가 포함된 행만 반환되도록 테이블을 필터링합니다.
+
+```sql
+SELECT * FROM db1.tags_table WHERE has(tags_string, 'tag1');
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+`hasAll(arr, elems)` 함수를 사용하여 `elems` 배열의 모든 요소가 `arr` 배열에 포함된 행을 반환합니다.
+
+테이블을 필터링하여 `tags_string` 배열의 모든 요소가 `['tag1', 'tag2']` 배열에 포함된 행을 반환합니다.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAll(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+└────┴────────────────────────┴──────────┘
+```
+
+`hasAny(arr, elems)` 함수를 사용해 `elems` 배열의 요소 중 하나 이상이 `arr` 배열에 포함된 행을 반환합니다.
+
+테이블을 필터링하여 `tags_string` 배열의 요소 중 하나 이상이 `['tag1', 'tag2']` 배열에 포함된 행을 반환합니다.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAny(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+`arrayExists(lambda, arr)` 함수를 사용하면 람다 함수로 테이블을 필터링할 수 있습니다.
+
+`tags_int` 배열에서 하나 이상의 요소가 3보다 큰 행만 반환하도록 테이블을 필터링합니다.
+
+```sql
+SELECT * FROM db1.tags_table WHERE arrayExists(x -> x > 3, tags_int);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```

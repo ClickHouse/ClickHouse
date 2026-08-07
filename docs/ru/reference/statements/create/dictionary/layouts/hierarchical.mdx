@@ -1,0 +1,92 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hierarchical
+title: 'Иерархические словари'
+sidebarTitle: 'Иерархические'
+description: 'Настройка иерархических словарей со связями между родительскими и дочерними ключами.'
+doc_type: 'reference'
+---
+
+<div id="hierarchical-dictionaries">
+  ## Иерархические словари
+</div>
+
+ClickHouse поддерживает иерархические словари с [числовым ключом](/ru/reference/statements/create/dictionary/attributes#numeric-key).
+
+Рассмотрим следующую иерархию:
+
+```text
+0 (Common parent)
+│
+├── 1 (United States of America)
+│   │
+│   └── 2 (California)
+│       │
+│       └── 3 (San Francisco)
+│
+└── 4 (Great Britain)
+    │
+    └── 5 (London)
+```
+
+Эта иерархия может быть представлена в виде следующей таблицы словаря.
+
+| region&#95;id | parent&#95;region | region&#95;name          |
+| ------------- | ----------------- | ------------------------ |
+| 1             | 0                 | United States of America |
+| 2             | 1                 | California               |
+| 3             | 2                 | San Francisco            |
+| 4             | 0                 | Great Britain            |
+| 5             | 4                 | London                   |
+
+Эта таблица содержит столбец `parent_region`, в котором хранится ключ ближайшего родительского элемента.
+
+ClickHouse поддерживает иерархическое свойство для атрибутов внешних словарей. Это свойство позволяет настроить иерархический словарь так, как описано выше.
+
+Функция [dictGetHierarchy](/ru/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy) позволяет получить цепочку родительских элементов.
+
+Для нашего примера структура словаря может быть следующей:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY regions_dict
+    (
+        region_id UInt64,
+        parent_region UInt64 DEFAULT 0 HIERARCHICAL,
+        region_name String DEFAULT ''
+    )
+    PRIMARY KEY region_id
+    SOURCE(...)
+    LAYOUT(HASHED())
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <dictionary>
+        <structure>
+            <id>
+                <name>region_id</name>
+            </id>
+
+            <attribute>
+                <name>parent_region</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+                <hierarchical>true</hierarchical>
+            </attribute>
+
+            <attribute>
+                <name>region_name</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+
+        </structure>
+    </dictionary>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

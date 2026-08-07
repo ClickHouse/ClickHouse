@@ -1,0 +1,16 @@
+---
+title: 目次
+---
+
+| ページ                                                                      | 説明                                                              |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| [主キーの選び方](/ja/concepts/best-practices/choosing-a-primary-key)               | クエリ性能を最大化し、ストレージのオーバーヘッドを最小限に抑える主キーの選び方。                        |
+| [データ型の選び方](/ja/concepts/best-practices/select-data-type)                    | メモリ使用量を削減し、圧縮率を高め、クエリを高速化するための最適なデータ型を選びます。                     |
+| [materialized view を使う](/ja/concepts/best-practices/use-materialized-views) | materialized view を活用してデータを事前集計し、分析クエリを大幅に高速化します。               |
+| [JOIN を最小限に抑えて最適化する](/ja/concepts/best-practices/minimize-optimize-joins)   | ClickHouse の `JOIN` 機能を効率的に使うためのベストプラクティス。                      |
+| [パーティションキーの選び方](/ja/concepts/best-practices/partitioning-keys)              | 効率的なデータのプルーニングと高速なクエリ実行を可能にするパーティション化戦略を選びます。                   |
+| [インサート戦略の選び方](/ja/concepts/best-practices/selecting-an-insert-strategy)     | 適切なインサートパターンによって、データのインジェストのスループットを最適化し、リソース消費を抑えます。            |
+| [データスキッピングインデックス](/ja/concepts/best-practices/using-data-skipping-indices)  | セカンダリ索引を戦略的に適用し、不要なデータブロックの読み取りを避けて、フィルタ付きクエリを高速化します。           |
+| [ミューテーションを避ける](/ja/concepts/best-practices/avoid-mutations)                 | 高コストな `UPDATE`/`DELETE` 操作を不要にするスキーマとワークフローを設計し、パフォーマンスを向上させます。 |
+| [OPTIMIZE FINAL を避ける](/ja/concepts/best-practices/avoid-optimize-final)     | `OPTIMIZE FINAL` が有効な場合と逆効果になる場合を理解し、性能ボトルネックを防ぎます。             |
+| [適切な場面で JSON を使う](/ja/concepts/best-practices/json-type)                    | ClickHouse で半構造化 JSON データを扱う際に、柔軟性とパフォーマンスのバランスを取ります。           |

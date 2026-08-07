@@ -1,0 +1,53 @@
+---
+title: استعلامات RBAC الشائعة
+description: "استعلامات تساعد على منح أذونات محددة للمستخدمين."
+date: 2023-09-28
+tags: ['الأمان والمصادقة', 'إدارة Cloud']
+keywords: ['RBAC', 'استعلامات']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## المقدمة
+</div>
+
+فيما يلي بعض الاستعلامات الشائعة التي تساعد على منح المستخدمين أذونات محددة.
+
+<div id="how-do-i-grant-the-same-permissions-as-the-current-user-to-another-user">
+  ## كيف أمنح مستخدمًا آخر نفس أذونات المستخدم الحالي؟
+</div>
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-based-on-the-grants-of-the-current-user">
+  ## كيف أمنح مستخدمًا صلاحيةً محددة استنادًا إلى الامتيازات الممنوحة للمستخدم الحالي؟
+</div>
+
+في المثال أدناه، سيتمكن `another_user` من تنفيذ أوامر `SELECT` على جميع قواعد البيانات والجداول الخاصة بالمستخدم الحالي.
+
+```sql
+GRANT CURRENT GRANTS(SELECT ON *.*) TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-for-a-specific-database-based-on-the-grants-of-the-current-user">
+  ## كيف أمنح مستخدمًا صلاحيةً محددة على قاعدة بيانات معيّنة استنادًا إلى الامتيازات الممنوحة للمستخدم الحالي؟
+</div>
+
+في المثال أدناه، سيتمكن `another_user` من تنفيذ أوامر `INSERT` على جميع الجداول في `my_database`.
+
+```sql
+GRANT INSERT ON my_database.* TO another_user;
+```
+
+<div id="how-do-i-give-access-to-all-grants-for-a-specific-user-based-on-the-default-user">
+  ## كيف أمنح مستخدمًا معيّنًا جميع الامتيازات استنادًا إلى المستخدم default؟
+</div>
+
+```sql
+GRANT default_role TO another_user;
+```

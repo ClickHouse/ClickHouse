@@ -1,0 +1,3 @@
+<clickhouse>
+    <os_cpu_busy_time_threshold>1000000000000000000</os_cpu_busy_time_threshold>
+</clickhouse>

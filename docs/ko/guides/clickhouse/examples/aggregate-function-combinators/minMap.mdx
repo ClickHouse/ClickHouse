@@ -1,0 +1,73 @@
+---
+slug: '/examples/aggregate-function-combinators/minMap'
+title: 'minMap'
+description: 'minMap 조합자를 사용하는 예시'
+keywords: ['min', 'map', 'combinator', 'examples', 'minMap']
+sidebarTitle: 'minMap'
+doc_type: '참고'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`맵`](/ko/reference/functions/aggregate-functions/combinators#-map) 조합자는 [`min`](/ko/reference/functions/aggregate-functions/min)
+함수에 적용할 수 있으며, `minMap`
+집계 조합자 함수를 사용해 각 키별로 맵의 최솟값을 계산합니다.
+
+<div id="example-usage">
+  ## 예시 사용
+</div>
+
+이 예시에서는 서로 다른 시간 슬롯별 상태 코드와 해당 개수를 저장하는 테이블을 생성합니다.
+각 행에는 상태 코드와 그에 대응하는 개수가 담긴 맵이 포함됩니다. 각 시간 슬롯 내에서
+각 상태 코드의 최소 개수를 찾기 위해 `minMap`을 사용합니다.
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    minMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+`minMap` 함수는 각 타임슬롯에서 상태 코드별 최소 개수를 찾습니다. 예시는 다음과 같습니다:
+
+* 타임슬롯 &#39;2000-01-01 00:00:00&#39;의 경우:
+  * 상태 &#39;a&#39;: 15
+  * 상태 &#39;b&#39;: 25
+  * 상태 &#39;c&#39;: min(35, 45) = 35
+  * 상태 &#39;d&#39;: 55
+  * 상태 &#39;e&#39;: 65
+* 타임슬롯 &#39;2000-01-01 00:01:00&#39;의 경우:
+  * 상태 &#39;d&#39;: 75
+  * 상태 &#39;e&#39;: 85
+  * 상태 &#39;f&#39;: min(95, 105) = 95
+  * 상태 &#39;g&#39;: min(115, 125) = 115
+
+```response title="Response"
+   ┌────────────timeslot─┬─minMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':95,'g':115}       │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':35,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`min`](/ko/reference/functions/aggregate-functions/min)
+* [`맵 조합자`](/ko/reference/functions/aggregate-functions/combinators#-map)

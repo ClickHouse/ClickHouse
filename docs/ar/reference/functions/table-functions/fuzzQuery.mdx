@@ -1,0 +1,48 @@
+---
+description: 'يُجري تغييرات عشوائية على سلسلة الاستعلام المحددة.'
+sidebarTitle: 'fuzzQuery'
+slug: /sql-reference/table-functions/fuzzQuery
+title: 'fuzzQuery'
+doc_type: 'reference'
+---
+
+يُجري تغييرات عشوائية على سلسلة الاستعلام المحددة.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+fuzzQuery(query[, max_query_length[, random_seed]])
+```
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+| الوسيطة            | الوصف                                                                |
+| ------------------ | -------------------------------------------------------------------- |
+| `query`            | (String) - الاستعلام المُراد إخضاعه للاختبار العشوائي.               |
+| `max_query_length` | (UInt64) - الحد الأقصى لطول الاستعلام أثناء عملية الاختبار العشوائي. |
+| `random_seed`      | (UInt64) - بذرة عشوائية للحصول على نتائج قابلة لإعادة التكرار.       |
+
+<div id="returned_value">
+  ## القيمة المُعادة
+</div>
+
+كائن جدول بعمود واحد يحتوي على سلاسل الاستعلام المعدّلة.
+
+<div id="usage-example">
+  ## مثال استخدام
+</div>
+
+```sql
+SELECT * FROM fuzzQuery('SELECT materialize(\'a\' AS key) GROUP BY key') LIMIT 2;
+```
+
+```response
+   ┌─query──────────────────────────────────────────────────────────┐
+1. │ SELECT 'a' AS key GROUP BY key                                 │
+2. │ EXPLAIN PIPELINE compact = true SELECT 'a' AS key GROUP BY key │
+   └────────────────────────────────────────────────────────────────┘
+```

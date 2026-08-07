@@ -1,0 +1,135 @@
+---
+slug: /guides/sre/configuring-tls-acme-client
+sidebarTitle: '通过 ACME 配置 TLS 自动预配'
+title: '通过 ACME 配置 TLS 自动预配'
+description: '本指南提供了简单且精简的设置，用于配置 ClickHouse 使用 OpenSSL 证书来验证连接。'
+keywords: ['ACME 配置', 'TLS 设置', 'OpenSSL 证书', '安全连接', 'SRE 指南', 'Let`s Encrypt']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/zh/_self_managed_only_automated.mdx';
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<SelfManaged />
+
+本指南介绍如何配置 ClickHouse 以使用 [ACME](https://en.wikipedia.org/wiki/Automatic_Certificate_Management_Environment) 协议 (由 [RFC8555](https://www.rfc-editor.org/rfc/rfc8555) 定义) 。
+借助 ACME 支持，ClickHouse 可以自动从 [Let&#39;s Encrypt](https://letsencrypt.org/) 或 [ZeroSSL](https://zerossl.com/) 等提供商获取并续订证书。
+TLS 加密可保护客户端与 ClickHouse 服务器之间的传输数据，防止敏感查询及其结果被窃听。
+
+<div id="overview">
+  ## 概述
+</div>
+
+ACME 协议定义了通过 [Let&#39;s Encrypt](https://letsencrypt.org/) 或 [ZeroSSL](https://zerossl.com/) 等服务自动更新证书的流程。简而言之，作为证书申请方，ClickHouse 需要通过预定义的质询类型来验证域名所有权，才能获得证书。
+
+要启用 ACME，请配置 HTTP 和 HTTPS 端口以及 `acme` 块：
+
+```xml
+<http_port>80</http_port>
+<https_port>443</https_port>
+
+<acme>
+    <email>valid_email@example.com</email>
+    <terms_of_service_agreed>true</terms_of_service_agreed>
+    <domains>
+        <domain>example.com</domain>
+    </domains>
+</acme>
+```
+
+HTTP 端口在域名验证期间用于处理 ACME `HTTP-01` 质询请求 (有关质询类型的更多信息，请参见[此处](https://letsencrypt.org/docs/challenge-types/)) 。验证完成并签发证书后，HTTPS 端口会使用获取到的证书提供加密流量。
+
+HTTP 端口在服务器本身上不必一定是 80；可以使用 `nftables` 或类似工具重新映射。请查阅你的 ACME 提供商文档，确认 `HTTP-01` 质询接受哪些端口。
+
+在 `acme` 块中，我们定义了用于创建账户的 `email`，并接受 ACME 服务的服务条款。
+之后，唯一还需要的就是一个域名列表。
+
+<div id="current-limitations">
+  ### 当前限制
+</div>
+
+* 仅支持 `HTTP-01` 质询类型。
+* 仅支持 `RSA 2048` 密钥。
+* 暂不处理速率限制。
+
+<div id="configuration-parameters">
+  ## 配置参数
+</div>
+
+`acme` 部分中可用的配置选项：
+
+| 参数                                   | 默认值                                              | 说明                                                     |
+| ------------------------------------ | ------------------------------------------------ | ------------------------------------------------------ |
+| `zookeeper_path`                     | `/clickhouse/acme`                               | 用于存储 ACME 账户数据、证书以及 ClickHouse 节点之间协调状态的 ZooKeeper 路径。 |
+| `directory_url`                      | `https://acme-v02.api.letsencrypt.org/directory` | 用于签发证书的 ACME 目录端点。默认为 Let’s Encrypt 生产环境服务器。           |
+| `email`                              |                                                  | 用于创建和管理 ACME 账户的电子邮件地址。ACME 提供商可能会通过该地址发送到期通知和重要更新。    |
+| `terms_of_service_agreed`            | `false`                                          | 表示是否接受 ACME 提供商的服务条款。必须将其设置为 `true` 才能启用 ACME。         |
+| `domains`                            |                                                  | 需要签发 TLS 证书的域名列表。每个域名都指定为一个 `<domain>` 条目。             |
+| `refresh_certificates_before`        | `2592000` (一个月，以秒为单位)                            | 距离证书到期还有这段时间时，ClickHouse 将尝试续订证书。                      |
+| `refresh_certificates_task_interval` | `3600` (一小时，以秒为单位)                               | ClickHouse 检查证书是否需要续订的时间间隔。                            |
+
+请注意，配置默认使用 Let’s Encrypt 的生产目录。为避免因配置错误而触发请求配额限制，建议先使用[暂存目录](https://letsencrypt.org/docs/staging-environment/)测试证书签发流程。
+
+<div id="administration">
+  # 管理
+</div>
+
+<div id="initial-deployment">
+  ## 初始部署
+</div>
+
+在为包含多个副本的集群启用 ACME 客户端时，首次签发证书期间需要格外谨慎。
+
+第一个在启用 ACME 后启动的副本会立即尝试创建 ACME 订单并执行 HTTP-01 质询验证。如果当时只有部分副本在对外提供服务，质询很可能会失败，因为其他副本无法响应验证请求。
+
+如果条件允许，建议暂时将流量路由到单个副本 (例如通过调整 DNS 记录) ，让其先完成首次证书签发。证书成功签发并存储到 Keeper 后，即可在其余副本上启用 ACME。它们会自动复用现有证书，并参与后续续订。
+
+如果无法将流量路由到单个副本，另一种方法是在启用 ACME 客户端之前，先将现有证书和私钥手动上传到 Keeper。这样可以跳过初始验证步骤，并让所有副本在启动时就已具备有效证书。
+
+首次证书签发或导入完成后，证书续订无需特殊处理，因为所有副本都已在运行 ACME 客户端，并通过 Keeper 共享状态。
+
+<div id="keeper-data-structure">
+  ## Keeper 数据结构
+</div>
+
+```text
+/clickhouse/acme
+└── <acme-directory-host>
+    ├── account_private_key          # ACME 账户私钥 (PEM)
+    ├── challenges                   # 活跃的 HTTP-01 质询状态
+    └── domains
+        └── <domain-name>
+            ├── certificate          # 已颁发的 TLS 证书 (PEM)
+            └── private_key          # 域私钥 (PEM)
+```
+
+<div id="migrating-from-other-acme-clients">
+  ## 从其他 ACME 客户端迁移
+</div>
+
+可以将当前的 TLS 证书和私钥迁移到 Keeper，以简化迁移过程。
+目前，服务端仅支持 `RSA 2048` 私钥。
+
+假设我们从 `certbot` 迁移，并使用 `/etc/letsencrypt/live` 目录，则可以使用以下这组命令：
+
+```bash
+DOMAIN=example.com
+CERT_DIR=/etc/letsencrypt/live/$DOMAIN
+ZK_BASE=/clickhouse/acme/acme-v02.api.letsencrypt.org/domains/$DOMAIN
+
+clickhouse keeper-client -q "create '/clickhouse' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme/acme-v02.api.letsencrypt.org' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme/acme-v02.api.letsencrypt.org/domains' ''"
+clickhouse keeper-client -q "create '$ZK_BASE' ''"
+
+clickhouse keeper-client -q "create '$ZK_BASE/certificate' \"$(cat $CERT_DIR/fullchain.pem)\""
+clickhouse keeper-client -q "set '$ZK_BASE/certificate' \"$(cat $CERT_DIR/fullchain.pem)\""
+
+clickhouse keeper-client -q "create '$ZK_BASE/private_key' \"$(cat $CERT_DIR/privkey.pem)\""
+clickhouse keeper-client -q "set '$ZK_BASE/private_key' \"$(cat $CERT_DIR/privkey.pem)\""
+```

@@ -1,0 +1,35 @@
+---
+title: ClickHouse Cloud의 모든 노드에서 SYSTEM SQL 문 실행
+description: "`ON CLUSTER`와 `clusterAllReplicas`를 사용해 ClickHouse Cloud 서비스의 모든 노드에서 SYSTEM SQL 문과 쿼리를 실행하는 방법을 알아보세요."
+date: 2023-03-01
+tags: ['배포 및 스케일링']
+keywords: ['clusterAllReplicas']
+---
+
+{frontMatter.description}
+
+{/* TRUNCATE */}
+
+<div id="answer">
+  ## 답변
+</div>
+
+ClickHouse Cloud 서비스의 모든 노드에서 동일한 쿼리를 실행하려면 [clusterAllReplicas](/ko/reference/functions/table-functions/cluster)를 사용할 수 있습니다.
+
+예를 들어, 모든 노드의 (노드 로컬) 시스템 테이블(system table)에서 항목을 가져오려면 다음을 사용할 수 있습니다:
+
+```sql
+SELECT ... FROM clusterAllReplicas(default, system.TABLE) ...;
+```
+
+마찬가지로 [ON CLUSTER](/ko/reference/statements/distributed-ddl) 절을 사용하면 하나의 SQL 문으로 모든 노드에서 동일한 [SYSTEM SQL 문](/ko/reference/statements/system)을 실행할 수 있습니다:
+
+```sql
+SYSTEM ... ON CLUSTER default;
+```
+
+예를 들어 모든 노드에서 [파일 시스템 캐시를 삭제](/ko/reference/statements/system#drop-filesystem-cache)하려면 다음을 사용할 수 있습니다:
+
+```sql
+SYSTEM DROP FILESYSTEM CACHE ON CLUSTER default;
+```

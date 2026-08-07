@@ -1,0 +1,147 @@
+---
+alias: []
+description: 'Documentação do formato ArrowStream'
+input_format: true
+keywords: ['ArrowStream']
+output_format: true
+slug: /interfaces/formats/ArrowStream
+title: 'ArrowStream'
+doc_type: 'referência'
+---
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✔     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+`ArrowStream` é o formato no &quot;modo stream&quot; do Apache Arrow. Ele foi projetado para processamento de streams em memória.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+No exemplo abaixo, usamos o conjunto de dados `forex`, que está disponível no
+[playground SQL do ClickHouse](https://sql.clickhouse.com). Você pode se conectar a ele
+remotamente com `clickhouse-client` usando o host `sql-clickhouse.clickhouse.com`
+e o usuário `demo` (que não tem senha). A tabela `forex` está no
+banco de dados `forex`, por isso o definimos como banco de dados padrão:
+
+```bash
+clickhouse-client --secure --host sql-clickhouse.clickhouse.com --user demo --database forex
+```
+
+A tabela `forex` armazena taxas de câmbio. Podemos verificar seu tamanho e
+o nível de compressão em disco consultando [`system.columns`](/pt-BR/reference/system-tables/columns):
+
+```sql title="Query"
+SELECT
+    table,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    sum(data_compressed_bytes) / sum(data_uncompressed_bytes) AS compression_ratio
+FROM system.columns
+WHERE (database = 'forex') AND (table = 'forex')
+GROUP BY table
+ORDER BY table ASC
+```
+
+```response title="Response"
+   ┌─table─┬─compressed_size─┬─uncompressed_size─┬───compression_ratio─┐
+1. │ forex │ 63.69 GiB       │ 280.48 GiB        │ 0.22708227109363446 │
+   └───────┴─────────────────┴───────────────────┴─────────────────────┘
+```
+
+Ao contrário do formato [`Arrow`](/pt-BR/reference/formats/Arrow/Arrow) em &quot;modo de arquivo&quot;, que
+exige o resultado completo antes de poder ser lido, `ArrowStream` é entregue como uma
+sequência de lotes de registros que um consumidor pode ler de forma incremental, à medida que
+chegam. Isso o torna ideal para transmitir o resultado de uma consulta diretamente para uma
+ferramenta de visualização ou analytics sem antes materializar todo o dataset.
+
+Para transmitir o resultado, envie a consulta pela interface HTTP do ClickHouse com uma
+requisição `POST` e leia a resposta como um stream Arrow. Desabilitamos a compactação
+da saída Arrow por meio da configuração
+[`output_format_arrow_compression_method`](/pt-BR/reference/settings/formats#output_format_arrow_compression_method)
+para que os consumidores possam decodificar os lotes diretamente à medida que os recebem.
+
+A saída `ArrowStream` é binária bruta, portanto, em vez de imprimi-la no
+terminal, nós a redirecionamos para um consumidor. O stream é autodescritivo (carrega
+seu próprio esquema), então aqui o redirecionamos diretamente para o
+[`clickhouse-local`](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local), que lê os
+lotes recebidos com `--input-format ArrowStream` e faz consultas sobre eles como se fossem uma tabela.
+A tabela `forex` é grande, então restringimos a consulta remota com um predicado `WHERE`
+e um `LIMIT` para manter este exemplo pequeno:
+
+```bash
+curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
+    --data-binary "
+        SELECT
+            concat(base, '.', quote) AS base_quote,
+            datetime AS last_update,
+            CAST(bid, 'Float32') AS bid,
+            CAST(ask, 'Float32') AS ask,
+            ask - bid AS spread
+        FROM forex
+        WHERE base = 'USD' AND quote = 'CHF'
+        ORDER BY datetime ASC
+        LIMIT 5
+        FORMAT ArrowStream
+        SETTINGS output_format_arrow_compression_method='none'" \
+  | clickhouse-local --input-format ArrowStream \
+      --query "SELECT * FROM table ORDER BY last_update ASC FORMAT PrettyCompact"
+```
+
+```response title="Response"
+   ┌─base_quote─┬─────────────last_update─┬────bid─┬────ask─┬────────────────spread─┐
+1. │ USD.CHF    │ 2000-05-30 17:23:44.000 │  1.688 │ 1.6885 │ 0.0005000829696655273 │
+2. │ USD.CHF    │ 2000-05-30 17:23:46.000 │ 1.6885 │  1.689 │ 0.0004999637603759766 │
+3. │ USD.CHF    │ 2000-05-30 17:23:48.000 │ 1.6886 │ 1.6891 │ 0.0005000829696655273 │
+4. │ USD.CHF    │ 2000-05-30 17:23:49.000 │ 1.6888 │ 1.6893 │ 0.0004999637603759766 │
+5. │ USD.CHF    │ 2000-05-30 17:24:45.000 │  1.689 │ 1.6895 │ 0.0004999637603759766 │
+   └────────────┴─────────────────────────┴────────┴────────┴───────────────────────┘
+```
+
+O mesmo stream pode ser consumido de forma incremental por qualquer cliente compatível com Arrow, que
+o lê lote por lote, em vez de fazer a bufferização do resultado completo. Por exemplo,
+usando a [biblioteca Apache Arrow para JavaScript](https://arrow.apache.org/docs/js/), um
+`RecordBatchReader` retorna cada lote de registros assim que ele é transmitido pelo
+servidor:
+
+```js
+const reader = await RecordBatchReader.from(response);
+await reader.open();
+for await (const recordBatch of reader) {
+    const batchTable = new Table(recordBatch);
+    const ipcStream = tableToIPC(batchTable, 'stream');
+    const bytes = new Uint8Array(ipcStream);
+    table.update(bytes);
+}
+```
+
+Para um passo a passo completo de streaming de dados `ArrowStream` do ClickHouse para uma
+visualização em tempo real com [Perspective](https://perspective.finos.org/), consulte
+a postagem do blog
+[Streaming de visualizações em tempo real com ClickHouse, Apache Arrow e Perspective](https://clickhouse.com/blog/streaming-real-time-visualizations-clickhouse-apache-arrow-perpsective).
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>
+
+`ArrowStream` compartilha as mesmas configurações de formato do formato [`Arrow`](/pt-BR/reference/formats/Arrow/Arrow).
+
+| Configuração                                                                 | Descrição                                                                                                                                                                 | Padrão      |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `input_format_arrow_allow_missing_columns`                                   | Permite colunas ausentes ao ler formatos de entrada Arrow                                                                                                                 | `1`         |
+| `input_format_arrow_case_insensitive_column_matching`                        | Ignora maiúsculas e minúsculas ao corresponder colunas Arrow com colunas CH.                                                                                              | `0`         |
+| `input_format_arrow_import_nested`                                           | Configuração obsoleta, não faz nada.                                                                                                                                      | `0`         |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Ignora colunas com tipos não suportados durante a inferência de esquema do formato Arrow                                                                                  | `0`         |
+| `output_format_arrow_compression_method`                                     | Método de compressão do formato de saída Arrow. Codecs compatíveis: lz4&#95;frame, zstd, none (sem compressão)                                                            | `lz4_frame` |
+| `output_format_arrow_date_as_uint16`                                         | Grava valores Date como números simples de 16 bits (lidos de volta como UInt16), em vez de convertê-los para um tipo Arrow DATE32 de 32 bits (lido de volta como Date32). | `0`         |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | Usa o tipo Arrow FIXED&#95;SIZE&#95;BINARY em vez de Binary para colunas FixedString.                                                                                     | `1`         |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | Habilita a saída do tipo LowCardinality como o tipo Arrow Dicionário                                                                                                      | `0`         |
+| `output_format_arrow_string_as_string`                                       | Usa o tipo Arrow String em vez de Binary para colunas String                                                                                                              | `1`         |
+| `output_format_arrow_unsupported_types_as_binary`                            | Gera tipos sem conversão como dados binários brutos. Se for false, esses tipos gerarão a exceção UNKNOWN&#95;TYPE.                                                        | `1`         |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Sempre usa inteiros de 64 bits para índices de dicionário no formato Arrow                                                                                                | `0`         |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Usa inteiros com sinal para índices de dicionário no formato Arrow                                                                                                        | `1`         |

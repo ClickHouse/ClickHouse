@@ -1,0 +1,366 @@
+---
+description: 'Conjunto de dados com 1,3 milhão de registros de dados históricos sobre os cardápios
+  de hotéis, restaurantes e cafés, com os pratos e seus respectivos preços.'
+sidebarTitle: 'Conjunto de dados "what''s on the menu?" da New York Public Library'
+slug: /getting-started/example-datasets/menus
+title: 'Conjunto de dados "What''s on the Menu?" da New York Public Library'
+doc_type: 'guide'
+keywords: ['conjunto de dados de exemplo', 'cardápios', 'dados históricos', 'dados de amostra', 'nypl']
+---
+
+Este conjunto de dados foi criado pela New York Public Library. Ele contém dados históricos sobre os cardápios de hotéis, restaurantes e cafés, com os pratos e seus respectivos preços.
+
+Fonte: http://menus.nypl.org/data
+Os dados são de domínio público.
+
+Os dados vêm do acervo da biblioteca e podem estar incompletos, além de serem difíceis de usar em análises estatísticas. Ainda assim, também dão água na boca.
+São apenas 1,3 milhão de registros sobre pratos em cardápios — um volume de dados muito pequeno para o ClickHouse, mas ainda assim um bom exemplo.
+
+<div id="download-dataset">
+  ## Baixe o conjunto de dados
+</div>
+
+Execute o comando:
+
+```bash
+wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.tgz
+# Opção: Validar o checksum
+md5sum 2021_08_01_07_01_17_data.tgz
+# O checksum deve ser igual a: db6126724de939a5481e3160a2d67d15
+```
+
+Substitua o link pelo link atualizado de http://menus.nypl.org/data, se necessário.
+O download tem cerca de 35 MB.
+
+<div id="unpack-dataset">
+  ## Descompacte o dataset
+</div>
+
+```bash
+tar xvf 2021_08_01_07_01_17_data.tgz
+```
+
+O tamanho não comprimido é de cerca de 150 MB.
+
+Os dados são normalizados e consistem em quatro tabelas:
+
+* `Menu` — Informações sobre os menus: o nome do restaurante, a data em que o menu foi visto etc.
+* `Dish` — Informações sobre os pratos: o nome do prato junto com algumas características.
+* `MenuPage` — Informações sobre as páginas dos menus, pois cada página pertence a algum menu.
+* `MenuItem` — Um item do menu. Um prato com seu preço em uma determinada página do menu: com referências ao prato e à página do menu.
+
+<div id="create-tables">
+  ## Crie as tabelas
+</div>
+
+Usamos o tipo de dado [Decimal](/pt-BR/reference/data-types/decimal) para armazenar preços.
+
+```sql
+CREATE TABLE dish
+(
+    id UInt32,
+    name String,
+    description String,
+    menus_appeared UInt32,
+    times_appeared Int32,
+    first_appeared UInt16,
+    last_appeared UInt16,
+    lowest_price Decimal64(3),
+    highest_price Decimal64(3)
+) ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE menu
+(
+    id UInt32,
+    name String,
+    sponsor String,
+    event String,
+    venue String,
+    place String,
+    physical_description String,
+    occasion String,
+    notes String,
+    call_number String,
+    keywords String,
+    language String,
+    date String,
+    location String,
+    location_type String,
+    currency String,
+    currency_symbol String,
+    status String,
+    page_count UInt16,
+    dish_count UInt16
+) ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE menu_page
+(
+    id UInt32,
+    menu_id UInt32,
+    page_number UInt16,
+    image_id String,
+    full_height UInt16,
+    full_width UInt16,
+    uuid UUID
+) ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE menu_item
+(
+    id UInt32,
+    menu_page_id UInt32,
+    price Decimal64(3),
+    high_price Decimal64(3),
+    dish_id UInt32,
+    created_at DateTime,
+    updated_at DateTime,
+    xpos Float64,
+    ypos Float64
+) ENGINE = MergeTree ORDER BY id;
+```
+
+<div id="import-data">
+  ## Importar os dados
+</div>
+
+Para enviar os dados ao ClickHouse, execute:
+
+```bash
+clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO dish FORMAT CSVWithNames" < Dish.csv
+clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO menu FORMAT CSVWithNames" < Menu.csv
+clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO menu_page FORMAT CSVWithNames" < MenuPage.csv
+clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --date_time_input_format best_effort --query "INSERT INTO menu_item FORMAT CSVWithNames" < MenuItem.csv
+```
+
+Usamos o formato [CSVWithNames](/pt-BR/reference/formats/CSV/CSVWithNames), pois os dados estão em CSV com cabeçalho.
+
+Desativamos `format_csv_allow_single_quotes`, pois apenas aspas duplas são usadas nos campos de dados, e aspas simples podem aparecer dentro dos valores sem confundir o parser de CSV.
+
+Desativamos [input&#95;format&#95;null&#95;as&#95;default](/pt-BR/reference/settings/formats#input_format_null_as_default), pois nossos dados não contêm [NULL](/pt-BR/reference/settings/formats#input_format_null_as_default). Caso contrário, o ClickHouse tentará analisar sequências `\N` e poderá confundi-las com `\` nos dados.
+
+A configuração [date&#95;time&#95;input&#95;format best&#95;effort](/pt-BR/reference/settings/formats#date_time_input_format) permite analisar campos [DateTime](/pt-BR/reference/data-types/datetime) em uma grande variedade de formatos. Por exemplo, ISO-8601 sem segundos, como &#39;2000-01-01 01:02&#39;, será reconhecido. Sem essa configuração, apenas o formato fixo de DateTime é aceito.
+
+<div id="denormalize-data">
+  ## Desnormalize os dados
+</div>
+
+Os dados são apresentados em várias tabelas em [forma normalizada](https://en.wikipedia.org/wiki/Database_normalization#Normal_forms). Isso significa que você precisa fazer [JOIN](/pt-BR/reference/statements/select/join) se quiser consultar, por exemplo, nomes de pratos a partir de itens do menu.
+Para tarefas analíticas típicas, é muito mais eficiente trabalhar com dados já combinados por `JOIN` para evitar fazer `JOIN` toda vez. Isso é chamado de dados &quot;desnormalizados&quot;.
+
+Criaremos uma tabela `menu_item_denorm` que conterá todos os dados combinados com JOIN:
+
+```sql
+CREATE TABLE menu_item_denorm
+ENGINE = MergeTree ORDER BY (dish_name, created_at)
+AS SELECT
+    price,
+    high_price,
+    created_at,
+    updated_at,
+    xpos,
+    ypos,
+    dish.id AS dish_id,
+    dish.name AS dish_name,
+    dish.description AS dish_description,
+    dish.menus_appeared AS dish_menus_appeared,
+    dish.times_appeared AS dish_times_appeared,
+    dish.first_appeared AS dish_first_appeared,
+    dish.last_appeared AS dish_last_appeared,
+    dish.lowest_price AS dish_lowest_price,
+    dish.highest_price AS dish_highest_price,
+    menu.id AS menu_id,
+    menu.name AS menu_name,
+    menu.sponsor AS menu_sponsor,
+    menu.event AS menu_event,
+    menu.venue AS menu_venue,
+    menu.place AS menu_place,
+    menu.physical_description AS menu_physical_description,
+    menu.occasion AS menu_occasion,
+    menu.notes AS menu_notes,
+    menu.call_number AS menu_call_number,
+    menu.keywords AS menu_keywords,
+    menu.language AS menu_language,
+    menu.date AS menu_date,
+    menu.location AS menu_location,
+    menu.location_type AS menu_location_type,
+    menu.currency AS menu_currency,
+    menu.currency_symbol AS menu_currency_symbol,
+    menu.status AS menu_status,
+    menu.page_count AS menu_page_count,
+    menu.dish_count AS menu_dish_count
+FROM menu_item
+    JOIN dish ON menu_item.dish_id = dish.id
+    JOIN menu_page ON menu_item.menu_page_id = menu_page.id
+    JOIN menu ON menu_page.menu_id = menu.id;
+```
+
+<div id="validate-data">
+  ## Verifique os dados
+</div>
+
+```sql title="Query"
+SELECT count() FROM menu_item_denorm;
+```
+
+```text title="Response"
+┌─count()─┐
+│ 1329175 │
+└─────────┘
+```
+
+<div id="run-queries">
+  ## Execute algumas consultas
+</div>
+
+<div id="query-averaged-historical-prices">
+  ### Preços médios históricos dos pratos
+</div>
+
+```sql title="Query"
+SELECT
+    round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
+    count(),
+    round(avg(price), 2),
+    bar(avg(price), 0, 100, 100)
+FROM menu_item_denorm
+WHERE (menu_currency = 'Dollars') AND (d > 0) AND (d < 2022)
+GROUP BY d
+ORDER BY d ASC;
+```
+
+```text title="Response"
+┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 100, 100)─┐
+│ 1850 │     618 │                  1.5 │ █▍                           │
+│ 1860 │    1634 │                 1.29 │ █▎                           │
+│ 1870 │    2215 │                 1.36 │ █▎                           │
+│ 1880 │    3909 │                 1.01 │ █                            │
+│ 1890 │    8837 │                  1.4 │ █▍                           │
+│ 1900 │  176292 │                 0.68 │ ▋                            │
+│ 1910 │  212196 │                 0.88 │ ▊                            │
+│ 1920 │  179590 │                 0.74 │ ▋                            │
+│ 1930 │   73707 │                  0.6 │ ▌                            │
+│ 1940 │   58795 │                 0.57 │ ▌                            │
+│ 1950 │   41407 │                 0.95 │ ▊                            │
+│ 1960 │   51179 │                 1.32 │ █▎                           │
+│ 1970 │   12914 │                 1.86 │ █▋                           │
+│ 1980 │    7268 │                 4.35 │ ████▎                        │
+│ 1990 │   11055 │                 6.03 │ ██████                       │
+│ 2000 │    2467 │                11.85 │ ███████████▋                 │
+│ 2010 │     597 │                25.66 │ █████████████████████████▋   │
+└──────┴─────────┴──────────────────────┴──────────────────────────────┘
+```
+
+Considere isso com ressalvas.
+
+<div id="query-burger-prices">
+  ### Preços de hambúrgueres
+</div>
+
+```sql title="Query"
+SELECT
+    round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
+    count(),
+    round(avg(price), 2),
+    bar(avg(price), 0, 50, 100)
+FROM menu_item_denorm
+WHERE (menu_currency = 'Dollars') AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%burger%')
+GROUP BY d
+ORDER BY d ASC;
+```
+
+```text title="Response"
+┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)───────────┐
+│ 1880 │       2 │                 0.42 │ ▋                                     │
+│ 1890 │       7 │                 0.85 │ █▋                                    │
+│ 1900 │     399 │                 0.49 │ ▊                                     │
+│ 1910 │     589 │                 0.68 │ █▎                                    │
+│ 1920 │     280 │                 0.56 │ █                                     │
+│ 1930 │      74 │                 0.42 │ ▋                                     │
+│ 1940 │     119 │                 0.59 │ █▏                                    │
+│ 1950 │     134 │                 1.09 │ ██▏                                   │
+│ 1960 │     272 │                 0.92 │ █▋                                    │
+│ 1970 │     108 │                 1.18 │ ██▎                                   │
+│ 1980 │      88 │                 2.82 │ █████▋                                │
+│ 1990 │     184 │                 3.68 │ ███████▎                              │
+│ 2000 │      21 │                 7.14 │ ██████████████▎                       │
+│ 2010 │       6 │                18.42 │ ████████████████████████████████████▋ │
+└──────┴─────────┴──────────────────────┴───────────────────────────────────────┘
+```
+
+<div id="query-vodka">
+  ### Vodca
+</div>
+
+```sql title="Query"
+SELECT
+    round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
+    count(),
+    round(avg(price), 2),
+    bar(avg(price), 0, 50, 100)
+FROM menu_item_denorm
+WHERE (menu_currency IN ('Dollars', '')) AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%vodka%')
+GROUP BY d
+ORDER BY d ASC;
+```
+
+```text title="Response"
+┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)─┐
+│ 1910 │       2 │                    0 │                             │
+│ 1920 │       1 │                  0.3 │ ▌                           │
+│ 1940 │      21 │                 0.42 │ ▋                           │
+│ 1950 │      14 │                 0.59 │ █▏                          │
+│ 1960 │     113 │                 2.17 │ ████▎                       │
+│ 1970 │      37 │                 0.68 │ █▎                          │
+│ 1980 │      19 │                 2.55 │ █████                       │
+│ 1990 │      86 │                  3.6 │ ███████▏                    │
+│ 2000 │       2 │                 3.98 │ ███████▊                    │
+└──────┴─────────┴──────────────────────┴─────────────────────────────┘
+```
+
+Para encontrar vodka, temos que escrever `ILIKE '%vodka%'` — e isso certamente chama atenção.
+
+<div id="query-caviar">
+  ### Caviar
+</div>
+
+Vamos exibir os preços do caviar. Também vamos exibir o nome de algum prato com caviar.
+
+```sql title="Query"
+SELECT
+    round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
+    count(),
+    round(avg(price), 2),
+    bar(avg(price), 0, 50, 100),
+    any(dish_name)
+FROM menu_item_denorm
+WHERE (menu_currency IN ('Dollars', '')) AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%caviar%')
+GROUP BY d
+ORDER BY d ASC;
+```
+
+```text title="Response"
+┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)──────┬─any(dish_name)──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1090 │       1 │                    0 │                                  │ Caviar                                                                                                                              │
+│ 1880 │       3 │                    0 │                                  │ Caviar                                                                                                                              │
+│ 1890 │      39 │                 0.59 │ █▏                               │ Butter and caviar                                                                                                                   │
+│ 1900 │    1014 │                 0.34 │ ▋                                │ Anchovy Caviar on Toast                                                                                                             │
+│ 1910 │    1588 │                 1.35 │ ██▋                              │ 1/1 Brötchen Caviar                                                                                                                 │
+│ 1920 │     927 │                 1.37 │ ██▋                              │ ASTRAKAN CAVIAR                                                                                                                     │
+│ 1930 │     289 │                 1.91 │ ███▋                             │ Astrachan caviar                                                                                                                    │
+│ 1940 │     201 │                 0.83 │ █▋                               │ (SPECIAL) Domestic Caviar Sandwich                                                                                                  │
+│ 1950 │      81 │                 2.27 │ ████▌                            │ Beluga Caviar                                                                                                                       │
+│ 1960 │     126 │                 2.21 │ ████▍                            │ Beluga Caviar                                                                                                                       │
+│ 1970 │     105 │                 0.95 │ █▊                               │ BELUGA MALOSSOL CAVIAR AMERICAN DRESSING                                                                                            │
+│ 1980 │      12 │                 7.22 │ ██████████████▍                  │ Authentic Iranian Beluga Caviar the world's finest black caviar presented in ice garni and a sampling of chilled 100° Russian vodka │
+│ 1990 │      74 │                14.42 │ ████████████████████████████▋    │ Avocado Salad, Fresh cut avocado with caviare                                                                                       │
+│ 2000 │       3 │                 7.82 │ ███████████████▋                 │ Aufgeschlagenes Kartoffelsueppchen mit Forellencaviar                                                                               │
+│ 2010 │       6 │                15.58 │ ███████████████████████████████▏ │ "OYSTERS AND PEARLS" "Sabayon" of Pearl Tapioca with Island Creek Oysters and Russian Sevruga Caviar                                │
+└──────┴─────────┴──────────────────────┴──────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Pelo menos eles têm caviar com vodca. Muito bom.
+
+<div id="playground">
+  ## Playground online
+</div>
+
+Os dados são carregados no ClickHouse playground, [exemplo](https://sql.clickhouse.com?query_id=KB5KQJJFNBKHE5GBUJCP1B).

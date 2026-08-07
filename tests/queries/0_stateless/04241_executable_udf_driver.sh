@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# Tags: no-fasttest, no-random-settings
+# - no-fasttest: needs `cc` to compile a tiny C program
+# - no-random-settings: the executable UDF path is server-set
+#
+# This test exercises the executable UDF "driver" feature end-to-end via clickhouse-local:
+#   1. Define a driver in a config file
+#   2. `CREATE FUNCTION ... ENGINE = DockerC() AS '...'`
+#   3. Call the created function
+#   4. Simulate the driver-generated config file disappearing and verify it is recreated
+#   5. DROP FUNCTION and verify cleanup
+
+set -u
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+# Need `cc` available on the system to compile the user function body.
+if ! command -v cc >/dev/null 2>&1; then
+    echo "skipped: cc not available"
+    cat "$CUR_DIR/04241_executable_udf_driver.reference"
+    exit 0
+fi
+
+WORK_DIR=$(mktemp -d)
+trap 'rm -rf "$WORK_DIR"' EXIT
+
+DRIVER_DIR="$CUR_DIR/../../../programs/server/user_defined_executable_function_drivers"
+
+cat > "$WORK_DIR/config.xml" <<EOF
+<clickhouse>
+    <allow_experimental_executable_udf_drivers>1</allow_experimental_executable_udf_drivers>
+    <user_defined_executable_function_drivers_config>${WORK_DIR}/*_driver.xml</user_defined_executable_function_drivers_config>
+    <dynamic_user_defined_executable_functions_path>${WORK_DIR}/dyn/</dynamic_user_defined_executable_functions_path>
+    <user_defined_path>${WORK_DIR}/user_defined</user_defined_path>
+    <user_scripts_path>${WORK_DIR}/user_scripts/</user_scripts_path>
+    <path>${WORK_DIR}/data/</path>
+</clickhouse>
+EOF
+
+cat > "$WORK_DIR/docker_c_driver.xml" <<EOF
+<clickhouse>
+    <driver>
+        <name>DockerC</name>
+        <create_command>${DRIVER_DIR}/docker_c_create.sh</create_command>
+        <drop_command>${DRIVER_DIR}/docker_c_drop.sh</drop_command>
+        <env>
+            <CLICKHOUSE_C_DRIVER_FORCE_LOCAL>1</CLICKHOUSE_C_DRIVER_FORCE_LOCAL>
+        </env>
+    </driver>
+</clickhouse>
+EOF
+
+cat > "$WORK_DIR/gvisor_c_driver.xml" <<EOF
+<clickhouse>
+    <driver>
+        <name>GVisorC</name>
+        <create_command>${DRIVER_DIR}/gvisor_c_create.sh</create_command>
+        <drop_command>${DRIVER_DIR}/gvisor_c_drop.sh</drop_command>
+    </driver>
+</clickhouse>
+EOF
+
+cat > "$WORK_DIR/unsafe_c_driver.xml" <<EOF
+<clickhouse>
+    <driver>
+        <name>UnsafeC</name>
+        <create_command>${DRIVER_DIR}/unsafe_c_create.sh</create_command>
+        <drop_command>${DRIVER_DIR}/unsafe_c_drop.sh</drop_command>
+    </driver>
+</clickhouse>
+EOF
+
+mkdir -p "$WORK_DIR/user_defined" "$WORK_DIR/user_scripts" "$WORK_DIR/dyn" "$WORK_DIR/data"
+
+run() {
+    "$CLICKHOUSE_LOCAL" --config-file="$WORK_DIR/config.xml" --query "$1" 2>&1
+}
+
+echo "-- driver runtime commands"
+python3 - "$DRIVER_DIR/c_driver_common.py" <<'PY'
+import importlib.util
+import os
+import sys
+
+spec = importlib.util.spec_from_file_location("c_driver_common", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+os.environ.pop("CLICKHOUSE_C_DRIVER_CPUS", None)
+os.environ["CLICKHOUSE_C_DRIVER_POOL_SIZE"] = "7"
+print("docker_default_cpus_per_worker" if module.docker_resource_limits()["cpus"] == "1.0" else "docker_default_cpus_bad")
+
+os.environ["CLICKHOUSE_C_DRIVER_CPUS"] = "1.5"
+print("docker_cpu_override_preserved" if module.docker_resource_limits()["cpus"] == "1.5" else "docker_cpu_override_bad")
+PY
+mkdir -p "$WORK_DIR/docker_runtime" "$WORK_DIR/gvisor_runtime" "$WORK_DIR/unsafe_runtime"
+(
+    cd "$WORK_DIR/docker_runtime" &&
+    printf 'return x + y;\n' | CLICKHOUSE_C_DRIVER_COMPILE_LOCAL=1 CLICKHOUSE_C_DRIVER_SKIP_DOCKER_CONTAINER=1 "$DRIVER_DIR/docker_c_create.sh" --name test_docker_runtime --return UInt64 --args 'x UInt64, y UInt64'
+) > "$WORK_DIR/docker_runtime.xml"
+grep -q 'docker_fifo_runner.sh</command>' "$WORK_DIR/docker_runtime.xml" && echo "docker_fifo_runtime_present" || echo "docker_fifo_runtime_missing"
+grep -q 'docker exec -i' "$WORK_DIR/docker_runtime.xml" && echo "docker_exec_runtime_present" || echo "docker_exec_runtime_absent"
+grep -q 'docker run' "$WORK_DIR/docker_runtime.xml" && echo "docker_run_runtime_present" || echo "docker_run_runtime_absent"
+grep -q -- '--runtime=runsc' "$WORK_DIR/docker_runtime.xml" && echo "docker_gvisor_runtime_present" || echo "docker_gvisor_runtime_absent"
+test -s "$WORK_DIR/docker_runtime/docker_container_name" && echo "docker_container_name_present" || echo "docker_container_name_missing"
+test -x "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_runner_present" || echo "docker_fifo_runner_missing"
+grep -q 'pipe_dir=$(mktemp -d "${work_dir}/fifo.XXXXXX")' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_per_process_dir_present" || echo "docker_fifo_per_process_dir_missing"
+grep -q 'mkfifo "$pipe_dir/in" "$pipe_dir/out"' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_mkfifo_present" || echo "docker_fifo_mkfifo_missing"
+grep -q 'docker exec -d' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_detached_exec_present" || echo "docker_fifo_detached_exec_absent"
+grep -q 'docker exec -w' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_exec_present" || echo "docker_fifo_exec_absent"
+grep -q 'docker run --rm --name "$container"' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_run_present" || echo "docker_fifo_run_missing"
+grep -q '< /dev/null > "$docker_log" 2>&1 &' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_docker_stdin_closed" || echo "docker_fifo_docker_stdin_open"
+grep -q 'cat <&5 > "$pipe_dir/in"' "$WORK_DIR/docker_runtime/docker_fifo_runner.sh" && echo "docker_fifo_writer_stdin_present" || echo "docker_fifo_writer_stdin_missing"
+grep -q '<execute_direct>0</execute_direct>' "$WORK_DIR/docker_runtime.xml" && echo "docker_execute_shell" || echo "docker_execute_direct"
+
+(
+    cd "$WORK_DIR/gvisor_runtime" &&
+    printf 'return x + y;\n' | CLICKHOUSE_C_DRIVER_COMPILE_LOCAL=1 "$DRIVER_DIR/gvisor_c_create.sh" --name test_gvisor_runtime --return UInt64 --args 'x UInt64, y UInt64'
+) > "$WORK_DIR/gvisor_runtime.xml"
+grep -q 'runsc --rootless --network=none do' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_runtime_present" || echo "gvisor_runtime_missing"
+grep -q 'docker run' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_docker_present" || echo "gvisor_docker_absent"
+grep -q '<execute_direct>0</execute_direct>' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_execute_shell" || echo "gvisor_execute_direct"
+grep -q '<command_pipe_capacity>1048576</command_pipe_capacity>' "$WORK_DIR/gvisor_runtime.xml" && echo "gvisor_pipe_capacity_configured" || echo "gvisor_pipe_capacity_missing"
+
+(
+    cd "$WORK_DIR/unsafe_runtime" &&
+    printf 'return x + y;\n' | "$DRIVER_DIR/unsafe_c_create.sh" --name test_unsafe_runtime --return UInt64 --args 'x UInt64, y UInt64'
+) > "$WORK_DIR/unsafe_runtime.xml"
+grep -q '<command>user_func</command>' "$WORK_DIR/unsafe_runtime.xml" && echo "unsafe_runtime_direct" || echo "unsafe_runtime_missing"
+grep -q '<execute_direct>1</execute_direct>' "$WORK_DIR/unsafe_runtime.xml" && echo "unsafe_execute_direct" || echo "unsafe_execute_shell"
+grep -q 'docker run' "$WORK_DIR/unsafe_runtime.xml" && echo "unsafe_docker_present" || echo "unsafe_docker_absent"
+
+echo "-- create + call"
+run "
+CREATE FUNCTION test_udf_drv_add ARGUMENTS (x UInt8, y UInt8) RETURNS Int64
+    ENGINE = DockerC() AS 'return (int64_t) x + (int64_t) y;';
+SELECT test_udf_drv_add(40, 2);
+"
+
+echo "-- dynamic config exists after create"
+test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "yes" || echo "no"
+grep -q '<format>Buffers</format>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "buffers_format" || echo "bad_format"
+grep -q '<command>user_func</command>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "dynamic_command_relative" || echo "dynamic_command_absolute"
+grep -q '<execute_direct>1</execute_direct>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "dynamic_execute_direct" || echo "dynamic_execute_shell"
+grep -q '<send_chunk_header>1</send_chunk_header>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "chunk_header_enabled" || echo "chunk_header_disabled"
+grep -q '<command_pipe_capacity>' "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "pipe_capacity_configured" || echo "pipe_capacity_default"
+
+echo "-- work dir uses uuid name"
+WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_add.workdir")
+case "$WORK_DIR_NAME" in
+    ????????-????-????-????-????????????) echo "uuid_workdir_name" ;;
+    *) echo "bad_workdir_name:$WORK_DIR_NAME" ;;
+esac
+test -d "$WORK_DIR/dyn/$WORK_DIR_NAME" && echo "uuid_workdir_present" || echo "uuid_workdir_missing"
+test -d "$WORK_DIR/dyn/test_udf_drv_add.d" && echo "function_workdir_present" || echo "function_workdir_absent"
+grep -q 'setvbuf' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "setvbuf_present" || echo "setvbuf_absent"
+grep -Eq 'fread|fwrite|fgets|fflush|fputs|scanf|printf|strtoull|setvbuf' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "stdio_serde_present" || echo "stdio_serde_absent"
+grep -q 'ch_arg_0_values\[row\]' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "numeric_arg_view_present" || echo "numeric_arg_view_missing"
+grep -q 'ch_result_values\[row\] = user_function' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "numeric_result_view_present" || echo "numeric_result_view_missing"
+grep -q 'static CH_ALWAYS_INLINE int ch_process_chunk' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "chunk_loop_function_present" || echo "chunk_loop_function_missing"
+grep -q 'ch_try_set_pipe_capacity(STDIN_FILENO)' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "wrapper_pipe_capacity_present" || echo "wrapper_pipe_capacity_missing"
+grep -q 'ch_input_buffer' "$WORK_DIR/dyn/$WORK_DIR_NAME/wrapper.c" && echo "input_staging_present" || echo "input_staging_absent"
+
+echo "-- multi-row chunk call"
+run "SELECT sum(test_udf_drv_add(toUInt8(number), toUInt8(1))) FROM numbers(10);"
+
+echo "-- declared argument cast"
+run "
+CREATE FUNCTION test_udf_drv_add_u64 ARGUMENTS (x UInt64, y UInt64) RETURNS UInt64
+    ENGINE = DockerC() AS 'return x + y;';
+SELECT test_udf_drv_add_u64(1, 2);
+"
+
+echo "-- string args + return"
+run "
+CREATE FUNCTION test_udf_drv_concat ARGUMENTS (x String, y String) RETURNS String
+    ENGINE = DockerC() AS '
+        struct buf out = alloc(x.size + y.size);
+        if (out.data == NULL && out.size != 0)
+            return out;
+        char * p = (char *)out.data;
+        for (size_t i = 0; i != x.size; ++i)
+            p[i] = x.data[i];
+        for (size_t i = 0; i != y.size; ++i)
+            p[x.size + i] = y.data[i];
+        return out;
+    ';
+SELECT test_udf_drv_concat('hello ', 'world');
+SELECT length(test_udf_drv_concat('', ''));
+SELECT arrayStringConcat(groupArray(value), '') FROM
+(
+    SELECT test_udf_drv_concat(toString(number), ':') AS value
+    FROM numbers(5)
+    ORDER BY number
+);
+"
+STRING_WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_concat.workdir")
+grep -q 'struct buf alloc(size_t size)' "$WORK_DIR/dyn/$STRING_WORK_DIR_NAME/wrapper.c" && echo "string_allocator_present" || echo "string_allocator_missing"
+grep -Eq 'fread|fwrite|fgets|fflush|fputs|scanf|printf|strtoull|setvbuf' "$WORK_DIR/dyn/$STRING_WORK_DIR_NAME/wrapper.c" && echo "string_stdio_serde_present" || echo "string_stdio_serde_absent"
+
+echo "-- unsafe driver direct call"
+run "
+CREATE FUNCTION test_udf_drv_unsafe ARGUMENTS (x UInt64, y UInt64) RETURNS UInt64
+    ENGINE = UnsafeC() AS 'return x * y;';
+SELECT test_udf_drv_unsafe(6, 7);
+"
+grep -q '<command>user_func</command>' "$WORK_DIR/dyn/test_udf_drv_unsafe.xml" && echo "unsafe_dynamic_runtime_direct" || echo "unsafe_dynamic_runtime_missing"
+grep -q '<execute_direct>1</execute_direct>' "$WORK_DIR/dyn/test_udf_drv_unsafe.xml" && echo "unsafe_dynamic_execute_direct" || echo "unsafe_dynamic_execute_shell"
+
+echo "-- if not exists does not invoke driver"
+run "
+CREATE FUNCTION IF NOT EXISTS test_udf_drv_add ARGUMENTS (x UInt8, y UInt8) RETURNS Int64
+    ENGINE = DockerC() AS 'this is not valid C code';
+SELECT test_udf_drv_add(1, 2);
+"
+
+echo "-- attach-style recreate after config loss"
+rm -rf "$WORK_DIR/dyn/test_udf_drv_add.xml" "$WORK_DIR/dyn/test_udf_drv_add.yaml" "$WORK_DIR/dyn/test_udf_drv_add.workdir" "$WORK_DIR/dyn/$WORK_DIR_NAME"
+run "SELECT test_udf_drv_add(10, 5);"
+RECREATED_WORK_DIR_NAME=$(cat "$WORK_DIR/dyn/test_udf_drv_add.workdir")
+
+echo "-- query_log classifies driver-created function as executable UDF only"
+# Driver-created functions are persisted in the SQL-object storage, but they are executable UDFs and
+# must appear only in system.query_log.used_executable_user_defined_functions, not in
+# used_sql_user_defined_functions. Run this check in an isolated config with its own (fresh) data path
+# so system.query_log is created in-process - clickhouse-local does not re-attach a query_log table
+# persisted by an earlier process. The created function call goes through the query result cache
+# (use_query_cache); query_cache_nondeterministic_function_handling = 'save' lets the non-deterministic
+# executable UDF still exercise the cache determinism check that performs the classification.
+cat > "$WORK_DIR/config_query_log.xml" <<EOF
+<clickhouse>
+    <allow_experimental_executable_udf_drivers>1</allow_experimental_executable_udf_drivers>
+    <user_defined_executable_function_drivers_config>${WORK_DIR}/*_driver.xml</user_defined_executable_function_drivers_config>
+    <dynamic_user_defined_executable_functions_path>${WORK_DIR}/qlog_dyn/</dynamic_user_defined_executable_functions_path>
+    <user_defined_path>${WORK_DIR}/qlog_user_defined</user_defined_path>
+    <user_scripts_path>${WORK_DIR}/qlog_user_scripts/</user_scripts_path>
+    <path>${WORK_DIR}/qlog_data/</path>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </query_log>
+</clickhouse>
+EOF
+mkdir -p "$WORK_DIR/qlog_user_defined" "$WORK_DIR/qlog_user_scripts" "$WORK_DIR/qlog_dyn" "$WORK_DIR/qlog_data"
+"$CLICKHOUSE_LOCAL" --config-file="$WORK_DIR/config_query_log.xml" --query "
+CREATE FUNCTION test_udf_drv_qlog ARGUMENTS (x UInt8, y UInt8) RETURNS Int64
+    ENGINE = DockerC() AS 'return (int64_t) x + (int64_t) y;';
+SET log_queries = 1;
+SELECT test_udf_drv_qlog(123, 45) SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'save';
+SYSTEM FLUSH LOGS query_log;
+SELECT
+    if(has(used_executable_user_defined_functions, 'test_udf_drv_qlog'), 'executable', 'NOT_executable'),
+    if(has(used_sql_user_defined_functions, 'test_udf_drv_qlog'), 'ALSO_sql_BUG', 'sql_clean')
+FROM system.query_log
+WHERE current_database = currentDatabase() AND query LIKE '%test_udf_drv_qlog(123, 45)%' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+" 2>&1
+
+echo "-- drop removes everything"
+run "DROP FUNCTION test_udf_drv_add; DROP FUNCTION test_udf_drv_add_u64; DROP FUNCTION test_udf_drv_concat; DROP FUNCTION test_udf_drv_unsafe;"
+test -f "$WORK_DIR/dyn/test_udf_drv_add.xml" && echo "config_still_present" || echo "config_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_add.workdir" && echo "workdir_metadata_still_present" || echo "workdir_metadata_removed"
+test -d "$WORK_DIR/dyn/$RECREATED_WORK_DIR_NAME" && echo "workdir_still_present" || echo "workdir_removed"
+test -f "$WORK_DIR/user_defined/function_test_udf_drv_add.sql" && echo "sql_still_present" || echo "sql_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_add_u64.xml" && echo "u64_config_still_present" || echo "u64_config_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_add_u64.workdir" && echo "u64_workdir_metadata_still_present" || echo "u64_workdir_metadata_removed"
+test -f "$WORK_DIR/user_defined/function_test_udf_drv_add_u64.sql" && echo "u64_sql_still_present" || echo "u64_sql_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_concat.xml" && echo "string_config_still_present" || echo "string_config_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_concat.workdir" && echo "string_workdir_metadata_still_present" || echo "string_workdir_metadata_removed"
+test -d "$WORK_DIR/dyn/$STRING_WORK_DIR_NAME" && echo "string_workdir_still_present" || echo "string_workdir_removed"
+test -f "$WORK_DIR/user_defined/function_test_udf_drv_concat.sql" && echo "string_sql_still_present" || echo "string_sql_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_unsafe.xml" && echo "unsafe_config_still_present" || echo "unsafe_config_removed"
+test -f "$WORK_DIR/dyn/test_udf_drv_unsafe.workdir" && echo "unsafe_workdir_metadata_still_present" || echo "unsafe_workdir_metadata_removed"
+test -f "$WORK_DIR/user_defined/function_test_udf_drv_unsafe.sql" && echo "unsafe_sql_still_present" || echo "unsafe_sql_removed"

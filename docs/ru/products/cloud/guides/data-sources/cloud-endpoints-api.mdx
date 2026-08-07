@@ -1,0 +1,49 @@
+---
+slug: /manage/data-sources/cloud-endpoints-api
+sidebarTitle: 'IP-адреса Cloud'
+title: 'IP-адреса Cloud'
+description: 'На этой странице описаны возможности безопасности API Cloud Endpoints в ClickHouse. Здесь подробно рассказывается, как защитить ваши развертывания ClickHouse, управляя доступом с помощью механизмов аутентификации и авторизации.'
+doc_type: 'справочник'
+keywords: ['ClickHouse Cloud', 'статические IP-адреса', 'конечные точки Cloud', 'API', 'безопасность', 'исходящие IP-адреса', 'входящие IP-адреса', 'межсетевой экран']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="static-ips-api">
+  ## API статических IP-адресов
+</div>
+
+Если вам нужно получить список статических IP-адресов, вы можете использовать следующую конечную точку ClickHouse Cloud API: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). Этот API предоставляет конечные точки сервисов ClickHouse Cloud, такие как ingress/egress IP-адреса и конечные точки S3 для каждого региона и облачного провайдера.
+
+Если вы используете интеграцию, такую как MySQL или движок PostgreSQL, вам может потребоваться разрешить ClickHouse Cloud доступ к вашим инстансам. С помощью этого API можно получить публичные IP-адреса и настроить их в `firewalls` или `Authorized networks` в GCP, в `Security Groups` для Azure и AWS либо в любой другой системе управления исходящим трафиком, которую вы используете в своей инфраструктуре.
+
+Например, чтобы разрешить доступ из сервиса ClickHouse Cloud, размещённого в AWS в регионе `ap-south-1`, вы можете добавить адреса `egress_ips` для этого региона:
+
+```bash
+❯ curl -s https://api.clickhouse.cloud/static-ips.json | jq '.'
+{
+  "aws": [
+    {
+      "egress_ips": [
+        "3.110.39.68",
+        "15.206.7.77",
+        "3.6.83.17"
+      ],
+      "ingress_ips": [
+        "15.206.78.111",
+        "3.6.185.108",
+        "43.204.6.248"
+      ],
+      "region": "ap-south-1",
+      "s3_endpoints": "vpce-0a975c9130d07276d"
+    },
+...
+```
+
+Например, для экземпляра AWS RDS, работающего в `us-east-2` и которому нужно подключиться к сервису ClickHouse Cloud, должны быть настроены следующие входящие правила группы безопасности:
+
+<Image img="/images/_snippets/aws-rds-mysql.webp" size="lg" alt="Правила группы безопасности AWS" border />
+
+Для того же сервиса ClickHouse Cloud, работающего в `us-east-2`, но на этот раз подключенного к MySQL в GCP, список `Authorized networks` должен выглядеть так:
+
+<Image img="/images/_snippets/gcp-authorized-network.webp" size="md" alt="Авторизованные сети GCP" border />

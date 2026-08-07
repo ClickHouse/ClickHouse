@@ -1,0 +1,506 @@
+---
+sidebarTitle: 'الاستعلامات المتقدمة'
+keywords: ['clickhouse', 'بايثون', 'استعلام', 'متقدم']
+description: 'الاستعلامات المتقدمة باستخدام ClickHouse Connect'
+slug: /integrations/language-clients/python/advanced-querying
+title: 'الاستعلامات المتقدمة'
+doc_type: 'مرجع'
+---
+
+<div id="querycontexts">
+  ## QueryContexts
+</div>
+
+ينفّذ ClickHouse Connect الاستعلامات القياسية ضمن `QueryContext`. يحتوي `QueryContext` على البُنى الأساسية المستخدمة لبناء الاستعلامات على قاعدة بيانات ClickHouse، بالإضافة إلى الإعدادات المستخدمة لمعالجة النتيجة وتحويلها إلى `QueryResult` أو أي بنية بيانات استجابة أخرى. ويشمل ذلك الاستعلام نفسه، والمعلمات، والإعدادات، وتنسيقات القراءة، وخصائص أخرى.
+
+يمكن الحصول على `QueryContext` باستخدام طريقة العميل `create_query_context`. وتستقبل هذه الطريقة المعلمات نفسها التي تستقبلها طريقة الاستعلام الأساسية. ويمكن بعد ذلك تمرير سياق الاستعلام هذا إلى الطرق‏ `query` أو `query_df` أو `query_np` باعتباره وسيط الكلمة المفتاحية `context` بدلًا من أي من الوسائط الأخرى لهذه الطرق أو جميعها. لاحظ أن أي وسائط إضافية تُحدَّد عند استدعاء الطريقة ستتجاوز أي خصائص في `QueryContext`.
+
+أوضح Use case لـ `QueryContext` هو إرسال الاستعلام نفسه مع قيم مختلفة لمَعلمات الربط. ويمكن تحديث جميع قيم المعلمات باستدعاء الطريقة ‏`QueryContext.set_parameters` باستخدام قاموس، كما يمكن تحديث أي قيمة مفردة باستدعاء `QueryContext.set_parameter` باستخدام زوج `key` و`value` المطلوب.
+
+```python
+client.create_query_context(query='SELECT value1, value2 FROM data_table WHERE key = {k:Int32}',
+                            parameters={'k': 2},
+                            column_oriented=True)
+result = client.query(context=qc)
+assert result.result_set[1][0] == 'second_value2'
+qc.set_parameter('k', 1)
+result = test_client.query(context=qc)
+assert result.result_set[1][0] == 'first_value2'
+```
+
+لاحظ أن كائنات `QueryContext` ليست آمنة للاستخدام عبر الخيوط، ولكن يمكن الحصول على نسخة منها في بيئة متعددة الخيوط عبر استدعاء التابع `QueryContext.updated_copy`.
+
+<div id="streaming-queries">
+  ## الاستعلامات المتدفقة
+</div>
+
+يوفّر ClickHouse Connect Client عدة طرق لاسترجاع البيانات كتدفق (وهو مُنفَّذ كمُولِّد في بايثون):
+
+* `query_column_block_stream` -- يعيد بيانات query في كتل على هيئة تسلسل من الأعمدة باستخدام كائنات بايثون الأصلية
+* `query_row_block_stream` -- يعيد بيانات query على هيئة كتلة من الصفوف باستخدام كائنات بايثون الأصلية
+* `query_rows_stream` -- يعيد بيانات query كتسلسل من الصفوف باستخدام كائنات بايثون الأصلية
+* `query_np_stream` -- يعيد كل كتلة من بيانات query في ClickHouse كمصفوفة NumPy
+* `query_df_stream` -- يعيد كل كتلة من بيانات query في ClickHouse على هيئة Pandas DataFrame
+* `query_arrow_stream` -- يعيد بيانات query على هيئة PyArrow RecordBlocks
+* `query_df_arrow_stream` -- يعيد كل كتلة من بيانات query في ClickHouse على هيئة Pandas DataFrame مستند إلى Arrow أو Polars DataFrame، وفقًا للوسيط `dataframe_library` (القيمة default هي &quot;pandas&quot;).
+
+تعيد كل واحدة من هذه الطرق كائن `ContextStream`، ويجب فتحه باستخدام عبارة `with` لبدء استهلاك التدفق.
+
+<div id="data-blocks">
+  ### كتل البيانات
+</div>
+
+يعالج ClickHouse Connect جميع البيانات القادمة من طريقة `query` الأساسية كتدفق من الكتل التي يتلقاها من خادم ClickHouse. وتُنقل هذه الكتل من ClickHouse وإليه باستخدام تنسيق &quot;Native&quot; المخصص. والـ&quot;كتلة&quot; هي ببساطة تسلسل من أعمدة البيانات الثنائية، حيث يحتوي كل عمود على عدد متساوٍ من قيم البيانات من نوع البيانات المحدد. (وبما أن ClickHouse قاعدة بيانات عمودية، فهو يخزّن هذه البيانات بصيغة مشابهة.) ويتحكم في حجم الكتلة المُعادة من الاستعلام إعدادان للمستخدم يمكن ضبطهما على عدة مستويات (ملف تعريف المستخدم، أو المستخدم، أو الجلسة، أو الاستعلام). وهما:
+
+* [max&#95;block&#95;size](/ar/reference/settings/session-settings#max_block_size) -- حد حجم الكتلة بالصفوف. القيمة الافتراضية 65536.
+* [preferred&#95;block&#95;size&#95;bytes](/ar/reference/settings/session-settings#preferred_block_size_bytes) -- حد غير صارم لحجم الكتلة بالبايت. القيمة الافتراضية 1,000,0000.
+
+بغض النظر عن قيمة `preferred_block_size_setting`، لن تتجاوز أي كتلة أبدًا `max_block_size` صفًا. وبحسب نوع الاستعلام، قد تأتي الكتل الفعلية المُعادة بأي حجم. على سبيل المثال، قد تتضمن الاستعلامات على جدول موزّع يغطي عدة شظايا كتلًا أصغر جرى جلبها مباشرةً من كل شظية.
+
+عند استخدام إحدى طرائق Client `query_*_stream`، تُعاد النتائج كتلةً بكتلة. ولا يحمّل ClickHouse Connect سوى كتلة واحدة في كل مرة. ويتيح ذلك معالجة كميات كبيرة من البيانات دون الحاجة إلى تحميل مجموعة نتائج كبيرة كاملةً إلى الذاكرة. لاحظ أنه ينبغي أن يكون التطبيق مستعدًا لمعالجة أي عدد من الكتل، ولا يمكن التحكم في الحجم الدقيق لكل كتلة.
+
+<div id="http-data-buffer-for-slow-processing">
+  ### مخزن مؤقت لبيانات HTTP للمعالجة البطيئة
+</div>
+
+نظرًا لقيود بروتوكول HTTP، إذا كانت الكتل تُعالَج بمعدل أبطأ بكثير من المعدل الذي يبث به خادم ClickHouse البيانات، فسيغلق خادم ClickHouse الاتصال، مما يؤدي إلى ظهور استثناء في خيط المعالجة. ويمكن التخفيف من ذلك جزئيًا بزيادة حجم مخزن HTTP المؤقت للبث (الذي تبلغ قيمته الافتراضية 10 ميغابايت) باستخدام الإعداد الشائع `http_buffer_size`. وعادةً ما تكون قيم `http_buffer_size` الكبيرة مناسبة في هذه الحالة إذا كانت هناك ذاكرة كافية متاحة للتطبيق. وتُخزَّن البيانات في المخزن المؤقت بشكل مضغوط عند استخدام ضغط `lz4` أو `zstd`، لذا فإن استخدام نوعَي الضغط هذين يزيد الحجم الإجمالي للمخزن المؤقت المتاح.
+
+<div id="streamcontexts">
+  ### StreamContexts
+</div>
+
+تعيد كل واحدة من طرق `query_*_stream` (مثل `query_row_block_stream`) كائن `StreamContext` من ClickHouse، وهو كائن مدمج يجمع بين السياق والمولِّد في بايثون. وهذا هو الاستخدام الأساسي:
+
+```python
+with client.query_row_block_stream('SELECT pickup, dropoff, pickup_longitude, pickup_latitude FROM taxi_trips') as stream:
+    for block in stream:
+        for row in block:
+            <do something with each row of Python trip data>
+```
+
+لاحظ أن محاولة استخدام `StreamContext` من دون تعليمة `with` ستؤدي إلى حدوث خطأ. ويضمن استخدام سياق بايثون إغلاق التدفق (في هذه الحالة، استجابة HTTP متدفقة) بشكل صحيح حتى إذا لم تُستهلك جميع البيانات و/أو حدث استثناء أثناء المعالجة. كذلك، لا يمكن استخدام `StreamContext` لاستهلاك التدفق إلا مرة واحدة. وستؤدي محاولة استخدام `StreamContext` بعد الخروج منه إلى ظهور `StreamClosedError`.
+
+يمكنك استخدام الخاصية `source` في `StreamContext` للوصول إلى الكائن الأب `QueryResult`، الذي يتضمن أسماء الأعمدة وأنواعها.
+
+<div id="stream-types">
+  ### أنواع التدفق
+</div>
+
+تعيد الطريقة `query_column_block_stream` الكتلة كتسلسل من بيانات الأعمدة المخزَّنة على هيئة أنواع بيانات بايثون الأصلية. وباستخدام استعلامات `taxi_trips` أعلاه، ستكون البيانات المعادة قائمةً يكون كل عنصر فيها قائمةً أخرى (أو `tuple`) تضم كل البيانات الخاصة بالعمود المقابل. لذا فإن `block[0]` سيكون `tuple` لا يحتوي إلا على سلاسل نصية. وتُستخدم التنسيقات المعتمدة على الأعمدة غالبًا لإجراء عمليات تجميعية على جميع القيم في عمود معيّن، مثل جمع إجمالي الأجور.
+
+تعيد الطريقة `query_row_block_stream` الكتلة كتسلسل من الصفوف، كما في قواعد البيانات العلائقية التقليدية. وبالنسبة إلى رحلات التاكسي، ستكون البيانات المعادة قائمةً يكون كل عنصر فيها قائمةً أخرى تمثل صفًا من البيانات. لذا فإن `block[0]` سيحتوي على جميع الحقول (بالترتيب) لأول رحلة تاكسي، و`block[1]` سيحتوي على صف يضم جميع الحقول الخاصة برحلة التاكسي الثانية، وهكذا. وتُستخدم النتائج المعتمدة على الصفوف عادةً لأغراض العرض أو عمليات التحويل.
+
+تُعد `query_row_stream` طريقةً مريحة تنتقل تلقائيًا إلى الكتلة التالية عند التكرار عبر التدفق. وبخلاف ذلك، فهي مطابقة لـ `query_row_block_stream`.
+
+تعيد الطريقة `query_np_stream` كل كتلة على شكل مصفوفة NumPy ثنائية الأبعاد. داخليًا، تُخزَّن مصفوفات NumPy (عادةً) على هيئة أعمدة، لذلك لا حاجة إلى طرق منفصلة للصفوف أو الأعمدة. وسيُعبَّر عن &quot;shape&quot; لمصفوفة NumPy بالشكل (الأعمدة، الصفوف). وتوفّر مكتبة NumPy العديد من الطرق لمعالجة مصفوفات NumPy. لاحظ أنه إذا كانت جميع الأعمدة في الاستعلام تشترك في نوع بيانات NumPy نفسه (`dtype`)، فإن مصفوفة NumPy المعادة سيكون لها `dtype` واحد أيضًا، ويمكن إعادة تشكيلها/تدويرها من دون تغيير بنيتها الداخلية فعليًا.
+
+تعيد الطريقة `query_df_stream` كل كتلة ClickHouse على شكل Pandas DataFrame ثنائية الأبعاد. إليك مثالًا يوضّح أنه يمكن استخدام الكائن `StreamContext` كسياق بصورة مؤجلة (ولكن مرة واحدة فقط).
+
+```python
+df_stream = client.query_df_stream('SELECT * FROM hits')
+column_names = df_stream.source.column_names
+with df_stream:
+    for df in df_stream:
+        <do something with the pandas DataFrame>
+```
+
+تُرجِع الدالة `query_df_arrow_stream` كل كتلة من ClickHouse على هيئة DataFrame باستخدام backend لأنواع بيانات PyArrow. تدعم هذه الدالة كلاً من DataFrame في Pandas (الإصدار 2.x أو أحدث) وPolars عبر المعامل `dataframe_library` (وقيمته الافتراضية `"pandas"`). ويُنتج كل تكرار DataFrame مُحوَّلاً من دفعات سجلات PyArrow، مما يوفّر أداءً أفضل وكفاءة أعلى في استخدام الذاكرة لبعض أنواع البيانات.
+
+أخيرًا، تُرجِع الدالة `query_arrow_stream` نتيجة ClickHouse بتنسيق `ArrowStream` على هيئة `pyarrow.ipc.RecordBatchStreamReader` ومغلّفة داخل `StreamContext`. ويُرجِع كل تكرار في هذا stream قيمة PyArrow RecordBlock.
+
+<div id="streaming-examples">
+  ### أمثلة على البيانات المتدفقة
+</div>
+
+<div id="stream-rows">
+  #### تدفّق الصفوف
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Stream large result sets row by row
+with client.query_rows_stream("SELECT number, number * 2 as doubled FROM system.numbers LIMIT 100000") as stream:
+    for row in stream:
+        print(row)  # Process each row
+        # Output:
+        # (0, 0)
+        # (1, 2)
+        # (2, 4)
+        # ....
+```
+
+<div id="stream-row-blocks">
+  #### تدفق كتل الصفوف
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Stream in blocks of rows (more efficient than row-by-row)
+with client.query_row_block_stream("SELECT number, number * 2 FROM system.numbers LIMIT 100000") as stream:
+    for block in stream:
+        print(f"Received block with {len(block)} rows")
+        # Output:
+        # Received block with 65409 rows
+        # Received block with 34591 rows
+```
+
+<div id="stream-pandas-dataframes">
+  #### تدفق Pandas DataFrames
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Stream query results as Pandas DataFrames
+with client.query_df_stream("SELECT number, toString(number) AS str FROM system.numbers LIMIT 100000") as stream:
+    for df in stream:
+        # Process each DataFrame block
+        print(f"Received DataFrame with {len(df)} rows")
+        print(df.head(3))
+        # Output:
+        # Received DataFrame with 65409 rows
+        #    number str
+        # 0       0   0
+        # 1       1   1
+        # 2       2   2
+        # Received DataFrame with 34591 rows
+        #    number    str
+        # 0   65409  65409
+        # 1   65410  65410
+        # 2   65411  65411
+```
+
+<div id="stream-arrow-batches">
+  #### تدفق دفعات Arrow
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Stream query results as Arrow record batches
+with client.query_arrow_stream("SELECT * FROM large_table") as stream:
+    for arrow_batch in stream:
+        # Process each Arrow batch
+        print(f"Received Arrow batch with {arrow_batch.num_rows} rows")
+        # Output:
+        # Received Arrow batch with 65409 rows
+        # Received Arrow batch with 34591 rows
+```
+
+<div id="numpy-pandas-and-arrow-queries">
+  ## استعلامات NumPy وPandas وArrow
+</div>
+
+يوفّر ClickHouse Connect طرق استعلام متخصصة للعمل مع هياكل بيانات NumPy وPandas وArrow. وتتيح لك هذه الطرق استرجاع نتائج الاستعلام مباشرةً بهذه التنسيقات الشائعة للبيانات من دون تحويل يدوي.
+
+<div id="numpy-queries">
+  ### استعلامات NumPy
+</div>
+
+تعيد الطريقة `query_np` نتائج الاستعلام على شكل مصفوفة NumPy بدلًا من كائن `QueryResult` في ClickHouse Connect.
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Query returns a NumPy array
+np_array = client.query_np("SELECT number, number * 2 AS doubled FROM system.numbers LIMIT 5")
+
+print(type(np_array))
+# Output:
+# <class "numpy.ndarray">
+
+print(np_array)
+# Output:
+# [[0 0]
+#  [1 2]
+#  [2 4]
+#  [3 6]
+#  [4 8]]
+```
+
+<div id="pandas-queries">
+  ### استعلامات Pandas
+</div>
+
+تعيد الدالة `query_df` نتائج الاستعلام في صورة Pandas DataFrame بدلًا من `QueryResult` في ClickHouse Connect.
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Query returns a Pandas DataFrame
+df = client.query_df("SELECT number, number * 2 AS doubled FROM system.numbers LIMIT 5")
+
+print(type(df))
+# Output: <class "pandas.core.frame.DataFrame">
+print(df)
+# Output:
+#    number  doubled
+# 0       0        0
+# 1       1        2
+# 2       2        4
+# 3       3        6
+# 4       4        8
+```
+
+<div id="pyarrow-queries">
+  ### استعلامات PyArrow
+</div>
+
+تعيد الدالة `query_arrow` نتائج الاستعلام بصيغة PyArrow Table. وهي تستخدم تنسيق ClickHouse `Arrow` مباشرةً، لذا لا تقبل إلا ثلاث وسائط مشتركة مع الدالة الرئيسية `query`: `query` و`parameters` و`settings`. بالإضافة إلى ذلك، هناك وسيطة إضافية هي `use_strings`، وتحدد ما إذا كان Arrow Table سيعرض أنواع ClickHouse String كسلاسل نصية (إذا كانت True) أو كبايتات (إذا كانت False).
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Query returns a PyArrow Table
+arrow_table = client.query_arrow("SELECT number, toString(number) AS str FROM system.numbers LIMIT 3")
+
+print(type(arrow_table))
+# Output:
+# <class "pyarrow.lib.Table">
+
+print(arrow_table)
+# Output:
+# pyarrow.Table
+# number: uint64 not null
+# str: string not null
+# ----
+# number: [[0,1,2]]
+# str: [["0","1","2"]]
+```
+
+<div id="arrow-backed-dataframes">
+  ### DataFrames المدعومة بـ Arrow
+</div>
+
+يدعم ClickHouse Connect إنشاء DataFrame بسرعة وكفاءة في استخدام الذاكرة من نتائج Arrow عبر الطريقتين `query_df_arrow` و`query_df_arrow_stream`. وهما مجرد غلافين خفيفين حول طرق query الخاصة بـ Arrow، ويجريان تحويلات من دون نسخ إلى DataFrame حيثما أمكن:
+
+* `query_df_arrow`: ينفّذ الاستعلام باستخدام تنسيق الإخراج `Arrow` في ClickHouse ويُرجع DataFrame.
+  * بالنسبة إلى `dataframe_library='pandas'`، يُرجع DataFrame من pandas 2.x باستخدام أنواع بيانات مدعومة بـ Arrow (`pd.ArrowDtype`). ويتطلب ذلك pandas 2.x ويستفيد من مخازن من دون نسخ حيثما أمكن لتحقيق أداء ممتاز وتقليل استهلاك الذاكرة الإضافي.
+  * بالنسبة إلى `dataframe_library='polars'`، يُرجع DataFrame من Polars مُنشأ من Arrow Table (`pl.from_arrow`)، وهو بالكفاءة نفسها ويمكن أن يكون من دون نسخ بحسب البيانات.
+* `query_df_arrow_stream`: يبث النتائج على شكل تسلسل من DataFrame ‏(pandas 2.x أو Polars) مُحوَّلة من دفعات تدفق Arrow.
+
+<div id="query-to-arrow-backed-dataframe">
+  #### من الاستعلام إلى DataFrame مستند إلى Arrow
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# Query returns a Pandas DataFrame with Arrow dtypes (requires pandas 2.x)
+df = client.query_df_arrow(
+    "SELECT number, toString(number) AS str FROM system.numbers LIMIT 3",
+    dataframe_library="pandas"
+)
+
+print(df.dtypes)
+# Output:
+# number    uint64[pyarrow]
+# str       string[pyarrow]
+# dtype: object
+
+# Or use Polars
+polars_df = client.query_df_arrow(
+    "SELECT number, toString(number) AS str FROM system.numbers LIMIT 3",
+    dataframe_library="polars"
+)
+print(df.dtypes)
+# Output:
+# [UInt64, String]
+
+# Streaming into batches of DataFrames (polars shown)
+with client.query_df_arrow_stream(
+    "SELECT number, toString(number) AS str FROM system.numbers LIMIT 100000", dataframe_library="polars"
+) as stream:
+    for df_batch in stream:
+        print(f"Received {type(df_batch)} batch with {len(df_batch)} rows and dtypes: {df_batch.dtypes}")
+        # Output:
+        # Received <class 'polars.dataframe.frame.DataFrame'> batch with 65409 rows and dtypes: [UInt64, String]
+        # Received <class 'polars.dataframe.frame.DataFrame'> batch with 34591 rows and dtypes: [UInt64, String]
+```
+
+<div id="notes-and-caveats">
+  #### ملاحظات ومحاذير
+</div>
+
+* مطابقة أنواع Arrow: عند إرجاع البيانات بتنسيق Arrow، يطابق ClickHouse الأنواع مع أقرب أنواع Arrow المدعومة. بعض أنواع ClickHouse لا تملك مقابلًا أصليًا في Arrow، لذا تُعاد على هيئة بايتات خام في حقول Arrow (عادةً `BINARY` أو `FIXED_SIZE_BINARY`).
+  * أمثلة: يُمثَّل `IPv4` على هيئة Arrow `UINT32`؛ بينما يُمثَّل `IPv6` والأعداد الصحيحة الكبيرة (`Int128/UInt128/Int256/UInt256`) غالبًا على هيئة `FIXED_SIZE_BINARY`/`BINARY` مع بايتات خام.
+  * في هذه الحالات، سيحتوي عمود DataFrame على قيم بايتية تستند إلى حقل Arrow؛ وتقع على شيفرة العميل مسؤولية تفسير هذه البايتات أو تحويلها وفقًا لدلالات ClickHouse.
+* أنواع بيانات Arrow غير المدعومة (مثل UUID/ENUM كأنواع Arrow حقيقية) لا يتم إخراجها؛ بل تُمثَّل القيم باستخدام أقرب نوع Arrow مدعوم (وغالبًا على شكل بايتات ثنائية) في المخرجات.
+* متطلب Pandas: تتطلب `dtypes` المستندة إلى Arrow إصدار pandas 2.x. بالنسبة إلى إصدارات pandas الأقدم، استخدم `query_df` (غير Arrow) بدلًا من ذلك.
+* السلاسل النصية مقابل البيانات الثنائية: يتحكم الخيار `use_strings` (عندما يكون مدعومًا بواسطة إعداد الخادم `output_format_arrow_string_as_string`) فيما إذا كانت أعمدة ClickHouse `String` ستُعاد كسلاسل نصية في Arrow أو كبيانات ثنائية.
+
+<div id="mismatched-clickhousearrow-type-conversion-examples">
+  #### أمثلة على تحويل الأنواع غير المتطابقة بين ClickHouse وArrow
+</div>
+
+عندما يعيد ClickHouse الأعمدة كبيانات ثنائية خام (مثل `FIXED_SIZE_BINARY` أو `BINARY`)، تكون مسؤولية شيفرة التطبيق تحويل هذه البايتات إلى أنواع بايثون المناسبة. توضّح الأمثلة أدناه أن بعض التحويلات يمكن إجراؤها باستخدام واجهات برمجة تطبيقات لمكتبات DataFrame، بينما قد تتطلب تحويلات أخرى أساليب من بايثون الخالص مثل `struct.unpack` (وهي تضحي بالأداء لكنها تحافظ على المرونة).
+
+قد تصل أعمدة `Date` بصيغة `UINT16` (عدد الأيام منذ حقبة Unix، 1970‑01‑01). ويكون التحويل داخل DataFrame فعّالًا ومباشرًا:
+
+```python
+# Polars
+df = df.with_columns(pl.col("event_date").cast(pl.Date))
+
+# Pandas
+df["event_date"] = pd.to_datetime(df["event_date"], unit="D")
+```
+
+قد تَرِد أعمدة مثل `Int128` بتنسيق `FIXED_SIZE_BINARY` على شكل raw bytes. ويوفّر Polars دعمًا أصليًا للأعداد الصحيحة ذات 128 بت:
+
+```python
+# Polars - native support
+df = df.with_columns(pl.col("data").bin.reinterpret(dtype=pl.Int128, endianness="little"))
+```
+
+اعتبارًا من NumPy 2.3، لا يتوفر نوع بيانات عام لعدد صحيح بطول 128 بت، لذا لا بد من الرجوع إلى بايثون البحت، ويمكننا فعل شيء على النحو التالي:
+
+```python
+# Assuming we have a pandas dataframe with an Int128 column of dtype fixed_size_binary[16][pyarrow]
+
+print(df)
+# Output:
+#   str_col                                        int_128_col
+# 0    num1  b'\\x15}\\xda\\xeb\\x18ZU\\x0fn\\x05\\x01\\x00\\x00\\x00...
+# 1    num2  b'\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00...
+# 2    num3  b'\\x15\\xdfp\\x81r\\x9f\\x01\\x00\\x00\\x00\\x00\\x00\\x...
+
+print([int.from_bytes(n, byteorder="little") for n in df["int_128_col"].to_list()])
+# Output:
+# [1234567898765432123456789, 8, 456789123456789]
+```
+
+الخلاصة الأهم: يجب أن تتولى شيفرة التطبيق هذه التحويلات وفقًا لإمكانات مكتبة DataFrame المختارة ومقايضات الأداء المقبولة. وعندما لا تتوفر تحويلات مدمجة في DataFrame، تظل الأساليب المعتمدة على بايثون الخالص خيارًا متاحًا.
+
+<div id="read-formats">
+  ## تنسيقات القراءة
+</div>
+
+تتحكم تنسيقات القراءة في أنواع بيانات القيم المُعادة من طرق العميل `query` و`query_np` و`query_df`. (أما `raw_query` و`query_arrow` فلا تُعدِّلان البيانات الواردة من ClickHouse، لذلك لا ينطبق عليهما التحكم في التنسيق.) على سبيل المثال، إذا تغيّر تنسيق القراءة لـ UUID من التنسيق الافتراضي `native` إلى التنسيق البديل `string`، فستُعاد قيم عمود `UUID` في استعلام ClickHouse كسلاسل نصية (باستخدام تنسيق RFC 1422 القياسي 8-4-4-4-12) بدلًا من كائنات UUID في بايثون.
+
+يمكن أن تتضمن وسيطة &quot;نوع البيانات&quot; لأي دالة تنسيق أحرف بدل. ويكون التنسيق سلسلة واحدة بأحرف صغيرة.
+
+يمكن ضبط تنسيقات القراءة على عدة مستويات:
+
+* على المستوى العام، باستخدام الطرق المعرّفة في الحزمة `clickhouse_connect.datatypes.format`. ويتحكم ذلك في تنسيق نوع البيانات المُعدّ لجميع الاستعلامات.
+
+```python
+from clickhouse_connect.datatypes.format import set_read_format
+
+# Return both IPv6 and IPv4 values as strings
+set_read_format('IPv*', 'string')
+
+# Return all Date types as the underlying epoch second or epoch day
+set_read_format('Date*', 'int')
+```
+
+* على مستوى الاستعلام بالكامل، باستخدام وسيطة القاموس الاختيارية `query_formats`. في هذه الحالة، سيستخدم أي عمود (أو عمود فرعي) من أنواع البيانات المحددة التنسيق المُعد.
+
+```python
+# Return any UUID column as a string
+client.query('SELECT user_id, user_uuid, device_uuid from users', query_formats={'UUID': 'string'})
+```
+
+* بالنسبة إلى القيم في عمود محدد، باستخدام وسيطة القاموس الاختيارية `column_formats`. يكون المفتاح هو اسم العمود كما يعيده ClickHouse، و`format` لعمود البيانات أو قاموس &quot;format&quot; من المستوى الثاني يحتوي على اسم نوع في ClickHouse وقيمة من تنسيقات الاستعلام. ويمكن استخدام هذا القاموس الثانوي مع أنواع الأعمدة المتداخلة مثل Tuples أو Maps.
+
+```python
+# Return IPv6 values in the `dev_address` column as strings
+client.query('SELECT device_id, dev_address, gw_address from devices', column_formats={'dev_address':'string'})
+```
+
+<div id="read-format-options-python-types">
+  ### خيارات تنسيق القراءة (أنواع بايثون)
+</div>
+
+| نوع ClickHouse        | نوع بايثون الأصلي       | تنسيقات القراءة   | ملاحظات                                                                                                           |
+| --------------------- | ----------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                     | -                 |                                                                                                                   |
+| UInt64                | int                     | signed            | لا يدعم Superset حاليًا القيم الكبيرة غير الموقعة من نوع UInt64                                                   |
+| [U]Int[128,256]       | int                     | string            | الحد الأقصى لقيم int في Pandas وNumPy هو 64 بت، لذا يمكن إرجاع هذه القيم كسلاسل نصية                              |
+| BFloat16              | float                   | -                 | جميع قيم float في بايثون تكون داخليًا بدقة 64 بت                                                                  |
+| Float32               | float                   | -                 | جميع قيم float في بايثون تكون داخليًا بدقة 64 بت                                                                  |
+| Float64               | float                   | -                 |                                                                                                                   |
+| Decimal               | decimal.Decimal         | -                 |                                                                                                                   |
+| String                | string                  | bytes             | لا تحتوي أعمدة String في ClickHouse على ترميز متأصل، لذا تُستخدم أيضًا للبيانات الثنائية متغيرة الطول             |
+| FixedString           | bytes                   | string            | FixedStrings هي مصفوفات بايت ثابتة الحجم، لكنها تُعامَل أحيانًا كسلاسل نصية في بايثون                             |
+| Enum[8,16]            | string                  | string, int       | لا تقبل قيم enum في بايثون السلاسل النصية الفارغة، لذا تُعرَض جميع قيم enum إما كسلاسل نصية أو كقيمة int الأساسية |
+| Date                  | datetime.date           | int               | يخزّن ClickHouse قيم Date على أنها عدد الأيام منذ 01/01/1970. وهذه القيمة متاحة كـ int                            |
+| Date32                | datetime.date           | int               | مثل Date، ولكن لنطاق أوسع من التواريخ                                                                             |
+| DateTime              | datetime.datetime       | int               | يخزّن ClickHouse قيم DateTime كثوانٍ منذ epoch. وهذه القيمة متاحة كـ int                                          |
+| DateTime64            | datetime.datetime       | int               | datetime.datetime في بايثون محدود بدقة الميكروثانية. وتتوفر القيمة الصحيحة الخام ذات 64 بت                        |
+| Time                  | datetime.timedelta      | int, string, time | تُحفَظ النقطة الزمنية كـ Unix timestamp. وهذه القيمة متاحة كـ int                                                 |
+| Time64                | datetime.timedelta      | int, string, time | datetime.timedelta في بايثون محدود بدقة الميكروثانية. وتتوفر القيمة الصحيحة الخام ذات 64 بت                       |
+| IPv4                  | `ipaddress.IPv4Address` | string            | يمكن قراءة عناوين IP كسلاسل نصية، ويمكن إدراج السلاسل المنسقة بشكل صحيح كعناوين IP                                |
+| IPv6                  | `ipaddress.IPv6Address` | string            | يمكن قراءة عناوين IP كسلاسل نصية، ويمكن إدراج السلاسل المنسقة بشكل صحيح كعناوين IP                                |
+| Tuple                 | dict or tuple           | tuple, json       | تُعاد named tuples كقواميس افتراضيًا. ويمكن أيضًا إرجاع named tuples كسلاسل JSON                                  |
+| Map                   | dict                    | -                 |                                                                                                                   |
+| Nested                | Sequence[dict]          | -                 |                                                                                                                   |
+| UUID                  | uuid.UUID               | string            | يمكن قراءة UUIDs كسلاسل نصية منسقة وفق RFC 4122<br />                                                             |
+| JSON                  | dict                    | string            | يُعاد قاموس بايثون افتراضيًا. وسيُرجِع تنسيق `string` سلسلة JSON نصية                                             |
+| Variant               | object                  | -                 | يُرجِع نوع بايثون المطابق لنوع بيانات ClickHouse المخزَّن لهذه القيمة                                             |
+| Dynamic               | object                  | -                 | يُرجِع نوع بايثون المطابق لنوع بيانات ClickHouse المخزَّن لهذه القيمة                                             |
+
+<div id="external-data">
+  ## البيانات الخارجية
+</div>
+
+يمكن لاستعلامات ClickHouse قبول بيانات خارجية بأي تنسيق من تنسيقات ClickHouse. تُرسَل هذه البيانات الثنائية مع سلسلة الاستعلام لاستخدامها في معالجة البيانات. تجد تفاصيل ميزة البيانات الخارجية [هنا](/ar/reference/engines/table-engines/special/external-data). تقبل طُرق `query*` في العميل معاملاً اختياريًا باسم `external_data` للاستفادة من هذه الميزة. يجب أن تكون قيمة المعامل `external_data` كائنًا من نوع `clickhouse_connect.driver.external.ExternalData`. ويقبل مُنشئ هذا الكائن المعاملات التالية:
+
+| الاسم         | النوع             | الوصف                                                                                                                                         |
+| ------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| file&#95;path | str               | مسار ملف على النظام المحلي تُقرأ منه البيانات الخارجية. يجب توفير أحد الخيارين `file_path` أو `data`                                          |
+| file&#95;name | str               | اسم &quot;ملف&quot; البيانات الخارجية. إذا لم يُحدَّد، فسيُستمد من `file_path` (من دون الامتدادات)                                            |
+| data          | bytes             | البيانات الخارجية بصيغة ثنائية (بدلاً من قراءتها من ملف). يجب توفير أحد الخيارين `data` أو `file_path`                                        |
+| fmt           | str               | [تنسيق الإدخال](/ar/reference/formats/index) في ClickHouse للبيانات. القيمة الافتراضية هي `TSV`                                                  |
+| types         | str or seq of str | قائمة بأنواع بيانات الأعمدة في البيانات الخارجية. إذا كانت سلسلة نصية، فيجب فصل الأنواع بفواصل. يجب توفير أحد الخيارين `types` أو `structure` |
+| structure     | str or seq of str | قائمة بأسماء الأعمدة + أنواع البيانات في البيانات (انظر الأمثلة). يجب توفير أحد الخيارين `structure` أو `types`                               |
+| mime&#95;type | str               | نوع MIME اختياري لبيانات الملف. يتجاهل ClickHouse حاليًا هذا الترويس الفرعي في HTTP                                                           |
+
+لإرسال استعلام مع ملف CSV خارجي يحتوي على بيانات &quot;movie&quot;، ودمج هذه البيانات مع جدول `directors` الموجود مسبقًا على خادم ClickHouse:
+
+```python
+import clickhouse_connect
+from clickhouse_connect.driver.external import ExternalData
+
+client = clickhouse_connect.get_client()
+ext_data = ExternalData(file_path='/data/movies.csv',
+                        fmt='CSV',
+                        structure=['movie String', 'year UInt16', 'rating Decimal32(3)', 'director String'])
+result = client.query('SELECT name, avg(rating) FROM directors INNER JOIN movies ON directors.name = movies.director GROUP BY directors.name',
+                      external_data=ext_data).result_rows
+```
+
+يمكن إضافة ملفات بيانات خارجية إضافية إلى الكائن `ExternalData` الأوّلي باستخدام الأسلوب `add_file`، الذي يقبل المعلمات نفسها الخاصة بالمنشئ. وبالنسبة إلى HTTP، تُرسَل جميع البيانات الخارجية ضمن عملية رفع ملف `multi-part/form-data`.
+
+<div id="time-zones">
+  ## المناطق الزمنية
+</div>
+
+توجد عدة آليات لتطبيق منطقة زمنية على قيم ClickHouse DateTime وDateTime64. داخليًا، يخزّن ClickHouse server دائمًا أي كائن DateTime أو `DateTime64` على هيئة رقم غير مرتبط بمنطقة زمنية، ويمثل عدد الثواني منذ epoch، أي 1970-01-01 00:00:00 بتوقيت UTC. وبالنسبة إلى قيم `DateTime64`، قد يكون التمثيل بالميلي ثانية أو الميكروثانية أو النانوثانية منذ epoch، وذلك بحسب الدقة. ونتيجةً لذلك، فإن تطبيق أي معلومات متعلقة بالمنطقة الزمنية يحدث دائمًا على طرف العميل. لاحظ أن هذا يتطلب حسابات إضافية مؤثرة، لذلك يُنصح في التطبيقات الحساسة للأداء بالتعامل مع أنواع DateTime على أنها timestamps منذ epoch، باستثناء العرض للمستخدم والتحويل (فعلى سبيل المثال، تكون Pandas Timestamps دائمًا عددًا صحيحًا بطول 64 بت يمثل نانوثواني epoch لتحسين الأداء).
+
+عند استخدام أنواع بيانات مدركة للمنطقة الزمنية في الاستعلامات — وبخاصة الكائن `datetime.datetime` في بايثون — يطبّق `clickhouse-connect` منطقة زمنية على طرف العميل وفق قواعد الأولوية التالية:
+
+1. إذا تم تحديد المعامل الخاص بـ method للاستعلام `client_tzs`، فستُطبَّق المنطقة الزمنية الخاصة بالعمود المحدد
+2. إذا كان العمود في ClickHouse يحتوي على metadata للمنطقة الزمنية (أي إذا كان من نوع مثل DateTime64(3, &#39;America/Denver&#39;))، فستُطبَّق timezone الخاصة بعمود ClickHouse. (لاحظ أن metadata الخاصة بالمنطقة الزمنية هذه لا تكون متاحة لـ clickhouse-connect بالنسبة إلى أعمدة DateTime قبل version ‏23.2 من ClickHouse)
+3. إذا تم تحديد المعامل الخاص بـ method للاستعلام `query_tz` لهذا الاستعلام، فستُطبَّق &quot;timezone الخاصة بالاستعلام&quot;.
+4. إذا طُبّق إعداد timezone على الاستعلام أو session، فستُطبَّق تلك timezone. (هذه الوظيفة لم تُطرح بعد في ClickHouse server)
+5. وأخيرًا، إذا كان المعامل الخاص بالعميل `apply_server_timezone` مضبوطة على True (وهو الإعداد الافتراضي)، فستُطبَّق server timezone الخاصة بـ ClickHouse.
+
+لاحظ أنه إذا كانت timezone المطبّقة وفقًا لهذه القواعد هي UTC، فإن `clickhouse-connect` سيُرجع *دائمًا* كائن `datetime.datetime` في بايثون غير مرتبط بمنطقة زمنية. ويمكن بعد ذلك إضافة معلومات منطقة زمنية إضافية إلى هذا الكائن غير المرتبط بمنطقة زمنية من خلال شيفرة التطبيق عند الحاجة.

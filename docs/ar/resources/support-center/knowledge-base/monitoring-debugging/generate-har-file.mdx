@@ -1,0 +1,63 @@
+---
+date: 2025-11-11
+title: كيفية إنشاء ملف HAR لفريق الدعم
+tags: ['الأدوات والبرامج المساعدة']
+keywords: ['ملف HAR', 'أرشيف HTTP']
+description: 'يسجّل ملف HAR ‏(HTTP Archive) نشاط الشبكة في متصفحك. ويمكن أن يساعد فريق الدعم لدينا على تشخيص بطء تحميل الصفحات، أو الطلبات التي فشلت، أو مشكلات الشبكة الأخرى.'
+---
+
+{frontMatter.description}
+
+{/* اختصار */}
+
+<div id="from-google-chrome">
+  ## من Google Chrome
+</div>
+
+1. افتح أدوات المطور بالضغط على <kbd>F12</kbd> أو <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> ‏(Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> ‏(Mac).
+2. انقر على علامة التبويب &quot;Network&quot;.
+3. أعد تحميل الصفحة ثم أعِد إظهار المشكلة.
+4. من أدوات المطور، انقر على زر التنزيل.
+
+<div id="from-mozilla-firefox">
+  ## من Mozilla Firefox
+</div>
+
+1. افتح أدوات المطور بالضغط على <kbd>F12</kbd> أو <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>E</kbd> (Mac).
+2. انقر على علامة التبويب &quot;Network&quot;.
+3. أعد تحميل الصفحة ثم كرّر الخطوات التي تؤدي إلى ظهور المشكلة.
+4. من أدوات المطور، انقر بزر الماوس الأيمن داخل قائمة الطلبات وحدد &quot;Save All As HAR&quot;.
+
+<div id="from-microsoft-edge">
+  ## من Microsoft Edge
+</div>
+
+1. افتح أدوات المطور بالضغط على <kbd>F12</kbd> أو <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> (Mac).
+2. انقر على علامة التبويب &quot;Network&quot;.
+3. أعد تحميل الصفحة ثم أعد تنفيذ الخطوات التي تؤدي إلى ظهور المشكلة.
+4. من أدوات المطور، انقر بزر الماوس الأيمن داخل قائمة الشبكة واختر &quot;Save all as HAR with content&quot;.
+
+<div id="from-safari">
+  ## من Safari
+</div>
+
+1. فعّل أدوات المطور (إذا لم تكن مفعّلة بالفعل):
+   * انتقل إلى Safari &gt; Settings &gt; Advanced.
+   * حدّد &quot;Show Develop menu in menu bar&quot; في أسفل النافذة.
+2. انقر على Develop &gt; Show Web Inspector.
+3. انقر على علامة التبويب &quot;Network&quot;.
+4. أعد تحميل الصفحة ثم كرّر المشكلة.
+5. من أدوات المطور، انقر على زر &quot;Export&quot;.
+
+<div id="sending-har-file">
+  ## إرسال ملف ‎.HAR
+</div>
+
+1. أعد تسمية الملف باسم قصير وواضح (مثل: login-issue.har).
+2. اضغط الملف (اختياري، لكنه مُوصى به).
+3. أرفقه بطلب الدعم الخاص بك أو أرسله عبر البريد الإلكتروني إلى جهة اتصال الدعم المخصّصة لك.
+
+<Note>
+  قد تحتوي ملفات HAR على ملفات تعريف ارتباط الجلسة أو بيانات حساسة أخرى.
+  لا تشاركها إلا مع موظفي الدعم المخوّلين.
+</Note>

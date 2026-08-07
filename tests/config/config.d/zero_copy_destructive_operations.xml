@@ -1,0 +1,7 @@
+<clickhouse>
+    <merge_tree>
+        <disable_freeze_partition_for_zero_copy_replication>0</disable_freeze_partition_for_zero_copy_replication>
+        <disable_detach_partition_for_zero_copy_replication>0</disable_detach_partition_for_zero_copy_replication>
+        <disable_fetch_partition_for_zero_copy_replication>0</disable_fetch_partition_for_zero_copy_replication>
+    </merge_tree>
+</clickhouse>

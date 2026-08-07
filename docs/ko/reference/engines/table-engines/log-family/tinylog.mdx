@@ -1,0 +1,94 @@
+---
+description: 'TinyLog 테이블 엔진에 대한 문서'
+slug: /engines/table-engines/log-family/tinylog
+toc_priority: 34
+toc_title: 'TinyLog'
+title: 'TinyLog 테이블 엔진'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+이 엔진은 로그 엔진 계열에 속합니다. 로그 엔진의 공통 속성과 차이점은 [로그 엔진 계열](/ko/reference/engines/table-engines/log-family/index)을 참조하십시오.
+
+이 테이블 엔진은 일반적으로 한 번만 쓰는 방식으로 사용됩니다. 즉, 데이터를 한 번 기록한 뒤 필요할 때마다 여러 번 읽습니다. 예를 들어, `TinyLog` 유형의 테이블은 작은 배치 단위로 처리되는 중간 데이터를 저장하는 데 사용할 수 있습니다. 다만, 많은 수의 작은 테이블에 데이터를 저장하는 것은 비효율적입니다.
+
+쿼리는 단일 스트림에서 실행됩니다. 다시 말해, 이 엔진은 비교적 작은 테이블(약 1,000,000행 이하)을 위한 것입니다. 열어야 하는 파일 수가 더 적어 [Log](/ko/reference/engines/table-engines/log-family/log) 엔진보다 더 단순하므로, 작은 테이블이 많은 경우 이 테이블 엔진을 사용하는 것이 적합합니다.
+
+<div id="characteristics">
+  ## 특징
+</div>
+
+* **더 단순한 구조**: Log 엔진과 달리 TinyLog는 마크 파일을 사용하지 않습니다. 이로 인해 구조는 단순해지지만, 대규모 데이터셋에 대한 성능 최적화에는 제약이 있습니다.
+* **단일 스트림 쿼리**: TinyLog 테이블의 쿼리는 단일 스트림으로 실행되므로, 일반적으로 최대 1,000,000행 정도의 비교적 작은 테이블에 적합합니다.
+* **작은 테이블에 효율적**: TinyLog 엔진은 구조가 단순하므로 작은 테이블을 많이 관리할 때 유리하며, Log 엔진보다 파일 작업이 적게 필요합니다.
+
+Log 엔진과 달리 TinyLog는 마크 파일을 사용하지 않습니다. 이로 인해 구조는 단순해지지만, 더 큰 데이터셋에 대한 성능 최적화에는 제약이 있습니다.
+
+<div id="table_engines-tinylog-creating-a-table">
+  ## 테이블 생성하기
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = TinyLog
+```
+
+[CREATE TABLE](/ko/reference/statements/create/table) 쿼리에 대한 자세한 설명은 해당 참고 문서를 확인하십시오.
+
+<div id="table_engines-tinylog-writing-the-data">
+  ## 데이터 쓰기
+</div>
+
+`TinyLog` 엔진은 모든 컬럼을 하나의 파일에 저장합니다. 각 `INSERT` 쿼리마다 ClickHouse는 데이터 블록을 테이블 파일의 끝에 추가하고 컬럼을 하나씩 기록합니다.
+
+각 테이블에 대해 ClickHouse는 다음 파일을 생성합니다:
+
+* `<column>.bin`: 각 컬럼의 데이터 파일로, 직렬화되고 압축된 데이터를 포함합니다.
+
+`TinyLog` 엔진은 `ALTER UPDATE` 및 `ALTER DELETE` 작업을 지원하지 않습니다.
+
+<div id="table_engines-tinylog-example-of-use">
+  ## 사용 예시
+</div>
+
+테이블 생성:
+
+```sql
+CREATE TABLE tiny_log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = TinyLog
+```
+
+데이터 삽입:
+
+```sql
+INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+`INSERT` 쿼리 2개를 사용해 `<column>.bin` 파일 내부에 2개의 데이터 블록을 만들었습니다.
+
+ClickHouse는 데이터를 선택할 때 단일 스트림을 사용합니다. 따라서 출력에서 행 블록의 순서는 입력에서 동일한 블록의 순서와 일치합니다. 예시는 다음과 같습니다:
+
+```sql
+SELECT * FROM tiny_log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2024-12-10 13:11:58 │ REGULAR      │ The first regular message  │
+│ 2024-12-10 13:12:12 │ REGULAR      │ The second regular message │
+│ 2024-12-10 13:12:12 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```

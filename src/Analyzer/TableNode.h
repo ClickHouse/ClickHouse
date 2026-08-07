@@ -1,0 +1,186 @@
+#pragma once
+
+#include <Analyzer/HashUtils.h>
+#include <Storages/IStorage_fwd.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/TableLockHolder.h>
+
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/StorageID.h>
+
+#include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/TableExpressionModifiers.h>
+
+namespace DB
+{
+
+/** Table node represents table in query tree.
+  * Example: SELECT a FROM test_table.
+  * test_table - is identifier, that during query analysis pass must be resolved into table node.
+  */
+class TableNode;
+using TableNodePtr = std::shared_ptr<TableNode>;
+
+struct StorageSnapshot;
+using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+
+struct TemporaryTableHolder;
+using TemporaryTableHolderPtr = std::shared_ptr<TemporaryTableHolder>;
+
+struct MaterializedCTE;
+using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
+
+class TableNode : public IQueryTreeNode
+{
+public:
+    /// Construct table node with storage, storage id, storage lock, storage snapshot
+    explicit TableNode(StoragePtr storage_, StorageID storage_id_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_);
+
+    /// Construct table node with storage, storage lock, storage snapshot
+    explicit TableNode(StoragePtr storage_, TableLockHolder storage_lock_, StorageSnapshotPtr storage_snapshot_);
+
+    /// Construct table node with storage, context
+    explicit TableNode(StoragePtr storage_, const ContextPtr & context);
+
+    /// Construct table node for deferred MATERIALIZED CTE (subquery not yet resolved).
+    /// Creates StorageDummy as a placeholder; call finalizeMaterializedCTE after resolving the subquery.
+    explicit TableNode(
+        const std::string & cte_name_,
+        QueryTreeNodePtr materialized_cte_subquery_,
+        const ContextPtr & context_);
+
+    /// Replace the placeholder storage with the real StorageMemory from the temporary table holder.
+    void finalizeMaterializedCTE(TemporaryTableHolder temporary_table_holder_, const ContextPtr & context_);
+
+    /// Adopt another (canonical) MaterializedCTE for this node, replacing its own.
+    /// Used to merge duplicate materialized CTEs created for cloned WITH definitions
+    /// across UNION branches. Storage, storage id, lock, snapshot and temporary table
+    /// name are updated to the canonical CTE's; the local subquery child is kept
+    /// (it is structurally equal to the canonical's).
+    void adoptMaterializedCTE(MaterializedCTEPtr materialized_cte_, const ContextPtr & context_);
+
+    /** Update table node storage.
+      * After this call storage, storage_id, storage_lock, storage_snapshot will be updated using new storage.
+      */
+    void updateStorage(StoragePtr storage_value, const ContextPtr & context);
+
+    /// Get storage
+    const StoragePtr & getStorage() const
+    {
+        return storage;
+    }
+
+    /// Get storage id
+    const StorageID & getStorageID() const
+    {
+        return storage_id;
+    }
+
+    /// Get storage snapshot
+    const StorageSnapshotPtr & getStorageSnapshot() const
+    {
+        return storage_snapshot;
+    }
+
+    /// Get storage lock
+    const TableLockHolder & getStorageLock() const
+    {
+        return storage_lock;
+    }
+
+    /// Returns true if table was created as a temporary table
+    bool isTemporaryTable() const
+    {
+        return !temporary_table_name.empty();
+    }
+
+    /// Get temporary table name
+    const std::string & getTemporaryTableName() const
+    {
+        return temporary_table_name;
+    }
+
+    /// Set temporary table name
+    void setTemporaryTableName(std::string temporary_table_name_value)
+    {
+        temporary_table_name = std::move(temporary_table_name_value);
+    }
+
+    /// Return true if table node has table expression modifiers, false otherwise
+    bool hasTableExpressionModifiers() const
+    {
+        return table_expression_modifiers.has_value();
+    }
+
+    /// Get table expression modifiers
+    const std::optional<TableExpressionModifiers> & getTableExpressionModifiers() const
+    {
+        return table_expression_modifiers;
+    }
+
+    /// Get table expression modifiers
+    std::optional<TableExpressionModifiers> & getTableExpressionModifiers()
+    {
+        return table_expression_modifiers;
+    }
+
+    /// Set table expression modifiers
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
+    {
+        table_expression_modifiers = std::move(table_expression_modifiers_value);
+    }
+
+    const MaterializedCTEPtr & getMaterializedCTE() const
+    {
+        return materialized_cte;
+    }
+
+    bool isMaterializedCTE() const
+    {
+        return children[materialized_cte_subquery_index] != nullptr;
+    }
+
+    const QueryTreeNodePtr & getMaterializedCTESubquery() const
+    {
+        return children[materialized_cte_subquery_index];
+    }
+
+    QueryTreeNodePtr & getMaterializedCTESubquery()
+    {
+        return children[materialized_cte_subquery_index];
+    }
+
+    QueryTreeNodeType getNodeType() const override
+    {
+        return QueryTreeNodeType::TABLE;
+    }
+
+    void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
+
+    boost::intrusive_ptr<ASTTableIdentifier> toASTIdentifier() const;
+
+protected:
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+
+    void updateTreeHashImpl(HashState & state, CompareOptions) const override;
+
+    QueryTreeNodePtr cloneImpl() const override;
+
+    ASTPtr toASTImpl(const ConvertToASTOptions & options) const override;
+
+private:
+    StoragePtr storage;
+    StorageID storage_id;
+    TableLockHolder storage_lock;
+    StorageMetadataHandle storage_metadata;
+    StorageSnapshotPtr storage_snapshot;
+    std::optional<TableExpressionModifiers> table_expression_modifiers;
+    std::string temporary_table_name;
+    MaterializedCTEPtr materialized_cte;
+
+    static constexpr size_t materialized_cte_subquery_index = 0;
+    static constexpr size_t children_size = materialized_cte_subquery_index + 1;
+};
+
+}
+

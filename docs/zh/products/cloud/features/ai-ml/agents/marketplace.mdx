@@ -1,0 +1,63 @@
+---
+sidebarTitle: '市场'
+slug: /cloud/features/ai-ml/agents/marketplace
+title: '智能体市场'
+description: '发现并使用在您所在的 ClickHouse Cloud 组织内共享的智能体'
+keywords: ['AI', 'ClickHouse Cloud', '智能体', '市场', '共享', '发现']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+智能体市场用于浏览、搜索和运行组织内其他人与您共享的智能体。它还包括由管理员发布给整个组织的智能体。您可以通过左侧边栏中的 **智能体市场** 选项打开它。
+
+<Image img="/images/cloud/agent-builder/marketplace/marketplace.webp" alt="聊天界面，左侧边栏中的 智能体市场 选项被高亮显示" size="lg" />
+
+<div id="browse">
+  ## 浏览
+</div>
+
+智能体按类别分组，例如 *通用*、*人力资源*、*研发*、*财务*、*IT*、*销售*。使用市场顶部的选项卡可在不同类别之间切换。每个智能体卡片都会显示名称、图标及其所属类别。
+
+使用搜索栏可在所有类别中按名称或关键字查找智能体。
+
+<Image img="/images/cloud/agent-builder/marketplace/browse.webp" alt="智能体市场界面，显示标题、搜索栏、类别选项卡（通用、人力资源、研发、财务、IT、销售、售后、全部）以及一个可见的智能体卡片" size="lg" />
+
+<div id="open-an-agent">
+  ## 打开智能体
+</div>
+
+点击任意智能体卡片即可打开其详情视图。在此你可以：
+
+* **开始聊天** - 与该智能体发起新的对话。
+* **置顶** - 将该智能体添加到收藏夹，便于快速访问。
+* **复制链接** - 共享该智能体的直达链接。
+
+<Image img="/images/cloud/agent-builder/marketplace/use-agent.webp" alt="显示智能体名称、图标以及“置顶”“复制链接”和“开始聊天”操作的智能体详情模态框" size="md" />
+
+<div id="publish-your-own">
+  ## 发布你自己的
+</div>
+
+要让智能体能在市场中被找到，请在 [共享与访问](/zh/products/cloud/features/ai-ml/agents/sharing-and-access) 面板中按合适的范围共享它。可见性级别如下：
+
+* **Private** - 只有你自己能看到。不会显示在市场中。
+* **Shared with users or groups** - 对这些主体可见。会显示在他们的市场中。
+* **Organization-wide** - 对组织中的所有人可见。是否会显示在市场中取决于管理员设置的市场权限。
+
+发布前，请先为你的智能体选择类别并写清楚描述——这些字段会同时影响搜索和按类别浏览的体验。
+
+<div id="admin-controls">
+  ## 管理员控制
+</div>
+
+组织管理员可以：
+
+* 管理市场中显示的分类。
+* 将单个智能体提升到组织级视图中。
+* 按角色允许或限制对市场的访问。
+
+有关权限模型，请参阅[共享与访问](/zh/products/cloud/features/ai-ml/agents/sharing-and-access)。

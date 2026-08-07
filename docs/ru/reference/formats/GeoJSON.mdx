@@ -1,0 +1,219 @@
+---
+alias: []
+description: 'Формат ввода, который читает GeoJSON FeatureCollection и создает по одной строке для каждого объекта со столбцами id, geometry и properties.'
+input_format: true
+output_format: false
+keywords: ['GeoJSON']
+sidebarTitle: 'GeoJSON'
+slug: /interfaces/formats/GeoJSON
+title: 'GeoJSON'
+doc_type: 'reference'
+---
+
+| Ввод | Вывод | Псевдоним |
+| ---- | ----- | --------- |
+| ✔    | ✗     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+Считывает документ [GeoJSON](https://geojson.org/) `FeatureCollection` и создает по одной строке для каждого объекта. Каждая строка имеет следующую фиксированную схему:
+
+| Столбец      | Тип              | Описание                                                                                                                             |
+| ------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`         | `String`         | Элемент `id` объекта (JSON-строка или число), сохраняемый как текст; пустая строка, если `id` отсутствует или имеет значение `null`. |
+| `geometry`   | `Geometry`       | Геометрия объекта, сохраненная как `Geometry` тип варианта.                                                                          |
+| `properties` | `Nullable(JSON)` | Объект `properties` объекта, сохраняемый в полуструктурированном столбце `JSON`. Явное `"properties": null` сохраняется как `NULL`.  |
+
+Каждая геометрия хранится в типе `Geometry` ClickHouse (`Variant`). Поддерживаются следующие геометрические типы GeoJSON: `Point`, `LineString`, `MultiLineString`, `Polygon` и `MultiPolygon`. Два других геометрических типа GeoJSON, `GeometryCollection` и `MultiPoint`, не могут быть представлены типом `Geometry`; чтение такого значения в столбец `geometry` по умолчанию вызывает исключение, но это поведение можно изменить так, чтобы вместо этого вставлялось `NULL` — см. раздел [Обработка неподдерживаемых геометрических типов](#unsupported-geometry) ниже. По умолчанию столбец `geometry` имеет значение `NULL` только в том случае, если геометрия объекта представляет собой явный JSON `null`; при `input_format_geojson_unsupported_geometry_handling = 'null'` он также будет `NULL` для неподдерживаемого геометрического типа.
+
+Структура документа проверяется: `type` верхнего уровня должен быть равен `FeatureCollection`, а каждый элемент `features` должен иметь `type` `Feature`. Координаты должны удовлетворять ограничениям формы GeoJSON: `LineString` (и каждая линия в `MultiLineString`) должен содержать как минимум две позиции, а кольцо `Polygon` (и каждое кольцо в `MultiPolygon`) должно быть замкнутым и содержать как минимум четыре позиции. Некорректные документы отклоняются, а не молча загружаются.
+
+Другие ключи в объекте `FeatureCollection` (например, `name` или `crs`) и другие ключи внутри каждого объекта `Feature` (например, `bbox`) игнорируются.
+
+Порядок ключей может быть произвольным: `type` верхнего уровня может находиться как до, так и после массива `features`, а внутри объекта геометрии `coordinates` может находиться как до, так и после `type`.
+
+Вывод схемы возвращает указанную выше фиксированную схему, поэтому `DESCRIBE` и `SELECT ... FROM format(...)` работают без определения таблицы.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+Рассмотрим следующий GeoJSON‑файл `london.geojson`, содержащий различные геометрические типы:
+
+```json
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "id": "1",
+            "geometry": {"type": "Point", "coordinates": [-0.0761, 51.5081]},
+            "properties": {"name": "Tower of London", "feature_type": "landmark", "year_built": 1078}
+        },
+        {
+            "type": "Feature",
+            "id": "2",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[-0.2500, 51.4700], [-0.1800, 51.4900], [-0.1200, 51.5060], [-0.0700, 51.5050], [0.0000, 51.5100]]
+            },
+            "properties": {"name": "River Thames", "feature_type": "river", "length_km": 346}
+        },
+        {
+            "type": "Feature",
+            "id": "3",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[[-0.1880, 51.5074], [-0.1533, 51.5074], [-0.1533, 51.5153], [-0.1880, 51.5153], [-0.1880, 51.5074]]]
+            },
+            "properties": {"name": "Hyde Park", "feature_type": "park", "area_km2": 1.42}
+        }
+    ]
+}
+```
+
+Можно выполнить запрос к файлу и посмотреть геометрические типы:
+
+```sql title="Query"
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+┌─id─┬─name────────────┬─geo_type───┐
+│ 1  │ Tower of London │ Point      │
+│ 2  │ River Thames    │ LineString │
+│ 3  │ Hyde Park       │ Polygon    │
+└────┴─────────────────┴────────────┘
+```
+
+Расширение файла `.geojson` определяется автоматически, поэтому аргумент format можно не указывать:
+
+```sql title="Query"
+SELECT id, properties.name AS name, variantType(geometry) AS geo_type
+FROM file('london.geojson');
+```
+
+Мы можем использовать `variantType`, чтобы определить внутренний тип каждого объекта Geometry:
+
+```sql title="Query"
+SELECT properties.name AS name, geometry, variantType(geometry)
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+Row 1:
+──────
+name:                  Tower of London
+geometry:              (-0.0761,51.5081)
+variantType(geometry): Point
+
+Row 2:
+──────
+name:                  River Thames
+geometry:              [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
+variantType(geometry): LineString
+
+Row 3:
+──────
+name:                  Hyde Park
+geometry:              [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+variantType(geometry): Polygon
+```
+
+А исходные данные можно извлечь так:
+
+```sql title="Query"
+SELECT properties.name AS name, variantType(geometry), geometry.Point, geometry.LineString, geometry.Polygon
+FROM file('london.geojson', GeoJSON);
+```
+
+```response title="Response"
+Row 1:
+──────
+name:                  Tower of London
+variantType(geometry): Point
+geometry.Point:        (-0.0761,51.5081)
+geometry.LineString:   []
+geometry.Polygon:      []
+
+Row 2:
+──────
+name:                  River Thames
+variantType(geometry): LineString
+geometry.Point:        (0,0)
+geometry.LineString:   [(-0.25,51.47),(-0.18,51.49),(-0.12,51.506),(-0.07,51.505),(0,51.51)]
+geometry.Polygon:      []
+
+Row 3:
+──────
+name:                  Hyde Park
+variantType(geometry): Polygon
+geometry.Point:        (0,0)
+geometry.LineString:   []
+geometry.Polygon:      [[(-0.188,51.5074),(-0.1533,51.5074),(-0.1533,51.5153),(-0.188,51.5153),(-0.188,51.5074)]]
+```
+
+При обращении к подстолбцу `Geometry` возвращается значение, если в строке хранится этот тип; в противном случае возвращается значение по умолчанию для этого типа — `(0,0)` для `Point` и `[]` для типов на основе массивов, — поэтому используйте `variantType(geometry)`, чтобы определить, какой именно тип установлен.
+
+Мы также можем загружать данные GeoJSON в таблицу:
+
+```sql title="Query"
+CREATE TABLE london
+(
+    id           String,
+    geometry     Geometry,
+    properties   Nullable(JSON),
+    name         String MATERIALIZED properties.name,
+    feature_type String MATERIALIZED properties.feature_type
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO london
+SELECT id, geometry, properties
+FROM file('london.geojson', GeoJSON);
+```
+
+Затем выполните запрос с фильтрацией по типу объекта:
+
+```sql title="Query"
+SELECT name, feature_type, variantType(geometry) AS geo_type
+FROM london
+ORDER BY id;
+```
+
+```response title="Response"
+┌─name────────────┬─feature_type─┬─geo_type───┐
+│ Tower of London │ landmark     │ Point      │
+│ River Thames    │ river        │ LineString │
+│ Hyde Park       │ park         │ Polygon    │
+└─────────────────┴──────────────┴────────────┘
+```
+
+Мы также можем определить схему данных GeoJSON без определения таблицы:
+
+```sql title="Query"
+DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
+```
+
+```response title="Response"
+┌─name───────┬─type───────────┐
+│ id         │ String         │
+│ geometry   │ Geometry       │
+│ properties │ Nullable(JSON) │
+└────────────┴────────────────┘
+```
+
+<div id="unsupported-geometry">
+  ## Обработка неподдерживаемых геометрических типов
+</div>
+
+Некоторые допустимые геометрические типы GeoJSON — такие как `GeometryCollection` и `MultiPoint` — не могут быть представлены типом `Geometry` в ClickHouse. Управлять тем, что происходит, когда такую геометрию нужно сохранить в столбце `geometry`, можно с помощью настройки `input_format_geojson_unsupported_geometry_handling`. Возможные значения:
+
+* `'throw'` — сгенерировать исключение (по умолчанию)
+* `'null'` — вставить значение `NULL` в столбец `geometry` и продолжить синтаксический разбор
+
+Эта обработка применяется только при чтении столбца `geometry`. Если `geometry` не входит в число запрошенных выходных столбцов (например, `SELECT id FROM ...`), неподдерживаемая геометрия всё равно проверяется на корректность формата, но эта обработка не срабатывает: исключение не генерируется и `NULL` не вставляется, поскольку значение геометрии не материализуется.

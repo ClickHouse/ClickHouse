@@ -1,0 +1,112 @@
+---
+title: Dicas e truques para otimizar tipos de dados básicos no ClickHouse
+description: "Dicas e truques para otimizar tipos de dados básicos no ClickHouse"
+date: 2024-07-02
+tags: ['Desempenho e otimização']
+keywords: ['Otimização de tipos de dados básicos']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Quais tipos de dados devo usar no ClickHouse para otimizar a velocidade das minhas consultas e o uso de armazenamento?
+
+<div id="answer">
+  ## Resposta
+</div>
+
+Muitas vezes, ao usar uma conversão automatizada de outro sistema ou ao tentar escolher um tipo de dado, os usuários costumam adotar as abordagens de &quot;quanto mais, melhor&quot;, &quot;escolha o que for mais fácil&quot; ou &quot;escolha o mais genérico&quot;. Isso provavelmente funcionará para datasets pequenos, na casa dos milhões — talvez até bilhões de linhas. Pode não ser perceptível e é aceitável para esses tipos de conjuntos em que o impacto nas consultas dos usuários é pequeno em seus casos de uso.
+
+No entanto, isso deixará de ser aceitável à medida que o volume de dados crescer e o problema se tornar mais evidente.
+
+A diferença entre uma consulta levando 50ms e 500ms pode ser aceitável para a maioria dos casos de uso — por exemplo, em uma interface web —, mas uma é 10x mais lenta que a outra, mesmo que para o usuário final isso não seja muito perceptível.
+
+Exemplo de tabela inicial:
+
+```
+timestamp Datetime64(9),
+group_id Int64,
+vendor_id String,
+product_id String,
+category1 Int64,
+code_name String,
+paid_status String,
+country_code String,
+description String,
+price Float64,
+attributes Map(String, String)
+```
+
+Dados de exemplo:
+
+```
+3456, 0123456789, bd6087b7-6026-4974-9122-bc99faae5d84, "2024-03-01 01:00:01.000", 98, "bear", paid", "us", "corvette model car", 123.45, {"color" : "blue", "size" : "S"}
+156, 0000012345, bd6087b7-6026-4974-9122-bc99faae5d84, "2024-03-01 01:00:02:123", 45, "tiger", "not paid", "uk", "electric car", 53432.10, {"color" : "red", "model" : "X"} 
+...
+```
+
+A seguir estão algumas recomendações de como esses dados podem ser otimizados:
+
+`timestamp : DateTime64(9)`
+A menos que seja necessária precisão científica, um valor de precisão 9 (nanossegundos) raramente é necessário. Pode ser útil para exibição ou ordenação, mas geralmente não em consultas de busca, chaves primárias, etc.
+
+* **Recomendação:**
+  Para a PK, ordene por: DateTime
+  Para exibição ou ordenação: adicione uma coluna adicional - por exemplo, `timestamp_microseconds : DateTime64(6)`
+
+`group_id : Int64`
+Isso parece ser um inteiro; selecione o menor tipo inteiro que comporte o valor máximo necessário para a coluna. Com base neste dataset de amostra e no nome da coluna, é improvável que sejam necessários quintilhões de valores — provavelmente um Int16 seria suficiente, comportando até 16 mil valores.
+
+* **Recomendação**: Int16
+
+`vendor_id : String`
+Esta coluna parece ser um número, mas possui zeros à esquerda — provavelmente importante preservar a formatação. Também parece ter apenas um número fixo de caracteres.
+
+* **Recomendação**: FixedString(10)
+
+`product_id : String`
+Este é alfanumérico, então intuitivamente seria uma string, mas também é um UUID.
+
+* **Recomendação**: UUID
+
+`category1 : Int64`
+Os valores são pequenos, provavelmente com poucas categorias e sem perspectiva de crescimento significativo ou com quantidade limitada. Menos de 255
+
+* **Recomendação**: UInt8
+
+`code_name : String`
+Este campo parece ter apenas um número limitado de strings em uso.
+Para esse tipo de situação, em que o número de valores de string pode chegar a centenas ou milhares, campos de baixa cardinalidade são a solução indicada.
+
+* **Recomendação**: LowCardinality(String)
+
+`paid_status : String`
+Há um valor String de &quot;paid&quot; ou &quot;not&#95;paid&quot;. Para situações em que pode haver apenas dois valores, use um booleano.
+
+* **Recomendação**: Bool
+
+`country_code : String`
+Às vezes há colunas que se enquadram em múltiplas otimizações. Neste exemplo, existe apenas uma quantidade limitada de códigos de país e todos são identificadores de dois caracteres.
+
+* **Recomendação**: LowCardinality(FixedString(2))
+
+`price : Float64`
+Floats não são recomendados quando há uma precisão fixa conhecida, especialmente para dados e cálculos financeiros. O ideal é utilizar tipos Decimal com a precisão necessária. Para este caso de uso, é provável que o preço do item não ultrapasse 999.999,00
+
+* **Recomendação**: Decimal(10,2)
+
+`attributes : map`
+Frequentemente, pode haver uma tabela com atributos dinâmicos em maps. A busca por chaves ou valores tende a ser mais lenta. Existem algumas formas de melhorar o desempenho dos maps. Se houver chaves presentes na maioria dos registros, o ideal é colocá-las em uma coluna separada com baixa cardinalidade, e as que forem esparsas em outra coluna com alta cardinalidade. A partir daí, será mais eficiente criar skip indexes, embora isso possa aumentar a complexidade das queries.
+
+* **Recomendação:** lc&#95;attributes: Map(String, String), hc&#95;attributes: Map(String, String).
+
+Dependendo das consultas, outras opções que também podem ser usadas para criar um skip index e/ou extrair os atributos são:
+Usar Array Join para extrair os atributos em colunas com uma visão materializada:
+https://clickhouse.com/docs/knowledgebase/using-array-join-to-extract-and-query-attributes
+Usar um skip index para as chaves:
+https://clickhouse.com/docs/knowledgebase/improve-map-performance

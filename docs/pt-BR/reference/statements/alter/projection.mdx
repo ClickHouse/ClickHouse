@@ -1,0 +1,393 @@
+---
+description: 'Documentação sobre manipulação de projeções'
+sidebarTitle: 'PROJECTION'
+slug: /sql-reference/statements/alter/projection
+title: 'Projeções'
+doc_type: 'referência'
+---
+
+Esta página aborda o que são projeções, como usá-las e as várias opções para manipulá-las.
+
+<div id="overview">
+  ## Visão geral das projeções
+</div>
+
+As projeções armazenam dados em um formato que otimiza a execução de consultas. Esse recurso é útil para:
+
+* Executar consultas em uma coluna que não faz parte da chave primária
+* Pré-agregar colunas, reduzindo tanto o processamento quanto a E/S
+
+Você pode definir uma ou mais projeções para uma tabela e, durante a análise da consulta, o ClickHouse selecionará a projeção com a menor quantidade de dados a serem examinados, sem modificar a consulta fornecida pelo usuário.
+
+<Info>
+  **Uso de disco**
+
+  As projeções criam internamente uma nova tabela oculta, o que significa que será necessário mais E/S e mais espaço em disco.
+  Por exemplo, se a projeção tiver uma chave primária diferente, todos os dados da tabela original serão duplicados.
+</Info>
+
+Você pode ver mais detalhes técnicos sobre como as projeções funcionam internamente nesta [página](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections).
+
+<div id="examples">
+  ## Usando projeções
+</div>
+
+<div id="example-filtering-without-using-primary-keys">
+  ### Exemplo de filtragem sem usar chaves primárias
+</div>
+
+Criando a tabela:
+
+```sql
+CREATE TABLE visits_order
+(
+   `user_id` UInt64,
+   `user_name` String,
+   `pages_visited` Nullable(Float64),
+   `user_agent` String
+)
+ENGINE = MergeTree()
+PRIMARY KEY user_agent
+```
+
+Com `ALTER TABLE`, podemos adicionar a projeção a uma tabela existente:
+
+```sql
+ALTER TABLE visits_order ADD PROJECTION user_name_projection (
+    SELECT *
+    ORDER BY user_name
+)
+
+ALTER TABLE visits_order MATERIALIZE PROJECTION user_name_projection
+```
+
+Inserindo os dados:
+
+```sql
+INSERT INTO visits_order SELECT
+    number,
+    'test',
+    1.5 * (number / 2),
+    'Android'
+FROM numbers(1, 100);
+```
+
+A projeção permitirá filtrar por `user_name` rapidamente, mesmo que, na tabela original, `user_name` não tenha sido definido como `PRIMARY_KEY`.
+No momento da consulta, o ClickHouse determina que menos dados serão processados se a projeção for usada, pois os dados estão ordenados por `user_name`.
+
+```sql
+SELECT
+    *
+FROM visits_order
+WHERE user_name='test'
+LIMIT 2
+```
+
+Para verificar se uma consulta está usando a projeção, podemos consultar a tabela `system.query_log`. No campo `projections`, temos o nome da projeção usada, ou ele fica vazio se nenhuma tiver sido usada:
+
+```sql
+SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
+```
+
+<div id="example-pre-aggregation-query">
+  ### Exemplo de consulta com pré-agregação
+</div>
+
+Crie a tabela com a projeção `projection_visits_by_user`:
+
+```sql
+CREATE TABLE visits
+(
+   `user_id` UInt64,
+   `user_name` String,
+   `pages_visited` Nullable(Float64),
+   `user_agent` String,
+   PROJECTION projection_visits_by_user
+   (
+       SELECT
+           user_agent,
+           sum(pages_visited)
+       GROUP BY user_id, user_agent
+   )
+)
+ENGINE = MergeTree()
+ORDER BY user_agent
+```
+
+Insira os dados:
+
+```sql
+INSERT INTO visits SELECT
+    number,
+    'test',
+    1.5 * (number / 2),
+    'Android'
+FROM numbers(1, 100);
+```
+
+```sql
+INSERT INTO visits SELECT
+    number,
+    'test',
+    1. * (number / 2),
+   'IOS'
+FROM numbers(100, 500);
+```
+
+Execute uma primeira consulta com `GROUP BY` usando o campo `user_agent`.
+Esta consulta não usará a projeção definida, pois a pré-agregação não é compatível.
+
+```sql
+SELECT
+    user_agent,
+    count(DISTINCT user_id)
+FROM visits
+GROUP BY user_agent
+```
+
+Para usar a projeção, você pode executar consultas que selecionem parte ou a totalidade dos campos de pré-agregação e de `GROUP BY`:
+
+```sql
+SELECT
+    user_agent
+FROM visits
+WHERE user_id > 50 AND user_id < 150
+GROUP BY user_agent
+```
+
+```sql
+SELECT
+    user_agent,
+    sum(pages_visited)
+FROM visits
+GROUP BY user_agent
+```
+
+Como mencionado anteriormente, você pode consultar a tabela `system.query_log` para verificar se uma projeção foi usada.
+O campo `projections` mostra o nome da projeção usada.
+Ele ficará vazio se nenhuma projeção tiver sido usada:
+
+```sql
+SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
+```
+
+<div id="projection-indexes">
+  ### Criando e usando índices de projeção
+</div>
+
+Criando um [índice de projeção](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#projection-index):
+
+```sql
+CREATE TABLE events
+(
+    `event_time` DateTime,
+    `event_id` UInt64,
+    `user_id` UInt64,
+    `huge_string` String,
+    PROJECTION order_by_user_id INDEX user_id TYPE basic
+)
+ENGINE = MergeTree()
+ORDER BY (event_id);
+```
+
+<details markdown="1">
+  <summary>Criando uma projeção com o campo `_part_offset` explícito</summary>
+
+  Índices de projeção também podem ser criados com a sintaxe a seguir (não recomendada):
+
+  ```sql
+  CREATE TABLE events
+  (
+      `event_time` DateTime,
+      `event_id` UInt64,
+      `user_id` UInt64,
+      `huge_string` String,
+      PROJECTION order_by_user_id
+      (
+          SELECT
+              _part_offset
+          ORDER BY user_id
+      )
+  )
+  ENGINE = MergeTree()
+  ORDER BY (event_id);
+  ```
+</details>
+
+Inserindo alguns dados de exemplo:
+
+```sql
+INSERT INTO events SELECT * FROM generateRandom() LIMIT 100000;
+```
+
+O campo `_part_offset` mantém seu valor mesmo após mesclagens e mutações, o que o torna valioso para indexação secundária. Podemos aproveitar isso em consultas:
+
+```sql
+SELECT
+    count()
+FROM events
+WHERE _part_starting_offset + _part_offset IN (
+    SELECT _part_starting_offset + _part_offset
+    FROM events
+    WHERE user_id = 42
+)
+SETTINGS enable_shared_storage_snapshot_in_query = 1
+```
+
+<div id="manipulating-projections">
+  ## Manipulação de projeções
+</div>
+
+As seguintes operações com [projeções](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#projections) estão disponíveis:
+
+<div id="add-projection">
+  ### ADD PROJECTION
+</div>
+
+Use a instrução abaixo para adicionar uma descrição da projeção aos metadados de uma tabela:
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+```
+
+<div id="with-settings">
+  #### Cláusula `WITH SETTINGS`
+</div>
+
+`WITH SETTINGS` define **configurações da projeção**, que personalizam como a projeção armazena os dados (por exemplo, `index_granularity` ou `index_granularity_bytes`).
+Elas correspondem diretamente às **configurações de tabela do MergeTree**, mas se aplicam **somente a esta projeção**.
+
+Exemplo:
+
+```sql
+ALTER TABLE t
+ADD PROJECTION p (
+    SELECT x ORDER BY x
+) WITH SETTINGS (
+    index_granularity = 4096,
+    index_granularity_bytes = 1048576
+);
+```
+
+As configurações da projeção prevalecem sobre as configurações efetivas da tabela nessa projeção, sujeitas às regras de validação (por exemplo, substituições inválidas ou incompatíveis serão rejeitadas).
+
+<div id="drop-projection">
+  ### DROP PROJECTION
+</div>
+
+Use a instrução abaixo para remover a descrição de uma projeção dos metadados de uma tabela e excluir os arquivos da projeção do disco.
+Isso é implementado como uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
+
+```sql
+ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
+```
+
+<div id="materialize-projection">
+  ### MATERIALIZE PROJECTION
+</div>
+
+Use a instrução abaixo para reconstruir a projeção `name` na partição `partition_name`.
+Isso é implementado como uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
+```
+
+<div id="clear-projection">
+  ### CLEAR PROJECTION
+</div>
+
+Use a instrução abaixo para excluir os arquivos de projeção do disco sem remover a descrição.
+Isso é implementado por meio de uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]
+```
+
+Os comandos `ADD`, `DROP` e `CLEAR` são leves, no sentido de que apenas alteram metadados ou removem arquivos.
+Além disso, esses comandos são replicados e sincronizam os metadados de projeção por meio do ClickHouse Keeper ou do ZooKeeper.
+
+<Note>
+  A manipulação de projeções tem suporte apenas em tabelas com o motor [`*MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo variantes [replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication)).
+</Note>
+
+<div id="control-projections-merges">
+  ### Controlando o comportamento da mesclagem de projeções
+</div>
+
+Quando você executa uma consulta, o ClickHouse escolhe entre ler da tabela original ou de uma de suas projeções.
+A decisão de ler da tabela original ou de uma de suas projeções é tomada individualmente para cada parte da tabela.
+Em geral, o ClickHouse procura ler o mínimo possível de dados e emprega alguns recursos para identificar a melhor parte a ser lida, por exemplo, amostrando a chave primária de uma parte.
+Em alguns casos, partes da tabela de origem não têm partes de projeção correspondentes.
+Isso pode acontecer, por exemplo, porque a criação de uma projeção para uma tabela em SQL é “lazy” por padrão: ela afeta apenas os dados inseridos posteriormente, mas mantém as partes existentes inalteradas.
+
+Como uma das projeções já contém os valores agregados pré-computados, o ClickHouse tenta ler das partes de projeção correspondentes para evitar agregar novamente em tempo de execução da consulta. Se uma parte específica não tiver a parte de projeção correspondente, a execução da consulta recorre à parte original.
+
+Mas o que acontece se as linhas da tabela original mudarem de forma não trivial devido a mesclagens em segundo plano não triviais de partes de dados?
+Por exemplo, suponha que a tabela seja armazenada usando o mecanismo de tabela `ReplacingMergeTree`.
+Se a mesma linha for detectada em múltiplas partes de entrada durante a mesclagem, apenas a versão mais recente da linha (da parte inserida mais recentemente) será mantida, enquanto todas as versões mais antigas serão descartadas.
+
+Da mesma forma, se a tabela for armazenada usando o mecanismo de tabela `AggregatingMergeTree`, a operação de mesclagem pode consolidar linhas iguais nas partes de entrada (com base nos valores da chave primária) em uma única linha para atualizar estados de agregação parciais.
+
+Antes do ClickHouse v24.8, as partes de projeção ou ficavam silenciosamente dessincronizadas em relação aos dados principais, ou determinadas operações, como atualizações e exclusões, simplesmente não podiam ser executadas, já que o banco de dados lançava automaticamente uma exceção se a tabela tivesse projeções.
+
+Desde a v24.8, uma nova configuração no nível da tabela [`deduplicate_merge_projection_mode`](/pt-BR/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode) controla o comportamento caso as operações de mesclagem em segundo plano não triviais mencionadas acima ocorram em partes da tabela original.
+
+Mutações de exclusão são outro exemplo de operações de mesclagem de partes que removem linhas nas partes da tabela original. Desde a v24.7, também temos uma configuração para controlar o comportamento em relação às mutações de exclusão acionadas por exclusões leves: [`lightweight_mutation_projection_mode`](/pt-BR/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode).
+
+Abaixo estão os valores possíveis para `deduplicate_merge_projection_mode` e `lightweight_mutation_projection_mode`:
+
+* `throw` (padrão): uma exceção é lançada, impedindo que as partes de projeção fiquem dessincronizadas.
+* `drop`: As partes afetadas da tabela de projeção são descartadas. As consultas recorrerão à parte da tabela original nos casos em que as partes de projeção forem afetadas.
+* `rebuild`: A parte de projeção afetada é recriada para permanecer consistente com os dados da parte da tabela original.
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+Não é possível usar uma coluna `ALIAS` na cláusula `ORDER BY` de uma projeção. Por exemplo:
+
+```sql highlight={6}
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    ab_sum UInt64 ALIAS a + 1,
+    PROJECTION p (SELECT a ORDER BY ab_sum)
+)
+ENGINE = MergeTree ORDER BY id;
+-- Falha com UNKNOWN_IDENTIFIER
+```
+
+As colunas `ALIAS` não são armazenadas fisicamente e são calculadas em tempo de consulta, portanto não ficam disponíveis durante o caminho de gravação da parte de projeção, quando a expressão de ordenação é avaliada.
+
+Em vez disso, use colunas `MATERIALIZED` ou insira a expressão diretamente:
+
+```sql
+-- usando coluna MATERIALIZED
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    ab_sum UInt64 MATERIALIZED a + 1,
+    PROJECTION p (SELECT a ORDER BY ab_sum)
+)
+ENGINE = MergeTree ORDER BY id;
+
+-- usando uma expressão inline
+CREATE TABLE t
+(
+    id UInt64,
+    a UInt32,
+    PROJECTION p (SELECT a ORDER BY a + 1)
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [&quot;Controle de projeções durante mesclagens&quot; (post do blog)](https://clickhouse.com/blog/clickhouse-release-24-08#control-of-projections-during-merges)
+* [&quot;Projeções&quot; (guia)](/pt-BR/concepts/features/projections/projections#using-projections-to-speed-up-UK-price-paid)
+* [&quot;Visões materializadas versus projeções&quot;](/pt-BR/concepts/features/projections/materialized-views-versus-projections)

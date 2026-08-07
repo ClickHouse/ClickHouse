@@ -1,0 +1,51 @@
+---
+sidebarTitle: '概要'
+slug: /manage/scaling
+description: 'ClickHouse Cloud におけるオートスケーリングの概要'
+keywords: ['オートスケーリング', 'オートスケーリング', 'スケーリング', '水平', '垂直', 'バースト']
+title: 'オートスケーリング'
+doc_type: 'guide'
+---
+
+import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+スケーリングとは、クライアントの需要に応じて利用可能なリソースを調整できることです。Scale および Enterprise (標準の 1:4 プロファイル) のティアのサービスでは、API をプログラムから呼び出すか、UI で設定を変更してシステムリソースを調整することで、水平スケーリングを行えます。これらのサービスは、アプリケーションの需要に応じて垂直方向に**オートスケール**することもできます。
+
+<ScalePlanFeatureBadge feature="自動垂直スケーリング" />
+
+<Note>
+  Scale ティアと Enterprise ティアは、単一レプリカと複数レプリカの両方のサービスをサポートしています。一方、Basic ティアでサポートされるのは単一レプリカのサービスのみです。単一レプリカのサービスは固定サイズを前提としているため、垂直スケーリングにも水平スケーリングにも対応していません。サービスをスケーリングするには、Scale ティアまたは Enterprise ティアにアップグレードできます。
+</Note>
+
+<div id="how-scaling-works-in-clickhouse-cloud">
+  ## ClickHouse Cloud におけるスケーリングの仕組み
+</div>
+
+現在、ClickHouse Cloud では、Scale ティア サービスで垂直オートスケーリングと手動の水平スケーリングをサポートしています。
+
+Enterprise ティア サービスのスケーリングは、次のとおりです。
+
+* **水平スケーリング**: Enterprise ティア では、すべての標準プロファイルおよびカスタムプロファイルで手動の水平スケーリングを利用できます。
+* **垂直スケーリング**:
+  * 標準プロファイル (1:4) では、垂直オートスケーリングをサポートしています。
+  * カスタムプロファイル (`highMemory` と `highCPU`) では、垂直オートスケーリングと手動の垂直スケーリングはサポートされていません。ただし、これらのサービスはサポートに連絡することで垂直スケーリングが可能です。
+
+<Note>
+  ClickHouse Cloud のスケーリングは、[&quot;Make Before Break&quot; (MBB) ](/ja/products/cloud/features/autoscaling/make-before-break) と呼ばれる方式で行われます。
+  この方式では、古いレプリカを削除する前に新しいサイズのレプリカを 1 つ以上追加するため、スケーリング中にキャパシティが失われることはありません。
+  既存のレプリカを削除してから新しいレプリカを追加するまでの空白をなくすことで、MBB はよりシームレスで影響の少ないスケーリングを実現します。
+  これは特に、リソース使用率の上昇が追加キャパシティの必要性をトリガーする scale-up のシナリオで有効です。レプリカを早い段階で削除してしまうと、リソース制約がさらに悪化するためです。
+  この方式の一環として、古いレプリカを削除する前に、それらのレプリカ上で実行中の既存のクエリが完了するよう、最大 1 時間待機します。
+  これにより、既存のクエリを完了させる必要性と、古いレプリカが長く残りすぎないようにする必要性のバランスを取っています。
+</Note>
+
+<div id="learn-more">
+  ## 詳細はこちら
+</div>
+
+* [垂直オートスケーリング](/ja/products/cloud/features/autoscaling/vertical) — 使用状況に応じた CPU とメモリの自動スケーリング
+* [水平スケーリング](/ja/products/cloud/features/autoscaling/horizontal) — API または UI によるレプリカの手動スケーリング
+* [Make Before Break (MBB)](/ja/products/cloud/features/autoscaling/make-before-break) — ClickHouse Cloud がシームレスにスケーリングを実行する仕組み
+* [自動アイドリング](/ja/products/cloud/features/autoscaling/idling) — サービスの自動停止によるコスト削減
+* [スケーリングの推奨事項](/ja/products/cloud/features/autoscaling/scaling-recommendations) — スケーリングの推奨事項について
+* [スケジュールスケーリング](/ja/products/cloud/features/autoscaling/scheduled-scaling) — リアルタイムのメトリクスに依存せず、サービスをいつスケールアップまたはスケールダウンするかを正確に指定できるスケジュールスケーリング機能について

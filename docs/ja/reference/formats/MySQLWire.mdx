@@ -1,0 +1,19 @@
+---
+description: 'MySQLWireフォーマットに関するドキュメント'
+keywords: ['MySQLWire']
+slug: /interfaces/formats/MySQLWire
+title: 'MySQLWire'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>

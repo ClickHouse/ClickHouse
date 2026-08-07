@@ -1,0 +1,137 @@
+---
+sidebarTitle: 'Gerenciar minha conta'
+slug: /cloud/security/manage-my-account
+title: 'Gerenciar minha conta'
+description: 'Esta página descreve como aceitar convites, gerenciar as configurações de MFA e redefinir senhas'
+doc_type: 'guide'
+keywords: ['gerenciamento de contas', 'perfil do usuário', 'segurança', 'Cloud Console', 'configurações']
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="accept-invitation">
+  ## Aceite um convite
+</div>
+
+Você pode usar vários métodos para aceitar um convite para ingressar em uma organização. Se este for o seu primeiro convite, selecione abaixo o método de autenticação adequado para a sua organização.
+
+Se esta não for a sua primeira organização, faça login na sua organização existente e depois aceite o convite no canto inferior esquerdo da página OU aceite o convite pelo e-mail e faça login com a sua conta existente.
+
+<Info>
+  **Usuários SAML**
+
+  As organizações que usam SAML têm um login exclusivo para cada organização do ClickHouse. Use o link direto fornecido pelo seu administrador para fazer login.
+</Info>
+
+<div id="email-and-password">
+  ### E-mail e senha
+</div>
+
+O ClickHouse Cloud permite que você se autentique com um endereço de e-mail e senha. Ao usar esse método, a melhor forma de proteger sua conta do ClickHouse é usar uma senha forte. Há muitos recursos online para ajudar você a criar uma senha fácil de lembrar. Como alternativa, você pode usar um gerador de senhas aleatórias e armazená-la em um gerenciador de senhas para aumentar a segurança.
+
+As senhas devem ter no mínimo 12 caracteres e atender a 3 de 4 requisitos de complexidade: letras maiúsculas, letras minúsculas, números e/ou caracteres especiais.
+
+<div id="social-sso">
+  ### Login social com SSO
+</div>
+
+Use `Continue with Google` ou `Continue with Microsoft Account` para se cadastrar em serviços ou aceitar convites.
+
+Se a sua empresa usa Google Workspace ou Microsoft 365, você pode aproveitar a configuração atual de login único no ClickHouse Cloud. Para isso, basta se cadastrar com o endereço de e-mail corporativo da empresa e convidar outros usuários usando o e-mail corporativo deles. Com isso, seus usuários precisarão fazer login pelos fluxos de autenticação da empresa — seja por meio do seu provedor de identidade ou diretamente pela autenticação do Google ou da Microsoft — antes de conseguirem se autenticar no ClickHouse Cloud.
+
+<div id="saml-sso">
+  ### Single sign-on (SSO) com SAML
+</div>
+
+<EnterprisePlanFeatureBadge feature="SAML SSO" />
+
+Os usuários que usam SAML SSO são adicionados automaticamente pelo provedor de identidade ao fazer login. Usuários do ClickHouse Cloud com a função Organization Admin podem [gerenciar as funções](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users) atribuídas aos usuários SAML e exigir o SAML como único método de autenticação.
+
+<div id="mfa">
+  ## Gerenciar a autenticação multifator (MFA)
+</div>
+
+Usuários com email + senha ou autenticação social podem aumentar ainda mais a segurança da conta usando autenticação multifator (MFA). Para configurar a MFA:
+
+1. Acesse [console.clickhouse.cloud](https://console.clickhouse.cloud/)
+2. Clique nas suas iniciais no canto superior esquerdo, ao lado do logotipo do ClickHouse
+3. Selecione Profile
+4. Selecione Security à esquerda
+5. Clique em Set up no bloco Authenticator app
+6. Use um aplicativo autenticador, como Authy, 1Password ou Google Authenticator, para escanear o código QR
+7. Digite o código para confirmar
+8. Na tela seguinte, copie o código de recuperação e guarde-o em um local seguro
+9. Marque a caixa ao lado de `I have safely recorded this code`
+10. Clique em Continue
+
+<div id="obtain-recovery-code">
+  ### Obtenha um novo código de recuperação
+</div>
+
+Se você já configurou MFA e não criou ou perdeu seu código de recuperação, siga estas etapas para obter um novo código de recuperação:
+
+1. Acesse https://console.clickhouse.cloud
+2. Faça login com suas credentials e MFA
+3. Vá até seu perfil, no canto superior esquerdo
+4. Clique em Security, à esquerda
+5. Clique no ícone de lixeira ao lado do seu app Authenticator
+6. Clique em Remove authenticator app
+7. Digite seu código e clique em Continue
+8. Clique em Set up na seção do app Authenticator
+9. Escaneie o código QR e digite o novo código
+10. Copie seu código de recuperação e guarde-o em um local seguro
+11. Marque a caixa ao lado de `I have safely recorded this code`
+12. Clique em Continue
+
+<div id="account-recovery">
+  ## Recuperação da conta
+</div>
+
+<div id="forgot-password">
+  ### Esqueceu sua senha
+</div>
+
+Se você esqueceu sua senha, siga estas etapas para a recuperação de autoatendimento:
+
+1. Acesse https://console.clickhouse.cloud
+2. Digite seu endereço de e-mail e clique em Continue
+3. Clique em Forgot your password?
+4. Clique em Send password reset link
+5. Verifique seu e-mail e clique em Reset password na mensagem
+6. Digite sua nova senha, confirme-a e clique em Update password
+7. Clique em Back to sign in
+8. Faça login normalmente com sua nova senha
+
+<div id="mfa-self-serivce-recovery">
+  ### Recuperação de MFA por autoatendimento
+</div>
+
+Se você perdeu seu dispositivo de MFA ou excluiu seu token, siga estas etapas para recuperar o acesso e criar um novo token:
+
+1. Acesse https://console.clickhouse.cloud
+2. Insira suas credenciais e clique em Continue
+3. Na tela autenticação multifator, clique em Cancel
+4. Clique em Recovery code
+5. Insira o código e pressione Continue
+6. Copie o novo código de recuperação e armazene-o em um local seguro
+7. Marque a caixa ao lado de `I have safely recorded this code` e clique em Continue
+8. Depois de entrar, vá para o seu perfil no canto superior esquerdo
+9. Clique em Security no canto superior esquerdo
+10. Clique no ícone de lixeira ao lado de Authenticator app para remover seu autenticador antigo
+11. Clique em Remove authenticator app
+12. Quando for solicitada a sua autenticação multifator, clique em Cancel
+13. Clique em Recovery code
+14. Insira seu código de recuperação (este é o novo código gerado na etapa 7) e clique em Continue
+15. Copie o novo código de recuperação e armazene-o em um local seguro - isso serve como proteção caso você saia da tela durante o processo de remoção
+16. Marque a caixa ao lado de `I have safely recorded this code` e clique em Continue
+17. Siga o processo acima para configurar um novo fator de MFA
+
+<div id="lost-mfa-and-recovery-code">
+  ### Perda do MFA e do código de recuperação
+</div>
+
+Se você perdeu seu dispositivo de MFA E o código de recuperação, ou perdeu seu dispositivo de MFA e nunca obteve um código de recuperação, siga estas etapas para solicitar uma redefinição:
+
+**Envie um ticket**: Se você faz parte de uma organização que tem outros usuários com funções administrativas, mesmo que esteja tentando acessar uma organização de usuário único, peça a um membro da sua organização com a função Admin que entre na organização e envie um ticket de suporte para redefinir seu MFA em seu nome. Assim que verificarmos que a solicitação é autêntica, redefiniremos seu MFA e notificaremos o Admin. Entre normalmente, sem MFA, e vá até as configurações do seu perfil para configurar um novo fator, se desejar.
+
+**Redefinição por e-mail**: Se você for o único usuário da organização, envie uma solicitação de suporte por e-mail (support@clickhouse.com) usando o endereço de e-mail associado à sua conta. Assim que verificarmos que a solicitação veio do endereço de e-mail correto, redefiniremos seu MFA E sua senha. Acesse seu e-mail para abrir o link de redefinição de senha. Defina uma nova senha e depois vá até as configurações do seu perfil para configurar um novo fator, se desejar.

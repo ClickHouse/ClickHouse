@@ -1,0 +1,10 @@
+<clickhouse>
+    <test>
+        <data_parts_exchange>
+            <delay_before_sending_part_ms>250</delay_before_sending_part_ms>
+        </data_parts_exchange>
+        <clone_replica>
+            <delay_before_removing_local_parts_ms>250</delay_before_removing_local_parts_ms>
+        </clone_replica>
+    </test>
+</clickhouse>

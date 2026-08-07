@@ -1,0 +1,128 @@
+---
+description: 'Le moteur de table File stocke les données dans un fichier, dans l’un des
+  formats de fichier pris en charge (`TabSeparated`, `Native`, etc.).'
+sidebarTitle: 'File'
+slug: /engines/table-engines/special/file
+title: 'Moteur de table File'
+doc_type: 'reference'
+---
+
+Le moteur de table File stocke les données dans un fichier, dans l’un des [formats de fichier](/fr/reference/formats/index#formats-overview) pris en charge (`TabSeparated`, `Native`, etc.).
+
+Scénarios d’utilisation :
+
+* Exporter des données de ClickHouse vers un fichier.
+* Convertir des données d’un format à un autre.
+* Mettre à jour des données dans ClickHouse en modifiant un fichier sur un disque.
+
+<Note>
+  Ce moteur n’est pas disponible actuellement dans ClickHouse Cloud ; [utilisez plutôt la fonction de table S3](/fr/reference/functions/table-functions/s3).
+</Note>
+
+<div id="usage-in-clickhouse-server">
+  ## Utilisation dans ClickHouse Server
+</div>
+
+```sql
+File(Format)
+```
+
+Le paramètre `Format` spécifie l’un des formats de fichier disponibles. Pour exécuter
+des requêtes `SELECT`, le format doit être pris en charge en entrée, et pour exécuter
+des requêtes `INSERT`, en sortie. Les formats disponibles sont répertoriés dans la
+section [Formats](/fr/reference/formats/index#formats-overview).
+
+ClickHouse ne permet pas de spécifier un chemin de système de fichiers pour `File`. Il utilise le dossier défini par le paramètre [path](/fr/reference/settings/server-settings/settings) dans la configuration du serveur.
+
+Lors de la création d’une table à l’aide de `File(Format)`, un sous-répertoire vide est créé dans ce dossier. Lorsque des données sont écrites dans cette table, elles sont placées dans le fichier `data.Format` de ce sous-répertoire.
+
+Vous pouvez créer manuellement ce sous-dossier et ce fichier dans le système de fichiers du serveur, puis l’[ATTACH](/fr/reference/statements/attach) aux métadonnées de la table portant le nom correspondant, afin de pouvoir interroger les données de ce fichier.
+
+<Note>
+  Soyez prudent avec cette fonctionnalité, car ClickHouse ne suit pas les modifications externes apportées à ce type de fichiers. Le résultat d’écritures simultanées via ClickHouse et en dehors de ClickHouse est indéfini.
+</Note>
+
+<div id="example">
+  ## Exemple
+</div>
+
+**1.** Créez la table `file_engine_table` :
+
+```sql
+CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
+```
+
+Par défaut, ClickHouse crée le dossier `/var/lib/clickhouse/data/default/file_engine_table`.
+
+**2.** Créez manuellement `/var/lib/clickhouse/data/default/file_engine_table/data.TabSeparated` avec le contenu suivant :
+
+```bash
+$ cat data.TabSeparated
+one 1
+two 2
+```
+
+**3.** Exécutez une requête sur les données :
+
+```sql
+SELECT * FROM file_engine_table
+```
+
+```text
+┌─name─┬─value─┐
+│ one  │     1 │
+│ two  │     2 │
+└──────┴───────┘
+```
+
+<div id="usage-in-clickhouse-local">
+  ## Utilisation dans ClickHouse-local
+</div>
+
+Dans [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local), le moteur File accepte un chemin de fichier en plus de `Format`. Les flux d’entrée/sortie par défaut peuvent être indiqués à l’aide de noms numériques ou explicites, comme `0` ou `stdin`, `1` ou `stdout`. Il est possible de lire et d’écrire des fichiers compressés selon un paramètre supplémentaire du moteur ou l’extension du fichier (`gz`, `br` ou `xz`).
+
+**Exemple :**
+
+```bash
+$ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
+```
+
+<div id="details-of-implementation">
+  ## Détails de l’implémentation
+</div>
+
+* Plusieurs requêtes `SELECT` peuvent être exécutées en parallèle, mais les requêtes `INSERT` devront attendre leur tour.
+* La création d’un nouveau fichier via une requête `INSERT` est prise en charge.
+* Si le fichier existe, `INSERT` y ajoutera de nouvelles valeurs.
+* Non pris en charge :
+  * `ALTER`
+  * `SELECT ... SAMPLE`
+  * Index
+  * Réplication
+
+<div id="partition-by">
+  ## PARTITION BY
+</div>
+
+`PARTITION BY` — Facultatif. Il est possible de créer des fichiers distincts en partitionnant les données selon une clé de partition. Dans la plupart des cas, vous n’avez pas besoin de clé de partition et, lorsqu’elle est nécessaire, elle n’a généralement pas besoin d’être plus fine qu’un partitionnement mensuel. Le partitionnement n’accélère pas les requêtes (contrairement à l’expression ORDER BY). Vous ne devez jamais utiliser un partitionnement trop fin. Ne partitionnez pas vos données par identifiant ou nom de client (à la place, utilisez l’identifiant ou le nom du client comme première colonne de l’expression ORDER BY).
+
+Pour un partitionnement par mois, utilisez l’expression `toYYYYMM(date_column)`, où `date_column` est une colonne contenant une date de type [Date](/fr/reference/data-types/date). Les noms de partition ont ici le format `"YYYYMM"`.
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
+* `_file` — Nom du fichier. Type : `LowCardinality(String)`.
+* `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille est inconnue, la valeur est `NULL`.
+* `_time` — Heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si l’heure est inconnue, la valeur est `NULL`.
+
+<div id="settings">
+  ## Paramètres
+</div>
+
+* [engine&#95;file&#95;empty&#95;if&#95;not&#95;exists](/fr/reference/settings/session-settings#engine_file_empty_if_not_exists) - permet de lire des données vides à partir d&#39;un fichier inexistant. Désactivé par défaut.
+* [engine&#95;file&#95;truncate&#95;on&#95;insert](/fr/reference/settings/session-settings#engine_file_truncate_on_insert) - permet de tronquer le fichier avant d&#39;y insérer des données. Désactivé par défaut.
+* [engine&#95;file&#95;allow&#95;create&#95;multiple&#95;files](/fr/reference/settings/session-settings#engine_file_allow_create_multiple_files) - permet de créer un nouveau fichier à chaque insertion si le format comporte un suffixe. Désactivé par défaut.
+* [engine&#95;file&#95;skip&#95;empty&#95;files](/fr/reference/settings/session-settings#engine_file_skip_empty_files) - permet d&#39;ignorer les fichiers vides lors de la lecture. Désactivé par défaut.
+* [storage&#95;file&#95;read&#95;method](/fr/reference/settings/session-settings#engine_file_empty_if_not_exists) - méthode de lecture des données depuis le fichier de stockage, parmi : `read`, `pread`, `mmap`. La méthode `mmap` ne s&#39;applique pas à clickhouse-server (elle est destinée à clickhouse-local). Valeur par défaut : `pread` pour clickhouse-server, `mmap` pour clickhouse-local.

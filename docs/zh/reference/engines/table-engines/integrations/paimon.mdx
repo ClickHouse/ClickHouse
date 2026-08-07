@@ -1,0 +1,270 @@
+---
+description: '该引擎以只读方式集成现有 Apache Paimon
+  表，这些表可存储在亚马逊 S3、Azure、HDFS 或本地。'
+sidebarTitle: 'Paimon'
+slug: /engines/table-engines/integrations/paimon
+title: 'Paimon 表引擎'
+doc_type: 'reference'
+---
+
+该引擎以只读方式集成现有 Apache [Paimon](https://paimon.apache.org/) 表，这些表可存储在亚马逊 S3、Azure、HDFS 或本地。
+它支持快照读取、增量读取，以及由该引擎提供的基础分区裁剪。
+
+<div id="create-table">
+  ## 创建表
+</div>
+
+请注意，Paimon 表必须已存在于存储中；此命令不接受用于创建新表的 DDL 参数。
+创建 `Paimon*` 表受 `allow_experimental_paimon_storage_engine` 控制 (默认禁用) ，因此请先启用它，再运行 `CREATE TABLE`。
+
+```sql
+SET allow_experimental_paimon_storage_engine = 1;
+
+CREATE TABLE paimon_table_s3
+    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format] [,compression])
+
+CREATE TABLE paimon_table_azure
+    ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+CREATE TABLE paimon_table_hdfs
+    ENGINE = PaimonHDFS(path_to_table, [,format] [,compression_method])
+
+CREATE TABLE paimon_table_local
+    ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
+```
+
+<div id="engine-arguments">
+  ## 引擎参数
+</div>
+
+这些参数的说明分别与 `S3`、`AzureBlobStorage`、`HDFS` 和 `File` 表引擎中的参数说明一致。
+`format` 表示 Paimon 表中数据文件的格式。
+
+可以通过 [命名集合](/zh/concepts/features/configuration/server-config/named-collections) 指定引擎参数
+
+<div id="example">
+  ### 示例
+</div>
+
+```sql
+CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+使用命名集合：
+
+```xml
+<clickhouse>
+    <named_collections>
+        <paimon_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+        </paimon_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
+```
+
+<div id="capabilities">
+  ## 功能
+</div>
+
+* 从最新的表快照读取。
+* 启用时，可基于已提交的快照 ID 进行增量读取。
+* 启用 `use_paimon_partition_pruning` 时支持分区裁剪。
+* 配置后可选择在后台刷新元数据。
+* 使用 Atomic/Replicated 数据库时，表 UUID 会保持稳定，因此可在 Keeper 路径中使用 `{uuid}` 宏。
+
+<div id="settings">
+  ## 设置
+</div>
+
+该引擎使用与相应对象存储引擎相同的设置，并额外提供了 Paimon 特有的设置：
+
+* `allow_experimental_paimon_storage_engine` — 启用创建 `Paimon`、`PaimonS3`、`PaimonAzure`、`PaimonHDFS` 和 `PaimonLocal` 表引擎。默认值：`0` (禁用) 。
+* `paimon_incremental_read` — 启用增量读取模式。
+* `paimon_metadata_refresh_interval_sec` — 后台元数据刷新间隔 (单位：秒) 。当设置为大于 0 的值时，后台任务会定期从对象存储拉取最新的快照和 schema。默认值：30。
+* `paimon_keeper_path` — 增量读取状态对应的 Keeper 路径。必须设置，且每个表唯一；支持 `{database}`、`{table}`、`{uuid}` 等宏。
+* `paimon_replica_name` — 增量读取状态对应的副本名称。必须设置，且每个副本唯一；支持 `{replica}` 等宏。
+
+<div id="incremental-read-examples">
+  ## 增量读取示例
+</div>
+
+基于 Keeper 状态的增量读取：
+
+```sql
+CREATE TABLE paimon_inc
+ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types')
+SETTINGS
+    paimon_incremental_read = 1,
+    paimon_keeper_path = '/clickhouse/{database}/{uuid}',
+    paimon_replica_name = '{replica}';
+```
+
+<div id="query-level-settings-for-incremental-read">
+  ### 增量读取的查询级设置
+</div>
+
+以下设置属于**查询级** (通过 `SELECT ... SETTINGS` 传递，而不是在 `CREATE TABLE` 中设置) 。它们用于控制增量读取在每次查询中的行为：
+
+* `paimon_target_snapshot_id` — 仅读取指定快照的增量。Keeper 中已提交的 watermark **不会**推进，因此同一个快照可以重复读取任意次数。默认值：`-1` (禁用) 。
+* `max_consume_snapshots` — 单次增量读取可消费的快照数量上限。当源端累积了大量尚未读取的快照时，该参数会限制每次查询消费的数量，以控制批次大小。`0` 表示不限制。默认值：`0`。
+
+**定向快照读取** — 无论当前 watermark 如何，始终返回快照 1 的增量：
+
+```sql
+SELECT count()
+FROM paimon_inc
+SETTINGS paimon_target_snapshot_id = 1;
+```
+
+**限制每个批次的快照数** — 如果有三个新快照待处理，则每次查询最多消费两个：
+
+```sql
+SELECT count()
+FROM paimon_inc
+SETTINGS max_consume_snapshots = 2;
+```
+
+<div id="paimon-to-mergetree-via-refresh-mv">
+  ## 通过可刷新materialized view 将 Paimon 同步到 MergeTree
+</div>
+
+你可以构建一条端到端管道，使用 `APPEND` 模式的可刷新materialized view，持续将数据从 Paimon 表同步到 MergeTree 表。每个刷新周期只会从 Paimon 读取新增的增量数据，并将其追加到目标表。
+
+**步骤 1 — 创建启用了增量读取和元数据刷新的 Paimon 源表。**
+
+下面的示例使用 `PaimonLocal`。请根据你的存储后端，将 引擎 替换为 `PaimonS3`、`PaimonAzure`、`PaimonHDFS`，或可自动检测的 `Paimon` 引擎：
+
+```sql
+SET allow_experimental_paimon_storage_engine = 1;
+
+-- Local storage
+CREATE TABLE paimon_mv_source
+ENGINE = PaimonLocal('/path/to/paimon/table')
+SETTINGS
+    paimon_incremental_read = 1,
+    paimon_keeper_path = '/clickhouse/tables/{uuid}',
+    paimon_replica_name = '{replica}',
+    paimon_metadata_refresh_interval_sec = 1;
+
+-- S3 storage (the `Paimon` engine defaults to the S3 implementation when no `disk` is specified)
+CREATE TABLE paimon_mv_source
+ENGINE = Paimon('http://minio:9000/bucket/path/to/table', 'access_key', 'secret_key')
+SETTINGS
+    paimon_incremental_read = 1,
+    paimon_keeper_path = '/clickhouse/tables/{uuid}',
+    paimon_replica_name = '{replica}',
+    paimon_metadata_refresh_interval_sec = 1;
+```
+
+`paimon_metadata_refresh_interval_sec` 用于设置后台元数据刷新间隔 (以秒为单位) 。当该值大于 0 时，后台任务会定期从对象存储中拉取最新的快照和 schema，这样 MV 的刷新周期无需等待查询触发元数据更新，就能看到新提交的数据。默认值为 30。在大量表上启用时请谨慎，以避免对象存储和 Keeper I/O 开销过大。
+
+**步骤 2 — 创建 MergeTree 目标表 (schema 克隆自 Paimon 表) ：**
+
+```sql
+CREATE TABLE paimon_mv_dest AS paimon_mv_source
+ENGINE = MergeTree()
+ORDER BY tuple();
+```
+
+**步骤 3 — 创建可刷新 materialized view：**
+
+```sql
+CREATE MATERIALIZED VIEW paimon_mv
+REFRESH EVERY 10 SECOND
+APPEND
+TO paimon_mv_dest
+AS SELECT * FROM paimon_mv_source;
+```
+
+MV 每 10 秒执行一次 `SELECT * FROM paimon_mv_source`，该查询只会返回自上一个已提交快照以来新增的行，并将其追加到 `paimon_mv_dest`。
+
+**清理：**
+
+```sql
+SYSTEM STOP VIEW paimon_mv;
+DROP VIEW IF EXISTS paimon_mv SYNC;
+DROP TABLE IF EXISTS paimon_mv_dest SYNC;
+DROP TABLE IF EXISTS paimon_mv_source SYNC;
+```
+
+<Note>
+  删除 MV 前请先将其停止，以免后台刷新阻塞 DDL 操作。
+</Note>
+
+<div id="limitations">
+  ## 限制
+</div>
+
+* 增量读取要求已配置 Keeper (ZooKeeper) 。
+* 增量读取要求设置 `paimon_keeper_path`，且每个表的该值必须唯一。
+* 在同一 Keeper 路径下，`paimon_replica_name` 对每个副本都必须唯一。
+* 增量读取采用至多一次投递语义：已提交快照会在收集数据文件时向前推进，此时数据实际上尚未被消费。如果查询在文件收集后失败，重试时不会重新读取这些被跳过的快照。
+* 该表引擎为只读；不支持修改数据。
+* 增量读取不会处理来自 Paimon 源端的历史数据删除。如果上游 Paimon 数据被删除或更新，已写入 ClickHouse MergeTree 目标表的对应行不会被自动删除。你必须在 MergeTree 表上手动执行 `ALTER TABLE ... DELETE` 来清理过时数据。
+
+<div id="aliases">
+  ## 别名
+</div>
+
+`Paimon` 表引擎会根据 `disk` 设置自动检测存储后端，并相应分派到 `PaimonS3`、`PaimonAzure` 或 `PaimonLocal`。如果未指定 `disk`，则默认使用 `PaimonS3` 实现。
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_path` — 文件路径。类型：`LowCardinality(String)`。
+* `_file` — 文件名。类型：`LowCardinality(String)`。
+* `_size` — 文件大小 (以字节为单位) 。类型：`Nullable(UInt64)`。如果文件大小未知，则值为 `NULL`。
+* `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
+* `_etag` — 文件的 etag。类型：`LowCardinality(String)`。如果 etag 未知，则值为 `NULL`。
+
+<div id="data-types-supported">
+  ## 支持的数据类型
+</div>
+
+| Paimon 数据类型                       | ClickHouse 数据类型           |
+| --------------------------------- | ------------------------- |
+| BOOLEAN                           | Int8                      |
+| TINYINT                           | Int8                      |
+| SMALLINT                          | Int16                     |
+| INTEGER                           | Int32                     |
+| BIGINT                            | Int64                     |
+| FLOAT                             | Float32                   |
+| DOUBLE                            | Float64                   |
+| STRING,VARCHAR,BYTES,VARBINARY    | String                    |
+| DATE                              | Date                      |
+| TIME(p),TIME                      | Time(&#39;UTC&#39;)       |
+| TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                |
+| TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;) |
+| CHAR                              | FixedString(1)            |
+| BINARY(n)                         | FixedString(n)            |
+| DECIMAL(P,S)                      | Decimal(P,S)              |
+| ARRAY                             | Array                     |
+| MAP                               | Map                       |
+
+<div id="partition-supported">
+  ## 支持的分区键
+</div>
+
+Paimon 分区键支持的数据类型：
+
+* `CHAR`
+* `VARCHAR`
+* `BOOLEAN`
+* `DECIMAL`
+* `TINYINT`
+* `SMALLINT`
+* `INTEGER`
+* `DATE`
+* `TIME`
+* `TIMESTAMP`
+* `TIMESTAMP WITH LOCAL TIME ZONE`
+* `BIGINT`
+* `FLOAT`
+* `DOUBLE`

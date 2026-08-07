@@ -1,0 +1,158 @@
+---
+slug: /cloud/managed-postgres/extensions
+sidebarTitle: '扩展'
+title: 'PostgreSQL 扩展'
+description: 'ClickHouse Managed Postgres 中可用的 PostgreSQL 扩展'
+keywords: ['Postgres 扩展', 'postgis', 'pgvector', 'pg_cron', 'PostgreSQL 扩展']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.extensions-beta" />
+
+Managed Postgres 提供了一组精选扩展，用于增强数据库功能。以下是可用扩展列表。
+
+<div id="installing-extensions">
+  ## 安装扩展
+</div>
+
+要安装扩展，请连接到数据库并执行：
+
+```sql
+CREATE EXTENSION extension_name;
+```
+
+要查看当前已安装的扩展：
+
+```sql
+SELECT * FROM pg_extension;
+```
+
+要查看所有可用扩展及其版本：
+
+```sql
+SELECT * FROM pg_available_extensions;
+```
+
+<div id="available-extensions">
+  ## 可用扩展
+</div>
+
+| 扩展                             | 版本     | 描述                                                    |
+| ------------------------------ | ------ | ----------------------------------------------------- |
+| `address_standardizer`         | 3.6.3  | 用于将地址解析为各组成部分                                         |
+| `address_standardizer_data_us` | 3.6.3  | Address Standardizer 美国数据集示例                          |
+| `adminpack`                    | 2.1    | PostgreSQL 管理函数 *(仅限 PG16)*                           |
+| `age`                          | 1.7.0  | Apache AGE 图数据库扩展                                     |
+| `amcheck`                      |        | 用于验证关系完整性的函数                                          |
+| `autoinc`                      | 1.0    | 用于字段自动递增的函数                                           |
+| `bloom`                        | 1.0    | Bloom 访问方法 - 基于签名文件的索引                                |
+| `bool_plperl`                  | 1.0    | 在 bool 和 plperl 之间进行转换                                |
+| `bool_plperlu`                 | 1.0    | 在 bool 和 plperlu 之间进行转换                               |
+| `btree_gin`                    | 1.3    | 支持在 GIN 中为常见数据类型建立索引                                  |
+| `btree_gist`                   | 1.8    | 支持在 GiST 中为常见数据类型建立索引                                 |
+| `citext`                       | 1.8    | 用于不区分大小写字符串的数据类型                                      |
+| `cube`                         | 1.5    | 多维立方体数据类型                                             |
+| `dblink`                       | 1.2    | 从数据库内部连接到其他 PostgreSQL 数据库                            |
+| `dict_int`                     | 1.0    | 用于整数的文本搜索字典模板                                         |
+| `dict_xsyn`                    | 1.0    | 用于扩展同义词处理的文本搜索字典模板                                    |
+| `earthdistance`                | 1.2    | 计算地球表面的大圆距离                                           |
+| `file_fdw`                     | 1.0    | 用于访问平面文件的外部数据包装器                                      |
+| `fuzzystrmatch`                | 1.2    | 确定字符串之间的相似度和距离                                        |
+| `h3`                           | 4.2.3  | PostgreSQL 的 H3 绑定                                    |
+| `h3_postgis`                   | 4.2.3  | H3 与 PostGIS 的集成                                      |
+| `hll`                          | 2.19   | 用于存储 HyperLogLog 数据的类型                                |
+| `hstore`                       | 1.8    | 用于存储 (键、值) 对集合的数据类型                                   |
+| `hstore_plperl`                | 1.0    | 在 hstore 和 plperl 之间进行转换                              |
+| `hstore_plperlu`               | 1.0    | 在 hstore 和 plperlu 之间进行转换                             |
+| `hypopg`                       | 1.4.2  | PostgreSQL 的假设索引                                      |
+| `intagg`                       | 1.1    | 整数聚合器和枚举器 (已弃用)                                       |
+| `insert_username`              | 1.0    | 用于跟踪是谁更改了表的函数                                         |
+| `intarray`                     | 1.5    | 用于一维整数数组的函数、运算符和索引支持                                  |
+| `ip4r`                         | 2.4    | IPv4 和 IPv6 范围索引类型                                    |
+| `isn`                          | 1.3    | 国际产品编号标准的数据类型                                         |
+| `jsonb_plperl`                 | 1.0    | 在 jsonb 与 plperl 之间进行转换                               |
+| `jsonb_plperlu`                | 1.0    | 在 jsonb 与 plperlu 之间进行转换                              |
+| `lo`                           | 1.2    | 大对象维护                                                 |
+| `ltree`                        | 1.3    | 用于层级树状结构的数据类型                                         |
+| `moddatetime`                  | 1.0    | 用于跟踪最后修改时间的函数                                         |
+| `mysql_fdw`                    | 1.2    | 用于查询 MySQL 服务器的外部数据包装器                                |
+| `old_snapshot`                 | 1.0    | 用于支持 old&#95;snapshot&#95;threshold 的实用工具 *(仅 PG16)*  |
+| `orafce`                       | 4.16   | 用于模拟 Oracle RDBMS 中部分函数和包的函数及运算符                      |
+| `pageinspect`                  | 1.13   | 在底层级别检查数据库页面内容                                        |
+| `pg_buffercache`               |        | 检查共享缓冲区缓存                                             |
+| `pg_clickhouse`                | 0.3    | 用于从 PostgreSQL 查询 ClickHouse 数据库的接口                   |
+| `pg_cron`                      | 1.6    | PostgreSQL 的作业调度器                                     |
+| `pg_freespacemap`              | 1.3    | 检查空闲空间映射 (FSM)                                        |
+| `pg_hint_plan`                 |        | PostgreSQL 的优化器提示                                     |
+| `pg_ivm`                       | 1.13   | PostgreSQL 上的增量视图维护                                   |
+| `pg_logicalinspect`            | 1.0    | 用于检查逻辑解码组件的函数 *(PG18+)*                               |
+| `pg_partman`                   | 5.4.3  | 按时间或 ID 管理分区表的扩展                                      |
+| `pg_prewarm`                   | 1.2    | 预热关系数据                                                |
+| `pg_re2`                       | 0.1    | 基于 Google&#39;s RE2 的、与 ClickHouse 兼容的正则表达式函数         |
+| `pg_repack`                    | 1.5.3  | 以尽可能少的锁重组 PostgreSQL 数据库中的表                           |
+| `pg_similarity`                | 1.0    | 支持相似性查询                                               |
+| `pg_stat_ch`                   | 0.3    | 将每个查询的执行遥测数据实时流式传输到 ClickHouse                        |
+| `pg_stat_statements`           |        | 跟踪所有已执行 SQL 语句的规划和执行统计信息                              |
+| `pg_surgery`                   | 1.0    | 对受损关系执行修复操作的扩展                                        |
+| `pg_tokenizer`                 | 0.1.1  | 与 `vchord_bm25` 配合使用的文本分词器                            |
+| `pg_trgm`                      | 1.6    | 基于三元组的文本相似度度量和索引搜索                                    |
+| `pg_visibility`                | 1.2    | 检查可见性映射 (VM) 和页面级可见性信息                                |
+| `pg_walinspect`                | 1.1    | 用于检查 PostgreSQL 预写日志内容的函数                             |
+| `pgaudit`                      |        | 提供审计功能                                                |
+| `pgcrypto`                     | 1.4    | 加密函数                                                  |
+| `pglogical`                    | 2.4.6  | PostgreSQL 逻辑复制                                       |
+| `pglogical_origin`             | 1.0.0  | 从 Postgres 9.4 升级时用于兼容性的虚拟扩展                          |
+| `pgrouting`                    | 4.0.1  | pgRouting 扩展                                          |
+| `pgrowlocks`                   | 1.2    | 显示行级锁信息                                               |
+| `pgstattuple`                  | 1.5    | 显示元组级统计信息                                             |
+| `pgtap`                        | 1.3.4  | PostgreSQL 单元测试                                       |
+| `plperl`                       | 1.0    | PL/Perl 过程语言                                          |
+| `plperlu`                      | 1.0    | PL/PerlU 非受信任过程语言                                     |
+| `plpgsql`                      | 1.0    | PL/pgSQL 过程语言                                         |
+| `plpgsql_check`                | 2.8    | 对 plpgsql 函数进行扩展检查                                    |
+| `postgis`                      | 3.6.3  | PostGIS 几何和地理空间类型及函数                                  |
+| `postgis_raster`               | 3.6.3  | PostGIS 栅格类型和函数                                       |
+| `postgis_sfcgal`               | 3.6.3  | PostGIS SFCGAL 函数                                     |
+| `postgis_tiger_geocoder`       | 3.6.3  | PostGIS tiger 地理编码器和反向地理编码器                           |
+| `postgis_topology`             | 3.6.3  | PostGIS 拓扑空间类型和函数                                     |
+| `postgres_fdw`                 | 1.2    | 用于远程 PostgreSQL 服务器的外部数据包装器                           |
+| `prefix`                       | 1.2.0  | PostgreSQL 前缀范围模块                                     |
+| `refint`                       | 1.0    | 用于实现引用完整性的函数 (已废弃)                                    |
+| `seg`                          | 1.4    | 用于表示线段或浮点区间的数据类型                                      |
+| `semver`                       | 0.41.0 | 语义化版本数据类型                                             |
+| `sslinfo`                      | 1.2    | SSL 证书信息                                              |
+| `tablefunc`                    | 1.0    | 操作整个表的函数，包括 crosstab                                  |
+| `tcn`                          | 1.0    | 触发的变更通知                                               |
+| `tds_fdw`                      | 2.0.5  | 用于查询 TDS 数据库 (Sybase 或 Microsoft SQL Server) 的外部数据包装器 |
+| `tsm_system_rows`              | 1.0    | 以行数为限制的 TABLESAMPLE 方法                                |
+| `tsm_system_time`              | 1.0    | 以毫秒时间为限制的 TABLESAMPLE 方法                              |
+| `uint`                         |        | 无符号整数类型                                               |
+| `unaccent`                     | 1.1    | 用于移除重音符号的文本搜索字典                                       |
+| `unit`                         | 7      | SI 单位扩展                                               |
+| `uuid-ossp`                    | 1.1    | 生成通用唯一标识符 (UUID)                                      |
+| `vchord`                       | 1.1.1  | Postgres 的向量索引访问方法                                    |
+| `vchord_bm25`                  | 0.3.0  | 用于全文搜索的 BM25 排名访问方法                                   |
+| `vector`                       | 0.8.2  | 向量数据类型，以及 ivfflat 和 hnsw 访问方法                         |
+| `xml2`                         | 1.2    | XPath 查询与 XSLT                                        |
+
+<div id="pg-clickhouse">
+  ## pg_clickhouse 扩展
+</div>
+
+`pg_clickhouse` 扩展预装在每个 Managed Postgres 实例中。它允许你直接从 PostgreSQL 查询 ClickHouse 数据库，从而为事务处理和分析提供统一的查询层。
+
+有关设置说明和使用详情，请参阅 [pg&#95;clickhouse 文档](/zh/products/managed-postgres/extensions/pg_clickhouse/introduction)。
+
+<div id="pg-stat-ch">
+  ## pg_stat_ch 扩展
+</div>
+
+`pg_stat_ch` 扩展为你的 Managed Postgres 实例提供查询级可观测性。它会捕获每条查询的遥测数据 (耗时、行数、缓冲区、WAL、错误) ，并将其发送到 ClickHouse Cloud UI，在那里呈现为慢查询、错误和工作负载视图。无需额外设置。
+
+<div id="pg-re2">
+  ## pg_re2 扩展
+</div>
+
+`pg_re2` 扩展为 Managed Postgres 添加了与 ClickHouse 兼容的正则表达式函数，底层由 Google 的 RE2 引擎提供支持。在两者之间迁移查询，或运行需要两端具有一致模式匹配语义的混合工作负载时，它会非常有用。

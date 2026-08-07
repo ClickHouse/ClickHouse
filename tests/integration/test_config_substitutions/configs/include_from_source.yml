@@ -1,0 +1,10 @@
+---
+  mqs: 88888
+  users_1:
+    user_1:
+      password: ""
+      profile: default
+  users_2:
+    user_2:
+      password: ""
+      profile: default

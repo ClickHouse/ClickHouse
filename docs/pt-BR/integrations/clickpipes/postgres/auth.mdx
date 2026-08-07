@@ -1,0 +1,148 @@
+---
+slug: /integrations/clickpipes/postgres/auth
+sidebarTitle: 'Autenticação de banco de dados com AWS IAM (RDS/Aurora)'
+title: 'Autenticação de banco de dados com AWS IAM (RDS/Aurora)'
+description: 'Este artigo mostra como os clientes do ClickPipes podem usar o controle de acesso baseado em funções para se autenticar no Amazon RDS/Aurora e acessar o banco de dados com segurança.'
+doc_type: 'guide'
+keywords: ['clickpipes', 'rds', 'segurança', 'aws', 'conexão privada']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Este artigo demonstra como os clientes do ClickPipes podem usar o controle de acesso baseado em funções para se autenticar no Amazon Aurora e no RDS e acessar seus bancos de dados com segurança.
+
+<Warning>
+  Para AWS RDS Postgres e Aurora Postgres, você só pode executar ClickPipes `Initial Load Only` devido às limitações da autenticação de banco de dados via AWS IAM.
+
+  Para MySQL e MariaDB, essa limitação não se aplica, e você pode executar ClickPipes `Initial Load Only` e `CDC`.
+</Warning>
+
+<div id="setup">
+  ## Configuração
+</div>
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ### Obtendo o ARN da função IAM do serviço ClickHouse
+</div>
+
+1 - Faça login na sua conta do ClickHouse Cloud.
+
+2 - Selecione o serviço ClickHouse para o qual você deseja criar a integração
+
+3 - Selecione a aba **Settings**
+
+4 - Role a página até a seção **Network security information** na parte inferior da página
+
+5 - Copie o valor de **Service role ID (IAM)** associado ao serviço, como mostrado abaixo.
+
+<Image img="/images/cloud/security/secures3_arn.webp" alt="ARN do S3 seguro" size="lg" border />
+
+Vamos chamar esse valor de `{ClickHouse_IAM_ARN}`. Essa é a função IAM que será usada para acessar sua instância do RDS/Aurora.
+
+<div id="configuring-the-rds-aurora-instance">
+  ### Configurando a instância do RDS/Aurora
+</div>
+
+<div id="enabling-iam-db-authentication">
+  #### Habilitando a autenticação IAM do banco de dados
+</div>
+
+1. Faça login na sua conta da AWS e vá até a instância do RDS que você quer configurar.
+2. Clique no botão **Modify**.
+3. Role a página para baixo até a seção **Database authentication**.
+4. Ative a opção **Password and IAM database authentication**.
+5. Clique no botão **Continue**.
+6. Revise as alterações e clique na opção **Apply immediately**.
+
+<div id="obtaining-the-rds-resource-id">
+  #### Obtendo o ID do recurso do RDS/Aurora
+</div>
+
+1. Faça login na sua conta da AWS e navegue até a instância do RDS ou o cluster do Aurora que você deseja configurar.
+2. Clique na guia **Configuration**.
+3. Anote o valor de **Resource ID**. Ele deve se parecer com `db-xxxxxxxxxxxxxx` para RDS ou `cluster-xxxxxxxxxxxxxx` para um cluster do Aurora. Vamos chamar esse valor de `{RDS_RESOURCE_ID}`. Esse é o ID do recurso que será usado na política do IAM para permitir o acesso à instância do RDS.
+
+<div id="setting-up-the-database-user">
+  #### Configurar o usuário do banco de dados
+</div>
+
+<div id="setting-up-the-database-user-postgres">
+  ##### PostgreSQL
+</div>
+
+1. Conecte-se à sua instância do RDS/Aurora e crie um novo usuário do banco de dados com o seguinte comando:
+   ```sql
+   CREATE USER clickpipes_iam_user; 
+   GRANT rds_iam TO clickpipes_iam_user;
+   ```
+2. Siga as demais etapas no [guia de configuração do PostgreSQL como origem](/pt-BR/integrations/clickpipes/postgres/source/rds) para configurar sua instância do RDS para uso com o ClickPipes.
+
+<div id="setting-up-the-database-user-mysql">
+  ##### MySQL / MariaDB
+</div>
+
+1. Conecte-se à sua instância do RDS/Aurora e crie um novo usuário do banco de dados com o seguinte comando:
+   ```sql
+   CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
+   ```
+2. Siga as demais etapas no [guia de configuração da origem do MySQL](/pt-BR/integrations/clickpipes/mysql/source/rds) para configurar sua instância do RDS/Aurora para o ClickPipes.
+
+<div id="setting-up-iam-role">
+  ### Como configurar a função IAM
+</div>
+
+<div id="manually-create-iam-role">
+  #### Criar função IAM manualmente.
+</div>
+
+1 - Faça login na sua conta da AWS no navegador com um usuário do IAM que tenha permissão para criar e gerenciar funções IAM.
+
+2 - Acesse o Console do IAM
+
+3 - Crie uma nova função IAM com a seguinte política de IAM e de confiança.
+
+Política de confiança (substitua `{ClickHouse_IAM_ARN}` pelo ARN da função IAM pertencente à sua instância do ClickHouse):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "{ClickHouse_IAM_ARN}"
+      },
+      "Action": [
+        "sts:AssumeRole",
+        "sts:TagSession"
+      ]
+    }
+  ]
+}
+```
+
+Política do IAM (substitua `{RDS_RESOURCE_ID}` pelo ID do recurso da sua instância do RDS). Certifique-se de substituir `{RDS_REGION}` pela região da sua instância do RDS/Aurora e `{AWS_ACCOUNT}` pelo ID da sua conta da AWS:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds-db:connect"
+      ],
+      "Resource": [
+        "arn:aws:rds-db:{RDS_REGION}:{AWS_ACCOUNT}:dbuser:{RDS_RESOURCE_ID}/clickpipes_iam_user"
+      ]
+    }
+  ]
+}
+```
+
+4 - Copie o novo **ARN da função IAM** após a criação. Isso é necessário para acessar com segurança seu banco de dados da AWS a partir do ClickPipes. Vamos chamá-lo de `{RDS_ACCESS_IAM_ROLE_ARN}`.
+
+Agora você pode usar essa função IAM para se autenticar na sua instância RDS/Aurora a partir do ClickPipes.

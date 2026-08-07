@@ -1,0 +1,362 @@
+---
+slug: /use-cases/observability/clickstack/managed-getting-started
+title: 'Primeiros passos com o Managed ClickStack'
+description: 'Implante um coletor do OpenTelemetry no Managed ClickStack e instrumente uma aplicação de ponta a ponta'
+doc_type: 'guide'
+keywords: ['clickstack', 'opentelemetry', 'coletor', 'instrumentação', 'managed', 'observabilidade', 'gateway', 'nodejs', 'sdk']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import GatherCredentials from '/snippets/pt-BR/clickstack/_gather_credentials.mdx';
+import CreateIngestionUser from '/snippets/pt-BR/clickstack/_create_ingestion_user.mdx';
+
+Este guia leva você de um serviço Managed ClickStack vazio até logs, métricas, traces e replays de sessão fluindo de uma aplicação real. Você implantará um novo collector do OpenTelemetry (ou adaptará um existente, se já tiver um) para o seu serviço, instrumentará uma aplicação Node.js de exemplo sem alterar a lógica de negócio e, em seguida, explorará a telemetry na UI do ClickStack.
+
+<Note>
+  Se você estiver configurando um novo collector, ou usando o seu próprio, ele deverá operar como um **gateway**: um único endpoint OTLP para o qual suas aplicações, SDKs e collectors do tipo agent enviam dados. O gateway agrupa eventos em lotes, aplica qualquer processamento que você tenha configurado e os grava no ClickHouse por meio do [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+</Note>
+
+A aplicação que instrumentaremos é o [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), um app Node.js que faz consultas ao dataset do HackerNews hospedado na demo pública do ClickHouse. Cada chart, table e caixa de Busca é sustentado por uma consulta real do ClickHouse, então cada interação produz um trace cujo span principal é a chamada HTTPS do backend para o ClickHouse.
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Um **serviço Managed ClickStack** no [ClickHouse Cloud](https://console.clickhouse.cloud).
+* **Node 18+ e npm** para executar o aplicativo de exemplo.
+* **Docker**, caso você ainda não tenha um collector e queira seguir a opção de novo collector abaixo.
+
+<Steps>
+  <Step>
+    ## Tenha suas credenciais em mãos
+
+    <GatherCredentials />
+  </Step>
+
+  <Step>
+    ## Criar um usuário para ingestão
+
+    <CreateIngestionUser />
+  </Step>
+
+  <Step>
+    ## Implantar o collector
+
+    Escolha a opção que melhor se aplica à sua situação.
+
+    <Info>
+      **Collector existente**
+
+      Se você estiver usando um collector do OpenTelemetry existente, presumimos que ele já esteja configurado na função de **gateway**. Não recomendamos usar esse processo para reconfigurar collectors na função de **agent**.
+    </Info>
+
+    <Tabs>
+      <Tab title="Não tenho coletor">
+        Implante a **distribuição ClickStack do coletor do OpenTelemetry**, que já vem pré-configurada para o Managed ClickStack. No exemplo abaixo, executamos o coletor localmente por simplicidade.
+
+        <Note>
+          Em produção, normalmente você implantaria o coletor em um cluster do Kubernetes ou em uma máquina virtual que possa ser acessada pelos seus SDKs do OpenTelemetry, agentes e outros coletores. Isso permite que a telemetria de todo o ambiente seja coletada de forma centralizada e encaminhada ao ClickStack.
+        </Note>
+
+        Escolha um segredo compartilhado para autenticar os clientes que enviam dados ao coletor e, em seguida, exporte-o junto com seus detalhes de conexão e a senha escolhida para o usuário `hyperdx_ingest`:
+
+        ```shell
+        export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+        export CLICKHOUSE_USER=hyperdx_ingest
+        export CLICKHOUSE_PASSWORD=ClickH0u3eRocks123!
+        export OTLP_AUTH_TOKEN="a-strong-shared-secret"
+        ```
+
+        Execute o ClickStack OTel collector:
+
+        ```shell
+        docker run -d \
+          -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+          -e HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=otel \
+          -p 4317:4317 \
+          -p 4318:4318 \
+          clickhouse/clickstack-otel-collector:latest
+        ```
+
+        O collector agora expõe OTLP gRPC na porta `4317` e OTLP HTTP na porta `4318`. Aplicações, SDKs e collectors do tipo agent devem enviar para essas portas com `authorization: $OTLP_AUTH_TOKEN` nos cabeçalhos da solicitação. Mantenha o endpoint OTLP e o `OTLP_AUTH_TOKEN` à mão; você apontará a aplicação para eles nas próximas etapas.
+
+        <Info>
+          **Implantações de produção**
+
+          Para produção, recomendamos habilitar TLS no endpoint OTLP. Consulte [Como proteger o collector](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector).
+        </Info>
+      </Tab>
+
+      <Tab title="Tenho um collector">
+        Estenda a configuração existente do coletor para gravar no Managed ClickStack por meio do [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+
+        <Info>
+          **ClickHouse exporter obrigatório**
+
+          Se você estiver usando sua própria distribuição, verifique se ela inclui o ClickHouse exporter. A [imagem contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib) upstream já inclui esse exporter.
+        </Info>
+
+        Abaixo está um exemplo de configuração que usa o ClickHouse exporter com os receivers, processadores e pipelines esperados pela UI do ClickStack. Ela corresponde ao comportamento da distribuição ClickStack, incluindo o caminho de roteamento do Session Replay (`rrweb`). Substitua `<clickhouse_cloud_endpoint>` e `<your_password_here>` pelas credenciais do usuário `hyperdx_ingest` criado acima:
+
+        ```yaml
+        receivers:
+          otlp/hyperdx:
+            protocols:
+              grpc:
+                include_metadata: true
+                endpoint: "0.0.0.0:4317"
+              http:
+                cors:
+                  allowed_origins: ["*"]
+                  allowed_headers: ["*"]
+                include_metadata: true
+                endpoint: "0.0.0.0:4318"
+
+        processors:
+          batch:
+          memory_limiter:
+            # 80% of maximum memory up to 2G, adjust for low memory environments
+            limit_mib: 1500
+            # 25% of limit up to 2G, adjust for low memory environments
+            spike_limit_mib: 512
+            check_interval: 5s
+
+        connectors:
+          routing/logs:
+            default_pipelines: [logs/out-default]
+            error_mode: ignore
+            table:
+              - context: log
+                statement: route() where IsMatch(attributes["rr-web.event"], ".*")
+                pipelines: [logs/out-rrweb]
+
+        exporters:
+          clickhouse:
+            database: otel
+            endpoint: <clickhouse_cloud_endpoint>
+            username: hyperdx_ingest
+            password: <your_password_here>
+            ttl: 720h
+            timeout: 5s
+            retry_on_failure:
+              enabled: true
+              initial_interval: 5s
+              max_interval: 30s
+              max_elapsed_time: 300s
+          clickhouse/rrweb:
+            database: otel
+            endpoint: <clickhouse_cloud_endpoint>
+            username: hyperdx_ingest
+            password: <your_password_here>
+            ttl: 720h
+            logs_table_name: hyperdx_sessions
+            timeout: 5s
+            retry_on_failure:
+              enabled: true
+              initial_interval: 5s
+              max_interval: 30s
+              max_elapsed_time: 300s
+
+        service:
+          pipelines:
+            traces:
+              receivers: [otlp/hyperdx]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            metrics:
+              receivers: [otlp/hyperdx]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            logs/in:
+              receivers: [otlp/hyperdx]
+              exporters: [routing/logs]
+            logs/out-default:
+              receivers: [routing/logs]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            logs/out-rrweb:
+              receivers: [routing/logs]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse/rrweb]
+        ```
+
+        Algumas observações:
+
+        * O receiver `otlp/hyperdx` escuta em gRPC (`4317`) e HTTP (`4318`); aplicações e agents devem usar essas portas no host do seu collector.
+        * O exporter `clickhouse` grava logs, traces e metrics no database `otel`, no layout que a UI do ClickStack espera. O exporter `clickhouse/rrweb` processa eventos de session replay roteados pelo connector `routing/logs` para `otel.hyperdx_sessions`.
+        * A autenticação nos receivers OTLP fica por conta da sua configuração atual. Configure-a por meio das [extensions](https://opentelemetry.io/docs/collector/configuration/#extensions) do collector (por exemplo, `bearertokenauth`) ou de um reverse proxy com TLS, caso você precise exigir um token de ingestão.
+
+        Recarregue seu collector com a nova configuração. Tenha em mãos o endpoint OTLP e o header de autenticação que a sua configuração exigir; você apontará a aplicação para eles nas próximas etapas.
+
+        Para mais detalhes sobre como configurar OpenTelemetry collectors para uso com o Managed ClickStack, consulte [Ingestão com OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry).
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ## Clone e execute o aplicativo
+
+    Clone o repositório, instale as dependências e crie seu arquivo `.env`:
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    A fonte de dados do ClickHouse usa por padrão o cluster público de demonstração somente leitura, para que o aplicativo funcione sem nenhuma configuração adicional. Inicie-o:
+
+    ```bash
+    ./run.sh
+    ```
+
+    Abra [http://localhost:5001](http://localhost:5001). Você verá um seletor de ano, estatísticas resumidas, um gráfico de atividade, tabelas com os principais usuários e domínios e um campo de busca. Explore a interface: alterne entre os anos e abra as histórias para ver mais detalhes.
+
+    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="O aplicativo HackerNews Analyzer em execução localmente" />
+
+    Neste ponto, o aplicativo está em execução, mas sem instrumentação. O ClickStack não mostra nenhum dado: ele está aguardando telemetria. Este é o estado &quot;antes&quot;.
+  </Step>
+
+  <Step>
+    ## Conecte a aplicação ao seu collector
+
+    A aplicação precisa de dois valores para se conectar ao collector implantado acima:
+
+    * `OTEL_EXPORTER_OTLP_ENDPOINT`: o endpoint OTLP exposto pelo seu collector (geralmente a porta `4318` para OTLP via HTTPS).
+    * `OTEL_EXPORTER_OTLP_HEADERS`: o header de autorização que carrega seu token de ingestão, no formato `authorization=<ingestion_token>`. Use o `OTLP_AUTH_TOKEN` que você definiu no collector acima, ou o header de autenticação esperado pelo collector existente.
+
+    Copie `.env.example` para `.env` e, em seguida, abra o arquivo e defina as seguintes variáveis:
+
+    ```bash
+    OTEL_SERVICE_NAME=hn-analyzer-api
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-collector-endpoint>:4318
+    OTEL_EXPORTER_OTLP_HEADERS=authorization=<ingestion_token>
+    ```
+
+    O SDK usa `OTEL_EXPORTER_OTLP_HEADERS` para definir o cabeçalho de autorização para os três sinais: traces, métricas e logs. Se o seu collector estiver em execução localmente e não exigir autenticação, você pode deixar o valor vazio (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), mas a variável deve estar presente; o SDK ignora totalmente a inicialização se ela não estiver definida ou se estiver completamente vazia. Por fim, ao executar o collector sem TLS, certifique-se de usar o protocolo HTTP correto (ex.: `http://localhost:4318`).
+  </Step>
+
+  <Step>
+    ## Instrumente a aplicação
+
+    A instrumentação tem três partes: instalar os SDKs, alterar o comando de inicialização e habilitar o SDK do navegador. Nada disso muda a lógica de negócio da aplicação.
+
+    ### Instale os SDKs
+
+    Instale os SDKs do OpenTelemetry para o backend e para o navegador:
+
+    ```bash
+    npm install @hyperdx/node-opentelemetry @hyperdx/browser
+    ```
+
+    ### Use a CLI do opentelemetry-instrument
+
+    A aplicação é iniciada por `run.sh`, que tem duas linhas `exec` na parte inferior: uma ativa e outra comentada. Altere qual delas está ativa para que o Node seja executado por `opentelemetry-instrument`:
+
+    ```diff
+     # BEFORE: plain node, no instrumentation, collector stays silent:
+    -exec node scripts/entrypoint.js
+    +# exec node scripts/entrypoint.js
+
+     # AFTER: same source, wrapped by opentelemetry-instrument CLI.
+    -# exec npx opentelemetry-instrument scripts/entrypoint.js
+    +exec npx opentelemetry-instrument scripts/entrypoint.js
+    ```
+
+    Essa é toda a mudança no backend. A instrumentação automática é carregada por `opentelemetry-instrument` na inicialização do processo.
+
+    ### Ative o SDK do navegador
+
+    Para capturar traces distribuídos (do navegador para o backend) e replays de sessão, ative o SDK do navegador em `src/web/telemetry.ts`. Descomente a importação e o bloco `HyperDX.init({...})`:
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    export function initTelemetry(): void {
+      HyperDX.init({
+        url: __OTLP_ENDPOINT__,
+        apiKey: __OTLP_AUTH_TOKEN__,
+        service: 'hn-analyzer-web',
+        tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        consoleCapture: true,
+        advancedNetworkCapture: true,
+      });
+    }
+    ```
+
+    Nenhuma edição adicional no `.env` é necessária. `__OTLP_ENDPOINT__` e `__OTLP_AUTH_TOKEN__` são constantes de tempo de compilação injetadas por `vite.config.ts`: o endpoint é `OTEL_EXPORTER_OTLP_ENDPOINT`, e o token é convertido a partir de `OTEL_EXPORTER_OTLP_HEADERS`, os mesmos valores usados pelo backend.
+
+    <Warning>
+      O token de ingestão é incorporado ao pacote público do navegador e pode ser lido por qualquer pessoa que inspecione a aba Network.
+    </Warning>
+  </Step>
+
+  <Step>
+    ## Gerar tráfego
+
+    Reinicie a aplicação para que o novo comando de inicialização e o bundle do navegador recém-compilado entrem em vigor:
+
+    ```bash
+    # Ctrl-C the previous run, then:
+    ./run.sh
+    ```
+
+    Recarregue a aba do navegador para que o Vite passe a servir o pacote atualizado, depois atualize o app algumas vezes, mude de ano e clique nas histórias para gerar tráfego. Cada interação envia logs, métricas, traces e eventos de session replay pelo seu coletor para o ClickStack.
+  </Step>
+
+  <Step>
+    ## Inicie o ClickStack e explore sua telemetria
+
+    Abra seu serviço no [ClickHouse Cloud console](https://console.clickhouse.cloud) e selecione **ClickStack** no menu à esquerda; em seguida, **Start Ingestion**.
+
+    <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Iniciar o ClickStack" border />
+
+    A próxima etapa pode ser ignorada, pois você já configurou seu coletor. Clique em **Launch ClickStack** para continuar.
+
+    O ClickStack será aberto em uma nova guia, e você deverá ser direcionado automaticamente para a página **Getting Started**. Caso isso não aconteça, selecione **Getting Started** no menu à esquerda e clique em **Start Ingestion**; depois, em **Next**.
+
+    <Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack Start Ingestion" border />
+
+    O ClickStack deve detectar automaticamente suas tabelas e seus dados de telemetria, permitindo que você prossiga. Selecione **Start Exploring** para começar a explorar seus dados.
+
+    <Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack Start Exploring" border />
+
+    Agora, visualize os dados que a aplicação está produzindo:
+
+    1. Vá para **Busca** e filtre pelos últimos 5 minutos. Os logs de `hn-analyzer-api` começarão a aparecer.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Logs do ClickStack" />
+
+    2. Clique em uma requisição e suba pelo trace. Você verá o span do handler do Express, um span HTTP filho apontando para o ClickHouse cluster com a duração real da rede e registros `console.log` correlacionados no mesmo trace.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Traces do ClickStack" />
+
+    3. Abra **Session Replay** para reproduzir um vídeo navegável de uma sessão do navegador, sincronizado com a linha do tempo do trace.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Sessões do ClickStack" />
+
+    Logs, métricas, traces e session replays ficam todos na mesma UI, compartilham a mesma linguagem de consulta e são correlacionados automaticamente.
+
+    Se nada aparecer:
+
+    * Confirme se o valor do cabeçalho de autenticação definido em `OTEL_EXPORTER_OTLP_HEADERS` corresponde ao que seu coletor espera.
+    * Acompanhe os logs do seu coletor e procure por erros de exportação.
+    * Verifique se o endpoint do ClickHouse configurado no coletor inclui o protocolo e a porta (`https://...:8443`).
+  </Step>
+</Steps>
+
+<div id="further-reading">
+  ## Leitura adicional
+</div>
+
+* [Monitoramento do Kubernetes](/pt-BR/clickstack/managed-onboarding/monitoring-kubernetes): colete logs, métricas de infraestrutura e eventos do Kubernetes de um cluster.
+* [Monitoramento dos logs do AWS CloudWatch](/pt-BR/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): encaminhe logs do CloudWatch por meio do receiver CloudWatch do OpenTelemetry.
+* [Protegendo o collector](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector) com TLS no endpoint OTLP e usuários de ingestão com o menor privilégio necessário.
+* [Entrando em produção](/pt-BR/clickstack/managing/production) com recomendações para entrada em produção.

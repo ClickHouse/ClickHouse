@@ -1,0 +1,45 @@
+---
+description: 'Documentation de la clause INTO OUTFILE'
+sidebarTitle: 'INTO OUTFILE'
+slug: /sql-reference/statements/select/into-outfile
+title: 'Clause INTO OUTFILE'
+doc_type: 'reference'
+---
+
+La clause `INTO OUTFILE` redirige le résultat d&#39;une requête `SELECT` vers un fichier côté **client**.
+
+Les fichiers compressés sont pris en charge. Le type de compression est détecté à partir de l&#39;extension du nom de fichier (le mode `'auto'` est utilisé par défaut). Il peut également être spécifié explicitement dans une clause `COMPRESSION`. Le niveau de compression pour un type de compression donné peut être spécifié dans une clause `LEVEL`.
+
+**Syntaxe**
+
+```sql
+SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
+```
+
+`file_name` et `type` sont des chaînes de caractères littérales. Les types de compression pris en charge sont : `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+
+`level` est un littéral numérique. Les entiers positifs des plages suivantes sont pris en charge : `1-12` pour le type `lz4`, `1-22` pour le type `zstd` et `1-9` pour les autres types de compression.
+
+<div id="implementation-details">
+  ## Détails d’implémentation
+</div>
+
+* Cette fonctionnalité est disponible dans le [client en ligne de commande](/fr/concepts/features/interfaces/client) et [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local). Par conséquent, une requête envoyée via l’[interface HTTP](/fr/concepts/features/interfaces/http) échouera.
+* La requête échouera si un fichier portant le même nom existe déjà.
+* Le [format de sortie](/fr/reference/formats/index) par défaut est `TabSeparated` (comme dans le mode batch du client en ligne de commande). Utilisez la clause [FORMAT](/fr/reference/statements/select/format) pour le modifier.
+* Si `AND STDOUT` est mentionné dans la requête, la sortie écrite dans le fichier est également affichée sur la sortie standard. En cas d’utilisation de la compression, le texte en clair est affiché sur la sortie standard.
+* Si `APPEND` est mentionné dans la requête, la sortie est ajoutée à un fichier existant. Si la compression est utilisée, `APPEND` ne peut pas être utilisé.
+* Lors de l’écriture dans un fichier qui existe déjà, `APPEND` ou `TRUNCATE` doit être utilisé.
+
+**Exemple**
+
+Exécutez la requête suivante à l’aide du [client en ligne de commande](/fr/concepts/features/interfaces/client) :
+
+```bash title="Query"
+clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
+zcat select.gz 
+```
+
+```text title="Response"
+1,"ABC"
+```

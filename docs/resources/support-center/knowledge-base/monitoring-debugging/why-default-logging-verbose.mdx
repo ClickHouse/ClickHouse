@@ -1,0 +1,49 @@
+---
+date: 2025-01-10
+title: Why is ClickHouse logging so verbose by default?
+description: "Learn why the ClickHouse developers chose to set a verbose logging level by default."
+tags: ['Settings']
+keywords: ['Default Logging']
+---
+
+## Verbose Logging
+
+One thing that often confuses new users is that ClickHouse generates a lot of logging output, even under light load. 
+
+This is because the default logging level, due to historical reasons, is `trace` (instead of `warning` that would be the default in other databases). 
+
+The ClickHouse developers argue that `trace` provides a lot of insight in case something goes wrong. 
+
+On the other hand, large volumes of logging mean that the system table `system.text_log` fills up quickly and needs to be merged in the background. 
+
+If the database runs stably, users may re-configure the log level, which we explain how to do below.
+
+## Change the log level
+
+The different log levels available are documented [here](/reference/settings/server-settings/settings#logger)
+
+You'll need to edit the ClickHouse server configuration file (`/etc/clickhouse-server/config.xml`) to modify the log level. 
+
+The default value is `trace` but you can change it to the desired level. See the comment below: 
+
+```
+<clickhouse>
+    <logger>
+        {/* Possible levels [1]:
+
+          - none (turns off logging)
+          - fatal
+          - critical
+          - error
+          - warning
+          - notice
+          - information
+          - debug
+          - trace
+          - test (not for production usage)
+
+            [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114 */}
+        <level>trace</level>
+... Rest of the configuration file
+</clickhouse>
+```

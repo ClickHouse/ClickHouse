@@ -1,0 +1,40 @@
+---
+title: '特定のテーブルの再同期'
+description: 'Postgres ClickPipe の特定のテーブルを再同期する'
+slug: /integrations/clickpipes/postgres/table_resync
+sidebarTitle: 'テーブルを再同期'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'Postgres', 'CDC', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+パイプ内の特定のテーブルを再同期したい場面があります。たとえば、Postgres 側で大きなスキーマ変更があった場合や、ClickHouse 側でデータモデルを再設計した場合などです。
+
+ボタンをクリックするだけで個別のテーブルを再同期する機能は現在開発中ですが、このガイドでは、現時点で Postgres ClickPipe でこれを実現する手順を紹介します。
+
+<div id="removing-table">
+  ### 1. パイプからテーブルを削除する
+</div>
+
+これを行うには、[テーブルの削除ガイド](/ja/integrations/clickpipes/postgres/remove-table)を参照してください。
+
+<div id="truncate-drop-table">
+  ### 2. ClickHouse 上のテーブルを TRUNCATE または DROP する
+</div>
+
+この手順は、次のステップでこのテーブルを再度追加する際のデータ重複を防ぐためのものです。これを行うには、ClickHouse Cloud の **SQL Console** タブに移動してクエリを実行します。
+なお、テーブルがすでに ClickHouse に存在し、空でない場合は、そのテーブルを追加できないようにする検証が行われます。
+
+あるいは、古いテーブルを残しておく必要がある場合は、単に名前を変更することもできます。テーブルが非常に大きく、DROP に時間がかかる可能性がある場合にも有効です。
+
+```sql
+RENAME TABLE table_A TO table_A_bak;
+```
+
+<div id="add-table-again">
+  ### 3. テーブルを ClickPipe に再度追加する
+</div>
+
+これを行うには、[テーブルを追加するガイド](/ja/integrations/clickpipes/postgres/add-table)に従ってください。

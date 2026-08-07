@@ -1,0 +1,101 @@
+---
+date: 2025-01-16
+title: ¿Cómo elimino el usuario `default`?
+description: "Aprende a eliminar el usuario `default` al ejecutar ClickHouse Server."
+tags: ['Administración del servidor']
+words: ['Eliminar el usuario `default`', 'ClickHouse Server']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="removing-the-default-user">
+  ## Eliminar el usuario `default`
+</div>
+
+<Note>
+  Esta guía no se aplica a ClickHouse Cloud.
+</Note>
+
+En esta guía, aprenderemos a eliminar el usuario `default` del servidor de ClickHouse.
+
+Podemos hacerlo creando un archivo YAML (lo llamaremos `remove_default_user.yaml`) con el siguiente contenido
+
+```yaml
+users:
+  default:
+    "@remove": remove
+```
+
+La ubicación de este archivo depende de cómo esté instalado ClickHouse.
+
+<div id="running-the-executable-directly">
+  ## Ejecutar el ejecutable directamente
+</div>
+
+Si estamos ejecutando ClickHouse directamente (`clickhouse server`), debemos colocar el archivo en el directorio `config.d`.
+
+Cuando ejecutamos ClickHouse Server:
+
+```
+clickhouse server
+```
+
+Veremos la siguiente línea en los logs:
+
+```
+{} <Debug> ConfigProcessor: Merging configuration file 'config.d/remove_default_user.yaml'.
+```
+
+Y no podremos conectarnos con `clickhouse client`:
+
+```
+ClickHouse client version 24.11.1.2557 (official build).
+Connecting to localhost:9000 as user default.
+Password for user (default):
+Connecting to localhost:9000 as user default.
+Code: 516. DB::Exception: Received from localhost:9000. DB::Exception: default: Authentication failed: password is incorrect, or there is no user with such name.
+```
+
+<div id="docker-or-installed">
+  ## Docker o instalado
+</div>
+
+Si ejecutamos ClickHouse con Docker o lo tenemos instalado en nuestra máquina, debemos colocar el archivo en el directorio `/etc/clickhouse-server/users.d`.
+
+Así que, si lo ejecutamos con Docker, podemos montar el directorio `config.d` que creamos antes en `/etc/clickhouse-server/users.d`:
+
+```bash
+docker run \
+  -v ./config.d:/etc/clickhouse-server/users.d \
+  -p 8123:8123 -p9000:9000 \
+  clickhouse/clickhouse-server:24.12
+```
+
+```
+Merging configuration file '/etc/clickhouse-server/config.d/docker_related_config.xml'.
+Logging trace to /var/log/clickhouse-server/clickhouse-server.log
+Logging errors to /var/log/clickhouse-server/clickhouse-server.err.log
+```
+
+Luego podemos buscar en los logs del servidor para comprobar que lo recoge:
+
+```bash
+docker ps --format "table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Command}}"
+```
+
+```text
+CONTAINER ID   IMAGE                                NAMES               COMMAND
+383e8ed89431   clickhouse/clickhouse-server:24.12   trusting_rosalind   "/entrypoint.sh"
+```
+
+```
+docker exec -it trusting_rosalind grep "users\.d" /var/log/clickhouse-server/clickhouse-server.log
+```
+
+Deberíamos ver la siguiente línea:
+
+```text
+{} <Debug> ConfigProcessor: Merging configuration file '/etc/clickhouse-server/users.d/remove_default_user.yaml'.
+```

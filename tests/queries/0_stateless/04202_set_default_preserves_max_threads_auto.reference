@@ -1,0 +1,33 @@
+max_threads	1
+max_final_threads	1
+max_parsing_threads	1
+after-set max_threads	0
+after-set max_final_threads	0
+after-set max_parsing_threads	0
+after-default max_threads	1
+after-default max_final_threads	1
+after-default max_parsing_threads	1
+idempotent max_threads	1
+multi-default max_threads	1
+multi-default max_final_threads	1
+multi-default max_parsing_threads	1
+max_download_threads default	0	4
+max_download_threads after-set	1
+max_download_threads after-default	0	4
+max_download_threads after-zero	1
+max_download_threads after-default-from-auto	0	4
+getSetting numeric max_threads default	1
+getSetting > 0 max_threads default	1
+getSetting numeric max_threads explicit	1
+getSetting value max_threads explicit	4
+getSetting numeric max_final_threads default	1
+getSetting > 0 max_final_threads default	1
+getSetting numeric max_parsing_threads default	1
+getSetting > 0 max_parsing_threads default	1
+getSetting numeric max_download_threads default	1
+getSetting value max_download_threads default	4
+autowrapper-set	1
+autowrapper-default	auto
+control changed	1
+control default-changed	0
+control numeric	1

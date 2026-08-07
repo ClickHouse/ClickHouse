@@ -1,0 +1,534 @@
+---
+description: 'ユーザー定義関数（UDFs）に関するドキュメント'
+sidebarTitle: 'UDF'
+slug: /sql-reference/functions/udf
+title: 'ユーザー定義関数（UDFs）'
+doc_type: 'reference'
+---
+
+import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="udfs-user-defined-functions">
+  # UDFs ユーザー定義関数
+</div>
+
+ClickHouse は、いくつかの種類のユーザー定義関数 (UDFs) をサポートしています。
+
+* [実行可能 UDF](#executable-user-defined-functions) は、外部プログラムやスクリプト (Python、Bash など) を起動し、STDIN / STDOUT を介してデータのブロックをストリーミングします。ClickHouse を再コンパイルすることなく、既存のコードやツールを統合するために使用できます。インプロセスの選択肢と比べると呼び出しごとのオーバーヘッドは大きく、より重いロジックや別のランタイムが必要な場合に適しています。
+* [SQL UDFs](#sql-user-defined-functions) は、`CREATE FUNCTION` を使って SQL のみで定義されます。これらはクエリプランにインライン展開されるため (プロセス境界はありません) 、軽量で、式ロジックの再利用や複雑な計算カラムの簡略化に適しています。
+* [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) は、WebAssembly にコンパイルされたコードを、サーバープロセス内のサンドボックスで実行します。外部の実行可能ファイルよりも呼び出しごとのオーバーヘッドが低く、ネイティブ拡張機能よりも優れた分離性を備えているため、WASM をターゲットにできる言語 (例: C/C++/Rust) で記述されたカスタムアルゴリズムに適しています。
+
+<div id="executable-user-defined-functions">
+  ## 実行可能ユーザー定義関数
+</div>
+
+<PrivatePreviewBadge />
+
+<Note>
+  この機能は、ClickHouse Cloud でプライベートプレビューとして提供されています。
+  利用するには、https://clickhouse.cloud/support から ClickHouse Support にお問い合わせください。
+</Note>
+
+ClickHouse は、データ処理のために任意の外部実行可能プログラムまたはスクリプトを呼び出すことができます。
+
+実行可能ユーザー定義関数の設定は、1 つ以上の XML ファイルに配置できます。
+設定へのパスは、[`user_defined_executable_functions_config`](/ja/reference/settings/server-settings/settings#user_defined_executable_functions_config) パラメータで指定します。
+
+関数の設定には、次の項目が含まれます:
+
+| Parameter                     | Description                                                                                                                                                                                                                                                                                 | Required | Default Value             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------- |
+| `name`                        | 関数名                                                                                                                                                                                                                                                                                         | はい       | -                         |
+| `command`                     | 実行するスクリプト名、または `execute_direct` が false の場合は実行コマンド                                                                                                                                                                                                                                          | はい       | -                         |
+| `argument`                    | 引数の `type` と、必要に応じて引数の `name` を指定します。各引数は個別の設定として記述します。[Native](/ja/reference/formats/Native) や [JSONEachRow](/ja/reference/formats/JSON/JSONEachRow) など、ユーザー定義関数のフォーマットで引数名がシリアライゼーションの一部となる場合は、`name` の指定が必要です                                                                                  | はい       | `c` + argument&#95;number |
+| `format`                      | 引数をコマンドに渡す際の [フォーマット](/ja/reference/formats/index)。コマンドの出力でも同じフォーマットを使用する必要があります                                                                                                                                                                                                               | はい       | -                         |
+| `return_type`                 | 戻り値の型                                                                                                                                                                                                                                                                                       | はい       | -                         |
+| `return_name`                 | 戻り値の名前。[Native](/ja/reference/formats/Native) や [JSONEachRow](/ja/reference/formats/JSON/JSONEachRow) など、ユーザー定義関数のフォーマットで戻り値の名前がシリアライゼーションの一部となる場合は、`return_name` の指定が必要です                                                                                                                        | 任意       | `result`                  |
+| `type`                        | 実行可能の種類。`type` が `executable` に設定されている場合は単一のコマンドが起動され、`executable_pool` に設定されている場合はコマンドのプールが作成されます                                                                                                                                                                                          | はい       | -                         |
+| `max_command_execution_time`  | データの block を処理する際の最大実行時間 (秒) 。この設定は `executable_pool` コマンドでのみ有効です                                                                                                                                                                                                                           | 任意       | `10`                      |
+| `command_termination_timeout` | パイプが閉じられたあと、コマンドの終了を待機する時間 (秒) 。この時間を過ぎると、コマンドを実行しているプロセスに `SIGTERM` が送信されます                                                                                                                                                                                                                | 任意       | `10`                      |
+| `command_read_timeout`        | コマンドの stdout からデータを読み取る際のタイムアウト (ミリ秒)                                                                                                                                                                                                                                                       | 任意       | `10000`                   |
+| `command_write_timeout`       | コマンドの stdin にデータを書き込む際のタイムアウト (ミリ秒)                                                                                                                                                                                                                                                         | 任意       | `10000`                   |
+| `pool_size`                   | コマンドプールのサイズ                                                                                                                                                                                                                                                                                 | 任意       | `16`                      |
+| `send_chunk_header`           | process にデータの chunk を送信する前に、行数を送信するかどうかを制御します                                                                                                                                                                                                                                               | 任意       | `false`                   |
+| `execute_direct`              | `execute_direct` = `1` の場合、`command` は [user&#95;scripts&#95;path](/ja/reference/settings/server-settings/settings#user_scripts_path) で指定された user&#95;scripts フォルダー内から検索されます。追加のスクリプト引数は空白区切りで指定できます。例: `script_name arg1 arg2`。`execute_direct` = `0` の場合、`command` は `bin/sh -c` の引数として渡されます | 任意       | `1`                       |
+| `lifetime`                    | 関数の再読み込み間隔 (秒) 。`0` に設定すると、関数は再読み込みされません                                                                                                                                                                                                                                                    | 任意       | `0`                       |
+| `deterministic`               | 関数が決定論的かどうか (同じ入力に対して常に同じ結果を返すか)                                                                                                                                                                                                                                                            | 任意       | `false`                   |
+| `stderr_reaction`             | コマンドの stderr 出力の扱い方。値: `none` (無視) 、`log` (stderr をすべて即座に記録) 、`log_first` (終了後に先頭 4 KiB を記録) 、`log_last` (終了後に末尾 4 KiB を記録) 、`throw` (stderr に出力があった時点で直ちに例外を送出) 。`log_first` または `log_last` をゼロ以外の終了コードとともに使用した場合、stderr の内容が例外メッセージに含まれます                                                 | 任意       | `log_last`                |
+| `check_exit_code`             | true の場合、ClickHouse はコマンドの終了コードを確認します。終了コードがゼロ以外の場合は例外が発生します                                                                                                                                                                                                                                | 任意       | `true`                    |
+
+コマンドは `STDIN` から引数を読み取り、結果を `STDOUT` に出力する必要があります。また、引数は反復的に処理する必要があります。つまり、1 つの chunk の引数を処理したら、次の chunk を待機しなければなりません。
+
+<div id="executable-user-defined-functions">
+  ## 実行可能ユーザー定義関数
+</div>
+
+<div id="examples">
+  ## 例
+</div>
+
+<div id="udf-inline">
+  ### インラインスクリプトからの UDF
+</div>
+
+XML または YAML の設定で `execute_direct` を `0` に明示的に指定し、`test_function_sum` を手動で作成します。
+
+<Tabs>
+  <Tab title="XML">
+    `test_function.xml` ファイル (デフォルトのパス設定では `/etc/clickhouse-server/test_function.xml`) 。
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_sum</name>
+            <return_type>UInt64</return_type>
+            <argument>
+                <type>UInt64</type>
+                <name>lhs</name>
+            </argument>
+            <argument>
+                <type>UInt64</type>
+                <name>rhs</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
+            <execute_direct>0</execute_direct>
+            <deterministic>true</deterministic>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    `test_function.yaml` ファイル (デフォルトのパス設定では `/etc/clickhouse-server/test_function.yaml`) 。
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_sum
+      return_type: UInt64
+      argument:
+        - type: UInt64
+          name: lhs
+        - type: UInt64
+          name: rhs
+      format: TabSeparated
+      command: 'cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure ''x UInt64, y UInt64'' --query "SELECT x + y FROM table"'
+      execute_direct: 0
+      deterministic: true
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+```sql title="Query"
+SELECT test_function_sum(2, 2);
+```
+
+```text title="Result"
+┌─test_function_sum(2, 2)─┐
+│                       4 │
+└─────────────────────────┘
+```
+
+<div id="udf-python">
+  ### Python スクリプトからの UDF
+</div>
+
+この例では、`STDIN` から値を読み取り、それを文字列として返す UDF を作成します。
+
+XML または YAML の設定を使用して `test_function` を作成します。
+
+<Tabs>
+  <Tab title="XML">
+    ファイル `test_function.xml` (デフォルトのパス設定では `/etc/clickhouse-server/test_function.xml`) 。
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_python</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt64</type>
+                <name>value</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_function.py</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ファイル `test_function.yaml` (デフォルトのパス設定では `/etc/clickhouse-server/test_function.yaml`) 。
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_python
+      return_type: String
+      argument:
+        - type: UInt64
+          name: value
+      format: TabSeparated
+      command: test_function.py
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+`user_scripts` フォルダー内にスクリプトファイル `test_function.py` を作成します (デフォルトのパス設定では `/var/lib/clickhouse/user_scripts/test_function.py`) 。
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == '__main__':
+    for line in sys.stdin:
+        print("Value " + line, end='')
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_python(toUInt64(2));
+```
+
+```text title="Result"
+┌─test_function_python(2)─┐
+│ Value 2                 │
+└─────────────────────────┘
+```
+
+<div id="udf-stdin">
+  ### `STDIN` から 2 つの値を読み取り、その合計を JSON オブジェクトとして返す
+</div>
+
+名前付き引数と [JSONEachRow](/ja/reference/formats/JSON/JSONEachRow) フォーマットを使用して、XML または YAML の設定で `test_function_sum_json` を作成します。
+
+<Tabs>
+  <Tab title="XML">
+    ファイル `test_function.xml` (デフォルトのパス設定では `/etc/clickhouse-server/test_function.xml`) 。
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_sum_json</name>
+            <return_type>UInt64</return_type>
+            <return_name>result_name</return_name>
+            <argument>
+                <type>UInt64</type>
+                <name>argument_1</name>
+            </argument>
+            <argument>
+                <type>UInt64</type>
+                <name>argument_2</name>
+            </argument>
+            <format>JSONEachRow</format>
+            <command>test_function_sum_json.py</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ファイル `test_function.yaml` (デフォルトのパス設定では `/etc/clickhouse-server/test_function.yaml`) 。
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_sum_json
+      return_type: UInt64
+      return_name: result_name
+      argument:
+        - type: UInt64
+          name: argument_1
+        - type: UInt64
+          name: argument_2
+      format: JSONEachRow
+      command: test_function_sum_json.py
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+`user_scripts` フォルダー内にスクリプトファイル `test_function_sum_json.py` を作成します (デフォルトのパス設定では `/var/lib/clickhouse/user_scripts/test_function_sum_json.py`) 。
+
+```python
+#!/usr/bin/python3
+
+import sys
+import json
+
+if __name__ == '__main__':
+    for line in sys.stdin:
+        value = json.loads(line)
+        first_arg = int(value['argument_1'])
+        second_arg = int(value['argument_2'])
+        result = {'result_name': first_arg + second_arg}
+        print(json.dumps(result), end='\n')
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_sum_json(2, 2);
+```
+
+```text title="Result"
+┌─test_function_sum_json(2, 2)─┐
+│                            4 │
+└──────────────────────────────┘
+```
+
+<div id="udf-parameters-in-command">
+  ### `command` 設定でパラメータを使用する
+</div>
+
+実行可能なユーザー定義関数では、`command` 設定で構成した定数パラメータを受け取れます (これは `executable` 型のユーザー定義関数でのみ機能します) 。
+また、シェルの引数展開による脆弱性を防ぐため、`execute_direct` オプションも必要です。
+
+<Tabs>
+  <Tab title="XML">
+    ファイル `test_function_parameter_python.xml` (デフォルトのパス設定では `/etc/clickhouse-server/test_function_parameter_python.xml`) 。
+
+    ```xml title="/etc/clickhouse-server/test_function_parameter_python.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <execute_direct>true</execute_direct>
+            <name>test_function_parameter_python</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt64</type>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_function_parameter_python.py {test_parameter:UInt64}</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ファイル `test_function_parameter_python.yaml` (デフォルトのパス設定では `/etc/clickhouse-server/test_function_parameter_python.yaml`) 。
+
+    ```yml title="/etc/clickhouse-server/test_function_parameter_python.yaml"
+    functions:
+      type: executable
+      execute_direct: true
+      name: test_function_parameter_python
+      return_type: String
+      argument:
+        - type: UInt64
+      format: TabSeparated
+      command: test_function_parameter_python.py {test_parameter:UInt64}
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+`user_scripts` フォルダ内にスクリプトファイル `test_function_parameter_python.py` を作成します (デフォルトのパス設定では `/var/lib/clickhouse/user_scripts/test_function_parameter_python.py`) 。
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == "__main__":
+    for line in sys.stdin:
+        print("Parameter " + str(sys.argv[1]) + " value " + str(line), end="")
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_parameter_python(1)(2);
+```
+
+```text title="Result"
+┌─test_function_parameter_python(1)(2)─┐
+│ Parameter 1 value 2                  │
+└──────────────────────────────────────┘
+```
+
+<div id="udf-shell-script">
+  ### シェルスクリプトによるUDF
+</div>
+
+この例では、各値を 2 倍するシェルスクリプトを作成します。
+
+<Tabs>
+  <Tab title="XML">
+    ファイル `test_function_shell.xml` (デフォルトのパス設定の場合は `/etc/clickhouse-server/test_function_shell.xml`) 。
+
+    ```xml title="/etc/clickhouse-server/test_function_shell.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_shell</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt8</type>
+                <name>value</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_shell.sh</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ファイル `test_function_shell.yaml` (デフォルトのパス設定の場合は `/etc/clickhouse-server/test_function_shell.yaml`) 。
+
+    ```yml title="/etc/clickhouse-server/test_function_shell.yaml"
+    functions:
+      type: executable
+      name: test_shell
+      return_type: String
+      argument:
+        - type: UInt8
+          name: value
+      format: TabSeparated
+      command: test_shell.sh
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+`user_scripts` フォルダー内に、スクリプトファイル `test_shell.sh` を作成します (デフォルトのパス設定の場合は `/var/lib/clickhouse/user_scripts/test_shell.sh`) 。
+
+```bash title="/var/lib/clickhouse/user_scripts/test_shell.sh"
+#!/bin/bash
+
+while read read_data;
+    do printf "$(expr $read_data \* 2)\n";
+done
+```
+
+```sql title="Query"
+SELECT test_shell(number) FROM numbers(10);
+```
+
+```text title="Result"
+    ┌─test_shell(number)─┐
+ 1. │ 0                  │
+ 2. │ 2                  │
+ 3. │ 4                  │
+ 4. │ 6                  │
+ 5. │ 8                  │
+ 6. │ 10                 │
+ 7. │ 12                 │
+ 8. │ 14                 │
+ 9. │ 16                 │
+10. │ 18                 │
+    └────────────────────┘
+```
+
+<div id="error-handling">
+  ## エラー処理
+</div>
+
+一部の関数では、データが無効な場合に例外がスローされることがあります。
+この場合、クエリはキャンセルされ、エラーメッセージがクライアントに返されます。
+分散処理では、いずれかのサーバーで例外が発生すると、他のサーバーでもクエリの中止が試みられます。
+
+<div id="evaluation-of-argument-expressions">
+  ## 引数式の評価
+</div>
+
+ほとんどすべてのプログラミング言語では、特定の演算子では引数の1つが評価されないことがあります。
+通常は、`&&`、`||`、`?:` といった演算子です。
+ClickHouse では、関数 (演算子) の引数は常に評価されます。
+これは、各行を個別に計算するのではなく、カラムのパーツ全体が一度に評価されるためです。
+
+<div id="performing-functions-for-distributed-query-processing">
+  ## 分散クエリ処理における関数の実行
+</div>
+
+分散クエリ処理では、クエリ処理の各段階のうち、可能な限り多くの段階がリモートサーバー上で実行され、残りの段階 (中間結果のマージとそれ以降のすべて) はリクエスト元のサーバーで実行されます。
+
+つまり、関数が異なるサーバーで実行されることがあります。
+たとえば、クエリ `SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y),` では、
+
+* `distributed_table` に少なくとも2つの分片がある場合、関数 &#39;g&#39; と &#39;h&#39; はリモートサーバーで実行され、関数 &#39;f&#39; はリクエスト元のサーバーで実行されます。
+* `distributed_table` に分片が1つしかない場合、&#39;f&#39;、&#39;g&#39;、&#39;h&#39; のすべての関数はこの分片のサーバーで実行されます。
+
+通常、関数の結果は、どのサーバーで実行されるかに依存しません。ただし、これが重要になる場合もあります。
+たとえば、Dictionary を扱う関数は、その関数が実行されているサーバー上にある Dictionary を使用します。
+別の例として、`hostName` 関数は、自身が実行されているサーバーの名前を返します。これは、`SELECT` クエリでサーバーごとに `GROUP BY` できるようにするためです。
+
+クエリ内の関数がリクエスト元のサーバーで実行されるものの、リモートサーバーで実行する必要がある場合は、その関数を &#39;any&#39; 集約関数でラップするか、`GROUP BY` のキーに追加できます。
+
+<div id="sql-user-defined-functions">
+  ## SQL ユーザー定義関数
+</div>
+
+ラムダ式からカスタム関数を作成するには、[CREATE FUNCTION](/ja/reference/statements/create/function) ステートメントを使用します。これらの関数を削除するには、[DROP FUNCTION](/ja/reference/statements/drop#drop-function) ステートメントを使用します。
+
+<div id="webassembly-user-defined-functions">
+  ## WebAssembly ユーザー定義関数
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+WebAssembly ユーザー定義関数 (WASM UDFs) を使用すると、WebAssembly にコンパイルしたカスタムコードを ClickHouse サーバープロセス内で実行できます。
+
+<div id="quick-start">
+  ### クイックスタート
+</div>
+
+ClickHouse の設定で、実験的な WebAssembly サポートを有効にします。
+
+```xml
+<clickhouse>
+    <allow_experimental_webassembly_udf>true</allow_experimental_webassembly_udf>
+</clickhouse>
+```
+
+コンパイル済みのWASMモジュールをシステムテーブルに挿入します:
+
+```sql
+INSERT INTO system.webassembly_modules (name, code)
+SELECT 'my_module', base64Decode('AGFzbQEAAAA...');
+```
+
+WASM モジュールを使って関数を作成します:
+
+```sql
+CREATE FUNCTION my_function
+LANGUAGE WASM
+ABI ROW_DIRECT
+FROM 'my_module'
+ARGUMENTS (x UInt32, y UInt32)
+RETURNS UInt32;
+```
+
+クエリではこの関数を使用します:
+
+```sql
+SELECT my_function(10, 20);
+```
+
+<div id="more-information">
+  ### 詳細情報
+</div>
+
+詳細については、[WebAssembly ユーザー定義関数](/ja/reference/functions/regular-functions/wasm_udf) のドキュメントを参照してください。
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* [ClickHouse Cloudのユーザー定義関数](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

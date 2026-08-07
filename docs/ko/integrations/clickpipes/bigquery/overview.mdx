@@ -1,0 +1,110 @@
+---
+sidebarTitle: '개요'
+description: 'ClickPipes를 사용해 BigQuery에서 ClickHouse Cloud로 데이터를 내보내는 방법을 설명합니다.'
+slug: /integrations/clickpipes/bigquery/overview
+title: 'BigQuery와 ClickHouse Cloud 통합'
+doc_type: 'guide'
+---
+
+import IntroClickPipe from '/snippets/ko/_intro.mdx';
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<IntroClickPipe />
+
+<div id="features">
+  ## 기능
+</div>
+
+<div id="initial-load">
+  ### 초기 적재
+</div>
+
+BigQuery ClickPipe는 BigQuery [데이터셋](https://docs.cloud.google.com/bigquery/docs/datasets-intro)에서 선택한 테이블을 한 번의 배치 작업으로 ClickHouse 대상 테이블에 적재합니다. 수집 작업이 완료되면 ClickPipe는 자동으로 중지됩니다. 초기 적재 과정에는 스테이징용으로 사용자 제공 Google Cloud Storage(GCS) 버킷이 필요합니다. 앞으로는 이 중간 버킷을 ClickPipes에서 제공하고 관리할 예정입니다.
+
+<Note>
+  ClickPipes는 BigQuery에서 스테이징 GCS 버킷으로 데이터를 가져오기 위해 배치 추출 작업을 사용합니다. 이 작업에는 BigQuery의 **처리 요금이 부과되지 않습니다**.
+</Note>
+
+<div id="cdc">
+  ### CDC (변경 데이터 캡처)
+</div>
+
+현재 비공개 프리뷰에서는 CDC가 **지원되지 않지만**, 향후 지원될 예정입니다. 그전까지는 초기 적재가 완료된 후 [Google Cloud Storage ClickPipe](/ko/integrations/clickpipes/object-storage/google-cloud-storage/overview)를 사용해 BigQuery 데이터 내보내기를 ClickHouse Cloud에 지속적으로 동기화하는 것을 권장합니다.
+
+<div id="data-type-mapping">
+  ## 데이터 타입 매핑
+</div>
+
+[BigQuery 데이터 타입](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
+
+| BigQuery 데이터 타입   | ClickHouse 데이터 타입 | 세부 정보                                           |
+| ----------------- | ----------------- | ----------------------------------------------- |
+| `BOOL`            | `Bool`            |                                                 |
+| `INT64`           | `Int64`           |                                                 |
+| `FLOAT64`         | `Float64`         |                                                 |
+| `NUMERIC`         | `Decimal(P, S)`   | 정밀도는 최대 38, scale은 최대 9입니다. 정밀도와 scale이 유지됩니다.  |
+| `BIGNUMERIC`      | `Decimal(P, S)`   | 정밀도는 최대 76, scale은 최대 38입니다. 정밀도와 scale이 유지됩니다. |
+| `STRING`          | `String`          |                                                 |
+| `BYTES`           | `String`          |                                                 |
+| `JSON`            | `String` (JSON)   |                                                 |
+| `DATE`            | `Date`            |                                                 |
+| `TIME`            | `String`          | 마이크로초 정밀도입니다.                                   |
+| `DATETIME`        | `DateTime`        | 마이크로초 정밀도입니다.                                   |
+| `TIMESTAMP`       | `DateTime64(6)`   | 마이크로초 정밀도입니다.                                   |
+| `GEOGRAPHY`       | `String`          |                                                 |
+| `GEOMETRY`        | `String`          |                                                 |
+| `UUID`            | `String`          |                                                 |
+| `ARRAY<T>`        | `Array(T)`        |                                                 |
+| `ARRAY<DATE>`     | `Array(Date)`     |                                                 |
+| `STRUCT` (RECORD) | `String`          |                                                 |
+
+<div id="access-control">
+  ## 접근 제어
+</div>
+
+<div id="authentication">
+  ### 인증
+</div>
+
+<div id="service-account-credentials">
+  #### 서비스 계정 자격 증명
+</div>
+
+ClickPipes는 [서비스 계정 키](https://docs.cloud.google.com/iam/docs/keys-create-delete)를 사용해 Google Cloud 프로젝트에 인증합니다. ClickPipes가 BigQuery에서 데이터를 내보내고, 이를 스테이징 GCS 버킷에 적재한 뒤, ClickHouse로 읽어올 수 있도록 필요한 최소한의 [권한](#permissions)만 부여된 전용 서비스 계정을 생성하는 것을 권장합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="BigQuery 및 Cloud Storage 권한이 있는 서비스 계정 키 생성" size="lg" border />
+
+<div id="permissions">
+  ### 권한
+</div>
+
+<div id="bigquery">
+  #### BigQuery
+</div>
+
+서비스 계정에는 다음 BigQuery 역할이 있어야 합니다.
+
+* [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
+* [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
+
+액세스 범위를 더 구체적으로 제한하려면 [IAM 조건](https://docs.cloud.google.com/bigquery/docs/conditions)을 사용해 해당 역할이 액세스할 수 있는 리소스를 제한하는 것을 권장합니다. 예를 들어, `dataViewer` 역할을 동기화하려는 테이블이 포함된 특정 데이터셋으로 제한할 수 있습니다.
+
+```bash
+resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
+```
+
+<div id="cloud-storage">
+  #### Cloud Storage
+</div>
+
+서비스 계정에는 다음 Cloud Storage 역할이 있어야 합니다.
+
+* [`roles/storage.objectAdmin`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.objectAdmin)
+* [`roles/storage.bucketViewer`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.bucketViewer)
+
+액세스 범위를 더 세분화하려면 역할이 접근할 수 있는 리소스를 제한하는 [IAM 조건](https://docs.cloud.google.com/bigquery/docs/conditions)을 사용하는 것이 좋습니다. 예를 들어 `objectAdmin` 및 `bucketViewer` 역할을 ClickPipes 동기화용으로 생성된 전용 버킷에만 적용되도록 제한할 수 있습니다.
+
+```bash
+resource.name.startsWith("projects/_/buckets/<BUCKET_NAME>")
+```

@@ -1,0 +1,420 @@
+---
+slug: /data-modeling/denormalization
+title: 'Desnormalizando dados'
+description: 'Como usar a desnormalização para melhorar o desempenho das consultas'
+keywords: ['desnormalização de dados', 'desnormalizar', 'otimização de consultas']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+A desnormalização de dados é uma técnica no ClickHouse para usar tabelas planas e, assim, minimizar a latência das consultas, evitando junções.
+
+<div id="comparing-normalized-vs-denormalized-schemas">
+  ## Comparando esquemas normalizados vs. desnormalizados
+</div>
+
+Desnormalizar dados envolve reverter intencionalmente o processo de normalização para otimizar o desempenho do banco de dados para padrões de consulta específicos. Em bancos de dados normalizados, os dados são divididos em várias tabelas relacionadas para minimizar a redundância e garantir a integridade dos dados. A desnormalização reintroduz redundância ao combinar tabelas, duplicar dados e incorporar campos calculados em uma única tabela ou em um número menor de tabelas — efetivamente transferindo as junções do momento da consulta para o momento da inserção.
+
+Esse processo reduz a necessidade de junções complexas no momento da consulta e pode acelerar significativamente as operações de leitura, tornando-o ideal para aplicações com alta demanda de leitura e consultas complexas. No entanto, ele pode aumentar a complexidade das operações de gravação e da manutenção, já que qualquer alteração nos dados duplicados precisa ser propagada para todas as instâncias a fim de manter a consistência.
+
+<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="Desnormalização no ClickHouse" />
+
+<br />
+
+Uma técnica comum, popularizada por soluções NoSQL, é desnormalizar dados na ausência de suporte a `JOIN`, armazenando efetivamente todas as estatísticas ou linhas relacionadas em uma linha pai como colunas e objetos aninhados. Por exemplo, em um esquema de exemplo para um blog, podemos armazenar todos os `Comments` como um `Array` de objetos em seus respectivos posts.
+
+<div id="when-to-use-denormalization">
+  ## Quando usar desnormalização
+</div>
+
+Em geral, recomendamos desnormalizar nos seguintes casos:
+
+* Desnormalize tabelas que mudam com pouca frequência ou nas quais um atraso até que os dados estejam disponíveis para consultas analíticas seja aceitável, ou seja, os dados possam ser recarregados integralmente em lote.
+* Evite desnormalizar relacionamentos muitos-para-muitos. Isso pode exigir a atualização de muitas linhas se uma única linha de origem mudar.
+* Evite desnormalizar relacionamentos de alta cardinalidade. Se cada linha de uma tabela tiver milhares de entradas relacionadas em outra tabela, elas precisarão ser representadas como um `Array` — seja de um tipo primitivo ou de tuplas. Em geral, não recomendamos arrays com mais de 1000 tuplas.
+* Em vez de desnormalizar todas as colunas como objetos aninhados, considere desnormalizar apenas uma estatística usando visões materializadas (veja abaixo).
+
+Nem todas as informações precisam ser desnormalizadas — apenas as informações essenciais que precisam ser acessadas com frequência.
+
+O trabalho de desnormalização pode ser feito no ClickHouse ou antes, no pipeline, por exemplo, usando [Apache Flink](/pt-BR/integrations/connectors/data-ingestion/apache-flink).
+
+<div id="avoid-denormalization-on-frequently-updated-data">
+  ## Evite a desnormalização em dados atualizados com frequência
+</div>
+
+No ClickHouse, a desnormalização é uma das várias opções que você pode usar para otimizar o desempenho das consultas, mas deve ser usada com cuidado. Se os dados são atualizados com frequência e precisam ser atualizados quase em tempo real, essa abordagem deve ser evitada. Use-a se a tabela principal for, em grande parte, append-only ou puder ser recarregada periodicamente em lote, por exemplo, diariamente.
+
+Como abordagem, ela tem um desafio principal: o desempenho de gravação e a atualização dos dados. Mais especificamente, a desnormalização transfere, na prática, a responsabilidade pela junção dos dados do momento da consulta para o momento da ingestão. Embora isso possa melhorar significativamente o desempenho das consultas, também torna a ingestão mais complexa e significa que os pipelines de dados precisam reinserir uma linha no ClickHouse caso qualquer uma das linhas usadas para compô-la seja alterada. Isso significa que uma mudança em uma única linha de origem pode exigir a atualização de muitas linhas no ClickHouse. Em esquemas complexos, nos quais as linhas foram compostas a partir de junções complexas, a alteração de uma única linha em um componente aninhado de uma junção pode significar que milhões de linhas precisem ser atualizadas.
+
+Alcançar isso em tempo real geralmente é irrealista e exige um esforço significativo de engenharia, devido a dois desafios:
+
+1. Acionar as instruções JOIN corretas quando uma linha da tabela é alterada. O ideal é que isso não faça com que todos os objetos da junção sejam atualizados, mas apenas aqueles que foram afetados. Modificar as junções para filtrar com eficiência as linhas corretas e conseguir fazer isso com alta vazão exige ferramentas externas ou trabalho de engenharia.
+2. As atualizações de linhas no ClickHouse precisam ser gerenciadas com cuidado, o que introduz complexidade adicional.
+
+<br />
+
+Por isso, é mais comum usar um processo de atualização em lote, no qual todos os objetos desnormalizados são recarregados periodicamente.
+
+<div id="practical-cases-for-denormalization">
+  ## Casos práticos de desnormalização
+</div>
+
+Vamos considerar alguns exemplos práticos em que a desnormalização pode fazer sentido, e outros em que abordagens alternativas são mais adequadas.
+
+Considere uma tabela `Posts` que já foi desnormalizada com estatísticas como `AnswerCount` e `CommentCount` — os dados de origem são fornecidos dessa forma. Na prática, talvez queiramos normalizar essas informações, já que elas provavelmente mudam com frequência. Muitas dessas colunas também estão disponíveis por meio de outras tabelas; por exemplo, os comentários de um post podem ser obtidos pela coluna `PostId` na tabela `Comments`. Para fins deste exemplo, assumimos que os posts são recarregados em um processo em lote.
+
+Também consideramos apenas desnormalizar outras tabelas em `Posts`, pois esta é nossa tabela principal para análises. Desnormalizar na direção oposta também seria apropriado para algumas consultas, com as mesmas considerações acima.
+
+*Para cada um dos exemplos a seguir, assuma que existe uma consulta que exige o uso de ambas as tabelas em uma junção.*
+
+<div id="posts-and-votes">
+  ### Posts and Votes
+</div>
+
+Os votos em posts são representados em tabelas separadas. O esquema otimizado para isso é mostrado abaixo, assim como o comando insert para carregar os dados:
+
+```sql
+CREATE TABLE votes
+(
+        `Id` UInt32,
+        `PostId` Int32,
+        `VoteTypeId` UInt8,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `UserId` Int32,
+        `BountyAmount` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (VoteTypeId, CreationDate, PostId)
+
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 26.272 sec. Processed 238.98 million rows, 2.13 GB (9.10 million rows/s., 80.97 MB/s.)
+```
+
+À primeira vista, esses podem parecer candidatos à desnormalização na tabela `posts`. Há alguns desafios nessa abordagem.
+
+Votos são adicionados aos posts com frequência. Embora isso possa diminuir com o tempo para cada post, a consulta a seguir mostra que temos cerca de 40 mil votos por hora em 30 mil posts.
+
+```sql
+SELECT round(avg(c)) AS avg_votes_per_hr, round(avg(posts)) AS avg_posts_per_hr
+FROM
+(
+        SELECT
+        toStartOfHour(CreationDate) AS hr,
+        count() AS c,
+        uniq(PostId) AS posts
+        FROM votes
+        GROUP BY hr
+)
+```
+
+```response
+┌─avg_votes_per_hr─┬─avg_posts_per_hr─┐
+│               41759 │         33322 │
+└──────────────────┴──────────────────┘
+```
+
+Isso poderia ser resolvido com o processamento em lotes, se um atraso puder ser tolerado, mas ainda assim teríamos que lidar com atualizações, a menos que recarregássemos periodicamente todos os posts (o que dificilmente seria desejável).
+
+Mais problemático ainda é o fato de alguns posts terem um número extremamente alto de votos:
+
+```sql
+SELECT PostId, concat('https://stackoverflow.com/questions/', PostId) AS url, count() AS c
+FROM votes
+GROUP BY PostId
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌───PostId─┬─url──────────────────────────────────────────┬─────c─┐
+│ 11227902 │ https://stackoverflow.com/questions/11227902 │ 35123 │
+│   927386 │ https://stackoverflow.com/questions/927386   │ 29090 │
+│ 11227809 │ https://stackoverflow.com/questions/11227809 │ 27475 │
+│   927358 │ https://stackoverflow.com/questions/927358   │ 26409 │
+│  2003515 │ https://stackoverflow.com/questions/2003515  │ 25899 │
+└──────────┴──────────────────────────────────────────────┴───────┘
+```
+
+O ponto principal aqui é que estatísticas agregadas de votos para cada post seriam suficientes para a maioria das análises - não precisamos desnormalizar todas as informações de votos. Por exemplo, a coluna `Score` atual representa esse tipo de estatística, ou seja, o total de votos positivos menos os votos negativos. Idealmente, poderíamos simplesmente recuperar essas estatísticas no momento da consulta com um simples lookup (consulte [dicionários](/pt-BR/concepts/features/dictionaries/index)).
+
+<div id="users-and-badges">
+  ### Users e Badges
+</div>
+
+Agora vamos considerar `Users` e `Badges`:
+
+<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="Esquema de Users e Badges" />
+
+<p />
+
+Primeiro, inserimos os dados com o seguinte comando:
+
+<p />
+
+```sql
+CREATE TABLE users
+(
+    `Id` Int32,
+    `Reputation` LowCardinality(String),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `DisplayName` String,
+    `LastAccessDate` DateTime64(3, 'UTC'),
+    `AboutMe` String,
+    `Views` UInt32,
+    `UpVotes` UInt32,
+    `DownVotes` UInt32,
+    `WebsiteUrl` String,
+    `Location` LowCardinality(String),
+    `AccountId` Int32
+)
+ENGINE = MergeTree
+ORDER BY (Id, CreationDate)
+```
+
+```sql
+CREATE TABLE badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 26.229 sec. Processed 22.48 million rows, 1.36 GB (857.21 thousand rows/s., 51.99 MB/s.)
+```
+
+```sql
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 18.126 sec. Processed 51.29 million rows, 797.05 MB (2.83 million rows/s., 43.97 MB/s.)
+```
+
+Embora os usuários possam receber insígnias com frequência, é improvável que esse seja um conjunto de dados que precisemos atualizar mais de uma vez por dia. A relação entre insígnias e usuários é de um para muitos. Talvez possamos simplesmente desnormalizar as insígnias nos usuários como uma lista de tuplas? Embora isso seja possível, uma verificação rápida para confirmar o maior número de insígnias por usuário sugere que essa não é a melhor opção:
+
+```sql
+SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
+```
+
+```response
+┌─UserId─┬─────c─┐
+│  22656 │ 19334 │
+│   6309 │ 10516 │
+│ 100297 │  7848 │
+│ 157882 │  7574 │
+│  29407 │  6512 │
+└────────┴───────┘
+```
+
+Provavelmente não é realista desnormalizar 19 mil objetos em uma única linha. Talvez seja melhor manter essa relação em tabelas separadas ou acrescentar estatísticas.
+
+> Talvez queiramos desnormalizar estatísticas de medalhas para usuários, por exemplo, o número de medalhas. Consideramos esse exemplo ao usar dicionários para esse conjunto de dados no momento da inserção.
+
+<div id="posts-and-postlinks">
+  ### Posts e PostLinks
+</div>
+
+`PostLinks` relaciona `Posts` que os usuários consideram relacionados ou duplicados. A consulta a seguir mostra a estrutura e o comando de carregamento:
+
+```sql
+CREATE TABLE postlinks
+(
+  `Id` UInt64,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `PostId` Int32,
+  `RelatedPostId` Int32,
+  `LinkTypeId` Enum('Linked' = 1, 'Duplicate' = 3)
+)
+ENGINE = MergeTree
+ORDER BY (PostId, RelatedPostId)
+
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 4.726 sec. Processed 6.55 million rows, 129.70 MB (1.39 million rows/s., 27.44 MB/s.)
+```
+
+Podemos confirmar que nenhuma postagem tem links em excesso que impeçam a desnormalização:
+
+```sql
+SELECT PostId, count() AS c
+FROM postlinks
+GROUP BY PostId
+ORDER BY c DESC LIMIT 5
+```
+
+```response
+┌───PostId─┬───c─┐
+│ 22937618 │ 125 │
+│  9549780 │ 120 │
+│  3737139 │ 109 │
+│ 18050071 │ 103 │
+│ 25889234 │  82 │
+└──────────┴─────┘
+```
+
+Da mesma forma, esses links não são eventos que ocorram com frequência excessiva:
+
+```sql
+SELECT
+  round(avg(c)) AS avg_votes_per_hr,
+  round(avg(posts)) AS avg_posts_per_hr
+FROM
+(
+  SELECT
+  toStartOfHour(CreationDate) AS hr,
+  count() AS c,
+  uniq(PostId) AS posts
+  FROM postlinks
+  GROUP BY hr
+)
+```
+
+```response
+┌─avg_votes_per_hr─┬─avg_posts_per_hr─┐
+│                54 │                    44     │
+└──────────────────┴──────────────────┘
+```
+
+Usamos isso como exemplo de desnormalização abaixo.
+
+<div id="simple-statistic-example">
+  ### Exemplo simples de estatística
+</div>
+
+Na maioria dos casos, a desnormalização exige adicionar apenas uma única coluna ou estatística a uma linha da tabela pai. Por exemplo, talvez queiramos apenas enriquecer nossos posts com o número de posts duplicados e, para isso, basta adicionar uma coluna.
+
+```sql
+CREATE TABLE posts_with_duplicate_count
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+   ... -other columns
+   `DuplicatePosts` UInt16
+) ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+Para preencher esta tabela, utilizamos um `INSERT INTO SELECT` que faz uma junção entre nossa estatística de duplicados e nossos posts.
+
+```sql
+INSERT INTO posts_with_duplicate_count SELECT
+    posts.*,
+    DuplicatePosts
+FROM posts AS posts
+LEFT JOIN
+(
+    SELECT PostId, countIf(LinkTypeId = 'Duplicate') AS DuplicatePosts
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts.Id = postlinks.PostId
+```
+
+<div id="exploiting-complex-types-for-one-to-many-relationships">
+  ### Usando tipos complexos em relacionamentos um-para-muitos
+</div>
+
+Para realizar a desnormalização, muitas vezes precisamos usar tipos complexos. Se um relacionamento um-para-um estiver sendo desnormalizado, com um número pequeno de colunas, você pode simplesmente adicionar esses dados como linhas, mantendo seus tipos originais, como mostrado acima. No entanto, isso geralmente não é desejável para objetos maiores e não é viável para relacionamentos um-para-muitos.
+
+Em casos de objetos complexos ou relacionamentos um-para-muitos, você pode usar:
+
+* Named Tuples - Permitem representar uma estrutura relacionada como um conjunto de colunas.
+* Array(Tuple) ou Nested - Um array de tuplas nomeadas, também conhecido como Nested, em que cada elemento representa um objeto. Aplicável a relacionamentos um-para-muitos.
+
+Como exemplo, mostramos abaixo como desnormalizar `PostLinks` em `Posts`.
+
+Cada post pode conter vários links para outros posts, como mostrado anteriormente no esquema `PostLinks`. Como um tipo Nested, podemos representar esses posts relacionados e duplicados da seguinte forma:
+
+```sql
+SET flatten_nested=0
+CREATE TABLE posts_with_links
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+   ... -other columns
+   `LinkedPosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
+   `DuplicatePosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
+) ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+> Observe o uso da configuração `flatten_nested=0`. Recomendamos desativar o achatamento de dados aninhados.
+
+Podemos realizar essa desnormalização usando um `INSERT INTO SELECT` com uma consulta com `OUTER JOIN`:
+
+```sql
+INSERT INTO posts_with_links
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts.Id = postlinks.PostId
+```
+
+```response
+0 rows in set. Elapsed: 155.372 sec. Processed 66.37 million rows, 76.33 GB (427.18 thousand rows/s., 491.25 MB/s.)
+Peak memory usage: 6.98 GiB.
+```
+
+> Observe o tempo aqui. Conseguimos desnormalizar 66 mi de linhas em cerca de 2 min. Como veremos mais adiante, essa é uma operação que podemos agendar.
+
+Observe o uso das funções `groupArray` para agrupar `PostLinks` em um array para cada `PostId`, antes da junção. Esse array é então filtrado em duas sublistas: `LinkedPosts` e `DuplicatePosts`, que também excluem quaisquer resultados vazios da junção externa.
+
+Podemos selecionar algumas linhas para ver nossa nova estrutura desnormalizada:
+
+```sql
+SELECT LinkedPosts, DuplicatePosts
+FROM posts_with_links
+WHERE (length(LinkedPosts) > 2) AND (length(DuplicatePosts) > 0)
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+LinkedPosts:    [('2017-04-11 11:53:09.583',3404508),('2017-04-11 11:49:07.680',3922739),('2017-04-11 11:48:33.353',33058004)]
+DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',33058004)]
+```
+
+<div id="orchestrating-and-scheduling-denormalization">
+  ## Orquestração e agendamento da desnormalização
+</div>
+
+<div id="batch">
+  ### Lote
+</div>
+
+Aproveitar a desnormalização exige um processo de transformação que possa ser executado e orquestrado.
+
+Mostramos acima como o ClickHouse pode ser usado para realizar essa transformação depois que os dados forem carregados por meio de um `INSERT INTO SELECT`. Isso é adequado para transformações periódicas em lote.
+
+Os usuários têm várias opções para orquestrar isso no ClickHouse, desde que um processo periódico de carregamento em lote seja aceitável:
+
+* **[Refreshable Materialized Views](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view)** - Views materializadas atualizáveis podem ser usadas para agendar periodicamente uma consulta, enviando os resultados para uma tabela de destino. Ao executar a consulta, a view garante que a tabela de destino seja atualizada atomicamente. Isso oferece uma forma nativa do ClickHouse de agendar esse trabalho.
+* **Ferramentas externas** - Uso de ferramentas como [dbt](https://www.getdbt.com/) e [Airflow](https://airflow.apache.org/) para agendar periodicamente a transformação. A [integração do ClickHouse para dbt](/pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/index) garante que isso seja feito atomicamente, com a criação de uma nova versão da tabela de destino, que depois é trocada atomicamente pela versão que recebe consultas (por meio do comando [EXCHANGE](/pt-BR/reference/statements/exchange)).
+
+<div id="streaming">
+  ### Streaming
+</div>
+
+Como alternativa, você pode fazer isso fora do ClickHouse, antes da inserção, usando tecnologias de streaming, como [Apache Flink](/pt-BR/integrations/connectors/data-ingestion/apache-flink). Outra opção é usar [visões materializadas](/pt-BR/concepts/features/materialized-views/cascading-materialized-views) incrementais para realizar esse processo à medida que os dados são inseridos.

@@ -1,0 +1,34 @@
+---
+title: 'Resynchronisation de certaines tables'
+description: 'Resynchronisation de certaines tables dans un ClickPipe MongoDB'
+slug: /integrations/clickpipes/mongodb/table_resync
+sidebarTitle: 'Resynchroniser une table'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Dans certains cas, il peut être utile de resynchroniser certaines tables d’un pipe. Par exemple, après des changements majeurs de schéma dans MongoDB, ou à la suite d’un remaniement des données dans ClickHouse.
+
+Bien que la resynchronisation de tables individuelles par un simple clic soit encore en cours de développement, ce guide explique comment y parvenir dès aujourd’hui dans le ClickPipe MongoDB.
+
+<div id="removing-table">
+  ### 1. Supprimer la table du pipe
+</div>
+
+Pour ce faire, suivez le [guide de suppression de table](/fr/integrations/clickpipes/mongodb/remove-table).
+
+<div id="truncate-drop-table">
+  ### 2. TRUNCATE ou supprimer la table dans ClickHouse
+</div>
+
+Cette étape permet d’éviter les doublons de données lorsque nous ajouterons de nouveau cette table à l’étape suivante. Pour ce faire, accédez à l’onglet **SQL Console** de ClickHouse Cloud et exécutez une requête.
+Notez qu’un mécanisme de validation bloque l’ajout de la table si elle existe déjà dans ClickHouse et qu’elle n’est pas vide.
+
+<div id="add-table-again">
+  ### 3. Ajoutez à nouveau la table à ClickPipe
+</div>
+
+Pour cela, vous pouvez suivre le [guide d’ajout d’une table](/fr/integrations/clickpipes/mongodb/add-table).

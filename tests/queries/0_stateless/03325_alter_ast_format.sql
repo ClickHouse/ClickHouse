@@ -1,0 +1,2 @@
+-- https://github.com/ClickHouse/ClickHouse/issues/74369
+ALTER TABLE t22 (DELETE WHERE ('叫' = c1) OR ((792.3673220441809 = c0) AND (c0 = c1))), (MODIFY SETTING persistent = 1), (UPDATE  c1 = 'would' WHERE NOT f2()), (MODIFY SETTING persistent = 0); -- { serverError UNKNOWN_TABLE }

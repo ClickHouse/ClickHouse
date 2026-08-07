@@ -1,0 +1,57 @@
+---
+sidebarTitle: 'Notion'
+slug: /integrations/notion
+keywords: ['clickhouse', 'notion', 'mcp', 'custom agents', 'ai', 'integrate', 'connect']
+description: 'ClickHouse Remote MCPサーバー を介して、ClickHouse Cloud を Notion のカスタムエージェントに接続します。'
+title: 'Notion と ClickHouse を接続する'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Notion](https://www.notion.com/) は、メモ、ドキュメント、プロジェクト、AI を活用したカスタムエージェントを一元的に扱えるワークスペースです。
+
+ClickHouse Cloud を Notion の [カスタムエージェント](https://www.notion.com/help/mcp-connections-for-custom-agents) に接続できます。接続すると、そのエージェントは Notion を離れることなく、データを探索し、読み取り専用の分析クエリを実行し、ClickHouse Cloud のサービス情報やコスト情報を表示できます。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* 稼働中の[ClickHouse Cloud サービス](/ja/get-started/setup/cloud)で、[Remote MCPサーバーが有効になっている](/ja/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)
+* **Business** または **Enterprise** プランの Notion ワークスペース
+
+<div id="connect-clickhouse-to-notion">
+  ## ClickHouseをNotionのカスタムエージェントに接続する
+</div>
+
+ClickHouseは、Notionで事前設定済みの接続として提供されています (現在はベータ) 。カスタムMCPサーバーの設定やURLの貼り付けは不要です。
+
+1. Notionで、サイドバーの**Agents**セクションから新しいカスタムエージェントを作成します。
+2. エージェントの**Settings**で、**Tools and Access**の**Add connection**を選択し、利用可能な接続の一覧から**ClickHouse**を追加します。
+
+<Image img="/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp" size="md" alt="NotionのAdd connection pickerでClickHouseを選択している画面" />
+
+3. **Connect**をクリックし、ClickHouse Cloudの認証情報を使ってOAuthフローを完了します。アクセス範囲は、アカウントがすでにアクセスできる組織とサービスに限定されます。
+
+4. エージェントの設定で新しいClickHouse接続を展開し、このエージェントで使用するツールのトグルをオンにします。各ツールについて、エージェントが自動的に実行するか、毎回承認を求めるかも選択できます。ClickHouse Remote MCPサーバーによって公開されるすべてのツールは読み取り専用です。完全かつ最新の一覧は、[利用可能なツール](/ja/products/cloud/features/ai-ml/remote-mcp#available-tools)のリファレンスを参照してください。
+
+<Image img="/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp" size="md" alt="ツールごとのトグルが表示された、Notionで展開されたClickHouse接続" />
+
+<Note>
+  各カスタムエージェントには専用のClickHouse接続が必要で、接続を認証した本人だけがそのツール設定を変更できます。詳しくは、Notionの[Agent接続に関するセキュリティのベストプラクティス](https://www.notion.com/help/security-best-practices-for-agent-connections)を参照してください。
+</Note>
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* [ClickHouse CloudのRemote MCPサーバーを有効にして接続する](/ja/products/cloud/features/ai-ml/mcp/remote-mcp)
+* [CloudのRemote MCP: ツールリファレンス](/ja/products/cloud/features/ai-ml/remote-mcp)
+* Notion: [カスタムエージェントのMCP接続](https://www.notion.com/help/mcp-connections-for-custom-agents)
+* Notion: [MCPインテグレーションでカスタムエージェントをツールスタックに接続する](https://www.notion.com/help/guides/connect-custom-agents-to-mcp-integrations)

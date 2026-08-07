@@ -1,0 +1,205 @@
+---
+sidebarTitle: '비순차 모드 구성'
+title: '지속적인 수집을 위한 비순차 모드 구성'
+slug: /integrations/clickpipes/object-storage/s3/unordered-mode
+description: 'S3 ClickPipes에서 지속적인 수집용 비순차 모드를 구성하는 단계별 가이드입니다.'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+기본적으로 S3 ClickPipe는 파일이 버킷에 [사전순](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order)으로 추가된다고 가정합니다. [Amazon SQS](https://aws.amazon.com/sqs/) 큐를 버킷에 연결하고, 필요에 따라 [Amazon EventBridge](https://aws.amazon.com/eventbridge/)를 이벤트 라우터로 사용하도록 설정하면 파일명만으로는 순서를 알 수 없는 파일도 수집하도록 S3 ClickPipe를 구성할 수 있습니다. 이렇게 하면 ClickPipes가 `ObjectCreated:*` 이벤트를 수신하여 파일 이름 규칙과 관계없이 새 파일을 모두 수집할 수 있습니다.
+
+<Note>
+  비순차 모드는 **오직** Amazon S3에서만 지원되며, 퍼블릭 버킷이나 S3 호환 서비스에서는 **지원되지 않습니다**. 이 기능을 사용하려면 [Amazon SQS](https://aws.amazon.com/sqs/) 큐를 버킷에 연결하고, 필요에 따라 [Amazon EventBridge](https://aws.amazon.com/eventbridge/)를 이벤트 라우터로 사용하도록 설정해야 합니다.
+</Note>
+
+<div id="how-it-works">
+  ## 작동 방식
+</div>
+
+이 모드에서는 S3 ClickPipe가 먼저 선택한 경로의 **모든 파일**을 초기 적재한 다음, 지정된 경로와 일치하는 큐의 `ObjectCreated:*` 이벤트를 수신합니다. 이전에 이미 확인한 파일에 대한 메시지이거나, 경로와 일치하지 않는 파일이거나, 다른 유형의 이벤트는 **무시됩니다**. 파일은 `max insert bytes` 또는 `max file count`에 설정된 임계값에 도달하거나, 설정 가능한 인터벌이 지난 후(기본값 30초) 적재됩니다. 특정 파일이나 특정 시점부터 수집을 시작하는 것은 **불가능합니다**. ClickPipes는 항상 선택한 경로의 모든 파일을 적재합니다.
+
+데이터를 적재하는 동안에는 다양한 유형의 장애가 발생할 수 있으며, 이로 인해 부분 삽입이나 중복 데이터가 생길 수 있습니다. 객체 스토리지 ClickPipes는 삽입 실패에도 견고하며, 임시 스테이징 테이블(staging table)을 사용해 정확히 한 번 처리 의미 체계를 제공합니다. 데이터는 먼저 스테이징 테이블에 삽입됩니다. 문제가 발생하면 스테이징 테이블을 TRUNCATE한 뒤 깨끗한 상태에서 삽입을 다시 시도합니다. 삽입이 성공적으로 완료된 경우에만 파티션이 대상 테이블로 이동합니다.
+
+<Steps>
+  <Step>
+    ## Amazon SQS 큐 생성
+
+    **1.** AWS Console에서 **Simple Queue Service &gt; Create queue**로 이동합니다. 기본값을 사용하여 새 표준 큐를 생성합니다.
+
+    <Tip>
+      실패한 메시지를 더 쉽게 디버깅하고 재시도할 수 있도록 SQS 큐에 **데드 레터 큐(DLQ)** 를 구성할 것을 강력히 권장합니다. DLQ가 구성되어 있으면 실패한 메시지는 다시 큐에 들어가 재처리되며, 이 과정은 DLQ `maxReceiveCount` 매개변수에 설정된 횟수까지 반복됩니다.
+    </Tip>
+
+    **2.** 아래 두 가지 옵션 중 하나를 사용하여 S3 버킷을 SQS 큐에 연결하십시오. EventBridge는 팬아웃(fan-out)을 지원하고 보다 유연한 이벤트 필터링을 제공하며, 이벤트 유형 및 접두사(prefix)당 알림 규칙을 하나로 제한하는 S3 제약을 받지 않으므로 대부분의 사용 사례에 권장됩니다.
+
+    <Tabs>
+      <Tab title="EventBridge 사용">
+        **a.** S3 버킷 속성에서 **Event notifications &gt; Amazon EventBridge**로 이동한 다음, EventBridge로 알림을 전송하도록 활성화합니다. **Save changes**를 클릭합니다.
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="S3 버킷 속성에서 Amazon EventBridge 알림 활성화" size="lg" border />
+
+        **b.** AWS Console에서 **Amazon EventBridge &gt; Rules &gt; Create rule**로 이동합니다. 규칙 이름(예: `S3ObjectCreated`)을 지정하고 **default** 이벤트 버스를 선택한 다음 **다음**을 클릭합니다. **Build event pattern** 단계에서 이벤트 소스로 **AWS events or EventBridge partner events**를 선택한 후, 아래 이벤트 패턴을 수동으로 입력합니다. 이때 `<bucket-name>`은 버킷 이름으로 바꾸십시오.
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="EventBridge 규칙 이름 및 이벤트 버스 정의" size="lg" border />
+
+        ```json
+        {
+          "source": ["aws.s3"],
+          "detail-type": ["Object Created"],
+          "detail": {
+            "bucket": {
+              "name": ["<bucket-name>"]
+            }
+          }
+        }
+        ```
+
+        필요하면 접두사 또는 접미사 기준으로 필터링할 수 있도록 패턴에 `object.key` 조건을 추가할 수 있습니다. 추가하는 경우 ClickPipe에 설정한 경로와 일치해야 합니다.
+
+        **c.** **Select target(s)** 단계에서 대상 유형으로 **AWS service**를 선택하고 **SQS queue**를 선택합니다. 이전 단계에서 생성한 큐를 선택합니다. EventBridge가 필요한 IAM role을 자동 생성할 수 있도록 **Use execution role (recommended)**은 체크된 상태로 그대로 둔 다음, **다음**을 클릭하고 마법사를 완료합니다.
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="EventBridge 규칙 대상으로 SQS 큐 설정" size="lg" border />
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="EventBridge 규칙이 성공적으로 생성됨" size="lg" border />
+
+        **d.** EventBridge가 이 큐로 메시지를 전송할 수 있도록 SQS 큐 액세스 정책을 편집합니다. `<sqs-queue-arn>` 및 `<eventbridge-rule-arn>`을 적절한 값으로 바꾸십시오.
+
+        ```json
+        {
+          "Version": "2012-10-17",
+          "Id": "example-ID",
+          "Statement": [
+            {
+              "Sid": "AllowEventBridgeToSendMessage",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": "SQS:SendMessage",
+              "Resource": "<sqs-queue-arn>",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": "<eventbridge-rule-arn>"
+                }
+              }
+            }
+          ]
+        }
+        ```
+      </Tab>
+
+      <Tab title="직접 S3 → SQS">
+        **a.** S3 버킷이 이 큐로 메시지를 전송할 수 있도록 SQS 큐 액세스 정책을 편집합니다. `<sqs-queue-arn>`, `<bucket-arn>`, `<aws-account-id>`를 적절한 값으로 바꾸십시오.
+
+        ```json
+        {
+          "Version": "2012-10-17",
+          "Id": "example-ID",
+          "Statement": [
+            {
+              "Sid": "AllowS3ToSendMessage",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "s3.amazonaws.com"
+              },
+              "Action": "SQS:SendMessage",
+              "Resource": "<sqs-queue-arn>",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": "<bucket-arn>"
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": "<aws-account-id>"
+                }
+              }
+            }
+          ]
+        }
+        ```
+
+        **b.** S3 버킷 속성에서 `ObjectCreated` 이벤트에 대한 **Event notifications**를 활성화하고 대상을 SQS 큐로 설정합니다. 필요하면 알림을 트리거할 객체를 필터링하도록 접두사 또는 접미사를 지정할 수 있습니다. 지정하는 경우 ClickPipe에 설정한 경로와 일치해야 합니다.
+
+        <Note>
+          S3는 동일한 버킷에서 같은 이벤트 유형에 대해 서로 겹치는 알림 규칙을 여러 개 허용하지 않습니다. 이 버킷에 이미 `ObjectCreated` 이벤트용 알림 규칙이 있다면 대신 EventBridge 방식을 사용하십시오.
+        </Note>
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ## IAM role 설정
+
+    **1.** ClickHouse Cloud 콘솔에서 **Settings &gt; Network security information**으로 이동한 다음, 서비스의 **IAM role ARN**을 복사합니다.
+
+    **2.** AWS Console에서 **IAM &gt; Roles &gt; Create role**로 이동합니다. **Custom trust policy**를 선택한 뒤, 다음 내용을 붙여넣고 `<ch-cloud-arn>`을 이전 단계에서 복사한 IAM role ARN으로 바꿉니다:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "AllowAssumeRole",
+          "Effect": "Allow",
+          "Principal": {
+            "AWS": "<ch-cloud-arn>"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    ```
+
+    **3.** S3에서 객체를 읽고 SQS 큐의 메시지를 관리하는 데 필요한 [필수 권한](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#permissions)을 포함하는 인라인 정책을 IAM role에 생성하세요. `<bucket-arn>` 및 `<sqs-queue-arn>`을 적절한 값으로 대체하세요:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "S3BucketMetadataAccess",
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetBucketLocation",
+            "s3:ListBucket"
+          ],
+          "Resource": "<bucket-arn>"
+        },
+        {
+          "Sid": "AllowGetListObjects",
+          "Effect": "Allow",
+          "Action": [
+            "s3:Get*",
+            "s3:List*"
+          ],
+          "Resource": "<bucket-arn>/*"
+        },
+        {
+          "Sid": "SQSNotificationsAccess",
+          "Effect": "Allow",
+          "Action": [
+            "sqs:DeleteMessage",
+            "sqs:ListQueues",
+            "sqs:ReceiveMessage",
+            "sqs:GetQueueAttributes"
+          ],
+          "Resource": "<sqs-queue-arn>"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## unordered mode로 ClickPipe 생성
+
+    **1.** ClickHouse Cloud 콘솔에서 **Data Sources &gt; Create ClickPipe**로 이동한 다음 **Amazon S3**를 선택합니다. S3 버킷에 연결하는 데 필요한 정보를 입력합니다. **Authentication method**에서 **IAM role**을 선택하고, 이전 단계에서 생성한 역할의 ARN을 입력합니다.
+
+    **2.** **Incoming data**에서 **Continuous ingestion**을 켭니다. 수집 모드로 **Any order**를 선택하고, 버킷에 연결된 큐의 **SQS queue URL**을 입력합니다.
+
+    **3.** **Parse information**에서 대상 테이블의 **정렬 키(Sorting key)**를 정의합니다. 매핑된 스키마를 필요에 맞게 조정한 다음, ClickPipes 데이터베이스 사용자에 대한 역할을 구성합니다.
+
+    **4.** 구성을 검토한 후 **Create ClickPipe**를 클릭합니다. ClickPipes는 먼저 버킷을 초기 스캔하여 지정된 경로와 일치하는 기존 파일을 모두 로드한 다음, 큐에 새 `ObjectCreated:*` 이벤트가 도착하면 파일 처리를 시작합니다.
+  </Step>
+</Steps>

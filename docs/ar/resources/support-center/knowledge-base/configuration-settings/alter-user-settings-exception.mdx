@@ -1,0 +1,41 @@
+---
+title: استثناء عند تعديل إعدادات المستخدم
+description: معالجة الاستثناء الذي يُطرح عند تعديل إعدادات المستخدم
+date: 2023-08-26
+tags: ['إعدادات', 'الأخطاء والاستثناءات']
+keywords: ['استثناء', 'إعدادات المستخدم']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dbexception-cannot-update-user-default-in-usersxml-because-this-storage-is-readonly-access_storage_readonly">
+  ## DB::Exception: Cannot update user `default` in users.xml because this storage is readonly. (ACCESS_STORAGE_READONLY)
+</div>
+
+عند محاولة تعديل إعدادات أحد المستخدمين، قد تواجه الاستثناء أعلاه.
+
+فيما يلي بعض الخيارات لاستكشاف هذا الخطأ وإصلاحه:
+
+<div id="edit-usersxml-directly">
+  ## عدّل users.xml مباشرةً
+</div>
+
+يمكنك تعديل الإعدادات المطلوبة لمستخدم معيّن أو إضافتها مباشرةً في `users.xml` ضمن المسار `/etc/clickhouse-server/users.d`.
+
+اقرأ المزيد عن `users.xml` [هنا](/ar/concepts/features/configuration/settings/settings-profiles).
+
+<div id="create-another-user">
+  ## أنشئ مستخدمًا آخر
+</div>
+
+يمكنك إنشاء مستخدم آخر بالإعدادات التي تحددها، ثم الاتصال بـ ClickHouse باستخدام هذا المستخدم الجديد.
+
+اطّلع على [هذه الصفحة](/ar/reference/statements/create/user) لمعرفة كيفية إنشاء المستخدمين.
+
+<div id="enable-sql-driven-access-control">
+  ## تمكين التحكم في الوصول المستند إلى SQL
+</div>
+
+يمكنك تمكين التحكم في الوصول المستند إلى SQL وإدارة الحسابات للمستخدم `default`. الخطوات اللازمة لذلك موضحة في هذه [الصفحة](/ar/concepts/features/security/access-rights#enabling-access-control).

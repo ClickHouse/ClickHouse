@@ -1,0 +1,2 @@
+{"a_enum_to_string":"A","b_enum_to_enum":"t","c_array_string":["s1", "s2"],"d_array_array_string":[["a1"], ["a2"]],"e_union_null_string":{"string": "s1"},"f_union_long_null":null,"g_fixed":"79cd909892d7e7ade1987cc7422628ba","h_record_skip":{"a": "a"}}
+{"a_enum_to_string":"C","b_enum_to_enum":"f","c_array_string":[],"d_array_array_string":[],"e_union_null_string":null,"f_union_long_null":{"long": 123},"g_fixed":"79cd909892d7e7ade1987cc7422628ba","h_record_skip":{"a": "a"}}

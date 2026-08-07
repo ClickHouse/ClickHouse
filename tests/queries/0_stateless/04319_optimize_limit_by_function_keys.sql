@@ -1,0 +1,69 @@
+-- { echo }
+
+SET enable_analyzer = 1;
+SET optimize_limit_by_function_keys = 1;
+SET optimize_injective_functions_in_limit_by = 0;
+
+DROP TABLE IF EXISTS test;
+CREATE TABLE test (g UInt32, x UInt32) ENGINE = MergeTree ORDER BY (g, x);
+INSERT INTO test SELECT number % 3 AS g, number AS x FROM numbers(10);
+
+-- A key that is a function of another key is removed.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY g, g + 1;
+SELECT g FROM test ORDER BY x LIMIT 2 BY g, g + 1;
+
+-- A deeply nested function of a key is removed too.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY g, (g + 1) * 2;
+SELECT g FROM test ORDER BY x LIMIT 2 BY g, (g + 1) * 2;
+
+-- A function of several other keys is removed.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 1 BY g, x, g + x;
+SELECT g FROM test ORDER BY x LIMIT 1 BY g, x, g + x;
+
+-- A non-deterministic expression is not a function of the other keys and is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY g, g + rand();
+SELECT g FROM test ORDER BY x LIMIT 2 BY g, g + rand();
+
+-- A function of a non-key column is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY g, x + 1;
+SELECT g FROM test ORDER BY x LIMIT 2 BY g, x + 1;
+
+-- A plain column key is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY g;
+SELECT g FROM test ORDER BY x LIMIT 2 BY g;
+
+-- A nullary function is kept (it has no arguments to be a function of other keys).
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY g, rand();
+SELECT g FROM test ORDER BY x LIMIT 2 BY g, rand();
+
+-- The only key is never removed, even though it is a function.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY g + 1;
+SELECT g FROM test ORDER BY x LIMIT 2 BY g + 1;
+
+-- LIMIT BY inside a subquery is optimized.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM (SELECT g, x FROM test ORDER BY x LIMIT 2 BY g, g + 1);
+SELECT g FROM (SELECT g, x FROM test ORDER BY x LIMIT 2 BY g, g + 1);
+
+-- OFFSET and a negative limit are preserved while the redundant key is removed.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 OFFSET 3 BY g, g + 1;
+SELECT g FROM test ORDER BY x LIMIT 2 OFFSET 3 BY g, g + 1;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT -2 BY g, g + 1;
+SELECT g FROM test ORDER BY x LIMIT -2 BY g, g + 1;
+
+-- With the optimization disabled the redundant key is kept and the result is unchanged.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g FROM test ORDER BY x LIMIT 2 BY g, g + 1 SETTINGS optimize_limit_by_function_keys = 0;
+SELECT g FROM test ORDER BY x LIMIT 2 BY g, g + 1 SETTINGS optimize_limit_by_function_keys = 0;
+
+-- Aggregate functions are allowed in LIMIT BY (after GROUP BY); the aggregate key is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x);
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x);
+
+-- A function of an aggregate key is removed, while the aggregate key itself is kept.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x), sum(x) + 1;
+SELECT g, sum(x) FROM test GROUP BY g ORDER BY g LIMIT 1 BY sum(x), sum(x) + 1;
+
+-- Window functions are likewise allowed and kept; a function of a window-function key is removed.
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT x FROM test ORDER BY x LIMIT 2 BY sum(x) OVER (PARTITION BY g), (sum(x) OVER (PARTITION BY g)) + 1;
+SELECT x FROM test ORDER BY x LIMIT 2 BY sum(x) OVER (PARTITION BY g), (sum(x) OVER (PARTITION BY g)) + 1;
+
+DROP TABLE test;

@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'DbVisualizer'
+slug: /integrations/dbvisualizer
+description: 'DbVisualizer est un outil de base de données offrant une prise en charge étendue de ClickHouse.'
+title: 'Connecter DbVisualizer à ClickHouse'
+keywords: ['DbVisualizer', 'visualisation de bases de données', 'client SQL', 'pilote JDBC', 'outil de base de données']
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<div id="start-or-download-dbvisualizer">
+  ## Démarrer ou télécharger DbVisualizer
+</div>
+
+DbVisualizer est disponible à l’adresse https://www.dbvis.com/download/
+
+<div id="1-gather-your-connection-details">
+  ## 1. Rassemblez vos informations de connexion
+</div>
+
+<ConnectionDetails />
+
+<div id="2-built-in-jdbc-driver-management">
+  ## 2. Gestion intégrée des pilotes JDBC
+</div>
+
+DbVisualizer inclut les pilotes JDBC ClickHouse les plus récents. Il intègre un gestionnaire complet des pilotes JDBC, qui donne accès aux dernières versions publiées ainsi qu&#39;aux versions antérieures des pilotes.
+
+<Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="Interface du gestionnaire de pilotes de DbVisualizer affichant la configuration du pilote JDBC ClickHouse" />
+
+<div id="3-connect-to-clickhouse">
+  ## 3. Se connecter à ClickHouse
+</div>
+
+Pour connecter une base de données avec DbVisualizer, vous devez d’abord créer et configurer une connexion à la base de données.
+
+1. Créez une nouvelle connexion depuis **Database-&gt;Create Database Connection** et sélectionnez un pilote pour votre base de données dans le menu contextuel.
+
+2. Un onglet **Object View** s’ouvre pour la nouvelle connexion.
+
+3. Saisissez un nom pour la connexion dans le champ **Name** et, si vous le souhaitez, une description dans le champ **Notes**.
+
+4. Laissez **Database Type** sur **Auto Detect**.
+
+5. Si le pilote sélectionné dans **Driver Type** est marqué d’une coche verte, il est prêt à être utilisé. Dans le cas contraire, vous devrez peut-être le configurer dans le **Driver Manager**.
+
+6. Saisissez les informations sur le serveur de base de données dans les champs restants.
+
+7. Vérifiez qu’une connexion réseau peut être établie à l’adresse et au port spécifiés en cliquant sur le bouton **Ping Server**.
+
+8. Si le résultat de **Ping Server** indique que le serveur est joignable, cliquez sur **Connect** pour vous connecter au serveur de base de données.
+
+<Tip>
+Consultez [Résoudre les problèmes de connexion](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/) pour obtenir quelques conseils si vous rencontrez des problèmes pour vous connecter à la base de données.
+</Tip>
+
+<div id="learn-more">
+  ## En savoir plus
+</div>
+
+Pour en savoir plus sur DbVisualizer, consultez la [documentation de DbVisualizer](https://www.dbvis.com/docs/ug/).

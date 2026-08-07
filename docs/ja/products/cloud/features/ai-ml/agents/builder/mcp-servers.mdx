@@ -1,0 +1,46 @@
+---
+sidebarTitle: 'MCPサーバー'
+slug: /cloud/features/ai-ml/agents/builder/mcp-servers
+title: 'MCPサーバー'
+description: 'ClickHouse Agentにサードパーティ製MCPサーバーを接続する'
+keywords: ['AI', 'ClickHouse Cloud', 'エージェント', 'MCP', 'Model Context Protocol']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Model Context Protocol (MCP) は、AIモデルにツールやデータソースを公開するためのオープン標準です。ClickHouse Agent に MCPサーバー を接続すると、エージェントはそのサーバーが公開するあらゆる機能 (課題追跡システム、オブザーバビリティバックエンド、内部 API、サードパーティ製 SaaS、その他 MCP エンドポイントを持つあらゆるもの) にアクセスできるようになります。
+
+<div id="attach-an-mcp-server">
+  ## MCPサーバーをアタッチする
+</div>
+
+エージェントビルダーで、**MCPサーバー**セクションを開き、**Add server**をクリックします。サーバーのURLと認証設定を入力し、そのサーバーのツールの中から、このエージェントで使用するものを選択します。エージェントを保存します。
+
+1つのエージェントに複数のサーバーをアタッチできます。エージェントが呼び出した各ツールは会話に記録されるため、ユーザーはエージェントが何をしたかを確認できます。
+
+<div id="transport">
+  ## Transport
+</div>
+
+ClickHouse Agents は、プロダクション環境向けの MCP トランスポートである Streamable HTTP を使用します。接続先のサーバーは、ClickHouse Cloud から HTTP(S) 経由でアクセス可能である必要があります。
+
+<div id="authentication">
+  ## 認証
+</div>
+
+MCPサーバーでは認証情報が必要になる場合があります。ClickHouse Agents は以下をサポートしています。
+
+* **Bearerトークン** やその他の静的ヘッダー - サーバーの設定時に指定する固定値です。
+* **OAuth 2.0** - 対話型のフローです。サーバー上のツールをあなた (またはアクセス権を持つ任意のユーザー) が初めて呼び出すと、ブラウザーでサインインウィンドウが開きます。トークンは自動的に管理・更新されます。
+* **ユーザーごとの認証情報** - サーバー設定内の変数が呼び出し元ユーザーのプロファイルから置き換えられるため、各ユーザーは共有のサービスアカウントではなく、自身のIDで認証されます。
+
+ユーザーが指定した認証情報は暗号化して保存され、入力したユーザーにのみ紐づけられます。あるユーザーの認証情報が、別のユーザーのエージェント実行時に見えることはありません。
+
+<div id="limits">
+  ## 制限
+</div>
+
+1 回のエージェント実行で参照できる個別のMCPサーバーターゲットは最大 50 個、リクエストごとの拡張ツール構成は最大 100 個です。これを超える場合は、[サブエージェント](/ja/products/cloud/features/ai-ml/agents/builder/subagents) を使ってエージェントを分割する必要があります。

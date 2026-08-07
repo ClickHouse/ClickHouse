@@ -1,0 +1,109 @@
+---
+alias: []
+description: 'Avro 格式的文档'
+input_format: true
+keywords: ['Avro']
+output_format: true
+slug: /interfaces/formats/Avro
+title: 'Avro'
+doc_type: 'reference'
+---
+
+import DataTypeMapping from '/snippets/zh/data-types-matching.mdx';
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 描述
+</div>
+
+[Apache Avro](https://avro.apache.org/) 是一种面向行的序列化格式，采用二进制编码以实现高效的数据处理。`Avro` 格式支持读取和写入 [Avro 数据文件](https://avro.apache.org/docs/current/specification/#object-container-files)。该格式要求消息为自描述消息，并内嵌 schema。如果你将 Avro 与 Schema Registry 搭配使用，请参阅 [`AvroConfluent`](/zh/reference/formats/Avro/AvroConfluent) 格式。
+
+<div id="data-type-mapping">
+  ## 数据类型映射
+</div>
+
+<DataTypeMapping />
+
+<div id="format-settings">
+  ## 格式设置
+</div>
+
+| Setting                                    | Description                                                                               | Default |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------- | ------- |
+| `input_format_avro_allow_missing_fields`   | 当 schema 中找不到某个字段时，是否使用默认值而不是报错。                                                          | `0`     |
+| `input_format_avro_null_as_default`        | 将 `null` 值插入非 Nullable 列时，是否使用默认值而不是报错。                                                   | `0`     |
+| `output_format_avro_codec`                 | Avro 输出文件使用的压缩算法。可能的值：`null`、`deflate`、`snappy`、`zstd`。                                   |         |
+| `output_format_avro_sync_interval`         | Avro 文件中同步标记的间隔频率 (以字节为单位) 。                                                              | `16384` |
+| `output_format_avro_string_column_pattern` | 用于识别参与 Avro 字符串类型映射的 `String` 列的正则表达式。默认情况下，ClickHouse 的 `String` 列会写为 Avro 的 `bytes` 类型。 |         |
+| `output_format_avro_rows_in_file`          | 每个 Avro 输出文件的最大行数。达到该限制时，会创建一个新文件 (如果存储系统支持文件拆分) 。                                        | `1`     |
+
+<div id="examples">
+  ## 示例
+</div>
+
+<div id="reading-avro-data">
+  ### 读取 Avro 数据
+</div>
+
+要将 Avro 文件中的数据读入 ClickHouse 表：
+
+```bash
+$ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avro"
+```
+
+导入的 Avro 文件的根 schema 必须为 `record` 类型。
+
+为了找出表中列与 Avro schema 字段之间的对应关系，ClickHouse 会比较它们的名称。
+这种比较区分大小写，未使用的字段会被跳过。
+
+ClickHouse 表中列的数据类型可以与插入的 Avro 数据中的对应字段不同。插入数据时，ClickHouse 会根据上表解释数据类型，然后将数据[转换](/zh/reference/functions/regular-functions/type-conversion-functions#CAST)为相应的列类型。
+
+导入数据时，如果在 schema 中找不到某个字段，并且启用了设置 [`input_format_avro_allow_missing_fields`](/zh/reference/settings/formats#input_format_avro_allow_missing_fields)，则会使用默认值，而不是抛出错误。
+
+<div id="writing-avro-data">
+  ### 写入 Avro 数据
+</div>
+
+要将 ClickHouse 表中的数据写入 Avro 文件：
+
+```bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
+```
+
+列名必须满足以下规则：
+
+* 以 `[A-Za-z_]` 开头
+* 后续只能包含 `[A-Za-z0-9_]`
+
+Avro 文件的输出压缩和同步时间间隔可分别通过 [`output_format_avro_codec`](/zh/reference/settings/formats#output_format_avro_codec) 和 [`output_format_avro_sync_interval`](/zh/reference/settings/formats#output_format_avro_sync_interval) 设置进行配置。
+
+<div id="inferring-the-avro-schema">
+  ### 推断 Avro schema
+</div>
+
+使用 ClickHouse [`DESCRIBE`](/zh/reference/statements/describe-table) 函数，你可以像下面的示例一样快速查看推断出的 Avro 文件格式。
+此示例包含一个可公开访问的 Avro 文件 URL，位于 ClickHouse S3 公共 bucket 中：
+
+```sql
+DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits.avro', 'Avro');
+
+┌─name───────────────────────┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ WatchID                    │ Int64           │              │                    │         │                  │                │
+│ JavaEnable                 │ Int32           │              │                    │         │                  │                │
+│ Title                      │ String          │              │                    │         │                  │                │
+│ GoodEvent                  │ Int32           │              │                    │         │                  │                │
+│ EventTime                  │ Int32           │              │                    │         │                  │                │
+│ EventDate                  │ Date32          │              │                    │         │                  │                │
+│ CounterID                  │ Int32           │              │                    │         │                  │                │
+│ ClientIP                   │ Int32           │              │                    │         │                  │                │
+│ ClientIP6                  │ FixedString(16) │              │                    │         │                  │                │
+│ RegionID                   │ Int32           │              │                    │         │                  │                │
+...
+│ IslandID                   │ FixedString(16) │              │                    │         │                  │                │
+│ RequestNum                 │ Int32           │              │                    │         │                  │                │
+│ RequestTry                 │ Int32           │              │                    │         │                  │                │
+└────────────────────────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```

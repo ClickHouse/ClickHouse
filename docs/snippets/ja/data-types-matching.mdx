@@ -1,0 +1,44 @@
+---
+title: データ型の対応
+---
+
+次の表は、Apache Avro フォーマットでサポートされるすべてのデータ型と、`INSERT` および `SELECT` クエリでそれぞれに対応する ClickHouse の[データ型](/ja/reference/data-types/index)を示しています。
+
+| Avro data type `INSERT`                     | ClickHouse data type                                                                            | Avro data type `SELECT`       |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- |
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/ja/reference/data-types/int-uint), [UInt(8\16\32)](/ja/reference/data-types/int-uint) | `int`                         |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](/ja/reference/data-types/int-uint), [UInt64](/ja/reference/data-types/int-uint)               | `long`                        |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](/ja/reference/data-types/float)                                                          | `float`                       |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](/ja/reference/data-types/float)                                                          | `double`                      |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/ja/reference/data-types/string)                                                          | `bytes` または `string` *        |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](/ja/reference/data-types/fixedstring)                                             | `fixed(N)`                    |
+| `enum`                                      | [Enum(8\16)](/ja/reference/data-types/enum)                                                        | `enum`                        |
+| `array(T)`                                  | [Array(T)](/ja/reference/data-types/array)                                                         | `array(T)`                    |
+| `map(V, K)`                                 | [Map(V, K)](/ja/reference/data-types/map)                                                          | `map(string, K)`              |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/ja/reference/data-types/date)                                                       | `union(null, T)`              |
+| `union(T1, T2, …)` **                       | [Variant(T1, T2, …)](/ja/reference/data-types/variant)                                             | `union(T1, T2, …)` **         |
+| `null`                                      | [Nullable(Nothing)](/ja/reference/data-types/special-data-types/nothing)                           | `null`                        |
+| `int (date)` ***                            | [Date](/ja/reference/data-types/date), [Date32](/ja/reference/data-types/date32)                      | `int (date)` ***              |
+| `long (timestamp-millis)` ***               | [DateTime64(3)](/ja/reference/data-types/datetime)                                                 | `long (timestamp-millis)` *** |
+| `long (timestamp-micros)` ***               | [DateTime64(6)](/ja/reference/data-types/datetime)                                                 | `long (timestamp-micros)` *** |
+| `bytes (decimal)`  ***                      | [DateTime64(N)](/ja/reference/data-types/datetime)                                                 | `bytes (decimal)`  ***        |
+| `int`                                       | [IPv4](/ja/reference/data-types/ipv4)                                                              | `int`                         |
+| `fixed(16)`                                 | [IPv6](/ja/reference/data-types/ipv6)                                                              | `fixed(16)`                   |
+| `bytes (decimal)` ***                       | [Decimal(P, S)](/ja/reference/data-types/decimal)                                                  | `bytes (decimal)` ***         |
+| `string (uuid)` ***                         | [UUID](/ja/reference/data-types/uuid)                                                              | `string (uuid)` ***           |
+| `fixed(16)`                                 | [Int128/UInt128](/ja/reference/data-types/int-uint)                                                | `fixed(16)`                   |
+| `fixed(32)`                                 | [Int256/UInt256](/ja/reference/data-types/int-uint)                                                | `fixed(32)`                   |
+| `record`                                    | [Tuple](/ja/reference/data-types/tuple)                                                            | `record`                      |
+
+* `bytes` がデフォルトで、設定 [`output_format_avro_string_column_pattern`](/ja/reference/settings/formats#output_format_avro_string_column_pattern) で制御されます
+
+**  [Variant 型](/ja/reference/data-types/variant) は `null` をフィールド値として暗黙的に受け入れるため、たとえば Avro の `union(T1, T2, null)` は `Variant(T1, T2)` に変換されます。
+そのため、ClickHouse から Avro を生成する際には、Avro の `union` 型の候補に常に `null` 型を含める必要があります。これは、スキーマ推論の時点では、実際に `null` となる値があるかどうか分からないためです。
+
+*** [Avro 論理型](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+サポートされていない Avro 論理データ型:
+
+* `time-millis`
+* `time-micros`
+* `duration`

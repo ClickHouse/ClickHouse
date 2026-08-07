@@ -1,0 +1,271 @@
+---
+slug: /optimize/skipping-indexes
+sidebarTitle: 'Index de saut de données'
+description: 'Les index de saut permettent à ClickHouse d’éviter de lire d’importants volumes de données dont il est garanti qu’ils ne contiennent aucune valeur correspondante.'
+title: 'Comprendre les index de saut de données dans ClickHouse'
+doc_type: 'guide'
+keywords: ['index de saut', 'saut de données', 'performance', 'indexation', 'bonnes pratiques']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+De nombreux facteurs influent sur les performances des requêtes ClickHouse. Dans la plupart des cas, l’élément déterminant est de savoir si ClickHouse peut utiliser la clé primaire pour évaluer la condition de la clause WHERE de la requête. Il est donc essentiel, pour concevoir efficacement une table, de choisir une clé primaire adaptée aux types de requêtes les plus courants.
+
+Néanmoins, aussi soigneusement que la clé primaire soit optimisée, il existera inévitablement des cas d’usage où elle ne pourra pas être utilisée efficacement. Les utilisateurs s’appuient souvent sur ClickHouse pour des séries temporelles, mais ils souhaitent aussi analyser ces mêmes données selon d’autres dimensions métier, comme l’identifiant client, l’URL du site web ou le numéro de produit. Dans ce cas, les performances des requêtes peuvent être nettement moins bonnes, car un parcours complet de chaque valeur de colonne peut être nécessaire pour appliquer la condition de la clause WHERE. Même si ClickHouse reste relativement rapide dans ces circonstances, le fait d’évaluer des millions, voire des milliards, de valeurs individuelles rendra les requêtes « non indexées » bien plus lentes que celles qui s’appuient sur la clé primaire.
+
+Dans une base de données relationnelle traditionnelle, une façon de résoudre ce problème consiste à ajouter un ou plusieurs index « secondaires » à une table. Il s’agit d’une structure de type b-tree qui permet à la base de données de trouver toutes les lignes correspondantes sur le disque en temps O(log(n)) au lieu de O(n) (un parcours complet de la table), où n est le nombre de lignes. Cependant, ce type d’index secondaire ne fonctionne pas avec ClickHouse (ni avec d’autres bases de données orientées colonnes), car il n’y a pas de lignes individuelles sur le disque à ajouter à l’index.
+
+ClickHouse propose à la place un autre type d’index qui, dans certaines circonstances, peut considérablement améliorer la vitesse des requêtes. Ces structures sont appelées index « Skip », car elles permettent à ClickHouse d’éviter de lire d’importants blocs de données dont il est garanti qu’ils ne contiennent aucune valeur correspondante.
+
+<div id="basic-operation">
+  ## Fonctionnement de base
+</div>
+
+Vous ne pouvez utiliser les index de saut de données que sur les tables de la famille MergeTree. Chaque index de saut de données comporte quatre arguments principaux :
+
+* Nom de l’index. Le nom de l’index est utilisé pour créer le fichier d’index dans chaque partition. Il est également requis comme paramètre lors de la suppression ou de la matérialisation de l’index.
+* Expression de l’index. L’expression de l’index sert à calculer l’ensemble des valeurs stockées dans l’index. Elle peut être une combinaison de colonnes, d’opérateurs simples et/ou d’un sous-ensemble de fonctions déterminé par le type d’index.
+* TYPE. Le type d’index contrôle le calcul qui détermine s’il est possible d’éviter la lecture et l’évaluation de chaque bloc d’index.
+* GRANULARITY. Chaque bloc indexé est constitué de GRANULARITY granules. Par exemple, si la granularité de l’index principal de la table est de 8192 lignes et que la granularité de l’index est de 4, chaque &quot;bloc&quot; indexé comptera 32768 lignes.
+
+Lorsqu’un utilisateur crée un index de saut de données, deux fichiers supplémentaires sont ajoutés dans le répertoire de chaque partie de données de la table.
+
+* `skp_idx_{index_name}.idx`, qui contient les valeurs ordonnées de l’expression
+* `skp_idx_{index_name}.mrk2`, qui contient les offsets correspondants dans les fichiers de colonnes de données associés.
+
+Si une partie de la condition de filtrage de la clause WHERE correspond à l’expression de l’index de saut lors de l’exécution d’une requête et de la lecture des fichiers de colonnes concernés, ClickHouse utilisera les données du fichier d’index pour déterminer si chaque bloc de données concerné doit être traité ou peut être ignoré (en supposant que le bloc n’a pas déjà été exclu par l’application de la clé primaire). Pour prendre un exemple très simplifié, considérez la table suivante, chargée avec des données prévisibles.
+
+```sql
+CREATE TABLE skip_table
+(
+  my_key UInt64,
+  my_value UInt64
+)
+ENGINE MergeTree primary key my_key
+SETTINGS index_granularity=8192;
+
+INSERT INTO skip_table SELECT number, intDiv(number,4096) FROM numbers(100000000);
+```
+
+Lors de l’exécution d’une requête simple qui n’utilise pas la clé primaire, les 100 millions d’entrées de la
+colonne `my_value` sont scannées :
+
+```sql
+SELECT * FROM skip_table WHERE my_value IN (125, 700)
+```
+
+```response
+┌─my_key─┬─my_value─┐
+│ 512000 │      125 │
+│ 512001 │      125 │
+│    ... |      ... |
+└────────┴──────────┘
+
+8192 rows in set. Elapsed: 0.079 sec. Processed 100.00 million rows, 800.10 MB (1.26 billion rows/s., 10.10 GB/s.
+```
+
+Ajoutez maintenant un skip index très simple :
+
+```sql
+ALTER TABLE skip_table ADD INDEX vix my_value TYPE set(100) GRANULARITY 2;
+```
+
+En règle générale, les index de saut ne s’appliquent qu’aux données nouvellement insérées ; le simple ajout de l’index n’aura donc aucun effet sur la requête ci-dessus.
+
+Pour indexer des données déjà présentes, utilisez cette instruction :
+
+```sql
+ALTER TABLE skip_table MATERIALIZE INDEX vix;
+```
+
+Réexécutez la requête avec l’index que vous venez de créer :
+
+```sql
+SELECT * FROM skip_table WHERE my_value IN (125, 700)
+```
+
+```response
+┌─my_key─┬─my_value─┐
+│ 512000 │      125 │
+│ 512001 │      125 │
+│    ... |      ... |
+└────────┴──────────┘
+
+8192 rows in set. Elapsed: 0.051 sec. Processed 32.77 thousand rows, 360.45 KB (643.75 thousand rows/s., 7.08 MB/s.)
+```
+
+Au lieu de traiter 100 millions de lignes représentant 800 mégaoctets, ClickHouse n’a lu et analysé que 32768 lignes pour 360 kilooctets
+-- soit quatre granules de 8192 lignes chacune.
+
+Sous une forme plus visuelle, voici comment les 4096 lignes dont `my_value` vaut 125 ont été lues et sélectionnées, et comment les lignes suivantes
+ont été ignorées sans être lues sur le disque :
+
+<Image img="/images/guides/best-practices/simple_skip.webp" size="md" alt="Saut simple" />
+
+Vous pouvez obtenir des informations détaillées sur l’utilisation des index de saut en activant la trace lors de l’exécution des requêtes. Depuis
+clickhouse-client, définissez `send_logs_level` :
+
+```sql
+SET send_logs_level='trace';
+```
+
+Cela fournira des informations utiles pour le débogage lors de l&#39;optimisation des requêtes SQL et des index de table.  À partir de l&#39;exemple ci-dessus,
+le journal de débogage montre que l&#39;index de saut a exclu tous les granules sauf deux :
+
+```sql
+<Debug> default.skip_table (933d4b2c-8cea-4bf9-8c93-c56e900eefd1) (SelectExecutor): Index `vix` has dropped 6102/6104 granules.
+```
+
+<div id="skip-index-types">
+  ## Types d’index de saut
+</div>
+
+{/* vale off */}
+
+<div id="minmax">
+  ### minmax
+</div>
+
+{/* vale on */}
+
+Ce type d’index léger ne nécessite aucun paramètre.  Il stocke les valeurs minimale et maximale de l’expression d’index
+pour chaque bloc (si l’expression est un tuple, il stocke séparément les valeurs de chaque membre de l’élément
+du tuple).  Ce type est idéal pour les colonnes qui ont tendance à être approximativement triées par valeur.  Ce type d’index est généralement le moins coûteux à utiliser lors du traitement des requêtes.
+
+Ce type d’index ne fonctionne correctement qu’avec une expression scalaire ou un tuple -- l’index ne sera jamais appliqué à des expressions qui renvoient un type de données Array ou Map.
+
+{/* vale off */}
+
+<div id="set">
+  ### set
+</div>
+
+{/* vale on */}
+
+Ce type d’index lightweight accepte un seul paramètre : la taille maximale, max&#95;size, de l’ensemble de valeurs par bloc (0 autorise
+un nombre illimité de valeurs distinctes). Cet ensemble contient toutes les valeurs du bloc (ou est vide si le nombre de valeurs dépasse max&#95;size). Ce type d’index convient bien aux colonnes à faible cardinalité dans chaque ensemble de granules (autrement dit, lorsqu’elles sont &quot;regroupées&quot;), mais à cardinalité globale plus élevée.
+
+Le coût, les performances et l’efficacité de cet index dépendent de la cardinalité au sein des blocs. Si chaque bloc contient un grand nombre de valeurs uniques, soit l’évaluation de la condition de la requête sur un grand ensemble d’index sera très coûteuse, soit l’index ne sera pas appliqué, car il sera vide du fait du dépassement de max&#95;size.
+
+{/* vale off */}
+
+<div id="text">
+  ### texte
+</div>
+
+{/* vale on */}
+
+Pour les charges de travail qui impliquent du langage naturel ou de la recherche en texte libre (par exemple, la recherche de mots ou d’expressions dans de grandes colonnes de texte), ClickHouse fournit un **index de texte** (un véritable index inversé).
+L’index de texte prend efficacement en charge la recherche en texte intégral et les recherches sur des tokens. C’est le choix recommandé pour les requêtes de recherche en texte intégral, car il offre une indexation déterministe des tokens et de meilleures performances pour des fonctions de recherche telles que `hasAnyToken` et `hasAllTokens`, tout en optimisant également les fonctions courantes de recherche textuelle.
+
+Pour plus de détails, consultez la documentation sur l’index de texte [ici](/fr/reference/engines/table-engines/mergetree-family/textindexes).
+
+<div id="bloom-filter-types">
+  ### Types de filtres de Bloom
+</div>
+
+Un *filtre de Bloom* est une structure de données qui permet de tester l’appartenance à un ensemble de manière économe en espace, au prix d’une légère probabilité de faux positifs. Un faux positif n’est pas un problème majeur dans le cas des index de saut, car le seul inconvénient est la lecture de quelques blocks inutiles. Cependant, la possibilité de faux positifs signifie aussi que l’expression indexée doit normalement être évaluée à true, faute de quoi des données valides risquent d’être ignorées.
+
+Comme les filtres de Bloom gèrent plus efficacement les tests portant sur un grand nombre de valeurs discrètes, ils peuvent convenir à des expressions conditionnelles qui produisent davantage de valeurs à tester. En particulier, un index de filtre de Bloom peut être appliqué aux Array, où chaque valeur du tableau est testée, ainsi qu’aux Map, en convertissant soit les clés, soit les valeurs en Array à l’aide de la fonction mapKeys ou mapValues.
+
+Il existe trois types d’index de saut de données basés sur des filtres de Bloom :
+
+* Le **bloom&#95;filter** de base, qui prend un seul paramètre facultatif correspondant au taux de « faux positifs » autorisé entre 0 et 1 (si non spécifié, .025 est utilisé).
+
+* Le **tokenbf&#95;v1** spécialisé *(Obsolète)*). Il prend trois paramètres, tous liés au réglage du filtre de Bloom utilisé : (1) la taille du filtre en octets (des filtres plus grands produisent moins de faux positifs, au prix d’un surcoût de stockage), (2) le nombre de fonctions de hachage appliquées (là encore, un plus grand nombre de fonctions de hachage réduit les faux positifs), et (3) la seed des fonctions de hachage du filtre de Bloom. Consultez le calculateur [ici](https://hur.st/bloomfilter/) pour plus de détails sur l’effet de ces paramètres sur le fonctionnement du filtre de Bloom.
+  Cet index fonctionne uniquement avec les types de données String, FixedString et Map. L’expression d’entrée est découpée en séquences de caractères séparées par des caractères non alphanumériques. Par exemple, une valeur de column `This is a candidate for a \"full text\" search` contiendra les tokens `This` `is` `a` `candidate` `for` `full` `text` `search`. Il est destiné à être utilisé avec des recherches LIKE, EQUALS, IN, hasToken() et d’autres recherches similaires portant sur des mots et d’autres valeurs au sein de chaînes plus longues. Par exemple, un cas d’usage possible serait la recherche d’un petit nombre de noms de classe ou de numéros de ligne dans une column de lignes de logs applicatifs en texte libre.
+
+* Le **ngrambf&#95;v1** spécialisé *(Obsolète)*. Cet index fonctionne de la même manière que l’index de tokens. Il prend un paramètre supplémentaire avant les réglages du filtre de Bloom : la taille des ngrams à indexer. Un ngram est une chaîne de caractères de longueur `n` composée de caractères quelconques, de sorte que la chaîne `A short string` avec une taille de ngram de 4 serait indexée comme suit :
+  ```text
+  'A sh', ' sho', 'shor', 'hort', 'ort ', 'rt s', 't st', ' str', 'stri', 'trin', 'ring'
+  ```
+
+Cet index peut également être utile pour les recherches textuelles, en particulier dans les langues sans séparation entre les mots, comme le chinois.
+
+> Pour les workloads de recherche en texte intégral, le **index de texte** dédié (voir [Text index for full-text search](/fr/reference/engines/table-engines/mergetree-family/textindexes)) est recommandé à la place des index obsolètes *tokenbf&#95;v1* ou *ngrambf&#95;v1*.
+> Le index de texte fournit un véritable index inversé avec de meilleures performances de recherche, un comportement plus prévisible, ainsi qu’une plus grande souplesse et de meilleures performances que les index de filtre de Bloom basés sur des tokens.
+
+<div id="skip-index-functions">
+  ## Fonctions des index de saut
+</div>
+
+L&#39;objectif principal des index de saut est de limiter la quantité de données analysées par les requêtes les plus fréquentes. Compte tenu de la nature analytique des données ClickHouse, le profil de ces requêtes inclut, dans la plupart des cas, des expressions fonctionnelles. Les index de saut doivent donc interagir correctement avec les fonctions courantes pour être efficaces. Cela peut se produire dans les cas suivants :
+
+* des données sont insérées et l&#39;index est défini comme une expression fonctionnelle (le résultat de l&#39;expression étant stocké dans les fichiers d&#39;index), ou
+* la requête est traitée et l&#39;expression est appliquée aux valeurs d&#39;index stockées afin de déterminer s&#39;il faut exclure le block.
+
+Chaque type d&#39;index de saut fonctionne avec un sous-ensemble des fonctions ClickHouse disponibles, adapté à l&#39;implémentation de l&#39;index indiquée
+[ici](/fr/reference/engines/table-engines/mergetree-family/mergetree#functions-support). En règle générale, les index `set` et les index basés sur un filtre de Bloom (un autre type d&#39;index `set`) sont tous deux non ordonnés et ne fonctionnent donc pas avec des plages. À l&#39;inverse, les index minmax sont particulièrement efficaces avec les plages, car il est très rapide de déterminer si des plages s&#39;intersectent. L&#39;efficacité des fonctions de correspondance partielle LIKE, startsWith, endsWith et hasToken dépend du type d&#39;index utilisé, de l&#39;expression d&#39;index et de la structure particulière des données.
+
+<div id="skip-index-settings">
+  ## Paramètres des index de saut
+</div>
+
+Deux paramètres sont disponibles pour les index de saut.
+
+* **use&#95;skip&#95;indexes**  (0 ou 1, 1 par défaut).  Toutes les requêtes ne peuvent pas utiliser efficacement les index de saut.  Si une condition de filtrage donnée
+  est susceptible d&#39;inclure la plupart des granules, l&#39;utilisation de l&#39;index de data skipping entraîne un coût inutile, parfois important.  Définissez cette valeur sur
+  0 pour les requêtes qui ne bénéficieront probablement d&#39;aucun index de saut.
+* **force&#95;data&#95;skipping&#95;indices** (liste de noms d&#39;index séparés par des virgules).  Ce paramètre peut être utilisé pour empêcher certains types de
+  requêtes inefficaces.  Lorsqu&#39;une requête sur une table est trop coûteuse sans index de saut, l&#39;utilisation de ce paramètre avec un ou plusieurs noms d&#39;index
+  renverra une exception pour toute requête qui n&#39;utilise pas les index indiqués.  Cela évite que des requêtes mal écrites
+  ne consomment les ressources du serveur.
+
+<div id="skip-best-practices">
+  ## Bonnes pratiques des index de saut
+</div>
+
+Les index de saut ne sont pas intuitifs, surtout pour les personnes habituées aux index secondaires orientés lignes des SGBDR ou aux index inversés des bases documentaires. Pour qu’un data skipping index apporte un réel bénéfice dans ClickHouse, il doit permettre d’éviter suffisamment de lectures de granules pour compenser le coût de calcul de l’index. Point crucial : si une valeur apparaît ne serait-ce qu’une seule fois dans un bloc indexé, l’ensemble du bloc doit être chargé en mémoire puis évalué, et le coût de l’index a alors été engagé en vain.
+
+Considérez la distribution des données suivante :
+
+<Image img="/images/guides/best-practices/bad_skip.webp" size="md" alt="Skip inefficace" />
+
+Supposons que la clé primaire / ORDER BY soit `timestamp` et qu’il existe un index sur `visitor_id`. Considérez la requête suivante :
+
+```sql
+SELECT timestamp, url FROM table WHERE visitor_id = 1001`
+```
+
+Un index secondaire traditionnel serait très avantageux avec ce type de distribution des données.  Au lieu de lire les 32768 lignes pour trouver
+les 5 lignes correspondant au visitor&#95;id demandé, l’index secondaire ne contiendrait que cinq emplacements de lignes, et seules ces cinq lignes seraient
+lues sur le disque.  C’est exactement l’inverse pour un index de saut de données ClickHouse.  Les 32768 valeurs de la colonne `visitor_id` seront testées
+quel que soit le type d’index de saut.
+
+Par conséquent, l’idée naturelle de vouloir accélérer les requêtes ClickHouse en ajoutant simplement un index aux
+colonnes clés est souvent erronée.  Cette fonctionnalité avancée ne doit être utilisée qu’après avoir étudié d’autres solutions, comme modifier la clé primaire (voir [Comment choisir une clé primaire](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes)), utiliser des projections ou utiliser des vues matérialisées. Même lorsqu’un index de saut de données est approprié, un réglage minutieux de l’index comme de la table
+sera souvent nécessaire.
+
+Dans la plupart des cas, un index de saut utile nécessite une forte corrélation entre la clé primaire et la colonne/expression non primaire ciblée.
+S’il n’y a pas de corrélation (comme dans le diagramme ci-dessus), il est très probable que la condition de filtrage soit satisfaite par au moins une des lignes du
+bloc de plusieurs milliers de valeurs, et peu de blocs seront ignorés.  À l’inverse, si une plage de valeurs de la clé primaire (comme le moment de la
+journée) est fortement associée aux valeurs de la colonne d’index potentielle (comme l’âge des téléspectateurs), alors un index de type minmax
+sera probablement bénéfique.  Notez qu’il peut être possible d’augmenter cette corrélation lors de l’insertion des données, soit en incluant des
+colonnes supplémentaires dans la clé de tri/ORDER BY, soit en regroupant les inserts de manière à ce que les valeurs associées à la clé primaire soient regroupées à l’insertion.  Par
+exemple, tous les événements d’un site&#95;id particulier pourraient être regroupés et insérés ensemble par le processus d’ingestion, même si la clé primaire
+est un timestamp contenant des événements provenant d’un grand nombre de sites.  Cela produira de nombreux granules qui ne contiennent que quelques identifiants de site, de sorte que de nombreux
+blocs pourront être ignorés lors d’une recherche sur une valeur site&#95;id spécifique.
+
+Un autre bon candidat pour un index de saut concerne les expressions à cardinalité élevée où une valeur donnée est relativement peu présente dans les données.  Un exemple
+pourrait être une plateforme d’observabilité qui suit les codes d’erreur dans les requêtes API.  Certains codes d’erreur, bien que rares dans les données, peuvent être particulièrement
+importants pour les recherches.  Un index de saut de type set sur la colonne error&#95;code permettrait d’ignorer la grande majorité des blocs qui ne contiennent pas
+d’erreurs et améliorerait donc significativement les requêtes centrées sur les erreurs.
+
+Enfin, la Bonne pratique essentielle est de tester, tester, tester. Là encore, contrairement aux index secondaires b-tree ou aux index inversés pour la recherche dans des documents,
+le comportement des index de saut de données n’est pas facile à prédire. Les ajouter à une table entraîne un coût significatif à la fois sur l’ingestion des données et sur les requêtes
+qui, pour de nombreuses raisons possibles, ne bénéficient pas de l’index. Ils doivent toujours être testés sur des données réelles, et les tests doivent
+inclure des variations de type, de granularité et d’autres paramètres. Les tests révèlent souvent des schémas et des écueils qui ne ressortent pas clairement de
+simples raisonnements théoriques.
+
+<div id="related-docs">
+  ## Documentation connexe
+</div>
+
+* [Guide des bonnes pratiques](/fr/concepts/best-practices/using-data-skipping-indices)
+* [Exemples d’index de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [Gestion des index de saut de données](/fr/reference/statements/alter/skipping-index)
+* [Informations sur la table système](/fr/reference/system-tables/data_skipping_indices)

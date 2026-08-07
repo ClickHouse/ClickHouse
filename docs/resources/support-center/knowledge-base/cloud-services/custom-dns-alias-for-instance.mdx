@@ -1,0 +1,112 @@
+---
+title: Create a custom DNS alias by setting up a reverse proxy
+description: Learn how to set up a custom DNS alias for your instance using a reverse proxy
+date: 2025-05-16
+tags: ['Server Admin', 'Security and Authentication']
+keywords: ['custom DNS alias', 'DNS']
+hide_title: true
+---
+
+{frontMatter.description}
+{/* truncate */}
+
+<br/>
+<br/>
+# Custom DNS alias by setting up reverse proxy {#custom-dns-alias}
+> In this knowledgebase article, we will walk you through how you can set up a
+custom DNS alias for your ClickHouse Cloud instance through the use of a reverse
+proxy such as Nginx for ClickHouse native client.
+
+## Create a self-signed certificate {#create-certificate}
+<Note>
+This step is not needed if you are using signed certificates.
+</Note>
+
+Create a self-signed certificate with the domain name of your choice.
+In this example we will use a domain name `xyz-customdomain.com` and
+create a certificate called `MyCertificate.crt`. Refer to ["Create SSL certificates"](/concepts/features/security/tls/configuring-tls#2-create-tls-certificates)
+for further details.
+
+Add the certificate to `/etc/clickhouse-client/config.xml`:
+
+```yaml highlight={5}
+<clickhouse>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <caConfig>/etc/ssl/certs/MyCertificate.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>
+```
+
+## Update Nginx configuration {#update-nginx-config}
+Add the following in your `nginx.conf` file:
+
+```text
+proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+proxy_ssl_server_name on;
+```
+
+```text highlight={21-22}
+stream {
+    upstream stream_backend {
+         server xyz.us-west-2.aws.clickhouse.cloud:9440;
+    }
+
+    server {
+        listen                9440 ssl;
+        proxy_pass            stream_backend;
+
+        ssl_certificate       /etc/ssl/certs/MyCertificate.crt;
+        ssl_certificate_key   /etc/ssl/certs/MyKey.key;
+        ssl_protocols         SSLv3 TLSv1 TLSv1.1 TLSv1.2;
+        ssl_ciphers           HIGH:!aNULL:!MD5;
+        ssl_session_cache     shared:SSL:20m;
+        ssl_session_timeout   4h;
+        ssl_handshake_timeout 30s;
+	proxy_ssl on;
+	proxy_ssl_trusted_certificate /etc/ssl/certs/isrgrootx1.pem;
+	proxy_ssl_session_reuse on;
+        proxy_ssl_verify on;
+	proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+	proxy_ssl_server_name on;
+    }
+}
+```
+
+Where `isrgrootx1.pem` is the root certificate for ClickHouse Cloud which you
+can download [here](https://letsencrypt.org/certs/isrgrootx1.pem).
+
+## Update hosts file {#update-hosts-file}
+<Note>
+The following step is not needed if you are using your own domain controllers
+</Note>
+
+Add the following to your `/etc/hosts` file on the Nginx server:
+
+```text title='/etc/hosts'
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost6 localhost6.localdomain6
+10.X.Y.Z  xyz-customdomain.com
+```
+
+Where `10.X.Y.Z` is the IP address of your specific Nginx box.
+
+## Connect to Cloud using alias {#connect-to-cloud-using-alias}
+You are now ready to connect using your custom alias:
+
+```bash
+clickhouse-client --host xyz.customdomain.com --secure --password 'xxxxxxx'
+ClickHouse client version 23.12.1.428 (official build).
+Connecting to xyz.customdomain.com:9440 as user default.
+Connected to ClickHouse server version 23.9.2.
+
+clickhouse-cloud :)
+```

@@ -1,0 +1,116 @@
+---
+sidebarTitle: 'Timescale'
+description: 'TimescaleDB 확장 기능이 포함된 Postgres를 ClickPipes 소스로 설정합니다'
+slug: /integrations/clickpipes/postgres/source/timescale
+title: 'TimescaleDB 확장 기능이 포함된 Postgres 소스 설정 가이드'
+keywords: ['TimescaleDB']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<div id="background">
+  ## 배경
+</div>
+
+[TimescaleDB](https://github.com/timescale/timescaledb)는 Timescale Inc에서 개발한 오픈 소스 Postgres 확장 기능으로,
+Postgres를 벗어나지 않고도 분석 쿼리 성능을 높이는 것을 목표로 합니다. 이는
+확장 기능이 관리하고 &quot;청크&quot; 단위로 자동 파티셔닝을 지원하는 &quot;하이퍼테이블&quot;을 생성함으로써
+구현됩니다. 하이퍼테이블은 투명한 압축과 하이브리드 행-열 지향 스토리지(「hypercore」라고 함)도 지원하지만, 이러한
+기능을 사용하려면 독점 라이선스가 적용되는 확장 기능 버전이 필요합니다.
+
+Timescale Inc는 TimescaleDB용 관리형 서비스도 두 가지 제공합니다:
+
+* `Managed Service for Timescale`
+* `Timescale Cloud`.
+
+TimescaleDB 확장 기능을 사용할 수 있는 관리형 서비스를 제공하는 서드파티 공급업체도 있지만,
+라이선스 문제로 인해 이러한 공급업체는 오픈 소스 버전의 확장 기능만 지원합니다.
+
+Timescale 하이퍼테이블은 일반적인 Postgres 테이블과 여러 면에서 다르게 동작합니다. 이 때문에
+이를 복제하는 과정에는 몇 가지 복잡한 문제가 따르므로, Timescale 하이퍼테이블 복제 기능은
+**best effort** 수준으로 고려해야 합니다.
+
+<div id="supported-postgres-versions">
+  ## 지원되는 Postgres 버전
+</div>
+
+ClickPipes는 Postgres 12 이상을 지원합니다.
+
+<div id="enable-logical-replication">
+  ## 논리적 복제 활성화
+</div>
+
+따라야 하는 단계는 TimescaleDB가 포함된 Postgres 인스턴스를 어떻게 배포했는지에 따라 달라집니다.
+
+* 관리형 서비스를 사용 중이고 해당 서비스 제공업체가 사이드바에 나와 있다면, 해당 제공업체의 가이드를 따르십시오.
+* TimescaleDB를 직접 배포하는 경우, 일반 가이드를 따르십시오.
+
+그 밖의 관리형 서비스를 사용하는 경우, 아직 활성화되지 않았다면 논리적 복제를 활성화할 수 있도록 서비스 제공업체에 지원 티켓을 제출하십시오.
+
+<Info>
+  Timescale Cloud는 논리적 복제 활성화를 지원하지 않으며, 이는 CDC 모드의 Postgres 파이프에 필요합니다.
+  따라서 Timescale Cloud 사용자는 Postgres ClickPipe를 사용해 데이터의 일회성 적재(`Initial Load Only`)만 수행할 수 있습니다.
+</Info>
+
+<div id="configuration">
+  ## 구성
+</div>
+
+Timescale 하이퍼테이블은 여기에 삽입된 데이터를 직접 저장하지 않습니다. 대신 데이터는 `_timescaledb_internal` 스키마에 있는 여러 개의 해당 &quot;청크&quot; 테이블에 저장됩니다. 하이퍼테이블에 대해 쿼리를 실행할 때는 이것이 문제가 되지 않습니다. 하지만 논리적 복제 중에는 하이퍼테이블의 변경 사항이 아니라 청크 테이블의 변경 사항이 감지됩니다. Postgres ClickPipe에는 청크 테이블의 변경 사항을 부모 하이퍼테이블에 자동으로 다시 매핑하는 로직이 있지만, 이를 위해서는 추가 단계가 필요합니다.
+
+<Info>
+  데이터에 대해 일회성 적재(`Initial Load Only`)만 수행하려면 2단계부터는 건너뛰십시오.
+</Info>
+
+1. ClickPipes 전용 사용자를 생성합니다:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 이전 단계에서 생성한 사용자에게 스키마 수준의 읽기 전용 권한을 부여합니다. 다음 예시는 `public` 스키마에 대한 권한을 보여줍니다. 복제하려는 테이블이 포함된 각 스키마에 대해 이 명령을 반복하십시오:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 사용자에게 복제 권한을 부여합니다:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. Postgres 슈퍼유저/관리자 권한으로, 복제하려는 하이퍼테이블이 포함된 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)을 생성합니다. 이 publication에는 **반드시 전체 `_timescaledb_internal` 스키마도 포함되어야 합니다**. 그래야 파이프가 기반 청크의 변경 사항을 수신할 수 있습니다. 성능 오버헤드를 피하려면 publication에 필요한 테이블만 포함할 것을 강력히 권장합니다.
+
+<Warning>
+  publication에 포함되는 모든 테이블은 **primary key**가 정의되어 있거나 *또는* **replica identity**가 `FULL`로 구성되어 있어야 합니다. 범위 지정 방법에 대한 안내는 [Postgres FAQ](/ko/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)를 참조하십시오.
+</Warning>
+
+```sql
+   -- When adding new tables to the ClickPipe, you'll need to add them to the publication manually as well.
+   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2, TABLES IN SCHEMA _timescaledb_internal;
+```
+
+`clickpipes` publication에는 지정된 테이블에서 생성된 변경 이벤트 집합이 포함되며, 이후 복제 스트림을 수집하는 데 사용됩니다.
+
+<Info>
+  일부 관리형 서비스에서는 관리자 계정에 전체 스키마에 대한 publication을 생성하는 데 필요한 권한이 부여되지 않습니다. 이 경우 서비스 제공업체에 지원 티켓을 제출하십시오. 또는 이 단계(및 다음 단계)를 건너뛰고 대신 데이터를 일회성으로 적재할 수 있습니다.
+</Info>
+
+이 단계를 완료하면 [ClickPipe 생성](/ko/integrations/clickpipes/postgres/index)을 진행할 수 있습니다.
+
+<div id="configure-network-access">
+  ## 네트워크 액세스 구성
+</div>
+
+Timescale 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 허용 목록에 추가하십시오.
+이 작업 방법은 제공업체마다 다르므로, 사용하는 제공업체가 사이드바에 나와 있으면 해당 안내를 참조하거나 제공업체에
+티켓을 제출하십시오.

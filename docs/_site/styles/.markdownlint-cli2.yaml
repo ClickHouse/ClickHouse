@@ -1,0 +1,13 @@
+---
+config:
+  default: false
+  MD007: true # Unordered list indentation
+  MD010: true # Disallow hard tabs
+  MD012: true # Multiple consecutive blank lines
+  MD040: true # Fenced code blocks should have a language specified
+  custom-anchor-headings: true # Headings must have a custom anchor which is unique per page eg. # A Heading {#a-heading}
+ignores:
+  - "docs/en/"
+  - "changelogs/"
+customRules:
+  - "./markdownlint/custom_rules/headings_have_custom_anchors.js"

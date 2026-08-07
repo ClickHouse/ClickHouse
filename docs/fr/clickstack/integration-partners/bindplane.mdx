@@ -1,0 +1,218 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/bindplane
+title: 'Acheminer OpenTelemetry vers ClickStack avec Bindplane'
+sidebarTitle: 'Bindplane'
+description: 'Acheminez la télémétrie vers ClickStack à l’aide de Bindplane pour une gestion centralisée des collecteurs'
+doc_type: 'guide'
+keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'gestion des collecteurs']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import PartnerBadge from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **En bref**
+
+  Ce guide vous montre comment router la télémétrie vers ClickStack à l’aide de la destination ClickStack native de Bindplane. Vous apprendrez à :
+
+  * Configurer ClickStack comme destination dans Bindplane
+  * Créer une configuration pour traiter et router la télémétrie
+  * Déployer à distance des configurations sur des OTel collecteurs et commencer à collecter des données
+  * Consulter la télémétrie dans ClickStack
+
+  Cette intégration associe l’ingestion haute performance de ClickStack à la gestion centralisée des collecteurs de Bindplane, ce qui facilite le passage à l’échelle de l’observabilité sans surcharge opérationnelle.
+
+  Temps requis : 10-15 minutes
+</Info>
+
+<div id="what-is-bindplane">
+  ## Qu’est-ce que Bindplane ?
+</div>
+
+Bindplane est un pipeline de télémétrie natif OpenTelemetry qui assure une gestion centralisée des collecteurs OpenTelemetry. Il simplifie l’exploitation de vastes flottes de collecteurs grâce à l’édition visuelle de la configuration, à des déploiements progressifs sécurisés et à la pipeline intelligence.
+
+<div id="why-bindplane-clickstack">
+  ## Pourquoi Bindplane + ClickStack ?
+</div>
+
+À grande échelle, la gestion de flottes de collecteurs OpenTelemetry devient le principal goulet d’étranglement opérationnel. ClickStack a prouvé sa capacité à gérer des volumes d’ingestion extrêmes : ses clients ingèrent de la télémétrie à des gigaoctets par seconde et stockent des centaines de pétaoctets. Le défi ne porte alors plus sur les performances des requêtes, mais sur l’exploitation fiable de l’infrastructure de collecteurs qui alimente ClickHouse.
+
+Bindplane répond à ce besoin en offrant :
+
+* Une gestion centralisée des collecteurs OpenTelemetry, de quelques milliers à plus d’un million
+* Une édition visuelle de la configuration avec des déploiements progressifs sécurisés en un clic
+* La détection automatique des ressources et un enrichissement appliqué de manière cohérente avant que les données n’atteignent ClickStack
+* Le routage fan-out, afin que les mêmes flux de télémétrie puissent être envoyés simultanément vers ClickStack et d’autres destinations
+* Une visibilité complète sur le pipeline, y compris l’état de santé des collecteurs, le débit et les performances de bout en bout
+
+<Tip>
+  **À retenir**
+
+  * **ClickStack gère des volumes d’ingestion extrêmes, le stockage et des requêtes analytiques rapides**
+  * **Bindplane gère le pipeline d’ingestion et la complexité opérationnelle liée à l’exécution de flottes de collecteurs**
+</Tip>
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Instance ClickStack en cours d’exécution (en local, sur serveur ou dans ClickHouse Cloud)
+* Compte Bindplane ([créez un compte sur `app.bindplane.com`](https://app.bindplane.com))
+* OTel Collector Bindplane installé (voir [Install Your First Collector](https://docs.bindplane.com/readme/install-your-first-collector))
+* Connectivité réseau entre les collecteurs Bindplane et votre point de terminaison OTLP ClickStack
+* Clé d’ingestion API ClickStack (disponible dans ClickStack Team Settings &gt; API Keys, [voir la documentation](/fr/clickstack/ingesting-data/opentelemetry#sending-otel-data))
+* Ports réseau appropriés ouverts (`4318` pour HTTP/s ou `4317` pour gRPC)
+
+<div id="integrate-bindplane-clickstack">
+  ## Intégrer ClickStack à Bindplane
+</div>
+
+<Steps>
+  <Step>
+    #### Configurer ClickStack comme destination
+
+    1. Connectez-vous à votre compte Bindplane
+    2. Accédez à **Library**
+    3. Cliquez sur **Add Destination**
+    4. Sélectionnez **ClickStack** dans la liste des destinations disponibles
+    5. Configurez la connexion :
+       * **Protocol** : choisissez HTTP ou gRPC (par défaut : HTTP sur le port `4318`)
+       * **Hostname** : saisissez le nom d’hôte ou l’adresse IP de votre point de terminaison OTLP ClickStack
+       * **Port** : saisissez le port (`4318` pour HTTP, `4317` pour gRPC)
+       * **API Ingestion Key** : saisissez votre clé d’ingestion API ClickStack
+    6. Donnez un nom à la destination (par exemple, &quot;ClickStack Production&quot;)
+    7. Cliquez sur **Save** pour créer la destination
+
+    <Tip>
+      **Points clés à retenir**
+
+      La destination ClickStack prend en charge les protocoles HTTP et gRPC. Pour les scénarios à fort volume, gRPC avec compression (gzip, zstd ou snappy) est recommandé pour de meilleures performances.
+    </Tip>
+  </Step>
+
+  <Step>
+    #### Créer une configuration
+
+    Une fois votre destination ClickStack configurée, créez une configuration pour traiter et acheminer la télémétrie :
+
+    1. Accédez à **Configurations** → **Create Configuration**
+    2. Donnez un nom à la configuration (par exemple, &quot;ClickStack Pipeline&quot;)
+    3. Sélectionnez le **Collector Type** et la **Platform** pour votre déploiement
+    4. Ajoutez des sources :
+       * Cliquez sur **Add Source** pour choisir parmi plus de 80 sources disponibles
+       * Pour les tests, vous pouvez ajouter une source de génération de télémétrie afin de simuler du trafic
+       * Pour la production, ajoutez des sources correspondant à votre télémétrie réelle (logs, métriques, traces)
+    5. Ajoutez la destination ClickStack :
+       * Cliquez sur **Add Destination**
+       * Sélectionnez la destination ClickStack que vous avez créée à l’étape précédente
+       * Choisissez les types de télémétrie à envoyer (Logs, Metrics, Traces ou tous)
+
+    <Tip>
+      **Points clés à retenir**
+
+      Vous pouvez ajouter des processeurs pour le filtrage, l’échantillonnage, le masquage, l’enrichissement, le batching, etc., afin de façonner la télémétrie avant son arrivée dans ClickStack. Cela garantit que des données cohérentes et structurées arrivent dans ClickHouse.
+    </Tip>
+  </Step>
+
+  <Step>
+    #### Ajouter des processeurs (facultatif)
+
+    Bindplane fournit des fonctionnalités de pipeline intelligence ainsi que des recommandations de processeurs. Vous pouvez ajouter des processeurs pour :
+
+    * **Filter** : réduire le volume de données en excluant la télémétrie inutile
+    * **Sample** : appliquer des stratégies d’échantillonnage aux traces à fort volume
+    * **Enrich** : ajouter des attributs de ressource, des labels ou des métadonnées
+    * **Transform** : modifier la structure ou le contenu de la télémétrie
+    * **Batch** : optimiser la taille des lots pour une transmission efficace
+
+    Ces processeurs sont appliqués de manière cohérente à l’ensemble de votre flotte de collecteurs avant que les données n’atteignent ClickStack.
+  </Step>
+
+  <Step>
+    #### Déployer les collecteurs et lancer le déploiement progressif sécurisé
+
+    1. Ajoutez un collecteur (BDOT Collector) à votre configuration :
+       * Accédez à **Agents** dans Bindplane
+       * Installez le collecteur Bindplane sur vos systèmes cibles [en suivant les instructions d’installation de Bindplane](https://docs.bindplane.com/readme/install-your-first-collector)
+       * Le collecteur apparaîtra dans votre liste de collecteurs une fois connecté
+
+    2. Assignez la configuration à vos collecteurs :
+       * Sélectionnez les collecteurs que vous souhaitez utiliser
+       * Associez-leur votre configuration ClickStack
+
+    3. Lancez un déploiement progressif sécurisé :
+       * Cliquez sur **Start Rollout** pour déployer la configuration
+       * Bindplane validera la configuration avant de la déployer
+       * Suivez l’état du déploiement progressif sécurisé dans l’interface Bindplane
+
+    <Tip>
+      **Points clés à retenir**
+
+      Bindplane propose des déploiements progressifs sécurisés en un clic avec validation. Vous pouvez surveiller en temps réel l’état de santé des collecteurs, le débit et les éventuelles erreurs via l’interface Bindplane.
+    </Tip>
+
+    <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="Signaux de télémétrie dans ClickStack via Bindplane" size="lg" />
+  </Step>
+
+  <Step>
+    #### Vérifier la télémétrie dans ClickStack
+
+    Une fois la configuration déployée, la télémétrie commence à affluer vers ClickStack depuis votre flotte de collecteurs gérés :
+
+    1. Connectez-vous à votre instance ClickStack (HyperDX UI)
+    2. Accédez à l’explorateur **Logs**, **Metrics** ou **Traces**
+    3. Vous devriez voir apparaître les données de télémétrie provenant de vos collecteurs gérés par Bindplane
+    4. Les données qui arrivent dans ClickStack sont déjà enrichies et structurées par les processeurs Bindplane
+
+    <Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="Signaux de télémétrie dans ClickStack via Bindplane" size="lg" />
+  </Step>
+</Steps>
+
+<div id="advanced-configuration">
+  ## Configuration avancée
+</div>
+
+<div id="fan-out-routing">
+  ### Routage fan-out
+</div>
+
+Bindplane prend en charge le routage fan-out, ce qui vous permet d’envoyer simultanément les mêmes flux de télémétrie vers plusieurs destinations. Vous pouvez :
+
+* Envoyer les logs, les métriques et les traces vers ClickStack pour leur stockage et leur analyse à long terme
+* Acheminer ces mêmes données vers d’autres plateformes d’observabilité pour des alertes en temps réel
+* Transférer certaines données de télémétrie vers des plateformes SIEM pour l’analyse de sécurité
+
+Cela se configure en ajoutant plusieurs destinations à votre configuration Bindplane.
+
+<div id="compression">
+  ### Compression et performances
+</div>
+
+Pour les scénarios à fort volume, configurez la compression dans votre destination ClickStack :
+
+* **HTTP** : prend en charge gzip, deflate, snappy, zstd ou None (par défaut : gzip)
+* **gRPC** : prend en charge gzip, snappy, zstd ou None (par défaut : gzip)
+
+La compression réduit l’utilisation de la bande passante lors de l’envoi de télémétrie vers ClickStack, ce qui est particulièrement important à grande échelle.
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+Maintenant que vos données de télémétrie transitent de Bindplane vers ClickStack, vous pouvez :
+
+* **Créer des tableaux de bord** : créez des visualisations dans ClickStack (HyperDX) pour les logs, les métriques et les traces
+* **Configurer des alertes** : configurez des alertes dans ClickStack pour les conditions critiques
+* **Faire évoluer votre déploiement** : ajoutez davantage de collecteurs et de sources à mesure que vos besoins en observabilité augmentent
+* **Optimiser votre pipeline** : utilisez la pipeline intelligence de Bindplane pour identifier des opportunités d&#39;optimisation
+
+<div id="read-more">
+  ## Pour en savoir plus
+</div>
+
+* [Intégration ClickStack dans la documentation Bindplane](https://docs.bindplane.com/integrations/destinations/clickstack)
+
+{/* - ["Intégration Bindplane + ClickStack : envoyer OpenTelemetry (OTel) vers ClickStack" sur le blog Bindplane](tbd) -- ajouter le lien une fois publié */}

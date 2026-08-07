@@ -1,0 +1,61 @@
+1000
+('_id.$oid','String')
+('date.$date','String')
+('teams','Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))')
+('abbreviation','String')
+('city','String')
+('home','Bool')
+('name','String')
+('players','Array(JSON(max_dynamic_types=8, max_dynamic_paths=64))')
+('results.ast','Int64')
+('results.blk','Int64')
+('results.drb','Int64')
+('results.fg','Int64')
+('results.fg3','Int64')
+('results.fg3_pct','String')
+('results.fg3a','Int64')
+('results.fg_pct','String')
+('results.fga','Int64')
+('results.ft','Int64')
+('results.ft_pct','String')
+('results.fta','Int64')
+('results.mp','Int64')
+('results.orb','Int64')
+('results.pf','Int64')
+('results.pts','Int64')
+('results.stl','Int64')
+('results.tov','Int64')
+('results.trb','Int64')
+('score','Int64')
+('won','Int64')
+Boston Celtics	70
+Los Angeles Lakers	64
+Milwaukee Bucks	61
+Philadelphia 76ers	57
+Atlanta Hawks	55
+('ast','Int64')
+('blk','Int64')
+('drb','Int64')
+('fg','Int64')
+('fg3','Int64')
+('fg3_pct','String')
+('fg3a','Int64')
+('fg_pct','String')
+('fga','Int64')
+('ft','Int64')
+('ft_pct','String')
+('fta','Int64')
+('mp','String')
+('orb','Int64')
+('pf','Int64')
+('player','String')
+('pts','Int64')
+('stl','Int64')
+('tov','Int64')
+('trb','Int64')
+Larry Bird	10
+Clyde Drexler	4
+Alvin Robertson	3
+Magic Johnson	3
+Charles Barkley	2
+1

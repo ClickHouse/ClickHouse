@@ -1,0 +1,30 @@
+-- toStartOfDay
+4
+4
+-- toStartOfISOYear
+3
+3
+-- toRelativeSecondNum
+4
+4
+-- toRelativeMinuteNum
+4
+4
+-- toRelativeHourNum
+4
+4
+-- toRelativeWeekNum
+4
+4
+-- toRelativeDayNum
+4
+4
+-- toMonthNumSinceEpoch
+4
+4
+-- toYearNumSinceEpoch
+4
+4
+-- toDaysSinceYearZero (raw out-of-range Date32 keys)
+2
+2

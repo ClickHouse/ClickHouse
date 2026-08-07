@@ -1,0 +1,9 @@
+<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <snapshot_distance>75</snapshot_distance>
+            <max_requests_batch_size>100</max_requests_batch_size>
+            <quorum_reads>false</quorum_reads>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>

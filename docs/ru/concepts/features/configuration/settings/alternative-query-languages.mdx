@@ -1,0 +1,89 @@
+---
+slug: /guides/developer/alternative-query-languages
+sidebarTitle: 'Альтернативные языки запросов'
+title: 'Альтернативные языки запросов'
+description: 'Использование альтернативных языков запросов в ClickHouse'
+keywords: ['альтернативные языки запросов', 'диалекты запросов', 'диалект MySQL', 'диалект PostgreSQL', 'руководство для разработчиков']
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+Помимо стандартного SQL, ClickHouse поддерживает различные альтернативные языки запросов для работы с данными.
+
+В настоящее время поддерживаются следующие диалекты:
+
+* `clickhouse`: Диалект [SQL](/ru/products/chdb/reference/sql-reference), используемый в ClickHouse по умолчанию
+* `prql`: [Pipelined Relational Query Language (PRQL)](https://prql-lang.org/)
+* `kusto`: [Kusto Query Language (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+
+Используемый язык запросов задаётся параметром `dialect`.
+
+<div id="standard-sql">
+  ## Стандартный SQL
+</div>
+
+Стандартный SQL — язык запросов ClickHouse по умолчанию.
+
+```sql
+SET dialect = 'clickhouse'
+```
+
+<div id="pipelined-relational-query-language-prql">
+  ## Конвейерный реляционный язык запросов (PRQL)
+</div>
+
+<ExperimentalBadge />
+
+Чтобы включить PRQL:
+
+```sql
+SET allow_experimental_prql_dialect = 1; -- этот оператор SET требуется только для версий ClickHouse >= v25.1
+SET dialect = 'prql'
+```
+
+Пример PRQL-запроса:
+
+```prql
+from trips
+aggregate {
+    ct = count this
+    total_days = sum days
+}
+```
+
+ClickHouse использует транспиляцию из PRQL в SQL для выполнения запросов PRQL.
+
+<div id="kusto-query-language-kql">
+  ## Язык запросов Kusto (KQL)
+</div>
+
+<ExperimentalBadge />
+
+Чтобы включить KQL:
+
+```sql
+SET allow_experimental_kusto_dialect = 1; -- этот оператор SET требуется только для версий ClickHouse >= 25.1
+SET dialect = 'kusto'
+```
+
+```kql title="Query"
+numbers(10) | project number
+```
+
+```response title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+Обратите внимание, что KQL-запросы могут не поддерживать все функции, определённые в ClickHouse.

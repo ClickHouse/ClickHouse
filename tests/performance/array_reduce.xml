@@ -1,0 +1,8 @@
+<test>
+    <query>SELECT arrayReduce('count', range(1000000)) FROM numbers_mt(500000000) format Null</query>
+    <query>SELECT arrayReduce('sum', range(1000000)) FROM numbers_mt(500000000) format Null</query>
+    <query>SELECT arrayReduceInRanges('count', [(1, 1000000)], range(1000000)) FROM numbers_mt(500000000) format Null</query>
+    <query>SELECT arrayReduceInRanges('sum', [(1, 1000000)], range(1000000)) FROM numbers_mt(500000000) format Null</query>
+    <query>SELECT arrayReduceInRanges('count', arrayZip(range(1000000), range(1000000)), range(1000000))[123456]</query>
+    <query>SELECT arrayReduceInRanges('sum', arrayZip(range(1000000), range(1000000)), range(1000000))[123456]</query>
+</test>

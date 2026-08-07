@@ -1,0 +1,116 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/slackbot
+sidebarTitle: 'Integrar com o SlackBot'
+title: 'Como criar um agente SlackBot usando o servidor MCP do ClickHouse.'
+description: 'Aprenda a criar um agente SlackBot que pode interagir com o servidor MCP do ClickHouse.'
+keywords: ['ClickHouse', 'MCP', 'Slack', 'SlackBot', 'PydanticAI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Neste guia, você aprenderá a criar um agente [SlackBot](https://slack.com/intl/en-gb/help/articles/202026038-An-introduction-to-Slackbot).
+Esse bot permite que você faça perguntas sobre seus dados no ClickHouse diretamente do Slack, usando linguagem natural. Ele usa o
+[ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse) e o [PydanticAI](https://ai.pydantic.dev/mcp/client/#__tabbed_1_1).
+
+<Info>
+  **Projeto de exemplo**
+
+  O código deste exemplo pode ser encontrado no [repositório de exemplos](https://github.com/ClickHouse/examples/blob/main/ai/mcp/slackbot/README.md).
+</Info>
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Você precisará ter o [`uv`](https://docs.astral.sh/uv/getting-started/installation/) instalado
+* Você precisará ter acesso a um workspace do Slack
+* Você precisará de uma API key da Anthropic ou de outro provedor de LLM
+
+<Steps>
+  <Step>
+    ## Criar um Slack App
+
+    1. Acesse [slack.com/apps](https://slack.com/apps) e clique em `Create New App`.
+    2. Escolha a opção `From scratch` e dê um nome ao seu app.
+    3. Selecione seu workspace do Slack.
+  </Step>
+
+  <Step>
+    ## Instalar o app no seu workspace
+
+    Em seguida, você precisará adicionar ao seu workspace o app criado na etapa anterior.
+    Você pode seguir as instruções de [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
+    na documentação do Slack.
+  </Step>
+
+  <Step>
+    ## Configurar as definições do app do Slack
+
+    * Acesse `App Home`
+      * Em `Show Tabs` → `Messages Tab`: habilite `Allow users to send Slash commands and messages from the messages tab`
+      * Acesse `Socket Mode`
+        * Habilite `Socket Mode`
+        * Anote o `Socket Mode Handler` para a variável de ambiente `SLACK_APP_TOKEN`
+      * Acesse `OAuth & Permissions`
+        * Adicione os seguintes `Bot Token Scopes`:
+          * `app_mentions:read`
+          * `assistant:write`
+          * `chat:write`
+          * `im:history`
+          * `im:read`
+          * `im:write`
+          * `channels:history`
+        * Instale o app no seu workspace e anote o `Bot User OAuth Token` para a variável de ambiente `SLACK_BOT_TOKEN`.
+      * Acesse `Event Subscriptions`
+        * Habilite `Events`
+        * Em `Subscribe to bot events`, adicione:
+          * `app_mention`
+          * `assistant_thread_started`
+          * `message:im`
+        * Save Changes
+  </Step>
+
+  <Step>
+    ## Adicionar variáveis de ambiente (`.env`)
+
+    Crie um arquivo `.env` na raiz do projeto com as seguintes variáveis de ambiente,
+    que permitirão que seu app se conecte ao [SQL playground do ClickHouse](https://sql.clickhouse.com/).
+
+    ```env
+    SLACK_BOT_TOKEN=your-slack-bot-token
+    SLACK_APP_TOKEN=your-slack-app-level-token
+    ANTHROPIC_API_KEY=your-anthropic-api-key
+    CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com
+    CLICKHOUSE_PORT=8443
+    CLICKHOUSE_USER=demo
+    CLICKHOUSE_PASSWORD=
+    CLICKHOUSE_SECURE=true
+    ```
+
+    Você pode adaptar as variáveis do ClickHouse para usar seu próprio servidor ClickHouse
+    ou uma instância no Cloud, se preferir.
+  </Step>
+
+  <Step>
+    ## Usando o bot
+
+    1. **Inicie o bot:**
+
+       ```sh
+       uv run main.py
+       ```
+    2. **No Slack:**
+       * Mencione o bot em um canal: `@yourbot Who are the top contributors to the ClickHouse git repo?`
+       * Responda na thread com uma menção: `@yourbot how many contributions did these users make last week?`
+       * Envie uma mensagem direta para o bot: `Show me all tables in the demo database.`
+
+    O bot responderá na thread, usando todas as mensagens anteriores como contexto,
+    quando aplicável.
+
+    **Contexto da thread:**
+    Ao responder em uma thread, o bot carrega todas as mensagens anteriores (exceto a atual) e as inclui como contexto para a IA.
+
+    **Uso de ferramentas:**
+    O bot usa apenas as ferramentas disponíveis via MCP (por exemplo, schema discovery e execução de SQL) e sempre mostrará o SQL usado e um resumo de como a resposta foi encontrada.
+  </Step>
+</Steps>

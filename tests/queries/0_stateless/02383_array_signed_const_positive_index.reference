@@ -1,0 +1,58 @@
+-- { echo }
+
+SELECT materialize([[13]])[1::Int8];
+[13]
+SELECT materialize([['Hello']])[1::Int8];
+['Hello']
+SELECT materialize([13])[1::Int8];
+13
+SELECT materialize(['Hello'])[1::Int8];
+Hello
+SELECT materialize([[13], [14]])[2::Int8];
+[14]
+SELECT materialize([['Hello'], ['world']])[2::Int8];
+['world']
+SELECT materialize([13, 14])[2::Int8];
+14
+SELECT materialize(['Hello', 'world'])[2::Int8];
+world
+SELECT materialize([[13], [14]])[3::Int8];
+[]
+SELECT materialize([['Hello'], ['world']])[3::Int8];
+[]
+SELECT materialize([13, 14])[3::Int8];
+0
+SELECT materialize(['Hello', 'world'])[3::Int8];
+
+SELECT materialize([[13], [14]])[0::Int8];
+[]
+SELECT materialize([['Hello'], ['world']])[0::Int8];
+[]
+SELECT materialize([13, 14])[0::Int8];
+0
+SELECT materialize(['Hello', 'world'])[0::Int8];
+
+SELECT materialize([[13], [14]])[-1];
+[14]
+SELECT materialize([['Hello'], ['world']])[-1];
+['world']
+SELECT materialize([13, 14])[-1];
+14
+SELECT materialize(['Hello', 'world'])[-1];
+world
+SELECT materialize([[13], [14]])[-9223372036854775808];
+[]
+SELECT materialize([['Hello'], ['world']])[-9223372036854775808];
+[]
+SELECT materialize([13, 14])[-9223372036854775808];
+0
+SELECT materialize(['Hello', 'world'])[-9223372036854775808];
+
+SELECT materialize([[toNullable(13)], [14]])[-9223372036854775808];
+[]
+SELECT materialize([['Hello'], [toNullable('world')]])[-9223372036854775808];
+[]
+SELECT materialize([13, toNullable(14)])[-9223372036854775808];
+\N
+SELECT materialize(['Hello', toLowCardinality('world')])[-9223372036854775808];
+

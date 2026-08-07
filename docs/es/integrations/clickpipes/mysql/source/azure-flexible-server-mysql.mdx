@@ -1,0 +1,84 @@
+---
+sidebarTitle: 'Azure Flexible Server for MySQL'
+description: 'Configura Azure Flexible Server for MySQL como fuente de ClickPipes'
+slug: /integrations/clickpipes/mysql/source/azure-flexible-server-mysql
+title: 'Guía de configuración de la fuente Azure Flexible Server for MySQL'
+keywords: ['azure', 'servidor flexible', 'mysql', 'clickpipes', 'binlog']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Esta guía paso a paso le muestra cómo configurar Azure Flexible Server for MySQL para replicar datos en ClickHouse Cloud mediante [MySQL ClickPipe](/es/integrations/clickpipes/mysql/index). Para este servicio, solo se admite la **ingestión puntual**. Para consultar preguntas frecuentes sobre MySQL CDC, vea la [página de preguntas frecuentes de MySQL](/es/integrations/clickpipes/mysql/faq).
+
+<Warning>
+  La ingestión continua mediante **CDC no se admite** en este servicio. Azure Flexible Server for MySQL no permite configurar la variable del sistema [`binlog_row_metadata`](https://dev.mysql.com/doc/refman/en/replication-options-binary-log.html#sysvar_binlog_row_metadata) en `FULL`, lo que es necesario para que MySQL CDC tenga todas sus funcionalidades en ClickPipes.
+
+  Envíe una solicitud de mejora en el [foro de comentarios de Azure](https://feedback.azure.com/d365community/forum/47b1e71d-ee24-ec11-b6e6-000d3a4f0da0), vote a favor de [esta pregunta](https://learn.microsoft.com/en-us/answers/questions/766047/setting-binlog-row-metadata-to-full-in-azure-db-fo) o [póngase en contacto con el soporte de Azure](https://azure.microsoft.com/en-us/support/create-ticket/) para solicitar esta funcionalidad.
+</Warning>
+
+<div id="configure-database-user">
+  ## Configurar un usuario de la base de datos
+</div>
+
+Conéctese a su instancia de Azure Flexible Server for MySQL como usuario administrador y ejecute los siguientes comandos:
+
+1. Cree un usuario específico para ClickPipes:
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some-password';
+   ```
+
+2. Conceda permisos sobre el esquema. El siguiente ejemplo muestra los permisos para la base de datos `mysql`. Repita estos comandos para cada base de datos y host que desee replicar:
+
+   ```sql
+   GRANT SELECT ON `mysql`.* TO 'clickpipes_user'@'%';
+   ```
+
+3. Aplique los cambios en los permisos:
+
+   ```sql
+   FLUSH PRIVILEGES;
+   ```
+
+<div id="configure-network-access">
+  ## Configurar el acceso a la red
+</div>
+
+<Note>
+  ClickPipes no admite conexiones de Azure Private Link. Si no permites el acceso público a tu instancia de Azure Flexible Server for MySQL, puedes [usar un túnel SSH](/es/integrations/clickpipes/mysql/source/azure-flexible-server-mysql#configure-network-access) para conectarte de forma segura. Azure Private Link será compatible en el futuro.
+</Note>
+
+A continuación, debes permitir las conexiones desde ClickPipes a tu instancia de Azure Flexible Server for MySQL.
+
+<Tabs>
+  <Tab title="Permitir las IP de ClickPipes">
+    1. En Azure Portal, ve a **All resources**. Selecciona tu instancia de Azure Flexible Server for MySQL para abrir la página **Overview**.
+
+    2. En **Settings**, selecciona **Networking**. Asegúrate de que **Public access** esté habilitado.
+
+    3. En la sección **Firewall rules**, introduce la [lista de direcciones IP estáticas de ClickPipes](/es/integrations/clickpipes/home#list-of-static-ips) correspondiente a la región en la que está desplegado tu servicio.
+
+       <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp" alt="Configurar la red para acceso público con una lista de IP permitidas" size="lg" border />
+
+    4. Haz clic en **Save** para guardar los cambios en la configuración de seguridad de red.
+  </Tab>
+
+  <Tab title="Usar un túnel SSH">
+    Si no permites el acceso público a tu instancia de Azure Flexible Server for MySQL, primero debes configurar un host bastión SSH para tunelizar la conexión de forma segura. Para configurar un host bastión SSH en Azure:
+
+    1. Crea e inicia una máquina virtual (VM) de Azure siguiendo la [documentación oficial](https://learn.microsoft.com/en-us/azure/virtual-machines/linux/quick-create-portal?tabs=ubuntu).
+       * Asegúrate de que la VM esté en la misma Virtual Network (VNet) que tu instancia de Azure Flexible Server for MySQL, o en una VNet emparejada con conectividad.
+       * Asegúrate de que la VM tenga una [dirección IP pública estática](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/virtual-network-public-ip-address). Usarás esta dirección IP al conectar ClickPipes con tu host bastión SSH.
+
+    2. Actualiza las reglas del Network Security Group (NSG) del host bastión SSH para permitir el tráfico desde la [lista de direcciones IP estáticas de ClickPipes](/es/integrations/clickpipes/home#list-of-static-ips) correspondiente a la región en la que está desplegado tu servicio.
+
+    3. Actualiza las reglas del firewall de tu instancia de Azure Flexible Server for MySQL para permitir el tráfico desde la [dirección IP privada](https://learn.microsoft.com/en-us/azure/virtual-network/ip-services/private-ip-addresses) del host bastión SSH.
+  </Tab>
+</Tabs>
+
+<div id="whats-next">
+  ## ¿Qué sigue?
+</div>
+
+Ahora puedes [crear tu ClickPipe](/es/integrations/clickpipes/mysql/index) y empezar a ingestar datos desde tu instancia de Azure Flexible Server for MySQL en ClickHouse Cloud. Asegúrate de anotar los detalles de conexión que utilizaste al configurar tu instancia, ya que los necesitarás durante el proceso de creación de ClickPipe.

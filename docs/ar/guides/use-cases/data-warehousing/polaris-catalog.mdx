@@ -1,0 +1,107 @@
+---
+slug: /use-cases/data-lake/polaris-catalog
+sidebarTitle: 'كتالوج Polaris'
+title: 'كتالوج Polaris'
+description: 'في هذا الدليل، سنرشدك إلى خطوات الاستعلام عن
+ بياناتك باستخدام ClickHouse وكتالوج Polaris من Snowflake.'
+keywords: ['Polaris', 'Snowflake', 'بحيرة البيانات']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+يدعم ClickHouse التكامل مع عدة catalogs ‏(Unity وGlue وPolaris
+وغيرها). في هذا الدليل، سنرشدك إلى خطوات الاستعلام عن بياناتك
+باستخدام ClickHouse و[Apache Polaris Catalog](https://polaris.apache.org/releases/1.1.0/getting-started/using-polaris/#setup).
+يدعم Apache Polaris جداول Iceberg وDelta Tables ‏(عبر Generic Tables). ولا يدعم هذا التكامل حاليًا سوى جداول Iceberg.
+
+<Note>
+  بما أن هذه الميزة تجريبية، فستحتاج إلى تفعيلها باستخدام:
+  `SET allow_experimental_database_unity_catalog = 1;`
+</Note>
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+للاتصال بكتالوج Polaris، ستحتاج إلى:
+
+* Snowflake Open Catalog ‏(Polaris المُدار) أو Polaris Catalog مستضاف ذاتيًا
+* URI الخاص بكتالوج Polaris (على سبيل المثال، `https://<account-id>.<region>.aws.snowflakecomputing.com/polaris/api/catalog/v1` أو `http://polaris:8181/api/catalog/v1/oauth/tokens`)
+* بيانات اعتماد الكتالوج (client ID وclient secret)
+* URI الخاص برموز OAuth المميزة لمثيل Polaris لديك
+* نقطة نهاية التخزين لمخزن الكائنات الذي توجد فيه بيانات Iceberg الخاصة بك (على سبيل المثال، S3)
+* إصدار ClickHouse 26.1+
+
+بالنسبة إلى Open Catalog، وهو عرض Polaris المُدار من Snowflake، سيتضمن URI لديك `/polaris`، بينما في حالة الاستضافة الذاتية، قد لا يتضمنه.
+
+<Steps>
+  <Step>
+    ## إنشاء اتصال بين Polaris وClickHouse
+
+    أنشئ قاعدة بيانات تربط ClickHouse بكتالوج Polaris لديك:
+
+    ```sql
+    CREATE DATABASE polaris_catalog
+    ENGINE = DataLakeCatalog('https://<catalog_uri>/api/catalog/v1')
+    SETTINGS
+        catalog_type = 'rest',
+        catalog_credential = '<client-id>:<client-secret>',
+        warehouse = 'snowflake',
+        auth_scope = 'PRINCIPAL_ROLE:ALL',
+        oauth_server_uri = 'https://<catalog_uri>/api/catalog/v1/oauth/tokens',
+        storage_endpoint = '<storage_endpoint>'
+    ```
+  </Step>
+
+  <Step>
+    ## الاستعلام عن كتالوج Polaris باستخدام ClickHouse
+
+    بمجرد إنشاء الاتصال، يمكنك الاستعلام عن Polaris:
+
+    ```sql title="استعلام"
+    USE polaris_catalog;
+    SHOW TABLES;
+    ```
+
+    للاستعلام عن جدول:
+
+    ```sql title="استعلام"
+    SELECT count(*) FROM `polaris_db.my_iceberg_table`;
+    ```
+
+    <Note>
+      تكون علامات backticks مطلوبة، على سبيل المثال: `schema.table`.
+    </Note>
+
+    لمعاينة DDL الخاص بالجدول:
+
+    ```sql
+    SHOW CREATE TABLE `polaris_db.my_iceberg_table`;
+    ```
+  </Step>
+
+  <Step>
+    ## تحميل البيانات من Polaris إلى ClickHouse
+
+    لتحميل البيانات من Polaris إلى جدول ClickHouse، أنشئ الجدول الهدف بالمخطط المطلوب، ثم نفّذ insert من جدول Polaris:
+
+    ```sql title="استعلام"
+    CREATE TABLE my_clickhouse_table
+    (
+        -- عرّف الأعمدة لتتطابق مع جدول Iceberg لديك
+        `id` Int64,
+        `name` String,
+        `event_time` DateTime64(3)
+    )
+    ENGINE = MergeTree
+    ORDER BY id;
+
+    INSERT INTO my_clickhouse_table
+    SELECT * FROM polaris_catalog.`polaris_db.my_iceberg_table`;
+    ```
+  </Step>
+</Steps>

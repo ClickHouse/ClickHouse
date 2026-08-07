@@ -1,0 +1,69 @@
+---
+sidebarTitle: 'Paramètres du modèle'
+slug: /cloud/features/ai-ml/agents/builder/model-parameters
+title: 'Paramètres du modèle'
+description: 'Configurer la sélection du modèle et les paramètres de génération pour ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'paramètres du modèle', 'température', 'top-p', 'top-k', 'thinking', 'mise en cache des prompts']
+doc_type: 'reference'
+draft: true
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Les paramètres du modèle déterminent quel modèle un agent utilise et comment ce modèle génère des réponses.
+Dans l’onglet **Agent Builder**, cliquez sur **Sélectionner un modèle** dans la section **Modèle**.
+La fenêtre **Paramètres du modèle** s’ouvre alors.
+
+<div id="provider-and-model">
+  ## Fournisseur et modèle
+</div>
+
+* **Fournisseur** - sélectionnez le fournisseur de LLM.
+* **Modèle** - sélectionnez le modèle précis de ce fournisseur. Chaque modèle a ses points forts : les grands modèles de raisonnement pour les tâches exigeant beaucoup de planification, et les petits modèles plus rapides pour les requêtes courantes.
+
+**Fournisseur** et **Modèle** sont tous deux obligatoires. Le reste du panneau s’adapte en fonction des capacités du modèle sélectionné.
+
+<div id="context-and-output-limits">
+  ## Limites de contexte et de sortie
+</div>
+
+* **Nombre maximal de tokens de contexte** - limite la quantité totale de contexte que l&#39;agent envoie au modèle. Laissez **System** pour utiliser la valeur par défaut du modèle. Réduisez-la pour diminuer le coût ; augmentez-la pour les agents qui doivent traiter de gros volumes d&#39;entrée.
+* **Nombre maximal de tokens de sortie** - limite la taille de la réponse de l&#39;agent. **System** utilise la valeur par défaut du modèle. Définissez une valeur plus basse si les réponses sont trop longues, ou plus élevée si elles sont tronquées.
+* **Limite de tokens par fichier** - limite le nombre de tokens qu&#39;un seul fichier chargé ajoute au contexte. Utile lorsque les utilisateurs joignent de gros fichiers et que vous ne voulez pas qu&#39;ils monopolisent le reste de la conversation.
+
+<div id="sampling">
+  ## Échantillonnage
+</div>
+
+* **Température** - aléatoire. Des valeurs plus élevées (0.7–1.0) = plus d&#39;aléatoire, tandis que des valeurs plus faibles (0.0–0.3) = un comportement plus ciblé et plus déterministe. Nous recommandons de modifier ce paramètre ou Top P, mais pas les deux.
+* **Top P** - échantillonnage par noyau. Modifie la manière dont le modèle sélectionne les tokens en sortie.
+* **Top K** - limite l&#39;échantillonnage aux K tokens les plus probables à chaque étape. Pris en charge par certains fournisseurs ; contrôle le déterminisme sur un autre axe que la température.
+
+Si vous ne cherchez pas à obtenir un comportement particulier, laissez les curseurs proches de leurs valeurs par défaut, car de petits changements changent rarement grand-chose, tandis que de grands changements peuvent dégrader la qualité de la sortie.
+
+<div id="reasoning-controls">
+  ## Contrôles du raisonnement
+</div>
+
+Disponibles sur les modèles qui prennent en charge un raisonnement étendu. L&#39;ensemble exact varie selon le fournisseur.
+
+* **Thinking** - active ou désactive le mode de raisonnement étendu du modèle. Lorsqu&#39;il est activé, le modèle génère des tokens de réflexion internes avant sa réponse finale ; cela améliore généralement la précision sur les tâches difficiles, au prix d&#39;une latence accrue et d&#39;une consommation de tokens plus élevée.
+* **Thinking Budget** - définit un budget de tokens pour la phase de réflexion. Le modèle cesse de réfléchir et répond une fois ce budget épuisé.
+* **Effort** - réglage général du niveau d&#39;effort de raisonnement (**Auto**, faible, moyen, élevé). Utilisé par les modèles de raisonnement qui n&#39;exposent pas directement de budget de tokens de réflexion.
+* **Thought Visibility** - détermine si la réflexion du modèle est affichée directement à l&#39;utilisateur, masquée dans une section repliée ou entièrement omise.
+
+<div id="conversation-behavior">
+  ## Comportement de la conversation
+</div>
+
+* **Renvoyer les fichiers** - lorsqu’elle est activée, les fichiers joints dans les échanges précédents sont renvoyés à chaque échange suivant afin que le modèle ne les perde pas de vue. Désactivez cette option pour économiser des tokens si la conversation est courte ou si le modèle résume les fichiers au fur et à mesure.
+* **Utiliser la mise en cache des prompts** - lorsqu’elle est prise en charge par le fournisseur, met en cache les parties réutilisables du prompt afin de réduire les coûts et la latence dans les conversations où les instructions et les descriptions des outils se répètent d’un échange à l’autre.
+* **Recherche web** - active ou désactive la recherche web native du fournisseur sur les modèles pris en charge. Cela se distingue de l’[outil de recherche web](/fr/products/cloud/features/ai-ml/agents/builder/web-search), qui s’exécute comme l’un des outils de l’agent plutôt qu’en tant que fonctionnalité du fournisseur.
+
+<div id="reset">
+  ## Réinitialiser
+</div>
+
+**Réinitialiser les paramètres du modèle** en bas du panneau rétablit tous les champs à leurs valeurs par défaut. Utilisez cette option si vous avez assez expérimenté et souhaitez repartir sur de bonnes bases.

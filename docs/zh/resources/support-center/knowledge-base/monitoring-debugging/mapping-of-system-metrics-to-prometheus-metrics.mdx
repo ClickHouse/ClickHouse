@@ -1,0 +1,72 @@
+---
+title: "`system.dashboards` 中使用的指标与 `system.custom_metrics` 中 Prometheus 指标的映射关系"
+description: "`system.dashboards` 中使用的指标与 `system.custom_metrics` 中 Prometheus 指标的映射关系"
+date: 2024-07-23
+tags: ['系统表']
+keywords: ['指标', 'system.dashboards', 'system.custom_metrics']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="mapping-of-metrics-used-in-systemdashboards-to-prometheus-metrics-in-systemcustom_metrics">
+  ## `system.dashboards` 中所用指标与 `system.custom_metrics` 中 Prometheus 指标的映射
+</div>
+
+下表列出了 `system.dashboards` 中所用指标与 `system.custom_metrics` 中 Prometheus 指标之间的对应关系。
+这对于希望监控 `system.dashboards` 中相同指标的用户会很有帮助。 
+
+<div id="mapping-table-for-metrics-in-systemdashboards-to-prometheus-metrics-in-systemcustom_metrics">
+  ### system.dashboards 中指标到 system.custom_metrics 中 Prometheus 指标的映射表
+</div>
+
+| 仪表盘      | 标题                       | Prometheus 指标名称 (system.custom&#95;metrics)                                                                                                                                                                           |
+| -------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 概览       | 查询/秒                     | ClickHouseProfileEvents&#95;Query                                                                                                                                                                                     |
+| 概览       | CPU 使用量 (核数)             | ClickHouseProfileEvents&#95;OSCPUVirtualTimeMicroseconds                                                                                                                                                              |
+| 概览       | 正在运行的查询                  | ClickHouseMetrics&#95;Query                                                                                                                                                                                           |
+| 概览       | 正在运行的合并                  | ClickHouseMetrics&#95;Merge                                                                                                                                                                                           |
+| 概览       | 选中字节/秒                   | ClickHouseProfileEvents&#95;SelectedBytes                                                                                                                                                                             |
+| 概览       | IO 等待                    | ClickHouseProfileEvents&#95;OSIOWaitMicroseconds                                                                                                                                                                      |
+| 概览       | CPU 等待                   | ClickHouseProfileEvents&#95;OSCPUWaitMicroseconds                                                                                                                                                                     |
+| 概览       | 操作系统 CPU 使用率 (用户空间)      | ClickHouseAsyncMetrics&#95;OSUserTimeNormalized                                                                                                                                                                       |
+| 概览       | 操作系统 CPU 使用率 (内核)        | ClickHouseAsyncMetrics&#95;OSSystemTimeNormalized                                                                                                                                                                     |
+| 概览       | 从磁盘读取                    | ClickHouseProfileEvents&#95;OSReadBytes                                                                                                                                                                               |
+| 概览       | 从文件系统读取                  | ClickHouseProfileEvents&#95;OSReadChars                                                                                                                                                                               |
+| 概览       | 内存 (已跟踪)                 | ClickHouseMetrics&#95;MemoryTracking                                                                                                                                                                                  |
+| 概览       | 平均负载 (15 分钟)             | ClickHouseAsyncMetrics&#95;LoadAverage15                                                                                                                                                                              |
+| 概览       | 选中行数/秒                   | ClickHouseProfileEvents&#95;SelectedRows                                                                                                                                                                              |
+| 概览       | 插入行数/秒                   | ClickHouseProfileEvents&#95;InsertedRows                                                                                                                                                                              |
+| 概览       | MergeTree parts 总数       | ClickHouseAsyncMetrics&#95;TotalPartsOfMergeTreeTables                                                                                                                                                                |
+| 概览       | 单个分区的最大 parts 数          | ClickHouseAsyncMetrics&#95;MaxPartCountForPartition                                                                                                                                                                   |
+| Cloud 概览 | 查询/秒                     | ClickHouseProfileEvents&#95;Query                                                                                                                                                                                     |
+| Cloud 概览 | CPU 使用量 (核数)             | ClickHouseProfileEvents&#95;OSCPUVirtualTimeMicroseconds                                                                                                                                                              |
+| Cloud 概览 | 正在运行的查询                  | ClickHouseMetrics&#95;Query                                                                                                                                                                                           |
+| Cloud 概览 | 正在运行的合并                  | ClickHouseMetrics&#95;Merge                                                                                                                                                                                           |
+| Cloud 概览 | 选中字节/秒                   | ClickHouseProfileEvents&#95;SelectedBytes                                                                                                                                                                             |
+| Cloud 概览 | IO 等待 (本地文件系统)           | ClickHouseProfileEvents&#95;OSIOWaitMicroseconds                                                                                                                                                                      |
+| Cloud 概览 | S3 读取等待                  | ClickHouseProfileEvents&#95;ReadBufferFromS3Microseconds                                                                                                                                                              |
+| Cloud 概览 | S3 读取错误/秒                | ProfileEvent&#95;ReadBufferFromS3RequestsErrors                                                                                                                                                                       |
+| Cloud 概览 | CPU 等待                   | ClickHouseProfileEvents&#95;OSCPUWaitMicroseconds                                                                                                                                                                     |
+| Cloud 概览 | 操作系统 CPU 使用率 (用户空间，归一化)  | ClickHouseAsyncMetrics&#95;OSUserTimeNormalized                                                                                                                                                                       |
+| Cloud 概览 | 操作系统 CPU 使用率 (内核，归一化)    | ClickHouseAsyncMetrics&#95;OSSystemTimeNormalized                                                                                                                                                                     |
+| Cloud 概览 | 从磁盘读取 (字节/秒)             | ClickHouseProfileEvents&#95;OSReadBytes                                                                                                                                                                               |
+| Cloud 概览 | 从文件系统读取 (字节/秒)           | ClickHouseProfileEvents&#95;OSReadChars                                                                                                                                                                               |
+| Cloud 概览 | 内存 (已跟踪，字节)              | ClickHouseMetrics&#95;MemoryTracking                                                                                                                                                                                  |
+| Cloud 概览 | 平均负载 (15 分钟)             | ClickHouseAsyncMetrics&#95;LoadAverage15                                                                                                                                                                              |
+| Cloud 概览 | 选中行数/秒                   | ClickHouseProfileEvents&#95;SelectedRows                                                                                                                                                                              |
+| Cloud 概览 | 插入行数/秒                   | ClickHouseProfileEvents&#95;InsertedRows                                                                                                                                                                              |
+| Cloud 概览 | MergeTree parts 总数       | ClickHouseAsyncMetrics&#95;TotalPartsOfMergeTreeTables                                                                                                                                                                |
+| Cloud 概览 | 单个分区的最大 parts 数          | ClickHouseAsyncMetrics&#95;MaxPartCountForPartition                                                                                                                                                                   |
+| Cloud 概览 | 从 S3 读取 (字节/秒)           | ClickHouseProfileEvents&#95;ReadBufferFromS3Bytes                                                                                                                                                                     |
+| Cloud 概览 | 文件系统缓存大小                 | ClickHouseMetrics&#95;FilesystemCacheSize                                                                                                                                                                             |
+| Cloud 概览 | Disk S3 写请求/秒            | ClickHouseProfileEvents&#95;DiskS3PutObject + ClickHouseProfileEvents&#95;DiskS3UploadPart + ClickHouseProfileEvents&#95;DiskS3CreateMultipartUpload + ClickHouseProfileEvents&#95;DiskS3CompleteMultipartUpload      |
+| Cloud 概览 | Disk S3 读请求/秒            | ClickHouseProfileEvents&#95;DiskS3GetObject + ClickHouseProfileEvents&#95;DiskS3HeadObject + ClickHouseProfileEvents&#95;DiskS3ListObjects                                                                            |
+| Cloud 概览 | 文件系统缓存命中率                | ClickHouseProfileEvents&#95;CachedReadBufferReadFromCacheBytes / (ClickHouseProfileEvents&#95;CachedReadBufferReadFromCacheBytes + ClickHouseProfileEvents&#95;CachedReadBufferReadFromSourceBytes)                   |
+| Cloud 概览 | 页缓存命中率                   | greatest(0, (sum(ClickHouseProfileEvents&#95;OSReadChars) - sum(ClickHouseProfileEvents&#95;OSReadBytes)) /  (sum(ClickHouseProfileEvents&#95;OSReadChars) + sum(ClickHouseProfileEvents&#95;ReadBufferFromS3Bytes))) |
+| Cloud 概览 | 网络接收字节/秒                 | ClickHouseProfileEvents&#95;NetworkReceiveBytes                                                                                                                                                                       |
+| Cloud 概览 | 网络发送字节/秒                 | ClickHouseProfileEvents&#95;NetworkSendBytes                                                                                                                                                                          |
+
+相关链接：
+https://clickhouse.com/docs/integrations/prometheus

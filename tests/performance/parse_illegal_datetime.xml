@@ -1,0 +1,33 @@
+<test>
+    <create_query>
+        CREATE TABLE test_date(date String) ENGINE = Memory;
+    </create_query>
+
+    <fill_query>
+        INSERT INTO test_date SELECT 'invalid' FROM numbers(100000);
+    </fill_query>
+
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>
+        SELECT parseDateTimeOrZero(date, 'yyyy-MM-dd HH:mm:ss', 'Asia/Shanghai') FROM test_date FORMAT Null;
+    </query>
+
+    <query>
+        SELECT parseDateTimeOrNull(date, 'yyyy-MM-dd HH:mm:ss', 'Asia/Shanghai') FROM test_date FORMAT Null;
+    </query>
+
+    <query>
+        SELECT parseDateTimeInJodaSyntaxOrZero(date, 'yyyy-MM-dd HH:mm:ss', 'Asia/Shanghai') FROM test_date FORMAT Null;
+    </query>
+
+    <query>
+        SELECT parseDateTimeInJodaSyntaxOrNull(date, 'yyyy-MM-dd HH:mm:ss', 'Asia/Shanghai') FROM test_date FORMAT Null;
+    </query>
+
+    <drop_query>
+        DROP TABLE IF EXISTS test_date
+    </drop_query>
+</test>

@@ -1,0 +1,201 @@
+---
+description: 'تتيح دالة الجدول `remote` الوصول إلى الخوادم البعيدة بشكل ديناميكي،
+  أي من دون إنشاء جدول [Distributed](/reference/engines/table-engines/special/distributed). وتعمل دالة الجدول `remoteSecure` بالطريقة نفسها التي تعمل بها
+  `remote` ولكن عبر اتصال آمن.'
+sidebarTitle: 'remote'
+slug: /sql-reference/table-functions/remote
+title: 'remote, remoteSecure'
+doc_type: 'reference'
+---
+
+تتيح دالة الجدول `remote` الوصول إلى الخوادم البعيدة بشكل ديناميكي، أي من دون إنشاء جدول [Distributed](/ar/reference/engines/table-engines/special/distributed). وتعمل دالة الجدول `remoteSecure` بالطريقة نفسها التي تعمل بها `remote` ولكن عبر اتصال آمن.
+
+يمكن استخدام كلتا الدالتين في استعلامات `SELECT` و`INSERT`.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+remote(addresses_expr, [db, table, user [, password], sharding_key])
+remote(addresses_expr, [db.table, user [, password], sharding_key])
+remote(named_collection[, option=value [,..]])
+remoteSecure(addresses_expr, [db, table, user [, password], sharding_key])
+remoteSecure(addresses_expr, [db.table, user [, password], sharding_key])
+remoteSecure(named_collection[, option=value [,..]])
+```
+
+<div id="parameters">
+  ## المعلمات
+</div>
+
+| الوسيطة          | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `addresses_expr` | عنوان خادم بعيد أو تعبير يُولِّد عدة عناوين لخوادم بعيدة. التنسيق: `host` أو `host:port`.<br /><br />    يمكن تحديد `host` على أنه اسم خادم، أو عنوان IPv4 أو عنوان IPv6. يجب تحديد عنوان IPv6 داخل `[]`.<br /><br />    يشير `port` إلى منفذ TCP على الخادم البعيد. إذا لم يُحدَّد المنفذ، فسيتم استخدام [tcp&#95;port](/ar/reference/settings/server-settings/settings#tcp_port) من ملف إعدادات الخادم لدالة الجدول `remote` (افتراضيًا 9000) و[tcp&#95;port&#95;secure](/ar/reference/settings/server-settings/settings#tcp_port_secure) لدالة الجدول `remoteSecure` (افتراضيًا 9440).<br /><br />    بالنسبة إلى عناوين IPv6، يكون تحديد المنفذ إلزاميًا.<br /><br />    إذا تم تحديد المعلمة `addresses_expr` فقط، فسيتم استخدام `system.one` افتراضيًا لكل من `db` و`table`.<br /><br />    النوع: [String](/ar/reference/data-types/string). |
+| `db`             | اسم قاعدة البيانات. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `table`          | اسم الجدول. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `user`           | اسم المستخدم. إذا لم يُحدَّد، فستُستخدم القيمة `default`. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `password`       | كلمة مرور المستخدم. إذا لم تُحدَّد، فستُستخدم كلمة مرور فارغة. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `sharding_key`   | مفتاح التقسيم الأفقي لدعم توزيع البيانات عبر العُقد. على سبيل المثال: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. النوع: [UInt32](/ar/reference/data-types/int-uint).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+
+يمكن أيضًا تمرير الوسائط باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections).
+
+<div id="returned-value">
+  ## القيمة المُعادة
+</div>
+
+جدول موجود على خادم بعيد.
+
+<div id="usage">
+  ## الاستخدام
+</div>
+
+نظرًا إلى أن دالتي الجداول `remote` و`remoteSecure` تعيدان إنشاء الاتصال مع كل طلب، يُنصح باستخدام جدول `Distributed` بدلًا من ذلك. كذلك، إذا كانت أسماء المضيفين محددة، فستُحلّ هذه الأسماء، ولن تُحتسب الأخطاء عند العمل مع عدة نسخ متماثلة. وعند معالجة عدد كبير من الاستعلامات، احرص دائمًا على إنشاء جدول `Distributed` مسبقًا، ولا تستخدم دالة الجدول `remote`.
+
+قد تكون دالة الجدول `remote` مفيدة في الحالات التالية:
+
+* ترحيل البيانات لمرة واحدة من نظام إلى آخر
+* الوصول إلى خادم محدد لمقارنة البيانات، واستكشاف الأخطاء وإصلاحها، والاختبار، أي لإجراء اتصالات عند الحاجة.
+* استعلامات بين عناقيد ClickHouse مختلفة لأغراض البحث.
+* الطلبات الموزعة غير المتكررة التي تُجرى يدويًا.
+* الطلبات الموزعة التي يُعاد فيها تحديد مجموعة الخوادم في كل مرة.
+
+<div id="addresses">
+  ### العناوين
+</div>
+
+```text
+example01-01-1
+example01-01-1:9440
+example01-01-1:9000
+localhost
+127.0.0.1
+[::]:9440
+[::]:9000
+[2a02:6b8:0:1111::11]:9000
+```
+
+يمكن إدراج عدة عناوين مفصولة بفواصل. في هذه الحالة، سيستخدم ClickHouse المعالجة الموزعة ويرسل الاستعلام إلى جميع العناوين المحددة (مثل الشظايا التي تحتوي على بيانات مختلفة). مثال:
+
+```text
+example01-01-1,example01-02-1
+```
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="selecting-data-from-a-remote-server">
+  ### استعلام البيانات من خادم بعيد:
+</div>
+
+```sql
+SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
+```
+
+أو باستخدام [المجموعات المُسمّاة](/ar/concepts/features/configuration/server-config/named-collections):
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = '127.0.0.1',
+        database = 'db';
+SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
+```
+
+<div id="inserting-data-into-a-table-on-a-remote-server">
+  ### إدراج البيانات في جدول على خادم بعيد:
+</div>
+
+```sql
+CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
+INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALUES ('test', 42);
+SELECT * FROM remote_table;
+```
+
+<div id="migration-of-tables-from-one-system-to-another">
+  ### ترحيل الجداول من نظام إلى آخر:
+</div>
+
+يستخدم هذا المثال جدولًا واحدًا من مجموعة بيانات نموذجية. قاعدة البيانات هي `imdb`، والجدول هو `actors`.
+
+<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
+  #### على نظام ClickHouse المصدر (النظام الذي يستضيف البيانات حاليًا)
+</div>
+
+* تحقّق من قاعدة البيانات المصدر واسم الجدول (`imdb.actors`)
+
+  ```sql
+  show databases
+  ```
+
+  ```sql
+  show tables in imdb
+  ```
+
+* احصل على عبارة CREATE TABLE من المصدر:
+
+```sql
+  SELECT create_table_query
+  FROM system.tables
+  WHERE database = 'imdb' AND table = 'actors'
+```
+
+الناتج
+
+```sql
+  CREATE TABLE imdb.actors (`id` UInt32,
+                            `first_name` String,
+                            `last_name` String,
+                            `gender` FixedString(1))
+                  ENGINE = MergeTree
+                  ORDER BY (id, first_name, last_name, gender);
+```
+
+<div id="on-the-destination-clickhouse-system">
+  #### على نظام ClickHouse الهدف
+</div>
+
+* أنشئ قاعدة البيانات الهدف:
+
+  ```sql
+  CREATE DATABASE imdb
+  ```
+
+* باستخدام عبارة CREATE TABLE من المصدر، أنشئ الجدول في الوجهة:
+
+  ```sql
+  CREATE TABLE imdb.actors (`id` UInt32,
+                            `first_name` String,
+                            `last_name` String,
+                            `gender` FixedString(1))
+                  ENGINE = MergeTree
+                  ORDER BY (id, first_name, last_name, gender);
+  ```
+
+<div id="back-on-the-source-deployment">
+  #### بالعودة إلى عملية نشر المصدر
+</div>
+
+أدرِج البيانات في قاعدة البيانات الجديدة والجدول الجديد اللذين أُنشئا على النظام البعيد. ستحتاج إلى المضيف، والمنفذ، واسم المستخدم، وكلمة المرور، وقاعدة البيانات الوجهة، وجدول الوجهة.
+
+```sql
+INSERT INTO FUNCTION
+remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
+SELECT * from imdb.actors
+```
+
+<div id="globs-in-addresses">
+  ## المطابقة بالأنماط
+</div>
+
+تُستخدم الأنماط داخل `{ }` لإنشاء مجموعة من الشظايا وتحديد النُسخ المتماثلة. وإذا وُجدت عدة أزواج من `{ }`، فسيتم إنشاء حاصل الضرب الديكارتي للمجموعات المقابلة.
+
+أنواع الأنماط التالية مدعومة.
+
+* `{a,b,c}` - تمثل أيًّا من السلاسل البديلة `a` أو `b` أو `c`. يُستبدل النمط بـ `a` في عنوان الشظية الأولى، ويُستبدل بـ `b` في عنوان الشظية الثانية، وهكذا. على سبيل المثال، يُنشئ `example0{1,2}-1` العنوانين `example01-1` و `example02-1`.
+* `{N..M}` - نطاق من الأرقام. يُنشئ هذا النمط عناوين الشظايا بمؤشرات متزايدة من `N` إلى `M` (بما في ذلك `M`). على سبيل المثال، يُنشئ `example0{1..2}-1` العنوانين `example01-1` و `example02-1`.
+* `{0n..0m}` - نطاق من الأرقام مع أصفار بادئة. يحافظ هذا النمط على الأصفار البادئة في المؤشرات. على سبيل المثال، يُنشئ `example{01..03}-1` العناوين `example01-1` و `example02-1` و `example03-1`.
+* `{a|b}` - أي عدد من المتغيرات المفصولة بالرمز `|`. يحدد هذا النمط النُسخ المتماثلة. على سبيل المثال، يُنشئ `example01-{1|2}` النُسختين المتماثلتين `example01-1` و `example01-2`.
+
+سيُرسل الاستعلام إلى أول نُسخة متماثلة سليمة. ومع ذلك، بالنسبة إلى `remote`، تُجرى المداورة على النُسخ المتماثلة وفق الترتيب المضبوط حاليًا في إعداد [load&#95;balancing](/ar/reference/settings/session-settings#load_balancing).
+عدد العناوين المُنشأة مقيَّد بإعداد [table&#95;function&#95;remote&#95;max&#95;addresses](/ar/reference/settings/session-settings#table_function_remote_max_addresses).

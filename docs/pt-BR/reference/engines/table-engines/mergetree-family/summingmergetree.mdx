@@ -1,0 +1,257 @@
+---
+description: 'SummingMergeTree herda do motor MergeTree. Seu principal recurso
+  é a capacidade de somar automaticamente dados numéricos durante as mesclagens de partes.'
+sidebarTitle: 'SummingMergeTree'
+slug: /engines/table-engines/mergetree-family/summingmergetree
+title: 'Motor de tabela SummingMergeTree'
+doc_type: 'referência'
+---
+
+O motor herda de [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). A diferença é que, ao mesclar partes de dados em tabelas `SummingMergeTree`, o ClickHouse substitui todas as linhas com a mesma chave primária (ou, mais precisamente, com a mesma [chave de ordenação](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree)) por uma única linha contendo os valores somados das colunas com tipo de dado numérico. Se a chave de ordenação for composta de modo que um único valor de chave corresponda a um grande número de linhas, isso reduz significativamente o volume de armazenamento e acelera a seleção de dados.
+
+Recomendamos usar esse motor em conjunto com `MergeTree`. Armazene os dados completos em uma tabela `MergeTree` e use `SummingMergeTree` para armazenar dados agregados, por exemplo, na preparação de relatórios. Essa abordagem evita a perda de dados valiosos devido a uma chave primária composta incorretamente.
+
+<div id="creating-a-table">
+  ## Criar uma tabela
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = SummingMergeTree([columns])
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+Para ver uma descrição dos parâmetros da requisição, consulte [descrição da requisição](/pt-BR/reference/statements/create/table).
+
+<div id="parameters-of-summingmergetree">
+  ### Parâmetros do SummingMergeTree
+</div>
+
+<div id="columns">
+  #### Colunas
+</div>
+
+`columns` - uma tupla com os nomes das colunas cujos valores serão somados. Parâmetro opcional.
+As colunas devem ser de tipo numérico e não devem estar na partição nem na chave de ordenação.
+
+Se `columns` não for especificado, o ClickHouse soma os valores de todas as colunas com tipo de dado numérico que não estejam na chave de ordenação.
+
+<div id="query-clauses">
+  ### Cláusulas de consulta
+</div>
+
+Ao criar uma tabela `SummingMergeTree`, são necessárias as mesmas [cláusulas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) exigidas na criação de uma tabela `MergeTree`.
+
+<details markdown="1">
+  <summary>Método obsoleto para criar uma tabela</summary>
+
+  <Note>
+    Não use este método em novos projetos e, se possível, migre os projetos antigos para o método descrito acima.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] SummingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [columns])
+  ```
+
+  Todos os parâmetros, exceto `columns`, têm o mesmo significado de `MergeTree`.
+
+  * `columns` — tupla com os nomes das colunas cujos valores serão somados. Parâmetro opcional. Para uma descrição, consulte o texto acima.
+</details>
+
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
+
+Considere a tabela a seguir:
+
+```sql
+CREATE TABLE summtt
+(
+    key UInt32,
+    value UInt32
+)
+ENGINE = SummingMergeTree()
+ORDER BY key
+```
+
+Insira dados nela:
+
+```sql
+INSERT INTO summtt VALUES(1,1),(1,2),(2,1)
+```
+
+O ClickHouse pode não somar todas as linhas completamente ([veja abaixo](#data-processing)), por isso usamos a função de agregação `sum` e a cláusula `GROUP BY` na consulta.
+
+```sql
+SELECT key, sum(value) FROM summtt GROUP BY key
+```
+
+```text
+┌─key─┬─sum(value)─┐
+│   2 │          1 │
+│   1 │          3 │
+└─────┴────────────┘
+```
+
+<div id="data-processing">
+  ## Processamento de dados
+</div>
+
+Quando os dados são inseridos em uma tabela, eles são salvos como foram inseridos. O ClickHouse mescla periodicamente as partes de dados inseridas, e é nesse momento que as linhas com a mesma chave primária são somadas e substituídas por uma única linha em cada parte de dados resultante.
+
+O ClickHouse pode mesclar as partes de dados de modo que diferentes partes de dados resultantes possam conter linhas com a mesma chave primária, ou seja, a soma ficará incompleta. Portanto, em uma consulta, devem ser usados a função de agregação [sum()](/pt-BR/reference/functions/aggregate-functions/sum) e a cláusula `GROUP BY` no (`SELECT`), conforme descrito no exemplo acima.
+
+<div id="common-rules-for-summation">
+  ### Regras comuns de soma
+</div>
+
+Os valores nas colunas com tipo de dado numérico são somados. O conjunto de colunas é definido pelo parâmetro `columns`.
+
+Se os valores forem 0 em todas as colunas de soma, a linha será excluída.
+
+Se uma coluna não fizer parte da chave primária e não for somada, um valor arbitrário será selecionado entre os existentes.
+
+Os valores não são somados nas colunas da chave primária.
+
+<div id="the-summation-in-the-aggregatefunction-columns">
+  ### A soma nas colunas do tipo AggregateFunction
+</div>
+
+Para colunas do [tipo AggregateFunction](/pt-BR/reference/data-types/aggregatefunction), o ClickHouse se comporta como o motor [AggregatingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/aggregatingmergetree), agregando de acordo com a função.
+
+<div id="nested-structures">
+  ### Estruturas aninhadas
+</div>
+
+Uma tabela pode conter estruturas de dados aninhadas que são processadas de forma especial.
+
+Se o nome de uma tabela aninhada termina com `Map` e ela contém pelo menos duas colunas que atendem aos seguintes critérios:
+
+* a primeira coluna é numérica `(*Int*, Date, DateTime)` ou uma string `(String, FixedString)`, vamos chamá-la de `key`,
+* as outras colunas são aritméticas `(*Int*, Float32/64)`, vamos chamá-las de `(values...)`,
+
+então essa tabela aninhada é interpretada como um mapeamento de `key => (values...)` e, ao mesclar suas linhas, os elementos de dois conjuntos de dados são mesclados por `key`, somando os `(values...)` correspondentes.
+
+Exemplos:
+
+```text
+DROP TABLE IF EXISTS nested_sum;
+CREATE TABLE nested_sum
+(
+    date Date,
+    site UInt32,
+    hitsMap Nested(
+        browser String,
+        imps UInt32,
+        clicks UInt32
+    )
+) ENGINE = SummingMergeTree
+PRIMARY KEY (date, site);
+
+INSERT INTO nested_sum VALUES ('2020-01-01', 12, ['Firefox', 'Opera'], [10, 5], [2, 1]);
+INSERT INTO nested_sum VALUES ('2020-01-01', 12, ['Chrome', 'Firefox'], [20, 1], [1, 1]);
+INSERT INTO nested_sum VALUES ('2020-01-01', 12, ['IE'], [22], [0]);
+INSERT INTO nested_sum VALUES ('2020-01-01', 10, ['Chrome'], [4], [3]);
+
+OPTIMIZE TABLE nested_sum FINAL; -- simular merge 
+
+SELECT * FROM nested_sum;
+┌───────date─┬─site─┬─hitsMap.browser───────────────────┬─hitsMap.imps─┬─hitsMap.clicks─┐
+│ 2020-01-01 │   10 │ ['Chrome']                        │ [4]          │ [3]            │
+│ 2020-01-01 │   12 │ ['Chrome','Firefox','IE','Opera'] │ [20,11,22,5] │ [1,3,0,1]      │
+└────────────┴──────┴───────────────────────────────────┴──────────────┴────────────────┘
+
+SELECT
+    site,
+    browser,
+    impressions,
+    clicks
+FROM
+(
+    SELECT
+        site,
+        sumMap(hitsMap.browser, hitsMap.imps, hitsMap.clicks) AS imps_map
+    FROM nested_sum
+    GROUP BY site
+)
+ARRAY JOIN
+    imps_map.1 AS browser,
+    imps_map.2 AS impressions,
+    imps_map.3 AS clicks;
+
+┌─site─┬─browser─┬─impressions─┬─clicks─┐
+│   12 │ Chrome  │          20 │      1 │
+│   12 │ Firefox │          11 │      3 │
+│   12 │ IE      │          22 │      0 │
+│   12 │ Opera   │           5 │      1 │
+│   10 │ Chrome  │           4 │      3 │
+└──────┴─────────┴─────────────┴────────┘
+```
+
+Ao solicitar dados, use a função [sumMap(key, value)](/pt-BR/reference/functions/aggregate-functions/sumMap) para fazer a agregação de `Map`.
+
+Para estruturas de dados aninhadas, não é necessário especificar suas colunas na tupla de colunas usada para a soma.
+
+<div id="tuple-element-aggregation">
+  ### Agregação de elementos de Tuple
+</div>
+
+Quando a configuração `allow_tuple_element_aggregation` está habilitada, as colunas `Tuple` são achatadas recursivamente para que cada elemento final participe da soma de forma independente. Isso permite armazenar várias métricas em uma única coluna `Tuple` e fazer com que elas sejam somadas elemento por elemento durante as operações de merge.
+
+As mesmas regras se aplicam às subcolunas achatadas e às colunas regulares:
+
+* Apenas subcolunas numéricas são somadas.
+* As subcolunas que pertencem a um `Tuple` na chave de ordenação ou na chave de partição são excluídas da soma.
+* Se `columns` for especificado, apenas as subcolunas das colunas `Tuple` listadas serão somadas.
+* Se todas as subcolunas numéricas de uma linha forem zero após a soma, a linha será excluída.
+
+<Note>
+  Esta configuração é imutável e deve ser especificada no momento da criação da tabela.
+</Note>
+
+```sql
+CREATE TABLE summing_tuples
+(
+    key UInt32,
+    metrics Tuple(
+        impressions UInt64,
+        clicks UInt64,
+        nested Tuple(
+            conversions UInt64
+        )
+    )
+) ENGINE = SummingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO summing_tuples VALUES (1, (100, 10, (1)));
+INSERT INTO summing_tuples VALUES (1, (200, 20, (3)));
+
+OPTIMIZE TABLE summing_tuples FINAL;
+
+SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM summing_tuples;
+```
+
+```text
+┌─key─┬─metrics.impressions─┬─metrics.clicks─┬─metrics.nested.conversions─┐
+│   1 │                 300 │             30 │                          4 │
+└─────┴─────────────────────┴────────────────┴────────────────────────────┘
+```
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Como usar combinadores de agregação no ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

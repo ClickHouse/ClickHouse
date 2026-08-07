@@ -1,0 +1,138 @@
+---
+description: 'Consulta dados de e para um servidor HTTP/HTTPS remoto. Este motor é semelhante
+  ao motor File.'
+sidebarTitle: 'URL'
+slug: /engines/table-engines/special/url
+title: 'motor de tabela URL'
+doc_type: 'reference'
+---
+
+Consulta dados de e para um servidor HTTP/HTTPS remoto. Este motor é semelhante ao motor [File](/pt-BR/reference/engines/table-engines/special/file).
+
+Sintaxe: `URL(URL [,Format] [,CompressionMethod])`
+
+* O parâmetro `URL` deve estar em conformidade com a estrutura de um Uniform Resource Locator. A URL especificada deve apontar para um servidor que use HTTP ou HTTPS. Isso não requer cabeçalhos adicionais para obter uma resposta do servidor.
+
+* O `Format` deve ser um formato que o ClickHouse possa usar em consultas `SELECT` e, se necessário, em `INSERT`. Para a lista completa de formatos compatíveis, consulte [Formats](/pt-BR/reference/formats/index#formats-overview).
+
+  Se esse argumento não for especificado, o ClickHouse detectará o formato automaticamente pelo sufixo do parâmetro `URL`. Se o sufixo do parâmetro `URL` não corresponder a nenhum dos formatos compatíveis, a criação da tabela falhará. Por exemplo, para a expressão de motor `URL('http://localhost/test.json')`, o formato `JSON` é aplicado.
+
+* `CompressionMethod` indica se o corpo HTTP deve ser comprimido. Se a compressão estiver habilitada, os pacotes HTTP enviados pelo motor URL conterão o cabeçalho &#39;Content-Encoding&#39; para indicar qual método de compressão está sendo usado.
+
+Para habilitar a compressão, primeiro certifique-se de que o endpoint HTTP remoto indicado pelo parâmetro `URL` oferece suporte ao algoritmo de compressão correspondente.
+
+O `CompressionMethod` compatível deve ser um dos seguintes:
+
+* gzip or gz
+* deflate
+* brotli or br
+* lzma or xz
+* zstd or zst
+* lz4
+* bz2
+* snappy
+* none
+* auto
+
+Se `CompressionMethod` não for especificado, o padrão será `auto`. Isso significa que o ClickHouse detecta automaticamente o método de compressão pelo sufixo do parâmetro `URL`. Se o sufixo corresponder a qualquer um dos métodos de compressão listados acima, a compressão correspondente será aplicada; caso contrário, nenhuma compressão será habilitada.
+
+Por exemplo, para a expressão de motor `URL('http://localhost/test.gzip')`, o método de compressão `gzip` é aplicado, mas para `URL('http://localhost/test.fr')`, nenhuma compressão é habilitada porque o sufixo `fr` não corresponde a nenhum dos métodos de compressão acima.
+
+<div id="using-the-engine-in-the-clickhouse-server">
+  ## Uso
+</div>
+
+As consultas `INSERT` e `SELECT` são transformadas em requisições `POST` e `GET`,
+respectivamente. Para processar requisições `POST`, o servidor remoto deve oferecer
+suporte a [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
+
+Você pode limitar o número máximo de redirecionamentos HTTP GET usando a configuração [max&#95;http&#95;get&#95;redirects](/pt-BR/reference/settings/session-settings#max_http_get_redirects).
+
+<div id="example">
+  ## Exemplo
+</div>
+
+**1.** Crie uma tabela `url_engine_table` no servidor:
+
+```sql
+CREATE TABLE url_engine_table (word String, value UInt64)
+ENGINE=URL('http://127.0.0.1:12345/', CSV)
+```
+
+**2.** Crie um servidor HTTP básico usando as ferramentas padrão do Python 3 e
+inicie-o:
+
+```python3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```bash
+$ python3 server.py
+```
+
+**3.** Solicitar dados:
+
+```sql
+SELECT * FROM url_engine_table
+```
+
+```text
+┌─word──┬─value─┐
+│ Hello │     1 │
+│ World │     2 │
+└───────┴───────┘
+```
+
+<div id="details-of-implementation">
+  ## Detalhes da implementação
+</div>
+
+* Leituras e gravações podem ocorrer em paralelo
+* Não há suporte a:
+  * Operações `ALTER` e `SELECT...SAMPLE`.
+  * Índices.
+  * Replicação.
+
+<div id="virtual-columns">
+  ## Colunas virtuais
+</div>
+
+* `_path` — Caminho da `URL`. Tipo: `LowCardinality(String)`.
+* `_file` — Nome do recurso da `URL`. Tipo: `LowCardinality(String)`.
+* `_size` — Tamanho do recurso em bytes. Tipo: `Nullable(UInt64)`. Se o tamanho for desconhecido, o valor será `NULL`.
+* `_time` — Hora da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se a hora for desconhecida, o valor será `NULL`.
+* `_headers` - Cabeçalhos da resposta HTTP. Tipo: `Map(LowCardinality(String), LowCardinality(String))`.
+
+<div id="resolving-relative-urls">
+  ## Resolução de URLs relativas
+</div>
+
+A configuração [url&#95;base](/pt-BR/reference/settings/session-settings#url_base) permite usar uma URL relativa no motor `URL`. Quando `url_base` está definido, a URL passada para o motor é resolvida com base nele, de acordo com a [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). Para ver uma descrição completa das regras de resolução, consulte a [documentação da função de tabela url](/pt-BR/reference/functions/table-functions/url#resolving-relative-urls).
+
+**Exemplo**
+
+```sql
+SET url_base = 'http://127.0.0.1:12345/';
+CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.csv', CSV);
+SELECT * FROM url_engine_table;
+```
+
+<div id="storage-settings">
+  ## Configurações de armazenamento
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/pt-BR/reference/settings/session-settings#engine_url_skip_empty_files) - permite ignorar arquivos vazios durante a leitura. Desativado por padrão.
+* [enable&#95;url&#95;encoding](/pt-BR/reference/settings/session-settings#enable_url_encoding) - permite ativar/desativar a decodificação/codificação do caminho na URI. Ativado por padrão.
+* [url&#95;base](/pt-BR/reference/settings/session-settings#url_base) - URL base para a resolução de URLs relativas passadas ao motor.

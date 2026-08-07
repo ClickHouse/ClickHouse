@@ -1,0 +1,218 @@
+---
+title: Добавление столбца в таблицу
+description: В этом руководстве мы рассмотрим, как добавить столбец в существующую таблицу.
+date: 2024-12-18
+tags: ['Моделирование данных']
+keywords: ['Добавить столбец']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="adding-a-column-to-a-table">
+  ## Добавление столбца в таблицу
+</div>
+
+Для этого мы будем использовать clickhouse-local:
+
+```bash
+clickhouse -m --output_format_pretty_row_numbers=
+```
+
+Предположим, что у нас есть следующая таблица:
+
+```sql
+CREATE TABLE events (
+    date Date DEFAULT today(), 
+    name String
+) 
+ENGINE = MergeTree
+ORDER BY date;
+```
+
+Добавим одну запись:
+
+```sql
+INSERT INTO events (name) VALUES ('Alexey');
+```
+
+А теперь выполните запрос к таблице `events`:
+
+```sql
+SELECT *
+FROM events;
+```
+
+```text
+┌───────date─┬─name───┐
+│ 2024-12-18 │ Alexey │
+└────────────┴────────┘
+```
+
+<div id="adding-a-new-column">
+  ## Добавление нового столбца
+</div>
+
+Теперь предположим, что мы хотим добавить новый столбец с именем `favoriteNumber` типа `Float64`.
+Это можно сделать с помощью предложения [`ALTER TABLE...ADD COLUMN`](/ru/reference/statements/alter/column#add-column):
+
+```sql
+ALTER TABLE events 
+ADD COLUMN favoriteNumber Float64 DEFAULT 7;
+```
+
+Если выполнить запрос к таблице `events`, мы увидим следующий результат:
+
+```text
+┌───────date─┬─name───┬─favoriteNumber─┐
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+Для строки `Alexey` по умолчанию используется значение 7, поскольку на момент её добавления этого столбца ещё не существовало.
+Далее добавим ещё один столбец:
+
+```sql
+INSERT INTO events (name) VALUES ('Tyler');
+```
+
+Если выполнить запрос к таблице `events`, мы увидим следующий вывод:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+<div id="modifying-a-columns-default-value">
+  ## Изменение значения по умолчанию столбца
+</div>
+
+Если изменить тип столбца `favoriteNumber` с помощью предложения [`ALTER TABLE...MODIFY COLUMN`](/ru/reference/statements/alter/column#modify-column), ситуация становится интереснее:
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 99;
+```
+
+Если мы снова выполним запрос к `events`, то увидим такой вывод:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │             99 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tyler` сохраняет значение `7` — это значение по умолчанию действовало на момент создания этой строки.
+`Alexey` получает новое значение по умолчанию `99`, потому что на момент создания этой строки столбца `favoriteNumber` ещё не существовало.
+
+Если мы хотим, чтобы строка `Alexey` сразу использовала текущее значение по умолчанию, нужно вызвать [`OPTIMIZE TABLE` ](/ru/reference/statements/optimize), чтобы принудительно записать текущие значения по умолчанию на диск:
+
+```sql
+OPTIMIZE TABLE events;
+```
+
+После этого предположим, что мы снова изменим значение по умолчанию:
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 21;
+```
+
+Затем вставьте ещё одну строку:
+
+```sql
+INSERT INTO events (name) VALUES ('Tanya');
+```
+
+И наконец, давайте ещё раз выполним запрос к `events`:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │             99 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │             21 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tanya` получает новое значение по умолчанию `21`, а у `Alexey` остаётся старое — `99`.
+
+<div id="controlling-column-position-in-table">
+  ## Управление положением столбца в таблице
+</div>
+
+Когда мы добавляем новый столбец, по умолчанию он добавляется в конец таблицы.
+Но с помощью секций `FIRST` и `AFTER` можно указать, где именно будет располагаться столбец.
+
+Например, если мы хотим добавить столбец `favoriteColor` после столбца `name`, это можно сделать так:
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteColor String DEFAULT 'Yellow' AFTER name;
+```
+
+Выполним запрос к `events`:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+└────────────┴────────┴───────────────┴────────────────┘
+```
+
+Если мы хотим добавить столбец `favoriteDatabase` и сделать его первым в списке, можно сделать так:
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteDatabase String DEFAULT 'ClickHouse' FIRST;
+```
+
+```text
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ favoriteDatabase ┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ ClickHouse       │ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+└──────────────────┴────────────┴────────┴───────────────┴────────────────┘
+```
+
+Давайте посмотрим на определение таблицы:
+
+```sql
+SHOW CREATE TABLE events
+FORMAT LineAsString
+```
+
+```sql
+CREATE TABLE default.`clickhouse-local-ab404c86-56cc-495b-ad1d-fb343cac3bc0events`
+(
+    `favoriteDatabase` String DEFAULT 'ClickHouse',
+    `date` Date DEFAULT today(),
+    `name` String,
+    `favoriteColor` String DEFAULT 'Yellow',
+    `favoriteNumber` Float64 DEFAULT 21
+)
+ENGINE = MergeTree
+ORDER BY date
+```

@@ -1,0 +1,339 @@
+---
+slug: /getting-started/quick-start/cloud
+sidebarTitle: 'Cloud'
+keywords: ['clickhouse', 'التثبيت', 'البدء باستخدام', 'البدء السريع']
+title: 'البدء السريع مع ClickHouse Cloud'
+description: 'دليل البدء السريع لـ ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+> أسرع وأسهل طريقة لبدء استخدام ClickHouse وتشغيله هي إنشاء
+> خدمة جديدة في [ClickHouse Cloud](https://console.clickhouse.cloud). في دليل البدء السريع هذا، سنُعِدّك
+> للانطلاق في ثلاث خطوات سهلة.
+
+<Steps>
+  <Step>
+    ## أنشئ خدمة ClickHouse
+
+    لإنشاء خدمة ClickHouse مجانية في [ClickHouse Cloud](https://console.clickhouse.cloud)، ما عليك سوى التسجيل باتباع الخطوات التالية:
+
+    * أنشئ حسابًا من [صفحة التسجيل](https://console.clickhouse.cloud/signUp)
+    * يمكنك التسجيل باستخدام بريدك الإلكتروني أو عبر Google SSO أو Microsoft SSO أو AWS Marketplace أو Google Cloud أو Microsoft Azure
+    * إذا سجلت باستخدام البريد الإلكتروني وكلمة المرور، فتذكّر تأكيد عنوان بريدك الإلكتروني خلال 24 ساعة عبر الرابط الذي سيصلك في بريدك الإلكتروني
+    * سجّل الدخول باستخدام اسم المستخدم وكلمة المرور اللذين أنشأتهما للتو
+
+    <Image img="/images/_snippets/signup_page.webp" size="md" alt="اختر الخطة" border />
+
+    <br />
+
+    بعد تسجيل الدخول، يبدأ ClickHouse Cloud معالج الإعداد الذي يوجّهك خلال إنشاء خدمة ClickHouse جديدة. حدّد المنطقة التي تريد نشر الخدمة فيها، وامنح خدمتك الجديدة اسمًا:
+
+    <Image img="/images/_snippets/createservice1.webp" size="md" alt="خدمة ClickHouse جديدة" border />
+
+    <br />
+
+    بشكل افتراضي، توضع المؤسسات الجديدة ضمن فئة Scale، ويُنشأ لها 3 نسخ متماثلة، لكل منها 4 وحدات VCPU و16 GiB من RAM. ويكون [التحجيم التلقائي الرأسي](/ar/products/cloud/features/autoscaling/vertical) مفعّلًا افتراضيًا في فئة Scale. يمكنك تغيير فئة مؤسستك لاحقًا من صفحة &#39;Plans&#39;.
+
+    خصّص موارد الخدمة عند الحاجة بتحديد حد أدنى وحد أقصى لحجم النسخ المتماثلة التي يمكن التحجيم بينهما. وعندما تصبح جاهزًا، حدّد `Create service`.
+
+    <Image img="/images/_snippets/scaling_limits.webp" size="md" alt="حدود التحجيم" border />
+
+    <br />
+
+    تهانينا! أصبحت خدمة ClickHouse Cloud الخاصة بك جاهزة وتعمل الآن، واكتملت عملية الإعداد. تابع القراءة لمعرفة كيفية البدء في إدخال بياناتك والاستعلام عنها.
+  </Step>
+
+  <Step>
+    ## الاتصال بـ ClickHouse
+
+    هناك طريقتان للاتصال بـ ClickHouse:
+
+    * الاتصال باستخدام SQL Console عبر الويب
+    * الاتصال من خلال تطبيقك
+
+    <br />
+
+    ### الاتصال باستخدام SQL Console
+
+    للبدء بسرعة، يوفّر ClickHouse واجهة SQL Console عبر الويب، وستتم إعادة توجيهك إليها بعد إكمال عملية الإعداد.
+
+    <Image img="/images/_snippets/createservice8.webp" size="md" alt="SQL Console" border />
+
+    أنشئ علامة تبويب للاستعلام، ثم أدخل استعلامًا بسيطًا للتحقق من أن الاتصال يعمل:
+
+    ```sql
+    SHOW databases
+    ```
+
+    يجب أن تظهر لك 4 قواعد بيانات في القائمة، بالإضافة إلى أي قواعد بيانات أخرى ربما أضفتها.
+
+    <Image img="/images/_snippets/show_databases.webp" size="md" alt="SQL Console" border />
+
+    <br />
+
+    هذا كل شيء — أنت الآن جاهز لبدء استخدام خدمة ClickHouse الجديدة!
+
+    ### الاتصال بتطبيقك
+
+    اضغط على زر Connect من قائمة التنقل. ستُفتح نافذة منبثقة تعرض بيانات اعتماد خدمتك وتزوّدك بمجموعة من الإرشادات حول كيفية الاتصال عبر الواجهة أو عملاء اللغات.
+
+    <Image img="/images/_snippets/service_connect.webp" size="md" alt="Service Connect" border />
+
+    <br />
+
+    إذا لم تتمكن من العثور على عميل اللغة الذي تستخدمه، فقد ترغب في مراجعة قائمة [Integrations](/ar/integrations/home) لدينا.
+  </Step>
+
+  <Step>
+    ## إضافة البيانات
+
+    ClickHouse أفضل مع البيانات! هناك طرق متعددة لإضافة البيانات، ومعظمها متاح في صفحة مصادر البيانات التي يمكن الوصول إليها من قائمة التنقل.
+
+    <Image img="/images/_snippets/data_sources.webp" size="md" alt="مصادر البيانات" border />
+
+    <br />
+
+    يمكنك رفع البيانات باستخدام الطرق التالية:
+
+    * قم بإعداد ClickPipe لبدء إدخال البيانات من مصادر مثل S3 وPostgres وKafka وGCS
+    * استخدم SQL Console
+    * استخدم عميل ClickHouse
+    * ارفع ملفًا - تشمل التنسيقات المقبولة JSON وCSV وTSV
+    * ارفع البيانات من عنوان URL للملف
+
+    ### ClickPipes
+
+    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes) منصة تكامل مُدارة تجعل استيعاب البيانات من مجموعة متنوعة من المصادر أمراً بسيطاً لا يتجاوز بضع نقرات. صُمِّمت لتلبية أشد أعباء العمل تطلباً، وتضمن بنيتها المتينة وقابلة للتوسع أداءً ثابتاً وموثوقية عالية. ويمكن استخدام ClickPipes لتلبية احتياجات البث على المدى الطويل أو لتنفيذ مهام تحميل البيانات لمرة واحدة.
+
+    <Image img="/images/_snippets/select_data_source.webp" size="md" alt="اختر مصدر البيانات" border />
+
+    <br />
+
+    ### إضافة البيانات باستخدام SQL Console
+
+    كما هو الحال في معظم أنظمة إدارة قواعد البيانات، يُنظّم ClickHouse الجداول منطقيًا ضمن **قواعد بيانات**. استخدم الأمر [`CREATE DATABASE`](/ar/reference/statements/create/database) لإنشاء قاعدة بيانات جديدة في ClickHouse:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS helloworld
+    ```
+
+    نفِّذ الأمر التالي لإنشاء جدول باسم `my_first_table` في قاعدة البيانات `helloworld`:
+
+    ```sql
+    CREATE TABLE helloworld.my_first_table
+    (
+        user_id UInt32,
+        message String,
+        timestamp DateTime,
+        metric Float32
+    )
+    ENGINE = MergeTree()
+    PRIMARY KEY (user_id, timestamp)
+    ```
+
+    في المثال أعلاه، `my_first_table` جدول من نوع [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) يحتوي على أربعة أعمدة:
+
+    * `user_id`: عدد صحيح غير موقَّع من 32 بت ([UInt32](/ar/reference/data-types/int-uint))
+    * `message`: نوع بيانات [String](/ar/reference/data-types/string)، ويحل محل أنواع مثل `VARCHAR` و`BLOB` و`CLOB` وغيرها في أنظمة قواعد البيانات الأخرى
+    * `timestamp`: قيمة [DateTime](/ar/reference/data-types/datetime)، تمثل نقطة زمنية محددة
+    * `metric`: عدد بفاصلة عائمة من 32 بت ([Float32](/ar/reference/data-types/float))
+
+    <Info>
+      **محركات الجداول**
+
+      تحدد محركات الجداول ما يلي:
+
+      * كيفية ومكان تخزين البيانات
+      * الاستعلامات التي تدعمها
+      * ما إذا كانت البيانات مكررة أم لا
+
+      <br />
+
+      هناك العديد من محركات الجداول للاختيار من بينها، ولكن إذا كنت تنشئ جدولًا بسيطًا على خادم ClickHouse أحادي العقدة، فغالبًا ما سيكون [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) هو خيارك المناسب.
+    </Info>
+
+    #### مقدمة موجزة عن المفاتيح الأولية
+
+    قبل المتابعة، من المهم أن تفهم كيفية عمل المفاتيح الأساسية في ClickHouse (قد تبدو آلية تنفيذ المفاتيح الأساسية غير متوقعة!):
+
+    * المفاتيح الأساسية في ClickHouse ***ليست فريدة*** لكل صف في الجدول
+
+    يحدد المفتاح الأساسي لجدول ClickHouse كيفية ترتيب البيانات عند كتابتها على القرص. كل 8,192 صفاً أو 10 ميغابايت من
+    البيانات (يُشار إليها بـ **دقة الفهرس**) تُنشئ إدخالاً في ملف فهرس المفتاح الأساسي. يُفرز هذا المفهوم
+    **فهرساً متفرقاً** يسهل احتواؤه في الذاكرة، وتمثل الحبيبات شريطاً يضم أصغر قدر من بيانات الأعمدة التي تُعالَج خلال استعلامات `SELECT`.
+
+    يمكن تعريف المفتاح الأساسي باستخدام المعلمة `PRIMARY KEY`. إذا عرّفت جدولاً دون تحديد `PRIMARY KEY`،
+    فإن المفتاح يصبح المجموعة المرتبة المحددة في جملة `ORDER BY`. وإذا حددت كلاً من `PRIMARY KEY` و`ORDER BY`، فيجب أن يكون المفتاح الأساسي مجموعة فرعية من ترتيب الفرز.
+
+    المفتاح الأساسي هو أيضاً مفتاح الترتيب، وهو Tuple من `(user_id, timestamp)`. لذا، ستكون البيانات المخزنة في كل ملف عمود مرتبةً وفق `user_id` أولاً، ثم `timestamp`.
+
+    للتعمق في المفاهيم الأساسية لـ ClickHouse، راجع [&quot;المفاهيم الأساسية&quot;](/ar/concepts/core-concepts/index).
+
+    #### إدراج البيانات في جدولك
+
+    يمكنك استخدام الأمر المألوف [`INSERT INTO TABLE`](/ar/reference/statements/insert-into) مع ClickHouse، غير أنه من المهم أن تدرك أن كل عملية إدراج في جدول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) تؤدي إلى إنشاء **جزء** جديد في التخزين.
+
+    <Tip>
+      **أفضل ممارسات ClickHouse**
+
+      أدرِج عددًا كبيرًا من الصفوف في كل دفعة — عشرات الآلاف أو حتى ملايين
+      الصفوف دفعة واحدة. لا تقلق — يمكن لـ ClickHouse التعامل بسهولة مع هذا الحجم من البيانات — كما أن ذلك [سيوفّر لك المال](/ar/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous) لأنه يرسل عددًا أقل من طلبات الكتابة إلى خدمتك.
+    </Tip>
+
+    <br />
+
+    حتى في هذا المثال البسيط، لنُدرج أكثر من صف واحد في المرة الواحدة:
+
+    ```sql
+    INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+        (101, 'Hello, ClickHouse!',                                 now(),       -1.0    ),
+        (102, 'Insert a lot of rows per batch',                     yesterday(), 1.41421 ),
+        (102, 'Sort your data based on your commonly-used queries', today(),     2.718   ),
+        (101, 'Granules are the smallest chunks of data read',      now() + 5,   3.14159 )
+    ```
+
+    <Note>
+      لاحظ أن العمود `timestamp` يُعبَّأ باستخدام مجموعة متنوعة من وظائف [**Date**](/ar/reference/data-types/date) و[**DateTime**](/ar/reference/data-types/datetime). ويضم ClickHouse مئات الوظائف المفيدة التي يمكنك [استعراضها في قسم **Functions**](/ar/reference/functions/index).
+    </Note>
+
+    لنتحقق من نجاح العملية:
+
+    ```sql
+    SELECT * FROM helloworld.my_first_table
+    ```
+
+    ### إضافة البيانات باستخدام ClickHouse Client
+
+    يمكنك أيضاً الاتصال بخدمة ClickHouse Cloud الخاصة بك باستخدام أداة سطر الأوامر [**clickhouse client**](/ar/concepts/features/interfaces/cli). انقر على `Connect` في القائمة اليسرى للوصول إلى هذه التفاصيل. من مربع الحوار، اختر `Native` من القائمة المنسدلة:
+
+    <Image img="/images/_snippets/client_details.webp" size="md" alt="تفاصيل الاتصال بـ ClickHouse client" border />
+
+    <br />
+
+    1. ثبّت [ClickHouse](/ar/concepts/features/interfaces/cli).
+
+    2. نفّذ الأمر، مع استبدال اسم المضيف واسم المستخدم وكلمة المرور الخاصة بك:
+
+    ```bash
+    ./clickhouse client --host HOSTNAME.REGION.CSP.clickhouse.cloud \
+    --secure --port 9440 \
+    --user default \
+    --password <password>
+    ```
+
+    إذا ظهر لك رمز الوجه المبتسم، فأنت جاهز لتشغيل الاستعلامات!
+
+    ```response
+    :)
+    ```
+
+    3. جرّب ذلك بتنفيذ الاستعلام التالي:
+
+    <br />
+
+    ```sql
+    SELECT *
+    FROM helloworld.my_first_table
+    ORDER BY timestamp
+    ```
+
+    لاحظ أن الاستجابة تظهر بتنسيق جدول أنيق:
+
+    ```response
+    ┌─user_id─┬─message────────────────────────────────────────────┬───────────timestamp─┬──metric─┐
+    │     102 │ Insert a lot of rows per batch                     │ 2022-03-21 00:00:00 │ 1.41421 │
+    │     102 │ Sort your data based on your commonly-used queries │ 2022-03-22 00:00:00 │   2.718 │
+    │     101 │ Hello, ClickHouse!                                 │ 2022-03-22 14:04:09 │      -1 │
+    │     101 │ Granules are the smallest chunks of data read      │ 2022-03-22 14:04:14 │ 3.14159 │
+    └─────────┴────────────────────────────────────────────────────┴─────────────────────┴─────────┘
+
+    4 rows in set. Elapsed: 0.008 sec.
+    ```
+
+    4. أضِف عبارة [`FORMAT`](/ar/reference/statements/select/format) لتحديد أحد [تنسيقات الإخراج المتعددة التي يدعمها ClickHouse](/ar/reference/formats/index):
+
+    <br />
+
+    ```sql
+    SELECT *
+    FROM helloworld.my_first_table
+    ORDER BY timestamp
+    FORMAT TabSeparated
+    ```
+
+    في الاستعلام أعلاه، يُعاد الإخراج بتنسيق مفصول بمسافات جدولة (tab):
+
+    ```response
+    Query id: 3604df1c-acfd-4117-9c56-f86c69721121
+
+    102 Insert a lot of rows per batch      2022-03-21 00:00:00     1.41421
+    102 Sort your data based on your commonly-used queries  2022-03-22 00:00:00     2.718
+    101 Hello, ClickHouse!  2022-03-22 14:04:09     -1
+    101 Granules are the smallest chunks of data read       2022-03-22 14:04:14     3.14159
+
+    4 rows in set. Elapsed: 0.005 sec.
+    ```
+
+    5. للخروج من `clickhouse client`، اكتب الأمر **exit**:
+
+    <br />
+
+    ```bash
+    exit
+    ```
+
+    ### رفع ملف
+
+    من المهام الشائعة عند البدء باستخدام قاعدة بيانات هي إدراج بيانات موجودة لديك في ملفات. لدينا بعض
+    بيانات نموذجية متاحة عبر الإنترنت يمكنك إدراجها، وهي تمثل بيانات clickstream - وتتضمن معرّف المستخدم، وعنوان URL الذي جرت زيارته،
+    والطابع الزمني للحدث.
+
+    لنفترض أن لدينا النص التالي في ملف CSV باسم `data.csv`:
+
+    ```bash title="data.csv"
+    102,This is data in a file,2022-02-22 10:43:28,123.45
+    101,It is comma-separated,2022-02-23 00:00:00,456.78
+    103,Use FORMAT to specify the format,2022-02-21 10:43:30,678.90
+    ```
+
+    1. يقوم الأمر التالي بإدراج البيانات في `my_first_table`:
+
+    <br />
+
+    ```bash
+    ./clickhouse client --host HOSTNAME.REGION.CSP.clickhouse.cloud \
+    --secure --port 9440 \
+    --user default \
+    --password <password> \
+    --query='INSERT INTO helloworld.my_first_table FORMAT CSV' < data.csv
+    ```
+
+    2. لاحظ ظهور الصفوف الجديدة الآن في الجدول عند الاستعلام من SQL Console:
+
+    <br />
+
+    <Image img="/images/_snippets/new_rows_from_csv.webp" size="md" alt="صفوف جديدة من ملف CSV" />
+
+    <br />
+  </Step>
+</Steps>
+
+<Tip>
+  **تصفية قائمة الوصول لعناوين IP**
+
+  قبل المتابعة، نوصي بإعداد تصفية قائمة الوصول لعناوين IP.
+  راجع [&quot;إعداد عوامل تصفية IP&quot;](/ar/products/cloud/guides/security/connectivity/setting-ip-filters) لمزيد من التفاصيل.
+</Tip>
+
+<div id="whats-next">
+  ## ما التالي؟
+</div>
+
+* يوضّح لك [الدليل التعليمي](/ar/get-started/quickstarts/tutorial) كيفية إدراج مليوني صف في جدول وكتابة بعض الاستعلامات التحليلية
+* لدينا قائمة من [مجموعات البيانات التجريبية](/ar/get-started/sample-datasets/index) مع إرشادات حول كيفية إدراجها
+* اطّلع على الفيديو الخاص بنا ومدته 12 دقيقة حول [بدء الاستخدام مع ClickHouse](https://clickhouse.com/company/events/getting-started-with-clickhouse/)
+* إذا كانت بياناتك تأتي من مصدر خارجي، فاطّلع على [مجموعة أدلة التكامل](/ar/integrations/home) الخاصة بنا للاتصال بقوائم انتظار الرسائل وقواعد البيانات وخطوط المعالجة وغير ذلك
+* إذا كنت تستخدم أداة تصوّر UI/BI، فاطّلع على [أدلة المستخدم لتوصيل واجهة المستخدم بـ ClickHouse](/ar/integrations/connectors/data-visualization/index)
+* يتضمن دليل المستخدم حول [المفاتيح الأساسية](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) كل ما تحتاج إلى معرفته عن المفاتيح الأساسية وكيفية تعريفها

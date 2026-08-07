@@ -1,0 +1,205 @@
+---
+title: Adding a column to a table
+description: In this guide, we'll learn how to add a column to an existing table.
+date: 2024-12-18
+tags: ['Data Modelling']
+keywords: ['Add Column']
+---
+
+{frontMatter.description}
+{/* truncate */}
+
+## Adding a Column to a Table {#adding-a-column-to-a-table}
+We'll be using clickhouse-local:
+
+```bash
+clickhouse -m --output_format_pretty_row_numbers=
+```
+
+Let's imagine we have the following table:
+
+```sql
+CREATE TABLE events (
+    date Date DEFAULT today(), 
+    name String
+) 
+ENGINE = MergeTree
+ORDER BY date;
+```
+
+Let's add one record:
+
+```sql
+INSERT INTO events (name) VALUES ('Alexey');
+```
+
+And now query the `events` table:
+
+```sql
+SELECT *
+FROM events;
+```
+
+```text
+┌───────date─┬─name───┐
+│ 2024-12-18 │ Alexey │
+└────────────┴────────┘
+```
+
+## Adding a new column {#adding-a-new-column}
+Now let's say we're going to add a new column called `favoriteNumber`, which will be a `Float64`.
+We can do this using the [`ALTER TABLE...ADD COLUMN`](/reference/statements/alter/column#add-column) clause:
+
+```sql
+ALTER TABLE events 
+ADD COLUMN favoriteNumber Float64 DEFAULT 7;
+```
+
+If we query the `events` table, we'll see the following output:
+
+```text
+┌───────date─┬─name───┬─favoriteNumber─┐
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+The `Alexey` row defaults to 7 since that column didn't exist when we added that row.
+Next, let's add another column:
+
+```sql
+INSERT INTO events (name) VALUES ('Tyler');
+```
+
+If we query the `events` table, we'll see the following output:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+## Modifying a column's default value {#modifying-a-columns-default-value}
+If we modify the `favoriteNumber` column to have a different type using the [`ALTER TABLE...MODIFY COLUMN`](/reference/statements/alter/column#modify-column) clause, things get interesting:
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 99;
+```
+
+If we query `events` again, we'll see this output:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │             99 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tyler` keeps a value of `7`, which was the default when that row was created.
+`Alexey` picks up the new default of `99` because the `favoriteNumber` column didn't exist when that row was created.
+
+If we want the `Alexey` row to use the current default right away, we need to call [`OPTIMIZE TABLE` ](/reference/statements/optimize) to force current defaults to be written to disk:
+
+```sql
+OPTIMIZE TABLE events;
+```
+
+Once we've done that, let's say we change the default value again:
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 21;
+```
+
+And then insert another row:
+
+```sql
+INSERT INTO events (name) VALUES ('Tanya');
+```
+
+Finally, let's query `events` one more time:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │             99 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │             21 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tanya` picks up the new default of `21`, but `Alexey` has the old default of `99`.
+
+## Controlling column position in table {#controlling-column-position-in-table}
+When we add a new column, by default it will be added at the end of the table.
+But, we can use the `FIRST` and `AFTER` clauses to control where a column is positioned.
+
+For example, if we wanted to add a column called `favoriteColor` after the `name` column, we could do this:
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteColor String DEFAULT 'Yellow' AFTER name;
+```
+
+Let's query `events`:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+└────────────┴────────┴───────────────┴────────────────┘
+```
+
+And if we wanted to add a column `favoriteDatabase` and have that be first in the list, we could do this:
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteDatabase String DEFAULT 'ClickHouse' FIRST;
+```
+
+```text
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ favoriteDatabase ┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ ClickHouse       │ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+└──────────────────┴────────────┴────────┴───────────────┴────────────────┘
+```
+
+And let's have a look at the table definition:
+
+```sql
+SHOW CREATE TABLE events
+FORMAT LineAsString
+```
+
+```sql
+CREATE TABLE default.`clickhouse-local-ab404c86-56cc-495b-ad1d-fb343cac3bc0events`
+(
+    `favoriteDatabase` String DEFAULT 'ClickHouse',
+    `date` Date DEFAULT today(),
+    `name` String,
+    `favoriteColor` String DEFAULT 'Yellow',
+    `favoriteNumber` Float64 DEFAULT 21
+)
+ENGINE = MergeTree
+ORDER BY date
+```

@@ -1,0 +1,1131 @@
+---
+description: 'Documentação para highlight-next-line'
+sidebarTitle: 'Discos externos para armazenar dados'
+slug: /operations/storing-data
+title: 'Discos externos para armazenar dados'
+doc_type: 'guide'
+---
+
+Os dados processados no ClickHouse geralmente são armazenados no sistema de arquivos local da
+máquina em que o servidor ClickHouse está em execução. Isso exige discos de grande capacidade,
+que podem ser caros. Para evitar armazenar dados localmente, há suporte às seguintes opções de armazenamento:
+
+1. armazenamento de objetos [Amazon S3](https://aws.amazon.com/s3/).
+2. [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
+3. Sem suporte: Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html))
+
+<br />
+
+<Note>
+  O ClickHouse também oferece suporte a motores de tabela externos, que são diferentes da
+  opção de armazenamento externo descrita nesta página, pois permitem ler dados
+  armazenados em formatos de arquivo genéricos (como Parquet). Nesta página, estamos descrevendo
+  a configuração de armazenamento para tabelas da família `MergeTree` ou da família `Log` do ClickHouse.
+
+  1. para trabalhar com dados armazenados em discos `Amazon S3`, use o motor de tabela [S3](/pt-BR/reference/engines/table-engines/integrations/s3).
+  2. para trabalhar com dados armazenados no Azure Blob Storage, use o motor de tabela [AzureBlobStorage](/pt-BR/reference/engines/table-engines/integrations/azureBlobStorage).
+  3. para trabalhar com dados no Hadoop Distributed File System (sem suporte), use o motor de tabela [HDFS](/pt-BR/reference/engines/table-engines/integrations/hdfs).
+</Note>
+
+<div id="configuring-external-storage">
+  ## Configurar armazenamento externo
+</div>
+
+Os motores de tabela das famílias [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) e [`Log`](/pt-BR/reference/engines/table-engines/log-family/log)
+podem armazenar dados em `S3`, `AzureBlobStorage` e `HDFS` (não compatível) usando um disco dos tipos `s3`,
+`azure_blob_storage` e `hdfs` (não compatível), respectivamente.
+
+A configuração do disco exige:
+
+1. Uma seção `type`, igual a um destes valores: `s3`, `azure_blob_storage`, `hdfs` (não compatível), `local_blob_storage`, `web`.
+2. A configuração de um tipo específico de armazenamento externo.
+
+A partir da versão `24.1` do ClickHouse, é possível usar uma nova opção de configuração.
+Ela exige especificar:
+
+1. Um `type` igual a `object_storage`
+2. `object_storage_type`, igual a um destes valores: `s3`, `azure_blob_storage` (ou apenas `azure` a partir da `24.3`), `hdfs` (não compatível), `local_blob_storage` (ou apenas `local` a partir da `24.3`), `web`.
+
+<br />
+
+Opcionalmente, `metadata_type` pode ser especificado (o padrão é `local`), mas também pode ser definido como `plain`, `web` e, a partir da `24.4`, `plain_rewritable`.
+O uso do tipo de metadados `plain` é descrito na [seção de plain storage](/pt-BR/concepts/features/configuration/server-config/storing-data#plain-storage); o tipo de metadados `web` só pode ser usado com o tipo de armazenamento de objetos `web`; o tipo de metadados `local` armazena os arquivos de metadados localmente (cada arquivo de metadados contém o mapeamento para arquivos no armazenamento de objetos e algumas metainformações adicionais sobre eles).
+
+Por exemplo:
+
+```xml
+<s3>
+    <type>s3</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3>
+```
+
+corresponde à seguinte configuração (a partir da versão `24.1`):
+
+```xml
+<s3>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>local</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3>
+```
+
+A configuração a seguir:
+
+```xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+é igual a:
+
+```xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+Um exemplo de configuração completa de armazenamento será o seguinte:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+A partir da versão 24.1, também pode ser assim:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+Para definir um tipo específico de armazenamento como opção padrão para todas as tabelas `MergeTree`,
+adicione a seguinte seção ao arquivo de configuração:
+
+```xml
+<clickhouse>
+    <merge_tree>
+        <storage_policy>s3</storage_policy>
+    </merge_tree>
+</clickhouse>
+```
+
+Se você quiser configurar uma política de armazenamento específica para uma tabela específica,
+poderá defini-la nas configurações ao criar a tabela:
+
+```sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS storage_policy = 's3';
+```
+
+Você também pode usar `disk` em vez de `storage_policy`. Nesse caso, não é necessário
+ter a seção `storage_policy` no arquivo de configuração; basta uma seção `disk`.
+
+```sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = 's3';
+```
+
+<div id="refresh-parts-interval-and-table-disk">
+  ## refresh_parts_interval and table_disk
+</div>
+
+Esta configuração se destina a tabelas MergeTree não replicadas, nas quais as partes podem ser gravadas externamente e a descoberta de metadados precisa ser atualizada a partir do armazenamento.
+
+A configuração do MergeTree `refresh_parts_interval` permite atualizar periodicamente a lista de partes de dados a partir do armazenamento subjacente (por exemplo, para reconhecer partes gravadas externamente). A distinção importante é entre **metadados compartilhados entre réplicas** e **metadados locais à réplica** (por exemplo, S3 com metadados locais por réplica): somente quando os metadados são compartilhados as novas partes ficam visíveis para todas as réplicas. Usar apenas armazenamento de objetos não implica metadados compartilhados.
+
+* **Armazenamento de objetos (por exemplo, `disk = 's3'`) não implica metadados compartilhados.** Quando os metadados são armazenados localmente por réplica (o padrão), cada réplica gerencia de forma independente seus ponteiros para blobs no armazenamento de objetos. Alterações feitas em uma réplica não ficam visíveis para as outras. Nesse caso, `refresh_parts_interval` não torna novas partes visíveis entre réplicas, porque os metadados que cada réplica lê são locais à própria réplica.
+
+* **A atualização automática de partes exige que os metadados do sistema de arquivos sejam compartilhados** (ou que a tabela use metadados somente leitura pertencentes à própria tabela, para que a atualização se aplique). Definir `table_disk = true` junto com um disco local da tabela (por exemplo, `SETTINGS disk = disk(type=object_storage, ...), table_disk = true`) é uma forma de obter a semântica correta: a tabela controla o ciclo de vida dos metadados e o armazenamento é tratado como somente leitura, de modo que `refresh_parts_interval` é executado e partes adicionadas externamente podem ser descobertas.
+
+* **Com um disco definido globalmente** (por exemplo, `disk = 's3'` em `storage_configuration`) e metadados locais padrão, cada réplica tem seu próprio estado de metadados. Embora os blobs possam estar no S3, o armazenamento não é considerado compartilhado para fins de `refresh_parts_interval`, e novas partes criadas fora do ClickHouse ou em outra réplica não serão detectadas.
+
+Para a atualização automática de partes, garanta que os metadados sejam compartilhados ou use um disco no nível da tabela com `table_disk = true`, como acima. Confiar apenas em `refresh_parts_interval` com metadados locais à réplica não atualizará as partes como esperado.
+
+<Note>
+  `refresh_parts_interval` não é usado para tabelas ReplicatedMergeTree.
+  As tabelas replicadas já sincronizam partes por meio do mecanismo de replicação.
+  Esta configuração se aplica apenas a tabelas MergeTree não replicadas nas quais as partes são gravadas externamente e a atualização de metadados é necessária.
+</Note>
+
+<div id="dynamic-configuration">
+  ## Configuração dinâmica
+</div>
+
+Também é possível especificar a configuração de armazenamento sem um disco
+predefinido no arquivo de configuração; em vez disso, ela pode ser definida nas
+configurações da consulta `CREATE`/`ATTACH`.
+
+A consulta de exemplo a seguir se baseia na configuração dinâmica de disco acima e
+mostra como usar um disco local para armazenar em cache dados de uma tabela armazenada em uma URL.
+
+```sql highlight={20-23}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=web,
+    endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+  );
+```
+
+O exemplo abaixo adiciona um cache ao armazenamento externo.
+
+```sql highlight={20-28}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+```
+
+Nas configurações destacadas abaixo, observe que o disco de `type=web` está aninhado no
+disco de `type=cache`.
+
+<Note>
+  O exemplo usa `type=web`, mas qualquer tipo de disco pode ser configurado como dinâmico,
+  incluindo disco local. Discos locais exigem que o argumento `path` esteja dentro do
+  parâmetro de configuração do servidor `custom_local_disks_base_directory`, que não tem
+  valor padrão; portanto, defina-o também ao usar disco local.
+</Note>
+
+Também é possível combinar a configuração baseada em arquivo de configuração com a
+configuração definida em SQL:
+
+```sql highlight={20-28}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+```
+
+em que `web` vem do arquivo de configuração do servidor:
+
+```xml
+<storage_configuration>
+    <disks>
+        <web>
+            <type>web</type>
+            <endpoint>'https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'</endpoint>
+        </web>
+    </disks>
+</storage_configuration>
+```
+
+<div id="s3-storage">
+  ### Usando o armazenamento S3
+</div>
+
+<div id="required-parameters-s3">
+  #### Parâmetros obrigatórios
+</div>
+
+| Parâmetro           | Descrição                                                                                                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `endpoint`          | URL do endpoint do S3 nos formatos `path` ou `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). Deve incluir o bucket e o caminho raiz para o armazenamento de dados. |
+| `access_key_id`     | ID da chave de acesso do S3 usada para autenticação.                                                                                                                                                               |
+| `secret_access_key` | Chave de acesso secreta do S3 usada para autenticação.                                                                                                                                                             |
+
+<div id="optional-parameters-s3">
+  #### Parâmetros opcionais
+</div>
+
+| Parâmetro                                       | Descrição                                                                                                                                                                                                                                                                                                                                                              | Valor padrão                                  |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `region`                                        | Nome da região do S3.                                                                                                                                                                                                                                                                                                                                                  | -                                             |
+| `support_batch_delete`                          | Controla se o suporte à exclusão em lote deve ser verificado. Defina como `false` ao usar o Google Cloud Storage (GCS), pois o GCS não oferece suporte a exclusões em lote.                                                                                                                                                                                            | `true`                                        |
+| `use_environment_credentials`                   | Lê as credenciais da AWS das variáveis de ambiente `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e `AWS_SESSION_TOKEN`, se elas existirem. Observação: as credenciais de ambiente são compartilhadas entre todos os discos S3. Para usar credenciais diferentes em discos diferentes, especifique `access_key_id` e `secret_access_key` explicitamente para cada disco. | `false`                                       |
+| `use_insecure_imds_request`                     | Se `true`, usa uma requisição IMDS insegura ao obter credenciais dos metadados do Amazon EC2.                                                                                                                                                                                                                                                                          | `false`                                       |
+| `expiration_window_seconds`                     | Período de tolerância (em segundos) para verificar se credenciais com expiração já expiraram.                                                                                                                                                                                                                                                                          | `120`                                         |
+| `proxy`                                         | Configuração de proxy para o endpoint do S3. Cada elemento `uri` dentro do bloco `proxy` deve conter uma URL de proxy.                                                                                                                                                                                                                                                 | -                                             |
+| `connect_timeout_ms`                            | Timeout de conexão do socket em milissegundos.                                                                                                                                                                                                                                                                                                                         | `10000` (10 segundos)                         |
+| `request_timeout_ms`                            | Timeout da requisição em milissegundos.                                                                                                                                                                                                                                                                                                                                | `5000` (5 segundos)                           |
+| `retry_attempts`                                | Número de tentativas para refazer requisições com falha.                                                                                                                                                                                                                                                                                                               | `10`                                          |
+| `single_read_retries`                           | Número de tentativas para refazer leituras quando houver queda de conexão.                                                                                                                                                                                                                                                                                             | `4`                                           |
+| `min_bytes_for_seek`                            | Número mínimo de bytes para usar a operação de seek em vez de leitura sequencial.                                                                                                                                                                                                                                                                                      | `1 MB`                                        |
+| `metadata_path`                                 | Caminho no sistema de arquivos local para armazenar arquivos de metadados do S3.                                                                                                                                                                                                                                                                                       | `/var/lib/clickhouse/disks/<disk_name>/`      |
+| `skip_access_check`                             | Se `true`, ignora as verificações de acesso ao disco durante a inicialização.                                                                                                                                                                                                                                                                                          | `false`                                       |
+| `header`                                        | Adiciona o cabeçalho HTTP especificado às requisições. Pode ser especificado várias vezes.                                                                                                                                                                                                                                                                             | -                                             |
+| `server_side_encryption_customer_key_base64`    | Cabeçalhos obrigatórios para acessar objetos do S3 com criptografia SSE-C.                                                                                                                                                                                                                                                                                             | -                                             |
+| `server_side_encryption_kms_key_id`             | Cabeçalhos obrigatórios para acessar objetos do S3 com [criptografia SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html). Uma string vazia usa a chave do S3 gerenciada pela AWS.                                                                                                                                                  | -                                             |
+| `server_side_encryption_kms_encryption_context` | Cabeçalho de contexto de criptografia para SSE-KMS (usado com `server_side_encryption_kms_key_id`).                                                                                                                                                                                                                                                                    | -                                             |
+| `server_side_encryption_kms_bucket_key_enabled` | Habilita chaves de bucket do S3 para SSE-KMS (usado com `server_side_encryption_kms_key_id`).                                                                                                                                                                                                                                                                          | Corresponde à configuração no nível do bucket |
+| `s3_max_put_rps`                                | Número máximo de requisições PUT por segundo antes de aplicar throttling.                                                                                                                                                                                                                                                                                              | `0` (ilimitado)                               |
+| `s3_max_put_burst`                              | Número máximo de requisições PUT simultâneas antes de atingir o limite de RPS.                                                                                                                                                                                                                                                                                         | Igual a `s3_max_put_rps`                      |
+| `s3_max_get_rps`                                | Número máximo de requisições GET por segundo antes de aplicar throttling.                                                                                                                                                                                                                                                                                              | `0` (ilimitado)                               |
+| `s3_max_get_burst`                              | Número máximo de requisições GET simultâneas antes de atingir o limite de RPS.                                                                                                                                                                                                                                                                                         | Igual a `s3_max_get_rps`                      |
+| `read_resource`                                 | Nome do recurso para [agendamento](/pt-BR/concepts/features/configuration/server-config/workload-scheduling) de requisições de leitura.                                                                                                                                                                                                                                      | String vazia (desabilitado)                   |
+| `write_resource`                                | Nome do recurso para [agendamento](/pt-BR/concepts/features/configuration/server-config/workload-scheduling) de requisições de gravação.                                                                                                                                                                                                                                     | String vazia (desabilitado)                   |
+| `key_template`                                  | Define o formato de geração da chave do objeto usando a sintaxe [re2](https://github.com/google/re2/wiki/Syntax). Requer a flag `storage_metadata_write_full_object_key`. É incompatível com `root path` em `endpoint`. Requer `key_compatibility_prefix`.                                                                                                             | -                                             |
+| `key_compatibility_prefix`                      | Obrigatório com `key_template`. Especifica o `root path` anterior de `endpoint` para ler versões mais antigas dos metadados.                                                                                                                                                                                                                                           | -                                             |
+| `read_only`                                     | Permite apenas leitura do disco.                                                                                                                                                                                                                                                                                                                                       | -                                             |
+
+<Note>
+  O Google Cloud Storage (GCS) também é compatível com o tipo `s3`. Consulte [GCS backed MergeTree](/pt-BR/integrations/connectors/data-sources/gcs).
+</Note>
+
+<div id="plain-storage">
+  ### Usando Plain Storage
+</div>
+
+Na versão `22.10`, foi introduzido um novo tipo de disco, `s3_plain`, que oferece armazenamento de gravação única.
+Os parâmetros de configuração dele são os mesmos do tipo de disco `s3`.
+Diferentemente do tipo de disco `s3`, ele armazena os dados como estão. Em outras palavras,
+em vez de usar nomes de blob gerados aleatoriamente, ele usa nomes de arquivo normais
+(da mesma forma que o ClickHouse armazena arquivos no disco local) e não armazena
+metadados localmente. Por exemplo, ele é derivado dos dados em `s3`.
+
+Esse tipo de disco permite manter uma versão estática da tabela, pois não
+permite executar mesclagens nos dados existentes nem inserir novos
+dados. Um caso de uso desse tipo de disco é criar backups nele, o que pode ser feito
+via `BACKUP TABLE data TO Disk('plain_disk_name', 'backup_name')`. Depois,
+você pode executar `RESTORE TABLE data AS data_restored FROM Disk('plain_disk_name', 'backup_name')`
+ou usar `ATTACH TABLE data (...) ENGINE = MergeTree() SETTINGS disk = 'plain_disk_name'`.
+
+Configuração:
+
+```xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+A partir da versão `24.1`, é possível configurar qualquer disco de armazenamento de objetos (`s3`, `azure`, `hdfs` (não compatível), `local`) usando
+o tipo de metadados `plain`.
+
+Configuração:
+
+```xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>azure</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+<div id="s3-plain-rewritable-storage">
+  ### Usando o armazenamento S3 Plain Rewritable
+</div>
+
+Um novo tipo de disco `s3_plain_rewritable` foi introduzido na versão `24.4`.
+Assim como o tipo de disco `s3_plain`, ele não requer armazenamento adicional para
+arquivos de metadados. Em vez disso, os metadados são armazenados no S3.
+Ao contrário do tipo de disco `s3_plain`, o `s3_plain_rewritable` permite executar mesclagens
+e oferece suporte a operações `INSERT`.
+[Mutações](/pt-BR/reference/statements/alter/index#mutations) e a replicação de tabelas não são suportadas.
+
+Um caso de uso desse tipo de disco é em tabelas `MergeTree` não replicadas. Embora
+o tipo de disco `s3` seja adequado para tabelas `MergeTree` não replicadas, você pode optar
+pelo tipo de disco `s3_plain_rewritable` se não precisar de metadados locais
+para a tabela e estiver disposto a aceitar um conjunto limitado de operações. Isso pode
+ser útil, por exemplo, para tabelas de sistema.
+
+Configuração:
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
+é igual a
+
+```xml
+<s3_plain_rewritable>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain_rewritable</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
+A partir da versão `24.5`, é possível configurar qualquer disco de armazenamento de objetos
+(`s3`, `azure`, `local`) com o tipo de metadados `plain_rewritable`.
+
+<div id="azure-blob-storage">
+  ### Usando o Azure Blob Storage
+</div>
+
+Os motores de tabela da família `MergeTree` podem armazenar dados no [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/)
+usando um disco do tipo `azure_blob_storage`.
+
+Trecho de configuração:
+
+```xml
+<storage_configuration>
+    ...
+    <disks>
+        <blob_storage_disk>
+            <type>azure_blob_storage</type>
+            <storage_account_url>http://account.blob.core.windows.net</storage_account_url>
+            <container_name>container</container_name>
+            <account_name>account</account_name>
+            <account_key>pass123</account_key>
+            <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
+            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
+            <skip_access_check>false</skip_access_check>
+        </blob_storage_disk>
+    </disks>
+    ...
+</storage_configuration>
+```
+
+<div id="azure-blob-storage-connection-parameters">
+  #### Parâmetros de conexão
+</div>
+
+| Parâmetro                           | Descrição                                                                                                                                                                                                                            | Valor padrão        |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
+| `storage_account_url` (Obrigatório) | URL da conta do Azure Blob Storage. Exemplos: `http://account.blob.core.windows.net` ou `http://azurite1:10000/devstoreaccount1`.                                                                                                    | -                   |
+| `container_name`                    | Nome do contêiner de destino.                                                                                                                                                                                                        | `default-container` |
+| `container_already_exists`          | Controla o comportamento de criação do contêiner: <br />- `false`: Cria um novo contêiner <br />- `true`: Conecta-se diretamente ao contêiner existente <br />- Não definido: Verifica se o contêiner existe e o cria, se necessário | -                   |
+
+Parâmetros de autenticação (o disco tentará todos os métodos disponíveis **e** Managed Identity Credential):
+
+| Parâmetro           | Descrição                                                       |
+| ------------------- | --------------------------------------------------------------- |
+| `connection_string` | Para autenticação usando uma string de conexão.                 |
+| `account_name`      | Para autenticação usando Shared Key (usado com `account_key`).  |
+| `account_key`       | Para autenticação usando Shared Key (usado com `account_name`). |
+
+<div id="azure-blob-storage-limit-parameters">
+  #### Parâmetros de limite
+</div>
+
+| Parâmetro                            | Descrição                                                                         |
+| ------------------------------------ | --------------------------------------------------------------------------------- |
+| `s3_max_single_part_upload_size`     | Tamanho máximo de um único upload de bloco para o Azure Blob Storage.             |
+| `min_bytes_for_seek`                 | Tamanho mínimo de uma região em que é possível usar `seek`.                       |
+| `max_single_read_retries`            | Número máximo de tentativas de ler um fragmento de dados do Azure Blob Storage.   |
+| `max_single_download_retries`        | Número máximo de tentativas de baixar um buffer de leitura do Azure Blob Storage. |
+| `thread_pool_size`                   | Número máximo de threads para a instanciação de `IDiskRemote`.                    |
+| `s3_max_inflight_parts_for_one_file` | Número máximo de requisições PUT simultâneas para um único objeto.                |
+
+<div id="azure-blob-storage-other-parameters">
+  #### Outros parâmetros
+</div>
+
+| Parâmetro                        | Descrição                                                                                                                           | Valor padrão                             |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `metadata_path`                  | Caminho no filesystem local para armazenar os arquivos de metadados do Blob Storage.                                                | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `skip_access_check`              | Se `true`, ignora as verificações de acesso ao disco durante a inicialização.                                                       | `false`                                  |
+| `read_resource`                  | Nome do recurso para [agendamento](/pt-BR/concepts/features/configuration/server-config/workload-scheduling) de solicitações de leitura.  | String vazia (desabilitado)              |
+| `write_resource`                 | Nome do recurso para [agendamento](/pt-BR/concepts/features/configuration/server-config/workload-scheduling) de solicitações de gravação. | String vazia (desabilitado)              |
+| `metadata_keep_free_space_bytes` | Quantidade de espaço livre no disco de metadados a ser reservada.                                                                   | -                                        |
+
+Exemplos de configurações funcionais podem ser encontrados no diretório de testes de integração (veja, por exemplo, [test&#95;merge&#95;tree&#95;azure&#95;blob&#95;storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) ou [test&#95;azure&#95;blob&#95;storage&#95;zero&#95;copy&#95;replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
+
+<Info>
+  **A replicação zero-copy não está pronta para produção**
+
+  A replicação zero-copy é desabilitada por padrão no ClickHouse versão 22.8 e posteriores. Este recurso não é recomendado para uso em produção.
+</Info>
+
+<div id="using-hdfs-storage-unsupported">
+  ## Usando armazenamento HDFS (sem suporte)
+</div>
+
+Nesta configuração de exemplo:
+
+* o disco é do tipo `hdfs` (sem suporte)
+* os dados estão hospedados em `hdfs://hdfs1:9000/clickhouse/`
+
+Vale lembrar que o HDFS não tem suporte e, portanto, podem ocorrer problemas ao usá-lo. Fique à vontade para enviar um pull request com a correção caso surja algum problema.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+                <skip_access_check>true</skip_access_check>
+            </hdfs>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <hdfs>
+                <volumes>
+                    <main>
+                        <disk>hdfs</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </hdfs>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+Tenha em mente que o HDFS pode não funcionar em casos de borda.
+
+<div id="encrypted-virtual-file-system">
+  ### Usando criptografia de dados
+</div>
+
+Você pode criptografar os dados armazenados em discos externos [S3](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) ou [HDFS](#using-hdfs-storage-unsupported) (sem suporte), ou em um disco local. Para ativar o modo de criptografia, no arquivo de configuração, você deve definir um disco do tipo `encrypted` e escolher o disco em que os dados serão salvos. Um disco `encrypted` criptografa todos os arquivos gravados em tempo real e, quando você lê arquivos de um disco `encrypted`, ele os descriptografa automaticamente. Assim, você pode trabalhar com um disco `encrypted` como se fosse um disco normal.
+
+Exemplo de configuração de disco:
+
+```xml
+<disks>
+  <disk1>
+    <type>local</type>
+    <path>/path1/</path>
+  </disk1>
+  <disk2>
+    <type>encrypted</type>
+    <disk>disk1</disk>
+    <path>path2/</path>
+    <key>_16_ascii_chars_</key>
+  </disk2>
+</disks>
+```
+
+Por exemplo, quando o ClickHouse grava dados de uma tabela no arquivo `store/all_1_1_0/data.bin` em `disk1`, na prática, esse arquivo será gravado no disco físico no caminho `/path1/store/all_1_1_0/data.bin`.
+
+Ao gravar o mesmo arquivo em `disk2`, ele será, na prática, gravado no disco físico no caminho `/path1/path2/store/all_1_1_0/data.bin`, em modo criptografado.
+
+<div id="required-parameters-encrypted-disk">
+  ### Parâmetros obrigatórios
+</div>
+
+| Parâmetro | Tipo   | Descrição                                                                                                                                                   |
+| --------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`    | String | Deve ser definido como `encrypted` para criar um disco criptografado.                                                                                       |
+| `disk`    | String | Tipo de disco usado no armazenamento subjacente.                                                                                                            |
+| `key`     | Uint64 | Chave para criptografar e descriptografar. Pode ser especificada em hexadecimal com `key_hex`. É possível especificar várias chaves usando o atributo `id`. |
+
+<div id="optional-parameters-encrypted-disk">
+  ### Parâmetros opcionais
+</div>
+
+| Parâmetro        | Tipo   | Padrão         | Descrição                                                                                                                                                        |
+| ---------------- | ------ | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`           | String | Diretório raiz | Local no disco onde os dados serão salvos.                                                                                                                       |
+| `current_key_id` | String | -              | O ID da chave usado para criptografia. Todas as chaves especificadas podem ser usadas para descriptografar.                                                      |
+| `algorithm`      | Enum   | `AES_128_CTR`  | Algoritmo de criptografia. Opções: <br />- `AES_128_CTR` (chave de 16 bytes) <br />- `AES_192_CTR` (chave de 24 bytes) <br />- `AES_256_CTR` (chave de 32 bytes) |
+
+Exemplo de configuração de disco:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3>
+                <type>s3</type>
+                <endpoint>...
+            </disk_s3>
+            <disk_s3_encrypted>
+                <type>encrypted</type>
+                <disk>disk_s3</disk>
+                <algorithm>AES_128_CTR</algorithm>
+                <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
+                <key_hex id="1">ffeeddccbbaa99887766554433221100</key_hex>
+                <current_key_id>1</current_key_id>
+            </disk_s3_encrypted>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+```
+
+<div id="using-local-cache">
+  ### Usando cache local
+</div>
+
+É possível configurar cache local em discos na configuração de armazenamento a partir da versão 22.3.
+Nas versões 22.3 - 22.7, o cache é suportado apenas para o tipo de disco `s3`. Nas versões &gt;= 22.8, o cache é suportado para qualquer tipo de disco: S3, Azure, Local, Encrypted etc.
+Nas versões &gt;= 23.5, o cache é suportado apenas para tipos de disco remotos: S3, Azure, HDFS (não suportado).
+O cache usa a política de cache `LRU`.
+
+Exemplo de configuração para versões iguais ou posteriores à 22.8:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+            </s3>
+            <cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </cache>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>cache</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        <policies>
+    </storage_configuration>
+```
+
+Exemplo de configuração para versões anteriores à 22.8:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+                <data_cache_enabled>1</data_cache_enabled>
+                <data_cache_max_size>10737418240</data_cache_max_size>
+            </s3>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        <policies>
+    </storage_configuration>
+```
+
+Configurações de **disco do File Cache**:
+
+Essas configurações devem ser definidas na seção de configuração de disco.
+
+| Parâmetro                             | Tipo    | Padrão     | Descrição                                                                                                                                                                                                                                         |
+| ------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                                | String  | -          | **Obrigatório**. Caminho para o diretório em que o cache será armazenado.                                                                                                                                                                         |
+| `max_size`                            | Size    | -          | **Obrigatório**. Tamanho máximo do cache em bytes ou em formato legível (por exemplo, `10Gi`). Os arquivos são removidos do cache usando a política LRU quando o limite é atingido. Compatível com os formatos `ki`, `Mi`, `Gi` (desde a v22.10). |
+| `cache_on_write_operations`           | Boolean | `false`    | Habilita cache write-through para consultas `INSERT` e merges em segundo plano. Pode ser substituído por consulta com `enable_filesystem_cache_on_write_operations`.                                                                              |
+| `enable_filesystem_query_cache_limit` | Boolean | `false`    | Habilita limites de tamanho do cache por consulta com base em `max_query_cache_size`.                                                                                                                                                             |
+| `enable_cache_hits_threshold`         | Boolean | `false`    | Quando habilitado, os dados só são armazenados em cache depois de serem lidos várias vezes.                                                                                                                                                       |
+| `cache_hits_threshold`                | Integer | `0`        | Número de leituras necessárias antes que os dados sejam armazenados em cache (requer `enable_cache_hits_threshold`).                                                                                                                              |
+| `enable_bypass_cache_with_threshold`  | Boolean | `false`    | Ignora o cache para intervalos de leitura grandes.                                                                                                                                                                                                |
+| `bypass_cache_threshold`              | Size    | `256Mi`    | Tamanho do intervalo de leitura a partir do qual o cache é ignorado (requer `enable_bypass_cache_with_threshold`).                                                                                                                                |
+| `max_file_segment_size`               | Size    | `8Mi`      | Tamanho máximo de um único arquivo de cache em bytes ou em formato legível.                                                                                                                                                                       |
+| `max_elements`                        | Integer | `10000000` | Número máximo de arquivos de cache.                                                                                                                                                                                                               |
+| `load_metadata_threads`               | Integer | `16`       | Número de threads para carregar os metadados do cache na inicialização.                                                                                                                                                                           |
+| `use_split_cache`                     | Boolean | `false`    | Usa separação de arquivos entre sistema e dados.                                                                                                                                                                                                  |
+| `split_cache_ratio`                   | Double  | `0.1`      | Proporção do segmento do sistema em relação ao tamanho total do cache para split&#95;cache.                                                                                                                                                       |
+
+> **Observação**: Valores de tamanho aceitam unidades como `ki`, `Mi`, `Gi` etc. (por exemplo, `10Gi`).
+
+<div id="file-cache-query-profile-settings">
+  ## Configurações de consulta/perfil do cache do sistema de arquivos
+</div>
+
+| Configuração                                                            | Tipo     | Padrão                  | Descrição                                                                                                                                                                                        |
+| ----------------------------------------------------------------------- | -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `enable_filesystem_cache`                                               | Booleano | `true`                  | Ativa/desativa o uso do cache por consulta, mesmo ao usar um tipo de disco `cache`.                                                                                                              |
+| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | Booleano | `false`                 | Quando ativado, usa o cache apenas se os dados já existirem; novos dados não serão armazenados em cache.                                                                                         |
+| `enable_filesystem_cache_on_write_operations`                           | Booleano | `false` (Cloud: `true`) | Ativa o cache write-through. Requer `cache_on_write_operations` na configuração do cache.                                                                                                        |
+| `enable_filesystem_cache_log`                                           | Booleano | `false`                 | Ativa o logging detalhado do uso do cache em `system.filesystem_cache_log`.                                                                                                                      |
+| `filesystem_cache_allow_background_download`                            | Booleano | `true`                  | Permite que segmentos parcialmente baixados sejam concluídos em segundo plano. Desative para manter os downloads em primeiro plano para a consulta/sessão atual.                                 |
+| `max_query_cache_size`                                                  | Tamanho  | `false`                 | Tamanho máximo de cache por consulta. Requer `enable_filesystem_query_cache_limit` na configuração do cache.                                                                                     |
+| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Booleano | `true`                  | Controla o comportamento quando `max_query_cache_size` é atingido: <br />- `true`: interrompe o download de novos dados <br />- `false`: remove dados antigos para abrir espaço para novos dados |
+
+<Warning>
+  As configurações do cache e as configurações de consulta do cache correspondem à versão mais recente do ClickHouse;
+  em versões anteriores, alguns recursos podem não ter suporte.
+</Warning>
+
+<div id="cache-system-tables-file-cache">
+  #### Tabelas de sistema do cache
+</div>
+
+| Nome da tabela                | Descrição                                                     | Requisitos                                  |
+| ----------------------------- | ------------------------------------------------------------- | ------------------------------------------- |
+| `system.filesystem_cache`     | Exibe o estado atual do cache do sistema de arquivos.                     | Nenhum                                      |
+| `system.filesystem_cache_log` | Fornece estatísticas detalhadas de uso do cache por consulta. | Requer `enable_filesystem_cache_log = true` |
+
+<div id="cache-commands-file-cache">
+  #### Comandos do cache
+</div>
+
+<div id="system-clear-filesystem-cache-on-cluster">
+  ##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER`
+</div>
+
+Este comando só é compatível quando nenhum `<cache_name>` é fornecido
+
+<div id="show-filesystem-caches">
+  ##### `SHOW FILESYSTEM CACHES`
+</div>
+
+Exibe uma lista dos caches do sistema de arquivos configurados no servidor.
+(Em versões menores ou iguais à `22.8`, o comando se chama `SHOW CACHES`)
+
+```sql title="Query"
+SHOW FILESYSTEM CACHES
+```
+
+```text title="Response"
+┌─Caches────┐
+│ s3_cache  │
+└───────────┘
+```
+
+<div id="describe-filesystem-cache">
+  ##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
+</div>
+
+Mostra a configuração do cache e algumas estatísticas gerais de um cache específico.
+O nome do cache pode ser obtido com o comando `SHOW FILESYSTEM CACHES`. (Para versões anteriores
+ou iguais à `22.8`, o comando se chama `DESCRIBE CACHE`)
+
+```sql title="Query"
+DESCRIBE FILESYSTEM CACHE 's3_cache'
+```
+
+```text title="Response"
+┌────max_size─┬─max_elements─┬─max_file_segment_size─┬─boundary_alignment─┬─cache_on_write_operations─┬─cache_hits_threshold─┬─current_size─┬─current_elements─┬─path───────┬─background_download_threads─┬─enable_bypass_cache_with_threshold─┐
+│ 10000000000 │      1048576 │             104857600 │            4194304 │                         1 │                    0 │         3276 │               54 │ /s3_cache/ │                           2 │                                  0 │
+└─────────────┴──────────────┴───────────────────────┴────────────────────┴───────────────────────────┴──────────────────────┴──────────────┴──────────────────┴────────────┴─────────────────────────────┴────────────────────────────────────┘
+```
+
+| Métricas atuais do cache  | Métricas assíncronas do cache | Eventos de perfil do cache                                                                |
+| ------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------- |
+| `FilesystemCacheSize`     | `FilesystemCacheBytes`        | `CachedReadBufferReadFromSourceBytes`, `CachedReadBufferReadFromCacheBytes`               |
+| `FilesystemCacheElements` | `FilesystemCacheFiles`        | `CachedReadBufferReadFromSourceMicroseconds`, `CachedReadBufferReadFromCacheMicroseconds` |
+|                           |                               | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
+|                           |                               | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
+
+<div id="web-storage">
+  ### Usando armazenamento web estático (somente leitura)
+</div>
+
+Este é um disco somente leitura. Seus dados apenas são lidos e nunca modificados. Uma nova tabela
+é carregada nesse disco com a consulta `ATTACH TABLE` (veja o exemplo abaixo). O disco local
+não é efetivamente usado; cada consulta `SELECT` resultará em uma requisição `http` para
+buscar os dados necessários. Qualquer modificação nos dados da tabela resultará em uma
+exceção, ou seja, os seguintes tipos de consultas não são permitidos: [`CREATE TABLE`](/pt-BR/reference/statements/create/table),
+[`ALTER TABLE`](/pt-BR/reference/statements/alter/index), [`RENAME TABLE`](/pt-BR/reference/statements/rename#rename-table),
+[`DETACH TABLE`](/pt-BR/reference/statements/detach) e [`TRUNCATE TABLE`](/pt-BR/reference/statements/truncate).
+O armazenamento web pode ser usado para fins de somente leitura. Um exemplo de uso é hospedar
+dados de exemplo ou migrar dados. Há uma ferramenta, `clickhouse-static-files-uploader`,
+que prepara um diretório de dados para uma determinada tabela (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
+Para cada tabela necessária, você obtém um diretório de arquivos. Esses arquivos podem ser enviados
+para, por exemplo, um servidor web de arquivos estáticos. Após essa preparação,
+você pode carregar essa tabela em qualquer servidor ClickHouse por meio de `DiskWeb`.
+
+Nesta configuração de exemplo:
+
+* o disco é do tipo `web`
+* os dados são hospedados em `http://nginx:80/test1/`
+* um cache no armazenamento local é usado
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>http://nginx:80/test1/</endpoint>
+            </web>
+            <cached_web>
+                <type>cache</type>
+                <disk>web</disk>
+                <path>cached_web_cache/</path>
+                <max_size>100000000</max_size>
+            </cached_web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+            <cached_web>
+                <volumes>
+                    <main>
+                        <disk>cached_web</disk>
+                    </main>
+                </volumes>
+            </cached_web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  O armazenamento também pode ser configurado temporariamente em uma consulta, caso não se espere usar um dataset da web
+  com frequência; consulte a [configuração dinâmica](#dynamic-configuration) e evite
+  editar o arquivo de configuração.
+
+  Um [dataset de demonstração](https://github.com/ClickHouse/web-tables-demo) está hospedado no GitHub. Para preparar suas próprias tabelas para armazenamento web,
+  consulte a ferramenta [clickhouse-static-files-uploader](/pt-BR/concepts/features/tools-and-utilities/static-files-disk-uploader)
+</Tip>
+
+Nesta consulta `ATTACH TABLE`, o `UUID` fornecido corresponde ao nome do diretório dos dados, e o endpoint é a URL do conteúdo bruto no GitHub.
+
+```sql highlight={1,20-23}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      );
+```
+
+Um caso de teste pronto para uso. Você precisa adicionar esta configuração a config:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>https://clickhouse-datasets.s3.yandex.net/disk-with-static-files-tests/test-hits/</endpoint>
+            </web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+Em seguida, execute esta consulta:
+
+```sql
+ATTACH TABLE test_hits UUID '1ae36516-d62d-4218-9ae3-6516d62da218'
+(
+    WatchID UInt64,
+    JavaEnable UInt8,
+    Title String,
+    GoodEvent Int16,
+    EventTime DateTime,
+    EventDate Date,
+    CounterID UInt32,
+    ClientIP UInt32,
+    ClientIP6 FixedString(16),
+    RegionID UInt32,
+    UserID UInt64,
+    CounterClass Int8,
+    OS UInt8,
+    UserAgent UInt8,
+    URL String,
+    Referer String,
+    URLDomain String,
+    RefererDomain String,
+    Refresh UInt8,
+    IsRobot UInt8,
+    RefererCategories Array(UInt16),
+    URLCategories Array(UInt16),
+    URLRegions Array(UInt32),
+    RefererRegions Array(UInt32),
+    ResolutionWidth UInt16,
+    ResolutionHeight UInt16,
+    ResolutionDepth UInt8,
+    FlashMajor UInt8,
+    FlashMinor UInt8,
+    FlashMinor2 String,
+    NetMajor UInt8,
+    NetMinor UInt8,
+    UserAgentMajor UInt16,
+    UserAgentMinor FixedString(2),
+    CookieEnable UInt8,
+    JavascriptEnable UInt8,
+    IsMobile UInt8,
+    MobilePhone UInt8,
+    MobilePhoneModel String,
+    Params String,
+    IPNetworkID UInt32,
+    TraficSourceID Int8,
+    SearchEngineID UInt16,
+    SearchPhrase String,
+    AdvEngineID UInt8,
+    IsArtifical UInt8,
+    WindowClientWidth UInt16,
+    WindowClientHeight UInt16,
+    ClientTimeZone Int16,
+    ClientEventTime DateTime,
+    SilverlightVersion1 UInt8,
+    SilverlightVersion2 UInt8,
+    SilverlightVersion3 UInt32,
+    SilverlightVersion4 UInt16,
+    PageCharset String,
+    CodeVersion UInt32,
+    IsLink UInt8,
+    IsDownload UInt8,
+    IsNotBounce UInt8,
+    FUniqID UInt64,
+    HID UInt32,
+    IsOldCounter UInt8,
+    IsEvent UInt8,
+    IsParameter UInt8,
+    DontCountHits UInt8,
+    WithHash UInt8,
+    HitColor FixedString(1),
+    UTCEventTime DateTime,
+    Age UInt8,
+    Sex UInt8,
+    Income UInt8,
+    Interests UInt16,
+    Robotness UInt8,
+    GeneralInterests Array(UInt16),
+    RemoteIP UInt32,
+    RemoteIP6 FixedString(16),
+    WindowName Int32,
+    OpenerName Int32,
+    HistoryLength Int16,
+    BrowserLanguage FixedString(2),
+    BrowserCountry FixedString(2),
+    SocialNetwork String,
+    SocialAction String,
+    HTTPError UInt16,
+    SendTiming Int32,
+    DNSTiming Int32,
+    ConnectTiming Int32,
+    ResponseStartTiming Int32,
+    ResponseEndTiming Int32,
+    FetchTiming Int32,
+    RedirectTiming Int32,
+    DOMInteractiveTiming Int32,
+    DOMContentLoadedTiming Int32,
+    DOMCompleteTiming Int32,
+    LoadEventStartTiming Int32,
+    LoadEventEndTiming Int32,
+    NSToDOMContentLoadedTiming Int32,
+    FirstPaintTiming Int32,
+    RedirectCount Int8,
+    SocialSourceNetworkID UInt8,
+    SocialSourcePage String,
+    ParamPrice Int64,
+    ParamOrderID String,
+    ParamCurrency FixedString(3),
+    ParamCurrencyID UInt16,
+    GoalsReached Array(UInt32),
+    OpenstatServiceName String,
+    OpenstatCampaignID String,
+    OpenstatAdID String,
+    OpenstatSourceID String,
+    UTMSource String,
+    UTMMedium String,
+    UTMCampaign String,
+    UTMContent String,
+    UTMTerm String,
+    FromTag String,
+    HasGCLID UInt8,
+    RefererHash UInt64,
+    URLHash UInt64,
+    CLID UInt32,
+    YCLID UInt64,
+    ShareService String,
+    ShareURL String,
+    ShareTitle String,
+    ParsedParams Nested(
+        Key1 String,
+        Key2 String,
+        Key3 String,
+        Key4 String,
+        Key5 String,
+        ValueDouble Float64),
+    IslandID FixedString(16),
+    RequestNum UInt32,
+    RequestTry UInt8
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID)
+SETTINGS storage_policy='web';
+```
+
+<div id="required-parameters-s3">
+  #### Parâmetros obrigatórios
+</div>
+
+| Parâmetro  | Descrição                                                                                                            |
+| ---------- | -------------------------------------------------------------------------------------------------------------------- |
+| `type`     | `web`. Caso contrário, o disco não é criado.                                                                         |
+| `endpoint` | A URL do endpoint no formato `path`. A URL do endpoint deve conter um caminho raiz para armazenar os dados enviados. |
+
+<div id="optional-parameters-s3">
+  #### Parâmetros opcionais
+</div>
+
+| Parâmetro                           | Descrição                                                                          | Valor padrão     |
+| ----------------------------------- | ---------------------------------------------------------------------------------- | ---------------- |
+| `min_bytes_for_seek`                | O número mínimo de bytes para usar a operação de seek em vez da leitura sequencial | `1` MB           |
+| `remote_fs_read_backoff_threashold` | O tempo máximo de espera ao tentar ler dados de um disco remoto                    | `10000` segundos |
+| `remote_fs_read_backoff_max_tries`  | O número máximo de tentativas de leitura com backoff                               | `5`              |
+
+Se uma consulta falhar com a exceção `DB:Exception Unreachable URL`, você pode tentar ajustar as configurações: [http&#95;connection&#95;timeout](/pt-BR/reference/settings/session-settings#http_connection_timeout), [http&#95;receive&#95;timeout](/pt-BR/reference/settings/session-settings#http_receive_timeout), [keep&#95;alive&#95;timeout](/pt-BR/reference/settings/server-settings/settings#keep_alive_timeout).
+
+Para gerar os arquivos para upload, execute:
+`clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` pode ser encontrado na consulta `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
+
+Ao carregar arquivos por `endpoint`, eles devem ser carregados no caminho `<endpoint>/store/`, mas a configuração deve conter apenas `endpoint`.
+
+Se a URL não estiver acessível durante o carregamento do disco, quando o servidor estiver inicializando as tabelas, todos os erros serão capturados. Se, nesse caso, ocorrerem erros, as tabelas poderão ser recarregadas (e ficar visíveis) por meio de `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name`. Se os metadados tiverem sido carregados com sucesso na inicialização do servidor, as tabelas ficarão disponíveis imediatamente.
+
+Use a configuração [http&#95;max&#95;single&#95;read&#95;retries](/pt-BR/concepts/features/configuration/server-config/storing-data#web-storage) para limitar o número máximo de tentativas durante uma única leitura HTTP.
+
+<div id="zero-copy">
+  ### Replicação zero-copy (não pronta para produção)
+</div>
+
+A replicação zero-copy é possível, mas não é recomendada, com discos `S3` e `HDFS` (não compatível). Replicação zero-copy significa que, se os dados estiverem armazenados remotamente em várias máquinas e precisarem ser sincronizados, apenas os metadados serão replicados (caminhos para as partes de dados), e não os dados em si.
+
+<Info>
+  **A replicação zero-copy não está pronta para produção**
+
+  A replicação zero-copy vem desabilitada por padrão no ClickHouse versão 22.8 e posteriores. Este recurso não é recomendado para uso em produção.
+</Info>

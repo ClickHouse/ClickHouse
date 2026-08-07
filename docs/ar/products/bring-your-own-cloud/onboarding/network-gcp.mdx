@@ -1,0 +1,159 @@
+---
+title: 'إعداد الشبكات الخاصة لـ BYOC على GCP'
+slug: /cloud/reference/byoc/onboarding/network-gcp
+sidebarTitle: 'إعداد الشبكات الخاصة على GCP'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'vpc peering', 'gcp', 'private service connect']
+description: 'إعداد VPC Peering أو Private Service Connect لـ BYOC على GCP'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يدعم ClickHouse BYOC على GCP خيارين للاتصال الخاص، هما VPC Peering وPrivate Service Connect. وتتحرك حركة المرور بالكامل داخل شبكة GCP، من دون أن تعبر الإنترنت العام مطلقًا.
+
+<div id="common-prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+الخطوات المشتركة اللازمة لكلٍّ من VPC peering وPrivate Service Connect.
+
+<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
+  ### فعّل موازن التحميل الخاص لـ ClickHouse BYOC
+</div>
+
+تواصل مع ClickHouse Support لتفعيل موازن التحميل الخاص.
+
+<div id="gcp-vpc-peering">
+  ## إعداد VPC peering
+</div>
+
+يُرجى الاطلاع على [ميزة GCP VPC peering](https://docs.cloud.google.com/vpc/docs/vpc-peering) والانتباه إلى قيود VPC peering (على سبيل المثال، لا يمكن أن تتداخل نطاقات IP للشبكات الفرعية بين شبكات VPC المترابطة). يستخدم ClickHouse BYOC موازن تحميل خاصًا لإتاحة الاتصال الشبكي عبر peering إلى خدمات ClickHouse.
+
+لإنشاء VPC peering أو حذفه في ClickHouse BYOC، اتبع الخطوات التالية:
+
+<Note>
+  خطوات هذا المثال مخصّصة لسيناريو بسيط. أما في السيناريوهات المتقدمة، مثل peering مع اتصال on-premise، فقد يلزم إجراء بعض التعديلات.
+</Note>
+
+<Steps>
+  <Step>
+    ### إنشاء peering connection
+
+    في هذا المثال، نُعدّ peering بين شبكة BYOC VPC وشبكة VPC أخرى موجودة بالفعل.
+
+    1. انتقل إلى &quot;VPC Network&quot; في مشروع Google Cloud الخاص بـ ClickHouse BYOC.
+    2. اختر &quot;VPC network peering&quot;.
+    3. انقر على &quot;Create connection&quot;.
+    4. أدخل الحقول المطلوبة وفقًا لاحتياجاتك. في ما يلي لقطة شاشة لإنشاء peering داخل مشروع GCP نفسه.
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-gcp-1.webp" size="md" alt="BYOC إنشاء peering connection" border />
+
+    يتطلب GCP VPC peering وجود اتصالين بين الشبكتين لكي يعمل (أي اتصال من شبكة BYOC إلى شبكة VPC الحالية، واتصال من شبكة VPC الحالية إلى شبكة BYOC). لذلك، تحتاج أيضًا إلى إنشاء اتصال آخر مماثل في الاتجاه المعاكس. في ما يلي لقطة شاشة لإنشاء peering connection الثاني:
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-gcp-2.webp" size="md" alt="BYOC قبول peering connection" border />
+
+    بعد إنشاء الاتصالين، يجب أن تصبح حالة الاتصالين &quot;Active&quot; بعد تحديث صفحة Google Cloud Console:
+
+    <Image img="/images/cloud/reference/byoc-vpcpeering-gcp-3.webp" size="lg" alt="BYOC قبول peering connection" border />
+
+    يجب أن تصبح خدمة ClickHouse الآن متاحة من شبكة VPC المترابطة.
+  </Step>
+
+  <Step>
+    ### الوصول إلى خدمة ClickHouse عبر peering connection
+
+    للوصول إلى ClickHouse بشكل خاص، يتم توفير موازن تحميل خاص وendpoint لاتصال آمن من شبكة VPC المترابطة الخاصة بالمستخدم. ويتبع private endpoint تنسيق public endpoint نفسه مع اللاحقة `-private`. على سبيل المثال:
+
+    * **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
+    * **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
+  </Step>
+</Steps>
+
+<div id="gcp-psc">
+  ## إعداد PSC (Private Service Connect)
+</div>
+
+يوفّر GCP PSC ‏(Private Service Connect) اتصالًا خاصًا وآمنًا بخدمات ClickHouse BYOC لديك من دون الحاجة إلى VPC peering أو بوابات الإنترنت.
+
+<Steps>
+  <Step>
+    ### اطلب إعداد خدمة PSC
+
+    تواصل مع [ClickHouse Support](https://clickhouse.com/cloud/bring-your-own-cloud) لطلب إعداد خدمة PSC لبيئة نشر BYOC لديك. لا يلزم تقديم أي معلومات محددة في هذه المرحلة—يكفي فقط توضيح أنك تريد إعداد اتصال PSC.
+
+    سيتولى ClickHouse Support تفعيل مكونات البنية التحتية اللازمة، بما في ذلك **موازن التحميل الخاص** و**خدمة PSC**.
+  </Step>
+
+  <Step>
+    ### الحصول على اسم خدمة GCP PSC واسم DNS
+
+    سيوفّر لك ClickHouse Support اسم خدمة PSC. ويمكنك أيضًا العثور عليه في ClickHouse Cloud console ضمن &quot;Organization&quot; -&gt; &quot;Infrastructure&quot;، ثم النقر على اسم البنية التحتية لعرض التفاصيل.
+
+    <Image img="/images/cloud/reference/byoc-privatelink-gcp-1.webp" size="lg" alt="نقطة نهاية BYOC PSC" border />
+
+    <Image img="/images/cloud/reference/byoc-privatelink-gcp-2.webp" size="lg" alt="نقطة نهاية BYOC PSC" border />
+
+    يمكنك أيضًا العثور على اسم خدمة PSC في وحدة تحكم GCP Private Service Connect ضمن &quot;Published services&quot; (صفِّ حسب اسم الخدمة أو ابحث عن خدمات ClickHouse)
+
+    <Image img="/images/cloud/reference/byoc-privatelink-gcp-3.webp" size="lg" alt="نقطة نهاية BYOC PSC" border />
+
+    <Image img="/images/cloud/reference/byoc-privatelink-gcp-4.webp" size="lg" alt="نقطة نهاية BYOC PSC" border />
+  </Step>
+
+  <Step>
+    ### أنشئ نقطة نهاية PSC في شبكتك
+
+    بعد أن يقوم ClickHouse Support بتمكين خدمة PSC من جانبهم، ستحتاج إلى إنشاء نقطة نهاية PSC في شبكة تطبيق العميل لديك للاتصال بخدمة ClickHouse PSC.
+
+    1. **إنشاء نقطة نهاية PSC**:
+
+    * انتقل إلى GCP Console -&gt; Network Services → Private Service Connect → Connect Endpoint
+    * اختر &quot;Published service&quot; ضمن &quot;Target&quot;، ثم أدخل اسم خدمة PSC الذي حصلت عليه في الخطوة الأخيرة في حقل &quot;Target details&quot;
+    * أدخل اسمًا صالحًا لنقطة النهاية
+    * اختر شبكتك وحدد الشبكات الفرعية (وهذه هي الشبكة التي سيتصل منها تطبيق العميل لديك)
+    * اختر أو أنشئ عنوان IP جديدًا لنقطة النهاية. يجب استخدام عنوان IP هذا في الخطوة [Set private DNS name for endpoint](#step-4-set-private-dns-name-for-endpoint)
+    * انقر على &quot;Add Endpoint&quot;، ثم انتظر قليلًا حتى يتم إنشاء نقطة النهاية.
+    * يجب أن تصبح حالة نقطة النهاية &quot;Accepted&quot;، وتواصل مع ClickHouse Support إذا لم يتم قبولها تلقائيًا.
+
+    <Image img="/images/cloud/reference/byoc-privatelink-gcp-5.webp" size="lg" alt="إنشاء نقطة نهاية PSC لـ BYOC" border />
+
+    2. **الحصول على معرّف اتصال PSC**:
+
+    * انقر على تفاصيل نقطة النهاية واحصل على &quot;PSC Connection ID&quot; لاستخدامه في الخطوة [Add endpoint&#39;s PSC Connection ID to service allowlist](#step-5-add-endpoint-id-allowlist)
+
+    <Image img="/images/cloud/reference/byoc-privatelink-gcp-6.webp" size="lg" alt="تفاصيل نقطة نهاية PSC لـ BYOC" border />
+  </Step>
+
+  <Step>
+    ### تعيين اسم private DNS لنقطة النهاية
+
+    <Note>
+      توجد عدة طرق لتهيئة DNS. يُرجى إعداد DNS بما يتناسب مع حالة الاستخدام الخاصة بك.
+    </Note>
+
+    تحتاج إلى توجيه جميع النطاقات الفرعية (wildcard) لـ &quot;اسم DNS&quot;، والمأخوذ من خطوة [الحصول على اسم خدمة GCP PSC واسم DNS](#step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect)، إلى عنوان IP الخاص بـ PSC endpoint في GCP. ويضمن ذلك أن تتمكن الخدمات/المكوّنات داخل VPC/الشبكة لديك من حله بشكل صحيح.
+  </Step>
+
+  <Step>
+    ### أضِف معرّف اتصال PSC الخاص بنقطة النهاية إلى قائمة السماح لكل خدمة
+
+    بمجرد إنشاء نقطة نهاية PSC الخاصة بك وتصبح الحالة &quot;Accepted&quot;، يجب إضافة معرّف اتصال PSC الخاص بنقطة النهاية إلى قائمة السماح لكل **خدمة ClickHouse** تريد الوصول إليها عبر PSC.
+
+    **تواصل مع ClickHouse Support**:
+
+    * قدّم معرّفات اتصال PSC الخاصة بنقطة النهاية إلى ClickHouse Support
+    * حدّد خدمات ClickHouse التي يجب أن تسمح بالوصول من نقطة النهاية هذه
+    * سيضيف ClickHouse Support معرّفات اتصال نقطة النهاية إلى قائمة السماح الخاصة بالخدمة
+  </Step>
+
+  <Step>
+    ### الاتصال بـ ClickHouse عبر PSC
+
+    بعد إضافة معرّفات اتصال نقاط النهاية إلى قائمة السماح، يمكنك الاتصال بخدمة ClickHouse الخاصة بك باستخدام نقطة نهاية PSC.
+
+    يكون تنسيق نقطة نهاية PSC مشابهًا لتنسيق نقطة النهاية العامة، لكنه يتضمن نطاقًا فرعيًا `p`. على سبيل المثال:
+
+    * **نقطة النهاية العامة**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.clickhouse-byoc.com`
+    * **نقطة نهاية PSC**: `h5ju65kv87.p.mhp0y4dmph.us-east1.gcp.clickhouse-byoc.com`
+  </Step>
+</Steps>

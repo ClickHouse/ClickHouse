@@ -1,0 +1,32 @@
+index is applied while using column alias
+Expression ((Projection + Before ORDER BY))
+  Expression (WHERE)
+    ReadFromMergeTree (default.t)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 8/8
+      Skip
+        Name: ngrams
+        Description: ngrambf_v1 GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/8
+      Ranges: 0
+Expression ((Project names + Projection))
+  Expression ((WHERE + (Change column names to column identifiers + Compute alias columns)))
+    ReadFromMergeTree (default.t)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 8/8
+      Skip
+        Name: ngrams
+        Description: ngrambf_v1 GRANULARITY 1
+        Parts: 0/1
+        Granules: 0/8
+      Ranges: 0
+index is applied to view
+0
+0

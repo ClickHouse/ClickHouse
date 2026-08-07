@@ -1,0 +1,59 @@
+---
+description: 'Este motor oferece integração somente leitura com tabelas Apache Hudi
+  existentes no Amazon S3.'
+sidebarTitle: 'Hudi'
+slug: /engines/table-engines/integrations/hudi
+title: 'Motor de tabela Hudi'
+doc_type: 'referência'
+---
+
+Este motor oferece integração somente leitura com tabelas Apache [Hudi](https://hudi.apache.org/) existentes no Amazon S3.
+
+<div id="create-table">
+  ## Criar tabela
+</div>
+
+Observe que a tabela Hudi já deve existir no S3; este comando não aceita parâmetros DDL para criar uma nova tabela.
+
+```sql
+CREATE TABLE hudi_table
+    ENGINE = Hudi(url, [aws_access_key_id, aws_secret_access_key,] [extra_credentials])
+```
+
+**Parâmetros do motor**
+
+* `url` — URL do bucket com o caminho para uma tabela Hudi existente.
+* `aws_access_key_id`, `aws_secret_access_key` - Credenciais de longo prazo para o usuário da conta [AWS](https://aws.amazon.com/). Você pode usá-las para autenticar suas solicitações. O parâmetro é opcional. Se as credenciais não forem especificadas, elas serão obtidas do arquivo de configuração.
+* `extra_credentials` - Opcional. Usado para fornecer um `role_arn` para acesso baseado em funções no ClickHouse Cloud. Consulte [Secure S3](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver as etapas de configuração.
+
+Os parâmetros do motor podem ser especificados usando [Named Collections](/pt-BR/concepts/features/configuration/server-config/named-collections).
+
+**Exemplo**
+
+```sql
+CREATE TABLE hudi_table ENGINE=Hudi('http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/test_table/', 'ABC123', 'Abc+123')
+```
+
+Usando coleções nomeadas:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <hudi_conf>
+            <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
+            <access_key_id>ABC123</access_key_id>
+            <secret_access_key>Abc+123</secret_access_key>
+        </hudi_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [função de tabela do Hudi](/pt-BR/reference/functions/table-functions/hudi)

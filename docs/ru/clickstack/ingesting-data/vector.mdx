@@ -1,0 +1,608 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/vector
+description: 'Ингестия данных через Vector для ClickStack — стека обсервабилити ClickHouse'
+title: 'Ингестия через Vector'
+toc_max_heading_level: 2
+doc_type: 'guide'
+keywords: ['clickstack', 'vector', 'трейсы', 'обсервабилити', 'телеметрия']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import InstallingVector from '/snippets/ru/_installing_vector.mdx';
+import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
+
+[Vector](https://vector.dev) — это высокопроизводительный, вендорно-нейтральный конвейер данных для обсервабилити. Его обычно используют для сбора, преобразования и маршрутизации журналов и метрик из самых разных источников; особенно популярен он для ингестии журналов благодаря своей гибкости и низким требованиям к ресурсам.
+
+При использовании Vector с ClickStack пользователи сами определяют свои схемы. Эти схемы могут соответствовать соглашениям OpenTelemetry, но также могут быть полностью кастомными и отражать определяемые пользователем структуры событий. На практике ингестия через Vector чаще всего используется для **журналов**, когда пользователям нужен полный контроль над парсингом и обогащением данных перед их записью в ClickHouse.
+
+Это руководство посвящено онбордингу данных в ClickStack с использованием Vector как для ClickStack с открытым исходным кодом, так и для Управляемого ClickStack. Для простоты в нём не рассматриваются подробно источники Vector и конфигурация конвейера. Вместо этого основное внимание уделено настройке **приёмника**, записывающего данные в ClickHouse, и обеспечению совместимости итоговой схемы с ClickStack.
+
+Единственное строгое требование ClickStack — независимо от того, используется ли развертывание с открытым исходным кодом или управляемое, — заключается в том, что данные должны содержать **столбец с временной меткой** (или эквивалентное поле времени), который можно указать при настройке источника данных в интерфейсе ClickStack.
+
+<div id="sending-data-with-vector">
+  ## Отправка данных через Vector
+</div>
+
+<br />
+
+<Tabs>
+  <Tab title="Управляемый ClickStack">
+    В данном руководстве предполагается, что вы уже создали сервис Управляемого ClickStack и сохранили учётные данные сервиса. Если нет, следуйте руководству [Getting Started](/ru/clickstack/getting-started/managed) для Управляемого ClickStack до момента, когда вам будет предложено настроить Vector.
+
+    <Steps>
+      <Step>
+        ### Создайте базу данных и таблицу
+
+        Для Vector необходимо заранее определить таблицу и схему до начала ингестии данных.
+
+        Сначала создайте базу данных. Это можно сделать через [консоль ClickHouse Cloud](/ru/products/cloud/features/sql-console-features/sql-console).
+
+        В примере ниже мы используем `logs`:
+
+        ```sql
+        CREATE DATABASE IF NOT EXISTS logs
+        ```
+
+        Создайте таблицу для своих данных. Она должна соответствовать выходной схеме данных. В примере ниже используется классическая структура Nginx. При необходимости адаптируйте её под свои данные, следуя [рекомендациям по работе со схемой](/ru/concepts/best-practices/select-data-type). Мы **настоятельно рекомендуем** ознакомиться с [концепцией первичных ключей](/ru/concepts/core-concepts/primary-indexes) и выбрать первичный ключ на основе рекомендаций, изложенных [здесь](/ru/clickstack/managing/performance-tuning#choosing-a-primary-key).
+
+        ```sql
+        CREATE TABLE logs.nginx_logs
+        (
+            `time_local` DateTime,
+            `remote_addr` IPv4,
+            `remote_user` LowCardinality(String),
+            `request` String,
+            `status` UInt16,
+            `body_bytes_sent` UInt64,
+            `http_referer` String,
+            `http_user_agent` String,
+            `http_x_forwarded_for` LowCardinality(String),
+            `request_time` Float32,
+            `upstream_response_time` Float32,
+            `http_host` String
+        )
+        ENGINE = MergeTree
+        ORDER BY (toStartOfMinute(time_local), status, remote_addr)
+        ```
+
+        <Info>
+          **Первичный ключ Nginx**
+
+          Приведённый выше первичный ключ рассчитан на типичные сценарии работы с журналами Nginx в интерфейсе ClickStack, но в продакшене его может потребоваться скорректировать в зависимости от вашей рабочей нагрузки.
+        </Info>
+      </Step>
+
+      <Step>
+        ### Добавьте приёмник ClickHouse в конфигурацию Vector
+
+        Измените конфигурацию Vector, чтобы добавить приёмник ClickHouse, обновив поле `inputs` для получения событий из существующих конвейеров.
+
+        Эта конфигурация предполагает, что предшествующий конвейер Vector уже **подготовил данные в соответствии с целевой схемой ClickHouse**, то есть поля разобраны, правильно названы и имеют подходящие типы для вставки. См. [**пример Nginx ниже**](#example-dataset-with-vector), чтобы увидеть полный пример разбора и нормализации сырых строк логов в схему, подходящую для ClickStack.
+
+        ```yaml
+        sinks:
+          clickhouse:
+            type: clickhouse
+            inputs:
+              - your_input
+            endpoint: "<CLICKHOUSE_ENDPOINT>"
+            database: logs
+            format: json_each_row
+            table: nginx_logs
+            skip_unknown_fields: true
+            auth:
+              strategy: "basic"
+              user: "default"
+              password: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        По умолчанию мы рекомендуем использовать формат **`json_each_row`**, в котором каждое событие кодируется как отдельный объект JSON в одной строке. Это формат по умолчанию и рекомендуемый формат для ClickStack при ингестии JSON-данных, поэтому ему следует отдавать предпочтение перед альтернативными форматами, например объектами JSON, закодированными в виде строк.
+
+        Sink ClickHouse также поддерживает **потоковое кодирование Arrow** (сейчас в статусе бета). Оно может обеспечить более высокую пропускную способность, но имеет важные ограничения: база данных и таблица должны быть фиксированными, так как схема считывается один раз при запуске, а динамическая маршрутизация не поддерживается. Поэтому кодирование Arrow лучше всего подходит для фиксированных, чётко определённых конвейеров ингестии.
+
+        Рекомендуем ознакомиться с доступными параметрами конфигурации sink в [документации Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse):
+
+        <Note>
+          В примере выше используется пользователь по умолчанию для Управляемого ClickStack. Для промышленных развертываний мы рекомендуем [создать отдельного пользователя для ингестии](/ru/clickstack/ingesting-data/collector#creating-an-ingestion-user) с соответствующими разрешениями и ограничениями.
+        </Note>
+      </Step>
+
+      <Step>
+        ### Перейдите в интерфейс ClickStack
+
+        Откройте свой сервис Управляемый ClickStack и выберите &quot;ClickStack&quot; в меню слева. Если вы уже завершили онбординг, интерфейс ClickStack откроется в новой вкладке, а авторизация произойдёт автоматически. Если нет, пройдите онбординг и выберите “Launch ClickStack” после того, как укажете Vector в качестве источника входящих данных.
+
+        <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Запуск ClickStack для Vector" size="lg" />
+      </Step>
+
+      <Step>
+        ### Создание источника данных
+
+        Создайте источник данных для журналов. Если источников данных ещё нет, при первом входе вам будет предложено создать его. В противном случае перейдите в Team Settings и добавьте новый источник данных.
+
+        <Image img="/images/clickstack/create-vector-datasource.webp" alt="Создание источника данных — vector" size="lg" />
+
+        Приведённая выше конфигурация предполагает схему в стиле Nginx со столбцом `time_local`, который используется в качестве временной метки. По возможности это должен быть столбец временной метки, объявленный в первичном ключе. Этот столбец обязателен.
+
+        Мы также рекомендуем обновить `Default SELECT`, чтобы явно задать, какие столбцы возвращаются в представлении журналов. Если доступны дополнительные поля, такие как имя сервиса, уровень журнала или столбец body, их тоже можно настроить. Столбец, отображаемый как временная метка, также можно переопределить, если он отличается от столбца, используемого в первичном ключе таблицы и указанного выше.
+
+        В приведённом выше примере столбец `Body` в данных отсутствует. Вместо этого он задаётся с помощью SQL-выражения, которое восстанавливает строку журнала Nginx из доступных полей.
+
+        Другие возможные параметры см. в [справочнике по конфигурации](/ru/clickstack/managing/config).
+      </Step>
+
+      <Step>
+        ### Просмотр данных
+
+        Перейдите в представление журналов, чтобы изучить данные и начать работу с ClickStack.
+
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Журналы Nginx в ClickStack" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack с открытым исходным кодом">
+    <Steps>
+      <Step>
+        ### Создайте базу данных и таблицу
+
+        Для Vector таблица и схема должны быть определены до начала ингестии данных.
+
+        Сначала создайте базу данных. Это можно сделать через [веб-интерфейс ClickHouse](/ru/concepts/features/interfaces/http#web-ui) по адресу [http://localhost:8123/play](http://localhost:8123/play). Используйте имя пользователя и пароль по умолчанию `api:api`.
+
+        <Image img="/images/clickstack/play-ui-clickstack.webp" alt="Интерфейс play в ClickStack" size="lg" />
+
+        В примере ниже используется `logs`:
+
+        ```sql
+        CREATE DATABASE IF NOT EXISTS logs
+        ```
+
+        Создайте таблицу для ваших данных. Она должна соответствовать схеме выходных данных. В примере ниже используется классическая структура Nginx. При необходимости адаптируйте её под свои данные, соблюдая [рекомендации по выбору схемы](/ru/concepts/best-practices/select-data-type). Мы **настоятельно рекомендуем** ознакомиться с [концепцией первичных ключей](/ru/concepts/core-concepts/primary-indexes) и выбирать первичный ключ в соответствии с рекомендациями, изложенными [здесь](/ru/clickstack/managing/performance-tuning#choosing-a-primary-key).
+
+        ```sql
+        CREATE TABLE logs.nginx_logs
+        (
+            `time_local` DateTime,
+            `remote_addr` IPv4,
+            `remote_user` LowCardinality(String),
+            `request` String,
+            `status` UInt16,
+            `body_bytes_sent` UInt64,
+            `http_referer` String,
+            `http_user_agent` String,
+            `http_x_forwarded_for` LowCardinality(String),
+            `request_time` Float32,
+            `upstream_response_time` Float32,
+            `http_host` String
+        )
+        ENGINE = MergeTree
+        ORDER BY (toStartOfMinute(time_local), status, remote_addr)
+        ```
+
+        <Info>
+          **Первичный ключ Nginx**
+
+          Указанный выше первичный ключ рассчитан на типичные сценарии доступа к журналам Nginx в интерфейсе ClickStack, но в рабочей среде его может потребоваться скорректировать с учетом вашей рабочей нагрузки.
+        </Info>
+      </Step>
+
+      <Step>
+        ### Добавьте ClickHouse sink в конфигурацию Vector
+
+        Ингестия в ClickStack при использовании Vector должна выполняться напрямую в ClickHouse, минуя конечную точку OTLP, предоставляемую collector.
+
+        Измените конфигурацию Vector, добавив ClickHouse sink и обновив поле `inputs`, чтобы оно принимало события из существующих конвейеров.
+
+        Эта конфигурация предполагает, что ваш вышестоящий конвейер Vector уже **подготовил данные в соответствии с целевой схемой ClickHouse**, то есть поля разобраны, корректно именованы и имеют подходящие типы для вставки. Полный пример того, как разбирать и нормализовать необработанные строки логов в схему, подходящую для ClickStack, см. в [**примере Nginx ниже**](#example-dataset-with-vector).
+
+        ```yaml
+        sinks:
+          clickhouse:
+            type: clickhouse
+            inputs:
+              - your_input
+            endpoint: "http://localhost:8123"
+            database: logs
+            format: json_each_row
+            table: nginx_logs
+            skip_unknown_fields: true
+            auth:
+              strategy: "basic"
+              user: "api"
+              password: "api"
+        ```
+
+        По умолчанию мы рекомендуем использовать формат **`json_each_row`**, который кодирует каждое событие в виде отдельного объекта JSON в каждой строке. Это формат по умолчанию и рекомендуемый формат для ClickStack при приёме JSON-данных, поэтому ему следует отдавать предпочтение перед альтернативными форматами, например объектами JSON, закодированными как строки.
+
+        Sink ClickHouse также поддерживает **потоковое кодирование Arrow** (сейчас в бета-версии). Оно может обеспечить более высокую пропускную способность, но имеет важные ограничения: база данных и таблица должны быть фиксированными, так как схема считывается один раз при запуске, а динамическая маршрутизация не поддерживается. По этой причине кодирование Arrow лучше всего подходит для фиксированных, чётко определённых конвейеров ингестии.
+
+        Мы рекомендуем ознакомиться с доступными параметрами конфигурации sink в [документации Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse):
+
+        <Note>
+          В примере выше используется пользователь `api` для ClickStack с открытым исходным кодом. Для продуктивных развёртываний мы рекомендуем [создать отдельного пользователя для приёма данных](/ru/clickstack/ingesting-data/collector#creating-an-ingestion-user) с необходимыми разрешениями и лимитами. Приведённая выше конфигурация также предполагает, что Vector запущен на том же хосте, что и ClickStack. В продуктивных развёртываниях это, скорее всего, будет не так. Рекомендуем отправлять данные через защищённый HTTPS-порт 8443.
+        </Note>
+      </Step>
+
+      <Step>
+        ### Перейдите в интерфейс ClickStack
+
+        Перейдите в интерфейс ClickStack по адресу [http://localhost:8080](http://localhost:8080). Если вы ещё не прошли онбординг, создайте пользователя.
+
+        <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="Вход в ClickStack" size="lg" />
+      </Step>
+
+      <Step>
+        ### Создайте источник данных
+
+        Перейдите в Team Settings и добавьте новый источник данных.
+
+        <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="Создание источника данных — Vector" size="lg" />
+
+        Приведённая выше конфигурация предполагает схему в стиле Nginx со столбцом `time_local`, используемым в качестве временной метки. По возможности это должен быть столбец временной метки, указанный в первичном ключе. Этот столбец обязателен.
+
+        Мы также рекомендуем обновить `Default SELECT`, чтобы явно указать, какие столбцы возвращаются в представлении журналов. Если доступны дополнительные поля, такие как имя сервиса, уровень журнала или столбец body, их также можно настроить. Столбец отображения временной метки тоже можно переопределить, если он отличается от столбца, используемого в первичном ключе таблицы и настроенного выше.
+
+        В примере выше столбец `Body` в данных отсутствует. Вместо этого он задаётся с помощью SQL-выражения, которое воссоздаёт строку журнала Nginx из доступных полей.
+
+        Сведения о других возможных параметрах см. в [справочнике по конфигурации](/ru/clickstack/managing/config).
+      </Step>
+
+      <Step>
+        ### Просмотрите данные
+
+        Перейдите в представление журналов, чтобы просмотреть данные и начать работу с ClickStack.
+
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Журналы Nginx в ClickStack" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="example-dataset-with-vector">
+  ## Пример набора данных с Vector
+</div>
+
+Ниже, в качестве более полного примера, мы используем **файл журнала Nginx**.
+
+<Tabs>
+  <Tab title="Управляемый ClickStack">
+    В данном руководстве предполагается, что вы уже создали сервис Управляемого ClickStack и сохранили учётные данные сервиса. Если нет, следуйте руководству [Getting Started](/ru/clickstack/getting-started/managed) для Управляемого ClickStack вплоть до шага настройки Vector.
+
+    <Steps>
+      <Step>
+        ### Установка Vector
+
+        <InstallingVector />
+      </Step>
+
+      <Step>
+        ### Скачайте тестовые данные
+
+        <VectorSampleData />
+      </Step>
+
+      <Step>
+        ### Создайте базу данных и таблицу
+
+        Для Vector необходимо заранее определить таблицу и схему до начала ингестии данных.
+
+        Сначала создайте базу данных. Это можно сделать через [консоль ClickHouse Cloud](/ru/products/cloud/features/sql-console-features/sql-console).
+
+        Создайте базу данных `logs`:
+
+        ```sql
+        CREATE DATABASE IF NOT EXISTS logs
+        ```
+
+        Создайте таблицу для своих данных.
+
+        ```sql
+        CREATE TABLE logs.nginx_logs
+        (
+            `time_local` DateTime,
+            `remote_addr` IPv4,
+            `remote_user` LowCardinality(String),
+            `request` String,
+            `status` UInt16,
+            `body_bytes_sent` UInt64,
+            `http_referer` String,
+            `http_user_agent` String,
+            `http_x_forwarded_for` LowCardinality(String),
+            `request_time` Float32,
+            `upstream_response_time` Float32,
+            `http_host` String
+        )
+        ENGINE = MergeTree
+        ORDER BY (toStartOfMinute(time_local), status, remote_addr)
+        ```
+
+        <Info>
+          **Первичный ключ Nginx**
+
+          Приведённый выше первичный ключ рассчитан на типичные сценарии доступа к журналам Nginx в интерфейсе ClickStack, но в производственной среде его может потребоваться скорректировать с учётом вашей рабочей нагрузки.
+        </Info>
+      </Step>
+
+      <Step>
+        ### Скопируйте конфигурацию Vector
+
+        Скопируйте конфигурацию Vector и создайте файл `nginx.yaml`, указав `CLICKHOUSE_ENDPOINT` и `CLICKHOUSE_PASSWORD`.
+
+        ```yaml
+        data_dir: ./.vector-data
+        sources:
+          nginx_logs:
+            type: file
+            include:
+              - access.log
+            read_from: beginning
+
+        transforms:
+          decode_json:
+            type: remap
+            inputs:
+              - nginx_logs
+            source: |
+              . = parse_json!(to_string!(.message))
+              ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
+              # Формат DateTime, совместимый с ClickHouse
+              .time_local = format_timestamp!(ts, format: "%F %T")
+
+        sinks:
+          clickhouse:
+            type: clickhouse
+            inputs:
+              - decode_json
+            endpoint: "<CLICKHOUSE_ENDPOINT>"
+            database: logs
+            format: json_each_row
+            table: nginx_logs
+            skip_unknown_fields: true
+            auth:
+              strategy: "basic"
+              user: "default"
+              password: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        <Note>
+          В примере выше используется пользователь по умолчанию для Управляемого ClickStack. Для промышленного развертывания мы рекомендуем [создать отдельного пользователя для ингестии](/ru/clickstack/ingesting-data/collector#creating-an-ingestion-user) с соответствующими разрешениями и ограничениями.
+        </Note>
+      </Step>
+
+      <Step>
+        ### Запуск Vector
+
+        Запустите Vector следующей командой, предварительно создав каталог данных для сохранения смещений в файле.
+
+        ```bash
+        mkdir ./.vector-data
+        vector --config nginx.yaml
+        ```
+      </Step>
+
+      <Step>
+        ### Перейдите в интерфейс ClickStack
+
+        Перейдите в свой сервис Управляемый ClickStack и выберите &quot;ClickStack&quot; в левом меню. Если вы уже завершили онбординг, интерфейс ClickStack откроется в новой вкладке, и вы автоматически войдёте в систему. Если нет, пройдите онбординг и нажмите “Launch ClickStack” после того, как выберете Vector в качестве входного источника.
+
+        <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Запуск ClickStack для Vector" size="lg" />
+      </Step>
+
+      <Step>
+        ### Создание источника данных
+
+        Создайте источник данных для журналов. Если источников данных ещё нет, при первом входе в систему вам будет предложено создать его. В противном случае перейдите в Team Settings и добавьте новый источник данных.
+
+        <Image img="/images/clickstack/create-vector-datasource.webp" alt="Создание источника данных — vector" size="lg" />
+
+        Конфигурация предполагает схему Nginx со столбцом `time_local`, который используется как временная метка. Именно этот столбец временной метки объявлен в первичном ключе. Этот столбец обязателен.
+
+        Мы также указали выражение `SELECT` по умолчанию: `time_local, remote_addr, status, request`, — оно определяет, какие столбцы возвращаются в представлении журналов.
+
+        В приведённом выше примере столбец `Body` отсутствует в данных. Вместо этого он задаётся как SQL-выражение:
+
+        ```sql
+        concat(
+          remote_addr, ' ',
+          remote_user, ' ',
+          '[', formatDateTime(time_local, '%d/%b/%Y:%H:%M:%S %z'), '] ',
+          '"', request, '" ',
+          toString(status), ' ',
+          toString(body_bytes_sent), ' ',
+          '"', http_referer, '" ',
+          '"', http_user_agent, '" ',
+          '"', http_x_forwarded_for, '" ',
+          toString(request_time), ' ',
+          toString(upstream_response_time), ' ',
+          '"', http_host, '"'
+        )
+        ```
+
+        Это позволяет восстановить строку лога из структурированных полей.
+
+        Другие возможные варианты см. в [справочнике по конфигурации](/ru/clickstack/managing/config).
+      </Step>
+
+      <Step>
+        ### Просмотрите данные
+
+        Перейдите в режим поиска за `October 20th, 2025`, чтобы просмотреть данные и начать работу с ClickStack.
+
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Интерфейс HyperDX" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack с открытым исходным кодом">
+    В этом руководстве предполагается, что вы уже настроили ClickStack с открытым исходным кодом согласно [руководству по началу работы](/ru/clickstack/getting-started/oss).
+
+    <Steps>
+      <Step>
+        ### Установка Vector
+
+        <InstallingVector />
+      </Step>
+
+      <Step>
+        ### Скачайте тестовые данные
+
+        <VectorSampleData />
+      </Step>
+
+      <Step>
+        ### Создайте базу данных и таблицу
+
+        Для Vector необходимо, чтобы таблица и схема были определены до начала ингестии данных.
+
+        Сначала создайте базу данных. Это можно сделать через [веб-интерфейс ClickHouse](/ru/concepts/features/interfaces/http#web-ui) по адресу [http://localhost:8123/play](http://localhost:8123/play). Используйте имя пользователя и пароль по умолчанию `api:api`.
+
+        <Image img="/images/clickstack/play-ui-clickstack.webp" alt="Интерфейс play в ClickStack" size="lg" />
+
+        Создайте базу данных `logs`:
+
+        ```sql
+        CREATE DATABASE IF NOT EXISTS logs
+        ```
+
+        Создайте таблицу для своих данных.
+
+        ```sql
+        CREATE TABLE logs.nginx_logs
+        (
+            `time_local` DateTime,
+            `remote_addr` IPv4,
+            `remote_user` LowCardinality(String),
+            `request` String,
+            `status` UInt16,
+            `body_bytes_sent` UInt64,
+            `http_referer` String,
+            `http_user_agent` String,
+            `http_x_forwarded_for` LowCardinality(String),
+            `request_time` Float32,
+            `upstream_response_time` Float32,
+            `http_host` String
+        )
+        ENGINE = MergeTree
+        ORDER BY (toStartOfMinute(time_local), status, remote_addr)
+        ```
+
+        <Info>
+          **Первичный ключ Nginx**
+
+          Указанный выше первичный ключ рассчитан на типичные сценарии доступа к журналам Nginx в интерфейсе ClickStack, но в рабочей среде его может потребоваться скорректировать с учётом вашей рабочей нагрузки.
+        </Info>
+      </Step>
+
+      <Step>
+        ### Скопируйте конфигурацию Vector
+
+        Ингестия в ClickStack из Vector должна выполняться напрямую в ClickHouse, минуя конечную точку OTLP, предоставляемую коллектором.
+
+        Скопируйте конфигурацию Vector и создайте файл `nginx.yaml`.
+
+        ```yaml
+        data_dir: ./.vector-data
+        sources:
+          nginx_logs:
+            type: file
+            include:
+              - access.log
+            read_from: beginning
+
+        transforms:
+          decode_json:
+            type: remap
+            inputs:
+              - nginx_logs
+            source: |
+              . = parse_json!(to_string!(.message))
+              ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
+              # Формат DateTime, совместимый с ClickHouse
+              .time_local = format_timestamp!(ts, format: "%F %T")
+
+        sinks:
+          clickhouse:
+            type: clickhouse
+            inputs:
+              - decode_json
+            endpoint: "http://localhost:8123"
+            database: logs
+            format: json_each_row
+            table: nginx_logs
+            skip_unknown_fields: true
+            auth:
+              strategy: "basic"
+              user: "api"
+              password: "api"
+        ```
+
+        <Note>
+          В приведённом выше примере для ClickStack с открытым исходным кодом используется пользователь `api`. Для продакшен-развертываний мы рекомендуем [создать отдельного пользователя для ингестии](/ru/clickstack/ingesting-data/collector#creating-an-ingestion-user) с соответствующими разрешениями и ограничениями. Эта конфигурация также предполагает, что Vector работает на том же хосте, что и ClickStack. В продакшен-развертываниях, скорее всего, будет иначе. Мы рекомендуем отправлять данные через защищённый HTTPS-порт 8443.
+        </Note>
+      </Step>
+
+      <Step>
+        ### Запуск Vector
+
+        Запустите Vector с помощью следующей команды.
+
+        ```bash
+        mkdir ./.vector-data
+        vector --config nginx-local.yaml
+        ```
+      </Step>
+
+      <Step>
+        ### Создайте источник данных
+
+        Создайте источник данных для журналов через `Team -> Sources`
+
+        <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="Создание источника данных — vector" size="lg" />
+
+        Конфигурация предполагает схему Nginx со столбцом `time_local`, который используется в качестве временной метки. Это столбец временной метки, объявленный в primary key. Этот столбец обязателен.
+
+        Мы также указали значение `time_local, remote_addr, status, request` в качестве select по умолчанию — оно определяет, какие столбцы возвращаются в представлении журналов.
+
+        В приведённом выше примере столбца `Body` в данных нет. Вместо этого он задаётся SQL-выражением:
+
+        ```sql
+        concat(
+          remote_addr, ' ',
+          remote_user, ' ',
+          '[', formatDateTime(time_local, '%d/%b/%Y:%H:%M:%S %z'), '] ',
+          '"', request, '" ',
+          toString(status), ' ',
+          toString(body_bytes_sent), ' ',
+          '"', http_referer, '" ',
+          '"', http_user_agent, '" ',
+          '"', http_x_forwarded_for, '" ',
+          toString(request_time), ' ',
+          toString(upstream_response_time), ' ',
+          '"', http_host, '"'
+        )
+        ```
+
+        Это восстанавливает строку лога из структурированных полей.
+
+        Описание других возможных вариантов см. в [справочнике по конфигурации](/ru/clickstack/managing/config).
+      </Step>
+
+      <Step>
+        ### Перейдите в интерфейс ClickStack
+
+        Откройте интерфейс ClickStack по адресу [http://localhost:8080](http://localhost:8080). Создайте пользователя, если вы ещё не прошли онбординг.
+
+        <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="Вход в ClickStack" size="lg" />
+      </Step>
+
+      <Step>
+        ### Просмотрите данные
+
+        Перейдите в представление поиска за `October 20th, 2025`, чтобы просмотреть данные и начать работу с ClickStack.
+
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Интерфейс HyperDX" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

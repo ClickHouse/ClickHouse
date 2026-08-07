@@ -1,0 +1,247 @@
+---
+description: 'PostgreSQL 엔진을 사용하면 원격 PostgreSQL 서버에 저장된 데이터에 대해 `SELECT` 및 `INSERT` 쿼리를 실행할 수 있습니다.'
+sidebarTitle: 'PostgreSQL'
+slug: /engines/table-engines/integrations/postgresql
+title: 'PostgreSQL 테이블 엔진'
+doc_type: 'guide'
+---
+
+PostgreSQL 엔진을 사용하면 원격 PostgreSQL 서버에 저장된 데이터에 대해 `SELECT` 및 `INSERT` 쿼리를 실행할 수 있습니다.
+
+<Note>
+  현재 이 테이블 엔진은 PostgreSQL 12 이상 버전만 지원합니다.
+</Note>
+
+<Tip>
+  [Managed Postgres](/ko/products/managed-postgres/overview) 서비스를 확인해 보십시오. 컴퓨트와 물리적으로 같은 위치에 배치된 NVMe 스토리지를 기반으로 하므로, EBS와 같은 네트워크 연결 스토리지를 사용하는 대안과 비교했을 때 디스크 입출력에 병목이 있는 워크로드에서 최대 10배 더 빠른 성능을 제공합니다. 또한 ClickPipes의 Postgres CDC 커넥터를 사용해 Postgres 데이터를 ClickHouse로 복제할 수 있습니다.
+</Tip>
+
+<div id="creating-a-table">
+  ## 테이블 생성
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+```
+
+[CREATE TABLE](/ko/reference/statements/create/table) 쿼리에 대한 자세한 설명을 참조하십시오.
+
+테이블 구조는 원본 PostgreSQL 테이블 구조와 다를 수 있습니다.
+
+* 컬럼 이름은 원본 PostgreSQL 테이블의 컬럼 이름과 같아야 하지만, 그중 일부만 사용하거나 순서를 임의로 지정할 수 있습니다.
+* 컬럼 타입은 원본 PostgreSQL 테이블의 타입과 달라도 됩니다. ClickHouse는 값을 ClickHouse 데이터 타입으로 [cast](/ko/reference/engines/database-engines/postgresql#data_types-support)하려고 시도합니다.
+* [external&#95;table&#95;functions&#95;use&#95;nulls](/ko/reference/settings/session-settings#external_table_functions_use_nulls) 설정은 널 허용 컬럼을 처리하는 방식을 정의합니다. 기본값은 1입니다. 값이 0이면 테이블 함수는 널 허용 컬럼을 생성하지 않고 null 대신 기본값을 삽입합니다. 이는 배열 내부의 NULL 값에도 적용됩니다.
+
+**엔진 매개변수**
+
+* `host:port` — PostgreSQL 서버 주소입니다.
+* `database` — 원격 데이터베이스 이름입니다.
+* `table` — 원격 테이블 이름입니다.
+* `user` — PostgreSQL 사용자입니다.
+* `password` — 사용자 비밀번호입니다.
+* `schema` — 기본값이 아닌 테이블 스키마입니다. 선택 사항입니다.
+* `on_conflict` — 충돌 해결 전략입니다. 예시: `ON CONFLICT DO NOTHING`. 선택 사항입니다. 참고: 이 옵션을 추가하면 삽입 성능이 저하됩니다.
+
+[이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)은 운영 환경(production)에서 사용하는 것을 권장합니다(버전 21.11부터 사용 가능). 다음은 예시입니다.
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <schema>schema1</schema>
+    </postgres_creds>
+</named_collections>
+```
+
+일부 매개변수는 키-값 인수로 재정의할 수 있습니다:
+
+```sql
+SELECT * FROM postgresql(postgres_creds, table='table1');
+```
+
+<div id="implementation-details">
+  ## 구현 세부 사항
+</div>
+
+PostgreSQL 측의 `SELECT` 쿼리는 각 `SELECT` 쿼리 후 커밋되는 읽기 전용 PostgreSQL 트랜잭션 내에서 `COPY (SELECT ...) TO STDOUT` 형태로 실행됩니다.
+
+`=`, `!=`, `>`, `>=`, `<`, `<=`, `IN`과 같은 단순한 `WHERE` 절은 PostgreSQL 서버에서 실행됩니다.
+
+모든 조인, 집계, 정렬, `IN [ array ]` 조건, 그리고 `LIMIT` 샘플링 제약은 PostgreSQL에 대한 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
+
+PostgreSQL 측의 `INSERT` 쿼리는 각 `INSERT` 문 후 자동 커밋되는 PostgreSQL 트랜잭션 내에서 `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` 형태로 실행됩니다.
+
+PostgreSQL `Array` 타입은 ClickHouse 배열로 변환됩니다.
+
+<Note>
+  주의하십시오. PostgreSQL에서는 `type_name[]`처럼 생성된 배열 데이터에 대해, 동일한 컬럼의 서로 다른 테이블 행에 차원 수가 서로 다른 다차원 배열이 포함될 수 있습니다. 그러나 ClickHouse에서는 동일한 컬럼의 모든 테이블 행에서 차원 수가 같은 다차원 배열만 허용됩니다.
+</Note>
+
+`|`로 나열해야 하는 여러 레플리카를 지원합니다. 예를 들면 다음과 같습니다:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgres{2|3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword');
+```
+
+PostgreSQL 딕셔너리 소스에서는 레플리카 우선순위를 지원합니다. 맵의 숫자가 클수록 우선순위는 낮아집니다. 가장 높은 우선순위는 `0`입니다.
+
+아래 예시에서는 레플리카 `example01-1`의 우선순위가 가장 높습니다:
+
+```xml
+<postgresql>
+    <port>5432</port>
+    <user>clickhouse</user>
+    <password>qwerty</password>
+    <replica>
+        <host>example01-1</host>
+        <priority>1</priority>
+    </replica>
+    <replica>
+        <host>example01-2</host>
+        <priority>2</priority>
+    </replica>
+    <db>db_name</db>
+    <table>table_name</table>
+    <where>id=10</where>
+    <invalidate_query>SQL_QUERY</invalidate_query>
+</postgresql>
+</source>
+```
+
+<div id="usage-example">
+  ## 사용 예시
+</div>
+
+<div id="table-in-postgresql">
+  ### PostgreSQL의 테이블
+</div>
+
+```text
+postgres=# CREATE TABLE "public"."test" (
+"int_id" SERIAL,
+"int_nullable" INT NULL DEFAULT NULL,
+"float" FLOAT NOT NULL,
+"str" VARCHAR(100) NOT NULL DEFAULT '',
+"float_nullable" FLOAT NULL DEFAULT NULL,
+PRIMARY KEY (int_id));
+
+CREATE TABLE
+
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
+INSERT 0 1
+
+postgresql> SELECT * FROM test;
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+ (1 row)
+```
+
+<div id="creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above">
+  ### ClickHouse에서 테이블 생성 및 위에서 생성한 PostgreSQL 테이블에 연결하기
+</div>
+
+이 예시에서는 [PostgreSQL 테이블 엔진](/ko/reference/engines/table-engines/integrations/postgresql)을 사용해 ClickHouse 테이블을 PostgreSQL 테이블에 연결하고, PostgreSQL 데이터베이스에 대해 SELECT와 INSERT SQL 문을 모두 사용할 수 있습니다:
+
+```sql
+CREATE TABLE default.postgresql_table
+(
+    `float_nullable` Nullable(Float32),
+    `str` String,
+    `int_id` Int32
+)
+ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+```
+
+<div id="inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query">
+  ### SELECT 쿼리를 사용해 PostgreSQL 테이블의 초기 데이터를 ClickHouse 테이블에 삽입하기
+</div>
+
+[postgresql 테이블 함수](/ko/reference/functions/table-functions/postgresql)는 PostgreSQL의 데이터를 ClickHouse로 복사합니다. 이는 PostgreSQL 대신 ClickHouse에서 데이터를 쿼리하거나 분석하여 쿼리 성능을 높일 때 자주 사용되며, PostgreSQL에서 ClickHouse로 데이터를 마이그레이션하는 데에도 사용할 수 있습니다. PostgreSQL의 데이터를 ClickHouse로 복사할 것이므로, ClickHouse에서는 MergeTree 테이블 엔진을 사용하는 테이블을 만들고 이름을 postgresql&#95;copy로 지정합니다:
+
+```sql
+CREATE TABLE default.postgresql_copy
+(
+    `float_nullable` Nullable(Float32),
+    `str` String,
+    `int_id` Int32
+)
+ENGINE = MergeTree
+ORDER BY (int_id);
+```
+
+```sql
+INSERT INTO default.postgresql_copy
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+```
+
+<div id="inserting-incremental-data-from-postgresql-table-into-clickhouse-table">
+  ### PostgreSQL 테이블에서 ClickHouse 테이블로 증분 데이터 삽입하기
+</div>
+
+초기 삽입 후 PostgreSQL 테이블과 ClickHouse 테이블 간 동기화를 계속 수행하려면, ClickHouse에서 WHERE 절을 사용해 타임스탬프 또는 고유한 시퀀스 ID를 기준으로 PostgreSQL에 새로 추가된 데이터만 삽입할 수 있습니다.
+
+이렇게 하려면 다음과 같이 이전에 삽입한 최대 ID 또는 타임스탬프를 추적해야 합니다:
+
+```sql
+SELECT max(`int_id`) AS maxIntID FROM default.postgresql_copy;
+```
+
+그런 다음 PostgreSQL 테이블에서 최대값을 초과하는 값을 삽입합니다
+
+```sql
+INSERT INTO default.postgresql_copy
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password')
+WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
+```
+
+<div id="selecting-data-from-the-resulting-clickhouse-table">
+  ### 생성된 ClickHouse 테이블에서 데이터 조회하기
+</div>
+
+```sql
+SELECT * FROM postgresql_copy WHERE str IN ('test');
+```
+
+```text
+┌─float_nullable─┬─str──┬─int_id─┐
+│           ᴺᵁᴸᴸ │ test │      1 │
+└────────────────┴──────┴────────┘
+```
+
+<div id="using-non-default-schema">
+  ### 기본값이 아닌 스키마 사용
+</div>
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
+```
+
+**관련 항목**
+
+* [`postgresql` 테이블 함수](/ko/reference/functions/table-functions/postgresql)
+* [딕셔너리 소스로 PostgreSQL 사용하기](/ko/reference/statements/create/dictionary/sources/postgresql)
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* 블로그: [ClickHouse와 PostgreSQL - 데이터를 위한 환상적인 조합 - 1부](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+* 블로그: [ClickHouse와 PostgreSQL - 데이터를 위한 환상적인 조합 - 2부](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

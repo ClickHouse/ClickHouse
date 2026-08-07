@@ -1,0 +1,141 @@
+---
+description: 'Proporciona una interfaz similar a una tabla de solo lectura para tablas de Apache Paimon en
+  Amazon S3, Azure, HDFS o almacenadas localmente.'
+sidebarTitle: 'paimon'
+slug: /sql-reference/table-functions/paimon
+title: 'paimon'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="paimon-table-function">
+  # paimon Función de tabla
+</div>
+
+<ExperimentalBadge />
+
+Proporciona una interfaz de solo lectura similar a una tabla para las tablas de Apache [Paimon](https://paimon.apache.org/) almacenadas en Amazon S3, Azure, HDFS o localmente.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+paimonHDFS(path_to_table, [,format] [,compression_method])
+
+paimonLocal(path_to_table, [,format] [,compression_method])
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+La descripción de estos argumentos coincide con la de las funciones de tabla `s3`, `azureBlobStorage`, `HDFS` y `file`, respectivamente.
+`format` indica el formato de los archivos de datos de la tabla Paimon.
+
+Para `paimonS3`, puede usarse un parámetro opcional, `extra_credentials`, para pasar un `role_arn` y habilitar el acceso basado en roles en ClickHouse Cloud. Consulta [Secure S3](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver los pasos de configuración.
+
+<div id="returned-value">
+  ### Valor de retorno
+</div>
+
+Una tabla con la estructura especificada para leer datos de la tabla de Paimon indicada.
+
+<div id="defining-a-named-collection">
+  ## Definir una colección con nombre
+</div>
+
+A continuación se muestra un ejemplo de cómo configurar una colección con nombre para almacenar la URL y las credenciales:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <paimon_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+            <format>auto</format>
+            <structure>auto</structure>
+        </paimon_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+SELECT * FROM paimonS3(paimon_conf, filename = 'test_table')
+DESCRIBE paimonS3(paimon_conf, filename = 'test_table')
+```
+
+<div id="aliases">
+  ## Alias
+</div>
+
+La función de tabla `paimon` ahora es un alias de `paimonS3`.
+
+<div id="virtual-columns">
+  ## Columnas virtuales
+</div>
+
+* `_path` — Ruta del archivo. Tipo: `LowCardinality(String)`.
+* `_file` — Nombre del archivo. Tipo: `LowCardinality(String)`.
+* `_size` — Tamaño del archivo en bytes. Tipo: `Nullable(UInt64)`. Si se desconoce el tamaño del archivo, el valor es `NULL`.
+* `_time` — Hora de la última modificación del archivo. Tipo: `Nullable(DateTime)`. Si se desconoce la hora, el valor es `NULL`.
+* `_etag` — El etag del archivo. Tipo: `LowCardinality(String)`. Si se desconoce el etag, el valor es `NULL`.
+
+<div id="data-types-supported">
+  ## Tipos de datos admitidos
+</div>
+
+| Tipo de dato de Paimon            | Tipo de dato de ClickHouse |
+| --------------------------------- | -------------------------- |
+| BOOLEAN                           | Int8                       |
+| TINYINT                           | Int8                       |
+| SMALLINT                          | Int16                      |
+| INTEGER                           | Int32                      |
+| BIGINT                            | Int64                      |
+| FLOAT                             | Float32                    |
+| DOUBLE                            | Float64                    |
+| STRING,VARCHAR,BYTES,VARBINARY    | String                     |
+| DATE                              | Date                       |
+| TIME(p),TIME                      | Time(&#39;UTC&#39;)        |
+| TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                 |
+| TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;)  |
+| CHAR                              | FixedString(1)             |
+| BINARY(n)                         | FixedString(n)             |
+| DECIMAL(P,S)                      | Decimal(P,S)               |
+| ARRAY                             | Array                      |
+| MAP                               | Map                        |
+
+<div id="partition-supported">
+  ## Particiones admitidas
+</div>
+
+Tipos de datos admitidos en las claves de partición de Paimon:
+
+* `CHAR`
+* `VARCHAR`
+* `BOOLEAN`
+* `DECIMAL`
+* `TINYINT`
+* `SMALLINT`
+* `INTEGER`
+* `DATE`
+* `TIME`
+* `TIMESTAMP`
+* `TIMESTAMP WITH LOCAL TIME ZONE`
+* `BIGINT`
+* `FLOAT`
+* `DOUBLE`
+
+<div id="see-also">
+  ## Véase también
+</div>
+
+* [Función de tabla de clúster de Paimon](/es/reference/functions/table-functions/paimonCluster)

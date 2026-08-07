@@ -1,0 +1,7 @@
+<clickhouse>
+  <profiles>
+    <background>
+      <function_sleep_max_microseconds_per_block>5000000</function_sleep_max_microseconds_per_block>
+    </background>
+  </profiles>
+</clickhouse>

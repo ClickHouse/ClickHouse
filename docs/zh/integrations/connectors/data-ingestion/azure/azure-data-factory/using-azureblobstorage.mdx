@@ -1,0 +1,159 @@
+---
+sidebarTitle: '使用 azureBlobStorage 表函数'
+slug: /integrations/azure-data-factory/table-function
+description: '使用 ClickHouse 的 azureBlobStorage 表函数'
+keywords: ['azure data factory', 'azure', 'microsoft', 'data', 'azureBlobStorage']
+title: '使用 ClickHouse 的 azureBlobStorage 表函数'
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+这是将数据从 Azure Blob 存储或 Azure Data Lake Storage 复制到 ClickHouse 的最高效、最直接的方法之一。使用此表函数，您可以让 ClickHouse 直接连接到 Azure 存储，并按需读取数据。
+
+它提供了类似表的接口，使您能够直接从源中选择、插入和过滤数据。该函数经过高度优化，支持许多常用文件格式，包括 `CSV`、`JSON`、`Parquet`、`Arrow`、`TSV`、`ORC`、`Avro` 等。完整列表请参见 [&quot;数据格式&quot;](/zh/reference/formats/index)。
+
+在本节中，我们将通过一个简单的入门指南，介绍如何将数据从 Azure Blob 存储传输到 ClickHouse，以及有效使用此函数时需要注意的重要事项。有关更多详细信息和高级选项，请参阅官方文档：
+[`azureBlobStorage` 表函数文档页面](/zh/reference/functions/table-functions/azureBlobStorage)
+
+<div id="acquiring-azure-blob-storage-access-keys">
+  ## 获取 Azure Blob 存储访问密钥
+</div>
+
+要让 ClickHouse 访问你的 Azure Blob 存储，你需要一个包含访问密钥的连接字符串。
+
+1. 在 Azure 门户中，进入你的 **存储帐户**。
+
+2. 在左侧菜单中，选择 **安全 +
+   网络** 部分下的 **访问密钥**。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="Azure 数据存储设置" border />
+
+3. 选择 **key1** 或 **key2**，然后点击 **连接字符串** 字段旁边的
+   **显示** 按钮。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="Azure 数据存储访问密钥" border />
+
+4. 复制该连接字符串——你将在 azureBlobStorage 表函数中将其用作参数。
+
+<div id="querying-the-data-from-azure-blob-storage">
+  ## 从 Azure Blob 存储查询数据
+</div>
+
+打开您常用的 ClickHouse 查询控制台——可以是 ClickHouse Cloud
+Web 界面、ClickHouse 命令行客户端，或任何其他用于运行
+查询的工具。准备好连接字符串和 ClickHouse 查询
+控制台后，您就可以开始直接从 Azure Blob 存储查询数据。
+
+在下面的示例中，我们将查询位于名为 data-container 的
+容器中的 JSON 文件里存储的全部数据：
+
+```sql
+SELECT * FROM azureBlobStorage(
+    '<YOUR CONNECTION STRING>',
+    'data-container',
+    '*.json',
+    'JSONEachRow');
+```
+
+如果你想把这些数据复制到本地 ClickHouse 表中 (例如 `my&#95;table`) ，
+可以使用 `INSERT INTO ... SELECT` 语句：
+
+```sql
+INSERT INTO my_table
+SELECT * FROM azureBlobStorage(
+    '<YOUR CONNECTION STRING>',
+    'data-container',
+    '*.json',
+    'JSONEachRow');
+```
+
+这样你就能高效地将外部数据导入 ClickHouse，而无需
+经过中间的 ETL 步骤。
+
+<div id="simple-example-using-the-environmental-sensors-dataset">
+  ## 使用 Environmental Sensors 数据集的简单示例
+</div>
+
+作为示例，我们将从 Environmental Sensors
+数据集中下载一个文件。
+
+1. 从 [Environmental Sensors 数据集](/zh/get-started/sample-datasets/environmental-sensors)
+   下载一个[样本文件](https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/sensors/monthly/2019-06_bmp180.csv.zst)
+
+2. 在 Azure 门户中，如果你还没有存储帐户，请新建一个存储帐户。
+
+<Warning>
+  请确保你的存储帐户已启用 **Allow storage account key access**，否则你将无法使用帐户密钥访问
+  数据。
+</Warning>
+
+3. 在你的存储帐户中创建一个新容器。在本示例中，我们将其命名为 sensors。
+   如果你使用的是现有容器，则可以跳过此步骤。
+
+4. 将之前下载的 `2019-06_bmp180.csv.zst` 文件上传到该
+   容器。
+
+5. 按照前文所述的步骤，获取 Azure Blob 存储
+   连接字符串。
+
+完成以上设置后，你就可以直接从 Azure Blob 存储查询数据：
+
+```sql
+    SELECT *
+    FROM azureBlobStorage(
+        '<YOUR CONNECTION STRING>', 
+        'sensors',
+        '2019-06_bmp180.csv.zst', 
+        'CSVWithNames')
+    LIMIT 10
+    SETTINGS format_csv_delimiter = ';'
+```
+
+7. 要将数据加载到表中，请创建原始数据集中所用
+   schema 的简化版本：
+   ```sql
+   CREATE TABLE sensors
+   (
+       sensor_id UInt16,
+       lat Float32,
+       lon Float32,
+       timestamp DateTime,
+       temperature Float32
+   )
+   ENGINE = MergeTree
+   ORDER BY (timestamp, sensor_id);
+   ```
+
+<Info>
+  有关查询 Azure Blob 存储等外部数据源时的配置选项和 schema 推断的更多信息，
+  请参阅[从输入数据自动推断 schema](/zh/concepts/features/interfaces/schema-inference)
+</Info>
+
+8. 现在将 Azure Blob 存储中的数据插入 sensors 表：
+   ```sql
+   INSERT INTO sensors
+   SELECT sensor_id, lat, lon, timestamp, temperature
+   FROM azureBlobStorage(
+       '<YOUR CONNECTION STRING>', 
+       'sensors',
+       '2019-06_bmp180.csv.zst', 
+       'CSVWithNames')
+   SETTINGS format_csv_delimiter = ';'
+   ```
+
+现在，sensors 表中已包含存储在 Azure Blob 存储中的 `2019-06_bmp180.csv.zst`
+文件数据。
+
+<div id="additional-resources">
+  ## 更多资源
+</div>
+
+以上只是对如何使用 `azureBlobStorage` 函数的基础介绍。有关
+更多高级选项和配置细节，请参阅官方
+文档：
+
+* [azureBlobStorage 表函数](/zh/reference/functions/table-functions/azureBlobStorage)
+* [输入和输出数据格式](/zh/reference/formats/index)
+* [从输入数据自动推断 schema](/zh/concepts/features/interfaces/schema-inference)

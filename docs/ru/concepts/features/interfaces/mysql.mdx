@@ -1,0 +1,179 @@
+---
+description: 'Документация по интерфейсу MySQL в ClickHouse, позволяющему клиентам
+  MySQL подключаться к ClickHouse'
+sidebarTitle: 'Интерфейс MySQL'
+slug: /interfaces/mysql
+title: 'Интерфейс MySQL'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+ClickHouse поддерживает протокол MySQL. Это позволяет некоторым клиентам, для которых нет нативных коннекторов ClickHouse, использовать вместо них протокол MySQL; совместимость была проверена со следующими BI-инструментами:
+
+* [Looker Studio](/ru/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
+* [Tableau Online](/ru/integrations/connectors/data-visualization/tableau/tableau-online-and-clickhouse)
+* [QuickSight](/ru/integrations/connectors/data-visualization/quicksight-and-clickhouse)
+
+Если вы используете другие, не прошедшие проверку клиенты или интеграции, имейте в виду следующие ограничения:
+
+* Реализация SSL может быть не полностью совместимой; возможны проблемы с [TLS SNI](https://www.cloudflare.com/learning/ssl/what-is-sni/).
+* Для некоторых инструментов могут требоваться возможности диалекта (например, специфичные для MySQL функции или настройки), которые пока не реализованы.
+
+Если доступен нативный драйвер (например, [DBeaver](/ru/integrations/connectors/sql-clients/dbeaver)), всегда предпочтительнее использовать его вместо интерфейса MySQL. Кроме того, хотя большинство клиентских библиотек MySQL должны работать нормально, интерфейс MySQL не гарантирует полной совместимости и не является полной заменой для существующей кодовой базы с MySQL-запросами.
+
+Если в вашем сценарии используется конкретный инструмент, у которого нет нативного драйвера ClickHouse, и вы хотите работать с ним через интерфейс MySQL, но столкнулись с определёнными несовместимостями, пожалуйста, [создайте issue](https://github.com/ClickHouse/ClickHouse/issues) в репозитории ClickHouse.
+
+<Note>
+Чтобы лучше поддерживать SQL-диалект указанных выше BI-инструментов, интерфейс MySQL в ClickHouse неявно выполняет SELECT-запросы с настройкой [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/ru/reference/settings/session-settings#prefer_column_name_to_alias).
+Отключить это нельзя, и в редких пограничных случаях это может приводить к различиям в поведении между запросами, отправленными через обычный интерфейс запросов ClickHouse и через интерфейс запросов MySQL.
+</Note>
+
+<div id="enabling-the-mysql-interface-on-clickhouse-cloud">
+  ## Включение интерфейса MySQL в ClickHouse Cloud
+</div>
+
+1. После создания сервиса ClickHouse Cloud нажмите кнопку `Connect`.
+
+<br />
+
+<Image img="/images/interfaces/mysql0.webp" alt="Экран учетных данных — промпт" size="md" />
+
+2. В раскрывающемся списке `Connect with` выберите `MySQL`.
+
+<br />
+
+<Image img="/images/interfaces/mysql1.webp" alt="Экран учетных данных — выбран MySQL" size="md" />
+
+3. Включите переключатель, чтобы активировать интерфейс MySQL для этого сервиса. После этого для сервиса будет открыт порт `3306`, и отобразится экран подключения MySQL с вашим уникальным именем пользователя MySQL. Пароль будет таким же, как у пользователя сервиса по умолчанию.
+
+<br />
+
+<Image img="/images/interfaces/mysql2.webp" alt="Экран учетных данных — MySQL включен" size="md" />
+
+Скопируйте показанную строку подключения MySQL.
+
+<Image img="/images/interfaces/mysql3.webp" alt="Экран учетных данных — строка подключения" size="md" />
+
+<div id="creating-multiple-mysql-users-in-clickhouse-cloud">
+  ## Создание нескольких пользователей MySQL в ClickHouse Cloud
+</div>
+
+По умолчанию существует встроенный пользователь `mysql4<subdomain>`, который использует тот же пароль, что и `default`. Часть `<subdomain>` — это первый сегмент имени хоста вашего ClickHouse Cloud. Такой формат необходим для работы с инструментами, которые поддерживают защищённое соединение, но не передают [информацию SNI при TLS-рукопожатии](https://www.cloudflare.com/learning/ssl/what-is-sni), из-за чего внутренняя маршрутизация невозможна без дополнительной подсказки в имени пользователя (клиент консоли MySQL — один из таких инструментов).
+
+Поэтому мы *настоятельно рекомендуем* при создании нового пользователя для работы с интерфейсом MySQL использовать формат `mysql4<subdomain>_<username>`, где `<subdomain>` служит подсказкой для идентификации вашего сервиса ClickHouse Cloud, а `<username>` — произвольный суффикс на ваш выбор.
+
+<Tip>
+  Для имени хоста ClickHouse Cloud вида `foobar.us-east1.aws.clickhouse.cloud` часть `<subdomain>` будет равна `foobar`, а пользовательское имя MySQL может выглядеть так: `mysql4foobar_team1`.
+</Tip>
+
+Вы можете создать дополнительных пользователей для работы с интерфейсом MySQL, если, например, вам нужно применить дополнительные настройки.
+
+1. Необязательно — создайте [профиль настроек](/ru/reference/statements/create/settings-profile), который будет применяться к вашему пользовательскому пользователю. Например, `my_custom_profile` с дополнительной настройкой, которая будет применяться по умолчанию при подключении под пользователем, которого мы создадим позже:
+
+   ```sql
+   CREATE SETTINGS PROFILE my_custom_profile SETTINGS prefer_column_name_to_alias=1;
+   ```
+
+   `prefer_column_name_to_alias` приведён здесь только в качестве примера — вы можете использовать и другие настройки.
+
+2. [Создайте пользователя](/ru/reference/statements/create/user) в следующем формате: `mysql4<subdomain>_<username>` ([см. выше](#creating-multiple-mysql-users-in-clickhouse-cloud)). Пароль должен быть в формате двойного хэша SHA1. Например:
+
+   ```sql
+   CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$';
+   ```
+
+   или, если вы хотите использовать для этого пользователя пользовательский профиль:
+
+   ```sql
+   CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$' SETTINGS PROFILE 'my_custom_profile';
+   ```
+
+   где `my_custom_profile` — имя профиля, который вы создали ранее.
+
+3. [Выдайте](/ru/reference/statements/grant) новому пользователю необходимые разрешения для работы с нужными таблицами или базами данных. Например, если вы хотите предоставить доступ только к `system.query_log`:
+
+   ```sql
+   GRANT SELECT ON system.query_log TO mysql4foobar_team1;
+   ```
+
+4. Используйте созданного пользователя для подключения к вашему сервису ClickHouse Cloud через интерфейс MySQL.
+
+<div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
+  ### Устранение неполадок при работе с несколькими пользователями MySQL в ClickHouse Cloud
+</div>
+
+Если вы создали нового пользователя MySQL и при подключении через клиент MySQL CLI видите следующую ошибку:
+
+```sql
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 54
+```
+
+В этом случае убедитесь, что имя пользователя имеет формат `mysql4<subdomain>_<username>`, как описано ([выше](#creating-multiple-mysql-users-in-clickhouse-cloud)).
+
+<div id="enabling-the-mysql-interface-on-self-managed-clickhouse">
+  ## Включение интерфейса MySQL в самоуправляемом ClickHouse
+</div>
+
+Добавьте настройку [mysql&#95;port](/ru/reference/settings/server-settings/settings#mysql_port) в файл конфигурации сервера. Например, можно указать порт в новом XML-файле в каталоге [`config.d/`](/ru/concepts/features/configuration/server-config/configuration-files):
+
+```xml
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
+```
+
+Запустите сервер ClickHouse и найдите в журнале сообщение, похожее на приведённое ниже, в котором упоминается прослушивание протокола совместимости MySQL:
+
+```bash
+{} <Information> Application: Listening for MySQL compatibility protocol: 127.0.0.1:9004
+```
+
+<div id="connect-mysql-to-clickhouse">
+  ## Подключение MySQL к ClickHouse
+</div>
+
+Следующая команда показывает, как подключиться к ClickHouse с помощью клиента MySQL `mysql`:
+
+```bash
+mysql --protocol tcp -h [hostname] -u [username] -P [port_number] [database_name]
+```
+
+Например:
+
+```bash
+$ mysql --protocol tcp -h 127.0.0.1 -u default -P 9004 default
+```
+
+Вывод при успешном подключении:
+
+```text
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 4
+Server version: 20.2.1.1-ClickHouse
+
+Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql>
+```
+
+Для совместимости со всеми клиентами MySQL рекомендуется указывать пароль пользователя с использованием [двойного хэша SHA1](/ru/concepts/features/configuration/settings/settings-users#user-namepassword) в файле конфигурации.
+Если пароль пользователя задан с помощью [SHA256](/ru/reference/functions/regular-functions/hash-functions#SHA256), некоторые клиенты не смогут аутентифицироваться (mysqljs и старые версии инструментов командной строки MySQL и MariaDB).
+
+Ограничения:
+
+* подготовленные запросы не поддерживаются
+
+* некоторые типы данных передаются как строки
+
+Чтобы отменить долго выполняющийся запрос, используйте оператор `KILL QUERY connection_id` (при обработке он заменяется на `KILL QUERY WHERE query_id = connection_id`). Например:
+
+```bash
+$ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
+```

@@ -1,0 +1,102 @@
+---
+slug: /cloud/managed-postgres/branching
+sidebarTitle: 'Branching'
+title: 'Branching'
+description: 'Create isolated database branches from point-in-time snapshots for development, staging, testing, and recovery workflows'
+keywords: ['managed postgres', 'branching', 'pitr', 'point-in-time recovery', 'staging', 'development', 'database branch']
+doc_type: 'guide'
+---
+
+Managed Postgres supports creating isolated database branches using Point-in-Time Recovery (PITR).
+
+A branch is a fully independent PostgreSQL deployment created from a specific point in time of an existing database. Branches can be used for development, staging, testing, debugging, data validation, or recovery workflows — without impacting the source database.
+
+Unlike copy-on-write implementations that share storage with the primary database, Managed Postgres branches are restored from backups and operate as independent PostgreSQL deployments.
+
+## How branching works {#branching}
+
+Branch creation is built on the same backup and recovery infrastructure used for [Point-in-Time Recovery (PITR)](/products/managed-postgres/backup-and-restore).
+
+When you create a branch, Managed Postgres restores a base backup from object storage, replays the required WAL segments to reach the requested recovery point, and provisions a new PostgreSQL deployment from the recovered state. Once recovery completes, the branch operates independently of the source database.
+
+The resulting branch is a complete copy of the source database at the selected point in time.
+
+## Common use cases {#common-use-cases}
+
+### Development and testing {#dev-and-testing}
+
+Create a branch from a production or staging database to validate application changes, migrations, or new features against realistic data.
+
+### Staging environments {#staging-environments}
+
+Maintain a staging environment that closely mirrors production without affecting production workloads.
+
+### Data validation {#date-validation}
+
+Test schema changes, indexing strategies, and query optimizations before deploying them to production.
+
+### Recovery and investigation {#recovery-and-investigation}
+
+Recover a database to a specific point in time for troubleshooting, auditing, or validating application behavior.
+
+## Branch sizing {#branch-sizing}
+
+Branches are independent PostgreSQL deployments and can be sized separately from the source database.
+
+For example, a production deployment may run on a larger configuration while a development or staging branch can use a smaller compute profile to reduce costs. This lets teams create temporary environments without matching the compute resources of production.
+
+## Branch creation time {#branch-creation-time}
+
+Because Managed Postgres uses NVMe-backed PostgreSQL storage, branches are restored from backups rather than created through storage-level copy-on-write mechanisms. As a result, branch creation isn't instantaneous.
+
+Typical branch creation times range from several minutes to tens of minutes, depending on:
+
+- Database size
+- Backup size
+- Recovery point
+- Amount of WAL that must be replayed
+- Overall cluster configuration
+
+For most deployments, branches are available within a few minutes. Larger databases may require additional time.
+
+If branch creation time becomes a bottleneck for your workflow, contact the ClickHouse team. In many cases, branch recovery performance can be optimized based on workload characteristics and recovery requirements.
+
+## Branches vs local development {#branches-v-local-dev}
+
+A common question is whether every developer should use a production branch as their development environment.
+
+While branches are useful for testing, validation, and staging workflows, they're generally not the recommended approach for day-to-day application development. Each branch is a separate PostgreSQL deployment that must be restored from backups and maintained independently. Creating large numbers of branches can increase infrastructure costs and operational complexity.
+
+For most organizations, we recommend:
+
+- Using PostgreSQL branches for staging, testing, debugging, and validation workflows.
+- Using local PostgreSQL environments for day-to-day development.
+- Generating synthetic development datasets or using sanitized datasets where appropriate.
+- Avoiding routine development directly against production-derived branches.
+
+This approach reduces load on production systems, improves development velocity, and helps ensure that production data remains appropriately protected.
+
+For guidance on creating local PostgreSQL development environments using Docker, see [Local development environments](/products/managed-postgres/local-development).
+
+## Recommended workflow {#recommended-workflow}
+
+A common workflow looks like:
+
+```text
+Production Database
+        │
+        ├─────────────► Branch
+        │                  │
+        │                  ├── Staging
+        │                  ├── Validation
+        │                  ├── Migration Testing
+        │                  └── Incident Investigation
+        │
+        └─────────────► Local Development
+                               │
+                               ├── Docker PostgreSQL
+                               ├── Application Migrations
+                               └── Synthetic Test Data
+```
+
+Branches are best suited for environments that need a production-like copy of a database. For routine development, local PostgreSQL environments typically provide a faster, lower-cost, and more scalable workflow.

@@ -1,0 +1,79 @@
+1	l	\N	LowCardinality(String)	Nullable(String)
+2		\N	LowCardinality(String)	Nullable(String)
+1	l	\N	LowCardinality(String)	Nullable(String)
+2		\N	LowCardinality(String)	Nullable(String)
+-
+0	\N		Nullable(String)	LowCardinality(String)
+1	\N	l	Nullable(String)	LowCardinality(String)
+0	\N		Nullable(String)	LowCardinality(String)
+1	\N	l	Nullable(String)	LowCardinality(String)
+-
+1	l	\N	LowCardinality(String)	Nullable(String)
+0		\N	LowCardinality(String)	Nullable(String)
+0		\N	LowCardinality(String)	Nullable(String)
+1	l	\N	LowCardinality(String)	Nullable(String)
+-
+0	\N		Nullable(String)	LowCardinality(String)
+1	\N	l	Nullable(String)	LowCardinality(String)
+0	\N		Nullable(String)	LowCardinality(String)
+1	\N	l	Nullable(String)	LowCardinality(String)
+- join_use_nulls -
+1	l	\N	LowCardinality(String)	Nullable(String)
+2	\N	\N	LowCardinality(Nullable(String))	Nullable(String)
+1	l	\N	LowCardinality(Nullable(String))	Nullable(String)
+2	\N	\N	LowCardinality(Nullable(String))	Nullable(String)
+-
+\N	\N	\N	Nullable(String)	LowCardinality(Nullable(String))
+1	\N	l	Nullable(String)	LowCardinality(String)
+1	\N	l	Nullable(String)	LowCardinality(Nullable(String))
+\N	\N	\N	Nullable(String)	LowCardinality(Nullable(String))
+-
+1	l	\N	LowCardinality(String)	Nullable(String)
+\N	\N	\N	LowCardinality(Nullable(String))	Nullable(String)
+1	l	\N	LowCardinality(Nullable(String))	Nullable(String)
+\N	\N	\N	LowCardinality(Nullable(String))	Nullable(String)
+-
+\N	\N	\N	Nullable(String)	LowCardinality(Nullable(String))
+1	\N	l	Nullable(String)	LowCardinality(String)
+1	\N	l	Nullable(String)	LowCardinality(Nullable(String))
+\N	\N	\N	Nullable(String)	LowCardinality(Nullable(String))
+- analyzer -
+1	l	\N	LowCardinality(String)	Nullable(String)
+\N		\N	LowCardinality(String)	Nullable(String)
+1	l	\N	LowCardinality(String)	Nullable(String)
+\N		\N	LowCardinality(String)	Nullable(String)
+-
+\N	\N		Nullable(String)	LowCardinality(String)
+1	\N	l	Nullable(String)	LowCardinality(String)
+1	\N	l	Nullable(String)	LowCardinality(String)
+\N	\N		Nullable(String)	LowCardinality(String)
+-
+1	l	\N	Nullable(String)	Nullable(String)
+0	\N	\N	Nullable(String)	Nullable(String)
+0	\N	\N	Nullable(String)	Nullable(String)
+1	l	\N	Nullable(String)	Nullable(String)
+-
+0	\N	\N	Nullable(String)	Nullable(String)
+1	\N	l	Nullable(String)	Nullable(String)
+0	\N	\N	Nullable(String)	Nullable(String)
+1	\N	l	Nullable(String)	Nullable(String)
+- join_use_nulls -
+1	l	\N	LowCardinality(String)	Nullable(String)
+\N	\N	\N	LowCardinality(Nullable(String))	Nullable(String)
+1	l	\N	LowCardinality(Nullable(String))	Nullable(String)
+\N	\N	\N	LowCardinality(Nullable(String))	Nullable(String)
+-
+\N	\N	\N	Nullable(String)	LowCardinality(Nullable(String))
+1	\N	l	Nullable(String)	LowCardinality(String)
+1	\N	l	Nullable(String)	LowCardinality(Nullable(String))
+\N	\N	\N	Nullable(String)	LowCardinality(Nullable(String))
+-
+1	l	\N	Nullable(String)	Nullable(String)
+\N	\N	\N	Nullable(String)	Nullable(String)
+1	l	\N	Nullable(String)	Nullable(String)
+\N	\N	\N	Nullable(String)	Nullable(String)
+-
+\N	\N	\N	Nullable(String)	Nullable(String)
+1	\N	l	Nullable(String)	Nullable(String)
+1	\N	l	Nullable(String)	Nullable(String)
+\N	\N	\N	Nullable(String)	Nullable(String)

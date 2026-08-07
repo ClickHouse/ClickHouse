@@ -1,0 +1,206 @@
+---
+slug: /primary-indexes
+title: 'プライマリインデックス'
+description: 'ClickHouseにおけるスパースプライマリインデックスの仕組み'
+keywords: ['スパースプライマリインデックス', 'プライマリインデックス', '索引']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<Tip>
+  **高度な索引の詳細をお探しですか？**
+
+  このページでは、ClickHouse のスパースプライマリインデックスの概要、構築方法、動作の仕組み、そしてクエリの高速化にどのように役立つかを紹介します。
+
+  より高度な索引戦略や詳細な技術解説については、[primary indexes deep dive](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) を参照してください。
+</Tip>
+
+<div id="how-does-the-sparse-primary-index-work-in-clickHouse">
+  ## ClickHouse におけるスパースプライマリインデックスの仕組み
+</div>
+
+<br />
+
+ClickHouse のスパースプライマリインデックスは、テーブルの主キーカラムに対するクエリ条件に一致するデータを含む可能性がある[グラニュール](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (行のブロック) を効率的に特定するのに役立ちます。次のセクションでは、このインデックスがそれらのカラムの値からどのように構築されるかを説明します。
+
+<div id="sparse-primary-index-creation">
+  ### スパースプライマリインデックスの作成
+</div>
+
+スパースプライマリインデックスがどのように構築されるかを説明するために、いくつかのアニメーションを使って [uk&#95;price&#95;paid&#95;simple](/ja/concepts/core-concepts/parts) テーブルを見ていきます。
+
+[おさらい](/ja/concepts/core-concepts/parts)として、主キー (town, street) を持つ ① の例のテーブルでは、② 挿入されたデータは ③ 主キーカラムの値でソートされ、圧縮されたうえで、各カラムごとに別々のファイルとしてディスクに保存されます。
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+
+<br />
+
+<br />
+
+処理のため、各カラムのデータは ④ 論理的にグラニュールに分割されます。各グラニュールは 8,192 行を含み、ClickHouse のデータ処理メカニズムが扱う最小単位です。
+
+このグラニュール構造こそが、プライマリインデックスを **スパース** にしている理由でもあります。ClickHouse はすべての行を索引化するのではなく、⑤ 各グラニュールにつき 1 行、具体的には先頭の行の主キー値だけを保存します。その結果、グラニュールごとに 1 つの索引エントリが作成されます。
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+
+<br />
+
+<br />
+
+このスパース性のおかげで、プライマリインデックスはメモリ内に完全に収まるほど小さく、主キーカラムに対する述語条件を持つクエリを高速にフィルタリングできます。次のセクションでは、これがそのようなクエリの高速化にどのように役立つかを説明します。
+
+<div id="primary-index-usage">
+  ### プライマリインデックスの使用
+</div>
+
+次のアニメーションでは、スパースプライマリインデックスがクエリの高速化にどのように使われるかを示します。
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+
+<br />
+
+<br />
+
+① この例のクエリには、2 つの主キーカラムの両方に対する条件が含まれています: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+
+② クエリを高速化するために、ClickHouse はテーブルのプライマリインデックスをメモリに読み込みます。
+
+③ 次に、インデックスエントリを走査して、条件に一致する行を含む可能性があるグラニュール、つまりスキップできないグラニュールを特定します。
+
+④ その後、それらのグラニュールと、クエリに必要な他のカラムに対応するグラニュールがメモリに読み込まれ、[処理](/ja/concepts/core-concepts/query-parallelism) されます。
+
+<div id="monitoring-primary-indexes">
+  ## プライマリインデックスの監視
+</div>
+
+テーブル内の各[データパート](/ja/concepts/core-concepts/parts)には、それぞれ固有のプライマリインデックスがあります。これらのプライマリインデックスの内容は、[mergeTreeIndex](/ja/reference/functions/table-functions/mergeTreeIndex)テーブル関数を使って確認できます。
+
+次のクエリは、サンプルテーブルの各データパートについて、プライマリインデックス内のエントリ数を一覧表示します。
+
+```sql
+SELECT
+    part_name,
+    max(mark_number) AS entries
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+GROUP BY part_name;
+```
+
+```txt
+   ┌─part_name─┬─entries─┐
+1. │ all_2_2_0 │     914 │
+2. │ all_1_1_0 │    1343 │
+3. │ all_0_0_0 │    1349 │
+   └───────────┴─────────┘
+```
+
+このクエリは、現在のデータパーツのうちいずれか 1 つのプライマリインデックスから、最初の 10 件のエントリを表示します。これらのパーツは、バックグラウンドで継続的により大きなパーツへと[マージ](/ja/concepts/core-concepts/merges)されることに注意してください:
+
+```sql
+SELECT 
+    mark_number + 1 AS entry,
+    town,
+    street
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+WHERE part_name = (SELECT any(part_name) FROM mergeTreeIndex('uk', 'uk_price_paid_simple')) 
+ORDER BY mark_number ASC
+LIMIT 10;
+```
+
+```txt
+    ┌─entry─┬─town───────────┬─street───────────┐
+ 1. │     1 │ ABBOTS LANGLEY │ ABBEY DRIVE      │
+ 2. │     2 │ ABERDARE       │ RICHARDS TERRACE │
+ 3. │     3 │ ABERGELE       │ PEN Y CAE        │
+ 4. │     4 │ ABINGDON       │ CHAMBRAI CLOSE   │
+ 5. │     5 │ ABINGDON       │ THORNLEY CLOSE   │
+ 6. │     6 │ ACCRINGTON     │ MAY HILL CLOSE   │
+ 7. │     7 │ ADDLESTONE     │ HARE HILL        │
+ 8. │     8 │ ALDEBURGH      │ LINDEN ROAD      │
+ 9. │     9 │ ALDERSHOT      │ HIGH STREET      │
+10. │    10 │ ALFRETON       │ ALMA STREET      │
+    └───────┴────────────────┴──────────────────┘
+```
+
+最後に、[EXPLAIN](/ja/reference/statements/explain) 句を使用して、すべてのデータパーツのプライマリインデックスが、サンプルクエリの述語に一致する行を含む可能性のないグラニュールをどのようにスキップするかを確認します。これらのグラニュールは、読み込みと処理の対象から除外されます:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    max(price)
+FROM
+    uk.uk_price_paid_simple
+WHERE
+    town = 'LONDON' AND street = 'OXFORD STREET';
+```
+
+```txt
+    ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                                                  │
+ 2. │   Aggregating                                                                                              │
+ 3. │     Expression (Before GROUP BY)                                                                           │
+ 4. │       Expression                                                                                           │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)                                                        │
+ 6. │         Indexes:                                                                                           │
+ 7. │           PrimaryKey                                                                                       │
+ 8. │             Keys:                                                                                          │
+ 9. │               town                                                                                         │
+10. │               street                                                                                       │
+11. │             Condition: and((street in ['OXFORD STREET', 'OXFORD STREET']), (town in ['LONDON', 'LONDON'])) │
+12. │             Parts: 3/3                                                                                     │
+13. │             Granules: 3/3609                                                                               │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+上の EXPLAIN 出力の 13 行目を見ると、すべてのデータパーツにまたがる 3,609 個のグラニュールのうち、プライマリインデックスの解析によって処理対象として選択されたのは 3 個だけであることがわかります。残りのグラニュールはすべてスキップされました。
+
+次のクエリを実行するだけでも、データの大部分がスキップされたことを確認できます。
+
+```sql
+SELECT max(price)
+FROM uk.uk_price_paid_simple
+WHERE (town = 'LONDON') AND (street = 'OXFORD STREET');
+```
+
+```txt
+   ┌─max(price)─┐
+1. │  263100000 │ -- 2億6310万
+   └────────────┘
+
+1 row in set. Elapsed: 0.010 sec. Processed 24.58 thousand rows, 159.04 KB (2.53 million rows/s., 16.35 MB/s.)
+Peak memory usage: 13.00 MiB.
+```
+
+上記のとおり、サンプルのテーブルでは約3,000万行のうち、処理されたのは約25,000行だけでした。
+
+```sql
+SELECT count() FROM uk.uk_price_paid_simple;
+```
+
+```txt
+   ┌──count()─┐
+1. │ 29556244 │ -- 2,956万
+   └──────────┘
+```
+
+<div id="key-takeaways">
+  ## 重要なポイント
+</div>
+
+* **スパースプライマリインデックス** は、主キーカラムに対するクエリ条件に一致する行を含む可能性があるグラニュールを特定することで、ClickHouse が不要なデータを読み飛ばせるようにします。
+
+* 各索引には **各グラニュールの先頭行** の主キー値だけが格納されます (グラニュールはデフォルトで 8,192 行) 。そのため、メモリに収まるほどコンパクトです。
+
+* MergeTree テーブルの **各データパート** には、それぞれ **専用のプライマリインデックス** があり、クエリ実行時には個別に使用されます。
+
+* クエリ実行時、この索引により ClickHouse は **グラニュールをスキップ** できるため、I/O とメモリ使用量を削減しつつ、パフォーマンスを向上させます。
+
+* `mergeTreeIndex` テーブル関数を使って **索引の内容を確認** でき、`EXPLAIN` 句で索引の利用状況を確認できます。
+
+<div id="where-to-find-more-information">
+  ## さらに詳しい情報
+</div>
+
+ClickHouse におけるスパースプライマリインデックスの仕組みや、従来のデータベース索引との違い、利用時のベストプラクティスについてさらに詳しく知りたい場合は、索引に関する詳細な[解説](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)をご覧ください。
+
+プライマリインデックスのスキャンで選択されたデータを ClickHouse がどのように高い並列性で処理するのかに興味がある場合は、クエリ並列性ガイドを[こちら](/ja/concepts/core-concepts/query-parallelism)でご覧ください。

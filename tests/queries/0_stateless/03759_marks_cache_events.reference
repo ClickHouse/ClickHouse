@@ -1,0 +1,9 @@
+"query_kind","load_marks_asynchronously","hits","misses"
+"Insert","0",0,0
+"Select","0",0,1
+"Select","0",1,0
+"Select","1",0,1
+"Select","1",1,0
+"part_name","hits","misses"
+"all_1_1_1",0,0
+"all_1_1_2",0,0

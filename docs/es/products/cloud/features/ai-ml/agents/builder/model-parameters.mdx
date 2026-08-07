@@ -1,0 +1,69 @@
+---
+sidebarTitle: 'Parámetros del modelo'
+slug: /cloud/features/ai-ml/agents/builder/model-parameters
+title: 'Parámetros del modelo'
+description: 'Configura la selección del modelo y los parámetros de generación de ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agentes', 'parámetros del modelo', 'temperature', 'top-p', 'top-k', 'thinking', 'caché de prompts']
+doc_type: 'reference'
+draft: true
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Los parámetros del modelo determinan qué modelo usa un agente y cómo ese modelo genera respuestas.
+En la pestaña **Agent Builder**, haz clic en **Seleccionar un modelo** bajo el encabezado **Modelo**.
+Esto abrirá la ventana **Parámetros del modelo**.
+
+<div id="provider-and-model">
+  ## Proveedor y modelo
+</div>
+
+* **Proveedor**: selecciona el proveedor de LLM.
+* **Modelo**: selecciona el modelo específico de ese proveedor. Cada modelo tiene sus propios puntos fuertes: los modelos grandes de razonamiento para tareas que requieren mucha planificación y los modelos pequeños, más rápidos, para consultas rutinarias.
+
+Tanto **Proveedor** como **Modelo** son obligatorios. El resto del panel se adapta según lo que admita el modelo seleccionado.
+
+<div id="context-and-output-limits">
+  ## Contexto y límites de salida
+</div>
+
+* **Máximo de tokens de contexto** - limita el contexto total que el agente envía al modelo. Déjelo en **System** para usar el valor predeterminado del modelo. Redúzcalo para disminuir el coste; auméntelo para los agentes que necesiten procesar entradas grandes.
+* **Máximo de tokens de salida** - limita el tamaño de la respuesta del agente. **System** usa el valor predeterminado del modelo. Establézcalo en un valor más bajo si las respuestas son demasiado largas, o más alto si se están truncando.
+* **Límite de tokens por archivo** - limita cuántos tokens aporta al contexto un único archivo cargado. Es útil cuando los usuarios adjuntan archivos grandes y no quiere que desplacen el resto de la conversación.
+
+<div id="sampling">
+  ## Muestreo
+</div>
+
+* **Temperatura** - aleatoriedad. Los valores más altos (0.7–1.0) = más aleatorio, mientras que los valores más bajos (0.0–0.3) = más enfocado y determinista. Recomendamos ajustar este valor o Top P, pero no ambos.
+* **Top P** - muestreo de núcleo. Cambia cómo el modelo selecciona los tokens de salida.
+* **Top K** - restringe el muestreo a los K tokens más probables en cada paso. Algunos proveedores lo admiten; controla el determinismo en un eje distinto al de la temperatura.
+
+Si no estás ajustando un comportamiento específico, deja los deslizadores cerca de sus valores predeterminados, ya que los cambios pequeños rara vez marcan una diferencia apreciable y los grandes pueden degradar la calidad de la salida.
+
+<div id="reasoning-controls">
+  ## Controles de razonamiento
+</div>
+
+Disponible en los modelos que exponen razonamiento extendido. El conjunto exacto varía según el proveedor.
+
+* **Thinking** - activa o desactiva el modo de razonamiento extendido del modelo. Cuando está activado, el modelo genera tokens internos de Thinking antes de su respuesta final; esto suele mejorar la precisión en tareas difíciles, a costa de una mayor latencia y más tokens.
+* **Thinking Budget** - establece un presupuesto de tokens para la fase de Thinking. El modelo deja de pensar y responde una vez que ha consumido esa cantidad de tokens.
+* **Effort** - ajuste general del esfuerzo de razonamiento (**Auto**, bajo, medio, alto). Lo usan los modelos de razonamiento que no exponen directamente un presupuesto de tokens de Thinking.
+* **Thought Visibility** - controla si el Thinking del modelo se muestra al usuario en línea, se oculta tras una vista contraída o se omite por completo.
+
+<div id="conversation-behavior">
+  ## Comportamiento de la conversación
+</div>
+
+* **Reenviar archivos** - cuando está activado, los archivos adjuntos en turnos anteriores se reenvían en cada turno posterior para que el modelo no los pierda de vista. Desactívalo para ahorrar tokens si la conversación es corta o si el modelo va resumiendo los archivos sobre la marcha.
+* **Usar caché de prompts** - cuando el proveedor lo admite, almacena en caché las partes reutilizables de prompts para reducir el coste y la latencia en conversaciones en las que las instrucciones y las descripciones de herramientas se repiten entre turnos.
+* **Web Search** - activa la búsqueda web nativa del proveedor en los modelos compatibles. Esto es distinto de la [herramienta Web search](/es/products/cloud/features/ai-ml/agents/builder/web-search), que se ejecuta como una de las herramientas del agente, en lugar de como una funcionalidad del proveedor.
+
+<div id="reset">
+  ## Restablecer
+</div>
+
+**Restablecer los parámetros del modelo** al final del panel devuelve todos los campos a los valores predeterminados del sistema. Úsalo cuando ya hayas experimentado lo suficiente y quieras volver a empezar desde cero.

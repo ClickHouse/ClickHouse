@@ -1,0 +1,121 @@
+a0
+a1
+a10
+a11
+a12
+a2
+a3
+a4
+a5
+a6
+a7
+a8
+a9
+('a0',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a1',['String'])
+('a10',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a11',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a12',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a2',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a3',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a4',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a5',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a6',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a7',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a8',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a9',['Array(Nullable(Int64))','Bool','Int64','String'])
+Array(Nullable(Int64))
+Bool
+Int64
+String
+Array(Nullable(Int64))
+Bool
+Int64
+String
+Filter
+a1
+a2
+('a1',['String'])
+('a2',['String'])
+String
+If
+a1
+a2
+('a1',['String'])
+('a2',['String'])
+String
+Group by
+Array(Nullable(Int64))	['a1','a2']
+Bool	['a1','a2']
+Int64	['a1','a2']
+None	['a0','a1','a10','a11','a12','a3','a4','a5','a6','a7','a8','a9']
+String	['a1','a2']
+Array(Nullable(Int64))	{'a1':['String'],'a2':['Array(Nullable(Int64))']}
+Bool	{'a1':['String'],'a2':['Bool']}
+Int64	{'a1':['String'],'a2':['Int64']}
+None	{'a0':['Array(Nullable(Int64))','Bool','Int64','String'],'a1':['String'],'a10':['Array(Nullable(Int64))','Bool','Int64','String'],'a11':['Array(Nullable(Int64))','Bool','Int64','String'],'a12':['Array(Nullable(Int64))','Bool','Int64','String'],'a3':['Array(Nullable(Int64))','Bool','Int64','String'],'a4':['Array(Nullable(Int64))','Bool','Int64','String'],'a5':['Array(Nullable(Int64))','Bool','Int64','String'],'a6':['Array(Nullable(Int64))','Bool','Int64','String'],'a7':['Array(Nullable(Int64))','Bool','Int64','String'],'a8':['Array(Nullable(Int64))','Bool','Int64','String'],'a9':['Array(Nullable(Int64))','Bool','Int64','String']}
+String	{'a1':['String'],'a2':['String']}
+Array(Nullable(Int64))	['Array(Nullable(Int64))']
+Bool	['Bool']
+Int64	['Int64']
+None	[]
+String	['String']
+Remote
+a0
+a1
+a10
+a11
+a12
+a2
+a3
+a4
+a5
+a6
+a7
+a8
+a9
+('a0',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a1',['String'])
+('a10',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a11',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a12',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a2',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a3',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a4',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a5',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a6',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a7',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a8',['Array(Nullable(Int64))','Bool','Int64','String'])
+('a9',['Array(Nullable(Int64))','Bool','Int64','String'])
+Array(Nullable(Int64))
+Bool
+Int64
+String
+Remote filter
+a1
+a2
+('a1',['String'])
+('a2',['String'])
+String
+Remote if
+a1
+a2
+('a1',['String'])
+('a2',['String'])
+String
+Remote group by
+Array(Nullable(Int64))	['a1','a2']
+Bool	['a1','a2']
+Int64	['a1','a2']
+None	['a0','a1','a10','a11','a12','a3','a4','a5','a6','a7','a8','a9']
+String	['a1','a2']
+Array(Nullable(Int64))	{'a1':['String'],'a2':['Array(Nullable(Int64))']}
+Bool	{'a1':['String'],'a2':['Bool']}
+Int64	{'a1':['String'],'a2':['Int64']}
+None	{'a0':['Array(Nullable(Int64))','Bool','Int64','String'],'a1':['String'],'a10':['Array(Nullable(Int64))','Bool','Int64','String'],'a11':['Array(Nullable(Int64))','Bool','Int64','String'],'a12':['Array(Nullable(Int64))','Bool','Int64','String'],'a3':['Array(Nullable(Int64))','Bool','Int64','String'],'a4':['Array(Nullable(Int64))','Bool','Int64','String'],'a5':['Array(Nullable(Int64))','Bool','Int64','String'],'a6':['Array(Nullable(Int64))','Bool','Int64','String'],'a7':['Array(Nullable(Int64))','Bool','Int64','String'],'a8':['Array(Nullable(Int64))','Bool','Int64','String'],'a9':['Array(Nullable(Int64))','Bool','Int64','String']}
+String	{'a1':['String'],'a2':['String']}
+Array(Nullable(Int64))	['Array(Nullable(Int64))']
+Bool	['Bool']
+Int64	['Int64']
+None	[]
+String	['String']

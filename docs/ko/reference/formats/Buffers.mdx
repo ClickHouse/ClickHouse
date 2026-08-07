@@ -1,0 +1,114 @@
+---
+alias: []
+description: 'Buffers 포맷 문서'
+input_format: true
+keywords: ['Buffers']
+output_format: true
+slug: /interfaces/formats/Buffers
+title: 'Buffers'
+doc_type: '참고'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+`Buffers`는 consumer와 producer가 이미 스키마와 컬럼 순서를 알고 있을 때 사용하는, **임시** 데이터 교환용의 매우 단순한 바이너리 포맷입니다.
+
+[Native](/ko/reference/formats/Native)와 달리 컬럼 이름, 컬럼 타입, 추가 메타데이터를 **저장하지 않습니다**.
+
+이 포맷에서는 데이터를 바이너리 포맷의 [블록](/ko/resources/develop-contribute/introduction/architecture#block) 단위로 기록하고 읽습니다. Buffers는 [Native](/ko/reference/formats/Native) 포맷과 동일한 컬럼별 바이너리 표현을 사용하며, 동일한 Native 포맷 설정을 따릅니다.
+
+각 블록에 대해 다음 시퀀스가 기록됩니다.
+
+1. 컬럼 수 (UInt64, 리틀 엔디언).
+2. 행 수 (UInt64, 리틀 엔디언).
+3. 각 컬럼에 대해:
+
+* 직렬화된 컬럼 데이터의 총 바이트 크기 (UInt64, 리틀 엔디언).
+* [Native](/ko/reference/formats/Native) 포맷과 정확히 동일한 직렬화된 컬럼 데이터 바이트.
+
+<div id="example-usage">
+  ## 예시 사용
+</div>
+
+파일에 쓰기:
+
+```sql
+SELECT
+    number AS num,
+    number * number AS num_square
+FROM numbers(10)
+INTO OUTFILE 'squares.buffers'
+FORMAT Buffers;
+```
+
+컬럼 타입을 명시적으로 지정해 다시 읽습니다:
+
+```sql
+SELECT
+    *
+FROM file(
+    'squares.buffers',
+    'Buffers',
+    'col_1 UInt64, col_2 UInt64'
+);
+```
+
+```txt
+  ┌─col_1─┬─col_2─┐
+  │     0 │     0 │
+  │     1 │     1 │
+  │     2 │     4 │
+  │     3 │     9 │
+  │     4 │    16 │
+  │     5 │    25 │
+  │     6 │    36 │
+  │     7 │    49 │
+  │     8 │    64 │
+  │     9 │    81 │
+  └───────┴───────┘
+```
+
+동일한 컬럼 타입의 테이블이 있으면 직접 데이터를 채울 수 있습니다:
+
+```sql
+CREATE TABLE number_squares
+(
+    a UInt64,
+    b UInt64
+) ENGINE = Memory;
+
+INSERT INTO number_squares
+FROM INFILE 'squares.buffers'
+FORMAT Buffers;
+```
+
+테이블을 확인하세요:
+
+```sql
+SELECT * FROM number_squares;
+```
+
+```txt
+  ┌─a─┬──b─┐
+  │ 0 │  0 │
+  │ 1 │  1 │
+  │ 2 │  4 │
+  │ 3 │  9 │
+  │ 4 │ 16 │
+  │ 5 │ 25 │
+  │ 6 │ 36 │
+  │ 7 │ 49 │
+  │ 8 │ 64 │
+  │ 9 │ 81 │
+  └───┴────┘
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>

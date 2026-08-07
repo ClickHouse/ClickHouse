@@ -1,0 +1,72 @@
+---
+description: 'Instale o ClickHouse'
+keywords: ['clickhouse', 'instalar', 'primeiros passos', 'início rápido']
+sidebarTitle: 'Instalar'
+slug: /install
+title: 'Instruções de instalação'
+doc_type: 'guide'
+---
+
+import {galaxyOnClick} from "/snippets/pt-BR/lib/galaxy.jsx";
+
+<Card title="ClickHouse Cloud" icon="cloud" href="https://console.clickhouse.cloud/signUp?loc=docs-install-page-banner" cta="Comece grátis">
+  Comece a desenvolver instantaneamente sem precisar dimensionar nem escalar seu cluster. O ClickHouse Cloud cuida do dimensionamento, da escalabilidade
+  , da segurança, da confiabilidade e dos upgrades.
+</Card>
+
+<br />
+
+Se você prefere gerenciar por conta própria, selecione uma das opções de ClickHouse de código aberto abaixo.
+Use o script de instalação rápida ou a CLI `clickhousectl` para um ambiente local, ou instale o
+ClickHouse Server a partir de pacotes ou binários para uma implantação em produção.
+
+<h3 className="install-group-heading">Desenvolvimento local</h3>
+
+<p className="install-group-description">
+  Execute o ClickHouse na sua própria máquina para criar, testar e experimentar.
+  A instalação rápida disponibiliza um único binário rapidamente, ou use o clickhousectl
+  para instalar e gerenciar versões e servidores locais.
+</p>
+
+<div className="installContainer">
+  <a href="/install/quick-install" style={{textDecoration: 'none'}}>
+    <Card title="Instalação rápida" />
+  </a>
+
+  <a href="/install/clickhousectl" style={{textDecoration: 'none'}}>
+    <Card title="clickhousectl (CLI)" icon="console" />
+  </a>
+
+  <a href="/install/docker" style={{textDecoration: 'none'}}>
+    <Card title="Docker" />
+  </a>
+
+  <a href="/install/advanced" style={{textDecoration: 'none'}}>
+    <Card title="Compilação do código-fonte" icon="code" />
+  </a>
+</div>
+
+<h3 className="install-group-heading">Servidor de produção</h3>
+
+<p className="install-group-description">
+  Instale o ClickHouse Server a partir de pacotes ou binários para uma
+  implantação de longa execução na sua própria infraestrutura.
+</p>
+
+<div className="installContainer">
+  <a href="/install/debian_ubuntu" style={{textDecoration: 'none'}}>
+    <Card title="Debian/Ubuntu" />
+  </a>
+
+  <a href="/install/redhat" style={{textDecoration: 'none'}}>
+    <Card title="Redhat" />
+  </a>
+
+  <a href="/install/nixos" style={{textDecoration: 'none'}}>
+    <Card title="NixOS" />
+  </a>
+
+  <a href="/install/linux_other" style={{textDecoration: 'none'}}>
+    <Card title="Outro Linux" />
+  </a>
+</div>

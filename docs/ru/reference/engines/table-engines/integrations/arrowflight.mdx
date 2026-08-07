@@ -1,0 +1,110 @@
+---
+description: 'Движок позволяет выполнять запросы к удалённым наборам данных и вставку в них через Apache Arrow Flight.'
+sidebarTitle: 'ArrowFlight'
+slug: /engines/table-engines/integrations/arrowflight
+title: 'Движок таблицы ArrowFlight'
+doc_type: 'reference'
+---
+
+Движок таблицы ArrowFlight позволяет ClickHouse выполнять запросы к удалённым наборам данных и вставку в них по протоколу [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html).
+Эта интеграция позволяет ClickHouse с высокой производительностью взаимодействовать с внешними серверами с поддержкой Flight в столбцовом формате Apache Arrow.
+
+<div id="creating-a-table">
+  ## Создание таблицы
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
+    ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password']);
+```
+
+**Параметры движка**
+
+* `host:port` — Адрес удалённого сервера Arrow Flight. Если порт не указан, используется порт по умолчанию `8815`. [String](/ru/reference/data-types/string).
+* `dataset_name` — Идентификатор набора данных на сервере Flight (используется как дескриптор PATH или в запросе `SELECT *` в зависимости от настройки `arrow_flight_request_descriptor_type`). [String](/ru/reference/data-types/string).
+* `username` — Имя пользователя для HTTP-аутентификации Basic. [String](/ru/reference/data-types/string).
+* `password` — Пароль для HTTP-аутентификации Basic. [String](/ru/reference/data-types/string).
+
+Если `username` и `password` не указаны, аутентификация не используется (это работает, только если сервер Arrow Flight допускает неаутентифицированный доступ).
+
+Список столбцов необязателен — если он не указан, схема определяется автоматически на удалённом сервере Arrow Flight через `GetSchema`.
+
+<div id="named-collections">
+  ## Именованные коллекции
+</div>
+
+Движок поддерживает [именованные коллекции](/ru/concepts/features/configuration/server-config/named-collections) для хранения параметров подключения:
+
+```sql
+CREATE TABLE remote_flight_data
+    ENGINE = ArrowFlight(named_collection_name);
+```
+
+Параметры именованной коллекции:
+
+| Параметр                   | Обязательно                  | По умолчанию | Описание                                                 |
+| -------------------------- | ---------------------------- | ------------ | -------------------------------------------------------- |
+| `host` или `hostname`      | Нет                          | `""`         | Имя хоста сервера.                                       |
+| `port`                     | Да                           | —            | Порт сервера.                                            |
+| `dataset`                  | Да                           | —            | Имя набора данных или дескриптор.                        |
+| `use_basic_authentication` | Нет                          | `true`       | Включает базовую аутентификацию.                         |
+| `user` или `username`      | Если аутентификация включена | —            | Имя пользователя для аутентификации.                     |
+| `password`                 | Нет                          | `""`         | Пароль для аутентификации.                               |
+| `enable_ssl`               | Нет                          | `false`      | Включает шифрование TLS.                                 |
+| `ssl_ca`                   | Нет                          | `""`         | Путь к файлу CA‑сертификата для проверки TLS.            |
+| `ssl_override_hostname`    | Нет                          | `""`         | Переопределяет имя хоста, используемое при проверке TLS. |
+
+<div id="settings">
+  ## Настройки
+</div>
+
+* `arrow_flight_request_descriptor_type` — Определяет, как имя набора данных отправляется на сервер Flight. Возможные значения: `path` (по умолчанию, отправляется как дескриптор PATH) или `command` (отправляется как дескриптор CMD с `SELECT * FROM <dataset>`). Используйте `command` для серверов Flight, которые ожидают SQL-команды (например, Dremio).
+
+<div id="usage-example">
+  ## Пример использования
+</div>
+
+Чтение данных с удалённого сервера Arrow Flight:
+
+```sql
+CREATE TABLE remote_flight_data
+(
+    id UInt32,
+    name String,
+    value Float64
+) ENGINE = ArrowFlight('127.0.0.1:9005', 'sample_dataset');
+
+SELECT * FROM remote_flight_data ORDER BY id;
+```
+
+```text
+┌─id─┬─name────┬─value─┐
+│  1 │ foo     │ 42.1  │
+│  2 │ bar     │ 13.3  │
+│  3 │ baz     │ 77.0  │
+└────┴─────────┴───────┘
+```
+
+Вставка данных на удалённый сервер Arrow Flight:
+
+```sql
+INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
+```
+
+<div id="notes">
+  ## Примечания
+</div>
+
+* Если в операторе `CREATE TABLE` указаны столбцы, они должны соответствовать схеме, возвращаемой сервером Flight.
+* Если столбцы не указаны, схема автоматически определяется на основе данных удалённого сервера.
+* Поддерживаются как чтение (`SELECT`), так и запись (`INSERT`).
+* Параметр `arrow_flight_request_descriptor_type` определяет, будет ли имя набора данных отправлено как дескриптор PATH или как дескриптор CMD, содержащий запрос `SELECT *`.
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [Табличная функция arrowFlight](/ru/reference/functions/table-functions/arrowflight)
+* [Интерфейс Arrow Flight](/ru/concepts/features/interfaces/arrowflight)
+* [Спецификация Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
+* [Формат Arrow в ClickHouse](/ru/reference/formats/Arrow/Arrow)

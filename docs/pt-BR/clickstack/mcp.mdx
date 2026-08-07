@@ -1,0 +1,332 @@
+---
+slug: /use-cases/observability/clickstack/mcp
+title: 'Servidor MCP do ClickStack'
+sidebarTitle: 'Servidor MCP'
+description: 'Conecte assistentes de IA ao ClickStack usando o servidor do Model Context Protocol (MCP)'
+doc_type: 'guide'
+keywords: ['ClickStack', 'MCP', 'Model Context Protocol', 'IA', 'observabilidade', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O ClickStack inclui um [servidor Model Context Protocol (MCP)](https://modelcontextprotocol.io/) integrado que permite que assistentes de IA interajam com seus dados de observabilidade. Depois de conectado, um assistente de IA pode consultar logs, traces e métricas; gerenciar dashboards e alertas; explorar fontes de dados; e trabalhar com pesquisas salvas — tudo em linguagem natural.
+
+Isso permite que você use ferramentas como [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor](https://www.cursor.com/) ou qualquer cliente compatível com MCP para investigar incidentes, criar dashboards e gerenciar sua configuração de observabilidade sem sair do ambiente de desenvolvimento.
+
+<div id="availability">
+  ## Disponibilidade
+</div>
+
+O servidor MCP está disponível nos seguintes tipos de implantação do ClickStack:
+
+| Implantação                                       | Status      |
+| ------------------------------------------------- | ----------- |
+| **Open Source ClickStack**                        | Disponível  |
+| **BYOC (Bring Your Own Cloud)**                   | Disponível  |
+| **ClickStack no ClickHouse Cloud**                | Disponível  |
+| **HyperDX v1** ([hyperdx.io](https://hyperdx.io)) | Sem suporte |
+
+<Info>
+  **Configuração diferente para ClickHouse Cloud vs OSS/BYOC**
+
+  O ClickStack no ClickHouse Cloud usa um endpoint e um método de autenticação diferentes das implantações Open Source e BYOC. Consulte a seção [ClickStack no ClickHouse Cloud](#managed-clickstack) abaixo para a configuração específica do Cloud.
+</Info>
+
+<div id="managed-clickstack">
+  ## ClickStack no ClickHouse Cloud
+</div>
+
+O ClickStack no ClickHouse Cloud se conecta por meio do endpoint MCP do ClickHouse Cloud em `https://mcp.clickhouse.cloud/clickstack` e usa autenticação OAuth 2.0. A autenticação com API key não tem suporte nesse endpoint.
+
+<div id="managed-prerequisites">
+  ### Pré-requisitos
+</div>
+
+* Um serviço do ClickHouse Cloud em execução com o [ClickStack ativado](/pt-BR/clickstack/deployment/managed)
+* [MCP ativado](/pt-BR/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) no serviço — abra o console do Cloud, clique em **Connect**, selecione **Connect with MCP** e ative-o
+
+<div id="managed-endpoint">
+  ### Endpoint
+</div>
+
+```text
+https://mcp.clickhouse.cloud/clickstack
+```
+
+A autenticação usa OAuth 2.0. Quando seu cliente MCP se conecta pela primeira vez, ele abre uma janela do navegador para que você faça login com suas credenciais do ClickHouse Cloud. Não é necessária nenhuma chave de API.
+
+<div id="managed-connecting-a-client">
+  ### Conectar um cliente MCP
+</div>
+
+Cada cliente gerencia automaticamente o fluxo do OAuth ao se conectar pela primeira vez.
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack
+    ```
+
+    Abra o Claude Code e execute `/mcp`; depois, selecione `clickstack` para concluir o fluxo do OAuth.
+  </Tab>
+
+  <Tab title="Cursor">
+    Adicione o seguinte a `.cursor/mcp.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "clickstack": {
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="VS Code">
+    Adicione o seguinte a `.vscode/mcp.json`:
+
+    ```json
+    {
+      "servers": {
+        "clickstack": {
+          "type": "http",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="OpenCode">
+    Adicione o seguinte a `opencode.json`:
+
+    ```json
+    {
+      "mcp": {
+        "clickstack": {
+          "type": "remote",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="LibreChat">
+    Adicione o seguinte a `librechat.yaml`:
+
+    ```yaml
+    mcpServers:
+      clickstack:
+        type: streamable-http
+        url: https://mcp.clickhouse.cloud/clickstack
+    ```
+  </Tab>
+
+  <Tab title="Other">
+    Qualquer cliente MCP com suporte a **Streamable HTTP** com OAuth pode se conectar. Configure-o com:
+
+    * **URL:** `https://mcp.clickhouse.cloud/clickstack`
+  </Tab>
+</Tabs>
+
+<div id="managed-service-override">
+  ### Direcionando para um serviço específico
+</div>
+
+Sem o cabeçalho `x-service-id`, as solicitações são direcionadas por padrão ao primeiro serviço ClickStack provisionado e usado pela sua conta. Para direcionar as solicitações a outro serviço, passe `x-service-id: <YOUR_SERVICE_ID>` como cabeçalho na configuração do seu cliente MCP.
+
+<div id="oss-byoc">
+  ## Open Source e BYOC
+</div>
+
+As implantações Open Source e BYOC usam o endpoint MCP integrado da sua instância do ClickStack com autenticação via token Bearer.
+
+<div id="managed-prerequisites">
+  ### Pré-requisitos
+</div>
+
+* Uma instância do ClickStack em execução (consulte [Implantação](/pt-BR/clickstack/deployment/overview) para ver as opções de configuração)
+* Uma **Personal API Access Key** — encontre a sua no HyperDX em **Team Settings → API Keys → Personal API Access Key**
+
+<Image img="/images/clickstack/api-key-personal.webp" alt="Personal API Access Key em Team Settings" size="md" border />
+
+<Note>
+  A Personal API Access Key é diferente da **API key de ingestão** encontrada em Team Settings, que é usada para autenticar dados de telemetria enviados ao coletor OpenTelemetry.
+</Note>
+
+<div id="managed-endpoint">
+  ### Endpoint
+</div>
+
+O servidor MCP está disponível no caminho `/api/mcp` na URL de frontend do seu ClickStack. Por exemplo, com uma implantação local padrão, a URL é `http://localhost:8080/api/mcp`. Substitua `localhost:8080` pelo host e pela porta da sua instância se você tiver alterado os valores padrão.
+
+<Note>
+  Os exemplos nesta página usam a URL do app de frontend (porta `8080` por padrão). Você também pode acessar o servidor MCP diretamente pelo backend em `<BACKEND_URL>/mcp`, mas nem todas as implantações expõem o backend, por isso esta documentação usa o caminho do frontend.
+</Note>
+
+O servidor MCP usa o transporte **Streamable HTTP** com autenticação por **token Bearer**.
+
+<div id="managed-connecting-a-client">
+  ### Conectar um cliente MCP
+</div>
+
+Substitua `<YOUR_CLICKSTACK_URL>` pela URL da sua instância (por exemplo, `http://localhost:8080`) e `<YOUR_API_KEY>` pela sua Personal API Access Key.
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```shell
+    claude mcp add --transport http hyperdx <YOUR_CLICKSTACK_URL>/api/mcp \
+      --header "Authorization: Bearer <YOUR_API_KEY>"
+    ```
+  </Tab>
+
+  <Tab title="Cursor">
+    Adicione o seguinte a `.cursor/mcp.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "hyperdx": {
+          "url": "<YOUR_CLICKSTACK_URL>/api/mcp",
+          "headers": {
+            "Authorization": "Bearer <YOUR_API_KEY>"
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="VS Code">
+    Adicione o seguinte a `.vscode/mcp.json`:
+
+    ```json
+    {
+      "servers": {
+        "hyperdx": {
+          "type": "http",
+          "url": "<YOUR_CLICKSTACK_URL>/api/mcp",
+          "headers": {
+            "Authorization": "Bearer <YOUR_API_KEY>"
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="OpenCode">
+    Adicione o seguinte a `opencode.json`:
+
+    ```json
+    {
+      "mcp": {
+        "hyperdx": {
+          "type": "remote",
+          "url": "<YOUR_CLICKSTACK_URL>/api/mcp",
+          "oauth": false,
+          "headers": {
+            "Authorization": "Bearer <YOUR_API_KEY>"
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="LibreChat">
+    Adicione o seguinte a `librechat.yaml`:
+
+    ```yaml
+    mcpServers:
+      clickstack:
+        type: streamable-http
+        url: <YOUR_CLICKSTACK_URL>/api/mcp
+        headers:
+          Authorization: "Bearer <YOUR_API_KEY>"
+    ```
+  </Tab>
+
+  <Tab title="Outros">
+    Qualquer cliente MCP com suporte a **Streamable HTTP** pode se conectar. Configure-o com:
+
+    * **URL:** `<YOUR_CLICKSTACK_URL>/api/mcp`
+    * **Cabeçalho:** `Authorization: Bearer <YOUR_API_KEY>`
+  </Tab>
+</Tabs>
+
+<div id="capabilities">
+  ## O que você pode fazer com o MCP?
+</div>
+
+Depois de se conectar, seu assistente de IA tem acesso a várias ferramentas que abrangem as principais áreas do ClickStack. Elas incluem:
+
+* **Consulta de dados** — Pesquise e agregue logs, traces e métricas usando o query builder do ClickStack, a sintaxe de busca ou SQL puro.
+* **Fontes de dados** — Liste as fontes de dados disponíveis, conexões de banco de dados, esquemas de colunas e chaves de atributos.
+* **Dashboards** — Crie, atualize, exclua e inspecione dashboards, junto com seus tiles.
+* **Alertas** — Crie, atualize e inspecione alertas, junto com seu histórico de avaliação.
+* **Pesquisas salvas** — Crie, atualize e inspecione definições reutilizáveis de pesquisas salvas.
+* **Webhooks** — Liste os destinos de webhook disponíveis para notificações de alerta.
+* **Equipes** — Liste as equipes às quais o usuário atual pertence e identifique a equipe ativa.
+
+O conjunto específico de ferramentas pode se expandir com o tempo. Seu cliente MCP descobrirá automaticamente as ferramentas disponíveis ao se conectar.
+
+<div id="multi-team">
+  ## Uso por múltiplas equipes (OSS/BYOC)
+</div>
+
+Isso se aplica apenas a implantações Open Source e BYOC. Para o ClickStack no ClickHouse Cloud, consulte [Direcionar para um serviço específico](#managed-service-override).
+
+Por padrão, as solicitações MCP operam no contexto da sua equipe primária. Se você pertence a várias equipes, pode direcionar a solicitação para uma equipe específica incluindo o cabeçalho `x-hdx-team` com o ID da equipe junto com o cabeçalho `Authorization`. Se o cabeçalho for omitido, sua equipe primária será usada. Se você especificar uma equipe da qual não faz parte, a solicitação será rejeitada com um erro `401`.
+
+Use a ferramenta de listagem de equipes do seu cliente MCP para descobrir a quais equipes você tem acesso e qual delas está ativa.
+
+<div id="troubleshooting">
+  ## Solução de problemas
+</div>
+
+<div id="troubleshooting-managed">
+  ### ClickStack no ClickHouse Cloud
+</div>
+
+<Accordion title="O fluxo do OAuth não é concluído">
+  * Confirme que seu cliente MCP oferece suporte a OAuth 2.0. Clients que oferecem suporte apenas a token Bearer ou ao transporte stdio não conseguem se autenticar com o endpoint do Cloud.
+  * Verifique se o navegador não está bloqueando o pop-up ou o redirecionamento do OAuth.
+  * Verifique se sua conta do ClickHouse Cloud tem acesso à organização e ao serviço.
+</Accordion>
+
+<Accordion title="O MCP está habilitado, mas o cliente MCP não consegue se conectar">
+  * Confirme que você está usando o endpoint do ClickStack (`https://mcp.clickhouse.cloud/clickstack`), e não o endpoint MCP geral do Cloud (`https://mcp.clickhouse.cloud/mcp`).
+  * Verifique se o [MCP está habilitado](/pt-BR/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) no serviço no console do Cloud.
+</Accordion>
+
+<Accordion title="As solicitações vão para o serviço errado">
+  Sem o cabeçalho `x-service-id`, as solicitações são direcionadas por padrão para o primeiro serviço do ClickStack provisionado e usado pela sua conta. Envie o cabeçalho para direcioná-las a um serviço específico. Consulte [Direcionar para um serviço específico](#managed-service-override).
+</Accordion>
+
+<div id="troubleshooting-oss">
+  ### Open Source e BYOC
+</div>
+
+<Accordion title="Estou recebendo um erro 403 de autenticação">
+  * Verifique se você está usando a **Personal API Access Key** (não a API key de ingestão).
+  * Confirme se a chave está incluída como um token `Bearer` no cabeçalho `Authorization`.
+  * Verifique se sua instância do ClickStack está em execução e acessível na URL que você configurou.
+</Accordion>
+
+<Accordion title="Estou sendo afetado por rate limit">
+  O servidor MCP aplica um limite de **600 solicitações por minuto** por usuário. Se você exceder esse limite, as solicitações serão rejeitadas temporariamente. Reduza a frequência das solicitações ou aguarde antes de tentar novamente.
+</Accordion>
+
+<Accordion title="Estou recebendo um erro 401 com o cabeçalho x-hdx-team">
+  Verifique se o ID da equipe está correto e se sua conta de usuário é membro dessa equipe.
+</Accordion>
+
+<Accordion title="Não consigo me conectar ao servidor MCP">
+  * Certifique-se de que seu cliente MCP oferece suporte ao transporte **Streamable HTTP**. Clientes mais antigos que oferecem suporte apenas ao transporte stdio não funcionarão.
+  * Se você estiver executando o ClickStack localmente, confirme se o aplicativo está acessível na URL configurada (o padrão é `http://localhost:8080`).
+  * Em implantações BYOC atrás de um balanceador de carga ou proxy reverso, certifique-se de que o caminho `/api/mcp` não esteja sendo bloqueado nem reescrito.
+</Accordion>

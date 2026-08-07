@@ -1,0 +1,94 @@
+---
+title: AWS PrivateLink を使用して ClickPipes 向けにプライベート RDS を公開する設定
+description: AWS PrivateLink 経由で ClickPipes 向けにプライベート RDS を公開するための設定手順です。
+date: 2024-11-27
+tags: ['セキュリティと認証', 'Cloud 管理']
+keywords: ['AWS PrivateLink', 'プライベート RDS', 'ClickPipes']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="aws-privatelink-setup-to-expose-private-rds-for-clickpipes">
+  ## ClickPipes からプライベート RDS を利用できるようにする AWS PrivateLink の設定
+</div>
+
+AWS PrivateLink を介してプライベート RDS を ClickPipes から利用できるようにするための設定手順です。クロスリージョンアクセスにも対応しています。
+
+<Info>
+  これは AWS Endpoint Service を使用する方法で、主にクロスリージョンアクセスに適しています。同一リージョンでのアクセスが必要な場合は、
+  [VPC リソースの作成](/ja/integrations/clickpipes/aws-privatelink#vpc-resource) を
+  推奨します。
+</Info>
+
+<div id="private-link-creation">
+  ## プライベートリンクの作成
+</div>
+
+以下の手順に従って、RDS インスタンス用の **VPC エンドポイントサービス** を作成します。エンドポイントサービスが必要な
+RDS インスタンスが複数ある場合は、これらの手順を繰り返してください (インスタンスごとに異なるリスナーポートを使用している場合も同様です) 。
+
+1. VPC を確認し、[NLB を作成](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/create-network-load-balancer.html)します
+   * 対象の VPC に移動し、Network Load Balancer (NLB) を作成します。NLB は internet-facing (パブリック) ではなく、internal (プライベート) である必要があります。
+
+2. ターゲットグループを設定します
+   * ターゲットグループは、RDS インスタンスのエンドポイント IP とポート (通常、PostgreSQL は 5432、MySQL は 3306) を指すように設定してください。
+
+<Note>
+  ターゲットグループを新しい RDS エンドポイント IP で更新する処理を自動化したい場合は、AWS Lambda 関数やその他の自動化ツールを使用できます。
+  この目的で利用できる Terraform モジュールの 1 つが [こちら](https://github.com/MaterializeInc/terraform-aws-rds-privatelink) です。
+</Note>
+
+* **重要**: DB Cluster/Aurora の場合に使用する RDS インスタンスのエンドポイントは、共通エンドポイントではなく、writer エンドポイント**のみ**であることを確認してください。
+  * NLB による TLS 終端を避けるため、TCP プロトコルを使用していることを確認してください。
+
+3. リスナーポートを設定します
+   * ロードバランサーのリスナーポートは、ターゲットグループで使用するポート (通常、PostgreSQL は 5432、MySQL は 3306) と一致している必要があります。
+
+4. VPC エンドポイントサービスを作成します
+   * VPC 内で、NLB を指すエンドポイントサービスを作成します。
+   * 特定のアカウントからの接続リクエストの承認を有効にします。
+
+5. ClickPipes がエンドポイントサービスを使用できるように認可します
+   * ClickPipes アカウントに、このエンドポイントサービスをリクエストする権限を付与します。
+     * 次の principal ID を追加して、許可する principal を設定します。
+       ```
+       arn:aws:iam::072088201116:root
+       ```
+
+6. NLB で &quot;Enforce Security Group Inbound Rules on Private Link Traffic&quot; を無効にします (NLB にセキュリティグループがアタッチされている場合)
+   * NLB の設定に移動し、NLB にセキュリティグループがアタッチされている場合は、&quot;Enforce Security Group Inbound Rules on Private Link Traffic&quot; 設定を無効にします。
+   * Terraform を使用している場合は、NLB の `enforce_security_group_inbound_rules_on_private_link_traffic` 属性を `off` に設定します
+   * この設定は、ClickPipes VPC から NLB へのトラフィックを許可するために**必須**です。
+
+7. **任意**: データベースのリージョンが ClickPipes のリージョンと異なる場合は、クロスリージョンのサポートを有効にします
+   * VPC コンソールの `Endpoint Services` で、対象のエンドポイントサービスを選択します。
+   * `Actions` ボタンをクリックし、`Modify supported Regions` を選択します。
+   * エンドポイントサービスへのアクセスを許可するリージョンを追加します。ClickPipes のリージョン一覧については、[こちらを参照](/ja/integrations/clickpipes/home#list-of-static-ips)してください。
+
+8. **MySQL の場合に推奨**
+   * MySQL を使用している場合は、ソースデータベースのパラメータとして `skip_name_resolve=1` を設定することを推奨します。
+     NLB からのヘルスチェックが繰り返し行われるため、MySQL は NLB ホストをブロックします。このパラメータを設定すると、DNS ホスト名のルックアップが完全に
+     回避されるため、NLB ホストがブロックされることはありません。RDS を使用している場合、これにはインスタンスの
+     再起動が必要です。
+
+<div id="initiating-connection">
+  ## 接続の開始
+</div>
+
+完了したら、ガイドに従って[接続を開始](/ja/integrations/clickpipes/aws-privatelink#creating-clickpipe)できます。
+
+Console でステータスが `Ready` になったら、次のセクションに進んで ClickPipe を作成できます。
+
+<div id="creating-clickpipes">
+  ## ClickPipes の作成
+</div>
+
+前のステップで取得した DNS 名を使って、[ClickPipe を作成してください](/ja/integrations/clickpipes/postgres/index)。
+
+<div id="dynamically-updating-the-rds-endpoint-ip">
+  ## RDS エンドポイント IP を動的に更新する
+</div>
+
+RDS のエンドポイント IP が変更された場合 (再起動、フェイルオーバー、更新時など) は、NLB のターゲットグループを新しい IP に更新する必要があります。この処理は、AWS Lambda 関数やその他の自動化ツールを使って自動化できます。

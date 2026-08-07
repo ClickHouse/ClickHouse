@@ -1,0 +1,26 @@
+-- simple view: query sent over view
+v_simple
+-- view with GROUP BY: inner query sent over t_base
+t_base
+-- view with ORDER BY: inner query sent over t_base
+t_base
+-- view with DISTINCT: inner query sent over t_base
+t_base
+-- view with LIMIT: inner query sent over t_base
+t_base
+-- view with OFFSET: inner query sent over t_base
+t_base
+-- view with LIMIT BY: inner query sent over t_base
+t_base
+-- view with WINDOW (inline): inner query sent over t_base
+t_base
+-- view with WINDOW (named): inner query sent over t_base
+t_base
+-- view with WINDOW (partition): inner query sent over t_base
+t_base
+-- view with UNION DISTINCT: inner query sent over t_base/t_base2
+t_base
+t_base2
+-- correctness check
+4995000
+4995000

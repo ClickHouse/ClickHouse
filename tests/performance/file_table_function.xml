@@ -1,0 +1,56 @@
+<test>
+
+    <substitutions>
+        <substitution>
+            <name>format</name>
+            <values>
+                <value>TabSeparated</value>
+                <value>TabSeparatedWithNames</value>
+                <value>TabSeparatedWithNamesAndTypes</value>
+                <value>CSV</value>
+                <value>CSVWithNames</value>
+                <value>Values</value>
+                <value>JSONEachRow</value>
+                <value>JSONCompactEachRow</value>
+                <value>JSONCompactEachRowWithNamesAndTypes</value>
+                <value>TSKV</value>
+                <value>RowBinary</value>
+                <value>Native</value>
+                <value>MsgPack</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>partitions_count</name>
+            <values>
+                <value>5</value>
+                <value>50</value>
+                <value>500</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>
+        INSERT INTO FUNCTION file('test_file', '{format}', 'key UInt64, value UInt64')
+        SELECT number, number FROM numbers(10000000)
+    </query>
+
+    <query>
+        INSERT INTO FUNCTION file('test_file', '{format}', 'key UInt64, value1 UInt64, value2 UInt64, value3 UInt64, value4 UInt64, value5 UInt64')
+        SELECT number, number, number, number, number, number FROM numbers(1000000)
+    </query>
+
+    <!-- Disabled in 36538, broken now
+    <query>
+        INSERT INTO FUNCTION file('test_file_{{_partition_id}}', '{format}', 'partition_id UInt64, value UInt64')
+        PARTITION BY partition_id
+        SELECT (number % {partitions_count}) as partition_id, number FROM numbers(50000)
+    </query>
+
+    <query>
+        INSERT INTO FUNCTION file('test_file_{{_partition_id}}', '{format}', 'partition_id UInt64, value1 UInt64, value2 UInt64, value3 UInt64, value4 UInt64, value5 UInt64')
+        PARTITION BY partition_id
+        SELECT (number % {partitions_count}) as partition_id, number, number, number, number, number FROM numbers(50000)
+    </query>
+    -->
+
+</test>

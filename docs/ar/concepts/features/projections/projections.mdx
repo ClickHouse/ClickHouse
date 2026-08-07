@@ -1,0 +1,712 @@
+---
+slug: /data-modeling/projections
+title: 'الإسقاطات'
+description: 'صفحة توضّح ماهية الإسقاطات، وكيف يمكن استخدامها لتحسين
+أداء الاستعلام، وكيف تختلف عن العروض المادية.'
+keywords: ['إسقاط', 'إسقاطات', 'تحسين الاستعلامات']
+sidebar_order: 1
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
+
+<div id="introduction">
+  ## المقدمة
+</div>
+
+يوفّر ClickHouse آليات متعددة لتسريع الاستعلامات التحليلية على كميات كبيرة
+من البيانات في سيناريوهات الوقت الفعلي. ومن هذه الآليات التي تُسرّع
+استعلاماتك استخدام *الإسقاطات*. تساعد الإسقاطات في تحسين
+الاستعلامات من خلال إعادة ترتيب البيانات وفقًا للسمات المهمة. ويمكن أن يكون ذلك على النحو التالي:
+
+1. إعادة ترتيب كاملة
+2. مجموعة فرعية من الجدول الأصلي بترتيب مختلف
+3. تجميع محسوب مسبقًا (يشبه العرض المادي) ولكن بترتيب
+   يتوافق مع التجميع.
+
+<br />
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="how-do-projections-work">
+  ## كيف تعمل الإسقاطات؟
+</div>
+
+من الناحية العملية، يمكن اعتبار الإسقاط جدولًا مخفيًا إضافيًا
+للجدول الأصلي. ويمكن أن يكون للإسقاط ترتيب صفوف مختلف، وبالتالي
+فهرس أساسي مختلف عن الفهرس الموجود في الجدول الأصلي، كما يمكنه
+الحساب المسبق للقيم التجميعية تلقائيًا وبشكل تدريجي. ونتيجة لذلك، توفّر الإسقاطات
+&quot;أداتي ضبط&quot; لتسريع تنفيذ الاستعلامات:
+
+* **الاستخدام الصحيح للفهارس الأساسية**
+* **الحساب المسبق للتجميعات**
+
+تتشابه الإسقاطات من بعض الجوانب مع [العروض المادية](/ar/concepts/features/materialized-views/index)
+، التي تتيح لك أيضًا استخدام ترتيبات متعددة للصفوف والحساب المسبق للتجميعات
+وقت الإدراج.
+تُحدَّث الإسقاطات تلقائيًا
+وتبقى متزامنة مع الجدول الأصلي، بخلاف العروض المادية التي
+تُحدَّث صراحةً. وعندما يستهدف الاستعلام الجدول الأصلي،
+يأخذ ClickHouse تلقائيًا عينات من المفاتيح الأساسية ويختار جدولًا يمكنه
+إنتاج النتيجة الصحيحة نفسها، لكنه يتطلب أقل قدر ممكن من البيانات
+للقراءة، كما هو موضح في الشكل أدناه:
+
+<Image img="/images/data-modeling/projections_1.webp" size="md" alt="الإسقاطات في ClickHouse" />
+
+<div id="smarter_storage_with_part_offset">
+  ### تخزين أكثر ذكاءً باستخدام `_part_offset`
+</div>
+
+بدءًا من الإصدار 25.5، يدعم ClickHouse العمود الافتراضي `_part_offset` في
+الإسقاطات، مما يوفّر طريقة جديدة لتعريف الإسقاط.
+
+توجد الآن طريقتان لتعريف الإسقاط:
+
+* **تخزين الأعمدة الكاملة (السلوك الأصلي)**: يحتوي الإسقاط على البيانات الكاملة
+  ويمكن قراءته مباشرةً، مما يوفّر أداءً أسرع عندما تتوافق عوامل التصفية مع
+  مفتاح الفرز الخاص بالإسقاط.
+
+* **تخزين مفتاح الفرز + `_part_offset` فقط**: يعمل الإسقاط مثل فهرس.
+  يستخدم ClickHouse الفهرس الأساسي الخاص بالإسقاط لتحديد الصفوف المطابقة، لكنه يقرأ
+  البيانات الفعلية من الجدول الأساسي. ويقلّل ذلك من العبء الإضافي للتخزين مقابل
+  زيادة طفيفة في I/O وقت تنفيذ الاستعلام.
+
+يمكن أيضًا المزج بين الأسلوبين أعلاه، بحيث تُخزَّن بعض الأعمدة في الإسقاط وتُخزَّن
+الأعمدة الأخرى بشكل غير مباشر عبر `_part_offset`.
+
+<div id="when-to-use-projections">
+  ## متى تستخدم الإسقاطات؟
+</div>
+
+تُعدّ الإسقاطات ميزة جذابة للمستخدمين الجدد لأنها تُصان تلقائيًا
+عند إدراج البيانات. علاوة على ذلك، يمكن ببساطة إرسال الاستعلامات إلى
+جدول واحد، حيث تُستغل الإسقاطات، متى أمكن، لتسريع
+زمن الاستجابة.
+
+وهذا بخلاف العروض المادية، حيث يتعين على المستخدم اختيار
+الجدول الهدف المُحسَّن المناسب أو إعادة كتابة استعلامه، بحسب
+المرشحات. وهذا يفرض عبئًا أكبر على تطبيقات المستخدم ويزيد من
+التعقيد من جهة العميل.
+
+وعلى الرغم من هذه المزايا، فإن للإسقاطات بعض القيود المتأصلة التي
+ينبغي أن تكون على دراية بها، ولذلك يجب استخدامها بحذر.
+
+* لا تسمح الإسقاطات باستخدام TTL مختلف للجدول المصدر والجدول
+  الهدف (المخفي)، بينما تتيح العروض المادية استخدام قيم TTL مختلفة.
+* لا تدعم الجداول التي تحتوي على إسقاطات التحديثات الخفيفة وعمليات الحذف.
+* يمكن ربط العروض المادية في سلسلة: إذ يمكن أن يكون الجدول الهدف لعرض مادي واحد
+  هو الجدول المصدر لعرض مادي آخر، وهكذا. وهذا غير
+  ممكن مع الإسقاطات.
+* لا تدعم تعريفات الإسقاطات عمليات JOIN، لكن العروض المادية تدعمها. ومع ذلك، يمكن للاستعلامات على الجداول التي تحتوي على إسقاطات استخدام joins بحرية.
+* لا تدعم تعريفات الإسقاطات المرشحات (عبارة `WHERE`)، لكن العروض المادية تدعمها. ومع ذلك، يمكن للاستعلامات على الجداول التي تحتوي على إسقاطات استخدام المرشحات بحرية.
+
+نوصي باستخدام الإسقاطات عندما:
+
+* تكون هناك حاجة إلى إعادة ترتيب كاملة للبيانات. وبينما يمكن للتعبير في
+  الإسقاط، من الناحية النظرية، استخدام `GROUP BY,` فإن العروض المادية تكون
+  أكثر فعالية في الاحتفاظ بالتجميعات. كما أن مُحسِّن الاستعلامات يكون على الأرجح
+  أكثر ميلًا إلى الاستفادة من الإسقاطات التي تستخدم إعادة ترتيب بسيطة، أي `SELECT * ORDER BY x`.
+  ويمكنك تحديد مجموعة فرعية من الأعمدة في هذا التعبير لتقليل
+  البصمة التخزينية.
+* يكون المستخدمون مرتاحين للزيادة المحتملة في البصمة التخزينية
+  وللكلفة الإضافية المترتبة على كتابة البيانات مرتين. اختبر التأثير على سرعة الإدراج و
+  [قيّم عبء التخزين](/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="filtering-without-using-primary-keys">
+  ### التصفية على أعمدة ليست ضمن المفتاح الأساسي
+</div>
+
+في هذا المثال، سنوضح كيفية إضافة إسقاط إلى جدول.
+وسنرى أيضًا كيف يمكن استخدام إسقاط لتسريع الاستعلامات التي تُجري تصفية
+على أعمدة ليست ضمن المفتاح الأساسي للجدول.
+
+في هذا المثال، سنستخدم مجموعة بيانات New York Taxi Data
+المتاحة على [sql.clickhouse.com](https://sql.clickhouse.com/) والمرتبة
+حسب `pickup_datetime`.
+
+لنكتب استعلامًا بسيطًا للعثور على جميع معرّفات الرحلات التي قدّم فيها الركاب
+إكرامية للسائق تزيد على 200 دولار:
+
+<RunnableCode>
+  ```sql
+  SELECT
+    tip_amount,
+    trip_id,
+    dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min
+  FROM nyc_taxi.trips WHERE tip_amount > 200 AND trip_duration_min > 0
+  ORDER BY tip_amount, trip_id ASC
+  ```
+</RunnableCode>
+
+لاحظ أنه لأننا نُجري التصفية على `tip_amount`، وهو ليس ضمن `ORDER BY`، اضطر ClickHouse
+إلى إجراء مسح كامل للجدول. لنعمل الآن على تسريع هذا الاستعلام.
+
+وللحفاظ على الجدول الأصلي والنتائج الأصلية، سننشئ جدولًا جديدًا وننسخ البيانات باستخدام `INSERT INTO SELECT`:
+
+```sql
+CREATE TABLE nyc_taxi.trips_with_projection AS nyc_taxi.trips;
+INSERT INTO nyc_taxi.trips_with_projection SELECT * FROM nyc_taxi.trips;
+```
+
+لإضافة إسقاط، نستخدم تعليمة `ALTER TABLE` مع تعليمة `ADD PROJECTION`
+التالية:
+
+```sql
+ALTER TABLE nyc_taxi.trips_with_projection
+ADD PROJECTION prj_tip_amount
+(
+    SELECT *
+    ORDER BY tip_amount, dateDiff('minutes', pickup_datetime, dropoff_datetime)
+)
+```
+
+من الضروري، بعد إضافة إسقاط، استخدام تعليمة `MATERIALIZE PROJECTION`
+لكي تُرتَّب البيانات فيه فعليًا وتُعاد كتابتها وفقًا
+للاستعلام المحدد أعلاه:
+
+```sql
+ALTER TABLE nyc.trips_with_projection MATERIALIZE PROJECTION prj_tip_amount
+```
+
+لنُشغِّل الاستعلام مرة أخرى الآن بعد أن أضفنا الإسقاط:
+
+<RunnableCode>
+  ```sql
+  SELECT
+    tip_amount,
+    trip_id,
+    dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min
+  FROM nyc_taxi.trips_with_projection WHERE tip_amount > 200 AND trip_duration_min > 0
+  ORDER BY tip_amount, trip_id ASC
+  ```
+</RunnableCode>
+
+لاحظ كيف تمكّنا من تقليل وقت الاستعلام بشكل ملحوظ، واحتجنا إلى فحص
+عدد أقل من الصفوف.
+
+يمكننا التأكد من أن استعلامنا أعلاه استخدم بالفعل الإسقاط الذي أنشأناه، وذلك
+من خلال الاستعلام عن جدول `system.query_log`:
+
+```sql
+SELECT query, projections 
+FROM system.query_log 
+WHERE query_id='<query_id>'
+```
+
+```response
+   ┌─query─────────────────────────────────────────────────────────────────────────┬─projections──────────────────────┐
+   │ SELECT                                                                       ↴│ ['default.trips.prj_tip_amount'] │
+   │↳  tip_amount,                                                                ↴│                                  │
+   │↳  trip_id,                                                                   ↴│                                  │
+   │↳  dateDiff('minutes', pickup_datetime, dropoff_datetime) AS trip_duration_min↴│                                  │
+   │↳FROM trips WHERE tip_amount > 200 AND trip_duration_min > 0                   │                                  │
+   └───────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────┘
+```
+
+<div id="using-projections-to-speed-up-UK-price-paid">
+  ### استخدام الإسقاطات لتسريع استعلامات أسعار العقارات المدفوعة في المملكة المتحدة
+</div>
+
+لتوضيح كيف يمكن استخدام الإسقاطات لتسريع أداء الاستعلامات، دعونا
+نلقِ نظرة على مثال يستخدم مجموعة بيانات من الواقع. في هذا المثال سنستخدم
+الجدول من دليلنا العملي [UK Property Price Paid](/ar/get-started/sample-datasets/uk-price-paid)
+والذي يحتوي على 30.03 مليون صف. هذه المجموعة من البيانات متاحة أيضًا ضمن بيئة
+[sql.clickhouse.com](https://sql.clickhouse.com/?query_id=6IDMHK3OMR1C97J6M9EUQS)
+الخاصة بنا.
+
+إذا كنت ترغب في معرفة كيفية إنشاء الجدول وإدراج البيانات، فيمكنك
+الرجوع إلى صفحة [&quot;مجموعة بيانات أسعار العقارات في المملكة المتحدة&quot;](/ar/get-started/sample-datasets/uk-price-paid).
+
+يمكننا تشغيل استعلامين بسيطين على مجموعة البيانات هذه. يعرض الأول المقاطعات في لندن التي
+سُجلت فيها أعلى الأسعار المدفوعة، بينما يحسب الثاني متوسط السعر لكل مقاطعة:
+
+<RunnableCode>
+  ```sql
+  SELECT
+    county,
+    price
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  ORDER BY price DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      county,
+      avg(price)
+  FROM uk.uk_price_paid
+  GROUP BY county
+  ORDER BY avg(price) DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+لاحظ أنه على الرغم من سرعتهما الكبيرة، فقد أُجري فحص كامل للجدول عبر جميع الصفوف البالغ عددها 30.03 مليونًا في كلٍ من الاستعلامين، وذلك
+لأن `town` و`price` لم يكونا ضمن عبارة `ORDER BY` عند
+إنشاء الجدول:
+
+```sql highlight={6}
+CREATE TABLE uk.uk_price_paid
+(
+  ...
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+لنرَ ما إذا كان بإمكاننا تسريع هذا الاستعلام باستخدام projections.
+
+للحفاظ على الجدول والنتائج الأصليين، سننشئ جدولًا جديدًا وننسخ البيانات باستخدام `INSERT INTO SELECT`:
+
+```sql
+CREATE TABLE uk.uk_price_paid_with_projections AS uk_price_paid;
+INSERT INTO uk.uk_price_paid_with_projections SELECT * FROM uk.uk_price_paid;
+```
+
+ننشئ ونملأ الإسقاط `prj_oby_town_price`، الذي يُنتج
+جدولًا إضافيًا (مخفيًا) بفهرس أساسي، مرتّبًا حسب البلدة والسعر، من أجل
+تحسين الاستعلام الذي يسرد المقاطعات في بلدة محددة بحسب أعلى الأسعار
+المدفوعة:
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (ADD PROJECTION prj_obj_town_price
+  (
+    SELECT *
+    ORDER BY
+        town,
+        price
+  ))
+```
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (MATERIALIZE PROJECTION prj_obj_town_price)
+SETTINGS mutations_sync = 1
+```
+
+يُستخدم الإعداد [`mutations_sync`](/ar/reference/settings/session-settings#mutations_sync)
+لفرض التنفيذ بشكل متزامن.
+
+ننشئ ونملأ الإسقاط `prj_gby_county` — وهو جدول إضافي (مخفي)
+يحسب مسبقًا وبشكل تزايدي قيم التجميع avg(price) لجميع
+مقاطعات المملكة المتحدة البالغ عددها 130:
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (ADD PROJECTION prj_gby_county
+  (
+    SELECT
+        county,
+        avg(price)
+    GROUP BY county
+  ))
+```
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections
+  (MATERIALIZE PROJECTION prj_gby_county)
+SETTINGS mutations_sync = 1
+```
+
+<Note>
+  إذا كانت هناك عبارة `GROUP BY` مستخدمة في إسقاط مثل الإسقاط `prj_gby_county`
+  أعلاه، فإن محرك التخزين الأساسي للجدول (المخفي)
+  يصبح `AggregatingMergeTree`، وتُحوَّل جميع الدوال التجميعية إلى
+  `AggregateFunction`. وهذا يضمن تجميع البيانات التزايدي بشكل صحيح.
+</Note>
+
+يعرض الشكل أدناه تصورًا للجدول الرئيسي `uk_price_paid_with_projections`
+والإسقاطين التابعين له:
+
+<Image img="/images/data-modeling/projections_2.webp" size="md" alt="تصور للجدول الرئيسي uk_price_paid_with_projections والإسقاطين التابعين له" />
+
+إذا شغّلنا الآن الاستعلام الذي يسرد المقاطعات في لندن ذات أعلى ثلاثة
+أسعار مرة أخرى، فسنلاحظ تحسنًا في أداء الاستعلام:
+
+<RunnableCode>
+  ```sql
+  SELECT
+    county,
+    price
+  FROM uk.uk_price_paid_with_projections
+  WHERE town = 'LONDON'
+  ORDER BY price DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+وبالمثل، بالنسبة إلى الاستعلام الذي يسرد مقاطعات المملكة المتحدة ذات أعلى
+ثلاثة متوسطات للأسعار المدفوعة:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      county,
+      avg(price)
+  FROM uk.uk_price_paid_with_projections
+  GROUP BY county
+  ORDER BY avg(price) DESC
+  LIMIT 3
+  ```
+</RunnableCode>
+
+لاحظ أن كلا الاستعلامين يستهدفان الجدول الأصلي، وأن كليهما أسفر
+عن فحص كامل للجدول (إذ جرى بثّ جميع الصفوف البالغ عددها 30.03 مليون صف من القرص) قبل أن
+ننشىء الإسقاطين.
+
+لاحظ أيضًا أن الاستعلام الذي يسرد المقاطعات في لندن لأعلى ثلاثة
+أسعار مدفوعة يبثّ 2.17 مليون صف. وعندما استخدمنا مباشرةً جدولًا ثانيًا
+مُحسّنًا لهذا الاستعلام، لم يُبثّ سوى 81.92 ألف صف من القرص.
+
+يرجع سبب هذا الاختلاف إلى أن التحسين `optimize_read_in_order`
+المذكور أعلاه غير مدعوم حاليًا للإسقاطات.
+
+نفحص جدول `system.query_log` لنرى أن ClickHouse
+استخدم تلقائيًا الإسقاطين للاستعلامين المذكورين أعلاه (انظر
+عمود projections أدناه):
+
+```sql
+SELECT
+  tables,
+  query,
+  query_duration_ms::String ||  ' ms' AS query_duration,
+        formatReadableQuantity(read_rows) AS read_rows,
+  projections
+FROM clusterAllReplicas(default, system.query_log)
+WHERE (type = 'QueryFinish') AND (tables = ['default.uk_price_paid_with_projections'])
+ORDER BY initial_query_start_time DESC
+  LIMIT 2
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+tables:         ['uk.uk_price_paid_with_projections']
+query:          SELECT
+    county,
+    avg(price)
+FROM uk_price_paid_with_projections
+GROUP BY county
+ORDER BY avg(price) DESC
+LIMIT 3
+query_duration: 5 ms
+read_rows:      132.00
+projections:    ['uk.uk_price_paid_with_projections.prj_gby_county']
+
+Row 2:
+──────
+tables:         ['uk.uk_price_paid_with_projections']
+query:          SELECT
+  county,
+  price
+FROM uk_price_paid_with_projections
+WHERE town = 'LONDON'
+ORDER BY price DESC
+LIMIT 3
+SETTINGS log_queries=1
+query_duration: 11 ms
+read_rows:      2.29 million
+projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+
+<div id="further-examples">
+  ### أمثلة إضافية
+</div>
+
+تستخدم الأمثلة التالية مجموعة بيانات أسعار المملكة المتحدة نفسها، وتقارن بين الاستعلامات عند استخدام الإسقاطات وعند عدم استخدامها.
+
+وللحفاظ على جدولنا الأصلي (وعلى الأداء)، ننشئ مجددًا نسخة من الجدول باستخدام `CREATE AS` و`INSERT INTO SELECT`.
+
+```sql
+CREATE TABLE uk.uk_price_paid_with_projections_v2 AS uk.uk_price_paid;
+INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
+```
+
+<div id="build-projection">
+  #### إنشاء إسقاط
+</div>
+
+لننشئ إسقاطًا تجميعيًا استنادًا إلى الأبعاد `toYear(date)` و`district` و`town`:
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    ADD PROJECTION projection_by_year_district_town
+    (
+        SELECT
+            toYear(date),
+            district,
+            town,
+            avg(price),
+            sum(price),
+            count()
+        GROUP BY
+            toYear(date),
+            district,
+            town
+    )
+```
+
+عبِّئ الإسقاط للبيانات الموجودة. (من دون تخزينه ماديًا، لن يُنشأ الإسقاط إلا للبيانات المُدرجة حديثًا):
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    MATERIALIZE PROJECTION projection_by_year_district_town
+SETTINGS mutations_sync = 1
+```
+
+تُظهر الاستعلامات التالية الفرق في الأداء مع الإسقاطات وبدونها. ولتعطيل استخدام الإسقاطات، نستخدم الإعداد [`optimize_use_projections`](/ar/reference/settings/session-settings#optimize_use_projections)، وهو مُمكَّن افتراضيًا.
+
+<div id="average-price-projections">
+  #### الاستعلام 1. متوسط السعر لكل سنة
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 1000000, 80)
+  FROM uk.uk_price_paid_with_projections_v2
+  GROUP BY year
+  ORDER BY year ASC
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 1000000, 80)
+  FROM uk.uk_price_paid_with_projections_v2
+  GROUP BY year
+  ORDER BY year ASC
+
+  ```
+</RunnableCode>
+
+يُفترض أن تكون النتائج نفسها، لكن الأداء سيكون أفضل في المثال الأخير!
+
+<div id="average-price-london-projections">
+  #### الاستعلام 2. متوسط السعر سنويًا في لندن
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 2000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year ASC
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 2000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year ASC
+  ```
+</RunnableCode>
+
+<div id="most-expensive-neighborhoods-projections">
+  #### الاستعلام 3. الأحياء الأكثر تكلفة
+</div>
+
+يجب تعديل الشرط `(date >= '2020-01-01')` بحيث يطابق بُعد الإسقاط (`toYear(date) >= 2020)`:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE toYear(date) >= 2020
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  SETTINGS optimize_use_projections=0
+  ```
+</RunnableCode>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid_with_projections_v2
+  WHERE toYear(date) >= 2020
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
+
+مرة أخرى، النتيجة هي نفسها، لكن لاحظ تحسّن أداء الاستعلام في الاستعلام الثاني.
+
+<div id="combining-projections">
+  ### دمج الإسقاطات في استعلام واحد
+</div>
+
+اعتبارًا من الإصدار 25.6، واستنادًا إلى دعم `_part_offset` الذي أُضيف في
+الإصدار السابق، يمكن لـ ClickHouse الآن استخدام عدة إسقاطات لتسريع
+استعلام واحد يتضمن عدة عوامل تصفية.
+
+ومن المهم أن ClickHouse لا يزال يقرأ البيانات من إسقاط واحد فقط (أو من الجدول الأساسي)،
+لكنه يستطيع استخدام الفهارس الأساسية للإسقاطات الأخرى لاستبعاد الأجزاء غير الضرورية قبل القراءة.
+ويكون هذا مفيدًا بشكل خاص للاستعلامات التي تُجري تصفية على عدة أعمدة، إذ قد
+يطابق كلٌّ منها إسقاطًا مختلفًا.
+
+> حاليًا، تقتصر هذه الآلية على استبعاد الأجزاء بالكامل. أما الاستبعاد على مستوى
+> granule فغير مدعوم بعد.
+
+لتوضيح ذلك، نعرّف الجدول (مع إسقاطات تستخدم أعمدة `_part_offset`)
+ونُدرج خمسة صفوف كمثال تطابق المخططات أعلاه.
+
+```sql
+CREATE TABLE page_views
+(
+    id UInt64,
+    event_date Date,
+    user_id UInt32,
+    url String,
+    region String,
+    PROJECTION region_proj
+    (
+        SELECT _part_offset ORDER BY region
+    ),
+    PROJECTION user_id_proj
+    (
+        SELECT _part_offset ORDER BY user_id
+    )
+)
+ENGINE = MergeTree
+ORDER BY (event_date, id)
+SETTINGS
+  index_granularity = 1, -- one row per granule
+  max_bytes_to_merge_at_max_space_in_pool = 1; -- disable merge
+```
+
+ثم نُدخل البيانات إلى الجدول:
+
+```sql
+INSERT INTO page_views VALUES (
+1, '2025-07-01', 101, 'https://example.com/page1', 'europe');
+INSERT INTO page_views VALUES (
+2, '2025-07-01', 102, 'https://example.com/page2', 'us_west');
+INSERT INTO page_views VALUES (
+3, '2025-07-02', 106, 'https://example.com/page3', 'us_west');
+INSERT INTO page_views VALUES (
+4, '2025-07-02', 107, 'https://example.com/page4', 'us_west');
+INSERT INTO page_views VALUES (
+5, '2025-07-03', 104, 'https://example.com/page5', 'asia');
+```
+
+<Note>
+  ملاحظة: يستخدم الجدول إعدادات مخصصة لأغراض التوضيح، مثل حبيبات من صف واحد
+  وتعطيل عمليات دمج الأجزاء، وهي غير موصى بها للاستخدام في بيئات الإنتاج.
+</Note>
+
+ينتج عن هذا الإعداد ما يلي:
+
+* خمسة أجزاء منفصلة (جزء واحد لكل صف مُدرَج)
+* مُدخل واحد في الفهرس الأساسي لكل صف (في الجدول الأساسي وفي كل إسقاط)
+* يحتوي كل جزء على صف واحد بالضبط
+
+باستخدام هذا الإعداد، نشغّل استعلامًا يطبّق عامل تصفية على كلٍّ من `region` و`user_id`.
+ونظرًا إلى أن الفهرس الأساسي للجدول الأساسي مبني على `event_date` و`id`، فهو
+غير مفيد هنا، لذا يستخدم ClickHouse ما يلي:
+
+* `region_proj` لتقليص الأجزاء حسب المنطقة
+* `user_id_proj` لتقليص الأجزاء أكثر حسب `user_id`
+
+يمكن ملاحظة هذا السلوك باستخدام `EXPLAIN projections = 1`، الذي يوضّح كيف
+يحدّد ClickHouse الإسقاطات ويطبّقها.
+
+```sql
+EXPLAIN projections=1
+SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
+```
+
+```response
+    ┌─explain────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                              │
+ 2. │   Expression                                                                           │                                                                        
+ 3. │     ReadFromMergeTree (default.page_views)                                             │
+ 4. │     Projections:                                                                       │
+ 5. │       Name: region_proj                                                                │
+ 6. │         Description: Projection has been analyzed and is used for part-level filtering │
+ 7. │         Condition: (region in ['us_west', 'us_west'])                                  │
+ 8. │         Search Algorithm: binary search                                                │
+ 9. │         Parts: 3                                                                       │
+10. │         Marks: 3                                                                       │
+11. │         Ranges: 3                                                                      │
+12. │         Rows: 3                                                                        │
+13. │         Filtered Parts: 2                                                              │
+14. │       Name: user_id_proj                                                               │
+15. │         Description: Projection has been analyzed and is used for part-level filtering │
+16. │         Condition: (user_id in [107, 107])                                             │
+17. │         Search Algorithm: binary search                                                │
+18. │         Parts: 1                                                                       │
+19. │         Marks: 1                                                                       │
+20. │         Ranges: 1                                                                      │
+21. │         Rows: 1                                                                        │
+22. │         Filtered Parts: 2                                                              │
+    └────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+يوضح ناتج `EXPLAIN` (المعروض أعلاه) خطة الاستعلام المنطقية من الأعلى إلى الأسفل:
+
+| رقم الصف | الوصف                                                                                                           |
+| -------- | --------------------------------------------------------------------------------------------------------------- |
+| 3        | يخطط للقراءة من الجدول الأساسي `page_views`                                                                     |
+| 5-13     | يستخدم `region_proj` لتحديد 3 أجزاء حيث `region = 'us_west'`، مع استبعاد جزأين من أصل 5 أجزاء                   |
+| 14-22    | يستخدم `user_id_proj` لتحديد جزء واحد حيث `user_id = 107`، مع استبعاد جزأين إضافيين من الأجزاء الثلاثة المتبقية |
+
+في النهاية، لا تتم القراءة إلا من **جزء واحد فقط من أصل 5 أجزاء** في الجدول الأساسي.
+ومن خلال الجمع بين تحليل الفهارس لعدة إسقاطات، يقلّل ClickHouse بشكل كبير كمية البيانات التي تُفحص،
+مما يحسّن الأداء مع إبقاء أعباء التخزين الإضافية منخفضة.
+
+<div id="related-content">
+  ## محتوى ذو صلة
+</div>
+
+* [مقدمة عملية عن الفهارس الأولية في ClickHouse](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
+* [العروض المادية](/ar/concepts/features/materialized-views/index)
+* [ALTER PROJECTION](/ar/reference/statements/alter/projection)

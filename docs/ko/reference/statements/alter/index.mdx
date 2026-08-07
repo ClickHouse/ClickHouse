@@ -1,0 +1,85 @@
+---
+description: 'ALTER에 대한 문서'
+sidebarTitle: 'ALTER'
+slug: /sql-reference/statements/alter/
+title: 'ALTER'
+doc_type: 'reference'
+---
+
+대부분의 `ALTER TABLE` 쿼리는 테이블 설정이나 데이터를 수정합니다:
+
+| 수정자                                                                  |
+| -------------------------------------------------------------------- |
+| [COLUMN](/ko/reference/statements/alter/column)                         |
+| [PARTITION](/ko/reference/statements/alter/partition)                   |
+| [DELETE](/ko/reference/statements/alter/delete)                         |
+| [UPDATE](/ko/reference/statements/alter/update)                         |
+| [ORDER BY](/ko/reference/statements/alter/order-by)                     |
+| [INDEX](/ko/reference/statements/alter/skipping-index)                  |
+| [CONSTRAINT](/ko/reference/statements/alter/constraint)                 |
+| [TTL](/ko/reference/statements/alter/ttl)                               |
+| [STATISTICS](/ko/reference/statements/alter/statistics)                 |
+| [APPLY DELETED MASK](/ko/reference/statements/alter/apply-deleted-mask) |
+| [APPLY PATCHES](/ko/reference/statements/alter/apply-patches)           |
+
+<Note>
+  대부분의 `ALTER TABLE` 쿼리는 [*MergeTree](/ko/reference/engines/table-engines/mergetree-family/index), [Merge](/ko/reference/engines/table-engines/special/merge), [Distributed](/ko/reference/engines/table-engines/special/distributed) 테이블에서만 지원됩니다.
+</Note>
+
+다음 `ALTER` SQL 문은 뷰를 수정합니다:
+
+| SQL 문                                                            | 설명                                                                         |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY QUERY](/ko/reference/statements/alter/view) | [구체화된 뷰(Materialized View)](/ko/reference/statements/create/view)의 구조를 수정합니다. |
+
+다음 `ALTER` SQL 문은 역할 기반 접근 제어와 관련된 개체를 수정합니다:
+
+| SQL 문                                                            |
+| ---------------------------------------------------------------- |
+| [USER](/ko/reference/statements/alter/user)                         |
+| [ROLE](/ko/reference/statements/alter/role)                         |
+| [QUOTA](/ko/reference/statements/alter/quota)                       |
+| [ROW POLICY](/ko/reference/statements/alter/row-policy)             |
+| [SETTINGS PROFILE](/ko/reference/statements/alter/settings-profile) |
+
+| SQL 문                                                                  | 설명                                                                                      |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/ko/reference/statements/alter/comment)  | 이전 설정 여부와 관계없이 테이블 주석을 추가, 수정 또는 제거합니다.                                                 |
+| [ALTER NAMED COLLECTION](/ko/reference/statements/alter/named-collection) | [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 수정합니다. |
+
+<div id="mutations">
+  ## 뮤테이션
+</div>
+
+테이블 데이터를 변경하기 위한 `ALTER` 쿼리는 &quot;뮤테이션&quot;이라는 메커니즘으로 구현되며, 대표적인 예로 [ALTER TABLE ... DELETE](/ko/reference/statements/alter/delete) 및 [ALTER TABLE ... UPDATE](/ko/reference/statements/alter/update)가 있습니다. 이는 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/index) 테이블의 머지와 유사한 비동기 백그라운드 프로세스로, 파트의 새로운 &quot;뮤테이션된&quot; 버전을 생성합니다.
+
+`*MergeTree` 테이블에서 뮤테이션은 **전체 데이터 파트를 다시 써서** 실행됩니다.
+원자성은 보장되지 않습니다. 준비가 완료되는 즉시 기존 파트가 뮤테이션된 파트로 대체되므로, 뮤테이션 도중 실행을 시작한 `SELECT` 쿼리에서는 이미 뮤테이션된 파트의 데이터와 아직 뮤테이션되지 않은 파트의 데이터를 함께 보게 됩니다.
+
+뮤테이션은 생성 순서에 따라 완전히 정렬되며, 각 파트에 그 순서대로 적용됩니다. 또한 뮤테이션은 `INSERT INTO` 쿼리와 부분적인 순서 관계를 가집니다. 즉, 뮤테이션이 제출되기 전에 테이블에 삽입된 데이터는 뮤테이션되지만, 그 이후에 삽입된 데이터는 뮤테이션되지 않습니다. 참고로 뮤테이션은 어떤 방식으로도 삽입을 차단하지 않습니다.
+
+뮤테이션 쿼리는 뮤테이션 항목이 추가된 직후 즉시 반환됩니다(복제된 테이블의 경우 ZooKeeper에, 복제되지 않은 테이블의 경우 파일 시스템에 추가됩니다). 뮤테이션 자체는 시스템 프로필 설정을 사용해 비동기적으로 실행됩니다. 뮤테이션의 진행 상황은 [`system.mutations`](/ko/reference/system-tables/mutations) 테이블을 사용해 추적할 수 있습니다. 성공적으로 제출된 뮤테이션은 ClickHouse 서버가 재시작되더라도 계속 실행됩니다. 제출된 뮤테이션은 롤백할 수 없지만, 어떤 이유로 뮤테이션이 멈춘 경우 [`KILL MUTATION`](/ko/reference/statements/kill#kill-mutation) 쿼리로 취소할 수 있습니다.
+
+완료된 뮤테이션 항목은 즉시 삭제되지 않습니다(보존되는 항목 수는 `finished_mutations_to_keep` 스토리지 엔진 매개변수로 결정됩니다). 오래된 뮤테이션 항목은 삭제됩니다.
+
+<div id="synchronicity-of-alter-queries">
+  ## ALTER 쿼리의 동기성
+</div>
+
+복제되지 않은 테이블에서는 모든 `ALTER` 쿼리가 동기식으로 수행됩니다. 복제된 테이블에서는 쿼리가 적절한 작업에 대한 지시만 `ZooKeeper`에 추가하고, 실제 작업은 가능한 한 빨리 수행됩니다. 다만, 쿼리는 이러한 작업이 모든 레플리카에서 완료될 때까지 기다릴 수 있습니다.
+
+뮤테이션을 생성하는 `ALTER` 쿼리(예: `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC` 등이 있으나 이에 국한되지는 않음)의 동기성은 [mutations&#95;sync](/ko/reference/settings/session-settings#mutations_sync) 설정으로 정의됩니다.
+
+메타데이터만 수정하는 다른 `ALTER` 쿼리의 경우 [alter&#95;sync](/ko/reference/settings/session-settings#alter_sync) 설정을 사용해 대기 동작을 설정할 수 있습니다.
+
+비활성 레플리카가 모든 `ALTER` 쿼리를 실행할 때까지 얼마나 오래 기다릴지(초 단위)는 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) 설정으로 지정할 수 있습니다.
+
+<Note>
+  모든 `ALTER` 쿼리에서 `alter_sync = 2`이고 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면 `UNFINISHED` 예외가 발생합니다.
+</Note>
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* 블로그: [ClickHouse에서 업데이트 및 삭제 처리](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

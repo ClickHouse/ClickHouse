@@ -1,0 +1,615 @@
+---
+description: 'توثيق نوع البيانات Variant في ClickHouse'
+sidebarTitle: 'Variant(T1, T2, ...)'
+slug: /sql-reference/data-types/variant
+title: 'Variant(T1, T2, ...)'
+doc_type: 'reference'
+---
+
+يمثل هذا النوع union من أنواع بيانات أخرى. ويعني النوع `Variant(T1, T2, ..., TN)` أن كل صف من هذا النوع
+يحتوي على قيمة من النوع `T1` أو `T2` أو ... أو `TN`، أو لا يحتوي على أيٍّ منها (القيمة `NULL`).
+
+لا يهم ترتيب الأنواع المتداخلة: Variant(T1, T2) = Variant(T2, T1).
+يمكن أن تكون الأنواع المتداخلة أي أنواع باستثناء Nullable(...) و LowCardinality(Nullable(...)) و Variant(...).
+
+<Note>
+  لا يُنصح باستخدام أنواع متشابهة كبدائل (على سبيل المثال، أنواع رقمية مختلفة مثل `Variant(UInt32, Int64)` أو أنواع تاريخ مختلفة مثل `Variant(Date, DateTime)`)،
+  لأن التعامل مع قيم من هذه الأنواع قد يؤدي إلى التباس. افتراضيًا، سيؤدي إنشاء نوع `Variant` من هذا النوع إلى حدوث استثناء، لكن يمكن تمكينه باستخدام الإعداد `allow_suspicious_variant_types`
+</Note>
+
+<div id="creating-variant">
+  ## إنشاء نوع Variant
+</div>
+
+استخدام النوع `Variant` في تعريف عمود الجدول:
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT v FROM test;
+```
+
+```text
+┌─v─────────────┐
+│ ᴺᵁᴸᴸ          │
+│ 42            │
+│ Hello, World! │
+│ [1,2,3]       │
+└───────────────┘
+```
+
+باستخدام CAST مع الأعمدة العادية:
+
+```sql
+SELECT toTypeName(variant) AS type_name, 'Hello, World!'::Variant(UInt64, String, Array(UInt64)) as variant;
+```
+
+```text
+┌─type_name──────────────────────────────┬─variant───────┐
+│ Variant(Array(UInt64), String, UInt64) │ Hello, World! │
+└────────────────────────────────────────┴───────────────┘
+```
+
+استخدام الدالتين `if/multiIf` عندما لا تكون للوسيطات نوعٌ مشترك (يجب تفعيل الإعداد `use_variant_as_common_type` لاستخدامهما):
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
+```
+
+```text
+┌─variant───┐
+│ []        │
+│ 1         │
+│ [0,1]     │
+│ 3         │
+│ [0,1,2,3] │
+└───────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL) AS variant FROM numbers(4);
+```
+
+```text
+┌─variant───────┐
+│ 42            │
+│ [1,2,3]       │
+│ Hello, World! │
+│ ᴺᵁᴸᴸ          │
+└───────────────┘
+```
+
+استخدام الدالتين &#39;array/map&#39; إذا لم يكن لعناصر array أو لقيم map نوعٌ مشترك (يجب أن يكون الإعداد `use_variant_as_common_type` مُمكّنًا لهذا الغرض):
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT array(range(number), number, 'str_' || toString(number)) as array_of_variants FROM numbers(3);
+```
+
+```text
+┌─array_of_variants─┐
+│ [[],0,'str_0']    │
+│ [[0],1,'str_1']   │
+│ [[0,1],2,'str_2'] │
+└───────────────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as map_of_variants FROM numbers(3);
+```
+
+```text
+┌─map_of_variants───────────────┐
+│ {'a':[],'b':0,'c':'str_0'}    │
+│ {'a':[0],'b':1,'c':'str_1'}   │
+│ {'a':[0,1],'b':2,'c':'str_2'} │
+└───────────────────────────────┘
+```
+
+<div id="reading-variant-nested-types-as-subcolumns">
+  ## قراءة أنواع Variant المتداخلة كأعمدة فرعية
+</div>
+
+يدعم النوع Variant قراءة نوع متداخل واحد من عمود Variant باستخدام اسم النوع كعمود فرعي.
+لذلك، إذا كان لديك العمود `variant Variant(T1, T2, T3)`، فيمكنك قراءة عمود فرعي من النوع `T2` باستخدام الصياغة `variant.T2`.
+وسيكون نوع هذا العمود الفرعي `Nullable(T2)` إذا كان `T2` يمكن أن يوجد داخل `Nullable`، وإلا فسيكون `T2`. وسيكون هذا العمود الفرعي
+بنفس حجم عمود Variant الأصلي، وسيحتوي على قيم `NULL` (أو قيم فارغة إذا تعذر وجود `T2` داخل `Nullable`)
+في جميع الصفوف التي لا يكون فيها عمود Variant الأصلي من النوع `T2`.
+
+يمكن أيضًا قراءة الأعمدة الفرعية لـ Variant باستخدام الدالة `variantElement(variant_column, type_name)`.
+
+أمثلة:
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT v, v.String, v.UInt64, v.`Array(UInt64)` FROM test;
+```
+
+```text
+┌─v─────────────┬─v.String──────┬─v.UInt64─┬─v.Array(UInt64)─┐
+│ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ          │     ᴺᵁᴸᴸ │ []              │
+│ 42            │ ᴺᵁᴸᴸ          │       42 │ []              │
+│ Hello, World! │ Hello, World! │     ᴺᵁᴸᴸ │ []              │
+│ [1,2,3]       │ ᴺᵁᴸᴸ          │     ᴺᵁᴸᴸ │ [1,2,3]         │
+└───────────────┴───────────────┴──────────┴─────────────────┘
+```
+
+```sql
+SELECT toTypeName(v.String), toTypeName(v.UInt64), toTypeName(v.`Array(UInt64)`) FROM test LIMIT 1;
+```
+
+```text
+┌─toTypeName(v.String)─┬─toTypeName(v.UInt64)─┬─toTypeName(v.Array(UInt64))─┐
+│ Nullable(String)     │ Nullable(UInt64)     │ Array(UInt64)               │
+└──────────────────────┴──────────────────────┴─────────────────────────────┘
+```
+
+```sql
+SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM test;
+```
+
+```text
+┌─v─────────────┬─variantElement(v, 'String')─┬─variantElement(v, 'UInt64')─┬─variantElement(v, 'Array(UInt64)')─┐
+│ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ []                                 │
+│ 42            │ ᴺᵁᴸᴸ                        │                          42 │ []                                 │
+│ Hello, World! │ Hello, World!               │                        ᴺᵁᴸᴸ │ []                                 │
+│ [1,2,3]       │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ [1,2,3]                            │
+└───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
+```
+
+لمعرفة نوع Variant المُخزَّن في كل صف، يمكن استخدام الدالة `variantType(variant_column)`. تُرجع هذه الدالة القيمة `Enum` التي تحتوي على اسم نوع Variant لكل صف (أو `'None'` إذا كانت قيمة الصف `NULL`).
+
+مثال:
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT variantType(v) FROM test;
+```
+
+```text
+┌─variantType(v)─┐
+│ None           │
+│ UInt64         │
+│ String         │
+│ Array(UInt64)  │
+└────────────────┘
+```
+
+```sql
+SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
+```
+
+```text
+┌─toTypeName(variantType(v))──────────────────────────────────────────┐
+│ Enum8('None' = -1, 'Array(UInt64)' = 0, 'String' = 1, 'UInt64' = 2) │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="conversion-between-a-variant-column-and-other-columns">
+  ## التحويل بين عمود من نوع Variant والأعمدة الأخرى
+</div>
+
+هناك 4 عمليات تحويل ممكنة يمكن إجراؤها لعمود من النوع `Variant`.
+
+<div id="converting-a-string-column-to-a-variant-column">
+  ### تحويل عمود String إلى عمود Variant
+</div>
+
+يتم التحويل من `String` إلى `Variant` عبر تحليل قيمة من النوع `Variant` انطلاقًا من القيمة النصية:
+
+```sql
+SELECT '42'::Variant(String, UInt64) AS variant, variantType(variant) AS variant_type
+```
+
+```text
+┌─variant─┬─variant_type─┐
+│ 42      │ UInt64       │
+└─────────┴──────────────┘
+```
+
+```sql
+SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
+```
+
+```text
+┌─variant─┬─variant_type──┐
+│ [1,2,3] │ Array(UInt64) │
+└─────────┴───────────────┘
+```
+
+````sql
+SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types```
+````
+
+```text
+┌─map_of_variants─────────────────────────────┬─map_of_variant_types──────────────────────────┐
+│ {'key1':42,'key2':true,'key3':'2020-01-01'} │ {'key1':'UInt64','key2':'Bool','key3':'Date'} │
+└─────────────────────────────────────────────┴───────────────────────────────────────────────┘
+```
+
+لتعطيل التحليل أثناء التحويل من `String` إلى `Variant`، يمكنك إيقاف الإعداد `cast_string_to_dynamic_use_inference`:
+
+```sql
+SET cast_string_to_variant_use_inference = 0;
+SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
+```
+
+```text
+┌─variant───┬─variant_type─┐
+│ [1, 2, 3] │ String       │
+└───────────┴──────────────┘
+```
+
+<div id="converting-an-ordinary-column-to-a-variant-column">
+  ### تحويل عمود عادي إلى عمود Variant
+</div>
+
+يمكن تحويل عمود عادي من النوع `T` إلى عمود `Variant` يحتوي على هذا النوع:
+
+```sql
+SELECT toTypeName(variant) AS type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
+```
+
+```text
+┌─type_name──────────────────────────────┬─variant─┬─variant_name──┐
+│ Variant(Array(UInt64), String, UInt64) │ [1,2,3] │ Array(UInt64) │
+└────────────────────────────────────────┴─────────┴───────────────┘
+```
+
+ملاحظة: تتم دائمًا عملية التحويل من النوع `String` عبر التحليل، وإذا كنت بحاجة إلى تحويل عمود `String` إلى النوع الفرعي `String` ضمن `Variant` من دون تحليل، فيمكنك القيام بما يلي:
+
+```sql
+SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
+```
+
+```sql
+┌─variant───┬─variant_type─┐
+│ [1, 2, 3] │ String       │
+└───────────┴──────────────┘
+```
+
+<div id="converting-a-variant-column-to-an-ordinary-column">
+  ### تحويل عمود `Variant` إلى عمود عادي
+</div>
+
+يمكن تحويل عمود `Variant` إلى عمود عادي. في هذه الحالة، ستُحوَّل جميع قيم `Variant` المتداخلة إلى النوع الهدف:
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String)) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('42.42');
+SELECT v::Nullable(Float64) FROM test;
+```
+
+```text
+┌─CAST(v, 'Nullable(Float64)')─┐
+│                         ᴺᵁᴸᴸ │
+│                           42 │
+│                        42.42 │
+└──────────────────────────────┘
+```
+
+<div id="converting-a-variant-to-another-variant">
+  ### تحويل Variant إلى Variant آخر
+</div>
+
+يمكن تحويل عمود `Variant` إلى عمود `Variant` آخر، ولكن فقط إذا كان عمود `Variant` الوجهة يتضمن جميع الأنواع المتداخلة الموجودة في `Variant` الأصلي:
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String)) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('String');
+SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
+```
+
+```text
+┌─CAST(v, 'Variant(UInt64, String, Array(UInt64))')─┐
+│ ᴺᵁᴸᴸ                                              │
+│ 42                                                │
+│ String                                            │
+└───────────────────────────────────────────────────┘
+```
+
+<div id="reading-variant-type-from-the-data">
+  ## قراءة النوع `Variant` من البيانات
+</div>
+
+تدعم جميع التنسيقات النصية (TSV وCSV وCustomSeparated وValues وJSONEachRow وغيرها) قراءة النوع `Variant`. وأثناء تحليل البيانات، يحاول ClickHouse إدراج القيمة في النوع الفرعي الأنسب ضمن `Variant`.
+
+مثال:
+
+```sql
+SELECT
+    v,
+    variantElement(v, 'String') AS str,
+    variantElement(v, 'UInt64') AS num,
+    variantElement(v, 'Float64') AS float,
+    variantElement(v, 'DateTime') AS date,
+    variantElement(v, 'Array(UInt64)') AS arr
+FROM format(JSONEachRow, 'v Variant(String, UInt64, Float64, DateTime, Array(UInt64))', $$
+{"v" : "Hello, World!"},
+{"v" : 42},
+{"v" : 42.42},
+{"v" : "2020-01-01 00:00:00"},
+{"v" : [1, 2, 3]}
+$$)
+```
+
+```text
+┌─v───────────────────┬─str───────────┬──num─┬─float─┬────────────────date─┬─arr─────┐
+│ Hello, World!       │ Hello, World! │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │                ᴺᵁᴸᴸ │ []      │
+│ 42                  │ ᴺᵁᴸᴸ          │   42 │  ᴺᵁᴸᴸ │                ᴺᵁᴸᴸ │ []      │
+│ 42.42               │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │ 42.42 │                ᴺᵁᴸᴸ │ []      │
+│ 2020-01-01 00:00:00 │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │ 2020-01-01 00:00:00 │ []      │
+│ [1,2,3]             │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │                ᴺᵁᴸᴸ │ [1,2,3] │
+└─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
+```
+
+<div id="comparing-values-of-variant-data">
+  ## مقارنة قيم النوع Variant
+</div>
+
+لا يمكن مقارنة القيم من النوع `Variant` إلا بقيم من النوع `Variant` نفسه.
+
+بشكل افتراضي، تستخدم عوامل المقارنة [التنفيذ الافتراضي لـ Variant](#functions-with-variant-arguments)،
+حيث تُطبَّق المقارنة على كل نوع فرعي على حدة. ويمكن تعطيل ذلك باستخدام الإعداد `use_variant_default_implementation_for_comparisons = 0`
+لاستخدام قواعد المقارنة الأصلية لـ Variant الموضحة أدناه. **ملاحظة**: يستخدم `ORDER BY` دائمًا المقارنة الأصلية.
+
+**قواعد المقارنة الأصلية لـ Variant:**
+
+تُعرَّف نتيجة العامل `<` للقيمتين `v1` ذات النوع الأساسي `T1` و`v2` ذات النوع الأساسي `T2` من النوع `Variant(..., T1, ... T2, ...)` كما يلي:
+
+* إذا كان `T1 = T2 = T`، فستكون النتيجة `v1.T < v2.T` (أي ستتم مقارنة القيم الأساسية).
+* إذا كان `T1 != T2`، فستكون النتيجة `T1 < T2` (أي ستتم مقارنة أسماء الأنواع).
+
+أمثلة:
+
+```sql
+SET allow_suspicious_types_in_order_by = 1;
+CREATE TABLE test (v1 Variant(String, UInt64, Array(UInt32)), v2 Variant(String, UInt64, Array(UInt32))) ENGINE=Memory;
+INSERT INTO test VALUES (42, 42), (42, 43), (42, 'abc'), (42, [1, 2, 3]), (42, []), (42, NULL);
+```
+
+```sql
+SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
+```
+
+```text
+┌─v2──────┬─v2_type───────┐
+│ []      │ Array(UInt32) │
+│ [1,2,3] │ Array(UInt32) │
+│ abc     │ String        │
+│ 42      │ UInt64        │
+│ 43      │ UInt64        │
+│ ᴺᵁᴸᴸ    │ None          │
+└─────────┴───────────────┘
+```
+
+```sql
+SELECT v1, variantType(v1) AS v1_type, v2, variantType(v2) AS v2_type, v1 = v2, v1 < v2, v1 > v2 FROM test;
+```
+
+```text
+┌─v1─┬─v1_type─┬─v2──────┬─v2_type───────┬─equals(v1, v2)─┬─less(v1, v2)─┬─greater(v1, v2)─┐
+│ 42 │ UInt64  │ 42      │ UInt64        │              1 │            0 │               0 │
+│ 42 │ UInt64  │ 43      │ UInt64        │              0 │            1 │               0 │
+│ 42 │ UInt64  │ abc     │ String        │              0 │            0 │               1 │
+│ 42 │ UInt64  │ [1,2,3] │ Array(UInt32) │              0 │            0 │               1 │
+│ 42 │ UInt64  │ []      │ Array(UInt32) │              0 │            0 │               1 │
+│ 42 │ UInt64  │ ᴺᵁᴸᴸ    │ None          │              0 │            1 │               0 │
+└────┴─────────┴─────────┴───────────────┴────────────────┴──────────────┴─────────────────┘
+
+```
+
+إذا كنت بحاجة إلى العثور على الصف ذي قيمة `Variant` محددة، يمكنك القيام بأحد الإجراءات التالية:
+
+* حوّل القيمة إلى نوع `Variant` المقابل:
+
+```sql
+SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, Array(UInt32));
+```
+
+```text
+┌─v1─┬─v2──────┐
+│ 42 │ [1,2,3] │
+└────┴─────────┘
+```
+
+* قارن العمود الفرعي `Variant` بالنوع المطلوب:
+
+```sql
+SELECT * FROM test WHERE v2.`Array(UInt32)` == [1,2,3] -- or using variantElement(v2, 'Array(UInt32)')
+```
+
+```text
+┌─v1─┬─v2──────┐
+│ 42 │ [1,2,3] │
+└────┴─────────┘
+```
+
+قد يكون من المفيد أحيانًا إجراء فحص إضافي لنوع Variant، لأن الأعمدة الفرعية ذات الأنواع المعقدة مثل `Array/Map/Tuple` لا يمكن أن تكون ضمن `Nullable`، وستأخذ قيمًا افتراضية بدلًا من `NULL` في الصفوف ذات الأنواع المختلفة:
+
+```sql
+SELECT v2, v2.`Array(UInt32)`, variantType(v2) FROM test WHERE v2.`Array(UInt32)` == [];
+```
+
+```text
+┌─v2───┬─v2.Array(UInt32)─┬─variantType(v2)─┐
+│ 42   │ []               │ UInt64          │
+│ 43   │ []               │ UInt64          │
+│ abc  │ []               │ String          │
+│ []   │ []               │ Array(UInt32)   │
+│ ᴺᵁᴸᴸ │ []               │ None            │
+└──────┴──────────────────┴─────────────────┘
+```
+
+```sql
+SELECT v2, v2.`Array(UInt32)`, variantType(v2) FROM test WHERE variantType(v2) == 'Array(UInt32)' AND v2.`Array(UInt32)` == [];
+```
+
+```text
+┌─v2─┬─v2.Array(UInt32)─┬─variantType(v2)─┐
+│ [] │ []               │ Array(UInt32)   │
+└────┴──────────────────┴─────────────────┘
+```
+
+**ملاحظة:** تُعَدّ قيم Variant ذات الأنواع الرقمية المختلفة Variants مختلفة، ولا تُقارَن ببعضها بعضًا؛ بل تُقارَن أسماء أنواعها بدلًا من ذلك.
+
+مثال:
+
+```sql
+SET allow_suspicious_variant_types = 1;
+CREATE TABLE test (v Variant(UInt32, Int64)) ENGINE=Memory;
+INSERT INTO test VALUES (1::UInt32), (1::Int64), (100::UInt32), (100::Int64);
+SELECT v, variantType(v) FROM test ORDER by v;
+```
+
+```text
+┌─v───┬─variantType(v)─┐
+│ 1   │ Int64          │
+│ 100 │ Int64          │
+│ 1   │ UInt32         │
+│ 100 │ UInt32         │
+└─────┴────────────────┘
+```
+
+**ملاحظة**: افتراضيًا، لا يُسمح باستخدام النوع `Variant` في مفاتيح `GROUP BY`/`ORDER BY`. وإذا أردت استخدامه، فضع في اعتبارك قاعدة المقارنة الخاصة به وفعّل الإعدادين `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by`.
+
+<div id="jsonextract-functions-with-variant">
+  ## دوال JSONExtract مع النوع Variant
+</div>
+
+تدعم جميع دوال `JSONExtract*` النوع `Variant`:
+
+```sql
+SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Variant(UInt32, String, Array(UInt32))') AS variant, variantType(variant) AS variant_type;
+```
+
+```text
+┌─variant─┬─variant_type──┐
+│ [1,2,3] │ Array(UInt32) │
+└─────────┴───────────────┘
+```
+
+```sql
+SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 'Map(String, Variant(UInt32, String, Array(UInt32)))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types
+```
+
+```text
+┌─map_of_variants──────────────────┬─map_of_variant_types────────────────────────────┐
+│ {'a':42,'b':'Hello','c':[1,2,3]} │ {'a':'UInt32','b':'String','c':'Array(UInt32)'} │
+└──────────────────────────────────┴─────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Variant(UInt32, String, Array(UInt32))') AS variants, arrayMap(x -> (x.1, variantType(x.2)), variants) AS variant_types
+```
+
+```text
+┌─variants───────────────────────────────┬─variant_types─────────────────────────────────────────┐
+│ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','UInt32'),('b','String'),('c','Array(UInt32)')] │
+└────────────────────────────────────────┴───────────────────────────────────────────────────────┘
+```
+
+<div id="functions-with-variant-arguments">
+  ## الدوال ذات الوسائط من نوع Variant
+</div>
+
+تدعم معظم الدوال في ClickHouse تلقائيًا الوسائط من النوع `Variant` من خلال **التنفيذ الافتراضي لـ Variant**.
+بدءًا من الإصدار `26.1`، عندما تستقبل دالة لا تتعامل صراحةً مع أنواع Variant عمودًا من نوع Variant، فإن ClickHouse:
+
+1. يستخرج كل نوع فرعي من عمود Variant
+2. ينفّذ الدالة بشكل منفصل لكل نوع فرعي
+3. يدمج النتائج على النحو المناسب استنادًا إلى أنواع النتائج
+
+يتيح لك ذلك استخدام الدوال العادية مع أعمدة Variant من دون الحاجة إلى معالجة خاصة.
+
+**مثال:**
+
+```sql
+CREATE TABLE test (v Variant(UInt32, String)) ENGINE = Memory;
+INSERT INTO test VALUES (42), ('hello'), (NULL);
+SELECT *, toTypeName(v) FROM test WHERE v = 42;
+```
+
+```text
+   ┌─v──┬─toTypeName(v)───────────┐
+1. │ 42 │ Variant(String, UInt32) │
+   └────┴─────────────────────────┘
+```
+
+يُطبَّق عامل المقارنة تلقائيًا على كل نوع ضمن Variant على حدة، مما يتيح التصفية على أعمدة Variant.
+
+**سلوك نوع النتيجة:**
+
+يعتمد نوع النتيجة على ما تعيده الدالة لكل نوع ضمن Variant:
+
+* **أنواع نتائج مختلفة**: `Variant(T1, T2, ...)`
+
+  ```sql
+  CREATE TABLE test2 (v Variant(UInt64, Float64)) ENGINE = Memory;
+  INSERT INTO test2 VALUES (42::UInt64), (42.42);
+  SELECT v + 1 AS result, toTypeName(result) FROM test2;
+  ```
+
+  ```text
+  ┌─result─┬─toTypeName(plus(v, 1))──┐
+  │     43 │ Variant(Float64, UInt64) │
+  │  43.42 │ Variant(Float64, UInt64) │
+  └────────┴─────────────────────────┘
+  ```
+
+* **عدم توافق الأنواع**: `NULL` للأنواع غير المتوافقة ضمن Variant
+
+  ```sql
+  CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
+  INSERT INTO test3 VALUES ([1,2,3]), (42);
+  SELECT v + 10 AS result, toTypeName(result) FROM test3;
+  ```
+
+  ```text
+  ┌─result─┬─toTypeName(plus(v, 10))─┐
+  │   ᴺᵁᴸᴸ │ Nullable(UInt64)        │
+  │     52 │ Nullable(UInt64)        │
+  └────────┴─────────────────────────┘
+  ```
+
+<Note>
+  **معالجة الأخطاء:** عندما يتعذر على دالة معالجة نوع فرعي، لا تُلتقط إلا الأخطاء المرتبطة بالأنواع (ILLEGAL&#95;TYPE&#95;OF&#95;ARGUMENT,
+  TYPE&#95;MISMATCH, CANNOT&#95;CONVERT&#95;TYPE, NO&#95;COMMON&#95;TYPE)، وتكون النتيجة NULL لتلك الصفوف. أما الأخطاء الأخرى، مثل
+  القسمة على صفر أو نفاد الذاكرة، فتُثار كالمعتاد لتجنّب إخفاء المشكلات الحقيقية بصمت.
+</Note>
+
+<div id="variant-type-mismatch-behavior">
+  ### سلوك عدم تطابق النوع
+</div>
+
+يتحكم الإعداد `variant_throw_on_type_mismatch` بما يحدث عند تطبيق دالة على عمود `Variant` وكان النوع الفعلي المخزَّن في أحد الصفوف غير متوافق مع الدالة:
+
+* `true` (الافتراضي) — إثارة استثناء (`ILLEGAL_TYPE_OF_ARGUMENT`) عند أول صف غير متوافق.
+* `false` — إرجاع `NULL` للصفوف غير المتوافقة مع الاحتفاظ بالنتيجة للصفوف المتوافقة.
+
+**مثال:**
+
+```sql
+CREATE TABLE test (v Variant(String, UInt64)) ENGINE = Memory;
+INSERT INTO test VALUES ('hello'), (42), ('foo');
+
+-- Default (throw on mismatch): length() does not accept UInt64, so the query throws.
+SELECT length(v) FROM test;  -- throws ILLEGAL_TYPE_OF_ARGUMENT
+
+-- With throw disabled: incompatible rows return NULL.
+SET variant_throw_on_type_mismatch = false;
+SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
+```
+
+```text
+┌─v─────┬─length(v)─┐
+│ foo   │         3 │
+│ hello │         5 │
+│ 42    │      ᴺᵁᴸᴸ │
+└───────┴───────────┘
+```

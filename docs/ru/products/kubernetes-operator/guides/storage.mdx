@@ -1,0 +1,190 @@
+---
+position: 3
+slug: /clickhouse-operator/guides/storage
+title: Хранилище и тома
+keywords: ['kubernetes', 'хранилище', 'тома', 'pvc', 'jbod', 'disks']
+description: 'Как оператор подготавливает постоянное хранилище для кластеров ClickHouse, включая основной том данных, многодисковые (JBOD) конфигурации, расширение ёмкости и то, что нельзя изменить после создания.'
+doc_type: 'guide'
+---
+
+В этом руководстве описано, как оператор подготавливает постоянное хранилище для
+`ClickHouseCluster`: основной том данных, подключение дополнительных дисков в
+многодисковой конфигурации (JBOD), расширение ёмкости и правила, определяющие, что
+можно и нельзя изменять после создания кластера.
+
+Подробное справочное описание каждого поля см. в разделе
+[Конфигурация → Конфигурация хранилища](/ru/products/kubernetes-operator/guides/configuration#storage-configuration)
+и в [справочнике по API](/ru/products/kubernetes-operator/reference/api-reference).
+
+<div id="primary-data-volume">
+  ## Основной том данных
+</div>
+
+`spec.dataVolumeClaimSpec` — это стандартный Kubernetes `PersistentVolumeClaimSpec`.
+Оператор преобразует его в `volumeClaimTemplate` StatefulSet, поэтому контроллер StatefulSet
+создает и сохраняет по одному PersistentVolumeClaim для каждой реплики и монтирует его
+по пути к данным ClickHouse `/var/lib/clickhouse`.
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd   # optional; depends on the installed CSI driver
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+* Если `accessModes` не указан, оператор по умолчанию устанавливает значение `ReadWriteOnce`.
+* PVC для каждой реплики сохраняется при удалении кластера, поэтому данные переживают
+  удаление и повторное создание custom resource.
+* Такое же поле есть у `KeeperCluster` и работает оно так же.
+
+<div id="ephemeral-storage">
+  ## Запуск без постоянного тома данных
+</div>
+
+`dataVolumeClaimSpec` необязателен. Если не указать его и не смонтировать собственный том
+по пути к данным, ClickHouse будет записывать данные в эфемерную файловую систему контейнера, а
+вебхук допуска вернёт предупреждение о том, что данные могут быть потеряны при перезапуске кластера.
+
+Этот вариант предназначен только для временных или тестовых кластеров. Чтобы использовать собственное хранилище
+вместо `dataVolumeClaimSpec` — например, `emptyDir` или заранее подготовленный
+том, — задайте его через `spec.podTemplate.volumes` и смонтируйте в
+`/var/lib/clickhouse` с помощью `spec.containerTemplate.volumeMounts`.
+
+<Note>
+  `dataVolumeClaimSpec` и пользовательский том по пути к данным взаимоисключающи.
+  Если задан `dataVolumeClaimSpec`, монтирование пользовательского тома в `/var/lib/clickhouse`
+  будет отклонено. Зарезервированные имена томов `clickhouse-storage-volume`,
+  `clickhouse-server-tls-volume` и `clickhouse-server-custom-ca-volume` нельзя
+  использовать в `podTemplate.volumes`.
+</Note>
+
+<div id="expanding-storage">
+  ## Расширение хранилища
+</div>
+
+Чтобы увеличить том, повысьте значение `resources.requests.storage` и примените изменения.
+Оператор обновит существующие PVC на месте.
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 200Gi   # was 100Gi
+```
+
+<Note>
+  Расширение работает только в том случае, если в нижележащем StorageClass задано
+  `allowVolumeExpansion: true`. Kubernetes не поддерживает уменьшение PVC, поэтому
+  новый размер должен быть больше или равен текущему.
+</Note>
+
+<div id="multi-disk-jbod">
+  ## Многодисковое (JBOD) хранилище
+</div>
+
+`spec.additionalVolumeClaimTemplates` добавляет дополнительные диски к каждой
+реплике ClickHouse помимо основного `dataVolumeClaimSpec`. Каждая запись представляет собой именованный шаблон PVC
+— `metadata.name` и `spec` PVC — который обрабатывается точно так же, как
+основной диск данных, поэтому контроллер StatefulSet создает и сохраняет по одному PVC для
+каждой реплики с именем `<name>-<statefulset>-0`.
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 100Gi
+  additionalVolumeClaimTemplates:
+    - metadata:
+        name: disk1
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+    - metadata:
+        name: disk2
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+```
+
+Оператор монтирует каждый дополнительный том в `/var/lib/clickhouse/disks/<name>`
+и **генерирует `storage_configuration` ClickHouse за вас** — вам не нужно задавать
+её вручную. Он регистрирует каждый дополнительный диск и добавляет его во
+встроенную политику хранения `default`.
+
+Основной диск данных (`default`) и каждый дополнительный диск входят в один общий том
+политики `default`, поэтому ClickHouse распределяет новые части данных между ними
+по круговому алгоритму. Полезная ёмкость равна сумме всех дисков, и каждая таблица,
+которая не задаёт собственную `storage_policy`, — включая таблицы `system.*` — использует
+этот общий набор.
+
+<Note>
+  Путь монтирования сохраняет имя шаблона без изменений, но идентификатор диска внутри
+  `storage_configuration` заменяет дефисы на символы подчёркивания. Шаблон с именем
+  `cold-disk` монтируется в `/var/lib/clickhouse/disks/cold-disk` и отображается как
+  `cold_disk` в сгенерированной конфигурации.
+</Note>
+
+<div id="custom-storage-policies">
+  ## Пользовательские политики хранения
+</div>
+
+Для описанной выше структуры JBOD `extraConfig` **не** нужен — оператор автоматически создаёт
+политику `default`. Используйте `spec.settings.extraConfig` только в тех случаях, когда
+вам нужны политики хранения *помимо* автоматически сгенерированной по умолчанию, например
+многоуровневая политика hot/cold с `move_factor` и `prefer_not_to_merge` или диск на базе S3.
+Добавленная там конфигурация накладывается поверх сгенерированного `storage_configuration`.
+
+Описание полей политики см. в
+[документации ClickHouse по хранилищу](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes).
+
+<div id="immutability">
+  ## Что нельзя изменить после создания
+</div>
+
+Структура хранилища по большей части фиксируется после создания кластера. Вебхук допуска отклоняет
+обновления, которые привели бы к отвязке или повторной привязке PersistentVolumeClaims:
+
+* Наличие `dataVolumeClaimSpec` неизменно — вы не можете **добавить** том
+  данных в кластер, созданный без него, и не можете **удалить** его из кластера, созданного
+  с ним.
+* Набор `additionalVolumeClaimTemplates` фиксирован — вы не можете **добавлять**,
+  **удалять** или **переименовывать** записи после создания.
+* Увеличение `resources.requests.storage` у существующей записи **допускается** (при условии
+  поддержки со стороны StorageClass, см. [Расширение хранилища](#expanding-storage)).
+
+<div id="validation-reference">
+  ## Справочник по валидации
+</div>
+
+| Условие                                                                                        | Результат                                                             |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Нет `dataVolumeClaimSpec` и нет пользовательского тома в `/var/lib/clickhouse`                 | Предупреждение — возможна потеря данных при перезапуске               |
+| Пользовательский том смонтирован в `/var/lib/clickhouse`, при этом задан `dataVolumeClaimSpec` | Отклонено                                                             |
+| Задан `additionalVolumeClaimTemplates`, но отсутствует `dataVolumeClaimSpec`                   | Отклонено                                                             |
+| Дополнительный диск с именем `default`                                                         | Отклонено — это имя зарезервировано для диска ClickHouse по умолчанию |
+| Дополнительный диск с именем `clickhouse-storage-volume`                                       | Отклонено — конфликтует с именем основного тома данных                |
+| Повторяющееся имя дополнительного диска                                                        | Отклонено                                                             |
+| Имя не соответствует `^[a-z]([-a-z0-9]*[a-z0-9])?$` или длиннее 63 символов                    | Отклонено схемой CRD                                                  |
+| Добавление или удаление `dataVolumeClaimSpec` после создания                                   | Отклонено                                                             |
+| Добавление, удаление или переименование `additionalVolumeClaimTemplates` после создания        | Отклонено                                                             |
+| Зарезервированное имя тома в `podTemplate.volumes`                                             | Отклонено                                                             |
+
+<div id="related-guides">
+  ## Связанные руководства
+</div>
+
+* [Конфигурация](/ru/products/kubernetes-operator/guides/configuration) — полный справочник по всем полям, включая `extraConfig`.
+* [Масштабирование кластеров](/ru/products/kubernetes-operator/guides/scaling) — как добавлять и удалять реплики и сегменты.

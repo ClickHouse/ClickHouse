@@ -1,0 +1,2 @@
+Test 1: With --tls-sni-override=custom.example.com
+PASS: custom.example.com found in TLS handshake

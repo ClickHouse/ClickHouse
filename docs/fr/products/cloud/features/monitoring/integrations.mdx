@@ -1,0 +1,36 @@
+---
+title: 'Intégrations de la communauté et des partenaires'
+slug: /cloud/monitoring/integrations
+description: "Intégrations de monitoring tierces et API de facturation et d’utilisation pour ClickHouse Cloud"
+keywords: ['cloud', 'monitoring', 'datadog', 'grafana', 'communauté', 'facturation', "API d’utilisation"]
+sidebarTitle: 'Intégrations'
+doc_type: 'guide'
+---
+
+import CommunityMonitoring from '/snippets/fr/_community_monitoring.mdx';
+
+<div id="direct-datadog">
+  ## Intégration Datadog directe
+</div>
+
+Datadog propose un plugin ClickHouse Monitoring pour son agent, qui interroge directement les tables système. Cette intégration offre une supervision complète de la base de données, avec prise en charge du cluster grâce à la fonctionnalité `clusterAllReplicas`.
+
+<Warning>
+  **Non recommandé pour ClickHouse Cloud**
+
+  L’intégration directe de l’agent Datadog, qui interroge les tables système, n’est pas recommandée pour les déploiements ClickHouse Cloud en raison de son incompatibilité avec le comportement de mise en veille optimisé pour les coûts et des limitations opérationnelles de la couche proxy Cloud.
+</Warning>
+
+Utilisez plutôt l’[Agent](https://docs.datadoghq.com/agent/?tab=Linux) Datadog et l’[intégration OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) pour collecter les métriques depuis l’endpoint Prometheus de ClickHouse Cloud. Cette approche respecte le comportement de mise en veille du service et maintient une séparation opérationnelle entre la supervision et les workloads de production. Pour les instructions de configuration, consultez la [documentation Datadog sur l’intégration Prometheus et OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/).
+
+Pour plus de détails sur la configuration de l’endpoint Prometheus, consultez la [page d’intégration Prometheus](/fr/products/cloud/features/monitoring/prometheus#integrating-with-datadog).
+
+<CommunityMonitoring />
+
+<div id="billing-usage-api">
+  ## API de facturation et d’utilisation
+</div>
+
+L’API de facturation et d’utilisation permet d’accéder par programmation aux données de facturation et d’utilisation de votre organisation Cloud. Cela est utile pour créer des tableaux de bord personnalisés de suivi des coûts ou intégrer les données de facturation à vos processus existants de reporting financier.
+
+Pour consulter la référence complète de l’API, voir la [documentation de l’API de facturation](/fr/api-reference/organization/get-list-of-available-organizations#tag/Billing).

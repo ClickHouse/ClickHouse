@@ -1,0 +1,94 @@
+---
+title: Configuração do AWS PrivateLink para expor um RDS privado ao ClickPipes
+description: Etapas de configuração para expor um RDS privado via AWS PrivateLink ao ClickPipes.
+date: 2024-11-27
+tags: ['Segurança e autenticação', 'Gerenciando a Cloud']
+keywords: ['AWS PrivateLink', 'Private RDS', 'ClickPipes']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="aws-privatelink-setup-to-expose-private-rds-for-clickpipes">
+  ## Configuração do AWS PrivateLink para expor um RDS privado ao ClickPipes
+</div>
+
+Etapas para expor um RDS privado ao ClickPipes via AWS PrivateLink, com suporte também a acesso entre regiões.
+
+<Info>
+  Isto usa o AWS Endpoint Service e é mais indicado para acesso entre regiões. Se você precisar de acesso na mesma região,
+  recomenda-se [criar um recurso de VPC](/pt-BR/integrations/clickpipes/aws-privatelink#vpc-resource).
+</Info>
+
+<div id="private-link-creation">
+  ## Criação do Private Link
+</div>
+
+Siga estas etapas para criar um **serviço de endpoint da VPC** para sua instância do RDS. Repita estas etapas se você tiver várias
+instâncias do RDS que exijam serviços de endpoint (OU se usar portas de listener diferentes para instâncias diferentes):
+
+1. Localize sua VPC e [crie um NLB](https://docs.aws.amazon.com/elasticloadbalancing/latest/network/create-network-load-balancer.html)
+   * Acesse a VPC de destino e crie um Network Load Balancer (NLB). Observe que o NLB deve ser interno (privado), e não voltado para a internet (público).
+
+2. Configure o grupo de destino
+   * O grupo de destino deve apontar para o IP do endpoint e a porta da instância do RDS (normalmente 5432 para PostgreSQL ou 3306 para MySQL).
+
+<Note>
+  Se quiser automatizar o processo de atualização do grupo de destino com o novo IP do endpoint do RDS, você pode usar funções AWS Lambda ou outras ferramentas de automação.
+  Um dos módulos do Terraform que podem ser usados para essa finalidade é [este](https://github.com/MaterializeInc/terraform-aws-rds-privatelink).
+</Note>
+
+* **IMPORTANTE**: Certifique-se de que o endpoint da instância do RDS usado no caso de cluster de DB/Aurora seja APENAS o endpoint WRITER, e NÃO o endpoint comum.
+  * Garanta que o protocolo TCP seja usado para evitar a terminação de TLS pelo NLB.
+
+3. Defina a porta do listener
+   * A porta do listener do balanceador de carga deve corresponder à porta usada pelo grupo de destino (normalmente 5432 para PostgreSQL ou 3306 para MySQL).
+
+4. Crie o serviço de endpoint da VPC
+   * Na VPC, crie um serviço de endpoint que aponte para o NLB.
+   * Habilite a aceitação de solicitações de conexão de contas específicas.
+
+5. Autorize o ClickPipes a usar o serviço de endpoint
+   * Conceda permissão à conta do ClickPipes para solicitar este serviço de endpoint.
+     * Configure os principals permitidos adicionando o seguinte ID de principal:
+       ```
+       arn:aws:iam::072088201116:root
+       ```
+
+6. Desative &quot;Enforce Security Group Inbound Rules on Private Link Traffic&quot; no NLB (se houver um Security Group anexado ao NLB)
+   * Acesse as configurações do NLB e desative a opção &quot;Enforce Security Group Inbound Rules on Private Link Traffic&quot; se houver um Security Group anexado ao NLB.
+   * Se estiver usando Terraform, defina o atributo `enforce_security_group_inbound_rules_on_private_link_traffic` como `off` para o NLB
+   * Essa configuração é **obrigatória** para permitir tráfego da VPC do ClickPipes para o NLB.
+
+7. **Opcional**: Habilite o suporte entre regiões caso a região do seu banco de dados seja diferente da região do ClickPipes
+   * Em `Endpoint Services` no console da VPC, selecione seu serviço de endpoint.
+   * Clique no botão `Actions` e selecione `Modify supported Regions`.
+   * Adicione as regiões nas quais você deseja permitir acesso ao serviço de endpoint; [consulte aqui](/pt-BR/integrations/clickpipes/home#list-of-static-ips) a lista de regiões do ClickPipes.
+
+8. **Recomendado para MySQL**
+   * Se você estiver usando MySQL, é recomendável definir `skip_name_resolve=1` como um parâmetro no banco de dados de origem.
+     Devido às verificações de integridade repetidas do NLB, o MySQL bloqueará os hosts do NLB. Definir esse parâmetro
+     evita completamente a resolução de nomes de host por DNS e, assim, ele nunca bloqueia os hosts do NLB. Se estiver usando RDS, isso exigirá a
+     reinicialização da instância.
+
+<div id="initiating-connection">
+  ## Iniciando a conexão
+</div>
+
+Quando isso estiver concluído, você poderá seguir o guia para [iniciar a conexão](/pt-BR/integrations/clickpipes/aws-privatelink#creating-clickpipe)
+
+Assim que o status aparecer como `Ready` no Console, você poderá seguir para a próxima seção e criar seu ClickPipe.
+
+<div id="creating-clickpipes">
+  ## Criando ClickPipes
+</div>
+
+Use o nome DNS obtido na etapa anterior para [criar seu ClickPipe](/pt-BR/integrations/clickpipes/postgres/index).
+
+<div id="dynamically-updating-the-rds-endpoint-ip">
+  ## Atualização dinâmica do IP do endpoint do RDS
+</div>
+
+Quando o IP do endpoint do RDS mudar (em caso de reinicializações/failover/atualizações), você precisará atualizar o grupo de destino do NLB com
+o novo IP. Você pode automatizar esse processo usando função AWS Lambda ou outras ferramentas de automação.

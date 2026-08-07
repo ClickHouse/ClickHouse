@@ -1,0 +1,152 @@
+---
+slug: /cloud/managed-postgres/pricing
+sidebarTitle: 'التسعير'
+title: 'التسعير'
+description: 'نموذج التسعير، والفئات، وأنواع المثيلات، وتفاصيل تسعير Beta لـ Postgres المُدار بواسطة ClickHouse'
+keywords: ['تسعير Postgres', 'تكلفة Managed Postgres', 'تسعير Postgres في Beta', 'حاسبة تسعير Postgres', 'تسعير NVMe', 'تسعير فئات Postgres']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pricing-beta" />
+
+تعتمد خدمة Postgres managed by ClickHouse على تخزين NVMe محلي، ما يتيح لها تقديم أداء بمستوى الإنتاج وتكامل أصلي مع ClickHouse من دون التكلفة الإضافية المرتبطة ببنيات التخزين المتصل بالشبكة التقليدية. تغطي هذه الصفحة نموذج التسعير، وأنواع المثيلات المتاحة، ومقارنة الفئات.
+
+أصبحت خدمة Postgres managed by ClickHouse متاحة الآن في Beta. وستظل الخدمة مجانية حتى يبدأ احتساب الاستخدام في 15 يونيو 2026، مما يمنح الفرق وقتًا لتحديد أحجام المثيلات بالشكل المناسب قبل بدء الفوترة.
+
+خلال فترة Beta، تتضمن جميع الخطط خصمًا بنسبة 50%، تأكيدًا على التزامنا تجاه عملائنا الأوائل. يبدأ التسعير من نحو **30 دولارًا شهريًا** مقابل 1 vCPU و8 GB RAM وتهيئة تخزين NVMe بسعة 59 GB.
+
+<Tip>
+  **حاسبة التسعير**
+
+  للحصول على تسعير دقيق، استخدم [حاسبة التسعير](https://clickhouse.com/pricing?service=postgres#pricing-calculator) للعثور على أفضل تهيئة وتسعير لعبء العمل لديك.
+</Tip>
+
+<div id="price-performance">
+  ## الأداء مقابل السعر
+</div>
+
+نظرًا إلى أن الخدمة تعمل على وحدات تخزين NVMe محلية، يمكن للعديد من أعباء العمل تحقيق أداء أفضل بكثير مقابل التكلفة مقارنةً بمعماريات التخزين التقليدية المتصلة بالشبكة. راجع [PostgresBench](https://postgresbench.clickhouse.com/) للاطلاع على مقارنات الأداء مع موفري Postgres البديلين على مواصفات عتادية مماثلة.
+
+قد يلاحظ العملاء انخفاضًا في متطلبات الموارد الحاسوبية يصل إلى 2–4× لأعباء عمل مماثلة. وينبغي أخذ مكاسب الكفاءة المحتملة هذه في الاعتبار عند مقارنة الأسعار بين الموفّرين، مع أن التحسينات الفعلية ستختلف حسب عبء العمل ويجب التحقق منها في تطبيقاتك المحددة.
+
+<div id="pricing-model">
+  ## نموذج التسعير
+</div>
+
+تعمل الخدمة على تخزين NVMe محلي، لذا يعتمد التسعير على التهيئة الكاملة للآلة الافتراضية — CPU والذاكرة والتخزين — بدلًا من احتساب رسوم منفصلة للحوسبة والقرص.
+
+يتوفر أكثر من 50 تهيئة، تتراوح من 1 vCPU / 8 GB RAM / 59 GB NVMe إلى 96 vCPUs / 768 GB RAM / 60 TB NVMe storage، مما يوفر مرونة لأعباء عمل Postgres المكثفة حوسبيًا وتلك كثيفة التخزين.
+
+<div id="tier-based-pricing">
+  ### التسعير حسب الفئة
+</div>
+
+تختلف الأسعار والميزات وحدود الموارد حسب فئة المؤسسة — [Basic, Scale, or Enterprise](/ar/products/cloud/features/cloud-tiers) — لكن كل فئة تتضمن الإمكانات الأساسية للخدمة، بما في ذلك Postgres الجاهز للإنتاج على تخزين NVMe محلي، وCDC الأصلية إلى ClickHouse، وامتداد `pg_clickhouse`.
+
+يلخّص الجدول أدناه الميزات والإمكانات والحدود المضمنة في كل فئة. ولمقارنة الأسعار بين الفئات، راجع [حاسبة التسعير](https://clickhouse.com/pricing?service=postgres#pricing-calculator).
+
+<div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', margin: '24px 0'}}>
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Basic</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>مثالي لتجربة الأفكار الجديدة أو المشاريع الناشئة. سعة تخزين وذاكرة محدودتان.</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li><a href="/ar/products/managed-postgres/scaling">حتى 8 جيجابايت من RAM للحوسبة</a></li>
+      <li><a href="/ar/products/managed-postgres/scaling">حتى 118 جيجابايت من تخزين NVMe المحلي</a></li>
+      <li><a href="/ar/products/managed-postgres/backup-and-restore">نسخ احتياطية مع فترة احتفاظ ليوم واحد</a></li>
+      <li><a href="/ar/products/managed-postgres/backup-and-restore">PITR والفروع</a></li>
+      <li>يتضمن <a href="/ar/products/managed-postgres/high-availability">التوفر العالي</a></li>
+      <li><a href="/ar/products/managed-postgres/monitoring/query-insights">Query Insights</a> مع فترة احتفاظ ليوم واحد</li>
+      <li><a href="/ar/products/managed-postgres/extensions">أكثر من 90 إضافة لـ Postgres</a></li>
+      <li><a href="/ar/products/managed-postgres/clickhouse-integration">Native CDC إلى ClickHouse</a></li>
+      <li><a href="/ar/products/managed-postgres/extensions">إضافة <code>pg&#95;clickhouse</code></a></li>
+      <li><a href="/ar/products/managed-postgres/migrations/clickhouse-cloud">ترحيل بيانات مُدار بالكامل</a></li>
+      <li>دعم خبراء بزمن استجابة يبلغ يوم عمل واحد</li>
+      <li><a href="/ar/products/cloud/guides/security/cloud-access-management/manage-my-account">المصادقة عبر تسجيل الدخول الأحادي (SSO)</a> باستخدام تسجيل الدخول الاجتماعي من Google أو Microsoft</li>
+      <li><a href="/ar/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa">المصادقة متعددة العوامل</a></li>
+    </ul>
+  </div>
+
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>التوسّع</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>للعمل مع بيئات الإنتاج، أو البيانات واسعة النطاق، أو حالات الاستخدام الاحترافية.</p>
+    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>كل ما في Basic، بالإضافة إلى</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li><a href="/ar/products/managed-postgres/scaling">حتى 60 تيرابايت من التخزين</a></li>
+      <li><a href="/ar/products/managed-postgres/scaling">حتى 96 vCPU و768 جيجابايت من RAM</a></li>
+      <li><a href="/ar/products/managed-postgres/scaling">التوسّع التلقائي للتخزين</a></li>
+      <li><a href="/ar/products/managed-postgres/read-replicas">النسخ المتماثلة للقراءة</a></li>
+      <li><a href="/ar/products/managed-postgres/security">الشبكات الخاصة</a></li>
+      <li><a href="/ar/products/managed-postgres/backup-and-restore">نسخ احتياطية مع فترة احتفاظ لمدة 7 أيام</a></li>
+      <li><a href="/ar/products/managed-postgres/monitoring/query-insights">Query Insights</a> مع فترة احتفاظ لمدة 7 أيام</li>
+      <li>دعم من خبراء مع زمن استجابة يبلغ ساعة واحدة على مدار الساعة طوال أيام الأسبوع للمشكلات من الفئة 1</li>
+    </ul>
+  </div>
+
+  <div style={{border: '1px solid var(--ifm-color-emphasis-300)', borderTop: '3px solid var(--ifm-color-primary)', borderRadius: '8px', padding: '20px', background: 'var(--ifm-background-surface-color)'}}>
+    <h4 style={{marginTop: 0, marginBottom: '8px', textAlign: 'center'}}>Enterprise</h4>
+    <p style={{textAlign: 'center', fontSize: '0.85rem', color: 'var(--ifm-color-emphasis-700)', minHeight: '3.5em', marginBottom: '16px'}}>للعمل مع بيئات الإنتاج، أو أحجام البيانات الكبيرة جدًا على نطاق واسع، أو حالات استخدام المؤسسات.</p>
+    <p style={{fontWeight: 600, marginBottom: '8px', fontSize: '0.9rem'}}>كل ما يتضمنه Scale، بالإضافة إلى</p>
+
+    <ul style={{paddingLeft: '20px', margin: 0, fontSize: '0.9rem'}}>
+      <li>دعم Enterprise مع زمن استجابة قدره 30 دقيقة للمشكلات ذات الخطورة 1</li>
+      <li>مناطق خاصة</li>
+      <li>مهندس دعم رئيسي مخصص</li>
+      <li><a href="/ar/products/managed-postgres/extensions">إضافات مخصصة</a> (*بانتظار الموافقة)</li>
+      <li><a href="/ar/products/managed-postgres/migrations/clickhouse-cloud">أدلة إرشادية استشارية لعمليات الترحيل</a></li>
+      <li><a href="/ar/products/managed-postgres/upgrades">الترقيات المجدولة</a></li>
+    </ul>
+  </div>
+</div>
+
+<div id="instance-types">
+  ### أنواع المثيلات
+</div>
+
+تُقسَّم تكوينات المثيلات إلى ثلاث فئات لتسهيل اختيار البنية التحتية بناءً على خصائص أعباء العمل.
+
+* **محسّنة للذاكرة:** مُصمَّمة لأعباء العمل كثيفة الذاكرة ذات نسب الذاكرة إلى CPU الأعلى (مثل 1:8 أو 1:4). تدعم عائلات AWS Graviton المستندة إلى `r8gd` و`r6gd` و`m6gd` و`m8gd`. وهي الأنسب لمجموعات العمل الكبيرة، وارتفاع معدلات الإصابة في ذاكرة التخزين المؤقت، وأعباء عمل قواعد البيانات المقيّدة بالذاكرة.
+* **محسّنة للتخزين:** مُصمَّمة لأعباء العمل التي تتطلب كميات كبيرة من تخزين NVMe المحلي دون توسيع القدرة الحاسوبية بشكل متناسب. تدعم عائلات AWS Graviton المستندة إلى `i8g` و`i8ge` و`i7i` و`i7ie`، مع تكوينات توفّر ما يصل إلى 60 تيرابايت من تخزين NVMe المحلي. وهي الأنسب لمجموعات البيانات الكبيرة، وأعباء العمل الخاصة بالسلاسل الزمنية، وتخزين السجلات والأحداث، وأعباء عمل OLTP كثيفة التخزين.
+* **محسّنة لـ CPU:** مُصمَّمة لأعباء العمل كثيفة القدرة الحاسوبية ذات نسب الذاكرة إلى CPU الأقل (عادةً ما تكون في حدود 1:2). تدعم عائلات `c6gd`، وهي الأنسب لأعباء العمل المعاملية عالية التزامن والاستعلامات المقيّدة بـ CPU.
+
+<div id="pricing-calculator">
+  ## حاسبة التسعير
+</div>
+
+استخدم [حاسبة التسعير](https://clickhouse.com/pricing?service=postgres#pricing-calculator) لتقدير تكاليف النشر عبر أنماط أعباء العمل والإعدادات المختلفة. يمكنك تخصيص ما يلي:
+
+* فئة المؤسسة (Basic، Scale، Enterprise)
+* المنطقة
+* نوع الإعداد (الذاكرة، أو التخزين، أو المحسّن لوحدة المعالجة المركزية)
+* معمارية وحدة المعالجة المركزية (ARM أو x86)
+* تحديد حجم vCPU والذاكرة والتخزين
+* إعدادات الاستعداد / التوافر العالي (HA)
+
+يتيح لك ذلك مقارنة الأسعار عبر أكثر من 50 تركيبة إعدادات مدعومة والعثور على الأنسب لعبء العمل لديك.
+
+<div id="beta-pricing-highlights">
+  ## أبرز ملامح تسعير Beta
+</div>
+
+خلال فترة Beta:
+
+* الخدمة مجانية حتى بدء احتساب الاستخدام في **15 يونيو 2026**
+* تتوفر إمكانات **CDC الأصلية** عبر **ClickPipes** من دون أي تكلفة إضافية
+* لا تُفرض حاليًا أي رسوم على **نقل البيانات الصادرة عبر الشبكة** أو **النسخ الاحتياطية**
+* تتضمن جميع الخطط حاليًا **تسعير Beta بخصم 50%**
+
+<div id="disclaimers">
+  ## إخلاءات المسؤولية
+</div>
+
+مع تطور المنتج خلال مرحلة Beta، قد تُجرى تحسينات على التسعير والباقات قبل التوافر العام (GA). يُرجى ملاحظة ما يلي:
+
+* سيبدأ تطبيق رسوم حركة البيانات الصادرة من الشبكة بعد GA. ومن المتوقع أن تتحمل التطبيقات الموجودة جنبًا إلى جنب مع قاعدة البيانات حدًا أدنى من هذه التكاليف.
+* قد تُفرض رسوم إضافية على النسخ الاحتياطية عند GA لفترات الاحتفاظ التي تتجاوز حدًا لا يزال قيد التحديد.
+* نتوقع أن تظل CDC أصلي عبر ClickPipes مجانية أو منخفضة التكلفة عند GA عندما يكون Postgres وClickHouse في المنطقة نفسها، بما ينسجم مع رؤية منصة OLTP + OLAP موحدة.
+* تُشغِّل عمليات التوسعة والصيانة مثيلات جديدة بالتوازي مع المثيلات القديمة لفترة وجيزة للحفاظ على بقاء قاعدة البيانات قيد التشغيل — وقد تلاحظ رسومًا متداخلة على كلٍّ من المثيلات القديمة والجديدة إلى أن يكتمل الانتقال. وتختلف مدة هذه الفترة بحسب نوع المثيل وحجم التخزين.
+* قد تلجأ الخدمة تلقائيًا إلى نوع مثيل مماثل من جيل أقدم للحفاظ على إعداد التوافر العالي المحدد، إذا كانت سعة نوع المثيل المحدد مقيّدة مؤقتًا في بعض مناطق التوافر. وستتم محاسبتك وفق سعر نوع المثيل المستهدف.
+* قد يتغير التسعير الحالي مع الاقتراب من GA، مع تعمّق فهمنا لأنماط استخدام العملاء في الواقع، وخصائص أعباء العمل، ومتطلبات البنية التحتية خلال فترة Beta.
