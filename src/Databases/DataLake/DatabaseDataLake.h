@@ -8,6 +8,7 @@
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Common/MultiVersion.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 
 namespace DB
@@ -64,6 +65,8 @@ public:
         const String & name,
         bool /*sync*/) override;
 
+    void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
+
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
@@ -73,17 +76,22 @@ private:
     /// Iceberg Catalog url.
     const std::string url;
     /// SETTINGS from CREATE query.
-    const DatabaseDataLakeSettings settings;
+    MultiVersion<DatabaseDataLakeSettings> database_settings;
     /// Database engine definition taken from initial CREATE DATABASE query.
-    const ASTPtr database_engine_definition;
+    ASTPtr database_engine_definition TSA_GUARDED_BY(mutex);
     const ASTPtr table_engine_definition;
     const LoggerPtr log;
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;
 
-    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl;
+    /// Guards `catalog_impl` because settings alter can rebuild it concurrently with readers.
+    mutable std::mutex catalog_mutex;
+    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl TSA_GUARDED_BY(catalog_mutex);
 
     void validateSettings();
+
+    /// Drop the cached catalog so the next `getCatalog` rebuilds it from the current settings.
+    void resetCatalog() const TSA_REQUIRES(catalog_mutex);
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,
