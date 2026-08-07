@@ -215,30 +215,6 @@ struct AggregateFunctionMergedJSONPatchData
             });
     }
 
-    bool hasNewerConflictingEntry(std::string_view path, const KeyData & sort_key) const
-    {
-        for (const auto & entry : entries)
-        {
-            if (pathsConflict(entry.pathView(), path) && entry.sort_key.less(sort_key))
-                return true;
-        }
-
-        return false;
-    }
-
-    void eraseShadowedEntries(std::string_view path, const KeyData & sort_key)
-    {
-        entries.erase(
-            std::remove_if(
-                entries.begin(),
-                entries.end(),
-                [&](const Entry & entry)
-                {
-                    return pathsConflict(entry.pathView(), path) && !sort_key.less(entry.sort_key);
-                }),
-            entries.end());
-    }
-
     void pushLeafEntry(std::string_view path, String value_blob, const KeyData & sort_key)
     {
         Entry entry;
