@@ -361,7 +361,7 @@ namespace ServerSetting
 
 namespace FailPoints
 {
-    extern const char create_empty_part_inject_stale_dir[];
+    extern const char claim_inject_stale_part_dir[];
 }
 
 namespace ErrorCodes
@@ -2460,7 +2460,7 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
 
     try
     {
-        state.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+        state.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings(), PartDirIntent::OpenExisting)
             .withPartInfo(part_info)
             .withPartFormatFromDisk()
             .build();
@@ -2475,7 +2475,7 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
             /// Build a fake part and mark it as broken in case of filesystem error.
             /// If the error impacts part directory instead of single files,
             /// an exception will be thrown during detach and silently ignored.
-            state.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+            state.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings(), PartDirIntent::OpenExisting)
                 .withPartStorageType(MergeTreeDataPartStorageType::Full)
                 .withPartType(MergeTreeDataPartType::Wide)
                 .build();
@@ -2521,7 +2521,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
             /// Build a fake part and mark it as broken in case of filesystem error.
             /// If the error impacts part directory instead of single files,
             /// an exception will be thrown during detach and silently ignored.
-            res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+            res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings(), PartDirIntent::OpenExisting)
                 .withPartStorageType(MergeTreeDataPartStorageType::Full)
                 .withPartType(MergeTreeDataPartType::Wide)
                 .build();
@@ -2542,7 +2542,7 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     try
     {
-        res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings())
+        res.part = getDataPartBuilder(part_name, single_disk_volume, part_name, getReadSettings(), PartDirIntent::OpenExisting)
             .withPartInfo(part_info)
             .withPartFormatFromDisk()
             .build();
@@ -3775,7 +3775,6 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
     if (!lock.try_lock())
         return 0;
 
-    const auto settings = getSettings();
     time_t current_time = time(nullptr);
     ssize_t deadline = current_time - custom_directories_lifetime_seconds;
 
@@ -3814,13 +3813,17 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
                 {
                     ThreadFuzzer::maybeInjectSleep();
 
-                    if (temporary_parts.contains(basename))
+                    /// Hold the name until the removal below is done, so a concurrent claim waits for it
+                    /// instead of recreating the directory under our feet.
+                    auto cleanup_hold = temporary_parts.tryHoldForCleanup(basename);
+                    if (!cleanup_hold)
                     {
-                        /// Actually we don't rely on temporary_directories_lifetime when removing old temporaries directories,
-                        /// it's just an extra level of protection just in case we have a bug.
+                        /// Actually we don't rely on temporary_directories_lifetime when removing old temporary
+                        /// directories, it's just an extra level of protection just in case we have a bug.
                         LOG_INFO(LogFrequencyLimiter(log.load(), 10), "{} is in use (by merge/mutation/INSERT) (consider increasing temporary_directories_lifetime setting)", full_path);
                         continue;
                     }
+
                     if (!disk->existsDirectory(it->path()))
                     {
                         /// We should recheck that the dir exists, otherwise we can get "No such file or directory"
@@ -3831,19 +3834,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
 
                     LOG_WARNING(log, "Removing temporary directory {}", full_path);
 
-                    /// Even if it's a temporary part it could be downloaded with zero copy replication and this function
-                    /// is executed as a callback.
-                    ///
-                    /// We don't control the amount of refs for temporary parts so we cannot decide can we remove blobs
-                    /// or not. So we are not doing it
-                    bool keep_shared = false;
-                    if (disk->supportZeroCopyReplication() && (*settings)[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && supportsReplication())
-                    {
-                        LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}", full_path);
-                        keep_shared = true;
-                    }
-
-                    disk->removeSharedRecursive(it->path(), keep_shared, {});
+                    removeSharedTemporaryDirectory(disk, it->path());
                     ++cleared_count;
                 }
             }
@@ -3866,6 +3857,61 @@ scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_d
 {
     temporary_parts.add(part_dir_name);
     return [this, part_dir_name]() { temporary_parts.remove(part_dir_name); };
+}
+
+void MergeTreeData::removeSharedTemporaryDirectory(const DiskPtr & disk, const String & relative_path) const
+{
+    /// A temporary part could be downloaded with zero-copy replication, and we don't control the amount
+    /// of refs for temporary parts, so we cannot decide whether the blobs can be removed. Keep them.
+    bool keep_shared = false;
+    if (disk->supportZeroCopyReplication() && (*getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication] && supportsReplication())
+    {
+        LOG_WARNING(log, "Since zero-copy replication is enabled we are not going to remove blobs from shared storage for {}", fullPath(disk, relative_path));
+        keep_shared = true;
+    }
+
+    disk->removeSharedRecursive(relative_path, keep_shared, {});
+}
+
+void MergeTreeData::reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name) const
+{
+    /// Only temporary names may be auto-reclaimed. Elsewhere (e.g. "detached/<dir>" during ATTACH) the
+    /// directory contents are the payload, and reclaiming would destroy user data.
+    if (!startsWith(part_dir_name, "tmp") || part_dir_name.find('/') != String::npos)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reclaim {}: not a temporary part directory name", part_dir_name);
+
+    /// The claim is what makes the removal safe: with the name owned, an existing directory can only be
+    /// a leftover of an earlier attempt that used the same deterministic name.
+    if (!temporary_parts.contains(part_dir_name))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reclaim {}: the name is not claimed", part_dir_name);
+
+    /// For testing: simulate such a leftover, non-empty so the removal below has something to do.
+    fiu_do_on(FailPoints::claim_inject_stale_part_dir,
+    {
+        auto injected_part_dir = fs::path(relative_data_path) / part_dir_name;
+        disk->createDirectories(injected_part_dir);
+        auto out = disk->writeFile(injected_part_dir / "stale_dummy_file.txt");
+        writeString("stale", *out);
+        out->finalize();
+    });
+
+    String relative_part_dir = fs::path(relative_data_path) / part_dir_name;
+    if (!disk->existsDirectory(relative_part_dir))
+        return;
+
+    LOG_WARNING(log, "Removing stale temporary directory {}", fullPath(disk, relative_part_dir));
+
+    removeSharedTemporaryDirectory(disk, relative_part_dir);
+}
+
+scope_guard MergeTreeData::claimTemporaryPartDirectory(const DiskPtr & disk, const String & part_dir_name, bool may_have_leftover) const
+{
+    scope_guard temporary_directory_lock = getTemporaryPartDirectoryHolder(part_dir_name);
+
+    if (may_have_leftover)
+        reclaimStaleTemporaryPartDirectory(disk, part_dir_name);
+
+    return temporary_directory_lock;
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::asMutableDeletingPart(const DataPartPtr & part)
@@ -5816,9 +5862,9 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
 }
 
 MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
-    const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_, bool part_may_exist_on_disk) const
+    const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_, PartDirIntent intent) const
 {
-    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, part_may_exist_on_disk);
+    return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, intent);
 }
 
 void MergeTreeData::changeSettings(
@@ -8155,7 +8201,7 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
                 {
                     auto projection_part
                         = const_cast<IMergeTreeDataPart &>(*part)
-                              .getProjectionPartBuilder(projection_name, /* projection */ nullptr, /* is_temp_projection */ false)
+                              .getProjectionPartBuilder(projection_name, /* projection */ nullptr, PartDirIntent::OpenExisting, /* is_temp_projection */ false)
                               .withPartFormatFromDisk()
                               .build();
                     backup_projection(projection_part->getDataPartStorage(), *projection_part);
@@ -8410,7 +8456,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     /// Load this part from the directory `temp_part_dir`.
     auto load_part = [&]
     {
-        MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings());
+        MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings(), PartDirIntent::OpenExisting);
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
@@ -8431,7 +8477,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         if (!part)
         {
             /// Make a fake data part only to copy its files to /detached/.
-            part = MergeTreeDataPartBuilder{*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings()}
+            part = MergeTreeDataPartBuilder{*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings(), PartDirIntent::OpenExisting}
                        .withPartStorageType(MergeTreeDataPartStorageType::Full)
                        .withPartType(MergeTreeDataPartType::Wide)
                        .build();
@@ -9368,7 +9414,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
         }
-        auto part = getDataPartBuilder(part_name, single_disk_volume, source_dir / new_dir, getReadSettings())
+        auto part = getDataPartBuilder(part_name, single_disk_volume, source_dir / new_dir, getReadSettings(), PartDirIntent::OpenExisting)
             .withPartFormatFromDisk()
             .build();
 
@@ -10540,26 +10586,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
-    /// Reclaim a stale leftover destination directory (e.g. tmp_clone_* / tmp_* left by a clone that was
-    /// interrupted or rolled back and then retried with the same deterministic name) before freeze
-    /// constructs the destination storage. Otherwise packed storage seeds its archive reader from the
-    /// leftover data.packed, and finalizeWriter carries stale archive members that the current source
-    /// does not rewrite into the new clone. The temporary-directory lock above guarantees no concurrent
-    /// operation owns this name, so an existing directory can only be such a stale leftover.
-    auto reclaim_stale_destination = [&](const DiskPtr & dst_disk)
-    {
-        auto relative_dst_dir = fs::path(relative_data_path) / tmp_dst_part_name;
-        if (dst_disk->existsDirectory(relative_dst_dir))
-        {
-            LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(dst_disk->getPath()) / relative_dst_dir).string());
-            dst_disk->removeRecursive(relative_dst_dir);
-        }
-    };
-
+    /// `freeze` rejects a non-empty destination, so reclaim the leftover here, once the destination disk
+    /// is known (the claim itself was taken above).
     std::shared_ptr<IDataPartStorage> dst_part_storage{};
     if (on_same_disk)
     {
-        reclaim_stale_destination(same_disk);
+        reclaimStaleTemporaryPartDirectory(same_disk, tmp_dst_part_name);
         dst_part_storage = src_part_storage->freeze(
             relative_data_path,
             tmp_dst_part_name,
@@ -10577,7 +10609,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             throw Exception(error.message, error.code);
         }
         auto dst_disk = (*reservation_on_dst_or_error)->getDisk();
-        reclaim_stale_destination(dst_disk);
+        reclaimStaleTemporaryPartDirectory(dst_disk, tmp_dst_part_name);
         dst_part_storage = src_part_storage->freezeRemote(
             relative_data_path,
             tmp_dst_part_name,
@@ -10610,7 +10642,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
               std::string(fs::path(dst_part_storage->getFullRootPath()) / tmp_dst_part_name),
               with_copy);
 
-    auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage, getReadSettings())
+    /// The `freeze` above already populated the destination, so probe it like an existing part.
+    auto dst_data_part = MergeTreeDataPartBuilder(*this, dst_part_name, dst_part_storage, getReadSettings(), PartDirIntent::OpenExisting)
         .withPartFormatFromDisk()
         .build();
 
@@ -12177,31 +12210,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         data_part_volume = createVolumeFromReservation(reservation, volume);
     }
 
-    auto tmp_dir_holder = getTemporaryPartDirectoryHolder(EMPTY_PART_TMP_PREFIX + new_part_name);
+    /// A leftover is possible here: the covering operation (DROP/DETACH/MOVE/REPLACE PARTITION) that
+    /// creates this empty part can be interrupted after the directory but before the rename.
+    String tmp_part_dir_name = EMPTY_PART_TMP_PREFIX + new_part_name;
+    auto tmp_dir_holder = claimTemporaryPartDirectory(data_part_volume->getDisk(), tmp_part_dir_name);
 
-    auto empty_part_disk = data_part_volume->getDisk();
-    auto relative_empty_part_dir = fs::path(relative_data_path) / (EMPTY_PART_TMP_PREFIX + new_part_name);
-
-    /// For testing: simulate a stale leftover directory from a previously interrupted operation.
-    fiu_do_on(FailPoints::create_empty_part_inject_stale_dir,
-    {
-        empty_part_disk->createDirectories(relative_empty_part_dir);
-    });
-
-    /// The directory may already exist as a stale leftover: a previous covering operation
-    /// (DROP/DETACH/MOVE/REPLACE PARTITION) that created this empty part can be interrupted after the
-    /// directory is created but before the part is renamed to its persistent name (e.g. a rolled-back
-    /// transaction with a deferred rename, or a crash). The tmp_dir_holder acquired above guarantees no
-    /// concurrent operation owns this name, so an existing directory can only be such a leftover and is
-    /// safe to remove. Remove it BEFORE constructing the storage, so packed storage does not seed its
-    /// archive reader or snapshot the mark layout (index_granularity_info) from the stale contents.
-    if (empty_part_disk->existsDirectory(relative_empty_part_dir))
-    {
-        LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(empty_part_disk->getPath()) / relative_empty_part_dir).string());
-        empty_part_disk->removeRecursive(relative_empty_part_dir);
-    }
-
-    auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings())
+    auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, tmp_part_dir_name, getReadSettings(), PartDirIntent::CreateFresh)
         .withBytesAndRows(0, 0, 0)
         .withPartInfo(new_part_info)
         .build();
