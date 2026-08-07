@@ -260,6 +260,25 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
 
+    /// The parser produces a bare `SelectWithUnionQuery` argument of `viewIfPermitted` only for the table
+    /// function form `viewIfPermitted(SELECT ... ELSE table_function(...))`: `ViewLayer` pushes the select,
+    /// and after `ELSE` only a function call is accepted, so the shape is always exactly
+    /// (select, function) without parameters. In an expression context `viewIfPermitted` is an ordinary
+    /// function and a bare select cannot appear among its arguments at all. The formatter prints the
+    /// unparseable-elsewhere `ELSE` form for exactly the table function shape, so reject any other
+    /// combination that contains a bare select, which the parser cannot produce.
+    if (name == "viewIfPermitted" && arguments)
+    {
+        bool has_bare_select = std::ranges::any_of(
+            arguments->children, [](const ASTPtr & child) { return child->as<ASTSelectWithUnionQuery>() != nullptr; });
+        bool is_table_function_shape = !parameters && arguments->children.size() == 2
+            && arguments->children[0]->as<ASTSelectWithUnionQuery>() && arguments->children[1]->as<ASTFunction>();
+        if (has_bare_select && !is_table_function_shape)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'viewIfPermitted' with a select query argument must have exactly two arguments, a select query "
+                "followed by a function, and no parameters during AST JSON deserialization");
+    }
+
     r.readAlias(*this);
 }
 
@@ -485,7 +504,13 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
         return;
     }
 
-    if (arguments && !parameters && arguments->children.size() == 2 && name == "viewIfPermitted"sv)
+    /// The `ELSE` form exists only for the table function `viewIfPermitted(SELECT ... ELSE table_function(...))`,
+    /// whose arguments are always a bare select query and a function call (`ViewLayer` in the parser).
+    /// In an expression context `viewIfPermitted` parses as an ordinary function (e.g. `viewIfPermitted(1, 2)`),
+    /// and formatting it with `ELSE` would produce text that cannot be parsed back
+    /// (inconsistent AST formatting, an exception in debug builds), so such shapes take the generic path below.
+    if (arguments && !parameters && arguments->children.size() == 2 && name == "viewIfPermitted"sv
+        && arguments->children[0]->as<ASTSelectWithUnionQuery>() && arguments->children[1]->as<ASTFunction>())
     {
         /// viewIfPermitted() needs special formatting: ELSE instead of comma between arguments, and better indents too.
         const auto * nl_or_nothing = settings.one_line ? "" : "\n";

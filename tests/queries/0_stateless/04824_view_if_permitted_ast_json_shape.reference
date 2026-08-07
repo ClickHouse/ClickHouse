@@ -1,0 +1,5 @@
+1
+1
+viewIfPermitted(SELECT 1 ELSE `null`(\'x UInt8\'))
+viewIfPermitted(1, 2)
+1
