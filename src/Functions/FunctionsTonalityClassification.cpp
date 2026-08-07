@@ -94,7 +94,7 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
 
 Determines the sentiment of the provided text data.
 
-The function makes use of an embedded emotional dictionary and only works for the Russian language.
+The function makes use of an embedded emotional dictionary and only works for the Russian language at the moment.
 
 )";
     FunctionDocumentation::Syntax syntax = "detectTonality(s)";
