@@ -22,10 +22,6 @@ using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext
 /// The first `refine` call for a part builds the index read results (reads the skip indexes
 /// and/or the projection), which is the same work the first reading thread for the part would
 /// have done; subsequent calls reuse the per-part cached result from `MergeTreeIndexReadResultPool`.
-///
-/// For parts on remote disks ranges are only shrunk from the edges or dropped entirely, never
-/// split on interior pruned marks: read pools size ranges to a few MiB of the read columns, so
-/// splitting them trades a cheap read-through of the pruned gaps for extra IO round trips.
 class IndexReadRangesRefiner : public IMergeTreeReadRangesRefiner
 {
 public:
