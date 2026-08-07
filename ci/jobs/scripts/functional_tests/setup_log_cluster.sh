@@ -14,6 +14,13 @@ set -e
 # Pre-configured destination cluster, where to export the data
 CLICKHOUSE_CI_LOGS_CLUSTER=${CLICKHOUSE_CI_LOGS_CLUSTER:-system_logs_export}
 
+# The stress harness exports `NO_AST_FUZZER` (see `tests/docker_scripts/stress_tests.lib`)
+# to keep the server-side AST fuzzer profile away from the harness's own queries. Every
+# query against the local server must carry it; the queries against the remote CI logs
+# cluster (the ones using `CONNECTION_ARGS`) must not, because the remote server has no
+# fuzzer profile and may be of a version that predates the setting. Referenced as
+# `${NO_AST_FUZZER:-}` because this script also runs outside of the stress harness.
+
 EXTRA_COLUMNS=${EXTRA_COLUMNS:-"repo LowCardinality(String), pull_request_number UInt32, commit_sha String, check_start_time DateTime('UTC'), check_name LowCardinality(String), instance_type LowCardinality(String), instance_id String, INDEX ix_repo (repo) TYPE set(100), INDEX ix_pr (pull_request_number) TYPE set(100), INDEX ix_commit (commit_sha) TYPE set(100), INDEX ix_check_time (check_start_time) TYPE minmax, "}
 echo "EXTRA_COLUMNS_EXPRESSION=${EXTRA_COLUMNS_EXPRESSION:?}"
 EXTRA_ORDER_BY_COLUMNS=${EXTRA_ORDER_BY_COLUMNS:-"check_name"}
@@ -97,20 +104,20 @@ function setup_logs_replication()
     echo "My hostname is ${HOSTNAME}"
 
     echo 'Create all configured system logs'
-    clickhouse-client --query "SYSTEM FLUSH LOGS"
+    clickhouse-client ${NO_AST_FUZZER:-} --query "SYSTEM FLUSH LOGS"
 
-    debug_or_sanitizer_build=$(clickhouse-client -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
+    debug_or_sanitizer_build=$(clickhouse-client ${NO_AST_FUZZER:-} -q "WITH ((SELECT value FROM system.build_options WHERE name='BUILD_TYPE') AS build, (SELECT value FROM system.build_options WHERE name='CXX_FLAGS') as flags) SELECT build='Debug' OR flags LIKE '%fsanitize%'")
     echo "Build is debug or sanitizer: $debug_or_sanitizer_build"
 
     # For each system log table:
     echo 'Create %_log tables'
-    clickhouse-client --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
+    clickhouse-client ${NO_AST_FUZZER:-} --query "SHOW TABLES FROM system LIKE '%\\_log'" | while read -r table
     do
         EXTRA_COLUMNS_FOR_TABLE="${EXTRA_COLUMNS}"
         EXTRA_COLUMNS_EXPRESSION_FOR_TABLE="${EXTRA_COLUMNS_EXPRESSION}"
 
         # Calculate hash of its structure according to the columns and their types, including extra columns
-        hash=$(clickhouse-client --query "
+        hash=$(clickhouse-client ${NO_AST_FUZZER:-} --query "
             SELECT sipHash64(groupArray((SELECT columns FROM external)), groupArray((name, type)))
             FROM (SELECT name, type FROM system.columns
                 WHERE database = 'system' AND table = '$table'
@@ -119,7 +126,7 @@ function setup_logs_replication()
         )
 
         # Create the destination table with adapted name and structure:
-        statement=$(clickhouse-client --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
+        statement=$(clickhouse-client ${NO_AST_FUZZER:-} --format TSVRaw --query "SHOW CREATE TABLE system.${table}" | sed -r -e '
             s/^\($/('"$EXTRA_COLUMNS_FOR_TABLE"'/;
             s/^ORDER BY (([^\(].+?)|\((.+?)\))$/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"', \2\3)/;
             s/^CREATE TABLE system\.\w+_log$/CREATE TABLE IF NOT EXISTS '"$table"'_'"$hash"'/;
@@ -154,7 +161,7 @@ function setup_logs_replication()
         echo "Creating table system.${table}_sender" >&2
 
         # Create Distributed table and materialized view to watch on the original table:
-        clickhouse-client --query "
+        clickhouse-client ${NO_AST_FUZZER:-} --query "
             CREATE TABLE system.${table}_sender
             ENGINE = Distributed(${CLICKHOUSE_CI_LOGS_CLUSTER}, default, ${table}_${hash})
             SETTINGS flush_on_detach=0
@@ -165,7 +172,7 @@ function setup_logs_replication()
 
         echo "Creating materialized view system.${table}_watcher" >&2
 
-        clickhouse-client --query "
+        clickhouse-client ${NO_AST_FUZZER:-} --query "
             CREATE MATERIALIZED VIEW system.${table}_watcher
             TO system.${table}_sender
             DEFINER = ci_logs_sender
@@ -187,17 +194,17 @@ function stop_logs_replication()
     # same `timeout` pattern as the drop step so an unreachable cluster cannot
     # block teardown indefinitely.
     echo "Flush pending log records to the remote cluster"
-    ( clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and table like '%_sender'" | {
+    ( clickhouse-client ${NO_AST_FUZZER:-} --query "select database||'.'||table from system.tables where database = 'system' and table like '%_sender'" | {
         tee /dev/stderr
     } | {
-        timeout --verbose --preserve-status --signal TERM --kill-after 1m 5m xargs -n1 -P10 -r -i clickhouse-client --query "SYSTEM FLUSH DISTRIBUTED {}"
+        timeout --verbose --preserve-status --signal TERM --kill-after 1m 5m xargs -n1 -P10 -r -i clickhouse-client ${NO_AST_FUZZER:-} --query "SYSTEM FLUSH DISTRIBUTED {}"
     } ) || echo "WARNING: failed to flush pending log records, some rows may be lost"
 
     echo "Detach all logs replication"
-    clickhouse-client --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
+    clickhouse-client ${NO_AST_FUZZER:-} --query "select database||'.'||table from system.tables where database = 'system' and (table like '%_sender' or table like '%_watcher')" | {
         tee /dev/stderr
     } | {
-        timeout --verbose --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client --query "drop table {}"
+        timeout --verbose --preserve-status --signal TERM --kill-after 5m 15m xargs -n1 -P10 -r -i clickhouse-client ${NO_AST_FUZZER:-} --query "drop table {}"
     }
 }
 

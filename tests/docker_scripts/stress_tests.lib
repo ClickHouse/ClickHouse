@@ -22,8 +22,9 @@ FAILURE_CONTEXT_MAX_LINE_WIDTH=3000
 # same way for their infrastructure queries.
 #
 # Exported so that the helper scripts the runners invoke (`create_tpcds.sh`,
-# `create_tpch.sh`) get it too; they reference it as `${NO_AST_FUZZER:-}` because they
-# also run outside of the stress harness.
+# `create_tpch.sh`, and `setup_log_cluster.sh` via `clickhouse_proc.py logs_export_start`)
+# get it too; they reference it as `${NO_AST_FUZZER:-}` because they also run outside of
+# the stress harness.
 export NO_AST_FUZZER="--ast_fuzzer_runs=0"
 
 function escaped()
