@@ -41,10 +41,11 @@ ASTPtr timeSeriesMatcherToAST(const PrometheusQueryTree::Matcher & matcher, cons
     String value = matcher.label_value;
     if (add_anchors)
     {
-        if (!value.starts_with('^'))
-            value = '^' + value;
-        if (!value.ends_with('$'))
-            value += '$';
+        /// Prometheus regexp matchers are fully anchored: the pattern must match the whole label value.
+        /// The pattern is wrapped in a non-capturing group before anchoring - the same way Prometheus does it -
+        /// because otherwise a top-level alternation would bind the anchors to its first and last branches only
+        /// (e.g. "a|b" would become "^a|b$", which also matches "ax" and "xb").
+        value = "^(?:" + value + ")$";
     }
     ASTPtr res = makeASTFunction(function_name, timeSeriesTagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
     if (add_not)

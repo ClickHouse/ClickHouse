@@ -1,6 +1,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
@@ -278,6 +279,21 @@ namespace
     {
         return doubleQuoteString(str);
     }
+
+    /// Serializes a label name: legacy identifier-shaped names are written as is,
+    /// other (UTF-8) names must be written as quoted string literals, e.g. {"http.status_code"="200"}.
+    String quotePromQLLabelName(std::string_view label_name)
+    {
+        auto is_legacy_first_char = [](char c) { return isAlphaASCII(c) || (c == '_'); };
+        auto is_legacy_char = [](char c) { return isAlphaNumericASCII(c) || (c == '_'); };
+
+        bool is_legacy_name = !label_name.empty() && is_legacy_first_char(label_name[0])
+            && (std::find_if_not(label_name.begin() + 1, label_name.end(), is_legacy_char) == label_name.end());
+
+        if (is_legacy_name)
+            return String{label_name};
+        return quotePromQLString(label_name);
+    }
 }
 
 String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
@@ -337,7 +353,7 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
             const auto & matcher = matchers[i];
             if (need_comma)
                 str += ",";
-            str += matcher.label_name;
+            str += quotePromQLLabelName(matcher.label_name);
             std::string_view matcher_type_str;
             switch (matcher.matcher_type)
             {
@@ -465,7 +481,7 @@ String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree &
         {
             if (need_comma)
                 str += ", ";
-            str += label;
+            str += quotePromQLLabelName(label);
             need_comma = true;
         }
         str += ") ";
@@ -486,7 +502,7 @@ String PrometheusQueryTree::BinaryOperator::toString(const PrometheusQueryTree &
             {
                 if (need_comma)
                     str += ", ";
-                str += label;
+                str += quotePromQLLabelName(label);
                 need_comma = true;
             }
             str += ")";
@@ -559,7 +575,7 @@ String PrometheusQueryTree::AggregationOperator::toString(const PrometheusQueryT
         {
             if (need_comma)
                 str += ", ";
-            str += label;
+            str += quotePromQLLabelName(label);
             need_comma = true;
         }
         str += ") ";

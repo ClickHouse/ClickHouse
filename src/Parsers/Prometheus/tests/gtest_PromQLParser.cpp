@@ -1305,3 +1305,73 @@ PrometheusQueryTree(STRING):
 )");
 
 }
+
+
+/// UTF-8 label names are written in PromQL as quoted string literals.
+TEST(PromQLParser, QuotedLabelNames)
+{
+    EXPECT_EQ(parse(R"(
+        {"http.status_code"="200"}
+        )"), R"(
+{"http.status_code"="200"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        http.status_code EQ '200'
+)");
+
+    EXPECT_EQ(parse(R"(
+        go_info{"my/label"=~"a|b", group!="canary"}
+        )"), R"(
+go_info{"my/label"=~"a|b",group!="canary"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        __name__ EQ 'go_info'
+        my/label RE 'a|b'
+        group NE 'canary'
+)");
+
+    /// A quoted label name that is a legacy identifier is written back without quotes.
+    EXPECT_EQ(parse(R"(
+        {'job'!~'prom.*'}
+        )"), R"(
+{job!~"prom.*"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        job NRE 'prom.*'
+)");
+
+    /// Escape sequences work in quoted label names the same way as in string literals.
+    EXPECT_EQ(parse(R"(
+        {"日本語"="x"}
+        )"), R"(
+{"日本語"="x"}
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    InstantSelector:
+        日本語 EQ 'x'
+)");
+
+    /// Quoted label names in grouping clauses.
+    EXPECT_EQ(parse(R"(
+        sum by ("http.status_code") (demo_api_request_duration_seconds_count)
+        )"), R"(
+sum by ("http.status_code") (demo_api_request_duration_seconds_count)
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    AggregationOperator(sum)
+        by http.status_code
+        InstantSelector:
+            __name__ EQ 'demo_api_request_duration_seconds_count'
+)");
+
+    /// An empty label name is not allowed.
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        EXPECT_FALSE(query_tree.tryParse(R"({""="x"})", 3, &error_message));
+        EXPECT_TRUE(error_message.contains("Label name must not be empty")) << error_message;
+    }
+}

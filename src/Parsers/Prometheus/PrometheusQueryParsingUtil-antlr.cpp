@@ -307,19 +307,50 @@ namespace
         /// Extracts a metric name.
         String getMetricName(antlr4_grammars::PromQLParser::MetricNameContext * ctx) const { return ctx->getText(); }
 
-        /// Extracts a label name.
-        String getLabelName(antlr4_grammars::PromQLParser::LabelNameContext * ctx) const { return ctx->getText(); }
+        /// Extracts a label name. A label name can be a quoted string literal -
+        /// that's how UTF-8 label names are written in PromQL, e.g. {"http.status_code"="200"}.
+        bool getLabelName(antlr4_grammars::PromQLParser::LabelNameContext * ctx, String & res_label_name)
+        {
+            auto * string_ctx = ctx->STRING();
+            if (!string_ctx)
+            {
+                res_label_name = ctx->getText();
+                return true;
+            }
+
+            if (!parseStringLiteral(string_ctx, res_label_name))
+            {
+                chassert(error_listener.hasError());
+                return false;
+            }
+
+            if (res_label_name.empty())
+            {
+                error_listener.setError("Label name must not be empty", getStartPos(string_ctx));
+                return false;
+            }
+
+            return true;
+        }
 
         /// Extracts multiple label names separated by comma.
-        Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx) const
+        bool getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx, Strings & res_label_name_list)
         {
-            Strings label_name_list;
+            res_label_name_list.clear();
 
             antlr4_grammars::PromQLParser::LabelNameContext * label_name_ctx = nullptr;
             for (size_t i = 0; (label_name_ctx = ctx->labelName(i)) != nullptr; ++i)
-                label_name_list.push_back(getLabelName(label_name_ctx));
+            {
+                String label_name;
+                if (!getLabelName(label_name_ctx, label_name))
+                {
+                    chassert(error_listener.hasError());
+                    return false;
+                }
+                res_label_name_list.push_back(std::move(label_name));
+            }
 
-            return label_name_list;
+            return true;
         }
 
         /// Extracts a matcher.
@@ -331,7 +362,11 @@ namespace
             if (!label_name_ctx || !label_value_ctx || !op_ctx)
                 throwInconsistentSchema("LabelMatcher", ctx->getText());
 
-            res_matcher.label_name = getLabelName(label_name_ctx);
+            if (!getLabelName(label_name_ctx, res_matcher.label_name))
+            {
+                chassert(error_listener.hasError());
+                return false;
+            }
 
             MatcherType matcher_type = {};
             if (op_ctx->EQ())
@@ -519,7 +554,11 @@ namespace
                     if (!labels_ctx)
                         throwInconsistentSchema("Grouping", grouping->getText());
                     new_node->on = true;
-                    new_node->labels = getLabelNameList(labels_ctx);
+                    if (!getLabelNameList(labels_ctx, new_node->labels))
+                    {
+                        chassert(error_listener.hasError());
+                        return nullptr;
+                    }
                 }
                 else if (auto * ignoring_ctx = grouping->ignoring())
                 {
@@ -527,19 +566,35 @@ namespace
                     if (!labels_ctx)
                         throwInconsistentSchema("Grouping", grouping->getText());
                     new_node->ignoring = true;
-                    new_node->labels = getLabelNameList(labels_ctx);
+                    if (!getLabelNameList(labels_ctx, new_node->labels))
+                    {
+                        chassert(error_listener.hasError());
+                        return nullptr;
+                    }
                 }
                 if (auto * group_left_ctx = grouping->groupLeft())
                 {
                     new_node->group_left = true;
                     if (auto * extra_labels_ctx = group_left_ctx->labelNameList())
-                        new_node->extra_labels = getLabelNameList(extra_labels_ctx);
+                    {
+                        if (!getLabelNameList(extra_labels_ctx, new_node->extra_labels))
+                        {
+                            chassert(error_listener.hasError());
+                            return nullptr;
+                        }
+                    }
                 }
                 else if (auto * group_right_ctx = grouping->groupRight())
                 {
                     new_node->group_right = true;
                     if (auto * extra_labels_ctx = group_right_ctx->labelNameList())
-                        new_node->extra_labels = getLabelNameList(extra_labels_ctx);
+                    {
+                        if (!getLabelNameList(extra_labels_ctx, new_node->extra_labels))
+                        {
+                            chassert(error_listener.hasError());
+                            return nullptr;
+                        }
+                    }
                 }
             }
             new_node->bool_modifier = bool_modifier;
@@ -678,7 +733,11 @@ namespace
                 auto * labels_ctx = by->labelNameList();
                 if (!labels_ctx)
                     throwInconsistentSchema("By", by->getText());
-                new_node->labels = getLabelNameList(labels_ctx);
+                if (!getLabelNameList(labels_ctx, new_node->labels))
+                {
+                    chassert(error_listener.hasError());
+                    return nullptr;
+                }
             }
             else if (without)
             {
@@ -686,7 +745,11 @@ namespace
                 auto * labels_ctx = without->labelNameList();
                 if (!labels_ctx)
                     throwInconsistentSchema("Without", without->getText());
-                new_node->labels = getLabelNameList(labels_ctx);
+                if (!getLabelNameList(labels_ctx, new_node->labels))
+                {
+                    chassert(error_listener.hasError());
+                    return nullptr;
+                }
             }
 
             new_node->children.reserve(arguments.size());

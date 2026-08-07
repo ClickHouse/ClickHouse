@@ -675,6 +675,7 @@ public:
     KeywordContext *keyword();
     antlr4::tree::TerminalNode *METRIC_NAME();
     antlr4::tree::TerminalNode *LABEL_NAME();
+    antlr4::tree::TerminalNode *STRING();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;

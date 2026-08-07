@@ -212,6 +212,7 @@ labelName
     : keyword
     | METRIC_NAME
     | LABEL_NAME
+    | STRING
     ;
 
 labelNameList

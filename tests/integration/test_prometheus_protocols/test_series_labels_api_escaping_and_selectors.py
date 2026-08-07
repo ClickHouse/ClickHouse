@@ -5,6 +5,8 @@
 2. The `match[]` parameter is a full Prometheus series selector: a bare metric name or an instant
    selector with `=`, `!=`, `=~`, and `!~` label matchers, filtering the series set exactly like the
    PromQL query endpoints do (Grafana emits the selector forms to narrow label names / label values).
+   Non-legacy (UTF-8) label names are written in a selector as quoted string literals, e.g.
+   {"http.status_code"="200"}, covering the same label surface as the escaped `U__...` form.
 3. Prometheus allows `match[]` to be repeated; the result is the union of the series matched by each
    selector, and a repeated value must not be silently dropped.
 4. An explicitly empty `match[]` value, an unparsable selector, a PromQL expression that is not an
@@ -162,6 +164,46 @@ def test_label_values_narrowed_by_selector():
 
     data = get_json_from_api('/api/v1/label/U__http_2e_status__code/values?match[]={host="server2"}')
     assert data == ["500"], f"Unexpected values: {data}"
+
+
+def test_selector_with_quoted_label_name():
+    """A non-legacy (UTF-8) label name is written in a selector as a quoted string literal,
+    e.g. {"http.status_code"="200"}, and must filter the same label surface that the escaped
+    `U__...` form of `/api/v1/label/<name>/values` exposes."""
+    data = get_json_from_api('/api/v1/series?match[]={"http.status_code"="200"}')
+    assert len(data) == 1, f"Expected 1 series, got: {data}"
+    assert data[0]["host"] == "server1", f"Unexpected series: {data}"
+
+    data = get_json_from_api('/api/v1/series?match[]=cpu_usage{"path/segment"!="a"}')
+    assert len(data) == 1 and data[0]["host"] == "server2", f"Unexpected series: {data}"
+
+    data = get_json_from_api('/api/v1/series?match[]={"http.status_code"=~"[45]00"}')
+    assert len(data) == 1 and data[0]["host"] == "server2", f"Unexpected series: {data}"
+
+
+def test_labels_narrowed_by_quoted_label_name_selector():
+    data = get_json_from_api('/api/v1/labels?match[]={"http.status_code"="500"}')
+    assert set(data) == {"__name__", "host", "http.status_code", "path/segment"}, f"Unexpected labels: {data}"
+
+
+def test_label_values_narrowed_by_quoted_label_name_selector():
+    data = get_json_from_api('/api/v1/label/host/values?match[]={"http.status_code"="200"}')
+    assert data == ["server1"], f"Unexpected values: {data}"
+
+    data = get_json_from_api(
+        '/api/v1/label/U__http_2e_status__code/values?match[]={"path/segment"="b"}'
+    )
+    assert data == ["500"], f"Unexpected values: {data}"
+
+
+def test_empty_quoted_label_name_is_rejected():
+    """Prometheus rejects an empty label name in a selector with a parse error."""
+    url = f'http://{node.ip_address}:9093/api/v1/series?match[]={{""="x"}}'
+    response = requests.get(url)
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "error", f"Expected error status, got: {data}"
+    assert "match[]" in data["error"], f"Unexpected error message: {data}"
 
 
 def test_bare_metric_name_match_still_works():
