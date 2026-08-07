@@ -672,3 +672,25 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_target"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_free"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_taken"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_src"
+
+# A `MergeTree` table whose metadata carries any TTL is skipped: the internal `DETACH TABLE ... SYNC`
+# cancels selected-but-not-started background TTL merges, and every such cancellation leaks a
+# `max_number_of_merges_with_ttl_in_pool` slot until server restart (see the comment in
+# `reattachTablesUsedInQuery` and https://github.com/ClickHouse/ClickHouse/pull/111925).
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ttl"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_ttl (a UInt64, d DateTime) ENGINE = MergeTree ORDER BY a TTL d + INTERVAL 1 DAY"
+check_if_not_detached "SELECT * FROM t_reattach_ttl FORMAT Null" "t_reattach_ttl"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_ttl"
+
+# A table with an Outdated part that no Active part covers is skipped: the `DETACH`/`ATTACH` cycle
+# reloads the parts from disk and would resurrect that part as Active. `ALTER TABLE ... DETACH PART`
+# leaves such a part behind — the empty covering part it creates is immediately dropped from the
+# working set but stays on disk until the asynchronous cleanup.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_uncovered"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_uncovered (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_uncovered VALUES (1)"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_uncovered VALUES (2)"
+check_if_detached "SELECT * FROM t_reattach_uncovered FORMAT Null" "t_reattach_uncovered"
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE t_reattach_uncovered DETACH PART 'all_1_1_0'"
+check_if_not_detached "SELECT * FROM t_reattach_uncovered FORMAT Null" "t_reattach_uncovered"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_uncovered"

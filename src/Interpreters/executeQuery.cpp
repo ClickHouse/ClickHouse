@@ -2053,6 +2053,55 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
             }
             if (has_transactional_parts)
                 continue;
+
+            /// Tables with a TTL are not safe to reattach yet: `StorageMergeTree::scheduleDataProcessingJob`
+            /// books a `max_number_of_merges_with_ttl_in_pool` slot when it selects a TTL merge, but the slot
+            /// is released through the `MergeList` entry that `MergePlainMergeTreeTask::prepare` creates only
+            /// when the task starts running. The internal `DETACH TABLE ... SYNC` below cancels still-queued
+            /// background tasks (`removeTasksCorrespondingToStorage`), and `MergePlainMergeTreeTask::cancel`
+            /// does not return the booked slot, so every cancelled selected-but-not-started TTL merge leaks a
+            /// slot until server restart; two leaks disable TTL merges server-wide (the default limit is 2).
+            /// Until that leak is fixed (https://github.com/ClickHouse/ClickHouse/pull/111925), skip tables
+            /// whose metadata carries any TTL — TTL merges are only ever selected for those.
+            const auto merge_tree_metadata = merge_tree->getInMemoryMetadataPtr(context, false);
+            if (merge_tree_metadata->hasAnyTTL())
+                continue;
+
+            /// The `DETACH`/`ATTACH` cycle reloads the parts from disk, and an Outdated part that no Active
+            /// part covers is reloaded as Active — resurrecting state the query would otherwise never see.
+            /// Such parts exist until the asynchronous cleanup deletes them from disk: the empty covering
+            /// part left by `ALTER TABLE ... DETACH PART`, an empty part removed from the working set by
+            /// `clearEmptyParts`, or a part removed by `DROP PARTITION` (the same resurrection happens on a
+            /// server restart in that window, so it is pre-existing behavior, but this hook must not turn it
+            /// into a deterministic side effect of an unrelated query). A resurrected part changes `SELECT`
+            /// results and part-level introspection, and a resurrected empty part additionally lacks the
+            /// projections of its neighbors, making a subsequent `OPTIMIZE TABLE ... FINAL` a silent no-op
+            /// ("Parts have different projection sets" in `MergeTreeMergePredicate::canMergeParts`). Like the
+            /// checks above, this is a best-effort, point-in-time check.
+            {
+                const auto active_parts = merge_tree->getDataPartsVectorForInternalUsage();
+                const auto outdated_parts = merge_tree->getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Outdated});
+                bool has_uncovered_outdated_parts = false;
+                for (const auto & outdated : outdated_parts)
+                {
+                    bool covered = false;
+                    for (const auto & active : active_parts)
+                    {
+                        if (active->info.contains(outdated->info))
+                        {
+                            covered = true;
+                            break;
+                        }
+                    }
+                    if (!covered)
+                    {
+                        has_uncovered_outdated_parts = true;
+                        break;
+                    }
+                }
+                if (has_uncovered_outdated_parts)
+                    continue;
+            }
         }
 
         /// `DETACH TABLE` requires `DROP TABLE`, and the internal `ATTACH TABLE` below goes through the same
