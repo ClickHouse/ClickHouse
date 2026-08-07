@@ -24,14 +24,14 @@ public:
       *  and existence of more than one ephemeral node with same identifier indicates an error.
       */
     LeaderElection(
-        DB::BackgroundSchedulePool & pool_,
+        DB::BackgroundSchedulePoolPtr pool_,
         const std::string & path_,
         ZooKeeper & zookeeper_,
         std::function<void()> before_election_,
         std::function<void()> on_leader_,
         const std::string & identifier_,
         int time_wait_ms_)
-        : pool(pool_)
+        : pool(std::move(pool_))
         , path(path_)
         , zookeeper(zookeeper_)
         , before_election(std::move(before_election_))
@@ -41,7 +41,7 @@ public:
         , log_name("LeaderElection (" + path + ")")
         , log(&Poco::Logger::get(log_name))
     {
-        task = pool.createTask(DB::StorageID::createEmpty(), log_name, [this] { threadFunction(); });
+        task = pool->createTask(DB::StorageID::createEmpty(), log_name, [this] { threadFunction(); });
         createNode();
     }
 
@@ -57,7 +57,7 @@ public:
     ~LeaderElection() { releaseNode(); }
 
 private:
-    DB::BackgroundSchedulePool & pool;
+    DB::BackgroundSchedulePoolPtr pool;
     DB::BackgroundSchedulePool::TaskHolder task;
     std::string path;
     ZooKeeper & zookeeper;
@@ -164,7 +164,7 @@ ReplicatedMergeTreeGeoReplicationController::ReplicatedMergeTreeGeoReplicationCo
     if (!region.empty())
     {
         log_name = storage.getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::GeoReplicationController)";
-        task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ threadFunction(); });
+        task = storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), log_name, [this]{ threadFunction(); });
         task->deactivate();
     }
 }
