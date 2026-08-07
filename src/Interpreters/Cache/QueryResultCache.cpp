@@ -479,6 +479,8 @@ static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filte
     }
     catch (...)
     {
+        /// A filter that fails to parse cannot be analyzed for table dependencies,
+        /// so fail closed - the caller disables the consistency optimization. Ok.
         return false;
     }
 
