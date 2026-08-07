@@ -8,21 +8,13 @@ INSERT INTO part_profile_events SELECT number, toString(number) FROM numbers(100
 SYSTEM FLUSH LOGS part_log;
 
 SELECT count() FROM part_profile_events;
--- Pin the assertion to the NewPart row(s) written by THIS run's insert: among the NewPart events for
--- this table in this run's database, keep only those at the latest `event_time_microseconds`. A retry
--- within two minutes leaves an older (hence excluded) row, and the part removal logged by `DROP TABLE`
--- is a different `event_type`, so neither can contribute a stale, often-zero row that would hide a
--- missing `S3PutObject` in the current insert.
-SELECT max(ProfileEvents['S3PutObject'] > 0)
+-- Pin the assertion to THIS run's table incarnation: `DROP`/`CREATE` gives the table a fresh UUID,
+-- so filtering by `table_uuid` excludes any `NewPart` row left by a previous attempt in the same
+-- database, and `count() > 0` proves the current insert actually wrote a row instead of silently
+-- passing on a stale one when it did not.
+SELECT count() > 0 AND min(ProfileEvents['S3PutObject'] > 0)
 FROM system.part_log
 WHERE event_type = 'NewPart'
   AND table = 'part_profile_events'
   AND database = currentDatabase()
-  AND event_time_microseconds =
-  (
-      SELECT max(event_time_microseconds)
-      FROM system.part_log
-      WHERE event_type = 'NewPart'
-        AND table = 'part_profile_events'
-        AND database = currentDatabase()
-  );
+  AND table_uuid = (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 'part_profile_events');
