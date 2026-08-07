@@ -172,6 +172,14 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent)
     };
 }
 
+void ThreadGroup::setCancellationPredicates(
+    QueryIsCanceledPredicate is_canceled, ThrowIfQueryCanceledPredicate throw_if_canceled)
+{
+    std::lock_guard lock(mutex);
+    shared_data.query_is_canceled_predicate = std::move(is_canceled);
+    shared_data.throw_if_query_canceled_predicate = std::move(throw_if_canceled);
+}
+
 std::vector<UInt64> ThreadGroup::getInvolvedThreadIds() const
 {
     std::vector<UInt64> res;

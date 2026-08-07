@@ -119,6 +119,12 @@ public:
         return shared_data;
     }
 
+    /// Overrides both cancellation predicates. Needed for groups without a process-list element
+    /// (background merges and mutations), where the constructor's predicates are constant `false`.
+    /// Must be called before the group's first attach: `attachToGroupImpl` copies `shared_data` into a
+    /// thread's `local_data` once, so an already-attached thread keeps the predicates it copied.
+    void setCancellationPredicates(QueryIsCanceledPredicate is_canceled, ThrowIfQueryCanceledPredicate throw_if_canceled);
+
     /// Mutation shared data
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level);
     void attachQueryForLog(const String & query_, UInt64 normalized_hash = 0);

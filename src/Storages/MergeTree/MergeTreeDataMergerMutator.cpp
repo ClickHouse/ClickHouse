@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ThreadStatus.h>
 #include <Common/quoteString.h>
 #include <Common/WeightedRandomSampling.h>
 
@@ -500,10 +501,26 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     /// `KILL MUTATION` until the subquery finishes (issue #51586). `context` is this mutation's query context
     /// (`makeQueryContextForMutate`), which the reading context resolves via `getQueryContext`.
     const String partition_id = future_part->part_info.getPartitionId();
-    context->setInteractiveCancelCallback(
-        [&blocker = merges_blocker, merge_entry, partition_id]()
+    auto is_cancelled = [&blocker = merges_blocker, merge_entry, partition_id]()
+    {
+        return blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled;
+    };
+    context->setInteractiveCancelCallback(is_cancelled);
+
+    /// The same predicate also has to reach the IO layer, which does not observe the callback above:
+    /// `PipelineExecutor::cancel` is cooperative and cannot preempt a processor already inside `work()`,
+    /// so a read stuck in the S3 retry loop sleeps through the cancellation. Those loops poll
+    /// `CurrentThread::get().isQueryCanceled()` and `CurrentThread::checkIfNotCancelled()` instead, which
+    /// for a background task answer constant `false`: the predicates installed by the ThreadGroup
+    /// constructor resolve through the process-list element, and a merge/mutate context has none.
+    /// Called before the group's first attach - both mutation paths reach here from `prepare()`, while
+    /// their `ThreadGroupSwitcher` is still guarded by a not-yet-created merge-list entry.
+    (*merge_entry)->thread_group->setCancellationPredicates(
+        is_cancelled,
+        [is_cancelled]
         {
-            return blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled;
+            if (is_cancelled())
+                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
         });
 
     return std::make_shared<MutateTask>(
