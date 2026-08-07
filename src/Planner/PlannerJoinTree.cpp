@@ -24,6 +24,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -173,10 +174,10 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
+    extern const int ILLEGAL_PREWHERE;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -806,16 +807,16 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
     const auto & query_context = planner_context->getQueryContext();
     const auto & settings = query_context->getSettingsRef();
 
-    if (settings[Setting::parallel_replicas_count] <= 1 || settings[Setting::parallel_replicas_custom_key].value.empty())
+    if (settings[Setting::parallel_replicas_count] <= 1)
         return {};
 
+    /// An empty custom key is not skipped silently on purpose: the caller has already checked that the custom key
+    /// filtering is requested, and this replica has been given an offset to read only its own part of the data.
+    /// `parseCustomKeyForTable` fails on it, the same way it does on the initiator when the initiator builds the
+    /// filter itself for a cluster with a single shard.
     auto custom_key_ast = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context);
-    if (!custom_key_ast)
-        throw DB::Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Parallel replicas processing with custom_key has been requested "
-                "(setting 'max_parallel_replicas'), but the table does not have custom_key defined for it "
-                " or it's invalid (setting 'parallel_replicas_custom_key')");
+    /// `parseCustomKeyForTable` either parses the key or throws, it never returns nothing.
+    chassert(custom_key_ast);
 
     LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
 
@@ -1695,6 +1696,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 const auto & columns_names = table_expression_data.getColumnNames();
 
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
+                bool row_policy_filter_not_pushed = false;
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
@@ -1783,11 +1785,39 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
+
+                    /// The filter is built against this table's schema, but read() hands it to wrapper
+                    /// storages' children (Merge, Buffer), which re-derive it against their own types.
+                    /// Push it down only if every column it consumes is in the PREWHERE contract.
+                    /// A remote storage cannot carry it at all: read() only ships query text to the
+                    /// remote servers and never lowers the filter into it, so pushing would silently
+                    /// drop an access-control filter. Refuse, and let the stage check fail closed.
+                    bool can_push_down_filter = storage->supportsPrewhere() && !storage->isRemote();
+                    if (can_push_down_filter)
+                    {
+                        if (const auto supported_prewhere_columns = storage->supportedPrewhereColumns())
+                        {
+                            const auto & table_columns = storage_snapshot->metadata->getColumns();
+                            const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
+                            for (const auto & column_name : row_policy_filter_info->actions.getRequiredColumnsNames())
+                            {
+                                if (!prewhereSupportedColumnsContain(*supported_prewhere_columns, include_subcolumns, table_columns, column_name))
+                                {
+                                    can_push_down_filter = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
-                    if (storage->supportsPrewhere())
+                    if (can_push_down_filter)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
+                    {
                         where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));
+                        row_policy_filter_not_pushed = true;
+                    }
                 }
 
                 if (query_context->canUseParallelReplicasCustomKey())
@@ -1816,8 +1846,22 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 }
 
                 if (!select_query_options.build_logical_plan)
+                {
                     till_stage = storage->getQueryProcessingStage(
                         query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);
+
+                    /// A row-level filter refused for push-down runs as a filter step right
+                    /// above the read, but that step is only appended while the storage stops at
+                    /// FetchColumns. A storage processing further (e.g. Distributed or a wrapper
+                    /// over it) would silently skip the policy, so fail closed instead.
+                    if (row_policy_filter_not_pushed && till_stage > QueryProcessingStage::FetchColumns)
+                        throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                            "Row policy filter for {} cannot be pushed into the storage read, and the storage processes "
+                            "the query remotely, so the filter cannot be applied. Define the policy on the underlying "
+                            "tables instead; note that such a policy is not applied to reads shipped with "
+                            "`serialize_query_plan = 1`",
+                            storage->getStorageID().getNameForLogs());
+                }
 
                 if (select_query_options.build_logical_plan)
                 {
@@ -2452,8 +2496,6 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
         lookup_reading_step->setAnalyzedResult(nullptr);
         /// Hand-constructed filter dag has same hash key each time, so disable cache
         lookup_reading_step->disableQueryConditionCache();
-        /// initializePipeline is done multiple times concurrently, so not to remove parts snapshot
-        lookup_reading_step->disableMergeTreePartsSnapshotRemoval();
     }
 
     for (const auto & column_name : lookup_plan.getCurrentHeader()->getNames())
