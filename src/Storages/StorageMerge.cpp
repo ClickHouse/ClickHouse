@@ -48,6 +48,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -1258,6 +1259,24 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     return modified_query_info;
 }
 
+/// A coordinated read has already been split into a local read plus a shipped remote fragment. The fragment is a
+/// separate plan this walk cannot reach, so reordering only the local side would leave the two in different
+/// coordination modes.
+static bool planHasCoordinatedRead(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+    if (typeid_cast<const ReadFromParallelReplicasStep *>(node->step.get()))
+        return true;
+    if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get());
+        read && read->isParallelReadingFromReplicas())
+        return true;
+    for (const auto * child : node->children)
+        if (planHasCoordinatedRead(child))
+            return true;
+    return false;
+}
+
 static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
 {
     bool ok = true;
@@ -1805,6 +1824,11 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     /// Otherwise, it can lead to incorrect final behavior because the implementation may rely on the reading in direct order).
     if (order_info_->direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
         return false;
+
+    /// The shipped fragment of a coordinated child read cannot be reordered, so decline.
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized() && planHasCoordinatedRead(child_plan.plan.getRootNode()))
+            return false;
 
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
     {

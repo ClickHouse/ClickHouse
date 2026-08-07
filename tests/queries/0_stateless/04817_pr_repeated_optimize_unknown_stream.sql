@@ -69,6 +69,20 @@ SELECT count() FROM merge(currentDatabase(), '^t_pr_ro$')
 WHERE timestamp >= toDateTime('2026-06-02 00:00:00')
 SETTINGS force_index_by_date = 1, force_primary_key = 1;
 
+-- Witness: an ordered read through the merged table. Read-in-order runs after the rewrite has already
+-- shipped the fragment, and it can only reach the local read, so ordering a coordinated child would
+-- leave the two sides in different coordination modes and abort with the same unknown-stream error.
+-- `optimize_read_in_order` is randomized by the test runner and is what enables the optimization,
+-- so pin it here or this arm passes for the wrong reason.
+SELECT 'merge ordered';
+SELECT value FROM merge(currentDatabase(), '^t_pr_ro$') ORDER BY timestamp LIMIT 3
+SETTINGS optimize_read_in_order = 1;
+
+-- Control: the same ordered read with read-in-order off, the configuration that already worked.
+SELECT 'merge ordered no read in order';
+SELECT value FROM merge(currentDatabase(), '^t_pr_ro$') ORDER BY timestamp LIMIT 3
+SETTINGS optimize_read_in_order = 0;
+
 -- Control: index analysis is reported for the child read, independent of granule counts. It runs
 -- through EXPLAIN, which never builds a pipeline, so it is unaffected by the duplicate and passes
 -- either way.

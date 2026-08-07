@@ -10,6 +10,14 @@ merge joined reversed
 499485
 merge with forced index
 13600
+merge ordered
+0
+1
+2
+merge ordered no read in order
+0
+1
+2
 merge index analysis
 1	1	1
 merge plan shape
