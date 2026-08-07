@@ -966,7 +966,9 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     for (size_t i = 0; i < keys.size(); ++i)
     {
         auto & [predicate_op, lhs, rhs] = keys[i];
-        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+        /// The subtype fallback is not applicable: the IEJoin key conditions are inequalities,
+        /// where the order of the values matters, not only their equality.
+        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context, /* allow_conversion_to_subtype= */ false);
 
         description.operators[i] = predicate_op;
         description.key_names_left.push_back(lhs.getColumnName());
