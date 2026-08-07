@@ -5,7 +5,7 @@ import os
 import time
 from pathlib import Path
 from typing import Dict
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from ._environment import _Environment
 from .settings import Settings
@@ -132,6 +132,12 @@ class S3:
                     extra_args["ContentType"] = inferred_content_type
                 if content_encoding:
                     extra_args["ContentEncoding"] = content_encoding
+                if tags:
+                    # Attach tags to the upload request itself (URL-encoded
+                    # querystring) instead of a follow-up put_object_tagging
+                    # call, so the object is never left untagged by a tagging
+                    # step that fails after a successful upload.
+                    extra_args["Tagging"] = urlencode(tags)
 
                 def _upload():
                     client = cls._get_boto3_client()
@@ -141,11 +147,6 @@ class S3:
                         )
                     else:
                         client.upload_file(str(local_path), bucket, key)
-                    if tags:
-                        tag_set = [{"Key": k, "Value": v} for k, v in tags.items()]
-                        client.put_object_tagging(
-                            Bucket=bucket, Key=key, Tagging={"TagSet": tag_set}
-                        )
 
                 # Retry on transient credential failures
                 cls._retry_on_no_credentials(_upload)
@@ -174,17 +175,12 @@ class S3:
                 cmd += f" --content-type {content_type}"
             if content_encoding:
                 cmd += f" --content-encoding {content_encoding}"
-            _ = cls.run_command_with_retries(cmd, no_strict=no_strict)
-
-            # Apply tags if provided
             if tags:
-                bucket = s3_full_path.split("/")[0]
-                key = "/".join(s3_full_path.split("/")[1:])
-                # Use JSON format for tagging to ensure correct syntax
-                tag_set = [{"Key": k, "Value": v} for k, v in tags.items()]
-                tagging_json = json.dumps({"TagSet": tag_set})
-                tag_cmd = f"aws s3api put-object-tagging --bucket {bucket} --key {key} --tagging '{tagging_json}'"
-                cls.run_command_with_retries(tag_cmd, no_strict=True)
+                # Apply tags during upload (single request) rather than a
+                # follow-up put-object-tagging that could fail and leave the
+                # object untagged.
+                cmd += f" --tagging '{urlencode(tags)}'"
+            _ = cls.run_command_with_retries(cmd, no_strict=no_strict)
 
         # Common cleanup and return for both paths
         try:
