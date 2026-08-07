@@ -473,24 +473,24 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     /// We create and deactivate all tasks for consistency.
     /// They all will be scheduled and activated by the restarting thread.
-    queue_updating_task = getContext()->getSchedulePool().createTask(
+    queue_updating_task = getContext()->getSchedulePool()->createTask(
         getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
 
     queue_updating_task->deactivate();
 
-    mutations_updating_task = getContext()->getSchedulePool().createTask(
+    mutations_updating_task = getContext()->getSchedulePool()->createTask(
         getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsUpdatingTask)", [this]{ mutationsUpdatingTask(); });
 
     mutations_updating_task->deactivate();
 
-    merge_selecting_task = getContext()->getSchedulePool().createTask(
+    merge_selecting_task = getContext()->getSchedulePool()->createTask(
         getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
 
     /// Will be activated if we will achieve leader state.
     merge_selecting_task->deactivate();
     merge_selecting_sleep_ms = (*getSettings())[MergeTreeSetting::merge_selecting_sleep_ms];
 
-    mutations_finalizing_task = getContext()->getSchedulePool().createTask(
+    mutations_finalizing_task = getContext()->getSchedulePool()->createTask(
         getStorageID(), getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
 
     /// This task can be scheduled by different parts of code even when storage is readonly.
@@ -2428,7 +2428,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
     std::erase_if(detached_parts, [&](const DetachedPartInfo & detached_part_info)
     {
         const auto volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
-        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / detached_part_info.dir_name, getReadSettings())
+        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(DETACHED_DIR_NAME) / detached_part_info.dir_name, getReadSettings(), PartDirIntent::OpenExisting)
                     .withPartFormatFromDisk()
                     .build();
 
@@ -2474,7 +2474,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             volume = std::make_shared<SingleDiskVolume>("volume_" + detached_part_info.dir_name, detached_part_info.disk);
         }
-        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_dir, getReadSettings())
+        auto part = getDataPartBuilder(entry.new_part_name, volume, fs::path(rename_parts.source_dir) / rename_parts.old_and_new_names.front().new_dir, getReadSettings(), PartDirIntent::OpenExisting)
             .withPartFormatFromDisk()
             .build();
 

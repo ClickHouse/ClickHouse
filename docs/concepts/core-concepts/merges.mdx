@@ -110,7 +110,7 @@ The part merging is performed in several steps:
 
 **③ Indexing**: A new [sparse primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) is generated for the merged column files.
 
-**④ Compression & Storage**: The new column files and index are [compressed](/reference/statements/create/table#column_compression_codec) and saved in a new [directory](/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) representing the merged data part.
+**④ Compression & Storage**: The new column files and index are [compressed](/reference/statements/create/table/codec) and saved in a new [directory](/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) representing the merged data part.
 
 Additional [metadata in data parts](/concepts/core-concepts/parts), such as secondary data skipping indexes, column statistics, checksums, and min-max indexes, is also recreated based on the merged column files. We omitted these details for simplicity.
 
