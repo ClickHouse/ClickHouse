@@ -2098,12 +2098,19 @@ SELECT
 FROM pg_class_oids AS oids
 INNER JOIN pg_namespace AS ns ON oids.database = ns.nspname)");
 
+    /// The fixed rows keep the historic (oid, relkind) pairs that clients probe for one sample relation
+    /// of every `relkind`. The rows whose OID denotes a real catalog this handler emulates additionally
+    /// carry that catalog's name under the `pg_catalog` namespace: `pg_attribute` exposes built-in column
+    /// rows for `attrelid = 1247` (`pg_type`), so the standard `pg_class.relname -> pg_class.oid ->
+    /// pg_attribute.attrelid` resolution must find `pg_type` by name. The generated branch excludes a
+    /// user table that would collide with such a named row (a ClickHouse database literally named
+    /// `pg_catalog` holding a table `pg_type`), so a (namespace, name) pair still denotes one relation.
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class AS
 SELECT oid, relname, relnamespace, relkind FROM VALUES(
     'oid UInt32, relname String, relnamespace UInt32, relkind String',
-    (1259, '', 0, 'r'),
+    (1259, 'pg_class', 11, 'r'),
     (2615, '', 0, 'i'),
-    (1247, '', 0, 'r'),
+    (1247, 'pg_type', 11, 'r'),
     (3079, '', 0, 'v'),
     (1260, '', 0, 'c'),
     (1255, '', 0, 'f'),
@@ -2116,7 +2123,8 @@ SELECT
     name AS relname,
     relnamespace,
     'r' AS relkind
-FROM pg_class_entries)");
+FROM pg_class_entries
+WHERE NOT (relnamespace = 11 AND name IN ('pg_class', 'pg_type')))");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc AS
 SELECT * FROM VALUES(
