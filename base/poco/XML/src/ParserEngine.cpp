@@ -807,6 +807,11 @@ int ParserEngine::handleExternalEntityRef(XML_Parser parser, const XML_Char* con
 			// expat's handler-call-depth bookkeeping; rebalance it or XML_ParserFree is a no-op
 			// and the external parser leaks. Any handler exception (not just XMLException)
 			// can unwind through parseExternal, so clean up on every exception type.
+			// Note: with the vendored expat compiled with XML_GE=0 (and no XML_DTD), expat never
+			// invokes the external-entity-ref handler — entity references are stored by
+			// storeSelfEntityValue and passed through as literal text — so this cleanup is
+			// defensive and cannot be exercised (or regression-tested) through any public API
+			// unless entity processing is re-enabled at compile time.
 			XML_ResetHandlerCallDepth(extParser);
 			XML_ParserFree(extParser);
 			throw;
