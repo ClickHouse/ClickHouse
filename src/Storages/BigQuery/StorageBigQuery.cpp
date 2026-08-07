@@ -184,8 +184,9 @@ public:
 
             /// A stable `insertId` (the query id plus a monotonic row ordinal) lets BigQuery
             /// best-effort deduplicate rows within its streaming-insert window. Streaming inserts are
-            /// not atomic across `insertAll` batches, so if a later batch fails after earlier batches
-            /// have been accepted, the earlier rows stay committed while the `INSERT` reports an error.
+            /// not atomic: one `insertAll` request can commit some rows while rejecting the others with
+            /// `insertErrors`, and a later batch can fail after earlier batches have been accepted;
+            /// either way the committed rows stay in BigQuery while the `INSERT` reports an error.
             /// With a stable `insertId`, both a transport-level retry of one batch and re-running the
             /// same `INSERT` (same query id, same input order) skip the already-committed rows instead
             /// of duplicating them. It is omitted when there is no query id (best-effort dedup off).
@@ -668,7 +669,7 @@ The `BigQuery` engine allows reading from and writing to a table in [Google BigQ
 
 Reading uses the BigQuery REST API (`tabledata.list`), so only native tables can be read (views, materialized views and external tables cannot). Writing uses streaming inserts (`tabledata.insertAll`), which requires billing to be enabled for the project.
 
-Writes are not atomic: a large `INSERT` is sent in batches (at most 500 rows per request, and also split to stay under BigQuery's 10 MB request-size limit), and if a later batch is rejected after earlier batches were accepted, the already-accepted rows stay committed in BigQuery while the query reports an error. Each row carries a stable `insertId` (derived from the query id and the row's ordinal position) so that BigQuery best-effort deduplicates retried rows; because the `insertId` depends on the ordinal position, re-running the same `INSERT` deduplicates only when it presents the rows in the same order (for example single-threaded, with `max_threads = 1` and `max_insert_threads = 1`). See the [`bigquery` table function limitations](/sql-reference/table-functions/bigquery#limitations) for details.
+Writes are not atomic: a large `INSERT` is sent in batches (at most 500 rows per request, and also split to stay under BigQuery's 10 MB request-size limit), a single request may itself partially succeed (BigQuery can commit some rows of a request while rejecting the others with `insertErrors`), and a later batch may be rejected after earlier batches were accepted — in both cases the already-committed rows stay in BigQuery while the query reports an error. Each row carries a stable `insertId` (derived from the query id and the row's ordinal position) so that BigQuery best-effort deduplicates retried rows; because the `insertId` depends on the ordinal position, re-running the same `INSERT` deduplicates only when it presents the rows in the same order (for example single-threaded, with `max_threads = 1` and `max_insert_threads = 1`). See the [`bigquery` table function limitations](/sql-reference/table-functions/bigquery#limitations) for details.
 
 ## Creating a table {#creating-a-table}
 
