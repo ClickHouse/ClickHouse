@@ -263,16 +263,18 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 بالإضافة إلى صيغة الاستعلام الفرعي الموضحة أعلاه، يمكن أن يكون الطرف الأيمن من `SOME` / `ALL` تعبيرَ مصفوفة (قيمة حرفية لمصفوفة، أو عمودًا من نوع مصفوفة، أو أي تعبير يُرجع مصفوفة). هذه هي صيغة مكمِّم المصفوفة بأسلوب PostgreSQL. ويُتعرَّف عليها أثناء التحليل وتُعاد كتابتها إلى دوال المصفوفات، لذلك لا حاجة إلى إعادة كتابتها يدويًا:
 
-| الصياغة                                  | تُعاد كتابتها إلى                  |
-| ---------------------------------------- | ---------------------------------- |
-| `expr = SOME(arr)`                       | `has(arr, expr)`                   |
-| `expr <> ALL(arr)`                       | `NOT has(arr, expr)`               |
-| `expr OP SOME(arr)` (أي عامل مقارنة آخر) | `arrayExists(x -> expr OP x, arr)` |
-| `expr OP ALL(arr)` (أي عامل مقارنة آخر)  | `arrayAll(x -> expr OP x, arr)`    |
+| الصياغة                                   | تُعاد كتابتها إلى                  |
+| ----------------------------------------- | ---------------------------------- |
+| `expr = SOME(arr)`                        | `has(arr, expr)`                   |
+| `expr <> ALL(arr)`                        | `NOT has(arr, expr)`               |
+| `expr OP SOME(arr)` (أي معامل مدعوم آخر) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (أي معامل مدعوم آخر)  | `arrayAll(x -> expr OP x, arr)`    |
 
 يمثل `SOME` المكمِّم الوجودي (وهو المرادف في SQL لـ `ANY`). وتُعامَل `=` و `<>` كحالتين خاصتين وتُحوَّلان إلى `has` / `NOT has` لأن لهما تنفيذًا مُحسَّنًا؛ أما الصيغة العامة فتعتمد على الدالتين الأعلى ترتيبًا `arrayExists` / `arrayAll`.
 
-لا يُتعرَّف على صيغة المصفوفة إلا مع عوامل المقارنة `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, و `>=`. أما العوامل الأخرى التي تقبل مصفوفة في الطرف الأيمن — مثل `LIKE` و `ILIKE` و `NOT LIKE` و `REGEXP` و `IN` — فلا **تُعاد** كتابتها إلى مكمِّم المصفوفة، وتحتفظ بمعناها المعتاد. على سبيل المثال، `'abc' LIKE SOME(['a%', 'b%'])` ليست صيغة مكمِّم المصفوفة؛ استخدم `arrayExists` / `arrayAll` مباشرةً في تلك الحالات.
+يُتعرَّف على صيغة المصفوفة مع معاملات المقارنة `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`، ومع مسندات المقارنة بالكلمات المفتاحية `IS DISTINCT FROM` و `IS NOT DISTINCT FROM`، ومع مسندات البحث في السلاسل `LIKE` و `ILIKE` و `NOT LIKE` و `NOT ILIKE` و `REGEXP`. ولا يُتعرَّف على مسندات المقارنة بالكلمات المفتاحية ومسندات البحث في السلاسل إلا في صيغة المصفوفة، وليس في صيغة الاستعلام الفرعي (التي تُخفَّض إلى `IN`/`NOT IN`). أما المعاملات التي لا تحمل معنى مكمِّم المصفوفة — مثل `IN` نفسها — فلا **تُعاد** كتابتها وتحتفظ بمعناها المعتاد.
+
+تعمل مسندات البحث في السلاسل لأن `MatchImpl` (التنفيذ الكامن وراء `LIKE` / `ILIKE` / `REGEXP`) يدعم `haystack` ثابتًا مع `needle` غير ثابتة. على سبيل المثال، يُعاد كتابة `'abc' LIKE SOME(['a%', 'b%'])` إلى `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`، كما يُعاد كتابة `'abc' NOT LIKE ALL(['x%', 'y%'])` إلى `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. وهذا يطابق سلسلة واحدة مع عدة أنماط؛ أما إذا أردت المطابقة بتمرير موحّد واحد فلا يزال بإمكانك استخدام دالة بحث متعددة الأنماط مثل `multiMatchAny` (التعبيرات النمطية) أو `multiSearchAny` (السلاسل الفرعية).
 
 <Info>
   **`ANY` غير مدعومة في صيغة المصفوفة**
@@ -282,15 +284,16 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 ```sql title="Query"
 SELECT
-    3 = SOME([1, 2, 3, 4]) AS in_array,
-    5 < SOME([1, 2, 6])    AS less_than_some,
-    5 > ALL([1, 2, 3])     AS greater_than_all;
+    3 = SOME([1, 2, 3, 4])         AS in_array,
+    5 < SOME([1, 2, 6])            AS less_than_some,
+    5 > ALL([1, 2, 3])             AS greater_than_all,
+    'abc' LIKE SOME(['a%', 'z%'])  AS like_some;
 ```
 
 ```text title="Response"
-┌─in_array─┬─less_than_some─┬─greater_than_all─┐
-│        1 │              1 │                1 │
-└──────────┴────────────────┴──────────────────┘
+┌─in_array─┬─less_than_some─┬─greater_than_all─┬─like_some─┐
+│        1 │              1 │                1 │         1 │
+└──────────┴────────────────┴──────────────────┴───────────┘
 ```
 
 <Info>
@@ -525,6 +528,63 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 │ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
 └─────────────────────────┴────────────────┘
 ```
+
+<div id="at-time-zone">
+  ### AT TIME ZONE وAT LOCAL
+</div>
+
+تحوِّل المعاملات اللاحقة `AT TIME ZONE` و`AT LOCAL` قيمة من النوع `DateTime` أو `DateTime64` إلى منطقة زمنية مختلفة. وهما اختصار نحوي للدالة الحالية [`toTimeZone`](/ar/reference/functions/regular-functions/date-time-functions#toTimezone):
+
+| Syntax                   | Equivalent                     |
+| ------------------------ | ------------------------------ |
+| `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
+| `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
+
+يمكن أن تكون `zone` أي تعبير سلسلة ثابتًا يُقيَّم إلى اسم منطقة زمنية صالح (مثل `'America/Denver'` أو `'UTC'` أو `concat('America', '/', 'Denver')`). وبما أن `AT TIME ZONE` تُختزل إلى `toTimeZone`، فإن قواعد وسيط المنطقة الزمنية نفسها تنطبق هنا: فالتعبيرات غير الثابتة، مثل الإشارة إلى عمود، تتطلب [`allow_nonconst_timezone_arguments = 1`](/ar/reference/settings/session-settings#allow_nonconst_timezone_arguments).
+
+يستخدم `AT LOCAL` [المنطقة الزمنية الحالية للجلسة](/ar/reference/settings/session-settings#session_timezone) (أو المنطقة الزمنية الافتراضية للخادم إذا لم يتم تعيين المنطقة الزمنية للجلسة). في جداول `Distributed`، يجب تعيين `session_timezone` صراحةً؛ وعندما تكون فارغة، تكون `timeZone()` محلية على مستوى shard ولا يمكن استخدامها كوسيط ثابت للدالة `toTimeZone`، مما يؤدي إلى الاستثناء `ILLEGAL_COLUMN`.
+
+<Note>
+  بخلاف PostgreSQL، حيث إن `timestamp without time zone AT TIME ZONE zone` يعيد تفسير قيمة الوقت الظاهر كما لو كانت ضمن المنطقة المحددة قبل التحويل، فإن ClickHouse يحتفظ دائمًا بنفس النقطة الزمنية المطلقة ولا يغيّر سوى تسمية المنطقة الزمنية المستخدمة للعرض. وكلتا الصيغتين مكافئتان لـ `toTimeZone` ولا تغيّران قيمة `timestamp` الأساسية.
+</Note>
+
+تبلغ أسبقية المعامل `AT TIME ZONE` القيمة 13 (أعلى من `*`/`/`/`%` عند 12، وأعلى من `+`/`-` عند 11)، بما يتوافق مع PostgreSQL. وهذا يعني أن `a * ts AT TIME ZONE 'tz'` يُفسَّر على أنه `a * (ts AT TIME ZONE 'tz')`، وأن `ts + interval AT TIME ZONE 'tz'` يُفسَّر على أنه `ts + (interval AT TIME ZONE 'tz')`. لتطبيق تحويل المنطقة الزمنية بعد العمليات الحسابية، استخدم أقواسًا صريحة:
+
+```sql
+-- Explicit parens required to add first, then convert timezone
+SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR) AT TIME ZONE 'America/Denver';
+-- Equivalent to:
+SELECT toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, 'America/Denver');
+```
+
+أمثلة:
+
+```sql
+SET session_timezone = 'UTC';
+
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE 'America/Denver';
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), 'America/Denver')─┐
+│ 2001-02-16 13:38:40                                              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), timeZone())─┐
+│ 2001-02-16 20:38:40                                        │
+└────────────────────────────────────────────────────────────┘
+```
+
+**انظر أيضًا**
+
+* [`toTimeZone`](/ar/reference/functions/regular-functions/date-time-functions#toTimezone)
+* [`timeZone`](/ar/reference/functions/regular-functions/date-time-functions#timezone)
 
 <div id="logical-and-operator">
   ## المعامل المنطقي AND

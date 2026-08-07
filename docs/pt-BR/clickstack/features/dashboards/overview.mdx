@@ -34,17 +34,13 @@ Por exemplo, você pode criar um gráfico do número de erros (`count()`) agrupa
 Nos exemplos abaixo, usamos o dataset remoto disponível em [sql.clickhouse.com](https://sql.clickhouse.com), descrito no guia [&quot;Dataset de demonstração remoto&quot;](/pt-BR/clickstack/example-datasets/remote-demo-data). **Você também pode reproduzir esses exemplos acessando [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).**
 
 <Steps>
-  <Step>
-    ### Acesse o Chart Explorer
-
+  <Step title="Acesse o Chart Explorer" id="navigate-chart-explorer">
     Selecione `Chart Explorer` no menu à esquerda.
 
     <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
   </Step>
 
-  <Step>
-    ### Criar visualização
-
+  <Step title="Criar visualização" id="create-visualization">
     No exemplo abaixo, criamos um gráfico da duração média das requisições ao longo do tempo por nome do serviço. Para isso, o usuário precisa especificar uma métrica, uma coluna (que pode ser uma expressão SQL) e um campo de agregação.
 
     Selecione o tipo de visualização `Line/Bar` no menu superior, seguido do dataset `Traces` (ou `Demo Traces` se estiver usando [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Preencha os seguintes valores:
@@ -59,7 +55,7 @@ Nos exemplos abaixo, usamos o dataset remoto disponível em [sql.clickhouse.com]
 
     Observe que você pode filtrar eventos usando uma cláusula SQL `WHERE` ou a sintaxe Lucene e definir o intervalo de tempo em que os eventos devem ser visualizados. Também há suporte para múltiplas séries.
 
-    Por exemplo, filtre pelo serviço `frontend` adicionando o filtro `ServiceName:\"frontend\"`. Adicione uma segunda série para a contagem de eventos ao longo do tempo com o alias `Count` clicando em `Add Series`.
+    Por exemplo, filtre pelo serviço `frontend` adicionando o filtro `ServiceName:"frontend"`. Adicione uma segunda série para a contagem de eventos ao longo do tempo com o alias `Count` clicando em `Add Series`.
 
     <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Visualização simples 2" size="lg" />
 
@@ -90,17 +86,13 @@ Filtros globais podem ser aplicados no nível do dashboard, propagando-se automa
 Abaixo, criamos um dashboard com duas visualizações usando as fontes de dados de log e trace. Estas etapas podem ser reproduzidas em [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) ou localmente, conectando-se ao dataset hospedado em [sql.clickhouse.com](https://sql.clickhouse.com), conforme descrito no guia [&quot;Dataset de demonstração remoto&quot;](/pt-BR/clickstack/example-datasets/remote-demo-data).
 
 <Steps>
-  <Step>
-    ### Acesse `Dashboards`
-
+  <Step title="Acesse Dashboards" id="navigate-dashboards">
     Selecione `Dashboards` no menu à esquerda. Em seguida, clique em `New Dashboard` para criar um dashboard temporário ou salvo.
 
     <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="Criar dashboard" size="lg" />
   </Step>
 
-  <Step>
-    ### Criar uma visualização – tempo médio de requisição por serviço
-
+  <Step title="Criar uma visualização – tempo médio de requisição por serviço" id="create-a-tile">
     Selecione `Add New Tile` para abrir o painel de criação de visualizações.
 
     Selecione o tipo de visualização `Line/Bar` no menu superior, seguido do conjunto de dados `Traces` (ou `Demo Traces` se estiver usando [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Preencha os valores a seguir para criar um gráfico que mostre a duração média das requisições ao longo do tempo para cada nome de serviço:
@@ -121,9 +113,7 @@ Abaixo, criamos um dashboard com duas visualizações usando as fontes de dados 
     <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="Dashboard com visualizações" size="lg" />
   </Step>
 
-  <Step>
-    ### Crie uma visualização – eventos ao longo do tempo por serviço
-
+  <Step title="Crie uma visualização – eventos ao longo do tempo por serviço" id="create-a-tile-2">
     Selecione `Add New Tile` para abrir o painel de criação de visualizações.
 
     Selecione o tipo de visualização `Line/Bar` no menu superior e, em seguida, o dataset `Logs` (ou `Demo Logs`, se estiver usando [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). Preencha os valores a seguir para criar um gráfico que mostre a contagem de eventos ao longo do tempo por nome de serviço:
@@ -143,9 +133,7 @@ Abaixo, criamos um dashboard com duas visualizações usando as fontes de dados 
     <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="Dashboard com visualizações 2" size="lg" />
   </Step>
 
-  <Step>
-    ### Adicione um tile de mapa de calor para a duração do span
-
+  <Step title="Adicione um tile de mapa de calor para a duração do span" id="create-a-tile-heatmap">
     Tiles de mapa de calor mostram a contagem de eventos que caem em cada bucket de (tempo, valor) como uma grade colorida. Use um mapa de calor quando quiser ver a **forma** de uma distribuição ao longo do tempo, e não apenas a média ou um único percentil. Um mapa de calor de latência revela padrões bimodais de duração, agrupamentos na cauda lenta ou dispersões repentinas que um gráfico de linhas acabaria diluindo na média.
 
     Para adicionar um tile de mapa de calor:
@@ -189,9 +177,7 @@ Abaixo, criamos um dashboard com duas visualizações usando as fontes de dados 
     Ao selecioná-la, a visualização [Event Deltas](/pt-BR/clickstack/features/event-deltas) é aberta com a fonte de dados do tile, a cláusula `Where` e o intervalo de tempo mantidos. A partir daí, você pode examinar interativamente a mesma distribuição, segmentar por atributo para ver o que diferencia os spans lentos dos rápidos e inspecionar os spans individuais por trás de qualquer célula, sem precisar reconstruir a consulta manualmente.
   </Step>
 
-  <Step>
-    ### Filtro do painel
-
+  <Step title="Filtro do painel" id="filter-dashboards">
     Filtros Lucene ou SQL, juntamente com o intervalo de tempo, podem ser aplicados ao painel e serão propagados automaticamente para todas as visualizações.
 
     <Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="Painel com filtro" size="lg" />
@@ -211,6 +197,20 @@ Abaixo, criamos um dashboard com duas visualizações usando as fontes de dados 
 Para remover, editar ou duplicar uma visualização, passe o cursor sobre ela e use os respectivos botões de ação.
 
 <Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="Editar dashboard" size="lg" />
+
+<div id="tile-display-settings">
+  ### Configurações de exibição do tile
+</div>
+
+Cada tile tem um painel **Configurações de exibição** com opções que controlam como seu valor é exibido. Abra-o no editor do tile clicando em **Configurações de exibição**. As opções disponíveis dependem do tipo de visualização.
+
+Tiles Number podem mostrar um **gráfico de fundo**: uma linha de tendência desenhada atrás do valor, para que sua variação ao longo do intervalo de tempo selecionado fique visível de relance. Isso é útil para tiles de SLO e de orçamento de erro, em que a tendência do valor importa tanto quanto a leitura atual.
+
+Com um tile Number selecionado, abra **Configurações de exibição** e defina **Gráfico de fundo** como **Linha** ou **Área** (ou **Nenhum** para desativá-lo). A linha de tendência é derivada de uma versão da consulta do tile agrupada em buckets de tempo, portanto nenhuma configuração adicional é necessária. Por padrão, ela herda a cor do tile; defina uma **Cor de fundo** para substituí-la por uma cor específica da paleta.
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Painel Configurações de exibição de um tile Number, com Gráfico de fundo definido como Área" size="lg" />
+
+Os gráficos de fundo se aplicam a tiles Number do construtor de consultas. Tiles Number de Raw SQL retornam um único valor sem dimensão de tempo para agrupar em buckets, portanto a opção aparece, mas fica desabilitada para eles.
 
 <div id="dashboard-listing-search">
   ## Dashboard - listagem e busca
@@ -239,17 +239,13 @@ Além dos [filtros de texto livre](#filter-dashboards) disponíveis em todos os 
 As etapas a seguir mostram como adicionar um filtro personalizado ao dashboard criado na seção [&quot;Criando dashboards&quot;](#creating-dashboards).
 
 <Steps>
-  <Step>
-    ### Abra a caixa de diálogo Editar filtros
-
+  <Step title="Abra a caixa de diálogo Editar filtros" id="open-edit-filters">
     Abra um dashboard salvo e selecione **Editar filtros** na barra de ferramentas.
 
     <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Botão Editar filtros na barra de ferramentas do dashboard" size="lg" />
   </Step>
 
-  <Step>
-    ### Adicione um novo filtro
-
+  <Step title="Adicione um novo filtro" id="add-new-filter">
     Clique em **Adicionar novo filtro**. Configure o filtro fornecendo um **Nome**, selecionando uma **Fonte de dados** e inserindo uma **Expressão de filtro** — uma coluna SQL ou expressão cujos valores distintos preencherão a lista suspensa. Clique em **Salvar filtro**.
 
     Por exemplo, para adicionar um filtro de serviço a dados de traces, use `ServiceName` como expressão de filtro com a fonte de dados `Traces`. O &quot;Filtro de valores da lista suspensa&quot; é opcional e permite restringir quais valores aparecem na lista suspensa.
@@ -261,17 +257,13 @@ As etapas a seguir mostram como adicionar um filtro personalizado ao dashboard c
     <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="Modal Filtros mostrando um filtro de Serviços configurado" size="md" />
   </Step>
 
-  <Step>
-    ### Use o filtro
-
+  <Step title="Use o filtro" id="use-filter">
     Feche o modal Filtros. O novo filtro suspenso aparece abaixo da barra de pesquisa. Clique nele para ver os valores disponíveis e selecione um deles para filtrar todas as visualizações do dashboard.
 
     <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="Dashboard filtrado para o serviço frontend" size="lg" />
   </Step>
 
-  <Step>
-    ### (Opcional) Salve os valores do filtro como padrão
-
+  <Step title="(Opcional) Salve os valores do filtro como padrão" id="save-default-filters">
     Para manter uma seleção de filtro como padrão do dashboard, escolha **Salvar consulta e filtros como padrão** no menu do dashboard. O dashboard sempre será aberto com os filtros selecionados aplicados. Para redefinir, selecione **Remover consulta e filtros padrão** no mesmo menu.
 
     <Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="Menu do dashboard mostrando a opção Salvar consulta e filtros como padrão" size="lg" />
@@ -283,13 +275,13 @@ As etapas a seguir mostram como adicionar um filtro personalizado ao dashboard c
 </Note>
 
 <div id="drilldown-to-search">
-  ## Drilldown para a Search
+  ## Drilldown para a Busca
 </div>
 
-Os tiles do dashboard permitem drilldown para a página Search. Clique em um ponto de dados em uma visualização para abrir um menu de contexto com as seguintes opções:
+Os tiles do dashboard permitem drilldown para a página Busca. Clique em um ponto de dados em uma visualização para abrir um menu de contexto com as seguintes opções:
 
-* **Ver todos os eventos** — navega até a página Search, mostrando todos os eventos da janela de tempo selecionada.
-* **Filtrar por grupo** — navega até a página Search, filtrada por uma série específica.
+* **Ver todos os eventos** — navega até a página Busca, mostrando todos os eventos da janela de tempo selecionada.
+* **Filtrar por grupo** — navega até a página Busca, filtrada por uma série específica.
 
 <Image img="/images/clickstack/dashboards/drilldown.webp" alt="Menu de contexto de drilldown mostrando as opções Ver todos os eventos e Filtrar por grupo" size="lg" />
 

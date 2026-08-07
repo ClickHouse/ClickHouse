@@ -137,7 +137,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             if (prune_primary_key)
             {
                 const auto & primary_key = metadata_snapshot->getPrimaryKey();
-                KeyCondition dynamic_key_condition(filter_dag, context, primary_key.column_names, primary_key.expression);
+                KeyCondition dynamic_key_condition(filter_dag, context, primary_key);
 
                 RangesInDataPart part_for_pk = part;
                 part_for_pk.ranges = ranges;

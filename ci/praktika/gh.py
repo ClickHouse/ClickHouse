@@ -761,6 +761,72 @@ class GH:
         return res
 
     @classmethod
+    def _submit_team_review_requests(cls, team_slugs, pr, repo):
+        assert team_slugs
+
+        payload = {"reviewers": [], "team_reviewers": team_slugs}
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as temp_file:
+            json.dump(payload, temp_file)
+            temp_file_path = temp_file.name
+
+        try:
+            cmd = (
+                "gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+                f"--input {shlex.quote(temp_file_path)}"
+            )
+            if not cls.do_command_with_retries(cmd):
+                raise RuntimeError(
+                    f"Failed to request team reviews for pull request [{pr}]"
+                )
+        finally:
+            os.unlink(temp_file_path)
+
+    @classmethod
+    def request_team_reviews(cls, team_slugs, pr=None, repo=None):
+        requested = set(team_slugs)
+        if not requested:
+            return True
+
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        cmd = (
+            f'gh api -H "Accept: application/vnd.github.v3+json" '
+            f'"/repos/{repo}/pulls/{pr}/requested_reviewers" '
+            "--jq '[.teams[].slug]'"
+        )
+        output = cls.get_output_with_retries(cmd)
+        if not output:
+            raise RuntimeError(
+                f"Failed to retrieve team review requests for pull request [{pr}]"
+            )
+
+        try:
+            requested_teams = json.loads(output)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"Failed to parse team review requests for pull request [{pr}]: {e}"
+            ) from e
+        if not isinstance(requested_teams, list) or not all(
+            isinstance(team, str) for team in requested_teams
+        ):
+            raise RuntimeError(
+                f"Unexpected team review request response for pull request [{pr}]"
+            )
+
+        teams_to_request = sorted(requested - set(requested_teams))
+        if teams_to_request:
+            cls._submit_team_review_requests(teams_to_request, pr, repo)
+
+        return True
+
+    @classmethod
     def get_pr_contributors(cls, pr=None, repo=None):
         if not repo:
             repo = _Environment.get().REPOSITORY
@@ -1112,6 +1178,40 @@ class GH:
             if prs:
                 return prs[0]["url"]
             print(f"No {state} PR found for branch [{branch}]")
+        return ""
+
+    @classmethod
+    def get_pr_state_by_branch(cls, branch, repo=None):
+        """'MERGED' / 'OPEN' / '' for the PR whose head is `branch`.
+
+        Merged takes priority: an already-merged PR means the change is in master,
+        so the caller should stop even if a stray open PR also exists. (This is
+        the opposite order from `get_pr_url_by_branch`, which checks open first;
+        they agree unless one branch has both an open and a merged PR - which the
+        release flow's "never recreate once present" invariant prevents for the
+        `auto/<tag>` / `bump_version_<version>` branches this is used with.) Same
+        retry / fail-close semantics as `get_pr_url_by_branch` - a failed lookup
+        raises rather than being mistaken for 'no PR' (which would recreate a PR
+        or skip a needed merge after the release is already published).
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        safe_repo = shlex.quote(repo)
+        safe_branch = shlex.quote(branch)
+        for state in ("merged", "open"):
+            cmd = (
+                f"gh pr list --repo {safe_repo} --head {safe_branch}"
+                f" --state {state} --json url"
+            )
+            raw = cls.get_output_with_retries(cmd)
+            if not raw:
+                raise RuntimeError(
+                    f"gh pr list failed for branch [{branch}] in repo [{repo}] "
+                    f"(state {state}) after retries; refusing to treat a failed "
+                    f"lookup as 'no PR'"
+                )
+            if json.loads(raw):
+                return state.upper()
         return ""
 
     _STATUS_TO_GH = {

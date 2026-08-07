@@ -364,6 +364,18 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
                 poco_request.set(header.name, header.value);
         }
 
+        /// Some SDK clients (e.g. Key Vault) do not set the `Content-Length` header themselves
+        /// and rely on the transport to compute it from the body stream (the removed curl-based
+        /// transport did that). Without it the request body is sent with no framing at all,
+        /// and Azure responds with `411 Length Required`. Body-less requests get a `NullBodyStream`,
+        /// so mirror the curl transport and skip only the methods that never carry a body.
+        if (method != "GET" && method != "HEAD"
+            && !poco_request.has(Poco::Net::HTTPRequest::CONTENT_LENGTH))
+        {
+            if (const auto * request_body_stream = request.GetBodyStream())
+                poco_request.setContentLength(request_body_stream->Length());
+        }
+
         if (method == "GET" || method == "HEAD")
             request_throttler.throttleHTTPGet();
         else if (method == "PUT" || method == "POST" || method == "PATCH")

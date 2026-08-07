@@ -2,6 +2,8 @@
 title: Configurer l’ingestion gérée
 ---
 
+import ManagedIngestionExampleOtelConfig from '/snippets/fr/clickstack/_config_example_otel.mdx';
+
 <img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
 
 Sélectionnez &quot;Start Ingestion&quot; et vous serez invité à choisir une source d’ingestion. Managed ClickStack prend en charge OpenTelemetry et [Vector](https://vector.dev/) comme principales sources d’ingestion. Les utilisateurs peuvent toutefois aussi envoyer des données directement vers ClickHouse selon leur propre schéma, à l’aide de l’une des [intégrations prises en charge par ClickHouse Cloud](/fr/integrations/home).
@@ -51,7 +53,7 @@ Sélectionnez &quot;Start Ingestion&quot; et vous serez invité à choisir une s
 
     À cette fin, un exemple de configuration d’OpenTelemetry Collector vous est fourni. Il utilise le ClickHouse exporter avec les paramètres appropriés et expose des receivers OTLP. Cette configuration correspond aux interfaces et au comportement attendus par la distribution ClickStack.
 
-    <ExampleOTelConfig />
+    <ManagedIngestionExampleOtelConfig />
 
     <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
 

@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Introdução às visões materializadas'
 title: 'Crie sua primeira visão materializada'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['Analytics em tempo real', 'Armazenamento de dados']
 products: ['Cloud']
 description: 'Saiba como usar visões materializadas no ClickHouse para pré-computar e armazenar resultados de consultas com uma ordenação diferente, permitindo buscas rápidas em colunas não cobertas pela chave primária.'
 ---
@@ -39,9 +39,7 @@ Neste guia de início rápido, você vai resolver esse problema criando uma **vi
 Ao final, você entenderá como visões materializadas funcionam como gatilhos de inserção, como fazer backfill dos dados existentes e o trade-off de espaço em disco ao armazenar os dados duas vezes.
 
 <Steps titleSize="h3">
-  <Step>
-    ### Entenda por que você precisa de uma visão materializada
-
+  <Step title="Entenda por que você precisa de uma visão materializada" id="understand-why-you-need-a-materialized-view">
     Sua tabela `uk_price_paid` está ordenada por `(postcode, addr1, addr2)`. Isso significa que o ClickHouse pode ignorar grandes blocos de dados quando você filtra por `postcode`, `addr1` ou `addr2`, mas consultas que filtram por `town` precisam examinar cada uma das linhas — todas as 30 milhões.
 
     Você poderia criar uma segunda tabela com um `ORDER BY` diferente, mas aí precisaria se lembrar de inserir os dados nas duas tabelas sempre que novos dados chegassem. Uma **visão materializada** automatiza isso: ela monitora as inserções em uma tabela de origem, transforma as linhas e as grava automaticamente em uma tabela de destino.
@@ -49,9 +47,7 @@ Ao final, você entenderá como visões materializadas funcionam como gatilhos d
     Pense em uma visão materializada como um **gatilho de inserção** — toda vez que linhas são inseridas na tabela de origem, a consulta `SELECT` da MV é executada sobre o novo bloco de linhas, e o resultado é inserido na tabela de destino.
   </Step>
 
-  <Step>
-    ### Crie a tabela de destino
-
+  <Step title="Crie a tabela de destino" id="create-the-destination-table">
     Uma visão materializada precisa de algum lugar para armazenar seu resultado. É apenas uma tabela MergeTree comum — você tem controle total sobre seu esquema, `ORDER BY` e `PARTITION BY`.
 
     Crie uma tabela ordenada por `(town, date)` com apenas as colunas necessárias para consultas por cidade:
@@ -78,9 +74,7 @@ Ao final, você entenderá como visões materializadas funcionam como gatilhos d
     ```
   </Step>
 
-  <Step>
-    ### Crie a visão materializada
-
+  <Step title="Crie a visão materializada" id="create-the-materialized-view">
     Agora, crie a visão materializada que conecta a tabela de origem (`uk_price_paid`) à tabela de destino (`uk_price_paid_by_town`):
 
     ```sql
@@ -99,9 +93,7 @@ Ao final, você entenderá como visões materializadas funcionam como gatilhos d
     Há uma ressalva importante: visões materializadas só são acionadas por **inserções**. Se você excluir ou atualizar linhas na tabela de origem, a tabela de destino não saberá disso — as MVs não permanecem sincronizadas com exclusões ou atualizações. Se você precisar desse tipo de sincronização, considere usar [projeções](/pt-BR/reference/statements/alter/projection).
   </Step>
 
-  <Step>
-    ### Fazer backfill dos dados existentes
-
+  <Step title="Fazer backfill dos dados existentes" id="backfill-existing-data">
     A visão materializada processa apenas inserções *futuras*. As 30 milhões de linhas já em `uk_price_paid` foram inseridas antes de a MV existir, então a tabela de destino está vazia no momento.
 
     Faça o backfill manualmente:
@@ -133,9 +125,7 @@ Ao final, você entenderá como visões materializadas funcionam como gatilhos d
     Ambas as tabelas devem ter o mesmo número de linhas.
   </Step>
 
-  <Step>
-    ### Consulte a tabela de destino da visão materializada
-
+  <Step title="Consulte a tabela de destino da visão materializada" id="query-the-materialized-view-destination-table">
     Agora, execute uma consulta com filtro em `town` na tabela de destino e compare o resultado com uma consulta feita diretamente na tabela de origem.
 
     Primeiro, consulte a tabela de origem:
@@ -178,9 +168,7 @@ Ao final, você entenderá como visões materializadas funcionam como gatilhos d
     Por isso, recomenda-se criar visões materializadas usando a cláusula `TO`.
   </Step>
 
-  <Step>
-    ### Observe que os dados são armazenados duas vezes
-
+  <Step title="Observe que os dados são armazenados duas vezes" id="observe-the-data-is-stored-twice">
     Visões materializadas oferecem leituras mais rápidas, em troca de espaço adicional em disco. Consulte `system.parts` para ver quanto espaço cada tabela usa:
 
     ```sql
@@ -201,9 +189,11 @@ Ao final, você entenderá como visões materializadas funcionam como gatilhos d
   </Step>
 </Steps>
 
-## Próximos passos
+<div id="next-steps">
+  ## Próximos passos
+</div>
 
-Neste guia de início rápido, você criou uma visão materializada para armazenar dados de vendas de imóveis do Reino Unido com uma ordem de ordenação diferente, permitindo consultas rápidas por cidade sem modificar a tabela original. Você aprendeu que as MVs funcionam como gatilhos de inserção, que os dados existentes precisam ser carregados manualmente de forma retroativa e que a contrapartida é o uso de espaço adicional em disco.
+Neste guia de início rápido, você criou uma visão materializada para armazenar dados de vendas de imóveis do Reino Unido com uma ordenação diferente, permitindo consultas rápidas por cidade sem modificar a tabela original. Você aprendeu que as MVs funcionam como gatilhos de inserção, que os dados existentes precisam receber backfill manualmente e que a contrapartida é o uso de espaço adicional em disco.
 
 Confira a seguir os próximos guias de início rápido:
 

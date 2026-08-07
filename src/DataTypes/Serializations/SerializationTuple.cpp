@@ -739,6 +739,15 @@ struct DeserializeBinaryBulkStateTuple : public ISerialization::DeserializeBinar
 
         return new_state;
     }
+
+    void forEachNestedState(const std::function<void(const ISerialization::DeserializeBinaryBulkStatePtr &)> & callback) const override
+    {
+        for (const auto & state : states)
+        {
+            if (state)
+                callback(state);
+        }
+    }
 };
 
 void SerializationTuple::enumerateStreams(

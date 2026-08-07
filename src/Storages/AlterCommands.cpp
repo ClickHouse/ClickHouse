@@ -28,6 +28,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -49,6 +50,7 @@
 #include <Common/randomSeed.h>
 
 #include <ranges>
+#include <vector>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -564,7 +566,49 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
+/// The exact set of columns an ADD COLUMN command materializes: flatten_nested expansion plus the
+/// IF NOT EXISTS existence filter. Shared by AlterCommand::apply and AlterCommands::validate so both
+/// model the identical schema (an earlier drift here caused apply/validate to disagree on nested adds).
+/// Returns empty when the command is a whole-command no-op (IF NOT EXISTS and the column already exists).
+static std::vector<ColumnDescription> columnsAddedByAlter(
+    const ColumnsDescription & existing_columns,
+    ColumnDescription column,
+    ContextPtr context,
+    bool if_not_exists,
+    bool share_nested_offsets)
+{
+    /// An exact `column_name` match is always a whole-command no-op; the `n`/`n.*` nested equivalence
+    /// (`hasNested`) is only "exists" when share_nested_offsets is enabled, matching prepare()/validate().
+    if (if_not_exists
+        && (existing_columns.has(column.name)
+            || (share_nested_offsets && existing_columns.hasNested(column.name))))
+        return {};
+
+    std::vector<ColumnDescription> columns_to_add;
+    if (context->getSettingsRef()[Setting::flatten_nested])
+    {
+        StorageInMemoryMetadata temporary_metadata;
+        temporary_metadata.columns.add(column, /*after_column*/ "", /*first*/ true);
+        temporary_metadata.columns.flattenNested();
+
+        for (const auto & col : temporary_metadata.columns.getAll())
+            columns_to_add.push_back(temporary_metadata.columns.get(col.name));
+    }
+    else
+    {
+        columns_to_add.push_back(std::move(column));
+    }
+
+    /// Skip only the EXACT transformed names that already exist (not an `n.*` prefix), so a repeated
+    /// flattened `n.a` add is a no-op while a genuinely new distinct column is never dropped.
+    if (if_not_exists)
+        std::erase_if(columns_to_add, [&](const ColumnDescription & c) { return existing_columns.has(c.name); });
+
+    return columns_to_add;
+}
+
+
+void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     /// Helper function for column existence check with IF EXISTS
     auto should_skip_column_operation = [&]() -> bool {
@@ -587,34 +631,22 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         column.ttl = ttl;
 
-        if (context->getSettingsRef()[Setting::flatten_nested])
+        /// The exact columns this ADD materializes (flatten_nested expansion + IF NOT EXISTS filter).
+        /// Empty means a whole-command no-op. validate() advances its snapshot with the same set so
+        /// apply() and validate() never disagree on what a (nested) ADD introduces.
+        auto columns_to_add = columnsAddedByAlter(metadata.columns, column, context, if_not_exists, share_nested_offsets);
+        if (columns_to_add.empty())
+            return;
+
+        if (!after_column.empty() || first)
         {
-            StorageInMemoryMetadata temporary_metadata;
-            temporary_metadata.columns.add(column, /*after_column*/ "", /*first*/ true);
-            temporary_metadata.columns.flattenNested();
-
-            const auto transformed_columns = temporary_metadata.columns.getAll();
-
-            auto add_column = [&](const String & name)
-            {
-                const auto & transformed_column = temporary_metadata.columns.get(name);
-                metadata.columns.add(transformed_column, after_column, first);
-            };
-
-            if (!after_column.empty() || first)
-            {
-                for (const auto & col: transformed_columns | std::views::reverse)
-                    add_column(col.name);
-            }
-            else
-            {
-                for (const auto & col: transformed_columns)
-                    add_column(col.name);
-            }
+            for (const auto & col : columns_to_add | std::views::reverse)
+                metadata.columns.add(col, after_column, first);
         }
         else
         {
-            metadata.columns.add(column, after_column, first);
+            for (const auto & col : columns_to_add)
+                metadata.columns.add(col, after_column, first);
         }
 
         metadata.addImplicitIndicesForColumn(column, context);
@@ -1322,7 +1354,7 @@ bool AlterCommand::isDropOrRename() const
         || type == Type::RENAME_COLUMN;
 }
 
-std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const
+std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     if (!isRequireMutationStage(metadata, context))
     {
@@ -1330,7 +1362,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
         /// to the metadata so that subsequent commands see the updated state. For example,
         /// ADD COLUMN followed by RENAME COLUMN needs the new column to be visible.
         if (!ignore)
-            apply(metadata, context);
+            apply(metadata, context, share_nested_offsets);
         return {};
     }
 
@@ -1382,7 +1414,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     const auto & settings = context->getSettingsRef();
     result.max_parser_depth = settings[Setting::max_parser_depth];
     result.max_parser_backtracks = settings[Setting::max_parser_backtracks];
-    apply(metadata, context);
+    apply(metadata, context, share_nested_offsets);
     return result;
 }
 
@@ -1406,7 +1438,7 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
+void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
 {
     if (!prepared)
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
@@ -1415,13 +1447,14 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(metadata_copy, context);
+            command.apply(metadata_copy, context, share_nested_offsets);
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
     {
-        metadata_copy.primary_key.recalculateWithNewAST(metadata_copy.primary_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
+        metadata_copy.primary_key = KeyDescription::getPrimaryKeyFromAST(
+            metadata_copy.primary_key.definition_ast, metadata_copy.sorting_key, metadata_copy.columns, metadata_copy.virtuals, context);
     }
     else
     {
@@ -1681,6 +1714,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
+    /// Columns whose default is evaluated at insert time (DEFAULT, MATERIALIZED); their expressions
+    /// must not reference virtual columns. An external-target (`TO`) materialized view forwards inserts
+    /// to its target using the target metadata and never evaluates its own column defaults, so a default
+    /// over a virtual column is inert there and is left out of this set.
+    NameSet insert_time_default_columns;
+    bool defaults_evaluated_at_insert_time = true;
+    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
+        defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
     for (size_t i = 0; i < size(); ++i)
@@ -1734,7 +1775,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     settings[Setting::allow_experimental_codecs]);
             }
 
-            all_columns.add(ColumnDescription(column_name, command.data_type));
+            /// Advance the working snapshot with the exact columns apply() would materialize
+            /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
+            /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
+            for (auto & col : columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type),
+                                                  context, command.if_not_exists, share_nested))
+                all_columns.add(std::move(col));
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -1858,7 +1904,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     {
                         auto execution_context = Context::createCopy(context);
                         auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, all_columns);
-                        QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
+                        auto fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
                         for (const ColumnDescription & column : all_columns)
                         {
                             if (const auto & default_expression = column.default_desc.expression)
@@ -2047,6 +2093,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
+
+                if (defaults_evaluated_at_insert_time
+                    && (command.default_kind == ColumnDefaultKind::Default || command.default_kind == ColumnDefaultKind::Materialized))
+                    insert_time_default_columns.insert(final_column_name);
             } /// if we change data type for column with default
             else if (all_columns.has(column_name) && command.data_type)
             {
@@ -2063,6 +2113,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     addTypeConversionToAST(make_intrusive<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
 
                 default_expr_list->children.emplace_back(setAlias(column_in_table.default_desc.expression->clone(), tmp_column_name));
+
+                if (defaults_evaluated_at_insert_time
+                    && (column_in_table.default_desc.kind == ColumnDefaultKind::Default || column_in_table.default_desc.kind == ColumnDefaultKind::Materialized))
+                    insert_time_default_columns.insert(final_column_name);
             }
         }
     }
@@ -2073,7 +2127,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     if (!is_parameterized_view && all_columns.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot DROP or CLEAR all columns");
 
-    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
+    validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context, insert_time_default_columns);
 }
 
 bool AlterCommands::hasNonReplicatedAlterCommand() const
@@ -2106,7 +2160,7 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters) const
+MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters, bool share_nested_offsets) const
 {
     /// Save a copy of the original metadata before applying commands.
     /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
@@ -2126,7 +2180,7 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     MutationCommands result;
     for (const auto & alter_cmd : *this)
     {
-        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context); mutation_cmd)
+        if (auto mutation_cmd = alter_cmd.tryConvertToMutationCommand(metadata, context, share_nested_offsets); mutation_cmd)
         {
             result.push_back(*mutation_cmd);
         }

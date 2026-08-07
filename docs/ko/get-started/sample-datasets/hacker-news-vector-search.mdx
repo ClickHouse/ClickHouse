@@ -30,9 +30,7 @@ doc_type: 'guide'
 </div>
 
 <Steps>
-  <Step>
-    ### 테이블 생성
-
+  <Step title="테이블 생성" id="create-table">
     게시물과 해당 임베딩, 관련 속성을 저장할 `hackernews` 테이블을 생성합니다:
 
     ```sql
@@ -63,9 +61,7 @@ doc_type: 'guide'
     [문서](/ko/reference/engines/table-engines/mergetree-family/annindexes)에서 설명한 포스트필터링/프리필터링이 결합된 벡터 유사도 검색을 이해하는 데 활용할 수 있습니다
   </Step>
 
-  <Step>
-    ### 데이터 불러오기
-
+  <Step title="데이터 불러오기" id="load-table">
     `Parquet` 파일의 데이터셋을 불러오려면 다음 SQL 문을 실행하십시오:
 
     ```sql
@@ -75,9 +71,7 @@ doc_type: 'guide'
     테이블에 2,874만 개의 행을 삽입하는 데는 몇 분 정도 걸립니다.
   </Step>
 
-  <Step>
-    ### 벡터 유사성 인덱스 구축하기
-
+  <Step title="벡터 유사성 인덱스 구축하기" id="build-vector-similarity-index">
     다음 SQL을 실행하여 `hackernews` 테이블의 `vector` 컬럼에 벡터 유사성 인덱스를 정의하고 구축합니다:
 
     ```sql
@@ -94,9 +88,7 @@ doc_type: 'guide'
     전체 2,874만 건의 데이터셋에 대해 인덱스를 빌드하고 저장하는 데는 사용 가능한 CPU 코어 수와 스토리지 대역폭에 따라 몇 분에서 몇 시간까지 걸릴 수 있습니다.
   </Step>
 
-  <Step>
-    ### ANN 검색 수행
-
+  <Step title="ANN 검색 수행" id="perform-ann-search">
     벡터 유사도 인덱스가 구축되면 벡터 검색 쿼리는 자동으로 해당 인덱스를 사용합니다:
 
     ```sql title="Query"
@@ -110,14 +102,12 @@ doc_type: 'guide'
     벡터 인덱스를 처음 메모리에 로드할 때는 몇 초에서 몇 분까지 걸릴 수 있습니다.
   </Step>
 
-  <Step>
-    ### 검색 쿼리용 임베딩 생성
-
+  <Step title="검색 쿼리용 임베딩 생성" id="generating-embeddings-for-search-query">
     [Sentence Transformers](https://www.sbert.net/)는 문장과 단락의 의미론적 의미를 파악하기 위한 임베딩(embedding) 모델을 로컬 환경에서 간편하게 사용할 수 있도록 제공합니다.
 
     이 HackerNews 데이터셋에는 [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) 모델로 생성된 벡터 임베딩(vector embedding)이 포함되어 있습니다.
 
-    아래에 예시 Python 스크립트가 제공됩니다. 이 스크립트는 `sentence_transformers` Python 패키지를 사용하여 프로그래밍 방식으로 임베딩 벡터를 생성하는 방법을 보여줍니다. 생성된 검색 임베딩 벡터는 `SELECT` 쿼리에서 [`cosineDistance()`](/ko/reference/functions/regular-functions/distance-functions#cosineDistance) 함수의 인수로 전달됩니다.
+    아래에 예시 Python 스크립트가 제공됩니다. 이 스크립트는 `sentence_transformers` Python 패키지를 사용하여 프로그래밍 방식으로 임베딩 벡터를 생성하는 방법을 보여줍니다. 생성된 검색 임베딩 벡터는 `SELECT&#96; 쿼리에서 [`cosineDistance()&#96;](/reference/functions/regular-functions/distance-functions#cosineDistance) 함수의 인수로 전달됩니다.
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -132,12 +122,12 @@ doc_type: 'guide'
     chclient = clickhouse_connect.get_client() # ClickHouse credentials here
 
     while True:
-        # 사용자로부터 검색 쿼리 입력 받기
+        # Take the search query from user
         print("Enter a search query :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # 모델을 실행하여 검색 벡터 획득
+        # Run the model and obtain search vector
         print("Generating the embedding for ", input_query);
         embeddings = model.encode(texts)
 
@@ -148,22 +138,23 @@ doc_type: 'guide'
         for row in result.result_rows:
             print(row[0], row[2][:100])
             print("---------")
+
     ```
 
     위 Python 스크립트를 실행한 예시와 유사도 검색 결과는 다음과 같습니다
     (상위 20개 posts 각각에서 100자만 출력됩니다):
 
     ```text
-    초기화 중...
+    Initializing...
 
-    검색어를 입력하세요 :
+    Enter a search query :
     Are OLAP cubes useful
 
-    "Are OLAP cubes useful"에 대한 임베딩 생성 중
+    Generating the embedding for  "Are OLAP cubes useful"
 
-    ClickHouse 쿼리 중...
+    Querying ClickHouse...
 
-    결과 :
+    Results :
 
     27742647 smartmic:
     slt2021: OLAP Cube is not dead, as long as you use some form of:<p>1. GROUP BY multiple fi
@@ -289,15 +280,15 @@ doc_type: 'guide'
 
     model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 
-    chclient = clickhouse_connect.get_client(compress=False) # ClickHouse 자격 증명을 여기에 입력하세요
+    chclient = clickhouse_connect.get_client(compress=False) # ClickHouse credentials here
 
     while True:
-        # 사용자로부터 검색 쿼리를 입력받습니다
+        # Take the search query from user
         print("Enter a search topic :")
         input_query = sys.stdin.readline();
         texts = [input_query]
 
-        # 모델을 실행하여 검색 또는 참조 벡터를 생성합니다
+        # Run the model and obtain search or reference vector
         print("Generating the embedding for ----> ", input_query);
         embeddings = model.encode(texts)
 
@@ -305,7 +296,7 @@ doc_type: 'guide'
         params = {'v1':list(embeddings[0]), 'v2':100}
         result = chclient.query("SELECT id,title,text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
 
-        # 모든 검색 결과를 하나로 합칩니다
+        # Just join all the search results
         doc_results = ""
         for row in result.result_rows:
             doc_results = doc_results + "\n" + row[2]
