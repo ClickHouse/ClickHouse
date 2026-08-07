@@ -527,6 +527,14 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     {
         IQueryPlanStep * step = node->step.get();
 
+        /// Never restructure a step that decides which rows a `SQL SECURITY DEFINER` / `NONE`
+        /// view exposes: the split halves are new steps that would not carry the barrier flag,
+        /// and the post-lazy `tryMergeExpressions` / `tryMergeFilters` passes (and any later
+        /// optimization of the rebuilt subtree) would then freely combine invoker-supplied
+        /// expressions with the view's filtering. See IQueryPlanStep::isSecurityBarrier.
+        if (step->isSecurityBarrier())
+            return false;
+
         PlanStepWithRequiredDAGPositions step_to_split;
         step_to_split.step = step;
 
@@ -574,6 +582,12 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_merge_tree)
+        return false;
+
+    /// The reading step carries the barrier when `optimizePrewhere` has absorbed the view's own
+    /// filter into PREWHERE. Splitting it into a main and a lazy read would lose the flag the
+    /// same way. See IQueryPlanStep::isSecurityBarrier.
+    if (read_from_merge_tree->isSecurityBarrier())
         return false;
 
     if (read_from_merge_tree->getPrewhereInfo() || read_from_merge_tree->getRowLevelFilter())
