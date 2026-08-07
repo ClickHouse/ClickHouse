@@ -34,6 +34,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 log_readahead_pool_threads;
     extern const CoordinationSettingsUInt64 log_readahead_serve_wait_timeout_ms;
     extern const CoordinationSettingsNonZeroUInt64 log_readahead_window_bytes;
+    extern const CoordinationSettingsUInt64 min_time_between_fsyncs_ms;
     extern const CoordinationSettingsNonZeroUInt64 rotate_log_storage_interval;
 }
 
@@ -340,6 +341,7 @@ KeeperStateManager::KeeperStateManager(
           FlushSettings
           {
               .max_flush_batch_size = keeper_context_->getCoordinationSettings()[CoordinationSetting::max_flush_batch_size],
+              .min_time_between_fsyncs_ms = keeper_context_->getCoordinationSettings()[CoordinationSetting::min_time_between_fsyncs_ms],
           },
           buildReadAheadSettings(keeper_context_),
           keeper_context_))
