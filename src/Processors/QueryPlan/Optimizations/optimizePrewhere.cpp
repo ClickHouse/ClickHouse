@@ -252,6 +252,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         (has_multiple_conditions && read_from_merge_tree_step) ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns) : nullptr,
         queried_columns,
         storage.supportedPrewhereColumns(),
+        storage.supportedPrewhereColumnsIncludeSubcolumns(),
         getLogger("QueryPlanOptimizePrewhere")};
 
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),

@@ -64,7 +64,9 @@ def check():
                 links.append(f"[Uncovered code]({uncovered_code_url})")
             if links:
                 body += "\n" + " · ".join(links)
-            GH.post_fresh_comment(tag="llvm-coverage", body=body)
+            GH.post_updateable_comment(
+                comment_tags_and_bodies={"coverage": body}, only_update=True
+            )
         else:
             print("Not a PR run, skipping GitHub coverage comment")
 

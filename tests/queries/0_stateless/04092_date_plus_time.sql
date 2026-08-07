@@ -403,10 +403,10 @@ DROP TABLE test_saturate_intermediate;
 
 SET date_time_overflow_behavior = 'throw';
 
--- Time values beyond the visible range display as saturated (999:59:59 or -999:59:59
--- depending on sign) but internally store their full numeric value. Date+Time uses
--- the internal value, so two Time values that print identically can produce different
--- DateTime results.
+-- Numeric inputs to `Time` are capped to the range of the type ([-999:59:59, 999:59:59]),
+-- whatever the width of the source type is, so a value beyond the visible range is stored
+-- saturated instead of keeping its full numeric value. Date+Time uses the stored value,
+-- therefore two `Time` values that print identically also produce the same `DateTime`.
 SELECT
     toTime(9999999) AS t_raw,
     toTime(3599999) AS t_vis,

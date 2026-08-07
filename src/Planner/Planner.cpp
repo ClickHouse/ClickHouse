@@ -916,9 +916,19 @@ void addDistinctStep(QueryPlan & query_plan,
     /** If after this stage of DISTINCT
       * 1. ORDER BY is not executed.
       * 2. There is no LIMIT BY.
+      * 3. There is a non-zero LIMIT (a bare OFFSET without a LIMIT still populates limit_offset, but
+      *    limit_length + limit_offset would then bound the head by the offset alone and drop the tail
+      *    that OFFSET must return).
+      * 4. LIMIT is not negative (a negative LIMIT takes rows from the tail, so it cannot bound
+      *    the number of distinct rows collected from the head).
+      * 5. LIMIT/OFFSET is not fractional (a fraction of the total row count is only resolved after
+      *    all rows are read, so it cannot bound the number of distinct rows either).
       * Then you can get no more than limit_length + limit_offset of different rows.
       */
-    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy())
+    if ((!query_node.hasOrderBy() || !before_order) && !query_node.hasLimitBy()
+        && limit_length != 0
+        && !query_analysis_result.is_limit_length_negative
+        && query_analysis_result.fractional_limit == 0 && query_analysis_result.fractional_offset == 0)
     {
         if (limit_length <= std::numeric_limits<UInt64>::max() - limit_offset)
             limit_hint_for_distinct = limit_length + limit_offset;
@@ -2204,7 +2214,6 @@ void Planner::buildPlanForQueryNode()
     select_query_info.has_window = hasWindowFunctionNodes(query_tree);
     select_query_info.has_aggregates = hasAggregateFunctionNodes(query_tree);
     select_query_info.need_aggregate = query_node.hasGroupBy() || select_query_info.has_aggregates;
-    select_query_info.merge_tree_enable_remove_parts_from_snapshot_optimization = select_query_options.merge_tree_enable_remove_parts_from_snapshot_optimization;
 
     if (!select_query_info.has_window && query_node.hasQualify())
     {
@@ -2703,6 +2712,9 @@ void Planner::buildPlanForQueryNode()
         && select_query_options.to_stage != QueryProcessingStage::Complete // Don't do it for INSERT SELECT, for example
         && client_info.distributed_depth <= 1 // Makes sense for higher depths too, just not supported
         && !client_info.is_replicated_database_internal
+        // A local shard/replica plan is united into the parent pipeline in this process, where
+        // nothing unmarshalls the blocks.
+        && !select_query_options.is_local_plan_for_distributed_query
     )
         query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 
