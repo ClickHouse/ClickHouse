@@ -178,13 +178,6 @@ struct WallabyTraits<UInt32>
     static constexpr std::array<UInt8, WALLABY_LEAD_CLASSES> lead_classes{0, 4, 8, 10, 12, 14, 18, 24};
 };
 
-/// If the chosen decimal packing is wider than half the value width, the XOR encoding is also tried.
-template <typename T>
-constexpr UInt8 wallabyXorAttemptBitsThreshold()
-{
-    return WallabyTraits<T>::width_bits / 2;
-}
-
 template <typename T>
 UInt8 leadClassIndex(UInt8 lead)
 {
@@ -245,7 +238,6 @@ struct DecimalEncodingResult
 {
     VectorMode mode;
     UInt32 payload_size;
-    UInt8 bits;
 };
 
 /** Tries to encode a vector with one of the decimal modes into scratch.
@@ -398,7 +390,7 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         out += sizeof(T);
     }
 
-    return DecimalEncodingResult<T>{use_delta ? VectorMode::DecimalDelta : VectorMode::DecimalFor, payload_size, bits};
+    return DecimalEncodingResult<T>{use_delta ? VectorMode::DecimalDelta : VectorMode::DecimalFor, payload_size};
 }
 
 /// Hash of the high bits of a value used to probe the ring for a reference sharing them.
@@ -760,8 +752,20 @@ UInt32 compressImpl(const char * source, UInt32 values_count, char * dest)
 
         const auto decimal = encodeDecimal<T>(values.data(), count, decimal_scratch.data(), scratch_size);
 
+        /// The XOR encoding is skipped only when it provably cannot beat the decimal one: every
+        /// value differing from its predecessor costs at least the cheapest single-value branch
+        /// (the '0' selector, the 2-bit tag and a ring index), while repeats may collapse into
+        /// runs almost for free. The bound must account for that collapse — a heuristic based on
+        /// the decimal bit width alone would miss piecewise-constant data, where the XOR mode
+        /// encodes long plateaus in a few bytes while the decimal modes pay per value.
+        UInt32 differing = 0;
+        for (UInt32 i = 1; i < count; ++i)
+            differing += words[i] != words[i - 1] ? 1 : 0;
+        constexpr UInt32 min_single_bits = 3 + WALLABY_RING_INDEX_BITS;
+        const UInt64 xor_bits_lower_bound = 8 + Traits::width_bits + static_cast<UInt64>(differing) * min_single_bits;
+
         UInt32 xor_size = 0;
-        if (!decimal || decimal->bits > wallabyXorAttemptBitsThreshold<T>())
+        if (!decimal || xor_bits_lower_bound < static_cast<UInt64>(decimal->payload_size) * 8)
             xor_size = encodeXor<T>(words.data(), count, xor_scratch.data(), scratch_size);
 
         const UInt32 raw_size = count * sizeof(T);
