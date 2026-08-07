@@ -95,9 +95,18 @@ run "many rows" \
 
 # 5. One match per row over a megabyte: about two loop iterations per row, so an iteration counter alone
 #    never reaches its threshold and the deadline is observed only because the bytes each match scanned are
-#    charged too. This is the case that distinguishes charging bytes from counting iterations.
+#    charged too. This is the case that distinguishes charging bytes from counting iterations. The rows must
+#    arrive in one block, which puts the whole haystack in memory at once, so the row count is what keeps
+#    that block well inside the 5G `max_memory_usage` the test profile sets; the alternation pattern rather
+#    than a larger block is what makes the call outlast the deadline.
 run "sparse matches" \
-    "SELECT sum(countMatches(materialize(concat(repeat('a', 1000000), 'b')), '[^a]')) FROM numbers(4000) SETTINGS max_block_size = 4000"
+    "SELECT sum(countMatches(materialize(concat(repeat('a', 1000000), 'b')), '(a|aa|aaa|aaaa)*b')) FROM numbers(1600) SETTINGS max_block_size = 1600"
+
+# 5b. A pattern that matches empty, which advances a single byte per iteration and reaches its own charge
+#     rather than the one a non-empty match reaches. A whole-match offset is a sentinel and not a position
+#     when the match is empty, so this is also the shape that would read one if it were read unguarded.
+run "empty matches" \
+    "SELECT countMatches(materialize(repeat(repeat('a', 1000000), 60)), 'x*') FROM numbers(1) FORMAT Null"
 
 # 6. `countMatchesCaseInsensitive`, the second registered function: the same template with
 #    `case_insensitive = true`, so it is covered by construction rather than by its own charge.

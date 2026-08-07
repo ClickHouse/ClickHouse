@@ -154,17 +154,18 @@ public:
             /// for zero-width assertions such as `\b` and `^`. The returned offsets are relative to `begin`.
             if (re.match(begin, end - begin, pos - begin, matches, matches_limit))
             {
-                /// Charged for the distance scanned, which is not the distance `pos` advances: an empty match
-                /// moves `pos` a single byte however far ahead the match was found.
-                budget.charge(matches[0].offset + matches[0].length - (pos - begin));
-
                 if (matches[0].length > 0)
                 {
+                    /// Charged for the distance scanned, which is not the distance `pos` advances.
+                    budget.charge(matches[0].offset + matches[0].length - (pos - begin));
                     pos = begin + matches[0].offset + matches[0].length;
                     ++match_count;
                 }
                 else
                 {
+                    /// `offset` is not a position for an empty match, so only the byte `pos` advances is charged.
+                    budget.charge();
+
                     if (count_matches_stop_at_empty_match)
                         /// Progress should be made, but with empty match the progress will not be done.
                         break;
