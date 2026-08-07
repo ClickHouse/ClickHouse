@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <base/removeDuplicates.h>
+#include <algorithm>
 #include <boost/container/flat_map.hpp>
 #include <boost/container/flat_set.hpp>
 
@@ -530,6 +531,27 @@ void SettingsProfileElements::applyChanges(const AlterSettingsProfileElements & 
 
     /// Remove empty elements and duplicates, and sort the result.
     normalize();
+}
+
+Strings SettingsProfileElements::findRevertedSettingNames(const AlterSettingsProfileElements & changes) const
+{
+    SettingsProfileElements new_elements = *this;
+    new_elements.applyChanges(changes);
+
+    Strings reverted;
+    for (const auto & old_element : *this)
+    {
+        if (!old_element.value || old_element.setting_name.empty())
+            continue;
+
+        auto it = std::find_if(
+            new_elements.begin(), new_elements.end(),
+            [&](const SettingsProfileElement & e) { return e.setting_name == old_element.setting_name; });
+
+        if (it == new_elements.end() || !it->value)
+            reverted.push_back(old_element.setting_name);
+    }
+    return reverted;
 }
 
 }

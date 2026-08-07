@@ -5882,10 +5882,20 @@ void MergeTreeData::changeSettings(
 
         /// `RESET SETTING` drops a name from `new_changes` instead of setting it to the default, so add it
         /// back explicitly with its reverted value - otherwise the feature tier check never sees it.
+        /// `old_settings->changes()` gives canonical names, but `new_changes` may still spell a surviving
+        /// override as an alias, so compare resolved names rather than raw strings.
+        std::unordered_set<std::string_view> new_changes_resolved_names;
+        for (const auto & change : new_changes)
+            new_changes_resolved_names.insert(MergeTreeSettings::resolveName(change.name));
+
         auto changes_with_resets = new_changes;
         for (const auto & old_change : old_settings->changes())
-            if (!new_changes.tryGet(old_change.name))
+        {
+            if (!new_changes_resolved_names.contains(old_change.name))
+            {
                 changes_with_resets.emplace_back(old_change.name, copy->get(old_change.name));
+            }
+        }
 
         /// Compare against the table's live settings, not `copy`'s bare defaults, so an existing override isn't
         /// mistaken for a change made by this ALTER.

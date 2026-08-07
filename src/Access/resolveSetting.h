@@ -74,6 +74,16 @@ inline bool settingIsBuiltin(std::string_view full_name)
     });
 }
 
+/// Compiled default value of a builtin setting, e.g. what it reverts to when dropped.
+inline Field settingGetDefaultValue(std::string_view full_name)
+{
+    return resolveSetting(full_name, [&] <typename T> (std::string_view short_name, SettingsType<T>)
+    {
+        static const T defaults;
+        return defaults.get(short_name);
+    });
+}
+
 template <typename T>
 inline String settingFullName(std::string_view short_name);
 

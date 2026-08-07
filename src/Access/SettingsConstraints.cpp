@@ -156,14 +156,14 @@ void SettingsConstraints::check(const Settings & current_settings, const AlterSe
     check(current_settings, profile_elements.add_settings, source);
     check(current_settings, profile_elements.modify_settings, source);
 
-    /// A dropped override reverts the setting to its compiled default; check that reversion like a MODIFY to it.
-    /// Custom settings have no compiled default (and no tier), so they are left alone, same as before.
-    static const Settings default_settings;
+    /// A dropped override reverts the setting to its compiled default; check that reversion like a MODIFY to
+    /// it. `settingIsBuiltin` (not `Settings::hasBuiltin`) so a `merge_tree_`-prefixed name is recognized too;
+    /// truly custom settings have no compiled default (and no tier), so they are left alone, same as before.
     for (const auto & element : profile_elements.drop_settings)
     {
-        if (SettingsProfileElements::isAllowBackupSetting(element.setting_name) || !Settings::hasBuiltin(element.setting_name))
+        if (SettingsProfileElements::isAllowBackupSetting(element.setting_name) || !settingIsBuiltin(element.setting_name))
             continue;
-        SettingChange change(element.setting_name, default_settings.get(element.setting_name));
+        SettingChange change(element.setting_name, settingGetDefaultValue(element.setting_name));
         check(current_settings, change, source);
     }
 }

@@ -625,3 +625,105 @@ def test_drop_setting_bypassing_feature_tier_for_user(start_cluster):
     instance.query("SYSTEM RELOAD CONFIG")
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS admin_with_experimental, user_drop_bypass")
+
+
+def test_drop_all_settings_bypassing_feature_tier(start_cluster):
+    # DROP ALL SETTINGS must be checked the same way as DROP SETTING for every setting it removes
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental, user_drop_all_bypass")
+    instance.query(
+        "CREATE USER admin_with_experimental IDENTIFIED WITH no_password "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+    instance.query("GRANT ACCESS MANAGEMENT ON *.* TO admin_with_experimental")
+    instance.query(
+        "CREATE USER user_drop_all_bypass IDENTIFIED WITH no_password "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER USER user_drop_all_bypass DROP ALL SETTINGS",
+        user="admin_with_experimental",
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    output = instance.query(
+        "SELECT value FROM system.settings WHERE name = 'allow_experimental_time_series_table'",
+        user="user_drop_all_bypass",
+    )
+    assert output.strip() == "1"
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental, user_drop_all_bypass")
+
+
+def test_drop_setting_bypassing_feature_tier_for_merge_tree_prefixed_setting(
+    start_cluster,
+):
+    # A `merge_tree_`-prefixed setting dropped from a user/role/profile must be checked too: it is a
+    # MergeTreeSettings name carried through `Settings` as a custom setting, not a `Settings` builtin
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental, user_drop_mt_bypass")
+    instance.query(
+        "CREATE USER admin_with_experimental IDENTIFIED WITH no_password "
+        f"SETTINGS {MERGE_TREE_EXPERIMENTAL_SETTING} = 1"
+    )
+    instance.query("GRANT ACCESS MANAGEMENT ON *.* TO admin_with_experimental")
+    instance.query(
+        "CREATE USER user_drop_mt_bypass IDENTIFIED WITH no_password "
+        f"SETTINGS {MERGE_TREE_EXPERIMENTAL_SETTING} = 1"
+    )
+
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        f"ALTER USER user_drop_mt_bypass DROP SETTING {MERGE_TREE_EXPERIMENTAL_SETTING}",
+        user="admin_with_experimental",
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    output = instance.query("SHOW CREATE USER user_drop_mt_bypass")
+    assert MERGE_TREE_EXPERIMENTAL_SETTING in output
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental, user_drop_mt_bypass")
+
+
+def test_alter_preserves_aliased_merge_tree_setting(start_cluster):
+    # Not tier-specific: an unrelated ALTER must not silently reset a setting that was set through an
+    # alias, regardless of allow_feature_tier. `enable_block_number_column` is the only aliased
+    # MergeTree setting today (alias `allow_experimental_block_number_column`); if it's renamed, use
+    # whatever DECLARE_WITH_ALIAS MergeTree setting exists then
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP TABLE IF EXISTS test_alias_preserved")
+    instance.query(
+        "CREATE TABLE test_alias_preserved (a UInt64) ENGINE = MergeTree ORDER BY a "
+        "SETTINGS allow_experimental_block_number_column = 1, enable_block_offset_column = 1"
+    )
+
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER TABLE test_alias_preserved MODIFY SETTING max_avg_part_size_for_too_many_parts = 999999999"
+    )
+    assert output == ""
+    assert error == ""
+
+    # `enable_block_number_column` must still read as enabled: this setting throws otherwise
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER TABLE test_alias_preserved MODIFY SETTING part_minmax_index_columns = 'with_block_number_offset'"
+    )
+    assert output == ""
+    assert error == ""
+
+    instance.query("DROP TABLE IF EXISTS test_alias_preserved")

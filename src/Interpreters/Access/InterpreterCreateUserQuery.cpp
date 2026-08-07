@@ -257,6 +257,25 @@ BlockIO InterpreterCreateUserQuery::execute()
     else if (query.settings)
         settings_from_query = AlterSettingsProfileElements{*query.settings, access_control};
 
+    /// A settings clause can drop a setting explicitly, or by omission (`DROP ALL SETTINGS`, or an
+    /// old-style `SETTINGS ...` full replacement). Either way it must still be checked against the tier,
+    /// so add every name each target currently has that this change would drop to `drop_settings` too.
+    if (settings_from_query && query.alter && !query.attach)
+    {
+        for (const auto & name : query.names->toStrings())
+        {
+            if (auto user = access_control.tryRead<User>(name))
+            {
+                for (const auto & setting_name : user->settings.findRevertedSettingNames(*settings_from_query))
+                {
+                    SettingsProfileElement element;
+                    element.setting_name = setting_name;
+                    settings_from_query->drop_settings.push_back(element);
+                }
+            }
+        }
+    }
+
     if (settings_from_query && !query.attach)
         getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
 

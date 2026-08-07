@@ -94,6 +94,11 @@ public:
     /// Applies changes from an "ALTER PROFILE (USER/ROLE)" command. Always normalizes the result.
     void applyChanges(const AlterSettingsProfileElements & changes);
 
+    /// Names with a value in `*this` that would have none after `applyChanges(changes)` - i.e. every
+    /// setting the change reverts, whether by an explicit DROP or by omission (an old-style `SETTINGS ...`
+    /// full replacement that just doesn't mention the name).
+    Strings findRevertedSettingNames(const AlterSettingsProfileElements & changes) const;
+
     bool isBackupAllowed() const;
     static bool isAllowBackupSetting(const String & setting_name);
 };
