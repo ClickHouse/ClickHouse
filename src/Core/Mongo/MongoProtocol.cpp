@@ -100,7 +100,10 @@ String QueryExecutor::execute(const String & query)
     /// distinguish `1.5` from `1.5000000000`, and the column stores the latter.
     query_context->setSetting("output_format_json_quote_decimals", true);
     query_context->setSetting("output_format_decimal_trailing_zeros", true);
-    query_context->setSetting("output_format_json_quote_denormals", false);
+    /// Denormals are quoted rather than replaced by JSON `null`: BSON doubles can hold `NaN`
+    /// and the infinities, and the reply encoder rebuilds the values from the strings `"nan"`,
+    /// `"-nan"`, `"inf"` and `"-inf"` (see `appendTypedValue`).
+    query_context->setSetting("output_format_json_quote_denormals", true);
     query_context->setSetting("output_format_json_named_tuples_as_objects", true);
     query_context->setSetting("output_format_json_array_of_rows", false);
 
