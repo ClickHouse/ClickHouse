@@ -12,7 +12,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t_mut (id UInt64) ENGINE = MergeTree ORDER BY id"
+# The pool pin makes the mutation schedulable regardless of what else this run has queued, and
+# `auto_statistics_types = ''` keeps the set from being built via the statistics estimation path, so the
+# read under test is the key-analysis build. Both siblings of this family pin the same pair.
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_mut (id UInt64) ENGINE = MergeTree ORDER BY id
+    SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0, auto_statistics_types = ''"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_mut SELECT number FROM numbers(1000)"
 
 # Nothing listens on this port, so the read never completes on its own.
@@ -70,7 +75,9 @@ echo "dropped: $?"
 # The second cancellation source: stopping merges must reach the read as well, so that shutting a
 # table (or the server) down does not wait out the retry budget either. `KILL MUTATION` only sets the
 # merge-list entry's flag, so without this arm the `merges_blocker` half of the predicate is unpinned.
-$CLICKHOUSE_CLIENT -q "CREATE TABLE t_stop (id UInt64) ENGINE = MergeTree ORDER BY id"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_stop (id UInt64) ENGINE = MergeTree ORDER BY id
+    SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0, auto_statistics_types = ''"
 $CLICKHOUSE_CLIENT -q "INSERT INTO t_stop SELECT number FROM numbers(1000)"
 $CLICKHOUSE_CLIENT -q "
     ALTER TABLE t_stop DELETE WHERE id IN (
@@ -83,6 +90,8 @@ for _ in {1..150}; do
     [[ "$started" -ge 1 ]] && break
     sleep 0.2
 done
+echo "stop merges: mutation started: $([[ "$started" -ge 1 ]] && echo 1 || echo 0)"
+
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_stop"
 stopped=0
 for _ in {1..300}; do
