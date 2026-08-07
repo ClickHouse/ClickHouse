@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
-#include <DataTypes/DataTypeFloat.h>
+#include <DataTypes/DataTypeNumberBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -140,7 +140,7 @@ class AggregateFunctionExponentialTimeDecayed final
           AggregateFunctionExponentialTimeDecayed<result_kind>>
 {
 public:
-    static DataTypePtr getResultType()
+    static DataTypePtr getResultDataType()
     {
         if constexpr (result_kind == ExponentialTimeDecayedResult::Avg)
             return std::make_shared<DataTypeFloat64>();
@@ -149,13 +149,13 @@ public:
     }
 
     AggregateFunctionExponentialTimeDecayed(
-        const DataTypes & argument_types,
-        const Array & parameters,
+        const DataTypes & argument_types_,
+        const Array & parameters_,
         Float64 decay_length_)
         : IAggregateFunctionDataHelper<
               ExponentialTimeDecayedState,
               AggregateFunctionExponentialTimeDecayed<result_kind>>(
-              argument_types, parameters, getResultType())
+              argument_types_, parameters_, getResultDataType())
         , decay_length(decay_length_)
     {
     }
