@@ -122,11 +122,14 @@ static bool subtreeIsShippable(const QueryPlan::Node * node)
 class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplicasVisitor, debug_logging_enabled>
 {
     QueryPlan::Nodes & nodes;
+    const QueryPlanOptimizationSettings & optimization_settings;
 
 public:
-    explicit ApplyParallelReplicasVisitor(QueryPlan::Node * root_, QueryPlan::Nodes & nodes_)
+    ApplyParallelReplicasVisitor(
+        QueryPlan::Node * root_, QueryPlan::Nodes & nodes_, const QueryPlanOptimizationSettings & optimization_settings_)
         : QueryPlanVisitor<ApplyParallelReplicasVisitor, debug_logging_enabled>(root_)
         , nodes(nodes_)
+        , optimization_settings(optimization_settings_)
     {
     }
 
@@ -252,7 +255,13 @@ public:
 
             /// Replace original aggregation step with MergingAggregated step
             aggregator_params.only_merge = true; /// Merge partial aggregation results
-            const bool memory_efficient_aggregation = false;
+            /// Merging the results of the replicas is the same as merging the results of the shards of a
+            /// `Distributed` table, so it obeys the same setting. Note that this is not only about the memory:
+            /// the ordinary merging transform returns the two-level buckets in an arbitrary order, which the
+            /// node above cannot merge memory efficiently.
+            /// Grouping sets are not supported by the memory efficient merging, see `MergingAggregatedStep`.
+            const bool memory_efficient_aggregation = optimization_settings.distributed_aggregation_memory_efficient
+                && grouping_sets_params.empty() && !new_split_node.step->getOutputHeader()->has("__grouping_set");
             QueryPlanStepPtr final_aggregation_step = std::make_unique<MergingAggregatedStep>(
                 new_split_node.step->getOutputHeader(),
                 aggregator_params,
@@ -496,7 +505,7 @@ void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, con
 
     insertParallelReplicasSplit(query_plan, nodes);
 
-    ApplyParallelReplicasVisitor(query_plan.getRootNode(), nodes).visit();
+    ApplyParallelReplicasVisitor(query_plan.getRootNode(), nodes, settings).visit();
 
     ConvertToDistributedVisitor(query_plan).visit();
 }

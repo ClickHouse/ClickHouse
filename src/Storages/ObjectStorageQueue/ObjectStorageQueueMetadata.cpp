@@ -205,7 +205,7 @@ void ObjectStorageQueueMetadata::startup()
     if (!cleanup_task
         && (cleanup_processed_files || cleanup_failed_files || cleanup_processing_files))
     {
-        cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
+        cleanup_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(
             StorageID::createEmpty(), "ObjectStorageQueueCleanupFunc",
             [this] { cleanupThreadFunc(); });
 
