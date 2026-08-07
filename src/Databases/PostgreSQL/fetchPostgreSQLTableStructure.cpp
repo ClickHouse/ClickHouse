@@ -345,15 +345,23 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
 
     auto where = fmt::format("relname = {}", quoteStringPostgreSQL(postgres_table));
 
-    /// When no schema is specified, the table has to be looked up in the schema the server itself resolves
-    /// unqualified names in, because that is where the `COPY` statements of the read and write paths will
-    /// read and write the rows: `current_schema()` is the first existing schema of the search path. For
-    /// PostgreSQL with the default search path it is `public`, and a ClickHouse server (which exposes its
-    /// databases as schemas) reports the connected database, so schema discovery and the data path always
-    /// agree on the same relation.
-    where += postgres_schema.empty()
-        ? " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())"
-        : fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
+    /// When no schema is specified, the table has to be looked up the way the server itself resolves
+    /// unqualified names, because that is how the `COPY` statements of the read and write paths will
+    /// read and write the rows: the first schema of the search path that contains a relation of this
+    /// name wins (`current_schemas(false)` lists the existing schemas of the search path in order,
+    /// and `array_position` both filters to them - it is `NULL`, and so not `> 0`, for any other
+    /// schema - and ranks them). For PostgreSQL with the default search path that is `public`, and a
+    /// ClickHouse server (which exposes its databases as schemas) lists just the connected database,
+    /// so schema discovery and the data path always agree on the same relation.
+    const String relnamespace_expr = postgres_schema.empty()
+        ? fmt::format(
+            "(SELECT ns.oid FROM pg_namespace AS ns JOIN pg_class AS tbl ON tbl.relnamespace = ns.oid"
+            " WHERE tbl.relname = {0} AND array_position(current_schemas(false), ns.nspname::text) > 0"
+            " ORDER BY array_position(current_schemas(false), ns.nspname::text) LIMIT 1)",
+            quoteStringPostgreSQL(postgres_table))
+        : fmt::format("(SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
+
+    where += " AND relnamespace = " + relnamespace_expr;
 
     std::string columns_part;
     if (!columns.empty())
@@ -462,13 +470,13 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and a.attnum = ANY(ix.indkey) "
             "and t.relkind in ('r', 'p') " /// simple tables
             "and t.relname = {} " /// Connection is already done to a needed database, only table name is needed.
-            "and t.relnamespace = (select oid from pg_namespace where nspname = {}) "
+            "and t.relnamespace = {} "
             "and ix.indisreplident = 't' " /// index is is replica identity index
             "ORDER BY a.attname", /// column name
             quoteStringPostgreSQL(postgres_table),
             /// The same schema the columns above were taken from - see the comment on `where`. Resolving the
             /// replica identity in a different schema than the physical columns would describe two relations.
-            (postgres_schema.empty() ? String("current_schema()") : quoteStringPostgreSQL(postgres_schema))
+            relnamespace_expr
         );
 
         table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_with_schema, query, use_nulls, true);

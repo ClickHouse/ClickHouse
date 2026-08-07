@@ -2,14 +2,17 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Common/DateLUT.h>
+#include <Common/assert_cast.h>
 
 #include <Common/config_version.h>
 
@@ -317,6 +320,58 @@ private:
     String current_timezone;
 };
 
+/// `array_position(array, element)` - PostgreSQL compatibility function.
+/// Returns the 1-based position of the first occurrence of `element` in `array`, or `NULL` when the
+/// element does not occur (where ClickHouse's native `indexOf`, whose search this function reuses,
+/// returns 0). Provided so that the schema-discovery query of `fetchPostgreSQLTableStructure` - which
+/// resolves an unqualified table name through the schemas of the `search_path` in order, the way
+/// PostgreSQL itself does - can run unchanged against ClickHouse's PostgreSQL wire protocol emulation.
+/// Unlike PostgreSQL, a `NULL` element yields `NULL` rather than the position of the first `NULL` of
+/// the array (the common default-null behavior of ClickHouse functions).
+class FunctionArrayPosition final : public IFunction
+{
+public:
+    static constexpr auto name = "array_position";
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionArrayPosition>(context); }
+
+    explicit FunctionArrayPosition(ContextPtr context_) : context(std::move(context_)) {}
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// The argument validation is delegated to `indexOf`, which throws for a non-array first
+        /// argument or an element type incomparable with the array elements.
+        return std::make_shared<DataTypeNullable>(buildIndexOf(arguments)->getResultType());
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        auto index_of = buildIndexOf(arguments);
+        ColumnPtr positions = index_of->execute(arguments, index_of->getResultType(), input_rows_count, /* dry_run = */ false);
+        positions = positions->convertToFullColumnIfConst();
+
+        const auto & positions_data = assert_cast<const ColumnUInt64 &>(*positions).getData();
+        auto null_map = ColumnUInt8::create(input_rows_count);
+        auto & null_map_data = null_map->getData();
+        for (size_t i = 0; i < input_rows_count; ++i)
+            null_map_data[i] = positions_data[i] == 0 ? 1 : 0;
+
+        return ColumnNullable::create(positions, std::move(null_map));
+    }
+
+private:
+    FunctionBasePtr buildIndexOf(const ColumnsWithTypeAndName & arguments) const
+    {
+        return FunctionFactory::instance().get("indexOf", context)->build(arguments);
+    }
+
+    ContextPtr context;
+};
+
 }
 
 REGISTER_FUNCTION(PostgresCatalog)
@@ -342,6 +397,17 @@ REGISTER_FUNCTION(PostgresCatalog)
         .examples = {{"Example", "SELECT current_setting('server_version_num')", "120000"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
+
+    factory.registerFunction<FunctionArrayPosition>(FunctionDocumentation{
+        .description = "PostgreSQL compatibility function. Returns the 1-based position of the first occurrence of the "
+                       "element in the array, or `NULL` when the element does not occur. "
+                       "The native ClickHouse counterpart is `indexOf`, which returns 0 instead of `NULL`.",
+        .syntax = "array_position(array, element)",
+        .arguments = {{"array", "The array to search.", {"Array(T)"}}, {"element", "The element to search for.", {"T"}}},
+        .returned_value = {"The 1-based position of the first occurrence, or `NULL` when the element does not occur.", {"Nullable(UInt64)"}},
+        .examples = {{"Example", "SELECT array_position(['a', 'b'], 'b')", "2"}},
+        .introduced_in = {26, 8},
+        .category = FunctionDocumentation::Category::Array});
 }
 
 }

@@ -1096,6 +1096,66 @@ def test_postgres_empty_multidimensional_array(started_cluster):
     cursor.execute("DROP TABLE test_empty_nested_array")
 
 
+def test_postgres_unqualified_name_follows_search_path(started_cluster):
+    """An unqualified table name resolves through the whole `search_path`, like PostgreSQL itself.
+
+    Schema discovery must find the table in the same relation the `COPY` statements of the read and
+    write paths will use: the first schema of the `search_path` that contains it. Pinning the lookup
+    to `current_schema()` (the first *existing* schema of the path) would miss a table that lives in
+    a later schema of the path, and pinning it to `public` would resolve a shadowed name in the wrong
+    schema. The dedicated role carries the non-trivial `search_path`, so the connections ClickHouse
+    opens for it pick the path up regardless of any pooling.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP SCHEMA IF EXISTS tenant CASCADE")
+    cursor.execute("DROP TABLE IF EXISTS public.search_path_late")
+    cursor.execute("DROP TABLE IF EXISTS public.search_path_shadow")
+    # `DROP ROLE` refuses while the role still holds privileges, so revoke them all first.
+    cursor.execute(
+        "DO $$ BEGIN IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'search_path_user') "
+        "THEN EXECUTE 'DROP OWNED BY search_path_user'; END IF; END $$"
+    )
+    cursor.execute("DROP ROLE IF EXISTS search_path_user")
+    cursor.execute("CREATE SCHEMA tenant")
+    # A table only in `public`, the *second* schema of the path: still found.
+    cursor.execute("CREATE TABLE public.search_path_late (id integer)")
+    cursor.execute("INSERT INTO public.search_path_late VALUES (1), (2)")
+    # A name present in both schemas: the earlier schema of the path wins.
+    cursor.execute("CREATE TABLE tenant.search_path_shadow (id integer)")
+    cursor.execute("INSERT INTO tenant.search_path_shadow VALUES (10)")
+    cursor.execute("CREATE TABLE public.search_path_shadow (id integer)")
+    cursor.execute("INSERT INTO public.search_path_shadow VALUES (20)")
+    cursor.execute(f"CREATE ROLE search_path_user LOGIN PASSWORD '{pg_pass}'")
+    cursor.execute("GRANT USAGE ON SCHEMA tenant, public TO search_path_user")
+    cursor.execute(
+        "GRANT SELECT ON public.search_path_late, public.search_path_shadow TO search_path_user"
+    )
+    # The write-path check below inserts through the same unqualified name.
+    cursor.execute("GRANT SELECT, INSERT ON tenant.search_path_shadow TO search_path_user")
+    cursor.execute("ALTER ROLE search_path_user SET search_path = tenant, public")
+    started_cluster.postgres_conn.commit()
+
+    try:
+        late = f"postgresql('postgres1:5432', 'postgres', 'search_path_late', 'search_path_user', '{pg_pass}')"
+        assert node1.query(f"SELECT id FROM {late} ORDER BY id") == "1\n2\n"
+
+        shadow = f"postgresql('postgres1:5432', 'postgres', 'search_path_shadow', 'search_path_user', '{pg_pass}')"
+        assert node1.query(f"SELECT id FROM {shadow}") == "10\n"
+
+        # The write path resolves the same relation: an unqualified INSERT lands in `tenant`, not `public`.
+        node1.query(f"INSERT INTO TABLE FUNCTION {shadow} VALUES (11)")
+        assert node1.query(f"SELECT id FROM {shadow} ORDER BY id") == "10\n11\n"
+        cursor.execute("SELECT id FROM public.search_path_shadow")
+        assert cursor.fetchall() == [(20,)]
+    finally:
+        cursor.execute("DROP OWNED BY search_path_user")
+        cursor.execute("DROP TABLE public.search_path_late")
+        cursor.execute("DROP TABLE public.search_path_shadow")
+        cursor.execute("DROP SCHEMA tenant CASCADE")
+        cursor.execute("DROP ROLE search_path_user")
+        started_cluster.postgres_conn.commit()
+
+
 def test_postgres_date32_array(started_cluster):
     """Test that PostgreSQL DATE[] arrays with large dates are correctly read as Array(Date32)."""
     cursor = started_cluster.postgres_conn.cursor()
