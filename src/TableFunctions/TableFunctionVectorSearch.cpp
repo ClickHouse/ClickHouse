@@ -62,8 +62,6 @@ private:
     }
 
     /// The structure the table function exposes: the source-table columns plus `_score`.
-    /// Unlike `getActualTableStructure` it performs no access check, because `executeImpl`
-    /// checks the source-table access on its own.
     static ColumnsDescription buildTableStructure(const StoragePtr & source_table_ptr, const StorageMetadataPtr & metadata_snapshot);
 
     String source_database;
@@ -168,11 +166,8 @@ ColumnsDescription TableFunctionVectorSearch::buildTableStructure(const StorageP
 
 ColumnsDescription TableFunctionVectorSearch::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    /// `DESCRIBE vectorSearch(...)` and `CREATE TABLE ... AS vectorSearch(...)` end here and never
-    /// reach `StorageMergeTreeScoredSearchBase::read`, so the source-table `SELECT` check done
-    /// there does not run. The structure returned below is the source table's column names and
-    /// types, and `SHOW_COLUMNS` is the privilege that guards them: `DESCRIBE TABLE` on the source
-    /// table itself checks exactly this.
+    /// `DESCRIBE` and `CREATE TABLE ... AS` end here and never reach the source-table `SELECT` check in
+    /// `StorageMergeTreeScoredSearchBase::read`. `DESCRIBE TABLE` guards the same structure with `SHOW_COLUMNS`.
     context->checkAccess(AccessType::SHOW_COLUMNS, source_database, source_table);
 
     auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
@@ -187,15 +182,8 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool /*is_insert_query*/) const
 {
-    /// The engine guard and the index resolution below disclose source-table metadata: whether the
-    /// source is a MergeTree table, whether an index of a given name exists and is a
-    /// `vector_similarity` one, and - in the 4-argument form - the names of all vector indexes.
-    /// The `SELECT` check on the columns the query reads happens later, in
-    /// `StorageMergeTreeScoredSearchBase::read`, so without a check here a user with no grants at
-    /// all could probe that metadata by varying the arguments. `SHOW_TABLES` is what lets a user
-    /// know that the source table exists; it is implied by any grant on the table, including the
-    /// column-level `SELECT` that a successful search needs, so requiring it here does not
-    /// tighten the privileges of a legitimate search.
+    /// The engine guard and the index resolution below disclose source-table metadata long before the
+    /// `SELECT` check in `read`. `SHOW_TABLES` is implied by any grant on the table, even a column-level one.
     context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
 
     auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);

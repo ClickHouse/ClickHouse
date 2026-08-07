@@ -67,9 +67,6 @@ ReadFromMergeTreeScoredSearch::ReadFromMergeTreeScoredSearch(
 
 bool ReadFromMergeTreeScoredSearch::hasRowsHiddenOnRead() const
 {
-    /// A materialized lightweight delete stores `_row_exists = 0`, and a pending one is an
-    /// `UPDATE _row_exists = 0`. Both are honoured by the readers only when `apply_deleted_mask`
-    /// is set, and the `_row_exists` prefilter that the caller builds behaves the same way.
     if (context->getSettingsRef()[Setting::apply_deleted_mask])
     {
         if (mutations_snapshot->getAllUpdatedColumns().contains(RowExistsColumn::name))
@@ -79,9 +76,6 @@ bool ReadFromMergeTreeScoredSearch::hasRowsHiddenOnRead() const
             return true;
     }
 
-    /// An ordinary pending `ALTER DELETE` hides rows without touching any column: it writes no
-    /// `_row_exists` and contributes nothing to `getAllUpdatedColumns`, so it needs a check of its
-    /// own. The readers apply it on read regardless of `apply_deleted_mask`.
     if (!mutations_snapshot->hasDataMutations())
         return false;
 
@@ -155,16 +149,11 @@ void ReadFromMergeTreeScoredSearch::applyFilters(ActionDAGNodes added_filter_nod
         Block allowed_inputs;
         for (const auto & column : source_storage_snapshot->getColumns(allowed_columns_options))
         {
-            /// `_part` is part metadata: the predicate on it has already pruned the
-            /// part list above, and pushing it into the subquery as well would turn a
-            /// metadata-only filter into a row-reading prefilter that spends the
-            /// `search_topk_prefilter_max_rows` budget for nothing.
+            /// A `_part` predicate has already pruned the part list above.
+            /// Pushing it into the subquery too would make a metadata-only filter read rows to build a bitmap.
             ///
-            /// `_part_index` and `_part_offset` are the bitmap subquery's own row
-            /// locators (it always reads them to map matched rows back to parts).
-            /// Pushing a user predicate on these same columns into the subquery
-            /// would conflict with that internal use, so leave such predicates to
-            /// the outer filter, where the lazy reader has materialized them.
+            /// `_part_index` and `_part_offset` are the subquery's own row locators, which it
+            /// always reads, so predicates on them are left to the outer filter over materialized rows.
             if (column.name == "_part" || column.name == "_part_index" || column.name == "_part_offset")
                 continue;
 
@@ -183,11 +172,8 @@ void ReadFromMergeTreeScoredSearch::applyFilters(ActionDAGNodes added_filter_nod
         prefilter_nodes.push_back(&row_policy->actions.findInOutputs(row_policy->column_name));
     }
 
-    /// Without a prefilter the scorer reads the index directly and never goes through the
-    /// `MergeTree` readers, so nothing hides the rows that a plain `SELECT` from the source table
-    /// would not return. Routing the scorer through the bitmap subquery restores that: the
-    /// subquery does read through the readers, so rows they drop never enter the bitmap.
-    /// With a prefilter this happens anyway, because that prefilter is read the same way.
+    /// Without prefilter we will bypass the _row_exists filter, so add it explicitly.
+    /// With prefilter _row_exists mask will be applied automatically in MergeTree readers.
     if (prefilter_nodes.empty() && hasRowsHiddenOnRead())
     {
         row_exists_dag = ActionsDAG(NamesAndTypesList{{RowExistsColumn::name, RowExistsColumn::type}});
@@ -223,8 +209,6 @@ void ReadFromMergeTreeScoredSearch::applyFilters(ActionDAGNodes added_filter_nod
         subquery.optimize(QueryPlanOptimizationSettings(context));
         bitmap_state->subquery_plan = std::move(subquery);
 
-        /// Indexed by `part_index_in_query`, which pruning preserves, so the vector is sized by
-        /// the unpruned part list even when the subquery reads only a subset of it.
         auto & bitmaps = bitmap_state->bitmaps.emplace(ranges_in_data_parts->size());
         for (auto & part_bitmap : bitmaps)
             part_bitmap = std::make_shared<roaring::Roaring>();
