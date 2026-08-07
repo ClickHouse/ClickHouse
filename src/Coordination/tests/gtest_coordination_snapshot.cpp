@@ -2670,6 +2670,106 @@ TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSequentialCreateTouc
     EXPECT_EQ(conflict->subtree_root, "/p/n0000000001");
 }
 
+/// `SetWatches` carries lists of paths rather than a single one, and `KeeperStorage::setWatches`
+/// resolves them against the tree (a missing node answers an immediate `DELETED` event instead of
+/// re-registering the watch), so a watch on a pruned path replays differently after orphan cleanup.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSetWatchesTouchingRemovedSubtree)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    /// The pruned path hides in `exist_watches`, not in `data_watches[0]`, so anything that only
+    /// looks at `getPath()` would miss it.
+    auto set_watches = std::make_shared<Coordination::ZooKeeperSetWatchesRequest>();
+    set_watches->data_watches = {"/present"};
+    set_watches->exist_watches = {"/missing/child"};
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), set_watches));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::SetWatch));
+    EXPECT_EQ(conflict->request_path, "/missing/child");
+    EXPECT_EQ(conflict->subtree_root, "/missing");
+}
+
+/// Same for the persistent watch lists that only `SetWatches2` carries.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalRefusesSetWatches2PersistentWatchTouchingRemovedSubtree)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    auto set_watches = std::make_shared<Coordination::ZooKeeperSetWatches2Request>();
+    set_watches->data_watches = {"/present"};
+    set_watches->persistent_recursive_watches = {"/missing/child"};
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), set_watches));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    auto conflict = state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot());
+    ASSERT_TRUE(conflict.has_value());
+    EXPECT_EQ(conflict->log_idx, 2);
+    EXPECT_EQ(conflict->op_num, Coordination::opNumToString(Coordination::OpNum::SetWatch2));
+    EXPECT_EQ(conflict->request_path, "/missing/child");
+    EXPECT_EQ(conflict->subtree_root, "/missing");
+}
+
+/// A `SetWatches` that names only surviving paths -- including one with empty lists -- must not
+/// block recovery.
+TEST_P(CoordinationTestWithCompression, OrphanRemovalAllowsBenignSetWatchesInLogTail)
+{
+    ChangelogDirTest snapshots("./snapshots");
+    ChangelogDirTest logs("./logs");
+
+    auto ctx = makeContextForOrphanRemoval(GetParam().use_lsmt_storage, this->enable_compression, "./snapshots", "./logs");
+    writeSnapshotWithOrphans(ctx, this->enable_compression, 1, {"/present"}, {"/missing/child"});
+
+    DB::KeeperLogStore changelog({}, {}, ctx);
+    changelog.init(0, 1000);
+    DB::SnapshotsQueue snapshots_queue{1};
+    auto state_machine = std::make_shared<DB::KeeperStateMachine>(nullptr, snapshots_queue, ctx, nullptr);
+    state_machine->init();
+    state_machine->setLogStore(&changelog);
+
+    appendEntry(changelog, makeCreateEntry(*state_machine, "/covered", "covered"));
+    auto benign_watches = std::make_shared<Coordination::ZooKeeperSetWatchesRequest>();
+    benign_watches->data_watches = {"/present"};
+    benign_watches->child_watches = {"/present"};
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), benign_watches));
+    /// All lists empty: nothing to check, and in particular no `data_watches[0]` to trip over.
+    auto empty_watches = std::make_shared<Coordination::ZooKeeperSetWatchesRequest>();
+    appendEntry(changelog, getLogEntryFromZKRequest(0, 1, state_machine->getNextZxid(), empty_watches));
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    EXPECT_FALSE(
+        state_machine->findOrphanConflictInLogTail(state_machine->last_commit_index() + 1, changelog.next_slot()).has_value());
+}
+
 /// When the snapshot covers the whole log there is nothing to replay, so nothing can observe the
 /// pruned paths.
 TEST_P(CoordinationTestWithCompression, OrphanRemovalNoConflictWhenNoLogTail)

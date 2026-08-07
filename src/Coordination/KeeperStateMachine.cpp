@@ -266,8 +266,7 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
             }
             return true;
         }
-        /// These touch no node path at all. `SetWatches`/`SetWatches2` must not have `getPath()` called
-        /// on them: it dereferences `data_watches[0]` without checking that the list is non-empty.
+        /// These touch no node path at all.
         ///
         /// `Sync` carries a path but never reads or writes the tree -- its handler ignores the storage
         /// argument entirely and just echoes the path back (see `process(const ZooKeeperSyncRequest &,
@@ -278,11 +277,37 @@ bool forEachRequestPath(const Coordination::ZooKeeperRequest & request, F && f)
         case OpNum::Auth:
         case OpNum::Close:
         case OpNum::SessionID:
-        case OpNum::SetWatch:
-        case OpNum::SetWatch2:
         case OpNum::Error:
         case OpNum::Sync:
             return true;
+        /// `SetWatches`/`SetWatches2` carry lists of paths rather than a single one (`getPath()` must not
+        /// be called on them: it dereferences `data_watches[0]` without checking that the list is
+        /// non-empty). `KeeperStorage::setWatches` resolves the data, child (list), and exist watch paths
+        /// against the tree -- whether the node exists and its `mzxid`/`pzxid` decide between an immediate
+        /// `DELETED`/`CHANGED`/`CREATED` watch event and re-registering the watch -- so a watch on a pruned
+        /// path would replay differently after orphan cleanup. The persistent watch lists of `SetWatches2`
+        /// are registered without consulting the tree, but they are checked all the same: a tail entry
+        /// naming a pruned path is evidence the log postdates state the snapshot lost, and being broader
+        /// than strictly necessary is the safe direction for this guard.
+        case OpNum::SetWatch:
+        case OpNum::SetWatch2:
+        {
+            const auto & set_watches = dynamic_cast<const Coordination::SetWatchesRequest &>(request);
+            for (const auto & path : set_watches.data_watches)
+                f(path);
+            for (const auto & path : set_watches.child_watches)
+                f(path);
+            for (const auto & path : set_watches.exist_watches)
+                f(path);
+            if (const auto * set_watches2 = dynamic_cast<const Coordination::SetWatches2Request *>(&request))
+            {
+                for (const auto & path : set_watches2->persistent_watches)
+                    f(path);
+                for (const auto & path : set_watches2->persistent_recursive_watches)
+                    f(path);
+            }
+            return true;
+        }
         /// Everything else has a meaningful single path.
         case OpNum::Reconfig:
         case OpNum::Get:
