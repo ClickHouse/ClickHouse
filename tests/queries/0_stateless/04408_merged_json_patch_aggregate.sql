@@ -499,4 +499,22 @@ FROM
     SELECT '{"a":2}'::JSON, CAST(NULL, 'Nullable(Float64)')
 );
 
+-- LEFT JOIN regression test: columns from the right side of a LEFT JOIN become ColumnNullable at runtime.
+-- KeyFixed and KeyString must unwrap ColumnNullable without crashing (e.g. Bad cast from ColumnNullable to ColumnString/ColumnVector).
+CREATE TABLE t_left_json (id UInt32, patch String) ENGINE = Memory;
+CREATE TABLE t_right_keys (id UInt32, ver_num UInt32, ver_str String) ENGINE = Memory;
+
+INSERT INTO t_left_json VALUES (1, '{"a":1}'), (2, '{"b":2}');
+INSERT INTO t_right_keys VALUES (1, 10, 'v10');
+
+SELECT toJSONString(mergedJSONPatch(CAST(patch, 'JSON'), t_right_keys.ver_num))
+FROM t_left_json LEFT JOIN t_right_keys ON t_left_json.id = t_right_keys.id;
+
+SELECT toJSONString(mergedJSONPatch(CAST(patch, 'JSON'), t_right_keys.ver_str))
+FROM t_left_json LEFT JOIN t_right_keys ON t_left_json.id = t_right_keys.id;
+
+DROP TABLE t_left_json;
+DROP TABLE t_right_keys;
+
+
 DROP TABLE t_bad_sort_keys;

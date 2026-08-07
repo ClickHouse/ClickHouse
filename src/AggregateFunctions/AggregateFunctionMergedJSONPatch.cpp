@@ -92,8 +92,9 @@ namespace ErrorCodes
 /// Sort key types: concrete uniform structs, stored inline, no virtual dispatch.
 
 /// Helper to unwrap ColumnNullable if present; otherwise returns the input column.
-/// This is needed because columns can be wrapped in ColumnNullable at runtime even if
-/// the DataType wasn't detected as Nullable at factory construction time.
+/// This is needed because columns from the right side of a LEFT/RIGHT/FULL JOIN are wrapped in
+/// ColumnNullable at runtime by the query pipeline, even if the aggregate function was instantiated
+/// with a non-nullable DataType (e.g. UInt32 or String from the table schema).
 /// Returns a pointer to avoid dangling reference issues with temporaries.
 static const IColumn * unwrapNullable(const IColumn & column)
 {
