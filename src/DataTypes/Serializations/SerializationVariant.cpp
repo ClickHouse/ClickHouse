@@ -1145,7 +1145,7 @@ bool SerializationVariant::tryDeserializeVariantFromField(
         }
         if (variant_column.size() > prev_size)
         {
-            variant_column.popBack(1);
+            variant_column.popBack(variant_column.size() - prev_size);
         }
     }
 
