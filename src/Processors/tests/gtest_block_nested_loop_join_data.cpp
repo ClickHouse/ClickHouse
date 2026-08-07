@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <numeric>
 #include <thread>
 #include <vector>
 
@@ -203,7 +205,6 @@ TEST(BlockNestedLoopJoinData, MatchFlagsAreKeptOnlyWhereTheResultNeedsThem)
 {
     for (auto strictness : {JoinStrictness::All, JoinStrictness::Any, JoinStrictness::RightAny})
     {
-        EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Inner, strictness));
         EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Left, strictness));
         EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Cross, strictness));
         EXPECT_TRUE(needsBuildSideMatchFlags(JoinKind::Right, strictness));
@@ -214,6 +215,11 @@ TEST(BlockNestedLoopJoinData, MatchFlagsAreKeptOnlyWhereTheResultNeedsThem)
         EXPECT_TRUE(keepsUnmatchedBuildRows(JoinKind::Right, strictness));
         EXPECT_TRUE(keepsUnmatchedBuildRows(JoinKind::Full, strictness));
     }
+
+    /// `ANY INNER` keeps the flags to take each build row once, though it emits no build row itself.
+    EXPECT_TRUE(needsBuildSideMatchFlags(JoinKind::Inner, JoinStrictness::Any));
+    EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Inner, JoinStrictness::All));
+    EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Inner, JoinStrictness::RightAny));
 
     /// The right-driven early-exit kinds select build rows by their flag, the left-driven ones do not.
     EXPECT_FALSE(needsBuildSideMatchFlags(JoinKind::Left, JoinStrictness::Semi));
@@ -282,6 +288,44 @@ TEST(BlockNestedLoopJoinData, ConcurrentMatchFlagSetsKeepEveryFlag)
 
     for (size_t row = 0; row < num_rows; ++row)
         EXPECT_EQ(data->isBuildRowMatched(row), row % 3 != 0) << "row " << row;
+}
+
+TEST(BlockNestedLoopJoinData, ConcurrentClaimsGiveEveryBuildRowToOneProbeStream)
+{
+    constexpr size_t num_threads = 8;
+    constexpr size_t num_rows = 4096;
+
+    auto data = makeData(JoinKind::Right, JoinStrictness::Any);
+    for (size_t i = 0; i < num_rows; ++i)
+        ASSERT_TRUE(data->addBlock(makeBlock({i}), 1));
+    data->finish();
+
+    /// Every thread tries to take every row, so all of them contend on each one in turn.
+    std::vector<std::vector<size_t>> claimed_by_thread(num_threads);
+    std::vector<std::thread> threads;
+    for (size_t thread_index = 0; thread_index < num_threads; ++thread_index)
+    {
+        threads.emplace_back([&, thread_index]
+        {
+            for (size_t row = 0; row < num_rows; ++row)
+                if (data->claimBuildRow(row))
+                    claimed_by_thread[thread_index].push_back(row);
+        });
+    }
+    for (auto & thread : threads)
+        thread.join();
+
+    std::vector<size_t> claimed;
+    for (const auto & rows : claimed_by_thread)
+        claimed.insert(claimed.end(), rows.begin(), rows.end());
+    std::sort(claimed.begin(), claimed.end());
+
+    std::vector<size_t> expected(num_rows);
+    std::iota(expected.begin(), expected.end(), 0);
+    /// Exactly one thread takes each row, and a taken row counts as matched from then on.
+    EXPECT_EQ(claimed, expected);
+    for (size_t row = 0; row < num_rows; ++row)
+        EXPECT_TRUE(data->isBuildRowMatched(row)) << "row " << row;
 }
 
 TEST(BlockNestedLoopJoinData, EmptyBuildSideAction)

@@ -25,8 +25,10 @@ SELECT 'tuple inner result', (SELECT arraySort(groupArray((l.id, r.id))) FROM tt
 SELECT 'nullable tuple routed', count() FROM (EXPLAIN SELECT count() FROM ttk_l l JOIN ttk_r r ON l.tn > r.tn AND l.y < r.y) WHERE explain LIKE '%IEJoin%';
 SELECT 'nullable tuple result', (SELECT arraySort(groupArray((l.id, r.id))) FROM ttk_l l JOIN ttk_r r ON l.tn > r.tn AND l.y < r.y) = (SELECT arraySort(groupArray((l.id, r.id))) FROM ttk_l l, ttk_r r WHERE l.tn > r.tn AND l.y < r.y) AS ok;
 
--- The outer/anti fallback is the block nested loop join, whose operator is not implemented yet.
-SELECT count() FROM ttk_l l LEFT ANTI JOIN ttk_r r ON l.tn > r.tn AND l.y < r.y; -- { serverError NOT_IMPLEMENTED }
+-- The outer/anti fallback is the block nested loop join, which evaluates the same comparison.
+SELECT 'tuple anti',
+    (SELECT count() FROM ttk_l l LEFT ANTI JOIN ttk_r r ON l.tn > r.tn AND l.y < r.y)
+  = (SELECT count() FROM ttk_l l WHERE l.id NOT IN (SELECT l.id FROM ttk_l l, ttk_r r WHERE l.tn > r.tn AND l.y < r.y)) AS ok;
 
 -- Dynamic keys: not routed even with the setting that admits them as hash join keys.
 SET allow_dynamic_type_in_join_keys = 1;
@@ -62,8 +64,10 @@ INSERT INTO tvk_r VALUES (1, 3, 0, 15), (2, 'zzz', 1, 25);
 SELECT 'variant routed', count() FROM (EXPLAIN SELECT count() FROM tvk_l l JOIN tvk_r r ON l.v > r.v AND l.y < r.y) WHERE explain LIKE '%IEJoin%';
 SELECT 'variant inner result', (SELECT arraySort(groupArray((l.id, r.id))) FROM tvk_l l JOIN tvk_r r ON l.v > r.v AND l.y < r.y) = (SELECT arraySort(groupArray((l.id, r.id))) FROM tvk_l l, tvk_r r WHERE l.v > r.v AND l.y < r.y) AS ok;
 
--- The outer/anti fallback is the block nested loop join, whose operator is not implemented yet.
-SELECT count() FROM tvk_l l LEFT ANTI JOIN tvk_r r ON l.v > r.v AND l.y < r.y; -- { serverError NOT_IMPLEMENTED }
+-- The outer/anti fallback is the block nested loop join, which evaluates the same comparison.
+SELECT 'variant anti',
+    (SELECT count() FROM tvk_l l LEFT ANTI JOIN tvk_r r ON l.v > r.v AND l.y < r.y)
+  = (SELECT count() FROM tvk_l l WHERE l.id NOT IN (SELECT l.id FROM tvk_l l, tvk_r r WHERE l.v > r.v AND l.y < r.y)) AS ok;
 
 -- A variant comparison beyond two scalar inequalities is a residual condition inside the
 -- operator, evaluated with SQL semantics: the NULL-keyed left row matches nothing.

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <optional>
 #include <vector>
 
@@ -10,6 +11,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/DelayedPortsProcessor.h>
@@ -66,13 +69,46 @@ Value valueAt(const IColumn & column, size_t row)
     return column.getUInt(row);
 }
 
+using PairCounter = std::shared_ptr<std::atomic<size_t>>;
+
+/// `probe < build`, counting the candidate pairs the condition is evaluated on.
+class CountingLess final : public IFunction
+{
+public:
+    explicit CountingLess(PairCounter counter_) : counter(std::move(counter_)) {}
+
+    String getName() const override { return "countingLess"; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt8>(); }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        counter->fetch_add(input_rows_count);
+
+        auto result = ColumnUInt8::create(input_rows_count);
+        auto & values = result->getData();
+        for (size_t row = 0; row < input_rows_count; ++row)
+            values[row] = arguments[0].column->getUInt(row) < arguments[1].column->getUInt(row);
+        return result;
+    }
+
+private:
+    PairCounter counter;
+};
+
 /// The whole `ON` condition as the operator sees it: `probe <op> build` over the two input headers.
-BlockNestedLoopPredicate makePredicate(const String & function_name, bool nullable)
+/// With a counter, the condition is a counting `less` instead of the named function.
+BlockNestedLoopPredicate makePredicate(const String & function_name, bool nullable, const PairCounter & counter = nullptr)
 {
     tryRegisterFunctions();
 
     ActionsDAG dag(NamesAndTypesList{{"probe", valueType(nullable)}, {"build", valueType(nullable)}});
-    const auto & function = FunctionFactory::instance().get(function_name, getContext().context);
+    FunctionOverloadResolverPtr function;
+    if (counter)
+        function = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<CountingLess>(counter));
+    else
+        function = FunctionFactory::instance().get(function_name, getContext().context);
     const auto & condition = dag.addFunction(function, {dag.getInputs()[0], dag.getInputs()[1]}, "condition");
     dag.getOutputs() = {&condition};
 
@@ -123,7 +159,8 @@ ProbeResult runProbe(
     JoinStrictness strictness = JoinStrictness::All,
     size_t max_block_size = 0,
     const String & function_name = "less",
-    bool nullable = false)
+    bool nullable = false,
+    const PairCounter & counter = nullptr)
 {
     auto probe_header = makeHeader("probe", nullable);
     auto build_header = makeHeader("build", nullable);
@@ -136,7 +173,7 @@ ProbeResult runProbe(
 
     auto source = std::make_shared<SourceFromChunks>(probe_header, std::move(chunks));
     auto probe = std::make_shared<BlockNestedLoopProbeTransform>(
-        probe_header, output_header, data, makePredicate(function_name, nullable), max_block_size, 0);
+        probe_header, output_header, data, makePredicate(function_name, nullable, counter), max_block_size, 0);
 
     connect(source->getPort(), probe->getInputs().front());
 
@@ -441,7 +478,159 @@ TEST(BlockNestedLoopJoinProbe, TheUnmatchedScanPartitionsTheBuildBlocksOverStrea
 
 TEST(BlockNestedLoopJoinProbe, UnsupportedJoinTypesAreRejected)
 {
-    EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Left, JoinStrictness::Any), Exception);
-    EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Left, JoinStrictness::Semi), Exception);
-    EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Left, JoinStrictness::Anti), Exception);
+    /// `ASOF` prescribes the shape of its condition, so an arbitrary predicate is not one it can
+    /// express, and the operator is never chosen for it.
+    EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Left, JoinStrictness::Asof), Exception);
+    EXPECT_THROW(runProbe({{1}}, {{2}}, JoinKind::Inner, JoinStrictness::Unspecified), Exception);
+}
+
+/// The build side of every left-driven test below: the walk visits 2, then 5, then 7, so the first
+/// build row a probe row matches under `probe < build` is the smallest one greater than it.
+const std::vector<Values> left_driven_build_blocks{{2, 5}, {7}};
+
+TEST(BlockNestedLoopJoinProbe, AnyLeftKeepsOneMatchPerProbeRowAndPadsTheRest)
+{
+    for (auto strictness : {JoinStrictness::Any, JoinStrictness::RightAny})
+    {
+        auto result = runProbe(
+            left_driven_build_blocks, {{1, 4, 6, 9}},
+            JoinKind::Left, strictness, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+
+        EXPECT_EQ(sorted(result.rows), sorted({
+            {Value(1), Value(2)}, {Value(4), Value(5)}, {Value(6), Value(7)}, {Value(9), std::nullopt}}))
+            << toString(strictness);
+    }
+}
+
+TEST(BlockNestedLoopJoinProbe, AnyInnerTakesEachRowOfEitherSideOnce)
+{
+    /// `ANY INNER` disables the cartesian product on both sides: the probe row 1 takes 2, the probe
+    /// row 4 takes 5, and the probe row 3 - which matches 5 and 7 - has to settle for 7, because 5
+    /// is already taken. Nothing is left for the probe row 9.
+    auto result = runProbe(left_driven_build_blocks, {{1, 4, 3, 9}}, JoinKind::Inner, JoinStrictness::Any);
+
+    EXPECT_EQ(sorted(result.rows), sorted({{1, 2}, {4, 5}, {3, 7}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, AnyInnerLeavesOverProbeRowsWhenTheBuildSideRunsOut)
+{
+    /// Two probe rows compete for one build row, so one of them ends up with nothing - which is
+    /// what makes the result the same however the planner orders the two inputs.
+    auto result = runProbe({{5}}, {{1, 2}}, JoinKind::Inner, JoinStrictness::Any);
+
+    EXPECT_EQ(result.rows, (std::vector<JoinedRow>{{1, 5}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, SemiLeftEmitsEveryMatchedProbeRowOnce)
+{
+    auto result = runProbe(left_driven_build_blocks, {{1, 4, 9}}, JoinKind::Left, JoinStrictness::Semi);
+
+    EXPECT_EQ(sorted(result.rows), sorted({{1, 2}, {4, 5}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, AntiLeftEmitsOnlyTheProbeRowsThatMatchedNothing)
+{
+    auto result = runProbe(
+        left_driven_build_blocks, {{1, 4, 9, 8}},
+        JoinKind::Left, JoinStrictness::Anti, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+
+    EXPECT_EQ(sorted(result.rows), sorted({{Value(9), std::nullopt}, {Value(8), std::nullopt}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, AntiLeftWithAnEmptyBuildSideKeepsEveryProbeRow)
+{
+    auto result = runProbe(
+        {}, {{1, 2}},
+        JoinKind::Left, JoinStrictness::Anti, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+
+    EXPECT_EQ(sorted(result.rows), sorted({{Value(1), std::nullopt}, {Value(2), std::nullopt}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, SemiRightEmitsEveryMatchedBuildRowOnce)
+{
+    /// Probe {4, 9, 1} against build {2, 5, 7}: the walk gives 5 and 7 to the probe row 4, which
+    /// reaches them first, and 2 to the probe row 1. Nothing matches the probe row 9.
+    auto result = runProbe({{2, 5}, {7}}, {{4, 9, 1}}, JoinKind::Right, JoinStrictness::Semi);
+
+    EXPECT_EQ(sorted(result.rows), sorted({{1, 2}, {4, 5}, {4, 7}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, AnyRightEmitsEveryBuildRowExactlyOnce)
+{
+    /// Each build row leaves with the first probe row that matches it; the build row 1, which
+    /// nothing matches, is the one the scan after the probe pads.
+    auto result = runProbe(
+        {{1, 2}, {5, 7}}, {{4, 9, 1}},
+        JoinKind::Right, JoinStrictness::Any, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+
+    EXPECT_EQ(sorted(result.rows), sorted({
+        {Value(1), Value(2)}, {Value(4), Value(5)}, {Value(4), Value(7)}, {std::nullopt, Value(1)}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, AntiRightEmitsOnlyTheBuildRowsThatMatchedNothing)
+{
+    auto result = runProbe(
+        {{2, 5}, {7}}, {{4, 9}},
+        JoinKind::Right, JoinStrictness::Anti, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+
+    EXPECT_EQ(sorted(result.rows), sorted({{std::nullopt, Value(2)}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, AntiRightWithAnEmptyProbeSideKeepsEveryBuildRow)
+{
+    auto result = runProbe(
+        {{2}, {5}}, {},
+        JoinKind::Right, JoinStrictness::Anti, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+
+    EXPECT_EQ(sorted(result.rows), sorted({{std::nullopt, Value(2)}, {std::nullopt, Value(5)}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, RightAnyKeepsOneMatchPerProbeRowAndDropsTheBuildRowsItPassedOver)
+{
+    /// The old `ANY`: the probe row 4 takes 5, the first build row it matches, and 7 - which it
+    /// matched but did not take - counts as matched all the same, so the scan after the probe pads
+    /// only the build row 2, which nothing matched.
+    auto result = runProbe(
+        {{5, 7}, {2}}, {{4}},
+        JoinKind::Right, JoinStrictness::RightAny, /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+
+    EXPECT_EQ(sorted(result.rows), sorted({{Value(4), Value(5)}, {std::nullopt, Value(2)}}));
+}
+
+TEST(BlockNestedLoopJoinProbe, EarlyExitStopsTheBuildSideWalkAtTheFirstMatch)
+{
+    /// One block per build row, so the walk can stop between any two of them.
+    const std::vector<Values> build_blocks{{100}, {101}, {102}, {103}};
+
+    auto pairs_evaluated = [&](JoinKind kind, JoinStrictness strictness, const Values & probe_values)
+    {
+        auto counter = std::make_shared<std::atomic<size_t>>(0);
+        runProbe(build_blocks, {probe_values}, kind, strictness, /*max_block_size=*/ 0, "less",
+            /*nullable=*/ true, counter);
+        return counter->load();
+    };
+
+    /// `ALL` evaluates the whole cartesian product of the chunk and the build side.
+    EXPECT_EQ(pairs_evaluated(JoinKind::Left, JoinStrictness::All, {1, 2}), 8);
+
+    /// The strictnesses that keep one match per probe row stop after the first build block, which
+    /// every probe row matches.
+    EXPECT_EQ(pairs_evaluated(JoinKind::Left, JoinStrictness::Any, {1, 2}), 2);
+    EXPECT_EQ(pairs_evaluated(JoinKind::Left, JoinStrictness::Semi, {1, 2}), 2);
+    EXPECT_EQ(pairs_evaluated(JoinKind::Left, JoinStrictness::Anti, {1, 2}), 2);
+
+    /// `ANY INNER` also takes each build row once, so the second probe row walks on to the second
+    /// block after losing the first one: 2 pairs on the first block and 1 on the second.
+    EXPECT_EQ(pairs_evaluated(JoinKind::Inner, JoinStrictness::Any, {1, 2}), 3);
+
+    /// A probe row that matches nothing keeps the walk going, on its own: 2 pairs on the first
+    /// block, then one per block for the probe row that is still looking.
+    EXPECT_EQ(pairs_evaluated(JoinKind::Left, JoinStrictness::Any, {1, 200}), 5);
+
+    /// The right-driven selections need every build row, and so does a kind that pads the build
+    /// rows nothing matched, whichever side drives it.
+    EXPECT_EQ(pairs_evaluated(JoinKind::Right, JoinStrictness::Any, {1, 2}), 8);
+    EXPECT_EQ(pairs_evaluated(JoinKind::Right, JoinStrictness::Semi, {1, 2}), 8);
+    EXPECT_EQ(pairs_evaluated(JoinKind::Right, JoinStrictness::Anti, {1, 2}), 8);
+    EXPECT_EQ(pairs_evaluated(JoinKind::Full, JoinStrictness::RightAny, {1, 2}), 8);
 }

@@ -29,6 +29,10 @@ EmptyBuildSideAction emptyBuildSideActionFor(JoinKind kind, JoinStrictness stric
 
 bool needsBuildSideMatchFlags(JoinKind kind, JoinStrictness strictness)
 {
+    /// `ANY INNER` disables the cartesian product on both sides, so it needs the flags to give a
+    /// build row to at most one probe row, even though it emits no build row of its own afterwards.
+    if (strictness == JoinStrictness::Any && isInner(kind))
+        return true;
     if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
         return isRight(kind);
     return isRightOrFull(kind);
@@ -136,6 +140,14 @@ void BlockNestedLoopJoinData::setBuildRowMatched(size_t global_row)
 {
     chassert(global_row < getTotalRows());
     matched_flags[global_row].store(true, std::memory_order_relaxed);
+}
+
+bool BlockNestedLoopJoinData::claimBuildRow(size_t global_row)
+{
+    chassert(global_row < getTotalRows());
+    /// An atomic read-modify-write, so exactly one probe stream finds the flag unset and takes the
+    /// row. Relaxed is enough: nothing but the claim itself travels through this access.
+    return !matched_flags[global_row].exchange(true, std::memory_order_relaxed);
 }
 
 bool BlockNestedLoopJoinData::isBuildRowMatched(size_t global_row) const

@@ -1,0 +1,140 @@
+l.x < r.y
+ANY INNER routed	1
+ANY INNER pairs match	0
+ANY LEFT routed	1
+ANY LEFT pairs match	0
+ANY RIGHT routed	1
+ANY RIGHT pairs match	0
+ANY INNER distinct ids, swap = 0	1
+ANY INNER is empty only with nothing to match, swap = 0	1
+ANY INNER distinct ids, swap = 1	1
+ANY INNER is empty only with nothing to match, swap = 1	1
+ANY LEFT ids	1
+ANY LEFT padded	1
+ANY RIGHT ids	1
+ANY RIGHT padded	1
+old ANY LEFT ids	1
+old ANY FULL count	1
+l.x + l.id > r.y
+ANY INNER routed	1
+ANY INNER pairs match	0
+ANY LEFT routed	1
+ANY LEFT pairs match	0
+ANY RIGHT routed	1
+ANY RIGHT pairs match	0
+ANY INNER distinct ids, swap = 0	1
+ANY INNER is empty only with nothing to match, swap = 0	1
+ANY INNER distinct ids, swap = 1	1
+ANY INNER is empty only with nothing to match, swap = 1	1
+ANY LEFT ids	1
+ANY LEFT padded	1
+ANY RIGHT ids	1
+ANY RIGHT padded	1
+old ANY LEFT ids	1
+old ANY FULL count	1
+sipHash64(l.x, r.y) % 4 = 0
+ANY INNER routed	1
+ANY INNER pairs match	0
+ANY LEFT routed	1
+ANY LEFT pairs match	0
+ANY RIGHT routed	1
+ANY RIGHT pairs match	0
+ANY INNER distinct ids, swap = 0	1
+ANY INNER is empty only with nothing to match, swap = 0	1
+ANY INNER distinct ids, swap = 1	1
+ANY INNER is empty only with nothing to match, swap = 1	1
+ANY LEFT ids	1
+ANY LEFT padded	1
+ANY RIGHT ids	1
+ANY RIGHT padded	1
+old ANY LEFT ids	1
+old ANY FULL count	1
+l.s LIKE r.s
+ANY INNER routed	1
+ANY INNER pairs match	0
+ANY LEFT routed	1
+ANY LEFT pairs match	0
+ANY RIGHT routed	1
+ANY RIGHT pairs match	0
+ANY INNER distinct ids, swap = 0	1
+ANY INNER is empty only with nothing to match, swap = 0	1
+ANY INNER distinct ids, swap = 1	1
+ANY INNER is empty only with nothing to match, swap = 1	1
+ANY LEFT ids	1
+ANY LEFT padded	1
+ANY RIGHT ids	1
+ANY RIGHT padded	1
+old ANY LEFT ids	1
+old ANY FULL count	1
+l.x + r.y < -1000000
+ANY INNER routed	1
+ANY INNER pairs match	0
+ANY LEFT routed	1
+ANY LEFT pairs match	0
+ANY RIGHT routed	1
+ANY RIGHT pairs match	0
+ANY INNER distinct ids, swap = 0	1
+ANY INNER is empty only with nothing to match, swap = 0	1
+ANY INNER distinct ids, swap = 1	1
+ANY INNER is empty only with nothing to match, swap = 1	1
+ANY LEFT ids	1
+ANY LEFT padded	1
+ANY RIGHT ids	1
+ANY RIGHT padded	1
+old ANY LEFT ids	1
+old ANY FULL count	1
+join_use_nulls = 0
+Int32
+1	0
+2	0
+3	1
+4	1
+5	0
+6	0
+-
+Int32
+0	11
+0	12
+0	14
+1	13
+1	15
+--
+join_use_nulls = 1
+Nullable(Int32)
+1	0
+2	0
+3	1
+4	1
+5	0
+6	0
+-
+Nullable(Int32)
+0	11
+0	12
+0	14
+1	13
+1	15
+--
+ANY INNER probe=0 build=1
+ANY INNER probe=1 build=0
+ANY INNER probe=0 build=0
+ANY LEFT probe=0 build=1
+ANY LEFT probe=1 build=0
+1	0
+2	0
+3	0
+4	0
+5	0
+6	0
+ANY LEFT probe=0 build=0
+ANY RIGHT probe=0 build=1
+0	11
+0	12
+0	13
+0	14
+0	15
+ANY RIGHT probe=1 build=0
+ANY RIGHT probe=0 build=0
+join_any_take_last_row	1
+chunked any left	300	44850	49
+chunked any right	70	2415

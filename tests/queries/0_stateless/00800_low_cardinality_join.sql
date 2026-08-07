@@ -12,8 +12,8 @@ select * from (select toLowCardinality(dummy) as val from system.one) any left j
 select * from (select toLowCardinality(toNullable(dummy)) as val from system.one) any left join (select toLowCardinality(toNullable(dummy)) as val from system.one) using val order by all;
 select '-';
 -- Both sides of the equality come from the left table, so there is no join key: the block
--- nested loop join takes the condition, and its operator is not implemented yet.
-select * from (select dummy as val from system.one) any left join (select dummy as val from system.one) on val + 0 = val * 1 order by all; -- { serverError NOT_IMPLEMENTED }
+-- nested loop join takes the condition.
+select * from (select dummy as val from system.one) any left join (select dummy as val from system.one) on val + 0 = val * 1 order by all;
 select * from (select dummy as val from system.one) any left join (select dummy as rval from system.one) on val + 0 = rval * 1 order by all;
 select * from (select toLowCardinality(dummy) as val from system.one) any left join (select dummy as rval from system.one) on val + 0 = rval * 1 order by all;
 select * from (select dummy as val from system.one) any left join (select toLowCardinality(dummy) as rval from system.one) on val + 0 = rval * 1 order by all;

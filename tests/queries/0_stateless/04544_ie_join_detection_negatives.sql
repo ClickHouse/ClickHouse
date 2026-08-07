@@ -47,7 +47,7 @@ JOIN neg_r r ON l.x < r.x AND l.c > r.y; -- { serverError NOT_IMPLEMENTED }
 SET join_algorithm = 'direct,parallel_hash,hash';
 SELECT 'setting off', count() FROM (EXPLAIN SELECT count() FROM neg_l l JOIN neg_r r ON l.x < r.x AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
 SELECT 'setting off outer', count() FROM neg_l l LEFT JOIN neg_r r ON l.x < r.x AND l.y > r.y;
-SELECT count() FROM neg_l l LEFT ANTI JOIN neg_r r ON l.x < r.x AND l.y > r.y; -- { serverError NOT_IMPLEMENTED }
+SELECT 'setting off anti', count() FROM neg_l l LEFT ANTI JOIN neg_r r ON l.x < r.x AND l.y > r.y;
 
 DROP TABLE neg_l;
 DROP TABLE neg_r;

@@ -1,0 +1,132 @@
+-- Tags: no-old-analyzer
+
+-- `ANY` joins on an `ON` condition with no join key, evaluated by the block nested loop operator.
+-- `ANY` keeps one row of the side it is driven by - the probe side for `INNER`/`LEFT`, the build
+-- side for `RIGHT` - joined to any one row of the other that the condition holds for. Which one it
+-- is is not fixed, because the build side is stored in whatever order the build streams filled it,
+-- so what is asserted is the count, the fact that every joined pair satisfies the condition, and
+-- that a row is padded exactly when nothing matches it.
+
+SET join_algorithm = 'direct,parallel_hash,hash';
+SET cross_to_inner_join_rewrite = 0;
+SET join_use_nulls = 0;
+
+DROP TABLE IF EXISTS bnl_any_probe;
+DROP TABLE IF EXISTS bnl_any_build;
+
+CREATE TABLE bnl_any_probe (id Int32, x Nullable(Int32), s String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE bnl_any_build (id Int32, y Nullable(Int32), s String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO bnl_any_probe VALUES (1, 1, 'a'), (2, 5, 'ab'), (3, NULL, 'b'), (4, 9, ''), (5, 3, 'abc'), (6, -2, 'A');
+INSERT INTO bnl_any_build VALUES (11, 2, 'a%'), (12, 4, 'b%'), (13, NULL, '%'), (14, 8, 'z%'), (15, -2, '');
+
+{% for condition in [
+    'l.x < r.y',
+    'l.x + l.id > r.y',
+    'sipHash64(l.x, r.y) % 4 = 0',
+    'l.s LIKE r.s',
+    'l.x + r.y < -1000000'
+] -%}
+
+SELECT '{{ condition }}';
+
+{% for kind in ['INNER', 'LEFT', 'RIGHT'] -%}
+
+SELECT 'ANY {{ kind }} routed', count()
+FROM (EXPLAIN SELECT count() FROM bnl_any_probe l ANY {{ kind }} JOIN bnl_any_build r ON {{ condition }})
+WHERE explain LIKE '%BlockNestedLoopJoin%';
+
+-- Every pair the operator emitted satisfies the condition. A padded row carries the id 0, which no
+-- row of either table has.
+SELECT 'ANY {{ kind }} pairs match', countIf(l.id != 0 AND r.id != 0 AND NOT ifNull(toUInt8({{ condition }}), 0))
+FROM bnl_any_probe l ANY {{ kind }} JOIN bnl_any_build r ON {{ condition }};
+
+{% endfor -%}
+
+-- `ANY INNER` takes each row of either side at most once. Which rows are paired is not fixed - a
+-- probe row can lose its only match to another one - so what holds is that no id repeats, and that
+-- the result is empty exactly when nothing matches at all.
+{% for swap in [0, 1] -%}
+SELECT 'ANY INNER distinct ids, swap = {{ swap }}',
+    (SELECT uniqExact(l.id) = count() AND uniqExact(r.id) = count()
+     FROM bnl_any_probe l ANY INNER JOIN bnl_any_build r ON {{ condition }}
+     SETTINGS query_plan_join_swap_table = {{ swap }}) AS ok;
+SELECT 'ANY INNER is empty only with nothing to match, swap = {{ swap }}',
+    (SELECT count() = 0 FROM bnl_any_probe l ANY INNER JOIN bnl_any_build r ON {{ condition }}
+     SETTINGS query_plan_join_swap_table = {{ swap }})
+  = (SELECT count() = 0 FROM bnl_any_probe l CROSS JOIN bnl_any_build r WHERE {{ condition }}) AS ok;
+{% endfor -%}
+SELECT 'ANY LEFT ids',
+    (SELECT arraySort(groupArray(l.id)) FROM bnl_any_probe l ANY LEFT JOIN bnl_any_build r ON {{ condition }})
+  = (SELECT arraySort(groupArray(id)) FROM bnl_any_probe) AS ok;
+SELECT 'ANY LEFT padded',
+    (SELECT arraySort(groupArray(l.id)) FROM bnl_any_probe l ANY LEFT JOIN bnl_any_build r ON {{ condition }} WHERE r.id = 0)
+  = (SELECT arraySort(groupArray(id)) FROM bnl_any_probe WHERE id NOT IN (
+        SELECT l.id FROM bnl_any_probe l CROSS JOIN bnl_any_build r WHERE {{ condition }})) AS ok;
+
+-- `ANY RIGHT` keeps every build row exactly once, padded where nothing matched it.
+SELECT 'ANY RIGHT ids',
+    (SELECT arraySort(groupArray(r.id)) FROM bnl_any_probe l ANY RIGHT JOIN bnl_any_build r ON {{ condition }})
+  = (SELECT arraySort(groupArray(id)) FROM bnl_any_build) AS ok;
+SELECT 'ANY RIGHT padded',
+    (SELECT arraySort(groupArray(r.id)) FROM bnl_any_probe l ANY RIGHT JOIN bnl_any_build r ON {{ condition }} WHERE l.id = 0)
+  = (SELECT arraySort(groupArray(id)) FROM bnl_any_build WHERE id NOT IN (
+        SELECT r.id FROM bnl_any_probe l CROSS JOIN bnl_any_build r WHERE {{ condition }})) AS ok;
+
+-- The old `ANY` joins one build row to every probe row whatever the kind, so a `RIGHT` join of it
+-- keeps the probe rows that matched, plus the build rows that matched nothing.
+SET any_join_distinct_right_table_keys = 1;
+SELECT 'old ANY LEFT ids',
+    (SELECT arraySort(groupArray(l.id)) FROM bnl_any_probe l ANY LEFT JOIN bnl_any_build r ON {{ condition }})
+  = (SELECT arraySort(groupArray(id)) FROM bnl_any_probe) AS ok;
+SELECT 'old ANY FULL count',
+    (SELECT count() FROM bnl_any_probe l ANY FULL JOIN bnl_any_build r ON {{ condition }})
+  = (SELECT count() FROM bnl_any_probe)
+  + (SELECT count() FROM bnl_any_build WHERE id NOT IN (
+        SELECT r.id FROM bnl_any_probe l CROSS JOIN bnl_any_build r WHERE {{ condition }})) AS ok;
+SET any_join_distinct_right_table_keys = 0;
+
+{% endfor -%}
+
+-- The padded side of an `ANY` result with and without `join_use_nulls`. Only the ids are selected:
+-- which build row a probe row was joined to is not fixed, but whether it was joined at all is.
+{% for join_use_nulls in [0, 1] -%}
+
+SELECT 'join_use_nulls = {{ join_use_nulls }}';
+SET join_use_nulls = {{ join_use_nulls }};
+SELECT any(toTypeName(r.id)) FROM bnl_any_probe l ANY LEFT JOIN bnl_any_build r ON l.x < r.y;
+SELECT l.id, r.id IS NULL OR r.id = 0 FROM bnl_any_probe l ANY LEFT JOIN bnl_any_build r ON l.x < r.y ORDER BY ALL;
+SELECT '-';
+SELECT any(toTypeName(l.id)) FROM bnl_any_probe l ANY RIGHT JOIN bnl_any_build r ON l.x < r.y;
+SELECT l.id IS NULL OR l.id = 0, r.id FROM bnl_any_probe l ANY RIGHT JOIN bnl_any_build r ON l.x < r.y ORDER BY ALL;
+SELECT '--';
+
+{% endfor -%}
+SET join_use_nulls = 0;
+
+-- Every kind against an empty side.
+{% for kind in ['INNER', 'LEFT', 'RIGHT'] -%}
+{% for probe_rows, build_rows in [(0, 1), (1, 0), (0, 0)] -%}
+SELECT 'ANY {{ kind }} probe={{ probe_rows }} build={{ build_rows }}';
+SELECT l.id, r.id FROM (SELECT * FROM bnl_any_probe WHERE {{ probe_rows }}) l
+ANY {{ kind }} JOIN (SELECT * FROM bnl_any_build WHERE {{ build_rows }}) r ON l.x < r.y
+ORDER BY ALL;
+{% endfor -%}
+{% endfor -%}
+
+-- `join_any_take_last_row` names the last of the rows a join key groups together, which a
+-- condition with no join key has none of; the operator ignores the setting and stays a valid `ANY`
+-- join under it.
+SELECT 'join_any_take_last_row',
+    (SELECT uniqExact(l.id) = count() FROM bnl_any_probe l ANY LEFT JOIN bnl_any_build r ON l.x < r.y
+     SETTINGS join_any_take_last_row = 1) AS ok;
+
+-- A result that does not fit one block, with more than one probe stream.
+SELECT 'chunked any left', count(), sum(l.number), countIf(l.number > r.number + 250)
+FROM numbers(300) l ANY LEFT JOIN numbers(70) r ON l.number > r.number + 250
+SETTINGS max_block_size = 13, max_joined_block_size_rows = 5, max_threads = 4;
+SELECT 'chunked any right', count(), sum(r.number)
+FROM numbers(300) l ANY RIGHT JOIN numbers(70) r ON l.number > r.number + 250
+SETTINGS max_block_size = 13, max_joined_block_size_rows = 5, max_threads = 4;
+
+DROP TABLE bnl_any_probe;
+DROP TABLE bnl_any_build;

@@ -44,6 +44,24 @@ public:
 
     String getName() const override { return "BlockNestedLoopProbe"; }
 
+    /// How many of the pairs that satisfy the condition are part of the result, which is what
+    /// strictness controls.
+    enum class PairSelection : uint8_t
+    {
+        /// Every one of them: `ALL`, and any strictness on an explicit cartesian join.
+        AllPairs,
+        /// One per probe row - the first build row it matches - for a left-driven `ANY`/`SEMI`.
+        FirstPerProbeRow,
+        /// One per build row - the first probe row that matches it - for a right-driven `ANY`/`SEMI`.
+        FirstPerBuildRow,
+        /// One per probe row and one per build row at once: `ANY INNER`, which disables the
+        /// cartesian product on both sides. `INNER` is its own reverse, so the operator has to
+        /// answer the same way whichever of its inputs the planner decided to build.
+        OnePerRowOfBothSides,
+        /// None: an `ANTI` result is made of the rows that matched nothing.
+        NoPairs,
+    };
+
     Status prepare() override;
     void work() override;
 
@@ -71,6 +89,13 @@ private:
     /// Evaluates the condition on the next tile of candidate pairs, accumulates the surviving ones
     /// and advances the build cursor. Returns the number of pairs evaluated.
     size_t matchNextTile();
+    /// Keeps the pairs of the current tile that `pair_selection` selects, and records the match on
+    /// the probe row and on the build row where the kind needs it.
+    void appendMatchedPairs(const IColumn & matched_probe, const IColumn & matched_build, size_t num_matched);
+    /// Extends the last run of accumulated pairs, or opens one for the current build block.
+    void addBuildRun(size_t length);
+    /// Removes the probe rows that have matched from the walk over the rest of the build side.
+    void dropMatchedProbeRows();
     /// Whether the accumulated pairs already fill an output chunk.
     bool hasFullOutputChunk() const;
     /// Materializes at most `max_block_size` accumulated pairs, keeping the rest for the next call.
@@ -90,12 +115,18 @@ private:
     const size_t max_block_size;
     const size_t max_block_bytes;
 
-    /// Whether this kind and strictness are implemented by the probe at all.
-    const bool implemented;
+    /// How many of the satisfied pairs the strictness lets through.
+    const PairSelection pair_selection;
     /// Whether a probe row that matched nothing is still part of the result, padded.
     const bool keep_unmatched_probe_rows;
     /// Whether every matched build row must be flagged for the stage that runs after the probe.
     const bool flag_matched_build_rows;
+    /// Whether a build row is taken by the probe row that reaches it first, and by no other.
+    const bool claim_build_rows;
+    /// Whether a probe row leaves the walk as soon as it matches.
+    const bool early_exit_per_probe_row;
+    /// Whether the walk records which probe rows have matched.
+    const bool track_probe_row_match;
 
     /// The probe chunk being walked.
     Columns probe_columns;
@@ -103,8 +134,9 @@ private:
     bool has_probe_chunk = false;
     Stage stage = Stage::Done;
 
-    /// The walk over the build side: one tile is `probe_num_rows x build_rows_per_tile` pairs.
-    size_t build_rows_per_tile = 1;
+    /// The walk over the build side: one tile is `active_probe_rows.size() x build rows` pairs.
+    /// The probe rows still in the walk, in increasing order; every one of them under `ALL`.
+    PaddedPODArray<UInt64> active_probe_rows;
     size_t build_block_cursor = 0;
     size_t build_row_cursor = 0;
 
@@ -117,8 +149,8 @@ private:
     size_t probe_row_bytes = 0;
     size_t build_row_bytes = 0;
 
-    /// Set for every probe row that matched at least one build row. Empty for the kinds that do
-    /// not keep unmatched probe rows.
+    /// Set for every probe row that matched at least one build row. Empty for the kinds whose
+    /// result does not depend on it.
     IColumnFilter probe_row_matched;
     size_t unmatched_probe_cursor = 0;
 

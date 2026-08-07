@@ -75,6 +75,9 @@ public:
     /// Records that some probe row matched the build row `global_row`. Called by every probe stream
     /// concurrently, only for a kind that keeps the flags.
     void setBuildRowMatched(size_t global_row);
+    /// Takes the build row `global_row` for the caller, if no probe stream has taken it yet. This is
+    /// how a right-driven `ANY`/`SEMI` gives a build row to exactly one probe row.
+    bool claimBuildRow(size_t global_row);
     /// Whether any probe row matched the build row `global_row`. Meaningful only once every probe
     /// stream has finished.
     bool isBuildRowMatched(size_t global_row) const;

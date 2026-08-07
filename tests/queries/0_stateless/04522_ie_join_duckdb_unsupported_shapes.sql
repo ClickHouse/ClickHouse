@@ -58,9 +58,11 @@ SELECT 'anti residual';
 SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300 ORDER BY ALL;
 SELECT 'full residual';
 SELECT l.id, r.id FROM left_small l FULL JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300 ORDER BY ALL;
--- A disjunction of inequality conditions is left to the block nested loop join, whose operator
--- is not implemented yet.
-SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON (l.start < r.stop AND r.start < l.stop) OR (l.start > r.stop AND r.start > l.stop); -- { serverError NOT_IMPLEMENTED }
+-- A disjunction of inequality conditions is left to the block nested loop join, which evaluates
+-- it as a whole.
+SELECT 'anti disjunction';
+SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r
+ON (l.start < r.stop AND r.start < l.stop) OR (l.start > r.stop AND r.start > l.stop) ORDER BY ALL;
 
 -- Tail-predicate sections ported from DuckDB test/sql/join/iejoin/test_iesemijoin.test and
 -- test_ieantijoin.test: SEMI/ANTI with a third equality conjunct, alone and combined with an

@@ -1,0 +1,105 @@
+-- Tags: no-old-analyzer
+
+-- `SEMI` and `ANTI` joins on an `ON` condition with no join key, evaluated by the block nested loop
+-- operator. Both are decided by whether a row matches at all, never by how many times: `LEFT SEMI`
+-- and `LEFT ANTI` split the probe side, `RIGHT SEMI` and `RIGHT ANTI` split the build side. Each of
+-- the four is checked against the rewrite that states the same thing without the operator - the
+-- rows of one side whose id does, or does not, appear in the cross join filtered by the condition.
+
+SET join_algorithm = 'direct,parallel_hash,hash';
+SET cross_to_inner_join_rewrite = 0;
+SET join_use_nulls = 0;
+
+DROP TABLE IF EXISTS bnl_sa_probe;
+DROP TABLE IF EXISTS bnl_sa_build;
+
+CREATE TABLE bnl_sa_probe (id Int32, x Nullable(Int32), s String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE bnl_sa_build (id Int32, y Nullable(Int32), s String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO bnl_sa_probe VALUES (1, 1, 'a'), (2, 5, 'ab'), (3, NULL, 'b'), (4, 9, ''), (5, 3, 'abc'), (6, -2, 'A');
+INSERT INTO bnl_sa_build VALUES (11, 2, 'a%'), (12, 4, 'b%'), (13, NULL, '%'), (14, 8, 'z%'), (15, -2, '');
+
+{% for condition in [
+    'l.x < r.y',
+    'l.x + l.id > r.y',
+    'sipHash64(l.x, r.y) % 4 = 0',
+    'l.s LIKE r.s',
+    'l.x + r.y < -1000000'
+] -%}
+
+SELECT '{{ condition }}';
+
+{% for kind in ['SEMI', 'ANTI'] -%}
+{% for side in ['LEFT', 'RIGHT'] -%}
+
+SELECT '{{ side }} {{ kind }} routed', count()
+FROM (EXPLAIN SELECT count() FROM bnl_sa_probe l {{ side }} {{ kind }} JOIN bnl_sa_build r ON {{ condition }})
+WHERE explain LIKE '%BlockNestedLoopJoin%';
+
+{% if side == 'LEFT' -%}
+SELECT '{{ side }} {{ kind }}',
+    (SELECT arraySort(groupArray(l.id)) FROM bnl_sa_probe l {{ side }} {{ kind }} JOIN bnl_sa_build r ON {{ condition }})
+  = (SELECT arraySort(groupArray(id)) FROM bnl_sa_probe WHERE id {{ 'IN' if kind == 'SEMI' else 'NOT IN' }} (
+        SELECT l.id FROM bnl_sa_probe l CROSS JOIN bnl_sa_build r WHERE {{ condition }})) AS ok;
+{% else -%}
+SELECT '{{ side }} {{ kind }}',
+    (SELECT arraySort(groupArray(r.id)) FROM bnl_sa_probe l {{ side }} {{ kind }} JOIN bnl_sa_build r ON {{ condition }})
+  = (SELECT arraySort(groupArray(id)) FROM bnl_sa_build WHERE id {{ 'IN' if kind == 'SEMI' else 'NOT IN' }} (
+        SELECT r.id FROM bnl_sa_probe l CROSS JOIN bnl_sa_build r WHERE {{ condition }})) AS ok;
+{% endif -%}
+
+{% endfor -%}
+{% endfor -%}
+
+-- A `SEMI` join carries the columns of the row it matched, and that row is one the condition holds
+-- for. Which one it is is not fixed - the build side is stored in whatever order the build streams
+-- filled it - so only the fact that it matches is asserted.
+SELECT 'LEFT SEMI pairs match', countIf(NOT ifNull(toUInt8({{ condition }}), 0))
+FROM bnl_sa_probe l SEMI LEFT JOIN bnl_sa_build r ON {{ condition }};
+SELECT 'RIGHT SEMI pairs match', countIf(NOT ifNull(toUInt8({{ condition }}), 0))
+FROM bnl_sa_probe l SEMI RIGHT JOIN bnl_sa_build r ON {{ condition }};
+
+{% endfor -%}
+
+-- The padded side of an `ANTI` result: the rows of the other side are not there at all, so they
+-- carry the type's default, or NULL once the pre-join actions made them `Nullable`.
+{% for join_use_nulls in [0, 1] -%}
+
+SELECT 'join_use_nulls = {{ join_use_nulls }}';
+SET join_use_nulls = {{ join_use_nulls }};
+SELECT * FROM bnl_sa_probe l ANTI LEFT JOIN bnl_sa_build r ON l.x < r.y ORDER BY ALL;
+SELECT '-';
+SELECT * FROM bnl_sa_probe l ANTI RIGHT JOIN bnl_sa_build r ON l.x < r.y ORDER BY ALL;
+SELECT '--';
+
+{% endfor -%}
+SET join_use_nulls = 0;
+
+-- Every kind against an empty side. An `ANTI` join keeps the whole of the side it drives when the
+-- other one is empty, and a `SEMI` join keeps nothing.
+{% for kind in ['SEMI', 'ANTI'] -%}
+{% for side in ['LEFT', 'RIGHT'] -%}
+{% for probe_rows, build_rows in [(0, 1), (1, 0), (0, 0)] -%}
+SELECT '{{ side }} {{ kind }} probe={{ probe_rows }} build={{ build_rows }}';
+SELECT l.id, r.id FROM (SELECT * FROM bnl_sa_probe WHERE {{ probe_rows }}) l
+{{ side }} {{ kind }} JOIN (SELECT * FROM bnl_sa_build WHERE {{ build_rows }}) r ON l.x < r.y
+ORDER BY ALL;
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+
+-- A result that does not fit one block, with more than one probe stream.
+SELECT 'chunked left semi', count(), sum(l.number)
+FROM numbers(300) l SEMI LEFT JOIN numbers(70) r ON l.number > r.number + 250
+SETTINGS max_block_size = 13, max_joined_block_size_rows = 5, max_threads = 4;
+SELECT 'chunked left anti', count(), sum(l.number)
+FROM numbers(300) l ANTI LEFT JOIN numbers(70) r ON l.number > r.number + 250
+SETTINGS max_block_size = 13, max_joined_block_size_rows = 5, max_threads = 4;
+SELECT 'chunked right semi', count(), sum(r.number)
+FROM numbers(300) l SEMI RIGHT JOIN numbers(70) r ON l.number > r.number + 250
+SETTINGS max_block_size = 13, max_joined_block_size_rows = 5, max_threads = 4;
+SELECT 'chunked right anti', count(), sum(r.number)
+FROM numbers(300) l ANTI RIGHT JOIN numbers(70) r ON l.number > r.number + 250
+SETTINGS max_block_size = 13, max_joined_block_size_rows = 5, max_threads = 4;
+
+DROP TABLE bnl_sa_probe;
+DROP TABLE bnl_sa_build;

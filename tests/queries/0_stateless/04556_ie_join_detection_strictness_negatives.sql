@@ -1,7 +1,7 @@
 -- Tags: no-old-analyzer
 
 -- Strictnesses that must never route to IEJoin even with `ie_join` listed first: ANY with
--- only inequality conditions keeps the pre-existing error, ASOF stays on the ASOF path.
+-- only inequality conditions goes to the block nested loop join, ASOF stays on the ASOF path.
 
 SET join_algorithm = 'ie_join,hash';
 
@@ -13,9 +13,10 @@ CREATE TABLE neg_r (k Int32, t Int32, v Int32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO neg_l VALUES (1, 10), (1, 20);
 INSERT INTO neg_r VALUES (1, 5, 100), (1, 15, 200);
 
--- ANY strictness with only inequality conditions falls back to the block nested loop join,
--- whose operator is not implemented yet
-SELECT * FROM neg_l l ANY LEFT JOIN neg_r r ON l.k < r.v AND l.t > r.t; -- { serverError NOT_IMPLEMENTED }
+-- ANY strictness with only inequality conditions falls back to the block nested loop join. Which
+-- of the matching right rows it keeps is not fixed, so only the left side of the pair is selected.
+SELECT 'any not routed', count() FROM (EXPLAIN SELECT * FROM neg_l l ANY LEFT JOIN neg_r r ON l.k < r.v AND l.t > r.t) WHERE explain LIKE '%IEJoin%';
+SELECT 'any', l.k, l.t FROM neg_l l ANY LEFT JOIN neg_r r ON l.k < r.v AND l.t > r.t ORDER BY ALL;
 
 -- ASOF join stays on the ASOF path (its ON has an equality plus one inequality)
 SELECT 'asof not routed', count() FROM (EXPLAIN SELECT * FROM neg_l l ASOF JOIN neg_r r ON l.k = r.k AND l.t >= r.t) WHERE explain LIKE '%IEJoin%';
