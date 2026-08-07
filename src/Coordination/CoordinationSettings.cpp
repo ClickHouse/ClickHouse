@@ -97,7 +97,7 @@ namespace ErrorCodes
     DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
-    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write. Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
+    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write. Increase only after all nodes in the cluster are upgraded to a version that supports the new format", HOT_RELOAD) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
     DECLARE(Bool, use_new_dispatcher, true, "Use new request dispatcher implementation (KeeperRequestDispatcher)", 0) \
     DECLARE(UInt64, max_in_flight_request_batches, 20, "Maximum number of request batches in flight in the new dispatcher pipeline", 0) \
