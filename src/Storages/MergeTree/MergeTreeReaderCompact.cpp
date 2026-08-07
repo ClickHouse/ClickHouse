@@ -324,7 +324,7 @@ void MergeTreeReaderCompact::readData(
     }
 }
 
-void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark)
+void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark)
 {
     if (!has_subcolumns || !has_substream_marks)
         return;
@@ -333,7 +333,7 @@ void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark, size_t cur
     /// We don't call it during prefixes deserialization because we can get prefixes from cache and
     /// don't call it at all.
     for (auto index : column_to_subcolumns_indexes | std::views::values | std::views::join)
-        getStream(columns_to_read[index]).adjustRightMark(current_task_last_mark);
+        getStream(columns_to_read[index]).adjustRightMark(last_mark_to_read);
 
     /// Second, deserialize prefixes of get the from cache.
     auto deserialize = [&]() -> DeserializeBinaryBulkStateMap

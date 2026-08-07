@@ -34,10 +34,8 @@ public:
 
     /// Return the number of rows has been read or zero if there is no columns to read.
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
-    /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
-    virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
-                            bool continue_reading, size_t max_rows_to_read,
-                            MutableColumns & res_columns) = 0;
+    virtual size_t readRows(size_t from_mark, bool continue_reading,
+                            size_t max_rows_to_read, MutableColumns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -87,7 +85,7 @@ public:
 
     MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
 
-    virtual bool canSkipMark(size_t, size_t) { return false; }
+    virtual bool canSkipMark(size_t) { return false; }
 
     /// Returns true if this reader can skip whole marks via `canSkipMark` for at least some inputs.
     /// Independent of any particular mark index. Used by callers that need to know upfront whether
@@ -95,7 +93,7 @@ public:
     /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
     virtual bool canSkipAnyMark() const { return false; }
 
-    virtual void updateAllMarkRanges(const MarkRanges & ranges) { all_mark_ranges = ranges; }
+    virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
@@ -152,6 +150,9 @@ protected:
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
+    /// Last mark of `all_mark_ranges`, used as the right bound of ranged read requests on remote disks.
+    /// Cached because the ranges can contain thousands of fragments and the bound is needed on every read.
+    size_t last_mark_to_read = 0;
 
     /// Per-reader read hints (see setReadHints/getReadHints above).
     RangesInDataPartReadHints read_hints;
