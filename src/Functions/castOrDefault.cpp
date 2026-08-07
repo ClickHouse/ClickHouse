@@ -717,7 +717,9 @@ Like [toDate](#toDate) but if unsuccessful, returns a default value which is eit
         { return std::make_shared<FunctionCastOrDefaultTyped>(context, "toDateOrDefault", std::make_shared<DataTypeDate>()); },
         toDateOrDefault_documentation);
     FunctionDocumentation::Description toDate32OrDefault_description = R"(
-Converts the argument to the [Date32](/reference/data-types/date32) data type. If the value is outside the range, `toDate32OrDefault` returns the lower border value supported by [Date32](/reference/data-types/date32). If the argument has [Date](/reference/data-types/date) type, it's borders are taken into account. Returns default value if an invalid argument is received.
+Converts the argument to the [Date32](/reference/data-types/date32) data type. If the argument cannot be converted, which includes a numeric value outside of the range of [Date32](/reference/data-types/date32), the function returns a default value which is either the second argument (if specified), or otherwise the lower boundary of [Date32](/reference/data-types/date32). If the argument has [Date](/reference/data-types/date) type, its borders are taken into account.
+
+Note that, unlike [toDate32](#toDate32), this function does not saturate an out-of-range numeric argument to the boundaries of [Date32](/reference/data-types/date32); such an argument is treated as unconvertible.
     )";
     FunctionDocumentation::Syntax toDate32OrDefault_syntax = "toDate32OrDefault(expr[, default])";
     FunctionDocumentation::Arguments toDate32OrDefault_arguments = {
@@ -727,7 +729,8 @@ Converts the argument to the [Date32](/reference/data-types/date32) data type. I
     FunctionDocumentation::ReturnedValue toDate32OrDefault_returned_value = {"Value of type Date32 if successful, otherwise returns the default value if passed or 1900-01-01 if not.", {"Date32"}};
     FunctionDocumentation::Examples toDate32OrDefault_examples = {
         {"Successful conversion", "SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))", "1930-01-01"},
-        {"Failed conversion", "SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))", "2020-01-01"}
+        {"Failed conversion", "SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))", "2020-01-01"},
+        {"Out-of-range number", "SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))", "2020-01-01"}
     };
     FunctionDocumentation::Category toDate32OrDefault_category = FunctionDocumentation::Category::TypeConversion;
     FunctionDocumentation::IntroducedIn toDate32OrDefault_introduced_in = {21, 11};

@@ -144,6 +144,23 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     size_t buf_size,
     const WriteSettings & write_settings)
 {
+    /// A conditional write is a compare-and-swap request. HDFS can express only its If-None-Match
+    /// half: `O_CREAT` maps to `Hdfs::Create` alone, which the NameNode rejects when the file exists,
+    /// whereas the bare `O_WRONLY` used below maps to `Hdfs::Create | Hdfs::Overwrite` and truncates
+    /// (`contrib/libhdfs3/src/client/Hdfs.cpp:663-674`). If-Match has no equivalent at all: renames
+    /// are unconditional and the only synthesisable etag is weak. Writing anyway would downgrade the
+    /// CAS to a plain overwrite, so two concurrent writers would both be acknowledged while one of
+    /// them, and all of its rows, is silently discarded; honouring only the expressible half would
+    /// leave the other silently degraded. So both are refused, and exclusive create is the sanctioned
+    /// way to support the If-None-Match half later. Checked before `initializeHDFSFS` so no NameNode
+    /// contact is needed to reject a request that cannot be satisfied.
+    if (!write_settings.object_storage_write_if_none_match.empty() || !write_settings.object_storage_write_if_match.empty())
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "HDFSObjectStorage does not support conditional writes (If-None-Match / If-Match), so the "
+            "requested compare-and-swap on {} cannot be performed atomically",
+            object.remote_path);
+
     initializeHDFSFS();
     if (attributes.has_value())
         throw Exception(
