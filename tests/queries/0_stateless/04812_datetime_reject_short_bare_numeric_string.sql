@@ -16,6 +16,11 @@ SELECT toDateTimeOrZero('2018', 'UTC');
 -- Five digits and more remain a valid unix timestamp.
 SELECT toDateTime('12345', 'UTC');
 
+-- A short number followed by other characters is not a bare short number: the numeric prefix is
+-- parsed and the cast reports the trailing characters with the whole value in the message.
+SELECT CAST('2021-1-01 00:00:00' AS DateTime); -- { serverError CANNOT_PARSE_TEXT }
+SELECT CAST('01-02-2020 20:00:00Z' AS DateTime); -- { serverError CANNOT_PARSE_TEXT }
+
 -- The value is also rejected when the rest of the input keeps the whole broken-down date and time
 -- length visible in the read buffer (the optimistic parsing path).
 SELECT d FROM format(TSV, 'd DateTime, s String', '2018\tpadding padding padding'); -- { serverError CANNOT_PARSE_DATETIME }

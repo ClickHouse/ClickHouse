@@ -947,13 +947,17 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             /// bare number like '2018' stays invalid (it is neither a plausible timestamp nor a date).
             /// Short values are meaningful only for DateTime64, where a small decimal timestamp like
             /// 1234.5 is valid; this rule matches the fallback.
+            /// When the fifth character is a digit, the value is not a bare short number: the digit run
+            /// was interrupted by other characters (e.g. '01-02-2020 20:00:00'). Parse the numeric
+            /// prefix and let the caller report the trailing characters, so that a cast produces the
+            /// usual "syntax error at position" message with the whole value in it.
             const char * digits_begin = s + (isNumericASCII(s[0]) ? 0 : 1);
             const char * digit_pos = digits_begin;
             /// The buffer holds at least 19 characters here, so a digit run shorter than 5 has really ended.
             while (digit_pos < digits_begin + 5 && isNumericASCII(*digit_pos))
                 ++digit_pos;
 
-            if (digit_pos - digits_begin < 5)
+            if (digit_pos - digits_begin < 5 && !isNumericASCII(s[4]))
             {
                 if constexpr (throw_exception)
                     throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");

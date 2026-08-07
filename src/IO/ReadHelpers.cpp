@@ -1692,7 +1692,26 @@ ReturnType readDateTimeTextFallback(
                 /// Short values are meaningful only for DateTime64, where a small decimal timestamp
                 /// like 1234.5 is valid; this rule matches the optimistic path.
                 if constexpr (throw_exception)
+                {
+                    /// When the number is followed by a plausible date delimiter but the date layout
+                    /// does not match (e.g. '2021-1-01 00:00:00'), the probed characters can be given
+                    /// back: parse the numeric prefix and let the caller report the trailing
+                    /// characters, so that a cast produces the usual "syntax error at position"
+                    /// message with the whole value in it. A number followed by a non-date character
+                    /// (e.g. a field delimiter of a row-based format) stays rejected here, otherwise
+                    /// a short bare number would be silently accepted as a unix timestamp.
+                    if (may_be_date && can_rollback)
+                    {
+                        datetime = 0;
+                        for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+                            datetime = datetime * 10 + *digit_pos - '0';
+
+                        buf.position() = probe_start;
+                        return ReturnType(true);
+                    }
+
                     throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime {}", std::string_view(s, pos));
+                }
                 else
                     return false;
             }
