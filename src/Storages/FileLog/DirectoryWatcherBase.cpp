@@ -1,4 +1,3 @@
-#include <Interpreters/Context.h>
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSettings.h>
