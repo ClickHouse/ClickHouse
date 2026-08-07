@@ -30,14 +30,23 @@ struct TheilsUData : CrossTabAggregateData
     /// Based on https://en.wikipedia.org/wiki/Uncertainty_coefficient.
     Float64 getResult() const
     {
-        if (count < 2)
+        return computeExact(*this);
+    }
+
+    /// Computes the entropies directly from the count maps: a constant first argument
+    /// gives H(A) = 0 exactly (every term is `1 · log 1`), and a genuinely small H(A)
+    /// does not suffer from the catastrophic cancellation of the cached-sums formula
+    /// in `TheilsUWindowData::getResult`, which uses this as a fallback.
+    static Float64 computeExact(const CrossTabCountsState & state)
+    {
+        if (state.count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
 
         Float64 h_a = 0.0;
-        for (const auto & [key, value] : count_a)
+        for (const auto & [key, value] : state.count_a)
         {
             Float64 value_float = static_cast<Float64>(value);
-            Float64 prob_a = value_float / static_cast<Float64>(count);
+            Float64 prob_a = value_float / static_cast<Float64>(state.count);
             h_a += prob_a * log(prob_a);
         }
 
@@ -45,11 +54,11 @@ struct TheilsUData : CrossTabAggregateData
             return 0.0;
 
         Float64 dep = 0.0;
-        for (const auto & [key, value] : count_ab)
+        for (const auto & [key, value] : state.count_ab)
         {
             Float64 value_ab = static_cast<Float64>(value);
-            Float64 value_b = static_cast<Float64>(count_b.at(key.items[UInt128::_impl::little(1)]));
-            Float64 prob_ab = value_ab / static_cast<Float64>(count);
+            Float64 value_b = static_cast<Float64>(state.count_b.at(key.items[UInt128::_impl::little(1)]));
+            Float64 prob_ab = value_ab / static_cast<Float64>(state.count);
             Float64 prob_a_given_b = value_ab / value_b;
             dep += prob_ab * log(prob_a_given_b);
         }
@@ -61,6 +70,7 @@ struct TheilsUData : CrossTabAggregateData
 
 /// add() - O(1) with high constant factor because of maintaining cached sums
 /// getResult() - amortized O(1), independent of row/column degree
+///               (except for frames whose H(A) is at the rounding-noise level, which fall back to the exact recomputation)
 /// Suitable to be used in window functions (SELECT ... OVER(...) FROM ...)
 
 /// Unlike others (e.g. cramersV, contingency), this class does not inherit from CrossTabPhiSquaredWindowData
@@ -173,15 +183,20 @@ struct TheilsUWindowData : CrossTabCountsState
 
         /// The cached Σ n·log n sums accumulate rounding error from the incremental
         /// updates, so the derived entropies are only accurate to about
-        /// N · ε · log N in absolute terms. When the true H(A) is zero (the first
-        /// argument is constant within the frame), the computed `h_a` is pure
-        /// rounding noise, and `1 - H(A|B) / H(A)` amplifies that noise without
-        /// bound. Compare against an error bound instead of exact zero, and widen
-        /// the sanity-check tolerance by the same relative amount.
+        /// N · ε · log N in absolute terms. When the true H(A) is at or below that
+        /// noise level — either zero (the first argument is constant within the
+        /// frame) or genuinely tiny (a huge frame with an almost-constant first
+        /// argument) — the computed `h_a` is dominated by rounding noise, and
+        /// `1 - H(A|B) / H(A)` amplifies that noise without bound. Fall back to
+        /// the exact recomputation from the count maps in that case: it is free of
+        /// cancellation (a constant column gives H(A) = 0 exactly), at the cost of
+        /// giving up the amortized O(1) complexity for such degenerate frames.
+        /// Widen the sanity-check tolerance on the fast path by the same relative
+        /// error bound.
         const Float64 entropy_error = 8 * std::numeric_limits<Float64>::epsilon() * count_f * std::log(count_f);
 
         if (h_a <= entropy_error)
-            return 0.0;
+            return TheilsUData::computeExact(*this);
 
         /// H(A|B) = (Σ n_b log n_b - Σ n_ab log n_ab) / N
         const Float64 h_a_given_b = (sum_b_nlogn - sum_ab_nlogn) / count_f;

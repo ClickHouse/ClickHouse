@@ -30,3 +30,23 @@ WITH
      ORDER BY g ASC
      LIMIT 1) AS over_merged_raw
 SELECT round(direct_raw, 4) AS direct, round(over_merged_raw, 4) AS merged_over;
+
+-- A genuinely non-constant first argument must not be mistaken for a constant one.
+-- With counts {N - 1, 1} and N = 30 million, the true H(A) ≈ 6.1e-7 is below the
+-- rounding-noise bound of the cached incremental sums, so the window state falls back
+-- to the exact recomputation from the count maps. Here B = A, so H(A|B) = 0 and the
+-- true theilsU is 1, not 0. The states are pre-aggregated per group and merged in the
+-- window, which keeps the test cheap: the first frame holds only the constant group
+-- (theilsU = 0), the second adds the single-row group (theilsU = 1).
+SELECT round(u, 4) AS u
+FROM
+(
+    SELECT theilsUMerge(st) OVER (ORDER BY g ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS u
+    FROM
+    (
+        SELECT number = 0 AS g, theilsUState(toUInt8(number = 0), toUInt8(number = 0)) AS st
+        FROM numbers(30000000)
+        GROUP BY g
+    )
+)
+ORDER BY u;
