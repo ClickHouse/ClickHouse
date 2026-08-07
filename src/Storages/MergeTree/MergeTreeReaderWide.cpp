@@ -469,6 +469,13 @@ void MergeTreeReaderWide::deserializePrefix(
             if (stream_name)
                 streams.erase(*stream_name);
         };
+        deserialize_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                name_and_type, substream_path, ".bin",
+                data_part_info_for_read->getChecksums(), storage_settings);
+            return stream_name.has_value();
+        };
         deserialize_settings.release_all_prefixes_streams = settings.read_only_column_sample;
         deserialize_settings.has_uniform_marks_callback =
             [&](const ISerialization::SubstreamPath & substream_path,
