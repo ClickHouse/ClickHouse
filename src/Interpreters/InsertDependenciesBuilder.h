@@ -33,6 +33,8 @@ using ViewErrorsRegistryPtr = std::shared_ptr<ViewErrorsRegistry>;
 
 class DeduplicationInfo;
 
+struct Settings;
+
 class InsertDependenciesBuilder : public std::enable_shared_from_this<InsertDependenciesBuilder>
 {
 private:
@@ -170,6 +172,18 @@ public:
     /// insert single-stream when this probe reports true and that setting is disabled.
     static bool forwardedInsertHidesDependentView(const StoragePtr & storage, size_t depth = 0);
 
+    /// Whether the INSERT is a non-parallel quorum insert (`insert_quorum >= 2` or `'auto'`, with
+    /// `insert_quorum_parallel = 0`). Such an insert permits a single in-flight quorum part per table:
+    /// every `ReplicatedMergeTreeSink` checks in `onStart` that the quorum of all previous writes is
+    /// already satisfied (`checkQuorumPrecondition`) and throws `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE`
+    /// otherwise. Concurrent sibling sinks of the same query - the write fan-out to
+    /// `max_insert_threads` sink chains as well as the branches of dependent materialized views
+    /// converging on one target table - would race against the not-yet-satisfied quorum node of the
+    /// part committed by a sibling, so such an insert must keep a single sink stream and push its
+    /// dependent views sequentially (a sequential sink blocks in `commitPart` until the quorum of its
+    /// part is satisfied, so the next sink starts with the quorum node already gone).
+    static bool isSequentialQuorumInsert(const Settings & settings);
+
     /// Whether inserting into `storage` reaches a `Buffer` or a `Distributed`, whose final write runs in a
     /// context other than this query's, so this query's deduplication settings (`deduplicate_insert` /
     /// `insert_deduplicate` / `deduplicate_blocks_in_dependent_materialized_views`) never govern it.
@@ -248,6 +262,7 @@ private:
 
     bool async_insert = false;
     bool skip_destination_table = false;
+    bool sequential_quorum_insert = false;
     size_t sink_stream_size = 1;
 
     /// When the insertion is made into a materialized view, the root_view is the view itself and dependent_views contains its inner table.

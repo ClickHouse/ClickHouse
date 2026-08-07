@@ -127,6 +127,8 @@ namespace Setting
     extern const SettingsBool materialized_views_ignore_errors;
     extern const SettingsBool materialized_views_squash_parallel_inserts;
     extern const SettingsBool parallel_view_processing;
+    extern const SettingsUInt64Auto insert_quorum;
+    extern const SettingsBool insert_quorum_parallel;
 }
 
 namespace MergeTreeSetting
@@ -1059,6 +1061,12 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
     return false;
 }
 
+bool InsertDependenciesBuilder::isSequentialQuorumInsert(const Settings & settings)
+{
+    return !settings[Setting::insert_quorum_parallel]
+        && (settings[Setting::insert_quorum].is_auto || settings[Setting::insert_quorum].valueOr(0) >= 2);
+}
+
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
@@ -1081,6 +1089,8 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
 
     const ASTInsertQuery * as_insert_query = init_query->as<ASTInsertQuery>();
     insert_null_as_default = as_insert_query && as_insert_query->select && settings[Setting::insert_null_as_default];
+
+    sequential_quorum_insert = isSequentialQuorumInsert(settings);
 
     deduplicate_blocks = isDeduplicationEnabledForInsert(async_insert, settings);
     LOG_DEBUG(logger, "deduplicate_blocks : {}", deduplicate_blocks);
@@ -1163,9 +1173,14 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
         && ((deduplicate_blocks_in_dependent_materialized_views && any_dependent_target_dedup_hazard)
             || any_dependent_target_forwards_to_separate_context);
 
+    /// A non-parallel quorum insert permits a single in-flight quorum part per table, so it must not
+    /// write through several sinks running concurrently (see `isSequentialQuorumInsert`). For the plain
+    /// `INSERT` pipeline `InterpreterInsertQuery` already passes `max_insert_threads = 1` here; this
+    /// also keeps the `INSERT SELECT` fan-out single-stream.
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
-        && !mv_dedup_single_stream)
+        && !mv_dedup_single_stream
+        && !sequential_quorum_insert)
         sink_stream_size = max_insert_threads;
 }
 
@@ -2101,6 +2116,14 @@ bool InsertDependenciesBuilder::isViewsInvolved() const
 size_t InsertDependenciesBuilder::getViewProcessingNumThreads() const
 {
     const auto & settings = init_context->getSettingsRef();
+    /// The single sink stream of a non-parallel quorum insert is still duplicated into one branch per
+    /// dependent view, and with `parallel_view_processing` enabled those branches run concurrently -
+    /// so two views converging on one `ReplicatedMergeTree` target would still race two in-flight
+    /// quorum parts of one query against each other. Push the views of such an insert sequentially:
+    /// each branch's sink blocks in `commitPart` until the quorum of its part is satisfied, so the
+    /// next branch starts with the quorum node already gone (see `isSequentialQuorumInsert`).
+    if (sequential_quorum_insert && isViewsInvolved())
+        return 1;
     if (settings[Setting::parallel_view_processing] || !isViewsInvolved())
         return static_cast<size_t>(settings[Setting::max_threads]);
     return 1;

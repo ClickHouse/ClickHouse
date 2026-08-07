@@ -76,8 +76,6 @@ namespace Setting
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 max_insert_threads_min_free_memory_per_thread;
     extern const SettingsBool use_strict_insert_block_limits;
-    extern const SettingsUInt64Auto insert_quorum;
-    extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
@@ -896,9 +894,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     /// and throws `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE` otherwise. With a write fan-out every branch
     /// runs its own sink - including branches that receive no data - so sibling sinks of the same
     /// `INSERT` race against the not-yet-satisfied quorum node of the part committed by the branch that
-    /// got the data. Keep such inserts single-stream.
-    const bool sequential_quorum_insert = !settings[Setting::insert_quorum_parallel]
-        && (settings[Setting::insert_quorum].is_auto || settings[Setting::insert_quorum].valueOr(0) >= 2);
+    /// got the data. Keep such inserts single-stream. (The dependent-view fan-out of such an insert is
+    /// serialized separately, by the single-thread pipeline cap below.)
+    const bool sequential_quorum_insert = InsertDependenciesBuilder::isSequentialQuorumInsert(settings);
 
     const size_t insert_threads
         = (async_insert || dedup_single_stream || serial_hidden_views || sequential_quorum_insert) ? 1 : max_insert_threads;
@@ -1030,7 +1028,17 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // demand-driven by lazy ConcurrencyControl / CPULeaseAllocation, so a wide ceiling
     // does not translate into reserved-but-unused slots.
     // max_threads is already memory-adjusted; use it for the parallel case to preserve that adjustment.
-    const bool serial_views = !settings[Setting::parallel_view_processing] && insert_dependencies->isViewsInvolved();
+    /// The single sink stream of a non-parallel quorum insert is still duplicated into one branch per
+    /// dependent view, and with `parallel_view_processing` enabled those branches run concurrently - so
+    /// two views converging on one `ReplicatedMergeTree` target would race two in-flight quorum parts
+    /// of one query against each other, violating the single-in-flight-part contract the single-stream
+    /// fan-out above preserves. Push the views of such an insert sequentially: each branch's sink
+    /// blocks in `commitPart` until the quorum of its part is satisfied, so the next branch starts
+    /// with the quorum node already gone. An `Alias` destination hides its target's dependent views
+    /// behind the nested `INSERT` its sink runs; that nested `INSERT` observes the same settings and
+    /// serializes them the same way.
+    const bool serial_views = (!settings[Setting::parallel_view_processing] || sequential_quorum_insert)
+        && insert_dependencies->isViewsInvolved();
     pipeline.setNumThreads(serial_views ? 1 : max_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
