@@ -140,8 +140,8 @@ public:
             /// `value / 10^scale`, and the kernel knows nothing about scale. Where that division
             /// goes depends on whether converting one element takes a call.
             ///
-            /// Up to 64 bits AArch64 converts and divides with plain instructions, packed at that,
-            /// so the division sits inside the accumulation loop, which stays call-free and
+            /// AArch64 converts and divides a machine integer with plain instructions, packed at
+            /// that, so the division sits inside the accumulation loop, which stays call-free and
             /// vectorizes - 40 packed ops, no calls, 6 stack accesses for `Decimal64`.
             /// `wide::integer<128>` has no such instruction and lowers to soft-float quad calls
             /// (`__floatunditf`, `__multf3`, `__addtf3`); a call in the loop spills the lane
@@ -169,7 +169,7 @@ public:
 #if defined(__x86_64__)
                     static constexpr bool convert_into_buffer = true;
 #else
-                    static constexpr bool convert_into_buffer = sizeof(typename T1::NativeType) > 8;
+                    static constexpr bool convert_into_buffer = is_big_int_v<typename T1::NativeType>;
 #endif
                     static constexpr size_t TILE = 1024; /// `ResultType[TILE]` stays in L1
                     const auto & vec = static_cast<const ColVecT1 &>(*columns[0]).getData();
