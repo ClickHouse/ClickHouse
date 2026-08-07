@@ -1047,13 +1047,44 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
 void CacheMetadata::startup()
 {
     download_threads.reserve(download_threads_num);
-    for (size_t i = 0; i < download_threads_num; ++i)
+    try
     {
-        download_threads.emplace_back(std::make_shared<DownloadThread>());
-        download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>(
-            [this, thread = download_threads.back()] { downloadThreadFunc(thread->stop_flag); });
+        for (size_t i = 0; i < download_threads_num; ++i)
+        {
+            download_threads.emplace_back(std::make_shared<DownloadThread>());
+            try
+            {
+                download_threads.back()->thread = std::make_unique<ThreadFromGlobalPool>(
+                    [this, thread = download_threads.back()] { downloadThreadFunc(thread->stop_flag); });
+            }
+            catch (...)
+            {
+                download_threads.pop_back();
+                throw;
+            }
+        }
+        cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]{ cleanupThreadFunc(); });
     }
-    cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]{ cleanupThreadFunc(); });
+    catch (...)
+    {
+        /// Stop and join the threads which were started, using their stop flags
+        /// rather than cancelling the queues, so that a subsequent shutdown()
+        /// (or a retried startup) still finds the queues in a usable state.
+        {
+            std::lock_guard lock(download_queue->mutex);
+            for (auto & download_thread : download_threads)
+                download_thread->stop_flag = true;
+        }
+        download_queue->cv.notify_all();
+
+        for (auto & download_thread : download_threads)
+        {
+            if (download_thread->thread && download_thread->thread->joinable())
+                download_thread->thread->join();
+        }
+        download_threads.clear();
+        throw;
+    }
 }
 
 void CacheMetadata::shutdown()

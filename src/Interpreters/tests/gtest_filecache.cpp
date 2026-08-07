@@ -11,6 +11,8 @@
 #include <thread>
 
 #include <Core/ServerUUID.h>
+#include <Common/Stopwatch.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/iota.h>
 #include <Common/randomSeed.h>
@@ -80,6 +82,7 @@ namespace DB::ErrorCodes
 {
     extern const int FILECACHE_ACCESS_DENIED;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_SCHEDULE_TASK;
 }
 namespace DB::FileCacheSetting
 {
@@ -93,6 +96,7 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsDouble keep_free_space_elements_ratio;
     extern const FileCacheSettingsNonZeroUInt64 load_metadata_threads;
     extern const FileCacheSettingsBool load_metadata_asynchronously;
+    extern const FileCacheSettingsUInt64 background_download_threads;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
     extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
@@ -3868,5 +3872,66 @@ TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
 
         auto found = query_limit.tryGetQueryContext(state_guard.lock());
         ASSERT_EQ(found.get(), nullptr);
+    }
+}
+
+TEST_F(FileCacheTest, AsyncInitThreadStartFailureIsSynchronous)
+{
+    /// Regression test: when the permanent background threads of the cache (background
+    /// downloads, delayed cleanup) do not fit into the global thread pool, the
+    /// `CANNOT_SCHEDULE_TASK` exception must reach the caller of `initialize`
+    /// synchronously even with `load_metadata_asynchronously`, instead of being deferred
+    /// into `init_exception` on the metadata loading thread, which would leave the server
+    /// running with a registered but permanently broken cache.
+
+    ServerUUID::setRandomForUnitTests();
+
+    /// The schedule pool is created lazily and starts its own threads; create it
+    /// before enabling fault injection.
+    DB::Context::getGlobalContextInstance()->getSchedulePool();
+
+    const fs::path cache_path = caches_dir / "cache_async_fail_close";
+    fs::remove_all(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_path.string();
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 5;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = true;
+    settings[FileCacheSetting::background_download_threads] = 2;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    /// Fault injection is blocked for the current thread only: with the fix the permanent
+    /// threads are started synchronously in `initialize` and succeed, while on the broken
+    /// code they were started on the metadata loading thread (where the injection is
+    /// active), so the failure was deferred into `init_exception`.
+    auto block_current_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
+    CannotAllocateThreadFaultInjector::setFaultProbability(1.0);
+    SCOPE_EXIT({ CannotAllocateThreadFaultInjector::setFaultProbability(0.0); });
+
+    DB::FileCache cache("async_fail_close", settings);
+    cache.initialize();
+
+    /// `initialize` did not throw, so the cache must eventually become usable.
+    /// `assertInitialized` (inside `getFileSegmentInfos`) waits on `init_mutex` for the
+    /// loading thread, but before the loading thread takes the mutex it throws
+    /// "Cache not initialized", so retry until the initialization settles.
+    Stopwatch watch;
+    while (true)
+    {
+        ASSERT_LT(watch.elapsedSeconds(), 300) << "cache initialization did not settle";
+        try
+        {
+            cache.getFileSegmentInfos(FileCache::getCommonOrigin().user_id);
+            break;
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_NE(e.code(), DB::ErrorCodes::CANNOT_SCHEDULE_TASK)
+                << "initialize() succeeded, but the cache came up broken: " << e.message();
+            std::this_thread::sleep_for(1ms);
+        }
     }
 }

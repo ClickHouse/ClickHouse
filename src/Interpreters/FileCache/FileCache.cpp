@@ -551,6 +551,24 @@ void FileCache::initialize()
             throw;
         }
 
+        /// Start the permanent background threads (downloads, delayed cleanup)
+        /// before the (possibly asynchronous) metadata loading: if they do not fit
+        /// into the global thread pool, `CANNOT_SCHEDULE_TASK` must reach the caller
+        /// synchronously instead of being deferred into `init_exception` on the
+        /// loading thread, where it would leave the server running with a registered
+        /// but permanently broken cache. Until the metadata is loaded, the threads
+        /// only sleep on their empty queues.
+        try
+        {
+            metadata.startup();
+        }
+        catch (...)
+        {
+            init_exception = std::current_exception();
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            throw;
+        }
+
         if (load_metadata_asynchronously)
         {
             load_metadata_main_thread = std::make_unique<ThreadFromGlobalPool>([this, need_to_load_metadata] { initializeImpl(need_to_load_metadata); });
@@ -586,8 +604,6 @@ void FileCache::initializeImpl(bool load_metadata)
 
         if (load_metadata)
             loadMetadata();
-
-        metadata.startup();
     }
     catch (...)
     {
