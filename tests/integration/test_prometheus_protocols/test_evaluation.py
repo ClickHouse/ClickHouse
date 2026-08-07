@@ -3230,6 +3230,156 @@ def test_aggregation_operators():
         [],
     )
 
+    # PromQL evaluates `quantile` with an out-of-range phi to a constant (with a warning)
+    # instead of failing the query: phi < 0 -> -Inf, phi > 1 -> +Inf for every group.
+    do_query_test(
+        "quantile(-0.5, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "-inf"]],
+    )
+
+    do_query_test(
+        "quantile(1.5, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "+Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "inf"]],
+    )
+
+    # phi NaN -> NaN for every group; the result must keep the input time grid.
+    do_query_test(
+        "quantile(NaN, last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "NaN"], [120, "NaN"], [130, "NaN"], [140, "NaN"], [150, "NaN"]]}]}',
+        [["[]", "[('1970-01-01 00:01:50.000',nan),('1970-01-01 00:02:00.000',nan),('1970-01-01 00:02:10.000',nan),('1970-01-01 00:02:20.000',nan),('1970-01-01 00:02:30.000',nan)]"]],
+    )
+
+    # Out-of-range phi with grouping: every group gets the constant at exactly the
+    # time steps where the group has input data (same grids as the `count by (size)`
+    # and `sum without (shape)` tests above).
+    do_query_test(
+        "(quantile(1.5, last_over_time(bar[10])) by (size))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "+Inf"], [120, "+Inf"], [130, "+Inf"], [150, "+Inf"]]}, {"metric": {"size": "s"}, "values": [[110, "+Inf"], [120, "+Inf"], [140, "+Inf"]]}, {"metric": {"size": "xl"}, "values": [[110, "+Inf"], [150, "+Inf"]]}]}',
+        [
+            ["[('size','l')]", "[('1970-01-01 00:01:50.000',inf),('1970-01-01 00:02:00.000',inf),('1970-01-01 00:02:10.000',inf),('1970-01-01 00:02:30.000',inf)]"],
+            ["[('size','s')]", "[('1970-01-01 00:01:50.000',inf),('1970-01-01 00:02:00.000',inf),('1970-01-01 00:02:20.000',inf)]"],
+            ["[('size','xl')]", "[('1970-01-01 00:01:50.000',inf),('1970-01-01 00:02:30.000',inf)]"],
+        ],
+    )
+
+    do_query_test(
+        "(quantile(-0.5, last_over_time(bar[10])) without (shape))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "-Inf"], [120, "-Inf"], [130, "-Inf"], [150, "-Inf"]]}, {"metric": {"size": "s"}, "values": [[110, "-Inf"], [120, "-Inf"], [140, "-Inf"]]}, {"metric": {"size": "xl"}, "values": [[110, "-Inf"], [150, "-Inf"]]}]}',
+        [
+            ["[('size','l')]", "[('1970-01-01 00:01:50.000',-inf),('1970-01-01 00:02:00.000',-inf),('1970-01-01 00:02:10.000',-inf),('1970-01-01 00:02:30.000',-inf)]"],
+            ["[('size','s')]", "[('1970-01-01 00:01:50.000',-inf),('1970-01-01 00:02:00.000',-inf),('1970-01-01 00:02:20.000',-inf)]"],
+            ["[('size','xl')]", "[('1970-01-01 00:01:50.000',-inf),('1970-01-01 00:02:30.000',-inf)]"],
+        ],
+    )
+
+    # Out-of-range phi over a nonexistent metric still yields an empty result.
+    do_query_test(
+        "quantile(1.5, nonexistent_metric_name)[50:10]",
+        150,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
+    # A runtime scalar phi (a scalar subquery instead of a literal) must follow the same
+    # out-of-range rules; its value is not known when the query is converted to SQL,
+    # so the out-of-range check happens at runtime.
+    do_query_test(
+        "quantile(scalar(vector(-0.5)), bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "-inf"]],
+    )
+
+    do_query_test(
+        "quantile(scalar(vector(1.5)), bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "+Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "inf"]],
+    )
+
+    # An in-range runtime scalar phi must keep behaving exactly like the literal phi:
+    # bar at t=120 is [8, 9, 16, 40], so the inclusive median is 12.5.
+    do_query_test(
+        "quantile(0.5, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "12.5"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "12.5"]],
+    )
+
+    do_query_test(
+        "quantile(scalar(vector(0.5)), bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "12.5"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "12.5"]],
+    )
+
+    # The `scalar(vector(<literal>))` phi above is converted to a constant before the
+    # query runs (`vector` and `scalar` pass a constant literal through unchanged), so
+    # those tests exercise the same constant path as a plain literal phi. Binary scalar
+    # arithmetic, however, is never constant-folded by the converter - it always becomes
+    # a scalar subquery - so the following tests provably execute the runtime
+    # out-of-range check.
+    do_query_test(
+        "quantile(scalar(vector(time())) * 0 - 0.5, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "-inf"]],
+    )
+
+    do_query_test(
+        "quantile(scalar(vector(time())) * 0 + 1.5, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "+Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "inf"]],
+    )
+
+    do_query_test(
+        "quantile(scalar(vector(time())) * 0 + NaN, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "quantile(scalar(vector(time())) * 0 + 0.5, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "12.5"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "12.5"]],
+    )
+
+    # A phi computed from stored data cannot be known before the query runs:
+    # http_errors{http_code="404"} is a single series with value 5 at t=120,
+    # so phi = 5 - 5.5 = -0.5 (out of range) and phi = 5 / 10 = 0.5 (in range).
+    do_query_test(
+        'quantile(scalar(http_errors{http_code="404"}) - 5.5, bar)',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "-inf"]],
+    )
+
+    do_query_test(
+        'quantile(scalar(http_errors{http_code="404"}) / 10, bar)',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "12.5"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "12.5"]],
+    )
+
+    # The runtime out-of-range check must also keep the input time grid when the
+    # quantile is evaluated at multiple steps (same grid as the phi NaN test above).
+    do_query_test(
+        "quantile(0 - 0.5, last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "-Inf"], [120, "-Inf"], [130, "-Inf"], [140, "-Inf"], [150, "-Inf"]]}]}',
+        [["[]", "[('1970-01-01 00:01:50.000',-inf),('1970-01-01 00:02:00.000',-inf),('1970-01-01 00:02:10.000',-inf),('1970-01-01 00:02:20.000',-inf),('1970-01-01 00:02:30.000',-inf)]"]],
+    )
+
     # FIXME: quantile with phi depending on timestamp is not implemented yet.
     # phi = scalar(time()) / 200 varies per subquery step: 0.55, 0.60, 0.65, 0.70, 0.75.
     # do_query_test(
@@ -3671,6 +3821,40 @@ def test_histogram_quantile():
         300,
         '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "NaN"]}]}',
         [["[('job','api')]", "1970-01-01 00:05:00.000", "nan"]],
+    )
+
+    # Input series without a parsable `le` label are silently dropped (matching
+    # Prometheus), so a pure non-histogram input produces an empty result.
+    do_query_test(
+        "histogram_quantile(0.9, foo)",
+        300,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # ... even when phi is out of range: the series are dropped before the
+    # out-of-range short-circuit, so no -Inf/+Inf output appears for them.
+    do_query_test(
+        "histogram_quantile(1.5, foo)",
+        300,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Mixed input: series with a parsable `le` are processed, the rest are dropped.
+    do_query_test(
+        'histogram_quantile(0.5, {__name__=~"http_request_duration_seconds_bucket|foo"})',
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "0.5"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "0.5"]],
+    )
+
+    # Mixed input with an out-of-range phi: only the histogram part produces -Inf.
+    do_query_test(
+        'histogram_quantile(-0.5, {__name__=~"http_request_duration_seconds_bucket|foo"})',
+        300,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [300, "-Inf"]}]}',
+        [["[('job','api')]", "1970-01-01 00:05:00.000", "-inf"]],
     )
 
     # Type validation: second argument must be an instant vector.

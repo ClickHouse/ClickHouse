@@ -98,6 +98,7 @@
         "clickstack/service-maps",
         "clickstack/features/session-replay",
         "clickstack/mcp",
+        "clickstack/url-parameters",
         {
           "group": "Demo days",
           "pages": [

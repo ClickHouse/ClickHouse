@@ -1,6 +1,6 @@
 {
   "version": 6,
-  "settings": 521,
+  "settings": 523,
   "anchorRoutes": {
     "abort_on_logical_error": "/reference/settings/server-settings/settings/other",
     "access_control_improvements": "/reference/settings/server-settings/settings/access-control",
@@ -68,6 +68,7 @@
     "cpu_slot_preemption_timeout_ms": "/reference/settings/server-settings/settings/cpu-slot",
     "cpu_slot_quantum_ns": "/reference/settings/server-settings/settings/cpu-slot",
     "crash_log": "/reference/settings/server-settings/settings/other",
+    "create_union_system_log_tables": "/reference/settings/server-settings/settings/other",
     "custom_cached_disks_base_directory": "/reference/settings/server-settings/settings/custom",
     "custom_settings_prefixes": "/reference/settings/server-settings/settings/custom",
     "database_atomic_delay_before_drop_table_sec": "/reference/settings/server-settings/settings/other",
@@ -310,6 +311,7 @@
     "mutation_workload": "/reference/settings/server-settings/settings/other",
     "mysql_port": "/reference/settings/server-settings/settings/mysql",
     "mysql_require_secure_transport": "/reference/settings/server-settings/settings/mysql",
+    "named_collections_storage.type": "/reference/settings/server-settings/settings/other",
     "oom_canary_enable": "/reference/settings/server-settings/settings/oom-canary",
     "oom_canary_initial_backoff_seconds": "/reference/settings/server-settings/settings/oom-canary",
     "oom_canary_max_backoff_seconds": "/reference/settings/server-settings/settings/oom-canary",
@@ -1369,13 +1371,13 @@
       "path": "/reference/settings/server-settings/settings/background",
       "label": "background_*",
       "settings": 8,
-      "characters": 3635
+      "characters": 3665
     },
     {
       "path": "/reference/settings/server-settings/settings/background-merges",
       "label": "background_merges_*",
       "settings": 2,
-      "characters": 2268
+      "characters": 2308
     },
     {
       "path": "/reference/settings/server-settings/settings/background-schedule",
@@ -1423,7 +1425,7 @@
       "path": "/reference/settings/server-settings/settings/database-catalog",
       "label": "database_catalog_*",
       "settings": 5,
-      "characters": 2494
+      "characters": 2538
     },
     {
       "path": "/reference/settings/server-settings/settings/database-replicated",
@@ -1447,7 +1449,7 @@
       "path": "/reference/settings/server-settings/settings/dictionaries",
       "label": "dictionaries_*",
       "settings": 3,
-      "characters": 1443
+      "characters": 1446
     },
     {
       "path": "/reference/settings/server-settings/settings/disable",
@@ -1477,7 +1479,7 @@
       "path": "/reference/settings/server-settings/settings/distributed-ddl",
       "label": "distributed_ddl_*",
       "settings": 2,
-      "characters": 3083
+      "characters": 3093
     },
     {
       "path": "/reference/settings/server-settings/settings/dns-allow",
@@ -1663,7 +1665,7 @@
       "path": "/reference/settings/server-settings/settings/max",
       "label": "max_*",
       "settings": 25,
-      "characters": 9915
+      "characters": 10033
     },
     {
       "path": "/reference/settings/server-settings/settings/max-backups",
@@ -1675,7 +1677,7 @@
       "path": "/reference/settings/server-settings/settings/max-concurrent",
       "label": "max_concurrent_*",
       "settings": 3,
-      "characters": 1656
+      "characters": 1701
     },
     {
       "path": "/reference/settings/server-settings/settings/max-database",
@@ -1765,7 +1767,7 @@
       "path": "/reference/settings/server-settings/settings/max-thread",
       "label": "max_thread_*",
       "settings": 2,
-      "characters": 996
+      "characters": 1007
     },
     {
       "path": "/reference/settings/server-settings/settings/max-view",
@@ -1789,7 +1791,7 @@
       "path": "/reference/settings/server-settings/settings/merges-mutations",
       "label": "merges_mutations_*",
       "settings": 2,
-      "characters": 1132
+      "characters": 1166
     },
     {
       "path": "/reference/settings/server-settings/settings/min",
@@ -1807,7 +1809,7 @@
       "path": "/reference/settings/server-settings/settings/mysql",
       "label": "mysql_*",
       "settings": 2,
-      "characters": 733
+      "characters": 745
     },
     {
       "path": "/reference/settings/server-settings/settings/oom-canary",
@@ -1873,7 +1875,7 @@
       "path": "/reference/settings/server-settings/settings/postgresql",
       "label": "postgresql_*",
       "settings": 2,
-      "characters": 783
+      "characters": 800
     },
     {
       "path": "/reference/settings/server-settings/settings/prefetch-threadpool",
@@ -1891,7 +1893,7 @@
       "path": "/reference/settings/server-settings/settings/query",
       "label": "query_*",
       "settings": 6,
-      "characters": 7536
+      "characters": 8207
     },
     {
       "path": "/reference/settings/server-settings/settings/query-cache-max",
@@ -1909,7 +1911,7 @@
       "path": "/reference/settings/server-settings/settings/remote",
       "label": "remote_*",
       "settings": 2,
-      "characters": 1739
+      "characters": 1763
     },
     {
       "path": "/reference/settings/server-settings/settings/replicated-fetches",
@@ -2035,7 +2037,7 @@
       "path": "/reference/settings/server-settings/settings/total-memory",
       "label": "total_memory_*",
       "settings": 4,
-      "characters": 2264
+      "characters": 2277
     },
     {
       "path": "/reference/settings/server-settings/settings/uncompressed-cache",
@@ -2059,7 +2061,7 @@
       "path": "/reference/settings/server-settings/settings/user",
       "label": "user_*",
       "settings": 4,
-      "characters": 4621
+      "characters": 4642
     },
     {
       "path": "/reference/settings/server-settings/settings/user-defined",
@@ -2094,8 +2096,8 @@
     {
       "path": "/reference/settings/server-settings/settings/other",
       "label": "Other",
-      "settings": 118,
-      "characters": 99451
+      "settings": 120,
+      "characters": 102375
     }
   ]
 }

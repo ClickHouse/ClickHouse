@@ -821,12 +821,69 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
         /// the same finder (it also handles the named-collection form `Remote(named_collection, ...)`).
         findRemoteFunctionSecretArguments();
     }
+    else if (engine_name == "NATS")
+    {
+        /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
+        findNATSTableEngineSecretArguments();
+    }
     else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
     {
         /// JDBC('DSN', database, table)
         /// ODBC('DSN', database, table)
         /// The DSN (connection string) may contain credentials.
         findXDBCSecretArguments();
+    }
+}
+
+void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
+{
+    /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
+    ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
+    ///      [, nats_url = 'nats://user:password@host:4222'], ...)
+    /// The only positional argument the engine accepts is the name of a named collection, so the
+    /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
+    /// separately by `NATS::SETTINGS_TO_HIDE`, and this function masks the same keys the same way:
+    /// the secrets are hidden whole, while `nats_url` keeps everything but its userinfo password.
+    /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
+    for (size_t i = 0; i < function->arguments->size(); ++i)
+    {
+        const auto equals_func = function->arguments->at(i)->getFunction();
+        if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
+            || equals_func->arguments->size() != 2)
+        {
+            /// The engine accepts no positional arguments except the collection name in the first
+            /// position, but it rejects them only after the query has been formatted for logging.
+            /// A malformed positional argument can carry a secret (a credential file path, a url
+            /// with a password), so hide it whole rather than leak it (fail closed).
+            if (i > 0 || !function->arguments->at(i)->isIdentifier())
+                markSecretArgument(i, /* argument_is_named= */ false);
+            continue;
+        }
+
+        String key;
+        if (!equals_func->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
+        {
+            markSecretArgument(i, /* argument_is_named= */ true);
+        }
+        else if (key == "nats_url")
+        {
+            String url;
+            if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
+            {
+                if (maskURIPassword(&url))
+                    result.replaced_arguments[i] = "nats_url = " + quoteString(url);
+            }
+            else
+            {
+                /// A url built from a constant expression can embed credentials in its pieces, which
+                /// we cannot evaluate here; hide it whole rather than leak.
+                markSecretArgument(i, /* argument_is_named= */ true);
+            }
+        }
+        else if (std::find(std::begin(nats_secret_keys), std::end(nats_secret_keys), key) != std::end(nats_secret_keys))
+        {
+            markSecretArgument(i, /* argument_is_named= */ true);
+        }
     }
 }
 

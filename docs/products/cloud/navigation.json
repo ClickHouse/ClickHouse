@@ -21,14 +21,8 @@
                 "products/cloud/reference/supported-regions",
                 "products/cloud/features/infrastructure/deployment-options",
                 "products/cloud/guides/cloud-compatibility",
-                {
-                  "expanded": false,
-                  "group": "Deployment modes",
-                  "pages": [
-                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
-                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
-                  ]
-                }
+                "products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
+                "products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
               ]
             },
             {
@@ -80,25 +74,6 @@
           "$ref": "../bring-your-own-cloud/navigation.json"
         },
         {
-          "group": "Connect and query",
-          "pages": [
-            "products/cloud/features/sql-console-features/sql-console",
-            "products/cloud/guides/sql-console/connection-details",
-            "products/cloud/features/sql-console-features/query-insights",
-            {
-              "expanded": false,
-              "group": "Query API endpoints",
-              "pages": [
-                "products/cloud/features/sql-console-features/query-endpoints",
-                "products/cloud/guides/sql-console/query-endpoints"
-              ]
-            },
-            "products/cloud/features/sql-console-features/dashboards",
-            "products/cloud/features/sql-console-features/user-defined-functions",
-            "products/cloud/features/sql-console-features/clickstack"
-          ]
-        },
-        {
           "group": "Data and integrations",
           "pages": [
             "products/cloud/features/integrations",
@@ -117,6 +92,25 @@
               ]
             },
             "products/cloud/guides/migration/oss-to-cloud-backup-restore"
+          ]
+        },
+        {
+          "group": "Connect and query",
+          "pages": [
+            "products/cloud/features/sql-console-features/sql-console",
+            "products/cloud/guides/sql-console/connection-details",
+            "products/cloud/features/sql-console-features/query-insights",
+            {
+              "expanded": false,
+              "group": "Query API endpoints",
+              "pages": [
+                "products/cloud/features/sql-console-features/query-endpoints",
+                "products/cloud/guides/sql-console/query-endpoints"
+              ]
+            },
+            "products/cloud/features/sql-console-features/dashboards",
+            "products/cloud/features/sql-console-features/user-defined-functions",
+            "products/cloud/features/sql-console-features/clickstack"
           ]
         },
         {
@@ -355,6 +349,9 @@
             "products/cloud/features/support",
             "products/cloud/reference/account-close"
           ]
+        },
+        {
+          "sourceRef": "ClickHouse/airgap-docs"
         }
   ],
   "icon": "/images/icons/icon-clickhouse-cloud.svg",

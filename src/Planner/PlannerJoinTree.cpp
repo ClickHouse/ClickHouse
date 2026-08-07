@@ -2485,8 +2485,6 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
         lookup_reading_step->setAnalyzedResult(nullptr);
         /// Hand-constructed filter dag has same hash key each time, so disable cache
         lookup_reading_step->disableQueryConditionCache();
-        /// initializePipeline is done multiple times concurrently, so not to remove parts snapshot
-        lookup_reading_step->disableMergeTreePartsSnapshotRemoval();
     }
 
     for (const auto & column_name : lookup_plan.getCurrentHeader()->getNames())

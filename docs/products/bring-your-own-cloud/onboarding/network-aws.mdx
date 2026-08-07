@@ -81,14 +81,18 @@ The ClickHouse service should now be accessible from the peered VPC.
 
 To access ClickHouse privately, a private load balancer and endpoint are provisioned for secure connectivity from the user's peered VPC. The private endpoint follows the public endpoint format with a `-private` suffix. For example:
 
-- **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-- **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+- **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+- **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
 
 Optional, after verifying that peering is working, you can request the removal of the public load balancer for ClickHouse BYOC.
 
 ## Set up PrivateLink {#setup-privatelink}
 
 AWS PrivateLink provides a secure and private connection to your ClickHouse BYOC services without the need for VPC peering or internet gateways. All traffic flows within the AWS network, ensuring that it never traverses the public internet.
+
+<Note>
+**Cross-region connections.** The **Enable private link** toggle in the ClickHouse console provisions the endpoint service and covers **same-region** consumers only. AWS disables cross-region access on endpoint services by default, and the ClickHouse console doesn't manage it — if your clients are in a different region, you enable it yourself: the endpoint service lives in your BYOC account, so add the consumer regions to its **Supported regions** list in your own AWS console (see step 3 below). ClickHouse won't change or reset these values. AWS cross-region data transfer rates apply.
+</Note>
 
 <Steps>
 <Step title="Enable private link in ClickHouse console" id="step-1-enable-private-link">
@@ -129,7 +133,7 @@ Make sure the **private load balancer** is turned on as a prerequisite.
 
 7. (Optional) Assign Security groups/Tags.
    <Note>
-   Make sure that ports `443`, `8443`, `9440`, `3306` are allowed in the security group.
+   Make sure that ports `443`, `8443`, and `9440` are allowed in the security group.
    </Note>
 8. Click "Create endpoint", wait a moment for the endpoint to be created.
 9. After creating the endpoint, copy the `Endpoint ID` value — you'll use it in the next step.

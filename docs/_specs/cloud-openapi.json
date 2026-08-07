@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1037333",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1038969",
       "email": "support@clickhouse.com"
     }
   },
@@ -9346,7 +9346,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts": {
       "get": {
         "summary": "ClickStack: List Alerts",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves alerts for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When more records exist than are returned, `meta.total` exceeds `data.length`; clients with large collections must page with `limit`/`offset` to retrieve them all.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves alerts for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When `totalCount` exceeds the number of returned items, page with `limit`/`offset` to retrieve them all.",
         "operationId": "clickStackListAlerts",
         "parameters": [
           {
@@ -9367,6 +9367,27 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1000
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of results to skip before returning.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
             }
           }
         ],
@@ -10594,7 +10615,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks": {
       "get": {
         "summary": "ClickStack: List Webhooks",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves webhooks for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When more records exist than are returned, `meta.total` exceeds `data.length`; clients with large collections must page with `limit`/`offset` to retrieve them all.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves webhooks for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When `totalCount` exceeds the number of returned items, page with `limit`/`offset` to retrieve them all.",
         "operationId": "clickStackListWebhooks",
         "parameters": [
           {
@@ -10615,6 +10636,27 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1000
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of results to skip before returning.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
             }
           }
         ],
@@ -11718,7 +11760,7 @@
     "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/saved-searches": {
       "get": {
         "summary": "ClickStack: List Saved Searches",
-        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves saved searches for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When more records exist than are returned, `meta.total` exceeds `data.length`; clients with large collections must page with `limit`/`offset` to retrieve them all.",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Retrieves saved searches for the authenticated team (paginated). Results are capped at `limit` (default and maximum 1000). When `totalCount` exceeds the number of returned items, page with `limit`/`offset` to retrieve them all.",
         "operationId": "clickStackListSavedSearches",
         "parameters": [
           {
@@ -11739,6 +11781,27 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 1000
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of results to skip before returning.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
             }
           }
         ],
@@ -30553,7 +30616,8 @@
             "enum": [
               "services-per-organization",
               "postgres-services-per-organization",
-              "replicas-per-warehouse"
+              "replicas-per-warehouse",
+              "api-keys-per-organization"
             ],
             "example": "services-per-organization"
           },
