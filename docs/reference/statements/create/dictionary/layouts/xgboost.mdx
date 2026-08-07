@@ -24,7 +24,7 @@ SET enable_xgboost = 1;
 Only `CREATE DICTIONARY` is supported: an `XGBOOST` dictionary defined in a server configuration file fails to load.
 :::
 
-[`predictXGBoost`](/reference/functions/regular-functions/machine-learning-functions#predictXGBoost) is the only way to query the dictionary: it takes the features as individual arguments, returns the prediction, and accepts additional [prediction parameters](#prediction-parameters). The dictionary holds a trained model rather than rows, so the generic dictionary interface — [`dictGet`](/reference/functions/regular-functions/ext-dict-functions#dictGet), `dictHas` and `SELECT * FROM dict` — is not supported and reports an error.
+[`predictXGBoost`](/reference/functions/regular-functions/machine-learning-functions) is the only way to query the dictionary: it takes the features as individual arguments, returns the prediction, and accepts additional [prediction parameters](#prediction-parameters). The dictionary holds a trained model rather than rows, so the generic dictionary interface — [`dictGet`](/reference/functions/regular-functions/ext-dict-functions#dictGet), `dictHas` and `SELECT * FROM dict` — is not supported and reports an error.
 
 ## Quickstart {#quickstart}
 
