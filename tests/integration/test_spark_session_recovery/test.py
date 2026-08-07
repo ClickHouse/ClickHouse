@@ -6,6 +6,7 @@ import threading
 
 import pyspark
 import pyspark.java_gateway
+import pytest
 from pyspark.context import SparkContext
 from pyspark.sql import SparkSession
 
@@ -13,6 +14,10 @@ from helpers import spark_tools
 from helpers.spark_tools import ResilientSparkSession
 
 
+# The deadlock this pins happens inside the Popen constructor, before any call
+# with a timeout of its own, so the test carries its own bound: a regression
+# fails here in seconds instead of stalling the worker for the global 900 s.
+@pytest.mark.timeout(120)
 def test_gateway_launch_does_not_run_python_in_the_forked_child():
     """A gateway launch must not run Python in the forked child.
 
