@@ -65,6 +65,8 @@ struct PushdownGroup
     /// desynchronize expressions that must stay equal, e.g. an aggregation key in the
     /// GROUP BY list and the same expression in the projection.
     bool viable = true;
+    /// Number of `getSubcolumn` occurrences matched into this group.
+    size_t occurrences = 0;
 
     /// Set when the group is applied.
     String new_column_name;
@@ -83,6 +85,11 @@ struct QueryProcessingState
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> eligible_targets;
 
     std::vector<PushdownGroup> groups;
+
+    /// Number of references to each column of the eligible targets, including the column
+    /// arguments of matched `getSubcolumn` occurrences (each occurrence contributes one
+    /// reference, compensated by `PushdownGroup::occurrences` when deciding to apply).
+    std::unordered_map<const IQueryTreeNode *, std::unordered_map<String, size_t>> column_references;
 
     bool collect_candidates = false;
     bool query_has_aggregation = false;
@@ -228,6 +235,16 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
         return;
     }
 
+    if (state.collect_candidates)
+    {
+        if (const auto * column_node = node->as<ColumnNode>())
+        {
+            auto column_source = column_node->getColumnSourceOrNull();
+            if (column_source && state.eligible_targets.contains(column_source.get()))
+                ++state.column_references[column_source.get()][column_node->getColumnName()];
+        }
+    }
+
     if (auto * function_node = node->as<FunctionNode>())
     {
         if (state.collect_candidates)
@@ -248,10 +265,15 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
                             .column_type = match->column_node->getColumnType(),
                             .subcolumn_type = function_node->getResultType(),
                             .viable = true,
+                            .occurrences = 0,
                             .new_column_name = {},
                             .applied = false});
                         group = &state.groups.back();
                     }
+
+                    /// The column argument of the matched occurrence is visited below as a child
+                    /// and counted in column_references; the occurrence counter compensates it.
+                    ++group->occurrences;
 
                     /// All occurrences must have the same types. Types can diverge e.g. when
                     /// group_by_use_nulls wraps an occurrence used as a GROUP BY key into Nullable.
@@ -291,9 +313,20 @@ void collectCandidates(const QueryTreeNodePtr & node, ClauseKind clause_kind, bo
 /// subquery is processed.
 QueryTreeNodePtr buildSubcolumnProjectionNode(const PushdownGroup & group, const QueryTreeNodePtr & inner_node, const ContextPtr & context)
 {
-    const auto * inner_column = inner_node->as<ColumnNode>();
-    if (!inner_column || inner_column->hasExpression())
+    auto * inner_column = inner_node->as<ColumnNode>();
+    if (!inner_column)
         return nullptr;
+
+    /// An exported ALIAS column whose body is just another column of the same table (possibly
+    /// chained) is semantically the underlying storage column, so the subcolumn can be read
+    /// directly from it. Non-trivial expressions (function calls, casts, ARRAY JOIN and
+    /// JOIN USING columns) are rejected by resolveTrivialAliasChain.
+    if (inner_column->hasExpression())
+    {
+        inner_column = resolveTrivialAliasChain(inner_column);
+        if (!inner_column)
+            return nullptr;
+    }
 
     auto inner_source = inner_column->getColumnSourceOrNull();
     if (!inner_source)
@@ -423,7 +456,18 @@ void replaceCandidates(QueryTreeNodePtr & node, QueryProcessingState & state)
         replaceCandidates(child, state);
 }
 
-void processQuery(QueryNode & query_node, QueryProcessingState & state)
+/// Exported projection columns that became unused in the parent query after the rewrite,
+/// per subquery. Such columns are removed by the subsequent RemoveUnusedProjectionColumnsPass,
+/// so when the subquery itself is processed, references inside those dead projection slots
+/// must not count as uses of the whole column (otherwise pushdown through several levels of
+/// subqueries would stop at the first level).
+using PrunedProjectionColumns = std::unordered_map<const IQueryTreeNode *, std::unordered_set<String>>;
+
+void processQuery(
+    QueryNode & query_node,
+    QueryProcessingState & state,
+    const std::unordered_set<String> * pruned_exports,
+    PrunedProjectionColumns & pruned_projection_columns)
 {
     const auto & context = query_node.getContext();
     state.collect_candidates = context->getSettingsRef()[Setting::optimize_push_subcolumns_into_subqueries];
@@ -467,39 +511,92 @@ void processQuery(QueryNode & query_node, QueryProcessingState & state)
         }
     }
 
-    const std::initializer_list<std::pair<QueryTreeNodePtr *, ClauseKind>> clauses = {
-        {&query_node.getJoinTreeNode(), ClauseKind::PreAggregation},
-        {&query_node.getPrewhere(), ClauseKind::PreAggregation},
-        {&query_node.getWhere(), ClauseKind::PreAggregation},
-        {&query_node.getWithNode(), ClauseKind::PostAggregation},
-        {&query_node.getProjectionNode(), ClauseKind::PostAggregation},
-        {&query_node.getGroupByNode(), ClauseKind::PostAggregation},
-        {&query_node.getHaving(), ClauseKind::PostAggregation},
-        {&query_node.getWindowNode(), ClauseKind::PostAggregation},
-        {&query_node.getQualify(), ClauseKind::PostAggregation},
-        {&query_node.getOrderByNode(), ClauseKind::PostAggregation},
-        {&query_node.getInterpolate(), ClauseKind::Interpolate},
-        {&query_node.getLimitByNode(), ClauseKind::PostAggregation},
-        {&query_node.getLimitByLimit(), ClauseKind::PostAggregation},
-        {&query_node.getLimitByOffset(), ClauseKind::PostAggregation},
-        {&query_node.getLimit(), ClauseKind::PostAggregation},
-        {&query_node.getOffset(), ClauseKind::PostAggregation},
+    /// Every clause of the query is traversed, even those that cannot reference columns of the
+    /// JOIN TREE (e.g. LIMIT expressions must be constant): besides collecting candidates, the
+    /// traversal also discovers nested subqueries to process, e.g. a scalar subquery in LIMIT.
+    /// Projection slots whose exported column became unused in the parent query are skipped:
+    /// they are removed by RemoveUnusedProjectionColumnsPass together with everything in them.
+    auto for_each_clause = [&](auto && visit_clause)
+    {
+        visit_clause(query_node.getJoinTreeNode(), ClauseKind::PreAggregation);
+        visit_clause(query_node.getPrewhere(), ClauseKind::PreAggregation);
+        visit_clause(query_node.getWhere(), ClauseKind::PreAggregation);
+        visit_clause(query_node.getWithNode(), ClauseKind::PostAggregation);
+
+        const auto & projection_columns = query_node.getProjectionColumns();
+        auto & projection_nodes = query_node.getProjection().getNodes();
+        for (size_t i = 0; i < projection_nodes.size(); ++i)
+        {
+            if (pruned_exports && i < projection_columns.size() && pruned_exports->contains(projection_columns[i].name))
+                continue;
+            visit_clause(projection_nodes[i], ClauseKind::PostAggregation);
+        }
+
+        visit_clause(query_node.getGroupByNode(), ClauseKind::PostAggregation);
+        visit_clause(query_node.getHaving(), ClauseKind::PostAggregation);
+        visit_clause(query_node.getWindowNode(), ClauseKind::PostAggregation);
+        visit_clause(query_node.getQualify(), ClauseKind::PostAggregation);
+        visit_clause(query_node.getOrderByNode(), ClauseKind::PostAggregation);
+        visit_clause(query_node.getInterpolate(), ClauseKind::Interpolate);
+        visit_clause(query_node.getLimitByNode(), ClauseKind::PostAggregation);
+        visit_clause(query_node.getLimitByLimit(), ClauseKind::PostAggregation);
+        visit_clause(query_node.getLimitByOffset(), ClauseKind::PostAggregation);
+        visit_clause(query_node.getLimit(), ClauseKind::PostAggregation);
+        visit_clause(query_node.getOffset(), ClauseKind::PostAggregation);
     };
 
-    for (const auto & [clause_node, clause_kind] : clauses)
-        collectCandidates(*clause_node, clause_kind, false /*inside_aggregate_function*/, state);
+    for_each_clause([&](QueryTreeNodePtr & clause_node, ClauseKind clause_kind)
+    {
+        collectCandidates(clause_node, clause_kind, false /*inside_aggregate_function*/, state);
+    });
 
     bool any_group_applied = false;
     for (auto & group : state.groups)
     {
-        if (group.viable)
-            any_group_applied |= applyGroup(group);
+        if (!group.viable)
+            continue;
+
+        /// If the whole column is still referenced outside of the replaced occurrences (either
+        /// directly or by an occurrence of a non-viable group), the parent projection column
+        /// stays, and the subquery would read both the whole column and the subcolumn from the
+        /// table. Extracting the subcolumn from the already read column is cheaper, so the
+        /// group is not applied.
+        size_t references = state.column_references[group.source.get()][group.column_name];
+        size_t replaced_references = 0;
+        for (const auto & other_group : state.groups)
+        {
+            if (other_group.viable && other_group.source == group.source && other_group.column_name == group.column_name)
+                replaced_references += other_group.occurrences;
+        }
+        if (references > replaced_references)
+            continue;
+
+        any_group_applied |= applyGroup(group);
     }
 
     if (any_group_applied)
     {
-        for (const auto & [clause_node, _] : clauses)
-            replaceCandidates(*clause_node, state);
+        for_each_clause([&](QueryTreeNodePtr & clause_node, ClauseKind)
+        {
+            replaceCandidates(clause_node, state);
+        });
+
+        /// Record the subquery columns whose references were all replaced: their projection
+        /// slots become unused and are skipped when the subquery itself is processed.
+        for (const auto & [source, columns] : state.column_references)
+        {
+            for (const auto & [column_name, references] : columns)
+            {
+                size_t replaced_references = 0;
+                for (const auto & group : state.groups)
+                {
+                    if (group.applied && group.source.get() == source && group.column_name == column_name)
+                        replaced_references += group.occurrences;
+                }
+                if (replaced_references > 0 && references == replaced_references)
+                    pruned_projection_columns[source].insert(column_name);
+            }
+        }
     }
 }
 
@@ -509,6 +606,7 @@ void PushSubcolumnsIntoSubqueriesPass::run(QueryTreeNodePtr & query_tree_node, C
 {
     QueryTreeNodes nodes_to_visit = {query_tree_node};
     std::unordered_set<const IQueryTreeNode *> visited_nodes;
+    PrunedProjectionColumns pruned_projection_columns;
 
     while (!nodes_to_visit.empty())
     {
@@ -530,7 +628,9 @@ void PushSubcolumnsIntoSubqueriesPass::run(QueryTreeNodePtr & query_tree_node, C
             continue;
 
         QueryProcessingState state;
-        processQuery(*query_node, state);
+        auto pruned_it = pruned_projection_columns.find(query_node);
+        const auto * pruned_exports = pruned_it == pruned_projection_columns.end() ? nullptr : &pruned_it->second;
+        processQuery(*query_node, state, pruned_exports, pruned_projection_columns);
 
         for (const auto & subquery_to_visit : state.subqueries_to_visit)
             nodes_to_visit.push_back(subquery_to_visit);

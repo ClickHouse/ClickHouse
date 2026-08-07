@@ -11,8 +11,8 @@ Output: id, tup.a, tup.b
 1	1	one
 2	2	two
 aliased subquery, whole column and subcolumn
-Output: json, json.a
-Output: json, json.a
+Output: json, getSubcolumn(json, \'a\')
+Output: json
 {"a":1,"b":"x"}	1
 {"a":2,"b":"y"}	2
 aliased subquery over aliased subquery

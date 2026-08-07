@@ -39,8 +39,8 @@ Output: n.null
 0
 1
 whole column and subcolumn
-Output: json, json.a
-Output: json, json.a
+Output: json, getSubcolumn(json, \'a\')
+Output: json
 {"a":1,"b":"x","c":{"d":10}}	1
 {"a":2,"b":"y"}	2
 subcolumn in WHERE
