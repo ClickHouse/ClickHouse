@@ -31,6 +31,7 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [last_processed_path = "",]
     [tracked_files_limit = 1000,]
     [tracked_file_ttl_sec = 0,]
+    [failed_file_ttl_sec = 0,]
     [polling_min_timeout_ms = 1000,]
     [polling_max_timeout_ms = 600000,]
     [polling_backoff_ms = 30000,]
@@ -91,8 +92,8 @@ To get a list of settings, configured for the table, use `system.s3_queue_settin
 **Setting Names (24.7+)**
 
 Starting from version 24.7, S3Queue settings can be specified with or without the `s3queue_` prefix:
-- **Modern syntax** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec`, etc.
-- **Legacy syntax** (all versions): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, etc.
+- **Modern syntax** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec`, `failed_file_ttl_sec`, etc.
+- **Legacy syntax** (all versions): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, `s3queue_failed_file_ttl_sec`, etc.
 
 Both forms are supported in 24.7+. The examples on this page use the modern syntax with no prefix.
 </Info>
@@ -317,6 +318,34 @@ Possible values:
 - Positive integer.
 
 Default value: `0`.
+
+### `failed_file_ttl_sec` {#failed_file_ttl_sec}
+
+Maximum number of seconds to store failed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
+Failed files are files that could not be processed due to parsing errors, schema mismatches, or other exceptions.
+After the specified number of seconds, old failed file entries are automatically removed from ZooKeeper and the in-memory cache by the periodic cleanup task.
+
+<Note>
+This setting only applies to **unordered mode** tables. For ordered mode tables, the setting is ignored and failed files are stored indefinitely.
+</Note>
+
+You can also manually clear all failed files using the [`SYSTEM DROP S3QUEUE FAILED FILES`](/sql-reference/statements/system#drop-s3queue-failed-files) command.
+
+Possible values:
+
+- Positive integer.
+
+Default value: `0` (store forever).
+
+**Example**
+
+```sql
+CREATE TABLE s3_queue_engine_table (name String, value UInt32)
+ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
+SETTINGS
+    mode = 'unordered',
+    failed_file_ttl_sec = 3600;  -- Remove failed files older than 1 hour
+```
 
 ### `cleanup_interval_min_ms` {#cleanup_interval_min_ms}
 
