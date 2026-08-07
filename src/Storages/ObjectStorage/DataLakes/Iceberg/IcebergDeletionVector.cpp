@@ -12,7 +12,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
-#include <Storages/ObjectStorage/DataLakes/PuffinFile.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinFilesCache.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <IO/SeekableReadBuffer.h>
