@@ -1836,6 +1836,14 @@ Chunk StorageFileSource::generate()
                         /// The footer is then parsed directly from the opened bytes.
                         current_file_cache_version.reset();
                         current_file_version_settled = false;
+
+                        /// The size and mtime also come from the pre-open `stat`, and the `_size` /
+                        /// `_time` virtual columns would otherwise expose them alongside data read
+                        /// from a different file generation. No stat of the path can be attributed
+                        /// to the opened bytes anymore, so fail close here too: with the optionals
+                        /// empty the virtual columns are filled with NULL.
+                        current_file_size.reset();
+                        current_file_last_modified.reset();
                     }
                 }
             }
