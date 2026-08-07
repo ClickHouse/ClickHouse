@@ -228,6 +228,8 @@ private:
 
     bool enable_analyzer = false;
 
+    /// Which statistics `EXPLAIN ANALYZE` needs from this join. Comes from the query context through
+    /// the constructor, so every join of the query gets it.
     JoinAnalyzeMode analyze_mode = JoinAnalyzeMode::None;
 
     Names requiredJoinedNames() const;
@@ -269,7 +271,7 @@ private:
 public:
     TableJoin() = default;
 
-    TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
+    TableJoin(const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
     TableJoin(const JoinSettings & settings, bool join_use_nulls_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
 
     /// for StorageJoin
@@ -291,7 +293,6 @@ public:
     void assertEnableAnalyzer() const;
 
     JoinAnalyzeMode analyzeMode() const { return analyze_mode; }
-    void setAnalyzeMode(JoinAnalyzeMode value) { analyze_mode = value; }
 
     bool collectAnalyzeStats() const { return collectsAnalyzeStats(analyze_mode); }
     bool collectExactMatches() const { return collectsExactMatches(analyze_mode); }

@@ -217,8 +217,6 @@ struct QueryPlanOptimizationSettings
 
     bool is_explain;
 
-    JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
-
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;

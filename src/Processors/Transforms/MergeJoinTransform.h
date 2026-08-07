@@ -178,17 +178,10 @@ private:
 };
 
 
-struct AsofRightRowRef
-{
-    size_t chunk_generation = 0;
-    size_t row = 0;
-    bool operator==(const AsofRightRowRef &) const = default;
-};
-
 class AsofJoinState : boost::noncopyable
 {
 public:
-    void set(const FullMergeJoinCursor & rcursor, size_t rpos, size_t chunk_generation);
+    void set(const FullMergeJoinCursor & rcursor, size_t rpos);
     void reset();
 
     bool hasMatch(const FullMergeJoinCursor & cursor, ASOFJoinInequality asof_inequality) const
@@ -200,7 +193,7 @@ public:
 
     JoinKeyRow key;
     Chunk value;
-    AsofRightRowRef value_ref;
+    size_t value_row = 0;
 };
 
 /*
@@ -286,8 +279,6 @@ private:
     std::optional<Status> handleAsofJoinState();
     Status asofJoin();
 
-    void countAsofMatch(AsofRightRowRef right_ref);
-
     void getEmptyResultColumns(MutableColumns & result_cols, size_t pos) const;
     MutableColumns getEmptyResultColumns() const;
     Columns getEmptyResultColumns(size_t pos) const;
@@ -310,7 +301,6 @@ private:
     AnyJoinState any_join_state;
     std::unique_ptr<AllJoinState> all_join_state;
     AsofJoinState asof_join_state;
-    std::optional<AsofRightRowRef> last_asof_matched_right;
 
     JoinKind kind;
     JoinStrictness strictness;

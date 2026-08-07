@@ -329,11 +329,11 @@ void AnyJoinState::setValue(Chunk value_)
 bool AnyJoinState::empty() const { return keys[0].row.empty() && keys[1].row.empty(); }
 
 
-void AsofJoinState::set(const FullMergeJoinCursor & rcursor, size_t rpos, size_t chunk_generation)
+void AsofJoinState::set(const FullMergeJoinCursor & rcursor, size_t rpos)
 {
     key = JoinKeyRow(rcursor, rpos);
     value = rcursor.getCurrent().clone();
-    value_ref = {chunk_generation, rpos};
+    value_row = rpos;
 }
 
 void AsofJoinState::reset()
@@ -756,9 +756,9 @@ std::optional<MergeJoinAlgorithm::Status> MergeJoinAlgorithm::handleAsofJoinStat
         for (const auto & col : left_columns)
             result_cols[i++]->insertFrom(*col, left_cursor.getRow());
         for (const auto & col : asof_join_state.value.getColumns())
-            result_cols[i++]->insertFrom(*col, asof_join_state.value_ref.row);
+            result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
         chassert(i == result_cols.size());
-        countAsofMatch(asof_join_state.value_ref);
+        ++stat.matched_rows.left;
         left_cursor.next();
     }
 
@@ -1036,19 +1036,13 @@ JoinAnalysisCounters MergeJoinAlgorithm::getJoinAnalysisCounters() const
     counters.left_rows = stat.num_rows[0];
     counters.right_rows = stat.num_rows[1];
     counters.matched_left = stat.matched_rows.left;
-    counters.matched_right = stat.matched_rows.right;
+
+    /// `ASOF` visits only the nearest right row of a key group, not every right row that satisfies
+    /// the `ON` condition, so the right side cannot be counted.
+    if (strictness != JoinStrictness::Asof)
+        counters.matched_right = stat.matched_rows.right;
 
     return counters;
-}
-
-void MergeJoinAlgorithm::countAsofMatch(AsofRightRowRef right_ref)
-{
-    ++stat.matched_rows.left;
-    if (last_asof_matched_right != right_ref)
-    {
-        ++stat.matched_rows.right;
-        last_asof_matched_right = right_ref;
-    }
 }
 
 MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
@@ -1097,7 +1091,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 for (const auto & col : right_columns)
                     result_cols[i++]->insertFrom(*col, rpos);
                 chassert(i == result_cols.size());
-                countAsofMatch({stat.num_blocks[1], rpos});
+                ++stat.matched_rows.left;
 
                 left_cursor.next();
                 continue;
@@ -1114,7 +1108,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
              || (asof_inequality == ASOFJoinInequality::GreaterOrEquals && asof_cmp >= 0))
             {
                 /// condition is satisfied, remember this row and move next to try to find better match
-                asof_join_state.set(right_cursor, rpos, stat.num_blocks[1]);
+                asof_join_state.set(right_cursor, rpos);
                 right_cursor.next();
                 continue;
             }
@@ -1128,9 +1122,9 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                     for (const auto & col : left_columns)
                         result_cols[i++]->insertFrom(*col, lpos);
                     for (const auto & col : asof_join_state.value.getColumns())
-                        result_cols[i++]->insertFrom(*col, asof_join_state.value_ref.row);
+                        result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
                     chassert(i == result_cols.size());
-                    countAsofMatch(asof_join_state.value_ref);
+                    ++stat.matched_rows.left;
                 }
                 else
                 {
@@ -1160,9 +1154,9 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 for (const auto & col : left_columns)
                     result_cols[i++]->insertFrom(*col, lpos);
                 for (const auto & col : asof_join_state.value.getColumns())
-                    result_cols[i++]->insertFrom(*col, asof_join_state.value_ref.row);
+                    result_cols[i++]->insertFrom(*col, asof_join_state.value_row);
                 chassert(i == result_cols.size());
-                countAsofMatch(asof_join_state.value_ref);
+                ++stat.matched_rows.left;
                 left_cursor.next();
                 continue;
             }
@@ -1275,6 +1269,12 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
     if (auto result = handleAsofJoinState())
         return std::move(*result);
 
+    /// The paths below that drop rows instead of emitting them are the only chance to count a
+    /// dropped equal range that continues an already matched one. Only `ANY` needs it: it is the
+    /// only strictness that carries such a range in `any_join_state.matched`, while `ALL` and
+    /// `ASOF` close theirs in handleAllJoinState/handleAsofJoinState right above.
+    const bool count_discarded_matches = collectsAnalyzeStats(analyze_mode) && strictness == JoinStrictness::Any;
+
     if (cursors[0].fullyCompleted() || cursors[1].fullyCompleted())
     {
         if (!cursors[0].fullyCompleted() && isLeftOrFull(kind))
@@ -1283,9 +1283,9 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         if (!cursors[1].fullyCompleted() && isRightOrFull(kind))
             return Status(createBlockWithDefaults(1));
 
-        if (cursors[0].isValid())
+        if (count_discarded_matches && cursors[0].isValid())
             consumeEqualRange(cursors[0], any_join_state.matched.left, stat.matched_rows.left);
-        if (cursors[1].isValid())
+        if (count_discarded_matches && cursors[1].isValid())
             consumeEqualRange(cursors[1], any_join_state.matched.right, stat.matched_rows.right);
         return Status({}, true);
     }
@@ -1297,7 +1297,8 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         {
             if (isLeftOrFull(kind))
                 return Status(createBlockWithDefaults(0));
-            consumeEqualRange(cursors[0], any_join_state.matched.left, stat.matched_rows.left);
+            if (count_discarded_matches)
+                consumeEqualRange(cursors[0], any_join_state.matched.left, stat.matched_rows.left);
             cursors[0].setChunk(Chunk());
             return Status(0);
         }
@@ -1306,7 +1307,8 @@ IMergingAlgorithm::Status MergeJoinAlgorithm::merge()
         {
             if (isRightOrFull(kind))
                 return Status(createBlockWithDefaults(1));
-            consumeEqualRange(cursors[1], any_join_state.matched.right, stat.matched_rows.right);
+            if (count_discarded_matches)
+                consumeEqualRange(cursors[1], any_join_state.matched.right, stat.matched_rows.right);
             cursors[1].setChunk(Chunk());
             return Status(1);
         }

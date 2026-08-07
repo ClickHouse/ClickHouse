@@ -837,7 +837,7 @@ Enabling [`any_join_distinct_right_table_keys`](/reference/settings/session-sett
 
 The [`Join`](/reference/engines/table-engines/special/join) table engine follows the same table, using the kind and strictness declared in the engine: `Join(ALL, INNER, …)` reports both sides, `Join(ANY, LEFT, …)` neither.
 
-**Merge algorithms.** `full_sorting_merge` and `parallel_full_sorting_merge` report **both** sides for every combination they accept, and without `matches = 1` — they walk the two sorted inputs and see every row of an equal range as they consume it, so nothing has to be reconstructed afterwards. They accept the four `ALL` kinds, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` and `ASOF LEFT`.
+**Merge algorithms.** `full_sorting_merge` and `parallel_full_sorting_merge` accept the four `ALL` kinds, `ANY INNER`, `ANY LEFT`, `ANY RIGHT`, `ASOF` and `ASOF LEFT`. They report **both** sides for every kind except `ASOF` and `ASOF LEFT`, where the right side is `not collected`, and without `matches = 1` — they walk the two sorted inputs and see every row of an equal range as they consume it, so nothing has to be reconstructed afterwards.
 
 `partial_merge` accepts `ALL INNER`, `ALL LEFT`, `ALL RIGHT`, `ALL FULL`, `ANY INNER`, `ANY LEFT` and `SEMI LEFT`. It reports both sides for the four `ALL` kinds, the right one with `matches = 1`; for `ANY INNER`, `ANY LEFT` and `SEMI LEFT` the right side is `not collected`.
 
@@ -879,7 +879,7 @@ Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> ·
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```
 
-- `size <right_size>` — the in-memory size of the buffered right table.
+- `size <right_size>` — the memory size of the blocks of right table.
 - `blocks <right_blocks>` — the number of blocks the right table was buffered into.
 - `storage <in-memory|external>` — whether the right table fit into memory (`in-memory`) or had to be spilled to disk (`external`). When it is `external`, an extra `spilled <spilled_bytes>` reports the compressed bytes written to disk.
 - `sort time <sort_time>` — the time spent sorting the right table (on the build stage) and each incoming left block (on the probe stage).
