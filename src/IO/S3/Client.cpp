@@ -1131,6 +1131,12 @@ void ClientCache::clearCache()
     }
 }
 
+ClientCacheRegistry & ClientCacheRegistry::instance()
+{
+    static ClientCacheRegistry registry;
+    return registry;
+}
+
 void ClientCacheRegistry::registerClient(const std::shared_ptr<ClientCache> & client_cache)
 {
     std::lock_guard lock(clients_mutex);

@@ -93,6 +93,13 @@ static String formatCodecChoices(RandomGenerator & rg, const DB::Strings & choic
             }
             res += ")";
         }
+        else if (choices[i] == "ZXC" && rg.nextBool())
+        {
+            /// Optional compression level, 1 (fastest) to 7 (max density); default is 3.
+            res += "(";
+            res += std::to_string(rg.randomInt<uint32_t>(1, 7));
+            res += ")";
+        }
         else if ((choices[i] == "Delta" || choices[i] == "DoubleDelta") && rg.nextBool())
         {
             res += "(";
@@ -142,6 +149,36 @@ static String formatCodecChoices(RandomGenerator & rg, const DB::Strings & choic
             res += rg.pickRandomly(sz3_error_modes);
             res += "', ";
             res += rg.pickRandomly(sz3_error_values);
+            res += ")";
+        }
+        else if (choices[i] == "Quantized")
+        {
+            /// Vector-quantization codec, only for Array(Float32/Float64/BFloat16); arguments are mandatory.
+            /// Quantized('<method>', dimensions[, ...]); dimensions is a multiple of 8 so every method accepts it.
+            static const DB::Strings quant_methods = {"turboquant", "rabitq", "int8", "prefix", "product"};
+            const String method = rg.pickRandomly(quant_methods);
+            const uint32_t dimensions = rg.randomInt<uint32_t>(1, 64) * 8;
+
+            res += "('";
+            res += method;
+            res += "', ";
+            res += std::to_string(dimensions);
+            if (method == "prefix")
+            {
+                /// leading dimensions in [1, dimensions], then format 'int8' or 'bf16'.
+                res += ", ";
+                res += std::to_string(rg.randomInt<uint32_t>(1, dimensions));
+                res += rg.nextBool() ? ", 'int8'" : ", 'bf16'";
+            }
+            else if (method == "product")
+            {
+                /// nbits in [1, 16] (capped at 8 to keep the codebook within limits), m > 0 dividing dimensions.
+                static const std::vector<uint32_t> subspaces = {1, 2, 4, 8};
+                res += ", ";
+                res += std::to_string(rg.randomInt<uint32_t>(1, 8));
+                res += ", ";
+                res += std::to_string(rg.pickRandomly(subspaces));
+            }
             res += ")";
         }
     }
@@ -201,7 +238,7 @@ static const SQLType * leafType(const SQLType * tp)
 }
 
 /// General-purpose compression codecs: work on any column type.
-static const DB::Strings kGeneralCodecs = {"LZ4", "LZ4HC", "ZSTD", "NONE", "AES_128_GCM_SIV", "AES_256_GCM_SIV"};
+static const DB::Strings kGeneralCodecs = {"LZ4", "LZ4HC", "ZSTD", "ZXC", "NONE", "AES_128_GCM_SIV", "AES_256_GCM_SIV"};
 
 String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
 {
@@ -248,6 +285,14 @@ String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
             /// Delta works for Decimal32/64; for wider precisions it may fail but is rare enough.
             pool.emplace_back("Delta");
             break;
+        case SQLTypeClass::ARRAY: {
+            /// The Quantized (vector quantization) codec applies only to Array(Float32/Float64/BFloat16),
+            /// i.e. an array whose element is a bare Float (a Nullable/LowCardinality element is rejected).
+            const auto * subtype = static_cast<const ArrayType *>(leaf)->subtype.get();
+            if (subtype && subtype->getTypeClass() == SQLTypeClass::FLOAT)
+                pool.emplace_back("Quantized");
+            break;
+        }
         default:
             /// Other types just support general-purpose codecs
             break;
@@ -445,6 +490,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_use_projections", trueOrFalseSetting},
        {"parallel_non_joined_rows_processing", trueOrFalseSetting},
        {"parallel_replicas_only_with_analyzer", trueOrFalseSetting},
+       {"parallel_replicas_plan_based", trueOrFalseSetting},
        {"parallel_replicas_prefer_local_join", trueOrFalseSetting},
        {"parallel_replicas_prefer_local_replica", trueOrFalseSetting},
        {"parallel_view_processing", trueOrFalseSetting},
@@ -621,6 +667,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          false)},
     {"analyze_index_with_space_filling_curves", trueOrFalseSetting},
     {"analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested", trueOrFalseSettingNoOracle},
+    {"analyzer_compatibility_allow_non_aggregate_in_having", trueOrFalseSettingNoOracle},
     {"analyzer_compatibility_join_using_top_level_identifier", trueOrFalseSetting},
     {"analyzer_compatibility_prefer_alias_over_subcolumn", trueOrFalseSettingNoOracle},
     {"analyzer_inline_views", trueOrFalseSetting},
@@ -974,6 +1021,11 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"iceberg_expire_default_min_snapshots_to_keep",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); }, {}, false)},
+    {"iceberg_manifest_min_count_to_compact",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
+         {"0", "1", "10", "30", "100"},
+         false)},
     {"iceberg_metadata_compression_method",
      CHSetting([](RandomGenerator & rg, FuzzConfig &) { return "'" + rg.pickRandomly(compressionMethods) + "'"; }, {}, false)},
     {"iceberg_metadata_log_level",
@@ -1008,7 +1060,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_arrow_allow_missing_columns", trueOrFalseSettingNoOracle},
     {"input_format_arrow_case_insensitive_column_matching", trueOrFalseSettingNoOracle},
     {"input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalseSettingNoOracle},
-    {"input_format_arrow_use_native_reader", trueOrFalseSetting},
     {"input_format_avro_allow_missing_fields", trueOrFalseSettingNoOracle},
     {"input_format_avro_null_as_default", trueOrFalseSettingNoOracle},
     {"input_format_binary_read_json_as_string", trueOrFalseSettingNoOracle},
@@ -1331,7 +1382,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_arrow_string_as_string", trueOrFalseSettingNoOracle},
     {"output_format_arrow_unsupported_types_as_binary", trueOrFalseSettingNoOracle},
     {"output_format_arrow_use_64_bit_indexes_for_dictionary", trueOrFalseSettingNoOracle},
-    {"output_format_arrow_use_native_writer", trueOrFalseSetting},
     {"output_format_arrow_use_signed_indexes_for_dictionary", trueOrFalseSettingNoOracle},
     {"output_format_avro_codec",
      CHSetting(
@@ -1768,6 +1818,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
     {"use_text_index_header_cache", trueOrFalseSetting},
     {"use_text_index_like_evaluation_by_dictionary_scan", trueOrFalseSetting},
+    {"use_text_index_negative_tokens_cache", trueOrFalseSetting},
     {"use_text_index_postings_cache", trueOrFalseSetting},
     {"use_text_index_tokens_cache", trueOrFalseSetting},
     {"use_uncompressed_cache", trueOrFalseSettingNoOracle},
@@ -1798,6 +1849,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<double>(0.2, 0.2, 1.0, 10.0)); },
          {"1", "1.5", "2", "3", "5", "10"},
          true)},
+    {"vector_search_use_quantized_codes", trueOrFalseSettingNoOracle},
     {"vector_search_with_rescoring", trueOrFalseSettingNoOracle},
     {"wait_changes_become_visible_after_commit_mode",
      CHSetting(
@@ -1860,6 +1912,18 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     if (fc.allow_transactions)
     {
         serverSettings.insert({{"implicit_transaction", trueOrFalseSettingNoOracle}});
+    }
+    if (!fc.dolor_server.has_value())
+    {
+        /// Dolor writes whole-file snappy File tables in the basic/Hadoop framing (the server
+        /// default), so flipping the decode mode would fail every read of them. Randomize only
+        /// when dolor is not in use; the oracle values would flip it behind the tables' back too.
+        serverSettings.insert(
+            {{"snappy_mode",
+              CHSetting(
+                  [](RandomGenerator & rg, FuzzConfig &) { return rg.nextBool() ? "'basic'" : "'framed'"; },
+                  {"'basic'", "'framed'"},
+                  false)}});
     }
 
     /// NonZeroUInt64 byte-size settings — must not receive 0
@@ -1983,6 +2047,8 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
            "output_format_pretty_max_rows",
            "parts_to_delay_insert",
            "parts_to_throw_insert",
+           "dead_blobs_to_delay_insert",
+           "dead_blobs_to_throw_insert",
            "query_cache_max_entries",
            "query_cache_min_query_runs",
            "page_cache_lookahead_blocks",
