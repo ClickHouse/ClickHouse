@@ -1,0 +1,28 @@
+kring throw: stopped within bound
+kring break: stopped within bound
+hexring throw: stopped within bound
+hexring break: stopped within bound
+line throw: stopped within bound
+line break: stopped within bound
+line_sizing throw: stopped within bound
+line_sizing break: stopped within bound
+tochildren throw: stopped within bound
+tochildren break: stopped within bound
+line kill returned promptly
+[644325529233966354,644325529233966355,644325529233966497,644325529233966504,644325529233966508,644325529233966509,644325529233966510]
+[644325529233966354,644325529233966355,644325529233966497,644325529233966504,644325529233966509,644325529233966510]
+[621807531097128959]
+[621807531097096191,621807531097128959,621807531097161727,621807531097194495,621807531097227263,621807531097260031,621807531097292799]
+140000
+120000
+346180
+200000
+140000
+1000000	0
+1000000	0
+1000000	0
+1000000	0
+stored kring: stopped within bound
+stored hexring: stopped within bound
+stored line: stopped within bound
+stored tochildren: stopped within bound

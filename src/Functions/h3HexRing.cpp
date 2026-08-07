@@ -10,7 +10,10 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 namespace DB
 {
@@ -21,6 +24,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -66,6 +70,17 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        /// See h3kRing.cpp for why the element is resolved per call and why the throttle counts items.
+        QueryStatusPtr process_list_element;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            process_list_element = query_context->getProcessListElementSafe();
+
+        auto check_query_time_limit = [&]
+        {
+            if (process_list_element && !process_list_element->checkTimeLimit())
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
+        };
+
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
             argument.column = argument.column->convertToFullColumnIfConst();
@@ -128,14 +143,26 @@ public:
         /// Allocate based on total size of arrays for all rows
         dst_data.getData().resize(current_offset);
 
-        /// Fill the array for each row with known size
+        /// Fill the array for each row with known size. The sizing loop above deliberately gets no
+        /// checkpoint: it is `6 * k` arithmetic plus a cell validation, so reaching even 1.6x a one
+        /// second deadline there took 80 million rows, past the memory a test may use.
         auto* ptr = dst_data.getData().data();
         current_offset = 0;
+        static constexpr UInt64 items_between_cancellation_checks = 100'000;
+        UInt64 items_since_check = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const H3Index origin_hindex = data_hindex[row];
             const int k = data_k[row];
             const auto size = dst_offsets[row] - current_offset;
+
+            items_since_check += std::max<UInt64>(1, size);
+            if (items_since_check >= items_between_cancellation_checks)
+            {
+                items_since_check = 0;
+                check_query_time_limit();
+            }
+
             if (size == 0)
                 continue;
 

@@ -9,9 +9,12 @@
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace DB
@@ -22,6 +25,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -67,6 +71,20 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        /// Resolved from the executing thread rather than captured: this instance can be stored in table
+        /// metadata and then run by any later query.
+        QueryStatusPtr process_list_element;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            process_list_element = query_context->getProcessListElementSafe();
+
+        /// `checkTimeLimit` returns false rather than throwing under the `break` overflow mode, but a
+        /// half-built array is a wrong value rather than a shorter one, so it becomes a throw here too.
+        auto check_query_time_limit = [&]
+        {
+            if (process_list_element && !process_list_element->checkTimeLimit())
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
+        };
+
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
             argument.column = argument.column->convertToFullColumnIfConst();
@@ -101,8 +119,20 @@ public:
         dst_offsets.resize(input_rows_count);
         auto current_offset = 0;
 
+        /// A whole block runs inside one `executeImpl` call, so the pipeline's between-blocks cancellation
+        /// check cannot interrupt it. Throttle on accumulated output items rather than rows, counting each
+        /// row as at least one: one row holds up to 300030001 items, and a row with an invalid cell none.
+        static constexpr UInt64 items_between_cancellation_checks = 100'000;
+        UInt64 items_since_check = 0;
+
         for (size_t row = 0; row < input_rows_count; ++row)
         {
+            if (++items_since_check >= items_between_cancellation_checks)
+            {
+                items_since_check = 0;
+                check_query_time_limit();
+            }
+
             const H3Index origin_hindex = data_hindex[row];
             const int k = data_k[row];
 
@@ -125,6 +155,7 @@ public:
             int64_t disk_size = 0;
             maxGridDiskSize(k, &disk_size);
             const auto vec_size = static_cast<size_t>(disk_size);
+            items_since_check += vec_size;
             VectorWithMemoryTracking<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());

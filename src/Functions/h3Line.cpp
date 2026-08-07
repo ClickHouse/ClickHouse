@@ -8,8 +8,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace DB
@@ -19,6 +22,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -62,6 +66,17 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        /// See h3kRing.cpp for why the element is resolved per call and why the throttle counts items.
+        QueryStatusPtr process_list_element;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            process_list_element = query_context->getProcessListElementSafe();
+
+        auto check_query_time_limit = [&]
+        {
+            if (process_list_element && !process_list_element->checkTimeLimit())
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
+        };
+
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
             argument.column = argument.column->convertToFullColumnIfConst();
@@ -94,10 +109,20 @@ public:
         auto & dst_offsets = dst->getOffsets();
         dst_offsets.resize(input_rows_count);
 
-        /// First calculate array sizes for all rows and save them in Offsets
+        /// First calculate array sizes for all rows and save them in Offsets. Unlike h3HexRing, this loop
+        /// needs a checkpoint of its own: `gridPathCellsSize` walks the grid and is not free even for a
+        /// distance of zero, so the sizing pass alone can outlast a deadline many times over.
+        static constexpr UInt64 items_between_cancellation_checks = 100'000;
+        UInt64 items_since_check = 0;
         UInt64 current_offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
+            if (++items_since_check >= items_between_cancellation_checks)
+            {
+                items_since_check = 0;
+                check_query_time_limit();
+            }
+
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
             const bool start_valid = validator.validateCell(start);
@@ -116,6 +141,7 @@ public:
                     "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
                     start, end, err);
 
+            items_since_check += size;
             current_offset += size;
             dst_offsets[row] = current_offset;
         }
@@ -126,11 +152,20 @@ public:
         /// Fill the array for each row with known size
         auto* ptr = dst_data.getData().data();
         current_offset = 0;
+        items_since_check = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
             const auto size = dst_offsets[row] - current_offset;
+
+            items_since_check += std::max<UInt64>(1, size);
+            if (items_since_check >= items_between_cancellation_checks)
+            {
+                items_since_check = 0;
+                check_query_time_limit();
+            }
+
             if (size == 0)
             {
                 continue;

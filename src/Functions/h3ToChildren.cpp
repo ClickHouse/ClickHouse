@@ -8,9 +8,12 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <base/range.h>
 
 static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
@@ -23,6 +26,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_COLUMN;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -66,6 +70,17 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        /// See h3kRing.cpp for why the element is resolved per call and why the throttle counts items.
+        QueryStatusPtr process_list_element;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            process_list_element = query_context->getProcessListElementSafe();
+
+        auto check_query_time_limit = [&]
+        {
+            if (process_list_element && !process_list_element->checkTimeLimit())
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
+        };
+
         auto non_const_arguments = arguments;
         for (auto & argument : non_const_arguments)
             argument.column = argument.column->convertToFullColumnIfConst();
@@ -99,8 +114,17 @@ public:
         dst_offsets.resize(input_rows_count);
         auto current_offset = 0;
 
+        static constexpr UInt64 items_between_cancellation_checks = 100'000;
+        UInt64 items_since_check = 0;
+
         for (size_t row = 0; row < input_rows_count; ++row)
         {
+            if (++items_since_check >= items_between_cancellation_checks)
+            {
+                items_since_check = 0;
+                check_query_time_limit();
+            }
+
             const UInt64 parent_hindex = data_hindex[row];
             const UInt8 child_resolution = data_resolution[row];
 
@@ -125,6 +149,7 @@ public:
                     "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
                     getName(), vec_size, toString(child_resolution));
 
+            items_since_check += vec_size;
             VectorWithMemoryTracking<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             cellToChildren(parent_hindex, child_resolution, hindex_vec.data());
