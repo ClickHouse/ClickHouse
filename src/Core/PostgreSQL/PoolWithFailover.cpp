@@ -57,9 +57,7 @@ auto PoolWithFailover::connectionReestablisher(std::weak_ptr<PoolHolder> pool, s
             }
             catch (const pqxx::broken_connection & pqxx_error)
             {
-                /// Same classification as the foreground `get()` path: a transient transport failure
-                /// is throttled at Warning, a permanent one stays at Error even during background
-                /// reconnect so a misconfiguration remains visible.
+                /// A permanent failure must stay visible even during background reconnect.
                 if (isTransientConnectionError(pqxx_error.what()))
                 {
                     if (interval_milliseconds >= 1000)
@@ -200,10 +198,7 @@ ConnectionHolderPtr PoolWithFailover::get()
                 }
                 catch (const pqxx::broken_connection & pqxx_error)
                 {
-                    /// A transient transport failure (server unreachable / not responding) is logged
-                    /// at Warning and left for the caller to tolerate; anything else (a server-side
-                    /// rejection or unrecognized failure) stays at Error so a permanent misconfiguration
-                    /// remains visible. See `isTransientConnectionError`.
+                    /// A transient failure is left for the caller to tolerate, so it is not an error yet.
                     if (isTransientConnectionError(pqxx_error.what()))
                         LOG_WARNING(log, "Connection error: {}", pqxx_error.what());
                     else

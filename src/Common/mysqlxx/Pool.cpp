@@ -407,9 +407,8 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             || e.errnum() == ER_DBACCESS_DENIED_ERROR
             || e.errnum() == ER_BAD_DB_ERROR;
 
-        /// A transient transport failure is propagated to the caller, who decides how severe
-        /// it is; a permanent misconfiguration (bad credentials, missing database) must stay
-        /// visible as an error even when the caller tolerates the failure (e.g. on ATTACH).
+        /// A transient failure is left for the caller to tolerate (e.g. on ATTACH), so it is not an
+        /// error yet, while a permanent one must stay visible even if the caller tolerates it.
         if (permanent_error)
             LOG_ERROR(log, "Failed to connect to MySQL ({}): {}", description, e.what());
         else

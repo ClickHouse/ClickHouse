@@ -8,9 +8,7 @@
 
 using postgres::isTransientConnectionError;
 
-/// Transient transport failures (server unreachable / not responding) must classify as transient so
-/// the pool logs them at Warning — this is what keeps an unreachable remote from tripping the Upgrade
-/// check. The `127.0.0.1:1` message is the exact libpq wording captured on 26.7.1.1.
+/// The `127.0.0.1:1` message is the exact libpq wording captured on 26.7.1.1.
 TEST(PostgresTransientConnectionError, TransportFailuresAreTransient)
 {
     EXPECT_TRUE(isTransientConnectionError(
@@ -25,8 +23,6 @@ TEST(PostgresTransientConnectionError, TransportFailuresAreTransient)
     EXPECT_TRUE(isTransientConnectionError("could not translate host name \"nosuchhost\" to address: Name or service not known"));
 }
 
-/// Server-side rejections and permanent misconfiguration must NOT be transient, so they keep logging
-/// at Error and stay visible even when the caller tolerates the failure.
 TEST(PostgresTransientConnectionError, ServerRejectionsAreNotTransient)
 {
     EXPECT_FALSE(isTransientConnectionError(
@@ -37,7 +33,6 @@ TEST(PostgresTransientConnectionError, ServerRejectionsAreNotTransient)
         "connection to server at \"127.0.0.1\", port 5432 failed: FATAL:  no pg_hba.conf entry for host \"10.0.0.1\""));
 }
 
-/// Fail loud: an unrecognized message defaults to non-transient (Error), never silently Warning.
 TEST(PostgresTransientConnectionError, UnknownDefaultsToNonTransient)
 {
     EXPECT_FALSE(isTransientConnectionError(""));

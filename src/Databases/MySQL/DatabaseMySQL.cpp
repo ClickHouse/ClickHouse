@@ -76,10 +76,8 @@ namespace ErrorCodes
 
 namespace
 {
-    /// A connection failure to the (unreachable) remote is demoted to Warning; any other exception
-    /// (e.g. a permission error reading INFORMATION_SCHEMA, or a permanent metadata problem after the
-    /// connect succeeds) stays at Error so it is not hidden. Must be called from within a catch block
-    /// (it rethrows the active exception to classify it by type).
+    /// Demote only a connection failure to the (unreachable) remote, so that anything else is not
+    /// hidden. Must be called from within a catch block: it rethrows the active exception to classify it.
     LogsLevel toleratedConnectionFailureLogLevel()
     {
         try

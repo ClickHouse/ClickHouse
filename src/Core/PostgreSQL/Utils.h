@@ -23,14 +23,9 @@ String getConnectionForLog(const String & host, UInt16 port);
 
 String formatNameForLogs(const String & postgres_database_name, const String & postgres_table_name);
 
-/// Classify a `pqxx::broken_connection` message as a transient transport failure (server not
-/// reachable / not responding) rather than a permanent one (server responded and rejected us, or a
-/// misconfiguration). libpq's connection errors carry no error code — only a localized free-text
-/// message (`PQerrorMessage`), and the connection is already finished when the exception is thrown —
-/// so this matches the known transport `strerror` substrings that libpq appends after
-/// `... failed: `. Anything unrecognized (including a server `FATAL:` auth / missing-database reply)
-/// is treated as non-transient, so an unclassifiable failure fails loud (logged at Error) instead of
-/// silently downgraded.
+/// Whether the server was unreachable / not responding, as opposed to having responded and rejected
+/// us. Matched on the message text because libpq connection errors carry no error code, only the
+/// free-text `PQerrorMessage`. Unrecognized messages are not transient, so they stay logged at Error.
 bool isTransientConnectionError(std::string_view message);
 
 }
