@@ -434,7 +434,7 @@ static bool planHasSubquerySet(const QueryPlan::Node * node)
 
 /// A read is in parallel-reading mode only after a coordinator has been created for it, so its presence means the
 /// phases below have already run on this plan. They are not idempotent, and a plan can be optimized more than
-/// once (StorageMerge child plans). optimizeTree.cpp guards its own transforms with planContainsLogicalExchange.
+/// once (`StorageMerge` child plans). optimizeTree.cpp guards its own transforms with `planContainsLogicalExchange`.
 static bool planHasCoordinatedRead(const QueryPlan::Node * node)
 {
     if (!node)

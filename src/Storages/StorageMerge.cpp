@@ -1259,9 +1259,9 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     return modified_query_info;
 }
 
-/// A coordinated read has already been split into a local read plus a shipped remote fragment. The fragment is a
-/// separate plan this walk cannot reach, so reordering only the local side would leave the two in different
-/// coordination modes.
+/// A coordinated child read is either a local read plus a shipped fragment, or, with no local plan, the fragment
+/// alone. Neither can be reordered: the fragment is a separate plan this walk cannot reach, so ordering only what it
+/// can reach leaves the two sides in different coordination modes.
 static bool planHasCoordinatedRead(const QueryPlan::Node * node)
 {
     if (!node)

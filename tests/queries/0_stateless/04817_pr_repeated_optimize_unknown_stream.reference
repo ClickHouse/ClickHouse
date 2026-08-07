@@ -32,5 +32,7 @@ merge without plan based
 4999950000
 merge without local plan
 4999950000
+merge ordered without local plan
+0
 merge without parallel replicas
 4999950000

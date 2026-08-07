@@ -131,6 +131,16 @@ SELECT 'merge without local plan';
 SELECT sum(value) FROM merge(currentDatabase(), '^t_pr_ro$')
 SETTINGS parallel_replicas_local_plan = 0;
 
+-- Witness: without a local plan the child read is the shipped fragment alone, with no local read to
+-- recognise it by, so this pins that ordering is declined for that shape too. Rows are not an oracle
+-- here, since ORDER BY sorts either way, so assert the sort was not converted to a partially sorted
+-- one: `Prefix sort description` is printed only for a sort with a non-empty prefix. Before the fix
+-- this arm read 1, and 10 of 30 runs returned the wrong three rows.
+SELECT 'merge ordered without local plan';
+SELECT countIf(explain LIKE '%Prefix sort description%')
+FROM (EXPLAIN actions = 1 SELECT value FROM merge(currentDatabase(), '^t_pr_ro$') ORDER BY timestamp LIMIT 3
+      SETTINGS optimize_read_in_order = 1, parallel_replicas_local_plan = 0);
+
 -- Control: no parallel replicas at all.
 SELECT 'merge without parallel replicas';
 SELECT sum(value) FROM merge(currentDatabase(), '^t_pr_ro$')
