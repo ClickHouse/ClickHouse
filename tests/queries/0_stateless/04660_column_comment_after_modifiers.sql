@@ -55,9 +55,12 @@ ALTER TABLE t_column_comment_order ADD COLUMN z UInt64 PRIMARY KEY COMMENT 'z co
 ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 COLLATE utf8_bin COMMENT 'g new comment'; -- { serverError NOT_IMPLEMENTED }
 ALTER TABLE t_column_comment_order MODIFY COLUMN g UInt64 PRIMARY KEY COMMENT 'g new comment'; -- { serverError BAD_ARGUMENTS }
 
--- In a type-less `MODIFY COLUMN`, a leading `STATISTICS` or `COLLATE` is still read as the type
--- name and rejected, rather than being taken for a modifier and silently applying only the comment.
-ALTER TABLE t_column_comment_order MODIFY COLUMN g STATISTICS(tdigest) COMMENT 'g new comment'; -- { serverError UNKNOWN_TYPE }
+-- In a type-less `MODIFY COLUMN`, a leading `STATISTICS` is a modifier, not a data type,
+-- so both orderings are equivalent. A leading `COLLATE` is still read as the type name and
+-- rejected, because `ALTER` cannot apply it regardless of where it is read.
+ALTER TABLE t_column_comment_order MODIFY COLUMN g STATISTICS(tdigest) COMMENT 'g newer comment';
+ALTER TABLE t_column_comment_order MODIFY COLUMN g COMMENT 'g newest comment' STATISTICS(uniq);
+SHOW CREATE TABLE t_column_comment_order FORMAT TSVRaw;
 ALTER TABLE t_column_comment_order MODIFY COLUMN g COLLATE utf8_bin COMMENT 'g new comment'; -- { clientError SYNTAX_ERROR }
 
 SELECT name, comment FROM system.columns WHERE database = currentDatabase() AND table = 't_column_comment_order' ORDER BY name;
@@ -81,7 +84,7 @@ SELECT formatQuery('CREATE TABLE t (a String COLLATE utf8_bin COMMENT \'a commen
 SELECT formatQuery('CREATE TABLE t (a String TTL now() COLLATE utf8_bin) ENGINE = MergeTree ORDER BY a');
 SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a UInt64 CODEC(ZSTD) COMMENT \'a comment\'');
 SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a SETTINGS (max_compress_block_size = 1024) COMMENT \'a comment\'');
--- Here `STATISTICS(tdigest)` is the type name, not a modifier, so it is printed before the comment.
+-- Here `STATISTICS(tdigest)` is a modifier, and formatting normalizes it after the comment.
 SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a STATISTICS(tdigest) COMMENT \'a comment\'');
 SELECT formatQuery('ALTER TABLE t MODIFY COLUMN a COLLATE utf8_bin COMMENT \'a comment\''); -- { serverError SYNTAX_ERROR }
 

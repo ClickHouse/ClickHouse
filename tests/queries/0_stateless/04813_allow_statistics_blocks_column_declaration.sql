@@ -11,6 +11,7 @@ SET allow_statistics = 0;
 ALTER TABLE t_allow_statistics_col_decl ADD COLUMN s UInt64 STATISTICS(tdigest); -- { serverError INCORRECT_QUERY }
 ALTER TABLE t_allow_statistics_col_decl MODIFY COLUMN x UInt32 STATISTICS(tdigest); -- { serverError INCORRECT_QUERY }
 ALTER TABLE t_allow_statistics_col_decl MODIFY COLUMN x COMMENT 'gated' STATISTICS(tdigest); -- { serverError INCORRECT_QUERY }
+ALTER TABLE t_allow_statistics_col_decl MODIFY COLUMN x STATISTICS(tdigest) COMMENT 'gated'; -- { serverError INCORRECT_QUERY }
 
 SET allow_statistics = 1;
 
