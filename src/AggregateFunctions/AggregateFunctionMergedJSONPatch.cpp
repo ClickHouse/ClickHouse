@@ -124,9 +124,9 @@ struct KeyFixed
             return value < other.value;
     }
 
-    void serialize(WriteBuffer & buffer) const { writeBinary(value, buffer); }
+    void serialize(WriteBuffer & buffer) const { writeBinaryLittleEndian(value, buffer); }
 
-    void deserialize(ReadBuffer & buffer) { readBinary(value, buffer); }
+    void deserialize(ReadBuffer & buffer) { readBinaryLittleEndian(value, buffer); }
 };
 
 /// String sort keys: owns a String (avoids Field's wrapper)
