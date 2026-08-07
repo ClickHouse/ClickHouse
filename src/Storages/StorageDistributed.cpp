@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Storages/StorageDistributed.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -457,6 +458,8 @@ StorageDistributed::StorageDistributed(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
 
     StorageInMemoryMetadata storage_metadata;
+    /// Only a definition loaded from validated metadata reaches here with no columns; the creators
+    /// infer an omitted structure themselves, under the user's context.
     if (columns_.empty())
     {
         StorageID id = StorageID::createEmpty();
@@ -852,7 +855,7 @@ public:
             if (!query)
                 return;
             bool no_replace = true;
-            for (const auto & table_node : extractTableExpressions(query->getJoinTree(), false, true))
+            for (const auto & table_node : extractTableExpressions(query->getJoinTreeNodeTyped(), false, true))
             {
                 const StorageDistributed * storage_distributed = nullptr;
                 if (const TableNode * table_node_typed = table_node->as<TableNode>())
@@ -893,10 +896,10 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
     if (!join)
         return rewrite;
 
-    auto table_expression = join->getRightTableExpression();
+    auto table_expression = join->getRightTableExpressionNode();
 
     if (QueryNode * query = table_expression->as<QueryNode>())
-        rewrite = rewriteJoinToGlobalJoinIfNeeded(query->getJoinTree());
+        rewrite = rewriteJoinToGlobalJoinIfNeeded(query->getJoinTreeNode());
     else if (const TableNode * table_node_typed = table_expression->as<TableNode>())
     {
         if (!typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get()))
@@ -911,7 +914,7 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
     if (rewrite)
         join->setLocality(JoinLocality::Global);
 
-    rewriteJoinToGlobalJoinIfNeeded(join->getLeftTableExpression());
+    rewriteJoinToGlobalJoinIfNeeded(join->getLeftTableExpressionNode());
 
     return rewrite;
 }
@@ -931,7 +934,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     else if (auto * query_info_table_function_node = query_info.table_expression->as<TableFunctionNode>())
         table_expression_modifiers = query_info_table_function_node->getTableExpressionModifiers();
 
-    QueryTreeNodePtr replacement_table_expression;
+    TableExpressionNodePtr replacement_table_expression;
 
     if (remote_table_function)
     {
@@ -1001,7 +1004,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             visitor.visit(query_node.getWhere());
         }
 
-        rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTree());
+        rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTreeNode());
     }
 
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
@@ -1453,7 +1456,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
         {
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
                 ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
 
@@ -2215,9 +2218,25 @@ void registerStorageDistributed(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, context);
 
+        /// Infer an omitted structure under the user's context, so that the `SHOW_COLUMNS` check for a
+        /// local shard is not made against the global context the constructor holds. Skipped when the
+        /// definition comes from already-validated metadata, which has no user to check against.
+        ColumnsDescription columns = args.columns;
+        if (columns.empty() && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        {
+            /// Expanded first, so this resolves the same cluster the constructor will: a Replicated
+            /// database's implicit cluster is found by the expanded name only.
+            const String expanded_cluster_name = local_context->getMacros()->expand(cluster_name);
+            columns = getStructureOfRemoteTable(
+                *local_context->getCluster(expanded_cluster_name),
+                StorageID{remote_database, remote_table},
+                local_context,
+                /* table_func_ptr = */ nullptr);
+        }
+
         return std::make_shared<StorageDistributed>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             remote_database,
@@ -2278,9 +2297,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
     name2 [type2],
     ...
 ) ENGINE = Remote(addresses_expr, [db, table, [user [, password], sharding_key]])
+[SETTINGS name = value, ...]
 ```
 
 `RemoteSecure` accepts the same arguments and connects over a secure connection (the secure TCP port is used by default). The arguments are interpreted exactly as for the `remote` and `remoteSecure` table functions, see their description for the supported signatures. The table structure may be omitted, in which case it is inferred from the remote table.
+
+The [settings of the created storage](#distributed-settings), such as `skip_unavailable_shards`, are specified after the engine definition, for example `ENGINE = Remote('127.0.0.1', system, one) SETTINGS skip_unavailable_shards = 1`. Note that the `remote` and `remoteSecure` table functions accept the `SETTINGS` clause among their arguments instead, `remote('127.0.0.1', system.one, SETTINGS skip_unavailable_shards = 1)`, because a table function has nowhere else to put it; the engines do not accept that form.
 
 For example:
 
@@ -2687,6 +2709,12 @@ If `db` and `table` are omitted, `system.one` is used.
 
 The remaining arguments are `user` (default: `default`), `password` (default: empty) and a `sharding_key` expression.
 
+The settings of the created storage, such as `skip_unavailable_shards`, are specified after the engine definition:
+`ENGINE = Remote('127.0.0.1', system, one) SETTINGS skip_unavailable_shards = 1`.
+Note that the `remote` and `remoteSecure` table functions accept the `SETTINGS` clause among their arguments instead,
+`remote('127.0.0.1', system.one, SETTINGS skip_unavailable_shards = 1)`, because a table function has nowhere else to put it;
+the engines do not accept that form.
+
 The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` error.
 )DOCS_MD";
 
@@ -2698,7 +2726,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
         .description = common_description + R"DOCS_MD(
 `Remote` connects over the plain TCP port (`tcp_port`, `9000` by default) when the port is omitted.
 )DOCS_MD",
-        .syntax = "ENGINE = Remote(addresses_expr[, db, table, user[, password], sharding_key])",
+        .syntax = "ENGINE = Remote(addresses_expr[, db, table, user[, password], sharding_key]) [SETTINGS name = value, ...]",
         .related = {"Distributed"}});
 
     factory.registerStorage("RemoteSecure", [create](const StorageFactory::Arguments & args)
@@ -2709,7 +2737,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
         .description = common_description + R"DOCS_MD(
 `RemoteSecure` connects over a secure TLS connection using the secure TCP port (`tcp_port_secure`, `9440` by default) when the port is omitted.
 )DOCS_MD",
-        .syntax = "ENGINE = RemoteSecure(addresses_expr[, db, table, user[, password], sharding_key])",
+        .syntax = "ENGINE = RemoteSecure(addresses_expr[, db, table, user[, password], sharding_key]) [SETTINGS name = value, ...]",
         .related = {"Distributed"}});
 }
 
