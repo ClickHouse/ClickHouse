@@ -25,6 +25,7 @@
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -377,12 +378,99 @@ public:
                 wide.push_back(entry_id);
             }
 
-            void resize(size_t new_size)
+            bool insert(EntryId entry_id)
+            {
+                if (wide.empty() && entry_id <= std::numeric_limits<UInt32>::max())
+                {
+                    const auto value = static_cast<UInt32>(entry_id);
+                    if (narrow.empty() || narrow.back() < value)
+                    {
+                        narrow.push_back(value);
+                        return true;
+                    }
+                    if (narrow.back() == value)
+                        return false;
+                    const auto it = std::ranges::lower_bound(narrow, value);
+                    if (it != narrow.end() && *it == value)
+                        return false;
+                    narrow.insert(it, value);
+                    return true;
+                }
+                if (wide.empty())
+                {
+                    wide.reserve(narrow.size() + 1);
+                    wide.assign(narrow.begin(), narrow.end());
+                    std::vector<UInt32>().swap(narrow);
+                }
+                if (wide.empty() || wide.back() < entry_id)
+                {
+                    wide.push_back(entry_id);
+                    return true;
+                }
+                if (wide.back() == entry_id)
+                    return false;
+                const auto it = std::ranges::lower_bound(wide, entry_id);
+                if (it != wide.end() && *it == entry_id)
+                    return false;
+                wide.insert(it, entry_id);
+                return true;
+            }
+
+            bool erase(EntryId entry_id)
             {
                 if (wide.empty())
-                    narrow.resize(new_size);
+                {
+                    if (entry_id > std::numeric_limits<UInt32>::max())
+                        return false;
+                    const auto value = static_cast<UInt32>(entry_id);
+                    const auto it = std::ranges::lower_bound(narrow, value);
+                    if (it == narrow.end() || *it != value)
+                        return false;
+                    narrow.erase(it);
+                    return true;
+                }
+                const auto it = std::ranges::lower_bound(wide, entry_id);
+                if (it == wide.end() || *it != entry_id)
+                    return false;
+                wide.erase(it);
+                return true;
+            }
+
+            template <typename Iterator, typename GetEntryId>
+            void eraseSortedAndCompact(Iterator removals_begin, Iterator removals_end, GetEntryId && get_entry_id)
+            {
+                const auto compact = [&](auto & values)
+                {
+                    using Value = typename std::decay_t<decltype(values)>::value_type;
+                    size_t survivors = 0;
+                    auto removal = removals_begin;
+                    for (const auto value : values)
+                    {
+                        const auto entry_id = static_cast<EntryId>(value);
+                        while (removal != removals_end && get_entry_id(*removal) < entry_id)
+                            ++removal;
+                        if (removal == removals_end || get_entry_id(*removal) != entry_id)
+                            ++survivors;
+                    }
+
+                    std::vector<Value> compacted;
+                    compacted.reserve(survivors);
+                    removal = removals_begin;
+                    for (const auto value : values)
+                    {
+                        const auto entry_id = static_cast<EntryId>(value);
+                        while (removal != removals_end && get_entry_id(*removal) < entry_id)
+                            ++removal;
+                        if (removal == removals_end || get_entry_id(*removal) != entry_id)
+                            compacted.push_back(value);
+                    }
+                    values.swap(compacted);
+                };
+
+                if (wide.empty())
+                    compact(narrow);
                 else
-                    wide.resize(new_size);
+                    compact(wide);
             }
 
             template <typename Callback>
@@ -429,6 +517,12 @@ public:
             return it ? &postings[it->getMapped()] : nullptr;
         }
 
+        Posting * find(std::string_view key, size_t hash)
+        {
+            auto * it = index.find(key, hash);
+            return it ? &postings[it->getMapped()] : nullptr;
+        }
+
         mutable SharedMutex mutex;
         PostingMap index;
         std::deque<Posting> postings;
@@ -443,6 +537,20 @@ public:
     };
 
 private:
+    struct PendingPostingRemoval
+    {
+        struct Membership
+        {
+            std::weak_ptr<LookupIndex> index;
+            String key;
+            size_t hash = 0;
+        };
+
+        EntryId entry_id = 0;
+        UInt64 tombstone_generation = 0;
+        std::vector<Membership> memberships;
+    };
+
     void serializeKeys(const Block & block, const std::vector<size_t> & positions, SerializedKeys & result) const;
     String serializeColumns(const Block & block, size_t row, const std::vector<size_t> & positions) const;
     String serializeRowColumns(const RowData & row, const std::vector<size_t> & positions, SegmentColumnCache & cache) const;
@@ -465,6 +573,10 @@ private:
     void
     intersectPostingIds(std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
     void clearData();
+    /// Runs under `writer_mutex`. Posting membership cannot disappear while an older snapshot may still
+    /// need it to reach the row version preceding a tombstone.
+    void pruneLookupTombstones();
+    void tryPruneLookupTombstones() const;
     void acquireInsertPreparation(UInt64 bytes);
     void releaseInsertPreparation(UInt64 bytes);
 
@@ -503,6 +615,8 @@ private:
     mutable SharedMutex lookup_catalog_mutex;
     std::array<PrimaryShard, primary_shard_count> primary_shards;
     std::vector<LookupIndexPtr> lookup_indexes;
+    std::vector<PendingPostingRemoval> pending_posting_removals;
+    std::atomic<bool> has_pending_posting_removals = false;
     EntryTable entries;
     mutable std::array<SharedMutex, row_lock_count> row_mutexes;
     mutable std::mutex recycled_versions_mutex;
