@@ -91,6 +91,11 @@ class ClickHouseProc:
     # respawned server. `BaseDaemon::setupWatchdog` adds exactly one level, so
     # this is only a guard against walking an unexpectedly deep chain forever.
     WATCHDOG_ANCESTOR_LIMIT = 8
+    # How many times `start` retries the startup watchdog walk when it cannot
+    # be completed - the pid it starts from is known to be alive then, so a
+    # failed walk is a transient `ps` outage, not an answer (see
+    # `_startup_watchdog_snapshot`).
+    WATCHDOG_SNAPSHOT_ATTEMPTS = 3
     # Whether process state can be read from `/proc`. False on the macOS
     # runners, where `ps` is used instead - see `_process_argv0`. Probed once
     # here rather than branching on `platform.system()`, so the two paths can be
@@ -149,6 +154,10 @@ class ClickHouseProc:
         # the pids in the pid files are known to be alive - the teardown-time
         # walk can find nothing when it starts inside the watchdog's restart
         # gap, and these are what it falls back to (see `_stop_one_server`).
+        # An empty tuple means "definitively no watchdog"; None means the
+        # startup walk could not be completed, so the teardown must not treat
+        # an empty pid file as proof that nothing can bring a server back
+        # (see `_startup_watchdog_snapshot` and `_stop_respawned_server`).
         self.watchdogs_0 = ()
         self.watchdogs_1 = ()
         self.watchdogs_2 = ()
@@ -513,7 +522,7 @@ class ClickHouseProc:
                 # this snapshot when its own walk starts from a pid that is
                 # already dead. The watchdog keeps its pid across the respawns
                 # it performs, so the snapshot stays current until teardown.
-                watchdogs = self._server_watchdog_pids(int(pid))
+                watchdogs = self._startup_watchdog_snapshot(int(pid))
                 if replica_num == 1:
                     self.pid_1 = int(pid)
                     self.watchdogs_1 = watchdogs
@@ -866,21 +875,27 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # is the answer for that case: it was walked at startup from a pid known
         # to be alive then, and the watchdog keeps its pid across the respawns
         # it performs, so the startup snapshot still names the process that can
-        # bring a server back now.
-        watchdogs = self._server_watchdog_pids(pid) or list(startup_watchdogs)
+        # bring a server back now. A snapshot of None means the startup walk
+        # itself could not be completed (see `_startup_watchdog_snapshot`), so
+        # an empty watchdog set is not proof that nothing is coming back -
+        # `_stop_respawned_server` then has to wait the respawn window out.
+        watchdogs = self._server_watchdog_pids(pid) or list(startup_watchdogs or ())
+        watchdogs_definitive = startup_watchdogs is not None
         if force:
             # Use clickhouse stop --force when this issue is fixed
             # https://github.com/ClickHouse/ClickHouse/issues/99142
             self._signal_server(pid, signal.SIGTERM, "TERM")
             if self._wait_server_gone(pid, timeout=10):
                 self._reap_server_wrapper(proc)
-                self._stop_respawned_server(pid_file, run_path, watchdogs)
+                self._stop_respawned_server(
+                    pid_file, run_path, watchdogs, watchdogs_definitive
+                )
                 return
         elif Shell.check(
             f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
             verbose=True,
         ):
-            self._stop_respawned_server(pid_file, run_path, watchdogs)
+            self._stop_respawned_server(pid_file, run_path, watchdogs, watchdogs_definitive)
             return
         print(
             f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
@@ -903,7 +918,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     f"system tables in {run_path} will not be scraped"
                 )
         self._reap_server_wrapper(proc)
-        self._stop_respawned_server(pid_file, run_path, watchdogs)
+        self._stop_respawned_server(pid_file, run_path, watchdogs, watchdogs_definitive)
 
     @classmethod
     def _current_server_pid(cls, pid_file) -> int:
@@ -919,7 +934,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return pid if cls._server_process_alive(pid) else 0
 
     @classmethod
-    def _stop_respawned_server(cls, pid_file, run_path, watchdogs=()):
+    def _stop_respawned_server(cls, pid_file, run_path, watchdogs=(), watchdogs_definitive=True):
         """Take out a server that came back while the previous one was stopped.
 
         In `CLICKHOUSE_WATCHDOG_RESTART=1` mode the watchdog starts a fresh
@@ -942,13 +957,27 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         alive, the decision is deferred for `RESPAWN_GRACE_TIMEOUT` - and a
         watchdog that outlives even that is taken out, because from here on
         nothing else would stop it from publishing another server.
+
+        `watchdogs_definitive=False` says that an empty `watchdogs` means
+        "the watchdog discovery could not be completed", not "there is no
+        watchdog" (see `_startup_watchdog_snapshot`). With no watchdog pids to
+        watch, the pid file itself is then the only signal left of a watchdog
+        about to bring a server back, so an empty pid file is believed only
+        after it has stayed empty for the whole `RESPAWN_GRACE_TIMEOUT`.
         """
         for _ in range(cls.RESPAWN_STOP_ATTEMPTS):
             pid = cls._current_server_pid(pid_file)
             if not pid:
                 still_alive = cls._wait_watchdogs_settled(watchdogs, pid_file)
                 if not still_alive and not cls._current_server_pid(pid_file):
-                    return
+                    if watchdogs_definitive or not cls._wait_server_republished(
+                        pid_file
+                    ):
+                        return
+                    # A server was republished, so something is bringing them
+                    # back after all: go take it - and whatever the fresh walk
+                    # from its live pid finds above it - out.
+                    continue
                 cls._kill_watchdogs(still_alive)
                 continue
             # The fresh walk can transiently come up empty - on the
@@ -1006,6 +1035,24 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             Utils.sleep(1)
 
     @classmethod
+    def _wait_server_republished(cls, pid_file) -> int:
+        """A live server pid the file names within the respawn window, or 0.
+
+        The last resort of `_stop_respawned_server` when the watchdog set is
+        unknown rather than known-empty: there are no watchdog pids whose exit
+        would prove that nothing is coming back, so the only choice left is to
+        sit out the whole `RESPAWN_GRACE_TIMEOUT` watching the pid file. A
+        server that shows up within it is returned for the caller to stop; a
+        pid file still empty after it is finally believed.
+        """
+        deadline = time.time() + cls.RESPAWN_GRACE_TIMEOUT
+        while True:
+            pid = cls._current_server_pid(pid_file)
+            if pid or time.time() >= deadline:
+                return pid
+            Utils.sleep(1)
+
+    @classmethod
     def _kill_watchdogs(cls, watchdogs) -> None:
         """Kill the given watchdog processes, outermost first.
 
@@ -1043,24 +1090,77 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         the watchdog sits the `sh -c ...` wrapper, and killing the wrapper is
         `_reap_server_wrapper`'s business, not this function's.
         """
+        return cls._server_watchdog_pids_checked(pid)[0]
+
+    @classmethod
+    def _server_watchdog_pids_checked(cls, pid):
+        """`(_server_watchdog_pids(pid), whether that answer is definitive)`.
+
+        The walk is definitive when every step could actually be read; it is
+        not when it stopped at a process whose parent or identity could not be
+        determined (a `ps` failure on the `HAS_PROC = False` path), in which
+        case an empty chain means "the watchdog could not be discovered" and
+        not "there is no watchdog". `start` needs the difference: its snapshot
+        is what later convinces `_stop_respawned_server` that nothing can bring
+        a server back, and a `ps` hiccup must not be allowed to stand in for
+        that proof (see `_startup_watchdog_snapshot`).
+        """
         watchdogs = []
+        definitive = True
         for _ in range(cls.WATCHDOG_ANCESTOR_LIMIT):
-            pid = cls._parent_pid(pid)
-            # `unknown_alive=False`: this is discovery, and its results become
-            # `SIGKILL` targets in `_kill_watchdogs`. An ancestor whose identity
-            # cannot be read must end the walk, not be promoted into a kill
-            # target - otherwise a `ps` failure while the parent-pid lookup
-            # still works would take out the `sh -c` wrapper and every live
-            # ancestor above it.
-            if pid <= 1 or not cls._watchdog_process_alive(pid, unknown_alive=False):
+            try:
+                pid = cls._parent_pid(pid, unknown_raises=True)
+                # `unknown_alive=None` (raise): this is discovery, and its
+                # results become `SIGKILL` targets in `_kill_watchdogs`. An
+                # ancestor whose identity cannot be read must end the walk, not
+                # be promoted into a kill target - otherwise a `ps` failure
+                # while the parent-pid lookup still works would take out the
+                # `sh -c` wrapper and every live ancestor above it.
+                if pid <= 1 or not cls._watchdog_process_alive(
+                    pid, unknown_alive=None
+                ):
+                    break
+            except ProcessIdentityUnknown as e:
+                print(f"WARNING: the watchdog walk stopped at process {pid}: {e}")
+                definitive = False
                 break
             watchdogs.append(pid)
         watchdogs.reverse()
-        return watchdogs
+        return watchdogs, definitive
 
     @classmethod
-    def _parent_pid(cls, pid) -> int:
-        """The parent pid of `pid`, or 0 if it cannot be determined."""
+    def _startup_watchdog_snapshot(cls, pid):
+        """The watchdog chain above the fresh server `pid`, or None if unknown.
+
+        `pid` was just read from the pid file of a server that is known to be
+        up, so a walk that cannot be completed is a transient `ps` outage, not
+        an answer - it is retried up to `WATCHDOG_SNAPSHOT_ATTEMPTS` times. A
+        walk that keeps failing is recorded as None rather than as an empty
+        snapshot: the empty snapshot is what later lets the teardown take an
+        empty pid file as proof that no server is coming back (see
+        `_stop_respawned_server`), and "the discovery failed" is no such proof.
+        """
+        for attempt in range(cls.WATCHDOG_SNAPSHOT_ATTEMPTS):
+            watchdogs, definitive = cls._server_watchdog_pids_checked(pid)
+            if definitive:
+                return tuple(watchdogs)
+            if attempt + 1 < cls.WATCHDOG_SNAPSHOT_ATTEMPTS:
+                Utils.sleep(1)
+        print(
+            f"WARNING: the watchdogs above process {pid} could not be "
+            "discovered - recording them as unknown"
+        )
+        return None
+
+    @classmethod
+    def _parent_pid(cls, pid, unknown_raises=False) -> int:
+        """The parent pid of `pid`, or 0 if it cannot be determined.
+
+        With `unknown_raises`, a lookup that failed - as opposed to one that
+        answered "no such process" - raises `ProcessIdentityUnknown` instead of
+        returning 0, for the one caller that must tell the two apart
+        (`_server_watchdog_pids_checked`).
+        """
         if cls.HAS_PROC:
             # `/proc/<pid>/status` rather than `/proc/<pid>/stat`, whose fields
             # cannot be split on whitespace: the second one is the command name,
@@ -1082,6 +1182,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             # without recording the pids, nor abort a teardown before any
             # signal is sent. With 0 the callers degrade to the no-watchdog
             # path and the startup snapshot.
+            if unknown_raises:
+                raise
             print(f"WARNING: cannot read the parent of process {pid}: {e}")
             return 0
         except ValueError:
@@ -1193,8 +1295,9 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         The fail-close default of treating an unreadable identity as alive is
         right only for pids that were already established as watchdogs - it
         keeps `_wait_watchdogs_settled` waiting and lets `_kill_watchdogs`
-        finish the job. `_server_watchdog_pids` passes `unknown_alive=False`,
-        because there the pid is a mere ancestor candidate.
+        finish the job. `_server_watchdog_pids_checked` passes
+        `unknown_alive=None` (raise), because there the pid is a mere ancestor
+        candidate and the walk has to know that its answer is not definitive.
         """
         return cls._process_alive_as(
             pid,
@@ -1214,11 +1317,15 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         after stripping the directory. `unknown_alive` is the answer when the
         identity cannot be read at all and the pid exists: the fail-close
         default is described in `_server_process_alive`, and the one caller
-        for which it is the wrong direction in `_watchdog_process_alive`.
+        for which it is the wrong direction in `_watchdog_process_alive`. None
+        means neither answer will do - `ProcessIdentityUnknown` is re-raised
+        for the caller to tell an unreadable identity from a definitive one.
         """
         try:
             argv0 = cls._process_argv0(pid)
         except ProcessIdentityUnknown as e:
+            if unknown_alive is None:
+                raise
             alive = unknown_alive and cls._pid_exists(pid)
             print(
                 f"WARNING: cannot identify process {pid} ({e}) - treating it as "

@@ -45,7 +45,7 @@ import sys
 import time
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc, ProcessIdentityUnknown
-from ci.praktika.utils import Shell
+from ci.praktika.utils import Shell, Utils
 
 # The fake server first plays the watchdog half of `BaseDaemon::setupWatchdog`:
 # fork, and let the child be the real server. So `Popen(shell=True)` on it
@@ -287,7 +287,7 @@ def _make_proc(monkeypatch, tmp_path, proc, pid, trap_timeout=10):
     # known to be alive: it is what `stop_server` falls back to when the
     # teardown begins inside the watchdog's restart gap and the walk from the
     # (then dead) pid finds nothing.
-    ch.watchdogs_0 = ClickHouseProc._server_watchdog_pids(pid)
+    ch.watchdogs_0 = ClickHouseProc._startup_watchdog_snapshot(pid)
     ch.proc_1 = ch.proc_2 = None
     ch.pid_1 = ch.pid_2 = 0
     ch.watchdogs_1 = ch.watchdogs_2 = ()
@@ -546,14 +546,18 @@ def test_stop_respawned_server_survives_a_walk_failure_with_the_startup_snapshot
         real_walk = ClickHouseProc._server_watchdog_pids.__func__
         real_stop_respawned = ClickHouseProc._stop_respawned_server.__func__
 
-        def stop_respawned_with_failing_walk(cls, pid_file, run_path, watchdogs=()):
+        def stop_respawned_with_failing_walk(
+            cls, pid_file, run_path, watchdogs=(), watchdogs_definitive=True
+        ):
             monkeypatch.setattr(
                 ClickHouseProc,
                 "_server_watchdog_pids",
                 classmethod(lambda cls, pid: []),
             )
             try:
-                return real_stop_respawned(cls, pid_file, run_path, watchdogs)
+                return real_stop_respawned(
+                    cls, pid_file, run_path, watchdogs, watchdogs_definitive
+                )
             finally:
                 monkeypatch.setattr(
                     ClickHouseProc, "_server_watchdog_pids", classmethod(real_walk)
@@ -572,6 +576,75 @@ def test_stop_respawned_server_survives_a_walk_failure_with_the_startup_snapshot
             )
         assert not ClickHouseProc._current_server_pid(pid_file), (
             f"a server ({pid_file.read_text().strip()}) outlived stop_server"
+        )
+        assert _status_lock_is_free(tmp_path), (
+            "the status lock was still held after stop_server returned; "
+            "`clickhouse local` cannot scrape this replica's system tables"
+        )
+    finally:
+        for watchdog in watchdogs:
+            _cleanup(proc, watchdog)
+        _cleanup(proc, ClickHouseProc._current_server_pid(pid_file) or startup_pid)
+
+
+def test_stop_server_wins_the_restart_gap_even_when_startup_discovery_failed(
+    monkeypatch, tmp_path
+):
+    # The startup snapshot itself can be lost to a `ps` outage: `start` then
+    # records the watchdogs as unknown (None, see `_startup_watchdog_snapshot`)
+    # rather than as a definitive empty snapshot. A teardown that begins inside
+    # the watchdog's restart gap now has a dead pid in the pid file, a dead
+    # startup pid, *and* no watchdog pids to wait on - so the only proof left
+    # that no server is coming back is the pid file staying empty for the whole
+    # respawn grace period. Trusting the empty set immediately loses: the
+    # teardown returns in milliseconds, the watchdog publishes a replacement a
+    # few seconds later, and that server holds `<run_path>/status` against the
+    # scraping `clickhouse local`.
+    pid_file = tmp_path / "clickhouse-server.pid"
+    respawn_delay = 5
+    proc, startup_pid = _start_fake_server(
+        tmp_path, restart_mode="delayed", restart_delay=respawn_delay
+    )
+    watchdogs = ClickHouseProc._server_watchdog_pids(startup_pid)
+    try:
+        assert watchdogs, "the fake watchdog is not above the fake server"
+        ch = _make_proc(monkeypatch, tmp_path, proc, startup_pid)
+        # What `start` records when the watchdog discovery keeps failing.
+        real_checked = ClickHouseProc._server_watchdog_pids_checked.__func__
+        monkeypatch.setattr(
+            ClickHouseProc,
+            "_server_watchdog_pids_checked",
+            classmethod(lambda cls, pid: ([], False)),
+        )
+        ch.watchdogs_0 = ClickHouseProc._startup_watchdog_snapshot(startup_pid)
+        monkeypatch.setattr(
+            ClickHouseProc, "_server_watchdog_pids_checked", classmethod(real_checked)
+        )
+        assert ch.watchdogs_0 is None, (
+            "a failed startup discovery must be recorded as unknown"
+        )
+        # Well above the fake watchdog's respawn delay, well below the test's
+        # patience: the wait for a republished server is the whole point here,
+        # not the production-sized grace period.
+        monkeypatch.setattr(ClickHouseProc, "RESPAWN_GRACE_TIMEOUT", 10)
+        os.kill(startup_pid, signal.SIGKILL)
+        deadline = time.monotonic() + 60
+        while _pid_alive(startup_pid):
+            assert time.monotonic() < deadline, "the fake server did not die"
+            time.sleep(0.05)
+        # The teardown now starts with a dead pid in the pid file, a dead
+        # startup pid, an unknown watchdog set, and the replacement
+        # `respawn_delay` seconds away.
+        ch.stop_server()
+        for watchdog in watchdogs:
+            assert not _pid_alive(watchdog), (
+                f"the watchdog {watchdog} outlived a teardown that had no "
+                "startup snapshot to fall back on"
+            )
+        time.sleep(respawn_delay + 1)
+        assert not ClickHouseProc._current_server_pid(pid_file), (
+            f"a server ({pid_file.read_text().strip()}) came up after "
+            "stop_server returned"
         )
         assert _status_lock_is_free(tmp_path), (
             "the status lock was still held after stop_server returned; "
@@ -798,6 +871,43 @@ def test_watchdog_walk_survives_a_ps_failure_without_proc(monkeypatch):
     )
 
 
+def test_startup_snapshot_records_a_failed_discovery_as_unknown(monkeypatch):
+    # `start` snapshots the watchdog chain from a pid that is known to be alive
+    # at that moment, and the empty snapshot is what later lets
+    # `_stop_respawned_server` take an empty pid file as proof that no server
+    # is coming back. A `ps` outage during `start` must therefore be recorded
+    # as "unknown" (None) - collapsing it to an empty snapshot reopens the
+    # leaked-server / held-`status` race for the whole run (the teardown would
+    # trust the snapshot and return inside the watchdog's restart gap).
+    monkeypatch.setattr(ClickHouseProc, "HAS_PROC", False)
+    monkeypatch.setattr(Utils, "sleep", staticmethod(lambda *a, **k: None))
+
+    def unavailable(*args, **kwargs):
+        raise ProcessIdentityUnknown("ps is not available")
+
+    monkeypatch.setattr(ClickHouseProc, "_ps_field", classmethod(unavailable))
+    assert ClickHouseProc._startup_watchdog_snapshot(os.getpid()) is None, (
+        "a startup watchdog discovery that keeps failing must be recorded as "
+        "unknown, not as a definitive empty snapshot"
+    )
+
+
+def test_startup_snapshot_retries_a_transient_discovery_failure(monkeypatch):
+    # The pid the startup snapshot is walked from is known to name a live
+    # server, so a failed walk is a transient `ps` hiccup, not an answer:
+    # `_startup_watchdog_snapshot` retries before settling for "unknown".
+    monkeypatch.setattr(Utils, "sleep", staticmethod(lambda *a, **k: None))
+    answers = iter([([], False), ([42], True)])
+    monkeypatch.setattr(
+        ClickHouseProc,
+        "_server_watchdog_pids_checked",
+        classmethod(lambda cls, pid: next(answers)),
+    )
+    assert ClickHouseProc._startup_watchdog_snapshot(os.getpid()) == (42,), (
+        "a transient walk failure at startup must be retried, not recorded"
+    )
+
+
 def test_watchdog_discovery_does_not_promote_unreadable_ancestors(monkeypatch):
     # `ps -o command=` failing while `ps -o ppid=` still works: an ancestor
     # whose identity cannot be read must end the walk. The fail-close "unknown
@@ -808,7 +918,7 @@ def test_watchdog_discovery_does_not_promote_unreadable_ancestors(monkeypatch):
     monkeypatch.setattr(
         ClickHouseProc,
         "_parent_pid",
-        classmethod(lambda cls, pid: parents.get(pid, 0)),
+        classmethod(lambda cls, pid, unknown_raises=False: parents.get(pid, 0)),
     )
 
     def unreadable(cls, pid):
