@@ -3,11 +3,15 @@
 #include <Core/Settings.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/SetSerialization.h>
 #include <Interpreters/SpillingHashJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <limits>
@@ -18,11 +22,6 @@ using namespace DB;
 namespace DB::Setting
 {
     extern const SettingsUInt64 grace_hash_join_initial_buckets;
-}
-
-namespace DB::QueryPlanSerializationSetting
-{
-    extern const QueryPlanSerializationSettingsUInt64 grace_hash_join_initial_buckets;
 }
 
 namespace DB::ErrorCodes
@@ -46,6 +45,71 @@ QueryPlanSerializationSettings roundTrip(const JoinSettings & source)
     QueryPlanSerializationSettings result;
     result.readBinary(in);
     return result;
+}
+
+std::unique_ptr<JoinStepLogical> makeJoinStep(UInt64 initial_buckets)
+{
+    Settings query_settings;
+    query_settings[Setting::grace_hash_join_initial_buckets] = initial_buckets;
+
+    auto empty_header = std::make_shared<const Block>();
+    return std::make_unique<JoinStepLogical>(
+        empty_header,
+        empty_header,
+        JoinOperator{},
+        JoinExpressionActions{},
+        std::vector<const ActionsDAG::Node *>{},
+        JoinSettings(query_settings),
+        SortingStep::Settings(query_settings));
+}
+
+String serializeJoinStep(const JoinStepLogical & step)
+{
+    SerializedSetsRegistry registry;
+    WriteBufferFromOwnString out;
+    IQueryPlanStep::Serialization ctx{
+        .out = out,
+        .registry = registry,
+        .skip_final_flag = false,
+        .skip_cache_key = false,
+        .version = 0,
+    };
+    step.serialize(ctx);
+    return out.str();
+}
+
+UInt8 readJoinStepFlags(const String & serialized_data)
+{
+    ReadBufferFromString in(serialized_data);
+    UInt8 flags = 0;
+    readIntBinary(flags, in);
+    return flags;
+}
+
+UInt64 roundTripJoinStep(const JoinStepLogical & source, const String & serialized_data)
+{
+    auto serialized_settings = roundTrip(source.getJoinSettings());
+
+    ReadBufferFromString in(serialized_data);
+    DeserializedSetsRegistry registry;
+    ContextPtr context;
+    const auto & input_headers = source.getInputHeaders();
+    const auto & output_header = source.getOutputHeader();
+    IQueryPlanStep::Deserialization ctx{
+        .in = in,
+        .registry = registry,
+        .storage_holders = {},
+        .context = context,
+        .input_headers = input_headers,
+        .output_header = output_header,
+        .settings = serialized_settings,
+        .max_type_complexity = 0,
+        .version = 0,
+        .skipping = false,
+    };
+
+    auto restored = JoinStepLogical::deserialize(ctx);
+    return static_cast<JoinStepLogical &>(*restored).getJoinSettings().grace_hash_join_initial_buckets;
 }
 
 void expectZeroExternalJoinThresholdRejected(bool concurrent)
@@ -78,15 +142,13 @@ void expectZeroExternalJoinThresholdRejected(bool concurrent)
 }
 
 
-TEST(QueryPlanSerializationSettings, EncodesAutomaticGraceBucketsByFieldAbsence)
+TEST(QueryPlanSerializationSettings, PreservesLegacyGraceBucketsWhenWireFieldIsMissing)
 {
     Settings query_settings;
     query_settings[Setting::grace_hash_join_initial_buckets] = 0;
     const auto serialized = roundTrip(JoinSettings(query_settings));
 
-    EXPECT_FALSE(serialized.isChanged("grace_hash_join_initial_buckets"));
-    EXPECT_EQ(serialized[QueryPlanSerializationSetting::grace_hash_join_initial_buckets], 1);
-    EXPECT_EQ(JoinSettings(serialized).grace_hash_join_initial_buckets, 0);
+    EXPECT_EQ(JoinSettings(serialized).grace_hash_join_initial_buckets, 1);
 }
 
 TEST(QueryPlanSerializationSettings, PreservesExplicitGraceBuckets)
@@ -97,8 +159,37 @@ TEST(QueryPlanSerializationSettings, PreservesExplicitGraceBuckets)
         query_settings[Setting::grace_hash_join_initial_buckets] = explicit_value;
         const auto serialized = roundTrip(JoinSettings(query_settings));
 
-        EXPECT_TRUE(serialized.isChanged("grace_hash_join_initial_buckets"));
         EXPECT_EQ(JoinSettings(serialized).grace_hash_join_initial_buckets, explicit_value);
+    }
+}
+
+TEST(QueryPlanSerializationSettings, RoundTripsAutomaticGraceBucketsThroughJoinStepFlag)
+{
+    const auto source = makeJoinStep(0);
+    const auto serialized_data = serializeJoinStep(*source);
+
+    EXPECT_EQ(readJoinStepFlags(serialized_data), 1);
+    EXPECT_EQ(roundTripJoinStep(*source, serialized_data), 0);
+}
+
+TEST(QueryPlanSerializationSettings, ReadsLegacyMissingGraceBucketsAsOne)
+{
+    const auto source = makeJoinStep(0);
+    auto serialized_data = serializeJoinStep(*source);
+    serialized_data.front() = 0;
+
+    EXPECT_EQ(roundTripJoinStep(*source, serialized_data), 1);
+}
+
+TEST(QueryPlanSerializationSettings, RoundTripsExplicitGraceBucketsWithoutAutoFlag)
+{
+    for (UInt64 explicit_value : {1, 8})
+    {
+        const auto source = makeJoinStep(explicit_value);
+        const auto serialized_data = serializeJoinStep(*source);
+
+        EXPECT_EQ(readJoinStepFlags(serialized_data), 0);
+        EXPECT_EQ(roundTripJoinStep(*source, serialized_data), explicit_value);
     }
 }
 
@@ -136,10 +227,20 @@ TEST(GraceHashJoinBuckets, CombinesPlannerAndRuntimeInformation)
     using Params = GraceHashJoin::InitialBucketsParams;
 
     EXPECT_EQ(
-        GraceHashJoin::getInitialNumBuckets(0, 1024, Params{.current_rows = 999, .current_bytes = 99900}, 0, 100000),
+        GraceHashJoin::getInitialNumBuckets(
+            0,
+            1024,
+            Params{.total_rows_estimation = std::nullopt, .current_rows = 999, .current_bytes = 99900},
+            0,
+            100000),
         2);
     EXPECT_EQ(
-        GraceHashJoin::getInitialNumBuckets(0, 1024, Params{.current_rows = 1000, .current_bytes = 100000}, 0, 100000),
+        GraceHashJoin::getInitialNumBuckets(
+            0,
+            1024,
+            Params{.total_rows_estimation = std::nullopt, .current_rows = 1000, .current_bytes = 100000},
+            0,
+            100000),
         4);
     EXPECT_EQ(
         GraceHashJoin::getInitialNumBuckets(

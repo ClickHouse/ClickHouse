@@ -71,6 +71,9 @@
 namespace
 {
 constexpr std::string_view join_dummy_result_name = "__join_result_dummy";
+/// Old readers already consume and ignore this reserved flags byte, so they safely keep the
+/// legacy serialized setting default of one bucket when a new writer requests automatic sizing.
+constexpr UInt8 grace_hash_join_initial_buckets_auto_flag = 1;
 }
 namespace DB
 {
@@ -1677,6 +1680,8 @@ static void serializeNodeList(
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
+    if (join_settings.grace_hash_join_initial_buckets == 0)
+        flags |= grace_hash_join_initial_buckets_auto_flag;
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(1, ctx.out);
@@ -1714,6 +1719,11 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 
     UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
+    if (flags & ~grace_hash_join_initial_buckets_auto_flag)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unknown `JoinStepLogical` serialization flags: {}",
+            static_cast<UInt64>(flags));
 
     ActionsDAG actions_dag;
     {
@@ -1736,6 +1746,8 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);
+    if (flags & grace_hash_join_initial_buckets_auto_flag)
+        join_settings.grace_hash_join_initial_buckets = 0;
 
     return std::make_unique<JoinStepLogical>(
         std::move(left_header),

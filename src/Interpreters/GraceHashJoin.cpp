@@ -320,8 +320,6 @@ size_t GraceHashJoin::getInitialNumBuckets(
     size_t initial_num_buckets = configured_num_buckets;
     if (initial_num_buckets == 0)
     {
-        initial_num_buckets = 1;
-
         const auto get_num_buckets_for_size = [max_num_buckets](size_t total_size, size_t max_bucket_size)
         {
             if (max_bucket_size == 0)

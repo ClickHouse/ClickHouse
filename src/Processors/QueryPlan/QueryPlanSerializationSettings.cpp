@@ -142,11 +142,6 @@ void QueryPlanSerializationSettings::readBinary(ReadBuffer & in)
     impl->readBinary(in);
 }
 
-bool QueryPlanSerializationSettings::isChanged(std::string_view name) const
-{
-    return impl->isChanged(name);
-}
-
 QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
 }
