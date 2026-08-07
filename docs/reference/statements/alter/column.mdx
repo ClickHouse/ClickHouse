@@ -359,7 +359,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 - On **wide** parts with full part storage, secondary indexes are **not** automatically rebuilt when only the column is rewritten. After changing underlying column data that an index depends on, run [`ALTER TABLE ... MATERIALIZE INDEX`](/sql-reference/statements/alter/skipping-index#materialize-index) if you need the index files refreshed.
 - On **compact** or **packed** parts, the mutation rewrites the whole part and force-recalculates pre-existing secondary indexes on that part.
 
-Separately, `ADD INDEX` only updates metadata: a newly added index stays unmaterialized on historical parts until you run `MATERIALIZE INDEX` or a later merge builds it.
+Separately, `ADD INDEX` only updates metadata: a newly added index stays unmaterialized on historical parts until you run `MATERIALIZE INDEX`. A later merge builds skip indexes only when [`materialize_skip_indexes_on_merge`](/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) is enabled and the index is not listed in [`exclude_materialize_skip_indexes_on_merge`](/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge); otherwise historical parts remain unmaterialized until an explicit `MATERIALIZE INDEX`.
 </Note>
 
 **See Also**
