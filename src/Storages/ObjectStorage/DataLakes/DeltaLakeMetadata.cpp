@@ -66,7 +66,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_delta_kernel_rs;
+    extern const SettingsBool allow_delta_kernel_rs;
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -645,7 +645,7 @@ DeltaLakeMetadata::DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageOb
 static bool isDeltaKernelEnabled(ContextPtr context, ObjectStorageType storage_type)
 {
     const bool supports_delta_kernel = storage_type == ObjectStorageType::S3 || storage_type == ObjectStorageType::Azure || storage_type == ObjectStorageType::Local;
-    return supports_delta_kernel && context->getSettingsRef()[Setting::allow_experimental_delta_kernel_rs] ;
+    return supports_delta_kernel && context->getSettingsRef()[Setting::allow_delta_kernel_rs] ;
 }
 
 bool DeltaLakeMetadata::supportsTotalRows(ContextPtr context, ObjectStorageType storage_type)
@@ -675,7 +675,7 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
             ErrorCodes::UNSUPPORTED_METHOD,
             "Time travel (delta_lake_snapshot_version) is not supported "
             "without DeltaKernel. Use S3 or Local storage with "
-            "allow_experimental_delta_kernel_rs = 1");
+            "allow_delta_kernel_rs = 1");
 
     if (settings[Setting::delta_lake_snapshot_start_version].value != -1
         || settings[Setting::delta_lake_snapshot_end_version].value != -1)
@@ -684,7 +684,7 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
             "Change data feed (delta_lake_snapshot_start_version / "
             "delta_lake_snapshot_end_version) is not supported "
             "without DeltaKernel. Use S3 or Local storage with "
-            "allow_experimental_delta_kernel_rs = 1");
+            "allow_delta_kernel_rs = 1");
 
     return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
 }
