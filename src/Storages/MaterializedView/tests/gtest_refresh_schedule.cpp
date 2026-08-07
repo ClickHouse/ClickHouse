@@ -25,9 +25,31 @@ RefreshSchedule scheduleWithSpreadSeconds(UInt64 spread_seconds)
     return RefreshSchedule(*strategy);
 }
 
+/// A calendar-unit window populates `months` instead of `seconds`, so it reaches the offset
+/// through a different term of CalendarTimeInterval::minSeconds.
+RefreshSchedule scheduleWithSpreadMonths(UInt64 spread_months)
+{
+    auto strategy = make_intrusive<ASTRefreshStrategy>();
+    strategy->schedule_kind = RefreshScheduleKind::EVERY;
+    auto period = make_intrusive<ASTTimeInterval>();
+    period->interval.seconds = 3600;
+    strategy->set(strategy->period, period);
+    auto spread = make_intrusive<ASTTimeInterval>();
+    spread->interval.months = spread_months;
+    strategy->set(strategy->spread, spread);
+    return RefreshSchedule(*strategy);
+}
+
 Int64 spreadMicroseconds(UInt64 spread_seconds, Int64 randomness, Int64 when_microseconds)
 {
     auto schedule = scheduleWithSpreadSeconds(spread_seconds);
+    auto when = std::chrono::system_clock::time_point(std::chrono::system_clock::duration(when_microseconds));
+    return schedule.addRandomSpread(when, randomness).time_since_epoch().count();
+}
+
+Int64 spreadMicrosecondsForMonths(UInt64 spread_months, Int64 randomness, Int64 when_microseconds)
+{
+    auto schedule = scheduleWithSpreadMonths(spread_months);
     auto when = std::chrono::system_clock::time_point(std::chrono::system_clock::duration(when_microseconds));
     return schedule.addRandomSpread(when, randomness).time_since_epoch().count();
 }
@@ -52,6 +74,17 @@ TEST(RefreshSchedule, AddRandomSpreadKeepsOrdinarySpreadsExact)
     /// Truncation is toward zero on both signs, as it was when the value was computed in double.
     EXPECT_EQ(spreadMicroseconds(1, 1, some_time_point), some_time_point);
     EXPECT_EQ(spreadMicroseconds(1, -1, some_time_point), some_time_point);
+}
+
+TEST(RefreshSchedule, AddRandomSpreadUsesCalendarUnits)
+{
+    /// A months-only window contributes through the months term of minSeconds, which is 365 days for
+    /// a whole year and 28 for each remaining month. None of these wraps, so the offset is exact.
+    EXPECT_EQ(spreadMicrosecondsForMonths(12, 1000000000, some_time_point), some_time_point + 15768000000000);
+    EXPECT_EQ(spreadMicrosecondsForMonths(12, -1000000000, some_time_point), some_time_point - 15768000000000);
+    EXPECT_EQ(spreadMicrosecondsForMonths(24, 1000000000, some_time_point), some_time_point + 31536000000000);
+    EXPECT_EQ(spreadMicrosecondsForMonths(1, 1000000000, some_time_point), some_time_point + 1209600000000);
+    EXPECT_EQ(spreadMicrosecondsForMonths(12, 0, some_time_point), some_time_point);
 }
 
 TEST(RefreshSchedule, AddRandomSpreadIsExactAboveDoublePrecision)

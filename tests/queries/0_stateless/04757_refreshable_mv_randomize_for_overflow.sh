@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: memory-engine
+# Tags: memory-engine, atomic-database
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,6 +38,16 @@ for i in {1..30}; do
             (x Int64) engine Memory as select 1 as x;"
 done
 
+# Arms E and F: a calendar-unit window reaches the offset through the months term of
+# CalendarTimeInterval::minSeconds instead of its seconds term, which every arm above uses.
+# Deterministic pre-fix: escaping needs |randomness| <= 1015 (E) or <= 6044 (F) out of 1e9.
+$CLICKHOUSE_CLIENT -q "
+    create materialized view rmv_e refresh every 1 year randomize for 1000000000000000000 year
+        (x Int64) engine Memory as select 1 as x;"
+$CLICKHOUSE_CLIENT -q "
+    create materialized view rmv_f refresh every 1 year randomize for 1000000000000000000 month
+        (x Int64) engine Memory as select 1 as x;"
+
 # Arm D: an ordinary spread still works.
 $CLICKHOUSE_CLIENT -q "
     create materialized view rmv_d refresh every 1 hour randomize for 4 day 1 hour
@@ -52,4 +62,4 @@ $CLICKHOUSE_CLIENT -q "select 'alive', 1"
 for i in {1..30}; do
     $CLICKHOUSE_CLIENT -q "drop table rmv_c_$i"
 done
-$CLICKHOUSE_CLIENT -q "drop table rmv_a; drop table rmv_b; drop table rmv_d"
+$CLICKHOUSE_CLIENT -q "drop table rmv_a; drop table rmv_b; drop table rmv_d; drop table rmv_e; drop table rmv_f"
