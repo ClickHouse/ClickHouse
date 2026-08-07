@@ -525,9 +525,6 @@ class Runner:
             # sampling thread is always joined even if TeePopen raised.
             host_metrics_collector.stop()
 
-        print("INFO: disk status after running a job:")
-        Shell.run("df -h")
-
         return exit_code
 
     def _get_result_object(
@@ -1150,6 +1147,10 @@ class Runner:
                 print("=== Post run script finished ===")
 
             result.dump()
+
+        # After the post hooks, so the numbers describe the disk the next job inherits.
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
 
         if not res and not job.force_success:
             sys.exit(1)
