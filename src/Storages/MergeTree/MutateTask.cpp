@@ -1722,15 +1722,30 @@ struct MutationContext : public std::enable_shared_from_this<MutationContext>
         (*mutate_entry)->pipeline_cancel_hook = [weak_ctx = weak_from_this()]()
         {
             if (auto ctx = weak_ctx.lock())
+            {
+                /// Access to the executor is guarded by the same mutex that protects the hook slot,
+                /// so it cannot race with the teardown in `resetMutatingPipeline()`.
+                std::lock_guard hook_lock{(*ctx->mutate_entry)->pipeline_cancel_hook_mutex};
                 if (ctx->mutating_executor)
                     ctx->mutating_executor->cancel();
+            }
         };
     }
 
-    void clearPipelineCancelHook()
+    void clearPipelineCancelHook() const
     {
         std::lock_guard lock{(*mutate_entry)->pipeline_cancel_hook_mutex};
         (*mutate_entry)->pipeline_cancel_hook = {};
+    }
+
+    /// Releases the mutation pipeline. Must run under the same mutex that protects the hook slot,
+    /// so a concurrent `cancelPartMutations` (KILL MUTATION) either cancels a still valid executor
+    /// or observes a null one, never a destroyed one.
+    void resetMutatingPipeline()
+    {
+        std::lock_guard lock{(*mutate_entry)->pipeline_cancel_hook_mutex};
+        mutating_executor.reset();
+        mutating_pipeline.reset();
     }
 
     /// Whether we need to count lightweight delete rows in this mutation
@@ -2654,8 +2669,7 @@ private:
         ctx->new_data_part->setMinMaxIndex(std::move(ctx->minmax_idx));
         ctx->new_data_part->loadProjections(false, false, noop, true /* if_not_loaded */);
         ctx->clearPipelineCancelHook();
-        ctx->mutating_executor.reset();
-        ctx->mutating_pipeline.reset();
+        ctx->resetMutatingPipeline();
 
         auto out_mut = static_pointer_cast<MergedBlockOutputStream>(ctx->out);
         out_mut->finalizeIndexGranularity();
@@ -3045,8 +3059,7 @@ private:
         if (ctx->mutating_executor)
         {
             ctx->clearPipelineCancelHook();
-            ctx->mutating_executor.reset();
-            ctx->mutating_pipeline.reset();
+            ctx->resetMutatingPipeline();
 
             auto out_mut = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
             out_mut->finalizeIndexGranularity();

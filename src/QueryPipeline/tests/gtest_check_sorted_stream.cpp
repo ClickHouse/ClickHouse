@@ -265,30 +265,43 @@ void checkCancellation(const char * fail_point_name)
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
 
-    QueryPipeline pipeline(std::move(pipe));
-    PullingPipelineExecutor executor(pipeline);
+    auto pipeline = std::make_shared<QueryPipeline>(std::move(pipe));
+    auto executor = std::make_shared<PullingPipelineExecutor>(*pipeline);
 
     FailPointInjection::enableFailPoint(fail_point_name);
 
     std::atomic<bool> pull_finished{false};
     std::atomic<bool> pull_result{true};
-    std::thread pull_thread([&]
+    /// The thread keeps `pipeline` and `executor` alive via the shared pointers, so on timeout it
+    /// can be detached instead of joined: the failpoint is already disabled, so it terminates on
+    /// its own without outliving the pipeline objects.
+    std::thread pull_thread([&, executor, pipeline]
     {
         Chunk chunk;
-        pull_result = executor.pull(chunk);
+        try
+        {
+            pull_result = executor->pull(chunk);
+        }
+        catch (...)
+        {
+            pull_result = false;
+        }
         pull_finished = true;
     });
 
     FailPointInjection::waitForPause(fail_point_name);
 
-    executor.cancel();
+    executor->cancel();
     FailPointInjection::disableFailPoint(fail_point_name);
 
     Stopwatch timer;
     while (!pull_finished && timer.elapsedSeconds() < 10)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-    pull_thread.join();
+    if (pull_finished)
+        pull_thread.join();
+    else
+        pull_thread.detach();
 
     ASSERT_TRUE(pull_finished) << "Pull did not finish promptly after cancellation";
     EXPECT_FALSE(pull_result);
