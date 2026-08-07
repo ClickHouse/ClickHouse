@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -114,6 +115,11 @@ void SerializationInterval::serializeTextQuoted(const IColumn & column, size_t r
             ostr.write('\'');
             return;
     }
+}
+
+void SerializationInterval::serializeTextHive(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Interval is not supported by the HiveText output format");
 }
 
 }

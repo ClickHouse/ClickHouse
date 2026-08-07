@@ -74,6 +74,7 @@ static struct InitFiu
     ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
     ONCE(object_storage_queue_fail_commit_once) \
     ONCE(object_storage_queue_fail_commit_after_success) \
+    ONCE(object_storage_queue_skip_one_file_in_batch) \
     ONCE(object_storage_queue_cancel_in_generate) \
     ONCE(object_storage_queue_sleep_in_generate) \
     ONCE(object_storage_queue_fail_tags_fetch) \
@@ -92,6 +93,7 @@ static struct InitFiu
     REGULAR(distributed_cache_wait_gap_buffered_on_seek) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
+    PAUSEABLE(file_segment_pause_before_write) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
@@ -138,6 +140,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(terminate_with_exception) \
@@ -161,8 +164,9 @@ static struct InitFiu
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(keeper_fault_on_watch_request) \
+    REGULAR(keeper_shutdown_delay_before_queue_check) \
     REGULAR(lazy_pipe_fds_fail_close) \
-    ONCE(create_empty_part_inject_stale_dir) \
+    REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
@@ -247,6 +251,7 @@ static struct InitFiu
     REGULAR(database_replicated_force_metadata_digest_check) \
     ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
+    PAUSEABLE(database_materialized_postgresql_pause_before_table_drop) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     REGULAR(datalake_try_get_table_throw) \
     REGULAR(datalake_get_tables_throw) \
@@ -354,8 +359,24 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
+static bool isRegisteredFailPoint(const String & fail_point_name)
+{
+#define M(NAME)                              \
+    if (fail_point_name == FailPoints::NAME) \
+        return true;
+    APPLY_FOR_FAILPOINTS(M, M, M, M)
+#undef M
+
+    return false;
+}
+
 void FailPointInjection::disableFailPoint(const String & fail_point_name)
 {
+    /// Registration is deliberately the only check: disabling a registered fail point that is
+    /// not currently enabled must stay a silent no-op, because callers do idempotent cleanup.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
@@ -371,6 +392,11 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
 
 void FailPointInjection::notifyFailPoint(const String & fail_point_name)
 {
+    /// Reported separately from the missing channel below, so a typo is not described as a
+    /// registered fail point that nothing is waiting on.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::lock_guard lock(mu);
     if (auto iter = fail_point_wait_channels.find(fail_point_name); iter != fail_point_wait_channels.end())
     {
@@ -406,6 +432,12 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
 {
+    /// A mistyped name would otherwise return at once and silently drop the synchronisation the
+    /// caller asked for, turning a deterministic test into a race. A registered fail point with no
+    /// channel still returns, because it is simply not paused.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
@@ -421,6 +453,10 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
 
 void FailPointInjection::waitForResume(const String & fail_point_name)
 {
+    /// Same as `waitForPause`: an unknown name must not look like an already finished wait.
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
     std::unique_lock lock(mu);
     auto iter = fail_point_wait_channels.find(fail_point_name);
     if (iter == fail_point_wait_channels.end())
@@ -462,7 +498,19 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 
 #else // USE_LIBFIU
 
+/// These are hooks in regular code paths, so they must be no-ops rather than throw.
+/// In particular, `disableFailPoint` is called unconditionally during quorum cleanup
+/// in `StorageReplicatedMergeTree` and `ReplicatedMergeTreeRestartingThread`.
+
 void FailPointInjection::pauseFailPoint(const String &)
+{
+}
+
+void FailPointInjection::notifyPauseAndWaitForResume(const String &)
+{
+}
+
+void FailPointInjection::disableFailPoint(const String &)
 {
 }
 
@@ -471,43 +519,33 @@ bool FailPointInjection::hasAnyFailPointBeenRegistered()
     return false;
 }
 
+/// The rest are only reachable through SYSTEM ... FAILPOINT queries (whose interpreter
+/// already throws in builds without libfiu), and pretending to succeed would leave the
+/// caller waiting for a fail point that can never fire.
+
+[[noreturn]] static void throwDisabled()
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Fail points are disabled because ClickHouse was built without libfiu");
+}
+
 void FailPointInjection::enableFailPoint(const String &)
 {
-}
-
-void FailPointInjection::enablePauseFailPoint(const String &, UInt64)
-{
-}
-
-void FailPointInjection::disableFailPoint(const String &)
-{
+    throwDisabled();
 }
 
 void FailPointInjection::notifyFailPoint(const String &)
 {
-}
-
-void FailPointInjection::wait(const String &)
-{
+    throwDisabled();
 }
 
 void FailPointInjection::waitForPause(const String &)
 {
+    throwDisabled();
 }
 
 void FailPointInjection::waitForResume(const String &)
 {
-}
-
-void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    String root_key = "fail_points_active";
-
-    Poco::Util::AbstractConfiguration::Keys fail_point_names;
-    config.keys(root_key, fail_point_names);
-
-    if (!fail_point_names.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FIU is not enabled");
+    throwDisabled();
 }
 
 std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()

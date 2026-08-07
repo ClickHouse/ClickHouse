@@ -586,6 +586,11 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_
     if (!table_join->oneDisjunct())
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoin does not support OR in JOIN ON section");
 
+    /// This join matches rows on the equality keys only, so a mixed `ON` condition reaching here
+    /// would be dropped instead of applied.
+    if (table_join->getMixedJoinExpression())
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "MergeJoin cannot evaluate a mixed JOIN ON condition");
+
     const auto & onexpr = table_join->getOnlyClause();
     std::tie(mask_column_name_left, mask_column_name_right) = onexpr.condColumnNames();
 
@@ -1262,6 +1267,11 @@ void MergeJoin::addConditionJoinColumn(Block & block, JoinTableSide block_side) 
 
 bool MergeJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
 {
+    /// `MergeJoin` matches rows on the equality keys only and never evaluates a mixed
+    /// (cross-side non-equi) `ON` condition, so accepting one here would silently drop it.
+    if (table_join->getMixedJoinExpression())
+        return false;
+
     return isSupported(table_join->kind(), table_join->strictness()) && table_join->oneDisjunct();
 }
 

@@ -695,7 +695,15 @@ namespace ErrorCodes
 #undef M
 
     constexpr ErrorCode END = 1010;
+
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
+    /** One `ErrorPairHolder` per error code, each holding two `Error` structs - the last message,
+      * format string, query id and captured stack trace, local and remote - plus a mutex. That is
+      * around 150 KB of data for the whole table, which the server wants for `system.errors` but a
+      * standalone build of the parser has nothing to do with: the names above are all it needs.
+      */
     ErrorPairHolder values[END + 1]{};
+#endif
 
     struct ErrorCodesNames
     {
@@ -732,6 +740,19 @@ namespace ErrorCodes
 
     ErrorCode end() { return END + 1; }
 
+#if defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
+
+    size_t increment(ErrorCode, bool, const std::string &, const std::string &, const FramePointers &)
+    {
+        return 0;
+    }
+
+    void extendedMessage(ErrorCode, bool, size_t, const std::string &)
+    {
+    }
+
+#else
+
     size_t increment(ErrorCode error_code, bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
     {
         if (error_code < 0 || error_code >= end())
@@ -755,6 +776,8 @@ namespace ErrorCodes
 
         values[error_code].extendedMessage(remote, error_index, message);
     }
+
+#endif
 
     size_t ErrorPairHolder::increment(bool remote, const std::string & message, const std::string & format_string, const FramePointers & trace)
     {
