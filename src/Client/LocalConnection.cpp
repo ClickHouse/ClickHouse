@@ -829,8 +829,10 @@ Packet LocalConnection::receivePacket()
         }
         case Protocol::Server::Progress:
         {
+            /// Note: no `reset` afterwards - `fetchAndResetPiecewiseAtomically` already zeroes every counter
+            /// atomically, and the pipeline keeps incrementing them from its own threads while we are here.
+            /// An extra `reset` would silently drop whatever landed in between, under-reporting the progress.
             packet.progress = state->progress.fetchAndResetPiecewiseAtomically();
-            state->progress.reset();
             next_packet_type.reset();
             break;
         }

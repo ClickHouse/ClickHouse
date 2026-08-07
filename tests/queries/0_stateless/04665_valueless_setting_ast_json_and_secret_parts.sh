@@ -32,7 +32,10 @@ $CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_diale
 # A payload may pair the flag with a value the parser would never produce. Deserialization must not
 # reject it: that runs before `executeQueryImpl` has an AST to mask with, so the raw JSON text -
 # the value included - would go down the unmasked logging path. The value is kept, so the query is
-# rejected by the setting's own check, and the value stays hidden when the query is formatted.
+# rejected by the setting's own check, and the formatter still prints it - a valueless setting only
+# has its value elided when the value really is `true`, so a formatter can never under-report what a
+# query carries. `formatQueryFromJSON` shows secrets, exactly like `formatQuerySingleLine` below;
+# what matters is that the masking path used for logging hides the password.
 CRAFTED="replaceAll(parseQueryToJSON(\$\$SELECT 1 SETTINGS format_avro_schema_registry_url = 'http://user:pass@localhost'\$\$), '{\"name\":\"format_avro_schema_registry_url\"', '{\"name\":\"format_avro_schema_registry_url\",\"shorthand\":true')"
 $CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON($CRAFTED)"
 CRAFTED_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED FORMAT TSVRaw")

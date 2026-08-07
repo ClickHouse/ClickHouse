@@ -45,6 +45,12 @@ Notes on data coverage:
     linked (clickhouse-keeper has none when built as a symlink to clickhouse).
   * `binary_sizes` is complete on both sides; `binary_symbols` is complete on
     the PR side and on master builds since this check was introduced.
+  * The warmup build builds every object-file target ninja knows about while a
+    PR build builds only `clickhouse-bundle`, so the object-size comparison
+    covers the object files the PR build produced (see `compare_objects`).
+  * Names coming out of a ThinLTO link carry an unstable `.llvm.<hash>` clone
+    suffix, so symbols and per-function times are keyed by the name with that
+    suffix removed (see `strip_clone_suffix`).
 
 Local run (no AWS SSM secrets and no PR comment; `gh` is still required, to
 enumerate master history from the provided baseline):
@@ -108,9 +114,15 @@ BINARY_SIG_BYTES = 8 << 20  # stripped binary: 8 MiB and
 BINARY_SIG_RATIO = 0.01  # 1%
 OBJECT_REPORT_BYTES = 16 << 10  # .o file: report at 16 KiB,
 OBJECT_SIG_BYTES = 256 << 10  # significant at 256 KiB
-OPTFN_REPORT_SECONDS = 2  # per-function LTO time: report at |delta| >= 2s
-OPTFN_REPORT_RATIO = 1.5  # and 1.5x, significant at 15s
-OPTFN_SIG_SECONDS = 15
+# Per-function ThinLTO time is the noisiest signal of the check: the two links
+# run on different machines, with different flags, and the backend's per-function
+# time depends on the import decisions of the whole module. Measured on pull
+# requests that cannot possibly have changed the functions in question, single
+# functions of a few seconds drifted by up to a factor of two - which the old
+# 2 s / 1.5x reporting bar turned into a dozen-row table on every pull request.
+OPTFN_REPORT_SECONDS = 5  # per-function LTO time: report at |delta| >= 5s
+OPTFN_REPORT_RATIO = 2.0  # and 2x, significant at 20s
+OPTFN_SIG_SECONDS = 20
 TU_REPORT_SECONDS = 5  # per-TU compile time: report at |delta| >= 5s
 TU_REPORT_RATIO = 1.3  # and 1.3x, significant at 20s and 1.5x
 TU_SIG_SECONDS = 20
@@ -125,8 +137,14 @@ TU_SIG_RATIO = 1.5
 # baselines use the PR's flags, but not the PR's runner.
 TU_SKEW_SIG_RATIO = 1.2
 TU_SKEW_SIG_SECONDS = 300
-SYMBOL_REPORT_BYTES = 16 << 10  # per-symbol size: report at 16 KiB,
-SYMBOL_SIG_BYTES = 256 << 10  # significant at 256 KiB
+# Per-symbol sizes are baselined on the official master build, not on the
+# flag-identical warmup one: its different flags change ThinLTO's inlining and
+# import decisions, so individual functions really do differ in size between two
+# builds of the same source. The whole stripped binary drifts by ~3 MiB on a
+# no-op pull request, so the margins here are much wider than the object-file
+# ones (those are baselined on a build compiled with the PR's exact flags).
+SYMBOL_REPORT_BYTES = 64 << 10  # per-symbol size: report at 64 KiB,
+SYMBOL_SIG_BYTES = 512 << 10  # significant at 512 KiB
 MAX_TABLE_ROWS = 20
 MAX_NAME_LEN = 100
 
@@ -295,6 +313,33 @@ def md_code(name: str) -> str:
 
 def strip_build_dir(path: str) -> str:
     return path.removeprefix(f"{BUILD_DIR}/")
+
+
+# ThinLTO's clone suffix, in the demangled form (` [clone .llvm.123]`) and in the
+# mangled one (`.llvm.123`) - `binary_symbols` holds demangled names, the time
+# trace holds mangled ones.
+CLONE_SUFFIX_RE = r"' ?\\[clone \\.llvm\\.[0-9]+\\]'"
+LLVM_SUFFIX_RE = r"'\\.llvm\\.[0-9]+'"
+
+
+def strip_clone_suffix(column: str) -> str:
+    """SQL dropping ThinLTO's `.llvm.<hash>` suffix from a symbol name.
+
+    When ThinLTO imports a function it promotes the module-local symbols it
+    needs and renames them with a `.llvm.<hash>` suffix (`nm --demangle` renders
+    it as ` [clone .llvm.<hash>]`). The hash is derived from the defining
+    module's identity, so it is not stable across builds: two builds of the very
+    same source name the same clone differently.
+
+    Both sides are therefore normalized by dropping the suffix, which also folds
+    the several clones of one function into a single row. Without it an entirely
+    unchanged function appears twice - once as removed, once as new, at exactly
+    the same size - and those phantom pairs were the largest rows of the symbol
+    and ThinLTO tables on every pull request, and enough to declare both
+    sections significant.
+    """
+    without_clone = f"replaceRegexpAll({column}, {CLONE_SUFFIX_RE}, '')"
+    return f"replaceRegexpAll({without_clone}, {LLVM_SUFFIX_RE}, '')"
 
 
 _DEMANGLER = None
@@ -655,6 +700,19 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
     The warmup build is the only master build compiled with the PR's exact
     flags: the official master build keeps debug symbols inside every .o file
     while PR builds strip them, which would dwarf any real change.
+
+    Only the object files the PR build produced are compared. The two builds do
+    not have the same target set: the warmup build compiles every object-file
+    target ninja knows about (see PR_CACHE_WARMUP_BUILD_TYPES in
+    build_clickhouse.py), while a PR build only builds `clickhouse-bundle`, so
+    hundreds of object files - `grpc_unsecure`, protobuf-lite, the gRPC half of
+    google-cloud-cpp, the unit tests, the utils - exist on the warmup side alone.
+    Reading them as removals produced a "685 removed, -40 MiB" finding on every
+    pull request. A PR-only object file, on the other hand, is a real addition:
+    the warmup side builds a superset of the target set, so it is a source file
+    the PR added. The reverse signal - a source file the PR deletes - is left to
+    the binary and symbol sections; there is no way to tell it apart from the
+    target-set difference here.
     """
     section = Section(title="Object file sizes")
     if base_side is None:
@@ -667,16 +725,16 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
             toInt64(pr_size) - toInt64(base_size) AS delta
         FROM {both_sides("binary_sizes", "file, size", pr_side, base_side, OBJECT_FILTER)}
         GROUP BY file
-        HAVING abs(delta) >= {OBJECT_REPORT_BYTES}
+        HAVING pr_size > 0 AND abs(delta) >= {OBJECT_REPORT_BYTES}
         ORDER BY abs(delta) DESC
         LIMIT {MAX_TABLE_ROWS}"""
     )
     totals = db.query(
         f"""SELECT
             countIf(pr_size > 0 AND base_size > 0 AND pr_size != base_size) AS changed,
-            countIf(base_size = 0) AS added,
-            countIf(pr_size = 0) AS removed,
-            sum(toInt64(pr_size) - toInt64(base_size)) AS total_delta
+            countIf(pr_size > 0 AND base_size = 0) AS added,
+            countIf(pr_size = 0) AS base_only,
+            sumIf(toInt64(pr_size) - toInt64(base_size), pr_size > 0) AS total_delta
         FROM (
             SELECT file,
                 maxIf(size, side = 'pr') AS pr_size,
@@ -685,16 +743,21 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
             GROUP BY file
         )"""
     )[0]
-    changed, added, removed = (
+    changed, added, base_only = (
         int(totals["changed"]),
         int(totals["added"]),
-        int(totals["removed"]),
+        int(totals["base_only"]),
     )
-    if not rows and not added and not removed:
+    # The baseline-only files are the target-set difference, not a finding, so
+    # they never bring the section to life on their own. Say how many were left
+    # out in the job log even when the section stays silent.
+    if base_only:
+        print(f"{base_only} object files exist only in the warmup baseline (target-set difference) and are not compared")
+    if not rows and not added:
         return section
 
     lines = [
-        f"{changed} object files changed ({format_bytes_delta(int(totals['total_delta']), 0)} total), {added} added, {removed} removed.",
+        f"{changed} object files changed ({format_bytes_delta(int(totals['total_delta']), 0)} total), {added} added.",
         "",
         "| Object file | Master | PR | Δ |",
         "|---|---:|---:|---:|",
@@ -704,17 +767,23 @@ def compare_objects(db: Db, pr_side, base_side) -> Section:
         delta = int(row["delta"])
         # OBJECT_FILTER keeps only real compile-stage .o files (link-stage
         # artifacts do not end in .o, and scratch/incremental dirs are
-        # excluded), and both sides compile the full set of objects with the
-        # same flags - so a one-sided row is a genuinely added or removed
+        # excluded), and the warmup build compiles a superset of the PR's
+        # targets with the same flags - so a PR-only row is a genuinely added
         # object file. Its whole size is the delta, and it drives the verdict
         # exactly like a size change of a file present on both sides.
         if abs(delta) >= OBJECT_SIG_BYTES:
             section.significant = True
         base_text = format_bytes(base_size) if base_size else "new"
-        pr_text = format_bytes(pr_size) if pr_size else "removed"
-        lines.append(f"| {md_code(strip_build_dir(row['file']))} | {base_text} | {pr_text} | {format_bytes_delta(delta, base_size)} |")
+        lines.append(f"| {md_code(strip_build_dir(row['file']))} | {base_text} | {format_bytes(pr_size)} | {format_bytes_delta(delta, base_size)} |")
+    if base_only:
+        lines += [
+            "",
+            f"{base_only} more object {'file is' if base_only == 1 else 'files are'} built by the "
+            "master warmup baseline only (it builds every object-file target, a "
+            "pull request build only `clickhouse-bundle`) and not compared.",
+        ]
     section.body = "\n".join(lines)
-    section.summary = f"{changed} object files changed, {added} added, {removed} removed"
+    section.summary = f"{changed} object files changed, {added} added"
     return section
 
 
@@ -741,6 +810,22 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     uniform ratio. The median ratio over matched functions estimates the skew
     and per-function deltas are taken relative to it, the same way the per-TU
     compile-time section normalizes its machine-speed skew.
+
+    The skew is estimated per binary. Each binary is a separate ThinLTO link, so
+    the two links of a build do not even run at the same time, let alone the
+    links of the two sides: their ratios to the baseline routinely differ by more
+    than a factor of two. One median over both binaries splits the difference and
+    charges the whole gap to the functions of both - it reported the unchanged
+    functions of `clickhouse` as several seconds faster and those of
+    `clickhouse-keeper` as twice as slow, in the same table, on a pull request
+    that touched neither.
+
+    A shift that moves every function of a binary by the same factor is the skew
+    itself, so - unlike the per-TU compile-time section, which judges its skew on
+    the section level - it produces no finding here. Absolute link times are not
+    comparable between the two sides at all (the master build's debug info alone
+    changes them by tens of percent), so there is nothing to judge such a shift
+    against.
     """
     section = Section(title="Slowest function optimization changes (ThinLTO)")
     trace_where = "name = 'OptFunction' AND dur >= 50000"
@@ -781,25 +866,37 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
         section.body = "\n".join(lines).rstrip()
         return section
     where = f"file IN ({in_list(comparable)}) AND {trace_where}"
+    # ThinLTO renames the clones it creates with an unstable hash, so both sides
+    # are keyed by the normalized function name (see strip_clone_suffix).
+    both = both_sides(
+        "build_time_trace",
+        f"file, {strip_clone_suffix('detail')} AS detail, dur",
+        pr_side,
+        base_side,
+        where,
+    )
     # The systematic skew between the sides, as the median PR/master time
-    # ratio over functions matched on both sides with a non-trivial baseline.
+    # ratio over functions matched on both sides with a non-trivial baseline,
+    # per binary (each is its own link, see above).
     # Interpolated: `medianExact` returns the upper middle element on an even
     # count, which overestimates the shift when a part of the functions
     # regressed and would normalize that regression away.
     skew_rows = db.query(
-        f"""SELECT quantileExactWeightedInterpolated(0.5)(pr_dur / base_dur, 1) AS skew, count() AS matched
+        f"""SELECT file, quantileExactWeightedInterpolated(0.5)(pr_dur / base_dur, 1) AS skew, count() AS matched
         FROM (
             SELECT file, detail,
                 sumIf(dur, side = 'pr') AS pr_dur,
                 sumIf(dur, side = 'base') AS base_dur
-            FROM {both_sides("build_time_trace", "file, detail, dur", pr_side, base_side, where)}
+            FROM {both}
             GROUP BY file, detail
             HAVING pr_dur >= 500000 AND base_dur >= 500000
-        )"""
+        )
+        GROUP BY file"""
     )
-    skew = 1.0
-    if skew_rows and int(skew_rows[0]["matched"]) >= 10:
-        skew = float(skew_rows[0]["skew"])
+    skews = {row["file"]: float(row["skew"]) for row in skew_rows if int(row["matched"]) >= 10}
+    skew_expr = "1.0"
+    if skews:
+        skew_expr = f"transform(file, [{in_list(skews)}], [{', '.join(f'{v}' for v in skews.values())}], 1.0)"
     report_us = int(OPTFN_REPORT_SECONDS * 1e6)
     # dur >= 50ms cuts the aggregation from ~1M rows per side to tens of
     # thousands; a function can only reach the report threshold if one side
@@ -808,22 +905,26 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
         f"""SELECT file, detail,
             sumIf(dur, side = 'pr') AS pr_dur,
             sumIf(dur, side = 'base') AS base_dur,
-            toInt64(pr_dur) - toInt64(base_dur * {skew}) AS delta
-        FROM {both_sides("build_time_trace", "file, detail, dur", pr_side, base_side, where)}
+            base_dur * ({skew_expr}) AS adjusted_base_dur,
+            toInt64(pr_dur) - toInt64(adjusted_base_dur) AS delta
+        FROM {both}
         GROUP BY file, detail
         HAVING abs(delta) >= {report_us}
             AND (pr_dur = 0 OR base_dur = 0
-                 OR greatest(toFloat64(pr_dur), base_dur * {skew}) >= least(toFloat64(pr_dur), base_dur * {skew}) * {OPTFN_REPORT_RATIO})
+                 OR greatest(toFloat64(pr_dur), adjusted_base_dur) >= least(toFloat64(pr_dur), adjusted_base_dur) * {OPTFN_REPORT_RATIO})
         ORDER BY abs(delta) DESC
         LIMIT {MAX_TABLE_ROWS}"""
     )
     if not rows:
         section.body = "\n".join(lines).rstrip()
         return section
-    if abs(skew - 1.0) >= 0.05:
+    skewed = sorted((f, s) for f, s in skews.items() if abs(s - 1.0) >= 0.05)
+    if skewed:
+        ratios = ", ".join(f"{md_code(strip_build_dir(f))} ×{s:.2f}" for f, s in skewed)
         lines += [
-            f"Median per-function time ratio to the master baseline is ×{skew:.2f} "
-            "(different machine and build flags); deltas below are relative to that ratio.",
+            f"Median per-function time ratio to the master baseline: {ratios} "
+            "(each binary is linked separately, on a different machine and with "
+            "different build flags); deltas below are relative to it.",
             "",
         ]
     lines += [
@@ -832,7 +933,7 @@ def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     ]
     for row in rows:
         pr_s, base_s = int(row["pr_dur"]) / 1e6, int(row["base_dur"]) / 1e6
-        adjusted_base_s = base_s * skew
+        adjusted_base_s = base_s * skews.get(row["file"], 1.0)
         delta = pr_s - adjusted_base_s
         if abs(delta) >= OPTFN_SIG_SECONDS:
             section.significant = True
@@ -1066,7 +1167,7 @@ def drill_down_tu(db: Db, pr_side, base_side, file, library, skew=1.0) -> List[s
         FROM {
             both_sides(
                 "build_time_trace",
-                "name, detail, dur",
+                f"name, {strip_clone_suffix('detail')} AS detail, dur",
                 pr_side,
                 base_side,
                 f"file = {quote(file)} AND library = {quote(library)} AND detail != '' AND name IN ('InstantiateFunction', 'InstantiateClass', 'ParseClass', 'Source', 'OptFunction', 'CodeGen Function')",
@@ -1100,6 +1201,11 @@ def compare_symbols(db: Db, pr_side, base_side) -> Section:
     sides have its symbol data; a binary whose symbols the master baseline has
     but the PR build did not upload means the profile producer lost rows, and
     is flagged as an incomplete comparison instead of an all-green omission.
+
+    Symbols are keyed by the name with ThinLTO's clone suffix removed (see
+    `strip_clone_suffix`): the suffix is not stable across builds, so without
+    that the largest rows of the table are the same unchanged function listed
+    twice, once removed and once new.
     """
     section = Section(title="Symbol sizes")
     sides = db.query(
@@ -1137,7 +1243,15 @@ def compare_symbols(db: Db, pr_side, base_side) -> Section:
             sumIf(size, side = 'pr') AS pr_size,
             sumIf(size, side = 'base') AS base_size,
             toInt64(pr_size) - toInt64(base_size) AS delta
-        FROM {both_sides("binary_symbols", "file, symbol, size", pr_side, base_side, f"file IN ({in_list(comparable)}) AND size >= 1024")}
+        FROM {
+            both_sides(
+                "binary_symbols",
+                f"file, {strip_clone_suffix('symbol')} AS symbol, size",
+                pr_side,
+                base_side,
+                f"file IN ({in_list(comparable)}) AND size >= 1024",
+            )
+        }
         GROUP BY file, symbol
         HAVING abs(delta) >= {SYMBOL_REPORT_BYTES}
         ORDER BY abs(delta) DESC

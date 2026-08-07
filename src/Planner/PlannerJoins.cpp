@@ -1064,6 +1064,11 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     if (!allowed_inner && !allowed_left)
         return {};
 
+    /// `DirectKeyValueJoin` looks rows up by the equality key only and never evaluates a mixed
+    /// (cross-side non-equi) `ON` condition, so accepting one here would silently drop it.
+    if (table_join->getMixedJoinExpression())
+        return {};
+
     const auto & clauses = table_join->getClauses();
     bool only_one_key = clauses.size() == 1 &&
         clauses[0].key_names_left.size() == 1 &&

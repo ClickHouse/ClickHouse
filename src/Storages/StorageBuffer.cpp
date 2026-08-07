@@ -197,7 +197,7 @@ StorageBuffer::StorageBuffer(
             CurrentMetrics::StorageBufferFlushThreads, CurrentMetrics::StorageBufferFlushThreadsActive, CurrentMetrics::StorageBufferFlushThreadsScheduled,
             num_shards, 0, num_shards);
     }
-    flush_handle = bg_pool.createTask(getStorageID(), log->name() + "/Bg", [this]{ backgroundFlush(); });
+    flush_handle = bg_pool->createTask(getStorageID(), log->name() + "/Bg", [this]{ backgroundFlush(); });
 
     LOG_TRACE(log, "Buffer(flush: ({}), min: ({}), max: ({}))", flush_thresholds.toString(), min_thresholds.toString(), max_thresholds.toString());
 }
@@ -539,6 +539,11 @@ void StorageBuffer::read(
     /// TODO: Find a way to support projections for StorageBuffer
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
+        /// The buffers plan is united with the table plan in the same process, where nothing
+        /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
+        auto buffers_select_query_options = SelectQueryOptions(processed_stage);
+        buffers_select_query_options.is_local_plan_for_distributed_query = true;
+
         if (enable_analyzer)
         {
             auto storage = std::make_shared<StorageValues>(
@@ -548,7 +553,7 @@ void StorageBuffer::read(
                     storage_snapshot->metadata->virtuals);
 
             auto interpreter
-                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, SelectQueryOptions(processed_stage), storage);
+                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
             interpreter.addStorageLimits(*query_info.storage_limits);
             buffers_plan = std::move(interpreter).extractQueryPlan();
         }
@@ -556,7 +561,7 @@ void StorageBuffer::read(
         {
             auto interpreter = InterpreterSelectQuery(
                     query_info.query, local_context, std::move(pipe_from_buffers),
-                    SelectQueryOptions(processed_stage));
+                    buffers_select_query_options);
             interpreter.addStorageLimits(*query_info.storage_limits);
             interpreter.buildQueryPlan(buffers_plan);
         }

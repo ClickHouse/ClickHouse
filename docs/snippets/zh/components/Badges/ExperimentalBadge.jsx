@@ -12,7 +12,7 @@ const Icon = () => {
 export const ExperimentalBadge = () => {
     return (
         <a
-            href="/docs/beta-and-experimental-features#experimental-features"
+            href="/zh/reference/settings/beta-and-experimental-features#experimental-features"
             className="experimentalBadge"
         >
             <Icon />Experimental 功能
