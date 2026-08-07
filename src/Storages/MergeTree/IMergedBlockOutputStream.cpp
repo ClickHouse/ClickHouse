@@ -57,12 +57,8 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     if (empty_columns.empty() || isCompactPart(data_part))
         return {};
 
-    /// A part must keep at least one physical column: a zero-column part cannot be loaded
-    /// (loadColumns / loadIndexGranularity throw NO_FILE_IN_DATA_PART "No columns in part").
-    /// When column TTLs fully expire every column of the part (e.g. a single-column table),
-    /// retain one physically instead of dropping it. Its files were already written with
-    /// default values during the merge, so keeping it matches what compact parts do (they
-    /// are never stripped above) and how a multi-column part reads an expired column.
+    /// A part must keep at least one physical column: `loadColumns` and `loadIndexGranularity`
+    /// throw NO_FILE_IN_DATA_PART "No columns in part" for a zero-column part.
     NameSet columns_to_remove = empty_columns;
     size_t columns_kept = 0;
     for (const auto & column : columns)
