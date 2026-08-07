@@ -1,0 +1,31 @@
+add unrelated typed path, key subcolumn unchanged -> allowed:
+pending mutations:	0
+key lookup after reload (data.a = 4):
+4	4
+adjust JSON param, key subcolumn unchanged -> allowed:
+SKIP unrelated path, key subcolumn unchanged -> allowed:
+0	0
+1	1
+2	2
+3	3
+4	4
+5	5
+change key subcolumn type unsafely -> reject:
+subcolumn in key expression, add unrelated path (data.a unchanged) -> allowed:
+0	0
+1	1
+2	2
+3	3
+subcolumn in key expression, retype data.a -> reject:
+add unrelated typed path, partition subcolumn unchanged -> allowed:
+9
+change partition subcolumn type unsafely -> reject:
+change non-key subcolumn only -> allowed:
+0	0	0
+1	1	1
+2	2	2
+3	3	3
+change key subcolumn unsafely -> reject:
+widen key subcolumn enum (safe) -> allowed:
+1	x	10
+2	y	20
