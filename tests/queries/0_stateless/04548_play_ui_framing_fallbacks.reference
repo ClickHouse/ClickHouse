@@ -63,6 +63,12 @@ replay clock comes from the packets: OK
 replay time reaches the metrics model: OK
 replay rebuilds the resource state: OK
 every replay site passes its tab: OK
+replay honors the saved truncation state: OK
+live truncation state is captured: OK
+both single-query saves persist it: OK
+the multi-statement save persists it: OK
+the tab snapshot round-trips it: OK
+both restore sites replay it: OK
 --- an incompatible explicit format is rejected as a framed exception the page can match
 1
 text/event-stream

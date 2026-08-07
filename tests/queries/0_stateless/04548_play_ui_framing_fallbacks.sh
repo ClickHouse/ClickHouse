@@ -281,7 +281,18 @@ echo "$page" | grep -q -F 'targetResultEl.updateMetrics(events, options.replay ?
 # line reappears after a reload / Back / Forward (`clearPanel` dropped that state); `syncActiveTabChrome`
 # repaints it. Every replay site passes its tab.
 echo "$page" | grep -q -F 'resourceMeter: tab ? (events) => accumulateResourceEvents(tab.resources, events) : undefined,' && echo 'replay rebuilds the resource state: OK'
-[ "$(echo "$page" | grep -c -E 'renderEventStreamText\(.*, format, tab\);')" -eq 3 ] && echo 'every replay site passes its tab: OK'
+[ "$(echo "$page" | grep -c -E 'renderEventStreamText\(.*, format, tab, (false|!!)')" -eq 3 ] && echo 'every replay site passes its tab: OK'
+# The live reader deliberately never renders an image collected from a truncated stream
+# (`verbatim.finish(truncated)` skips it), so a saved truncated `FORMAT PNG` snapshot must not
+# reopen as a partially decoded picture either: the truncation state is persisted with the
+# snapshot (it cannot be re-derived - the synthesized failure carrier is a well-formed terminal
+# block, indistinguishable from a complete failed stream) and replay passes it back into the sink.
+echo "$page" | grep -q -F 'return verbatim ? verbatim.finish(!!truncated) : false;' && echo 'replay honors the saved truncation state: OK'
+echo "$page" | grep -q -F 'is_truncated = res.truncated;' && echo 'live truncation state is captured: OK'
+[ "$(echo "$page" | grep -c -F 'truncated: !!result.is_truncated,')" -eq 2 ] && echo 'both single-query saves persist it: OK'
+echo "$page" | grep -q -F 'truncated: r ? !!r.is_truncated : false,' && echo 'the multi-statement save persists it: OK'
+echo "$page" | grep -q -F 'truncated: stateData.truncated ?? false,' && echo 'the tab snapshot round-trips it: OK'
+[ "$(echo "$page" | grep -c -E 'renderEventStreamText\(.*\.truncated\);')" -eq 2 ] && echo 'both restore sites replay it: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.

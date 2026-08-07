@@ -7988,6 +7988,14 @@ function dispatchEventStreamBlock(block, handleEvent)
 /// the whole snapshot is replayed. `format` is the output format of the response, which decides both
 /// the image MIME type and how the raw text is reconstructed. Returns true if an image was rendered.
 ///
+/// `truncated` is the persisted truncation state of the saved stream (see `readEventStream` and the
+/// transport catch in `postImpl`): the live path deliberately does not render an image collected
+/// from a cut-off stream (`makeVerbatimPayloadSink.finish`), so the replay must not either - a saved
+/// truncated `FORMAT PNG` response reopens as its error, exactly as it was shown live, instead of a
+/// partially decoded picture. The flag travels with the snapshot rather than being re-derived from
+/// the text: a truncated stream whose synthesized failure carrier was appended as a well-formed
+/// terminal block is indistinguishable from a complete failed stream by inspection.
+///
 /// `tab`, when given, is the tab the replayed stream belongs to: its `profile_events` packets are
 /// accumulated into the TAB-OWNED resource state through the same `accumulateResourceEvents` path
 /// the live `readEventStream` uses, so a framed result reopened after a reload / Back / Forward -
@@ -7996,7 +8004,7 @@ function dispatchEventStreamBlock(block, handleEvent)
 /// runs after the result is materialized), exactly as for a tab whose query streamed in the
 /// background. As live, it is one aggregate per run: every replayed statement of the tab
 /// accumulates into the same state.
-function renderEventStreamText(text, targetResultEl, rawText, base64, format, tab)
+function renderEventStreamText(text, targetResultEl, rawText, base64, format, tab, truncated)
 {
     /// Under the base64 wire the rendering mode is decided by the format, not the encoding: the
     /// default format replays as a table (the handler decodes the payloads), any other format goes
@@ -8023,7 +8031,11 @@ function renderEventStreamText(text, targetResultEl, rawText, base64, format, ta
     }
     /// The whole (already-finished) stream has been replayed: show the metric totals.
     targetResultEl.finalizeMetrics();
-    return verbatim ? verbatim.finish(false) : false;
+    /// Pass the SAVED truncation state through, mirroring the live `verbatim.finish(truncated)`:
+    /// a truncated stream's collected image bytes are incomplete, so the sink skips the image and
+    /// the replayed failure carrier alone reports the error - the same fail-closed behavior the
+    /// live path showed.
+    return verbatim ? verbatim.finish(!!truncated) : false;
 }
 
 /// Append streamed text to the string kept for the tab/history snapshot, but stop just past 100 KB.
@@ -8126,7 +8138,7 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
             {
                 abortController.abort();
                 targetResultEl.finalizeMetrics();
-                return { reply, exception: saw_exception, exception_block };
+                return { reply, exception: saw_exception, exception_block, truncated: false };
             }
         }
 
@@ -8190,7 +8202,11 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
     /// The stream is complete: switch the metrics table to totals / query-average rates.
     targetResultEl.finalizeMetrics();
 
-    return { reply, is_image, exception: saw_exception || truncated, exception_block };
+    /// `truncated` is returned on its own (not only folded into `exception`): the caller persists
+    /// it with the snapshot, so replay can keep the fail-closed image suppression above - a failed
+    /// but COMPLETE stream (a terminal `exception` packet) does render its collected image, while a
+    /// cut-off one never does, live and on restore alike.
+    return { reply, is_image, exception: saw_exception || truncated, exception_block, truncated };
 }
 
 /// Low-level marker for an exception raised after the HTTP response body has already started.
@@ -8594,6 +8610,12 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// history/tab replay path decodes the payloads rather than rendering the base64 text verbatim
     /// (see `renderEventStreamText`).
     let is_base64 = false;
+    /// Whether a framed `EventStream` response was cut off before it completed (a leftover partial
+    /// frame at EOF, or a transport failure mid-stream). Persisted with the snapshot so the replay
+    /// path keeps the live fail-closed behavior: an image collected from a truncated stream is
+    /// never rendered, live or on restore (see `makeVerbatimPayloadSink.finish` and
+    /// `renderEventStreamText`).
+    let is_truncated = false;
     /// The framing kind of the reply, recorded on the snapshot so the history/tab replay path
     /// dispatches on it EXPLICITLY instead of guessing from the payload's first bytes - a raw
     /// result whose text happens to start with `event:` or `{"packet":` (e.g.
@@ -8784,7 +8806,9 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             framing_kind = 'event_stream';
             const base64 = content_type.includes('payload=base64');
             is_base64 = base64;
-            renderEventStreamText(framed_error_stream, targetResultEl, !base64 && !isDefaultFormat(format), base64, format, tab);
+            /// The stream is not truncated here: `framed_error_stream` was buffered by a completed
+            /// `response.text()` (a transport break while reading it lands in the transport catch).
+            renderEventStreamText(framed_error_stream, targetResultEl, !base64 && !isDefaultFormat(format), base64, format, tab, false);
             /// `framed_error_stream` was read in full (uncapped), so the carrier is scanned from it
             /// at compaction time; no separate capture is needed here.
             reply = framed_error_stream;
@@ -8792,7 +8816,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             /// `Run all` whose total size exceeds the budget drops the bodies (and the framing kind)
             /// of the failed statements too, and only `display_error` restores them as their error.
             display_error = framedFailureMessage(reply, framing_kind, exception_carrier) ?? undefined;
-            return { format, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
+            return { format, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, is_truncated, framing_kind, exception_carrier };
         } else if (!response.ok && content_type.startsWith('application/x-ndjson')) {
             /// A query carrying its own `JSONEachPacket*` framing can also fail before the response
             /// reaches `200 OK` - e.g. `SELECT 1 FORMAT JSONEachRowWithProgress SETTINGS
@@ -8893,6 +8917,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             else is_raw = true;
             reply = res.reply;
             exception_carrier = res.exception_block;
+            is_truncated = res.truncated;
             /// An `exception` packet can arrive after the HTTP status was already sent as 200 OK
             /// (the headers go out once streaming begins). Report the failure to the caller, so the
             /// single-query path shows the error state and `Run all` does not execute the following
@@ -8910,7 +8935,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 /// See the non-OK `EventStream` branch above: persist the error text, so a failed
                 /// statement whose body the `Run all` size cap drops still restores as its error.
                 display_error = framedFailureMessage(reply, framing_kind, exception_carrier) ?? undefined;
-                return { format, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
+                return { format, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, is_truncated, framing_kind, exception_carrier };
             }
         } else if (formatIs(format, default_format)) {
             is_table = true;
@@ -9225,7 +9250,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         /// now-active tab's shared progress/download/history state for this stale run.
         if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
 
-        return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
+        return { format, reply, response_ok: true, is_table, is_raw, is_chart, is_image, is_error, is_base64, is_truncated, framing_kind };
     } catch (e) {
         if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
 
@@ -9261,6 +9286,10 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         {
             exception_carrier = 'event: exception\ndata: ' + JSON.stringify({ exception: display_error });
             reply = appendCappedSnapshot(reply, (reply === '' || reply.endsWith('\n\n') ? '' : '\n\n') + exception_carrier + '\n\n');
+            /// The stream broke mid-transport, so whatever payload was collected is incomplete:
+            /// mark the snapshot truncated, and the replay skips an image the live run never
+            /// rendered either (the verbatim sink's `finish` was never reached).
+            is_truncated = true;
         }
         else if (framing_kind === 'ndjson_packets')
         {
@@ -9269,7 +9298,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 : JSON.stringify({ exception: display_error });
             reply = appendCappedSnapshot(reply, (reply === '' || reply.endsWith('\n') ? '' : '\n') + exception_carrier + '\n');
         }
-        return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true, is_base64, framing_kind, exception_carrier };
+        return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true, is_base64, is_truncated, framing_kind, exception_carrier };
     }
 }
 
@@ -9484,6 +9513,9 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
                 /// summary so a reload restores the error instead of reopening the tab blank.
                 data: result.reply.length > 100000 ? compactFailureSnapshot(result.reply, result.framing_kind ?? '', result.exception_carrier) : result.reply,
                 base64: result.is_base64,
+                /// Whether the framed stream was cut off before it completed, so replay keeps the
+                /// live fail-closed behavior for a collected image (see `renderEventStreamText`).
+                truncated: !!result.is_truncated,
                 framing_kind: result.framing_kind,
                 elapsed_ns: 1e6 * (performance.now() - query_start),
                 params: paramValuesSnapshot,
@@ -9567,6 +9599,8 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
         /// is replayable, unlike a plain image blob whose bytes were never collected into `reply`.
         data: ((result.is_image && !result.is_base64) || result.reply.length > 100000) ? null : result.reply,
         base64: result.is_base64,
+        /// See the failure save above; always false here (a truncated stream is reported failed).
+        truncated: !!result.is_truncated,
         framing_kind: result.framing_kind,
         elapsed_ns: el.elapsedNs,
         params: paramValuesSnapshot,
@@ -9795,6 +9829,9 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
             error: r ? !!r.is_error : false,
             data,
             base64: r ? !!r.is_base64 : false,
+            /// See the single-query save: replay keeps the live image suppression for a statement
+            /// whose framed stream was cut off (see `renderEventStreamText`).
+            truncated: r ? !!r.is_truncated : false,
             framing_kind: r ? (r.framing_kind ?? '') : '',
             failed,
         };
@@ -10051,7 +10088,7 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
         const base64 = !!snap.base64;
         const raw_text = !base64 && !isDefaultFormat(format);
         el.enableViews();
-        const rendered_image = renderEventStreamText(snap.data, el, raw_text, base64, format, tab);
+        const rendered_image = renderEventStreamText(snap.data, el, raw_text, base64, format, tab, !!snap.truncated);
         /// What was rendered is decided the same way as in the live path (`postImpl`) and the
         /// single-query restore (`materializeResult`): an image is neither a table nor raw text, the
         /// default format is a table, any other format is raw text. `base64` says how the payloads
@@ -10405,7 +10442,7 @@ async function materializeResult(tab) {
         const base64 = !!result.base64;
         const raw_text = !base64 && !isDefaultFormat(format);
         el.enableViews();
-        const rendered_image = renderEventStreamText(result.data, el, raw_text, base64, format, tab);
+        const rendered_image = renderEventStreamText(result.data, el, raw_text, base64, format, tab, !!result.truncated);
         if (rendered_image) { /* an image, neither a table nor raw text */ }
         else if (isDefaultFormat(format)) is_table = true;
         else is_raw = true;
@@ -11848,6 +11885,9 @@ function saveHistory(stateData, titleForDoc, tab) {
         /// Whether the `EventStream` `data` snapshot carries base64-encoded payloads (a binary or raw
         /// output format); the replay path decodes them to bytes instead of showing the base64 text.
         base64: stateData.base64 ?? false,
+        /// Whether the framed stream was cut off before it completed; the replay path then skips an
+        /// image collected from the incomplete payload, exactly as the live run did (fail closed).
+        truncated: stateData.truncated ?? false,
         /// The framing kind of the `data` snapshot ('event_stream' / 'ndjson_packets' / ''), so the
         /// replay path dispatches on it explicitly instead of sniffing the payload's first bytes.
         framing_kind: stateData.framing_kind ?? '',
@@ -12130,6 +12170,7 @@ window.onpopstate = function(event) {
             error: flat.error ?? false,
             data: flat.data ?? null,
             base64: flat.base64 ?? false,
+            truncated: flat.truncated ?? false,
             framing_kind: flat.framing_kind ?? '',
             multi: flat.multi ?? null,
             color_modes: flat.color_modes || {},
