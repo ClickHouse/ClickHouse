@@ -1035,6 +1035,10 @@ static bool tryAddDisjunctiveConditions(
         return false;
 
     size_t initial_clauses_num = table_join_clauses.size();
+    /// Rolled back together with the clauses: the casts and pre-filters of the disjuncts processed
+    /// before the attempt was abandoned would otherwise stay in the pre-join actions, and the
+    /// operator that takes the join over would materialize columns nothing reads.
+    size_t initial_used_expressions_num = used_expressions.size();
     std::vector<JoinActionRef> disjunctive_conditions = join_expression.getArguments();
     bool has_residual_condition = false;
     for (const auto & expr : disjunctive_conditions)
@@ -1048,6 +1052,7 @@ static bool tryAddDisjunctiveConditions(
         if (!has_keys)
         {
             table_join_clauses.resize(initial_clauses_num);
+            used_expressions.erase(used_expressions.begin() + initial_used_expressions_num, used_expressions.end());
             if (!throw_on_error)
                 return false;
 

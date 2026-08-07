@@ -37,7 +37,7 @@ WHERE explain LIKE '%BlockNestedLoopJoin%';
 
 -- Every pair the operator emitted satisfies the condition. A padded row carries the id 0, which no
 -- row of either table has.
-SELECT 'ANY {{ kind }} pairs match', countIf(l.id != 0 AND r.id != 0 AND NOT ifNull(toUInt8({{ condition }}), 0))
+SELECT 'ANY {{ kind }} pairs match', count(), countIf(l.id != 0 AND r.id != 0 AND NOT ifNull(toUInt8({{ condition }}), 0))
 FROM bnl_any_probe l ANY {{ kind }} JOIN bnl_any_build r ON {{ condition }};
 
 {% endfor -%}

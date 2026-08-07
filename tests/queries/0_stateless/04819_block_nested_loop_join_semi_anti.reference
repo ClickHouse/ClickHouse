@@ -7,8 +7,8 @@ LEFT ANTI routed	1
 LEFT ANTI	1
 RIGHT ANTI routed	1
 RIGHT ANTI	1
-LEFT SEMI pairs match	0
-RIGHT SEMI pairs match	0
+LEFT SEMI pairs match	4	0
+RIGHT SEMI pairs match	3	0
 l.x + l.id > r.y
 LEFT SEMI routed	1
 LEFT SEMI	1
@@ -18,8 +18,8 @@ LEFT ANTI routed	1
 LEFT ANTI	1
 RIGHT ANTI routed	1
 RIGHT ANTI	1
-LEFT SEMI pairs match	0
-RIGHT SEMI pairs match	0
+LEFT SEMI pairs match	5	0
+RIGHT SEMI pairs match	4	0
 sipHash64(l.x, r.y) % 4 = 0
 LEFT SEMI routed	1
 LEFT SEMI	1
@@ -29,8 +29,8 @@ LEFT ANTI routed	1
 LEFT ANTI	1
 RIGHT ANTI routed	1
 RIGHT ANTI	1
-LEFT SEMI pairs match	0
-RIGHT SEMI pairs match	0
+LEFT SEMI pairs match	4	0
+RIGHT SEMI pairs match	4	0
 l.s LIKE r.s
 LEFT SEMI routed	1
 LEFT SEMI	1
@@ -40,8 +40,8 @@ LEFT ANTI routed	1
 LEFT ANTI	1
 RIGHT ANTI routed	1
 RIGHT ANTI	1
-LEFT SEMI pairs match	0
-RIGHT SEMI pairs match	0
+LEFT SEMI pairs match	6	0
+RIGHT SEMI pairs match	4	0
 l.x + r.y < -1000000
 LEFT SEMI routed	1
 LEFT SEMI	1
@@ -51,8 +51,8 @@ LEFT ANTI routed	1
 LEFT ANTI	1
 RIGHT ANTI routed	1
 RIGHT ANTI	1
-LEFT SEMI pairs match	0
-RIGHT SEMI pairs match	0
+LEFT SEMI pairs match	0	0
+RIGHT SEMI pairs match	0	0
 join_use_nulls = 0
 3	\N	b	0	\N	
 4	9		0	\N	

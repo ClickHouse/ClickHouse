@@ -15,6 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int LOGICAL_ERROR;
 }
 
@@ -67,6 +68,12 @@ BlockNestedLoopJoinStep::BlockNestedLoopJoinStep(
     if (sample.columns() != 1 || !sample.getByPosition(0).type->canBeUsedInBooleanContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join condition must have a single boolean output, got {}",
             sample.dumpStructure());
+
+    /// The condition is evaluated on a batch of candidate pairs and its result is used as a filter
+    /// over that batch, so a condition that changes the row count says nothing about any pair.
+    if (predicate_->hasArrayJoin())
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "arrayJoin is not supported in a JOIN ON expression that determines no join key");
 
     predicate.actions = std::move(predicate_);
     for (const auto & required_column : predicate.actions->getRequiredColumnsWithTypes())

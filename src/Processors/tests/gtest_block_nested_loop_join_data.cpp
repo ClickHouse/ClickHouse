@@ -123,7 +123,6 @@ TEST(BlockNestedLoopJoinData, RowOffsetsCoverEveryStoredRow)
 
     EXPECT_EQ(data->getTotalRows(), 6);
     EXPECT_GT(data->getTotalBytes(), 0);
-    EXPECT_FALSE(data->isBuildSideEmpty());
 
     const auto & offsets = data->getRowOffsets();
     ASSERT_EQ(offsets.size(), data->getNumBlocks() + 1);
@@ -143,7 +142,6 @@ TEST(BlockNestedLoopJoinData, EmptyBlocksAreNotStored)
     EXPECT_EQ(data->getNumBlocks(), 0);
     EXPECT_EQ(data->getRowOffsets(), (std::vector<size_t>{0}));
     EXPECT_EQ(data->getTotalRows(), 0);
-    EXPECT_TRUE(data->isBuildSideEmpty());
 }
 
 TEST(BlockNestedLoopJoinData, ColumnlessBlocksKeepTheirRowCount)
@@ -154,7 +152,6 @@ TEST(BlockNestedLoopJoinData, ColumnlessBlocksKeepTheirRowCount)
     data->finish();
 
     EXPECT_EQ(data->getTotalRows(), 5);
-    EXPECT_FALSE(data->isBuildSideEmpty());
     ASSERT_EQ(data->getNumBlocks(), 1);
     EXPECT_EQ(data->getBlockNumRows(0), 5);
 }
@@ -199,7 +196,6 @@ TEST(BlockNestedLoopJoinData, ReadingBeforeFinishThrows)
     EXPECT_FALSE(data->isFinished());
     EXPECT_THROW(data->getNumBlocks(), Exception);
     EXPECT_THROW(data->getRowOffsets(), Exception);
-    EXPECT_THROW(data->isBuildSideEmpty(), Exception);
 
     data->finish();
     EXPECT_TRUE(data->isFinished());
@@ -400,6 +396,24 @@ TEST(BlockNestedLoopJoinData, CompressedBlocksRoundTrip)
     EXPECT_EQ(storedValues(data), (std::vector<UInt64>{1, 2, 3, 4, 5}));
 }
 
+TEST(BlockNestedLoopJoinData, CompressionShrinksWhatIsHeldInMemory)
+{
+    const std::vector<UInt64> compressible(4096, 7);
+
+    auto plain = makeData();
+    ASSERT_TRUE(plain->addBlock(makeBlock(compressible), compressible.size()));
+    plain->finish();
+
+    auto compressed = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, compressEverything());
+    ASSERT_TRUE(compressed->addBlock(makeBlock(compressible), compressible.size()));
+    compressed->finish();
+
+    EXPECT_LT(compressed->getInMemoryBytes(), plain->getInMemoryBytes());
+    /// What the spill has to reserve is the block as it will be written out, not as it is held.
+    EXPECT_EQ(compressed->getMaxInMemoryBlockBytes(), plain->getMaxInMemoryBlockBytes());
+    EXPECT_EQ(storedValues(compressed), compressible);
+}
+
 TEST(BlockNestedLoopJoinData, SpilledBlocksRoundTrip)
 {
     auto storage = makeTemporaryStorage();
@@ -473,6 +487,37 @@ TEST(BlockNestedLoopJoinData, SpillingOnDemandMovesTheStoredBlocksOut)
     EXPECT_EQ(storedValues(data), (std::vector<UInt64>{1, 2, 3, 4, 5}));
 }
 
+TEST(BlockNestedLoopJoinData, SpillingOnAThresholdTakesTheEarlierBlocksWithIt)
+{
+    auto storage = makeTemporaryStorage();
+    BlockNestedLoopStoreSettings settings;
+    settings.tmp_data = storage.scope;
+    /// Wide enough for the first block to stay in memory and narrow enough for the second to
+    /// cross it, so that the spill starts with blocks already stored.
+    auto probe = makeData();
+    ASSERT_TRUE(probe->addBlock(makeBlock({1, 2}), 2));
+    settings.max_bytes_in_memory = probe->getInMemoryBytes() + 1;
+
+    auto data = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, settings);
+    ASSERT_TRUE(data->addBlock(makeBlock({1, 2}), 2));
+    EXPECT_EQ(data->getNumSpilledBlocks(), 0);
+
+    /// The block that crosses the threshold goes out behind the ones already in memory, so the
+    /// file order is still the index order and a forward read walks the blocks in order.
+    ASSERT_TRUE(data->addBlock(makeBlock({3}), 1));
+    EXPECT_EQ(data->getNumSpilledBlocks(), 2);
+    EXPECT_EQ(data->getInMemoryBytes(), 0);
+    EXPECT_EQ(data->getMaxInMemoryBlockBytes(), 0);
+    /// Nothing is left for the memory tracker to gain.
+    EXPECT_FALSE(data->spillInMemoryBlocks(0));
+
+    ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2));
+    data->finish();
+
+    EXPECT_EQ(data->getNumSpilledBlocks(), 3);
+    EXPECT_EQ(storedValues(data), (std::vector<UInt64>{1, 2, 3, 4, 5}));
+}
+
 TEST(BlockNestedLoopJoinData, MatchFlagsAreIndexedAcrossTheSpilledBoundary)
 {
     auto storage = makeTemporaryStorage();
@@ -535,21 +580,3 @@ TEST(BlockNestedLoopJoinData, SizeLimitsCountSpilledRowsToo)
     EXPECT_THROW(data->addBlock(makeBlock({3}), 1), Exception);
 }
 
-TEST(BlockNestedLoopJoinData, EmptyBuildSideAction)
-{
-    using enum EmptyBuildSideAction;
-
-    for (auto strictness : {JoinStrictness::All, JoinStrictness::Any, JoinStrictness::RightAny})
-    {
-        EXPECT_EQ(emptyBuildSideActionFor(JoinKind::Inner, strictness), ProduceNothing);
-        EXPECT_EQ(emptyBuildSideActionFor(JoinKind::Cross, strictness), ProduceNothing);
-        EXPECT_EQ(emptyBuildSideActionFor(JoinKind::Right, strictness), ProduceNothing);
-        EXPECT_EQ(emptyBuildSideActionFor(JoinKind::Left, strictness), PassProbeRowsPadded);
-        EXPECT_EQ(emptyBuildSideActionFor(JoinKind::Full, strictness), PassProbeRowsPadded);
-    }
-
-    EXPECT_EQ(emptyBuildSideActionFor(JoinKind::Left, JoinStrictness::Semi), ProduceNothing);
-    EXPECT_EQ(emptyBuildSideActionFor(JoinKind::Right, JoinStrictness::Semi), ProduceNothing);
-    EXPECT_EQ(emptyBuildSideActionFor(JoinKind::Left, JoinStrictness::Anti), PassProbeRowsPadded);
-    EXPECT_EQ(emptyBuildSideActionFor(JoinKind::Right, JoinStrictness::Anti), ProduceNothing);
-}

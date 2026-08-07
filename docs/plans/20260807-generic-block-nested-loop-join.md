@@ -8,7 +8,7 @@ inside the operator, and route to it every keyless non-equi join that currently 
 "cannot determine join keys": the planner always has a correct, memory-bounded operator to fall back
 to.
 
-The operator is built on the new-analyzer infrastructure only. It does **not** implement `IJoin` and
+The operator is built on the analyzer infrastructure only. It does **not** implement `IJoin` and
 never constructs a `TableJoin`. `JoinKind`/`JoinStrictness` come from `JoinOperator`, the predicate
 stays an `ActionsDAG` sub-DAG extracted from `JoinExpressionActions`, and the physical step is
 constructed directly in `buildPhysicalJoinImpl`.

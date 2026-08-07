@@ -1,10 +1,10 @@
 l.x < r.y
 ANY INNER routed	1
-ANY INNER pairs match	0
+ANY INNER pairs match	3	0
 ANY LEFT routed	1
-ANY LEFT pairs match	0
+ANY LEFT pairs match	6	0
 ANY RIGHT routed	1
-ANY RIGHT pairs match	0
+ANY RIGHT pairs match	5	0
 ANY INNER distinct ids, swap = 0	1
 ANY INNER is empty only with nothing to match, swap = 0	1
 ANY INNER distinct ids, swap = 1	1
@@ -17,11 +17,11 @@ old ANY LEFT ids	1
 old ANY FULL count	1
 l.x + l.id > r.y
 ANY INNER routed	1
-ANY INNER pairs match	0
+ANY INNER pairs match	3	0
 ANY LEFT routed	1
-ANY LEFT pairs match	0
+ANY LEFT pairs match	6	0
 ANY RIGHT routed	1
-ANY RIGHT pairs match	0
+ANY RIGHT pairs match	5	0
 ANY INNER distinct ids, swap = 0	1
 ANY INNER is empty only with nothing to match, swap = 0	1
 ANY INNER distinct ids, swap = 1	1
@@ -34,11 +34,11 @@ old ANY LEFT ids	1
 old ANY FULL count	1
 sipHash64(l.x, r.y) % 4 = 0
 ANY INNER routed	1
-ANY INNER pairs match	0
+ANY INNER pairs match	4	0
 ANY LEFT routed	1
-ANY LEFT pairs match	0
+ANY LEFT pairs match	6	0
 ANY RIGHT routed	1
-ANY RIGHT pairs match	0
+ANY RIGHT pairs match	5	0
 ANY INNER distinct ids, swap = 0	1
 ANY INNER is empty only with nothing to match, swap = 0	1
 ANY INNER distinct ids, swap = 1	1
@@ -51,11 +51,11 @@ old ANY LEFT ids	1
 old ANY FULL count	1
 l.s LIKE r.s
 ANY INNER routed	1
-ANY INNER pairs match	0
+ANY INNER pairs match	4	0
 ANY LEFT routed	1
-ANY LEFT pairs match	0
+ANY LEFT pairs match	6	0
 ANY RIGHT routed	1
-ANY RIGHT pairs match	0
+ANY RIGHT pairs match	5	0
 ANY INNER distinct ids, swap = 0	1
 ANY INNER is empty only with nothing to match, swap = 0	1
 ANY INNER distinct ids, swap = 1	1
@@ -68,11 +68,11 @@ old ANY LEFT ids	1
 old ANY FULL count	1
 l.x + r.y < -1000000
 ANY INNER routed	1
-ANY INNER pairs match	0
+ANY INNER pairs match	0	0
 ANY LEFT routed	1
-ANY LEFT pairs match	0
+ANY LEFT pairs match	6	0
 ANY RIGHT routed	1
-ANY RIGHT pairs match	0
+ANY RIGHT pairs match	5	0
 ANY INNER distinct ids, swap = 0	1
 ANY INNER is empty only with nothing to match, swap = 0	1
 ANY INNER distinct ids, swap = 1	1

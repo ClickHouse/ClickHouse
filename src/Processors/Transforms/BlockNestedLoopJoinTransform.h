@@ -101,7 +101,9 @@ private:
     void dropMatchedProbeRows();
     /// Whether the accumulated pairs already fill an output chunk.
     bool hasFullOutputChunk() const;
-    /// Materializes at most `max_block_size` accumulated pairs, keeping the rest for the next call.
+    /// How many accumulated pairs one output chunk may hold, under both limits.
+    size_t maxOutputChunkRows() const;
+    /// Materializes that many accumulated pairs, keeping the rest for the next call.
     Chunk takeMatchedRows();
     /// Emits the next window of probe rows that stayed unmatched, padded with build-side defaults.
     Chunk takeUnmatchedProbeRows();

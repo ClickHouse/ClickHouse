@@ -18,16 +18,6 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-EmptyBuildSideAction emptyBuildSideActionFor(JoinKind kind, JoinStrictness strictness)
-{
-    /// With no build row at all, the only rows a join can still produce are unmatched probe rows,
-    /// so the answer is exactly "does this kind keep an unmatched probe row". `SEMI` is the
-    /// exception among the left-driven kinds: it keeps a probe row only when it does match.
-    if (strictness == JoinStrictness::Semi)
-        return EmptyBuildSideAction::ProduceNothing;
-    return isLeftOrFull(kind) ? EmptyBuildSideAction::PassProbeRowsPadded : EmptyBuildSideAction::ProduceNothing;
-}
-
 bool needsBuildSideMatchFlags(JoinKind kind, JoinStrictness strictness)
 {
     /// `ANY INNER` disables the cartesian product on both sides, so it needs the flags to give a
@@ -80,7 +70,6 @@ BlockNestedLoopJoinData::BlockNestedLoopJoinData(
     , strictness(strictness_)
     , size_limits(size_limits_)
     , store_settings(std::move(store_settings_))
-    , empty_build_side_action(emptyBuildSideActionFor(kind_, strictness_))
     , needs_match_flags(needsBuildSideMatchFlags(kind_, strictness_))
 {
 }
@@ -135,7 +124,12 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
                     && getInMemoryBytes() + block_bytes > store_settings.max_bytes_in_memory));
 
         if (spill)
+        {
+            /// What is still in memory goes out first, so that the file order stays the index order.
+            if (!tmp_stream)
+                spillInMemoryBlocksLocked();
             spillBlock(entry, stored_block);
+        }
         else
             storeBlock(entry, index, std::move(stored_block), rows_in_join, bytes_in_join);
     }
@@ -149,6 +143,8 @@ void BlockNestedLoopJoinData::storeBlock(
     BuildBlockEntry & entry, size_t index, StoredBlock stored_block, size_t rows_in_join, size_t bytes_in_join)
 {
     stored_block.block_no = static_cast<UInt32>(index);
+    /// What the block takes once it is decompressed, which is the shape the spill writes it out in.
+    const size_t uncompressed_bytes = stored_block.allocatedBytes();
 
     const bool compress = !stored_block.columns.empty()
         && ((store_settings.min_rows_to_compress != 0 && rows_in_join >= store_settings.min_rows_to_compress)
@@ -165,8 +161,8 @@ void BlockNestedLoopJoinData::storeBlock(
     entry.block = std::make_shared<const StoredBlock>(std::move(stored_block));
 
     in_memory_bytes.fetch_add(stored_bytes, std::memory_order_relaxed);
-    if (stored_bytes > getMaxInMemoryBlockBytes())
-        max_in_memory_block_bytes.store(stored_bytes, std::memory_order_relaxed);
+    if (uncompressed_bytes > getMaxInMemoryBlockBytes())
+        max_in_memory_block_bytes.store(uncompressed_bytes, std::memory_order_relaxed);
 }
 
 void BlockNestedLoopJoinData::spillBlock(BuildBlockEntry & entry, const StoredBlock & stored_block)
@@ -194,6 +190,12 @@ bool BlockNestedLoopJoinData::spillInMemoryBlocks(size_t min_bytes)
     if (bytes_to_free == 0 || bytes_to_free < min_bytes)
         return false;
 
+    spillInMemoryBlocksLocked();
+    return true;
+}
+
+void BlockNestedLoopJoinData::spillInMemoryBlocksLocked()
+{
     /// In increasing index order, so that the file order stays the index order: every block added
     /// after this point is written to the file too, and gets a higher index.
     for (auto & entry : blocks)
@@ -208,7 +210,7 @@ bool BlockNestedLoopJoinData::spillInMemoryBlocks(size_t min_bytes)
     }
 
     in_memory_bytes.store(0, std::memory_order_relaxed);
-    return true;
+    max_in_memory_block_bytes.store(0, std::memory_order_relaxed);
 }
 
 void BlockNestedLoopJoinData::setBuildSideTotals(Block totals)
@@ -309,12 +311,6 @@ const std::vector<size_t> & BlockNestedLoopJoinData::getRowOffsets() const
 {
     assertFinished("the row offsets");
     return TSA_SUPPRESS_WARNING_FOR_READ(row_offsets);
-}
-
-bool BlockNestedLoopJoinData::isBuildSideEmpty() const
-{
-    assertFinished("the build side row count");
-    return getTotalRows() == 0;
 }
 
 BuildSideBlockReader::BuildSideBlockReader(BlockNestedLoopJoinDataPtr data_)
@@ -458,7 +454,8 @@ ProcessorMemoryStats BlockNestedLoopBuildTransform::getMemoryStats()
     ProcessorMemoryStats stats;
     stats.spillable_memory_bytes = data->getInMemoryBytes();
     /// The blocks are written out one at a time, so what the spill needs on top of what it frees is
-    /// the largest of them - once as the block it decompresses, once as the buffer it compresses into.
+    /// the largest of them, counted uncompressed - once as the block it decompresses into, once as
+    /// the buffer the temporary stream writes it through.
     stats.need_reserved_memory_bytes = 2 * data->getMaxInMemoryBlockBytes();
     return stats;
 }

@@ -53,9 +53,11 @@ SELECT '{{ side }} {{ kind }}',
 -- A `SEMI` join carries the columns of the row it matched, and that row is one the condition holds
 -- for. Which one it is is not fixed - the build side is stored in whatever order the build streams
 -- filled it - so only the fact that it matches is asserted.
-SELECT 'LEFT SEMI pairs match', countIf(NOT ifNull(toUInt8({{ condition }}), 0))
+-- The row count comes along, so a condition that matches nothing is told apart from an operator
+-- that produced nothing.
+SELECT 'LEFT SEMI pairs match', count(), countIf(NOT ifNull(toUInt8({{ condition }}), 0))
 FROM bnl_sa_probe l SEMI LEFT JOIN bnl_sa_build r ON {{ condition }};
-SELECT 'RIGHT SEMI pairs match', countIf(NOT ifNull(toUInt8({{ condition }}), 0))
+SELECT 'RIGHT SEMI pairs match', count(), countIf(NOT ifNull(toUInt8({{ condition }}), 0))
 FROM bnl_sa_probe l SEMI RIGHT JOIN bnl_sa_build r ON {{ condition }};
 
 {% endfor -%}

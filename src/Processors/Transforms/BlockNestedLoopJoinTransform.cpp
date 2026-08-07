@@ -332,6 +332,11 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
     size_t num_rows = tile_rows;
     Columns condition = predicate.actions->executeOnColumns(
         std::move(condition_inputs), predicate_input_header, predicate_input_positions, num_rows);
+    /// The condition answers one candidate pair per row of the tile. The step constructor rejects
+    /// the one function that can break that, so a mismatch here is a bug rather than a bad query.
+    if (num_rows != tile_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Block nested loop join condition returned {} rows for a tile of {} candidate pairs", num_rows, tile_rows);
 
     size_t num_matched = 0;
     ColumnPtr matched_probe;
@@ -481,10 +486,21 @@ bool BlockNestedLoopProbeTransform::hasFullOutputChunk() const
     return max_block_bytes != 0 && matched_probe_rows.size() * (probe_row_bytes + build_row_bytes) >= max_block_bytes;
 }
 
+size_t BlockNestedLoopProbeTransform::maxOutputChunkRows() const
+{
+    size_t limit = max_block_size != 0 ? max_block_size : std::numeric_limits<size_t>::max();
+    /// One tile's worth of pairs is accumulated before the size of the pending output is looked at
+    /// again, so the byte limit has to cut the chunk here as well, not only stop the accumulation.
+    const size_t row_bytes = probe_row_bytes + build_row_bytes;
+    if (max_block_bytes != 0 && row_bytes != 0)
+        limit = std::min(limit, std::max<size_t>(1, max_block_bytes / row_bytes));
+    return limit;
+}
+
 Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
 {
     const size_t total_rows = matched_probe_rows.size();
-    const size_t num_rows = max_block_size != 0 ? std::min(total_rows, max_block_size) : total_rows;
+    const size_t num_rows = std::min(total_rows, maxOutputChunkRows());
     chassert(num_rows != 0);
 
     Columns result;

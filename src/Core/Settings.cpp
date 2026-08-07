@@ -3525,6 +3525,12 @@ chosen [`join_algorithm`](/reference/settings/session-settings/join#join_algorit
 that setting for the per-algorithm behavior (spill, re-partition, switch, or
 throw/break per [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode)).
 
+When an `ON` section determines no join key at all, there is no algorithm to choose: the limit
+applies to the right side materialized by the
+[block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition),
+spilled blocks included, and the action on overflow is
+[`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode).
+
 Possible values:
 
 - Positive integer.
@@ -3543,6 +3549,12 @@ chosen [`join_algorithm`](/reference/settings/session-settings/join#join_algorit
 that setting for the per-algorithm behavior (spill, re-partition, switch, or
 throw/break per [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode)).
 
+When an `ON` section determines no join key at all, there is no algorithm to choose: the limit
+applies to the right side materialized by the
+[block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition),
+spilled blocks included, and the action on overflow is
+[`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode).
+
 Possible values:
 
 - Positive integer.
@@ -3555,7 +3567,9 @@ Defines what action ClickHouse performs when a join reaches any of the following
 - [max_rows_in_join](/reference/settings/session-settings/max-rows#max_rows_in_join)
 
 This setting is honored only by the `hash`, `parallel_hash`, and `ie_join`
-[`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) values. Other
+[`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) values, and by the
+[block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition),
+which is not selected through `join_algorithm`. Other
 algorithms (for example, `partial_merge`, `grace_hash`, `auto`) handle the
 limits differently — by spilling to disk, re-partitioning, or switching
 strategy — see
@@ -3577,7 +3591,7 @@ Default value: `THROW`.
 Changes the behaviour of join operations with `ANY` strictness when the right table has more than one matching row for a key.
 
 :::note
-This setting applies to [`Join`](/reference/engines/table-engines/special/join) engine tables and hash-based join algorithms.
+This setting applies to [`Join`](/reference/engines/table-engines/special/join) engine tables and hash-based join algorithms. It has no effect on a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition): with no join key there is no group of matching rows to take the last one of.
 
 If a join is built in parallel, the order of rows can be non-deterministic. This means that `join_any_take_last_row = 1` can return a non-deterministic row for `ANY JOIN` queries.
 :::
@@ -3656,7 +3670,7 @@ Possible values:
 
  The sort-based [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm for a `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables. Supports `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
 
- The position in the list sets the priority: listed after other algorithms, IEJoin is used only when they do not apply (the `ON` section has no equality conditions); listed first, it is used whenever the `ON` section has two inequality conditions. The remaining conditions (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and evaluated inside the operator as a residual condition affecting matching for the other kinds. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
+ The position in the list sets the priority: listed after other algorithms, IEJoin is used only when they do not apply (the `ON` section has no equality conditions); listed first, it is used whenever the `ON` section has two inequality conditions. The remaining conditions (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and evaluated inside the operator as a residual condition affecting matching for the other kinds. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
 
  Both inputs are accumulated in memory before joining: [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join) and [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) limit the accumulated input of both sides together (not just the right side), with the action on overflow set by [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode); the sort indexes the operator builds on top of the accumulated input are not counted against the limit. The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
@@ -3686,10 +3700,10 @@ Possible values:
 Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
 )", 0) \
     DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
-Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+Minimal count of rows to compress block in CROSS JOIN, and in the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), which materializes its right side the same way. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 )", 0) \
     DECLARE(UInt64, cross_join_min_bytes_to_compress, 1_GiB, R"(
-Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
+Minimal size of block to compress in CROSS JOIN, and in the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), which materializes its right side the same way. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
 )", 0) \
     DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
 Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
@@ -8328,7 +8342,7 @@ Max backoff in milliseconds for parts update when using `select_sequential_consi
 Max retries for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
+If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization. The threshold also bounds the right side materialized by the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), whatever `join_algorithm` is set to.
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
 The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
@@ -8337,7 +8351,7 @@ For example, if set to `0.6`, `JOIN` will allow using `60%` of the available mem
 
 If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
 
-Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured.
+Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured, or for the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition), which is not selected through `join_algorithm`.
 )", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
 Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.

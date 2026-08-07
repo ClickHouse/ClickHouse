@@ -57,5 +57,10 @@ SET join_algorithm = 'direct,parallel_hash,hash';
 SELECT count() FROM bnl_l l ASOF JOIN bnl_r r ON l.s LIKE r.s; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 SELECT count() FROM bnl_l l ASOF JOIN bnl_r r ON l.x < r.x AND l.y > r.y; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
+-- The operator answers one candidate pair per row of the batch it evaluates the condition on, so a
+-- condition that changes the row count is rejected instead of being evaluated against the wrong pairs.
+SELECT count() FROM bnl_l l LEFT JOIN bnl_r r ON arrayJoin([l.x < r.y, l.x > r.y]); -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT count() FROM bnl_l l FULL JOIN bnl_r r ON arrayJoin([l.x < r.y]); -- { serverError INVALID_JOIN_ON_EXPRESSION }
+
 DROP TABLE bnl_l;
 DROP TABLE bnl_r;

@@ -20,17 +20,6 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 class TemporaryBlockStreamHolder;
 class TemporaryBlockStreamReaderHolder;
 
-/// What a block nested loop join produces when the build side turns out to be empty.
-enum class EmptyBuildSideAction : uint8_t
-{
-    /// No pair can match and there is no build row to pad, so the result is empty.
-    ProduceNothing,
-    /// Every probe row is emitted once with the build-side columns set to their defaults.
-    PassProbeRowsPadded,
-};
-
-EmptyBuildSideAction emptyBuildSideActionFor(JoinKind kind, JoinStrictness strictness);
-
 /// Whether the result still depends on which build rows matched once the probe phase is over:
 /// `RIGHT` and `FULL` emit the build rows that matched nothing, and a right-driven `SEMI`/`ANTI`
 /// result is made of build rows selected by whether they matched at all. The other kinds decide
@@ -133,10 +122,6 @@ public:
     size_t getTotalRows() const { return total_rows.load(std::memory_order_relaxed); }
     size_t getTotalBytes() const { return total_bytes.load(std::memory_order_relaxed); }
 
-    /// Valid only after `finish`.
-    bool isBuildSideEmpty() const;
-    EmptyBuildSideAction getEmptyBuildSideAction() const { return empty_build_side_action; }
-
     const SharedHeader & getHeader() const { return build_header; }
     JoinKind getKind() const { return kind; }
     JoinStrictness getStrictness() const { return strictness; }
@@ -164,6 +149,8 @@ private:
     /// are written in increasing index order, which is what makes one forward pass enough to read
     /// any of them back.
     void spillBlock(BuildBlockEntry & entry, const StoredBlock & stored_block) TSA_REQUIRES(mutex);
+    /// Writes out every block that is still in memory, in index order.
+    void spillInMemoryBlocksLocked() TSA_REQUIRES(mutex);
 
     /// The entry of block `index`. Needs no lock: the store is read-only by the time it is called.
     const BuildBlockEntry & getBlockEntry(size_t index) const;
@@ -175,7 +162,6 @@ private:
     const JoinStrictness strictness;
     const SizeLimits size_limits;
     const BlockNestedLoopStoreSettings store_settings;
-    const EmptyBuildSideAction empty_build_side_action;
     const bool needs_match_flags;
 
     mutable std::mutex mutex;

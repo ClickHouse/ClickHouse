@@ -76,7 +76,8 @@ Value valueAt(const IColumn & column, size_t row)
 
 using PairCounter = std::shared_ptr<std::atomic<size_t>>;
 
-/// `probe < build`, counting the candidate pairs the condition is evaluated on.
+/// `probe < build`, counting the candidate pairs the condition is evaluated on. A `NULL` operand
+/// makes the pair no match, which is what the operator makes of a `NULL` condition value anyway.
 class CountingLess final : public IFunction
 {
 public:
@@ -85,6 +86,7 @@ public:
     String getName() const override { return "countingLess"; }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt8>(); }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -94,7 +96,11 @@ public:
         auto result = ColumnUInt8::create(input_rows_count);
         auto & values = result->getData();
         for (size_t row = 0; row < input_rows_count; ++row)
-            values[row] = arguments[0].column->getUInt(row) < arguments[1].column->getUInt(row);
+        {
+            auto left = valueAt(*arguments[0].column, row);
+            auto right = valueAt(*arguments[1].column, row);
+            values[row] = left && right && *left < *right;
+        }
         return result;
     }
 
@@ -699,8 +705,10 @@ TEST(BlockNestedLoopJoinProbe, EarlyExitStopsTheBuildSideWalkAtTheFirstMatch)
     EXPECT_EQ(pairs_evaluated(JoinKind::Inner, JoinStrictness::Any, {1, 2}), 3);
 
     /// A probe row that matches nothing keeps the walk going, on its own: 2 pairs on the first
-    /// block, then one per block for the probe row that is still looking.
+    /// block, then one per block for the probe row that is still looking. A `NULL` probe value is
+    /// such a row - the condition is never true for it.
     EXPECT_EQ(pairs_evaluated(JoinKind::Left, JoinStrictness::Any, {1, 200}), 5);
+    EXPECT_EQ(pairs_evaluated(JoinKind::Left, JoinStrictness::Any, {1, std::nullopt}), 5);
 
     /// The right-driven selections need every build row, and so does a kind that pads the build
     /// rows nothing matched, whichever side drives it.

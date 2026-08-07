@@ -57,6 +57,12 @@ LEFT JOIN bnl_pipeline_r r ON l.x < r.y;
 SELECT * FROM (SELECT id, sum(x) AS x FROM bnl_pipeline_l WHERE 0 GROUP BY id WITH TOTALS) l
 LEFT JOIN (SELECT id, sum(y) AS y FROM bnl_pipeline_r GROUP BY id WITH TOTALS) r ON l.x < r.y;
 
+-- Build-side totals with a probe side that does have rows: the single build stream that owns the
+-- totals port still stores every build row, so the joined rows come through next to the totals row.
+SELECT * FROM bnl_pipeline_l l
+LEFT JOIN (SELECT id, sum(y) AS y FROM bnl_pipeline_r GROUP BY id WITH TOTALS) r ON l.x < r.y
+ORDER BY ALL;
+
 -- `EXPLAIN actions = 1` describes the operator: the kind, the strictness and the whole ON condition.
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '')
 FROM (EXPLAIN actions = 1 SELECT * FROM bnl_pipeline_l l LEFT ANTI JOIN bnl_pipeline_r r ON l.x < r.y)
