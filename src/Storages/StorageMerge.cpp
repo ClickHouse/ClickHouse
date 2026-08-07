@@ -1871,7 +1871,12 @@ std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() cons
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::UNKNOWN_DATABASE)
+        /// The column sizes are a best-effort introspection (`system.columns`). The source database
+        /// may have been dropped (`UNKNOWN_DATABASE`), or it may be the internal database of temporary
+        /// tables, which `getDatabaseIterator` refuses to enumerate (`DATABASE_ACCESS_DENIED`) - such a
+        /// table can no longer be created, but a pre-existing definition still loads (`ATTACH`, backup
+        /// `RESTORE`, replicated-database replay) and must not break `system.columns`.
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::DATABASE_ACCESS_DENIED)
             return std::nullopt;
         throw;
     }

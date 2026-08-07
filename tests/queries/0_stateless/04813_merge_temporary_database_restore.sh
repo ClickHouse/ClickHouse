@@ -38,6 +38,9 @@ sed -i "s/${SRC_DB}/_temporary_and_external_tables/" "${WORK_DIR}/backups/b1/met
 ${CLICKHOUSE_LOCAL} --config-file "${CONFIG}" --path "${WORK_DIR}/data_restored" -q "
 RESTORE TABLE default.m FROM File('${WORK_DIR}/backups/b1') FORMAT Null;
 SHOW CREATE TABLE m;
+-- Introspection stays best-effort for the restored table: the size columns of \`system.columns\`
+-- go through \`StorageMerge::tryGetColumnSizes\`, which must not throw for the forbidden database.
+SELECT name, type, data_compressed_bytes FROM system.columns WHERE database = currentDatabase() AND table = 'm';
 SELECT * FROM m; -- { serverError DATABASE_ACCESS_DENIED }
 "
 
