@@ -40,6 +40,7 @@ import re
 import sys
 import threading
 import urllib.parse
+import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
@@ -256,10 +257,16 @@ def normalize(text):
     return "\n".join(line.rstrip() for line in text.strip().splitlines())
 
 
+# The scratch databases and sessions carry a name unique to this run, so that concurrent
+# invocations, the leftovers of an interrupted run, or a database that happens to exist on the
+# target server cannot collide with them.
+RUN_ID = uuid.uuid4().hex[:8]
+
+
 def run_entity(client, entity_index, examples):
     """Run all examples of one entity, in order, in one session and one database of its own."""
-    database = f"docs_examples_{entity_index}"
-    session = f"docs_examples_{entity_index}"
+    database = f"docs_examples_{RUN_ID}_{entity_index}"
+    session = f"docs_examples_{RUN_ID}_{entity_index}"
     outcomes = []
 
     ok, body = client.query(f"CREATE DATABASE {database}")
