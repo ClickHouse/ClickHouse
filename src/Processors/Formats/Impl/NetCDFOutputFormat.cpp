@@ -14,6 +14,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
+#include <Common/intExp.h>
 #include <Common/isValidUTF8.h>
 #include <Common/transformEndianness.h>
 
@@ -206,6 +207,14 @@ String chooseFillValue(const T * data, size_t size, const UInt8 * null_map, T pr
     return {};
 }
 
+/// The CF conventions name only the units of the scales 0, 3, 6 and 9, and a made-up string in the
+/// `units` attribute would not be decoded back into timestamps, so a `DateTime64` of another scale
+/// is written in the next finer named unit, with the values multiplied accordingly.
+UInt32 getCanonicalTimeScale(UInt32 scale)
+{
+    return (scale + 2) / 3 * 3;
+}
+
 /// The `units` attribute of the CF conventions, which is what tells a reader that the numbers of a
 /// variable are dates or times rather than plain numbers.
 String getUnits(const DataTypePtr & type)
@@ -220,13 +229,12 @@ String getUnits(const DataTypePtr & type)
         case TypeIndex::DateTime64:
         {
             UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*type).getScale();
-            switch (scale)
+            switch (getCanonicalTimeScale(scale))
             {
                 case 0: return "seconds since 1970-01-01 00:00:00";
                 case 3: return "milliseconds since 1970-01-01 00:00:00";
                 case 6: return "microseconds since 1970-01-01 00:00:00";
-                case 9: return "nanoseconds since 1970-01-01 00:00:00";
-                default: return fmt::format("1e-{} seconds since 1970-01-01 00:00:00", scale);
+                default: return "nanoseconds since 1970-01-01 00:00:00";
             }
         }
         default:
@@ -398,6 +406,12 @@ NetCDFOutputFormat::NetCDFOutputFormat(WriteBuffer & out_, SharedHeader header_)
         variable.units = getUnits(type);
         variable.data = type->createColumn();
 
+        if (type->getTypeId() == TypeIndex::DateTime64)
+        {
+            UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*type).getScale();
+            variable.time_multiplier = common::exp10_i64(static_cast<int>(getCanonicalTimeScale(scale) - scale));
+        }
+
         /// There is nothing in the format to mark a string as missing: an empty string is the
         /// closest thing, and it is what a NULL is written as. For the other types the value that
         /// the NULLs are written as is chosen in `finalizeImpl`, when the data is all there.
@@ -495,6 +509,30 @@ void NetCDFOutputFormat::finalizeImpl()
         else
         {
             variable.element_size = netCDFTypeSize(variable.type);
+
+            /// A `DateTime64` of a scale whose unit has no name in the CF conventions is written
+            /// in the next finer named unit, so the values are multiplied. The rescale happens
+            /// before the value of the NULLs is chosen, because that value has to be absent from
+            /// the data as it is stored in the file. The rows that are NULL are written as that
+            /// value, and the data under them is arbitrary, so they are not rescaled.
+            if (variable.time_multiplier != 1)
+            {
+                auto & data = assert_cast<ColumnDecimal<DateTime64> &>(*variable.data).getData();
+                const UInt8 * null_map = variable.null_map
+                    ? assert_cast<const ColumnUInt8 &>(*variable.null_map).getData().data()
+                    : nullptr;
+                for (size_t i = 0; i < data.size(); ++i)
+                {
+                    if (null_map && null_map[i])
+                        continue;
+
+                    if (common::mulOverflow(data[i].value, variable.time_multiplier, data[i].value))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "The NetCDF format cannot store the value of the column {} at the row {}: "
+                            "the CF conventions have no name for the unit of its scale, and the value "
+                            "does not fit in 64 bits in the next finer named unit", variable.name, i);
+                }
+            }
 
             /// The value that the NULLs are written as has to be absent from the data of the
             /// column, so it can only be chosen once the whole column is there.

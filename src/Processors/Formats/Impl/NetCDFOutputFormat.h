@@ -37,6 +37,10 @@ private:
         /// The value of the `units` attribute, which tells what the numbers of a column with dates
         /// or times mean. Empty when the column has no such meaning.
         String units;
+        /// What the values of a `DateTime64` column are multiplied by on writing. The CF
+        /// conventions name only the units of the scales 0, 3, 6 and 9, so a column of another
+        /// scale is written in the next finer named unit.
+        Int64 time_multiplier = 1;
 
         /// The data of the column, collected from all the chunks.
         MutableColumnPtr data;

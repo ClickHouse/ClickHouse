@@ -88,6 +88,11 @@ A column with dates or times is written as the number that is stored in it, toge
 `units` attribute of the CF conventions that says what that number means, such as
 `days since 1970-01-01`. On reading, such a variable is a plain number again.
 
+The CF conventions name only the units of the `DateTime64` scales 0, 3, 6 and 9. A column of
+another scale is written in the next finer named unit, with the values multiplied accordingly:
+a `DateTime64(5)` becomes microseconds, for example. A value that does not fit in 64 bits after
+the multiplication cannot be stored, and writing it throws an exception.
+
 ## Example usage {#example-usage}
 
 ```sql title="Query"
