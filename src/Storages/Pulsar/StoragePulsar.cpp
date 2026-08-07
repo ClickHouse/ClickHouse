@@ -184,9 +184,9 @@ StoragePulsar::StoragePulsar(
             throw;
         tryLogCurrentException(log, "Failed to subscribe to Pulsar topics on startup; will keep retrying in the background");
     }
-    streamer = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "PulsarStreamingTask", [this]() { streaming(); });
+    streamer = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "PulsarStreamingTask", [this]() { streaming(); });
     streamer->deactivate();
-    init_task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), "PulsarInitTask", [this]() { initConsumersFunc(); });
+    init_task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), "PulsarInitTask", [this]() { initConsumersFunc(); });
     init_task->deactivate();
 }
 
