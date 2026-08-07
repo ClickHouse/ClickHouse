@@ -1,4 +1,5 @@
-#include <AggregateFunctions/registerAggregateFunctions.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionUniqCombined.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -21,10 +22,38 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 namespace
 {
 
 constexpr size_t benchmark_rows = 65536;
+
+AggregateFunctionPtr
+createBenchmarkUniqCombined64(const String &, const DataTypes & argument_types, const Array & parameters, const Settings *)
+{
+    if (argument_types.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Benchmark uniqCombined64 requires exactly one argument, got {}", argument_types.size());
+
+    if (parameters.size() != 1 || parameters[0].getType() != Field::Types::UInt64 || parameters[0].safeGet<UInt64>() != 12)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Benchmark uniqCombined64 requires precision 12");
+
+    const WhichDataType which(argument_types[0]);
+    /// Keep precision 12 and the UInt64 hash type in sync with StatisticsUniqV2.
+    if (which.isUInt64())
+        return std::make_shared<AggregateFunctionUniqCombined<UInt64, 12, UInt64>>(argument_types, parameters);
+    if (which.isFloat64())
+        return std::make_shared<AggregateFunctionUniqCombined<Float64, 12, UInt64>>(argument_types, parameters);
+
+    throw Exception(
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        "Benchmark uniqCombined64 supports only UInt64 and Float64, got {}",
+        argument_types[0]->getName());
+}
 
 enum class ColumnKind
 {
@@ -98,7 +127,11 @@ void ensureAggregateFunctionsRegistered()
 {
     static const bool registered = []
     {
-        registerAggregateFunctions();
+        AggregateFunctionFactory::instance().registerFunction(
+            "uniqCombined64",
+            {createBenchmarkUniqCombined64,
+             {.description = "Benchmark-local uniqCombined64 registration.",
+              .category = FunctionDocumentation::Category::AggregateFunction}});
         return true;
     }();
     static_cast<void>(registered);
