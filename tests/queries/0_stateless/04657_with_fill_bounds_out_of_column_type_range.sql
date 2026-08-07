@@ -58,6 +58,28 @@ SELECT * FROM (SELECT toDateTime(0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM to
 -- STALENESS terminates the filling in-domain even with an INTERVAL step, so the TO bound is accepted.
 SELECT count(), min(d), max(d) FROM (SELECT toDate('2026-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 1 YEAR STALENESS INTERVAL 3 YEAR);
 
+SELECT 'an INTERVAL step clamps at the calendar boundary, which for Date32 and DateTime64 is inside the storage range';
+
+-- The calendar arithmetic of an INTERVAL step clamps at the representable calendar, [0000-01-01, 9999-12-31],
+-- and for Date32 and DateTime64 that window is strictly narrower than the storage type: a TO bound beyond the
+-- calendar boundary fits the storage type but can never be reached, so without the check these fills keep
+-- generating the clamped boundary value forever.
+SELECT * FROM (SELECT toDate32('9999-12-31') AS d ORDER BY d ASC WITH FILL TO 3000000 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDate32('9999-06-01') AS d ORDER BY d ASC WITH FILL TO 2932897 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDate32('0001-06-01') AS d ORDER BY d DESC WITH FILL TO -800000 STEP INTERVAL -1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDateTime64('9999-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300800 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDateTime64('9999-06-01 00:00:00.123', 3, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300800 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDateTime64('0001-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t DESC WITH FILL TO -70000000000 STEP INTERVAL -100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- The exclusive TO bound at exactly the calendar boundary is reachable and terminates. Only acceptance and
+-- termination are asserted: an anchor beyond the DateLUT table takes the out-of-range calendar path, whose
+-- clamped values are a pre-existing data-dependent artifact (see the pull request description).
+SELECT count() > 0 FROM (SELECT toDate32('9995-06-01') AS d ORDER BY d ASC WITH FILL TO 2932896 STEP INTERVAL 1 YEAR);
+-- In-range INTERVAL fills over Date32 and DateTime64 are unchanged.
+SELECT count(), min(d), max(d) FROM (SELECT toDate32('2026-01-01') AS d ORDER BY d ASC WITH FILL FROM toDate32('2020-01-01') TO toDate32('2027-01-01') STEP INTERVAL 1 YEAR);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('2020-01-03 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('2020-01-01 00:00:00', 0, 'UTC') TO toDateTime64('2020-01-05 00:00:00', 0, 'UTC') STEP INTERVAL 1 DAY);
+-- STALENESS terminates the filling in-domain, so an out-of-calendar TO is accepted.
+SELECT count(), min(d), max(d) FROM (SELECT toDate32('2026-03-05') AS d ORDER BY d ASC WITH FILL TO 3000000 STEP INTERVAL 1 YEAR STALENESS INTERVAL 3 YEAR);
+
 SELECT 'in-range filling is unchanged';
 
 SELECT groupArray(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL FROM 1 TO 10);

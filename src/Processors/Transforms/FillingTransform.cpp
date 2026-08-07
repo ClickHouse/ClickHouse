@@ -244,6 +244,14 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
   * terminates. `WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR` generates 1970-01-01 and 2070-01-01,
   * then wraps around 1990 and cycles through the UInt16 domain forever, all of it below TO = 70000.
   *
+  * On top of that, the calendar arithmetic clamps at the boundaries of the representable calendar - the window
+  * [0000-01-01, 9999-12-31] of DateLUTImpl - and for Date32 and DateTime64 that window is strictly narrower than
+  * the range of the storage type. A TO bound beyond the calendar boundary in the fill direction passes the
+  * storage-range check and is still unreachable: the filling keeps generating the boundary value forever. Such
+  * bounds are checked separately in checkFillBoundsFitColumnType against the calendar limits, not just the
+  * storage limits. (For Date the calendar clamp coincides with the UInt16 storage boundary, and DateTime wraps
+  * within UInt32 where any in-range TO stays reachable from some anchor, so the storage check suffices there.)
+  *
   * STALENESS is the exception: it terminates the filling in-domain, see below.
   *
   * STALENESS caps the sequence at the last data value plus the staleness, replacing TO as the effective bound in
@@ -307,9 +315,45 @@ static std::optional<Int64> fillValueRequiredToFitColumnType(const FillColumnDes
   */
 static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, const DataTypePtr & type, int direction)
 {
+    WhichDataType which(type);
+
+    /// The calendar arithmetic of an INTERVAL step clamps at the boundaries of the representable calendar
+    /// ([0000-01-01, 9999-12-31], see DateLUTImpl), and for Date32 and DateTime64 those boundaries lie strictly
+    /// inside the range of the storage type: a TO bound beyond the calendar boundary in the fill direction can
+    /// never be reached even when it fits the storage type, and the filling would keep generating the clamped
+    /// boundary value forever. STALENESS terminates the filling in-domain (see below), so it lifts the check.
+    if (descr.step_kind && !descr.fill_to.isNull() && descr.fill_staleness.isNull())
+    {
+        std::optional<bool> is_reachable;
+
+        if (which.isDate32() && descr.fill_to.getType() == Field::Types::Int64)
+        {
+            const Int64 to = descr.fill_to.safeGet<Int64>();
+            is_reachable = direction > 0
+                ? to <= DateLUTImpl::getMaxRepresentableDayNum()
+                : to >= DateLUTImpl::getMinRepresentableDayNum();
+        }
+        else if (which.isDateTime64() && descr.fill_to.getType() == Field::Types::Decimal64)
+        {
+            const auto & to_decimal = descr.fill_to.safeGet<DecimalField<Decimal64>>();
+            const Int128 scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(to_decimal.getScale());
+            /// The last representable time point of the calendar has all its sub-second digits set.
+            const Int128 max_ticks = static_cast<Int128>(DateLUTImpl::getMaxRepresentableTime()) * scale_multiplier + (scale_multiplier - 1);
+            const Int128 min_ticks = static_cast<Int128>(DateLUTImpl::getMinRepresentableTime()) * scale_multiplier;
+            const Int128 to = to_decimal.getValue().value;
+            is_reachable = direction > 0 ? to <= max_ticks : to >= min_ticks;
+        }
+
+        if (is_reachable && !*is_reachable)
+            throw Exception(
+                ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                "WITH FILL TO value {} is out of the calendar range of the ORDER BY column type {} and can never be reached by an INTERVAL step",
+                applyVisitor(FieldVisitorToString(), descr.fill_to),
+                type->getName());
+    }
+
     /// Only integers wrap around. Float bounds saturate, and they are inexact for a narrower column type anyway,
     /// so an exact-representability check would reject ordinary queries. Decimal conversion throws on overflow.
-    WhichDataType which(type);
     if (!isInteger(type) && !which.isDate() && !which.isDate32() && !which.isDateTime())
         return;
 

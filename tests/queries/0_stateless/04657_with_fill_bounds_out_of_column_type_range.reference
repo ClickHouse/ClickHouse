@@ -17,6 +17,11 @@ STALENESS caps the sequence before TO, so the TO bound is not rejected
 7	5	23
 an INTERVAL step can never reach an out of range TO, so such a TO is rejected
 3	2026-03-05	2028-03-05
+an INTERVAL step clamps at the calendar boundary, which for Date32 and DateTime64 is inside the storage range
+1
+7	2020-01-01	2026-01-01
+4	2020-01-01 00:00:00	2020-01-04 00:00:00
+3	2026-03-05	2028-03-05
 in-range filling is unchanged
 [1,2,3,4,5,6,7,8,9]
 [-1,-2,-3,-4,-5,-6,-7]
