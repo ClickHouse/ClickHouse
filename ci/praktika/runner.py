@@ -656,11 +656,18 @@ class Runner:
                                     f"Artifact {artifact_path} not found"
                                 )
                             Shell.check(f"ls -l {artifact_path}", verbose=True)
+                            # Every artifact object must carry a "retention"
+                            # tag: S3 lifecycle filters cannot match "objects
+                            # without a tag", so untagged objects would be
+                            # covered by no rule. Default to short retention;
+                            # per-artifact tags (e.g. retention=long) override.
+                            tags = {"retention": "default"}
+                            tags.update(artifact.ext.get("tags") or {})
                             for file_path in matched:
                                 link = S3.copy_file_to_s3(
                                     s3_path=s3_path,
                                     local_path=file_path,
-                                    tags=artifact.ext.get("tags"),
+                                    tags=tags,
                                 )
                                 result.set_link(link)
                                 artifact_links.append(link)
