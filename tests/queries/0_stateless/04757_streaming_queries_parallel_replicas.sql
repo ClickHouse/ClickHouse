@@ -7,7 +7,7 @@ CREATE TABLE t_stream_pr (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_stream_pr SELECT number FROM numbers(100);
 
 WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(10))
-SELECT count() FROM t_stream_pr STREAM CURSOR {'1': {'block_number': 0}}
+SELECT count() FROM t_stream_pr STREAM
 PREWHERE (x IN (t)) OR (x IN (t))
 SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 2,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_two_replicas',
