@@ -42,12 +42,12 @@ MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, Ma
     if (!index_read_result || (!index_read_result->skip_index_read_result && !index_read_result->projection_index_read_result))
         return ranges;
 
-    const auto & index_granularity = *info.data_part->index_granularity;
+    const auto & index_granularity = info.data_part_info->getIndexGranularity();
 
     /// On reading from remote disks, splitting a range multiplies number of IO requests with high latency.
     /// Typically ranges for remote reads are carefully prepared by the read pool (e.g. MergeTreePrefetchedReadPool).
     /// So, we only shrink ranges from the edges, or drop them entirely, to avoid high read fragmentation.
-    const bool only_shrink_ranges = info.data_part->isStoredOnRemoteDisk();
+    const bool only_shrink_ranges = info.data_part_info->getDataPartStorage()->isStoredOnRemoteDisk();
 
     /// Same predicate as MergeTreeReaderIndex::canSkipMark, applied before the ranges become a read task.
     MarkRanges result;
@@ -102,7 +102,7 @@ MarkRanges IndexReadRangesRefiner::refine(const MergeTreeReadTaskInfo & info, Ma
         bool part_fully_processed = remaining_marks.fetch_sub(dropped_marks, std::memory_order_acq_rel) == dropped_marks;
 
         if (part_fully_processed)
-            index_build_context->index_reader_pool->clear(info.data_part);
+            index_build_context->index_reader_pool->clear(info.data_part_info->getDataPart());
     }
 
     return result;

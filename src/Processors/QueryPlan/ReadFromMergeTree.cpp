@@ -285,7 +285,6 @@ namespace Setting
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsUInt64 predicate_statistics_sample_rate;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool apply_row_policy_after_final;
     extern const SettingsBool apply_prewhere_after_final;
@@ -470,7 +469,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     , log(std::move(log_))
     , analyzed_result_ptr(analyzed_result_ptr_)
     , is_parallel_reading_from_replicas(enable_parallel_reading_)
-    , enable_remove_parts_from_snapshot_optimization(!context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query] && query_info_.merge_tree_enable_remove_parts_from_snapshot_optimization)
     , number_of_current_replica(number_of_current_replica_)
 {
     if (is_parallel_reading_from_replicas)
@@ -3730,13 +3728,26 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     if (analyzed_result_ptr)
         analysis_result_copy = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
 
+    /// Filter DAGs can be modified by optimizations.
+    SelectQueryInfo query_info_copy = query_info;
+    if (query_info_copy.prewhere_info)
+        query_info_copy.prewhere_info = std::make_shared<PrewhereInfo>(query_info_copy.prewhere_info->clone());
+    if (query_info_copy.row_level_filter)
+    {
+        auto row_level_filter_copy = std::make_shared<FilterDAGInfo>();
+        row_level_filter_copy->actions = query_info_copy.row_level_filter->actions.clone();
+        row_level_filter_copy->column_name = query_info_copy.row_level_filter->column_name;
+        row_level_filter_copy->do_remove_column = query_info_copy.row_level_filter->do_remove_column;
+        query_info_copy.row_level_filter = std::move(row_level_filter_copy);
+    }
+
     auto cloned_step = std::make_unique<ReadFromMergeTree>(
         prepared_parts,
         mutations_snapshot,
         all_column_names,
         data,
         data_settings,
-        query_info,
+        query_info_copy,
         storage_snapshot,
         context,
         block_size.max_block_size_rows,
@@ -3749,7 +3760,6 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         read_task_callback,
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
-    cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
     /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
     /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
     /// parallel-replicas plan fragment) clones a subtree whose filter still contains `__topKFilter` and
@@ -4159,12 +4169,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.use_query_condition_cache = false;
     }
 
-    if (enable_remove_parts_from_snapshot_optimization || query_info.isStream())
+    /// Do not keep data parts in snapshot.
     {
-        /// Do not keep data parts in snapshot.
-        /// They are stored separately, and some could be released after PK analysis.
-        /// Keep the underlying storage alive because part teardown still reaches
-        /// `data_part->storage.getContext()`.
         auto stripped_snapshot_data = std::make_unique<MergeTreeData::SnapshotData>();
         if (const auto * snapshot_data = dynamic_cast<const MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
         {
@@ -4172,8 +4178,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
         }
 
-        /// The snapshot object may be shared with other parts of the query
-        /// (see `enable_shared_storage_snapshot_in_query`), which may read its data concurrently.
+        /// The snapshot object may be shared with other query plan steps.
         /// So replace our own pointer with a stripped clone instead of mutating the shared object in place.
         storage_snapshot = storage_snapshot->clone(std::move(stripped_snapshot_data));
     }
