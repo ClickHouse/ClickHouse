@@ -770,7 +770,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserIdentifier name_p;
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
-    ParserFunction table_function_p;
+    /// Parse the table function after AS in the table-function mode, so that a trailing
+    /// SETTINGS clause is accepted: CREATE TABLE ... AS remote(..., SETTINGS skip_unavailable_shards = 1)
+    ParserFunction table_function_p{/*allow_function_parameters_=*/ true, /*is_table_function_=*/ true};
     ParserNameList names_p;
     ParserSQLSecurity sql_security_p;
 
