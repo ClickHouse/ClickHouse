@@ -32,9 +32,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTDictionary.h>
-#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
@@ -75,6 +72,7 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TransactionLog.h>
+#include <Interpreters/checkValuelessSettingChanges.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/QueryMetadataCache.h>
@@ -89,7 +87,6 @@
 #include <Common/Licensing/LicenseChecker.h>
 #endif
 #include <Core/ServerSettings.h>
-#include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 
 #include <IO/CompressionMethod.h>
@@ -1165,74 +1162,6 @@ private:
 
 using ImplicitTransactionControlExecutorPtr = std::shared_ptr<ImplicitTransactionControlExecutor>;
 
-
-/// The valueless form `SETTINGS name` stands for `name = true`, and the SQL parser always writes
-/// Bool `true` for it, so `shorthand` paired with any other value is a parser-impossible shape that
-/// can only arrive from the AST JSON dialect. `BaseSettings::checkShorthandChange` rejects it for
-/// the settings applied through `BaseSettings`, but `SettingsChanges` are also consumed raw - e.g.
-/// the `Join` and `Log` engines, `EXPLAIN` settings, dictionary and data-lake settings - and every
-/// such reader would execute the carried value for a change that claims to be valueless. Instead of
-/// duplicating the check in each of them, reject the shape once for the whole tree. This runs after
-/// `query_for_logging` is prepared, so the exception is logged with the AST masked rather than with
-/// the raw JSON text, which is also why it is not checked at deserialization.
-static void checkValuelessSettingChanges(const IAST & ast)
-{
-    const auto check = [](const SettingsChanges & changes)
-    {
-        for (const auto & change : changes)
-            if (change.shorthand && change.value != Field(true))
-                BaseSettingsHelpers::throwValuelessSettingHasValue(change.name);
-    };
-
-    /// Dictionary and WASM function settings mandate `name = value` in their grammar, so the
-    /// valueless form itself is parser-impossible there, whatever the value. It cannot be let
-    /// through even with the mandatory `true`: `ASTCreateWasmFunctionQuery::formatImpl` renders
-    /// its settings via a temporary `ASTSetQuery`, which elides `= true` for the valueless form,
-    /// so a surviving flag would be persisted as `SETTINGS name` that the SQL grammar then fails
-    /// to parse back when the function is reloaded.
-    const auto check_no_shorthand = [](const SettingsChanges & changes)
-    {
-        for (const auto & change : changes)
-            if (change.shorthand)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Setting '{}' is marked as written without a value, "
-                    "but the valueless form is not part of the syntax here. Write '{} = <value>'",
-                    change.name, change.name);
-    };
-
-    const auto check_no_shorthand_in_set_query = [&](const ASTPtr & settings_ast)
-    {
-        if (!settings_ast)
-            return;
-        if (const auto * set_query = settings_ast->as<ASTSetQuery>())
-            check_no_shorthand(set_query->changes);
-    };
-
-    /// Most settings ride in an `ASTSetQuery`, but dictionary and WASM function settings
-    /// store `SettingsChanges` directly in their own nodes, and their `readJSON` restores
-    /// the `shorthand` flag just like `ASTSetQuery::readJSON` does.
-    if (const auto * set_query = ast.as<ASTSetQuery>())
-        check(set_query->changes);
-    else if (const auto * dictionary_settings = ast.as<ASTDictionarySettings>())
-        check_no_shorthand(dictionary_settings->changes);
-    else if (const auto * create_wasm_function = ast.as<ASTCreateWasmFunctionQuery>())
-        check_no_shorthand(create_wasm_function->getSettings());
-    /// Some settings do ride in an `ASTSetQuery`, but their grammar disables the valueless form
-    /// (`ParserSetQuery` with `shorthand_syntax = false`), so the flag is parser-impossible there
-    /// whatever the value, and the node cannot tell in which grammar it was parsed - the context
-    /// has to be judged from the parent. It cannot be let through even with the mandatory `true`:
-    /// nothing in these paths consults the flag, and `ASTSetQuery::formatImpl` elides `= true` for
-    /// the valueless form, so a surviving flag would be persisted (e.g. in the column declaration
-    /// of a table definition) as `SETTINGS name` that these grammars then fail to parse back.
-    else if (const auto * column_declaration = ast.as<ASTColumnDeclaration>())
-        check_no_shorthand_in_set_query(column_declaration->getSettings());
-    else if (const auto * explain_query = ast.as<ASTExplainQuery>())
-        check_no_shorthand_in_set_query(explain_query->getSettings());
-
-    for (const auto & child : ast.children)
-        checkValuelessSettingChanges(*child);
-}
 
 static BlockIO executeQueryImpl(
     const char * begin,

@@ -12,8 +12,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Craft a payload for a `Bool` setting whose shorthand flag carries `false`.
 CRAFTED="replaceAll(parseQueryToJSON(\$\$SELECT 1 SETTINGS optimize_move_to_prewhere = false\$\$), '{\"name\":\"optimize_move_to_prewhere\"', '{\"name\":\"optimize_move_to_prewhere\",\"shorthand\":true')"
 
-# The formatter must not claim the setting was written without a value when it carries `false`.
-$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON($CRAFTED)"
+# Formatting the payload is rejected, exactly like executing it: the shape is parser-impossible,
+# and every `IAST::createFromJSON` entry point rejects it before the malformed tree is consumed.
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON($CRAFTED)" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
 
 # And executing it must be rejected instead of silently running with `false`.
 CRAFTED_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED FORMAT TSVRaw")
@@ -22,7 +23,7 @@ $CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_diale
 # The same for a value of another type smuggled in under the flag: rejected for carrying a value,
 # before the type of the setting is even considered.
 CRAFTED_STR="replaceAll(parseQueryToJSON(\$\$SELECT 1 SETTINGS optimize_move_to_prewhere = false\$\$), '\"value\":{\"field_type\":\"Bool\",\"value\":false}', '\"shorthand\":true,\"value\":{\"field_type\":\"String\",\"value\":\"x\"}')"
-$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON($CRAFTED_STR)"
+$CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON($CRAFTED_STR)" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
 CRAFTED_STR_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_STR FORMAT TSVRaw")
 $CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_STR_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
 

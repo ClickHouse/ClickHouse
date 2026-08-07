@@ -79,6 +79,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/checkValuelessSettingChanges.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/processColumnTransformers.h>
@@ -632,6 +633,15 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
                 res->checkDepth(settings[Setting::max_ast_depth]);
             if (settings[Setting::max_ast_elements])
                 res->checkSize(settings[Setting::max_ast_elements]);
+
+            /// Reject a `shorthand` flag paired with a value the valueless `SETTINGS name` form
+            /// cannot carry before any client-side AST-to-SQL rewrite (query-parameter
+            /// substitution for old servers, `allow_merge_tree_settings`): serializing such an
+            /// AST back to SQL would silently drop the carried value - executing a different
+            /// change than the payload carried - or render the valueless form where the SQL
+            /// grammar does not accept it. The server re-checks the shape in `executeQuery` for
+            /// payloads that are sent as JSON text.
+            checkValuelessSettingChanges(*res);
 
             pos = json_end;
         }

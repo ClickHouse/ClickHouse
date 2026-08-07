@@ -5,6 +5,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/checkValuelessSettingChanges.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IAST.h>
@@ -314,6 +315,12 @@ public:
                 ast->checkDepth(max_ast_depth);
             if (max_ast_elements)
                 ast->checkSize(max_ast_elements);
+
+            /// Reject a `shorthand` flag paired with a value the valueless `SETTINGS name` form
+            /// cannot carry, mirroring the other `createFromJSON` entry points: formatting such
+            /// an AST would silently drop the carried value, or render the valueless form where
+            /// the SQL grammar does not accept it, producing text that cannot be parsed back.
+            checkValuelessSettingChanges(*ast);
 
             WriteBufferFromOwnString buf;
             if (orig_col)
