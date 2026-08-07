@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1038969",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1046231",
       "email": "support@clickhouse.com"
     }
   },
@@ -7097,6 +7097,134 @@
         "x-mint": {
           "content": "Returns a grand total and a list of daily, per-entity organization usage cost records for the organization in the queried time period (maximum 31 days). All days in both the request and the response are evaluated based on the UTC timezone."
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/activeBalances": {
+      "get": {
+        "summary": "Get organization active prepaid balances",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> Returns the active prepaid credit balances for the organization, each with its own balance ID and remaining credits, along with the total remaining credits across all active balances. A balance is active when it has started, has not expired, and has credits remaining. Balances are ordered by expiration date, soonest first, and the returned page is capped at `limit` (default and maximum 100). When `totalCount` exceeds the number of returned balances, page with `limit`/`offset` to retrieve them all. `totalRemainingPrepaidCredits` always covers every active balance, not just the returned page.",
+        "operationId": "activeBalancesGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Number of results to skip before returning.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ActiveBalances"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Billing"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services/{serviceId}/clickpipes": {
@@ -22521,7 +22649,7 @@
       "ClickPipeMongoDBSource": {
         "properties": {
           "uri": {
-            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...).",
+            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...). Embedded credentials are redacted from API responses, so the returned value can differ from what was submitted.",
             "type": "string",
             "example": "mongodb+srv://cluster0.example.mongodb.net/mydb"
           },
@@ -22579,7 +22707,7 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "uri": {
-            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...).",
+            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...). Embedded credentials are redacted from API responses, so the returned value can differ from what was submitted.",
             "type": "string",
             "example": "mongodb+srv://cluster0.example.mongodb.net/mydb"
           },
@@ -22639,7 +22767,7 @@
             "$ref": "#/components/schemas/PLAIN"
           },
           "uri": {
-            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...).",
+            "description": "MongoDB connection URI. Supports both standard URIs (mongodb://...) and SRV URIs (mongodb+srv://...). Embedded credentials are redacted from API responses, so the returned value can differ from what was submitted.",
             "type": [
               "string",
               "null"
@@ -23237,6 +23365,11 @@
             "maximum": 2,
             "example": 2
           },
+          "kafka_read_committed": {
+            "description": "Kafka Read Committed. Whether Kafka consumers read only committed messages",
+            "type": "boolean",
+            "example": false
+          },
           "object_storage_use_cluster_function": {
             "description": "use cluster function. Whether to use ClickHouse cluster function for distributed processing",
             "type": [
@@ -23644,6 +23777,11 @@
             "minimum": 0,
             "maximum": 2,
             "example": 2
+          },
+          "kafka_read_committed": {
+            "description": "Kafka Read Committed. Whether Kafka consumers read only committed messages",
+            "type": "boolean",
+            "example": false
           },
           "object_storage_use_cluster_function": {
             "description": "use cluster function. Whether to use ClickHouse cluster function for distributed processing",
@@ -30665,6 +30803,52 @@
           "adjustable"
         ]
       },
+      "ActiveBalance": {
+        "properties": {
+          "id": {
+            "description": "Unique ID of the prepaid balance.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "remainingPrepaidCredits": {
+            "description": "Remaining credits available on this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "totalAmount": {
+            "description": "Total credits granted on this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "amountSpent": {
+            "description": "Credits spent from this balance, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "startDate": {
+            "description": "Date the balance became active. ISO-8601, based on the UTC timezone.",
+            "type": "string",
+            "format": "date-time"
+          },
+          "expirationDate": {
+            "description": "Date the balance expires. ISO-8601, based on the UTC timezone.",
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ActiveBalances": {
+        "properties": {
+          "totalRemainingPrepaidCredits": {
+            "description": "Total remaining credits across all active prepaid balances, in ClickHouse Credits (CHCs).",
+            "type": "number"
+          },
+          "prepaidBalances": {
+            "type": "array",
+            "description": "List of active prepaid balances for the organization.",
+            "items": {
+              "$ref": "#/components/schemas/ActiveBalance"
+            }
+          }
+        }
+      },
       "ServiceClickhouseSetting": {
         "properties": {
           "name": {
@@ -33384,6 +33568,19 @@
                 "type": "integer",
                 "exclusiveMinimum": 0
               },
+              "memoryLimitMib": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1048576
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "sendChunkHeader": {
                 "default": false,
                 "type": "boolean"
@@ -33504,6 +33701,19 @@
                 "default": 10000,
                 "type": "integer",
                 "exclusiveMinimum": 0
+              },
+              "memoryLimitMib": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1048576
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "sendChunkHeader": {
                 "default": false,
@@ -33625,6 +33835,19 @@
                 "type": "integer",
                 "exclusiveMinimum": 0
               },
+              "memoryLimitMib": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1048576
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "sendChunkHeader": {
                 "default": false,
                 "type": "boolean"
@@ -33740,6 +33963,19 @@
                 "default": 10000,
                 "type": "integer",
                 "exclusiveMinimum": 0
+              },
+              "memoryLimitMib": {
+                "default": null,
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1048576
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "sendChunkHeader": {
                 "default": false,
@@ -34002,6 +34238,20 @@
               }
             ]
           },
+          "memoryLimitMib": {
+            "description": "Maximum memory, in MiB, available to each UDF sandbox process. Null uses the sandbox default.",
+            "default": null,
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1048576
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sendChunkHeader": {
             "description": "Whether ClickHouse sends a row-count chunk header.",
             "type": "boolean"
@@ -34062,6 +34312,7 @@
           "commandReadTimeout",
           "commandWriteTimeout",
           "maxCommandExecutionTime",
+          "memoryLimitMib",
           "sendChunkHeader",
           "format",
           "sandboxType",
