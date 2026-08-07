@@ -151,6 +151,8 @@ BlockIO InterpreterUpdateQuery::execute()
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Update queries are prohibited");
 
     getContext()->checkAccess(required_access);
+    /// Same database as `resolved_table_id` above, resolved again because the `ON CLUSTER` branch returns
+    /// before this point, and because this one must throw where that one returns empty. Do not collapse.
     auto table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
     update_query.setDatabase(table_id.database_name);
 
