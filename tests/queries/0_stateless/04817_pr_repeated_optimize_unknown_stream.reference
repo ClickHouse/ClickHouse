@@ -1,0 +1,26 @@
+merge one table
+4999950000
+merge two tables
+5000449500
+merge with filter
+4999949985
+merge joined
+499485
+merge joined reversed
+499485
+merge with forced index
+13600
+merge index analysis
+1	1	1
+merge forced index not used
+base table
+4999950000
+1
+view
+4999950000
+merge without plan based
+4999950000
+merge without local plan
+4999950000
+merge without parallel replicas
+4999950000

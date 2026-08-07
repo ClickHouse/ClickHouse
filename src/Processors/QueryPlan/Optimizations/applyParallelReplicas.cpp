@@ -432,6 +432,22 @@ static bool planHasSubquerySet(const QueryPlan::Node * node)
     return false;
 }
 
+/// A read is in parallel-reading mode only after a coordinator has been created for it, so its presence
+/// means the phases below have already run on this plan. They are not idempotent, and a plan can be
+/// optimized more than once (StorageMerge child plans, set subplans).
+static bool planHasCoordinatedRead(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+    if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get());
+        read && read->isParallelReadingFromReplicas())
+        return true;
+    for (const auto * child : node->children)
+        if (planHasCoordinatedRead(child))
+            return true;
+    return false;
+}
+
 /// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
 /// Raising the markers up the plan (through expressions, aggregation and unions) and rewriting them
 /// into a distributed read is done by the phases below. The planner now builds only a plain local plan.
@@ -492,6 +508,9 @@ void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, con
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
     if (!settings.enable_parallel_replicas)
+        return;
+
+    if (planHasCoordinatedRead(query_plan.getRootNode()))
         return;
 
     insertParallelReplicasSplit(query_plan, nodes);
