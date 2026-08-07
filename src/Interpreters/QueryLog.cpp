@@ -154,6 +154,11 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"used_privileges", array_low_cardinality_string, "Privileges which were successfully checked during query execution."},
         {"missing_privileges", array_low_cardinality_string, "Privileges that are missing during query execution."},
 
+        {"used_number_of_joins", std::make_shared<DataTypeUInt64>(), "The number of physical joins executed by the query. It is collected from the query pipeline, so it reflects the joins that were actually executed after all optimizations, not the number of JOIN clauses in the query text."},
+        {"used_join_algorithms", array_low_cardinality_string, "Names of the join algorithms that were actually used during query execution, e.g. 'hash', 'parallel_hash', 'grace_hash', 'direct', 'full_sorting_merge', 'partial_merge'. The setting join_algorithm only lists the allowed algorithms, the choice among them is made at runtime and an algorithm can even be replaced by another one in the middle of execution."},
+        {"used_join_kinds", array_low_cardinality_string, "Kinds of the joins executed by the query: 'INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS', 'COMMA', 'PASTE', and additionally 'ASOF' for ASOF joins."},
+        {"join_spilled_to_disk", std::make_shared<DataTypeUInt8>(), "1 if any join of the query wrote data to temporary files on disk (joining in external memory), 0 otherwise."},
+
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
 
         {"query_cache_usage", std::move(query_result_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache."},
@@ -335,6 +340,11 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         fill_column(used_row_policies, column_row_policies_names);
         fill_column(used_privileges, column_used_privileges);
         fill_column(missing_privileges, column_missing_privileges);
+
+        typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(used_number_of_joins);
+        fill_column(used_join_algorithms, typeid_cast<ColumnArray &>(*columns[i++]));
+        fill_column(used_join_kinds, typeid_cast<ColumnArray &>(*columns[i++]));
+        typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(join_spilled_to_disk);
     }
 
     {
