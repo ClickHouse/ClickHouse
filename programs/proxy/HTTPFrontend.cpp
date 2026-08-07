@@ -166,7 +166,7 @@ void handleHTTP(FiberSocket & client, const FrontendContext & ctx)
         const String value = Poco::trim(header.substr(colon + 1));
 
         if (name == "host")
-            attributes.host = stripPort(value);
+            attributes.host = Poco::toLower(stripPort(value));   /// DNS hostnames are case-insensitive.
         else if (name == "x-clickhouse-user")
             attributes.user = value;
         else if (name == "x-clickhouse-database")

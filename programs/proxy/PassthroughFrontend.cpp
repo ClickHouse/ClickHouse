@@ -8,6 +8,8 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
+#include <Poco/String.h>
+
 #include <base/scope_guard.h>
 
 
@@ -69,7 +71,7 @@ void handlePassthrough(FiberSocket & client, const FrontendContext & ctx)
     try
     {
         if (auto sni = peekTLSClientHelloSNI(reader))
-            attributes.host = *sni;
+            attributes.host = Poco::toLower(*sni);   /// DNS hostnames are case-insensitive.
         else
             LOG_DEBUG(ctx.log, "No SNI in the TLS ClientHello; routing by peer address or the default pool");
     }

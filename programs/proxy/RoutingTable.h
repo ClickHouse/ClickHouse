@@ -73,7 +73,10 @@ private:
 
     std::vector<Rule> rules;
 
-    static Matcher makeMatcher(const String & exact, const String & regexp);
+    /// DNS hostnames are case-insensitive, so the host matcher lowercases its exact values
+    /// and compiles its regexp as case-insensitive; the attribute itself is lowercased
+    /// by the frontends at extraction.
+    static Matcher makeMatcher(const String & exact, const String & regexp, bool case_insensitive = false);
     static std::unordered_set<String> loadAuthorizedKeys(const String & inline_keys, const String & file);
     static bool appliesToProtocol(const Rule & rule, ListenerProtocol protocol);
 };

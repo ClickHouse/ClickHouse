@@ -179,6 +179,10 @@ The available load-balancing strategies are `random`, `round_robin`, `least_conn
 Rules are checked in order; the first whose criteria all match wins. A rule can match on `host`
 (the TLS SNI or the HTTP `Host` header), `user`, `database`, `query_type` (`select`, `insert` or
 `other`; HTTP only), and `protocol`. It routes either to a named `pool` or to a `backend_template`.
+Hostnames are matched case-insensitively, as DNS names are case-insensitive: the incoming value is
+lowercased before matching, exact `host` values are compared after lowercasing, and a `host_regexp`
+is compiled as case-insensitive (regexp captures substituted into a `backend_template` are therefore
+lowercase). `user` and `database` are matched case-sensitively.
 
 Values can be matched exactly (or as a comma-separated list) or by a regular expression. A regular
 expression may contain capture groups whose values are substituted for `$1` … `$9` in a

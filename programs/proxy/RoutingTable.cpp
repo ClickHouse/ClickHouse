@@ -2,6 +2,8 @@
 
 #include <Common/Exception.h>
 
+#include <Poco/String.h>
+
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -72,13 +74,18 @@ String substituteCaptures(const String & pattern, const std::vector<String> & ca
     return res;
 }
 
-ConfigRoutingTable::Matcher ConfigRoutingTable::makeMatcher(const String & exact, const String & regexp)
+ConfigRoutingTable::Matcher ConfigRoutingTable::makeMatcher(const String & exact, const String & regexp, bool case_insensitive)
 {
     Matcher matcher;
     matcher.values = splitList(exact);
+    if (case_insensitive)
+        for (auto & value : matcher.values)
+            value = Poco::toLower(value);
     if (!regexp.empty())
     {
-        matcher.regexp = std::make_shared<re2::RE2>(regexp, re2::RE2::Quiet);
+        re2::RE2::Options options(re2::RE2::Quiet);
+        options.set_case_sensitive(!case_insensitive);
+        matcher.regexp = std::make_shared<re2::RE2>(regexp, options);
         if (!matcher.regexp->ok())
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
                 "Cannot compile regexp '{}' in a routing rule: {}", regexp, matcher.regexp->error());
@@ -215,7 +222,7 @@ ConfigRoutingTable::ConfigRoutingTable(const std::vector<RuleConfig> & rules_)
     for (const auto & rule_config : rules_)
     {
         Rule rule;
-        rule.host = makeMatcher(rule_config.host, rule_config.host_regexp);
+        rule.host = makeMatcher(rule_config.host, rule_config.host_regexp, /*case_insensitive=*/ true);
         rule.user = makeMatcher(rule_config.user, rule_config.user_regexp);
         rule.database = makeMatcher(rule_config.database, rule_config.database_regexp);
         rule.query_types = splitList(rule_config.query_type);
