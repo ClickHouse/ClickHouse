@@ -54,6 +54,8 @@ public:
 private:
     void updateOutputHeader() override;
 
+    const String & getConditionName() const;
+
     /// Appends the stage that emits the build rows no probe row matched, held back until every probe
     /// stream has finished.
     void addUnmatchedBuildRowsStage(

@@ -225,18 +225,48 @@ void BlockNestedLoopJoinStep::updateOutputHeader()
     output_header = concatHeaders(input_headers);
 }
 
+/// The name of the condition column, which for an analyzer plan is the expression that computes it
+/// (`less(__table1.x, __table2.y)`).
+const String & BlockNestedLoopJoinStep::getConditionName() const
+{
+    return predicate.actions->getSampleBlock().getByPosition(0).name;
+}
+
 void BlockNestedLoopJoinStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << settings.detail_prefix << "Type: " << toString(kind) << '\n';
-    settings.out << settings.detail_prefix << "Strictness: " << toString(strictness) << '\n';
-    settings.out << settings.detail_prefix << "Condition: " << predicate.actions->getSampleBlock().getByPosition(0).name << '\n';
+    const String & prefix = settings.detail_prefix;
+
+    settings.out << prefix << "Type: " << toString(kind) << '\n';
+    settings.out << prefix << "Strictness: " << toString(strictness) << '\n';
+
+    settings.out << prefix << "Condition: ";
+    if (settings.pretty)
+    {
+        /// The condition is computed inside the operator, so its column name is not in the plan's
+        /// pretty-name map; render the sub-DAG the way an `Expression` step's outputs are rendered.
+        PrettySetNameMap subquery_set_names;
+        settings.out << QueryPlanFormat::formatNodePretty(
+            predicate.actions->getActionsDAG().getOutputs().front(),
+            settings.pretty_names,
+            settings.runtime_filter_names,
+            subquery_set_names);
+    }
+    else
+    {
+        settings.out << getConditionName();
+    }
+    settings.out << '\n';
+
+    if (!settings.pretty && !settings.compact)
+        predicate.actions->describeActions(settings.out, prefix);
 }
 
 void BlockNestedLoopJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Type", toString(kind));
     map.add("Strictness", toString(strictness));
-    map.add("Condition", predicate.actions->getSampleBlock().getByPosition(0).name);
+    map.add("Condition", getConditionName());
+    map.add("Expression", predicate.actions->toTree());
 }
 
 void BlockNestedLoopJoinStep::describePipeline(FormatSettings & settings) const

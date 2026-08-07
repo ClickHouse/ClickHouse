@@ -1,0 +1,66 @@
+-- Tags: no-old-analyzer
+
+-- What `EXPLAIN actions = 1` says about a block nested loop join: the kind, the strictness, and the
+-- whole `ON` condition the operator evaluates - named by its condition column and dumped as actions
+-- in the legacy format, rendered as the expression that computes it in the pretty one.
+
+SET join_algorithm = 'direct,parallel_hash,hash';
+-- A swapped join is a different kind and a different condition, which is exactly what the
+-- description reports; pinned because the harness randomizes the setting.
+SET query_plan_join_swap_table = 'false';
+
+DROP TABLE IF EXISTS bnl_explain_l;
+DROP TABLE IF EXISTS bnl_explain_r;
+
+CREATE TABLE bnl_explain_l (a Int32, b Int32) ENGINE = Memory;
+CREATE TABLE bnl_explain_r (c Int32, d Int32) ENGINE = Memory;
+
+SET explain_query_plan_default = 'legacy';
+
+{% for join in ['LEFT', 'RIGHT', 'FULL', 'LEFT SEMI', 'RIGHT SEMI', 'LEFT ANTI', 'RIGHT ANTI', 'LEFT ANY', 'RIGHT ANY', 'INNER ANY'] -%}
+SELECT '-- {{ join }}';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN actions = 1 SELECT count() FROM bnl_explain_l {{ join }} JOIN bnl_explain_r ON a < c
+) WHERE startsWith(trimLeft(explain), 'BlockNestedLoopJoin')
+     OR startsWith(trimLeft(explain), 'Type: ')
+     OR startsWith(trimLeft(explain), 'Strictness: ')
+     OR startsWith(trimLeft(explain), 'Condition: ');
+{% endfor -%}
+
+-- The condition is a whole sub-DAG, one-sided subexpressions included, and `actions = 1` prints it.
+SELECT '-- predicate actions';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN actions = 1 SELECT count() FROM bnl_explain_l LEFT JOIN bnl_explain_r ON (a % 3) < (c % 5)
+) WHERE startsWith(trimLeft(explain), 'Condition: ') OR trimLeft(explain) LIKE 'FUNCTION %';
+
+-- Without `actions` there is nothing to say about the condition.
+SELECT '-- actions = 0';
+SELECT trimLeft(explain) FROM (
+    EXPLAIN actions = 0 SELECT count() FROM bnl_explain_l LEFT JOIN bnl_explain_r ON a < c
+) WHERE startsWith(trimLeft(explain), 'BlockNestedLoopJoin') OR startsWith(trimLeft(explain), 'Condition: ');
+
+SET explain_query_plan_default = 'pretty';
+
+-- The pretty format renders the condition as the expression that computes it, the way a `Filter`
+-- step renders the column it filters on.
+SELECT '-- pretty';
+{% for condition in ['a < c', 'a + b > c', 'a BETWEEN c AND d', 'a != c OR b = d', 'multiIf(a > 0, b < c, a < 0, b > d, false)'] -%}
+SELECT extract(explain, 'Condition: .*') AS condition FROM (
+    EXPLAIN actions = 1 SELECT count() FROM bnl_explain_l LEFT JOIN bnl_explain_r ON {{ condition }}
+) WHERE condition != '';
+{% endfor -%}
+
+-- The same three fields, plus the condition's action tree, in the JSON format.
+SELECT '-- json';
+SELECT line FROM (
+    SELECT arrayJoin(splitByChar('\n', explain)) AS line FROM (
+        EXPLAIN json = 1, actions = 1 SELECT count() FROM bnl_explain_l RIGHT ANY JOIN bnl_explain_r ON (a % 3) < c
+    )
+) WHERE line LIKE '%"Node Type": "BlockNestedLoopJoin"%'
+     OR line LIKE '%"Type": "RIGHT"%'
+     OR line LIKE '%"Strictness"%'
+     OR line LIKE '%"Condition"%'
+     OR line LIKE '%"Function": "%';
+
+DROP TABLE bnl_explain_l;
+DROP TABLE bnl_explain_r;

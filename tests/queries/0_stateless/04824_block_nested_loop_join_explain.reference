@@ -1,0 +1,70 @@
+-- LEFT
+BlockNestedLoopJoin
+Type: LEFT
+Strictness: ALL
+Condition: less(__table1.a, __table2.c)
+-- RIGHT
+BlockNestedLoopJoin
+Type: RIGHT
+Strictness: ALL
+Condition: less(__table1.a, __table2.c)
+-- FULL
+BlockNestedLoopJoin
+Type: FULL
+Strictness: ALL
+Condition: less(__table1.a, __table2.c)
+-- LEFT SEMI
+BlockNestedLoopJoin
+Type: LEFT
+Strictness: SEMI
+Condition: less(__table1.a, __table2.c)
+-- RIGHT SEMI
+BlockNestedLoopJoin
+Type: RIGHT
+Strictness: SEMI
+Condition: less(__table1.a, __table2.c)
+-- LEFT ANTI
+BlockNestedLoopJoin
+Type: LEFT
+Strictness: ANTI
+Condition: less(__table1.a, __table2.c)
+-- RIGHT ANTI
+BlockNestedLoopJoin
+Type: RIGHT
+Strictness: ANTI
+Condition: less(__table1.a, __table2.c)
+-- LEFT ANY
+BlockNestedLoopJoin
+Type: LEFT
+Strictness: ANY
+Condition: less(__table1.a, __table2.c)
+-- RIGHT ANY
+BlockNestedLoopJoin
+Type: RIGHT
+Strictness: ANY
+Condition: less(__table1.a, __table2.c)
+-- INNER ANY
+BlockNestedLoopJoin
+Type: INNER
+Strictness: ANY
+Condition: less(__table1.a, __table2.c)
+-- predicate actions
+Condition: less(modulo(__table1.a, 3_UInt8), modulo(__table2.c, 5_UInt8))
+FUNCTION modulo(__table1.a :: 0, 3_UInt8 :: 1) -> modulo(__table1.a, 3_UInt8) Int16 : 4
+FUNCTION modulo(__table2.c :: 2, 5_UInt8 :: 3) -> modulo(__table2.c, 5_UInt8) Int16 : 1
+FUNCTION less(modulo(__table1.a, 3_UInt8) :: 4, modulo(__table2.c, 5_UInt8) :: 1) -> less(modulo(__table1.a, 3_UInt8), modulo(__table2.c, 5_UInt8)) UInt8 : 3
+-- actions = 0
+BlockNestedLoopJoin
+-- pretty
+Condition: a < c
+Condition: a + b > c
+Condition: a >= c AND a <= d
+Condition: a != c OR b = d
+Condition: multiIf(a > 0, b < c, a < 0, b > d, 0)
+-- json
+                      "Node Type": "BlockNestedLoopJoin",
+                      "Type": "RIGHT",
+                      "Strictness": "ANY",
+                      "Condition": "less(modulo(__table1.a, 3_UInt8), __table2.c)",
+                            "Function": "modulo",
+                            "Function": "less",
