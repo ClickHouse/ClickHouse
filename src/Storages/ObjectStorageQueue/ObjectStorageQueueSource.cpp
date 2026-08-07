@@ -579,6 +579,28 @@ ObjectInfos ObjectStorageQueueSource::FileIterator::takeDueForeignProcessingRech
     return due;
 }
 
+std::optional<time_t> ObjectStorageQueueSource::FileIterator::earliestForeignProcessingRecheckTime()
+{
+    const time_t ttl_sec = foreign_processing_node_cache_ttl_sec.load();
+
+    std::lock_guard lock(next_mutex);
+    std::optional<time_t> earliest;
+    for (const auto & object : foreign_processing_files_to_recheck)
+    {
+        const auto status = metadata->tryGetFileStatus(object->getPath());
+        if (!status)
+            continue;
+
+        const time_t since = status->processingByAnotherProcessorSince();
+        if (!since)
+            continue;
+
+        if (!earliest.has_value() || since + ttl_sec < *earliest)
+            earliest = since + ttl_sec;
+    }
+    return earliest;
+}
+
 void ObjectStorageQueueSource::FileIterator::recheckForeignProcessingLater(
     ObjectInfoPtr object_info, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status)
 {

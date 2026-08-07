@@ -493,3 +493,76 @@ def test_foreign_processing_node_cache_ttl_is_alterable(started_cluster):
         DROP TABLE IF EXISTS {table_name};
         """
         )
+
+
+def test_ttl_bounds_retry_latency_on_idle_queue(started_cluster):
+    """`foreign_processing_node_cache_ttl_seconds` bounds the retry latency on an idle queue.
+
+    With a single foreign-held file every streaming cycle processes zero rows, so the
+    polling backoff grows far beyond the TTL. The streaming task must wake up no later
+    than the earliest pending foreign-processing recheck instead of sleeping through
+    the backoff, otherwise the TTL is not a bound on the retry latency at all.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_foreign_idle_queue_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    # The only file of the queue is held by the foreign processor: the queue is idle.
+    generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 100,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 5,
+            # The backoff after an empty cycle far exceeds the TTL: without the
+            # recheck-based wake-up the retry would take more than two minutes.
+            "s3queue_polling_min_timeout_ms": 1000,
+            "s3queue_polling_backoff_ms": 120000,
+            "s3queue_polling_max_timeout_ms": 600000,
+        },
+    )
+
+    conflict_file = f"{files_path}/test_0.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        # The first cycle observes the foreign `processing` node and processes nothing.
+        def get_cached_status():
+            return node.query(
+                f"SELECT status FROM system.s3queue_metadata_cache "
+                f"WHERE file_path LIKE '%{conflict_file}'"
+            ).strip()
+
+        run_with_retry(lambda x: x == "Processing", get_cached_status)
+
+        # The foreign processor releases the file without committing it.
+        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        # The file is picked up within the TTL plus a couple of streaming cycles,
+        # well before the two-minute polling backoff.
+        run_with_retry(lambda x: x == 1, get_count, retries=45)
+    finally:
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )

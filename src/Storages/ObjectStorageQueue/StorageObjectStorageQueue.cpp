@@ -888,6 +888,22 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
             reschedule_interval_ms = reschedule_processing_interval_ms;
         }
 
+        /// `foreign_processing_node_cache_ttl_seconds` bounds the retry latency of a file
+        /// skipped because of a foreign `processing` node: on an otherwise idle queue the
+        /// polling backoff may exceed the TTL, so wake up no later than the earliest recheck.
+        std::optional<time_t> recheck_time;
+        {
+            std::lock_guard streaming_lock(streaming_mutex);
+            if (streaming_file_iterator)
+                recheck_time = streaming_file_iterator->earliestForeignProcessingRecheckTime();
+        }
+        if (recheck_time.has_value())
+        {
+            const time_t current_time = std::time(nullptr);
+            const UInt64 recheck_delay_ms = *recheck_time > current_time ? (*recheck_time - current_time) * 1000 : 0;
+            reschedule_interval_ms = std::min(reschedule_interval_ms, recheck_delay_ms);
+        }
+
         LOG_TRACE(log, "Reschedule processing thread in {} ms", reschedule_interval_ms);
         task->scheduleAfter(reschedule_interval_ms);
 

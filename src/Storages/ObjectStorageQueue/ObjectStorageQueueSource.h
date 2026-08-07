@@ -83,6 +83,13 @@ public:
 
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
 
+        /// The earliest time at which a file skipped because of a fresh foreign `processing`
+        /// observation becomes due for a recheck; `std::nullopt` if there are no such files.
+        /// The streaming task schedules the next cycle no later than this time, so that
+        /// `foreign_processing_node_cache_ttl_seconds` bounds the retry latency even when
+        /// the queue is otherwise idle and the polling backoff is large.
+        std::optional<time_t> earliestForeignProcessingRecheckTime();
+
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;
