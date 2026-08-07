@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 import pytest
 import json
+import uuid
+import time
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
@@ -17,7 +19,7 @@ class PrunedInfo:
 
     def __repr__(self):
         return "PrunedInfo(not_pruned={}, partition_pruned={}, min_max_index_pruned={})".format(self.not_pruned, self.partition_pruned, self.min_max_index_pruned)
-    
+
     def __eq__(self, other):
         return (self.not_pruned == other.not_pruned and
                 self.partition_pruned == other.partition_pruned and
@@ -230,7 +232,7 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
             raise
 
         date_and_time_columns = get_date_and_time_columns(instance, query_id)
-        
+
         event_dates = date_and_time_columns['event_date']
         event_times = date_and_time_columns['event_time']
 
@@ -243,3 +245,49 @@ def test_system_iceberg_metadata(started_cluster_iceberg_with_spark, format_vers
             current_time = datetime.fromisoformat(time_str)
             assert current_time <= datetime.now(), "Event time is in the future. Event time: {}, current time: {}".format(current_time, datetime.now())
             assert current_time >= (datetime.now() - timedelta(days=1)), "Event time is too old. Event time: {}, current time: {}".format(current_time, datetime.now())
+
+
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_system_tables_partition_sorting_keys(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+
+    table_name = f"test_sys_tables_keys_{storage_type}_{uuid.uuid4().hex[:8]}"
+    fq_table = f"spark_catalog.default.{table_name}"
+
+    spark.sql(f"DROP TABLE IF EXISTS {fq_table}")
+    spark.sql(f"""
+        CREATE TABLE {fq_table} (
+            id INT,
+            ts TIMESTAMP,
+            payload STRING
+        )
+        USING iceberg
+        PARTITIONED BY (bucket(16, id), day(ts))
+        TBLPROPERTIES ('format-version' = '2')
+    """)
+    spark.sql(f"ALTER TABLE {fq_table} WRITE ORDERED BY (id DESC NULLS LAST, hour(ts))")
+    spark.sql(f"""
+        INSERT INTO {fq_table} VALUES
+        (1, timestamp'2024-01-01 10:00:00', 'a'),
+        (2, timestamp'2024-01-02 11:00:00', 'b'),
+        (NULL, timestamp'2024-01-03 12:00:00', 'c')
+    """)
+
+    time.sleep(2)
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{table_name}/",
+        f"/iceberg_data/default/{table_name}/",
+    )
+
+    create_iceberg_table(storage_type, instance, table_name, started_cluster_iceberg_with_spark)
+
+    res = instance.query(f"""
+        SELECT partition_key, sorting_key
+        FROM system.tables
+        WHERE name = '{table_name}' FORMAT csv
+    """).strip().lower()
+
+    assert res == '"bucket(16, id), day(ts)","id desc, hour(ts) asc"'
