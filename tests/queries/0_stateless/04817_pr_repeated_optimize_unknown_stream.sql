@@ -2,8 +2,9 @@
 -- A query plan can be optimized more than once, and `ReadFromMerge` does exactly that for its child
 -- plans. The parallel replicas rewrite was not idempotent, so a second run distributed an already
 -- coordinated read again: the query got two coordinators for one read, which aborted the server.
--- The witnesses below therefore killed the server before the fix, except the plan-shape one, which
--- asserts instead that the merged child read is still distributed after the guard.
+-- The witnesses below therefore killed the server before the fix, except the two that assert a plan
+-- shape instead: one that the merged child read is still distributed after the guard, and one that
+-- ordering is declined for a read shipped without a local plan.
 -- The controls read the same data by paths that never had the duplicate, so they pass either way and
 -- fail only if the guard skips the rewrite too broadly. See issue #110518.
 
@@ -135,7 +136,7 @@ SETTINGS parallel_replicas_local_plan = 0;
 -- recognise it by, so this pins that ordering is declined for that shape too. Rows are not an oracle
 -- here, since ORDER BY sorts either way, so assert the sort was not converted to a partially sorted
 -- one: `Prefix sort description` is printed only for a sort with a non-empty prefix. Before the fix
--- this arm read 1, and 10 of 30 runs returned the wrong three rows.
+-- this arm read 1, and the query it explains returned the wrong three rows in 6 of 40 runs.
 SELECT 'merge ordered without local plan';
 SELECT countIf(explain LIKE '%Prefix sort description%')
 FROM (EXPLAIN actions = 1 SELECT value FROM merge(currentDatabase(), '^t_pr_ro$') ORDER BY timestamp LIMIT 3
