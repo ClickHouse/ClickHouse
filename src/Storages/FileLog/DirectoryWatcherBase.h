@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/PipeFDs.h>
-#include <Common/ThreadPool.h>
+#include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <atomic>

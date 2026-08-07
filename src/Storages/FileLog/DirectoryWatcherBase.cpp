@@ -10,6 +10,7 @@
 #include <poll.h>
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 
 #if defined(OS_LINUX)
