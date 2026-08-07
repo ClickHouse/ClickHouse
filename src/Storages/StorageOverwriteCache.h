@@ -83,10 +83,17 @@ public:
     public:
         const IColumn & get(const RowSegment & segment, size_t position)
         {
-            auto & columns = cache[&segment];
-            if (columns.empty())
-                columns.resize(segment.columns.size());
-            auto & column = columns[position];
+            /// Consecutive accesses stay inside one segment for as long as a run of rows lasts, so the
+            /// segment the previous access resolved is kept: the map is probed once per segment change
+            /// rather than once per accessed value. References into the map stay valid across a rehash.
+            if (last_segment != &segment)
+            {
+                last_columns = &cache[&segment];
+                if (last_columns->empty())
+                    last_columns->resize(segment.columns.size());
+                last_segment = &segment;
+            }
+            auto & column = (*last_columns)[position];
             if (!column)
                 column = segment.columns[position]->decompress();
             return *column;
@@ -94,6 +101,8 @@ public:
 
     private:
         std::unordered_map<const RowSegment *, Columns> cache;
+        const RowSegment * last_segment = nullptr;
+        Columns * last_columns = nullptr;
     };
 
     using RowDataPtr = std::optional<RowData>;

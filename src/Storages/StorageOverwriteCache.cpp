@@ -465,12 +465,35 @@ protected:
         if (rows.empty())
             return {};
 
+        /// Rows a publication allocated together sit in one segment at consecutive positions, and the
+        /// identifiers arrive here in allocation order, so a read that keeps whole publications resolves
+        /// runs of one segment. Copying a run at a time turns a virtual call per value into one range
+        /// copy, and a read that keeps a scattered subset instead only pays the two comparisons that
+        /// close each run.
         for (size_t output_position = 0; output_position < positions.size(); ++output_position)
         {
-            for (const auto & row : rows)
+            auto & target = *columns[output_position];
+            const size_t source_position = positions[output_position];
+            size_t begin = 0;
+            while (begin < rows.size())
             {
-                const auto & source_column = segment_columns.get(*row.segment, positions[output_position]);
-                columns[output_position]->insertFrom(source_column, row.segment_row);
+                size_t end = begin + 1;
+                while (end < rows.size() && rows[end].segment.get() == rows[begin].segment.get()
+                       && rows[end].segment_row == rows[end - 1].segment_row + 1)
+                    ++end;
+
+                const auto & source_column = segment_columns.get(*rows[begin].segment, source_position);
+                /// Only a run long enough to amortize the setup a range copy needs is worth one. A
+                /// `LowCardinality` column remaps its dictionary for every range it is given, which costs
+                /// far more than the handful of single-value inserts a short run would have taken.
+                if (end - begin < min_range_copy_rows)
+                {
+                    for (size_t row = begin; row < end; ++row)
+                        target.insertFrom(source_column, rows[row].segment_row);
+                }
+                else
+                    target.insertRangeFrom(source_column, rows[begin].segment_row, end - begin);
+                begin = end;
             }
         }
 
@@ -478,6 +501,8 @@ protected:
     }
 
 private:
+    static constexpr size_t min_range_copy_rows = 32;
+
     const StorageOverwriteCache & storage;
     StorageOverwriteCache::ReadGuardPtr read_guard;
     std::vector<StorageOverwriteCache::EntryId> entry_ids;
@@ -2815,21 +2840,29 @@ Chunk StorageOverwriteCache::getByKeys(
     out_null_map.clear();
     out_null_map.resize_fill(rows, 0);
 
-    std::vector<String> serialized_keys;
-    serialized_keys.reserve(rows);
-    for (size_t row = 0; row < rows; ++row)
+    /// Serialize every key tuple into one buffer, the way an insert does. A `String` per row would
+    /// allocate once per looked-up key, and `IDataType::getDefaultSerialization` allocates as well, so
+    /// resolving it per row and key column used to cost more than the lookup it prepared. The cached
+    /// serializations are the ones an insert uses, so both sides produce the same bytes for a key.
+    SerializedKeys serialized_keys;
+    serialized_keys.offsets.resize(rows);
     {
-        WriteBufferFromOwnString out;
-        for (size_t key_index = 0; key_index < keys.size(); ++key_index)
-            key_column_types[key_index]->getDefaultSerialization()->serializeBinary(*keys[key_index].column, row, out, format_settings);
-        serialized_keys.push_back(out.str());
+        WriteBufferFromVector<PODArray<char>> out(serialized_keys.data);
+        for (size_t row = 0; row < rows; ++row)
+        {
+            for (size_t key_index = 0; key_index < keys.size(); ++key_index)
+                serializations[key_positions[key_index]]->serializeBinary(*keys[key_index].column, row, out, format_settings);
+            serialized_keys.offsets[row] = out.count();
+        }
+        out.finalize();
     }
 
     ReadGuard read_guard(*this);
     std::vector<RowDataPtr> resolved_rows(rows);
     for (size_t row = 0; row < rows; ++row)
     {
-        if (const auto entry = findEntry(serialized_keys[row], StringViewHash{}(serialized_keys[row])))
+        const std::string_view key = serialized_keys.at(row);
+        if (const auto entry = findEntry(key, StringViewHash{}(key)))
             resolved_rows[row] = resolveEntry(*entry, read_guard.generation());
     }
 
