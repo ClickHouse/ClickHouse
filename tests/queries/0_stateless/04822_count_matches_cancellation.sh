@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-fasttest, no-parallel, no-flaky-check
-# no-parallel: case 8 samples the process-wide `CurrentMetrics::QueryNonInternal`.
+# no-parallel: case 9 samples the process-wide `CurrentMetrics::QueryNonInternal`.
 # no-flaky-check: The test verifies a timeout-based behavior and is not suitable for rerun-based flakiness detection.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -28,8 +28,8 @@ DEADLINE=$(to_seconds "$DEADLINE_MS")
 # $5 = "fold" if the call is constant-folded (no pipeline), empty for a pipeline case,
 # $6 = the deadline in milliseconds (default `DEADLINE_MS`)
 #
-# Regexp compilation is pinned off so a pattern this test has already run cannot arrive compiled: the
-# compiled-regexp cache is server-global with a compile threshold of 3, and this test runs up to 5 times.
+# Regexp compilation is pinned off belt-and-braces: this function builds its matcher directly and never
+# consults that setting, so the pins are inert here and only keep the client invocations uniform.
 #
 # Two messages report the same enforced deadline and only one carries a number: `CancellationChecker` can
 # win the race against this function's own check, and its error then has no elapsed part to read. For a
@@ -107,6 +107,14 @@ run "sparse matches" \
 #     when the match is empty, so this is also the shape that would read one if it were read unguarded.
 run "empty matches" \
     "SELECT countMatches(materialize(repeat(repeat('a', 1000000), 60)), 'x*') FROM numbers(1) FORMAT Null"
+
+# 5c. The legacy empty-match setting leaves the loop at the first empty match, so that single match attempt
+#     is the only chance to observe the deadline. `\b` makes the match a boundary rather than the position
+#     asked for, so the matcher scans to the end of the value before reporting a zero-length match, and the
+#     counted classes are what make that scan cost enough to outlast the deadline. Charging one unit for it
+#     would put the whole call under a single unit per row.
+run "empty stop" \
+    "SELECT sum(countMatches(materialize(concat(repeat(' ', 1000000), 'a')), '\\\\b(?:[^ ]{8}|[^a]{9}|[^b]{11}|[^c]{13})*')) FROM numbers(1600) SETTINGS max_block_size = 1600, count_matches_stop_at_empty_match = 1"
 
 # 6. `countMatchesCaseInsensitive`, the second registered function: the same template with
 #    `case_insensitive = true`, so it is covered by construction rather than by its own charge.

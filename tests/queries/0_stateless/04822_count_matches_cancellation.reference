@@ -4,6 +4,7 @@ fixed string: stopped within bound
 many rows: stopped within bound
 sparse matches: stopped within bound
 empty matches: stopped within bound
+empty stop: stopped within bound
 case insensitive: stopped within bound
 break pipeline: stopped within bound
 TIMEOUT_EXCEEDED

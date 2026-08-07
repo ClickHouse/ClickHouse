@@ -167,8 +167,12 @@ public:
                     budget.charge();
 
                     if (count_matches_stop_at_empty_match)
+                    {
+                        /// The matcher may have scanned the rest of the value to find this match.
+                        budget.charge(end - pos);
                         /// Progress should be made, but with empty match the progress will not be done.
                         break;
+                    }
 
                     /// Progress is made by a single character in case the pattern does not match or have zero-byte match.
                     /// The reason is simply because the pattern could match another part of input when forwarded.
