@@ -4,7 +4,6 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenizer.h>
 
@@ -80,25 +79,10 @@ public:
 private:
     struct KeyTuplePositionMapping
     {
-        KeyTuplePositionMapping(
-            size_t tuple_index_,
-            size_t key_index_,
-            bool serialize_json_value_ = false,
-            DataTypePtr key_type_ = nullptr,
-            JSONAllValuesMatchKind json_match_kind_ = JSONAllValuesMatchKind::Direct)
-            : tuple_index(tuple_index_)
-            , key_index(key_index_)
-            , serialize_json_value(serialize_json_value_)
-            , key_type(std::move(key_type_))
-            , json_match_kind(json_match_kind_)
-        {
-        }
+        KeyTuplePositionMapping(size_t tuple_index_, size_t key_index_) : tuple_index(tuple_index_), key_index(key_index_) {}
 
         size_t tuple_index;
         size_t key_index;
-        bool serialize_json_value;
-        DataTypePtr key_type;
-        JSONAllValuesMatchKind json_match_kind;
     };
     /// Uses RPN like KeyCondition
     struct RPNElement

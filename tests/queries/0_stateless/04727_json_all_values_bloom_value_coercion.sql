@@ -21,23 +21,15 @@ FROM numbers(4);
 
 SELECT 'bloom equals index', count() FROM json_values_bloom_coercion
 WHERE data.ip = toUInt32(16909060) SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'bloom equals no index', count() FROM json_values_bloom_coercion
-WHERE data.ip = toUInt32(16909060) SETTINGS use_skip_indexes = 0;
 
 SELECT 'bloom in index', count() FROM json_values_bloom_coercion
 WHERE data.ip IN (toUInt32(16909060)) SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'bloom in no index', count() FROM json_values_bloom_coercion
-WHERE data.ip IN (toUInt32(16909060)) SETTINGS use_skip_indexes = 0;
 
 SELECT 'bloom date index', count() FROM json_values_bloom_coercion
 WHERE data.ts = toDate('2026-01-01') SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'bloom date no index', count() FROM json_values_bloom_coercion
-WHERE data.ts = toDate('2026-01-01') SETTINGS use_skip_indexes = 0;
 
 SELECT 'bloom array index', count() FROM json_values_bloom_coercion
 WHERE data.ips = [toUInt32(16909060)] SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'bloom array no index', count() FROM json_values_bloom_coercion
-WHERE data.ips = [toUInt32(16909060)] SETTINGS use_skip_indexes = 0;
 
 SELECT 'bloom identity cast index', count() FROM json_values_bloom_coercion
 WHERE data.ip::IPv4 = toUInt32(16909060) SETTINGS force_data_skipping_indices = 'idx';
@@ -72,28 +64,18 @@ FROM numbers(4);
 
 SELECT 'token equals index', count() FROM json_values_bloom_coercion
 WHERE data.ip = toUInt32(16909060) SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'token equals no index', count() FROM json_values_bloom_coercion
-WHERE data.ip = toUInt32(16909060) SETTINGS use_skip_indexes = 0;
 
 SELECT 'token in index', count() FROM json_values_bloom_coercion
 WHERE data.ip IN (toUInt32(16909060)) SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'token in no index', count() FROM json_values_bloom_coercion
-WHERE data.ip IN (toUInt32(16909060)) SETTINGS use_skip_indexes = 0;
 
 SELECT 'token has index', count() FROM json_values_bloom_coercion
 WHERE has(data.ips, toUInt32(16909060)) SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'token has no index', count() FROM json_values_bloom_coercion
-WHERE has(data.ips, toUInt32(16909060)) SETTINGS use_skip_indexes = 0;
 
 SELECT 'token hasAny index', count() FROM json_values_bloom_coercion
 WHERE hasAny(data.ips, [toUInt32(16909060)]) SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'token hasAny no index', count() FROM json_values_bloom_coercion
-WHERE hasAny(data.ips, [toUInt32(16909060)]) SETTINGS use_skip_indexes = 0;
 
 SELECT 'token date index', count() FROM json_values_bloom_coercion
 WHERE data.ts = toDate('2026-01-01') SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'token date no index', count() FROM json_values_bloom_coercion
-WHERE data.ts = toDate('2026-01-01') SETTINGS use_skip_indexes = 0;
 
 SELECT 'token narrowing cast result', count() FROM json_values_bloom_coercion WHERE data.x::UInt8 = 0;
 SELECT 'token narrowing cast indexes', count() FROM
@@ -118,8 +100,6 @@ INSERT INTO json_values_bloom_coercion SELECT '{"ip":"8.8.8.8"}' FROM numbers(4)
 
 SELECT 'ngram equals index', count() FROM json_values_bloom_coercion
 WHERE data.ip = toUInt32(16909060) SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'ngram equals no index', count() FROM json_values_bloom_coercion
-WHERE data.ip = toUInt32(16909060) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE json_values_bloom_coercion;
 
@@ -137,7 +117,5 @@ INSERT INTO json_values_bloom_coercion SELECT '{"ip":"8.8.8.8"}' FROM numbers(4)
 
 SELECT 'sparse equals index', count() FROM json_values_bloom_coercion
 WHERE data.ip = toUInt32(16909060) SETTINGS force_data_skipping_indices = 'idx';
-SELECT 'sparse equals no index', count() FROM json_values_bloom_coercion
-WHERE data.ip = toUInt32(16909060) SETTINGS use_skip_indexes = 0;
 
 DROP TABLE json_values_bloom_coercion;

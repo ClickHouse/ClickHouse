@@ -1,28 +1,17 @@
 bloom equals index	4
-bloom equals no index	4
 bloom in index	4
-bloom in no index	4
 bloom date index	4
-bloom date no index	4
 bloom array index	4
-bloom array no index	4
 bloom identity cast index	4
 bloom string cast index	4
 bloom narrowing cast result	4
 bloom narrowing cast indexes	0
 token equals index	4
-token equals no index	4
 token in index	4
-token in no index	4
 token has index	4
-token has no index	4
 token hasAny index	4
-token hasAny no index	4
 token date index	4
-token date no index	4
 token narrowing cast result	4
 token narrowing cast indexes	0
 ngram equals index	4
-ngram equals no index	4
 sparse equals index	4
-sparse equals no index	4

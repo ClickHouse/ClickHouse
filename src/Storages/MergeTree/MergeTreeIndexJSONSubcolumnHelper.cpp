@@ -110,9 +110,9 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
 
 static bool isJSONAllValuesMatchSafe(
     const RPNBuilderTreeNode & node,
-    JSONAllValuesMatchKind match_kind)
+    bool is_string_cast)
 {
-    if (match_kind == JSONAllValuesMatchKind::StringCast)
+    if (is_string_cast)
         return true;
 
     const auto * dag_node = node.getDAGNode();
@@ -152,26 +152,23 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
             if (!node_dag || !argument_dag)
                 return std::nullopt;
 
-            const bool is_identity_cast = node_dag->result_type->equals(*argument_dag->result_type);
-            if (!is_identity_cast && node_dag->result_type->getTypeId() != TypeIndex::String)
+            const bool is_string_cast = !node_dag->result_type->equals(*argument_dag->result_type);
+            if (is_string_cast && node_dag->result_type->getTypeId() != TypeIndex::String)
                 return std::nullopt;
 
-            const auto match_kind = is_identity_cast
-                ? JSONAllValuesMatchKind::IdentityCast
-                : JSONAllValuesMatchKind::StringCast;
-
-            if (!isJSONAllValuesMatchSafe(node, match_kind))
+            if (!isJSONAllValuesMatchSafe(node, is_string_cast))
                 return std::nullopt;
 
-            return JSONAllValuesIndexInfo{std::move(*json_info), match_kind, argument_dag->result_type};
+            const bool missing_value_is_not_indexed
+                = is_string_cast && (isDynamic(*argument_dag->result_type) || isVariant(*argument_dag->result_type));
+            return JSONAllValuesIndexInfo{std::move(*json_info), is_string_cast, missing_value_is_not_indexed};
         }
     }
 
     if (auto json_info = tryMatchJSONSubcolumnToIndex(node.getColumnName(), index_columns, "JSONAllValues"))
     {
-        constexpr auto match_kind = JSONAllValuesMatchKind::Direct;
-        if (isJSONAllValuesMatchSafe(node, match_kind))
-            return JSONAllValuesIndexInfo{std::move(*json_info), match_kind, node.getDAGNode()->result_type};
+        if (isJSONAllValuesMatchSafe(node, false))
+            return JSONAllValuesIndexInfo{std::move(*json_info), false, false};
     }
 
     return std::nullopt;
@@ -225,12 +222,30 @@ Field tryConvertJSONValueToType(
     return tryConvertFieldToType(value, *target_type, source_type.get());
 }
 
-String serializeJSONValueAsText(const Field & value, const DataTypePtr & type)
+std::optional<String> tryConvertAndSerializeJSONValueAsText(
+    const Field & value,
+    const DataTypePtr & source_type,
+    const DataTypePtr & target_type,
+    const DataTypePtr & default_type)
 {
-    auto column = type->createColumn();
-    column->insert(value);
+    Field converted_value = value;
+    DataTypePtr serialization_type = source_type;
+    if (target_type)
+    {
+        converted_value = tryConvertJSONValueToType(value, source_type, target_type);
+        if (converted_value.isNull())
+            return std::nullopt;
+
+        serialization_type = target_type;
+    }
+
+    if (default_type && !canContainNull(*default_type) && converted_value == default_type->getDefault())
+        return std::nullopt;
+
+    auto column = serialization_type->createColumn();
+    column->insert(converted_value);
     WriteBufferFromOwnString buf;
-    type->getDefaultSerialization()->serializeText(*column, 0, buf, {});
+    serialization_type->getDefaultSerialization()->serializeText(*column, 0, buf, {});
     return buf.str();
 }
 

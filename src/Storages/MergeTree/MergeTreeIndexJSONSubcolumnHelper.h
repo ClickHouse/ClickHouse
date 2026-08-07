@@ -18,18 +18,11 @@ struct JSONSubcolumnIndexInfo
     size_t header_position;        /// position of JSONAllPaths column in the index header
 };
 
-enum class JSONAllValuesMatchKind : uint8_t
-{
-    Direct,
-    IdentityCast,
-    StringCast,
-};
-
 struct JSONAllValuesIndexInfo
 {
     JSONSubcolumnIndexInfo subcolumn;
-    JSONAllValuesMatchKind match_kind = JSONAllValuesMatchKind::Direct;
-    DataTypePtr source_type;
+    bool is_string_cast;
+    bool missing_value_is_not_indexed;
 };
 
 /// Try to match a column name from the filter DAG to a JSON index column in the header.
@@ -100,7 +93,11 @@ Field tryConvertJSONValueToType(
     const DataTypePtr & source_type,
     const DataTypePtr & target_type);
 
-/// Convert a value to the text representation stored by `JSONAllValues`.
-String serializeJSONValueAsText(const Field & value, const DataTypePtr & type);
+/// Convert a value to the target type, if specified, and then to the text representation stored by `JSONAllValues`.
+std::optional<String> tryConvertAndSerializeJSONValueAsText(
+    const Field & value,
+    const DataTypePtr & source_type,
+    const DataTypePtr & target_type,
+    const DataTypePtr & default_type);
 
 }

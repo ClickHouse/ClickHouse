@@ -450,16 +450,14 @@ void fillJSONPathBloomPredicate(
 void fillJSONValueBloomPredicate(
     const JSONSubcolumnIndexInfo & json_info,
     const Block & header,
-    const Field & value_field,
-    const DataTypePtr & value_type,
+    const String & serialized_value,
     MergeTreeIndexConditionBloomFilter::RPNElement & out)
 {
     const DataTypePtr & index_type = header.getByPosition(json_info.header_position).type;
     const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-    Field serialized_value(serializeJSONValueAsText(value_field, value_type));
     out.predicate.emplace_back(std::make_pair(
         json_info.header_position,
-        BloomFilterHash::hashWithField(actual_type.get(), serialized_value)));
+        BloomFilterHash::hashWithField(actual_type.get(), Field(serialized_value))));
 }
 
 }
@@ -631,24 +629,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         auto serialized_values = ColumnString::create();
         for (size_t row = 0; row < column->size(); ++row)
         {
-            Field value = (*column)[row];
-            DataTypePtr serialization_type = type;
-
-            const auto key_data_type = WhichDataType(key_type);
-            if (json_info->match_kind != JSONAllValuesMatchKind::StringCast
-                && !key_data_type.isDynamic() && !key_data_type.isVariant())
-            {
-                value = tryConvertJSONValueToType(value, type, key_type);
-                if (value.isNull())
-                    return false;
-
-                serialization_type = key_type;
-            }
-
-            if (!canContainNull(*key_type) && value == key_type->getDefault())
+            auto serialized_value = tryConvertAndSerializeJSONValueAsText(
+                (*column)[row], type, json_info->is_string_cast ? nullptr : key_type, key_type);
+            if (!serialized_value)
                 return false;
 
-            serialized_values->insert(serializeJSONValueAsText(value, serialization_type));
+            serialized_values->insert(*serialized_value);
         }
 
         const DataTypePtr & index_type = header.getByPosition(json_info->subcolumn.header_position).type;
@@ -953,25 +939,13 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             return false;
 
         auto key_type = key_node.getDAGNode()->result_type;
-        Field serialized_value = value_field;
-        DataTypePtr serialization_type = value_type;
-
-        const auto key_data_type = WhichDataType(key_type);
-        if (json_info->match_kind != JSONAllValuesMatchKind::StringCast
-            && !key_data_type.isDynamic() && !key_data_type.isVariant())
-        {
-            serialized_value = tryConvertJSONValueToType(value_field, value_type, key_type);
-            if (serialized_value.isNull())
-                return false;
-
-            serialization_type = key_type;
-        }
-
-        if (!canContainNull(*key_type) && serialized_value == key_type->getDefault())
+        auto serialized_value = tryConvertAndSerializeJSONValueAsText(
+            value_field, value_type, json_info->is_string_cast ? nullptr : key_type, key_type);
+        if (!serialized_value)
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        fillJSONValueBloomPredicate(json_info->subcolumn, header, serialized_value, serialization_type, out);
+        fillJSONValueBloomPredicate(json_info->subcolumn, header, *serialized_value, out);
         return true;
     }
 

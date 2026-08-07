@@ -3,10 +3,6 @@ DROP TABLE IF EXISTS json_dynamic_string_token;
 DROP TABLE IF EXISTS json_dynamic_string_ngram;
 DROP TABLE IF EXISTS json_dynamic_string_sparse;
 
-SET input_format_try_infer_datetimes = 1;
-SET input_format_try_infer_datetimes_only_datetime64 = 1;
-SET session_timezone = 'UTC';
-
 CREATE TABLE json_dynamic_string_bloom
 (
     data JSON,
@@ -17,21 +13,20 @@ ORDER BY tuple()
 SETTINGS index_granularity = 1;
 
 INSERT INTO json_dynamic_string_bloom VALUES
-    ('{"ts":"2026-01-01 00:00:00"}'),
-    ('{"ts":"2020-05-05 10:00:00"}'),
+    ('{"value":2026}'),
+    ('{"value":2020}'),
     ('{}');
 
-SELECT count() FROM json_dynamic_string_bloom WHERE data.ts = toDate('2026-01-01');
 SELECT count() FROM json_dynamic_string_bloom
-WHERE data.ts::String = '2026-01-01 00:00:00.000000000'
+WHERE data.value::String = '2026'
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_bloom
-WHERE data.ts::String IN ('2026-01-01 00:00:00.000000000')
+WHERE data.value::String IN ('2026')
 SETTINGS force_data_skipping_indices = 'idx';
 
-SELECT count() FROM json_dynamic_string_bloom WHERE data.ts::String = '';
+SELECT count() FROM json_dynamic_string_bloom WHERE data.value::String = '';
 SELECT count() FROM json_dynamic_string_bloom
-WHERE data.ts::String = ''
+WHERE data.value::String = ''
 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 CREATE TABLE json_dynamic_string_token
@@ -46,34 +41,34 @@ SETTINGS index_granularity = 1;
 INSERT INTO json_dynamic_string_token SELECT * FROM json_dynamic_string_bloom;
 
 SELECT count() FROM json_dynamic_string_token
-WHERE data.ts::String = '2026-01-01 00:00:00.000000000'
+WHERE data.value::String = '2026'
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_token
-WHERE data.ts::String IN ('2026-01-01 00:00:00.000000000')
+WHERE data.value::String IN ('2026')
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_token
-WHERE data.ts::String LIKE '%2026%'
+WHERE data.value::String LIKE '%2026%'
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_token
-WHERE startsWith(data.ts::String, '2026')
+WHERE startsWith(data.value::String, '2026')
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_token
-WHERE hasToken(data.ts::String, '2026')
+WHERE hasToken(data.value::String, '2026')
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_token
-WHERE match(data.ts::String, '^2026')
+WHERE match(data.value::String, '^2026')
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_token
-WHERE multiSearchAny(data.ts::String, ['missing', '2026'])
+WHERE multiSearchAny(data.value::String, ['missing', '2026'])
 SETTINGS force_data_skipping_indices = 'idx';
 
-SELECT count() FROM json_dynamic_string_token WHERE startsWith(data.ts::String, '');
+SELECT count() FROM json_dynamic_string_token WHERE startsWith(data.value::String, '');
 SELECT count() FROM json_dynamic_string_token
-WHERE startsWith(data.ts::String, '')
+WHERE startsWith(data.value::String, '')
 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
-SELECT count() FROM json_dynamic_string_token WHERE match(data.ts::String, '^$');
+SELECT count() FROM json_dynamic_string_token WHERE match(data.value::String, '^$');
 SELECT count() FROM json_dynamic_string_token
-WHERE match(data.ts::String, '^$')
+WHERE match(data.value::String, '^$')
 SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 CREATE TABLE json_dynamic_string_ngram
@@ -88,16 +83,16 @@ SETTINGS index_granularity = 1;
 INSERT INTO json_dynamic_string_ngram SELECT * FROM json_dynamic_string_bloom;
 
 SELECT count() FROM json_dynamic_string_ngram
-WHERE data.ts::String LIKE '%2026%'
+WHERE data.value::String LIKE '%2026%'
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_ngram
-WHERE startsWith(data.ts::String, '2026')
+WHERE startsWith(data.value::String, '2026')
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_ngram
-WHERE endsWith(data.ts::String, '000000000')
+WHERE endsWith(data.value::String, '2026')
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_ngram
-WHERE match(data.ts::String, '^2026')
+WHERE match(data.value::String, '^2026')
 SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE json_dynamic_string_bloom;
@@ -114,21 +109,21 @@ ORDER BY tuple()
 SETTINGS index_granularity = 1;
 
 INSERT INTO json_dynamic_string_sparse VALUES
-    ('{"ts":"2026-01-01 00:00:00"}'),
-    ('{"ts":"2020-05-05 10:00:00"}'),
+    ('{"value":2026}'),
+    ('{"value":2020}'),
     ('{}');
 
 SELECT count() FROM json_dynamic_string_sparse
-WHERE data.ts::String LIKE '%2026%'
+WHERE data.value::String LIKE '%2026%'
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_sparse
-WHERE startsWith(data.ts::String, '2026')
+WHERE startsWith(data.value::String, '2026')
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_sparse
-WHERE endsWith(data.ts::String, '000000000')
+WHERE endsWith(data.value::String, '2026')
 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_dynamic_string_sparse
-WHERE match(data.ts::String, '^2026')
+WHERE match(data.value::String, '^2026')
 SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE json_dynamic_string_sparse;
