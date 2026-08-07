@@ -1694,7 +1694,11 @@ static BlockIO executeQueryImpl(
                 {
                     Field value_before;
                     const bool has_before = settings_before_source.tryGet(setting_name, value_before);
-                    if (has_before)
+
+                    /// `tryGet` is true for every registered setting, including unchanged defaults.
+                    /// Preserve the pre-source changed/default state so compatibility in RETURNING
+                    /// can still re-derive defaults for settings that were not user-changed before source phase.
+                    if (settings_before_source.isChanged(setting_name) && has_before)
                         restore_ast->changes.emplace_back(setting_name, std::move(value_before));
                     else
                         restore_ast->default_settings.emplace_back(setting_name);
