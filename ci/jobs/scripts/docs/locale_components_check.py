@@ -125,24 +125,33 @@ def main(argv=None):
                             return m.group(0)
                         # unprefixed: localized counterpart exists => must localize
                         localized = f"{loc}/{bare}"
-                        if resolves(localized):
-                            # Keep an English fallback when the page is translated
-                            # but the linked section is not. Requiring the explicit
-                            # anchor on the English page also avoids hiding broken
-                            # fragment links.
-                            if (
-                                fragment
-                                and has_fragment(bare, fragment)
-                                and not has_fragment(localized, fragment)
-                            ):
+                        english_resolves = resolves(bare)
+                        localized_resolves = resolves(localized)
+                        if fragment:
+                            english_fragment = (
+                                english_resolves and has_fragment(bare, fragment)
+                            )
+                            localized_fragment = (
+                                localized_resolves
+                                and has_fragment(localized, fragment)
+                            )
+                            # Do not let --fix preserve a typo on a localized URL.
+                            # Localize only when that target actually has the anchor.
+                            if not english_fragment and not localized_fragment:
+                                violations.append((rel, raw, "broken-fragment", None))
                                 return m.group(0)
+                            # Keep an English fallback when the page is translated
+                            # but the linked section is not.
+                            if english_fragment and not localized_fragment:
+                                return m.group(0)
+                        if localized_resolves:
                             suggestion = "/" + loc + raw  # keep fragment
                             violations.append((rel, raw, "should-localize", suggestion))
                             if args.fix:
                                 fixed += 1
                                 return m.group(0).replace(raw, "/" + loc + raw, 1)
                             return m.group(0)
-                        if not resolves(bare):
+                        if not english_resolves:
                             violations.append((rel, raw, "broken", None))
                         return m.group(0)
 
