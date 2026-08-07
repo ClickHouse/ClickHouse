@@ -1,0 +1,16 @@
+1
+1
+1
+1
+right semi
+10	2	20	r2
+10	3	20	r3
+20	4	30	r4
+right anti
+0	\N	1	10	r1
+0	\N	5	\N	rnull
+right anti, join_use_nulls = 1
+\N	\N	1	10	r1
+\N	\N	5	\N	rnull
+1
+1

@@ -165,83 +165,29 @@ def test_clickhouse_connect_sync_exemption_is_scoped():
         assert not docs_job_mintlify._is_trusted_clickhouse_connect_sync(info)
 
 
-def test_current_base_branch_accepts_current_master(monkeypatch):
-    checks = []
-    outputs = {
-        "git rev-parse HEAD": "abc123\n",
-        "git rev-parse FETCH_HEAD": "abc123\n",
-    }
-
+def test_base_branch_accepts_master(monkeypatch):
     monkeypatch.setattr(
         docs_autogen_nightly,
         "Info",
         lambda: SimpleNamespace(git_branch=docs_autogen_nightly.BASE_BRANCH),
     )
-    monkeypatch.setattr(
-        docs_autogen_nightly.Shell,
-        "check",
-        lambda command, **kwargs: checks.append((command, kwargs)) or True,
-    )
-    monkeypatch.setattr(
-        docs_autogen_nightly.Shell,
-        "get_output",
-        lambda command: outputs[command],
-    )
 
-    assert docs_autogen_nightly.on_current_base_branch()
-    assert checks == [
-        (
-            "git fetch --no-tags origin master",
-            {"verbose": True},
-        )
-    ]
+    assert docs_autogen_nightly.on_base_branch()
 
 
-def test_current_base_branch_rejects_stale_master(monkeypatch, capsys):
-    outputs = {
-        "git rev-parse HEAD": "old123\n",
-        "git rev-parse FETCH_HEAD": "new456\n",
-    }
-
+@pytest.mark.parametrize("branch", ["feature", docs_autogen_nightly.BRANCH])
+def test_base_branch_rejects_other_branches(monkeypatch, capsys, branch):
     monkeypatch.setattr(
         docs_autogen_nightly,
         "Info",
-        lambda: SimpleNamespace(git_branch=docs_autogen_nightly.BASE_BRANCH),
-    )
-    monkeypatch.setattr(
-        docs_autogen_nightly.Shell,
-        "check",
-        lambda *_args, **_kwargs: True,
-    )
-    monkeypatch.setattr(
-        docs_autogen_nightly.Shell,
-        "get_output",
-        lambda command: outputs[command],
+        lambda: SimpleNamespace(git_branch=branch),
     )
 
-    assert not docs_autogen_nightly.on_current_base_branch()
+    assert not docs_autogen_nightly.on_base_branch()
     assert (
-        "HEAD (old123) is not the current 'master' tip (new456)"
+        f"must run against '{docs_autogen_nightly.BASE_BRANCH}', not '{branch}'"
         in capsys.readouterr().err
     )
-
-
-def test_current_base_branch_rejects_feature_branch_before_fetch(monkeypatch):
-    monkeypatch.setattr(
-        docs_autogen_nightly,
-        "Info",
-        lambda: SimpleNamespace(git_branch="feature"),
-    )
-
-    def unexpected_call(*_args, **_kwargs):
-        raise AssertionError(
-            "workflow fetched or mutated state before checking the branch"
-        )
-
-    monkeypatch.setattr(docs_autogen_nightly.Shell, "check", unexpected_call)
-    monkeypatch.setattr(docs_autogen_nightly.Shell, "get_output", unexpected_call)
-
-    assert not docs_autogen_nightly.on_current_base_branch()
 
 
 def test_regenerate_runs_all_generator_families(monkeypatch):
