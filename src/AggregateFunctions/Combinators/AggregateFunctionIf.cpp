@@ -2,9 +2,6 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionIf.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 
-#include <Common/VectorWithMemoryTracking.h>
-#include <DataTypes/DataTypeTuple.h>
-
 #include <absl/container/inlined_vector.h>
 
 namespace DB
@@ -111,13 +108,6 @@ public:
 
         filter_is_nullable = arguments[num_arguments - 1]->isNullable();
         filter_is_only_null = arguments[num_arguments - 1]->onlyNull();
-    }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        auto arguments = Base::getArgumentsThatCanBeOnlyNull();
-        arguments.insert(num_arguments - 1);
-        return arguments;
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -287,13 +277,6 @@ public:
         filter_is_only_null = arguments.back()->onlyNull();
     }
 
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        auto arguments = Base::getArgumentsThatCanBeOnlyNull();
-        arguments.insert(number_of_arguments - 1);
-        return arguments;
-    }
-
     static bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments)
     {
         return assert_cast<const ColumnUInt8 &>(*columns[num_arguments - 1]).getData()[row_num];
@@ -401,7 +384,7 @@ public:
         ValuesWithType wrapped_arguments;
         wrapped_arguments.reserve(arguments_size);
 
-        VectorWithMemoryTracking<llvm::Value * > is_null_values;
+        std::vector<llvm::Value * > is_null_values;
 
         for (size_t i = 0; i < arguments_size; ++i)
         {
@@ -472,7 +455,7 @@ private:
 
     static constexpr size_t MAX_ARGS = 8;
     size_t number_of_arguments = 0;
-    std::array<char, MAX_ARGS> is_nullable{};    /// Plain array is better than std::vector due to one indirection less.
+    std::array<char, MAX_ARGS> is_nullable;    /// Plain array is better than std::vector due to one indirection less.
 };
 
 
@@ -480,25 +463,12 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     const AggregateFunctionPtr & nested_function, const DataTypes & arguments,
     const Array & params, const AggregateFunctionProperties & properties) const
 {
-    chassert(!arguments.empty());
+    assert(!arguments.empty());
 
     /// Nullability of the last argument (condition) does not affect the nullability of the result (NULL is processed as false).
     /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).
     bool return_type_is_nullable = !properties.returns_default_when_only_null && getResultType()->canBeInsideNullable()
         && std::any_of(arguments.begin(), arguments.end() - 1, [](const auto & element) { return element->isNullable(); });
-
-    /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns
-    /// true, which changed the If-combinator null adapter for Tuple-returning functions:
-    ///   - single-arg (IfNullUnary): from `<false, false>` to `<true, true>` (flag byte added).
-    ///   - multi-arg (IfNullVariadic): from `<false, false>` to `<true, true>` (flag byte added).
-    /// The change below will make sure that the null adapter for Tuple remains `<false, false>` keeping backward compatibility.
-    /// This can lead to some inconsistency because now for Tuple-returning aggregate functions we never
-    /// serialize the flag byte. But the base variadic Null combinator (applied to multi-argument functions
-    /// with at least one Nullable argument) always serializes the flag byte unconditionally.
-    /// For example, `simpleLinearRegressionState` will write the flag byte but `simpleLinearRegressionIfState` will not.
-    /// This inconsistency predates the introduction of `Nullable(Tuple)`.
-    if (return_type_is_nullable && typeid_cast<const DataTypeTuple *>(getResultType().get()))
-        return_type_is_nullable = false;
 
     bool need_to_serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
 
@@ -524,13 +494,9 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     return std::make_shared<AggregateFunctionIfNullVariadic<false, false>>(nested_function, arguments, params);
 }
 
-void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>(), Documentation{
-        .description = "Applied as a suffix to an aggregate function name (e.g. `sumIf`), it adds an extra `UInt8` condition argument; only rows for which the condition is non-zero are aggregated.",
-        .syntax = "<aggregate_function>If",
-        .related = {"Array", "Map"}});
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorIf>());
 }
 
 }

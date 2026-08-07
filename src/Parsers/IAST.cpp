@@ -1,15 +1,8 @@
 #include <Parsers/IAST.h>
 
-#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Array.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTWithAlias.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/String.h>
@@ -23,104 +16,78 @@
 namespace DB
 {
 
-/// Verify that we did not increase the size of IAST by accident.
-static_assert(sizeof(IAST) <= 32);
-
-void intrusive_ptr_add_ref(const IAST * p) noexcept
-{
-    p->ref_counter.fetch_add(1, std::memory_order_relaxed);
-}
-
-void intrusive_ptr_release(const IAST * p) noexcept
-{
-    if (p->ref_counter.fetch_sub(1, std::memory_order_acq_rel) == 1)
-    {
-        struct LinkedList
-        {
-            ASTs children;
-            LinkedList * next = nullptr;
-
-            static LinkedList * create(IAST * ptr)
-            {
-                if (ptr->children.empty())
-                {
-                    delete ptr;
-                    return nullptr;
-                }
-
-                ASTs children;
-                children.swap(ptr->children);
-                ptr->~IAST();
-                LinkedList * elem = new (dynamic_cast<void *>(ptr)) LinkedList;
-                elem->children.swap(children);
-                return elem;
-            }
-        };
-
-        static_assert(sizeof(LinkedList) <= sizeof(IAST));
-
-        const IAST * const_ptr = p;
-        IAST * ptr = const_cast<IAST *>(const_ptr);
-
-        LinkedList * list_head = LinkedList::create(ptr);
-
-        while (list_head)
-        {
-            ASTs children;
-            children.swap(list_head->children);
-            {
-                LinkedList * next = list_head->next;
-                list_head->~LinkedList();
-                operator delete(list_head);
-                list_head = next;
-            }
-
-            for (auto & child : children)
-            {
-                if (child == nullptr || child->use_count() != 1)
-                    continue;
-
-                ptr = child.detach();
-                chassert(ptr->ref_counter.fetch_sub(1, std::memory_order_acq_rel) == 1);
-
-                LinkedList * elem = LinkedList::create(ptr);
-                if (elem)
-                {
-                    elem->next = list_head;
-                    list_head = elem;
-                }
-            }
-        }
-    }
-}
-
 namespace ErrorCodes
 {
     extern const int TOO_BIG_AST;
     extern const int TOO_DEEP_AST;
     extern const int UNKNOWN_ELEMENT_IN_AST;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
-IAST::IAST(const IAST & other)
-    : TypePromotion<IAST>()
-    , children(other.children)
-    , ref_counter(0)
-    , flags_storage(other.flags_storage)
+
+IAST::~IAST()
 {
-}
+    /** Create intrusive linked list of children to delete.
+      * Each ASTPtr child contains pointer to next child to delete.
+      */
+    ASTPtr delete_list_head_holder = nullptr;
+    const bool delete_directly = next_to_delete_list_head == nullptr;
+    ASTPtr & delete_list_head_reference = next_to_delete_list_head ? *next_to_delete_list_head : delete_list_head_holder;
 
-IAST & IAST::operator=(const IAST & other)
-{
-    if (this == &other)
-        return *this;
-    children = other.children;
-    flags_storage = other.flags_storage;
-    return *this;
-}
+    /// Move children into intrusive list
+    for (auto & child : children)
+    {
+        /** If two threads remove ASTPtr concurrently,
+          * it is possible that neither thead will see use_count == 1.
+          * It is ok. Will need one more extra stack frame in this case.
+          */
+        if (child.use_count() != 1)
+            continue;
 
-IAST::~IAST() = default;
+        ASTPtr child_to_delete;
+        child_to_delete.swap(child);
+
+        if (!delete_list_head_reference)
+        {
+            /// Initialize list first time
+            delete_list_head_reference = std::move(child_to_delete);
+            continue;
+        }
+
+        ASTPtr previous_head = std::move(delete_list_head_reference);
+        delete_list_head_reference = std::move(child_to_delete);
+        delete_list_head_reference->next_to_delete = std::move(previous_head);
+    }
+
+    if (!delete_directly)
+        return;
+
+    while (delete_list_head_reference)
+    {
+        /** Extract child to delete from current list head.
+          * Child will be destroyed at the end of scope.
+          */
+        ASTPtr child_to_delete;
+        child_to_delete.swap(delete_list_head_reference);
+
+        /// Update list head
+        delete_list_head_reference = std::move(child_to_delete->next_to_delete);
+
+        /** Pass list head into child before destruction.
+          * It is important to properly handle cases where subclass has member same as one of its children.
+          *
+          * class ASTSubclass : IAST
+          * {
+          *     ASTPtr first_child; /// Same as first child
+          * }
+          *
+          * In such case we must move children into list only in IAST destructor.
+          * If we try to move child to delete children into list before subclasses desruction,
+          * first child use count will be 2.
+          */
+        child_to_delete->next_to_delete_list_head = &delete_list_head_reference;
+    }
+}
 
 size_t IAST::size() const
 {
@@ -197,20 +164,6 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-/** `CLICKHOUSE_PARSER_NO_FORMATTING` builds a parser that cannot turn an AST back into SQL.
-  *
-  * Formatting is a fifth of the standalone parser, and nothing in it can be left out piecemeal: it
-  * is one virtual function reached from every AST node, so the linker keeps all 116 implementations
-  * as long as a single call goes through that slot. Cutting the calls here cuts all of it - the
-  * formatters themselves, the secret masking they run afterwards, and everything only they use.
-  *
-  * Parsing itself does reach the formatter in a normal build, in the handful of places that have to
-  * keep a fragment of the query as a string - see `astText`, which is where that switches over to
-  * the query text. Everything else that formats does so to describe an AST node in an error
-  * message, and gets a placeholder here: an exception thrown by a build that only parses is either
-  * a syntax error, which quotes the query text rather than the AST, or a logical error, which comes
-  * with a stack trace.
-  */
 String IAST::formatWithPossiblyHidingSensitiveData(
     size_t max_length,
     bool one_line,
@@ -219,10 +172,6 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     IdentifierQuotingRule identifier_quoting_rule,
     IdentifierQuotingStyle identifier_quoting_style) const
 {
-#if defined(CLICKHOUSE_PARSER_NO_FORMATTING)
-    UNUSED(max_length, one_line, show_secrets, print_pretty_type_names, identifier_quoting_rule, identifier_quoting_style);
-    return "<AST>";  /// Only ever reaches an error message - see above.
-#else
     WriteBufferFromOwnString buf;
     FormatSettings settings(one_line);
     settings.show_secrets = show_secrets;
@@ -231,18 +180,6 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     settings.identifier_quoting_style = identifier_quoting_style;
     format(buf, settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length, !show_secrets);
-#endif
-}
-
-String astText(const IAST & ast, std::string_view source_text)
-{
-#if defined(CLICKHOUSE_PARSER_NO_FORMATTING)
-    UNUSED(ast);
-    return String(source_text);
-#else
-    UNUSED(source_text);
-    return ast.formatWithSecretsOneLine();
-#endif
 }
 
 String IAST::formatForLogging(size_t max_length) const
@@ -403,184 +340,6 @@ std::string IAST::dumpTree(size_t indent) const
     WriteBufferFromOwnString wb;
     dumpTree(wb, indent);
     return wb.str();
-}
-
-void IAST::writeJSON(WriteBuffer &) const
-{
-    /// Fail closed: an AST node without its own `writeJSON` override has no faithful JSON
-    /// representation. The default would emit `{"type": getID(), ...}` using `getID`, which
-    /// the deserialization factory does not recognize, so `parseQueryToJSON` would silently
-    /// produce a document that `formatQueryFromJSON` / the `clickhouse_json` dialect cannot
-    /// read back. Reject such queries here instead of emitting lossy JSON.
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "AST node of type '{}' does not support JSON serialization (this query is not supported by parseQueryToJSON)",
-        getID());
-}
-
-void IAST::readJSON(const Poco::JSON::Object & json)
-{
-    /// Default: read children from the "children" array.
-    if (json.has("children"))
-    {
-        auto arr = json.getArray("children");
-        if (!arr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'children' is not a JSON array during AST JSON deserialization");
-        children.reserve(arr->size());
-        for (unsigned int i = 0; i < arr->size(); ++i)
-        {
-            auto child_obj = arr->getObject(i);
-            if (!child_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'children' array during AST JSON deserialization", i);
-            children.push_back(IAST::createFromJSON(*child_obj));
-        }
-    }
-
-    /// Aliases are read by ASTWithAlias subclasses via JSONObjectReader::readAlias
-    /// in their own readJSON overrides, so we don't handle them here.
-}
-
-/// Decide how to emit `parenthesized` parens. When the node has an alias and we are not in an
-/// operator-chain context (`frame.need_parens == false`), defer to `ASTWithAlias::formatImpl` so
-/// it can emit `(expr) AS alias` instead of `(expr AS alias)` — only the former re-formats to
-/// itself and keeps the format-parse-format round-trip stable.
-///
-/// In operator-chain context (`frame.need_parens == true`) we keep the parens here so the output
-/// is `(expr AS alias)`, because the parser would not accept `(expr) AS alias OP rhs` at the top
-/// level of a SELECT element / WHERE clause (the alias terminates the SELECT element parser).
-static bool decideParensEmission(const IAST & node, IAST::FormatStateStacked & frame)
-{
-    const bool parens = node.isParenthesized() && !frame.wrapped_in_parens;
-    frame.wrapped_in_parens = false;
-    if (!parens)
-        return false;
-
-    if (!frame.need_parens)
-    {
-        if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(&node);
-            with_alias && !with_alias->alias.empty() && !dynamic_cast<const ASTSubquery *>(&node))
-        {
-            /// Skip the deferral for `ASTSubquery`: its `formatImplWithoutAlias` already emits
-            /// `(SELECT ...)` itself, so deferring would produce `((SELECT ...)) AS alias`,
-            /// and the parser collapses `((SELECT ...))` to a non-parenthesized subquery,
-            /// breaking the round-trip. The default `(formatImpl-output)` wrapping in
-            /// `IAST::format` produces `((SELECT ...) AS alias)` which round-trips cleanly.
-            frame.parenthesize_alias_inner_only = true;
-            frame.current_function = nullptr;
-            frame.list_element_index = 0;
-            return false;
-        }
-    }
-
-    /// A multi-element tuple literal naturally formats as `(elem, elem, ...)` — the
-    /// parens are part of the value's representation, not grouping parens. Emitting the
-    /// `parenthesized` flag's parens on top of that would produce `((1, 2))` for inputs
-    /// like `(((1), (2)))` or `NOT ((1, 1, 1))`, where the canonical form is a single
-    /// pair. Suppress them here. The aliased-tuple case (`((1, 2)) AS a`) is already
-    /// handled by the alias-deferral branch above and remains unaffected.
-    if (const auto * literal = dynamic_cast<const ASTLiteral *>(&node);
-        literal && literal->value.getType() == Field::Types::Tuple
-            && literal->value.safeGet<Tuple>().size() > 1)
-    {
-        return false;
-    }
-
-    /// `ASTSubquery` without an alias always emits its own enclosing `(SELECT ...)` parens.
-    /// Adding the `parenthesized` flag's parens on top would produce `((SELECT ...))`,
-    /// which the parser collapses back to a non-parenthesized subquery, breaking the
-    /// format-parse-format round-trip. The aliased case is different: there `((SELECT ...) AS alias)`
-    /// is the canonical form (the alias-deferral branch above explicitly skips `ASTSubquery` so
-    /// the outer parens are emitted here instead), so we only suppress when the alias is empty.
-    if (const auto * subquery = dynamic_cast<const ASTSubquery *>(&node); subquery && subquery->alias.empty())
-        return false;
-
-    /// In function-call form (`allow_operators = false`, set by `EXPLAIN SYNTAX`), an operator
-    /// AST is rendered as `funcname(arg1, arg2, ...)` — the function call's own `(...)` parens
-    /// already group the expression. Emitting the `parenthesized` flag's outer parens on top
-    /// produces redundant grouping like `(multiply(a, b))` at the top level of e.g. a `GROUP BY`
-    /// item or a subquery argument. This mirrors the per-argument suppression done inside
-    /// `ASTFunction::formatImplWithoutAlias` (where each function-call argument carries
-    /// `wrapped_in_parens = true`), extending it to the call sites where the `ASTFunction` is not
-    /// itself a function-call argument. The normal formatting path (`allow_operators = true`)
-    /// is unchanged so non-`EXPLAIN SYNTAX` callers still round-trip the user's parens.
-    if (!frame.allow_operators && dynamic_cast<const ASTFunction *>(&node))
-        return false;
-
-    frame.need_parens = false;
-    frame.current_function = nullptr;
-    frame.list_element_index = 0;
-    return true;
-}
-
-/// These four are the only calls through the `formatImpl` slot. See the comment on
-/// `formatWithPossiblyHidingSensitiveData` for why removing them removes the whole formatter.
-#if defined(CLICKHOUSE_PARSER_NO_FORMATTING)
-
-void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    UNUSED(ostr, settings);
-}
-
-void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    UNUSED(ostr, settings, state, frame);
-}
-
-void IAST::format(FormattingBuffer out) const
-{
-    UNUSED(out);
-}
-
-void IAST::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    UNUSED(ostr, settings, state, frame);
-}
-
-#else
-
-void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    FormatState state;
-    FormatStateStacked frame;
-    const bool parens = decideParensEmission(*this, frame);
-    if (parens)
-        ostr.write('(');
-    formatImpl(ostr, settings, state, std::move(frame));
-    if (parens)
-        ostr.write(')');
-}
-
-void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    checkStackSize();
-    const bool parens = decideParensEmission(*this, frame);
-    if (parens)
-        ostr.write('(');
-    formatImpl(ostr, settings, state, std::move(frame));
-    if (parens)
-        ostr.write(')');
-}
-
-void IAST::format(FormattingBuffer out) const
-{
-    checkStackSize();
-    const bool parens = decideParensEmission(*this, out.frame);
-    if (parens)
-        out.ostr.write('(');
-    formatImpl(out.ostr, out.settings, out.state, out.frame);
-    if (parens)
-        out.ostr.write(')');
-}
-
-void IAST::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
-}
-
-#endif
-
-void IAST::formatImpl(FormattingBuffer /*out*/) const
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown element in AST: {}", getID());
 }
 
 }

@@ -18,7 +18,7 @@ protected:
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        auto query = make_intrusive<ASTShowEnginesQuery>();
+        auto query = std::make_shared<ASTShowEnginesQuery>();
 
         if (!ParserKeyword(Keyword::SHOW_ENGINES).ignore(pos, expected))
             return false;

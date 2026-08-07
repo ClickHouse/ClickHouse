@@ -1,4 +1,6 @@
+#include <Core/Settings.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/misc.h>
@@ -15,6 +17,21 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsBool allow_experimental_analyzer;
+}
+
+namespace ErrorCodes
+{
+extern const int UNSUPPORTED_METHOD;
+}
+
+ApplyWithSubqueryVisitor::ApplyWithSubqueryVisitor(ContextPtr context_)
+    : use_analyzer(context_->getSettingsRef()[Setting::allow_experimental_analyzer])
+{
+}
 
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 {
@@ -35,6 +52,11 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 {
+    /// This is probably not the best place to check this, but it's just to throw a proper error to the user
+    if (!use_analyzer && ast.recursive_with)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
+
     std::optional<Data> new_data;
     if (auto with = ast.with())
     {
@@ -42,15 +64,15 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
         {
             visit(child, new_data ? *new_data : data);
             auto * ast_with_elem = child->as<ASTWithElement>();
-            auto child_alias = child->tryGetAlias();
-            if (ast_with_elem || !child_alias.empty())
+            auto * ast_literal = child->as<ASTLiteral>();
+            if (ast_with_elem || ast_literal)
             {
                 if (!new_data)
                     new_data = data;
                 if (ast_with_elem)
                     new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
                 else
-                    new_data->literals[child_alias] = child;
+                    new_data->literals[ast_literal->alias] = child;
             }
         }
     }

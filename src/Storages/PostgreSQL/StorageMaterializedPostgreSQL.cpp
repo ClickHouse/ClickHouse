@@ -1,6 +1,5 @@
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
-#include <Core/UUID.h>
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>
@@ -12,23 +11,22 @@
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/Connection.h>
 
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <DataTypes/dataTypeToAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
-
-#include <Databases/LoadingStrictnessLevel.h>
 
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -54,15 +52,12 @@ namespace Setting
 namespace MaterializedPostgreSQLSetting
 {
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
-    extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
 }
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_BACKUP_TABLE;
 }
 
 
@@ -89,7 +84,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     if (table_id_.uuid == UUIDHelpers::Nil)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL is allowed only for Atomic database");
 
-    setInMemoryMetadata(storage_metadata.withVirtuals(createVirtuals()));
+    setInMemoryMetadata(storage_metadata);
+    setVirtuals(createVirtuals());
 
     (*replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list] = remote_table_name_;
 
@@ -129,7 +125,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 
 
 /// Constructor for MaterializedPostgreSQL table engine - for the case of MaterializePosgreSQL database engine.
-/// It is used when nested ReplacingMergeTree table has already been created by replication thread.
+/// It is used when nested ReplacingMergeeTree table has already been created by replication thread.
 /// This storage is ready to handle read queries.
 StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
         StoragePtr nested_storage_,
@@ -144,15 +140,15 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
     , nested_table_id(nested_storage_->getStorageID())
 {
-    auto nested_metadata = nested_storage_->getInMemoryMetadataPtr(context_, false);
-    setInMemoryMetadata(*nested_metadata);
+    setInMemoryMetadata(nested_storage_->getInMemoryMetadata());
+    setVirtuals(*nested_storage_->getVirtualsPtr());
 }
 
 VirtualColumnsDescription StorageMaterializedPostgreSQL::createVirtuals()
 {
     VirtualColumnsDescription desc;
-    desc.addEphemeral("_sign", std::make_shared<DataTypeInt8>(), "", VirtualsMaterializationPlace::Reader);
-    desc.addEphemeral("_version", std::make_shared<DataTypeUInt64>(), "", VirtualsMaterializationPlace::Reader);
+    desc.addEphemeral("_sign", std::make_shared<DataTypeInt8>(), "");
+    desc.addEphemeral("_version", std::make_shared<DataTypeUInt64>(), "");
     return desc;
 }
 
@@ -249,8 +245,7 @@ std::shared_ptr<Context> StorageMaterializedPostgreSQL::makeNestedTableContext(C
 void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 {
     nested_table_id = nested_storage->getStorageID();
-    auto nested_metadata = nested_storage->getInMemoryMetadataPtr(getContext(), false);
-    setInMemoryMetadata(*nested_metadata);
+    setInMemoryMetadata(nested_storage->getInMemoryMetadata());
     has_nested.store(true);
 }
 
@@ -281,102 +276,9 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
 }
 
 
-void StorageMaterializedPostgreSQL::checkTableSizeBelowDropLimit(ContextPtr query_context) const
-{
-    /// In MaterializedPostgreSQL database engine mode there is no per-table nested storage
-    /// to size-check (the database engine owns the nested tables); mirror `dropInnerTableIfAny`.
-    if (is_materialized_postgresql_database)
-        return;
-
-    /// Mirror `dropInnerTableIfAny`'s tolerance: if the nested table is missing for any reason
-    /// the drop is a no-op, so the size check is too.
-    if (auto nested = tryGetNested())
-        nested->checkTableSizeBelowDropLimit(query_context);
-}
-
-
 bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & column_names) const
 {
     return needRewriteQueryWithFinalForStorage(column_names, getNested());
-}
-
-
-bool StorageMaterializedPostgreSQL::supportsPrewhere() const
-{
-    /// `read` hands the `SelectQueryInfo` over to the nested table untouched, so whatever the nested table
-    /// can do with `PREWHERE` the wrapper can do too. While the nested table is not created yet there is
-    /// nothing to read from anyway, so the default is good enough.
-    if (auto nested = tryGetNested())
-        return nested->supportsPrewhere();
-    return false;
-}
-
-
-bool StorageMaterializedPostgreSQL::canMoveConditionsToPrewhere() const
-{
-    if (auto nested = tryGetNested())
-        return nested->canMoveConditionsToPrewhere();
-    return false;
-}
-
-
-bool StorageMaterializedPostgreSQL::supportedPrewhereColumnsIncludeSubcolumns() const
-{
-    /// `StorageMerge` ANDs this bit across its children, so leaving it at the `IStorage` default would
-    /// silently drop a subcolumn condition from `PREWHERE` for the whole `Merge` table.
-    if (auto nested = tryGetNested())
-        return nested->supportedPrewhereColumnsIncludeSubcolumns();
-    return false;
-}
-
-
-bool StorageMaterializedPostgreSQL::supportsSubcolumns() const
-{
-    if (auto nested = tryGetNested())
-        return nested->supportsSubcolumns();
-    return false;
-}
-
-
-bool StorageMaterializedPostgreSQL::supportsOptimizationToSubcolumns() const
-{
-    if (auto nested = tryGetNested())
-        return nested->supportsOptimizationToSubcolumns();
-    return false;
-}
-
-
-IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes() const
-{
-    if (auto nested = tryGetNested())
-        return nested->getColumnSizes();
-    return {};
-}
-
-
-IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes(const Names & columns) const
-{
-    if (auto nested = tryGetNested())
-        return nested->getColumnSizes(columns);
-    return {};
-}
-
-
-std::optional<UInt64> StorageMaterializedPostgreSQL::totalRows(ContextPtr query_context) const
-{
-    /// An estimate: as for any `ReplacingMergeTree`, the deleted rows and the superseded versions of the
-    /// updated rows are still counted until the parts are merged.
-    if (auto nested = tryGetNested())
-        return nested->totalRows(query_context);
-    return {};
-}
-
-
-std::optional<UInt64> StorageMaterializedPostgreSQL::totalBytes(ContextPtr query_context) const
-{
-    if (auto nested = tryGetNested())
-        return nested->totalBytes(query_context);
-    return {};
 }
 
 
@@ -401,88 +303,59 @@ void StorageMaterializedPostgreSQL::read(
 }
 
 
-void StorageMaterializedPostgreSQL::backupData(
-    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
-{
-    /// The data lives in the nested ReplacingMergeTree table, delegate the backup to it.
-    auto nested = tryGetNested();
-    if (!nested)
-        throw Exception(
-            ErrorCodes::CANNOT_BACKUP_TABLE,
-            "Cannot back up table {}: its nested ReplacingMergeTree table does not exist (the table may not have "
-            "finished its initial synchronization from PostgreSQL yet). Failing closed instead of producing a "
-            "backup with table metadata but no data.",
-            getStorageID().getNameForLogs());
-
-    nested->backupData(backup_entries_collector, data_path_in_backup, partitions);
-}
-
-
-bool StorageMaterializedPostgreSQL::supportsBackupPartition() const
-{
-    /// Partition backups are delegated to the nested ReplacingMergeTree (see `backupData`), so report whatever
-    /// it supports. If the nested table does not exist yet, fall back to the default (no partition support);
-    /// `backupData` will then fail closed with a clear message anyway.
-    if (auto nested = tryGetNested())
-        return nested->supportsBackupPartition();
-    return false;
-}
-
-
-void StorageMaterializedPostgreSQL::restoreDataFromBackup(
-    RestorerFromBackup &, const String &, const std::optional<ASTs> &)
-{
-    /// A MaterializedPostgreSQL table starts replicating from the live PostgreSQL source as soon as it is
-    /// created (the constructor calls `replication_handler->startup`). Restoring the backed-up parts of the
-    /// nested ReplacingMergeTree on top of that freshly replicated data would mix the backup snapshot with the
-    /// current remote state, so an in-place restore into an already-existing MaterializedPostgreSQL table cannot
-    /// faithfully represent the backup. Fail closed and direct the user to restore the data into a separately
-    /// pre-created ReplacingMergeTree table instead - the data is still captured by `backupData`. Restoring
-    /// `... AS <new_table>` into a not-yet-existing table never reaches this point: that path would recreate the
-    /// table from the backup definition (again as MaterializedPostgreSQL) and is rejected earlier, in the storage
-    /// factory, before the table is created (see `registerStorageMaterializedPostgreSQL`). `allow_different_table_def`
-    /// only skips the definition comparison against an already existing target.
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "Restoring a MaterializedPostgreSQL table ({}) in place is not supported, because the table would start "
-        "replicating from the live PostgreSQL source and mix it with the backup snapshot. "
-        "Restore the data into a separate ReplacingMergeTree table that you have created beforehand with the same "
-        "structure as the nested table (including the _sign and _version columns), e.g.: "
-        "RESTORE TABLE <src> AS <existing_replacing_mergetree> SETTINGS allow_different_table_def = 1.",
-        getStorageID().getNameForLogs());
-}
-
-
-boost::intrusive_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterializedColumnsDeclaration(
+std::shared_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterializedColumnsDeclaration(
         String name, String type, UInt64 default_value)
 {
-    auto column_declaration = make_intrusive<ASTColumnDeclaration>();
+    auto column_declaration = std::make_shared<ASTColumnDeclaration>();
 
     column_declaration->name = std::move(name);
-    column_declaration->setType(makeASTDataType(type));
+    column_declaration->type = makeASTDataType(type);
 
-    column_declaration->default_specifier = ColumnDefaultSpecifier::Materialized;
-    column_declaration->setDefaultExpression(make_intrusive<ASTLiteral>(default_value));
+    column_declaration->default_specifier = "MATERIALIZED";
+    column_declaration->default_expression = std::make_shared<ASTLiteral>(default_value);
+
+    column_declaration->children.emplace_back(column_declaration->type);
+    column_declaration->children.emplace_back(column_declaration->default_expression);
 
     return column_declaration;
 }
 
 
-boost::intrusive_ptr<ASTExpressionList>
+ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & data_type) const
+{
+    WhichDataType which(data_type);
+
+    if (which.isNullable())
+        return makeASTDataType("Nullable", getColumnDeclaration(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
+
+    if (which.isArray())
+        return makeASTDataType("Array", getColumnDeclaration(typeid_cast<const DataTypeArray *>(data_type.get())->getNestedType()));
+
+    if (which.isDateTime64())
+        return makeASTDataType("DateTime64", std::make_shared<ASTLiteral>(static_cast<UInt32>(6)));
+
+    if (which.isDecimal())
+        return makeASTDataType("Decimal", std::make_shared<ASTLiteral>(getDecimalPrecision(*data_type)), std::make_shared<ASTLiteral>(getDecimalScale(*data_type)));
+
+    return makeASTDataType(data_type->getName());
+}
+
+
+std::shared_ptr<ASTExpressionList>
 StorageMaterializedPostgreSQL::getColumnsExpressionList(const NamesAndTypesList & columns, std::unordered_map<std::string, ASTPtr> defaults) const
 {
-    auto columns_expression_list = make_intrusive<ASTExpressionList>();
+    auto columns_expression_list = std::make_shared<ASTExpressionList>();
     for (const auto & [name, type] : columns)
     {
-        const auto & column_declaration = make_intrusive<ASTColumnDeclaration>();
+        const auto & column_declaration = std::make_shared<ASTColumnDeclaration>();
 
         column_declaration->name = name;
-        column_declaration->setType(dataTypeToAST(type));
+        column_declaration->type = getColumnDeclaration(type);
 
         if (auto it = defaults.find(name); it != defaults.end())
         {
-            column_declaration->setDefaultExpression(std::move(it->second));
-            column_declaration->default_specifier = ColumnDefaultSpecifier::Default;
+            column_declaration->default_expression = it->second;
+            column_declaration->default_specifier = "DEFAULT";
         }
 
         columns_expression_list->children.emplace_back(column_declaration);
@@ -497,7 +370,7 @@ StorageMaterializedPostgreSQL::getColumnsExpressionList(const NamesAndTypesList 
 ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override)
 {
-    auto create_table_query = make_intrusive<ASTCreateQuery>();
+    auto create_table_query = std::make_shared<ASTCreateQuery>();
 
     auto table_id = getStorageID();
     create_table_query->setTable(getNestedTableName());
@@ -505,13 +378,13 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     if (is_materialized_postgresql_database)
         create_table_query->uuid = table_id.uuid;
 
-    auto storage = make_intrusive<ASTStorage>();
-    storage->set(storage->engine, makeASTFunction("ReplacingMergeTree", make_intrusive<ASTIdentifier>("_version")));
+    auto storage = std::make_shared<ASTStorage>();
+    storage->set(storage->engine, makeASTFunction("ReplacingMergeTree", std::make_shared<ASTIdentifier>("_version")));
 
-    auto columns_declare_list = make_intrusive<ASTColumns>();
-    auto order_by_expression = make_intrusive<ASTFunction>();
+    auto columns_declare_list = std::make_shared<ASTColumns>();
+    auto order_by_expression = std::make_shared<ASTFunction>();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataPtr();
 
     ConstraintsDescription constraints;
     NamesAndTypesList ordinary_columns_and_types;
@@ -557,7 +430,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                     for (const auto & child : columns->children)
                     {
                         const auto * column_declaration = child->as<ASTColumnDeclaration>();
-                        auto type = DataTypeFactory::instance().get(column_declaration->getType());
+                        auto type = DataTypeFactory::instance().get(column_declaration->type);
                         ordinary_columns_and_types.emplace_back(NameAndTypePair(column_declaration->name, type));
                     }
                 }
@@ -611,9 +484,9 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
             merging_columns = table_structure->replica_identity_columns->columns;
 
         order_by_expression->name = "tuple";
-        order_by_expression->arguments = make_intrusive<ASTExpressionList>();
+        order_by_expression->arguments = std::make_shared<ASTExpressionList>();
         for (const auto & column : merging_columns)
-            order_by_expression->arguments->children.emplace_back(make_intrusive<ASTIdentifier>(column.name));
+            order_by_expression->arguments->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
         storage->set(storage->order_by, order_by_expression);
     }
@@ -674,28 +547,10 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
 }
 
 
-void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
-        /// Restoring a MaterializedPostgreSQL table from a backup is not supported, and must be rejected here -
-        /// before the storage is constructed - to fail closed. The constructor calls `replication_handler->startup`,
-        /// so by the time `restoreDataFromBackup` could reject the restore the table would already exist and be
-        /// replicating from the live PostgreSQL source (`RestorerFromBackup` does not roll back the created table on
-        /// a later failure). The table data is still captured by the backup (delegated to the nested
-        /// ReplacingMergeTree, see `backupData`); restore it into a ReplacingMergeTree created beforehand instead.
-        if (args.is_restore_from_backup)
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Restoring a MaterializedPostgreSQL table ({}) from a backup is not supported, because the table "
-                "would start replicating from the live PostgreSQL source as soon as it is created, mixing the backup "
-                "snapshot with the current remote state. The table data is still captured by the backup (delegated "
-                "to the nested ReplacingMergeTree); restore it into a ReplacingMergeTree table that you have created "
-                "beforehand with the same structure as the nested table (including the _sign and _version columns), "
-                "e.g.: RESTORE TABLE <src> AS <existing_replacing_mergetree> SETTINGS allow_different_table_def = 1.",
-                args.table_id.getNameForLogs());
-
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);
@@ -713,42 +568,11 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MaterializedPostgreSQL needs order by key or primary key");
 
         if (args.storage_def->primary_key)
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
         else
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, {}, args.getContext());
+            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.getContext());
 
-        /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
-        /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext(), /*storage_settings=*/ nullptr);
-
-        /// A named collection may specify the endpoint as `addresses_expr`, which fills only
-        /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
-        /// below is built from `host` / `port`. This engine keeps a single replication connection,
-        /// so exactly one address is accepted; canonicalize it back into `host` / `port`. This mirrors
-        /// `registerDatabaseMaterializedPostgreSQL`.
-        if (configuration.host.empty())
-        {
-            if (configuration.addresses.size() == 1)
-            {
-                configuration.host = configuration.addresses.front().first;
-                configuration.port = configuration.addresses.front().second;
-            }
-            else if (!isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Engine `MaterializedPostgreSQL` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
-                                configuration.addresses.size());
-            }
-            /// When replaying previously persisted metadata (server startup, and DETACH / ATTACH
-            /// with the short syntax, which re-reads the stored definition) a legacy multi-address
-            /// definition keeps its historical behavior: it could be created before this validation
-            /// existed (replication starts asynchronously, so the broken connection string never
-            /// aborted the CREATE), and the table must keep loading with replication failing and
-            /// retrying in the background rather than abort startup. A user ATTACH with a full
-            /// table definition is a fresh definition, not a replay, and stays fail-closed
-            /// (the same distinction `StorageDistributed` draws for its skipping-indices check).
-        }
-
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,
@@ -763,19 +587,8 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         if (has_settings)
             postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
-        /// For the table engine the user declares the column types explicitly, so this setting cannot
-        /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,
-        /// where the nested table structure is derived from PostgreSQL.
-        if (args.mode <= LoadingStrictnessLevel::CREATE
-            && (*postgresql_replication_settings)[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types].isChanged())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Setting `materialized_postgresql_use_extended_date_and_time_types` is not applicable to the "
-                            "MaterializedPostgreSQL table engine, where column types are declared explicitly. "
-                            "It only affects the MaterializedPostgreSQL database engine. "
-                            "Declare the desired `Date`/`DateTime` or `Date32`/`DateTime64` types directly in the table definition.");
-
         return std::make_shared<StorageMaterializedPostgreSQL>(
-                args.table_id, args.mode, configuration.database, configuration.table_or_query.getTableName(), connection_info,
+                args.table_id, args.mode, configuration.database, configuration.table, connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));
     };
@@ -788,84 +601,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             .supports_sort_order = true,
             .source_access_type = AccessTypeObjects::Source::POSTGRES,
             .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
-        },
-        Documentation{
-            .description = R"DOCS_MD(
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-# MaterializedPostgreSQL table engine
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
-
-:::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
-:::
-
-Creates ClickHouse table with an initial data dump of PostgreSQL table and starts the replication process, i.e. it executes a background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
-
-:::note
-This table engine is experimental. To use it, set `allow_experimental_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
-
-```sql
-SET allow_experimental_materialized_postgresql_table=1
-```
-:::
-
-If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
-
-## Creating a table {#creating-a-table}
-
-```sql
-CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password')
-PRIMARY KEY key;
-```
-
-**Engine Parameters**
-
-- `host:port` — PostgreSQL server address.
-- `database` — Remote database name.
-- `table` — Remote table name.
-- `user` — PostgreSQL user.
-- `password` — User password.
-
-## Requirements {#requirements}
-
-1. The [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) setting must have a value `logical` and `max_replication_slots` parameter must have a value at least `2` in the PostgreSQL config file.
-
-2. A table with `MaterializedPostgreSQL` engine must have a primary key — the same as a replica identity index (by default: primary key) of a PostgreSQL table (see [details on replica identity index](/reference/engines/database-engines/materialized-postgresql#requirements)).
-
-3. Only database [Atomic](https://en.wikipedia.org/wiki/Atomicity_(database_systems)) is allowed.
-
-4. The `MaterializedPostgreSQL` table engine only works for PostgreSQL versions >= 11 as the implementation requires the [pg_replication_slot_advance](https://pgpedia.info/p/pg_replication_slot_advance.html) PostgreSQL function.
-
-## Virtual columns {#virtual-columns}
-
-- `_version` — Transaction counter. Type: [UInt64](/reference/data-types/int-uint).
-
-- `_sign` — Deletion mark. Type: [Int8](/reference/data-types/int-uint). Possible values:
-  - `1` — Row is not deleted,
-  - `-1` — Row is deleted.
-
-These columns do not need to be added when a table is created. They are always accessible in `SELECT` query.
-`_version` column equals `LSN` position in `WAL`, so it might be used to check how up-to-date replication is.
-
-```sql
-CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
-PRIMARY KEY key;
-
-SELECT key, value, _version FROM postgresql_db.postgresql_replica;
-```
-
-:::note
-Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
-:::
-)DOCS_MD",
-            .syntax = "ENGINE = MaterializedPostgreSQL('host:port', 'database', 'table', 'user', 'password') ORDER BY key",
-            .related = {"PostgreSQL"}});
+        });
 }
 
 }

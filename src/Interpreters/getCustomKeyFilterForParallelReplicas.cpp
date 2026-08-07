@@ -1,5 +1,4 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Settings.h>
 
@@ -26,7 +25,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int INVALID_SETTING_VALUE;
 }
@@ -44,17 +42,18 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     if (filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING)
     {
         // first we do modulo with replica count
-        auto modulo_function = makeASTFunction("positiveModulo", custom_key_ast, make_intrusive<ASTLiteral>(replicas_count));
+        auto modulo_function = makeASTFunction("positiveModulo", custom_key_ast, std::make_shared<ASTLiteral>(replicas_count));
 
         /// then we compare result to the current replica number (offset)
-        auto equals_function = makeASTOperator("equals", std::move(modulo_function), make_intrusive<ASTLiteral>(replica_num));
+        auto equals_function = makeASTFunction("equals", std::move(modulo_function), std::make_shared<ASTLiteral>(replica_num));
 
         return equals_function;
     }
 
     chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
 
-    KeyDescription custom_key_description = KeyDescription::getKeyFromAST(custom_key_ast, columns, {}, context);
+    KeyDescription custom_key_description
+        = KeyDescription::getKeyFromAST(custom_key_ast, columns, context);
 
     using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
@@ -135,8 +134,8 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     RelativeSize lower_limit_rational = range_lower + relative_range_offset * size_of_universum;
     RelativeSize upper_limit_rational = range_lower + (relative_range_offset + relative_range_size) * size_of_universum;
 
-    UInt64 lower = static_cast<UInt64>(boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational));
-    UInt64 upper = static_cast<UInt64>(boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational));
+    UInt64 lower = boost::rational_cast<ASTSampleRatio::BigNum>(lower_limit_rational);
+    UInt64 upper = boost::rational_cast<ASTSampleRatio::BigNum>(upper_limit_rational);
 
     if (lower_limit_rational > range_lower)
         has_lower_limit = true;
@@ -147,12 +146,12 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     chassert(has_lower_limit || has_upper_limit);
 
     /// Let's add the conditions to cut off something else when the index is scanned again and when the request is processed.
-    boost::intrusive_ptr<ASTFunction> lower_function;
-    boost::intrusive_ptr<ASTFunction> upper_function;
+    std::shared_ptr<ASTFunction> lower_function;
+    std::shared_ptr<ASTFunction> upper_function;
 
     if (has_lower_limit)
     {
-        lower_function = makeASTOperator("greaterOrEquals", custom_key_ast, make_intrusive<ASTLiteral>(lower));
+        lower_function = makeASTFunction("greaterOrEquals", custom_key_ast, std::make_shared<ASTLiteral>(lower));
 
         if (!has_upper_limit)
             return lower_function;
@@ -160,7 +159,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     if (has_upper_limit)
     {
-        upper_function = makeASTOperator("less", custom_key_ast, make_intrusive<ASTLiteral>(upper));
+        upper_function = makeASTFunction("less", custom_key_ast, std::make_shared<ASTLiteral>(upper));
 
         if (!has_lower_limit)
             return upper_function;
@@ -168,21 +167,11 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     chassert(upper_function && lower_function);
 
-    return makeASTOperator("and", std::move(lower_function), std::move(upper_function));
+    return makeASTFunction("and", std::move(lower_function), std::move(upper_function));
 }
 
 ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context)
 {
-    /// The callers get here only when the custom key filtering is requested. Every replica reads only the part of
-    /// the data its filter selects, so without the key every replica would read everything and the result would be
-    /// multiplied by the number of the replicas. Fail instead, the same way for every caller.
-    if (custom_key.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Parallel replicas processing with custom_key has been requested "
-            "(setting 'max_parallel_replicas'), but the table does not have custom_key defined for it "
-            "or it's invalid (setting 'parallel_replicas_custom_key')");
-
     /// Try to parse expression
     ParserExpression parser;
     const auto & settings = context.getSettingsRef();

@@ -11,7 +11,7 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ArrayJoinStep : public ITransformingStep
 {
 public:
-    ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_, bool enable_lazy_columns_replication_);
+    ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array_join_, bool is_unaligned_, size_t max_block_size_);
     String getName() const override { return "ArrayJoin"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -22,13 +22,11 @@ public:
     const Names & getColumns() const { return array_join.columns; }
     bool isLeft() const { return array_join.is_left; }
 
-    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
-
-    QueryPlanStepPtr clone() const override;
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override;
@@ -36,7 +34,6 @@ private:
     ArrayJoin array_join;
     bool is_unaligned = false;
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
-    bool enable_lazy_columns_replication = false;
 };
 
 }

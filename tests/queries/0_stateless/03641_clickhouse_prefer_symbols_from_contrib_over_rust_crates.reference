@@ -1,2 +1,0 @@
-contrib/lz4/lib/lz4.c
-contrib/zstd/lib/compress/zstd_compress.c

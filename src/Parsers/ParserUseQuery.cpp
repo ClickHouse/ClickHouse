@@ -43,7 +43,7 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    auto query = make_intrusive<ASTUseQuery>();
+    auto query = std::make_shared<ASTUseQuery>();
     query->set(query->database, database);
     node = query;
 

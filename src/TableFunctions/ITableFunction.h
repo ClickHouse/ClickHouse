@@ -5,9 +5,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
 #include <Common/FunctionDocumentation.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Core/Names.h>
 #include <Analyzer/IQueryTreeNode.h>
 
 #include <memory>
@@ -56,7 +53,7 @@ public:
     /** Return array of table function arguments indexes for which query tree analysis must be skipped.
       * It is important for table functions that take subqueries, because otherwise analyzer will resolve them.
       */
-    virtual VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
+    virtual std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
 
@@ -77,7 +74,7 @@ public:
     /// It returns possible virtual column names of corresponding storage. If select query contains
     /// one of these columns, the structure from insertion table won't be used as a structure hint,
     /// because we cannot determine which column from table correspond to this virtual column.
-    virtual NameSet getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
+    virtual std::unordered_set<String> getVirtualsToCheckBeforeUsingStructureHint() const { return {}; }
 
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
@@ -88,16 +85,8 @@ public:
     virtual void setPartitionBy(const ASTPtr &) {}
 
     /// Create storage according to the query.
-    /// `check_create_temporary_table` is passed as false by database engines that resolve their
-    /// tables through a table function (e.g. the `URL` database): the table is referenced in the
-    /// query by an identifier and governed by the grants on the database, so the
-    /// `CREATE TEMPORARY TABLE` privilege required for a table function call written in a query
-    /// does not apply.
-    /// `check_source_access` is passed as false by callers that cannot know the direction of the
-    /// access yet (the `URL` database resolves a table before knowing whether it is the source or
-    /// the target of the query) and therefore run their own source access checks around the call.
     StoragePtr
-    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false, bool check_create_temporary_table = true, bool check_source_access = true) const;
+    execute(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns_ = {}, bool use_global_context = false, bool is_insert_query = false) const;
 
     /// Returns actual table structure after enforcing source access checks.
     /// Use this instead of getActualTableStructure() from outside execute().
@@ -106,22 +95,10 @@ public:
     /// Check that the user has the required source access (e.g. READ ON MYSQL, WRITE ON S3).
     void checkSourceAccess(ContextPtr context, bool is_insert_query) const;
 
-    /// The URI of the function for permission checking. Can be an empty string if not applicable.
-    /// For example, for url('https://foo.bar') the URI would be 'https://foo.bar'.
-    virtual const String & getFunctionURI() const
-    {
-        static const String empty;
-        return empty;
-    }
-
     virtual ~ITableFunction() = default;
 
 protected:
     virtual std::optional<AccessTypeObjects::Source> getSourceAccessObject() const;
-
-    /// Whether this is a `*Cluster` table function (e.g. `s3Cluster`, `urlCluster`). Overridden by
-    /// `ITableFunctionCluster`. Protected so derived functions can branch on the cluster context.
-    virtual bool isClusterFunction() const { return false; }
 
 private:
     virtual StoragePtr executeImpl(
@@ -131,18 +108,41 @@ private:
     /// This name is registered in the storage factory and used
     /// to check privileges.
     virtual const char * getStorageEngineName() const = 0;
+    virtual bool isClusterFunction() const { return false; }
     /// The database storage name is used to check privileges.
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
 
 protected:
-    String getFunctionURINormalized() const;
+    /// The URI of function for permission checking. Can be empty string if not applicable.
+    /// For example for url('https://foo.bar') URI would be 'https://foo.bar'.
+    virtual const String & getFunctionURI() const
+    {
+        static const String empty;
+        return empty;
+    }
+
+    String getFunctionURINormalized() const
+    {
+        try
+        {
+            Poco::URI uri(getFunctionURI());
+            uri.normalize();
+            return uri.toString();
+        }
+        catch (const Poco::Exception &)
+        {
+            return "";
+        }
+    }
 };
 
 /// Properties of table function that are independent of argument types and parameters.
 struct TableFunctionProperties
 {
+    FunctionDocumentation documentation;
+
     /** It is determined by the possibility of modifying any data or making requests to arbitrary hostnames.
       *
       * If users can make a request to an arbitrary hostname, they can get the info from the internal network

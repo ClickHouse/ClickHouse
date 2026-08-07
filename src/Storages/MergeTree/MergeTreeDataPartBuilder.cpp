@@ -2,12 +2,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-
-#include <Common/Jemalloc.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/JemallocMergeTreeArena.h>
 
 namespace DB
 {
@@ -19,33 +14,21 @@ namespace ErrorCodes
 }
 
 MergeTreeDataPartBuilder::MergeTreeDataPartBuilder(
-    const MergeTreeData & data_,
-    String name_,
-    VolumePtr volume_,
-    String root_path_,
-    String part_dir_,
-    const ReadSettings & read_settings_,
-    bool part_may_exist_on_disk_)
+    const MergeTreeData & data_, String name_, VolumePtr volume_, String root_path_, String part_dir_, const ReadSettings & read_settings_)
     : data(data_)
     , name(std::move(name_))
     , volume(std::move(volume_))
     , root_path(std::move(root_path_))
     , part_dir(std::move(part_dir_))
-    , part_may_exist_on_disk(part_may_exist_on_disk_)
     , read_settings(read_settings_)
 {
 }
 
 MergeTreeDataPartBuilder::MergeTreeDataPartBuilder(
-    const MergeTreeData & data_,
-    String name_,
-    MutableDataPartStoragePtr part_storage_,
-    const ReadSettings & read_settings_,
-    bool part_may_exist_on_disk_)
+    const MergeTreeData & data_, String name_, MutableDataPartStoragePtr part_storage_, const ReadSettings & read_settings_)
     : data(data_)
     , name(std::move(name_))
     , part_storage(std::move(part_storage_))
-    , part_may_exist_on_disk(part_may_exist_on_disk_)
     , read_settings(read_settings_)
 {
 }
@@ -54,20 +37,6 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
 {
     using PartType = MergeTreeDataPartType;
     using PartStorageType = MergeTreeDataPartStorageType;
-
-    /// Route every allocation produced while constructing the part (the `IMergeTreeDataPart`
-    /// object itself, its initializer-list members `Poco::LRUCache<String, ColumnSize>`,
-    /// `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`,
-    /// `index_granularity_info`, and also `MergeTreePartInfo::fromPartName` and
-    /// `data.getSettings()` clones below) into the dedicated MergeTree arena. These all share
-    /// the part's lifetime — much longer than a query — and pollute the default arena's pages
-    /// otherwise.
-    ///
-    /// For the same reason they are not charged to the query building the part: it is freed much later
-    /// by a background thread, so the charge drifts onto the per-user tracker permanently. See
-    /// `IMergeTreeDataPart::setColumns`.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     if (!part_type)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create part {}, because part type is not set", name);
@@ -90,14 +59,12 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     if (!part_info)
         part_info = MergeTreePartInfo::fromPartName(name, data.format_version);
 
-    auto data_settings = data.getSettings(projection ? &projection->settings_changes : nullptr);
-
     switch (part_type->getValue())
     {
         case PartType::Wide:
-            return std::make_shared<MergeTreeDataPartWide>(data, *data_settings, name, *part_info, part_storage, parent_part, part_may_exist_on_disk);
+            return std::make_shared<MergeTreeDataPartWide>(data, name, *part_info, part_storage, parent_part);
         case PartType::Compact:
-            return std::make_shared<MergeTreeDataPartCompact>(data, *data_settings, name, *part_info, part_storage, parent_part, part_may_exist_on_disk);
+            return std::make_shared<MergeTreeDataPartCompact>(data, name, *part_info, part_storage, parent_part);
         default:
             throw Exception(ErrorCodes::UNKNOWN_PART_TYPE,
                 "Unknown type of part {}", part_storage->getRelativePath());
@@ -109,26 +76,16 @@ MutableDataPartStoragePtr MergeTreeDataPartBuilder::getPartStorageByType(
     const VolumePtr & volume_,
     const String & root_path_,
     const String & part_dir_,
-    bool part_may_exist_on_disk,
-    [[maybe_unused]] const ReadSettings & read_settings)
+    const ReadSettings &) /// Unused here, but used in private repo.
 {
     if (!volume_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create part storage, because volume is not specified");
-
-    /// The storage object and its `root_path` / `part_dir` strings live for the part's whole lifetime.
-    /// Create them in the dedicated arena here: on the write paths this runs while configuring the
-    /// builder, before `build()` enters its own scope, so the scope there would otherwise miss them.
-    /// Not charged to the query for the same reason, see `IMergeTreeDataPart::setColumns`.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     using Type = MergeTreeDataPartStorageType;
     switch (storage_type_.getValue())
     {
         case Type::Full:
             return std::make_shared<DataPartStorageOnDiskFull>(volume_, root_path_, part_dir_);
-        case Type::Packed:
-            return std::make_shared<DataPartStorageOnDiskPacked>(volume_, root_path_, part_dir_, read_settings, part_may_exist_on_disk);
         default:
             throw Exception(ErrorCodes::UNKNOWN_PART_TYPE,
                 "Unknown type of storage for part {}", fs::path(root_path_) / part_dir_);
@@ -150,12 +107,6 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withParentPart(const IMerge
     return *this;
 }
 
-MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withProjection(ProjectionDescriptionRawPtr projection_)
-{
-    projection = projection_;
-    return *this;
-}
-
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartType(MergeTreeDataPartType part_type_)
 {
     part_type = part_type_;
@@ -164,7 +115,7 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartType(MergeTreeDataP
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartStorageType(MergeTreeDataPartStorageType storage_type_)
 {
-    part_storage = getPartStorageByType(storage_type_, volume, root_path, part_dir, part_may_exist_on_disk, read_settings);
+    part_storage = getPartStorageByType(storage_type_, volume, root_path, part_dir, read_settings);
     return *this;
 }
 
@@ -191,15 +142,8 @@ MergeTreeDataPartBuilder::getPartStorageAndMarkType(
 
         if (MarkType::isMarkFileExtension(ext))
         {
-            auto storage = getPartStorageByType(MergeTreeDataPartStorageType::Full, volume_, root_path_, part_dir_, true, read_settings_);
+            auto storage = getPartStorageByType(MergeTreeDataPartStorageType::Full, volume_, root_path_, part_dir_, read_settings_);
             return {std::move(storage), MarkType(ext)};
-        }
-
-        if (it->name() == DataPartStorageOnDiskPacked::DATA_FILE_NAME)
-        {
-            auto storage = getPartStorageByType(MergeTreeDataPartStorageType::Packed, volume_, root_path_, part_dir_, true, read_settings_);
-            auto mark_type = MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(*storage);
-            return {storage, mark_type};
         }
     }
 
@@ -215,13 +159,13 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromDisk()
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
 {
-    chassert(volume);
+    assert(volume);
     auto [storage, mark_type] = getPartStorageAndMarkType(volume, root_path, part_dir, read_settings);
 
     if (!storage || !mark_type)
     {
         /// Didn't find any data or mark file, suppose that part is empty.
-        return withBytesAndRows(0, 0, 0);
+        return withBytesAndRows(0, 0);
     }
 
     part_storage = std::move(storage);
@@ -231,22 +175,22 @@ MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromVolume()
 
 MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withPartFormatFromStorage()
 {
-    chassert(part_storage);
+    assert(part_storage);
     auto mark_type = MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(*part_storage);
 
     if (!mark_type)
     {
         /// Didn't find any mark file, suppose that part is empty.
-        return withBytesAndRows(0, 0, 0);
+        return withBytesAndRows(0, 0);
     }
 
     part_type = mark_type->part_type;
     return *this;
 }
 
-MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withBytesAndRows(size_t bytes_uncompressed, size_t rows_count, UInt32 part_level)
+MergeTreeDataPartBuilder & MergeTreeDataPartBuilder::withBytesAndRows(size_t bytes_uncompressed, size_t rows_count)
 {
-    return withPartFormat(data.choosePartFormat(bytes_uncompressed, rows_count, part_level, projection));
+    return withPartFormat(data.choosePartFormat(bytes_uncompressed, rows_count));
 }
 
 }
