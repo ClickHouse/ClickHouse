@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-replicated-database, no-flaky-check
+# Tags: no-fasttest, no-random-settings, no-replicated-database, no-flaky-check, no-parallel
 # no-fasttest: TPC-DS tables use web disk (S3) which is not available in fasttest.
 # no-random-settings: random session_timezone, query_plan_join_swap_table, etc. change query results.
 # no-replicated-database: the `tpcds` database is not created in DatabaseReplicated mode.
 # no-flaky-check: TPC-DS queries are too expensive for thread fuzzer.
+# no-parallel: heavy queries contend on the shared server under parallel FT jobs.
 # Known issue: the original query doesn't work, uses alternative formulation (https://github.com/ClickHouse/ClickHouse/issues/94858).
 # Once the issue is fixed, switch to the original query from tests/benchmarks/tpc-ds/README.md.
 
