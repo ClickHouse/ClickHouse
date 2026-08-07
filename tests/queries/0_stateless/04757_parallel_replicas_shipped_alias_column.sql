@@ -28,7 +28,9 @@ CREATE TABLE t_ship_alias
     a_mat Int64 ALIAS mat + 1,
     -- Two aliases with identical bodies: they collapse to one column on the remote side.
     a_dup1 String ALIAS toString(v),
-    a_dup2 String ALIAS toString(v)
+    a_dup2 String ALIAS toString(v),
+    -- A volatile body: every reference to one `ALIAS` column must still see one value per row.
+    a_rand UInt32 ALIAS rand()
 )
 ENGINE = MergeTree ORDER BY k;
 
@@ -67,6 +69,15 @@ SELECT r.k FROM t_ship_alias AS l GLOBAL INNER JOIN t_ship_alias AS r ON l.k = r
 SELECT r.a_lc, count() FROM t_ship_alias AS l GLOBAL INNER JOIN t_ship_alias AS r ON l.k = r.k GROUP BY r.a_lc ORDER BY ALL LIMIT 3;
 SELECT sum(r.a_v) FROM t_ship_alias AS l GLOBAL INNER JOIN t_ship_alias AS r ON l.k = r.k;
 SELECT count() FROM t_ship_plain WHERE k GLOBAL IN (SELECT k FROM t_ship_alias WHERE a_v > 20);
+
+SELECT 'a volatile alias body is still one value per row';
+
+-- Inlining gives each reference its own copy of the body, so a volatile body would be drawn twice if the
+-- copies did not converge again on the remote side. They do: an action node is named after the expression
+-- rather than the SQL alias, so structurally identical copies share one node. Both answers are 0 whatever
+-- `rand()` returns, and would be about half the rows if the references came apart.
+SELECT countIf(p <> q) FROM (SELECT r.a_rand AS p, r.a_rand AS q FROM t_ship_plain AS l GLOBAL INNER JOIN t_ship_alias AS r ON l.k = r.k);
+SELECT countIf(a_rand % 2 != 0) FROM (SELECT r.a_rand AS a_rand FROM t_ship_plain AS l GLOBAL INNER JOIN t_ship_alias AS r ON l.k = r.k WHERE r.a_rand % 2 = 0);
 
 SELECT 'parallel replicas pushed into a subquery';
 

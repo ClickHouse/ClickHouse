@@ -33,6 +33,9 @@ alias only in a clause, not in the projection
 2	4
 870
 9
+a volatile alias body is still one value per row
+0
+0
 parallel replicas pushed into a subquery
 58
 56
