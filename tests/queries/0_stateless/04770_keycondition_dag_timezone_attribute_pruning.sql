@@ -36,6 +36,29 @@ DROP TABLE IF EXISTS k_nullable;
 DROP TABLE IF EXISTS oracle_nullable;
 DROP TABLE IF EXISTS k_nullable_dt64;
 DROP TABLE IF EXISTS oracle_nullable_dt64;
+DROP TABLE IF EXISTS oracle_arr;
+DROP TABLE IF EXISTS k_arr;
+DROP TABLE IF EXISTS oracle_arr_dt64;
+DROP TABLE IF EXISTS k_arr_dt64;
+DROP TABLE IF EXISTS oracle_map;
+DROP TABLE IF EXISTS k_map;
+DROP TABLE IF EXISTS oracle_arr_nul;
+DROP TABLE IF EXISTS k_arr_nul;
+DROP TABLE IF EXISTS oracle_map_nul;
+DROP TABLE IF EXISTS k_map_nul;
+DROP TABLE IF EXISTS oracle_arr_tup;
+DROP TABLE IF EXISTS k_arr_tup;
+DROP TABLE IF EXISTS oracle_arr_arr;
+DROP TABLE IF EXISTS k_arr_arr;
+DROP TABLE IF EXISTS oracle_arr_lc;
+DROP TABLE IF EXISTS k_arr_lc;
+DROP TABLE IF EXISTS k_tup;
+DROP TABLE IF EXISTS k_map_el;
+DROP TABLE IF EXISTS k_arr_tup1;
+DROP TABLE IF EXISTS k_map_keytype;
+DROP TABLE IF EXISTS oracle_saf;
+DROP TABLE IF EXISTS k_saf;
+DROP TABLE IF EXISTS k_saf_arr;
 
 -- The oracle: identical data and predicate, no key transform to get wrong.
 CREATE TABLE oracle_utc (ts DateTime('UTC')) ENGINE = Memory;
@@ -147,6 +170,131 @@ SELECT 'control_nullable_element_carries_key_timezone', count() FROM (SELECT ts 
 SELECT 'control_nullable_transform_null_in_off', count() FROM (SELECT ts FROM k_nullable WHERE ts IN (SELECT CAST(toDateTime(1675195200) AS Nullable(DateTime)))) SETTINGS transform_null_in = 0;
 SET transform_null_in = 0;
 
+-- Carriers 15-22: the same defect at arbitrary wrapper depth. `Array`, `Map`, `Tuple` and
+-- `LowCardinality` all delegate `equals` to their children, so a nested timezone is exactly as
+-- invisible as a bare one, while a higher-order function takes its lambda argument type from the
+-- runtime wrapper type. `transform_null_in` is NOT needed here (measured: the rows below read the
+-- same at either value), so it stays off.
+CREATE TABLE oracle_arr (a Array(DateTime('UTC'))) ENGINE = Memory;
+INSERT INTO oracle_arr SELECT [toDateTime(1675195200, 'UTC')];
+CREATE TABLE k_arr (a Array(DateTime('UTC'))) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap(x -> toYYYYMM(x), a)) ORDER BY tuple();
+INSERT INTO k_arr SELECT [toDateTime(1675195200, 'UTC')];
+SELECT 'oracle_array', count() FROM (SELECT a FROM oracle_arr WHERE a IN (SELECT [toDateTime(1675195200)]));
+SELECT 'partition_array', count() FROM (SELECT a FROM k_arr WHERE a IN (SELECT [toDateTime(1675195200)]));
+
+CREATE TABLE oracle_arr_dt64 (a Array(DateTime64(3, 'UTC'))) ENGINE = Memory;
+INSERT INTO oracle_arr_dt64 SELECT [toDateTime64(1675195200, 3, 'UTC')];
+CREATE TABLE k_arr_dt64 (a Array(DateTime64(3, 'UTC'))) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap(x -> toYYYYMM(x), a)) ORDER BY tuple();
+INSERT INTO k_arr_dt64 SELECT [toDateTime64(1675195200, 3, 'UTC')];
+SELECT 'oracle_array_dt64', count() FROM (SELECT a FROM oracle_arr_dt64 WHERE a IN (SELECT [toDateTime64(1675195200, 3)]));
+SELECT 'partition_array_dt64', count() FROM (SELECT a FROM k_arr_dt64 WHERE a IN (SELECT [toDateTime64(1675195200, 3)]));
+
+CREATE TABLE oracle_map (m Map(String, DateTime('UTC'))) ENGINE = Memory;
+INSERT INTO oracle_map SELECT map('x', toDateTime(1675195200, 'UTC'));
+CREATE TABLE k_map (m Map(String, DateTime('UTC'))) ENGINE = MergeTree
+    PARTITION BY arraySum(mapValues(mapApply((k, v) -> (k, toYYYYMM(v)), m))) ORDER BY tuple();
+INSERT INTO k_map SELECT map('x', toDateTime(1675195200, 'UTC'));
+SELECT 'oracle_map', count() FROM (SELECT m FROM oracle_map WHERE m IN (SELECT map('x', toDateTime(1675195200))));
+SELECT 'partition_map', count() FROM (SELECT m FROM k_map WHERE m IN (SELECT map('x', toDateTime(1675195200))));
+
+-- Depth 2: the SAME code path reaches these, which is what asserts the recursion rather than a
+-- per-wrapper special case. `ifNull` keeps the key non-nullable so `arraySum` accepts it.
+CREATE TABLE oracle_arr_nul (a Array(Nullable(DateTime('UTC')))) ENGINE = Memory;
+INSERT INTO oracle_arr_nul SELECT [toDateTime(1675195200, 'UTC')];
+CREATE TABLE k_arr_nul (a Array(Nullable(DateTime('UTC')))) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap(x -> ifNull(toYYYYMM(x), 0), a)) ORDER BY tuple()
+    SETTINGS allow_nullable_key = 1;
+INSERT INTO k_arr_nul SELECT [toDateTime(1675195200, 'UTC')];
+SELECT 'oracle_array_nullable', count() FROM (SELECT a FROM oracle_arr_nul WHERE a IN (SELECT [CAST(toDateTime(1675195200) AS Nullable(DateTime))]));
+SELECT 'partition_array_nullable', count() FROM (SELECT a FROM k_arr_nul WHERE a IN (SELECT [CAST(toDateTime(1675195200) AS Nullable(DateTime))]));
+
+CREATE TABLE oracle_map_nul (m Map(String, Nullable(DateTime('UTC')))) ENGINE = Memory;
+INSERT INTO oracle_map_nul SELECT map('x', toDateTime(1675195200, 'UTC'));
+CREATE TABLE k_map_nul (m Map(String, Nullable(DateTime('UTC')))) ENGINE = MergeTree
+    PARTITION BY arraySum(mapValues(mapApply((k, v) -> (k, ifNull(toYYYYMM(v), 0)), m))) ORDER BY tuple()
+    SETTINGS allow_nullable_key = 1;
+INSERT INTO k_map_nul SELECT map('x', toDateTime(1675195200, 'UTC'));
+SELECT 'oracle_map_nullable', count() FROM (SELECT m FROM oracle_map_nul WHERE m IN (SELECT map('x', CAST(toDateTime(1675195200) AS Nullable(DateTime)))));
+SELECT 'partition_map_nullable', count() FROM (SELECT m FROM k_map_nul WHERE m IN (SELECT map('x', CAST(toDateTime(1675195200) AS Nullable(DateTime)))));
+
+CREATE TABLE oracle_arr_tup (a Array(Tuple(DateTime('UTC'), UInt8))) ENGINE = Memory;
+INSERT INTO oracle_arr_tup SELECT [(toDateTime(1675195200, 'UTC'), 1)];
+CREATE TABLE k_arr_tup (a Array(Tuple(DateTime('UTC'), UInt8))) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap((d, n) -> toYYYYMM(d) + n, a)) ORDER BY tuple();
+INSERT INTO k_arr_tup SELECT [(toDateTime(1675195200, 'UTC'), 1)];
+SELECT 'oracle_array_tuple', count() FROM (SELECT a FROM oracle_arr_tup WHERE a IN (SELECT [(toDateTime(1675195200), 1)]));
+SELECT 'partition_array_tuple', count() FROM (SELECT a FROM k_arr_tup WHERE a IN (SELECT [(toDateTime(1675195200), 1)]));
+
+CREATE TABLE oracle_arr_arr (a Array(Array(DateTime('UTC')))) ENGINE = Memory;
+INSERT INTO oracle_arr_arr SELECT [[toDateTime(1675195200, 'UTC')]];
+CREATE TABLE k_arr_arr (a Array(Array(DateTime('UTC')))) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap(y -> arraySum(arrayMap(x -> toYYYYMM(x), y)), a)) ORDER BY tuple();
+INSERT INTO k_arr_arr SELECT [[toDateTime(1675195200, 'UTC')]];
+SELECT 'oracle_array_array', count() FROM (SELECT a FROM oracle_arr_arr WHERE a IN (SELECT [[toDateTime(1675195200)]]));
+SELECT 'partition_array_array', count() FROM (SELECT a FROM k_arr_arr WHERE a IN (SELECT [[toDateTime(1675195200)]]));
+
+-- `LowCardinality` reaches the transform only through the CONSTANT-equality caller: building an
+-- `IN` set runs `recursiveRemoveLowCardinality` over the element type, so a nested `LowCardinality`
+-- never arrives there. The `IN` row further down is therefore a control, not a duplicate of this one.
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE oracle_arr_lc (a Array(LowCardinality(DateTime('UTC')))) ENGINE = Memory;
+INSERT INTO oracle_arr_lc SELECT [toDateTime(1675195200, 'UTC')];
+CREATE TABLE k_arr_lc (a Array(LowCardinality(DateTime('UTC')))) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap(x -> toYYYYMM(x), a)) ORDER BY tuple();
+INSERT INTO k_arr_lc SELECT [toDateTime(1675195200, 'UTC')];
+SELECT 'oracle_array_lowcardinality', count() FROM (SELECT a FROM oracle_arr_lc WHERE a = CAST([toDateTime(1675195200)] AS Array(LowCardinality(DateTime))));
+SELECT 'partition_array_lowcardinality', count() FROM (SELECT a FROM k_arr_lc WHERE a = CAST([toDateTime(1675195200)] AS Array(LowCardinality(DateTime))));
+
+-- Six controls for the wrapper rows, every one measured correct BEFORE the fix. The first four reach
+-- the helper with a wrapper type but their key expression takes the leaf out before the transform, so
+-- they were never carriers; the last two never reach it with a wrapped timezone at all.
+CREATE TABLE k_tup (t Tuple(DateTime('UTC'))) ENGINE = MergeTree PARTITION BY toYYYYMM(t.1) ORDER BY tuple();
+INSERT INTO k_tup SELECT tuple(toDateTime(1675195200, 'UTC'));
+SELECT 'control_tuple_leaf_key', count() FROM (SELECT t FROM k_tup WHERE t IN (SELECT tuple(toDateTime(1675195200))));
+
+CREATE TABLE k_map_el (m Map(String, DateTime('UTC'))) ENGINE = MergeTree PARTITION BY toYYYYMM(m['x']) ORDER BY tuple();
+INSERT INTO k_map_el SELECT map('x', toDateTime(1675195200, 'UTC'));
+SELECT 'control_map_element_key', count() FROM (SELECT m FROM k_map_el WHERE m IN (SELECT map('x', toDateTime(1675195200))));
+
+CREATE TABLE k_arr_tup1 (a Array(Tuple(DateTime('UTC')))) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap(x -> toYYYYMM(x.1), a)) ORDER BY tuple();
+INSERT INTO k_arr_tup1 SELECT [tuple(toDateTime(1675195200, 'UTC'))];
+SELECT 'control_array_tuple_leaf_key', count() FROM (SELECT a FROM k_arr_tup1 WHERE a IN (SELECT [tuple(toDateTime(1675195200))]));
+
+CREATE TABLE k_map_keytype (m Map(DateTime('UTC'), UInt8)) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap(x -> toYYYYMM(x), mapKeys(m))) ORDER BY tuple();
+INSERT INTO k_map_keytype SELECT map(toDateTime(1675195200, 'UTC'), 1);
+SELECT 'control_map_key_type', count() FROM (SELECT m FROM k_map_keytype WHERE m IN (SELECT map(toDateTime(1675195200), 1)));
+
+SELECT 'control_array_lowcardinality_in_path', count() FROM (SELECT a FROM k_arr_lc WHERE a IN (SELECT [CAST(toDateTime(1675195200) AS LowCardinality(DateTime))]));
+SELECT 'control_array_element_carries_key_timezone', count() FROM (SELECT a FROM k_arr WHERE a IN (SELECT [toDateTime(1675195200, 'UTC')]));
+SET allow_suspicious_low_cardinality_types = 0;
+
+-- Carriers 23-24: a `DateTime` leaf under a CUSTOM NAME. `SimpleAggregateFunction` is a custom name
+-- whose storage type is the argument type verbatim, so the timezone is invisible to `equals` here
+-- too, and the name must NOT stop the relabel: the leaf is still a `DateTime`, and the value map of
+-- a `DateTime` is not what the custom name changes. This is why the leaf test is checked BEFORE the
+-- custom-name refusal; the reverse order silently reintroduces the bug for these two rows.
+CREATE TABLE oracle_saf (ts DateTime('UTC')) ENGINE = Memory;
+INSERT INTO oracle_saf SELECT toDateTime(1675195200, 'UTC');
+CREATE TABLE k_saf (ts SimpleAggregateFunction(max, DateTime('UTC'))) ENGINE = AggregatingMergeTree
+    PARTITION BY toYYYYMM(ts) ORDER BY tuple();
+INSERT INTO k_saf SELECT toDateTime(1675195200, 'UTC');
+SELECT 'oracle_simpleaggregatefunction', count() FROM (SELECT ts FROM oracle_saf WHERE ts IN (SELECT toDateTime(1675195200)));
+SELECT 'partition_simpleaggregatefunction', count() FROM (SELECT ts FROM k_saf WHERE ts IN (SELECT toDateTime(1675195200)));
+
+CREATE TABLE k_saf_arr (a Array(SimpleAggregateFunction(max, DateTime('UTC')))) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap(x -> toYYYYMM(x), a)) ORDER BY tuple();
+INSERT INTO k_saf_arr SELECT [toDateTime(1675195200, 'UTC')];
+SELECT 'oracle_array_simpleaggregatefunction', count() FROM (SELECT a FROM oracle_arr WHERE a IN (SELECT [toDateTime(1675195200)]));
+SELECT 'partition_array_simpleaggregatefunction', count() FROM (SELECT a FROM k_saf_arr WHERE a IN (SELECT [toDateTime(1675195200)]));
+
+-- Two controls for the rows above, both correct on master and under the fix.
+SELECT 'control_simpleaggregatefunction_element_carries_key_timezone', count() FROM (SELECT ts FROM k_saf WHERE ts IN (SELECT toDateTime(1675195200, 'UTC')));
+SELECT 'control_array_simpleaggregatefunction_other_month', count() FROM (SELECT a FROM k_saf_arr WHERE a IN (SELECT [toDateTime(1677614400, 'UTC')]));
+
 -- Controls. Each was measured correct before the fix, so they are what proves the carriers above
 -- discriminate rather than the whole file simply reading 1.
 CREATE TABLE k_unixts (ts DateTime('UTC')) ENGINE = MergeTree PARTITION BY toUnixTimestamp(ts) ORDER BY tuple();
@@ -244,3 +392,26 @@ DROP TABLE k_nullable;
 DROP TABLE oracle_nullable;
 DROP TABLE k_nullable_dt64;
 DROP TABLE oracle_nullable_dt64;
+DROP TABLE oracle_arr;
+DROP TABLE k_arr;
+DROP TABLE oracle_arr_dt64;
+DROP TABLE k_arr_dt64;
+DROP TABLE oracle_map;
+DROP TABLE k_map;
+DROP TABLE oracle_arr_nul;
+DROP TABLE k_arr_nul;
+DROP TABLE oracle_map_nul;
+DROP TABLE k_map_nul;
+DROP TABLE oracle_arr_tup;
+DROP TABLE k_arr_tup;
+DROP TABLE oracle_arr_arr;
+DROP TABLE k_arr_arr;
+DROP TABLE oracle_arr_lc;
+DROP TABLE k_arr_lc;
+DROP TABLE k_tup;
+DROP TABLE k_map_el;
+DROP TABLE k_arr_tup1;
+DROP TABLE k_map_keytype;
+DROP TABLE oracle_saf;
+DROP TABLE k_saf;
+DROP TABLE k_saf_arr;
