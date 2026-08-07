@@ -38,7 +38,8 @@ SELECT 'dynamic result (keys allowed)', (SELECT arraySort(groupArray((l.id, r.id
 SET allow_dynamic_type_in_join_keys = 0;
 SELECT 'dynamic routed (keys disallowed)', count() FROM (EXPLAIN SELECT count() FROM (SELECT id, CAST(f, 'Dynamic') AS d, y FROM ttk_l) l JOIN (SELECT id, CAST(f, 'Dynamic') AS d, y FROM ttk_r) r ON l.d < r.d AND l.y > r.y) WHERE explain LIKE '%IEJoin%';
 SELECT 'dynamic inner (keys disallowed)', count() FROM (SELECT id, CAST(f, 'Dynamic') AS d, y FROM ttk_l) l JOIN (SELECT id, CAST(f, 'Dynamic') AS d, y FROM ttk_r) r ON l.d < r.d AND l.y > r.y;
-SELECT count() FROM (SELECT id, CAST(f, 'Dynamic') AS d, y FROM ttk_l) l LEFT JOIN (SELECT id, CAST(f, 'Dynamic') AS d, y FROM ttk_r) r ON l.d < r.d AND l.y > r.y; -- { serverError NOT_IMPLEMENTED }
+-- The swap would make it a RIGHT join, which the block nested loop join does not implement yet.
+SELECT 'dynamic outer (keys disallowed)', count() FROM (SELECT id, CAST(f, 'Dynamic') AS d, y FROM ttk_l) l LEFT JOIN (SELECT id, CAST(f, 'Dynamic') AS d, y FROM ttk_r) r ON l.d < r.d AND l.y > r.y SETTINGS query_plan_join_swap_table = 'false';
 
 -- A tuple comparison beyond two scalar inequalities is a residual condition inside the
 -- operator, evaluated with SQL semantics: the NaN-keyed left row matches nothing.

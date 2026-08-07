@@ -89,11 +89,13 @@ SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 -- Inline subquery aliased `b` (same name as the inner JOIN's right table) with
 -- a subcolumn: at the outer JOIN, `b.id` could come from the alias `b` or from
 -- the left table's Tuple `b.id`. Default ends up with both ON keys on one
--- side; compat restricts resolution to the alias-matching side.
-SELECT '-- inline subquery aliased b, with subcolumn (default fails) --';
+-- side (so the join has no key and is evaluated by the block nested loop operator, matching
+-- nothing); compat restricts resolution to the alias-matching side.
+SELECT '-- inline subquery aliased b, with subcolumn (default: both ON keys on one side) --';
 SELECT *
 FROM t2_compat a
-LEFT JOIN (SELECT * FROM t2_compat a INNER JOIN t2_compat b ON a.id = b.id) b ON a.id = b.id; -- { serverError NOT_IMPLEMENTED }
+LEFT JOIN (SELECT * FROM t2_compat a INNER JOIN t2_compat b ON a.id = b.id) b ON a.id = b.id
+SETTINGS query_plan_join_swap_table = 'false'; -- the swap would make it a RIGHT join, which the operator does not implement yet
 
 SELECT '-- inline subquery aliased b, with subcolumn (compat) --';
 SELECT *

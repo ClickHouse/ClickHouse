@@ -1,0 +1,40 @@
+-- Tags: no-old-analyzer
+
+-- The padded side of a `LEFT` join evaluated by the block nested loop operator. With
+-- `join_use_nulls = 0` an unmatched probe row gets the build columns' type defaults; with
+-- `join_use_nulls = 1` the pre-join actions made those columns `Nullable` and it gets NULL.
+
+SET join_algorithm = 'direct,parallel_hash,hash';
+-- The swap of the join inputs turns a `LEFT` join into a `RIGHT` one, which the operator does not
+-- implement yet.
+SET query_plan_join_swap_table = 'false';
+
+DROP TABLE IF EXISTS bnl_nulls_l;
+DROP TABLE IF EXISTS bnl_nulls_r;
+
+CREATE TABLE bnl_nulls_l (id Int32, x Int32) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE bnl_nulls_r (id Int32, y Int32, s String, n Nullable(Int32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO bnl_nulls_l VALUES (1, 1), (2, 5), (3, 100);
+INSERT INTO bnl_nulls_r VALUES (10, 2, 'a', 1), (20, 7, 'b', NULL);
+
+{% for join_use_nulls in [0, 1] -%}
+
+SELECT 'join_use_nulls = {{ join_use_nulls }}';
+SET join_use_nulls = {{ join_use_nulls }};
+
+SELECT * FROM bnl_nulls_l l LEFT JOIN bnl_nulls_r r ON l.x < r.y ORDER BY ALL;
+SELECT '-';
+-- Every probe row is padded when the build side is empty.
+SELECT * FROM bnl_nulls_l l LEFT JOIN (SELECT * FROM bnl_nulls_r WHERE 0) r ON l.x < r.y ORDER BY ALL;
+SELECT '-';
+-- ... and when the condition matches nothing.
+SELECT * FROM bnl_nulls_l l LEFT JOIN bnl_nulls_r r ON l.x + r.y < -1000000 ORDER BY ALL;
+SELECT '-';
+-- `INNER` pads nothing, so the setting does not change its result.
+SELECT * FROM bnl_nulls_l l JOIN bnl_nulls_r r ON l.x < r.y ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+SELECT '--';
+
+{% endfor -%}
+
+DROP TABLE bnl_nulls_l;
+DROP TABLE bnl_nulls_r;

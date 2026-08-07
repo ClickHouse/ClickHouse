@@ -62,8 +62,8 @@ SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '')
 FROM (EXPLAIN actions = 1 SELECT * FROM bnl_pipeline_l l LEFT ANTI JOIN bnl_pipeline_r r ON l.x < r.y)
 WHERE explain LIKE '%Type: %' OR explain LIKE '%Strictness: %' OR explain LIKE '%Condition: %';
 
--- ⚠️ The matching itself lands in task 4; until then the operator refuses to run.
-SELECT * FROM bnl_pipeline_l l LEFT JOIN bnl_pipeline_r r ON l.x < r.y; -- { serverError NOT_IMPLEMENTED }
+-- The pipeline end to end.
+SELECT * FROM bnl_pipeline_l l LEFT JOIN bnl_pipeline_r r ON l.x < r.y ORDER BY ALL;
 
 DROP TABLE bnl_pipeline_l;
 DROP TABLE bnl_pipeline_r;

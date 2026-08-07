@@ -17,3 +17,7 @@ build totals joined	1
 Type: LEFT
 Strictness: ANTI
 Condition: less(__table1.x, __table2.y)
+1	1	1	3
+1	1	2	4
+2	2	1	3
+2	2	2	4

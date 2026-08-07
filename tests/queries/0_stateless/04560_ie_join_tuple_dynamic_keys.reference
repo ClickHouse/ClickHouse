@@ -6,6 +6,7 @@ dynamic routed (keys allowed)	0
 dynamic result (keys allowed)	1
 dynamic routed (keys disallowed)	0
 dynamic inner (keys disallowed)	2
+dynamic outer (keys disallowed)	4
 tuple residual routed	1
 tuple residual semi	1
 variant routed	0

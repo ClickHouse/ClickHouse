@@ -1,0 +1,66 @@
+-- Tags: no-old-analyzer
+
+-- `INNER` and `LEFT` joins on an `ON` condition with no join key, evaluated by the block nested
+-- loop operator, against the rewrite that expresses the same join without it: a cross join with a
+-- filter, plus - for `LEFT` - the probe rows that the filter matched nowhere.
+--
+-- `INNER` with `ALL` strictness keeps its cross-join-with-a-filter plan while `hash` is enabled, so
+-- the operator takes it only where no other algorithm is available.
+
+SET cross_to_inner_join_rewrite = 0;
+SET join_use_nulls = 0;
+-- The swap of the join inputs turns a `LEFT` join into a `RIGHT` one, which the operator does not
+-- implement yet.
+SET query_plan_join_swap_table = 'false';
+
+DROP TABLE IF EXISTS bnl_probe;
+DROP TABLE IF EXISTS bnl_build;
+
+CREATE TABLE bnl_probe (id Int32, x Nullable(Int32), s String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE bnl_build (id Int32, y Nullable(Int32), s String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO bnl_probe VALUES (1, 1, 'a'), (2, 5, 'ab'), (3, NULL, 'b'), (4, 9, ''), (5, 3, 'abc'), (6, -2, 'A');
+INSERT INTO bnl_build VALUES (1, 2, 'a%'), (2, 4, 'b%'), (3, NULL, '%'), (4, 8, 'z%'), (5, -2, '');
+
+{% for condition in [
+    'l.x < r.y',
+    'l.x BETWEEN r.y - 3 AND r.y + 3',
+    'l.x + l.id > r.y',
+    'sipHash64(l.x, r.y) % 4 = 0',
+    'l.s LIKE r.s',
+    'l.x + r.y < -1000000'
+] -%}
+
+SELECT '{{ condition }}';
+
+SET join_algorithm = 'partial_merge';
+SELECT 'inner routed', count() FROM (EXPLAIN SELECT count() FROM bnl_probe l JOIN bnl_build r ON {{ condition }})
+WHERE explain LIKE '%BlockNestedLoopJoin%';
+SELECT 'inner',
+    (SELECT arraySort(groupArray((l.id, r.id))) FROM bnl_probe l JOIN bnl_build r ON {{ condition }})
+  = (SELECT arraySort(groupArray((l.id, r.id))) FROM bnl_probe l CROSS JOIN bnl_build r WHERE {{ condition }}) AS ok;
+
+SET join_algorithm = 'direct,parallel_hash,hash';
+SELECT 'left routed', count() FROM (EXPLAIN SELECT count() FROM bnl_probe l LEFT JOIN bnl_build r ON {{ condition }})
+WHERE explain LIKE '%BlockNestedLoopJoin%';
+SELECT 'left',
+    (SELECT arraySort(groupArray((l.id, r.id))) FROM bnl_probe l LEFT JOIN bnl_build r ON {{ condition }})
+  = (WITH matched AS (SELECT l.id AS lid, r.id AS rid FROM bnl_probe l CROSS JOIN bnl_build r WHERE {{ condition }})
+     SELECT arraySort(groupArray((lid, rid))) FROM (
+        SELECT lid, rid FROM matched
+        UNION ALL
+        SELECT id AS lid, 0 AS rid FROM bnl_probe WHERE id NOT IN (SELECT lid FROM matched))) AS ok;
+
+{% endfor -%}
+
+-- A result that does not fit one block: the walk over the build side resumes across `work` calls,
+-- and the accumulated pairs of one call are emitted over several output chunks.
+SELECT 'chunked',
+    (SELECT sum(cityHash64(l.number, r.number)) FROM numbers(300) l LEFT JOIN numbers(70) r ON l.number < r.number
+     SETTINGS max_block_size = 13, max_joined_block_size_rows = 5, max_threads = 1)
+  = (SELECT sum(cityHash64(l.number, r.number)) FROM numbers(300) l LEFT JOIN numbers(70) r ON l.number < r.number
+     SETTINGS max_threads = 8) AS ok;
+SELECT 'chunked count', count() FROM numbers(300) l LEFT JOIN numbers(70) r ON l.number < r.number
+SETTINGS max_joined_block_size_rows = 5;
+
+DROP TABLE bnl_probe;
+DROP TABLE bnl_build;

@@ -9,6 +9,7 @@ INSERT INTO t1 SELECT number + 2 FROM numbers(10);
 
 SET enable_analyzer = 1;
 SET query_plan_convert_outer_join_to_inner_join = 1; -- CI may inject False; WHERE false on RIGHT JOIN not converted before ON expression validation → INVALID_JOIN_ON_EXPRESSION on first query which should succeed
+SET query_plan_join_swap_table = 'false'; -- CI may inject True; the swap turns the RIGHT join into a LEFT one, which the block nested loop join already implements
 
 SELECT * FROM t1
 RIGHT JOIN t0 AS t2

@@ -1,10 +1,13 @@
 one-sided	0
 one-sided result	1
+one-sided outer	4
 same-side	0
 same-side result	1
 non-comparison	0
 non-comparison result	1
 no-supertype	0
 no-supertype result	1
+no-supertype outer	3
 totals routed	1
 setting off	0
+setting off outer	3
