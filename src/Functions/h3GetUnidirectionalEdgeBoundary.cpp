@@ -25,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3GetUnidirectionalEdgeBoundary final : public IFunction
+class FunctionH3GetUnidirectionalEdgeBoundary : public IFunction
 {
 public:
     static constexpr auto name = "h3GetUnidirectionalEdgeBoundary";

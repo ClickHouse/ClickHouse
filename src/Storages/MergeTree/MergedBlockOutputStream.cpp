@@ -2,10 +2,8 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -42,8 +40,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     bool reset_columns_,
     bool blocks_are_granules_size,
     const WriteSettings & write_settings_,
-    WrittenOffsetSubstreams * written_offset_substreams,
-    bool try_adaptive_codec)
+    WrittenOffsetSubstreams * written_offset_substreams)
     : IMergedBlockOutputStream(
           std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
@@ -64,8 +61,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         /* rewrite_primary_key = */ true,
         save_marks_in_cache,
         save_primary_index_in_memory,
-        blocks_are_granules_size,
-        try_adaptive_codec);
+        blocks_are_granules_size);
 
     data_part_storage->createDirectories();
 
@@ -76,7 +72,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     writer = createMergeTreeDataPartWriter(data_part->getType(),
         data_part->name,
         data_part->storage.getLogName(),
-        data_part->getSerializations().toSerializationByName(),
+        data_part->getSerializations(),
         data_part_storage,
         data_part->index_granularity_info,
         storage_settings,
@@ -107,9 +103,9 @@ void MergedBlockOutputStream::cancel() noexcept
 /** If the data is not sorted, but we pre-calculated the permutation, after which they will be sorted.
     * This method is used to save RAM, since you do not need to keep two blocks at once - the source and the sorted.
     */
-void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation, Block * permuted_columns_cache)
+void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation)
 {
-    writeImpl(block, permutation, permuted_columns_cache);
+    writeImpl(block, permutation);
 }
 
 struct MergedBlockOutputStream::Finalizer::Impl
@@ -251,14 +247,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
 
-    /// Everything assigned onto the part below (checksums, index granularity, primary index, TTL infos,
-    /// column sizes) lives as long as the part and is freed by a background thread, so it must not be
-    /// charged to the query writing it; see `IMergeTreeDataPart::setColumns` for why that would drift
-    /// onto the per-user tracker permanently. Reset before the finalizer, which is the query's own work.
-    /// Deliberately starts after `finalizePartOnDisk` above: the blocker is thread-wide and the block
-    /// write must stay accounted.
-    MemoryTrackerBlockerInThread not_charged_to_the_query;
-
     {
         /// The checksums map lives on the part for its whole lifetime: copy it into the part under the
         /// dedicated arena directly, rather than assigning and re-homing with a second copy later.
@@ -312,8 +300,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         if (new_part->index_granularity)
             new_part->index_granularity = new_part->index_granularity->clone();
     }
-
-    not_charged_to_the_query.reset();
 
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
     finalizer->written_files = std::move(written_files);
@@ -376,13 +362,12 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
 
-            /// Every patch part must have `source_parts.dat` on disk: `loadSourcePartsSet`
-            /// throws `CORRUPTED_DATA` otherwise, including for empty covering parts.
-            if (new_part->info.isPatch())
+            const auto & source_parts = new_part->getSourcePartsSet();
+            if (!source_parts.empty())
             {
                 write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
                 {
-                    new_part->getSourcePartsSet().writeBinary(buffer);
+                    source_parts.writeBinary(buffer);
                 });
             }
         }
@@ -454,13 +439,10 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->setColumnsSubstreams(columns_substreams);
     }
 
-    if (!new_part->storage.storesMetadataVersionInPartAttributes())
+    write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
     {
-        write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
-        {
-            writeIntText(new_part->getMetadataVersion(), buffer);
-        });
-    }
+        writeIntText(new_part->getMetadataVersion(), buffer);
+    });
 
     if (default_codec != nullptr)
     {
@@ -482,14 +464,14 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     return written_files;
 }
 
-void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation, Block * permuted_columns_cache)
+void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
     block.checkNumberOfRows();
     size_t rows = block.rows();
     if (!rows)
         return;
 
-    writer->write(block, permutation, permuted_columns_cache);
+    writer->write(block, permutation);
     if (reset_columns)
         new_serialization_infos.add(block);
 

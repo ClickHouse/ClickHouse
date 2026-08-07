@@ -1,5 +1,4 @@
 #include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
@@ -98,7 +97,7 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
 /// subquery has only LEFT / RIGHT / ALL INNER JOIN (or none), and left / right part is MergeTree table or subquery candidate as well.
 ///
 /// Additional checks are required, so we return many candidates. The innermost subquery is on top.
-static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
+std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
     std::vector<const QueryNode *> res;
 
@@ -123,7 +122,7 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
             case QueryTreeNodeType::QUERY:
             {
                 const auto & query_node_to_process = query_tree_node->as<QueryNode &>();
-                query_tree_node = query_node_to_process.getJoinTreeNode().get();
+                query_tree_node = query_node_to_process.getJoinTree().get();
                 res.push_back(&query_node_to_process);
                 break;
             }
@@ -141,7 +140,7 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 const auto & array_join_node = query_tree_node->as<ArrayJoinNode &>();
-                query_tree_node = array_join_node.getTableExpressionNode().get();
+                query_tree_node = array_join_node.getTableExpression().get();
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
@@ -159,10 +158,10 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
                 std::unordered_set<QueryTreeNodeType> supported_table_expression_types = {QueryTreeNodeType::TABLE, QueryTreeNodeType::QUERY, QueryTreeNodeType::UNION};
 
                 if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
-                    query_tree_node = join_node.getLeftTableExpressionNode().get();
+                    query_tree_node = join_node.getLeftTableExpression().get();
                 else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny
-                    && supported_table_expression_types.contains(join_node.getLeftTableExpressionNode()->getNodeType()))
-                    query_tree_node = join_node.getLeftTableExpressionNode().get();
+                    && supported_table_expression_types.contains(join_node.getLeftTableExpression()->getNodeType()))
+                    query_tree_node = join_node.getRightTableExpression().get();
                 else
                     return {};
 
@@ -209,14 +208,14 @@ public:
                 dummy_table_node->getTableExpressionModifiers() = table_node->getTableExpressionModifiers();
 
             dummy_table_node->setAlias(node->getAlias());
-            replacement_map.emplace(static_cast<const ITableExpressionNode *>(node.get()), std::move(dummy_table_node));
+            replacement_map.emplace(node.get(), std::move(dummy_table_node));
         }
     }
 
-    IQueryTreeNode::ReplacementMap replacement_map;
+    std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> replacement_map;
 };
 
-static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const ContextPtr & context)
+QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, const ContextPtr & context)
 {
     ReplaceTableNodeToDummyVisitor visitor(context);
     visitor.visit(query);
@@ -238,7 +237,7 @@ static void dumpStack(const std::vector<const QueryNode *> & stack)
 /// Find the best candidate for parallel replicas execution by verifying query plan.
 /// If query plan has only Expression, Filter or Join steps, we can execute it fully remotely and check the next query.
 /// Otherwise we can execute current query up to WithMergableStage only.
-static const QueryNode * findQueryForParallelReplicas(
+const QueryNode * findQueryForParallelReplicas(
     std::vector<const QueryNode *> stack,
     const std::unordered_map<const QueryNode *, const QueryPlan::Node *> & mapping,
     const Settings & settings)
@@ -442,7 +441,7 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             case QueryTreeNodeType::QUERY:
             {
                 const auto & query_node_to_process = query_tree_node->as<QueryNode &>();
-                query_tree_node = query_node_to_process.getJoinTreeNode().get();
+                query_tree_node = query_node_to_process.getJoinTree().get();
                 break;
             }
             case QueryTreeNodeType::UNION:
@@ -459,7 +458,7 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             case QueryTreeNodeType::ARRAY_JOIN:
             {
                 const auto & array_join_node = query_tree_node->as<ArrayJoinNode &>();
-                query_tree_node = array_join_node.getTableExpressionNode().get();
+                query_tree_node = array_join_node.getTableExpression().get();
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
@@ -475,13 +474,13 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
 
                 if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                 {
-                    query_tree_node = join_node.getLeftTableExpressionNode().get();
-                    join_nodes.push(join_node.getRightTableExpressionNode().get());
+                    query_tree_node = join_node.getLeftTableExpression().get();
+                    join_nodes.push(join_node.getRightTableExpression().get());
                 }
                 else if (join_kind == JoinKind::Right)
                 {
-                    query_tree_node = join_node.getRightTableExpressionNode().get();
-                    join_nodes.push(join_node.getLeftTableExpressionNode().get());
+                    query_tree_node = join_node.getRightTableExpression().get();
+                    join_nodes.push(join_node.getLeftTableExpression().get());
                 }
                 else
                 {
@@ -535,7 +534,7 @@ static const UnionNode * findTableUnionForParallelReplicas(const IQueryTreeNode 
             case QueryTreeNodeType::QUERY:
             {
                 const auto & query_node = query_tree_node->as<QueryNode &>();
-                query_tree_node = query_node.getJoinTreeNode().get();
+                query_tree_node = query_node.getJoinTree().get();
                 break;
             }
             case QueryTreeNodeType::UNION:
@@ -607,7 +606,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     const PlannerContextPtr & planner_context,
     std::shared_ptr<const StorageLimitsList> storage_limits)
 {
-    const auto processed_stage = QueryProcessingStage::WithMergeableState;
+    auto processed_stage = QueryProcessingStage::WithMergeableState;
     auto context = planner_context->getQueryContext();
 
     QueryTreeNodePtr modified_query_tree = query_node.clone();
@@ -659,7 +658,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     step->setStepDescription("Convert distributed names");
     query_plan.addStep(std::move(step));
 
-    return {std::move(query_plan), processed_stage, {}, {}, {}};
+    return {std::move(query_plan), std::move(processed_stage), {}, {}, {}};
 }
 
 }

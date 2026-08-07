@@ -50,7 +50,7 @@ private:
     std::unique_ptr<ProtobufSerializer> serializer;
 };
 
-class ProtobufListSchemaReader final : public IExternalSchemaReader
+class ProtobufListSchemaReader : public IExternalSchemaReader
 {
 public:
     explicit ProtobufListSchemaReader(const FormatSettings & format_settings);

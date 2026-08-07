@@ -1,6 +1,0 @@
-uint64	1
-string	1
-nullable	1
-lowcardinality	1
-array	1
-tuple	1

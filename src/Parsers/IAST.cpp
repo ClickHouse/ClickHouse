@@ -1,12 +1,8 @@
 #include <Parsers/IAST.h>
 
-#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
-#include <Poco/JSON/Object.h>
-#include <Poco/JSON/Array.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
@@ -197,20 +193,6 @@ size_t IAST::checkDepthImpl(size_t max_depth) const
     return res;
 }
 
-/** `CLICKHOUSE_PARSER_NO_FORMATTING` builds a parser that cannot turn an AST back into SQL.
-  *
-  * Formatting is a fifth of the standalone parser, and nothing in it can be left out piecemeal: it
-  * is one virtual function reached from every AST node, so the linker keeps all 116 implementations
-  * as long as a single call goes through that slot. Cutting the calls here cuts all of it - the
-  * formatters themselves, the secret masking they run afterwards, and everything only they use.
-  *
-  * Parsing itself does reach the formatter in a normal build, in the handful of places that have to
-  * keep a fragment of the query as a string - see `astText`, which is where that switches over to
-  * the query text. Everything else that formats does so to describe an AST node in an error
-  * message, and gets a placeholder here: an exception thrown by a build that only parses is either
-  * a syntax error, which quotes the query text rather than the AST, or a logical error, which comes
-  * with a stack trace.
-  */
 String IAST::formatWithPossiblyHidingSensitiveData(
     size_t max_length,
     bool one_line,
@@ -219,10 +201,6 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     IdentifierQuotingRule identifier_quoting_rule,
     IdentifierQuotingStyle identifier_quoting_style) const
 {
-#if defined(CLICKHOUSE_PARSER_NO_FORMATTING)
-    UNUSED(max_length, one_line, show_secrets, print_pretty_type_names, identifier_quoting_rule, identifier_quoting_style);
-    return "<AST>";  /// Only ever reaches an error message - see above.
-#else
     WriteBufferFromOwnString buf;
     FormatSettings settings(one_line);
     settings.show_secrets = show_secrets;
@@ -231,18 +209,6 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     settings.identifier_quoting_style = identifier_quoting_style;
     format(buf, settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length, !show_secrets);
-#endif
-}
-
-String astText(const IAST & ast, std::string_view source_text)
-{
-#if defined(CLICKHOUSE_PARSER_NO_FORMATTING)
-    UNUSED(ast);
-    return String(source_text);
-#else
-    UNUSED(source_text);
-    return ast.formatWithSecretsOneLine();
-#endif
 }
 
 String IAST::formatForLogging(size_t max_length) const
@@ -405,40 +371,6 @@ std::string IAST::dumpTree(size_t indent) const
     return wb.str();
 }
 
-void IAST::writeJSON(WriteBuffer &) const
-{
-    /// Fail closed: an AST node without its own `writeJSON` override has no faithful JSON
-    /// representation. The default would emit `{"type": getID(), ...}` using `getID`, which
-    /// the deserialization factory does not recognize, so `parseQueryToJSON` would silently
-    /// produce a document that `formatQueryFromJSON` / the `clickhouse_json` dialect cannot
-    /// read back. Reject such queries here instead of emitting lossy JSON.
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "AST node of type '{}' does not support JSON serialization (this query is not supported by parseQueryToJSON)",
-        getID());
-}
-
-void IAST::readJSON(const Poco::JSON::Object & json)
-{
-    /// Default: read children from the "children" array.
-    if (json.has("children"))
-    {
-        auto arr = json.getArray("children");
-        if (!arr)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'children' is not a JSON array during AST JSON deserialization");
-        children.reserve(arr->size());
-        for (unsigned int i = 0; i < arr->size(); ++i)
-        {
-            auto child_obj = arr->getObject(i);
-            if (!child_obj)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Null element at index {} in 'children' array during AST JSON deserialization", i);
-            children.push_back(IAST::createFromJSON(*child_obj));
-        }
-    }
-
-    /// Aliases are read by ASTWithAlias subclasses via JSONObjectReader::readAlias
-    /// in their own readJSON overrides, so we don't handle them here.
-}
-
 /// Decide how to emit `parenthesized` parens. When the node has an alias and we are not in an
 /// operator-chain context (`frame.need_parens == false`), defer to `ASTWithAlias::formatImpl` so
 /// it can emit `(expr) AS alias` instead of `(expr AS alias)` — only the former re-formats to
@@ -493,49 +425,11 @@ static bool decideParensEmission(const IAST & node, IAST::FormatStateStacked & f
     if (const auto * subquery = dynamic_cast<const ASTSubquery *>(&node); subquery && subquery->alias.empty())
         return false;
 
-    /// In function-call form (`allow_operators = false`, set by `EXPLAIN SYNTAX`), an operator
-    /// AST is rendered as `funcname(arg1, arg2, ...)` — the function call's own `(...)` parens
-    /// already group the expression. Emitting the `parenthesized` flag's outer parens on top
-    /// produces redundant grouping like `(multiply(a, b))` at the top level of e.g. a `GROUP BY`
-    /// item or a subquery argument. This mirrors the per-argument suppression done inside
-    /// `ASTFunction::formatImplWithoutAlias` (where each function-call argument carries
-    /// `wrapped_in_parens = true`), extending it to the call sites where the `ASTFunction` is not
-    /// itself a function-call argument. The normal formatting path (`allow_operators = true`)
-    /// is unchanged so non-`EXPLAIN SYNTAX` callers still round-trip the user's parens.
-    if (!frame.allow_operators && dynamic_cast<const ASTFunction *>(&node))
-        return false;
-
     frame.need_parens = false;
     frame.current_function = nullptr;
     frame.list_element_index = 0;
     return true;
 }
-
-/// These four are the only calls through the `formatImpl` slot. See the comment on
-/// `formatWithPossiblyHidingSensitiveData` for why removing them removes the whole formatter.
-#if defined(CLICKHOUSE_PARSER_NO_FORMATTING)
-
-void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    UNUSED(ostr, settings);
-}
-
-void IAST::format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    UNUSED(ostr, settings, state, frame);
-}
-
-void IAST::format(FormattingBuffer out) const
-{
-    UNUSED(out);
-}
-
-void IAST::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
-{
-    UNUSED(ostr, settings, state, frame);
-}
-
-#else
 
 void IAST::format(WriteBuffer & ostr, const FormatSettings & settings) const
 {
@@ -575,8 +469,6 @@ void IAST::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Forma
 {
     formatImpl(FormattingBuffer{ostr, settings, state, std::move(frame)});
 }
-
-#endif
 
 void IAST::formatImpl(FormattingBuffer /*out*/) const
 {

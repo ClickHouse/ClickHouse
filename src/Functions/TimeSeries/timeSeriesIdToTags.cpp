@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesIdToTags(id) returns Array(Tuple(String, String)) containing the names and values of tags associated with
 /// a specified identifier `id`.
-class FunctionTimeSeriesIdToTags final : public IFunction
+class FunctionTimeSeriesIdToTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesIdToTags";
@@ -59,9 +59,22 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto tags = tags_collector->getTagsByID(arguments[0].column);
+        const auto & id_type = TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
+        if (id_type == typeid(UInt64))
+            return executeForIDType<UInt64>(arguments, result_type, input_rows_count);
+        if (id_type == typeid(UInt128))
+            return executeForIDType<UInt128>(arguments, result_type, input_rows_count);
+        UNREACHABLE();
+    }
+
+    template <typename IDType>
+    ColumnPtr executeForIDType(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const
+    {
+        auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<IDType>(name, arguments, 0);
+
+        auto tags = tags_collector->getTagsByID(ids);
         chassert(tags.size() == input_rows_count);
 
         return TimeSeriesTagsFunctionHelpers::makeColumnForTagNamesAndValues(tags);
@@ -80,7 +93,7 @@ See also function [timeSeriesStoreTags()](/sql-reference/functions/time-series-f
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesIdToTags(id)";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).", {"Any"}}
+        {"id", "Identifier of a time series.", {"UInt64", "UInt128", "UUID", "FixedString(16)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         R"(

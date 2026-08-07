@@ -1,7 +1,5 @@
 #include <Analyzer/TableFunctionNode.h>
 
-#include <Analyzer/Identifier.h>
-
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
@@ -10,7 +8,6 @@
 #include <IO/Operators.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/StorageView.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -26,33 +23,20 @@ namespace ErrorCodes
 }
 
 TableFunctionNode::TableFunctionNode(String table_function_name_)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , table_function_name(table_function_name_)
     , storage_id("system", "one")
 {
     children[arguments_child_index] = std::make_shared<ListNode>();
 }
 
-void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, VectorWithMemoryTracking<size_t> unresolved_arguments_indexes_)
+void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, std::vector<size_t> unresolved_arguments_indexes_)
 {
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
+    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(context, false), context);
     unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
-
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-    storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
-
-    if (table_expression_modifiers)
-        storage_snapshot = storage_snapshot->clone(extendMetadataWithModifiers(storage_snapshot->metadata, *table_expression_modifiers), storage_snapshot->data);
-}
-
-void TableFunctionNode::setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-{
-    table_expression_modifiers = std::move(table_expression_modifiers_value);
-
-    if (storage_snapshot)
-        storage_snapshot = storage_snapshot->clone(extendMetadataWithModifiers(storage_snapshot->metadata, *table_expression_modifiers), storage_snapshot->data);
 }
 
 const StorageID & TableFunctionNode::getStorageID() const
@@ -136,7 +120,6 @@ void TableFunctionNode::updateTreeHashImpl(HashState & state, CompareOptions) co
     {
         state.update(change.name.size());
         state.update(change.name);
-        state.update(change.shorthand);
 
         const auto & value_dump = change.value.dump();
         state.update(value_dump.size());
@@ -163,18 +146,6 @@ ASTPtr TableFunctionNode::toASTImpl(const ConvertToASTOptions & options) const
     auto table_function_ast = make_intrusive<ASTFunction>();
 
     table_function_ast->name = table_function_name;
-
-    /// An unqualified parameterized-view name re-resolves against the receiving server's default
-    /// database, so qualify it from `storage_id`. Only a 2-part result is resolvable as a
-    /// parameterized view, so a dotted database name is left alone.
-    if (const auto * storage_view = storage ? storage->as<StorageView>() : nullptr;
-        storage_view && storage_view->isParameterizedView() && storage_id.hasDatabase()
-        && Identifier{table_function_name}.getPartsSize() == 1)
-    {
-        const auto database_name = storage_id.getDatabaseName();
-        if (Identifier{database_name}.getPartsSize() == 1)
-            table_function_ast->name = database_name + "." + storage_id.getTableName();
-    }
 
     const auto & arguments = getArguments();
     table_function_ast->children.push_back(arguments.toAST(options));

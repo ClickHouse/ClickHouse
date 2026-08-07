@@ -27,10 +27,7 @@ public:
         const String & name_,
         const MergeTreePartInfo & info_,
         const MutableDataPartStoragePtr & data_part_storage_,
-        const IMergeTreeDataPart * parent_part_ = nullptr,
-        bool part_may_exist_on_disk = true);
-
-    Strings getPreferredFileOrder() const override;
+        const IMergeTreeDataPart * parent_part_ = nullptr);
 
     bool isStoredOnReadonlyDisk() const override;
 

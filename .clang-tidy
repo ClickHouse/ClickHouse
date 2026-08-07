@@ -23,11 +23,9 @@ Checks: [
 
   '-bugprone-assignment-in-if-condition',
   '-bugprone-branch-clone',
-  '-bugprone-derived-method-shadowing-base-method',
   '-bugprone-easily-swappable-parameters',
   '-bugprone-exception-escape',
   '-bugprone-implicit-widening-of-multiplication-result',
-  '-bugprone-invalid-enum-default-initialization',
   '-bugprone-multi-level-implicit-pointer-conversion',
   '-bugprone-narrowing-conversions',
   '-bugprone-unchecked-optional-access',
@@ -36,7 +34,6 @@ Checks: [
   '-bugprone-forward-declaration-namespace',
   '-bugprone-nondeterministic-pointer-iteration-order',
   '-bugprone-sizeof-expression', # too aggressive
-  '-bugprone-throwing-static-initialization',
 
   '-cert-dcl16-c',
   '-cert-arr39-c', # alias of bugprone-sizeof-expression
@@ -44,63 +41,14 @@ Checks: [
 
   '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
 
-  '-clang-analyzer-core.NullPointerArithm',
-
   '-clang-analyzer-optin.performance.Padding',
 
   '-clang-analyzer-security.ArrayBound', # only false positives
 
-  '-clang-analyzer-cplusplus.NewDelete', # false positive on boost::split/is_any_of, reported inside the header so NOLINT at the call site cannot suppress it
   '-clang-analyzer-cplusplus.NewDeleteLeaks', # false positives, slow
   '-clang-analyzer-unix.Malloc', # fixme, false positive in contrib somehow
 
-  # cppcoreguidelines-* checks are mostly impractical in a codebase as large as ClickHouse, also slow.
-  # Listed explicitly (instead of wildcard '-cppcoreguidelines-*') so newly added checks in future
-  # clang-tidy versions are not silently suppressed; only `init-variables` and `pro-type-member-init`
-  # are enabled.
-  '-cppcoreguidelines-avoid-capturing-lambda-coroutines',
-  '-cppcoreguidelines-avoid-const-or-ref-data-members',
-  '-cppcoreguidelines-avoid-do-while',
-  '-cppcoreguidelines-avoid-goto',
-  '-cppcoreguidelines-avoid-non-const-global-variables',
-  '-cppcoreguidelines-avoid-reference-coroutine-parameters',
-  '-cppcoreguidelines-interfaces-global-init',
-  '-cppcoreguidelines-macro-usage',
-  '-cppcoreguidelines-misleading-capture-default-by-value',
-  '-cppcoreguidelines-missing-std-forward',
-  '-cppcoreguidelines-no-malloc',
-  '-cppcoreguidelines-no-suspend-with-lock',
-  '-cppcoreguidelines-owning-memory',
-  '-cppcoreguidelines-prefer-member-initializer',
-  '-cppcoreguidelines-pro-bounds-array-to-pointer-decay',
-  '-cppcoreguidelines-pro-bounds-avoid-unchecked-container-access',
-  '-cppcoreguidelines-pro-bounds-constant-array-index',
-  '-cppcoreguidelines-pro-bounds-pointer-arithmetic',
-  '-cppcoreguidelines-pro-type-const-cast',
-  '-cppcoreguidelines-pro-type-cstyle-cast',
-  '-cppcoreguidelines-pro-type-reinterpret-cast',
-  '-cppcoreguidelines-pro-type-static-cast-downcast',
-  '-cppcoreguidelines-pro-type-union-access',
-  '-cppcoreguidelines-pro-type-vararg',
-  '-cppcoreguidelines-rvalue-reference-param-not-moved',
-  '-cppcoreguidelines-slicing',
-  '-cppcoreguidelines-special-member-functions',
-  '-cppcoreguidelines-use-enum-class',
-  '-cppcoreguidelines-virtual-class-destructor',
-  # Aliases for checks owned by other modules. Disabled here so they are not silently re-enabled
-  # now that the wildcard `-cppcoreguidelines-*` is gone; their canonical names are handled
-  # elsewhere in this file.
-  '-cppcoreguidelines-avoid-c-arrays',                          # alias of `modernize-avoid-c-arrays`
-  '-cppcoreguidelines-avoid-magic-numbers',                     # alias of `readability-magic-numbers`
-  '-cppcoreguidelines-c-copy-assignment-signature',             # alias of `misc-unconventional-assign-operator`
-  '-cppcoreguidelines-explicit-virtual-functions',              # alias of `modernize-use-override`
-  '-cppcoreguidelines-macro-to-enum',                           # alias of `modernize-macro-to-enum`
-  '-cppcoreguidelines-narrowing-conversions',                   # alias of `bugprone-narrowing-conversions`
-  '-cppcoreguidelines-noexcept-destructor',                     # alias of `performance-noexcept-destructor`
-  '-cppcoreguidelines-noexcept-move-operations',                # alias of `performance-noexcept-move-constructor`
-  '-cppcoreguidelines-noexcept-swap',                           # alias of `performance-noexcept-swap`
-  '-cppcoreguidelines-non-private-member-variables-in-classes', # alias of `misc-non-private-member-variables-in-classes`
-  '-cppcoreguidelines-use-default-member-init',                 # alias of `modernize-use-default-member-init`
+  '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
 
   '-darwin-*',
 
@@ -118,7 +66,7 @@ Checks: [
   '-hicpp-braces-around-statements',
   '-hicpp-explicit-conversions',
   '-hicpp-function-size',
-  # '-hicpp-member-init', # alias of cppcoreguidelines-pro-type-member-init, enabled
+  '-hicpp-member-init',
   '-hicpp-move-const-arg',
   '-hicpp-multiway-paths-covered',
   '-hicpp-named-parameter',
@@ -139,14 +87,11 @@ Checks: [
   '-misc-const-correctness',
   '-misc-include-cleaner', # useful but far too many occurrences
   '-misc-no-recursion',
-  '-misc-multiple-inheritance',
   '-misc-non-private-member-variables-in-classes',
-  '-misc-override-with-different-visibility',
   '-misc-use-anonymous-namespace',
   '-misc-use-internal-linkage',
 
   '-modernize-avoid-c-arrays',
-  '-modernize-avoid-c-style-cast',
   '-modernize-concat-nested-namespaces',
   '-modernize-pass-by-value',
   '-modernize-return-braced-init-list',
@@ -179,14 +124,11 @@ Checks: [
   '-readability-function-cognitive-complexity',
   '-readability-function-size',
   '-readability-identifier-length',
-  '-readability-inconsistent-declaration-parameter-name',
   '-readability-identifier-naming', # useful but too slow
   '-readability-implicit-bool-conversion',
-  '-readability-inconsistent-ifelse-braces',
   '-readability-magic-numbers',
   '-readability-named-parameter',
   '-readability-redundant-declaration',
-  '-readability-redundant-typename',
   '-readability-redundant-inline-specifier', # useful but incompatible with __attribute((always_inline))__ (aka. ALWAYS_INLINE, base/base/defines.h).
         # ALWAYS_INLINE only has an effect if combined with `inline`: https://godbolt.org/z/Eefd74qdM
   '-readability-redundant-member-init', # Useful but triggers another problem. Imagine a struct S with multiple String members. Structs are often instantiated via designated

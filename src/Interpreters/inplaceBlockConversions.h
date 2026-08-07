@@ -45,7 +45,6 @@ void fillMissingColumns(
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
     StorageSnapshotPtr storage_snapshot,
-    bool share_nested_offsets = true,
-    const NameSet & additional_available_columns = {});
+    bool share_nested_offsets = true);
 
 }

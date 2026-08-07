@@ -214,7 +214,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).mergeWith(data(rhs));
     }
@@ -452,7 +452,7 @@ public:
         this->data(place).update(*columns[0], *columns[1], row_num);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).mergeWith(this->data(rhs));
     }
@@ -507,7 +507,6 @@ AggregateFunctionPtr createAggregateFunctionStatisticsBinary(
 
 }
 
-void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory & factory)
 {
     /// varSampStable documentation
@@ -624,7 +623,7 @@ FROM test_data;
     });
 
     FunctionDocumentation::Description description_stddevSampStable = R"(
-The result is equal to the square root of [varSamp](/reference/functions/aggregate-functions/varSamp). Unlike [stddevSamp](/reference/functions/aggregate-functions/stddevSamp) this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
+The result is equal to the square root of [varSamp](../../../sql-reference/aggregate-functions/reference/varSamp.md). Unlike [stddevSamp](../reference/stddevSamp.md) this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax syntax_stddevSampStable = R"(
 stddevSampStable(x)
@@ -670,7 +669,7 @@ FROM test_data;
     }, documentation_stddevSampStable});
 
     FunctionDocumentation::Description description_stddevPopStable = R"(
-The result is equal to the square root of [varPop](/reference/functions/aggregate-functions/varPop). Unlike [stddevPop](/reference/functions/aggregate-functions/stddevPop), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
+The result is equal to the square root of [varPop](../../../sql-reference/aggregate-functions/reference/varPop.md). Unlike [stddevPop](../reference/stddevPop.md), this function uses a numerically stable algorithm. It works slower but provides a lower computational error.
     )";
     FunctionDocumentation::Syntax syntax_stddevPopStable = R"(
 stddevPopStable(x)
@@ -849,7 +848,7 @@ $$
 
 <br/>
 
-Similar to the [`corr`](/reference/functions/aggregate-functions/corr) function, but uses a numerically stable algorithm.
+Similar to the [`corr`](../reference/corr.md) function, but uses a numerically stable algorithm.
 As a result, `corrStable` is slower than `corr` but produces a more accurate result.
     )";
     FunctionDocumentation::Syntax corrStable_syntax = "corrStable(x, y)";
