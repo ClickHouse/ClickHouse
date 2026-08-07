@@ -225,6 +225,115 @@ SELECT j.a FROM t_json_key_safety; -- { serverError CANNOT_PARSE_TEXT }
 DROP TABLE t_json_key_safety;
 
 -- ============================================================
+-- REJECT: subcolumn feeds a rows TTL (DELETE) expression; ttl_infos would go stale.
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(ts UInt32)) ENGINE = MergeTree ORDER BY id
+TTL toDateTime(j.ts) + INTERVAL 1 DAY DELETE;
+SELECT 'rows TTL on subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(ts Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
+-- REJECT: subcolumn only in the WHERE of a rows TTL (the TTL time expression is on a plain column).
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, d DateTime, j JSON(ts UInt32)) ENGINE = MergeTree ORDER BY id
+TTL d + INTERVAL 1 DAY DELETE WHERE j.ts > 0;
+SELECT 'rows TTL WHERE on subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(ts Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
+-- REJECT: subcolumn feeds a column TTL expression.
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, x UInt32 TTL toDateTime(j.ts) + INTERVAL 1 DAY, j JSON(ts UInt32))
+ENGINE = MergeTree ORDER BY id;
+SELECT 'column TTL on subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(ts Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
+-- REJECT: subcolumn feeds a GROUP BY TTL expression.
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, v UInt32, j JSON(ts UInt32)) ENGINE = MergeTree ORDER BY id
+TTL toDateTime(j.ts) + INTERVAL 1 DAY GROUP BY id SET v = max(v);
+SELECT 'GROUP BY TTL on subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(ts Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
+-- REJECT: subcolumn feeds a RECOMPRESS TTL expression.
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(ts UInt32)) ENGINE = MergeTree ORDER BY id
+TTL toDateTime(j.ts) + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(1));
+SELECT 'RECOMPRESS TTL on subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(ts Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
+-- ALLOW: a guarded structure reads one subcolumn; changing a *different* existing
+-- subcolumn's type leaves it intact, so the change must stay metadata-only.
+-- ============================================================
+
+-- ORDER BY reads j.a; change sibling j.b.
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32, b Int32)) ENGINE = MergeTree ORDER BY (j.a, id);
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number, 'b', number)) FROM numbers(4);
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int32, b Int64);
+SELECT 'ORDER BY sibling change -> metadata-only mutations:',
+    count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_json_key_safety';
+DETACH TABLE t_json_key_safety;
+ATTACH TABLE t_json_key_safety;
+SELECT 'ORDER BY sibling change, read after reload:', id, j.a, j.b FROM t_json_key_safety ORDER BY id;
+DROP TABLE t_json_key_safety;
+
+-- PARTITION BY reads j.a; change sibling j.b.
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32, b Int32)) ENGINE = MergeTree PARTITION BY j.a ORDER BY id;
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number % 3, 'b', number)) FROM numbers(9);
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int32, b Int64);
+SELECT 'PARTITION BY sibling change -> metadata-only mutations:',
+    count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_json_key_safety';
+DETACH TABLE t_json_key_safety;
+ATTACH TABLE t_json_key_safety;
+SELECT 'PARTITION BY sibling change, count j.b >= 4 after reload (expect 5):',
+    count() FROM t_json_key_safety WHERE j.b >= 4;
+DROP TABLE t_json_key_safety;
+
+-- Skip index reads j.a; change sibling j.b.
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32, b Int32), INDEX idx j.a TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number, 'b', number)) FROM numbers(4);
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int32, b Int64);
+SELECT 'skip index sibling change -> metadata-only mutations:',
+    count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_json_key_safety';
+DETACH TABLE t_json_key_safety;
+ATTACH TABLE t_json_key_safety;
+SELECT 'skip index sibling change, read after reload:', id, j.a, j.b FROM t_json_key_safety ORDER BY id;
+DROP TABLE t_json_key_safety;
+
+-- MATERIALIZED column reads j.a; change sibling j.b.
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(a Int32, b Int32), k String MATERIALIZED reinterpretAsString(j.a))
+ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('a', number, 'b', number)) FROM numbers(4);
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int32, b Int64);
+SELECT 'MATERIALIZED sibling change -> metadata-only mutations:',
+    count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_json_key_safety';
+DETACH TABLE t_json_key_safety;
+ATTACH TABLE t_json_key_safety;
+SELECT 'MATERIALIZED sibling change, read after reload:', id, j.a, j.b FROM t_json_key_safety ORDER BY id;
+DROP TABLE t_json_key_safety;
+
+-- TTL reads j.ts; change sibling j.a. j.ts is far in the future so no row expires.
+CREATE TABLE t_json_key_safety (id UInt32, j JSON(ts UInt32, a Int32)) ENGINE = MergeTree ORDER BY id
+TTL toDateTime(j.ts) + INTERVAL 1 DAY DELETE;
+INSERT INTO t_json_key_safety SELECT number, toJSONString(map('ts', 4000000000, 'a', number)) FROM numbers(4);
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(ts UInt32, a Int64);
+SELECT 'TTL sibling change -> metadata-only mutations:',
+    count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_json_key_safety';
+DETACH TABLE t_json_key_safety;
+ATTACH TABLE t_json_key_safety;
+SELECT 'TTL sibling change, read after reload:', id, j.a FROM t_json_key_safety ORDER BY id;
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
 -- Setting off: the same change on a key subcolumn goes through a full mutation
 -- (existing non-lazy behavior), which forbids altering a key subcolumn.
 -- ============================================================

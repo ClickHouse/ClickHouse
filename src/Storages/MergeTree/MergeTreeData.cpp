@@ -5660,6 +5660,43 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     backQuoteIfNeed(command.column_name),
                     projection.name);
             }
+
+            /// TTL expressions persist `ttl_infos`, rebuilt only by a mutation. Reject when the changed
+            /// subcolumn feeds any TTL expression or its WHERE (GROUP BY keys are a sorting-key prefix,
+            /// already covered above).
+            auto ttl_offending_expr = [&](const TTLDescription & ttl) -> ASTPtr
+            {
+                if (names_use_changed_subcolumn(expressionSourceColumns(ttl.expression_ast, old_columns_desc, local_context)))
+                    return ttl.expression_ast;
+                if (names_use_changed_subcolumn(expressionSourceColumns(ttl.where_expression_ast, old_columns_desc, local_context)))
+                    return ttl.where_expression_ast;
+                return nullptr;
+            };
+
+            TTLDescriptions all_ttls = old_metadata.getRowsWhereTTLs();
+            for (const auto & ttl : old_metadata.getGroupByTTLs())
+                all_ttls.push_back(ttl);
+            for (const auto & ttl : old_metadata.getMoveTTLs())
+                all_ttls.push_back(ttl);
+            for (const auto & ttl : old_metadata.getRecompressionTTLs())
+                all_ttls.push_back(ttl);
+            if (old_metadata.hasRowsTTL())
+                all_ttls.push_back(old_metadata.getRowsTTL());
+            for (const auto & [column_name, ttl] : old_metadata.getColumnTTLs())
+                all_ttls.push_back(ttl);
+
+            for (const auto & ttl : all_ttls)
+            {
+                auto offending_expr = ttl_offending_expr(ttl);
+                if (!offending_expr)
+                    continue;
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "ALTER of column {} changes the on-disk type of a subcolumn used by the TTL expression ({}); "
+                    "a metadata-only ALTER cannot recompute the TTL. Disable setting "
+                    "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation, or drop the TTL",
+                    backQuoteIfNeed(command.column_name), offending_expr->formatForErrorMessage());
+            }
         }
     }
 
