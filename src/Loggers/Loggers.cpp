@@ -447,18 +447,6 @@ DB::AsyncLogQueueSizes Loggers::getAsynchronousMetricsFromAsyncLogs()
     return {};
 }
 
-void Loggers::stopAsyncLoggingThreads()
-{
-    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
-        async->close();
-}
-
-void Loggers::startAsyncLoggingThreads()
-{
-    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
-        async->open();
-}
-
 void Loggers::stopLogging()
 {
     if (split)

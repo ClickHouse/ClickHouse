@@ -1,5 +1,9 @@
--- Tags: no-parallel, no-parallel-replicas
+-- Tags: long, no-parallel, no-parallel-replicas
 -- Tag no-parallel: Messes with internal cache
+-- Tag long: does a ~100k-row insert and several full-part TopK scans; on the slower
+--   S3 + sanitizer configuration this is heavy enough that, run repeatedly by the
+--   flaky check, it can approach the "test runs too long" threshold. The tag exempts
+--   it, matching the sibling `04217_query_condition_cache_topk` family.
 --
 -- Correctness regression for the Query Condition Cache (QCC) on the
 -- `ORDER BY <column> LIMIT n` (TopK) plan. The companion test
@@ -15,6 +19,8 @@
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
+-- The query condition cache for TopK (`ORDER BY ... LIMIT n`) reads is off by default; enable it for this test.
+SET use_query_condition_cache_for_top_k = 1;
 SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
@@ -53,7 +59,8 @@ DROP TABLE IF EXISTS tab;
 -- drops individual rows (those with `k` beyond the running threshold) inside every
 -- granule it reads. `w` matches every 1000th row, so most granules have no `w = 7`
 -- row left after `__topKFilter`, and the `WHERE` filter records them as skippable
--- in the QCC. 1 million rows: the QCC doesn't cache anything for less data than that.
+-- in the QCC. 100k rows over 64-row granules (≈1.5k granules) is enough for the
+-- single-threaded read to record and reuse a meaningful set of skippable granules.
 CREATE TABLE tab (id UInt32, k UInt32, w UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 64,
          min_bytes_for_wide_part = 0,
@@ -65,9 +72,9 @@ SETTINGS index_granularity = 64,
 -- threshold it sees, so granule-skip decisions (and the QCC population) would not
 -- be deterministic. Pin a single writer and squash the whole input into one block
 -- so the insert produces exactly one part. This also avoids an `OPTIMIZE ... FINAL`
--- merge of a 1M-row part with `index_granularity = 64` (≈15k marks), which is the
--- expensive step that timed out under the debug/sanitizer flaky check.
-INSERT INTO tab SELECT rand(), number, number % 1000 FROM numbers(1_000_000)
+-- merge of the part, which is the expensive step that timed out under the
+-- debug/sanitizer flaky check.
+INSERT INTO tab SELECT rand(), number, number % 1000 FROM numbers(100_000)
 SETTINGS max_insert_threads = 1, max_insert_block_size = 2_000_000, min_insert_block_size_rows = 2_000_000;
 
 SYSTEM CLEAR QUERY CONDITION CACHE;

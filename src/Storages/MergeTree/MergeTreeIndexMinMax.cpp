@@ -326,6 +326,21 @@ MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IMergeTre
     return {0 /* unknown */, {}};
 }
 
+MergeTreeIndexSubstreams MergeTreeIndexMinMax::getAllSubstreamsInPart(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
+{
+    /// minmax format changed `.idx` (v1) -> `.idx2` (v2); a part may carry both. Return every
+    /// extension present, not just the preferred one, so cleanup does not miss the stale file.
+    MergeTreeIndexSubstreams substreams;
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
+        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx2"});
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
+        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx"});
+    return substreams;
+}
+
 MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
                                                                    size_t index_granularity_, int direction_, size_t size_hint_, size_t last_part_granule_, bool store_map_) :
     index_name(index_name_)
