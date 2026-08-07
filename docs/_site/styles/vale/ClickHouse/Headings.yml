@@ -593,11 +593,9 @@ exceptions:
   - BackgroundMovePoolTask
   - BackgroundSchedulePoolSize
   - BackgroundSchedulePoolTask
-  - CacheDetachedFileSegments
   - CacheDictionaryThreads
   - CacheDictionaryThreadsActive
   - CacheDictionaryUpdateQueueBatches
-  - CacheFileSegments
   - ContextLockWait
   - DatabaseCatalogThreads
   - DatabaseCatalogThreadsActive
@@ -611,7 +609,9 @@ exceptions:
   - DiskSpaceReservedForMerge
   - DistributedSend
   - EphemeralNode
+  - FilesystemCacheDetachedFileSegments
   - FilesystemCacheElements
+  - FilesystemCacheFileSegments
   - FilesystemCacheReadBuffers
   - FilesystemCacheSize
   - QueryCacheBytes

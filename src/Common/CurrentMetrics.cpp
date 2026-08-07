@@ -332,8 +332,8 @@
     M(KafkaWrites, "Number of currently running inserts to Kafka") \
     M(KafkaAssignedPartitions, "Number of partitions Kafka tables currently assigned to") \
     M(FilesystemCacheReadBuffers, "Number of active cache buffers") \
-    M(CacheFileSegments, "Number of existing cache file segments") \
-    M(CacheDetachedFileSegments, "Number of existing detached cache file segments") \
+    M(FilesystemCacheFileSegments, "Number of existing cache file segments") \
+    M(FilesystemCacheDetachedFileSegments, "Number of existing detached cache file segments") \
     M(FilesystemCacheSize, "Filesystem cache size in bytes") \
     M(FilesystemCacheSizeLimit, "Filesystem cache size limit in bytes") \
     M(FilesystemCacheElements, "Filesystem cache elements (file segments)") \
@@ -453,7 +453,7 @@
     M(SharedMergeTreeMinReplicas, "The minimum number of replicas registered in Keeper across all tables. Note it might not be a sum of SharedMergeTreeMinActiveReplicas and SharedMergeTreeMinInactiveReplicas") \
     M(SharedMergeTreeMinPartitions, "The minimum number of partitions registered in Keeper across all SharedMergeTree tables") \
     M(SharedMergeTreeMaxPartitions, "The maximum number of partitions registered in Keeper across all SharedMergeTree tables") \
-    M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
+    M(FilesystemCacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
     M(DistrCacheSharedLimitCount, "Number of opened connections according to DistributedCache::ConnectionPool::SharedLimit") \
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
