@@ -40,7 +40,7 @@ CLICKHOUSE_CI_LOGS_USER = "ci"
 
 
 class ClickHouseProc:
-    MINIO_LOG = f"{temp_dir}/minio.log"
+    RUSTFS_LOG = f"{temp_dir}/rustfs.log"
     AZURITE_LOG = f"{temp_dir}/azurite.log"
     KAFKA_LOG = f"{temp_dir}/kafka.log"
     LOGS_SAVER_CLIENT_OPTIONS = "--max_memory_usage 10G --max_threads 1 --max_rows_to_read=0 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0 --max_execution_time 0 --max_execution_time_leaf 0 --max_estimated_execution_time 0"
@@ -111,7 +111,7 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         int(Utils.cpu_count() / 2)
-        self.minio_proc = None
+        self.rustfs_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
         # The failing sub-command + its ClickHouse error tail from
@@ -157,37 +157,36 @@ class ClickHouseProc:
 </clickhouse>
 """)
 
-    def start_minio(self, test_type):
+    def start_rustfs(self, test_type):
         os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
         command = [
-            "./ci/jobs/scripts/functional_tests/setup_minio.sh",
+            "./ci/jobs/scripts/functional_tests/setup_rustfs.sh",
             test_type,
             "./tests",
         ]
-        with open(self.MINIO_LOG, "w") as log_file:
-            self.minio_proc = subprocess.Popen(
+        with open(self.RUSTFS_LOG, "w") as log_file:
+            self.rustfs_proc = subprocess.Popen(
                 command, stdout=log_file, stderr=subprocess.STDOUT
             )
-        print(f"Started setup_minio.sh asynchronously with PID {self.minio_proc.pid}")
+        print(f"Started setup_rustfs.sh asynchronously with PID {self.rustfs_proc.pid}")
 
-        # Wait for setup_minio.sh to fully exit, not just for the bucket to be
+        # Wait for setup_rustfs.sh to fully exit, not just for the bucket to be
         # listable: the server's S3 disks authenticate at startup and need the
-        # whole user/policy/ACL setup in place. The minio server is nohup'd and
+        # whole user/policy/ACL setup in place. The rustfs server is nohup'd and
         # outlives the script, so waiting on the script is safe. Its internal
         # waits are bounded (wait_for_it caps at 60s), so pad the timeout.
         try:
-            returncode = self.minio_proc.wait(timeout=120)
+            returncode = self.rustfs_proc.wait(timeout=120)
         except subprocess.TimeoutExpired:
-            print("Failed to start minio: setup_minio.sh did not finish in time")
-            self.minio_proc.kill()
+            print("Failed to start rustfs: setup_rustfs.sh did not finish in time")
+            self.rustfs_proc.kill()
             return False
         if returncode != 0:
-            print(f"setup_minio.sh exited with code {returncode}")
+            print(f"setup_rustfs.sh exited with code {returncode}")
             return False
 
-        # wait_for_it can exit 0 even if minio is down, so confirm the bucket.
-        if not Shell.check("/mc ls clickminio/test", verbose=False, retries=3):
-            print("Failed to start minio: bucket clickminio/test not reachable")
+        if not Shell.check("/mc ls clickrustfs/test", verbose=False, retries=3):
+            print("Failed to start rustfs: bucket clickrustfs/test not reachable")
             return False
         return True
 
@@ -749,10 +748,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         """Gracefully stop only the ClickHouse server processes.
 
         Unlike `terminate`, this leaves the auxiliary services (Redpanda/Kafka,
-        MinIO) running. It is used between bugfix-validation iterations so the
+        RustFS) running. It is used between bugfix-validation iterations so the
         server binary can be swapped and restarted without tearing down the
         rest of the test environment: otherwise a changed test relying on
-        Kafka or MinIO would pass under the first build type and spuriously
+        Kafka or RustFS would pass under the first build type and spuriously
         "reproduce" a bug under the next one.
         """
         print("Stop ClickHouse processes")
@@ -818,8 +817,8 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 res += self._collect_core_dumps()
                 res += self._collect_diagnostic_reports()
                 res += self._get_logs_archive_coordination()
-                if Path(self.MINIO_LOG).exists():
-                    res.append(self.MINIO_LOG)
+                if Path(self.RUSTFS_LOG).exists():
+                    res.append(self.RUSTFS_LOG)
                 if Path(self.AZURITE_LOG).exists():
                     res.append(self.AZURITE_LOG)
                 if Path(self.KAFKA_LOG).exists():
@@ -1425,10 +1424,10 @@ if __name__ == "__main__":
                 res = ch.stop_log_exports()
             else:
                 res = True
-        elif command == "start_minio":
+        elif command == "start_rustfs":
             param = sys.argv[2]
             assert param in ["stateless"]
-            res = ch.start_minio(param)
+            res = ch.start_rustfs(param)
         elif command == "start_azurite":
             res = ch.start_azurite()
         else:

@@ -47,10 +47,10 @@ export ZOOKEEPER_FAULT_INJECTION=1
 # available for dump via clickhouse-local
 configure
 
-# run before start_minio to have valid aws creds
+# run before start_rustfs to have valid aws creds
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py logs_export_config || echo "ERROR: Failed to create log export config"
 
-cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_minio stateless || { echo "Failed to start minio"; exit 1; }
+cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_rustfs stateless || { echo "Failed to start rustfs"; exit 1; }
 cd /repo && python3 /repo/ci/jobs/scripts/clickhouse_proc.py start_azurite || { echo "Failed to start azurite"; exit 1; }
 
 # Start Redpanda (Kafka-compatible broker) so that Kafka engine tests work and

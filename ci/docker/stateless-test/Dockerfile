@@ -81,37 +81,44 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
 
 ENV NUM_TRIES=1
 
-# Unrelated to vars in setup_minio.sh, but should be the same there
+# Keep RUSTFS_VERSION / MC_VERSION in sync with the defaults in setup_rustfs.sh
 # to have the same binaries for local running scenario
-ARG MINIO_SERVER_VERSION=2025-06-13T11-33-47Z
-ARG MINIO_CLIENT_VERSION=2025-05-21T01-59-54Z
+ARG RUSTFS_VERSION=1.0.0-beta.12
+ARG MC_VERSION=2025-05-21T01-59-54Z
 ARG TARGETARCH
 
-# Download Minio-related binaries.
+# Download RustFS (the S3 server for stateless tests) and mc (still used to
+# provision users/policies/buckets - RustFS implements the MinIO admin API).
+# The musl build of RustFS is static-pie, so it runs on this image regardless
+# of its glibc version.
 # dl.min.io throttles under concurrent multi-arch image builds, so fetch with
 # --fail (never write an error body as a "binary") and retry with backoff on
 # transient errors/timeouts; otherwise one blip fails the build and the image
 # is never pushed, breaking every downstream stateless job with "image not found".
 RUN arch=${TARGETARCH:-amd64} \
+    && case "${arch}" in \
+        amd64) rustfs_arch=x86_64 ;; \
+        arm64) rustfs_arch=aarch64 ;; \
+        *) echo "unsupported architecture ${arch}" >&2; exit 1 ;; \
+    esac \
     && curl -fL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 60 --max-time 600 \
-        "https://dl.min.io/server/minio/release/linux-${arch}/archive/minio.RELEASE.${MINIO_SERVER_VERSION}" -o /minio \
+        "https://github.com/rustfs/rustfs/releases/download/${RUSTFS_VERSION}/rustfs-linux-${rustfs_arch}-musl-v${RUSTFS_VERSION}.zip" -o /tmp/rustfs.zip \
+    && unzip -q /tmp/rustfs.zip rustfs -d / \
+    && rm /tmp/rustfs.zip \
     && curl -fL --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 60 --max-time 600 \
-        "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MINIO_CLIENT_VERSION}" -o /mc \
-    && chmod +x /mc /minio
+        "https://dl.min.io/client/mc/release/linux-${arch}/archive/mc.RELEASE.${MC_VERSION}" -o /mc \
+    && chmod +x /mc /rustfs
 
 # Pre-bundle the AIStor (licensed MinIO) binaries so AIStor jobs do not each
 # re-fetch them from dl.min.io at runtime: ~22 stateless AIStor jobs start at
 # once, and that per-job download was a thundering herd on the external endpoint
-# that throttled/stalled the fetch. setup_minio.sh copies these into place instead
-# of downloading when present (community jobs keep using the /minio above).
+# that throttled/stalled the fetch. AIStor jobs copy these into place instead of
+# downloading (community jobs use the /rustfs above).
 #
 # Pin explicit versions and fetch the versioned RELEASE archives rather than the
 # moving `edge` channel: an unpinned URL makes clickhouse/stateless-test
 # non-reproducible - rebuilding the same source could silently change the AIStor
-# version under CI with no Dockerfile diff. Keep AISTOR_SERVER_VERSION /
-# AISTOR_CLIENT_VERSION in sync with the minio_server_version / minio_client_version
-# defaults in setup_minio.sh, which fetches these same RELEASE archives for
-# non-docker runs.
+# version under CI with no Dockerfile diff.
 #
 # Use -f so a failed fetch fails the build rather than shipping a truncated binary,
 # and retry with backoff so a transient dl.min.io throttle during the concurrent
@@ -126,10 +133,11 @@ RUN arch=${TARGETARCH:-amd64} \
         "https://dl.min.io/aistor/mc/release/linux-${arch}/archive/mc.RELEASE.${AISTOR_CLIENT_VERSION}" -o /opt/aistor/mc \
     && chmod +x /opt/aistor/minio /opt/aistor/mc
 
+# root credentials for the AIStor bundle above
 ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 
-# for minio to work without root
+# for the object storage setup (~/.aws credentials) to work without root
 RUN chmod 777 /home
 ENV HOME="/home"
 

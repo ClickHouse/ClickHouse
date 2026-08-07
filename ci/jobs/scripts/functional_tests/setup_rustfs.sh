@@ -2,14 +2,14 @@
 
 set -euxf -o pipefail
 
-export MINIO_ROOT_USER=${MINIO_ROOT_USER:-clickhouse}
-export MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-clickhouse}
+export RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-clickhouse}
+export RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-clickhouse}
 TEST_DIR=${2:-/repo/tests/}
 
 if [ -d "$TEMP_DIR" ]; then
   TEST_DIR=$(readlink -f $TEST_DIR)
   cd "$TEMP_DIR"
-  # add / for minio mc in docker
+  # add / for rustfs and mc in docker
   PATH="/:.:$PATH"
 fi
 
@@ -64,42 +64,49 @@ find_os() {
   echo "${os}"
 }
 
-download_minio() {
+download_binaries() {
   local os
-  local arch
-  local minio_server_version=${MINIO_SERVER_VERSION:-2026-03-20T23-11-32Z}
-  local minio_client_version=${MINIO_CLIENT_VERSION:-2026-03-12T04-18-55Z}
+  local rustfs_version=${RUSTFS_VERSION:-1.0.0-beta.12}
+  local mc_version=${MC_VERSION:-2025-05-21T01-59-54Z}
 
   os=$(find_os)
-  arch=$(find_arch)
-  wget "https://dl.min.io/aistor/minio/release/${os}-${arch}/archive/minio.RELEASE.${minio_server_version}" -O ./minio
-  wget "https://dl.min.io/aistor/mc/release/${os}-${arch}/archive/mc.RELEASE.${minio_client_version}" -O ./mc
-  chmod +x ./mc ./minio
+  # the musl build is static-pie and runs on any libc
+  wget "https://github.com/rustfs/rustfs/releases/download/${rustfs_version}/rustfs-${os}-$(uname -m)-musl-v${rustfs_version}.zip" -O ./rustfs.zip
+  unzip -o ./rustfs.zip rustfs
+  rm ./rustfs.zip
+  wget "https://dl.min.io/client/mc/release/${os}-$(find_arch)/archive/mc.RELEASE.${mc_version}" -O ./mc
+  chmod +x ./mc ./rustfs
 }
 
-start_minio() {
+start_rustfs() {
   pwd
-  mkdir -p ./minio_data
-  minio --version
-  nohup minio server --address ":11111" ./minio_data &
+  mkdir -p ./rustfs_data
+  rustfs --version
+  # CI data is throwaway - trade durability (fsync on writes) and background
+  # scanner/heal cycles for speed
+  export RUSTFS_DURABILITY_MODE=none
+  export RUSTFS_SCANNER_SPEED=slowest
+  export RUSTFS_HEAL_AUTO_HEAL_ENABLE=false
+  export RUSTFS_CONSOLE_ENABLE=false
+  nohup rustfs server --address ":11111" ./rustfs_data &
   wait_for_it
   lsof -i :11111
 }
 
-setup_minio() {
+setup_rustfs() {
   local test_type=$1
-  echo "setup_minio(), test_type=$test_type"
-  mc alias set clickminio http://localhost:11111 clickhouse clickhouse
-  mc admin user add clickminio test testtest
-  mc admin policy attach clickminio readwrite --user=test ||:
-  mc mb --ignore-existing clickminio/test
+  echo "setup_rustfs(), test_type=$test_type"
+  mc alias set clickrustfs http://localhost:11111 "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
+  mc admin user add clickrustfs test testtest
+  mc admin policy attach clickrustfs readwrite --user=test ||:
+  mc mb --ignore-existing clickrustfs/test
   if [ "$test_type" = "stateless" ]; then
-    echo "Create @test bucket in minio"
-    mc anonymous set public clickminio/test
+    echo "Make the test bucket in rustfs anonymously accessible"
+    mc anonymous set public clickrustfs/test
   fi
 }
 
-# uploads data to minio, by default after unpacking all tests
+# uploads data to rustfs, by default after unpacking all tests
 # will be in /usr/share/clickhouse-test/queries
 upload_data() {
   local query_dir=$1
@@ -107,17 +114,12 @@ upload_data() {
   local data_path=${test_path}/queries/${query_dir}/data_minio
   echo "upload_data() data_path=$data_path"
 
-  # iterating over globs will cause redundant file variable to be
-  # a path to a file, not a filename
-  # shellcheck disable=SC2045
   if [ -d "${data_path}" ]; then
-    mc cp --recursive "${data_path}"/ clickminio/test/
+    mc cp --recursive "${data_path}"/ clickrustfs/test/
   fi
 }
 
 setup_aws_credentials() {
-  local minio_root_user=${MINIO_ROOT_USER:-clickhouse}
-  local minio_root_password=${MINIO_ROOT_PASSWORD:-clickhouse}
   mkdir -p ~/.aws
   if [[ -f ~/.aws/credentials ]]; then
     if grep -q "^\[default\]" ~/.aws/credentials; then
@@ -127,8 +129,8 @@ setup_aws_credentials() {
   fi
   cat <<EOT >> ~/.aws/credentials
 [default]
-aws_access_key_id=${minio_root_user}
-aws_secret_access_key=${minio_root_password}
+aws_access_key_id=${RUSTFS_ACCESS_KEY}
+aws_secret_access_key=${RUSTFS_SECRET_KEY}
 EOT
 }
 
@@ -143,10 +145,10 @@ wait_for_it() {
   while ! curl "${params[@]}" "${url}" 2>&1 | grep AccessDenied
   do
     if [[ ${counter} == "${max_counter}" ]]; then
-      echo "failed to setup minio"
-      exit 0
+      echo "failed to setup rustfs"
+      exit 1
     fi
-    echo "trying to connect to minio"
+    echo "trying to connect to rustfs"
     sleep 1
     counter=$((counter + 1))
   done
@@ -155,12 +157,12 @@ wait_for_it() {
 main() {
   local query_dir
   query_dir=$(check_arg "$@")
-  if ! (minio --version && mc --version); then
-    download_minio
+  if ! (rustfs --version && mc --version); then
+    download_binaries
   fi
   setup_aws_credentials
-  start_minio
-  setup_minio "$1"
+  start_rustfs
+  setup_rustfs "$1"
   upload_data "${query_dir}" "$TEST_DIR"
 }
 
