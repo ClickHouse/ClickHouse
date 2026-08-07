@@ -1,5 +1,7 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-parallel
 -- Tag no-fasttest: a codec chain long enough to overflow a 32-bit reserve needs a second or two.
+-- Tag no-parallel: the 104-stage arm below allocates just under 4 GiB, and concurrent copies of
+-- this test would share one per-user memory limit, which no query-level setting can raise.
 
 -- CompressionCodecMultiple compounded each stage's reserved size in a UInt32 without checking for
 -- overflow. Every codec reserves more than its input, so a long enough chain wrapped the reserve
