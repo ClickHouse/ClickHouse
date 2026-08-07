@@ -8,6 +8,7 @@
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
 #include <cctype>
+#include <ranges>
 
 namespace DB
 {
@@ -56,7 +57,7 @@ private:
     void checkSanityBeforeExecuteImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
         auto condition = arguments[condition_arg_index].column->getDataAt(0);
-        if (condition.find_first_not_of(" \t\n\r") == std::string_view::npos)
+        if (std::ranges::all_of(condition, isWhitespaceASCII))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiFilter: 'condition' must not be empty");
     }
 
@@ -83,9 +84,9 @@ private:
     /// false so a row that the model failed to classify cleanly is filtered out rather than kept.
     static bool parseFilterMatch(std::string_view raw)
     {
-        while (!raw.empty() && isWhitespaceASCII(static_cast<unsigned char>(raw.front())))
+        while (!raw.empty() && isWhitespaceASCII(raw.front()))
             raw.remove_prefix(1);
-        while (!raw.empty() && isWhitespaceASCII(static_cast<unsigned char>(raw.back())))
+        while (!raw.empty() && isWhitespaceASCII(raw.back()))
             raw.remove_suffix(1);
 
         if (raw.size() != 4)

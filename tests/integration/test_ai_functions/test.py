@@ -161,6 +161,16 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
         instance.query(
             "CREATE TABLE test_input_nullable (x Nullable(String)) ENGINE = Memory"
         )
+        # MergeTree is required for a real PREWHERE (other engines rewrite it to WHERE).
+        instance.query(
+            "CREATE TABLE test_filter_mt (x String) ENGINE = MergeTree ORDER BY x"
+        )
+        instance.query(
+            "CREATE TABLE test_filter_join_left (id UInt32, x String) ENGINE = Memory"
+        )
+        instance.query(
+            "CREATE TABLE test_filter_join_right (id UInt32, tag String) ENGINE = Memory"
+        )
 
         yield cluster
     finally:
@@ -491,6 +501,101 @@ def test_filter_profile_events(started_cluster):
         query_id=qid,
     )
     events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 2
+    assert int(events["rows_processed"]) == 2
+
+
+def test_filter_prewhere(started_cluster):
+    """aiFilter is usable in PREWHERE on MergeTree (same filtering as WHERE)."""
+    instance.query("TRUNCATE TABLE test_filter_mt")
+    instance.query(
+        "INSERT INTO test_filter_mt VALUES ('great product'), ('does not match'), ('also good')"
+    )
+    qid = unique_query_id("filter_prewhere")
+    result = instance.query(
+        "SELECT x FROM test_filter_mt "
+        "PREWHERE aiFilter(x, 'positive feedback', map('credentials', 'ai_mock')) "
+        "ORDER BY x",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert result.strip().split("\n") == ["also good", "great product"]
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 3
+
+
+def test_filter_join_on(started_cluster):
+    """aiFilter in JOIN ... ON with a left-only predicate: one LLM call per left row.
+
+    When the filter does not depend on the right table, ClickHouse can evaluate it once
+    per left row (not once per candidate pair), which is the cheap/correct pattern.
+    """
+    instance.query("TRUNCATE TABLE test_filter_join_left")
+    instance.query("TRUNCATE TABLE test_filter_join_right")
+    instance.query(
+        "INSERT INTO test_filter_join_left VALUES "
+        "(1, 'great product'), (2, 'does not match'), (3, 'also good')"
+    )
+    instance.query(
+        "INSERT INTO test_filter_join_right VALUES "
+        "(1, 'a'), (1, 'b'), (2, 'c'), (3, 'd')"
+    )
+    qid = unique_query_id("filter_join_on")
+    result = instance.query(
+        """
+        SELECT l.x, r.tag
+        FROM test_filter_join_left AS l
+        INNER JOIN test_filter_join_right AS r
+            ON aiFilter(l.x, 'positive feedback', map('credentials', 'ai_mock'))
+            AND l.id = r.id
+        ORDER BY l.x, r.tag
+        """,
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert result.strip().split("\n") == [
+        "also good\td",
+        "great product\ta",
+        "great product\tb",
+    ]
+    events = get_profile_events(qid)
+    # Three left rows, one API call each — not one call per (left,right) candidate pair.
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_processed"]) == 3
+
+
+def test_filter_join_on_per_pair(started_cluster):
+    """aiFilter in JOIN ... ON that depends on both sides is evaluated per candidate pair."""
+    instance.query("TRUNCATE TABLE test_filter_join_left")
+    instance.query("TRUNCATE TABLE test_filter_join_right")
+    instance.query(
+        "INSERT INTO test_filter_join_left VALUES (1, 'great product'), (2, 'also good')"
+    )
+    instance.query(
+        "INSERT INTO test_filter_join_right VALUES (1, 'ok'), (1, 'does not match')"
+    )
+    qid = unique_query_id("filter_join_on_pair")
+    result = instance.query(
+        """
+        SELECT l.x, r.tag
+        FROM test_filter_join_left AS l
+        INNER JOIN test_filter_join_right AS r
+            ON l.id = r.id
+            AND aiFilter(
+                concat(l.x, ' ', r.tag),
+                'positive feedback',
+                map('credentials', 'ai_mock')
+            )
+        ORDER BY l.x, r.tag
+        """,
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    # Mock returns false when the user message contains "does not match".
+    assert result.strip().split("\n") == ["great product\tok"]
+    events = get_profile_events(qid)
+    # Two right matches for id=1 → two candidate pairs (and one LLM call each).
     assert int(events["api_calls"]) == 2
     assert int(events["rows_processed"]) == 2
 
