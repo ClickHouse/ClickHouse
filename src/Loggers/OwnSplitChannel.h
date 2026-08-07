@@ -108,7 +108,12 @@ public:
     ~OwnAsyncSplitChannel() override;
 
     void open() override;
+    /// Best-effort: reports a failed thread join to stderr and returns. For shutdown paths
+    /// (destructor, `Loggers::stopLogging`), where there is nothing better to do with the error.
     void close() override;
+    /// Fail-closed variant of `close`: propagates a failed thread join. For callers whose correctness
+    /// depends on no logging thread surviving, e.g. quiescing the process around `remapExecutable`.
+    void closeAndJoinThreads();
 
     void log(const Poco::Message & msg) override;
     void log(Poco::Message && msg) override;
@@ -154,6 +159,9 @@ private:
 
     /// Pushes the message into the queue. If the queue is full, drops the message and counts the drop.
     static void enqueueMessage(LogQueue & queue, AsyncLogMessagePtr message);
+
+    /// Publishes the current flush request counter as completed and wakes the waiters.
+    void releaseWaitingFlushers();
 
     std::atomic<bool> is_open = false;
     const size_t async_queue_size;

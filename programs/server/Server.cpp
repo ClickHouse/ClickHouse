@@ -1342,6 +1342,8 @@ try
             stopSignalListener();
 
             /// The async logging threads poll rather than block, so join them for the duration and restart afterwards.
+            /// This fails closed: if any logging thread cannot be joined, the exception propagates and the remap
+            /// is aborted, instead of rewriting the text segment under a thread that may still execute from it.
             stopAsyncLoggingThreads();
 
             /// At this point the process is single-threaded again and all handled signals are blocked,

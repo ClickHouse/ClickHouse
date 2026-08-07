@@ -300,22 +300,9 @@ void OwnAsyncSplitChannel::open()
 
 void OwnAsyncSplitChannel::close()
 {
-    is_open = false;
     try
     {
-        /// The polling consumers see is_open == false on their own, flush what is left, and exit.
-        if (text_log_thread)
-        {
-            text_log_thread->join();
-            text_log_thread.reset();
-        }
-
-        for (size_t i = 0; i < channels.size(); i++)
-        {
-            if (threads[i])
-                threads[i]->join();
-            threads[i].reset();
-        }
+        closeAndJoinThreads();
     }
     catch (...)
     {
@@ -323,8 +310,35 @@ void OwnAsyncSplitChannel::close()
         writeRetry(STDERR_FILENO, "Cannot close OwnAsyncSplitChannel: ");
         writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
         writeRetry(STDERR_FILENO, "\n");
+
+        /// A thread whose join failed would never serve a waiting flusher, so release them here too.
+        releaseWaitingFlushers();
+    }
+}
+
+void OwnAsyncSplitChannel::closeAndJoinThreads()
+{
+    is_open = false;
+
+    /// The polling consumers see is_open == false on their own, flush what is left, and exit.
+    if (text_log_thread)
+    {
+        text_log_thread->join();
+        text_log_thread.reset();
     }
 
+    for (size_t i = 0; i < channels.size(); i++)
+    {
+        if (threads[i])
+            threads[i]->join();
+        threads[i].reset();
+    }
+
+    releaseWaitingFlushers();
+}
+
+void OwnAsyncSplitChannel::releaseWaitingFlushers()
+{
     /// Release any flusher still waiting: the thread that would serve it has exited. Records the final
     /// drain did not take stay queued and are drained when the channel reopens (e.g. after remapExecutable),
     /// the same as for a flush that arrives while the channel is closed.
