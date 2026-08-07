@@ -17,7 +17,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsDialect dialect;
-    extern const SettingsBool enable_packed_string_keys_in_aggregation;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsUInt64 interactive_delay;
@@ -189,13 +188,6 @@ void MultiplexedConnections::sendQuery(
     /// all servers involved in the distributed query processing.
     modified_settings.set("allow_experimental_analyzer", static_cast<bool>(modified_settings[Setting::allow_experimental_analyzer]));
 
-    /// Two-level aggregation bucket numbers for a single String key depend on this value, so all
-    /// servers of a distributed query must agree on it even when it comes only from server/profile
-    /// defaults. Force it into the changed set, so it is always sent to the remote servers.
-    modified_settings.set(
-        "enable_packed_string_keys_in_aggregation",
-        static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
-
     const bool enable_offset_parallel_processing = context->canUseOffsetParallelReplicas();
 
     size_t num_replicas = replica_states.size();
@@ -241,15 +233,6 @@ void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadRes
     if (cancelled)
         return;
     current_connection->sendMergeTreeReadTaskResponse(response);
-}
-
-
-void MultiplexedConnections::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
-{
-    std::lock_guard lock(cancel_mutex);
-    if (cancelled)
-        return;
-    current_connection->sendMergeTreeAllRangesAnnouncementResponse(response);
 }
 
 

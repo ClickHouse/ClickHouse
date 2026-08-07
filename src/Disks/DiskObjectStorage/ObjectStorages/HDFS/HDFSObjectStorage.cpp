@@ -27,38 +27,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// HDFS has no native ETag, so we synthesise a version identifier from the
-/// attributes available in `hdfsFileInfo`: the last modification time and the size.
-///
-/// This token is NOT a strong content identifier and therefore must never be used
-/// as a content-cache key (see `ObjectMetadata::etag_is_strong`, which we set to
-/// `false`). Its precision is only one second: although the HDFS NameNode keeps the
-/// modification time in milliseconds, libhdfs3 truncates it to seconds when
-/// populating `hdfsFileInfo::mLastMod` (it computes `getModificationTime() / 1000`),
-/// and the public C API exposes no other field (no file id, no checksum) that
-/// changes on a content rewrite. Consequently a rewrite within the same wall-clock
-/// second that keeps the exact same byte size yields the same token for different
-/// content. That is acceptable for the informational `_etag` virtual column, but if
-/// it keyed the Parquet metadata / filesystem / page caches it could serve stale
-/// data. To use these caches with HDFS, libhdfs3 must be extended to expose the
-/// millisecond modification time (or a real version token).
-std::string HDFSObjectStorage::makeETag(Int64 last_modified, Int64 size)
-{
-    return fmt::format("{}_{}", last_modified, size);
-}
-
-ObjectMetadata HDFSObjectStorage::makeObjectMetadata(Int64 last_modified, Int64 size)
-{
-    ObjectMetadata metadata;
-    metadata.size_bytes = static_cast<uint64_t>(size);
-    metadata.last_modified = Poco::Timestamp::fromEpochTime(last_modified);
-    metadata.etag = makeETag(last_modified, size);
-    /// The HDFS etag is only a second-precision (mtime, size) token, so it must not key
-    /// a content cache. See `makeETag` for the precision caveat.
-    metadata.etag_is_strong = false;
-    return metadata;
-}
-
 void HDFSObjectStorage::initializeHDFSFS() const
 {
     if (initialized)
@@ -131,9 +99,7 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
         patchSettings(read_settings),
         /* read_until_position */0,
         use_external_buffer,
-        /// `bytes_size` may be `StoredObject::UnknownSize` when the object size is not known; it is a
-        /// sentinel, not a real size, so map it (and the legacy `0`) to `std::nullopt` (read to EOF).
-        (object.bytes_size && object.bytes_size != StoredObject::UnknownSize) ? std::optional<size_t>(object.bytes_size) : std::nullopt,
+        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
         std::move(blob_storage_log));
 }
 
@@ -144,23 +110,6 @@ std::unique_ptr<WriteBufferFromFileBase> HDFSObjectStorage::writeObject( /// NOL
     size_t buf_size,
     const WriteSettings & write_settings)
 {
-    /// A conditional write is a compare-and-swap request. HDFS can express only its If-None-Match
-    /// half: `O_CREAT` maps to `Hdfs::Create` alone, which the NameNode rejects when the file exists,
-    /// whereas the bare `O_WRONLY` used below maps to `Hdfs::Create | Hdfs::Overwrite` and truncates
-    /// (`contrib/libhdfs3/src/client/Hdfs.cpp:663-674`). If-Match has no equivalent at all: renames
-    /// are unconditional and the only synthesisable etag is weak. Writing anyway would downgrade the
-    /// CAS to a plain overwrite, so two concurrent writers would both be acknowledged while one of
-    /// them, and all of its rows, is silently discarded; honouring only the expressible half would
-    /// leave the other silently degraded. So both are refused, and exclusive create is the sanctioned
-    /// way to support the If-None-Match half later. Checked before `initializeHDFSFS` so no NameNode
-    /// contact is needed to reject a request that cannot be satisfied.
-    if (!write_settings.object_storage_write_if_none_match.empty() || !write_settings.object_storage_write_if_match.empty())
-        throw Exception(
-            ErrorCodes::UNSUPPORTED_METHOD,
-            "HDFSObjectStorage does not support conditional writes (If-None-Match / If-Match), so the "
-            "requested compare-and-swap on {} cannot be performed atomically",
-            object.remote_path);
-
     initializeHDFSFS();
     if (attributes.has_value())
         throw Exception(
@@ -258,9 +207,8 @@ ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path, bo
 std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
     initializeHDFSFS();
-    HDFSFileInfo file_info;
-    file_info.file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
-    if (!file_info.file_info)
+    auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
+    if (!file_info)
     {
         if (errno == ENOENT)
             return {};
@@ -268,11 +216,13 @@ std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std:
         throw Exception(ErrorCodes::HDFS_ERROR,
                         "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
     }
-    /// Tells `~HDFSFileInfo` how many records to free; the default 0 would free the array
-    /// but leak the inner `mName` / `mOwner` / `mGroup` strings of this single record.
-    file_info.length = 1;
 
-    return makeObjectMetadata(file_info.file_info->mLastMod, file_info.file_info->mSize);
+    ObjectMetadata metadata;
+    metadata.size_bytes = static_cast<size_t>(file_info->mSize);
+    metadata.last_modified = Poco::Timestamp::fromEpochTime(file_info->mLastMod);
+
+    hdfsFreeFileInfo(file_info, 1);
+    return metadata;
 }
 
 void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -313,7 +263,13 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
         {
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 String(file_path),
-                makeObjectMetadata(ls.file_info[i].mLastMod, ls.file_info[i].mSize)));
+                ObjectMetadata{
+                    .size_bytes = static_cast<uint64_t>(ls.file_info[i].mSize),
+                    .last_modified = Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
+                    .etag = {},
+                    .tags = {},
+                    .attributes = {},
+                }));
         }
 
         if (max_keys && children.size() >= max_keys)

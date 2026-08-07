@@ -3,7 +3,6 @@
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Common/quoteString.h>
 
-namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -26,9 +25,6 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Check; }
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     std::variant<std::monostate, ASTPtr, String> getPartitionOrPartitionID() const
     {
@@ -74,6 +70,7 @@ protected:
 
 struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
 {
+
     String getID(char /* delim */) const override { return "CheckAllQuery"; }
 
     ASTPtr clone() const override
@@ -85,9 +82,6 @@ struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Check; }
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & /* state */, FormatStateStacked frame) const override

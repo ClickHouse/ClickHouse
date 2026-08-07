@@ -4,7 +4,6 @@
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
@@ -86,9 +85,9 @@ struct MergeTreeReadTaskColumns
     /// Column names to read during WHERE
     NamesAndTypesList columns;
     /// Column names to read during each PREWHERE step
-    NamesAndTypesLists pre_columns;
+    std::vector<NamesAndTypesList> pre_columns;
     /// Column names to read from patch parts.
-    NamesAndTypesLists patch_columns;
+    std::vector<NamesAndTypesList> patch_columns;
 
     String dump() const;
     Names getAllColumnNames() const;
@@ -97,11 +96,9 @@ struct MergeTreeReadTaskColumns
 
 struct MergeTreeReadTaskInfo
 {
-    /// Part (owned or borrowed) to read while performing this task.
-    /// Owned parts wrap a concrete IMergeTreeDataPart (LoadedMergeTreeDataPartInfoForReader);
-    /// stateless-worker parts use BorrowedMergeTreeDataPartInfoForReader.
-    MergeTreeDataPartInfoForReaderPtr data_part_info;
-    /// Parent part of the projection part (projections are coordinator-only)
+    /// Data part which should be read while performing this task
+    DataPartPtr data_part;
+    /// Parent part of the projection part
     DataPartPtr parent_part;
     /// For `part_index` virtual column
     size_t part_index_in_query{};
@@ -199,8 +196,7 @@ public:
         const PrewhereExprInfo & prewhere_actions,
         MergeTreeIndexBuildContextPtr index_build_context,
         LazyMaterializingRowsPtr lazy_materializing_rows,
-        const ReadStepsPerformanceCounters & read_steps_performance_counters,
-        bool collect_predicate_statistics);
+        const ReadStepsPerformanceCounters & read_steps_performance_counters);
 
     void initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows);
 
@@ -240,8 +236,7 @@ public:
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,
         const PrewhereExprInfo & prewhere_actions,
-        const ReadStepsPerformanceCounters & read_steps_performance_counters,
-        bool collect_predicate_statistics);
+        const ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
     using DataflowCacheUpdateCallback

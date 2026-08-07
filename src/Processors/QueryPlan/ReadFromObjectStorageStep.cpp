@@ -189,7 +189,7 @@ bool ReadFromObjectStorageStep::requestReadingInOrder() const
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const
 {
-    return convertSortingKeyToInputOrder(storage_snapshot->metadata->getSortingKey());
+    return convertSortingKeyToInputOrder(getStorageMetadata()->getSortingKey());
 }
 
 }

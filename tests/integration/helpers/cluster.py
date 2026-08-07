@@ -1,4 +1,5 @@
 import base64
+import concurrent
 import errno
 import http.client
 import json
@@ -454,28 +455,8 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
     p.communicate()
 
 
-async def check_nats_is_available(cluster, connect_timeout=10):
-    # `nats.connect` reports a TLS or an authentication failure through its error callback
-    # and then keeps retrying, so an unbounded await hangs until the pytest timeout instead
-    # of telling us what went wrong. Bound the attempt and log what the client saw.
-    client_errors = []
-
-    async def collect_error(error):
-        client_errors.append(error)
-
-    try:
-        nc = await asyncio.wait_for(
-            nats_connect_ssl(cluster, max_reconnect_attempts=1, error_cb=collect_error),
-            connect_timeout,
-        )
-    except asyncio.TimeoutError:
-        logging.warning(
-            "Cannot connect to NATS in %s seconds, client errors: %s",
-            connect_timeout,
-            client_errors,
-        )
-        return False
-
+async def check_nats_is_available(cluster):
+    nc = await nats_connect_ssl(cluster, max_reconnect_attempts=1)
     available = nc.is_connected
     await nc.close()
     return available
@@ -2907,7 +2888,6 @@ class ClickHouseCluster:
     def wait_mysql8_to_start(self, timeout=180):
         self.mysql8_ip = self.get_instance_ip("mysql80")
         start = time.time()
-        errors = []
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
@@ -2920,11 +2900,10 @@ class ClickHouseCluster:
                 logging.debug("Mysql 8 Started")
                 return
             except Exception as ex:
-                errors += [str(ex)]
+                logging.debug("Can't connect to MySQL 8 " + str(ex))
                 time.sleep(0.5)
 
         run_and_check(["docker", "ps", "--all"])
-        logging.error("Can't connect to MySQL 8:{}".format(errors))
         raise Exception("Cannot wait MySQL 8 container")
 
     def wait_mysql_cluster_to_start(self, timeout=180):
@@ -3143,7 +3122,6 @@ class ClickHouseCluster:
                         self.base_rabbitmq_cmd + ["logs"], stdout=f
                     )
                 rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
-                break
             except Exception as ex:
                 logging.debug("Unable to get logs from docker: %s:", ex)
                 time.sleep(0.5)
@@ -4264,13 +4242,7 @@ class ClickHouseCluster:
             bufsize=0,
         )
 
-    def shutdown(
-        self,
-        kill=True,
-        ignore_fatal=False,
-        ignore_logical_errors=False,
-        ignore_sanitizer=False,
-    ):
+    def shutdown(self, kill=True, ignore_fatal=False, ignore_logical_errors=False):
         sanitizer_assert_instance = None
         failure_logs = []
 
@@ -4296,7 +4268,7 @@ class ClickHouseCluster:
                     exit_code = res["StatusCode"]
                     logging.info(f"The server {name} exited with code: {exit_code}")
 
-                if not ignore_sanitizer and instance.contains_in_log(
+                if instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
                     sanitizer_assert_instance = instance.grep_in_log(
@@ -4343,28 +4315,6 @@ class ClickHouseCluster:
                     for line in f:
                         if SANITIZER_SIGN in line:
                             sanitizer_assert_instance = line.split("|")[0].strip()
-                            break
-
-            if not sanitizer_assert_instance and not ignore_sanitizer and self.use_keeper:
-                # Keeper (zooN) containers are not in self.instances, so the per-instance
-                # scan above never covers them. Sanitizers write to raw stderr, which the
-                # keeper entrypoint redirects (via --logger.stderr) to a host-mounted
-                # stderr.log; scan it so a Keeper sanitizer report is detected reliably
-                # and ends up in the collected logs.
-                for i in range(1, 4):
-                    keeper_stderr = os.path.join(
-                        self.keeper_instance_dir_prefix + f"{i}", "log", "stderr.log"
-                    )
-                    if not os.path.exists(keeper_stderr):
-                        continue
-                    with open(keeper_stderr, "r", errors="replace") as f:
-                        if any(SANITIZER_SIGN in line for line in f):
-                            sanitizer_assert_instance = f"zoo{i}"
-                            logging.error(
-                                "Sanitizer in Keeper instance zoo%s log %s",
-                                i,
-                                keeper_stderr,
-                            )
                             break
         else:
             logging.warning(
@@ -4714,12 +4664,19 @@ class ClickHouseCluster:
 
     def process_integration_nodes(self, integration: str, nodes: list, action: str):
         base_cmd = getattr(self, f"base_{integration}_cmd")
-        # One `docker compose` invocation for all nodes: concurrent compose commands on
-        # the same project race on shared project state and can silently drop a node's
-        # action. compose parallelizes the services internally.
-        logging.info("%sing %s nodes: %s", action.capitalize(), integration, nodes)
-        subprocess_check_call(base_cmd + [action] + list(nodes))
-        logging.info("%sed %s nodes: %s", action.capitalize(), integration, nodes)
+
+        def process_single_node(node):
+            logging.info("%sing %s node: %s", action.capitalize(), integration, node)
+            subprocess_check_call(base_cmd + [action, node])
+            logging.info("%sed %s node: %s", action.capitalize(), integration, node)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
+            futures = []
+            for n in nodes:
+                futures += [executor.submit(process_single_node, n)]
+
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
 
     # Faster than waiting for clean stop
     def kill_zookeeper_nodes(self, zk_nodes):
@@ -5465,7 +5422,6 @@ class ClickHouseInstance:
         expected_to_fail=False,
         environment=None,
         wait_start=True,
-        daemon=False
     ):
         if not self.stay_alive:
             raise Exception(
@@ -5482,15 +5438,7 @@ class ClickHouseInstance:
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
                 exec_id = self.exec_in_container(
-                    [
-                        "bash",
-                        "-c",
-                        (
-                            self.clickhouse_start_command_in_daemon
-                            if daemon
-                            else self.clickhouse_start_command
-                        ),
-                    ],
+                    ["bash", "-c", self.clickhouse_start_command],
                     user=str(os.getuid()),
                     detach=True,
                     use_cli=False,
@@ -5590,9 +5538,9 @@ class ClickHouseInstance:
             "ClickHouse server is still running, but was expected to shutdown. Check logs."
         )
 
-    def restart_clickhouse(self, stop_start_wait_sec=60, kill=False, daemon=False):
+    def restart_clickhouse(self, stop_start_wait_sec=60, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
-        self.start_clickhouse(stop_start_wait_sec, daemon=daemon)
+        self.start_clickhouse(stop_start_wait_sec)
 
     def exec_in_container(
         self,

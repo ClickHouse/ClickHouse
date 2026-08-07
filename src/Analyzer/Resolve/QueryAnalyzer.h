@@ -121,9 +121,9 @@ public:
     explicit QueryAnalyzer(bool only_analyze_);
     ~QueryAnalyzer();
 
-    void resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
+    void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
 
-    void resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
+    void resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
 
 private:
     /// Utility functions
@@ -218,7 +218,7 @@ private:
     /// Resolve query tree nodes functions
 
     void qualifyColumnNodesWithProjectionNames(const QueryTreeNodes & column_nodes,
-        const TableExpressionNodePtr & table_expression_node,
+        const QueryTreeNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
     static GetColumnsOptions buildGetColumnsOptions(QueryTreeNodePtr & matcher_node, const ContextPtr & context);
@@ -226,7 +226,7 @@ private:
     using QueryTreeNodesWithNames = std::vector<std::pair<QueryTreeNodePtr, std::string>>;
 
     QueryTreeNodesWithNames getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
-        const TableExpressionNodePtr & table_expression_node,
+        const QueryTreeNodePtr & table_expression_node,
         const NamesAndTypes & matched_columns,
         IdentifierResolveScope & scope);
 
@@ -253,10 +253,9 @@ private:
         bool allow_lambda_expression,
         bool allow_table_expression,
         bool ignore_alias = false,
-        bool allow_niladic_functions = true,
-        bool is_top_level_projection = false);
+        bool allow_niladic_functions = true);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -274,7 +273,7 @@ private:
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
-    void initializeTableExpressionData(const TableExpressionNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    void initializeTableExpressionData(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
 
@@ -292,13 +291,7 @@ private:
 
     void resolveUnion(const QueryTreeNodePtr & union_node, IdentifierResolveScope & scope);
 
-    /// Lambdas that are currently in resolve process.
-    /// Keyed by the structural tree hash: a recursive reference to a lambda resolves to a fresh
-    /// clone of the alias node (see tryResolveIdentifierFromAliases), so the guard must detect
-    /// re-entry by structure, not by pointer identity -- otherwise genuine recursion would not be
-    /// caught and would instead run until TOO_DEEP_RECURSION. To keep this cheap, resolveLambda
-    /// computes the hash once per call (a single QueryTreeNodePtrWithHash reused for the
-    /// contains/insert/erase) instead of recomputing the lambda body's full getTreeHash three times.
+    /// Lambdas that are currently in resolve process
     QueryTreeNodePtrWithHashSet lambdas_in_resolve_process;
 
     /// CTEs that are currently in resolve process
@@ -308,6 +301,9 @@ private:
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
+
+    /// Materialized CTEs that are referenced more than once during query analysis and should be materialized to temporary tables.
+    std::unordered_set<MaterializedCTEPtr> reused_materialized_cte;
 
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;
@@ -340,16 +336,6 @@ private:
     std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
-
-    /// True while arguments of a table function are resolved. Table functions are resolved
-    /// into storages even in only-analyze mode (the storage is required to infer the query
-    /// header), so scalar subqueries in their arguments must be executed for real instead of
-    /// being replaced with type-only placeholders. See evaluateScalarSubqueryIfNeeded.
-    bool table_function_arguments_in_resolve_process = false;
-
-    /// True while a parameterized view argument value is resolved: a scalar subquery there must
-    /// fold to a literal, not a `__getScalar` reference. See `evaluateScalarSubqueryIfNeeded`.
-    bool parameterized_view_arguments_in_resolve_process = false;
 };
 
 }

@@ -10,10 +10,6 @@
 #    include <Common/TraceSender.h>
 #    include <Common/logger_useful.h>
 
-#    if defined(OS_DARWIN)
-#        include <execinfo.h>
-#    endif
-
 #    define STRINGIFY_HELPER(x) #x
 #    define STRINGIFY(x) STRINGIFY_HELPER(x)
 
@@ -180,18 +176,6 @@ void setLastFlushProfile(const char * filename)
     last_flush_profile = std::string_view{last_flush_profile_buffer.data(), last_flush_profile_size};
 }
 
-#if defined(OS_DARWIN)
-/// jemalloc's built-in profiler backtraces crash inside the malloc hook on macOS: the libunwind DWARF
-/// stepper null-derefs, and the __builtin_frame_address walk faults on frames without a set-up frame
-/// pointer. The system backtrace() validates the frame-pointer chain (and does not allocate), so it is
-/// safe to call here and is what we use for the profiler elsewhere. Installed via the prof_backtrace hook.
-void jemallocProfBacktrace(void ** vec, unsigned * len, unsigned max_len)
-{
-    int size = ::backtrace(vec, static_cast<int>(max_len));
-    *len = size > 0 ? static_cast<unsigned>(size) : 0;
-}
-#endif
-
 }
 
 void setCollectLocalProfileSamplesInTraceLog(bool value)
@@ -224,10 +208,6 @@ void setup(
     setValue("experimental.hooks.prof_sample", &jemallocAllocationTracker);
     setValue("experimental.hooks.prof_sample_free", &jemallocDeallocationTracker);
     setValue("experimental.hooks.prof_dump", &setLastFlushProfile);
-#if defined(OS_DARWIN)
-    /// Replace jemalloc's default (crash-prone on macOS) profiler backtrace with the safe system one.
-    setValue("experimental.hooks.prof_backtrace", &jemallocProfBacktrace);
-#endif
 }
 
 void verifySetup(
