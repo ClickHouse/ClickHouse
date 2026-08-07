@@ -630,7 +630,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         for (size_t row = 0; row < column->size(); ++row)
         {
             auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-                (*column)[row], type, json_info->is_string_cast ? nullptr : key_type, key_type);
+                (*column)[row],
+                type,
+                json_info->is_string_cast ? nullptr : key_type,
+                json_info->missing_value_is_not_indexed ? key_type : nullptr);
             if (!serialized_value)
                 return false;
 
@@ -940,7 +943,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         auto key_type = key_node.getDAGNode()->result_type;
         auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-            value_field, value_type, json_info->is_string_cast ? nullptr : key_type, key_type);
+            value_field,
+            value_type,
+            json_info->is_string_cast ? nullptr : key_type,
+            json_info->missing_value_is_not_indexed ? key_type : nullptr);
         if (!serialized_value)
             return false;
 

@@ -547,7 +547,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         else if (function_name != "multiSearchAny")
         {
             auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-                const_value, serialized_value_type, target_type, function_name == "equals" ? key_type : nullptr);
+                const_value,
+                serialized_value_type,
+                target_type,
+                function_name == "equals" && json_info->missing_value_is_not_indexed ? key_type : nullptr);
             if (!serialized_value)
                 return false;
 
@@ -884,7 +887,10 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         for (size_t row = 0; row < prepared_set->getTotalRowCount(); ++row)
         {
             auto serialized_value = tryConvertAndSerializeJSONValueAsText(
-                (*columns[0])[row], data_types[0], json_info->is_string_cast ? nullptr : key_type, key_type);
+                (*columns[0])[row],
+                data_types[0],
+                json_info->is_string_cast ? nullptr : key_type,
+                json_info->missing_value_is_not_indexed ? key_type : nullptr);
             if (!serialized_value)
                 return false;
 
