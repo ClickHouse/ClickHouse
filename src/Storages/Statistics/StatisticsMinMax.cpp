@@ -79,7 +79,7 @@ void StatisticsMinMax::serialize(WriteBuffer & buf)
 StatisticsFileVersion StatisticsMinMax::requiredFileVersion() const
 {
     /// Only a float can hold a NaN; for any other type an older reader derives the same false.
-    if (data_type && isFloat(removeLowCardinality(data_type)))
+    if (data_type && isFloat(removeLowCardinalityAndNullable(data_type)))
         return StatisticsFileVersion::V5;
     return StatisticsFileVersion::V4;
 }
@@ -99,7 +99,7 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
         max = max_val;
         /// V1 predates the `has_nan` flag too, so a float part with a hidden NaN reads a finite
         /// [min, max]. Apply the same conservative fallback as the V2..V4 path below.
-        if (isFloat(removeLowCardinality(data_type)))
+        if (isFloat(removeLowCardinalityAndNullable(data_type)))
             has_nan = true;
         return;
     }
@@ -120,7 +120,7 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
     {
         readBinary(has_nan, buf);
     }
-    else if (isFloat(removeLowCardinality(data_type)))
+    else if (isFloat(removeLowCardinalityAndNullable(data_type)))
     {
         /// No flag stored: `[1.0, nan, 3.0]` was written with a finite [min, max] hiding the NaN, so
         /// assume one may be there. A conservative keep, never a wrong skip.

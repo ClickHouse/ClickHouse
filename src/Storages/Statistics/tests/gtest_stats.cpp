@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -1041,6 +1042,14 @@ TEST(Statistics, ContainerVersionIsLowestThatRepresentsTheBlob)
     /// a NaN, so just float `minmax` is stamped V5.
     EXPECT_EQ(version_of(built(StatisticsType::MinMax, float_type, nan_field)), StatisticsFileVersion::V5);
     EXPECT_EQ(version_of(built(StatisticsType::MinMax, int_type, Field(Int64(1)))), StatisticsFileVersion::V4);
+
+    /// A wrapped float is still a float, so the version must not depend on the wrappers.
+    auto lc_float = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeFloat64>());
+    auto nullable_float = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>());
+    auto lc_nullable_float = std::make_shared<DataTypeLowCardinality>(nullable_float);
+    for (const DataTypePtr & wrapped : {DataTypePtr(lc_float), DataTypePtr(nullable_float), DataTypePtr(lc_nullable_float)})
+        EXPECT_EQ(version_of(built(StatisticsType::MinMax, wrapped, nan_field)), StatisticsFileVersion::V5)
+            << "wrapped float minmax must be stamped V5: " << wrapped->getName();
 }
 
 /// Merging a NaN-bearing part into a finite one must carry the flag over, otherwise the merged part
