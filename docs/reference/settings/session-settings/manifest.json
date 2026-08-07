@@ -1,5 +1,5 @@
 {
-  "settings": 1277,
+  "settings": 1280,
   "anchorRoutes": {
     "add_http_cors_header": "/reference/settings/session-settings/other",
     "additional_result_filter": "/reference/settings/session-settings/additional",
@@ -56,7 +56,6 @@
     "allow_experimental_hash_functions": "/reference/settings/session-settings/allow-experimental",
     "allow_experimental_iceberg_compaction": "/reference/settings/session-settings/allow-experimental",
     "allow_experimental_join_right_table_sorting": "/reference/settings/session-settings/allow-experimental",
-    "allow_experimental_json_ast_dialect": "/reference/settings/session-settings/allow-experimental",
     "allow_experimental_json_lazy_type_hints": "/reference/settings/session-settings/allow-experimental",
     "allow_experimental_kafka_offsets_storage_in_keeper": "/reference/settings/session-settings/allow-experimental",
     "allow_experimental_kusto_dialect": "/reference/settings/session-settings/allow-experimental",
@@ -383,6 +382,7 @@
     "enable_join_runtime_filters": "/reference/settings/session-settings/enable-join",
     "enable_join_runtime_filters_index_analysis": "/reference/settings/session-settings/enable-join",
     "enable_join_transitive_predicates": "/reference/settings/session-settings/enable-join",
+    "enable_json_ast_dialect": "/reference/settings/session-settings/enable",
     "enable_lazy_columns_replication": "/reference/settings/session-settings/enable",
     "enable_lightweight_delete": "/reference/settings/session-settings/enable-lightweight",
     "enable_lightweight_update": "/reference/settings/session-settings/enable-lightweight",
@@ -393,6 +393,7 @@
     "enable_optimize_predicate_expression": "/reference/settings/session-settings/enable-optimize-predicate-expression",
     "enable_optimize_predicate_expression_to_final_subquery": "/reference/settings/session-settings/enable-optimize-predicate-expression",
     "enable_order_by_all": "/reference/settings/session-settings/enable",
+    "enable_packed_string_keys_in_aggregation": "/reference/settings/session-settings/enable",
     "enable_parallel_blocks_marshalling": "/reference/settings/session-settings/enable-parallel",
     "enable_parallel_single_level_merge": "/reference/settings/session-settings/enable-parallel",
     "enable_parsing_to_custom_serialization": "/reference/settings/session-settings/enable",
@@ -446,6 +447,7 @@
     "filesystem_cache_reserve_space_wait_lock_timeout_milliseconds": "/reference/settings/session-settings/filesystem-cache",
     "filesystem_cache_segments_batch_size": "/reference/settings/session-settings/filesystem-cache",
     "filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit": "/reference/settings/session-settings/filesystem-cache",
+    "filesystem_cache_wait_for_concurrent_download_timeout_milliseconds": "/reference/settings/session-settings/filesystem-cache",
     "filesystem_prefetch_max_memory_usage": "/reference/settings/session-settings/filesystem-prefetch",
     "filesystem_prefetch_step_bytes": "/reference/settings/session-settings/filesystem-prefetch",
     "filesystem_prefetch_step_marks": "/reference/settings/session-settings/filesystem-prefetch",
