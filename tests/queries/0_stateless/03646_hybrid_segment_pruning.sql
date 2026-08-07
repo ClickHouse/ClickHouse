@@ -1,5 +1,4 @@
--- Tags: no-fasttest, no-random-settings
--- Tag no-fasttest: requires remote() table function
+-- Tags: no-random-settings
 -- Tag no-random-settings: asserts EXPLAIN output, which randomized plan settings perturb
 
 SET allow_experimental_hybrid_table = 1;

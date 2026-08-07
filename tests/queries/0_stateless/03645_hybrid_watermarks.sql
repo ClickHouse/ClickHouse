@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- Tag no-fasttest: requires remote() table function
-
 SET allow_experimental_hybrid_table = 1;
 
 DROP TABLE IF EXISTS local_hot SYNC;

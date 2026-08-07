@@ -1,5 +1,4 @@
--- Tags: no-fasttest, no-parallel
--- Tag no-fasttest: requires remote() table function
+-- Tags: no-parallel
 -- Tag no-parallel: uses a process-wide failpoint
 
 SET allow_experimental_hybrid_table = 1;
