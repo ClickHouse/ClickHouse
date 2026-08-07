@@ -292,6 +292,7 @@ public:
         : import_module_ctx(WasmEdgeResourcePtrCreate<WasmEdge_ModuleInstanceCreate>(wasmedgeStringWrap("env")))
         , vm_cxt(WasmEdgeResourcePtrCreate<WasmEdge_VMCreate>(getWasmEdgeVmConfig(cfg).get(), nullptr))
     {
+        memory_limit = cfg.memory_limit;
         auto * stat_ctx = WasmEdge_VMGetStatisticsContext(vm_cxt.get());
         if (cfg.hasFiniteFuelLimit())
         {
@@ -315,6 +316,11 @@ public:
         return static_cast<size_t>(WasmEdge_MemoryInstanceGetPageSize(memory_ctx)) * WASMEDGE_PAGE_SIZE;
     }
 
+    size_t getMaxLinearMemorySize() const override
+    {
+        return memory_limit ? memory_limit : getLinearMemorySize();
+    }
+
     VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override;
 
     void loadModuleFromAst(const WasmEdge_ASTModuleContext * ast_module, StopToken stop_token);
@@ -325,6 +331,8 @@ public:
 
 private:
     void loadModuleImpl(StopToken stop_token);
+
+    size_t memory_limit = 0;
 
     /// Host functions are registered in this context
     WasmEdgeResourcePtr<WasmEdge_ModuleInstanceContext> import_module_ctx;

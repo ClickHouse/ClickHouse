@@ -271,6 +271,11 @@ public:
         return std::get<wasmtime::Memory>(mem_result.value()).data(store_ref).size();
     }
 
+    size_t getMaxLinearMemorySize() const override
+    {
+        return cfg.memory_limit ? cfg.memory_limit : getLinearMemorySize();
+    }
+
     VectorWithMemoryTracking<WasmVal> invokeImpl(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token) override
     {
         setStoreFuel(store.context(), cfg, "function call");

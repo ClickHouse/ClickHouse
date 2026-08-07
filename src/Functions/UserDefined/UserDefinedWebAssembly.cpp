@@ -1020,7 +1020,11 @@ public:
                     return result_column;
                 }
 
-                const size_t wasm_linear_memory = compartment_ptr->getLinearMemorySize();
+                // getMaxLinearMemorySize() reflects the allocator ceiling the guest can still
+                // grow into (the configured memory_limit), not just the pages currently mapped;
+                // gating on the current page count alone would reject inputs the guest's
+                // allocator could actually satisfy after growing.
+                const size_t wasm_linear_memory = compartment_ptr->getMaxLinearMemorySize();
                 const size_t input_budget = wasm_linear_memory > 0 ? wasm_linear_memory / 2 : 0;
                 if (input_budget == 0)
                 {
@@ -1515,9 +1519,11 @@ private:
 
         // When no explicit block size is given, split input dynamically: estimate the total
         // serialized size once (O(1)) and split only if it would exceed 50% of the WASM
-        // module's actual linear memory. Using actual memory (not the CH-side limit)
-        // prevents OOM when a constant large geometry is materialized N times in the buffer.
-        const size_t wasm_linear_memory = compartment->getLinearMemorySize();
+        // module's linear memory ceiling. getMaxLinearMemorySize() reflects the configured
+        // memory_limit the engine enforces (the actual allocator ceiling the guest can grow
+        // into), not just the pages currently mapped, so it doesn't reject inputs the guest
+        // could still satisfy after growing.
+        const size_t wasm_linear_memory = compartment->getMaxLinearMemorySize();
         const size_t input_budget = (fixed_block_size == 0 && wasm_linear_memory > 0)
             ? wasm_linear_memory / 2  // 50% for input, leave room for GEOS heap
             : 0;
