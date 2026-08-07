@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -33,6 +34,30 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+static bool stringCastDefaultCanMatch(
+    const String & function_name,
+    const Field & value,
+    const DataTypePtr & result_type,
+    const DataTypePtr & source_type)
+{
+    Strings defaults{result_type->getDefault().safeGet<String>()};
+    if (!canContainNull(*source_type))
+        defaults.emplace_back(serializeJSONValueAsText(source_type->getDefault(), source_type));
+
+    if (function_name == "equals")
+        return std::ranges::find(defaults, value.safeGet<String>()) != defaults.end();
+
+    if (function_name == "like")
+    {
+        OptimizedRegularExpression regexp(
+            likePatternToRegexp(value.safeGet<String>()),
+            OptimizedRegularExpression::RE_DOT_NL | OptimizedRegularExpression::RE_NO_CAPTURE);
+        return std::ranges::any_of(defaults, [&](const auto & default_value) { return regexp.match(default_value); });
+    }
+
+    return function_name != "notEquals" && function_name != "notLike";
 }
 
 MergeTreeIndexGranuleBloomFilterText::MergeTreeIndexGranuleBloomFilterText(
@@ -475,6 +500,10 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         key_index = json_info->subcolumn.header_position;
 
         const auto key_type = key_node.getDAGNode()->result_type;
+        if (json_info->match_kind == JSONAllValuesMatchKind::StringCast
+            && stringCastDefaultCanMatch(function_name, const_value, key_type, json_info->source_type))
+            return false;
+
         DataTypePtr target_type;
         if (json_info->match_kind != JSONAllValuesMatchKind::StringCast)
         {
@@ -874,6 +903,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
                     json_info->subcolumn.header_position,
                     true,
                     argument.getDAGNode()->result_type,
+                    json_info->source_type,
                     json_info->match_kind);
             }
         }
@@ -891,6 +921,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
             json_info->subcolumn.header_position,
             true,
             left_argument.getDAGNode()->result_type,
+            json_info->source_type,
             json_info->match_kind);
     }
 
@@ -962,6 +993,10 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
                 }
 
                 if (!canContainNull(*elem.key_type) && value == elem.key_type->getDefault())
+                    return false;
+
+                if (isJSONAllValuesStringCastSourceDefault(
+                        elem.json_match_kind, elem.json_source_type, value))
                     return false;
 
                 String serialized_value = serializeJSONValueAsText(value, serialization_type);

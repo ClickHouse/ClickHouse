@@ -163,7 +163,7 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
             if (!isJSONAllValuesMatchSafe(node, match_kind))
                 return std::nullopt;
 
-            return JSONAllValuesIndexInfo{std::move(*json_info), match_kind};
+            return JSONAllValuesIndexInfo{std::move(*json_info), match_kind, argument_dag->result_type};
         }
     }
 
@@ -171,7 +171,7 @@ std::optional<JSONAllValuesIndexInfo> tryMatchNodeToJSONAllValuesIndex(
     {
         constexpr auto match_kind = JSONAllValuesMatchKind::Direct;
         if (isJSONAllValuesMatchSafe(node, match_kind))
-            return JSONAllValuesIndexInfo{std::move(*json_info), match_kind};
+            return JSONAllValuesIndexInfo{std::move(*json_info), match_kind, node.getDAGNode()->result_type};
     }
 
     return std::nullopt;
@@ -232,6 +232,17 @@ String serializeJSONValueAsText(const Field & value, const DataTypePtr & type)
     WriteBufferFromOwnString buf;
     type->getDefaultSerialization()->serializeText(*column, 0, buf, {});
     return buf.str();
+}
+
+bool isJSONAllValuesStringCastSourceDefault(
+    JSONAllValuesMatchKind match_kind,
+    const DataTypePtr & source_type,
+    const Field & value)
+{
+    if (match_kind != JSONAllValuesMatchKind::StringCast || canContainNull(*source_type))
+        return false;
+
+    return value == Field(serializeJSONValueAsText(source_type->getDefault(), source_type));
 }
 
 }
