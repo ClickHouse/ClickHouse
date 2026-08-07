@@ -50,6 +50,11 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
+}
+
 namespace ObjectStorageQueueSetting
 {
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
@@ -164,6 +169,9 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
 
 bool ObjectStorageQueueSource::FileIterator::isFinished()
 {
+    if (iterator_invalidated)
+        return true;
+
     std::lock_guard lock(mutex);
     LOG_TEST(log, "Iterator finished: {}, objects to retry: {}", iterator_finished.load(), objects_to_retry.size());
     return iterator_finished
@@ -385,6 +393,9 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 if (num_successful_objects != new_batch.size())
                 {
+                    /// file_metadatas is empty when the keeper tryMulti above failed and
+                    /// cleared it (see the chassert below); only compact it when populated.
+                    const bool compact_file_metadatas = !file_metadatas.empty();
                     size_t batch_i = 0;
                     for (size_t i = 0; i < num_successful_objects; ++i, ++batch_i)
                     {
@@ -400,10 +411,12 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
 
                         new_batch[i] = new_batch[batch_i];
-                        file_metadatas[i] = file_metadatas[batch_i];
+                        if (compact_file_metadatas)
+                            file_metadatas[i] = file_metadatas[batch_i];
                     }
                     new_batch.resize(num_successful_objects);
-                    file_metadatas.resize(num_successful_objects);
+                    if (compact_file_metadatas)
+                        file_metadatas.resize(num_successful_objects);
                 }
 
                 chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
@@ -497,7 +510,15 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (use_buckets_for_processing)
         {
+            refreshExpiringBucketLocks();
+
             std::lock_guard lock(mutex);
+
+            if (iterator_invalidated)
+            {
+                LOG_WARNING(log, "Bucket lock refresh failed, stopping the file iterator");
+                return {};
+            }
             auto result = getNextKeyFromAcquiredBucket(processor);
             object_info = result.object_info;
             file_metadata = result.file_metadata;
@@ -597,6 +618,38 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     }
 }
 
+void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
+{
+    const size_t ttl_seconds = metadata->getPersistentProcessingNodeTTLSeconds();
+    if (!ttl_seconds)
+        return;
+
+    std::lock_guard lock(mutex);
+
+    /// Already invalidated (possibly by another thread), nothing to refresh.
+    /// Checked under the mutex to never hit the released holder of the lost lock.
+    if (iterator_invalidated)
+        return;
+    for (auto & [processor, holders] : bucket_holders)
+    {
+        for (auto & holder : *holders)
+        {
+            if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 4)
+            {
+                try
+                {
+                    holder->refresh();
+                }
+                catch (...)
+                {
+                    iterator_invalidated = true;
+                    throw;
+                }
+            }
+        }
+    }
+}
+
 void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
 {
     std::lock_guard lock(mutex);
@@ -622,7 +675,15 @@ void ObjectStorageQueueSource::FileIterator::releaseFinishedBuckets()
                 chassert(holder->isFinished());
 
             /// Release bucket lock.
-            holder->release();
+            try
+            {
+                holder->release();
+            }
+            catch (...)
+            {
+                iterator_invalidated = true;
+                throw;
+            }
             ++released_holders;
 
             /// Reset bucket processor in cached state.
@@ -975,6 +1036,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , commit_once_processed(commit_once_processed_)
     , add_deduplication_info(add_deduplication_info_)
     , is_deduplication_v2(is_deduplication_v2_)
+    , insert_deduplication_version(context_->getServerSettings()[ServerSetting::insert_deduplication_version].value)
     , log(log_)
 {
     if (commit_once_processed)
@@ -1254,7 +1316,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 /// Create unique token per chunk: etag + row offset
                 dedup_token = fmt::format("{}:{}", etag, row_offset);
 
-                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
+                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true, insert_deduplication_version);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
                 chunk.getChunkInfos().add(std::move(deduplication_info));
             }
@@ -1287,7 +1349,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .storage_id = storage_id,
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified,
-                    .etag = &(object_metadata->etag),
                 },
                 getContext(),
                 format_settings);

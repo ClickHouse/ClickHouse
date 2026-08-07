@@ -9,12 +9,12 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
-#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Databases/enableAllExperimentalSettings.h>
@@ -153,7 +153,9 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     }
 }
 
-void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows) const
+void IMergeTreeReader::fillMissingColumns(
+    Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
+    const NameSet & previous_step_columns) const
 {
     try
     {
@@ -188,7 +190,8 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
                 : available_columns,
                 partially_read_columns,
                 storage_snapshot,
-                share_nested);
+                share_nested,
+                previous_step_columns);
 
             should_evaluate_missing_defaults
                 = std::any_of(res_columns.begin(), res_columns.end(), [](const auto & column) { return column == nullptr; });
@@ -293,12 +296,17 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
             }
 
             auto name_in_storage = it->getNameInStorage();
-            res_columns[pos] = additional_columns.getByName(name_in_storage).column;
 
             if (it->isSubcolumn())
             {
-                const auto & type_in_storage = it->getTypeInStorage();
-                res_columns[pos] = type_in_storage->getSubcolumn(it->getSubcolumnName(), res_columns[pos]);
+                /// The parent may still be in its pre-`ALTER MODIFY` type here (an earlier on-fly step
+                /// is not converted by performRequiredConversions); tryGetSubcolumnFromBlock casts it
+                /// to the storage type before extracting.
+                res_columns[pos] = tryGetSubcolumnFromBlock(additional_columns, it->getTypeInStorage(), *it);
+            }
+            else
+            {
+                res_columns[pos] = additional_columns.getByName(name_in_storage).column;
             }
         }
     }
@@ -387,24 +395,6 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
     }
 
     const auto & infos = data_part_info_for_read->getSerializationInfos();
-
-    /// The `Quantize` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,
-    /// `pq_codebook`) which the part's plain columns list (columns.txt) cannot represent - they round-trip to the bare
-    /// type name and are lost. Honor that serialization directly: rebuilding it from the part's `SerializationInfo` via
-    /// `IDataType::getSerialization(info)` would re-wrap it with the recorded kind stack and discard the companion
-    /// streams, so the subcolumn read would fall back to recomputing it and fail. This is restricted to that specific
-    /// serialization (a Quantize column is always dense) so it does not interfere with the Default/Sparse kind stack of
-    /// ordinary columns.
-    const auto & type_in_storage = required_column.getTypeInStorage();
-    if (const auto * custom = type_in_storage->getCustomSerialization();
-        custom && typeid(*custom) == typeid(SerializationQuantizedVector))
-    {
-        auto serialization = type_in_storage->getDefaultSerialization();
-        if (required_column.isSubcolumn())
-            return type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
-        return serialization;
-    }
-
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
         return IDataType::getSerialization(*column_in_part, *it->second);
 

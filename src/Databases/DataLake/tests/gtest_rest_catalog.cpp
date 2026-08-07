@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Databases/DataLake/RestCatalog.h>
+#include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/AutoPtr.h>
@@ -44,15 +45,19 @@ enum class CatalogShape
     TopLevelTable,
     NestedTableThenEmptySibling,
     Empty,
-    /// Flat-namespace catalog (Databricks Delta Sharing style) that ignores the `parent` filter and
-    /// echoes the same top-level namespace for every parent. A REST catalog would recurse on this
-    /// forever (gold -> gold.gold -> ...); a flat-namespace catalog must list the top level only.
-    ParentIgnoringEcho,
 };
 
 void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body)
 {
     response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+    response.setContentType("application/json");
+    response.setContentLength(body.size());
+    response.send() << body;
+}
+
+void writeError(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & body)
+{
+    response.setStatus(status);
     response.setContentType("application/json");
     response.setContentLength(body.size());
     response.send() << body;
@@ -99,8 +104,6 @@ public:
             {
                 if (shape == CatalogShape::NestedTableThenEmptySibling)
                     writeJSON(response, R"({"namespaces":[["parent"],["empty_later"]]})");
-                else if (shape == CatalogShape::ParentIgnoringEcho)
-                    writeJSON(response, R"({"namespaces":[["gold"]]})");
                 else
                     writeJSON(response, R"({"namespaces":[["namespace"]]})");
                 return;
@@ -108,9 +111,6 @@ public:
 
             if (shape == CatalogShape::NestedTableThenEmptySibling && parent == "parent")
                 writeJSON(response, R"({"namespaces":[["leaf_with_table"]]})");
-            else if (shape == CatalogShape::ParentIgnoringEcho)
-                /// Ignores `parent` and echoes the top-level namespace back for any parent.
-                writeJSON(response, R"({"namespaces":[["gold"]]})");
             else
                 writeJSON(response, R"({"namespaces":[]})");
             return;
@@ -126,8 +126,7 @@ public:
         }
 
         if (path == "/v1/namespaces/parent/tables"
-            || path == "/v1/namespaces/empty_later/tables"
-            || path == "/v1/namespaces/gold/tables")
+            || path == "/v1/namespaces/empty_later/tables")
         {
             writeJSON(response, R"({"identifiers":[]})");
             return;
@@ -136,6 +135,24 @@ public:
         if (path == "/v1/namespaces/parent%1Fleaf_with_table/tables")
         {
             writeJSON(response, R"({"identifiers":[{"name":"table_a"}]})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/table_a")
+        {
+            writeJSON(response, R"({"metadata":{"table-uuid":"11111111-2222-3333-4444-555555555555"}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/missing_table")
+        {
+            writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, R"({"error":{"message":"Table does not exist","type":"NoSuchTableException","code":404}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/unauthorized_table")
+        {
+            writeError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, R"({"error":{"message":"The access token has expired","type":"NotAuthorizedException","code":401}})");
             return;
         }
 
@@ -234,39 +251,11 @@ bool restCatalogEmpty(CatalogShape shape)
     return catalog.empty();
 }
 
-bool deltaSharingCatalogEmpty(CatalogShape shape)
-{
-    RestCatalogTestServer server(shape);
-    auto context = DB::Context::createCopy(getContext().context);
-    context->makeQueryContext();
-
-    DeltaSharingCatalog catalog(
-        "warehouse",
-        server.getUrl(),
-        /* catalog_credential */"",
-        /* auth_scope */"",
-        /* auth_header */"",
-        /* oauth_server_uri */"",
-        /* oauth_server_use_request_body */false,
-        context);
-
-    return catalog.empty();
-}
-
 }
 
 TEST(RestCatalog, EmptyReturnsFalseForTopLevelTable)
 {
     EXPECT_FALSE(restCatalogEmpty(CatalogShape::TopLevelTable));
-}
-
-TEST(RestCatalog, DeltaSharingTerminatesWhenParentFilterIgnored)
-{
-    /// Databricks Delta Sharing has flat namespaces and echoes the same namespace for any parent. As
-    /// a `DeltaSharingCatalog` it must list the top level only and terminate (a plain REST catalog
-    /// would recurse gold -> gold.gold -> ... forever). With no tables under the echoed namespace the
-    /// catalog is reported empty.
-    EXPECT_TRUE(deltaSharingCatalogEmpty(CatalogShape::ParentIgnoringEcho));
 }
 
 TEST(RestCatalog, EmptyKeepsFoundTableStateSticky)
@@ -295,6 +284,7 @@ TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
         /* oauth_server_use_request_body */false,
         context);
 
+<<<<<<< HEAD
     DB::SettingsChanges changes;
     changes.emplace_back("catalog_credential", "id:secret");
     expectThrowsCode([&] { catalog.applySettingsChanges(changes); }, DB::ErrorCodes::BAD_ARGUMENTS);
@@ -421,6 +411,35 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
     DB::SettingsChanges empty_value;
     empty_value.emplace_back("onelake_bearer_token", "");
     expectThrowsCode([&] { catalog.applySettingsChanges(empty_value); }, DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
+{
+    RestCatalogTestServer server(CatalogShape::TopLevelTable);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    TableMetadata existing;
+    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", existing));
+    EXPECT_TRUE(catalog.existsTable("namespace", "table_a"));
+
+    TableMetadata missing;
+    EXPECT_FALSE(catalog.tryGetTableMetadata("namespace", "missing_table", missing));
+    EXPECT_FALSE(catalog.existsTable("namespace", "missing_table"));
+
+    TableMetadata unauthorized;
+    EXPECT_THROW(catalog.tryGetTableMetadata("namespace", "unauthorized_table", unauthorized), DB::HTTPException);
+    EXPECT_THROW(catalog.existsTable("namespace", "unauthorized_table"), DB::HTTPException);
 }
 
 #endif
