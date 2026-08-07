@@ -276,10 +276,12 @@ Clears the encryption headers cache. This cache holds the encryption headers rea
 
 ```sql
 SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TYPE '<type>';
 SYSTEM CLEAR QUERY CACHE TAG '<tag>'
 ````
 
 Clears the [query cache](/concepts/features/performance/caches/query-cache).
+If a type (`Memory` or `Disk`) is specified, only entries of that type are deleted (by default both tiers are cleared).
 If a tag is specified, only query cache entries with the specified tag are deleted.
 
 ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE {#system-drop-schema-format}
