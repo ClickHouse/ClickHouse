@@ -311,6 +311,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     #undef M
     };
     Type type = Type::EMPTY;
+    bool top_k_heap_ever_rejected = false;
     AggregatedDataVariants();
     ~AggregatedDataVariants();
     bool empty() const { return type == Type::EMPTY; }

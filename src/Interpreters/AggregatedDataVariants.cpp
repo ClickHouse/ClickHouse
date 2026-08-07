@@ -56,6 +56,8 @@ auto constructWithReserveIfPossible(size_t size_hint)
 
 void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
 {
+    top_k_heap_ever_rejected = topKHeapEverRejected();
+
     switch (type_)
     {
         case Type::EMPTY:
@@ -95,6 +97,9 @@ size_t AggregatedDataVariants::size() const
 
 bool AggregatedDataVariants::topKHeapEverRejected() const
 {
+    if (top_k_heap_ever_rejected)
+        return true;
+
     switch (type)
     {
         case Type::EMPTY:
