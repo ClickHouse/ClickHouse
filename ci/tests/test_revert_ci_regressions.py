@@ -776,21 +776,27 @@ def _ls_remote(*branches):
     return "".join(f"{'c' * 40}\trefs/heads/{branch}\n" for branch in branches)
 
 
-def _handled(monkeypatch, ls_remote="", by_branch=(), by_marker=()):
-    """`already_handled` for #112345, with the remote and the two GitHub
+def _handled(
+    monkeypatch, ls_remote="", by_head=(), by_branch=(), by_marker=(), push=None
+):
+    """`already_handled` for #112345, with the remote, the real-time lookup of
+    the pull requests from the `revert-112345` branch, and the two GitHub
     searches -- by branch name and by the `Reverts ...` marker -- answered as
-    the caller says."""
+    the caller says. Nothing is deleted from the remote unless the caller
+    hands in a `push` of its own."""
     monkeypatch.setattr(job.Shell, "get_output", _shell({"ls-remote": ls_remote}))
     monkeypatch.setattr(
         job.GH,
         "get_output_with_retries",
         _shell(
             {
+                "--head": "" if by_head is None else json.dumps(list(by_head)),
                 "head:": json.dumps(list(by_branch)),
                 "Reverts": json.dumps(list(by_marker)),
             }
         ),
     )
+    monkeypatch.setattr(job.Git, "push", push or _unexpected("pushed"))
     return job.already_handled("b" * 40, 112345, "ClickHouse/ClickHouse")
 
 
@@ -806,16 +812,69 @@ def test_a_revert_already_on_master_stops_a_second_one(monkeypatch):
 
 def test_a_pushed_revert_branch_stops_a_second_one(monkeypatch):
     """The branch is what `.github/workflows/revert_broken_prs.yml` pushes too,
-    so an in-flight revert by either automation is seen with no indexing lag."""
-    monkeypatch.setattr(
-        job.Shell, "get_output", _shell({"ls-remote": _ls_remote("revert-112345")})
+    so an in-flight revert by either automation is seen with no indexing lag.
+    A pull request has it as its head, so the branch is no orphan and stands."""
+    handled = _handled(
+        monkeypatch,
+        ls_remote=_ls_remote("revert-112345"),
+        by_head=[{"number": 9876, "state": "OPEN"}],
     )
-    monkeypatch.setattr(
-        job.GH, "get_output_with_retries", _unexpected("listed pull requests")
+    assert "already exists on the remote" in handled
+
+
+def test_an_orphan_revert_branch_is_deleted_and_does_not_stop_the_revert(monkeypatch):
+    """A `revert-<pr>` branch no pull request in any state has ever had as its
+    head is the leftover of an attempt that failed between the push and the
+    pull request. Obeying it would suppress every retry until a human deletes
+    the branch, so the job deletes it instead and carries on. Asked through
+    the list API, not the search API, so an in-flight revert whose pull
+    request the search index has not caught up with does not read as one."""
+    deleted = []
+    handled = _handled(
+        monkeypatch,
+        ls_remote=_ls_remote("revert-112345"),
+        push=lambda repo, refspec, **_kwargs: deleted.append(refspec) or True,
     )
-    assert "already exists on the remote" in job.already_handled(
-        "b" * 40, 112345, "ClickHouse/ClickHouse"
+    assert handled == ""
+    assert deleted == [":refs/heads/revert-112345"]
+
+
+def test_an_orphan_revert_branch_that_cannot_be_deleted_stands(monkeypatch):
+    """When the deletion fails the branch is still there, the push this run
+    would make is not forced and would be refused, and standing down is the
+    honest reading."""
+    handled = _handled(
+        monkeypatch,
+        ls_remote=_ls_remote("revert-112345"),
+        push=lambda *_args, **_kwargs: False,
     )
+    assert "already exists on the remote" in handled
+
+
+def test_a_human_named_revert_branch_is_not_deleted_even_without_a_pull_request(
+    monkeypatch,
+):
+    """The "Revert" button creates `revert-<pr>-<head branch>` when it is
+    clicked and the pull request only when the human follows through, so a
+    bare one may be a human mid-revert. It is not this job's to delete, and
+    it stands the revert down as before."""
+    handled = _handled(
+        monkeypatch, ls_remote=_ls_remote("revert-112345-add-a-new-setting")
+    )
+    assert "revert-112345-add-a-new-setting" in handled
+
+
+def test_an_unreadable_branch_lookup_stops_the_revert(monkeypatch):
+    """`gh pr list --json` prints `[]` when nothing matched, so no output at
+    all means the command kept failing. Reading that as "no pull request
+    exists" would delete a branch on the strength of an answer that never
+    arrived."""
+    with pytest.raises(RuntimeError, match="failed to list pull requests"):
+        _handled(
+            monkeypatch,
+            ls_remote=_ls_remote("revert-112345"),
+            by_head=None,
+        )
 
 
 def test_a_revert_branch_pushed_by_the_github_button_stops_a_second_one(monkeypatch):
@@ -945,13 +1004,15 @@ class FakeCIDB:
         return "".join(json.dumps(row) + "\n" for row in self.rows)
 
 
-def _commits(*failed, exercised=None, first_run_times=None):
+def _commits(*failed, exercised=None, aborted=None, first_run_times=None):
     """One row per commit, newest first by the commit's first run, each
     exercised by every check the failure was seen in unless the caller says
-    otherwise. Each argument says whether the failure was recorded on that
-    commit; when it was, it was recorded in the first check that exercised it,
-    which of them being immaterial here."""
+    otherwise, none of the runs aborted unless the caller says so. Each
+    argument says whether the failure was recorded on that commit; when it
+    was, it was recorded in the first check that exercised it, which of them
+    being immaterial here."""
     exercised = exercised or [make_failure().check_names] * len(failed)
+    aborted = aborted or [[]] * len(failed)
     first_run_times = first_run_times or [
         "2026-07-31 21:%02d:00" % (59 - index) for index in range(len(failed))
     ]
@@ -960,6 +1021,7 @@ def _commits(*failed, exercised=None, first_run_times=None):
             "commit_sha": f"{index:040x}",
             "first_run_time": first_run_times[index],
             "exercised_checks": exercised[index],
+            "aborted_checks": aborted[index],
             "failed_checks": exercised[index][:1] if value else [],
         }
         for index, value in enumerate(failed)
@@ -1048,6 +1110,35 @@ def test_an_unfinished_commit_does_not_hide_older_full_green_evidence():
     assert "2 newest commits" in fixed
 
 
+def test_a_check_that_aborted_on_a_commit_did_not_exercise_it():
+    """A run that died partway ran *some* tests, not necessarily this one, so
+    the failure being absent from it is not evidence. Here the newest commit's
+    slow check wrote test rows and then a failing harness row: the commit is
+    unfinished, not green, and the one clean commit behind it is not enough."""
+    aborted = [["Stateless tests (amd_tsan, parallel)"], [], []]
+    rows = _commits(0, 0, 1, aborted=aborted)
+    assert job.already_fixed(FakeCIDB(rows), make_failure()) == ""
+
+
+def test_a_failure_whose_every_run_aborts_still_counts_as_reported():
+    """A server that dies *is* the check not finishing, so every occurrence of
+    such a failure comes with an aborted run. The check that recorded the
+    failure has plainly re-exercised it there: the guard has to answer "still
+    broken" and let the revert proceed, not "cannot be established" on the
+    failure's own symptom."""
+    check = ["Stateless tests (amd_tsan, parallel)"]
+    rows = [
+        {
+            "commit_sha": "0" * 40,
+            "first_run_time": "2026-07-31 21:59:00",
+            "exercised_checks": [],
+            "aborted_checks": check,
+            "failed_checks": check,
+        }
+    ]
+    assert job.already_fixed(FakeCIDB(rows), make_failure(check_names=check)) == ""
+
+
 def test_the_commit_history_window_opens_before_the_failure():
     """The margin is what keeps a late rerun of a pre-regression commit from
     losing its early runs to the cutoff and taking the rerun as its first
@@ -1065,14 +1156,18 @@ def test_the_commits_carry_what_exercised_them_and_what_failed_on_them():
     cidb = FakeCIDB([])
     job.already_fixed(cidb, make_failure())
     query = cidb.queries[0]
-    assert (
-        "arraySort(groupUniqArrayIf(50)(check_name, test_name != '')) "
-        "AS exercised_checks" in query
-    )
+    assert "AS exercised_checks" in query
+    assert "AS aborted_checks" in query
     assert "AS failed_checks" in query
     # A check that died before it reached the tests wrote the row about itself
     # and no test rows, so it exercised nothing.
     assert "test_name != ''" in query
+    # The rows the harness writes about itself under a test-like name are not
+    # tests: they must not make a check count as having exercised the commit,
+    # and a failing one marks the check's run as aborted partway.
+    assert "test_name NOT IN ('Check errors'" in query
+    assert "test_name IN ('Check errors'" in query
+    assert "'Test script failed'" in query
 
 
 def test_a_failure_absent_from_the_newest_commits_is_read_as_fixed():
@@ -1399,6 +1494,38 @@ def test_the_reintroduce_body_links_both_pull_requests():
     # It must not read as a revert itself, or the next run would skip it as one
     # and the merge-readiness check would wave it through with no CI.
     assert "Reverts ClickHouse/" not in body
+
+
+def test_a_failed_pull_request_creation_takes_its_branch_back(monkeypatch):
+    """The push and the pull request creation are two GitHub calls, and a
+    failure between them would leave a `revert-<pr>` branch that every later
+    run reads as an in-flight revert. The branch goes with the failure, so a
+    transient error costs one hour, not the auto-revert."""
+    monkeypatch.setattr(job.Shell, "check", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        job.Shell,
+        "get_output",
+        _shell({"rev-parse": "c" * 40, "rev-list": f"{'b' * 40} {'a' * 40}"}),
+    )
+    pushes = []
+    monkeypatch.setattr(
+        job.Git,
+        "push",
+        lambda _repo, refspec, **_kwargs: pushes.append(refspec) or True,
+    )
+
+    def _refuse(*_args, **_kwargs):
+        raise RuntimeError("HTTP 502")
+
+    monkeypatch.setattr(job, "create_pull_request", _refuse)
+    with pytest.raises(RuntimeError, match="HTTP 502"):
+        job.create_revert(
+            make_pull_request(), "b" * 40, _investigation(), "ClickHouse/ClickHouse"
+        )
+    assert pushes == [
+        "HEAD:refs/heads/revert-112345",
+        ":refs/heads/revert-112345",
+    ]
 
 
 def test_the_pull_request_number_is_read_out_of_the_created_url():

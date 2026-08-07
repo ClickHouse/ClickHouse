@@ -612,11 +612,18 @@ def commits_since_the_failure_query(failure: Failure, limit=COMMITS_QUERY_LIMIT)
 
     Which means a commit has to be shown to have run the check at all, or the
     name is missing for the trivial reason that nothing looked: `exercised_checks`
-    is the checks that wrote at least one test-level row on this commit. A check
-    that died before it got to the tests -- a build that failed, a server that
-    would not start -- writes the row about itself and no test rows, and so does
-    not count as having exercised anything. `failed_checks` is the checks that
-    recorded this failure on this commit.
+    is the checks that wrote at least one genuine test-level row on this commit.
+    A check that died before it got to the tests -- a build that failed, a
+    server that would not start -- writes the row about itself and no test rows,
+    and so does not count as having exercised anything. The rows the harness
+    writes about itself under a test-like name (`SYNTHETIC_TEST_NAMES`) are not
+    tests and do not count either. And a check that started its tests but did
+    not finish them is no better: it ran *some* tests, not necessarily this one,
+    so the failure being absent from it means nothing. Such a run records a
+    failing harness row -- `Test script failed`, `Server died` -- next to the
+    test rows it did produce, and `aborted_checks` carries the checks that wrote
+    one on this commit, for `already_fixed` to subtract from the exercised set.
+    `failed_checks` is the checks that recorded this failure on this commit.
 
     Per commit, not per run: whether the failure is fixed is a question about
     the newest commits of `master`, and rows are a bad proxy for commits. A
@@ -650,10 +657,11 @@ def commits_since_the_failure_query(failure: Failure, limit=COMMITS_QUERY_LIMIT)
     failure; the question here is whether the builds that showed it still do.
     """
     checks = ", ".join(quote_sql_string(name) for name in failure.check_names)
-    failed_here = (
-        f"test_name = {quote_sql_string(failure.test_name)} "
-        f"AND (test_status LIKE 'F%' OR test_status LIKE 'E%')"
+    synthetic = ", ".join(
+        quote_sql_string(name) for name in sorted(SYNTHETIC_TEST_NAMES)
     )
+    failed = "(test_status LIKE 'F%' OR test_status LIKE 'E%')"
+    failed_here = f"test_name = {quote_sql_string(failure.test_name)} AND {failed}"
     # The timestamps are projected under names of their own: aliasing one back
     # to `check_start_time` would shadow the column the `WHERE` compares, and
     # the query would fail on comparing a `String` with a `DateTime`.
@@ -661,7 +669,10 @@ def commits_since_the_failure_query(failure: Failure, limit=COMMITS_QUERY_LIMIT)
 SELECT
     commit_sha,
     toString(min(check_start_time)) AS first_run_time,
-    arraySort(groupUniqArrayIf(50)(check_name, test_name != '')) AS exercised_checks,
+    arraySort(groupUniqArrayIf(50)(check_name,
+        test_name != '' AND test_name NOT IN ({synthetic}))) AS exercised_checks,
+    arraySort(groupUniqArrayIf(50)(check_name,
+        test_name IN ({synthetic}) AND {failed})) AS aborted_checks,
     arraySort(groupUniqArrayIf(50)(check_name, {failed_here})) AS failed_checks
 FROM {Settings.CI_DB_TABLE_NAME}
 WHERE check_start_time >= toDateTime({quote_sql_string(failure.first_failure_time)})
@@ -709,6 +720,21 @@ def already_fixed(cidb: CIDB, failure: Failure) -> str:
     commit is skipped rather than counted -- fully reported green commits behind
     it are still evidence, because they are still newer than every failure.
 
+    Exercised means the check's run got through its tests, not that it wrote
+    rows: a run that aborted partway ran *some* tests, and the failure being
+    absent from the part that ran says nothing about the part that did not. So
+    a check whose run on the commit recorded a failing harness row -- the
+    aborted set from the query -- does not count as having exercised it,
+    however many test rows it wrote first. Recording the failure itself is the
+    one exception worth naming: for the "still reporting under this name"
+    question a check that recorded the failure on a commit has plainly
+    re-exercised the failure there -- that commit is failing evidence, not
+    green, but the check is not missing. Without that reading, a failure whose
+    every occurrence comes with an aborted run -- a server that dies *is* the
+    check not finishing -- would make its own checks look gone and the verdict
+    "cannot be established", standing the revert down on the failure's own
+    symptom.
+
     How much green is enough depends on how often the failure hits. Two clean
     commits mean a fix for something that failed on every run, and mean nothing
     for something that failed on one run in a hundred -- the assertion that
@@ -749,7 +775,14 @@ def already_fixed(cidb: CIDB, failure: Failure) -> str:
         if parse_db_time(commit["first_run_time"]) >= first_failure
     ]
 
-    reported = {check for commit in since for check in commit["exercised_checks"]}
+    def ran(commit: dict) -> set:
+        return set(commit["exercised_checks"]) - set(commit["aborted_checks"])
+
+    reported = {
+        check
+        for commit in since
+        for check in ran(commit) | set(commit["failed_checks"])
+    }
     missing = sorted(required_checks - reported)
     if missing:
         return (
@@ -774,7 +807,7 @@ def already_fixed(cidb: CIDB, failure: Failure) -> str:
                 gaps.append(run)
             run = 0
             continue
-        if not required_checks <= set(commit["exercised_checks"]):
+        if not required_checks <= ran(commit):
             continue
         run += 1
 
@@ -1114,6 +1147,29 @@ def search_pull_requests(repo: str, search: str, fields: str) -> List[dict]:
     return json.loads(output)
 
 
+def pull_requests_from_branch(repo: str, branch: str) -> List[dict]:
+    """The pull requests whose head is exactly `branch`, in any state.
+
+    Read through the list API rather than the search API: this answer decides
+    whether a pushed revert branch is an in-flight revert or an orphan, and the
+    search index lags minutes behind a just-created pull request -- exactly the
+    window an in-flight revert sits in. The list endpoint filters by head
+    directly and has no such lag.
+
+    As in `search_pull_requests`, an empty answer and an unreadable one must
+    not be confused: `gh pr list --json` prints `[]` when nothing matched, so
+    no output at all means the command kept failing, and the caller -- a guard
+    on a privileged action -- has to stand down rather than read it as "no
+    pull request exists"."""
+    output = GH.get_output_with_retries(
+        f"gh pr list --repo {shlex.quote(repo)} --state all "
+        f"--head {shlex.quote(branch)} --json number,state"
+    ).strip()
+    if not output:
+        raise RuntimeError(f"failed to list pull requests from {branch} in {repo}")
+    return json.loads(output)
+
+
 def removes_it_from_base_branch(pull_request: dict) -> bool:
     """Whether a revert pull request the search found actually takes the change
     off the base branch, now or once it is merged.
@@ -1139,7 +1195,10 @@ def already_handled(merge_commit: str, number: int, repo: str) -> str:
     revert is already on `master`: `git revert` records the reverted sha in the
     message, so history is authoritative and has no indexing lag. A revert
     branch is already pushed: an in-flight revert, by the workflow in
-    `.github/workflows/revert_broken_prs.yml`, by this job, or by a human. A
+    `.github/workflows/revert_broken_prs.yml`, by this job, or by a human --
+    except the automation-named `revert-<pr>` when no pull request has ever
+    referenced it, which is the orphan of a failed attempt and is deleted
+    rather than obeyed. A
     pull request exists on such a branch: covers a merged revert whose branch
     was deleted afterwards, and one that is still open and waiting for its
     checks. And a pull request carrying the `Reverts <repo>#<pr>` marker, which
@@ -1167,6 +1226,29 @@ def already_handled(merge_commit: str, number: int, repo: str) -> str:
         ).splitlines()
         if "refs/heads/" in line
     ]
+    # The exact `revert-<pr>` name is pushed by automation only -- this job and
+    # the workflow -- and both open the pull request right after the push. A
+    # branch of that name that no pull request in any state has ever had as its
+    # head is therefore an orphan of an attempt that failed between the two,
+    # not an in-flight revert, and left alone it would suppress every retry
+    # until a human deletes it. It is asked about through the list API, which
+    # has no indexing lag, so the in-flight window does not read as orphaned;
+    # and it is deleted rather than skipped over, because the push this run
+    # would make is not forced and would be refused while the branch stands.
+    # When the deletion fails, the branch still stands and standing down is
+    # both the honest and the safe reading. The `revert-<pr>-*` names are
+    # different: the "Revert" button creates the branch when it is clicked and
+    # the pull request only when the human follows through, so a bare one may
+    # be a human mid-revert, and it is not this job's to delete.
+    exact = branches[0]
+    if exact in pushed and not pull_requests_from_branch(repo, exact):
+        print(
+            f"NOTE: {exact} exists on the remote but no pull request has ever "
+            f"had it as its head -- an orphan of a failed revert attempt, "
+            f"deleting it"
+        )
+        if Git.push(repo, f":refs/heads/{exact}"):
+            pushed.remove(exact)
     if pushed:
         return (
             f"a revert branch already exists on the remote: {' '.join(sorted(pushed))}"
@@ -1616,12 +1698,22 @@ def create_revert(
     if not Git.push(repo, f"HEAD:refs/heads/{branch}"):
         raise RuntimeError(f"failed to push {branch}")
 
-    revert_pull_request = create_pull_request(
-        repo,
-        branch,
-        f'Revert "{pull_request["title"]}"',
-        revert_body(pull_request, investigation),
-    )
+    try:
+        revert_pull_request = create_pull_request(
+            repo,
+            branch,
+            f'Revert "{pull_request["title"]}"',
+            revert_body(pull_request, investigation),
+        )
+    except Exception:
+        # The branch is pushed and the pull request that would justify its
+        # existence is not there: left behind, it reads as an in-flight revert
+        # to every later run (`already_handled`), and a transient GitHub
+        # failure here would suppress the retry for good. So the branch goes
+        # with the failure. Best effort -- when the deletion fails too,
+        # `already_handled` recognizes the orphan and cleans it up itself.
+        Git.push(repo, f":refs/heads/{branch}")
+        raise
     # Detach before merging: merging deletes the branch, including locally, and
     # git refuses to delete the branch that is checked out.
     Shell.check("git checkout --detach", verbose=True, strict=True)
