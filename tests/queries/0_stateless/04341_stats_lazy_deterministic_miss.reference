@@ -1,4 +1,6 @@
-first query warnings:
-1
-second query warnings:
-0
+query 1:
+while loading statistics for column b from file statistics_b.stats in packed file statistics.packed of part all_1_1_0
+query 2:
+while loading statistics for column b from file statistics_b.stats in packed file statistics.packed of part all_1_1_0
+without statistics pruning:
+499

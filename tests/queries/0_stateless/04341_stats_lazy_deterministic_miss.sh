@@ -6,22 +6,15 @@
 # files in that directory are `DiskObjectStorageMetadata` pointer files, not the
 # statistics payload, so overwriting them does not corrupt the stored statistics.
 #
-# Regression test for the deterministic-miss negative cache in
-# `IMergeTreeDataPart::getEstimates`. A column whose statistics are declared in
-# the table metadata but whose statistics are unreadable (here: corrupted) must be
-# probed at most once per in-memory part object. Before the fix, only columns with
-# *no* declared statistics were recorded in `estimates_attempted_columns`, so a
-# metadata-declared column with broken statistics was re-read (and re-warned) on
-# every query.
+# A column whose statistics are declared in the table metadata but whose statistics
+# are unreadable (here: corrupted) must fail the operation that needs them, with the
+# column and part in the error message, and the failure must stay retryable: it must
+# not be recorded in the per-part estimates cache as "no statistics" (which would
+# silently disable statistics for the column until the part object is rebuilt).
+# Queries that do not need the corrupted statistics must be unaffected.
 # Related: https://github.com/ClickHouse/ClickHouse/pull/104691
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# Suppress the corrupted-statistics warning streaming to the client: the warning
-# is asserted below via `system.text_log` (a server-side log table), so it must
-# not also clutter stderr. Set this before sourcing `shell_config.sh`, otherwise
-# the shell_config default ("warning") is baked into `CLICKHOUSE_CLIENT_OPT0` and
-# passing `--send_logs_level` on the command line would duplicate the option.
-export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -80,36 +73,24 @@ PY
 ${CLICKHOUSE_CLIENT} -q "DETACH TABLE t_stats_miss"
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE t_stats_miss"
 
-QID1="${CLICKHOUSE_DATABASE}_stats_miss_1"
-QID2="${CLICKHOUSE_DATABASE}_stats_miss_2"
-
-# Both queries prune on `b`, so each one asks the part for `b`'s statistics. The
-# corrupted-statistics warning is asserted below via `system.text_log`.
-# `use_statistics_cache` is pinned to 1: `tests/clickhouse-test` randomizes this
-# setting (5% chance of 0), which would bypass the per-part nullopt cache and make
-# the second query re-read the corrupted blob, emitting an extra warning.
-for QID in "$QID1" "$QID2"; do
-    ${CLICKHOUSE_CLIENT} --query_id="$QID" -q "
-    SELECT count() FROM t_stats_miss WHERE b > 500
+prune_query="SELECT count() FROM t_stats_miss WHERE b > 500
     SETTINGS use_statistics_for_part_pruning = 1, use_statistics = 0,
              use_statistics_cache = 1,
-             enable_analyzer = 1, enable_parallel_replicas = 0
-    FORMAT Null"
+             enable_analyzer = 1, enable_parallel_replicas = 0"
+
+# Both queries prune on `b`, so each one asks the part for `b`'s statistics and
+# must fail on the corrupted blob with the column and part in the message. The
+# second query must fail the same way: the failure must not be negatively cached
+# as "no statistics for b".
+for i in 1 2; do
+    echo "query $i:"
+    ${CLICKHOUSE_CLIENT} -q "$prune_query FORMAT Null" 2>&1 \
+        | grep -o "while loading statistics for column b from file statistics_b.stats in packed file statistics.packed of part ${PART}" \
+        | head -n 1
 done
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
-
-# The first query probes the corrupted blob once and logs a warning; the second
-# query must find `b` negatively cached and emit no further warning.
-echo "first query warnings:"
-${CLICKHOUSE_CLIENT} -q "
-SELECT count() FROM system.text_log
-WHERE event_date >= yesterday() AND query_id = '${QID1}'
-  AND message LIKE '%Cannot load statistics for column b%'"
-echo "second query warnings:"
-${CLICKHOUSE_CLIENT} -q "
-SELECT count() FROM system.text_log
-WHERE event_date >= yesterday() AND query_id = '${QID2}'
-  AND message LIKE '%Cannot load statistics for column b%'"
+# A query that does not need `b`'s statistics is unaffected.
+echo "without statistics pruning:"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_stats_miss WHERE b > 500 SETTINGS use_statistics_for_part_pruning = 0, use_statistics = 0"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_stats_miss SYNC"

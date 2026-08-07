@@ -843,7 +843,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     size_t total_parts_before = parts.size();
     /// Load statistics only for the filter columns that have them. `getUsedColumns` would return
     /// an empty list here (it is populated only once `checkPartCanMatch` builds a key condition),
-    /// and an empty list makes `getEstimates` load statistics for every column of the part.
+    /// and an empty list makes `getEstimates` load nothing at all.
     const Names candidate_columns = statistics_pruner.getCandidateColumns();
 
     for (const auto & part : parts)

@@ -1257,6 +1257,11 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
 
         try
         {
+            fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+            {
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
+            });
+
             auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
             CompressedReadBuffer compressed_buf(*file_buf);
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
@@ -1297,6 +1302,11 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
         try
         {
+            fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
+            {
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
+            });
+
             auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
             CompressedReadBuffer compressed_buf(*file_buf);
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
@@ -1332,12 +1342,6 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 
 ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_columns) const
 {
-    fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
-    {
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                        "Injected failure in loadStatistics");
-    });
-
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
@@ -1406,7 +1410,7 @@ Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns, bool 
         return result;
     }
 
-    auto collectResult = [&](const std::unordered_map<String, std::optional<Estimate>> & source) -> Estimates
+    auto collect_result = [&](const std::unordered_map<String, std::optional<Estimate>> & source) -> Estimates
     {
         Estimates result;
         result.reserve(required_columns.size());
@@ -1426,40 +1430,33 @@ Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns, bool 
                 missing.push_back(column_name);
 
         if (missing.empty())
-            return collectResult(estimates);
+            return collect_result(estimates);
     }
 
-    /// Load off the lock, then commit under the lock; a failure leaves the cache clean.
-    ColumnsStatistics statistics;
-    try
-    {
-        statistics = loadStatistics(missing);
-    }
-    catch (...)
-    {
-        /// A load failure means every column in `missing` has no usable statistics
-        /// right now (deterministic miss or transient error).  Record nullopt for all
-        /// of them so that repeated queries on the same part object do not re-read and
-        /// re-warn on every invocation.
-        tryLogCurrentException(storage.log, fmt::format("Failed to load statistics for part {}", name));
-    }
+    /// Load off the lock, then commit under the lock.  A thrown load failure
+    /// (corrupted file or transient read error) propagates to the caller and leaves
+    /// the cache clean, so the failure stays retryable and never poisons this
+    /// in-memory part object with a "no statistics" record.
+    ColumnsStatistics statistics = loadStatistics(missing);
 
     std::lock_guard lock(estimates_mutex);
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
         for (const auto & column_name : missing)
         {
-            /// A miss is deterministic (no stats declared, file absent or unreadable); record it
-            /// as a nullopt entry so we don't re-read on every query. Transient load errors
-            /// propagate out of `loadStatistics` and stay retryable.
             if (auto it = statistics.find(column_name); it != statistics.end())
                 estimates.insert_or_assign(column_name, it->second->getEstimate());
             else
-                estimates.insert_or_assign(column_name, std::nullopt);
+                /// The load succeeded but returned nothing for this column: the miss is
+                /// deterministic (no stats declared or file absent), so record it as a
+                /// nullopt entry and don't re-read on every query. `emplace` (not
+                /// `insert_or_assign`) so it never overwrites a value a concurrent
+                /// query has just loaded successfully.
+                estimates.emplace(column_name, std::nullopt);
         }
     }
 
-    return collectResult(estimates);
+    return collect_result(estimates);
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
