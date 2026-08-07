@@ -47,7 +47,8 @@ old_blob="${CLICKHOUSE_TMP}/04757_old.native"
 $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}&client_protocol_version=54337" --data-binary "$query" > "$old_blob"
 echo "old peer: $(announced_version "$old_blob")"
 
-# `FORMAT Native` with no negotiated revision at all is the same downgrade to version 0.
+# `FORMAT Native` with no negotiated revision at all has no peer to derive a version for: the stream
+# is self-describing, so the version pinned on the type survives into it and is announced as such.
 default_blob="${CLICKHOUSE_TMP}/04757_default.native"
 $CLICKHOUSE_CURL -sS "${CLICKHOUSE_URL}" --data-binary "$query" > "$default_blob"
 echo "no revision: $(announced_version "$default_blob")"

@@ -181,8 +181,15 @@ size_t NativeWriter::write(const Block & block)
         /// has its columns pinned to version 0, and version 0 is not printed in the type name, so the
         /// receiver would see no version at all and read the payload with its own, higher version.
         /// Re-serializing loses nothing: the states are kept in memory in a version-independent form.
+        ///
+        /// Revision 0 means there is no peer to negotiate with: the block goes to a self-describing
+        /// stream that is read back by whoever wrote it (`StripeLog` data, `Set`/`Join` backups, a
+        /// `Native` format file). Here the version must be taken from the type: the reader derives
+        /// nothing from a revision and trusts the type name in the stream, so a version pinned on a
+        /// stored column (`pinCurrentStateVersionToAggregateFunctions`) has to survive, or the state
+        /// would silently degrade to version 0 on every round trip through local persistence.
         bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-        setVersionToAggregateFunctions(column.type, /* if_empty= */ false, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
+        setVersionToAggregateFunctions(column.type, /* if_empty= */ client_revision == 0, include_version ? std::optional<size_t>(client_revision) : std::nullopt);
 
         /// Type
         if (format_settings && format_settings->native.encode_types_in_binary_format)
