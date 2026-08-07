@@ -293,9 +293,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
-    startup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
-    consumer_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
-    cleanup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
+    startup_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
+    consumer_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
+    cleanup_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
 }
 
 

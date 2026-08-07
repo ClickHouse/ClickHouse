@@ -44,7 +44,7 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     : storage(storage_)
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreePartCheckThread)")
     , log(getLogger(log_name))
-    , pausable_task(storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); }))
+    , pausable_task(storage.getContext()->getSchedulePool()->createTask(storage.getStorageID(), log_name, [this] { run(); }))
 {
     getTask()->deactivate();
 }
