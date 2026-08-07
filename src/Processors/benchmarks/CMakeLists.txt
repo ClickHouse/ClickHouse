@@ -1,12 +1,12 @@
-clickhouse_add_executable(runtime_filter
-    runtime_filter.cpp
+clickhouse_add_executable(benchmark_runtime_filter
+    benchmark_runtime_filter.cpp
     ../../Functions/ComparisonParams.cpp
     ../../Functions/equals.cpp
     ../../Functions/isDistinctFrom.cpp
     ../../Functions/isNotDistinctFrom.cpp
     ../../Functions/notEquals.cpp
     ../../Functions/registerFunctions.cpp)
-target_link_libraries(runtime_filter PRIVATE
+target_link_libraries(benchmark_runtime_filter PRIVATE
     ch_contrib::gbenchmark_all
     dbms)
 
