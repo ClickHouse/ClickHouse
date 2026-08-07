@@ -512,6 +512,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     return {};
 }
 
+std::optional<size_t> estimateReadRowsCountForJoin(QueryPlan::Node & node)
+{
+    return estimateReadRowsCount(node).estimated_rows;
+}
+
 
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
 {

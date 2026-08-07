@@ -1,10 +1,13 @@
 0	UInt64
 planner auto
 10
+legacy planner auto
+10
 explicit value
 10
 runtime auto
 10000
 04665_explicit	2
+04665_legacy_planner_auto	1
 04665_planner_auto	1
 04665_runtime_auto	1

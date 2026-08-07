@@ -65,6 +65,7 @@
 #include <Parsers/QueryParameterVisitor.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/StorageDictionary.h>
@@ -1029,6 +1030,13 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         || (!isCrossOrComma(analyzed_join->kind()) && analyzed_join->getClauses().empty() && analyzed_join->strictness() != JoinStrictness::Asof))
         return std::make_shared<ConstantJoin>(analyzed_join, right_sample_block);
 
+    const auto get_rhs_size_estimation = [&]() -> std::optional<size_t>
+    {
+        if (!joined_plan || !joined_plan->isInitialized())
+            return std::nullopt;
+        return QueryPlanOptimizations::estimateReadRowsCountForJoin(*joined_plan->getRootNode());
+    };
+
     if (algorithm == JoinAlgorithm::PARTIAL_MERGE ||
         algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE)
     {
@@ -1050,6 +1058,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             Block left_sample_block(left_sample_columns);
             if (sanitizeBlock(left_sample_block, false))
             {
+                const auto rhs_size_estimation = get_rhs_size_estimation();
                 if (analyzed_join->allowParallelHashJoin())
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,
@@ -1059,7 +1068,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
-                        StatsCollectingParams{});
+                        StatsCollectingParams{},
+                        /*any_take_last_row_=*/false,
+                        rhs_size_estimation);
                 else
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,
@@ -1067,7 +1078,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         right_sample_block,
                         context->getTempDataOnDisk(),
                         settings[Setting::grace_hash_join_initial_buckets],
-                        settings[Setting::grace_hash_join_max_buckets]);
+                        settings[Setting::grace_hash_join_max_buckets],
+                        StatsCollectingParams{},
+                        /*any_take_last_row_=*/false,
+                        rhs_size_estimation);
             }
         }
 
@@ -1093,10 +1107,19 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         // Grace hash join requires that columns exist in left_sample_block.
         Block left_sample_block(left_sample_columns);
         if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
+        {
+            const auto rhs_size_estimation = get_rhs_size_estimation();
             return std::make_shared<GraceHashJoin>(
                 context->getSettingsRef()[Setting::grace_hash_join_initial_buckets],
                 context->getSettingsRef()[Setting::grace_hash_join_max_buckets],
-                analyzed_join, std::make_shared<const Block>(std::move(left_sample_block)), right_sample_block, context->getTempDataOnDisk());
+                analyzed_join,
+                std::make_shared<const Block>(std::move(left_sample_block)),
+                right_sample_block,
+                context->getTempDataOnDisk(),
+                /*any_take_last_row_=*/false,
+                /*external_join_threshold_=*/0,
+                GraceHashJoin::InitialBucketsParams{.total_rows_estimation = rhs_size_estimation});
+        }
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
@@ -1109,6 +1132,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             Block left_sample_block(left_sample_columns);
             if (sanitizeBlock(left_sample_block, false))
             {
+                const auto rhs_size_estimation = get_rhs_size_estimation();
                 if (analyzed_join->allowParallelHashJoin())
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,
@@ -1118,7 +1142,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
-                        StatsCollectingParams{});
+                        StatsCollectingParams{},
+                        /*any_take_last_row_=*/false,
+                        rhs_size_estimation);
                 else
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,
@@ -1126,7 +1152,10 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         right_sample_block,
                         context->getTempDataOnDisk(),
                         settings[Setting::grace_hash_join_initial_buckets],
-                        settings[Setting::grace_hash_join_max_buckets]);
+                        settings[Setting::grace_hash_join_max_buckets],
+                        StatsCollectingParams{},
+                        /*any_take_last_row_=*/false,
+                        rhs_size_estimation);
             }
         }
 

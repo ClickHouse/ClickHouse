@@ -21,7 +21,18 @@ INNER JOIN grace_hash_join_auto_initial_buckets_rhs AS rhs USING number
 SETTINGS
     grace_hash_join_initial_buckets = 0,
     max_rows_in_join = 1000,
+    query_plan_optimize_join_order_limit = 10,
     log_comment = '04665_planner_auto';
+
+SELECT 'legacy planner auto';
+SELECT count()
+FROM numbers(10) AS lhs
+INNER JOIN grace_hash_join_auto_initial_buckets_rhs AS rhs USING number
+SETTINGS
+    allow_experimental_analyzer = 0,
+    grace_hash_join_initial_buckets = 0,
+    max_rows_in_join = 1000,
+    log_comment = '04665_legacy_planner_auto';
 
 SELECT 'explicit value';
 SELECT count()
@@ -49,13 +60,13 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     log_comment,
-    if(log_comment IN ('04665_planner_auto', '04665_runtime_auto'),
+    if(log_comment IN ('04665_planner_auto', '04665_legacy_planner_auto', '04665_runtime_auto'),
         max(ProfileEvents['JoinGraceHashJoinInitialBuckets']) > 1,
         max(ProfileEvents['JoinGraceHashJoinInitialBuckets'])) AS initial_buckets
 FROM system.query_log
 WHERE
     current_database = currentDatabase()
-    AND log_comment IN ('04665_planner_auto', '04665_explicit', '04665_runtime_auto')
+    AND log_comment IN ('04665_planner_auto', '04665_legacy_planner_auto', '04665_explicit', '04665_runtime_auto')
     AND type = 'QueryFinish'
 GROUP BY log_comment
 ORDER BY log_comment;

@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Common/Exception.h>
+#include <Common/tests/gtest_global_register.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -49,6 +50,8 @@ QueryPlanSerializationSettings roundTrip(const JoinSettings & source)
 
 std::unique_ptr<JoinStepLogical> makeJoinStep(UInt64 initial_buckets)
 {
+    tryRegisterFunctions();
+
     Settings query_settings;
     query_settings[Setting::grace_hash_join_initial_buckets] = initial_buckets;
 
@@ -58,7 +61,9 @@ std::unique_ptr<JoinStepLogical> makeJoinStep(UInt64 initial_buckets)
         empty_header,
         JoinOperator{},
         JoinExpressionActions{},
-        std::vector<const ActionsDAG::Node *>{},
+        NameSet{},
+        std::unordered_map<String, const ActionsDAG::Node *>{},
+        false,
         JoinSettings(query_settings),
         SortingStep::Settings(query_settings));
 }
@@ -262,6 +267,17 @@ TEST(GraceHashJoinBuckets, ClampsAutoValueWithoutOverflow)
             1,
             0),
         8);
+}
+
+TEST(GraceHashJoinBuckets, LimitsAutomaticTemporaryFileBufferMemory)
+{
+    constexpr size_t configured_buffer_size = 1uz << 20;
+
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 1, 0), configured_buffer_size);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 128, 1uz << 30), configured_buffer_size);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 256, 1uz << 30), 1uz << 19);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 256, 100uz << 10), 50);
+    EXPECT_EQ(GraceHashJoin::getTemporaryFilesBufferSize(configured_buffer_size, 1024, 1), 1);
 }
 
 TEST(SpillingHashJoin, RejectsZeroExternalJoinThreshold)

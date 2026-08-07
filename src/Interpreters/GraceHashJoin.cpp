@@ -283,7 +283,11 @@ GraceHashJoin::GraceHashJoin(
             .bytes_compressed = ProfileEvents::ExternalJoinCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalJoinUncompressedBytes,
             .num_files = ProfileEvents::ExternalJoinWritePart,
-        }, table_join->temporaryFilesBufferSize(), table_join->temporaryFilesCodec()))
+        },
+        initial_num_buckets_ == 0
+            ? getTemporaryFilesBufferSize(table_join->temporaryFilesBufferSize(), initial_num_buckets, external_join_threshold_)
+            : table_join->temporaryFilesBufferSize(),
+        table_join->temporaryFilesCodec()))
     , hash_join(makeInMemoryJoin("grace0"))
     , hash_join_sample_block(hash_join->savedBlockSample())
 {
@@ -364,6 +368,24 @@ size_t GraceHashJoin::getInitialNumBuckets(
 
     /// The maximum may not be a power of two. Keep the result both valid and within the limit.
     return 1uz << bitScanReverse(max_num_buckets);
+}
+
+size_t GraceHashJoin::getTemporaryFilesBufferSize(
+    size_t configured_buffer_size,
+    size_t initial_num_buckets,
+    size_t max_bytes_before_external_join)
+{
+    chassert(configured_buffer_size > 0);
+    chassert(initial_num_buckets > 0);
+
+    if (max_bytes_before_external_join == 0)
+        return configured_buffer_size;
+
+    /// Every bucket owns two temporary streams. Each stream has an uncompressed buffer and
+    /// a compressed buffer, so reserve at most half of the external JOIN threshold for all
+    /// four buffers. Divide one factor at a time to avoid overflowing on a large bucket count.
+    size_t buffer_size = max_bytes_before_external_join / initial_num_buckets / 4 / 2;
+    return std::clamp(buffer_size, 1uz, configured_buffer_size);
 }
 
 bool GraceHashJoin::isSupported(const std::shared_ptr<TableJoin> & table_join)
