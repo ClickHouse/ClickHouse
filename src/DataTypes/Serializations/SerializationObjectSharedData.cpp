@@ -1087,14 +1087,16 @@ std::shared_ptr<SerializationObjectSharedData::ChunkStructures> SerializationObj
         if (!structure_prefix_stream)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty structure prefix stream for object shared data data");
 
+        /// A Compact granule always contains at least one chunk, and an empty (0-row) granule still
+        /// writes one empty chunk. Read at least one chunk so its structure bytes are always consumed.
         size_t total_chunk_rows = 0;
-        while (total_chunk_rows < rows_offset + limit)
+        do
         {
             ChunkStructure chunk_structure;
             deserializeChunkStructurePrefix(*structure_prefix_stream, chunk_structure, structure_state);
             total_chunk_rows += chunk_structure.num_rows;
             result->push_back(std::move(chunk_structure));
-        }
+        } while (total_chunk_rows < rows_offset + limit);
         settings.path.pop_back();
 
         if (total_chunk_rows != rows_offset + limit)
@@ -1628,18 +1630,17 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
                 auto * structure_state = checkAndGetState<DeserializeBinaryBulkStateObjectSharedDataStructure>(shared_data_state->bucket_structure_states[bucket]);
 
-                /// Read chunk structures until we've covered all requested rows.
-                /// For ADVANCED (no chunking) there is exactly one chunk with num_rows == rows_offset + limit.
-                /// For ADVANCED_CHUNKED there may be multiple chunks whose num_rows sum to rows_offset + limit.
+                /// A Compact granule always contains at least one chunk, and an empty (0-row) granule
+                /// still writes one empty chunk, so read at least one chunk to always consume its bytes.
                 std::vector<ChunkStructure> chunk_structures;
                 size_t total_chunk_rows = 0;
-                while (total_chunk_rows < rows_offset + limit)
+                do
                 {
                     ChunkStructure chunk_structure;
                     deserializeChunkStructurePrefix(*structure_prefix_stream, chunk_structure, *structure_state);
                     total_chunk_rows += chunk_structure.num_rows;
                     chunk_structures.push_back(std::move(chunk_structure));
-                }
+                } while (total_chunk_rows < rows_offset + limit);
 
                 if (total_chunk_rows != rows_offset + limit)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
