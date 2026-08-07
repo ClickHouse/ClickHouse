@@ -1,6 +1,7 @@
 #include <Formats/PNGWriter.h>
 
 #include <array>
+#include <cstring>
 #include <limits>
 
 #include <zlib.h>
@@ -353,6 +354,26 @@ void PNGWriter::writeEnd()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PNG writer cannot end an animation that was not started");
 
     writeChunk(out, "IEND", nullptr, 0);
+}
+
+void PNGWriter::patchDeclaredFrameCount(char * datastream, size_t size) const
+{
+    /// The animation datastream begins with the 8-byte signature, the `IHDR` chunk (12 bytes of framing
+    /// around 13 bytes of data), and then the `acTL` chunk, so the positions are fixed.
+    static constexpr size_t ACTL_TYPE_POS = 8 + (12 + 13) + 4;
+    static constexpr size_t ACTL_DATA_POS = ACTL_TYPE_POS + 4;
+    static constexpr size_t ACTL_DATA_SIZE = 8;
+    static constexpr size_t ACTL_CRC_POS = ACTL_DATA_POS + ACTL_DATA_SIZE;
+
+    if (!animation_started || frames_written == 0 || frames_written > MAX_DECLARED_FRAMES
+        || size < ACTL_CRC_POS + 4 || memcmp(datastream + ACTL_TYPE_POS, "acTL", 4) != 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no 'acTL' chunk whose frame count could be patched");
+
+    putBigEndian32(datastream + ACTL_DATA_POS, static_cast<UInt32>(frames_written));
+
+    /// The CRC of a chunk covers its type and data.
+    const uLong crc = crc32_z(0, reinterpret_cast<const Bytef *>(datastream + ACTL_TYPE_POS), 4 + ACTL_DATA_SIZE);
+    putBigEndian32(datastream + ACTL_CRC_POS, static_cast<UInt32>(crc));
 }
 
 void PNGWriter::finalize()

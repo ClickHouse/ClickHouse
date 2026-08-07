@@ -120,6 +120,21 @@ png_http "${DIMS}&output_format_image_streaming_animation=1" "
 " > "${OUT}/streaming.png"
 python3 "${PARSER}" "${OUT}/streaming.png" 0,0,0 1,0,0 2,0,0
 
+# With a terminal protocol the whole datastream is buffered before it is sent, so even in the streaming
+# mode the exact frame count is patched into `acTL` and the payload conforms to the specification.
+echo "--- streaming, three frames, iterm ---"
+png_http "${DIMS}&output_format_image_streaming_animation=1&output_format_image_terminal_mode=iterm" "
+    SELECT intDiv(number, 2) AS t, toUInt8(intDiv(number, 2) * 100 + number % 2) AS v
+    FROM numbers(6) ORDER BY number FORMAT PNG
+" > "${OUT}/streaming_iterm"
+python3 - "${OUT}/streaming_iterm" "${OUT}/streaming_iterm.png" <<'PYEOF'
+import base64, sys
+data = open(sys.argv[1], "rb").read()
+payload = data[data.index(b":") + 1 : data.index(b"\a")]
+open(sys.argv[2], "wb").write(base64.b64decode(payload))
+PYEOF
+python3 "${PARSER}" "${OUT}/streaming_iterm.png" 0,0,0 1,0,0 2,0,0
+
 # Buffered mode accepts `t` in any order and emits the frames sorted by `t`.
 echo "--- buffered, descending t is reordered ---"
 png_http "${DIMS}" "

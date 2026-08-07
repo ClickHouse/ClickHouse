@@ -59,6 +59,12 @@ public:
     /// End an animation by writing `IEND`.
     void writeEnd();
 
+    /// Rewrite the frame count declared by the `acTL` chunk (and the chunk's CRC) of a complete animation
+    /// datastream that this writer produced, in place. For when the header had to declare an upper bound
+    /// (the streaming mode), but the datastream was buffered in memory anyway (a terminal protocol carries
+    /// it as a single payload), so the exact count is known before any byte of it is sent.
+    void patchDeclaredFrameCount(char * datastream, size_t size) const;
+
     /// Flush the underlying buffer.
     void finalize();
 

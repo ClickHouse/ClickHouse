@@ -120,6 +120,12 @@ void PNGOutputFormat::finalizeImpl()
                 break; /// Already written to `out`.
             case ImageTerminalMode::ITerm:
                 animation_buffer_out->finalize();
+                /// In the streaming mode `acTL` declared an upper bound, because the frame count is not
+                /// known when the header is written. Here the whole datastream has been buffered anyway
+                /// (the protocol carries it as a single payload), so the exact count is known before any
+                /// byte of it is sent: patch it in, and the payload conforms to the specification
+                /// regardless of the mode.
+                animation_writer->patchDeclaredFrameCount(animation_buffer.data(), animation_buffer.size());
                 writeImageITerm(out, animation_buffer);
                 break;
             case ImageTerminalMode::Kitty:
@@ -299,7 +305,8 @@ In exchange:
   written, so the count is declared exactly and the output conforms to the specification.
 
 Because an inline terminal image protocol carries the whole datastream as a single payload, the frames cannot
-reach the terminal early and this setting only affects how much memory is used there.
+reach the terminal early and this setting only affects how much memory is used there. The exact frame count is
+patched into the buffered payload before it is sent, so the caveat about the upper bound does not apply.
 
 An animation is displayed only in the `iterm` terminal mode. The `sixel` protocol cannot represent an
 animation at all, and the Kitty graphics protocol animates only through a separate flow of per-frame commands,

@@ -23,6 +23,17 @@ frame2 delay=1/60 rect=2x1+0+0 dispose=0 blend=0
 pixel[0](0,0)=0
 pixel[1](0,0)=100
 pixel[2](0,0)=200
+--- streaming, three frames, iterm ---
+size=2x1 color_type=0
+acTL=num_frames=3 num_plays=0
+real_frames=3
+sequence_consecutive=True
+frame0 delay=1/60 rect=2x1+0+0 dispose=0 blend=0
+frame1 delay=1/60 rect=2x1+0+0 dispose=0 blend=0
+frame2 delay=1/60 rect=2x1+0+0 dispose=0 blend=0
+pixel[0](0,0)=0
+pixel[1](0,0)=100
+pixel[2](0,0)=200
 --- buffered, descending t is reordered ---
 size=2x1 color_type=0
 acTL=num_frames=3 num_plays=0
