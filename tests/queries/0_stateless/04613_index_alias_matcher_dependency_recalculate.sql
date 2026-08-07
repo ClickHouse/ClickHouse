@@ -8,9 +8,6 @@
 -- changes, even when the dependency is only visible after column matcher expansion
 -- inside another alias body.
 
--- Matchers do not match ALIAS columns unless this setting is enabled.
-SET asterisk_include_alias_columns = 1;
-
 -- The rebuild is queued as a `MATERIALIZE INDEX` mutation by the ALTER below; wait for it to
 -- finish before querying, otherwise the SELECT can still see the stale index files.
 SET alter_sync = 2;

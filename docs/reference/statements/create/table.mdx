@@ -124,7 +124,7 @@ A default value expression `expr` may reference arbitrary table columns and cons
 
 Column `DEFAULT`, `MATERIALIZED`, `EPHEMERAL`, and `ALIAS` expressions can use column matchers such as `*`, `COLUMNS('regexp')`, and `COLUMNS(column_name, ...)`, and the column transformer modifiers `EXCEPT`, `APPLY`, and `REPLACE`.
 
-Matchers are expanded before expression validation and execution. By default, `*` does not include `MATERIALIZED` or `ALIAS` columns; this can be changed with the `asterisk_include_materialized_columns` and `asterisk_include_alias_columns` settings. `EPHEMERAL` columns are not included in matcher expansion.
+Matchers are expanded before expression validation and execution. Unlike in `SELECT` queries, matcher expansion in stored expressions is independent of session settings, so the same table definition always expands to the same expression: `*` never includes `MATERIALIZED` or `ALIAS` columns (the `asterisk_include_materialized_columns` and `asterisk_include_alias_columns` settings have no effect here), while `COLUMNS` matches them. `EPHEMERAL` columns are not included in matcher expansion.
 
 ClickHouse detects and rejects cyclic default-expression dependencies. For example, `b String DEFAULT toJSONString(tuple(*))` is rejected because `*` includes `b` itself. Use `EXCEPT` to exclude the column when needed:
 

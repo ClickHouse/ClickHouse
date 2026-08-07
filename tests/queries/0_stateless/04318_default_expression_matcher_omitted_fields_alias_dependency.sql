@@ -1,5 +1,3 @@
-SET asterisk_include_alias_columns = 1;
-
 DROP TABLE IF EXISTS default_expression_matcher_omitted_fields_alias_dependency;
 
 CREATE TABLE default_expression_matcher_omitted_fields_alias_dependency

@@ -70,8 +70,8 @@ void ColumnAliasesMatcher::visit(ASTIdentifier & node, ASTPtr & ast, Data & data
         if (col.default_desc.kind == ColumnDefaultKind::Alias)
         {
             auto alias = node.tryGetAlias();
-            auto alias_expr = cloneAndExpandColumnDefaultExpression(col.default_desc, data.columns, data.context);
-            validateNoCyclicAliasesAfterExpansion(*column_name, alias_expr, data.columns, data.context);
+            auto alias_expr = cloneAndExpandColumnDefaultExpression(col.default_desc, data.columns);
+            validateNoCyclicAliasesAfterExpansion(*column_name, alias_expr, data.columns);
             auto original_column = alias_expr->getColumnName();
             // If expanded alias is used in array join, avoid expansion, otherwise the column will be mis-array joined
             if (data.array_join_result_columns.contains(original_column) || data.array_join_source_columns.contains(original_column))

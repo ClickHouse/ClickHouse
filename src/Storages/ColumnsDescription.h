@@ -331,7 +331,7 @@ struct DefaultExpressionsInfo
 
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info);
 
-ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context);
+ASTPtr cloneAndExpandColumnDefaultExpression(const ColumnDefault & column_default, const ColumnsDescription & columns);
 ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & column_default, const ColumnsDescription & columns, ContextPtr context);
 
 /// Insert into `dependencies` the columns from `candidate_names` that `node` reads,
@@ -340,9 +340,9 @@ ASTPtr cloneAndExpandColumnDefaultExpressionWithAliases(const ColumnDefault & co
 /// membership test, so reading a column through a subcolumn path still counts as a
 /// dependency on that column.
 void collectColumnDependenciesFromAST(const ASTPtr & node, const NameSet & candidate_names, const ColumnsDescription & columns, NameSet & dependencies);
-void validateNoCyclicAliasesAfterExpansion(const String & alias_name, const ASTPtr & expanded_alias_expression, const ColumnsDescription & columns, ContextPtr context);
-void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns, ContextPtr context);
-void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns, ContextPtr context);
+void validateNoCyclicAliasesAfterExpansion(const String & alias_name, const ASTPtr & expanded_alias_expression, const ColumnsDescription & columns);
+void expandColumnMatchersInExpression(ASTPtr & expression, const ColumnsDescription & columns);
+void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns);
 
 /// Validate default expressions and corresponding types compatibility, i.e.
 /// default expression result can be cast to column_type. Also checks, that we

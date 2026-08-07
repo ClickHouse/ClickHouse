@@ -1,8 +1,11 @@
-DROP TABLE IF EXISTS ttl_default_matcher_late_cycle;
+-- Matcher expansion in stored expressions is settings-independent: TTL materialization
+-- during a merge and later alias reads expand `*` identically no matter which
+-- `asterisk_include_*` settings the session (or the background merge context) has.
+DROP TABLE IF EXISTS ttl_default_matcher;
 
 SET asterisk_include_alias_columns = 0;
 
-CREATE TABLE ttl_default_matcher_late_cycle
+CREATE TABLE ttl_default_matcher
 (
     ts DateTime,
     a UInt8,
@@ -13,20 +16,18 @@ ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0;
 
-INSERT INTO ttl_default_matcher_late_cycle VALUES (toDateTime('2000-01-01 00:00:00'), 1, 'old');
+INSERT INTO ttl_default_matcher VALUES (toDateTime('2000-01-01 00:00:00'), 1, 'old');
 
--- TTL materialization during a merge expands `b`'s matcher under the background
--- merge context (server defaults), where alias columns are excluded from `*`, so no
--- cycle is formed and `OPTIMIZE` must succeed.
-OPTIMIZE TABLE ttl_default_matcher_late_cycle FINAL;
-OPTIMIZE TABLE ttl_default_matcher_late_cycle FINAL;
+-- TTL materialization during the merge recomputes the expired `b` from its DEFAULT;
+-- `*` never includes the alias `x`, so no cycle can form.
+OPTIMIZE TABLE ttl_default_matcher FINAL;
+OPTIMIZE TABLE ttl_default_matcher FINAL;
+
+SELECT x FROM ttl_default_matcher SETTINGS optimize_respect_aliases = 1;
 
 SET asterisk_include_alias_columns = 1;
 
--- With `asterisk_include_alias_columns = 1` the matcher in `b`'s default expands to
--- include the alias `x` (which aliases `b`), forming a `b` -> `x` -> `b` cycle. Reading the
--- alias column `x` forces this expansion at query time under both the old analyzer
--- (with `optimize_respect_aliases`) and the analyzer, so the late cycle is detected.
-SELECT x FROM ttl_default_matcher_late_cycle SETTINGS optimize_respect_aliases = 1; -- { serverError CYCLIC_ALIASES }
+-- The alias read is unaffected by the session setting.
+SELECT x FROM ttl_default_matcher SETTINGS optimize_respect_aliases = 1;
 
-DROP TABLE ttl_default_matcher_late_cycle;
+DROP TABLE ttl_default_matcher;

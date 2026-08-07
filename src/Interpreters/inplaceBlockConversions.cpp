@@ -78,7 +78,7 @@ void addDefaultRequiredExpressionsRecursively(
     {
         /// expressions must be cloned to prevent modification by the ExpressionAnalyzer
         auto column_default_expr = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, columns, context);
-        validateNoCyclicAliasesAfterExpansion(required_column_name, column_default_expr, columns, context);
+        validateNoCyclicAliasesAfterExpansion(required_column_name, column_default_expr, columns);
 
         /// Our default may depend on columns with default expr which not present in block
         /// we have to add them to block too
@@ -184,7 +184,7 @@ ASTPtr convertRequiredExpressions(
             if (auto column_default = columns.getDefault(required_column.name))
             {
                 default_value = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, columns, context);
-                validateNoCyclicAliasesAfterExpansion(required_column.name, default_value, columns, context);
+                validateNoCyclicAliasesAfterExpansion(required_column.name, default_value, columns);
             }
             else if (!forbid_default_defaults)
                 default_value = make_intrusive<ASTLiteral>(required_column.type->getDefault());

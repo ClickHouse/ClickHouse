@@ -214,7 +214,7 @@ ASTPtr IndexDescription::initExpressionInfo(ASTPtr index_expression, const Colum
     /// so an index over a typed alias (`b UInt8 ALIAS a`) is built over the alias body.
     /// See the comment on `ColumnAliasReplacementMode::IndexAnalysis` for why converting
     /// to the alias type here would misread the index files of already written parts.
-    expandColumnMatchersInExpressionList(expr_list, columns, context);
+    expandColumnMatchersInExpressionList(expr_list, columns);
     ASTPtr persisted_expression_list = expr_list->clone();
     replaceAliasColumnsInQuery(
         expr_list,

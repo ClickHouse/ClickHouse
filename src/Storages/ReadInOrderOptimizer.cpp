@@ -309,8 +309,8 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(
 
             const auto & columns = metadata_snapshot->getColumns();
             const auto & column_name = required_sort_description[i].column_name;
-            auto column_expr = cloneAndExpandColumnDefaultExpression(columns.get(column_name).default_desc, columns, context);
-            validateNoCyclicAliasesAfterExpansion(column_name, column_expr, columns, context);
+            auto column_expr = cloneAndExpandColumnDefaultExpression(columns.get(column_name).default_desc, columns);
+            validateNoCyclicAliasesAfterExpansion(column_name, column_expr, columns);
             replaceAliasColumnsInQuery(column_expr, columns, array_join_result_to_source, context);
 
             auto syntax_analyzer_result = TreeRewriter(context).analyze(column_expr, columns.getAll());

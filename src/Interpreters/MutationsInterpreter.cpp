@@ -132,7 +132,7 @@ ASTPtr cloneAndValidateExpandedDefaultExpression(
     ContextPtr context)
 {
     auto expression = cloneAndExpandColumnDefaultExpressionWithAliases(column_default, columns, context);
-    validateNoCyclicAliasesAfterExpansion(column_name, expression, columns, context);
+    validateNoCyclicAliasesAfterExpansion(column_name, expression, columns);
     return expression;
 }
 

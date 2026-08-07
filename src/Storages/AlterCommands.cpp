@@ -2012,7 +2012,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                             if (const auto & default_expression = column.default_desc.expression)
                             {
                                 ASTPtr query = default_expression->clone();
-                                expandColumnMatchersInExpression(query, all_columns, context);
+                                expandColumnMatchersInExpression(query, all_columns);
                                 auto expression = buildQueryTree(query, execution_context);
                                 QueryAnalyzer analyzer(true);
                                 analyzer.resolve(expression, fake_table_expression, execution_context);
@@ -2038,7 +2038,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                             if (const auto & default_expression = column.default_desc.expression)
                             {
                                 ASTPtr query = default_expression->clone();
-                                expandColumnMatchersInExpression(query, all_columns, context);
+                                expandColumnMatchersInExpression(query, all_columns);
                                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
                                 const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
                                 for (const auto & required_column : actions->getRequiredColumns())

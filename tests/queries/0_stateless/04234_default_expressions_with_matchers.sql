@@ -128,23 +128,21 @@ CREATE TABLE default_expr_matchers_indirect_self
 )
 ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 
-SET asterisk_include_materialized_columns = 1;
+-- `*` never includes MATERIALIZED or ALIAS columns, but `COLUMNS` does, so a `COLUMNS`
+-- pattern matching the column itself is a cycle.
 CREATE TABLE default_expr_matchers_materialized_self
 (
     a UInt8,
-    b String MATERIALIZED toJSONString(tuple(*))
+    b String MATERIALIZED toJSONString(tuple(COLUMNS('^(a|b)$')))
 )
 ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
-SET asterisk_include_materialized_columns = 0;
 
-SET asterisk_include_alias_columns = 1;
 CREATE TABLE default_expr_matchers_alias_self
 (
     a UInt8,
-    b String ALIAS toJSONString(tuple(*))
+    b String ALIAS toJSONString(tuple(COLUMNS('^(a|b)$')))
 )
 ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
-SET asterisk_include_alias_columns = 0;
 
 CREATE TABLE default_expr_matchers_default_except
 (
@@ -156,30 +154,27 @@ ENGINE = Memory;
 INSERT INTO default_expr_matchers_default_except (a) VALUES (1);
 SELECT b FROM default_expr_matchers_default_except;
 
+-- MATERIALIZED and ALIAS columns are not matched by `*`, but can be referenced via `COLUMNS`.
 CREATE TABLE default_expr_matchers_include_materialized
 (
     a UInt8,
     m UInt8 MATERIALIZED a + 1,
-    b String DEFAULT toJSONString(tuple(* EXCEPT b))
+    b String DEFAULT toJSONString(tuple(COLUMNS('^(a|m)$')))
 )
 ENGINE = Memory;
 
-SET asterisk_include_materialized_columns = 1;
 INSERT INTO default_expr_matchers_include_materialized (a) VALUES (1);
-SET asterisk_include_materialized_columns = 0;
 SELECT b FROM default_expr_matchers_include_materialized;
 
 CREATE TABLE default_expr_matchers_include_alias
 (
     a UInt8,
     x UInt8 ALIAS a + 1,
-    b String DEFAULT toJSONString(tuple(* EXCEPT b))
+    b String DEFAULT toJSONString(tuple(COLUMNS('^(a|x)$')))
 )
 ENGINE = Memory;
 
-SET asterisk_include_alias_columns = 1;
 INSERT INTO default_expr_matchers_include_alias (a) VALUES (1);
-SET asterisk_include_alias_columns = 0;
 SELECT b FROM default_expr_matchers_include_alias;
 
 CREATE TABLE default_expr_matchers_qualified_asterisk_error

@@ -1,5 +1,3 @@
-SET asterisk_include_alias_columns = 1;
-
 DROP TABLE IF EXISTS default_expression_matcher_alias_ttl;
 DROP TABLE IF EXISTS default_expression_matcher_alias_conversion;
 

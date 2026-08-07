@@ -63,7 +63,7 @@ TEST_F(ColumnsDescriptionTest, ExpandRootColumnMatcherExpression)
     matcher->setPattern("^a$");
     ASTPtr expression = matcher;
 
-    expandColumnMatchersInExpression(expression, columns, getContext().context);
+    expandColumnMatchersInExpression(expression, columns);
 
     const auto * identifier = expression->as<ASTIdentifier>();
     ASSERT_NE(identifier, nullptr);
@@ -80,7 +80,7 @@ TEST_F(ColumnsDescriptionTest, RejectRootColumnMatcherExpressionWithMultipleColu
 
     ASTPtr expression = make_intrusive<ASTAsterisk>();
 
-    EXPECT_THROW(expandColumnMatchersInExpression(expression, columns, getContext().context), Exception);
+    EXPECT_THROW(expandColumnMatchersInExpression(expression, columns), Exception);
 }
 
 TEST_F(ColumnsDescriptionTest, ColumnsSameAsSubcolumns1)

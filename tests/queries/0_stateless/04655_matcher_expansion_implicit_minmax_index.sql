@@ -5,7 +5,6 @@
 -- makes them schema-sensitive just like explicit indices: an unrelated `ADD COLUMN` changes the
 -- effective index expression while existing parts keep index files built from the old one.
 
-SET asterisk_include_alias_columns = 1;
 SET alter_sync = 2;
 SET mutations_sync = 2;
 

@@ -39,8 +39,14 @@ CREATE TABLE index_matcher_alias_late_cycle
 ENGINE = MergeTree
 ORDER BY tuple();
 
+-- `*` expansion is settings-independent and never includes ALIAS columns, so the
+-- normalized index expression cannot become cyclic through the alias `x` regardless of
+-- `asterisk_include_alias_columns`.
 SET asterisk_include_alias_columns = 1;
-ALTER TABLE index_matcher_alias_late_cycle ADD INDEX idx(x) TYPE set(0) GRANULARITY 1; -- { serverError CYCLIC_ALIASES }
+ALTER TABLE index_matcher_alias_late_cycle ADD INDEX idx(x) TYPE set(0) GRANULARITY 1;
+
+INSERT INTO index_matcher_alias_late_cycle (a) VALUES (1), (3);
+SELECT count() FROM index_matcher_alias_late_cycle WHERE x = '[1]' SETTINGS force_data_skipping_indices = 'idx';
 
 SET asterisk_include_alias_columns = 0;
 

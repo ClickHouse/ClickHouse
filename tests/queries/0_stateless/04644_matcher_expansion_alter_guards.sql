@@ -1,7 +1,6 @@
 -- Guards around the automatic repair mutations that an ALTER queues when column matcher
 -- expansion changes the effective expression of a stored column or of a skip index.
 
-SET asterisk_include_alias_columns = 1;
 SET alter_sync = 2;
 SET mutations_sync = 2;
 
