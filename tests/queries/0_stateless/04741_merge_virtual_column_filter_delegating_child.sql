@@ -275,12 +275,22 @@ SELECT '-- arm G: a _database filter must not prune it, because its rows carry a
 SELECT count() FROM merge(currentDatabase(), '^t04741_file_(child|sibling)$')
     WHERE _database = ''; -- { serverError FILE_DOESNT_EXIST }
 
-SELECT '-- arm H: reading the file-like child by its own name still selects it';
+-- Measured on all three binaries (master, this branch, the branch with the classifier reverted) this
+-- reads 0, so it is a control and not a witness: it asserts that pruning an ordinary file-like child
+-- is preserved. Arms F, G and J are the witnesses for the class. A count cannot be used here at all,
+-- because an admitted child's rows are dropped by the per-row filter and the total is unchanged.
+SELECT '-- arm H control: an excluded file-like child stays absent from the plan';
 INSERT INTO TABLE FUNCTION file('04741_present.tsv', TSV, 'x UInt32') SELECT number FROM numbers(19)
     SETTINGS engine_file_truncate_on_insert = 1;
 CREATE TABLE t04741_file_present (x UInt32) ENGINE = File(TSV, '04741_present.tsv');
-SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_(present|sibling)$')
-    WHERE _table = 't04741_file_present' GROUP BY 1 ORDER BY 1;
+SELECT count() FROM (EXPLAIN SELECT count() FROM merge(currentDatabase(), '^t04741_file_(present|sibling)$')
+    WHERE _table = 't04741_file_sibling')
+    WHERE explain ILIKE '%ReadFromFile%';
+
+SELECT '-- arm H control: without the filter it is admitted, and it really is readable';
+SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM merge(currentDatabase(), '^t04741_file_(present|sibling)$'))
+    WHERE explain ILIKE '%ReadFromFile%';
+SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_present$') GROUP BY 1 ORDER BY 1;
 
 -- `_path` here is a physical column, so `getVirtualsForFileLikeStorage` omits the `_path` virtual and
 -- the child no longer declares the whole family. It still stamps its own `_table`, so it stays
