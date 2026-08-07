@@ -4,6 +4,8 @@
 -- `doSettingsSanityCheckClamp`. They must not be checked where the settings are read, in
 -- `getFormatSettings`: that runs for every query, so an out-of-range value would be accepted by
 -- `SET` and would then fail every following statement, including the `SET` putting it back.
+-- The clamp logs a warning, which would otherwise reach the client's stderr and fail the test.
+SET send_logs_level = 'fatal';
 
 -- Zero is rejected up front, and the session survives it.
 SET format_avro_schema_registry_retry_initial_backoff_ms = 0; -- { serverError BAD_ARGUMENTS }

@@ -2,6 +2,8 @@
 -- rejected. It used to be rejected in `ProcessList::insert`, which runs for every query, so the
 -- value was accepted by `SET` and then failed every following statement - including the `SET`
 -- that would put it back, leaving the session unusable.
+-- The clamp logs a warning, which would otherwise reach the client's stderr and fail the test.
+SET send_logs_level = 'fatal';
 SET temporary_files_buffer_size = 9223372036854775806;
 SELECT value FROM system.settings WHERE name = 'temporary_files_buffer_size';
 SELECT 'session alive';
