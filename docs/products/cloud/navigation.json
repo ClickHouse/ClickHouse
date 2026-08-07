@@ -21,14 +21,8 @@
                 "products/cloud/reference/supported-regions",
                 "products/cloud/features/infrastructure/deployment-options",
                 "products/cloud/guides/cloud-compatibility",
-                {
-                  "expanded": false,
-                  "group": "Deployment modes",
-                  "pages": [
-                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
-                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
-                  ]
-                }
+                "products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
+                "products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
               ]
             },
             {
