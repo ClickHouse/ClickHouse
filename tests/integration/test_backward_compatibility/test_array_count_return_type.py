@@ -30,6 +30,14 @@ def start_cluster():
 # the coordinator builds a `UInt32` header, new servers compute `UInt32`
 # because the setting is forwarded to them, and old servers compute `UInt32`
 # natively while ignoring the unknown setting.
+#
+# An old coordinator must also be able to query the same mixed cluster: it
+# resolves `arrayCount` as `UInt32` and does not know the setting, so the new
+# server computes `UInt64` and the initiator converts the remote block to its
+# `UInt32` header. That conversion is a modular cast — the same truncation the
+# old implementation itself performed (it counted in `size_t` and narrowed
+# with `static_cast<UInt32>`), so the old coordinator observes exactly the
+# pre-upgrade semantics for arrays of any size.
 def test_array_count_mixed_version_remote(start_cluster):
     for node in (new_node, old_node):
         node.query("CREATE TABLE tab (arr Array(UInt64)) ENGINE = Memory")
@@ -50,6 +58,11 @@ def test_array_count_mixed_version_remote(start_cluster):
         new_node.query(query, settings={"compatibility": CLICKHOUSE_CI_MIN_TESTED_VERSION})
         == "6\tUInt32\n"
     )
+
+    # The old coordinator resolves `arrayCount` as `UInt32` and sends no
+    # settings; the new server computes `UInt64` and the initiator converts it
+    # to the `UInt32` header, matching the old (modular) semantics.
+    assert old_node.query(query) == "6\tUInt32\n"
 
     for node in (new_node, old_node):
         node.query("DROP TABLE tab")
