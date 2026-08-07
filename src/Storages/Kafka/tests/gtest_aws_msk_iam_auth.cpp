@@ -5,9 +5,12 @@
 
 #include <Storages/Kafka/AWSMSKIAMAuth.h>
 #include <Common/Exception.h>
+#include <IO/S3Defines.h>
 #include <Poco/Util/MapConfiguration.h>
+#include <aws/core/auth/AWSCredentials.h>
 #include <cppkafka/configuration.h>
 #include <cppkafka/kafka_handle_base.h>
+#include <chrono>
 
 namespace DB
 {
@@ -97,6 +100,83 @@ TEST(AWSMSKIAMAuth, InvalidRegions)
     EXPECT_FALSE(isValidAWSRegion("us-east"));
     EXPECT_FALSE(isValidAWSRegion("us-east-"));
     EXPECT_FALSE(isValidAWSRegion("-us-east-1"));
+}
+
+// ---------------------------------------------------------------------------
+// credentialsRemainingValidity / advertisedTokenLifetime
+// ---------------------------------------------------------------------------
+
+TEST(AWSMSKIAMAuth, RemainingValidityTruncatesTowardsZero)
+{
+    const auto now = std::chrono::system_clock::now();
+
+    /// Never report more time than the credentials really have: a token advertised as valid
+    /// for the rounded-up second outlives them.
+    EXPECT_EQ(credentialsRemainingValidity(now + std::chrono::milliseconds(1500), now), std::chrono::seconds(1));
+    EXPECT_EQ(credentialsRemainingValidity(now + std::chrono::milliseconds(999), now), std::chrono::seconds(0));
+    EXPECT_EQ(credentialsRemainingValidity(now - std::chrono::milliseconds(1500), now), std::chrono::seconds(-1));
+}
+
+TEST(AWSMSKIAMAuth, RemainingValidityOfExpiredCredentialsIsNotPositive)
+{
+    const auto now = std::chrono::system_clock::now();
+
+    EXPECT_EQ(credentialsRemainingValidity(now, now), std::chrono::seconds(0));
+    EXPECT_EQ(credentialsRemainingValidity(now - std::chrono::seconds(30), now), std::chrono::seconds(-30));
+}
+
+TEST(AWSMSKIAMAuth, CredentialsWithoutExpiryDoNotOverflow)
+{
+    /// Static credentials, e.g. from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, carry no
+    /// expiration. The AWS SDK spells that as `time_point::max()`, so the subtraction against
+    /// `now` must stay representable and the cap must not shorten the lifetime.
+    const Aws::Auth::AWSCredentials never_expiring{"key", "secret"};
+    const auto now = std::chrono::system_clock::now();
+
+    const auto remaining = credentialsRemainingValidity(never_expiring.GetExpiration().UnderlyingTimestamp(), now);
+    EXPECT_GT(remaining, std::chrono::seconds::zero());
+    EXPECT_EQ(advertisedTokenLifetime(remaining), TOKEN_LIFETIME);
+}
+
+TEST(AWSMSKIAMAuth, FreshCredentialsGetTheFullTokenLifetime)
+{
+    /// STS applies a 3600s default to AssumeRoleWithWebIdentity, which is what IRSA yields.
+    EXPECT_EQ(advertisedTokenLifetime(std::chrono::seconds(3600)), TOKEN_LIFETIME);
+    EXPECT_EQ(advertisedTokenLifetime(TOKEN_LIFETIME), TOKEN_LIFETIME);
+}
+
+TEST(AWSMSKIAMAuth, LifetimeIsCappedBelowTheTokenLifetime)
+{
+    EXPECT_EQ(advertisedTokenLifetime(TOKEN_LIFETIME - std::chrono::seconds(1)), TOKEN_LIFETIME - std::chrono::seconds(1));
+    EXPECT_EQ(advertisedTokenLifetime(std::chrono::seconds(1)), std::chrono::seconds(1));
+}
+
+TEST(AWSMSKIAMAuth, NextRefreshFallsInsideTheProviderRefreshWindow)
+{
+    /// The credentials provider reloads once the credentials are within
+    /// DEFAULT_EXPIRATION_WINDOW_SECONDS of expiring, so that is the least validity
+    /// GetAWSCredentials can hand back. librdkafka refreshes at 80% of the lifetime it is
+    /// given, and that refresh has to land before the credentials expire, inside the window
+    /// where the provider produces a fresh set. This is the invariant the cap exists for.
+    const auto floor = std::chrono::seconds(DB::S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
+
+    for (auto remaining = std::chrono::seconds(1); remaining <= std::chrono::seconds(4 * TOKEN_LIFETIME.count()); ++remaining)
+    {
+        const auto lifetime = advertisedTokenLifetime(remaining);
+
+        EXPECT_GT(lifetime, std::chrono::seconds::zero()) << "remaining = " << remaining.count();
+        EXPECT_LE(lifetime, remaining) << "remaining = " << remaining.count();
+        EXPECT_LE(lifetime, TOKEN_LIFETIME) << "remaining = " << remaining.count();
+
+        if (remaining < floor)
+            continue;
+
+        /// Time left once librdkafka schedules its refresh, in seconds.
+        const double left_at_refresh = static_cast<double>(remaining.count()) - 0.8 * static_cast<double>(lifetime.count());
+        EXPECT_GT(left_at_refresh, 0.0) << "remaining = " << remaining.count();
+        if (remaining <= TOKEN_LIFETIME)
+            EXPECT_LT(left_at_refresh, static_cast<double>(floor.count())) << "remaining = " << remaining.count();
+    }
 }
 
 // ---------------------------------------------------------------------------
