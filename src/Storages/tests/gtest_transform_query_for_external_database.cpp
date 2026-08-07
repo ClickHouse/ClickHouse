@@ -254,6 +254,9 @@ TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
           "SELECT field, value FROM test.table WHERE tuple(field, value) IN (tuple('foo', 'bar'))",
           R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar')))");
     check(state, 1, {"field", "value"},
+          "SELECT field, value FROM test.table WHERE tuple(field, value) IN tuple('foo', 'bar')",
+          R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar')))");
+    check(state, 1, {"field", "value"},
           "SELECT field, value FROM test.table WHERE tuple(field, value) IN (tuple(tuple('foo', 'bar'), tuple('qux', 'baz')))",
           R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar'), ('qux', 'baz')))");
 }
