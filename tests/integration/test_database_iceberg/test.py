@@ -294,8 +294,8 @@ def escape_like_literal(s):
 
 def test_namespace_filter_pushdown(started_cluster):
     """
-    Verify that `system.tables` and `system.iceberg_history` predicates that fully bind the namespace
-    (`name`/`table = '<ns>.<table>'`, `name`/`table LIKE '<ns>.%'`) only fetch the table list
+    Verify that `system.tables` predicates that fully bind the namespace
+    (`name = '<ns>.<table>'`, `name LIKE '<ns>.%'`) only fetch the table list
     from the targeted namespace instead of enumerating the whole catalog.
     See issue #105022.
 
@@ -397,19 +397,59 @@ def test_namespace_filter_pushdown(started_cluster):
         one_table,
     )
 
-    # `system.iceberg_history` exposes the catalog table name as `table`, but
-    # should pass the same namespace hint to the catalog.
-    assert_scoped(
-        f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' "
-        f"AND table LIKE '{escape_like_literal(namespace_1)}.%'",
-        "0",
+
+def test_iceberg_history_namespace_filter_pushdown(started_cluster):
+    """
+    A predicate on `system.iceberg_history.table` must be passed to the REST
+    catalog so ClickHouse requests the target namespace's table list only.
+
+    The result alone cannot prove pushdown because filtering after a full catalog
+    scan returns the same rows. `RestCatalog` logs every namespace whose `/tables`
+    endpoint it requests, so this test verifies that the target request happens
+    and the sibling request does not.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    target_namespace = f"{root_namespace}.target"
+    sibling_namespace = f"{root_namespace}.sibling"
+    table_name = "history_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(target_namespace)
+    catalog.create_namespace(sibling_namespace)
+
+    target_table = create_table(catalog, target_namespace, table_name)
+    target_table.append(pa.Table.from_pylist([generate_record()]))
+    sibling_table = create_table(catalog, sibling_namespace, table_name)
+    sibling_table.append(pa.Table.from_pylist([generate_record()]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    target_table_name = f"{target_namespace}.{table_name}"
+    target_log_message = (
+        f"Received tables response for namespace: {target_namespace}"
+    )
+    sibling_log_message = (
+        f"Received tables response for namespace: {sibling_namespace}"
     )
 
-    assert_scoped(
-        f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' "
-        f"AND table = '{one_table}'",
-        "0",
-    )
+    predicates = [
+        f"table = '{target_table_name}'",
+        f"table LIKE '{escape_like_literal(target_namespace)}.%'",
+    ]
+    for predicate in predicates:
+        target_requests_before = int(node.count_in_log(target_log_message))
+        sibling_requests_before = int(node.count_in_log(sibling_log_message))
+
+        result = node.query(
+            f"SELECT DISTINCT table FROM system.iceberg_history "
+            f"WHERE database = '{CATALOG_NAME}' AND {predicate}"
+        ).strip()
+
+        assert result == target_table_name
+        assert int(node.count_in_log(target_log_message)) == target_requests_before + 1
+        assert int(node.count_in_log(sibling_log_message)) == sibling_requests_before
 
 
 def test_check_database(started_cluster):
