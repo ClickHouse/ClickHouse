@@ -744,12 +744,13 @@ const std::map<String, Entry> & scalarFunctions()
                 2,
                 [](const ASTs & a) -> ASTPtr
                 {
-                    /// The input names a wall-clock time in `timezone`; reading it back in
-                    /// that zone and rendering as UTC is the inverse of `toTimezone`.
+                    /// The input is a `DateTime64(7, 'UTC')` whose wall clock names a local
+                    /// time in `timezone`. Re-reading that wall clock in `timezone` finds the
+                    /// instant it stands for; the result then renders in UTC.
                     return makeASTFunction(
-                        "toDateTime64",
-                        makeASTFunction("toString", makeASTFunction("toTimezone", a[0], asString(a[1]))),
-                        litI(7),
+                        "toTimezone",
+                        makeASTFunction(
+                            "toDateTime64", makeASTFunction("toString", a[0]), lit(static_cast<UInt64>(7)), asString(a[1])),
                         litS("UTC"));
                 }});
         result.emplace(
