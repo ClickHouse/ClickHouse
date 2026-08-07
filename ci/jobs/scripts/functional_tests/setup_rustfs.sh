@@ -66,7 +66,7 @@ find_os() {
 
 download_binaries() {
   local os
-  local rustfs_version=${RUSTFS_VERSION:-1.0.0-beta.12}
+  local rustfs_version=${RUSTFS_VERSION:-1.0.0-beta.11}
   local mc_version=${MC_VERSION:-2025-05-21T01-59-54Z}
 
   os=$(find_os)
