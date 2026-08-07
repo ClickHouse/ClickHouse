@@ -316,7 +316,7 @@ SELECT timezone()
 REGISTER_FUNCTION(ServerTimezone)
 {
     FunctionDocumentation::Description description = R"(
-Returns the timezone of the server, i.e. the value of the [`timezone`](/operations/server-configuration-parameters/settings#timezone) setting.
+Returns the timezone of the server, i.e. the value of the [`timezone`](/reference/settings/server-settings/settings/other#timezone) setting.
 If the function is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise, it produces a constant value.
     )";
     FunctionDocumentation::Syntax syntax = "serverTimezone()";

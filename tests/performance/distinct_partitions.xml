@@ -1,0 +1,55 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>partitions</name>
+            <values>
+                <value>16</value>
+                <value>64</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Pin max_threads so the per-partition DISTINCT heuristic engages on any runner: it requires the
+         partition count to be at least max_threads/2, so with a high core count (default max_threads) the
+         16-partition variant would be rejected and the optimization would not be exercised. With
+         max_threads=16 both the 16- and 64-partition tables satisfy 8 <= partitions <= 128. -->
+    <settings>
+        <max_threads>16</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE test_{partitions} (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a PARTITION BY sipHash64(a) % {partitions}</create_query>
+
+    <!-- Skewed shape: 3 hot values × 30% rows each (90% total) + 27 values × ~0.37% each (10% total). -->
+    <create_query>CREATE TABLE t_skew_10000000_{partitions} (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a</create_query>
+
+    <fill_query>INSERT INTO test_{partitions} SELECT number, number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_{partitions} FINAL</fill_query>
+
+    <fill_query>INSERT INTO t_skew_10000000_{partitions} SELECT if(number % 10 &lt; 9, number % 3, 3 + (number % 27)) AS a, number AS b FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_skew_10000000_{partitions} FINAL</fill_query>
+
+    <query>SELECT DISTINCT a FROM test_{partitions} FORMAT Null</query>
+
+    <query>SELECT DISTINCT a FROM test_{partitions} WHERE b > 1 FORMAT Null</query>
+
+    <query>SELECT DISTINCT a, b FROM test_{partitions} FORMAT Null</query>
+
+    <query>SELECT DISTINCT a FROM test_{partitions} SETTINGS optimize_distinct_in_order = 1 FORMAT Null</query>
+
+    <query>SELECT DISTINCT a FROM t_skew_10000000_{partitions} FORMAT Null</query>
+
+    <!-- propagation through ARRAY JOIN, and to consumers stacked above DISTINCT -->
+    <query>SELECT DISTINCT a FROM test_{partitions} ARRAY JOIN range(a % 4) AS e FORMAT Null</query>
+
+    <query>SELECT DISTINCT a, b FROM test_{partitions} LIMIT 1 BY a FORMAT Null</query>
+
+    <query>SELECT a, count() FROM (SELECT DISTINCT a, b FROM test_{partitions}) GROUP BY a FORMAT Null SETTINGS allow_aggregate_partitions_independently = 1</query>
+
+    <!-- consumers stacked above a (skipping) LIMIT BY, which preserves disjointness upward -->
+    <query>SELECT DISTINCT a FROM (SELECT a FROM test_{partitions} LIMIT 5 BY a) FORMAT Null</query>
+
+    <query>SELECT a, count() FROM (SELECT a FROM test_{partitions} LIMIT 5 BY a) GROUP BY a FORMAT Null SETTINGS allow_aggregate_partitions_independently = 1</query>
+
+    <drop_query>DROP TABLE test_{partitions}</drop_query>
+    <drop_query>DROP TABLE t_skew_10000000_{partitions}</drop_query>
+</test>

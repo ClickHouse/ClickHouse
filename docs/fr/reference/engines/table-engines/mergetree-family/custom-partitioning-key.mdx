@@ -162,7 +162,7 @@ GROUP BY UserID;
 ```
 
 <Note>
-  Les performances d’une telle requête dépendent fortement de la structure de la table. C’est pourquoi cette optimisation n’est pas activée par défaut.
+  Les performances d’une telle requête dépendent de la structure de la table. L’optimisation est activée par défaut depuis la version 26.7 ; les heuristiques d’exécution l’ignorent automatiquement lorsque la structure des partitions est défavorable — plus précisément, lorsqu’il y a trop peu de partitions (moins de `max_threads / 2`), trop de partitions (plus de `max_number_of_partitions_for_independent_aggregation`) ou lorsque la taille des partitions est très déséquilibrée (la plus grande partition contient plus de lignes que deux fois le nombre total de lignes divisé par `max_threads`). La liste ci-dessous décrit les facteurs de structure qui favorisent de bonnes performances de manière générale ; parmi eux, seuls le nombre de partitions et le déséquilibre des tailles sont pris en compte par les heuristiques d’exécution.
 </Note>
 
 Les facteurs clés pour obtenir de bonnes performances sont les suivants :
