@@ -1,11 +1,13 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-random-settings
 -- Tag no-fasttest: requires remote() table function
+-- Tag no-random-settings: asserts EXPLAIN output, which randomized plan settings perturb
 
 SET allow_experimental_hybrid_table = 1;
 
--- The EXPLAIN-based assertions below print plan shapes that some randomized session
--- settings perturb. Pin them for deterministic output. None of these affect pruning logic;
--- they just stabilize how the plan is rendered.
+-- The EXPLAIN-based assertions below print plan shapes. `no-random-settings` keeps the session
+-- at the defaults the reference was generated with. The settings below pin the few values that
+-- differ from their defaults, plus the timezone, so the assertions do not depend on the server
+-- configuration either. None of these affect pruning logic.
 SET prefer_localhost_replica = 1;             -- avoid ReadFromRemote vs ReadFromMergeTree flips
 SET query_plan_join_swap_table = 'false';     -- pin JOIN side ordering
 SET use_query_condition_cache = 0;            -- consistent EXPLAIN across runs
