@@ -292,7 +292,8 @@ void OwnAsyncSplitChannel::open()
     catch (...)
     {
         /// Fail closed: a partially opened channel would keep accepting messages into queues that no
-        /// consumer drains, silently losing diagnostics. Tear back down and let the caller handle it.
+        /// consumer drains, silently losing diagnostics. Tear back down - log() delivers synchronously
+        /// while the channel is stopped - and let the caller handle it.
         close();
         throw;
     }
@@ -428,6 +429,30 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         auto text_log_max_priority_loaded = text_log_max_priority.load(std::memory_order_relaxed);
         if (channels.empty() && !text_log_max_priority_loaded)
             return;
+
+        /// While the channel is stopped (before open, during the quiesce window around remapExecutable,
+        /// after close) there is no consumer thread, so deliver synchronously, as OwnSplitChannel does.
+        /// An enqueued message could otherwise be lost forever: if the server never reopens the channel -
+        /// e.g. startup fails because restarting the logging threads after the remap threw - the exception
+        /// unwinding out of Server::main is logged into queues that nobody will ever drain.
+        /// A message that raced with close() into the queue after the final drain is delivered when the
+        /// channel reopens, so the two paths may reorder messages across a stop/start cycle, but none are lost.
+        if (!is_open)
+        {
+            for (const auto & channel : channels)
+            {
+                if (channel->getPriority() >= msg_priority)
+                    channel->logExtended(notification->msg_ext);
+            }
+
+            if (text_log_max_priority_loaded >= msg_priority)
+            {
+                if (const auto text_log_locked = text_log.lock())
+                    logToSystemTextLogQueue(text_log_locked, notification->msg_ext, notification->msg_thread_name);
+            }
+
+            return;
+        }
 
         for (size_t i = 0; i < queues.size(); i++)
         {

@@ -1303,9 +1303,9 @@ try
         /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
         /// the window faults (and the signal handler's code is unmapped too, so it dies silently).
         ///
-        /// Restart the async logging threads even if remapExecutable throws. Otherwise the logger would stay
-        /// stopped, and the exception unwinding through Server::main would be logged into a queue that no
-        /// consumer thread is draining, silently losing the startup exception and any queued diagnostics.
+        /// Restart the async logging threads even if remapExecutable throws, so the exception unwinding
+        /// through Server::main is logged by a fully running logger (a stopped channel falls back to
+        /// synchronous delivery, but anything already queued waits until the threads run again).
         /// The remap exception is stashed rather than rethrown directly, so the restart happens outside the
         /// signal-blocking scope: the mask is restored first, and the logging threads get the same mask as
         /// during a normal startup.
@@ -1369,8 +1369,9 @@ try
 #endif
 
         /// Fail closed if the restart itself throws: continuing with only part of the logging threads
-        /// running would keep accepting messages into queues that no consumer drains (open() tears the
-        /// partially opened channel back down before rethrowing), silently losing later diagnostics.
+        /// running would keep accepting messages into queues that no consumer drains. open() tears the
+        /// partially opened channel back down before rethrowing, and a stopped channel delivers messages
+        /// synchronously, so the exception propagating out of Server::main still reaches the log.
         startAsyncLoggingThreads();
 
         /// Restarted after the logging threads, so that if this throws, the exception is still logged normally.
