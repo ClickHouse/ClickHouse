@@ -107,11 +107,31 @@ DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_f
 void DataTypeObject::insertDefaultInto(IColumn & column) const
 {
     auto & column_object = assert_cast<ColumnObject &>(column);
-    for (auto & [path, typed_column] : column_object.getTypedPaths())
-        typed_paths.at(path)->insertDefaultInto(*typed_column);
-    for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
-        dynamic_column->insertDefault();
-    column_object.getSharedDataColumn().insertDefault();
+    /// Exception-safe: if some sub-column's insert throws (e.g. on a memory limit),
+    /// roll back the sub-columns that were already advanced, otherwise the object is
+    /// left with sub-columns of different sizes and popBack would over-pop the shorter ones.
+    size_t prev_size = column_object.size();
+    try
+    {
+        for (auto & [path, typed_column] : column_object.getTypedPaths())
+            typed_paths.at(path)->insertDefaultInto(*typed_column);
+        for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
+            dynamic_column->insertDefault();
+        column_object.getSharedDataColumn().insertDefault();
+    }
+    catch (...)
+    {
+        for (auto & [_, typed_column] : column_object.getTypedPaths())
+            if (typed_column->size() > prev_size)
+                typed_column->popBack(typed_column->size() - prev_size);
+        for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
+            if (dynamic_column->size() > prev_size)
+                dynamic_column->popBack(dynamic_column->size() - prev_size);
+        auto & shared_data = column_object.getSharedDataColumn();
+        if (shared_data.size() > prev_size)
+            shared_data.popBack(shared_data.size() - prev_size);
+        throw;
+    }
 }
 
 bool DataTypeObject::isDefaultInsertTrivial() const
