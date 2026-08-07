@@ -75,7 +75,10 @@ t04741_file_sibling	23
 -- arm F control: with no filter the same query opens the child and fails
 -- arm G: a _database filter must not prune it, because its rows carry an empty _database
 -- arm H: reading the file-like child by its own name still selects it
+t04741_file_present	19
+-- arm J: a file-like child whose family virtual is shadowed physically is still pruned
 t04741_file_sibling	23
+-- arm J control: with no filter the same query opens the shadowed child and fails
 -- arm I: a _table filter prunes the loop child, so the query terminates
 t04741_loop_sibling	31
 -- arm I control: the pruned plan really does not read it

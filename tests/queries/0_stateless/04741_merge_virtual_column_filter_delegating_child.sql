@@ -276,8 +276,25 @@ SELECT count() FROM merge(currentDatabase(), '^t04741_file_(child|sibling)$')
     WHERE _database = ''; -- { serverError FILE_DOESNT_EXIST }
 
 SELECT '-- arm H: reading the file-like child by its own name still selects it';
-SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_sibling$')
+INSERT INTO TABLE FUNCTION file('04741_present.tsv', TSV, 'x UInt32') SELECT number FROM numbers(19)
+    SETTINGS engine_file_truncate_on_insert = 1;
+CREATE TABLE t04741_file_present (x UInt32) ENGINE = File(TSV, '04741_present.tsv');
+SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_(present|sibling)$')
+    WHERE _table = 't04741_file_present' GROUP BY 1 ORDER BY 1;
+
+-- `_path` here is a physical column, so `getVirtualsForFileLikeStorage` omits the `_path` virtual and
+-- the child no longer declares the whole family. It still stamps its own `_table`, so it stays
+-- prunable: master answers this query, and reading the absent file would raise FILE_DOESNT_EXIST.
+SELECT '-- arm J: a file-like child whose family virtual is shadowed physically is still pruned';
+CREATE TABLE t04741_file_shadow (x UInt32, _path String) ENGINE = File(TSV, '04741_no_such_file_2.tsv');
+SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_(shadow|sibling)$')
     WHERE _table = 't04741_file_sibling' GROUP BY 1 ORDER BY 1;
+
+SELECT '-- arm J control: with no filter the same query opens the shadowed child and fails';
+SELECT count() FROM merge(currentDatabase(), '^t04741_file_(shadow|sibling)$'); -- { serverError FILE_DOESNT_EXIST }
+
+DROP TABLE t04741_file_present;
+DROP TABLE t04741_file_shadow;
 
 -- `loop` re-reads its inner storage forever and declares no `_database`/`_table` of its own, so a
 -- query that names it cannot succeed either way and admitting an excluded one never terminates. Same

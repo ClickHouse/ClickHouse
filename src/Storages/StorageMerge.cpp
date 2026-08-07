@@ -1537,11 +1537,14 @@ bool readIsNotSelfNamed(const IStorage & child, size_t depth = 0)
 /// The file-like engines stamp `_table` from their own `StorageID` in the single family-wide site
 /// `addRequestedFileLikeStorageVirtualsToChunk`. The whole shared declaration identifies them: `Merge`,
 /// `Buffer`, the message queues and `Hive` also declare it at `Reader` place without self-stamping.
-bool declaresFileLikeSelfStampedTable(const VirtualColumnsDescription & virtuals)
+bool declaresFileLikeSelfStampedTable(const ColumnsDescription & columns, const VirtualColumnsDescription & virtuals)
 {
-    static constexpr std::array family_columns = {"_path", "_file", "_size", "_etag", "_tags", "_table"};
-    return std::ranges::all_of(family_columns, [&](const auto * name)
-    { return virtuals.tryGetDescription(name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader); });
+    /// `getVirtualsForFileLikeStorage` omits a family virtual whose name the table declares physically, so
+    /// a physical column counts as declared here. `_table` is excluded: it is the one the decision reads.
+    static constexpr std::array shadowable_columns = {"_path", "_file", "_size", "_etag", "_tags"};
+    return virtuals.tryGetDescription("_table", VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader)
+        && std::ranges::all_of(shadowable_columns, [&](const auto * name)
+    { return columns.has(name) || virtuals.tryGetDescription(name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader); });
 }
 
 /// The prefilter matches the child's own name, so it may prune only a child whose rows carry that child's
@@ -1569,7 +1572,7 @@ bool childMaterializesOwnStorageId(
     const auto & virtuals = child_metadata->virtuals;
 
     /// The file-like family stamps only `_table`, so a `_database` predicate stays unprunable there.
-    if (declaresFileLikeSelfStampedTable(virtuals))
+    if (declaresFileLikeSelfStampedTable(child_metadata->columns, virtuals))
         return !filtered_names.contains("_database");
 
     /// Both remaining tests are required: the self-stamping path in `StorageWithCommonVirtualColumns`
