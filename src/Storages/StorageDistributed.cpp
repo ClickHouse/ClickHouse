@@ -2842,11 +2842,11 @@ void registerStorageDistributed(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, context);
 
-        /// Infer an omitted structure under the user's context, so that the `SHOW_COLUMNS` check for a
-        /// local shard is not made against the global context the constructor holds. Skipped when the
-        /// definition comes from already-validated metadata, which has no user to check against.
-        ColumnsDescription columns = args.columns;
-        if (columns.empty() && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        /// Infer an omitted structure of a classic `(db, table)` target under the user's context, so that
+        /// the `SHOW_COLUMNS` check for a local shard is not made against the global context the constructor
+        /// holds. Skipped when the definition comes from already-validated metadata, which has no user to
+        /// check against. A table-function target infers its columns in its own branch above.
+        if (!remote_table_function_ptr && columns.empty() && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
         {
             /// Expanded first, so this resolves the same cluster the constructor will: a Replicated
             /// database's implicit cluster is found by the expanded name only.
