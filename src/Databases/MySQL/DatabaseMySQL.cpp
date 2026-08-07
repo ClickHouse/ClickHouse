@@ -88,6 +88,8 @@ namespace
         {
             return LogsLevel::warning;
         }
+        /// Ok to not report anything here: the exception stays active and the caller logs it at the
+        /// level returned from here.
         catch (...)
         {
             return LogsLevel::error;

@@ -74,6 +74,8 @@ namespace
         {
             return e.code() == ErrorCodes::POSTGRESQL_CONNECTION_FAILURE ? LogsLevel::warning : LogsLevel::error;
         }
+        /// Ok to not report anything here: the exception stays active and the caller logs it at the
+        /// level returned from here.
         catch (...)
         {
             return LogsLevel::error;
