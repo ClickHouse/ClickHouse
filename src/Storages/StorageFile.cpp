@@ -414,7 +414,7 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
 }
 
 /// Finds files matching a specified pattern with globs.
-Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
+Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read, bool use_glob_ast)
 {
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_pattern(path_with_globs);
@@ -424,7 +424,6 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     Strings paths;
 
     const size_t max_expansion = context->getSettingsRef()[Setting::glob_expansion_max_elements];
-    const bool use_glob_ast = context->getSettingsRef()[Setting::use_glob_ast_parser];
 
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
@@ -475,13 +474,12 @@ StorageFile::ArchiveInfo getArchiveInfo(
     const std::string & file_in_archive,
     const std::string & user_files_path,
     const ContextPtr & context,
-    size_t & total_bytes_to_read
+    size_t & total_bytes_to_read,
+    bool use_glob_ast
 )
 {
     StorageFile::ArchiveInfo archive_info;
     archive_info.path_in_archive = file_in_archive;
-
-    const bool use_glob_ast = context->getSettingsRef()[Setting::use_glob_ast_parser];
 
     if (use_glob_ast)
     {
@@ -502,7 +500,7 @@ StorageFile::ArchiveInfo getArchiveInfo(
         }
     }
 
-    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read);
+    archive_info.paths_to_archives = getPathsList(path_to_archive, user_files_path, context, total_bytes_to_read, use_glob_ast);
 
     return archive_info;
 }
@@ -1111,13 +1109,16 @@ namespace
     };
 }
 
-StorageFile::FileSource StorageFile::FileSource::parse(const String & source, const ContextPtr & context, std::optional<bool> allow_archive_path_syntax)
+StorageFile::FileSource StorageFile::FileSource::parse(const String & source, const ContextPtr & context, std::optional<bool> allow_archive_path_syntax, std::optional<bool> use_glob_ast_parser)
 {
     String filename;
     String path_to_archive;
 
     if (!allow_archive_path_syntax)
         allow_archive_path_syntax = context->getSettingsRef()[Setting::allow_archive_path_syntax];
+
+    if (!use_glob_ast_parser)
+        use_glob_ast_parser = context->getSettingsRef()[Setting::use_glob_ast_parser];
 
     if (*allow_archive_path_syntax)
         std::tie(path_to_archive, filename) = splitToArchivePathAndPathInArchive(source);
@@ -1128,9 +1129,9 @@ StorageFile::FileSource StorageFile::FileSource::parse(const String & source, co
     String user_files_path = context->getUserFilesPath();
 
     if (!path_to_archive.empty())
-        res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read);
+        res.archive_info = getArchiveInfo(path_to_archive, filename, user_files_path, context, res.total_bytes_to_read, *use_glob_ast_parser);
     else
-        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read);
+        res.paths = getPathsList(filename, user_files_path, context, res.total_bytes_to_read, *use_glob_ast_parser);
 
     res.with_globs = res.paths.size() > 1;
 
@@ -2810,7 +2811,14 @@ void registerStorageFile(StorageFactory & factory)
                 else if (type == Field::Types::UInt64)
                     source_fd = static_cast<int>(literal->value.safeGet<UInt64>());
                 else if (type == Field::Types::String)
-                    file_source = StorageFile::FileSource::parse(literal->value.safeGet<String>(), factory_args.getLocalContext());
+                    /// The resolved paths and the glob classification become table state that must
+                    /// survive `ATTACH` / server restart / DDL replay unchanged, so pin the legacy,
+                    /// setting-independent glob parser here.
+                    file_source = StorageFile::FileSource::parse(
+                        literal->value.safeGet<String>(),
+                        factory_args.getLocalContext(),
+                        /* allow_archive_path_syntax = */ {},
+                        /* use_glob_ast_parser = */ false);
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
             }
