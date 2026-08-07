@@ -34,6 +34,26 @@ bool looksLikeSetStatement(const std::vector<KQLToken> & tokens)
         && tokens[1].type == KQLTokenType::BareWord && tokens[2].type == KQLTokenType::Equals;
 }
 
+/// `pos` stands on the `set` word.
+ASTPtr parseSetStatement(const char *& pos, const char * end, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+{
+    Tokens sql_tokens(pos, end, max_query_size, /*skip_insignificant=*/true);
+    IParser::Pos token_iterator(sql_tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
+
+    ParserSetQuery set_parser;
+    ASTPtr node;
+    Expected expected;
+    if (set_parser.parse(token_iterator, node, expected))
+    {
+        pos = token_iterator->begin;
+        /// Consume the statement separator so the caller resumes on the next statement.
+        while (pos < end && (*pos == ';' || isWhitespaceASCII(*pos)))
+            ++pos;
+        return node;
+    }
+    throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse the SET statement");
+}
+
 }
 
 ASTPtr parseKQLQuery(
@@ -66,23 +86,7 @@ ASTPtr parseKQLQuery(
     pos = tokens.front().begin;
 
     if (looksLikeSetStatement(tokens))
-    {
-        Tokens sql_tokens(pos, end, max_query_size, /*skip_insignificant=*/true);
-        IParser::Pos token_iterator(sql_tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
-
-        ParserSetQuery set_parser;
-        ASTPtr node;
-        Expected expected;
-        if (set_parser.parse(token_iterator, node, expected))
-        {
-            pos = token_iterator->begin;
-            /// Consume the statement separator so the caller resumes on the next statement.
-            while (pos < end && (*pos == ';' || isWhitespaceASCII(*pos)))
-                ++pos;
-            return node;
-        }
-        throw Exception(ErrorCodes::SYNTAX_ERROR, "Cannot parse the SET statement");
-    }
+        return parseSetStatement(pos, end, max_query_size, max_parser_depth, max_parser_backtracks);
 
     KQLParser parser(pos, std::move(tokens), max_parser_depth);
     KQLTabularExpressionPtr query = parser.parseQuery();
@@ -104,6 +108,23 @@ ASTPtr parseKQLQuery(
     }
 
     return result;
+}
+
+ASTPtr tryParseKQLSetStatement(
+    const char *& pos,
+    const char * end,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
+{
+    KQLLexer lexer(pos, end);
+    std::vector<KQLToken> tokens = lexer.tokenize();
+
+    if (!looksLikeSetStatement(tokens))
+        return nullptr;
+
+    pos = tokens.front().begin;
+    return parseSetStatement(pos, end, max_query_size, max_parser_depth, max_parser_backtracks);
 }
 
 }

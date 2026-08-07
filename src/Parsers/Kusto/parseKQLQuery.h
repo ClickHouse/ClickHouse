@@ -26,4 +26,19 @@ ASTPtr parseKQLQuery(
     size_t max_parser_depth,
     size_t max_parser_backtracks);
 
+/** Parses the statement at `pos` only if it has the `SET name = ...` shape that
+  * `parseKQLQuery` recognizes as its `SET` fast path; returns `nullptr` otherwise.
+  *
+  * This exists for the `allow_experimental_kusto_dialect` gate: a session already in
+  * `dialect = 'kusto'` must be able to run `SET dialect = 'clickhouse'` (or turn the
+  * gate back on) even when the gate is off, or it could never leave the dialect.
+  * Throws only when the statement looks like a `SET` but does not parse as one.
+  */
+ASTPtr tryParseKQLSetStatement(
+    const char *& pos,
+    const char * end,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks);
+
 }

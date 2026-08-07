@@ -1237,11 +1237,20 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::kusto && !internal)
         {
-            if (!settings[Setting::allow_experimental_kusto_dialect])
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
             const char * kql_pos = begin;
-            out_ast = parseKQLQuery(
-                kql_pos, end, /*allow_multi_statements=*/false, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            if (!settings[Setting::allow_experimental_kusto_dialect])
+            {
+                /// A plain `SET` passes even when the gate is off, so a session that is
+                /// already in `dialect = 'kusto'` can run `SET dialect = 'clickhouse'`
+                /// (or turn the gate back on) instead of being stranded until reconnect.
+                out_ast = tryParseKQLSetStatement(
+                    kql_pos, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                if (!out_ast)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the Kusto Query Language (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
+            }
+            else
+                out_ast = parseKQLQuery(
+                    kql_pos, end, /*allow_multi_statements=*/false, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else if (settings[Setting::dialect] == Dialect::prql && !internal)
         {
