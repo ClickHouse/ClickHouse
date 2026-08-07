@@ -177,6 +177,12 @@ struct PositionDeleteKindPresence
 PositionDeleteKindPresence getPositionDeleteKindPresence(
     const std::vector<ProcessedManifestFileEntryPtr> & position_delete_files);
 
+/// Sum required per-file `record_count` over live manifest entries.
+/// Returns nullopt if any entry has a negative `record_count` or the sum would overflow `Int64`
+/// (fail closed — do not use optional column `value_counts`, which can disagree for nested fields).
+std::optional<Int64> getRecordCountInAllFilesExcludingDeleted(
+    const std::vector<ProcessedManifestFileEntryPtr> & files);
+
 /// Puffin deletion vectors must identify the data file via the dedicated `referenced_data_file`
 /// manifest field (non-empty). Position-delete lower/upper bounds must not be used as a fallback.
 void requireDirectReferencedDataFileForPuffinDeletionVector(

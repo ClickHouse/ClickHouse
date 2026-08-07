@@ -5,10 +5,14 @@
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 
+#include <limits>
+
 using namespace DB;
+using namespace DB::Iceberg;
 
 TEST(IcebergCountShortcuts, HasEqualityAndPositionDeleteHelpers)
 {
@@ -57,6 +61,91 @@ TEST(IcebergCountShortcuts, SnapshotSummaryFieldsRemainLoggingHintsOnly)
     EXPECT_EQ(*snapshot.total_rows, 100u);
     EXPECT_EQ(*snapshot.total_position_delete_rows, 10u);
     EXPECT_EQ(*snapshot.total_equality_delete_rows, 0u);
+}
+
+namespace
+{
+
+ProcessedManifestFileEntryPtr makeDataEntryForRecordCount(
+    Int64 record_count,
+    std::unordered_map<Int32, ColumnInfo> columns_infos = {})
+{
+    auto parsed = std::make_shared<ParsedManifestFileEntry>(
+        FileContentType::DATA,
+        IcebergPathFromMetadata::deserialize("s3://bucket/data/file.parquet"),
+        /*row_number=*/0,
+        ManifestEntryStatus::ADDED,
+        /*written_sequence_number=*/std::nullopt,
+        /*written_snapshot_id=*/std::nullopt,
+        DB::Row{},
+        std::move(columns_infos),
+        std::unordered_map<Int32, std::pair<Field, Field>>{},
+        /*file_format=*/"PARQUET",
+        /*lower_reference_data_file_path=*/std::nullopt,
+        /*upper_reference_data_file_path=*/std::nullopt,
+        /*equality_ids=*/std::nullopt,
+        /*sort_order_id=*/std::nullopt,
+        record_count,
+        /*file_size_in_bytes=*/100);
+
+    auto processed = std::make_shared<ProcessedManifestFileEntry>();
+    processed->parsed_entry = std::move(parsed);
+    processed->common_partition_specification = std::make_shared<PartitionSpecification>();
+    processed->sequence_number = 0;
+    processed->resolved_schema_id = 0;
+    processed->manifest_file_path = "s3://bucket/metadata/manifest.avro";
+    return processed;
+}
+
+}
+
+TEST(IcebergRecordCountAggregate, SumsRecordCountIgnoringValueCounts)
+{
+    ColumnInfo nested_list_stats;
+    nested_list_stats.rows_count = 1000; /// nested element count, not row count
+
+    const auto total = getRecordCountInAllFilesExcludingDeleted({
+        makeDataEntryForRecordCount(/*record_count=*/10, {{/*column_id=*/2, nested_list_stats}}),
+        makeDataEntryForRecordCount(/*record_count=*/5),
+    });
+
+    ASSERT_TRUE(total.has_value());
+    EXPECT_EQ(*total, 15);
+}
+
+TEST(IcebergRecordCountAggregate, SucceedsWithoutValueCounts)
+{
+    const auto total = getRecordCountInAllFilesExcludingDeleted({
+        makeDataEntryForRecordCount(/*record_count=*/42),
+    });
+
+    ASSERT_TRUE(total.has_value());
+    EXPECT_EQ(*total, 42);
+}
+
+TEST(IcebergRecordCountAggregate, EmptyManifestIsZero)
+{
+    const auto total = getRecordCountInAllFilesExcludingDeleted({});
+    ASSERT_TRUE(total.has_value());
+    EXPECT_EQ(*total, 0);
+}
+
+TEST(IcebergRecordCountAggregate, NegativeRecordCountFailsClosed)
+{
+    const auto total = getRecordCountInAllFilesExcludingDeleted({
+        makeDataEntryForRecordCount(/*record_count=*/10),
+        makeDataEntryForRecordCount(/*record_count=*/-1),
+    });
+    EXPECT_FALSE(total.has_value());
+}
+
+TEST(IcebergRecordCountAggregate, OverflowFailsClosed)
+{
+    const auto total = getRecordCountInAllFilesExcludingDeleted({
+        makeDataEntryForRecordCount(/*record_count=*/std::numeric_limits<Int64>::max()),
+        makeDataEntryForRecordCount(/*record_count=*/1),
+    });
+    EXPECT_FALSE(total.has_value());
 }
 
 #endif

@@ -3,6 +3,7 @@
 #if USE_AVRO
 
 #include <compare>
+#include <limits>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
@@ -48,6 +49,26 @@ PositionDeleteKindPresence getPositionDeleteKindPresence(
             break;
     }
     return presence;
+}
+
+std::optional<Int64> getRecordCountInAllFilesExcludingDeleted(
+    const std::vector<ProcessedManifestFileEntryPtr> & files)
+{
+    Int64 result = 0;
+    for (const auto & file : files)
+    {
+        const Int64 record_count = file->parsed_entry->record_count;
+        if (record_count < 0)
+            return std::nullopt;
+
+        const UInt64 record_count_u = static_cast<UInt64>(record_count);
+        const UInt64 result_u = static_cast<UInt64>(result);
+        if (result_u > static_cast<UInt64>(std::numeric_limits<Int64>::max()) - record_count_u)
+            return std::nullopt;
+
+        result += record_count;
+    }
+    return result;
 }
 
 void requireDirectReferencedDataFileForPuffinDeletionVector(

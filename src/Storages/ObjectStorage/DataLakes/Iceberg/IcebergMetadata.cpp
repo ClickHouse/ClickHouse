@@ -1089,8 +1089,9 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
             || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
             return {};
 
-        /// nullopt means a corrupted manifest file with a negative `record_count`: fail
-        /// closed to a real scan instead of returning a wrong count.
+        /// nullopt means a negative / overflowing per-file `record_count`: fail closed to a
+        /// real scan instead of returning a wrong count. Do not use optional column
+        /// `value_counts` here — nested fields can report element counts larger than rows.
         auto manifest_rows = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
         if (!manifest_rows.has_value())
             return {};
