@@ -2061,6 +2061,11 @@ static bool applyDeterministicDagToColumn(
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
 
+    /// `equals` calls `DateTime`/`DateTime64` types differing only in timezone interchangeable, yet the DAG reads the timezone from the
+    /// type it is handed; `Nullable` delegates `equals`, so test through it. Only these two: relabeling `Bool` collapses the value map.
+    if (isDateTimeOrDateTime64(removeNullable(input_type)) && input_type->equals(*dag.input_type))
+        input_type = dag.input_type;
+
     /// This is the final check for the output column after DAG execution:
     /// - materialize output column (Const/LowCardinality)
     /// - reject if any NULLs were created as a result of transformation

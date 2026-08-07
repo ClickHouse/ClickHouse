@@ -1,0 +1,246 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the `pruning_selected_parts` row below reads `ProfileEvents` from the
+-- initiator's `query_log`, and with parallel replicas the counters are reported where each
+-- read executes.
+--
+-- The key transform DAG reads the timezone from the type of the column it is handed, so a set element
+-- whose `DateTime` type declares a different timezone than the key column used to be transformed under the
+-- wrong timezone, naming a partition/mark the row does not live in. Every row below must equal its oracle.
+--
+-- The leading `SET` is load-bearing: the runner randomizes `session_timezone` and one of its draws is
+-- the local zone, which would make session tz == key tz and collapse the discriminator. A query-level
+-- `SET` beats the runner's client argv injection.
+SET session_timezone = 'Asia/Kolkata';
+
+DROP TABLE IF EXISTS oracle_utc;
+DROP TABLE IF EXISTS k_yyyymm;
+DROP TABLE IF EXISTS k_todate;
+DROP TABLE IF EXISTS k_tostring;
+DROP TABLE IF EXISTS k_cast;
+DROP TABLE IF EXISTS k_order_g1;
+DROP TABLE IF EXISTS k_order_gdef;
+DROP TABLE IF EXISTS k_dt64;
+DROP TABLE IF EXISTS oracle_dt64;
+DROP TABLE IF EXISTS k_reverse;
+DROP TABLE IF EXISTS oracle_reverse;
+DROP TABLE IF EXISTS k_samename;
+DROP TABLE IF EXISTS oracle_samename;
+DROP TABLE IF EXISTS k_unixts;
+DROP TABLE IF EXISTS k_notransform;
+DROP TABLE IF EXISTS k_hour;
+DROP TABLE IF EXISTS k_negation;
+DROP TABLE IF EXISTS oracle_negation;
+DROP TABLE IF EXISTS k_bool_neg;
+DROP TABLE IF EXISTS oracle_bool_neg;
+DROP TABLE IF EXISTS k_nullable;
+DROP TABLE IF EXISTS oracle_nullable;
+DROP TABLE IF EXISTS k_nullable_dt64;
+DROP TABLE IF EXISTS oracle_nullable_dt64;
+
+-- The oracle: identical data and predicate, no key transform to get wrong.
+CREATE TABLE oracle_utc (ts DateTime('UTC')) ENGINE = Memory;
+INSERT INTO oracle_utc SELECT toDateTime(1675195200, 'UTC');
+SELECT 'oracle', count() FROM (SELECT ts FROM oracle_utc WHERE ts IN (SELECT toDateTime(1675195200)));
+
+-- Carriers 1-3: timezone-observing functions in `PARTITION BY`, key `DateTime('UTC')` vs element `DateTime`.
+CREATE TABLE k_yyyymm (ts DateTime('UTC')) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY tuple();
+INSERT INTO k_yyyymm SELECT toDateTime(1675195200, 'UTC');
+SELECT 'partition_toYYYYMM', count() FROM (SELECT ts FROM k_yyyymm WHERE ts IN (SELECT toDateTime(1675195200)));
+
+CREATE TABLE k_todate (ts DateTime('UTC')) ENGINE = MergeTree PARTITION BY toDate(ts) ORDER BY tuple();
+INSERT INTO k_todate SELECT toDateTime(1675195200, 'UTC');
+SELECT 'partition_toDate', count() FROM (SELECT ts FROM k_todate WHERE ts IN (SELECT toDateTime(1675195200)));
+
+CREATE TABLE k_tostring (ts DateTime('UTC')) ENGINE = MergeTree PARTITION BY toString(ts) ORDER BY tuple();
+INSERT INTO k_tostring SELECT toDateTime(1675195200, 'UTC');
+SELECT 'partition_toString', count() FROM (SELECT ts FROM k_tostring WHERE ts IN (SELECT toDateTime(1675195200)));
+
+-- Carrier 4: a single `CAST` key takes a separate direct-cast route inside the transform.
+CREATE TABLE k_cast (ts DateTime('UTC')) ENGINE = MergeTree PARTITION BY ts::String ORDER BY tuple();
+INSERT INTO k_cast SELECT toDateTime(1675195200, 'UTC');
+SELECT 'partition_cast', count() FROM (SELECT ts FROM k_cast WHERE ts IN (SELECT toDateTime(1675195200)));
+
+-- Carriers 5-6: the primary key, not the partition. `index_granularity` is randomized, so pin it in the DDL.
+CREATE TABLE k_order_g1 (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY toYYYYMM(ts) SETTINGS index_granularity = 1;
+INSERT INTO k_order_g1 SELECT toDateTime(1675195200, 'UTC');
+SELECT 'primary_key_granularity_1', count() FROM (SELECT ts FROM k_order_g1 WHERE ts IN (SELECT toDateTime(1675195200)));
+
+CREATE TABLE k_order_gdef (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY toYYYYMM(ts);
+INSERT INTO k_order_gdef SELECT toDateTime(1675195200, 'UTC');
+SELECT 'primary_key_granularity_default', count() FROM (SELECT ts FROM k_order_gdef WHERE ts IN (SELECT toDateTime(1675195200)));
+
+-- Carrier 7: `DateTime64` equality compares the scale only, so the timezone is invisible there too.
+CREATE TABLE oracle_dt64 (ts DateTime64(3, 'UTC')) ENGINE = Memory;
+INSERT INTO oracle_dt64 SELECT toDateTime64(1675195200, 3, 'UTC');
+SELECT 'oracle_datetime64', count() FROM (SELECT ts FROM oracle_dt64 WHERE ts IN (SELECT toDateTime64(1675195200, 3)));
+
+CREATE TABLE k_dt64 (ts DateTime64(3, 'UTC')) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY tuple();
+INSERT INTO k_dt64 SELECT toDateTime64(1675195200, 3, 'UTC');
+SELECT 'partition_datetime64', count() FROM (SELECT ts FROM k_dt64 WHERE ts IN (SELECT toDateTime64(1675195200, 3)));
+
+-- Carrier 8: the reverse direction. The key declares no timezone and the element declares one.
+CREATE TABLE oracle_reverse (ts DateTime) ENGINE = Memory;
+INSERT INTO oracle_reverse SELECT toDateTime(1675195200);
+SELECT 'oracle_reverse', count() FROM (SELECT ts FROM oracle_reverse WHERE ts IN (SELECT toDateTime(1675195200, 'UTC')));
+
+CREATE TABLE k_reverse (ts DateTime) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY tuple();
+INSERT INTO k_reverse SELECT toDateTime(1675195200);
+SELECT 'partition_reverse', count() FROM (SELECT ts FROM k_reverse WHERE ts IN (SELECT toDateTime(1675195200, 'UTC')));
+
+-- Carrier 9: both sides declare a timezone explicitly, and the two differ.
+SELECT 'oracle_both_explicit', count() FROM (SELECT ts FROM oracle_utc WHERE ts IN (SELECT toDateTime(1675195200, 'Asia/Kolkata')));
+SELECT 'partition_both_explicit', count() FROM (SELECT ts FROM k_yyyymm WHERE ts IN (SELECT toDateTime(1675195200, 'Asia/Kolkata')));
+
+-- Carrier 10: both types report the bare name `DateTime` yet capture different timezones, because a
+-- `DateTime` type binds the session zone when it is constructed. The table must be created AND populated
+-- under the first timezone; only then does the switch below leave the two captures differing.
+SET session_timezone = 'UTC';
+CREATE TABLE k_samename (ts DateTime) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY tuple();
+INSERT INTO k_samename VALUES (1675195200);
+CREATE TABLE oracle_samename (ts DateTime) ENGINE = Memory;
+INSERT INTO oracle_samename VALUES (1675195200);
+SET session_timezone = 'Asia/Kolkata';
+SELECT 'same_name_key_type', toTypeName(ts) FROM k_samename LIMIT 1;
+SELECT 'oracle_same_name', count() FROM (SELECT ts FROM oracle_samename WHERE ts IN (SELECT toDateTime(1675195200)));
+SELECT 'partition_same_name', count() FROM (SELECT ts FROM k_samename WHERE ts IN (SELECT toDateTime(1675195200)));
+
+-- Carrier 11: `has` reaches the same helper through a different route, taking the element type from the
+-- array's nested type rather than from a subquery result. Disabling `optimize_rewrite_has_to_in` is
+-- load-bearing: at its default the pass turns this predicate into a literal `IN`, which never reaches the
+-- helper at all (measured: with the rewrite on, this reads 1 before the fix, i.e. it becomes
+-- `control_literal_in`).
+SET optimize_rewrite_has_to_in = 0;
+SELECT 'oracle_has', count() FROM (SELECT ts FROM oracle_utc WHERE has([toDateTime(1675195200)], ts));
+SELECT 'partition_has', count() FROM (SELECT ts FROM k_yyyymm WHERE has([toDateTime(1675195200)], ts));
+SELECT 'control_has_element_carries_key_timezone', count() FROM (SELECT ts FROM k_yyyymm WHERE has([toDateTime(1675195200, 'UTC')], ts));
+SET optimize_rewrite_has_to_in = 1;
+
+-- Carriers 12-14: the same defect one wrapper up. `equals` on a `Nullable` delegates to the nested type, so the
+-- timezone is just as invisible there, while the type id of a `Nullable` is not `DateTime`. Both settings below
+-- are load-bearing: at the default `transform_null_in = 0` every row here reads 1 even before the fix, and
+-- `allow_nullable_key` is a MergeTree setting, so it goes in the DDL rather than a query-level `SET`.
+SET transform_null_in = 1;
+CREATE TABLE oracle_nullable (ts Nullable(DateTime('UTC'))) ENGINE = Memory;
+INSERT INTO oracle_nullable SELECT toDateTime(1675195200, 'UTC');
+CREATE TABLE k_nullable (ts Nullable(DateTime('UTC'))) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY tuple()
+    SETTINGS allow_nullable_key = 1;
+INSERT INTO k_nullable SELECT toDateTime(1675195200, 'UTC');
+SELECT 'oracle_nullable', count() FROM (SELECT ts FROM oracle_nullable WHERE ts IN (SELECT CAST(toDateTime(1675195200) AS Nullable(DateTime))));
+SELECT 'partition_nullable', count() FROM (SELECT ts FROM k_nullable WHERE ts IN (SELECT CAST(toDateTime(1675195200) AS Nullable(DateTime))));
+
+SET optimize_rewrite_has_to_in = 0;
+SELECT 'oracle_nullable_has', count() FROM (SELECT ts FROM oracle_nullable WHERE has([CAST(toDateTime(1675195200) AS Nullable(DateTime))], ts));
+SELECT 'partition_nullable_has', count() FROM (SELECT ts FROM k_nullable WHERE has([CAST(toDateTime(1675195200) AS Nullable(DateTime))], ts));
+SET optimize_rewrite_has_to_in = 1;
+
+CREATE TABLE oracle_nullable_dt64 (ts Nullable(DateTime64(3, 'UTC'))) ENGINE = Memory;
+INSERT INTO oracle_nullable_dt64 SELECT toDateTime64(1675195200, 3, 'UTC');
+CREATE TABLE k_nullable_dt64 (ts Nullable(DateTime64(3, 'UTC'))) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY tuple()
+    SETTINGS allow_nullable_key = 1;
+INSERT INTO k_nullable_dt64 SELECT toDateTime64(1675195200, 3, 'UTC');
+SELECT 'oracle_nullable_dt64', count() FROM (SELECT ts FROM oracle_nullable_dt64 WHERE ts IN (SELECT CAST(toDateTime64(1675195200, 3) AS Nullable(DateTime64(3)))));
+SELECT 'partition_nullable_dt64', count() FROM (SELECT ts FROM k_nullable_dt64 WHERE ts IN (SELECT CAST(toDateTime64(1675195200, 3) AS Nullable(DateTime64(3)))));
+
+-- Two controls for the rows above, both correct before the fix. The second is what proves
+-- `transform_null_in` is a real co-factor rather than decoration.
+SELECT 'control_nullable_element_carries_key_timezone', count() FROM (SELECT ts FROM k_nullable WHERE ts IN (SELECT CAST(toDateTime(1675195200, 'UTC') AS Nullable(DateTime('UTC')))));
+SELECT 'control_nullable_transform_null_in_off', count() FROM (SELECT ts FROM k_nullable WHERE ts IN (SELECT CAST(toDateTime(1675195200) AS Nullable(DateTime)))) SETTINGS transform_null_in = 0;
+SET transform_null_in = 0;
+
+-- Controls. Each was measured correct before the fix, so they are what proves the carriers above
+-- discriminate rather than the whole file simply reading 1.
+CREATE TABLE k_unixts (ts DateTime('UTC')) ENGINE = MergeTree PARTITION BY toUnixTimestamp(ts) ORDER BY tuple();
+INSERT INTO k_unixts SELECT toDateTime(1675195200, 'UTC');
+SELECT 'control_timezone_blind_dag', count() FROM (SELECT ts FROM k_unixts WHERE ts IN (SELECT toDateTime(1675195200)));
+
+CREATE TABLE k_notransform (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY ts;
+INSERT INTO k_notransform SELECT toDateTime(1675195200, 'UTC');
+SELECT 'control_no_key_transform', count() FROM (SELECT ts FROM k_notransform WHERE ts IN (SELECT toDateTime(1675195200)));
+
+SELECT 'control_element_carries_key_timezone', count() FROM (SELECT ts FROM k_yyyymm WHERE ts IN (SELECT toDateTime(1675195200, 'UTC')));
+SELECT 'control_scalar_equality', count() FROM (SELECT ts FROM k_yyyymm WHERE ts = toDateTime(1675195200));
+SELECT 'control_literal_in', count() FROM (SELECT ts FROM k_yyyymm WHERE ts IN (toDateTime(1675195200)));
+SELECT 'control_range', count() FROM (SELECT ts FROM k_yyyymm WHERE ts >= toDateTime(1675195200) AND ts <= toDateTime(1675195200));
+
+-- Control: with the session timezone equal to the key's, the two types agree and there is nothing to relabel.
+SET session_timezone = 'UTC';
+SELECT 'control_session_timezone_equals_key', count() FROM (SELECT ts FROM k_yyyymm WHERE ts IN (SELECT toDateTime(1675195200)));
+SET session_timezone = 'Asia/Kolkata';
+
+-- Controls, not carriers: relabeling a `DateTime` type is a one-to-one change of which value the transform
+-- produces, so it cannot make an exact `NOT IN` / `!=` drop a matching row. Both must equal the oracle before
+-- and after the fix. Two partitions and an element naming one of them, so a wrong prune would be visible.
+CREATE TABLE k_negation (ts DateTime('UTC')) ENGINE = MergeTree PARTITION BY toYYYYMM(ts) ORDER BY tuple();
+INSERT INTO k_negation SELECT toDateTime(1675195200, 'UTC');
+INSERT INTO k_negation SELECT toDateTime(1677614400, 'UTC');
+CREATE TABLE oracle_negation (ts DateTime('UTC')) ENGINE = Memory;
+INSERT INTO oracle_negation SELECT toDateTime(1675195200, 'UTC');
+INSERT INTO oracle_negation SELECT toDateTime(1677614400, 'UTC');
+SELECT 'oracle_negation_not_in', arraySort(groupArray(toUnixTimestamp(ts))) FROM (SELECT ts FROM oracle_negation WHERE ts NOT IN (SELECT toDateTime(1675195200)));
+SELECT 'control_negation_not_in', arraySort(groupArray(toUnixTimestamp(ts))) FROM (SELECT ts FROM k_negation WHERE ts NOT IN (SELECT toDateTime(1675195200)));
+SELECT 'oracle_negation_neq', arraySort(groupArray(toUnixTimestamp(ts))) FROM (SELECT ts FROM oracle_negation WHERE ts != toDateTime(1675195200));
+SELECT 'control_negation_neq', arraySort(groupArray(toUnixTimestamp(ts))) FROM (SELECT ts FROM k_negation WHERE ts != toDateTime(1675195200));
+
+-- The relabel above is restricted to `DateTime`/`DateTime64` for a reason, and this row is what pins it.
+-- `Bool` is `UInt8` plus a custom name, equally invisible to `equals`, but its serialization renders every
+-- nonzero value as `true`, so relabeling a bare `UInt8` element to `Bool` would collapse the transform's
+-- value map. `toString` reports itself injective, nothing marks the condition relaxed, and an exact
+-- `NOT IN` then prunes
+-- the partition holding the matching row. Correct here and on master; reads 1 if the restriction is dropped.
+CREATE TABLE k_bool_neg (b Bool) ENGINE = MergeTree PARTITION BY toString(b) ORDER BY tuple();
+INSERT INTO k_bool_neg VALUES (false);
+INSERT INTO k_bool_neg VALUES (true);
+CREATE TABLE oracle_bool_neg (b Bool) ENGINE = Memory;
+INSERT INTO oracle_bool_neg VALUES (false), (true);
+SELECT 'oracle_bool_negation', count() FROM (SELECT b FROM oracle_bool_neg WHERE b NOT IN (SELECT 2::UInt8));
+SELECT 'control_bool_negation', count() FROM (SELECT b FROM k_bool_neg WHERE b NOT IN (SELECT 2::UInt8));
+
+-- The rows above assert answers, so they also pass if the transform is DECLINED rather than corrected: the
+-- key condition is then simply not built, every part is scanned and `count` is still right. The rows below
+-- assert that pruning is USED, which is the property the fix was chosen for over declining.
+--
+-- Two properties of this fixture are load-bearing. Two partitions, because with one part pruning-used and
+-- pruning-declined both select it. And the two hours interleaved across two days, so the element's instant
+-- lies inside the ts range of BOTH parts: the min-max index then keeps 2/2 and cannot stand in for the
+-- partition index, which is what leaves `SelectedParts` free to move (measured: with the parts separated in
+-- time, min-max prunes 1/2 on its own and this reads 1 whether the partition index ran or not).
+--
+-- `SelectedParts` is counted where each read executes, so with parallel replicas it is no longer a
+-- function of whether the partition index ran on the initiator. The tag covers the CI flavour that
+-- enables them in the default profile; this pins any other path that reaches the test with them on.
+SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
+CREATE TABLE k_hour (ts DateTime('UTC')) ENGINE = MergeTree PARTITION BY toHour(ts) ORDER BY tuple();
+INSERT INTO k_hour SELECT toDateTime(1675267200, 'UTC') UNION ALL SELECT toDateTime(1675285200, 'UTC')
+                UNION ALL SELECT toDateTime(1675440000, 'UTC') UNION ALL SELECT toDateTime(1675458000, 'UTC');
+OPTIMIZE TABLE k_hour FINAL;
+SELECT 'pruning_active_parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 'k_hour' AND active;
+SELECT 'pruning_count', count() FROM (SELECT ts FROM k_hour WHERE ts IN (SELECT toDateTime(1675440000))) SETTINGS log_comment = '04770_pruning_oracle';
+SYSTEM FLUSH LOGS query_log;
+SELECT 'pruning_selected_parts', ProfileEvents['SelectedParts'] FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+  AND current_database = currentDatabase() AND log_comment = '04770_pruning_oracle';
+
+DROP TABLE oracle_utc;
+DROP TABLE k_yyyymm;
+DROP TABLE k_todate;
+DROP TABLE k_tostring;
+DROP TABLE k_cast;
+DROP TABLE k_order_g1;
+DROP TABLE k_order_gdef;
+DROP TABLE k_dt64;
+DROP TABLE oracle_dt64;
+DROP TABLE k_reverse;
+DROP TABLE oracle_reverse;
+DROP TABLE k_samename;
+DROP TABLE oracle_samename;
+DROP TABLE k_unixts;
+DROP TABLE k_notransform;
+DROP TABLE k_hour;
+DROP TABLE k_negation;
+DROP TABLE oracle_negation;
+DROP TABLE k_bool_neg;
+DROP TABLE oracle_bool_neg;
+DROP TABLE k_nullable;
+DROP TABLE oracle_nullable;
+DROP TABLE k_nullable_dt64;
+DROP TABLE oracle_nullable_dt64;
