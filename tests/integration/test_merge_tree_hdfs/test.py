@@ -103,8 +103,7 @@ def cluster():
 
 def list_hdfs_objects(fs, path="/clickhouse"):
     # The object keys contain a nested directory prefix (e.g. `abc/xyz...`),
-    # so list the files recursively. Empty prefix directories left behind by
-    # object removal are not counted.
+    # so list the files recursively; directories are not objects.
     return [
         root + "/" + name for root, _, files in fs.walk(path) for name in files
     ]

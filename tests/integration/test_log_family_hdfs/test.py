@@ -31,9 +31,12 @@ def started_cluster():
 
 def count_hdfs_objects(fs, path="/clickhouse"):
     # The object keys contain a nested directory prefix (e.g. `abc/xyz...`),
-    # so count the files recursively. Empty prefix directories left behind by
-    # object removal are not counted.
+    # so count the files recursively; directories are not objects.
     return sum(len(files) for _, _, files in fs.walk(path))
+
+
+def count_hdfs_directories(fs, path="/clickhouse"):
+    return sum(len(dirs) for _, dirs, _ in fs.walk(path))
 
 
 def assert_objects_count(started_cluster, objects_count, num_tries=30):
@@ -102,3 +105,27 @@ def test_log_family_hdfs(
         assert_objects_count(started_cluster, 0)
     finally:
         node.query("DROP TABLE hdfs_test SYNC")
+
+
+def test_no_leftover_directories_after_removal(started_cluster):
+    # Every object key contains a nested directory prefix (e.g. `abc/xyz...`)
+    # whose directories are created on write, so object removal must delete the
+    # emptied prefix directories together with the files - otherwise every
+    # removed blob leaks one directory and the NameNode namespace grows without
+    # bound.
+    node = started_cluster.instances["node"]
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
+
+    node.query(
+        "CREATE TABLE hdfs_dir_cleanup (id UInt64) ENGINE=TinyLog SETTINGS disk = 'hdfs'"
+    )
+    try:
+        node.query("INSERT INTO hdfs_dir_cleanup SELECT number FROM numbers(5)")
+        assert count_hdfs_objects(fs) > 0
+        assert count_hdfs_directories(fs) > 0
+
+        node.query("TRUNCATE TABLE hdfs_dir_cleanup")
+        assert_objects_count(started_cluster, 0)
+        assert count_hdfs_directories(fs) == 0
+    finally:
+        node.query("DROP TABLE hdfs_dir_cleanup SYNC")

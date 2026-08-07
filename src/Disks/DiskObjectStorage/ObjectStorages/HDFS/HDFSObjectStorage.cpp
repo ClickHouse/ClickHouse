@@ -239,6 +239,24 @@ void HDFSObjectStorage::removeObject(const StoredObject & object)
 
     if (res == -1)
         throw Exception(ErrorCodes::HDFS_ERROR, "HDFSDelete failed with path: {}", path);
+
+    /// The generated object keys contain a nested directory prefix (e.g. `abc/xyzxyzxyz...`),
+    /// and `writeObject` creates those directories because HDFS, unlike blob storages, has real
+    /// directories. Clean the now-empty prefix directories up to the data directory, like
+    /// `LocalObjectStorage::removeObject` does; otherwise every removed blob would leave an empty
+    /// directory behind, growing the NameNode namespace without bound. A non-recursive `hdfsDelete`
+    /// fails on a non-empty directory, so the walk stops at the first directory that still holds
+    /// other blobs (or was concurrently repopulated); the cleanup is best-effort by design.
+    String root = fs::path(data_directory).lexically_normal().string();
+    if (!root.ends_with('/'))
+        root += '/';
+    fs::path dir = fs::path(path).lexically_normal().parent_path();
+    while (dir.string().size() > root.size() && dir.string().starts_with(root))
+    {
+        if (wrapErr<int>(hdfsDelete, hdfs_fs.get(), dir.string().c_str(), 0) == -1)
+            break;
+        dir = dir.parent_path();
+    }
 }
 
 void HDFSObjectStorage::removeObjects(const StoredObjects & objects)
