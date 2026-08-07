@@ -31,3 +31,11 @@ Also, they are replicated, syncing indices metadata via ClickHouse Keeper or Zoo
 <Note>
 Index manipulation is supported only for tables with [`*MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) engine (including [replicated](/reference/engines/table-engines/mergetree-family/replication) variants).
 </Note>
+
+
+## Concurrent `ALTER` and multi-clause `MATERIALIZE INDEX` {#concurrent-alter-and-multi-clause-materialize-index}
+
+On replicated tables, rapid separate `ALTER`s against one table can raise `CANNOT_ASSIGN_ALTER` (code 517) when previous `ALTER`s have not yet been applied on the replica (metadata still behind — can remain true after an earlier alter was already assigned). This is a general concurrent metadata-`ALTER` / mutation condition (not mutation-only); serialize/retry, wait for prior mutation-producing alters via [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) / `is_done` in [`system.mutations`](/reference/system-tables/mutations), or combine independent metadata operations into one multi-clause `ALTER` when the grammar allows it. See [Synchronicity of ALTER Queries](/reference/statements/alter/index#synchronicity-of-alter-queries) and [Concurrent ALTER assignment](/reference/statements/alter/index#concurrent-alter-assignment-on-one-table).
+
+Multiple `MATERIALIZE INDEX` clauses can appear in one `ALTER`. The covered case in-tree is packing several `ADD INDEX` clauses together with `MATERIALIZE INDEX` for those same new indexes in a single statement (`tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). That packed form is for ordinary (non-`DatabaseReplicated`) databases — `DatabaseReplicated` rejects mixed `ADD INDEX` + `MATERIALIZE INDEX` segments with `QUERY_IS_PROHIBITED`. Materialize-only multi-clause forms on already-existing indexes follow the same metadata-snapshot prepare path in the current implementation, but that exact shape is not yet covered by a focused stateless test—treat it as current implementation behavior rather than a separately guaranteed contract until such coverage exists. For ordered apply, issue one `MATERIALIZE INDEX` per statement and wait with [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync).
+
