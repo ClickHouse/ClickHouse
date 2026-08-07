@@ -26,7 +26,7 @@ SELECT number, uniqState(number), [uniqState(number)], tuple(uniqState(number)),
        toString(number % 3), toString(number % 3), toString(number % 3)
 FROM numbers(6) GROUP BY number;
 
-SELECT '-- new analyzer: refused';
+SELECT '-- the analyzer: refused';
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY st) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY arr) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
@@ -44,7 +44,7 @@ SELECT count() FROM (SELECT row_number() OVER (PARTITION BY mp) FROM t_wpb_state
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY deep) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY id, st) FROM t_wpb_state); -- { serverError ILLEGAL_COLUMN }
 
-SELECT '-- comparable types are untouched, new analyzer';
+SELECT '-- comparable types are untouched, the analyzer';
 SET enable_analyzer = 1;
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY saf) FROM t_wpb_state);
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY s) FROM t_wpb_state);
