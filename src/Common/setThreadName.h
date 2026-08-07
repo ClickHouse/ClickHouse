@@ -13,6 +13,7 @@ namespace DB
     M(ARROW_FLIGHT, "ArrowFlight") \
     M(ARROW_FLIGHT_EXPR, "ArrowFlightExpr") \
     M(ARROW_FLIGHT_SERVER, "ArrowFlightSrv") \
+    M(AST_FUZZER, "ASTFuzzer") \
     M(ASYNC_COPY, "AsyncCopy") \
     M(ASYNC_INSERT_QUEUE, "AsyncInsertQue") \
     M(ASYNC_INSERT_FLUSH, "AsyncInsertFlu") \
@@ -63,6 +64,7 @@ namespace DB
     M(DWARF_DECODER, "DWARFDecoder") \
     M(ERROR_LOG, "ErrorLog") \
     M(EXTERNAL_LOADER, "ExternalLoader") \
+    M(FILESYSTEM_CACHE_DROP, "FSCacheDropKeys") \
     M(GRPC_SERVER_CALL, "gRPCServerCall") \
     M(GRPC_SERVER_QUEUE, "gRPCServerQueue") \
     M(HASHED_DICT_DTOR, "HashedDictDtor") \

@@ -326,6 +326,13 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     if (settings.is_metadata_file)
         return file_size;
 
+    /// Special case for a stream that holds a single value for the whole part (the product quantization codebook).
+    /// The value is written after the data of all granules, so every granule's mark points at its start and no mark
+    /// delimits its end. In particular, when the value spans several compressed blocks, the final mark points into
+    /// the middle of it, and bounding the read by that mark truncates the value (`CANNOT_READ_ALL_DATA`).
+    if (settings.is_single_value_per_part)
+        return file_size;
+
     /// This is a good scenario. The compressed block is finished within the right mark,
     /// and previous mark was different.
     if (marks_getter->getMark(right_mark, 0).offset_in_decompressed_block == 0
