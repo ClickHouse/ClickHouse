@@ -24,6 +24,7 @@ public:
         JoinKind kind_,
         JoinStrictness strictness_,
         const SizeLimits & size_limits_,
+        BlockNestedLoopStoreSettings store_settings_,
         size_t max_block_size_,
         size_t max_block_bytes_);
 
@@ -66,6 +67,8 @@ private:
 
     /// Limits on the materialized right input, from `max_rows_in_join` / `max_bytes_in_join`.
     SizeLimits size_limits;
+    /// How the materialized right input is kept as it grows: compressed, then spilled.
+    BlockNestedLoopStoreSettings store_settings;
     /// Limits on a result block, from `max_block_size` / `max_joined_block_size_rows` and
     /// `max_joined_block_size_bytes`.
     size_t max_block_size;

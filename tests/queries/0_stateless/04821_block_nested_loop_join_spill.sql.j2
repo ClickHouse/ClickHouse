@@ -1,0 +1,58 @@
+-- Tags: no-old-analyzer
+
+-- The build side of a block nested loop join is memory-bounded: it is compressed once it grows
+-- past `cross_join_min_rows_to_compress`, and streamed to a temporary file once it holds more than
+-- `max_bytes_before_external_join`. Neither changes the result.
+--
+-- `partial_merge` keeps `INNER` from taking the `CROSS JOIN` + filter route, so every kind below is
+-- answered by the operator.
+
+SET cross_to_inner_join_rewrite = 0;
+SET join_use_nulls = 0;
+SET join_algorithm = 'partial_merge';
+
+DROP TABLE IF EXISTS bnl_spill_probe;
+DROP TABLE IF EXISTS bnl_spill_build;
+
+CREATE TABLE bnl_spill_probe (id Int32, x Int32) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE bnl_spill_build (id Int32, y Int32, s String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO bnl_spill_probe SELECT number, number % 37 FROM numbers(200);
+INSERT INTO bnl_spill_build SELECT number, number % 23, repeat('x', number % 11) FROM numbers(150);
+
+{% for kind in ['INNER', 'LEFT', 'RIGHT', 'FULL', 'LEFT ANY', 'RIGHT SEMI', 'LEFT ANTI'] -%}
+
+SELECT '{{ kind }}';
+
+SELECT 'routed', count() FROM (
+    EXPLAIN SELECT count() FROM bnl_spill_probe l {{ kind }} JOIN bnl_spill_build r ON l.x < r.y)
+WHERE explain LIKE '%BlockNestedLoopJoin%';
+
+-- A build side split into many blocks, all of them written to disk and read back for every probe
+-- chunk, answers exactly as one that stayed in memory.
+SELECT 'spilled',
+    (SELECT arraySort(groupArray((l.id, r.id))) FROM bnl_spill_probe l {{ kind }} JOIN bnl_spill_build r ON l.x < r.y
+     SETTINGS max_bytes_before_external_join = 1, max_block_size = 17)
+  = (SELECT arraySort(groupArray((l.id, r.id))) FROM bnl_spill_probe l {{ kind }} JOIN bnl_spill_build r ON l.x < r.y
+     SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0) AS ok;
+
+SELECT 'compressed',
+    (SELECT arraySort(groupArray((l.id, r.id))) FROM bnl_spill_probe l {{ kind }} JOIN bnl_spill_build r ON l.x < r.y
+     SETTINGS cross_join_min_rows_to_compress = 1, max_block_size = 17)
+  = (SELECT arraySort(groupArray((l.id, r.id))) FROM bnl_spill_probe l {{ kind }} JOIN bnl_spill_build r ON l.x < r.y
+     SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0) AS ok;
+
+{% endfor -%}
+
+-- The build side really did go to disk: without this the comparisons above would hold vacuously.
+SELECT count() FROM bnl_spill_probe l FULL JOIN bnl_spill_build r ON l.x < r.y
+SETTINGS max_bytes_before_external_join = 1, max_block_size = 17, log_comment = '04821_bnl_spilled';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'wrote temporary files', ProfileEvents['ExternalJoinWritePart'] > 0, ProfileEvents['ExternalJoinCompressedBytes'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04821_bnl_spilled'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+DROP TABLE bnl_spill_probe;
+DROP TABLE bnl_spill_build;

@@ -10,11 +10,14 @@
 #include <Core/Block.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/DiskLocal.h>
+#include <Disks/SingleDiskVolume.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/DelayedPortsProcessor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ResizeProcessor.h>
@@ -24,6 +27,8 @@
 #include <Common/assert_cast.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
+
+#include <Poco/TemporaryFile.h>
 
 using namespace DB;
 
@@ -127,14 +132,51 @@ SharedHeader makeOutputHeader(const SharedHeader & probe_header, const SharedHea
     return std::make_shared<const Block>(std::move(output_block));
 }
 
+/// A temporary storage scope backed by a directory that lives as long as the returned holder.
+struct TemporaryStorage
+{
+    std::unique_ptr<Poco::TemporaryFile> directory;
+    TemporaryDataOnDiskScopePtr scope;
+};
+
+TemporaryStorage makeTemporaryStorage()
+{
+    TemporaryStorage storage;
+    storage.directory = std::make_unique<Poco::TemporaryFile>();
+    storage.directory->createDirectories();
+    auto disk = std::make_shared<DiskLocal>("block_nested_loop_join_tmp", storage.directory->path() + "/");
+    VolumePtr volume = std::make_shared<SingleDiskVolume>("block_nested_loop_join_tmp", disk, 0);
+    storage.scope = std::make_shared<TemporaryDataOnDiskScope>(TemporaryDataOnDiskSettings{}, volume);
+    return storage;
+}
+
+/// Every block goes to disk: a threshold of one byte is passed by any of them.
+BlockNestedLoopStoreSettings spillEverything(const TemporaryDataOnDiskScopePtr & scope)
+{
+    BlockNestedLoopStoreSettings settings;
+    settings.max_bytes_in_memory = 1;
+    settings.tmp_data = scope;
+    return settings;
+}
+
+/// Every block is compressed: the very first one already passes the threshold.
+BlockNestedLoopStoreSettings compressEverything()
+{
+    BlockNestedLoopStoreSettings settings;
+    settings.min_rows_to_compress = 1;
+    return settings;
+}
+
 BlockNestedLoopJoinDataPtr makeData(
     const std::vector<Values> & build_blocks,
     const SharedHeader & build_header,
     JoinKind kind,
     JoinStrictness strictness,
-    bool nullable)
+    bool nullable,
+    BlockNestedLoopStoreSettings store_settings = {})
 {
-    auto data = std::make_shared<BlockNestedLoopJoinData>(build_header, kind, strictness, SizeLimits{});
+    auto data = std::make_shared<BlockNestedLoopJoinData>(
+        build_header, kind, strictness, SizeLimits{}, std::move(store_settings));
     for (const auto & values : build_blocks)
     {
         Block block;
@@ -160,12 +202,13 @@ ProbeResult runProbe(
     size_t max_block_size = 0,
     const String & function_name = "less",
     bool nullable = false,
-    const PairCounter & counter = nullptr)
+    const PairCounter & counter = nullptr,
+    BlockNestedLoopStoreSettings store_settings = {})
 {
     auto probe_header = makeHeader("probe", nullable);
     auto build_header = makeHeader("build", nullable);
     auto output_header = makeOutputHeader(probe_header, build_header);
-    auto data = makeData(build_blocks, build_header, kind, strictness, nullable);
+    auto data = makeData(build_blocks, build_header, kind, strictness, nullable, std::move(store_settings));
 
     Chunks chunks;
     for (const auto & values : probe_chunks)
@@ -474,6 +517,38 @@ TEST(BlockNestedLoopJoinProbe, TheUnmatchedScanPartitionsTheBuildBlocksOverStrea
     EXPECT_EQ(per_stream[2], (std::vector<UInt64>{15}));
     EXPECT_EQ(per_stream[3], (std::vector<UInt64>{16}));
     EXPECT_EQ(per_stream[4], (std::vector<UInt64>{18, 19}));
+}
+
+TEST(BlockNestedLoopJoinProbe, MatchesTheSameWayAgainstASpilledBuildSide)
+{
+    /// Every build block is on disk, and each of the three probe chunks walks the whole file, so
+    /// the reader has to start it over between them.
+    auto storage = makeTemporaryStorage();
+
+    const std::vector<Values> build_blocks{{2, 5}, {7}, {11}};
+    const std::vector<Values> probe_chunks{{1, 6}, {8}, {4}};
+
+    auto in_memory = runProbe(build_blocks, probe_chunks, JoinKind::Full, JoinStrictness::All,
+        /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+    auto spilled = runProbe(build_blocks, probe_chunks, JoinKind::Full, JoinStrictness::All,
+        /*max_block_size=*/ 0, "less", /*nullable=*/ true, /*counter=*/ nullptr, spillEverything(storage.scope));
+
+    EXPECT_EQ(sorted(spilled.rows), sorted(in_memory.rows));
+    EXPECT_FALSE(spilled.rows.empty());
+}
+
+TEST(BlockNestedLoopJoinProbe, MatchesTheSameWayAgainstACompressedBuildSide)
+{
+    const std::vector<Values> build_blocks{{2, 5}, {7}, {11}};
+    const std::vector<Values> probe_chunks{{1, 6}, {8}, {4}};
+
+    auto in_memory = runProbe(build_blocks, probe_chunks, JoinKind::Full, JoinStrictness::All,
+        /*max_block_size=*/ 0, "less", /*nullable=*/ true);
+    auto compressed = runProbe(build_blocks, probe_chunks, JoinKind::Full, JoinStrictness::All,
+        /*max_block_size=*/ 0, "less", /*nullable=*/ true, /*counter=*/ nullptr, compressEverything());
+
+    EXPECT_EQ(sorted(compressed.rows), sorted(in_memory.rows));
+    EXPECT_FALSE(compressed.rows.empty());
 }
 
 TEST(BlockNestedLoopJoinProbe, UnsupportedJoinTypesAreRejected)

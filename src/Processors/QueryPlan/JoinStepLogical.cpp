@@ -1324,6 +1324,7 @@ static void constructBlockNestedLoopJoinStep(
     JoinKind kind,
     JoinStrictness strictness,
     const JoinSettings & join_settings,
+    TemporaryDataOnDiskScopePtr tmp_data,
     QueryPlan::Nodes & nodes)
 {
     if (node.children.size() != 2)
@@ -1341,11 +1342,22 @@ static void constructBlockNestedLoopJoinStep(
         ? std::min<size_t>(join_settings.max_block_size, join_settings.max_joined_block_size_rows)
         : join_settings.max_block_size;
 
+    /// The build side is a materialized cross-join side with a predicate on top, so it is kept the
+    /// way a cross join keeps one: compressed past the same thresholds, and streamed to disk once
+    /// it no longer fits. `max_rows_in_join` / `max_bytes_in_join` stay a hard limit on it, so that
+    /// spilling does not quietly change what `join_overflow_mode` means.
+    BlockNestedLoopStoreSettings store_settings{
+        .min_rows_to_compress = join_settings.cross_join_min_rows_to_compress,
+        .min_bytes_to_compress = join_settings.cross_join_min_bytes_to_compress,
+        .max_bytes_in_memory = join_settings.getEffectiveMaxBytesBeforeExternalJoin(),
+        .tmp_data = std::move(tmp_data),
+    };
+
     SizeLimits size_limits(join_settings.max_rows_in_join, join_settings.max_bytes_in_join, join_settings.join_overflow_mode);
     node.step = std::make_unique<BlockNestedLoopJoinStep>(
         join_left_node->step->getOutputHeader(), join_right_node->step->getOutputHeader(),
         std::move(predicate), kind, strictness,
-        size_limits, max_block_size, join_settings.max_joined_block_size_bytes);
+        size_limits, std::move(store_settings), max_block_size, join_settings.max_joined_block_size_bytes);
 
     node.children = {join_left_node, join_right_node};
 
@@ -1716,7 +1728,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
             std::make_pair(bnl_residual_filter_condition_name, can_remove_residual_filter),
             std::move(block_nested_loop_condition),
             join_operator.kind, join_operator.strictness,
-            join_settings, nodes);
+            join_settings, table_join->getTempDataOnDisk(), nodes);
         return node;
     }
 

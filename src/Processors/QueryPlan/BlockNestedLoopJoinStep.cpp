@@ -46,11 +46,13 @@ BlockNestedLoopJoinStep::BlockNestedLoopJoinStep(
     JoinKind kind_,
     JoinStrictness strictness_,
     const SizeLimits & size_limits_,
+    BlockNestedLoopStoreSettings store_settings_,
     size_t max_block_size_,
     size_t max_block_bytes_)
     : kind(kind_)
     , strictness(strictness_)
     , size_limits(size_limits_)
+    , store_settings(std::move(store_settings_))
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
 {
@@ -160,7 +162,7 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
         probe_pipeline->addDefaultTotals();
 
     auto data = std::make_shared<BlockNestedLoopJoinData>(
-        build_pipeline->getSharedHeader(), kind, strictness, size_limits);
+        build_pipeline->getSharedHeader(), kind, strictness, size_limits, store_settings);
 
     const size_t max_streams = std::max<size_t>(1, settings.max_threads);
 

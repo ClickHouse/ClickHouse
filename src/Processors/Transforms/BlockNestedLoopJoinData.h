@@ -15,6 +15,11 @@
 namespace DB
 {
 
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
+class TemporaryBlockStreamHolder;
+class TemporaryBlockStreamReaderHolder;
+
 /// What a block nested loop join produces when the build side turns out to be empty.
 enum class EmptyBuildSideAction : uint8_t
 {
@@ -36,13 +41,43 @@ bool needsBuildSideMatchFlags(JoinKind kind, JoinStrictness strictness);
 /// with the probe side's column defaults.
 bool keepsUnmatchedBuildRows(JoinKind kind, JoinStrictness strictness);
 
+/// A build block ready for matching. Held by shared pointer because a block that was compressed or
+/// spilled is decompressed or read back into one that only lives as long as the output rows still
+/// pointing into it.
+using BuildBlockPtr = std::shared_ptr<const StoredBlock>;
+
+/// How the materialized build side is kept as it grows: compressed in memory, then streamed to disk.
+struct BlockNestedLoopStoreSettings
+{
+    /// A stored block is compressed once the build side has passed either threshold, from
+    /// `cross_join_min_rows_to_compress` and `cross_join_min_bytes_to_compress`.
+    size_t min_rows_to_compress = 0;
+    size_t min_bytes_to_compress = 0;
+    /// The build side is streamed to disk once what it holds in memory passes this, from
+    /// `max_bytes_before_external_join`; 0 leaves spilling to the query memory tracker alone.
+    size_t max_bytes_in_memory = 0;
+    /// Where the spilled blocks go. Without it the build side stays in memory whatever its size.
+    TemporaryDataOnDiskScopePtr tmp_data;
+};
+
 /// The materialized build side of a block nested loop join, shared by every build and probe stream.
 /// The build streams append to it concurrently until `finish`; from then on it is read-only, and
 /// only then are the stored blocks and their global row numbering observable.
+///
+/// A stored block may be compressed, or written to a temporary file and dropped from memory. Its
+/// row count is kept either way, so the global row numbering - and with it the indexing of the
+/// match flags - does not change when a block moves out of memory. Blocks are read back through a
+/// `BuildSideBlockReader`.
 class BlockNestedLoopJoinData
 {
 public:
-    BlockNestedLoopJoinData(SharedHeader build_header_, JoinKind kind_, JoinStrictness strictness_, const SizeLimits & size_limits_);
+    BlockNestedLoopJoinData(
+        SharedHeader build_header_,
+        JoinKind kind_,
+        JoinStrictness strictness_,
+        const SizeLimits & size_limits_,
+        BlockNestedLoopStoreSettings store_settings_ = {});
+    ~BlockNestedLoopJoinData();
 
     /// Appends one build block; `num_rows` is authoritative, because a block with no columns still
     /// has rows. Thread-safe. Returns false when the size limits are exceeded under
@@ -61,14 +96,27 @@ public:
     void finish();
     bool isFinished() const { return finished.load(std::memory_order_acquire); }
 
-    /// The stored build blocks, in an arbitrary order. A block's rows are stored exactly as they
-    /// arrived, so a row's index into the block's columns is also its position in the block.
+    /// The number of stored build blocks, and the rows of one of them. Both are known without
+    /// reading the block back, so a consumer can decide to skip a block without paying for it.
     /// Valid only after `finish`.
-    const std::vector<StoredBlock> & getBlocks() const;
+    size_t getNumBlocks() const;
+    size_t getBlockNumRows(size_t index) const;
     /// Global row number of the first row of block `i`, with a trailing entry equal to
     /// `getTotalRows()`. A global row number identifies a build row for the whole probe phase and
-    /// stays stable when a block is later moved out of memory. Valid only after `finish`.
+    /// stays stable when a block is moved out of memory. Valid only after `finish`.
     const std::vector<size_t> & getRowOffsets() const;
+
+    /// Whether the build side can be moved out of memory at all. A build side of columnless rows
+    /// cannot: the `Native` format has no way to persist a bare row count.
+    bool canSpill() const;
+    /// What the build side holds in memory right now, and the largest single block of it.
+    size_t getInMemoryBytes() const { return in_memory_bytes.load(std::memory_order_relaxed); }
+    size_t getMaxInMemoryBlockBytes() const { return max_in_memory_block_bytes.load(std::memory_order_relaxed); }
+    size_t getNumSpilledBlocks() const { return num_spilled_blocks.load(std::memory_order_relaxed); }
+    /// Streams every block that is still in memory out to the temporary file, and keeps the build
+    /// side streaming from then on. Returns false when there is less than `min_bytes` to gain.
+    /// Thread-safe, and called by the query memory tracker through the build transform.
+    bool spillInMemoryBlocks(size_t min_bytes);
 
     /// Whether the match flags below are kept at all; decided by the kind and strictness.
     bool hasBuildSideMatchFlags() const { return needs_match_flags; }
@@ -94,19 +142,50 @@ public:
     JoinStrictness getStrictness() const { return strictness; }
 
 private:
+    friend class BuildSideBlockReader;
+
+    /// One stored build block: in memory, possibly compressed, or in the temporary file at
+    /// `spill_ordinal`. `num_rows` is known either way.
+    struct BuildBlockEntry
+    {
+        BuildBlockPtr block;
+        size_t num_rows = 0;
+        bool compressed = false;
+        /// Position of the block in the temporary file; meaningful only when `block` is null.
+        size_t spill_ordinal = 0;
+    };
+
     void assertFinished(const char * what) const;
+
+    /// Keeps the block in memory, compressing it if the build side has grown past the thresholds.
+    void storeBlock(BuildBlockEntry & entry, size_t index, StoredBlock stored_block, size_t rows_in_join, size_t bytes_in_join)
+        TSA_REQUIRES(mutex);
+    /// Writes the block out and leaves `entry` pointing at it by its position in the file. Blocks
+    /// are written in increasing index order, which is what makes one forward pass enough to read
+    /// any of them back.
+    void spillBlock(BuildBlockEntry & entry, const StoredBlock & stored_block) TSA_REQUIRES(mutex);
+
+    /// The entry of block `index`. Needs no lock: the store is read-only by the time it is called.
+    const BuildBlockEntry & getBlockEntry(size_t index) const;
+    /// A fresh sequential reader over the spilled blocks, positioned at the first of them.
+    TemporaryBlockStreamReaderHolder createSpillReadStream() const;
 
     const SharedHeader build_header;
     const JoinKind kind;
     const JoinStrictness strictness;
     const SizeLimits size_limits;
+    const BlockNestedLoopStoreSettings store_settings;
     const EmptyBuildSideAction empty_build_side_action;
     const bool needs_match_flags;
 
     mutable std::mutex mutex;
-    std::vector<StoredBlock> blocks TSA_GUARDED_BY(mutex);
+    std::vector<BuildBlockEntry> blocks TSA_GUARDED_BY(mutex);
     std::vector<size_t> row_offsets TSA_GUARDED_BY(mutex);
     Block build_side_totals TSA_GUARDED_BY(mutex);
+
+    /// Exists from the first spill on; every later block is written to it as well, so that the
+    /// build side never goes back to growing in memory once it has proved too large for it.
+    std::unique_ptr<TemporaryBlockStreamHolder> tmp_stream TSA_GUARDED_BY(mutex);
 
     /// One flag per build row, indexed by global row number; allocated by `finish` and only for the
     /// kinds that need it.
@@ -120,11 +199,43 @@ private:
     std::unique_ptr<std::atomic_bool[]> matched_flags;
 
     std::atomic<size_t> total_rows{0};
+    /// What the build side would occupy in memory as a whole, spilled blocks included; this is what
+    /// `max_bytes_in_join` limits, so that spilling does not quietly raise the limit.
     std::atomic<size_t> total_bytes{0};
+    std::atomic<size_t> in_memory_bytes{0};
+    std::atomic<size_t> max_in_memory_block_bytes{0};
+    std::atomic<size_t> num_spilled_blocks{0};
     std::atomic<bool> finished{false};
 };
 
 using BlockNestedLoopJoinDataPtr = std::shared_ptr<BlockNestedLoopJoinData>;
+
+/// Reads the stored build blocks back, one at a time and in index order. Spilling is sequential, so
+/// the temporary file can only be read forward; a reader asked for an earlier block starts the file
+/// over, which is what the probe does for every probe chunk. Not thread-safe: each probe stream and
+/// each unmatched scan owns one.
+class BuildSideBlockReader
+{
+public:
+    explicit BuildSideBlockReader(BlockNestedLoopJoinDataPtr data_);
+    ~BuildSideBlockReader();
+
+    /// The block at `index`, decompressed or read back from disk as needed. It stays alive for as
+    /// long as the returned pointer is held, which is what lets accumulated output rows point into
+    /// a block the walk has already moved past.
+    BuildBlockPtr read(size_t index);
+
+private:
+    BuildBlockPtr readSpilledBlock(size_t index, size_t spill_ordinal);
+
+    BlockNestedLoopJoinDataPtr data;
+    std::unique_ptr<TemporaryBlockStreamReaderHolder> spill_stream;
+    /// Position of the file reader: the ordinal of the next spilled block it will hand out.
+    size_t next_spill_ordinal = 0;
+    /// The block handed out last, kept because one block is walked over several tiles.
+    BuildBlockPtr current;
+    size_t current_index = 0;
+};
 
 /// Fills `BlockNestedLoopJoinData` with the build side. Carries no data downstream: its output port
 /// has an empty header and is finished once the whole build side is stored, which is how the probe
@@ -142,6 +253,9 @@ public:
 
     Status prepare() override;
     void work() override;
+
+    ProcessorMemoryStats getMemoryStats() override;
+    bool spillOnSize(size_t bytes) override;
 
 private:
     /// Counts this stream out of the build phase, closing the store when it is the last one.

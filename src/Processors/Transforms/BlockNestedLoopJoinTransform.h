@@ -78,11 +78,14 @@ private:
     };
 
     /// A maximal group of accumulated pairs that share a stored build block. An output chunk can
-    /// span several blocks, and the build side of each group is gathered from its own block.
+    /// span several blocks, and the build side of each group is gathered from its own block, which
+    /// the run keeps alive - the walk may have moved on, and a compressed or spilled block would
+    /// otherwise have to be read back a second time.
     struct BuildRun
     {
         size_t block_index;
         size_t length;
+        BuildBlockPtr block;
     };
 
     void startProbeChunk(Chunk chunk);
@@ -106,6 +109,8 @@ private:
     const SharedHeader probe_header;
     const SharedHeader output_header;
     BlockNestedLoopJoinDataPtr data;
+    /// This stream's own way into the stored build blocks; the walk over them is what it reads back.
+    BuildSideBlockReader build_reader;
     BlockNestedLoopPredicate predicate;
     /// The fixed input structure of `predicate.actions`, and its precomputed input mapping.
     Block predicate_input_header;
@@ -139,6 +144,8 @@ private:
     PaddedPODArray<UInt64> active_probe_rows;
     size_t build_block_cursor = 0;
     size_t build_row_cursor = 0;
+    /// The block at `build_block_cursor`, held for as long as the walk stays inside it.
+    BuildBlockPtr current_build_block;
 
     /// The pairs that satisfied the condition and are not emitted yet: a row index within the probe
     /// chunk, and a row index within the stored block named by the matching entry of `build_runs`.
@@ -178,6 +185,7 @@ protected:
 
 private:
     BlockNestedLoopJoinDataPtr data;
+    BuildSideBlockReader build_reader;
     /// The columns of the output header that belong to the probe side and are padded here.
     const size_t num_probe_columns;
     const size_t max_block_size;
