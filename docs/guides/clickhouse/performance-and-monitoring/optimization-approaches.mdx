@@ -115,7 +115,7 @@ WHERE pickup_datetime >= '2009-01-01'
 GROUP BY payment_type;
 ```
 
-Use this output as the baseline. To complete the comparison, follow [Apply the primary-key change](/guides/clickhouse/performance-and-monitoring/query-optimization-example#apply-the-primary-key-change) in the worked example to create a table ordered by `pickup_datetime`, then run the same `EXPLAIN` against it. The primary-key section of the plan should show fewer selected granules before you use duration or memory measurements to evaluate the overall change.
+Use this output as the baseline. To complete the comparison, follow [Apply the ordering-key change](/guides/clickhouse/performance-and-monitoring/query-optimization-example#apply-the-primary-key-change) in the worked example to create a table with an ordering key that includes `pickup_datetime`, then run the same `EXPLAIN` against it. The primary-key section of the plan should show fewer selected granules before you use duration or memory measurements to evaluate the overall change.
 
 <Tip>
 [`PREWHERE`](/optimize/prewhere) can reduce the column values read without changing the number of rows processed. ClickHouse moves eligible conditions from `WHERE` to `PREWHERE` automatically when `optimize_move_to_prewhere` is enabled, which is the default. Inspect the plan before adding `PREWHERE` manually, and use `read_bytes` as well as `read_rows` when measuring its effect.
