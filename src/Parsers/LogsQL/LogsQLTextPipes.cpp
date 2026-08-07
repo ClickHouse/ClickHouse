@@ -284,9 +284,15 @@ void LogsQLParser::parsePipeExtract(Layer & layer, bool is_regexp)
         computed.emplace_back(columnName(field), value);
     }
 
-    /// Drop the temporary column with the capture groups.
+    /// Drop the temporary column with the capture groups. The plain path also drops
+    /// the original columns overwritten by the extracted fields, so that extracting
+    /// into an existing field replaces it instead of producing a duplicate column
+    /// (the EXCEPT transformer is not strict, so names absent from the schema are fine).
     auto except = make_intrusive<ASTColumnsExceptTransformer>();
     except->children.push_back(make_intrusive<ASTIdentifier>("__logsql_extract"));
+    if (!use_replace)
+        for (const auto & [name, expression] : computed)
+            except->children.push_back(make_intrusive<ASTIdentifier>(name));
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
     transformers->children.push_back(except);
 
@@ -442,10 +448,14 @@ void LogsQLParser::parsePipeFormat(Layer & layer)
         if (option == "hexnumencode")
         {
             /// A uint64 number encoded as 16 uppercase hex digits; non-numbers keep the raw value.
+            /// `hex` trims leading zero bytes, so pad the result to the fixed width.
             ASTPtr parsed = makeASTFunction("toUInt64OrNull", value);
             return makeASTFunction("if",
                 makeASTFunction("isNotNull", parsed),
-                makeASTFunction("hex", makeASTFunction("toUInt64OrZero", value->clone())),
+                makeASTFunction("leftPad",
+                    makeASTFunction("hex", makeASTFunction("toUInt64OrZero", value->clone())),
+                    makeNumber(16),
+                    makeString("0")),
                 value->clone());
         }
         if (option == "plain")
