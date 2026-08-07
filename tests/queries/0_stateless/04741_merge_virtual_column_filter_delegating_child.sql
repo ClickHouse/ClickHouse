@@ -303,6 +303,21 @@ SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_(shadow|sibli
 SELECT '-- arm J control: with no filter the same query opens the shadowed child and fails';
 SELECT count() FROM merge(currentDatabase(), '^t04741_file_(shadow|sibling)$'); -- { serverError FILE_DOESNT_EXIST }
 
+-- A wrapper over a file-like target emits the TARGET's name, not the wrapper's, so it must be pruned
+-- by name exactly like the target would be. Master prunes it, and the destination file is absent, so
+-- admitting it raises where master answered.
+SELECT '-- arm K: a Buffer over a file-like target is pruned by name';
+CREATE TABLE t04741_file_buf_target (x UInt32) ENGINE = File(TSV, '04741_no_such_file_3.tsv');
+CREATE TABLE t04741_file_buf (x UInt32)
+    ENGINE = Buffer(currentDatabase(), t04741_file_buf_target, 1, 3600, 3600, 10, 100, 10000, 100000);
+SELECT _table, count() FROM merge(currentDatabase(), '^t04741_file_(buf|sibling)$')
+    WHERE _table = 't04741_file_sibling' GROUP BY 1 ORDER BY 1;
+
+SELECT '-- arm K control: with no filter the same query opens the absent destination and fails';
+SELECT count() FROM merge(currentDatabase(), '^t04741_file_(buf|sibling)$'); -- { serverError FILE_DOESNT_EXIST }
+
+DROP TABLE t04741_file_buf;
+DROP TABLE t04741_file_buf_target;
 DROP TABLE t04741_file_present;
 DROP TABLE t04741_file_shadow;
 

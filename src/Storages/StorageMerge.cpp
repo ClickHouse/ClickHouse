@@ -78,6 +78,7 @@
 #if USE_LIBPQXX
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
@@ -1491,6 +1492,19 @@ StoragePtr tryResolveForwardingTarget(const std::function<StoragePtr()> & resolv
     }
 }
 
+/// The file-like engines stamp `_table` from their own `StorageID` in the single family-wide site
+/// `addRequestedFileLikeStorageVirtualsToChunk`. The whole shared declaration identifies them: `Merge`,
+/// `Buffer`, the message queues and `Hive` also declare it at `Reader` place without self-stamping.
+bool declaresFileLikeSelfStampedTable(const ColumnsDescription & columns, const VirtualColumnsDescription & virtuals)
+{
+    /// `getVirtualsForFileLikeStorage` omits a family virtual whose name the table declares physically, so
+    /// a physical column counts as declared here. `_table` is excluded: it is the one the decision reads.
+    static constexpr std::array shadowable_columns = {"_path", "_file", "_size", "_etag", "_tags"};
+    return virtuals.tryGetDescription("_table", VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader)
+        && std::ranges::all_of(shadowable_columns, [&](const auto * name)
+    { return columns.has(name) || virtuals.tryGetDescription(name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader); });
+}
+
 /// True when reading `child` does not stamp `child`'s own name into every row, so pruning it by name is
 /// required rather than optional. Only wrappers that forward the whole read and prune nothing themselves
 /// are followed, so a nested `Merge`, which prunes by name itself, is not.
@@ -1514,7 +1528,12 @@ bool readIsNotSelfNamed(const IStorage & child, size_t depth = 0)
     {
         auto target = tryResolveForwardingTarget(resolve);
         /// Held for the rest of the decision, so the inspected chain cannot be destroyed under us.
-        return !target || readIsNotSelfNamed(*target, depth + 1);
+        if (!target || readIsNotSelfNamed(*target, depth + 1))
+            return true;
+        /// A file-like target stamps its own `StorageID`, which is the target's name and not this
+        /// wrapper's, so reading through the wrapper is not self-named either.
+        auto target_metadata = target->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        return declaresFileLikeSelfStampedTable(target_metadata->columns, target_metadata->virtuals);
     };
 
     if (const auto * alias = dynamic_cast<const StorageAlias *>(&child))
@@ -1532,19 +1551,6 @@ bool readIsNotSelfNamed(const IStorage & child, size_t depth = 0)
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(&child))
         return forwards_to([proxy] { return proxy->tryGetNested(); });
     return false;
-}
-
-/// The file-like engines stamp `_table` from their own `StorageID` in the single family-wide site
-/// `addRequestedFileLikeStorageVirtualsToChunk`. The whole shared declaration identifies them: `Merge`,
-/// `Buffer`, the message queues and `Hive` also declare it at `Reader` place without self-stamping.
-bool declaresFileLikeSelfStampedTable(const ColumnsDescription & columns, const VirtualColumnsDescription & virtuals)
-{
-    /// `getVirtualsForFileLikeStorage` omits a family virtual whose name the table declares physically, so
-    /// a physical column counts as declared here. `_table` is excluded: it is the one the decision reads.
-    static constexpr std::array shadowable_columns = {"_path", "_file", "_size", "_etag", "_tags"};
-    return virtuals.tryGetDescription("_table", VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader)
-        && std::ranges::all_of(shadowable_columns, [&](const auto * name)
-    { return columns.has(name) || virtuals.tryGetDescription(name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader); });
 }
 
 /// The prefilter matches the child's own name, so it may prune only a child whose rows carry that child's

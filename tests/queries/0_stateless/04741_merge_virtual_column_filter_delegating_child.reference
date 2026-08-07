@@ -82,6 +82,9 @@ t04741_file_present	19
 -- arm J: a file-like child whose family virtual is shadowed physically is still pruned
 t04741_file_sibling	23
 -- arm J control: with no filter the same query opens the shadowed child and fails
+-- arm K: a Buffer over a file-like target is pruned by name
+t04741_file_sibling	23
+-- arm K control: with no filter the same query opens the absent destination and fails
 -- arm I: a _table filter prunes the loop child, so the query terminates
 t04741_loop_sibling	31
 -- arm I control: the pruned plan really does not read it
