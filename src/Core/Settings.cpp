@@ -3788,15 +3788,6 @@ single server.
 You can use `SHOW PROCESSLIST` to see the current memory consumption for each query.
 Peak memory consumption is tracked for each query and written to the log.
 
-Memory usage is not fully tracked for states of the following aggregate functions
-from `String` and `Array` arguments:
-- `min`
-- `max`
-- `any`
-- `anyLast`
-- `argMin`
-- `argMax`
-
 Memory consumption is also restricted by the parameters [`max_memory_usage_for_user`](/reference/settings/session-settings/max-memory-usage#max_memory_usage_for_user)
 and [`max_server_memory_usage`](/reference/settings/server-settings/settings/max-server-memory-usage#max_server_memory_usage).
 )", 0) \
