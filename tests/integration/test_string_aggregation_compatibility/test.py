@@ -11,6 +11,12 @@ node256 = cluster.add_instance(
     tag="25.6",
     with_installed_binary=True,
 )
+# A current server whose `default` profile disables the setting - the value is not
+# compiled-in, not sent with any query, and exists only as a server-side default.
+node_disabled_by_profile = cluster.add_instance(
+    "node_disabled_by_profile",
+    user_configs=["configs/users_packed_keys_disabled.xml"],
+)
 
 
 @pytest.fixture(scope="module")
@@ -246,3 +252,68 @@ def test_packed_string_keys_setting(started_cluster):
             )
             == 1000
         )
+
+
+def test_packed_string_keys_default_propagation(started_cluster):
+    # The initiator's *effective* value of `enable_packed_string_keys_in_aggregation`
+    # must reach the remote servers even when nobody mentions the setting in the query:
+    # two current peers whose server-side defaults disagree would otherwise silently
+    # pick different hash methods and mis-merge two-level buckets under
+    # `distributed_aggregation_memory_efficient`. `MultiplexedConnections::sendQuery`
+    # and `HedgedConnections::sendQuery` therefore force the setting into the changed
+    # set before sending it.
+    #
+    # This arm discriminates exactly that path: the initiator (node1) sits on the
+    # compiled-in default, which is *unchanged*, so the ordinary changed-settings
+    # serialization would send nothing, while the shard's own `default` profile turns
+    # the setting off (a profile default is marked changed and would propagate through
+    # the ordinary path on its own, so putting the `0` on the initiator would not
+    # discriminate). With the forced propagation the shard executes the secondary
+    # query with the initiator's effective value (1); without it, the shard would
+    # silently keep its own profile default (0). The shard-side `system.query_log`
+    # entry contains the key either way, because the shard's own profile default marks
+    # it changed locally, so the recorded *value* is the oracle, not the key presence.
+
+    # Guard: the profile default is in effect on the shard.
+    assert (
+        node_disabled_by_profile.query(
+            "SELECT value FROM system.settings WHERE name = 'enable_packed_string_keys_in_aggregation'"
+        ).strip()
+        == "0"
+    )
+
+    node_disabled_by_profile.query(
+        "DROP TABLE IF EXISTS repro6 SYNC; CREATE TABLE repro6 (s String) ENGINE = MergeTree ORDER BY s"
+    )
+    node_disabled_by_profile.query(
+        "INSERT INTO repro6 SELECT concat('k', toString(number % 500)) FROM numbers(5000)"
+    )
+
+    query_id = "packed_string_keys_default_propagation"
+    assert (
+        int(
+            node1.query(
+                f"""
+        SELECT count()
+        FROM
+        (
+            SELECT s
+            FROM remote('{node_disabled_by_profile.name}', 'default.repro6', 'default', '')
+            GROUP BY s
+        )""",
+                settings={"group_by_two_level_threshold": 1},
+                query_id=query_id,
+            )
+        )
+        == 500
+    )
+
+    node_disabled_by_profile.query("SYSTEM FLUSH LOGS")
+    shard_side_values = node_disabled_by_profile.query(
+        f"""
+        SELECT DISTINCT Settings['enable_packed_string_keys_in_aggregation']
+        FROM system.query_log
+        WHERE type = 'QueryFinish' AND is_initial_query = 0 AND initial_query_id = '{query_id}'
+        """
+    ).strip()
+    assert shard_side_values == "1"
