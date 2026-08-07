@@ -1067,7 +1067,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
             select_query = sq;
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
                 ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *sq);
             if (joined_tables.tablesCount() == 1)
@@ -1237,6 +1237,12 @@ BlockIO InterpreterInsertQuery::execute()
     /// spurious `ACCESS_DENIED` for table-scoped grants. Source `SELECT` access is still checked below.
     if (!query.table_function && !skip_target_insert_access_check)
         context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
+
+    /// Access the storage itself guards the write with (e.g. the source access of a table of a
+    /// `URL` database). It is also checked when the sink is created, but that happens in a
+    /// background flush for asynchronous inserts, so the check has to be repeated here.
+    if (!query.table_function)
+        table->checkInsertIsAllowed(context);
 
     if (!allow_materialized)
     {
