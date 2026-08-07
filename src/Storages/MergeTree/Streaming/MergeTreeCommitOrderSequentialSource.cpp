@@ -324,7 +324,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , requested_num_streams(requested_num_streams_)
     , max_block_size(max_block_size_)
     , subscription(std::move(subscription_))
-    , bounded(!query_info_.table_expression_modifiers->getStreamSettings()->subscribe_for_updates)
+    , stream_settings(*query_info_.table_expression_modifiers->getStreamSettings())
     , log(getLogger("MergeTreeCommitOrderSequentialSource"))
     , last_emitted_positions(buildMergeTreeCursor(query_info_.table_expression_modifiers->getStreamSettings()->cursor))
 {
@@ -403,8 +403,6 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfigur
     // Finish after the first completed snapshot, or once the first enrichment shows nothing (more) to read.
     if (subscription->updatesCount() > 0 && (finished_snapshots > 0 || result == Status::Async))
     {
-        if (!current_sub_pipeline.empty())
-            return Status::UpdatePipeline;   // tear down the spent sub-pipeline first
         outputs.front().finish();
         return Status::Finished;
     }
@@ -414,12 +412,8 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfigur
 
 void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()
 {
-    /// A non-empty `reading_up_to_block_numbers` means a snapshot sub-pipeline has just finished.
-    if (!reading_up_to_block_numbers.empty())
-    {
-        ++finished_snapshots;
-        LOG_TEST(log, "Finished reading snapshot #{}", finished_snapshots);
-    }
+    ++finished_snapshots;
+    LOG_TEST(log, "Finished reading snapshot #{}", finished_snapshots);
 
     for (const auto & [partition_id, safe_block_number] : reading_up_to_block_numbers)
     {
@@ -441,7 +435,7 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::prepare()
     if (!pending_snapshot.has_value())
         handlePipelineEnd();
 
-    if (bounded)
+    if (!stream_settings.subscribe_for_updates)
         return handleBoundedReconfiguration();
 
     return handleReconfiguration();

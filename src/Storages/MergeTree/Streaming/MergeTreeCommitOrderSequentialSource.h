@@ -5,6 +5,8 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Core/Streaming/Settings.h>
+
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 
@@ -54,8 +56,8 @@ private:
     const size_t requested_num_streams;
     const UInt64 max_block_size;
     const MergeTreeBoundsSubscriptionPtr subscription;
-    /// Whether this is a bounded stream (read the first snapshot, then finish); a query property read from `query_info`.
-    const bool bounded;
+    /// Streaming settings of the query (bounded flag, cursor, watermark); a query property read from `query_info`.
+    const StreamSettings stream_settings;
     const LoggerPtr log;
 
     /// Query runtime information

@@ -88,14 +88,6 @@ CursorPromotersMap constructPromoters(
             std::forward_as_tuple(partition_id),
             std::forward_as_tuple(std::move(committing_block_numbers[partition_id]), std::move(ranges)));
 
-    /// Partitions with in-flight (committing) blocks but no visible/virtual range yet still need a promoter.
-    for (auto && [partition_id, committing] : committing_block_numbers)
-        if (!committing.empty() && !promoters.contains(partition_id))
-            promoters.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(partition_id),
-                std::forward_as_tuple(std::move(committing), PartBlockNumberRanges{}));
-
     return promoters;
 }
 
