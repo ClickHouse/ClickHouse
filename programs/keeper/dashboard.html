@@ -681,7 +681,7 @@
         .ansi-bright-green { color: #4e9a06; }
         .ansi-bright-yellow { color: #fce94f; }
         .ansi-bright-blue { color: #729fcf; }
-        .ansi-bright-magenta { color: #ef2929; }
+        .ansi-bright-magenta { color: #ad7fa8; }
         .ansi-bright-cyan { color: #34e2e2; }
         .ansi-bright-white { color: #fff; }
         .ansi-bold { font-weight: bold; }
@@ -2006,9 +2006,8 @@
         return result;
     }
 
-    /// Match replxx (keeper-client): only the shared prefix of all candidates is
-    /// bright-magenta; the distinguishing suffix stays default terminal color.
-    /// See contrib/replxx/src/replxx_impl.cxx (BRIGHTMAGENTA for longestCommonPrefix).
+    /// Match replxx (keeper-client) LCP highlighting, using magenta (35) rather than
+    /// bright-magenta (95) so the dashboard palette (.ansi-magenta) stays consistent.
     function formatCompletionColumns(items) {
         if (items.length === 0) return "";
         const lcp = longestCommonPrefix(items);
@@ -2024,7 +2023,7 @@
                 if (idx >= items.length) break;
                 const item = items[idx];
                 const colored = lcp.length > 0
-                    ? ("\x1b[95m" + item.slice(0, lcp.length) + "\x1b[0m" + item.slice(lcp.length))
+                    ? ("\x1b[35m" + item.slice(0, lcp.length) + "\x1b[0m" + item.slice(lcp.length))
                     : item;
                 /// Pad by visible length, not ANSI-expanded length.
                 if (c < cols - 1)
