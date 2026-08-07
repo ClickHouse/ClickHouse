@@ -13,7 +13,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t (x UInt8) ENGINE = MergeTree ORDER BY x"
 
 JSON=$($CLICKHOUSE_CLIENT -q "SELECT parseQueryToJSON('INSERT INTO t FORMAT TSV') FORMAT TSVRaw")
 
-printf '1\n2\n3\n' | $CLICKHOUSE_CLIENT --allow_experimental_json_ast_dialect 1 --dialect clickhouse_json -q "$JSON"
+printf '1\n2\n3\n' | $CLICKHOUSE_CLIENT --enable_json_ast_dialect 1 --dialect clickhouse_json -q "$JSON"
 
 echo "--- piped stdin data is inserted (expect: 3 6) ---"
 $CLICKHOUSE_CLIENT -q "SELECT count(), sum(x) FROM t"
