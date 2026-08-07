@@ -268,9 +268,11 @@ REGISTER_FUNCTION(PredictXGBoost)
 {
     factory.registerFunction<FunctionPredictXGBoost>(FunctionDocumentation{
         .description = "Predicts a numeric target for a feature vector using an "
-                       "[`XGBOOST`](/sql-reference/statements/create/dictionary/layouts/xgboost) dictionary: "
-                       "predictXGBoost(dictionary_name, feature1, feature2, ...[, params]). Features are passed positionally "
-                       "in the dictionary's key order.",
+                       "[`XGBOOST`](/sql-reference/statements/create/dictionary/layouts/xgboost) dictionary. Features are "
+                       "passed positionally, in the order the dictionary's key columns were declared. This is the only way to "
+                       "query an `XGBOOST` dictionary: it holds a trained model rather than rows, so the generic dictionary "
+                       "interface (`dictGet`, `dictHas`, `SELECT * FROM dict`) is not supported. The XGBoost integration is "
+                       "experimental, so the `enable_xgboost` setting must be enabled.",
         .syntax = "predictXGBoost(dictionary_name, feature1[, feature2, ...][, params])",
         .arguments
         = {{"dictionary_name",
@@ -282,8 +284,8 @@ REGISTER_FUNCTION(PredictXGBoost)
            {"params",
             "Optional constant Map of XGBoost prediction parameters, from parameter name to an integer value, e.g. "
             "`map('type', 0, 'iteration_end', 0)`. Every accepted parameter is an integer or a boolean, so fractional "
-            "values are rejected. See the "
-            "[XGBOOST](/sql-reference/statements/create/dictionary/layouts/xgboost) for "
+            "values are rejected. See "
+            "[prediction parameters](/sql-reference/statements/create/dictionary/layouts/xgboost#prediction-parameters) for "
             "the accepted keys.",
             {"Map(String, (U)Int8/16/32/64)"}}},
         .returned_value = {"The model prediction as Float64, one per row.", {"Float64"}},

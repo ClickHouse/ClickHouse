@@ -1,15 +1,14 @@
 ---
 slug: /sql-reference/statements/create/dictionary/layouts/xgboost
 title: 'XGBoost dictionaries'
-sidebar_label: 'XGBoost'
-sidebar_position: 14
+sidebarTitle: 'XGBoost'
 description: 'Configure XGBOOST dictionaries to train a gradient-boosted model and predict a numeric target.'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<CloudNotSupportedBadge />
+<CloudNotSupportedBadge/>
 
 The `xgboost` (`XGBOOST`) dictionary trains an [XGBoost](https://xgboost.readthedocs.io/) gradient-boosted model, at load time, from a source table of training rows, then predicts a numeric target for any feature vector you pass in. The feature columns are the dictionary key and the single attribute is the target the model learns.
 
@@ -25,7 +24,7 @@ SET enable_xgboost = 1;
 Only `CREATE DICTIONARY` is supported: an `XGBOOST` dictionary defined in a server configuration file fails to load.
 :::
 
-[`predictXGBoost`](/sql-reference/functions/machine-learning-functions#predictxgboost) is the only way to query the dictionary: it takes the features as individual arguments, returns the prediction, and accepts additional [prediction parameters](#prediction-parameters). The dictionary holds a trained model rather than rows, so the generic dictionary interface — [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget), `dictHas` and `SELECT * FROM dict` — is not supported and reports an error.
+[`predictXGBoost`](/reference/functions/regular-functions/machine-learning-functions#predictXGBoost) is the only way to query the dictionary: it takes the features as individual arguments, returns the prediction, and accepts additional [prediction parameters](#prediction-parameters). The dictionary holds a trained model rather than rows, so the generic dictionary interface — [`dictGet`](/reference/functions/regular-functions/ext-dict-functions#dictGet), `dictHas` and `SELECT * FROM dict` — is not supported and reports an error.
 
 ## Quickstart {#quickstart}
 
