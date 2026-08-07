@@ -189,11 +189,19 @@ See [Writing to data lakes](/use-cases/data-lake/getting-started/writing-data) a
 
 ### Delta Lake {#delta-lake-settings}
 
-From version 25.6, ClickHouse reads Delta Lake on S3 and GCS through the Delta Lake Rust kernel ([allow_experimental_delta_kernel_rs](/reference/settings/session-settings/allow-experimental#allow_experimental_delta_kernel_rs), 25.5+). On Azure Blob Storage, use [deltaLakeAzure()](/sql-reference/table-functions/deltalake) with the legacy reader because the kernel is disabled there. Without the kernel, partition pruning, change data feed, and snapshot version reads aren't available.
+From version 25.6, ClickHouse reads Delta Lake on S3 and GCS through the Delta Lake Rust kernel. The setting is named [`allow_delta_kernel_rs`](/reference/settings/session-settings/allow#allow_delta_kernel_rs) in version 26.8 and later, and `allow_experimental_delta_kernel_rs` in versions 25.5 through 26.7. On Azure Blob Storage, use [deltaLakeAzure()](/sql-reference/table-functions/deltalake) with the legacy reader because the kernel is disabled there. Without the kernel, partition pruning, change data feed, and snapshot version reads aren't available.
 
 #### Delta Kernel {#delta-kernel}
 
-[allow_experimental_delta_kernel_rs](/reference/settings/session-settings/allow-experimental#allow_experimental_delta_kernel_rs) must be enabled for partition pruning, change data feed, and snapshot version reads. It's on by default on S3 and GCS from 25.5. Enable it explicitly on older versions or when troubleshooting:
+The Delta kernel setting must be enabled for partition pruning, change data feed, and snapshot version reads. It's on by default on S3 and GCS from 25.5. When enabling it explicitly, use the name for your ClickHouse version.
+
+For version 26.8 and later:
+
+```sql
+SET allow_delta_kernel_rs = 1;
+```
+
+For versions 25.5 through 26.7:
 
 ```sql
 SET allow_experimental_delta_kernel_rs = 1;
