@@ -137,8 +137,10 @@ namespace
         return all_paths;
     }
 
+    /// `header == nullptr` means the output schema is not known (a table definition without an
+    /// explicit column list): only the header-independent checks run, and no ids are assigned.
     std::optional<std::unordered_map<String, Int64>> buildColumnFieldIds(
-        const Block & header,
+        const Block * header,
         const std::vector<std::pair<String, String>> & overrides,
         bool auto_assign,
         bool write_geometadata)
@@ -146,7 +148,9 @@ namespace
         if (overrides.empty() && !auto_assign)
             return std::nullopt;
 
-        const std::vector<String> all_paths = enumerateOutputFieldPaths(header, write_geometadata);
+        std::vector<String> all_paths;
+        if (header)
+            all_paths = enumerateOutputFieldPaths(*header, write_geometadata);
         const std::unordered_set<String> known_paths(all_paths.begin(), all_paths.end());
 
         std::unordered_map<String, Int64> result;
@@ -178,7 +182,7 @@ namespace
                     "Iceberg for metadata fields (ids above {}); such a column would be ignored when the file is "
                     "read as an Iceberg table",
                     id, name, iceberg_max_user_field_id);
-            if (!known_paths.contains(name))
+            if (header && !known_paths.contains(name))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "output_format_parquet_column_field_ids references unknown column '{}'", name);
             if (!result.emplace(name, id).second)
@@ -203,7 +207,7 @@ namespace
                 ++next_id;
             }
         }
-        else
+        else if (header)
         {
             /// If auto-assign is off we require the map to cover every path so that the
             /// resulting Parquet file isn't a mix of "has field_id" and "no field_id" fields.
@@ -215,6 +219,22 @@ namespace
 
         return result;
     }
+}
+
+void validateParquetColumnFieldIds(
+    const NamesAndTypesList & physical_columns,
+    const std::vector<std::pair<String, String>> & overrides,
+    bool auto_assign,
+    bool write_geometadata)
+{
+    std::optional<Block> header;
+    if (!physical_columns.empty())
+    {
+        header.emplace();
+        for (const auto & column : physical_columns)
+            header->insert(ColumnWithTypeAndName(column.type->createColumn(), column.type, column.name));
+    }
+    buildColumnFieldIds(header ? &*header : nullptr, overrides, auto_assign, write_geometadata);
 }
 
 ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_)
@@ -241,7 +261,7 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     /// Resolve Parquet `field_id`s from the user-facing settings (explicit overrides and/or
     /// the Iceberg-style auto-assign toggle). Used only when there is no metadata mapping.
     column_field_ids = buildColumnFieldIds(
-        *header_,
+        header_.get(),
         format_settings.parquet.column_field_ids,
         format_settings.parquet.auto_assign_field_ids,
         format_settings.parquet.write_geometadata);

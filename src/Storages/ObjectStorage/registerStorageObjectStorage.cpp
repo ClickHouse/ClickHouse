@@ -18,6 +18,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/validateParquetFieldIdSettingsInDefinition.h>
 #include <Poco/Logger.h>
 #include <Disks/DiskType.h>
 
@@ -118,6 +119,11 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
             "Settings output_format_parquet_column_field_ids and output_format_parquet_auto_assign_field_ids "
             "cannot be used in the definition of an Iceberg table: the table metadata provides its own "
             "column-id mapping, so every write to such a table would fail");
+
+    /// A plain (non-Iceberg) table freezes these settings the same way, so an invalid
+    /// definition-supplied `field_id` map would be accepted here and then fail every `INSERT` —
+    /// validate a fresh definition up front instead.
+    validateParquetFieldIdSettingsInDefinition(args, configuration->format, *format_settings);
 
     ASTPtr partition_by;
     if (args.storage_def->partition_by)

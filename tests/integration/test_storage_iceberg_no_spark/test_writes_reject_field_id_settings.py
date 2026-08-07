@@ -274,3 +274,101 @@ def test_writes_reject_field_id_settings(
     assert "column-id mapping" in error
     # The table stays readable after the rejected write.
     assert instance.query(f"SELECT * FROM {legacy_table} ORDER BY ALL") == "1\n"
+
+
+def test_plain_object_storage_validates_field_ids_in_definition(
+    started_cluster_iceberg_no_spark,
+):
+    """A plain (non-Iceberg) object-storage table freezes its `FormatSettings` from the
+    `CREATE TABLE ... SETTINGS` clause too, so an invalid definition-supplied
+    `output_format_parquet_column_field_ids` map used to be accepted at CREATE time
+    and then fail every later `INSERT` — an accepted but permanently unwritable
+    table. Such a definition is validated up front now and rejected at DDL time,
+    while ambient (session/profile) values keep failing at write time only.
+    """
+    from helpers.config_cluster import minio_access_key, minio_secret_key
+
+    cluster = started_cluster_iceberg_no_spark
+    instance = cluster.instances["node1"]
+    base_url = f"http://{cluster.minio_host}:{cluster.minio_s3_port}/{cluster.minio_bucket}/plain_field_ids_{get_uuid_str()}"
+
+    def creation_expression(table_name, columns, settings):
+        columns_clause = f" ({columns})" if columns else ""
+        return (
+            f"CREATE TABLE {table_name}{columns_clause} "
+            f"ENGINE = S3('{base_url}/{table_name}.parquet', "
+            f"'{minio_access_key}', '{minio_secret_key}', 'Parquet') "
+            f"SETTINGS {settings}"
+        )
+
+    def make_table_name(suffix):
+        return f"test_plain_object_storage_field_ids_{suffix}_{get_uuid_str()}"
+
+    # A map referencing a column the table does not have is rejected at CREATE time.
+    unknown_table = make_table_name("unknown")
+    error = instance.query_and_get_error(
+        creation_expression(
+            unknown_table,
+            "x Int32",
+            "output_format_parquet_column_field_ids = {'missing': '1'}",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "unknown column" in error
+    assert instance.query(f"EXISTS TABLE {unknown_table}") == "0\n"
+
+    # A value that does not parse as an integer is rejected at CREATE time.
+    malformed_table = make_table_name("malformed")
+    error = instance.query_and_get_error(
+        creation_expression(
+            malformed_table,
+            "x Int32",
+            "output_format_parquet_column_field_ids = {'x': 'oops'}",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "not an integer" in error
+    assert instance.query(f"EXISTS TABLE {malformed_table}") == "0\n"
+
+    # With auto-assign off the map must cover every column.
+    partial_table = make_table_name("partial")
+    error = instance.query_and_get_error(
+        creation_expression(
+            partial_table,
+            "x Int32, y Int32",
+            "output_format_parquet_column_field_ids = {'x': '1'}",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "does not cover" in error
+    assert instance.query(f"EXISTS TABLE {partial_table}") == "0\n"
+
+    # The header-independent checks run even when the definition has no column
+    # list (the schema would be inferred from the data).
+    inferred_table = make_table_name("inferred")
+    error = instance.query_and_get_error(
+        creation_expression(
+            inferred_table,
+            None,
+            "output_format_parquet_column_field_ids = {'x': 'oops'}",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "not an integer" in error
+    assert instance.query(f"EXISTS TABLE {inferred_table}") == "0\n"
+
+    # A valid definition works end to end, and replaying it (short ATTACH) is
+    # not re-validated.
+    ok_table = make_table_name("ok")
+    instance.query(
+        creation_expression(
+            ok_table,
+            "x Int32, y Int32",
+            "output_format_parquet_column_field_ids = {'x': '5', 'y': '7'}",
+        )
+    )
+    instance.query(f"INSERT INTO {ok_table} VALUES (1, 2)")
+    assert instance.query(f"SELECT * FROM {ok_table} ORDER BY ALL") == "1\t2\n"
+    instance.query(f"DETACH TABLE {ok_table}")
+    instance.query(f"ATTACH TABLE {ok_table}")
+    assert instance.query(f"SELECT * FROM {ok_table} ORDER BY ALL") == "1\t2\n"

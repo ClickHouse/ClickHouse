@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 #include <Storages/PartitionedSink.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/validateParquetFieldIdSettingsInDefinition.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
@@ -2570,6 +2571,11 @@ void registerStorageURL(StorageFactory & factory)
                 partition_by = args.storage_def->partition_by->clone();
 
             auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
+
+            /// The frozen format settings make an invalid definition-supplied Parquet `field_id`
+            /// map fail every later `INSERT` — validate a fresh definition up front instead.
+            validateParquetFieldIdSettingsInDefinition(args, config.format, format_settings);
+
             const bool use_object_storage
                 = config.http_method.empty()
                 && urlPathHasListableGlobs(config.url);

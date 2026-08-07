@@ -1,5 +1,6 @@
 #include <Storages/StorageFile.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/validateParquetFieldIdSettingsInDefinition.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/PartitionedSink.h>
@@ -2748,6 +2749,10 @@ void registerStorageFile(StorageFactory & factory)
             {
                 storage_args.format_settings = getFormatSettings(factory_args.getContext());
             }
+
+            /// The frozen format settings make an invalid definition-supplied Parquet `field_id`
+            /// map fail every later `INSERT` — validate a fresh definition up front instead.
+            validateParquetFieldIdSettingsInDefinition(factory_args, storage_args.format_name, *storage_args.format_settings);
 
             if (engine_args_ast.size() == 1) /// Table in database
                 return std::make_shared<StorageFile>(factory_args.relative_data_path, storage_args);

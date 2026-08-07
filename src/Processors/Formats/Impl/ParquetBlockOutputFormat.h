@@ -3,6 +3,7 @@
 
 #if USE_PARQUET
 
+#include <Core/NamesAndTypes.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/Parquet/Write.h>
 #include <Formats/FormatSettings.h>
@@ -139,6 +140,24 @@ private:
     /// Parsed from output_format_parquet_column_field_ids setting.
     std::optional<std::unordered_map<String, Int64>> column_field_ids;
 };
+
+/// Validates the user-facing Parquet `field_id` settings without writing anything, throwing
+/// `BAD_ARGUMENTS` on a `column_field_ids` map the writer would reject: a value that does not
+/// parse as an `Int32`, a negative id, an id in the range Iceberg reserves for metadata fields,
+/// or a duplicate path or id. When `physical_columns` is non-empty the header-dependent checks
+/// run too: entries referencing unknown columns, a map that does not cover the schema while
+/// auto-assign is disabled, and a schema whose flattened dotted paths are ambiguous. An empty
+/// `physical_columns` means the schema is not known (a table definition relying on schema
+/// inference); only the header-independent checks run then.
+///
+/// Used at table definition time by engines that freeze the format settings from the
+/// `CREATE TABLE ... SETTINGS` clause, so an invalid definition is rejected up front instead of
+/// producing a table whose every `INSERT` fails.
+void validateParquetColumnFieldIds(
+    const NamesAndTypesList & physical_columns,
+    const std::vector<std::pair<String, String>> & overrides,
+    bool auto_assign,
+    bool write_geometadata);
 
 }
 
