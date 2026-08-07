@@ -193,6 +193,137 @@ String stringLiteralInnerBytes(const String & raw_token)
     return raw_token;
 }
 
+/// Append a Unicode code point (from `\uXXXX` / `\UXXXXXXXX`) to the value as UTF-8.
+void appendCodePointUTF8(UInt32 code_point, String & value)
+{
+    if (code_point <= 0x7F)
+        value += static_cast<char>(code_point);
+    else if (code_point <= 0x7FF)
+    {
+        value += static_cast<char>(0xC0 | (code_point >> 6));
+        value += static_cast<char>(0x80 | (code_point & 0x3F));
+    }
+    else if (code_point <= 0xFFFF)
+    {
+        value += static_cast<char>(0xE0 | (code_point >> 12));
+        value += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
+        value += static_cast<char>(0x80 | (code_point & 0x3F));
+    }
+    else
+    {
+        value += static_cast<char>(0xF0 | (code_point >> 18));
+        value += static_cast<char>(0x80 | ((code_point >> 12) & 0x3F));
+        value += static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
+        value += static_cast<char>(0x80 | (code_point & 0x3F));
+    }
+}
+
+/// The value of a PostgreSQL escape-string literal (an `E'...'` right after the `E` prefix): the quotes are
+/// stripped and the escape sequences PostgreSQL defines for this syntax are decoded - `\b`, `\f`, `\n`,
+/// `\r`, `\t`, octal `\o[oo]`, hex `\xh[h]`, Unicode `\uXXXX` / `\UXXXXXXXX` (appended as UTF-8) - while any
+/// other escaped character stands for itself (which covers `\\` and `\'`), and a doubled quote stands for a
+/// single quote. This is how clients spell control-character option values, e.g. `DELIMITER E'\t'` and
+/// `NULL E'\\N'`. A malformed escape (such as `\x` with no hex digit) is not worth throwing for here (see
+/// the comment in `parseOptions` on why the parser must not throw): the sequence is taken literally, and
+/// the resulting value either matches a supported option value or is rejected by the handler.
+String escapeStringLiteralInnerBytes(const String & raw_token)
+{
+    const String raw = stringLiteralInnerBytes(raw_token);
+    String value;
+    value.reserve(raw.size());
+
+    const auto is_octal = [](char c) { return c >= '0' && c <= '7'; };
+    const auto is_hex = [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); };
+    const auto hex_value = [](char c) -> UInt32
+    {
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        return (c >= 'a' ? c - 'a' : c - 'A') + 10;
+    };
+
+    size_t i = 0;
+    while (i < raw.size())
+    {
+        const char c = raw[i];
+        if (c == '\'')
+        {
+            /// A doubled quote; the lexer guarantees the quote is not the last byte of the inner bytes.
+            value += '\'';
+            i += 2;
+        }
+        else if (c != '\\')
+        {
+            value += c;
+            ++i;
+        }
+        else if (i + 1 >= raw.size())
+        {
+            /// A lone trailing backslash (the lexer does not produce one, but stay safe).
+            value += '\\';
+            ++i;
+        }
+        else
+        {
+            const char escaped = raw[i + 1];
+            i += 2;
+            switch (escaped)
+            {
+                case 'b': value += '\b'; break;
+                case 'f': value += '\f'; break;
+                case 'n': value += '\n'; break;
+                case 'r': value += '\r'; break;
+                case 't': value += '\t'; break;
+                case 'x':
+                {
+                    if (i < raw.size() && is_hex(raw[i]))
+                    {
+                        UInt32 code = hex_value(raw[i]);
+                        ++i;
+                        if (i < raw.size() && is_hex(raw[i]))
+                        {
+                            code = (code << 4) | hex_value(raw[i]);
+                            ++i;
+                        }
+                        value += static_cast<char>(code);
+                    }
+                    else
+                        value += 'x'; /// Malformed: no hex digit follows.
+                    break;
+                }
+                case 'u':
+                case 'U':
+                {
+                    const size_t digits = escaped == 'u' ? 4 : 8;
+                    if (i + digits <= raw.size() && std::all_of(raw.begin() + i, raw.begin() + i + digits, is_hex))
+                    {
+                        UInt32 code_point = 0;
+                        for (size_t d = 0; d < digits; ++d, ++i)
+                            code_point = (code_point << 4) | hex_value(raw[i]);
+                        appendCodePointUTF8(code_point, value);
+                    }
+                    else
+                        value += escaped; /// Malformed: not enough hex digits.
+                    break;
+                }
+                default:
+                {
+                    if (is_octal(escaped))
+                    {
+                        UInt32 code = escaped - '0';
+                        for (size_t d = 0; d < 2 && i < raw.size() && is_octal(raw[i]); ++d, ++i)
+                            code = (code << 3) | (raw[i] - '0');
+                        value += static_cast<char>(code);
+                    }
+                    else
+                        value += escaped; /// Covers `\\` and `\'`; any other character stands for itself.
+                    break;
+                }
+            }
+        }
+    }
+    return value;
+}
+
 }
 
 bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery> node, Expected & expected)
@@ -254,7 +385,9 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     /// disregarded (which would emit output that does not match what it asked for). A `DELIMITER` and a
     /// `HEADER` that match our defaults for the chosen format (a tab for text/TSV, a comma for CSV, and no
     /// header) are no-ops and accepted - this is exactly what real clients append, e.g. psycopg2's
-    /// `copy_to`/`copy_from` always send `DELIMITER AS '\t' NULL AS '\N'`. The `NULL` marker follows
+    /// `copy_to`/`copy_from` always send `DELIMITER AS '\t' NULL AS '\N'`, and PostgreSQL's
+    /// escape-string spellings of the same values (`DELIMITER E'\t' NULL E'\\N'`) are decoded and
+    /// accepted the same way. The `NULL` marker follows
     /// PostgreSQL's per-format defaults: `\N` for the text format (which is also ClickHouse's TSV default,
     /// so nothing needs wiring) and an empty unquoted field for CSV, which is carried in `csv_null_marker`
     /// and applied by the handler through `format_csv_null_representation`; an explicit `NULL '\N'` for CSV
@@ -273,6 +406,9 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     std::optional<String> null_value;
     bool header_requested = false;
     String unknown_option;
+    /// Whether the string literal about to be consumed carries PostgreSQL's escape-string syntax
+    /// (`E'...'`, e.g. `DELIMITER E'\t'`). The `E` and the literal arrive as two tokens.
+    bool pending_value_is_escape_string = false;
 
     while (!pos->isEnd())
     {
@@ -280,6 +416,15 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         {
             String word(pos->begin, pos->end);
             String lower = toLowerCopy(word);
+            /// The `E` prefix of an escape-string literal: recognized only when it directly abuts the
+            /// literal, as PostgreSQL requires (`E '...'` with a space is a syntax error there).
+            bool is_escape_string_prefix = false;
+            if (lower == "e")
+            {
+                auto next = pos;
+                ++next;
+                is_escape_string_prefix = next->type == TokenType::StringLiteral && pos->end == next->begin;
+            }
             if (lower == "format")
             {
                 ++pos;
@@ -297,6 +442,12 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
             {
                 setCopyFormat(node, lower);
                 pending = PendingOption::None;
+            }
+            else if (is_escape_string_prefix)
+            {
+                /// Keep whatever option is pending: the literal this prefix belongs to is the next token,
+                /// so `DELIMITER E'\t'` binds the same way `DELIMITER '\t'` does.
+                pending_value_is_escape_string = true;
             }
             else if (lower == "with" || lower == "as")
             {
@@ -333,11 +484,16 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         }
         else if (pos->type == TokenType::StringLiteral)
         {
+            const String raw_token(pos->begin, pos->end);
+            const String value = pending_value_is_escape_string
+                ? escapeStringLiteralInnerBytes(raw_token)
+                : stringLiteralInnerBytes(raw_token);
             if (pending == PendingOption::Delimiter)
-                delimiter_value = stringLiteralInnerBytes(String(pos->begin, pos->end));
+                delimiter_value = value;
             else if (pending == PendingOption::Null)
-                null_value = stringLiteralInnerBytes(String(pos->begin, pos->end));
+                null_value = value;
             pending = PendingOption::None;
+            pending_value_is_escape_string = false;
             ++pos;
         }
         else
@@ -362,7 +518,8 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         /// The `NULL` marker. Its value is taken as the raw bytes between the quotes without ClickHouse
         /// unescaping (that would turn a lone `'\N'` into an empty string), and the `\N` marker therefore
         /// has two accepted spellings: a standard-conforming client sends it as `'\N'` (raw `\N`), while
-        /// psycopg2 doubles the backslash and sends `'\\N'` (raw `\\N`).
+        /// psycopg2 doubles the backslash and sends `'\\N'` (raw `\\N`). An escape-string `E'\\N'` is
+        /// decoded to raw `\N` before this comparison, so it matches the first spelling.
         ///
         /// For the text format PostgreSQL's default marker is `\N`, which is also ClickHouse's TSV default,
         /// so both an absent `NULL` option and an explicit `NULL '\N'` (what libpq/psycopg2 append) are

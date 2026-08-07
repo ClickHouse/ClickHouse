@@ -343,6 +343,45 @@ def test_copy_honours_format_and_no_op_options(started_cluster):
         conn.close()
 
 
+def test_copy_escape_string_option_values(started_cluster):
+    # PostgreSQL's escape-string syntax is how clients spell control-character option values without
+    # embedding the raw bytes: `DELIMITER E'\t'` and `NULL E'\N'` (a doubled backslash in the SQL text)
+    # decode to exactly the tab and `\N` defaults, so they must be accepted as the no-ops their
+    # plain-string spellings are, and a non-default value in the same syntax must still be rejected.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        # The text format's defaults in the escape-string spelling: both options are no-ops.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH DELIMITER E'\\t' NULL E'\\\\N'", out
+        )
+        assert out.getvalue() == "1\t2\n"
+
+        # The same spelling works in the parenthesized grammar, and an escape-string `NULL E'\N'` for
+        # CSV selects the `\N` marker exactly like its plain-string spelling does.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT 1 AS a, CAST(NULL AS Nullable(Int32)) AS b) TO STDOUT WITH (FORMAT csv, DELIMITER E',', NULL E'\\\\N')",
+            out,
+        )
+        assert out.getvalue() == "1,\\N\n"
+
+        # A non-default value in the escape-string spelling is still rejected, not silently ignored.
+        with pytest.raises(py_psql.Error, match="non-default DELIMITER"):
+            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH DELIMITER E';'", io.StringIO())
+        conn.rollback()
+
+        # The connection stayed usable across all of the above.
+        cur.execute("SELECT 42")
+        assert cur.fetchone() == (42,)
+    finally:
+        conn.close()
+
+
 def test_copy_rejects_unsupported_options(started_cluster):
     # Only the format (text/CSV) is honoured; a data-formatting option we cannot faithfully apply must be
     # rejected with a clear error instead of being silently ignored (which would stream output that does not
