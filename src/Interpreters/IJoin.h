@@ -75,6 +75,12 @@ public:
 
     virtual const TableJoin & getTableJoin() const = 0;
 
+    /// The `join_any_take_last_row` setting: for `ANY` joins it selects the last matching right-side
+    /// row instead of the first one. It is not part of `TableJoin`, it is baked into the concrete
+    /// algorithm, so algorithms that honor it expose it here. Algorithms for which the setting is
+    /// meaningless keep the default.
+    virtual bool anyTakeLastRow() const { return false; }
+
     /// Returns true if clone is supported
     virtual bool isCloneSupported() const
     {
@@ -86,9 +92,9 @@ public:
         SharedHeader left_sample_block_,
         SharedHeader right_sample_block_) const
     {
-        (void)(table_join_);
-        (void)(left_sample_block_);
-        (void)(right_sample_block_);
+        (void)table_join_;
+        (void)left_sample_block_;
+        (void)right_sample_block_;
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
     }
 

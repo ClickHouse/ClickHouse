@@ -67,10 +67,18 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 3 adds the parallel-replicas flag (bit 32) on a serialized `ReadFromMergeTree`, telling the
 /// replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and do a
 /// full non-parallel read, so the serializer fails closed when this flag is set below version 3.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 3;
-/// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
-/// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
+/// Version 4 adds `WindowStep` to the set of serializable steps. An older worker does not register a
+/// "Window" step at all (`QueryPlanStepRegistry::createStep` would throw `UNKNOWN_IDENTIFIER` on it), so
+/// the serializer fails closed instead when talking to a peer below version 4.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
+/// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
+/// that one blob is reused for every replica, so a replica below this version must be excluded up front
+/// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
+/// future bump can't silently leave this gate behind.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
+/// `WindowStep` for `make_distributed_plan`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

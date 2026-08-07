@@ -1,3 +1,4 @@
+#include <Common/StringUtils.h>
 #include <algorithm>
 #include <string_view>
 
@@ -5,7 +6,6 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
-#include <boost/algorithm/string/predicate.hpp>
 
 #include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
@@ -516,7 +516,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 {"not", "NOT "},
             }};
 
-            if (auto it = std::ranges::find_if(operators, [&](const auto & op) { return boost::iequals(name, op.function_name); });
+            if (auto it = std::ranges::find_if(operators, [&](const auto & op) { return equalsCaseInsensitive(name, op.function_name); });
                 it != operators.end())
             {
                 const auto & func_symbol = it->operator_name;
@@ -591,7 +591,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 {"isNotNull", " IS NOT NULL"},
             }};
 
-            if (auto it = std::ranges::find_if(operators, [&](const auto & op) { return boost::iequals(name, op.function_name); });
+            if (auto it = std::ranges::find_if(operators, [&](const auto & op) { return equalsCaseInsensitive(name, op.function_name); });
                 it != operators.end())
             {
                 if (frame.need_parens)
