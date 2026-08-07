@@ -18,7 +18,6 @@
 #include <Common/FailPoint.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <base/sleep.h>
 
 #include <cstdint>
@@ -362,10 +361,9 @@ bool ReadBufferFromS3::processException(size_t read_offset, size_t attempt) cons
 
 
     /// Retrying a cancelled read only postpones the cancellation, and this loop sleeps between attempts.
-    /// Asking the thread rather than matching an error code mirrors `Client::RetryStrategy::ShouldRetry`,
-    /// covers every cancellation cause, and stays false for an ordinary network error.
-    if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-        return false;
+    /// Throw the cancellation cause rather than letting the caller rethrow the stale S3 error, matching
+    /// `Client::HeadObject`. Asking the thread covers every cause and stays quiet for a network error.
+    CurrentThread::checkIfNotCancelled();
 
     if (auto * s3_exception = current_exception_cast<S3Exception *>())
     {
