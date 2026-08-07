@@ -10,7 +10,8 @@
 
 SET allow_suspicious_codecs = 1;
 -- The 104-stage chain below reserves just under 4 GiB for one block, which is what this test is
--- about; that does not fit the per-query limit CI's default profile sets.
+-- about, and that is most of the per-query limit CI's default profile sets. This test measures a
+-- size bound, not memory consumption, so lift the limit rather than tune it.
 SET max_memory_usage = 0;
 
 DROP TABLE IF EXISTS t_codec_chain_overflow;
