@@ -39952,8 +39952,12 @@
     "source": "/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/reference/functions/regular-functions/overview",
     "source": "/sql-reference/functions/regular-functions"
+  },
+  {
+    "destination": "/reference/functions/regular-functions/overview",
+    "source": "/reference/functions/regular-functions/regular-functions-index"
   },
   {
     "destination": "/reference/functions/regular-functions/rounding-functions",
