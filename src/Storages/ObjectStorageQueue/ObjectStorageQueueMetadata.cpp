@@ -49,6 +49,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
+    extern const int KEEPER_EXCEPTION;
 }
 
 namespace Setting
