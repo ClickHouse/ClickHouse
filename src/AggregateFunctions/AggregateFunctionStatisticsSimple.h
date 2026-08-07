@@ -137,15 +137,16 @@ public:
         if constexpr (is_decimal<T1>)
         {
             /// A `Decimal` column holds unscaled integers, so a value is only recovered as
-            /// `value / 10^scale`, and the kernel knows nothing about scale. Where that division
-            /// goes depends on whether the target converts packed: `x86-64-v3` has no packed
-            /// `int64 -> double`, so it converts into a buffer first and the accumulation reads
-            /// that; AArch64 divides inside the accumulation loop instead. `Decimal128` and wider
-            /// have no packed conversion anywhere and always use the buffer. Both shapes fold the
-            /// moments at the same points, so they are bit-identical - verified on both targets.
+            /// `value / 10^scale`, and the kernel knows nothing about scale.
             ///
-            /// `skewPop` and `kurtPop` stay on the per-row path: on AArch64 no lane count pays for
-            /// the two extra moments, the best being +6.9% at level 3.
+            /// The per-row path accumulates each moment into its own dependency chain, so the third
+            /// and fourth are free to it - on AArch64 it measures the same at every level - while
+            /// the lane kernel pays for them in arithmetic. `skewPop` and `kurtPop` therefore stay
+            /// on it; no lane count catches up, the best being +7.2% at level 3.
+            ///
+            /// For the two levels below, AArch64 only matches the per-row path rather than beating
+            /// it - the ~9% there is the inlined conversion, not the lanes - but folding the same
+            /// way as x86-64 is what keeps the two targets returning the same value.
             if constexpr (StatFunc::num_args == 1 && StatFunc::level <= 2)
             {
                 if (if_argument_pos < 0)
