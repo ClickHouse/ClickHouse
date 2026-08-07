@@ -206,7 +206,12 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
-    settings[QueryPlanSerializationSetting::allow_experimental_codecs] = allow_experimental_codecs;
+    /// `allow_experimental_codecs` is a plan-setting name older peers do not know, and
+    /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire
+    /// only when it is `true` (a reader that does not receive it keeps the default `false`).
+    /// See the matching comment in `AggregatingStep::serializeSettings`.
+    if (allow_experimental_codecs)
+        settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
 }
 

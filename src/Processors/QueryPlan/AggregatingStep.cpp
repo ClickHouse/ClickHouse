@@ -1035,12 +1035,19 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     /// payload, so the settings it was built from travel with the step and are re-applied in
     /// `deserialize`; otherwise the shard would silently fall back to the server-level temporary
     /// data settings, and an experimental codec would be rejected there.
+    ///
+    /// `allow_experimental_codecs` is a plan-setting name older peers do not know, and
+    /// `QueryPlanSerializationSettings::readBinary` throws on an unknown name, so it goes on the wire
+    /// only when it is `true`. A reader that does not receive it keeps the default (`false`), which is
+    /// exactly the state the omission encodes, and a peer too old to know the name rejects only the
+    /// plans whose spill behavior actually depends on it, instead of every plan with this step.
     if (params.tmp_data_scope)
     {
         const auto & tmp_data_settings = params.tmp_data_scope->getSettings();
         settings[QueryPlanSerializationSetting::temporary_files_codec] = tmp_data_settings.compression_codec;
         settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = tmp_data_settings.buffer_size;
-        settings[QueryPlanSerializationSetting::allow_experimental_codecs] = tmp_data_settings.allow_experimental_codecs;
+        if (tmp_data_settings.allow_experimental_codecs)
+            settings[QueryPlanSerializationSetting::allow_experimental_codecs] = true;
     }
 
     /// A peer whose query-plan serialization version knows the name (this `version` is already the minimum of ours
