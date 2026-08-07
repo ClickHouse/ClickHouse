@@ -21,11 +21,14 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -37,6 +40,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -100,6 +104,24 @@ extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
+}
+
+namespace
+{
+
+/// The storage a database enumerates is not always the storage a read must go through: a
+/// `MaterializedPostgreSQL` database exposes the physical nested `ReplacingMergeTree` tables to
+/// generic enumerators and hands out the `StorageMaterializedPostgreSQL` wrapper for reads. Reading
+/// the nested table directly would bypass the wrapper's `_sign = 1` filter and forced `FINAL` and
+/// return stale and deleted rows. See `IDatabase::getTableForRead`.
+StoragePtr tableForRead(const DatabasePtr & database, const String & table_name, const StoragePtr & table, const ContextPtr & local_context)
+{
+    if (!database)
+        return table;
+
+    return database->getTableForRead(table_name, table, local_context);
+}
+
 }
 
 StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
@@ -252,11 +274,16 @@ StoragePtr StorageMerge::traverseTablesUntilImpl(const ContextPtr & query_contex
 
     for (auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
+
         while (iterator->isValid())
         {
-            const auto & table = iterator->table();
-            if (table.get() != ignore_self && predicate(table))
-                return table;
+            const auto & nested = iterator->table();
+            if (nested.get() != ignore_self)
+            {
+                if (auto table = tableForRead(database, iterator->name(), nested, query_context); table && predicate(table))
+                    return table;
+            }
 
             iterator->next();
         }
@@ -415,9 +442,12 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     for (const auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
+
         while (iterator->isValid())
         {
-            const auto & table = iterator->table();
+            const auto & nested = iterator->table();
+            auto table = nested.get() == this ? nested : tableForRead(database, iterator->name(), nested, local_context);
             if (table && table.get() != this)
             {
                 ++selected_table_size;
@@ -714,9 +744,16 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     };
     std::unordered_map<String, CachedModifiedQueryInfo> query_info_cache;
 
+    QueryStatusPtr query_status = context->getProcessListElementSafe();
+
     /// Settings will be modified when planning children tables.
     for (const auto & table : selected_tables)
     {
+        /// Building a plan (including query analysis) for every child table can take a long time when
+        /// the Merge table matches many tables, so honor `KILL QUERY` and `max_execution_time` between tables.
+        if (query_status)
+            query_status->checkTimeLimit();
+
         const auto & storage = std::get<1>(table);
 
         LOG_TRACE(logger, "Building plan for child table {}", storage->getStorageID().getNameForLogs());
@@ -1187,6 +1224,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     column_node = std::make_shared<ColumnNode>(*resolved_pair, modified_query_info.table_expression);
                 }
 
+                /// The set registry of the freshly derived planner context is empty, and
+                /// `PlannerActionsVisitor` resolves `IN` through it.
+                collectSets(column_node, *modified_query_info.planner_context);
+
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
                 actions_visitor.visit(*filter_actions_dag, column_node);
@@ -1495,13 +1536,18 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     auto access = query_context->getAccess();
     for (const auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
         auto granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName());
         auto granted_select_on_all_tables = access->isGranted(AccessType::SELECT, iterator->databaseName());
         while (iterator->isValid())
         {
-            StoragePtr storage = iterator->table();
+            StoragePtr storage = tableForRead(database, iterator->name(), iterator->table(), query_context);
             if (!storage)
+            {
+                /// `next` must be called on every path, otherwise the loop never terminates.
+                iterator->next();
                 continue;
+            }
 
             if (storage.get() != storage_merge.get())
                 if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
@@ -1640,6 +1686,9 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
             QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
             query_analysis_pass.run(query_tree, local_context);
+
+            /// On the query info cache path nothing registered this expression's sets.
+            collectSets(query_tree, *modified_query_info.planner_context);
 
             ColumnNodePtrWithHashSet empty_correlated_columns_set;
             PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);

@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Functions/hasPhrase.h>
 
 #include <Columns/ColumnFixedString.h>
@@ -190,7 +192,9 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
         ITokenizer::Type::SplitByString,
         ITokenizer::Type::SplitByRegexp,
         ITokenizer::Type::AsciiCJK,
+#if USE_ICU
         ITokenizer::Type::Icu,
+#endif
         ITokenizer::Type::Ngrams,
     };
     if (!supported_types.contains(tokenizer->getType()))

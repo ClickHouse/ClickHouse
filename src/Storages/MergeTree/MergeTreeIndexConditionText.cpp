@@ -1,5 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 
+#include "config.h"
+
 #include <set>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -1179,7 +1181,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             SplitByStringTokenizer::getExternalName(),
             SplitByRegexpTokenizer::getExternalName(),
             AsciiCJKTokenizer::getExternalName(),
+#if USE_ICU
             IcuTokenizer::getExternalName(),
+#endif
             NgramsTokenizer::getExternalName(),
         };
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))

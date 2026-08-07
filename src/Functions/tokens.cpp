@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -257,8 +259,10 @@ public:
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
                 else if (tokenizer == SplitByRegexpTokenizer::getExternalName())
                     optional_args.emplace_back("regexp", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
+#if USE_ICU
                 else if (tokenizer == IcuTokenizer::getExternalName())
                     optional_args.emplace_back("locale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
+#endif
             }
             else if (arguments.size() == 4 || arguments.size() == 5)
             {

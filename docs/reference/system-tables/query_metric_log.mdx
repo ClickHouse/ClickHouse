@@ -123,6 +123,10 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/reference/data-types/int-uint)) — Total number of returned object infos from iceberg iterator.
 - `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
 - `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
+- `ProfileEvent_OneLakeAccessTokenRequests` ([UInt64](/reference/data-types/int-uint)) — Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.
+- `ProfileEvent_OneLakeAccessTokenRequestFailures` ([UInt64](/reference/data-types/int-uint)) — Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).
+- `ProfileEvent_OneLakeAccessTokenRequestMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent requesting access tokens via the Entra ID refresh token grant in the OneLake catalog.
+- `ProfileEvent_OneLakeAccessTokenExpirations` ([UInt64](/reference/data-types/int-uint)) — Number of times the cached OneLake access token was found expired and renewed transparently.
 - `ProfileEvent_VectorSimilarityIndexCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times an index granule has been found in the vector index cache.
 - `ProfileEvent_VectorSimilarityIndexCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times an index granule has not been found in the vector index cache and had to be read from disk.
 - `ProfileEvent_VectorSimilarityIndexCacheWeightLost` ([UInt64](/reference/data-types/int-uint)) — Approximate number of bytes evicted from the vector index cache.
@@ -1367,6 +1371,7 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent waiting on tryBorrowObject when the executable_pool user-defined function pool is exhausted, in microseconds.
 - `ProfileEvent_ParquetReadRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups read from parquet data
 - `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/reference/data-types/int-uint)) — The total number of row groups pruned from parquet data
+- `ProfileEvent_ParquetPrunedPages` ([UInt64](/reference/data-types/int-uint)) — The total number of pages pruned from parquet data via column index
 - `ProfileEvent_ParquetDecodingTasks` ([UInt64](/reference/data-types/int-uint)) — Tasks issued by parquet reader
 - `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/reference/data-types/int-uint)) — Task groups sent to a thread pool by parquet reader
 - `ProfileEvent_ParquetPrefetcherReadRandomRead` ([UInt64](/reference/data-types/int-uint)) — The total number of reads with ReadMode::RandomRead by DB::Parquet::Prefetcher
