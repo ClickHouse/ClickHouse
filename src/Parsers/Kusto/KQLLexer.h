@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 
+#include <optional>
 #include <vector>
 
 
@@ -123,5 +124,10 @@ private:
 /// Ticks (100 ns) per KQL timespan unit, or 0 if `unit` is not one. Shared with the parser,
 /// which accepts the same spellings in `totimespan()` and friends.
 Int64 kqlTimespanUnitInTicks(std::string_view unit);
+
+/// Reads `[-][d.]hh:mm:ss[.fffffff]` - the way Kusto writes a timespan as a string - and
+/// returns the value in ticks. Shared between the parser (`timespan('...')`) and the runtime
+/// `kqlToTimespan` function, which applies the same reading per row.
+std::optional<Int64> kqlParseTimespanText(std::string_view text);
 
 }

@@ -1,6 +1,7 @@
 #include <Parsers/Kusto/KQLLexer.h>
 
 #include <Common/StringUtils.h>
+#include <base/arithmeticOverflow.h>
 #include <base/hex.h>
 
 #include <algorithm>
@@ -71,6 +72,100 @@ Int64 kqlTimespanUnitInTicks(std::string_view unit)
         if (candidate.suffix == unit)
             return candidate.ticks;
     return 0;
+}
+
+std::optional<Int64> kqlParseTimespanText(std::string_view text)
+{
+    bool negative = false;
+    if (!text.empty() && (text.front() == '-' || text.front() == '+'))
+    {
+        negative = text.front() == '-';
+        text.remove_prefix(1);
+    }
+
+    std::vector<std::string_view> parts;
+    size_t start = 0;
+    for (size_t i = 0; i <= text.size(); ++i)
+    {
+        if (i == text.size() || text[i] == ':')
+        {
+            parts.push_back(text.substr(start, i - start));
+            start = i + 1;
+        }
+    }
+    if (parts.size() != 3 && parts.size() != 1)
+        return {};
+
+    const auto to_number = [](std::string_view part, Int64 & out)
+    {
+        if (part.empty() || part.size() > 18)
+            return false;
+        out = 0;
+        for (const char c : part)
+        {
+            if (c < '0' || c > '9')
+                return false;
+            out = out * 10 + (c - '0');
+        }
+        return true;
+    };
+
+    Int64 days = 0;
+    Int64 hours = 0;
+    Int64 minutes = 0;
+    Int64 seconds = 0;
+    Int64 ticks = 0;
+
+    /// The first part may carry a leading `d.`, and the last a trailing `.fffffff`.
+    std::string_view head = parts.front();
+    if (const size_t dot = head.find('.'); dot != std::string_view::npos)
+    {
+        if (!to_number(head.substr(0, dot), days))
+            return {};
+        head = head.substr(dot + 1);
+    }
+
+    if (parts.size() == 1)
+    {
+        /// `time('2')` is not a thing; a bare component must have come with `d.`.
+        if (days == 0)
+            return {};
+        if (!head.empty() && !to_number(head, hours))
+            return {};
+    }
+    else
+    {
+        if (!to_number(head, hours))
+            return {};
+        if (!to_number(parts[1], minutes))
+            return {};
+
+        std::string_view tail = parts[2];
+        if (const size_t dot = tail.find('.'); dot != std::string_view::npos)
+        {
+            std::string fraction(tail.substr(dot + 1));
+            if (fraction.size() > 7)
+                fraction.resize(7);
+            fraction.resize(7, '0');
+            if (!to_number(fraction, ticks))
+                return {};
+            tail = tail.substr(0, dot);
+        }
+        if (!to_number(tail, seconds))
+            return {};
+    }
+
+    /// Every component is a field of up to 18 digits of untrusted text, so each step is
+    /// checked: an oversized literal must fail cleanly instead of overflowing.
+    Int64 total = 0;
+    Int64 result = 0;
+    if (common::mulOverflow<Int64>(days, 24, total) || common::addOverflow<Int64>(total, hours, total)
+        || common::mulOverflow<Int64>(total, 60, total) || common::addOverflow<Int64>(total, minutes, total)
+        || common::mulOverflow<Int64>(total, 60, total) || common::addOverflow<Int64>(total, seconds, total)
+        || common::mulOverflow<Int64>(total, 10'000'000, result) || common::addOverflow<Int64>(result, ticks, result))
+        return {};
+    /// All components are non-negative here, so `result` is too and the negation cannot overflow.
+    return negative ? -result : result;
 }
 
 const char * getKQLTokenName(KQLTokenType type)

@@ -760,20 +760,45 @@ const std::map<String, Entry> & scalarFunctions()
                 4,
                 [](const ASTs & arguments) -> ASTPtr
                 {
-                    /// `make_timespan(h, m)`, `(h, m, s)` or `(d, h, m, s)`.
+                    /// `make_timespan(h, m)`, `(h, m, s)` or `(d, h, m, s)`. The components are
+                    /// clock fields, and Kusto validates them as such: an hour of 25 or a minute
+                    /// of 61 makes the whole result null instead of rolling into the next field.
                     ASTs parts(arguments.begin(), arguments.end());
                     ASTPtr days = parts.size() == 4 ? parts[0] : litI(0);
                     const size_t base = parts.size() == 4 ? 1 : 0;
+                    ASTPtr hours = parts[base];
+                    ASTPtr minutes = parts[base + 1];
                     ASTPtr seconds = parts.size() >= base + 3 ? parts[base + 2] : litI(0);
+
+                    const auto in_range = [](const ASTPtr & part, Int64 limit)
+                    {
+                        return makeASTFunction(
+                            "and",
+                            makeASTFunction("greaterOrEquals", part->clone(), litI(0)),
+                            makeASTFunction("less", part->clone(), litI(limit)));
+                    };
+                    ASTPtr valid = makeASTFunction(
+                        "and",
+                        makeASTFunction("greaterOrEquals", days->clone(), litI(0)),
+                        in_range(hours, 24),
+                        in_range(minutes, 60),
+                        in_range(seconds, 60));
+
                     ASTPtr total = makeASTFunction(
                         "plus",
                         makeASTFunction(
                             "plus",
                             makeASTFunction("multiply", days, litI(86400)),
-                            makeASTFunction("multiply", parts[base], litI(3600))),
-                        makeASTFunction("plus", makeASTFunction("multiply", parts[base + 1], litI(60)), seconds));
-                    return makeASTFunction("toIntervalNanosecond", makeASTFunction("multiply", total, litI(1000000000)));
+                            makeASTFunction("multiply", hours, litI(3600))),
+                        makeASTFunction("plus", makeASTFunction("multiply", minutes, litI(60)), seconds));
+                    return makeASTFunction(
+                        "if",
+                        valid,
+                        makeASTFunction("toIntervalNanosecond", makeASTFunction("multiply", total, litI(1000000000))),
+                        lit(Field()));
                 }});
+        result.emplace(
+            "totimespan", Entry{1, 1, [](const ASTs & a) -> ASTPtr { return makeASTFunction("kqlToTimespan", a[0]); }});
         result.emplace(
             "unixtime_microseconds_todatetime",
             Entry{

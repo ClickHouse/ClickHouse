@@ -15,6 +15,8 @@
 
 #include <Poco/String.h>
 
+#include <cmath>
+
 
 namespace DB
 {
@@ -53,7 +55,8 @@ bool isLiteralExpression(const ASTPtr & node)
         return false;
 
     static const std::set<String> literal_wrappers{
-        "negate", "CAST", "accurateCastOrNull", "toIntervalNanosecond", "parseDateTime64BestEffortOrNull", "toUUIDOrNull"};
+        "negate", "CAST", "accurateCastOrNull", "toIntervalNanosecond", "kqlToTimespan",
+        "parseDateTime64BestEffortOrNull", "toUUIDOrNull"};
     if (!literal_wrappers.contains(function->name))
         return false;
 
@@ -1533,7 +1536,9 @@ ASTPtr KQLParser::parseMultiplicative()
         ++index;
         ASTPtr right = parseUnary();
         if (type == KQLTokenType::Asterisk)
-            left = makeASTFunction("multiply", left, right);
+            /// Kusto scales a timespan by a number (`2 * 1h`), which the ordinary `multiply`
+            /// does not take; the operand types are only known at runtime.
+            left = makeASTFunction("kqlMultiply", left, right);
         else if (type == KQLTokenType::Slash)
             /// KQL divides integers as integers: `7 / 2` is 3, not 3.5. Only the runtime
             /// knows the operand types, so the choice is made there.
@@ -1797,99 +1802,37 @@ ASTPtr KQLParser::parseDynamicLiteral()
 
 namespace
 {
-/// `[-][d.]hh:mm:ss[.fffffff]` - the way Kusto writes a timespan as a string.
-std::optional<Int64> parseTimespanText(std::string_view text)
+/// Ticks for a number written apart from its unit (`timespan(15 seconds)`) or with the unit
+/// implied (`timespan(2)` is two days). Mirrors the lexer's rule for the glued form `15s`;
+/// `std::nullopt` means the value does not fit a timespan.
+std::optional<Int64> timespanTicksFromNumber(std::string_view number_text, std::string_view unit)
 {
-    bool negative = false;
-    if (!text.empty() && (text.front() == '-' || text.front() == '+'))
+    const bool is_nanosecond = unit == "nanosecond" || unit == "nanoseconds";
+    const Int64 unit_ticks = kqlTimespanUnitInTicks(unit);
+
+    const bool is_floating_point = number_text.find_first_of(".eExX") != std::string_view::npos;
+    if (is_floating_point)
     {
-        negative = text.front() == '-';
-        text.remove_prefix(1);
+        const double mantissa = std::stod(String(number_text));
+        /// A tick is 100 ns, so nanoseconds are a tenth of one.
+        const double ticks = is_nanosecond ? mantissa / 100.0 : mantissa * static_cast<double>(unit_ticks);
+        if (!std::isfinite(ticks) || std::abs(ticks) > 9.2e18)
+            return {};
+        return static_cast<Int64>(std::llround(ticks));
     }
 
-    std::vector<std::string_view> parts;
-    size_t start = 0;
-    for (size_t i = 0; i <= text.size(); ++i)
+    Int64 mantissa = 0;
+    for (const char digit : number_text)
     {
-        if (i == text.size() || text[i] == ':')
-        {
-            parts.push_back(text.substr(start, i - start));
-            start = i + 1;
-        }
+        if (mantissa > (std::numeric_limits<Int64>::max() - (digit - '0')) / 10)
+            return {};
+        mantissa = mantissa * 10 + (digit - '0');
     }
-    if (parts.size() != 3 && parts.size() != 1)
+    if (is_nanosecond)
+        return mantissa / 100;
+    if (unit_ticks != 0 && mantissa > std::numeric_limits<Int64>::max() / unit_ticks)
         return {};
-
-    const auto to_number = [](std::string_view part, Int64 & out)
-    {
-        if (part.empty() || part.size() > 18)
-            return false;
-        out = 0;
-        for (const char c : part)
-        {
-            if (c < '0' || c > '9')
-                return false;
-            out = out * 10 + (c - '0');
-        }
-        return true;
-    };
-
-    Int64 days = 0;
-    Int64 hours = 0;
-    Int64 minutes = 0;
-    Int64 seconds = 0;
-    Int64 ticks = 0;
-
-    /// The first part may carry a leading `d.`, and the last a trailing `.fffffff`.
-    std::string_view head = parts.front();
-    if (const size_t dot = head.find('.'); dot != std::string_view::npos)
-    {
-        if (!to_number(head.substr(0, dot), days))
-            return {};
-        head = head.substr(dot + 1);
-    }
-
-    if (parts.size() == 1)
-    {
-        /// `time('2')` is not a thing; a bare component must have come with `d.`.
-        if (days == 0)
-            return {};
-        if (!head.empty() && !to_number(head, hours))
-            return {};
-    }
-    else
-    {
-        if (!to_number(head, hours))
-            return {};
-        if (!to_number(parts[1], minutes))
-            return {};
-
-        std::string_view tail = parts[2];
-        if (const size_t dot = tail.find('.'); dot != std::string_view::npos)
-        {
-            std::string fraction(tail.substr(dot + 1));
-            if (fraction.size() > 7)
-                fraction.resize(7);
-            fraction.resize(7, '0');
-            if (!to_number(fraction, ticks))
-                return {};
-            tail = tail.substr(0, dot);
-        }
-        if (!to_number(tail, seconds))
-            return {};
-    }
-
-    /// Every component is a field of up to 18 digits of untrusted text, so each step is
-    /// checked: an oversized literal must fail cleanly instead of overflowing.
-    Int64 total = 0;
-    Int64 result = 0;
-    if (common::mulOverflow<Int64>(days, 24, total) || common::addOverflow<Int64>(total, hours, total)
-        || common::mulOverflow<Int64>(total, 60, total) || common::addOverflow<Int64>(total, minutes, total)
-        || common::mulOverflow<Int64>(total, 60, total) || common::addOverflow<Int64>(total, seconds, total)
-        || common::mulOverflow<Int64>(total, 10'000'000, result) || common::addOverflow<Int64>(result, ticks, result))
-        return {};
-    /// All components are non-negative here, so `result` is too and the negation cannot overflow.
-    return negative ? -result : result;
+    return mantissa * unit_ticks;
 }
 }
 
@@ -1901,7 +1844,6 @@ ASTPtr KQLParser::tryParseTypedLiteral(const String & name)
         {"bool", Kind::Boolean},   {"boolean", Kind::Boolean}, {"int", Kind::Integer},
         {"long", Kind::Integer},   {"real", Kind::Real},       {"double", Kind::Real},
         {"decimal", Kind::Decimal}, {"timespan", Kind::Timespan}, {"time", Kind::Timespan},
-        {"totimespan", Kind::Timespan},
         {"string", Kind::Text},
     };
 
@@ -1978,6 +1920,49 @@ ASTPtr KQLParser::tryParseTypedLiteral(const String & name)
             value = makeLiteral(negative ? "-" + digits : digits);
             negative = false;
         }
+        else if (kind == Kind::Timespan)
+        {
+            /// The constructor forms Kusto documents beyond the glued literal `timespan(15s)`:
+            /// a bare number is days (`timespan(2)`), the unit may be a separate word
+            /// (`timespan(15 seconds)`), and the printed form may come unquoted
+            /// (`timespan(0.12:34:56.7)`).
+            std::optional<Int64> ticks;
+            if (lookahead().type == KQLTokenType::BareWord)
+            {
+                const KQLToken & unit_token = lookahead();
+                const std::string_view unit = unit_token.text();
+                if (kqlTimespanUnitInTicks(unit) == 0 && unit != "nanosecond" && unit != "nanoseconds")
+                    return bad(fmt::format("does not know the timespan unit '{}'", unit));
+                ticks = timespanTicksFromNumber(token.text(), unit);
+                index += 2;
+            }
+            else if (lookahead().type == KQLTokenType::Colon)
+            {
+                /// `d.hh:mm:ss.fffffff` lexes as numbers and colons; the reading is defined
+                /// on the raw text, so take the slice up to the closing parenthesis.
+                size_t last = index;
+                while (tokens[last].type != KQLTokenType::ClosingRoundBracket && !tokens[last].isEnd())
+                    ++last;
+                if (tokens[last].isEnd())
+                    return bad("is missing its closing parenthesis");
+                const std::string_view text{token.begin, static_cast<size_t>(tokens[last - 1].end - token.begin)};
+                ticks = kqlParseTimespanText(text);
+                if (!ticks)
+                    return bad("could not read the timespan");
+                index = last;
+            }
+            else
+            {
+                ticks = timespanTicksFromNumber(token.text(), "d");
+                ++index;
+            }
+            if (!ticks)
+                return bad("does not fit a timespan");
+            Int64 nanoseconds = 0;
+            if (common::mulOverflow<Int64>(*ticks, 100, nanoseconds))
+                return bad("does not fit a timespan");
+            value = makeASTFunction("toIntervalNanosecond", makeLiteral(nanoseconds));
+        }
         else
         {
             value = parsePrimary();
@@ -1995,7 +1980,7 @@ ASTPtr KQLParser::tryParseTypedLiteral(const String & name)
         }
         else if (kind == Kind::Timespan)
         {
-            const auto ticks = parseTimespanText(token.inner);
+            const auto ticks = kqlParseTimespanText(token.inner);
             if (!ticks)
                 return bad("could not read the timespan");
             ++index;
