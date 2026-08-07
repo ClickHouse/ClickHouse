@@ -1530,10 +1530,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 }
 
 /// Returns the list of column names required for the transforms in addMergingFinal
-static NameSet getColumnsRequiredForMergingFinal(const SortDescription & sort_description, MergeTreeData::MergingParams merging_params)
+static NameSet getColumnsRequiredForMergingFinal(
+    const SortDescription & sort_description, const StorageMetadataPtr & metadata_snapshot, MergeTreeData::MergingParams merging_params)
 {
     NameSet required_columns = sort_description | std::views::transform([](const SortColumnDescription & desc) { return desc.column_name; })
         | std::ranges::to<NameSet>();
+    /// The merge always orders by the physical sorting key, so those columns must be read even when
+    /// they are not in the query output (e.g. a sorting-key column moved to PREWHERE and pruned from
+    /// the output header would otherwise be dropped, leaving the merge without its key column).
+    for (const auto & column : metadata_snapshot->getColumnsRequiredForFinal())
+        required_columns.insert(column);
     switch (merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
@@ -4678,7 +4684,8 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
     if (query_info.isFinal())
     {
         // Cannot remove columns if FINAL requires them for merging
-        NameSet required_for_final = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params);
+        NameSet required_for_final
+            = getColumnsRequiredForMergingFinal(result_sort_description, storage_snapshot->metadata, data.merging_params);
         const auto has_column_that_is_not_required_for_final
             = std::ranges::any_of(all_column_names, [&](const auto & column_name) { return !required_for_final.contains(column_name); });
 
@@ -4699,7 +4706,8 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
     std::set<size_t> required_storage_column_positions;
     if (query_info.isFinal())
     {
-        const auto required_for_final = getColumnsRequiredForMergingFinal(result_sort_description, data.merging_params);
+        const auto required_for_final
+            = getColumnsRequiredForMergingFinal(result_sort_description, storage_snapshot->metadata, data.merging_params);
 
         for (size_t pos = 0; pos < output_header->columns(); ++pos)
         {

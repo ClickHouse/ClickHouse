@@ -3712,11 +3712,13 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
-        /// AI text functions: (text[, system_prompt | instruction_or_schema | target_language][, ...]).
-        /// All take a leading String `text` followed by String-typed semantic arguments, so a name swap keeps
-        /// the call parseable. `aiEmbed` (second arg `dimensions` is `UInt`) and `aiClassify` (second arg
-        /// `categories` is `Array(String)`) have incompatible argument types and are intentionally excluded.
-        {"aiGenerate", "aiExtract", "aiTranslate"},
+        /// AI text generation: text + optional params map
+        {"aiGenerate"},
+        /// aiEmbed takes (text, model[, params]); its arity matches no other AI function, so it is not
+        /// grouped for name-swapping (a swap would produce arity-mismatched calls).
+        {"aiEmbed"},
+        /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
+        {"aiClassify", "aiExtract", "aiTranslate"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
         /// Consistent hash functions (value, num_buckets → Int32)
