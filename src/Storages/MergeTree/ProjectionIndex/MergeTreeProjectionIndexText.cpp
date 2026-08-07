@@ -277,7 +277,6 @@ void MergeTreeProjectionIndexGranuleText::deserializeBinaryWithMultipleStreams(
         result.resize(cols.size());
         size_t rows_read = reader->readRows(
             mark,
-            sparse_index_tokens->size(),
             prev_mark && *prev_mark == mark - 1,
             rows_to_read,
             /*rows_offset=*/0,

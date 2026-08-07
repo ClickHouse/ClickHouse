@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 size_t MergeTreeReaderCompactSingleBuffer::readRows(
-    size_t from_mark, size_t current_task_last_mark,
+    size_t from_mark,
     bool continue_reading, size_t max_rows_to_read,
     size_t rows_offset, Columns & res_columns)
 try
@@ -85,7 +85,7 @@ try
                     matched_row_indices_for_posting = std::move(matched);
             }
 
-            stream->adjustRightMark(current_task_last_mark); /// Must go before seek.
+            stream->adjustRightMark(last_mark_to_read); /// Must go before seek.
             stream->seekToMarkAndColumn(from_mark, has_substream_marks ? columns_substreams.getFirstSubstreamPosition(*column_positions[pos]) : *column_positions[pos]);
 
             auto * cache_for_subcolumns = columns_for_offsets[pos] ? nullptr : &columns_cache_for_subcolumns;
@@ -98,7 +98,7 @@ try
         /// use deserialization prefixes cache and substreams cache during deserialization of subcolumns of the same column.
         if (has_substream_marks && has_subcolumns)
         {
-            readSubcolumnsPrefixes(from_mark, current_task_last_mark);
+            readSubcolumnsPrefixes(from_mark);
             initSubcolumnsDeserializationOrder();
             /// Deserialize all subcolumns according to subcolumns_deserialization_order.
             for (const auto & [column, subcolumns_order] : subcolumns_deserialization_order)
