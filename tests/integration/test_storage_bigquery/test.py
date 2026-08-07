@@ -1170,6 +1170,39 @@ def test_named_collection_dependency():
     node.query("DROP NAMED COLLECTION bq_dep")
 
 
+def test_named_collection_dependency_table_function():
+    # A permanent table created from the table function (`CREATE TABLE ... AS bigquery(collection)`)
+    # holds the named collection the same way the table engine does: `DROP NAMED COLLECTION` is
+    # blocked while the table exists, including after the table is re-attached (the dependency is
+    # re-established when the stored definition is loaded).
+    node.query("DROP TABLE IF EXISTS bq_nc_tf_dep")
+    node.query("DROP NAMED COLLECTION IF EXISTS bq_tf_dep")
+    node.query(
+        "CREATE NAMED COLLECTION bq_tf_dep AS "
+        f"project = '{PROJECT}', dataset = '{DATASET}', table = 'test_paging', "
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}'"
+    )
+    node.query("CREATE TABLE bq_nc_tf_dep AS bigquery(bq_tf_dep)")
+
+    error = node.query_and_get_error("DROP NAMED COLLECTION bq_tf_dep")
+    assert "is used by tables" in error
+    assert "bq_nc_tf_dep" in error
+
+    # The dependency survives a DETACH/ATTACH cycle: attaching the stored
+    # `CREATE TABLE ... AS bigquery(...)` definition registers it again.
+    node.query("DETACH TABLE bq_nc_tf_dep")
+    node.query("ATTACH TABLE bq_nc_tf_dep")
+    error = node.query_and_get_error("DROP NAMED COLLECTION bq_tf_dep")
+    assert "is used by tables" in error
+    assert "bq_nc_tf_dep" in error
+
+    # The transient use of the table function in a query does not register anything, so after the
+    # table is dropped the collection can be dropped even though it was just queried.
+    node.query("DROP TABLE bq_nc_tf_dep")
+    assert node.query("SELECT count() FROM bigquery(bq_tf_dep)") == "10\n"
+    node.query("DROP NAMED COLLECTION bq_tf_dep")
+
+
 def test_table_function_reuses_schema_snapshot():
     # The table function fetches the schema once during analysis and hands that snapshot (and the token
     # provider) to the storage, so the structure is not re-inferred at execution time. The read adds exactly

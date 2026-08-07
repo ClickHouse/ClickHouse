@@ -35,6 +35,8 @@ private:
 
     const char * getStorageEngineName() const override { return "BigQuery"; }
 
+    String getUsedNamedCollectionName() const override { return configuration ? configuration->named_collection_name : String{}; }
+
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -148,7 +150,7 @@ Exactly one authentication method must be provided. BigQuery does not allow anon
 2. **Service account key** (recommended for servers). Pass the content of a key file created in Google Cloud IAM with the `service_account_key` argument. ClickHouse signs a JWT with the key and exchanges it for an access token, refreshing it automatically.
 3. **Refresh token**. Pass `client_id`, `client_secret` and `refresh_token`, for example, taken from `~/.config/gcloud/application_default_credentials.json` after `gcloud auth application-default login`.
 
-Store credentials in a [named collection](/operations/named-collections) to avoid specifying them in each query.
+Store credentials in a [named collection](/operations/named-collections) to avoid specifying them in each query. A permanent table created from a named collection (with the `BigQuery` table engine or `CREATE TABLE ... AS bigquery(...)`) is registered as a dependency of the collection, so `DROP NAMED COLLECTION` is blocked while the table exists.
 
 ## Data type mapping {#data-type-mapping}
 

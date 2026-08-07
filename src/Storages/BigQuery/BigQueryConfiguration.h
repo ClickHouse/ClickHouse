@@ -45,6 +45,12 @@ struct BigQueryConfiguration
 
     CredentialsKind credentials_kind = CredentialsKind::AccessToken;
 
+    /// The name of the named collection the configuration was created from (empty when the arguments
+    /// were positional or in the `key = value` form). The table function reports it through
+    /// `ITableFunction::getUsedNamedCollectionName` so that a permanent `CREATE TABLE ... AS bigquery(...)`
+    /// table is registered as a dependency of the collection.
+    String named_collection_name;
+
     /// Parses arguments of the table function or the table engine:
     ///   bigquery('project', 'dataset', 'table'[, 'access_token'][, key = value, ...])
     ///   bigquery(named_collection[, key = value, ...])

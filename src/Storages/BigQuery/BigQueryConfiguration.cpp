@@ -139,6 +139,8 @@ BigQueryConfiguration BigQueryConfiguration::fromArguments(ASTs & args, ContextP
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/ true, nullptr, table_id))
     {
         configuration = fromNamedCollection(*named_collection);
+        /// A collection resolved, so the first argument is the collection name identifier.
+        configuration.named_collection_name = args.front()->as<ASTIdentifier &>().name();
     }
     else
     {
