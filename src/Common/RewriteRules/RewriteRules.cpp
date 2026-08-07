@@ -877,7 +877,7 @@ bool RewriteRules::loadIfNot(std::lock_guard<std::mutex> & lock) const
     if (storage->isReplicated())
     {
         auto * self = const_cast<RewriteRules *>(this);
-        update_task = context->getSchedulePool().createTask(
+        update_task = context->getSchedulePool()->createTask(
             StorageID::createEmpty(),
             "RewriteRuleReplicatedStorage",
             [self]{ self->updateFunc(); });
