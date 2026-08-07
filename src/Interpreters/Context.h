@@ -563,6 +563,9 @@ protected:
     Tables table_function_results;          /// Temporary tables obtained by execution of table functions. Keyed by AST tree id.
     mutable std::mutex table_function_results_mutex;
 
+    mutable std::mutex successful_query_callbacks_mutex;
+    std::vector<std::function<void()>> successful_query_callbacks TSA_GUARDED_BY(successful_query_callbacks_mutex);
+
     ContextWeakMutablePtr query_context;
     ContextWeakMutablePtr session_context;      /// Session context or nullptr. Could be equal to this.
     ContextWeakMutablePtr global_context;       /// Global context. Could be equal to this.
@@ -1335,6 +1338,11 @@ public:
     ContextMutablePtr getQueryContext() const;
     bool hasQueryContext() const { return !query_context.expired(); }
     bool isInternalSubquery() const;
+
+    /// Register work that must happen only after the complete query pipeline succeeds.
+    /// Callbacks are owned and executed by the query context.
+    void addSuccessfulQueryCallback(std::function<void()> callback);
+    std::vector<std::function<void()>> takeSuccessfulQueryCallbacks();
 
     ContextMutablePtr getSessionContext() const;
     bool hasSessionContext() const { return !session_context.expired(); }

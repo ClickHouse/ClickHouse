@@ -10,6 +10,7 @@
 #include <Processors/Transforms/RemovingReplicatedColumnsTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/Queue/StorageQueue.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
@@ -35,6 +36,7 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CheckConstraintsTransform.h>
@@ -49,6 +51,9 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Formats/FormatFactory.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -566,6 +571,95 @@ static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, 
 }
 
 
+static ASTPtr appendSourceTrackingColumns(const ASTPtr & query, const Names & tracking_columns)
+{
+    auto result = query->clone();
+
+    auto append_to_select = [&](ASTSelectQuery & select)
+    {
+        auto & select_list = select.select()->as<ASTExpressionList &>();
+        for (const auto & column_name : tracking_columns)
+            select_list.children.emplace_back(make_intrusive<ASTIdentifier>(column_name));
+    };
+
+    if (auto * select = result->as<ASTSelectQuery>())
+    {
+        append_to_select(*select);
+        return result;
+    }
+
+    auto * union_query = result->as<ASTSelectWithUnionQuery>();
+    if (!union_query || !union_query->list_of_selects)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a SELECT query while adding Queue tracking columns");
+
+    for (auto & child : union_query->list_of_selects->children)
+    {
+        auto * select = child->as<ASTSelectQuery>();
+        if (!select)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a SELECT branch while adding Queue tracking columns");
+        append_to_select(*select);
+    }
+    return result;
+}
+
+
+static Block removeSourceTrackingColumns(Block header, const Names & tracking_columns)
+{
+    for (const auto & column_name : tracking_columns)
+    {
+        if (header.has(column_name))
+            header.erase(column_name);
+    }
+    return header;
+}
+
+
+class TrackMaterializedViewSourceRowsTransform final : public ISimpleTransform
+{
+public:
+    TrackMaterializedViewSourceRowsTransform(
+        SharedHeader input_header_,
+        std::shared_ptr<StorageQueue> queue_storage_,
+        StorageID view_id_,
+        ContextPtr context_,
+        Names tracking_columns_)
+        : ISimpleTransform(
+            input_header_,
+            std::make_shared<const Block>(removeSourceTrackingColumns(*input_header_, tracking_columns_)),
+            false)
+        , input_header(std::move(input_header_))
+        , queue_storage(std::move(queue_storage_))
+        , view_id(std::move(view_id_))
+        , context(std::move(context_))
+        , tracking_columns(std::move(tracking_columns_))
+    {
+    }
+
+    String getName() const override { return "TrackMaterializedViewSourceRows"; }
+
+private:
+    void transform(Chunk & chunk) override
+    {
+        Block block = input_header->cloneWithColumns(chunk.detachColumns());
+        queue_storage->trackMaterializedViewSourceRows(view_id, block, context);
+        const size_t rows = block.rows();
+
+        Columns output_columns;
+        const auto & output_header = getOutputPort().getHeader();
+        output_columns.reserve(output_header.columns());
+        for (const auto & column : output_header)
+            output_columns.emplace_back(block.getByName(column.name).column);
+        chunk.setColumns(std::move(output_columns), rows);
+    }
+
+    SharedHeader input_header;
+    std::shared_ptr<StorageQueue> queue_storage;
+    StorageID view_id;
+    ContextPtr context;
+    Names tracking_columns;
+};
+
+
 /// For source chunk, execute view query over it.
 template <typename Executor>
 class ExecutingInnerQueryFromViewTransform final : public ExceptionKeepingTransform
@@ -663,21 +757,39 @@ private:
             std::move(data_block),
             source_metadata->virtuals));
 
+        auto queue_storage = std::dynamic_pointer_cast<StorageQueue>(source_storage);
+        const Names tracking_columns = queue_storage
+            ? queue_storage->getMaterializedViewSourceTrackingColumns(local_context)
+            : Names{};
+        const ASTPtr query_to_execute = tracking_columns.empty()
+            ? select_query
+            : appendSourceTrackingColumns(select_query, tracking_columns);
+
         QueryPipelineBuilder pipeline;
 
         if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
             InterpreterSelectQueryAnalyzer interpreter(
-                select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
+                query_to_execute, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
             pipeline = interpreter.buildQueryPipeline();
         }
         else
         {
-            InterpreterSelectQuery interpreter(select_query, local_context, SelectQueryOptions().ignoreAccessCheck());
+            InterpreterSelectQuery interpreter(query_to_execute, local_context, SelectQueryOptions().ignoreAccessCheck());
             pipeline = interpreter.buildQueryPipeline();
         }
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
+
+        if (queue_storage && !tracking_columns.empty())
+        {
+            pipeline.addTransform(std::make_shared<TrackMaterializedViewSourceRowsTransform>(
+                pipeline.getSharedHeader(),
+                queue_storage,
+                view_id,
+                local_context,
+                tracking_columns));
+        }
 
         bool insert_null_as_default = false;
 
@@ -1667,7 +1779,11 @@ void InsertDependenciesBuilder::collectAllDependencies()
         {
             // Destination tables for StorageMaterializedView does not have id in inner_tables
             for (auto & child : DatabaseCatalog::instance().getDependentViews(id))
+            {
+                if (id == init_table_id && !init_storage->shouldPushToMaterializedView(child, init_context))
+                    continue;
                 expand(child);
+            }
         }
     };
 

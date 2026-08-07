@@ -2140,6 +2140,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             if (expressions.hasWhere())
                 executeWhere(query_plan, expressions.before_where, expressions.remove_where_filter);
 
+            if (storage)
+                storage->addPostFilterStep(query_plan, context);
+
             if (expressions.need_aggregate)
                 executeAggregation(
                     query_plan, expressions.before_aggregation, aggregate_overflow_row, aggregate_final, query_info.input_order_info);

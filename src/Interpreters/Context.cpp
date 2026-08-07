@@ -3690,6 +3690,20 @@ bool Context::isInternalSubquery() const
     return ptr && ptr.get() != this;
 }
 
+void Context::addSuccessfulQueryCallback(std::function<void()> callback)
+{
+    auto target = hasQueryContext() ? getQueryContext() : shared_from_this();
+    std::lock_guard lock(target->successful_query_callbacks_mutex);
+    target->successful_query_callbacks.emplace_back(std::move(callback));
+}
+
+std::vector<std::function<void()>> Context::takeSuccessfulQueryCallbacks()
+{
+    auto target = hasQueryContext() ? getQueryContext() : shared_from_this();
+    std::lock_guard lock(target->successful_query_callbacks_mutex);
+    return std::exchange(target->successful_query_callbacks, {});
+}
+
 ContextMutablePtr Context::getSessionContext() const
 {
     auto ptr = session_context.lock();

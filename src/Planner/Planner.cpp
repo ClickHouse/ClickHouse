@@ -599,6 +599,21 @@ ALWAYS_INLINE void addExpressionStep(
     query_plan.addStep(std::move(expression_step));
 }
 
+void addStoragePostFilterSteps(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
+{
+    for (const auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
+    {
+        StoragePtr storage;
+        if (auto * table_node = table_expression->as<TableNode>())
+            storage = table_node->getStorage();
+        else if (auto * table_function_node = table_expression->as<TableFunctionNode>())
+            storage = table_function_node->getStorage();
+
+        if (storage)
+            storage->addPostFilterStep(query_plan, planner_context->getQueryContext());
+    }
+}
+
 template <size_t size>
 ALWAYS_INLINE void addFilterStep(
     const PlannerContextPtr & planner_context,
@@ -2411,6 +2426,8 @@ void Planner::buildPlanForQueryNode()
     {
         if (expression_analysis_result.hasWhere())
             addFilterStep(planner_context, query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets);
+
+        addStoragePostFilterSteps(query_plan, planner_context);
 
         if (expression_analysis_result.hasAggregation())
         {

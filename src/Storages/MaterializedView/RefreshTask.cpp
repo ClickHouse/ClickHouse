@@ -1422,6 +1422,11 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
             table_to_drop = view->exchangeTargetTable(new_table_id, refresh_context);
         }
+
+        /// Queue consumers register acknowledgements while building the refresh SELECT.
+        /// Run them only after the INSERT and, for non-APPEND refreshes, the table exchange succeed.
+        for (auto & callback : refresh_context->takeSuccessfulQueryCallbacks())
+            callback();
     }
     catch (...)
     {

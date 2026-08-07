@@ -174,6 +174,10 @@ public:
     /// Returns true if the blocks shouldn't be pushed to associated views on insert.
     virtual bool noPushingToViewsOnInserts() const { return false; }
 
+    /// Returns true if a dependent materialized view should receive the current insert.
+    /// Streaming storages may use query settings to select a subset of their views.
+    virtual bool shouldPushToMaterializedView(const StorageID &, ContextPtr) const { return true; }
+
     /// Read query returns streams which automatically distribute data between themselves.
     /// So, it's impossible for one stream run out of data when there is data in other streams.
     /// Example is StorageSystemNumbers.
@@ -435,6 +439,10 @@ public:
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
+
+    /// Gives a storage a chance to observe rows after WHERE has been applied.
+    /// The default implementation does nothing.
+    virtual void addPostFilterStep(QueryPlan &, ContextPtr) {}
 
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.

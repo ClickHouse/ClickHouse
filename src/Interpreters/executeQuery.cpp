@@ -2147,6 +2147,22 @@ static BlockIO executeQueryImpl(
         throw;
     }
 
+    if (!context->isInternalSubquery())
+    {
+        auto successful_query_callbacks = context->takeSuccessfulQueryCallbacks();
+        for (auto it = successful_query_callbacks.rbegin(); it != successful_query_callbacks.rend(); ++it)
+        {
+            res.finish_callbacks.emplace(
+                res.finish_callbacks.begin(),
+                [callback = std::move(*it)](
+                    const QueryPipelineFinalizedInfo &,
+                    std::chrono::system_clock::time_point)
+                {
+                    callback();
+                });
+        }
+    }
+
     return res;
 }
 

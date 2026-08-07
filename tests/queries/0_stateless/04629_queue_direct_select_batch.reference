@@ -1,0 +1,10 @@
+pending after filtered direct commit: 2
+filtered mv target rows: 1
+pending after filtered mv: 2
+direct pending after first result batch: 4
+direct pending after second result batch: 2
+mv rows after first result batch: 2
+mv pending after first result batch: 4
+mv rows after second result batch: 4
+mv pending after second result batch: 2
+reset and commit: rejected
