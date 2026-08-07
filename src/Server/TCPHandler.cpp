@@ -93,12 +93,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool async_insert;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
-    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsBool discard_query_data;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
@@ -2934,11 +2931,7 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
 
     if (compression == Protocol::Compression::Enable)
     {
-        CompressionCodecFactory::instance().validateCodec(
-            method,
-            level,
-            !query_settings[Setting::allow_suspicious_codecs],
-            query_settings[Setting::allow_experimental_codecs]);
+        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(query_settings));
 
         return CompressionCodecFactory::instance().get(method, level);
     }

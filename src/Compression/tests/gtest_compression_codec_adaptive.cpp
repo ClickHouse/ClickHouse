@@ -153,7 +153,7 @@ TEST(CompressionCodecFactory, IsDefaultCodec)
         const String query = "(" + expr + ")";
         ASTPtr parsed = parseQuery(parser, query, /*max_query_size=*/0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
         return CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-            parsed, /*column_type=*/nullptr, /*sanity_check=*/true, /*allow_experimental_codecs=*/false);
+            parsed, /*column_type=*/nullptr, CodecValidationSettings::trusted());
     };
 
     /// No CODEC clause resolves to the default codec.

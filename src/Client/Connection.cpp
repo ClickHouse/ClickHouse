@@ -67,8 +67,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
 }
@@ -970,11 +968,7 @@ void Connection::sendQuery(
         if (method == "ZSTD")
             level = (*settings)[Setting::network_zstd_compression_level];
 
-        CompressionCodecFactory::instance().validateCodec(
-            method,
-            level,
-            !(*settings)[Setting::allow_suspicious_codecs],
-            (*settings)[Setting::allow_experimental_codecs]);
+        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(*settings));
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
     else

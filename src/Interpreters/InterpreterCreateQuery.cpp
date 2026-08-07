@@ -122,12 +122,10 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
     extern const SettingsBool compatibility_ignore_auto_increment_in_create_table;
     extern const SettingsBool create_if_not_exists;
@@ -637,8 +635,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
-    bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
-    bool allow_experimental_codecs = skip_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
+    CodecValidationSettings codec_validation_settings = skip_checks ? CodecValidationSettings::trusted() : CodecValidationSettings(context_->getSettingsRef());
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
@@ -698,8 +695,8 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         {
             if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs);
+            column.codec
+                = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, column.type, codec_validation_settings);
         }
 
         if (auto statistics_desc = col_decl.getStatisticsDesc())

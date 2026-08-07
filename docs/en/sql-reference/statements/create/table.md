@@ -415,7 +415,7 @@ High compression levels are useful for asymmetric scenarios, like compress once,
 `ZXC` trades slow compression for very fast decompression, at a compression ratio between `LZ4` and `ZSTD`. It is a good fit for the compress-once, decompress-many pattern, and decompresses fastest on modern ARM cores. Higher levels mean better compression and slower compression, while decompression stays fast.
 
 :::note
-This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
+This codec is experimental and requires `SET enable_zxc_codec = 1` to use.
 :::
 
 #### Obsolete: ZSTD_QAT {#zstd_qat}
@@ -459,7 +459,7 @@ The codec accepts an optional variant argument:
 - `ALP(RD)` — Real Doubles variant. Reinterprets each value's bit pattern and splits it into a high part (sign + exponent + top mantissa bits) and a low part. High parts are dictionary-encoded (up to 8 entries), low parts are bit-packed. Works best when many values share the same high bits.
 
 :::note
-This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
+This codec is experimental and requires `SET enable_alp_codec = 1` to use.
 :::
 
 #### FPC {#fpc}
@@ -473,7 +473,7 @@ This codec is experimental and requires `SET allow_experimental_codecs = 1` to u
 `SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` - A lossy but error-bound codec ([SZ3 Lossy Compressor](https://szcompressor.org/)) for columns of type Float32, Float64, Array(Float32), or Array(Float64). For array columns, compression is most effective when all arrays have the same length (they are then compressed as fixed-width vectors); arrays of different lengths are still supported and are compressed as a flat sequence of values. The codec is not applicable to Map columns, because its keys would be corrupted by lossy compression. Supported values for 'algorithm' are `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` and `ALGO_INTERP`. Supported values for 'error_bound_mode' are `ABS`, `REL`, `PSNR` and `ABS_AND_REL`. Argument 'error_bound' is the maximum error and of type Float64.
 
 :::note
-This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
+This codec is experimental and requires `SET enable_sz3_codec = 1` to use.
 :::
 
 #### T64 {#t64}
@@ -505,8 +505,12 @@ The codec can only be set in `CREATE TABLE`, it cannot be added, removed, or cha
 It cannot be chained with any other codec (not even an encryption codec such as `AES_128_GCM_SIV`).
 For more details, see [Vector search with quantized codecs](/engines/table-engines/mergetree-family/annindexes#vector-search-with-quantized-codecs).
 
+:::note
+This codec is experimental and requires `SET enable_quantized_codec = 1` to use.
+:::
+
 ```sql
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 CREATE TABLE vectors
 (

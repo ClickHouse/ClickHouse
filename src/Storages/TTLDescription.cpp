@@ -53,8 +53,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool variant_throw_on_type_mismatch;
     extern const SettingsBool dynamic_throw_on_type_mismatch;
@@ -1383,8 +1381,7 @@ TTLDescription TTLDescription::getTTLFromAST(
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     ttl_element->recompression_codec, {},
-                    !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
-                    is_attach || context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    is_attach ? CodecValidationSettings::trusted() : CodecValidationSettings(context->getSettingsRef()));
         }
     }
 

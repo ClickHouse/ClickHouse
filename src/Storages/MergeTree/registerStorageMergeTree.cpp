@@ -881,7 +881,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use, so an
         /// experimental codec (e.g. `ZXC`) could slip in through `SETTINGS default_compression_codec = ...`.
         /// For freshly introduced definitions the merged value (explicit or inherited from the current
-        /// `<merge_tree>` config defaults) is checked against `allow_experimental_codecs`. A full-definition
+        /// `<merge_tree>` config defaults) is checked against the experimental-codec gate. A full-definition
         /// `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like user input that also runs
         /// under `LoadingStrictnessLevel::ATTACH`, so it counts as fresh too. Definitions read back from
         /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart) are
@@ -891,7 +891,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// remain loadable. Values *not* stored in the definition, however, fall back to the *current*
         /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
         /// introduce an experimental codec into existing tables via a config default plus a restart, without
-        /// anyone enabling `allow_experimental_codecs` (at startup the check runs against the default
+        /// anyone enabling that codec (at startup the check runs against the default
         /// profile, which is where such a config default can be legitimately allowed). `FORCE_RESTORE` is
         /// documented to skip all sanity checks and is left alone.
         const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
@@ -913,7 +913,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 if (codec.empty())
                     return;
                 if (is_fresh_definition || !is_stored_in_definition(name))
-                    CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                    CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
             };
 
             validate_codec_setting("marks_compression_codec", (*storage_settings)[MergeTreeSetting::marks_compression_codec].value);

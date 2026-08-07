@@ -61,10 +61,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
     extern const SettingsBool allow_statistics;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool flatten_nested;
     extern const SettingsUInt64 max_parser_depth;
@@ -627,7 +625,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, CodecValidationSettings::trusted());
 
         column.ttl = ttl;
 
@@ -694,7 +692,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                        codec, data_type ? data_type : column.type, CodecValidationSettings::trusted());
 
                 if (comment)
                     column.comment = *comment;
@@ -1724,6 +1723,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
     NameSet modified_columns;
     NameSet renamed_columns;
+    const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -1767,12 +1767,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (command.codec)
             {
-                const auto & settings = context->getSettingsRef();
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
                     command.data_type,
-                    !settings[Setting::allow_suspicious_codecs],
-                    settings[Setting::allow_experimental_codecs]);
+                    codec_validation_settings);
             }
 
             /// Advance the working snapshot with the exact columns apply() would materialize
@@ -1811,8 +1809,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
                     command.codec,
                     command.data_type,
-                    !context->getSettingsRef()[Setting::allow_suspicious_codecs],
-                    context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                    codec_validation_settings);
             }
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)

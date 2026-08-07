@@ -5066,7 +5066,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
     /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
-    /// `allow_experimental_codecs` for an explicit `ALTER TABLE ... MODIFY SETTING` here, on the initiator
+    /// the gate for an explicit `ALTER TABLE ... MODIFY SETTING` here, on the initiator
     /// with the query context; applying the resulting metadata (`changeSettings`, e.g. on other replicas)
     /// is not re-checked, so tables that already carry such a codec keep working. The same applies to
     /// `ALTER TABLE ... RESET SETTING`: the post-reset value comes from the current `<merge_tree>` config
@@ -5098,7 +5098,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 }
 
                 if (!codec.empty())
-                    CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                    CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
             }
         }
     }

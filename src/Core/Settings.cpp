@@ -8356,7 +8356,19 @@ implementation.
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_codecs, false, R"(
-If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
+If it is set to true, allow to specify any experimental compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_alp_codec, false, R"(
+Allows using the experimental `ALP` compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_quantized_codec, false, R"(
+Allows using the experimental `Quantized` compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_sz3_codec, false, R"(
+Allows using the experimental `SZ3` compression codec.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, enable_zxc_codec, false, R"(
+Allows using the experimental `ZXC` compression codec.
 )", EXPERIMENTAL) \
     DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
 Throw exception if unsupported query is used inside transaction
