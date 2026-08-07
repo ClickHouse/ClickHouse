@@ -78,9 +78,6 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     new_values["KeeperEphemeralsCount"] = { storage_stats.total_emphemeral_nodes_count, "The number of ephemeral nodes in ClickHouse Keeper." };
 
     new_values["KeeperApproximateDataSize"] = { storage_stats.approximate_data_size, "The approximate data size of ClickHouse Keeper, in bytes." };
-    /// Kept for compatibility with existing dashboards and queries: it has been reported as 0 for a
-    /// long time, and there is no key arena at all in the new node storage.
-    new_values["KeeperKeyArenaSize"] = { 0, "The size in bytes of the memory arena for keys in ClickHouse Keeper. Always 0: there is no such arena anymore." };
     /// TODO: value was incorrectly set to 0 previously for local snapshots
     /// it needs to be fixed and it needs to be atomic to avoid deadlock
     ///new_values["KeeperLatestSnapshotSize"] = { latest_snapshot_size, "The uncompressed size in bytes of the latest snapshot created by ClickHouse Keeper." };

@@ -245,16 +245,15 @@ NodeRef StorageState::getCommittedNode(const NodePathWithHash & path) const
         NodeAction action = NodeAction::Remove;
         ref.readPath(node_path, path_buf, serialized_size, action);
 
-        if (const auto * node_lookup = node_cache.map.find(node_path.calculateHash()))
+        if (const auto * node_info = node_cache.findEntry(node_path.calculateHash()))
         {
-            const NodeRefCache::Entry & node_info = node_lookup->getMapped();
             /// Don't touch entries whose latest update is in a newer sorted run or memtable.
-            if (run.max_file_seqno >= node_info.file_seqno)
+            if (run.max_file_seqno >= node_info->file_seqno)
             {
-                chassert(run.min_file_seqno <= node_info.file_seqno);
-                std::lock_guard guard(node_info.block);
-                node_info.block.set(block);
-                node_info.node_offset = offset;
+                chassert(run.min_file_seqno <= node_info->file_seqno);
+                std::lock_guard guard(node_info->block);
+                node_info->block.set(block);
+                node_info->node_offset = offset;
                 entries_updated += 1;
             }
         }
@@ -322,11 +321,11 @@ NodeRef StorageState::appendCommittedNode(FullNode & node)
         }
 
         const NodePathHash hash = node.getOrCalculatePathHash();
-        auto * lookup = node_cache.map.find(hash);
+        auto * node_cache_entry = node_cache.findEntry(hash);
         std::optional<NodeAction> combined;
 
         /// Validate `action` before mutating anything.
-        if (lookup)
+        if (node_cache_entry)
         {
             /// The node already exists, so its history so far combines to Create.
             /// Combine that with the new action, strictly (e.g. asserts we don't Create it again).
@@ -347,27 +346,23 @@ NodeRef StorageState::appendCommittedNode(FullNode & node)
 
         /// Update `node_cache`. (We hold storage_mutex exclusively, so no concurrent readers;
         /// no need for the per-entry spinlocks.)
-        if (lookup)
+        if (node_cache_entry)
         {
             if (!combined)
             {
                 /// Create + Remove: `node_cache` doesn't keep removed nodes.
-                /// `HashTable::erase` clears the cell without running the value's destructor,
-                /// so release the weak block ref explicitly - otherwise the control block leaks.
-                lookup->getMapped().block.store(nullptr);
-                node_cache.map.erase(hash);
+                node_cache.eraseEntry(hash, *node_cache_entry);
             }
             else
             {
-                NodeRefCache::Entry & info = lookup->getMapped();
-                info.file_seqno = mutable_memtable->file_seqno;
-                info.block.store(ref.block);
-                info.node_offset = ref.offset;
+                node_cache_entry->file_seqno = mutable_memtable->file_seqno;
+                node_cache_entry->block.store(ref.block);
+                node_cache_entry->node_offset = ref.offset;
             }
         }
         else
         {
-            NodeRefCache::Entry & info = node_cache.map[hash];
+            NodeRefCache::Entry & info = node_cache.getOrInsertEntry(hash);
             info.file_seqno = mutable_memtable->file_seqno;
             info.block.store(ref.block);
             info.node_offset = ref.offset;
@@ -467,7 +462,7 @@ void StorageState::fillAsynchronousMetrics(DB::AsynchronousMetricValues & new_va
     new_values["KeeperLSMTImmutableMemtablesSize"] = { immutable_memtable_bytes, "Bytes in memtables waiting for flush." };
     new_values["KeeperLSMTMutableMemtableSize"] = { mutable_memtable ? mutable_memtable->total_bytes : 0, "Bytes in current memtable." };
 
-    new_values["KeeperLSMTNodeCacheEntries"] = { node_cache.map.size(), "Number of znodes in node cache." };
+    new_values["KeeperLSMTNodeCacheEntries"] = { node_cache.size(), "Number of znodes in node cache." };
     new_values["KeeperLSMTThrottling"] = { write_throttling_us.load(), "Microseconds of delay added to each write because background flushes or merges fell behind. 0 if background work is keeping up." };
     new_values["KeeperLSMTMergesInProgress"] = { background ? background->merges_running.load() : 0, "Number of background merges running." };
 

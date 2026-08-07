@@ -44,7 +44,7 @@ struct LSMTDelta
     uint64_t old_digest = 0;
 
     ACLId old_acl_id = 0;
-    int64_t ephemeral_owner = 0;
+    int64_t ephemeral_owner = 0; // nonzero only if ephemeral, CONTAINER_EPHEMERAL_OWNER is not used here
     bool has_ttl = false;
     bool is_container = false;
 };

@@ -97,6 +97,8 @@ inline int64_t nodeCountDelta(NodeAction action)
 /// Map NodePathHash -> V.
 /// Takes advantage of the key already being a hash, so it doesn't need to be hashed again
 /// (and no hash is stored in the slot, so a slot is just sizeof(NodePathHash) + sizeof(V)).
+/// Be careful: HashMap doesn't call destructor on keys or values, so either keep them POD or do
+/// cleanup manually when removing from the map.
 template <typename V>
 using NodeHashMap = HashMap<NodePathHash, V, UInt128TrivialHash>;
 
