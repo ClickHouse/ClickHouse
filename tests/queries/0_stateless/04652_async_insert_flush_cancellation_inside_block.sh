@@ -54,9 +54,9 @@ FLUSH_SETTINGS="async_insert=1&wait_for_async_insert=1&async_insert_busy_timeout
 # `system.processes`: the runner's own hung check filters on that text and would stop seeing us.
 KILLER_EXCLUSION="SETTINGS+log_comment%3D%2704652+not-a-KILL+QUERY%2C+excluded+from+the+stress+random+killer%27"
 
-# `cancelled-elsewhere` and `between-chunks` are transient, not verdicts, so they are retried.
-# Retrying cannot mask the bug: an unfixed build yields `between-chunks` on EVERY attempt, and
-# exhausting the attempts prints the last observed label rather than a synthesised pass.
+# `cancelled-elsewhere`, `between-chunks` and the empty string are transient, not verdicts, so they
+# are retried. Retrying cannot mask the bug: an unfixed build yields `between-chunks` on EVERY
+# attempt, and exhausting the attempts prints the last observed label rather than a synthesised pass.
 MAX_ATTEMPTS=3
 
 # $1 - label, also used as the `FORMAT` clause. $2 - the column type.
@@ -90,7 +90,7 @@ function run_case()
 
         # `has(databases, ...)` and not `current_database`: the flush runs on a background thread
         # whose `current_database` is `default`, so the usual predicate matches NOTHING here. The
-        # table name is what names THIS flush, so an absent row prints nothing and therefore FAILs.
+        # table name is what names THIS flush.
         label=$($CLICKHOUSE_CLIENT -q "
             SYSTEM FLUSH LOGS query_log;
             SELECT multiIf(
@@ -107,14 +107,15 @@ function run_case()
             ORDER BY event_time_microseconds DESC
             LIMIT 1")
 
-        # Only the two transient labels are retried. Anything else - including the empty string, which
-        # means this flush left no row - is final and printed as it is.
-        if [ "$label" != "cancelled-elsewhere" ] && [ "$label" != "between-chunks" ]; then
+        # An empty label means this flush left no row at all, so there is nothing to read a verdict
+        # from: a lost sample rather than an outcome, hence retried like the other two.
+        if [ "$label" != "cancelled-elsewhere" ] && [ "$label" != "between-chunks" ] && [ -n "$label" ]; then
             break
         fi
     done
 
-    echo "$label"
+    # Name the exhausted-retries outcome; a blank line is indistinguishable from truncated stdout.
+    echo "${label:-no-flush-row}"
 }
 
 # `IRowInputFormat::read`. A `JSON` column gives the loop enough work per row to outlive the deadline
