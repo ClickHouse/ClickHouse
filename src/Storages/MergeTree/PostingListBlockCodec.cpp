@@ -39,8 +39,10 @@ namespace
             size_t needed_bytes_with_header = needed_bytes_without_header + 1;
             if (remaining_memory < needed_bytes_with_header)
             {
-                size_t min_need = needed_bytes_with_header - remaining_memory;
-                out.reserve(out.size() + 2 * min_need);
+                /// Grow geometrically: reserving only the shortfall would reallocate (and copy)
+                /// the whole buffer every couple of blocks, making the encoding quadratic
+                /// in the posting list size.
+                out.reserve(std::max(out.capacity() * 2, out.size() + needed_bytes_with_header));
             }
             /// Block Layout: [1byte(max_bits)][payload]
             size_t offset = out.size();

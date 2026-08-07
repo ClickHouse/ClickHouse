@@ -89,7 +89,9 @@ static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
 static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
 
 static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
-static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
+static_assert(PostingListBuilder::inline_capacity <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "inline_capacity must not exceed MAX_CARDINALITY_FOR_RAW_POSTINGS");
+/// With an 8-byte token key, a hash map cell fits in a single cache line.
+static_assert(sizeof(PostingListBuilder) <= 56, "PostingListBuilder is on the hot path of the text index build and must stay small");
 
 /// Kept as a fixed default rather than a MergeTree setting: a mutable table-level default would let
 /// an index's positions value change after parts exist, mixing positional and non-positional parts
@@ -213,70 +215,26 @@ PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_co
     chassert(posting_list_codec);
 }
 
-void PostingsSerialization::serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr)
-{
-    if (header & RawPostings)
-    {
-        roaring::api::roaring_uint32_iterator_t it;
-        roaring_iterator_init(&postings, &it);
-
-        while (it.has_value)
-        {
-            writeVarUInt(it.current_value, ostr);
-            roaring::api::roaring_uint32_iterator_advance(&it);
-        }
-    }
-    else
-    {
-        size_t num_bytes = roaring::api::roaring_bitmap_portable_size_in_bytes(&postings);
-        writeVarUInt(num_bytes, ostr);
-
-        std::vector<char> memory(num_bytes);
-        roaring::api::roaring_bitmap_portable_serialize(&postings, memory.data());
-        ostr.write(memory.data(), num_bytes);
-    }
-}
-
-void PostingsSerialization::serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr)
-{
-    chassert(info.header & IsCompressed);
-    chassert(posting_list_codec);
-    chassert(posting_list_codec->getType() != IPostingListCodec::Type::None);
-    posting_list_codec->encode(postings, posting_list_block_size, info, ostr);
-}
-
-void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr)
-{
-    if (info.header & IsCompressed)
-    {
-        serialize(postings.getLarge(), info, posting_list_block_size, ostr);
-    }
-    else if (postings.isLarge())
-    {
-        postings.getLarge().runOptimize();
-        serialize(postings.getLarge().roaring, info.header, ostr);
-    }
-    else
-    {
-        chassert(info.header & RawPostings);
-        size_t cardinality = postings.size();
-        const auto & array = postings.getSmall();
-
-        for (size_t i = 0; i < cardinality; ++i)
-            writeVarUInt(array[i], ostr);
-    }
-}
-
 PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
 {
+    chassert(posting_list_codec);
+
+    /// Small posting lists are stored as raw VarUInt-encoded row ids.
+    if (header & RawPostings)
+    {
+        if (cardinality > raw_postings_buffer.size())
+            raw_postings_buffer.resize(cardinality);
+
+        for (size_t i = 0; i < cardinality; ++i)
+            readVarUInt(raw_postings_buffer[i], istr);
+
+        auto postings = std::make_shared<PostingList>();
+        postings->addMany(cardinality, raw_postings_buffer.data());
+        return postings;
+    }
+
     if (header & IsCompressed)
     {
-        if (!posting_list_codec)
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Posting list header marks compressed data but no codec is configured");
-        }
-
         static constexpr auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
 
         if (serialization_version < required_version)
@@ -292,40 +250,12 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Posting list header marks compressed data but configured codec is None");
         }
-
-        auto postings = std::make_shared<PostingList>();
-        posting_list_codec->decode(istr, *postings);
-        return postings;
     }
-    else if (header & RawPostings)
-    {
-        if (cardinality > raw_postings_buffer.size())
-            raw_postings_buffer.resize(cardinality);
 
-        for (size_t i = 0; i < cardinality; ++i)
-            readVarUInt(raw_postings_buffer[i], istr);
-
-        auto postings = std::make_shared<PostingList>();
-        postings->addMany(cardinality, raw_postings_buffer.data());
-        return postings;
-    }
-    else
-    {
-        size_t num_bytes = 0;
-        readVarUInt(num_bytes, istr);
-
-        /// If the posting list is completely in the buffer, avoid copying.
-        if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
-        {
-            auto result = std::make_shared<PostingList>(PostingList::read(istr.position()));
-            istr.position() += num_bytes;
-            return result;
-        }
-
-        deserialization_buffer.resize(num_bytes);
-        istr.readStrict(deserialization_buffer.data(), num_bytes);
-        return std::make_shared<PostingList>(PostingList::read(deserialization_buffer.data()));
-    }
+    /// All other posting lists (including the uncompressed None format) are decoded by the codec.
+    auto postings = std::make_shared<PostingList>();
+    posting_list_codec->decode(istr, *postings);
+    return postings;
 }
 
 
@@ -857,16 +787,12 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     MergeTreeIndexTextParams params_,
     IPostingListCodec::Type posting_list_codec_type_,
     TokenToPostingsBuilderMap && tokens_map_,
-    std::list<PostingList> && posting_lists_,
     std::unique_ptr<Arena> && arena_,
-    std::unique_ptr<TokenToPositionListMap> && position_map_,
     SortedTokens && sorted_tokens_)
     : params(std::move(params_))
     , posting_list_codec_type(posting_list_codec_type_)
     , tokens_map(std::move(tokens_map_))
-    , posting_lists(std::move(posting_lists_))
     , arena(std::move(arena_))
-    , position_map(std::move(position_map_))
     , sorted_tokens(std::move(sorted_tokens_))
     , logger(getLogger("TextIndexGranuleWriter"))
 {
@@ -932,55 +858,6 @@ void serializeTokensFrontCoding(
     }
 }
 
-/// Split postings into smaller blocks without copying the data.
-/// We use the fact that the Roaring Bitmap is split into small
-/// containers that are stored in contiguous memory and sorted
-/// by the key. Therefore, to create a view to the smaller bitmap,
-/// we need only to adjust the pointers to the containers.
-std::vector<roaring::api::roaring_bitmap_t> splitPostings(const PostingList & postings, size_t block_size)
-{
-    std::vector<roaring::api::roaring_bitmap_t> result;
-    result.reserve((postings.cardinality() + block_size - 1) / block_size);
-    const auto & container = postings.roaring.high_low_container;
-
-    auto create_bitmap_view = [&](size_t begin, size_t size)
-    {
-        roaring::api::roaring_bitmap_t bitmap;
-        auto & new_container = bitmap.high_low_container;
-
-        new_container.size = static_cast<int32_t>(size);
-        new_container.allocation_size = 0;
-        new_container.containers = container.containers + begin;
-        new_container.typecodes = container.typecodes + begin;
-        new_container.keys = container.keys + begin;
-        new_container.flags = container.flags;
-        return bitmap;
-    };
-
-    size_t begin_index = 0;
-    size_t total_cardinality = 0;
-
-    for (ssize_t i = 0; i < container.size; ++i)
-    {
-        size_t container_cardinality = roaring::internal::container_get_cardinality(container.containers[i], container.typecodes[i]);
-        total_cardinality += container_cardinality;
-
-        /// The result block size may exceed the threshold, but that's ok,
-        /// since sizes of containers are much smaller than the target block size.
-        if (total_cardinality >= block_size)
-        {
-            result.emplace_back(create_bitmap_view(begin_index, i - begin_index + 1));
-            begin_index = i + 1;
-            total_cardinality = 0;
-        }
-    }
-
-    if (begin_index < static_cast<size_t>(container.size))
-        result.emplace_back(create_bitmap_view(begin_index, container.size - begin_index));
-
-    return result;
-}
-
 template <typename TokenGetter>
 void serializeTokensImpl(
     const TokenGetter & token_getter,
@@ -1006,76 +883,146 @@ void serializeTokensImpl(
 
 }
 
+void TextIndexSerialization::serializePostingsAndTokenInfo(
+    PostingListBuilder && postings,
+    MergeTreeIndexWriterStream & dictionary_stream,
+    MergeTreeIndexWriterStream & postings_stream,
+    const MergeTreeIndexTextParams & params,
+    PostingsSerialization & postings_serialization,
+    PositionListBuilder * positions,
+    MergeTreeIndexWriterStream * positions_stream)
+{
+    using enum PostingsSerialization::Flags;
+
+    const auto * codec = postings_serialization.getPostingListCodec();
+    chassert(codec);
+    size_t segment_size = codec->getSegmentSize(params.posting_list_block_size);
+
+    TokenPostingsInfo info;
+    std::span<const UInt32> raw_values;
+
+    if (postings.hasInline())
+    {
+        const auto & inline_state = postings.getInline();
+        info.cardinality = inline_state.size;
+        raw_values = {inline_state.values.data(), inline_state.size};
+    }
+    else
+    {
+        auto & large = postings.getLarge();
+
+        /// If the encoder already holds full segments, flush everything left into it. Otherwise flush only
+        /// when the buffered values exceed the raw-postings threshold (so a posting list that merely
+        /// outgrew the inline capacity stays raw).
+        size_t min_flush_size = large.encoder ? 0 : MAX_CARDINALITY_FOR_RAW_POSTINGS + 1;
+        large.flush(*codec, segment_size, min_flush_size);
+
+        if (large.values.empty())
+        {
+            info.cardinality = static_cast<UInt32>(large.encoder->cardinality());
+        }
+        else
+        {
+            info.cardinality = static_cast<UInt32>(large.values.size());
+            raw_values = {large.values.data(), info.cardinality};
+        }
+    }
+
+    /// Serialize position data if phrase query support is enabled. The position metadata is recorded on
+    /// `info` (and so written by `serializeTokenInfo` right after header+cardinality, before any posting
+    /// data) regardless of which posting-list layout is chosen below; the entries go to the `.pos` stream.
+    if (positions_stream)
+    {
+        chassert(positions);
+        positions->finalizeOrdering();
+        const auto & position_entries = positions->getEntries();
+
+        info.header |= HasPositions;
+        info.position_offset = positions_stream->plain_hashing.count();
+        info.position_cardinality = static_cast<UInt32>(position_entries.size());
+
+        TextIndexPositionCodec::encode(position_entries, positions_stream->plain_hashing);
+    }
+
+    /// Tiny posting lists are embedded into the dictionary block
+    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+    {
+        chassert(raw_values.size() == info.cardinality);
+        info.header |= RawPostings;
+        info.header |= EmbeddedPostings;
+
+        TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, info);
+        TextIndexSerialization::serializeRawPostings(raw_values, dictionary_stream.compressed_hashing);
+        return;
+    }
+
+    /// Small posting lists are serialized as raw VarUInts.
+    if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+    {
+        chassert(raw_values.size() == info.cardinality);
+        info.header |= RawPostings;
+        info.header |= SingleBlock;
+
+        info.offsets.emplace_back(postings_stream.plain_hashing.count());
+        info.ranges.emplace_back(raw_values.front(), raw_values.back());
+
+        TextIndexSerialization::serializeRawPostings(raw_values, postings_stream.plain_hashing);
+        TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, info);
+        return;
+    }
+
+    chassert(postings.hasLarge());
+    auto & large = postings.getLarge();
+    large.flush(*codec, segment_size, IPostingListEncoder::append_granularity);
+    large.encoder->finalize(postings_stream.plain_hashing, info);
+    TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, info);
+}
+
 TokenPostingsInfo TextIndexSerialization::serializePostings(
-    PostingListBuilder & postings,
+    const PostingList & postings,
     MergeTreeIndexWriterStream & postings_stream,
     const MergeTreeIndexTextParams & params,
     PostingsSerialization & postings_serialization)
 {
     using enum PostingsSerialization::Flags;
+
     TokenPostingsInfo info;
-    info.header = 0;
-    info.cardinality = static_cast<UInt32>(postings.size());
-    const IPostingListCodec * posting_list_codec = postings_serialization.getPostingListCodec();
+    info.cardinality = static_cast<UInt32>(postings.cardinality());
 
-    if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
-    {
-        info.header |= IsCompressed;
-        info.header |= HasBlockIndex;
-    }
+    PaddedPODArray<UInt32> values(info.cardinality);
+    postings.toUint32Array(values.data());
 
-    /// Apply posting list compression only to non-embedded,
-    /// non-raw posting lists (these are the big ones).
     if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
         info.header |= RawPostings;
         info.header |= EmbeddedPostings;
-        info.header &= ~IsCompressed;
-        info.header &= ~HasBlockIndex;
         return info;
     }
-    else if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+
+    if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
     {
         info.header |= RawPostings;
         info.header |= SingleBlock;
-        info.header &= ~IsCompressed;
-        info.header &= ~HasBlockIndex;
-    }
-    else if (info.cardinality <= params.posting_list_block_size)
-    {
-        info.header |= SingleBlock;
-    }
-
-    /// When posting compression is enabled, the posting list codec is used to compress posting lists.
-    /// The codec splits the posting list into blocks according to the posting_list_block_size setting.
-    if (info.header & IsCompressed)
-    {
-        postings_serialization.serialize(postings, info, params.posting_list_block_size, postings_stream.plain_hashing);
-    }
-    else if (info.header & SingleBlock)
-    {
         info.offsets.emplace_back(postings_stream.plain_hashing.count());
-        info.ranges.emplace_back(postings.minimum(), postings.maximum());
-        postings_serialization.serialize(postings, info, params.posting_list_block_size, postings_stream.plain_hashing);
-    }
-    else
-    {
-        chassert(postings.isLarge());
-        postings.getLarge().runOptimize();
-        auto blocks = splitPostings(postings.getLarge(), params.posting_list_block_size);
-
-        for (const auto & block : blocks)
-        {
-            if (roaring::api::roaring_bitmap_get_cardinality(&block) == 0)
-                continue;
-
-            info.offsets.emplace_back(postings_stream.plain_hashing.count());
-            info.ranges.emplace_back(roaring::api::roaring_bitmap_minimum(&block), roaring::api::roaring_bitmap_maximum(&block));
-            postings_serialization.serialize(block, info.header, postings_stream.plain_hashing);
-        }
+        info.ranges.emplace_back(values.front(), values.back());
+        TextIndexSerialization::serializeRawPostings(values, postings_stream.plain_hashing);
+        return info;
     }
 
+    const auto * codec = postings_serialization.getPostingListCodec();
+    chassert(codec);
+    size_t segment_size = codec->getSegmentSize(params.posting_list_block_size);
+
+    auto encoder = codec->createEncoder();
+    encoder->append(values, segment_size);
+    encoder->finalize(postings_stream.plain_hashing, info);
     return info;
+}
+
+void TextIndexSerialization::serializeRawPostings(std::span<const UInt32> row_ids, WriteBuffer & ostr)
+{
+    for (UInt32 row_id : row_ids)
+        writeVarUInt(row_id, ostr);
 }
 
 void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format)
@@ -1417,27 +1364,14 @@ DictionarySparseIndex serializeTokensAndPostings(
         for (size_t i = block_begin; i < block_end; ++i)
         {
             const auto & entry = sorted_tokens[i];
-            auto & postings = *entry.postings;
-            auto token_info = TextIndexSerialization::serializePostings(postings, postings_stream, params, postings_serialization);
-
-            /// Serialize position data if phrase query support is enabled.
-            if (positions_stream)
-            {
-                chassert(entry.positions);
-                entry.positions->finalizeOrdering();
-                const auto & position_entries = entry.positions->getEntries();
-
-                token_info.header |= PostingsSerialization::Flags::HasPositions;
-                token_info.position_offset = positions_stream->plain_hashing.count();
-                token_info.position_cardinality = static_cast<UInt32>(position_entries.size());
-
-                TextIndexPositionCodec::encode(position_entries, positions_stream->plain_hashing);
-            }
-
-            TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, token_info);
-
-            if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
-                postings_serialization.serialize(postings, token_info, params.posting_list_block_size, dictionary_stream.compressed_hashing);
+            TextIndexSerialization::serializePostingsAndTokenInfo(
+                std::move(*entry.postings),
+                dictionary_stream,
+                postings_stream,
+                params,
+                postings_serialization,
+                entry.positions,
+                positions_stream);
         }
     }
 
@@ -1492,24 +1426,15 @@ void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTre
 
 size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes() const
 {
-    size_t posting_lists_size = 0;
-    for (const auto & plist : posting_lists)
-        posting_lists_size += plist.getSizeInBytes();
-
-    size_t position_map_size = 0;
-    if (position_map)
-    {
-        position_map_size = position_map->getBufferSizeInBytes();
-        position_map_size += std::accumulate(sorted_tokens.begin(), sorted_tokens.end(), size_t{0},
-            [](size_t acc, const auto & token) { return acc + (token.positions ? token.positions->allocatedBytes() : size_t{0}); });
-    }
+    size_t posting_lists_heap_size = 0;
+    for (const auto & entry : sorted_tokens)
+        posting_lists_heap_size += entry.postings->memoryUsageBytes();
 
     return sizeof(*this)
-        /// can ignore the sizeof(PostingListBuilder) here since it is just references to tokens_map
+        /// The builders themselves are accounted in tokens_map.getBufferSizeInBytes().
         + sorted_tokens.capacity() * sizeof(SortedToken)
         + tokens_map.getBufferSizeInBytes()
-        + posting_lists_size
-        + position_map_size
+        + posting_lists_heap_size
         + arena->allocatedBytes();
 }
 
@@ -1520,46 +1445,111 @@ MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(
     : params(std::move(params_))
     , tokenizer(tokenizer_)
     , posting_list_codec(posting_list_codec_)
+    , segment_size(posting_list_codec_ ? posting_list_codec_->getSegmentSize(params.posting_list_block_size) : params.posting_list_block_size)
     , arena(std::make_unique<Arena>())
-    , position_map(params.positions ? std::make_unique<TokenToPositionListMap>() : nullptr)
 {
 }
 
-PostingListBuilder::PostingListBuilder(PostingList * posting_list)
-    : large{posting_list, roaring::BulkContext()}
-    , small_size(max_small_size)
+PostingListBuilder::PostingListBuilder(UInt32 first_value)
+{
+    auto & inline_state = std::get<Inline>(state);
+    inline_state.values[0] = first_value;
+    inline_state.size = 1;
+}
+
+PostingListBuilder::PostingListBuilder(UInt32 first_value, UInt32 first_position)
+    : state(std::in_place_type<Large>, first_value, first_position)
 {
 }
 
-void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
+void PostingListBuilder::add(UInt32 value, const IPostingListCodec & codec, size_t segment_size)
 {
-    if (small_size < max_small_size)
+    if (auto * inline_state = std::get_if<Inline>(&state))
     {
-        if (small_size)
+        /// Values are added in non-descending order.
+        chassert(inline_state->size != 0);
+        chassert(value >= inline_state->values[inline_state->size - 1]);
+
+        if (value == inline_state->values[inline_state->size - 1])
+            return;
+
+        if (inline_state->size < inline_capacity)
         {
-            /// Values are added in non-descending order.
-            chassert(small[small_size - 1] <= value);
-            if (small[small_size - 1] == value)
-                return;
+            inline_state->values[inline_state->size++] = value;
+            return;
         }
 
-        small[small_size++] = value;
-
-        if (small_size == max_small_size)
-        {
-            auto small_copy = std::move(small);
-            large.postings = &postings_holder.emplace_back();
-            large.context = roaring::BulkContext();
-
-            for (size_t i = 0; i < max_small_size; ++i)
-                large.postings->addBulk(large.context, small_copy[i]);
-        }
+        state.emplace<Large>(inline_state->values, inline_state->size, value);
+        return;
     }
-    else
-    {
-        /// Use addBulk to optimize consecutive insertions into the posting list.
-        large.postings->addBulk(large.context, value);
-    }
+
+    auto & large = std::get<Large>(state);
+    chassert(value >= large.last_value);
+
+    if (value == large.last_value)
+        return;
+
+    large.last_value = value;
+    large.values.push_back(value);
+    large.flush(codec, segment_size, IPostingListEncoder::append_granularity);
+}
+
+void PostingListBuilder::add(UInt32 value, UInt32 position, const IPostingListCodec & codec, size_t segment_size)
+{
+    /// With positions enabled the builder starts in the `Large` state (see the constructor).
+    auto & large = std::get<Large>(state);
+    chassert(large.positions);
+    chassert(value >= large.last_value);
+
+    /// Positions are recorded for every occurrence, including in-row repeats.
+    large.positions->add(value, position);
+
+    if (value == large.last_value)
+        return;
+
+    large.last_value = value;
+    large.values.push_back(value);
+    large.flush(codec, segment_size, IPostingListEncoder::append_granularity);
+}
+
+size_t PostingListBuilder::memoryUsageBytes() const
+{
+    const auto * large = std::get_if<Large>(&state);
+    if (!large)
+        return 0;
+
+    return large->values.allocated_bytes()
+        + (large->encoder ? large->encoder->memoryUsageBytes() : 0)
+        + (large->positions ? sizeof(PositionListBuilder) + large->positions->allocatedBytes() : 0);
+}
+
+PostingListBuilder::Large::Large(std::array<UInt32, inline_capacity> values_, UInt8 inline_size_, UInt32 added_value_)
+    : last_value(added_value_)
+{
+    values.insert(values_.begin(), values_.begin() + inline_size_);
+    values.push_back(added_value_);
+}
+
+PostingListBuilder::Large::Large(UInt32 first_value, UInt32 first_position)
+    : last_value(first_value)
+    , positions(std::make_unique<PositionListBuilder>())
+{
+    values.push_back(first_value);
+    positions->add(first_value, first_position);
+}
+
+void PostingListBuilder::Large::flush(const IPostingListCodec & codec, size_t segment_size, size_t min_flush_size)
+{
+    if (values.empty() || values.size() < min_flush_size)
+        return;
+
+    /// Created lazily: tokens whose posting lists end up raw or embedded never need an encoder
+    /// (with positions enabled every token starts in `Large`, so most builders never flush).
+    if (!encoder)
+        encoder = codec.createEncoder();
+
+    encoder->append({values.data(), values.size()}, segment_size);
+    values.clear();
 }
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
@@ -1587,15 +1577,24 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     ArenaKeyHolder key_holder(token, *arena);
     tokens_map.emplace(key_holder, it, inserted);
 
-    PostingListBuilder & posting_list_builder = it->getMapped();
-    posting_list_builder.add(static_cast<UInt32>(current_row), posting_lists);
+    const auto row = static_cast<UInt32>(current_row);
 
-    if (position_map)
+    /// The hash map requires the mapped value of an inserted key to be constructed in place
+    /// (see the comment for HashTable::emplace). When positions are enabled, the builder also
+    /// records the position of every occurrence of the token (for phrase search).
+    if (params.positions)
     {
-        TokenToPositionListMap::LookupResult pos_it;
-        position_map->emplace(key_holder, pos_it, inserted);
-        auto & positions_builder = pos_it->getMapped();
-        positions_builder.add(static_cast<UInt32>(current_row), token_position);
+        if (inserted)
+            new (&it->getMapped()) PostingListBuilder(row, token_position);
+        else
+            it->getMapped().add(row, token_position, *posting_list_codec, segment_size);
+    }
+    else
+    {
+        if (inserted)
+            new (&it->getMapped()) PostingListBuilder(row);
+        else
+            it->getMapped().add(row, *posting_list_codec, segment_size);
     }
 
     ++num_processed_tokens;
@@ -1615,43 +1614,16 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
         std::string_view token = key;
-        sorted_tokens.push_back(SortedToken{token, &mapped, nullptr});
+        sorted_tokens.push_back(SortedToken{token, &mapped, mapped.getPositions()});
     });
 
     std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
-
-    /// Attach each token's position builder by binary search over the already-sorted sorted_tokens.
-    /// tokens_map and position_map are filled in lockstep in addDocument(), so the key sets are identical.
-    if (position_map)
-    {
-        size_t attached = 0;
-        position_map->forEachValue([&](const auto & key, auto & mapped)
-        {
-            const std::string_view token(key);
-            auto it = std::ranges::lower_bound(
-                sorted_tokens, token,
-                [](std::string_view lhs, std::string_view rhs) { return lhs < rhs; },
-                &SortedToken::token);
-            if (it == sorted_tokens.end() || it->token != token)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Text index: positions token '{}' has no postings slot", token);
-            it->positions = &mapped;
-            ++attached;
-        });
-
-        if (attached != sorted_tokens.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Text index: postings map has {} tokens but positions map attached {}",
-                sorted_tokens.size(), attached);
-    }
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
         params,
         posting_list_codec ? posting_list_codec->getType() : IPostingListCodec::Type::None,
         std::move(tokens_map),
-        std::move(posting_lists),
         std::move(arena),
-        std::move(position_map),
         std::move(sorted_tokens));
 }
 
@@ -1661,13 +1633,7 @@ void MergeTreeIndexTextGranuleBuilder::reset()
     current_row = 0;
     num_processed_tokens = 0;
     tokens_map = {};
-    posting_lists.clear();
     arena = std::make_unique<Arena>();
-
-    if (params.positions)
-        position_map = std::make_unique<TokenToPositionListMap>();
-    else
-        position_map.reset();
 }
 
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(

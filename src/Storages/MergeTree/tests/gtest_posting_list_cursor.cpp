@@ -228,10 +228,9 @@ MultiBlockTestData makeMultiBlockData(
     WriteBufferFromOwnString out;
     for (const auto & block_docs : blocks)
     {
-        /// Use a segment size large enough to hold all docs in one segment.
-        SegmentedPostingListCodecImpl codec(block_docs.size() + BLOCK_SIZE, block_codec_type);
-        for (auto doc : block_docs)
-            codec.insert(doc);
+        /// A segment size large enough to hold all docs in one segment.
+        SegmentedPostingListCodecImpl codec(block_codec_type);
+        codec.append(block_docs, 1 << 20);
         codec.encode(out, info);
     }
 
