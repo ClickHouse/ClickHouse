@@ -70,8 +70,6 @@ String serializeJoinStep(const JoinStepLogical & step)
     IQueryPlanStep::Serialization ctx{
         .out = out,
         .registry = registry,
-        .skip_final_flag = false,
-        .skip_cache_key = false,
         .version = 0,
     };
     step.serialize(ctx);
