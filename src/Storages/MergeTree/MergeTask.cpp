@@ -21,7 +21,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
-#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -74,9 +74,9 @@
 #if CLICKHOUSE_CLOUD
     #include <Interpreters/FileCache/FileCacheFactory.h>
     #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+    #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
+    #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #endif
-#include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
-#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 
 
 namespace ProfileEvents
@@ -950,13 +950,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
-    auto part_compression_codec = global_ctx->data->getCompressionCodecForPart(
-        global_ctx->metadata_snapshot,
+    global_ctx->compression_codec = global_ctx->data->getCompressionCodecForPart(
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
         global_ctx->new_data_part->ttl_infos,
         global_ctx->time_of_merge);
-    global_ctx->compression_codec = std::move(part_compression_codec.codec);
-    global_ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
 
     switch (global_ctx->chosen_merge_algorithm)
     {
@@ -1026,77 +1023,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && !use_const_adaptive_granularity
         && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical;
 
-    /// For TTLDrop merges, all source parts are fully expired.
-    /// Skip creating the read pipeline to avoid opening source parts
-    /// and allocating read/prefetch buffers.
-    ///
-    /// We restrict this to tables that have only an unconditional rows TTL
-    /// (no column TTL, moves, recompression, GROUP BY, or WHERE-clause TTL).
-    /// When other TTL families are present, TTLTransform::finalize rebuilds
-    /// their maps from scratch, and replicating that logic here would be
-    /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
-    const bool can_short_circuit_ttl_drop =
-        global_ctx->future_part->merge_type == MergeType::TTLDrop
-        && global_ctx->metadata_snapshot->hasOnlyRowsTTL();
-
-    if (can_short_circuit_ttl_drop)
-    {
-        LOG_DEBUG(ctx->log, "TTLDrop merge: skipping data pipeline, "
-            "all {} source parts are fully expired", global_ctx->future_part->parts.size());
-
-        global_ctx->ttl_drop_short_circuit = true;
-
-        /// Reset all ttl_infos and mark table TTL as finished, matching what
-        /// TTLTransform::finalize produces in the normal all_data_dropped path:
-        /// it clears everything with `data_part->ttl_infos = {}`, then
-        /// TTLDeleteAlgorithm::finalize sets table_ttl = {0, 0, finished}.
-        global_ctx->new_data_part->ttl_infos = {};
-        global_ctx->new_data_part->ttl_infos.table_ttl = {0, 0, true};
-
-        /// Clear projections — no rows means no projection data to merge or rebuild.
-        global_ctx->projections_to_rebuild.clear();
-        global_ctx->projections_to_merge.clear();
-        global_ctx->projections_to_merge_parts.clear();
-
-        /// Force Horizontal algorithm. This prevents the Vertical stage from trying
-        /// to finalize an empty rows_sources file, and ensures finalizePart takes
-        /// the correct code path. Reinitialize the column/index state to match the
-        /// Horizontal branch of the switch above — if chooseMergeAlgorithm picked
-        /// Vertical, merging_columns would be key-only and gathering_columns non-empty,
-        /// which would leave MergedBlockOutputStream with incomplete column metadata.
-        global_ctx->chosen_merge_algorithm = MergeAlgorithm::Horizontal;
-        global_ctx->merge_list_element_ptr->merge_algorithm.store(global_ctx->chosen_merge_algorithm, std::memory_order_relaxed);
-
-        global_ctx->merging_columns = global_ctx->storage_columns;
-        global_ctx->merging_columns_expired_by_ttl = global_ctx->storage_columns_expired_by_ttl;
-        global_ctx->gathering_columns.clear();
-
-        /// Reinitialize skip indexes to match the Horizontal branch setup.
-        /// We must NOT simply clear them: MergedBlockOutputStream writes empty
-        /// skip-index files (with checksums) even for 0-row parts. Clearing
-        /// would produce different checksums than the normal TTLDrop path,
-        /// causing divergence during rolling upgrades on replicated tables.
-        global_ctx->merging_skip_indexes.clear();
-        global_ctx->skip_indexes_by_column.clear();
-        global_ctx->text_indexes_to_merge.clear();
-
-        auto all_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
-        for (const auto & index : all_skip_indexes)
-        {
-            if (!exclude_index_names.contains(index.name))
-            {
-                if (index.type == "text")
-                    global_ctx->text_indexes_to_merge.push_back(index);
-                else
-                    global_ctx->merging_skip_indexes.push_back(index);
-            }
-        }
-    }
-    else
-    {
-        /// Merged stream will be created and available as merged_stream variable
-        createMergedStream();
-    }
+    /// Merged stream will be created and available as merged_stream variable
+    createMergedStream();
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         ctx->sum_input_rows_upper_bound,
@@ -1118,8 +1046,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /*reset_columns=*/true,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
-        &global_ctx->written_offset_substreams,
-        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression);
+        &global_ctx->written_offset_substreams);
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -1387,7 +1314,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             global_ctx->projections_to_merge.push_back(&projection);
             global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
         }
-        else if (projection.with_block_number || projection.with_block_offset)
+        else if (projection.with_block_number)
         {
             /// Commit-order projections are not written during insert (block number is not yet finalized).
             /// When some source parts don't have the projection, rebuild it during the horizontal phase
@@ -1681,13 +1608,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() cons
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 {
-    /// TTLDrop short-circuit: no pipeline was created, skip directly to finalize.
-    if (global_ctx->ttl_drop_short_circuit)
-    {
-        finalize();
-        return false;
-    }
-
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     UInt64 step_time_ms
         = (*global_ctx->data_settings)[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
@@ -2058,7 +1978,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
         &global_ctx->written_offset_substreams,
-        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
         global_ctx->to->getSkipIndicesPackedWriter());
 
     ctx->column_elems_written = 0;
@@ -2318,7 +2237,6 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     for (const auto & task : ctx->tasks_for_projections)
     {
         auto part = task->getFuture().get();
-        part->getDataPartStorage().commitTransaction();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 
@@ -2334,9 +2252,6 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
     auto cached_index_marks = global_ctx->to->releaseCachedIndexMarks();
     for (auto & [name, marks] : cached_index_marks)
         global_ctx->cached_index_marks.emplace(name, std::move(marks));
-
-    global_ctx->new_data_part->getDataPartStorage().setPreferredFileOrder(
-        global_ctx->new_data_part->getPreferredFileOrder());
 
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
     global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
@@ -2484,7 +2399,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
                 if (part->rows_count == 0)
                     continue;
 
-                if (index_ptr->getDeserializedFormat(*part, index_ptr->getFileName()))
+                if (index_ptr->getDeserializedFormat(part->checksums, index_ptr->getFileName(), &part->getDataPartStorage()))
                 {
                     /// If text index exists in the source part, take it as is.
                     segments.emplace_back(part->getDataPartStoragePtr(), index_ptr->getFileName(), part_idx);
@@ -2506,8 +2421,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
             index_ptr,
             global_ctx->merged_part_offsets,
             reader_settings,
-            global_ctx->to->getWriterSettings(),
-            ctx->need_sync);
+            global_ctx->to->getWriterSettings());
 
         ctx->merge_tasks.emplace_back(std::move(task));
     }
@@ -3062,7 +2976,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
         /// Rebuild index if merge may reduce rows because we cannot adjust parts offsets in that case.
         /// Build index if it is not materialized in the data part.
-        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
+        if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part.checksums, index_ptr->getFileName(), &data_part.getDataPartStorage()))
         {
             description_to_build.push_back(index);
             indexes_to_build.push_back(std::move(index_ptr));
@@ -3089,8 +3003,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         /*rewrite_primary_key=*/ false,
         /*save_marks_in_cache=*/ false,
         /*save_primary_index_in_memory=*/ false,
-        /*blocks_are_granules_size=*/ false,
-        /*try_adaptive_codec=*/ false); /// Writes text index files, not column data.
+        /*blocks_are_granules_size=*/ false);
 
     auto transform = std::make_shared<BuildTextIndexTransform>(
         plan.getCurrentHeader(),
@@ -3099,8 +3012,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         global_ctx->temporary_text_index_storage,
         std::move(writer_settings),
         global_ctx->compression_codec,
-        global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension(),
-        *global_ctx->data->getSettings());
+        global_ctx->new_data_part->index_granularity_info.mark_type.getFileExtension());
 
     /// Pass original header as output header to remove temporary columns added by the transform.
     /// This is important to make this part's plan compatible with other parts' plans that don't materialize indexes.

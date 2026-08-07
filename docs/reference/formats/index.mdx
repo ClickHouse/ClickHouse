@@ -6,7 +6,7 @@ title: 'Formats for input and output data'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 ClickHouse supports most of the known text and binary data formats. This allows easy integration into almost any working
 data pipeline to leverage the benefits of ClickHouse.
@@ -161,13 +161,13 @@ can contain an absolute path or a path relative to the current directory on the 
 If you use the client in the [batch mode](/concepts/features/interfaces/client#batch-mode), the path to the schema must be relative due to security reasons.
 
 If you input or output data via the [HTTP interface](/concepts/features/interfaces/http) the file name specified in the format schema
-should be located in the directory specified in [format_schema_path](/reference/settings/server-settings/settings/format#format_schema_path)
+should be located in the directory specified in [format_schema_path](/reference/settings/server-settings/settings#format_schema_path)
 in the server configuration.
 
 ## Skipping errors {#skippingerrors}
 
-Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](/reference/settings/formats/input-format#input_format_allow_errors_num) and
-[input_format_allow_errors_ratio](/reference/settings/formats/input-format#input_format_allow_errors_ratio) settings.
+Some formats such as `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` and `Protobuf` can skip broken row if parsing error occurred and continue parsing from the beginning of next row. See [input_format_allow_errors_num](/reference/settings/formats#input_format_allow_errors_num) and
+[input_format_allow_errors_ratio](/reference/settings/formats#input_format_allow_errors_ratio) settings.
 Limitations:
 - In case of parsing error `JSONEachRow` skips all data until the new line (or EOF), so rows must be delimited by `\n` to count errors correctly.
 - `Template` and `CustomSeparated` use delimiter after the last column and delimiter between rows to find the beginning of next row, so skipping errors works only if at least one of them is not empty.

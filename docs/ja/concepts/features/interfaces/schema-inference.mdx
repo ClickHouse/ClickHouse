@@ -2002,7 +2002,7 @@ $$)
 
 Avroフォーマットでは、ClickHouse はデータからスキーマを読み取り、以下の型対応に従って ClickHouse のスキーマに変換します。
 
-| Avro データ型                          | ClickHouse データ型                                                       |
+| Avro データ型                     | ClickHouse データ型                                                  |
 | ---------------------------------- | --------------------------------------------------------------------- |
 | `boolean`                          | [Bool](/ja/reference/data-types/boolean)                                 |
 | `int`                              | [Int32](/ja/reference/data-types/int-uint)                               |
@@ -2019,7 +2019,7 @@ Avroフォーマットでは、ClickHouse はデータからスキーマを読�
 | `string (uuid)` *                  | [UUID](/ja/reference/data-types/uuid)                                    |
 | `binary (decimal)` *               | [Decimal(P, S)](/ja/reference/data-types/decimal)                        |
 
-* [Avro 論理型](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
+* [Avro 論理型](https://avro.apache.org/docs/current/spec.html#Logical+Types)
 
 その他の Avro 型はサポートされていません。
 

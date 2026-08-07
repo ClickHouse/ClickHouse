@@ -451,7 +451,6 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
             while (true)
             {
                 partition.temp_part->finalize();
-                partition.temp_part->part->getDataPartStorage().commitTransaction();
                 auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(partition.block_with_partition.partition_id, deduplicate);
                 auto deduplication_blocks_ids = getDeduplicationBlockIds(deduplication_hashes);
 

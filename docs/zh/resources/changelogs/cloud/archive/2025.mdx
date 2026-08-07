@@ -267,8 +267,8 @@ ClickPipes 中的 MySQL CDC 连接器现已面向广大用户开放 Public Beta�
 
 * 新增 `UsageCost` API 端点：API 规范现已支持一个用于获取使用情况信息的新端点。
   这是一个组织级端点，最多可查询 31 天的使用成本。可获取的指标包括
-  Storage、Compute、数据传输 和 ClickPipes。详情请参阅
-  [文档](/zh/products/cloud/api-reference/billing/get-organization-usage-costs)。
+  Storage、Compute、Data Transfer 和 ClickPipes。详情请参阅
+  [文档](/zh/api-reference/billing/get-organization-usage-costs)。
 * Terraform provider [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) 版本现已支持启用 MySQL 端点。
 
 <div id="february-21-2025">
@@ -423,14 +423,14 @@ JDBC / Java 将在[ 0.8.0](https://github.com/ClickHouse/clickhouse-java/release
   ### Prometheus 集成改进
 </div>
 
-我们为 Prometheus 集成带来了多项增强：
+我们对 Prometheus 集成进行了多项增强：
 
-* **组织级端点**。我们为 ClickHouse Cloud 的 Prometheus 集成新增了一项增强功能。除了服务级指标外，API 现在还提供用于**组织级指标**的端点。这个新端点会自动收集您组织内所有服务的指标，简化将指标导出到 Prometheus 收集器的流程。这些指标还可以与 Grafana 和 Datadog 等可视化工具集成，帮助您更全面地了解组织的性能表现。
+* **组织级端点**。我们增强了 ClickHouse Cloud 的 Prometheus 集成。除服务级指标外，API 现在还提供了一个用于**组织级指标**的端点。这个新端点会自动收集您组织内所有服务的指标，从而简化将指标导出到 Prometheus collector 的流程。这些指标还可以与 Grafana 和 Datadog 等可视化工具集成，帮助您更全面地了解组织的整体性能。
 
-  该功能现已向所有用户开放。更多详细信息请参见[这里](/zh/products/cloud/features/monitoring/prometheus)。
+  此功能现已面向所有用户开放。您可以在[这里](/zh/products/cloud/features/monitoring/prometheus)了解更多详情。
 
-* **过滤后的指标**。我们已为 ClickHouse Cloud 的 Prometheus 集成添加了返回过滤后指标列表的支持。借助此功能，您可以聚焦对监控服务运行状况至关重要的指标，从而减少响应载荷大小。
+* **过滤指标**。我们已为 ClickHouse Cloud 的 Prometheus 集成新增返回过滤后指标列表的支持。借助此功能，您可以聚焦于对监控服务健康状态至关重要的指标，从而减少响应载荷大小。
 
-  该功能可通过 API 中的可选查询参数使用，帮助您更轻松地优化数据采集，并简化与 Grafana 和 Datadog 等工具的集成。
+  该功能通过 API 中的可选查询参数提供，让您更轻松地优化数据收集，并简化与 Grafana 和 Datadog 等工具的集成。
 
-  过滤后指标功能现已向所有用户开放。更多详细信息请参见[这里](/zh/products/cloud/features/monitoring/prometheus)。
+  过滤指标功能现已面向所有用户开放。您可以在[这里](/zh/products/cloud/features/monitoring/prometheus)了解更多详情。

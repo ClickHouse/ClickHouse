@@ -235,22 +235,6 @@ void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const 
     }
 }
 
-void IColumn::serializeAsComparable(size_t /* n */, String & /* out */) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeAsComparable is not supported for {}", getName());
-}
-
-void IColumn::batchSerializeAsComparable(
-    size_t num_rows,
-    VectorWithMemoryTracking<String> & out,
-    const Permutation * permutation,
-    const UInt8 * null_map) const
-{
-    batchSerializeAsComparableImpl(
-        num_rows, out, permutation, null_map,
-        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
-}
-
 void IColumn::updateAt(const IColumn &, size_t, size_t)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateAt is not supported for {}", getName());

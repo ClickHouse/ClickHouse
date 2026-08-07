@@ -24,27 +24,29 @@ MySQL ClickPipe를 통해 데이터를 복제할 수 있도록 RDS MariaDB 인�
   ## 바이너리 로그 보존 활성화
 </div>
 
-바이너리 로그는 MySQL 서버 인스턴스에서 수행된 데이터 변경에 대한 정보를 포함하는 로그 파일 집합입니다. 바이너리 로그 파일은 복제에 필요합니다. 아래의 두 단계를 모두 따라야 합니다.
+바이너리 로그는 MySQL server 인스턴스에서 수행된 데이터 변경 정보를 담고 있는 로그 파일의 집합입니다. 바이너리 로그 파일은 복제에 필요합니다. 아래 2단계를 모두 따라야 합니다:
 
-<Steps>
-  <Step title="자동 백업을 통해 바이너리 로깅 활성화" id="enable-binlog-logging-rds">
-    자동 백업 기능에 따라 MySQL의 바이너리 로깅 활성화 여부가 결정됩니다. 이 설정은 AWS 콘솔에서 구성할 수 있습니다.
+<div id="enable-binlog-logging-rds">
+  ### 1. 자동 백업을 통해 바이너리 로깅 활성화
+</div>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS에서 자동 백업 활성화" size="lg" border />
+자동 백업 기능은 MySQL에서 바이너리 로깅의 활성화 여부를 결정합니다. 이 설정은 AWS 콘솔에서 지정할 수 있습니다:
 
-    복제 사용 사례에 따라 백업 보존을 충분히 긴 값으로 설정하는 것이 좋습니다.
-  </Step>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS에서 자동 백업 활성화" size="lg" border />
 
-  <Step title="Binlog 보존 시간" id="binlog-retention-hours-rds">
-    Amazon RDS for MariaDB에서는 변경 내용이 포함된 binlog 파일을 얼마 동안 보관할지 나타내는 binlog 보존 기간을 다른 방식으로 설정합니다. binlog 파일이 삭제되기 전에 일부 변경 내용을 읽지 못하면 복제를 계속할 수 없습니다. binlog 보존 시간의 기본값은 NULL이며, 이는 바이너리 로그가 보존되지 않음을 의미합니다.
+복제 사용 사례에 따라 백업 보존 기간을 충분히 길게 설정하는 것이 좋습니다.
 
-    DB 인스턴스에서 바이너리 로그를 보존할 시간을 지정하려면, 복제가 수행될 수 있을 만큼 충분히 긴 binlog 보존 주기로 mysql.rds&#95;set&#95;configuration 함수를 사용하십시오. 권장되는 최소값은 `24 hours`입니다.
+<div id="binlog-retention-hours-rds">
+  ### 2. binlog 보존 시간
+</div>
 
-    ```text
-    mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
-    ```
-  </Step>
-</Steps>
+Amazon RDS for MariaDB에서는 변경 내용이 포함된 binlog 파일을 얼마 동안 보관할지 나타내는 binlog 보존 기간을 다른 방식으로 설정합니다. binlog 파일이 삭제되기 전에 일부 변경 내용을 읽지 못하면 복제를 계속할 수 없습니다. binlog 보존 시간의 기본값은 NULL이며, 이는 바이너리 로그가 보존되지 않음을 의미합니다.
+
+DB 인스턴스에서 바이너리 로그를 보존할 시간을 지정하려면, 복제가 수행될 수 있을 만큼 충분히 긴 binlog 보존 주기로 mysql.rds&#95;set&#95;configuration 함수를 사용하십시오. 권장되는 최소값은 `24 hours`입니다.
+
+```text
+mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
+```
 
 <div id="binlog-parameter-group-rds">
   ## 파라미터 그룹에서 binlog 설정 구성
@@ -72,7 +74,7 @@ RDS Console에서 MariaDB 인스턴스를 클릭한 다음 `Configurations` 탭�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Binlog row image를 FULL로 설정" size="lg" border />
 
-다음으로, 오른쪽 상단의 `Save Changes`를 클릭합니다. 변경 사항을 적용하려면 인스턴스를 재부팅해야 할 수 있습니다. RDS 인스턴스의 `Configurations` 탭에서 파라미터 그룹 링크 옆에 `Pending reboot`가 표시되면, 인스턴스를 재부팅해야 한다는 뜻입니다.
+다음으로, 오른쪽 상단의 `Save Changes`를 클릭합니다. 변경 사항을 적용하려면 인스턴스를 재부팅해야 할 수 있습니다. RDS 인스턴스의 `Configurations` 탭에서 파라미터 그룹 링크 옆에 `Pending reboot`가 표시되면, 인스턴스 재부팅이 필요하다는 의미입니다.
 
 <br />
 
@@ -119,14 +121,14 @@ RDS Console에서 MariaDB 인스턴스를 클릭한 다음 `Configurations` 탭�
   ### IP 기반 액세스 제어
 </div>
 
-RDS 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 RDS 보안 그룹의 `인바운드 규칙`에 추가하십시오.
+RDS 인스턴스로 들어오는 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 RDS 보안 그룹의 `인바운드 규칙`에 추가하십시오.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="RDS에서 보안 그룹을 찾는 위치" size="lg" border />
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="위 보안 그룹의 인바운드 규칙 편집" size="lg" border />
 
 <div id="private-access-via-aws-privatelink">
-  ### AWS PrivateLink를 통한 프라이빗 액세스
+  ### AWS PrivateLink를 통한 비공개 액세스
 </div>
 
-프라이빗 네트워크를 통해 RDS 인스턴스에 연결하려면 AWS PrivateLink를 사용할 수 있습니다. 연결을 설정하려면 [ClickPipes용 AWS PrivateLink 설정 가이드](/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)를 따르십시오.
+비공개 네트워크를 통해 RDS 인스턴스에 연결하려면 AWS PrivateLink를 사용할 수 있습니다. 연결을 설정하려면 [ClickPipes용 AWS PrivateLink 설정 가이드](/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)를 따르십시오.

@@ -9,7 +9,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
@@ -29,17 +29,19 @@ Apache Polaris prend en charge les tables Iceberg et les tables Delta (via les t
 
 Pour vous connecter au catalogue Polaris, vous aurez besoin des éléments suivants :
 
-* Snowflake Open Catalog (Polaris hébergé) ou catalogue Polaris autohébergé
+* Snowflake Open Catalog (Polaris hébergé) ou Polaris Catalog autohébergé
 * L’URI de votre catalogue Polaris (par exemple, `https://<account-id>.<region>.aws.snowflakecomputing.com/polaris/api/catalog/v1` ou `http://polaris:8181/api/catalog/v1/oauth/tokens`)
 * Les identifiants du catalogue (ID client et secret client)
 * L’URI des tokens OAuth pour votre instance Polaris
-* Le endpoint de stockage de l’object store où se trouvent vos données Iceberg (par exemple, S3)
+* L’endpoint de stockage du stockage objet où se trouvent vos données Iceberg (par exemple, S3)
 * ClickHouse version 26.1+
 
 Pour Open Catalog, l’offre Polaris managée de Snowflake, votre URI inclura `/polaris`, tandis que pour une instance autohébergée, ce ne sera pas nécessairement le cas.
 
 <Steps>
-  <Step title="Création d’une connexion entre Polaris et ClickHouse" id="connecting">
+  <Step>
+    ## Création d’une connexion entre Polaris et ClickHouse
+
     Créez une base de données qui relie ClickHouse à votre catalogue Polaris :
 
     ```sql
@@ -55,7 +57,9 @@ Pour Open Catalog, l’offre Polaris managée de Snowflake, votre URI inclura `/
     ```
   </Step>
 
-  <Step title="Interroger le catalogue Polaris avec ClickHouse" id="query-polaris-catalog">
+  <Step>
+    ## Interroger le catalogue Polaris avec ClickHouse
+
     Une fois la connexion établie, vous pouvez interroger Polaris :
 
     ```sql title="Requête"
@@ -80,7 +84,9 @@ Pour Open Catalog, l’offre Polaris managée de Snowflake, votre URI inclura `/
     ```
   </Step>
 
-  <Step title="Chargement de données depuis Polaris dans ClickHouse" id="loading-data-into-clickhouse">
+  <Step>
+    ## Chargement de données depuis Polaris dans ClickHouse
+
     Pour charger des données depuis Polaris dans une table ClickHouse, créez la table cible avec le schéma souhaité, puis insérez les données depuis la table Polaris :
 
     ```sql title="Requête"

@@ -215,13 +215,6 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (!optimize)
         return;
 
-    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
-
-    /// If PREWHERE is deferred after FINAL, moving conditions cannot save any reads, and the moved conditions
-    /// would escape the already-made deferral decision and run before a deferred row policy
-    if (is_final && read_from_merge_tree_step && read_from_merge_tree_step->isPrewhereDeferredAfterFinal())
-        return;
-
     const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
 
     auto column_sizes = storage.getColumnSizes(queried_columns);
@@ -233,6 +226,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     /// - PREWHERE
     /// The former is more impactful, therefore disable PREWHERE if the vector
     /// second pass can actually use the vector-search read hints.
+    auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
     if (suppress_for_vector_search && read_from_merge_tree_step && shouldSuppressPrewhereForVectorSearch(*read_from_merge_tree_step, settings))
         return;
 
@@ -252,7 +246,6 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         (has_multiple_conditions && read_from_merge_tree_step) ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns) : nullptr,
         queried_columns,
         storage.supportedPrewhereColumns(),
-        storage.supportedPrewhereColumnsIncludeSubcolumns(),
         getLogger("QueryPlanOptimizePrewhere")};
 
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),

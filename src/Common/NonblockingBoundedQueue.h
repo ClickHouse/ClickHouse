@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <vector>
-#include <base/defines.h>
 #include <Common/BitHelpers.h>
 
 /// Vyukov queue.
@@ -81,13 +80,13 @@ public:
 
     /// `value` is moved-out iff the return value is true.
     ///
-    /// TSAN very rarely reports a data race between the `slot.value` write in `tryPush` and the
+    /// TSan very rarely reports a data race between the `slot.value` write in `tryPush` and the
     /// `slot.value` read in `tryPop`, even though the acquire/release operations on `slot.pos`
     /// make such a race impossible (the code is isomorphic to Vyukov's original implementation).
     /// Those reports are suppressed at runtime, per instantiation, by
     /// `__tsan_default_suppressions` in base/sanitizer_options.h. A `NO_SANITIZE_THREAD` attribute
-    /// here does not work: the reported access happens in the element type's move assignment,
-    /// which is a separate function that stays instrumented.
+    /// here does not work: the reported access happens in the element type's move assignment, which
+    /// is a separate function that stays instrumented.
     ///
     /// The suppression lists only `tryPush`. `tryPop` writes the payload too (it moves out of
     /// `slot.value`), but the `dequeue_pos` CAS gives one consumer sole ownership of a slot before
@@ -124,7 +123,6 @@ public:
         }
     }
 
-    /// See the comment on `tryPush` about TSAN.
     bool tryPop(T & out_value)
     {
         chassert(mask);

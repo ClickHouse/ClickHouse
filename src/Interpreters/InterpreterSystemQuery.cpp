@@ -40,8 +40,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -118,10 +116,6 @@
 #if USE_JEMALLOC
 #    include <Processors/Sources/JemallocProfileSource.h>
 #    include <Common/Jemalloc.h>
-#endif
-
-#if ENABLE_DISTRIBUTED_CACHE
-#include <DistributedCache/Utils.h>
 #endif
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
@@ -604,12 +598,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-
-#if ENABLE_DISTRIBUTED_CACHE
-            const auto user_id = DistributedCache::getFilesystemCacheUserId(getContext());
-#else
             const auto user_id = FileCache::getCommonOrigin().user_id;
-#endif
 
             if (query.filesystem_cache_name.empty())
             {
@@ -643,14 +632,6 @@ BlockIO InterpreterSystemQuery::execute()
             }
             break;
         }
-#if ENABLE_DISTRIBUTED_CACHE
-        case Type::CLEAR_DISTRIBUTED_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE);
-            DistributedCache::clearDistributedCache(getContext(), query, log);
-            break;
-        }
-#endif
         case Type::SYNC_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
@@ -993,21 +974,9 @@ BlockIO InterpreterSystemQuery::execute()
                 task->cancel();
             break;
         case Type::TEST_VIEW:
-        {
-            /// The parser keeps the literal text; resolving it needs the server timezone.
-            std::optional<Int64> fake_time;
-            if (query.fake_time_for_view)
-            {
-                ReadBufferFromString buf(*query.fake_time_for_view);
-                time_t time = 0;
-                readDateTimeText(time, buf);
-                assertEOF(buf);
-                fake_time = Int64(time);
-            }
             for (const auto & task : getRefreshTasks())
-                task->setFakeTime(fake_time);
+                task->setFakeTime(query.fake_time_for_view);
             break;
-        }
         case Type::STOP:
         case Type::START:
         case Type::PAUSE:
@@ -2783,6 +2752,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
         case Type::CLEAR_TEXT_INDEX_CACHES:
         case Type::CLEAR_FILESYSTEM_CACHE:
+        case Type::CLEAR_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::CLEAR_PAGE_CACHE:
         case Type::CLEAR_SCHEMA_CACHE:
@@ -2790,11 +2760,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_S3_CLIENT_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
-            break;
-        }
-        case Type::CLEAR_DISTRIBUTED_CACHE:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE);
             break;
         }
         case Type::CLEAR_DISK_METADATA_CACHE:

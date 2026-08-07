@@ -582,15 +582,14 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
+    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup)
 {
     /// First, deduce implicit types.
 
     /** all default_expressions as a single expression list,
      *  mixed with conversion-columns for each explicitly specified type */
 
-    DefaultExpressionsInfo default_expr_info;
-    default_expr_info.expr_list = make_intrusive<ASTExpressionList>();
+    DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
     NamesAndTypesList column_names_and_types;
 
     /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the initiator.
@@ -628,12 +627,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!default_expr_info.expr_list->children.empty()
         && (default_expr_info.has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
     {
-        /// Ordinary views never evaluate column defaults over an insert block, so a default over a
-        /// virtual column is inert there and must not be rejected.
-        NameSet insert_time_default_columns;
-        if (check_defaults_over_virtual_columns)
-            insert_time_default_columns = default_expr_info.insert_time_default_columns;
-        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_, insert_time_default_columns);
+        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_);
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
@@ -780,13 +774,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            /// An ordinary view and an external-target (`TO`) materialized view never evaluate their own
-            /// column defaults over an insert block (a `TO` MV forwards inserts to the target using the
-            /// target metadata), so a default over a virtual column is inert there and must not be rejected.
-            const bool check_defaults_over_virtual_columns
-                = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
-            properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
         }
 
         if (create.columns_list->indices)
@@ -1995,16 +1983,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
-void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
+void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
-
-    /// Re-check inferred column types only for a fresh, persisted table: the pre-construction check
-    /// does not see inferred columns, and ATTACH/RESTORE, temporary tables and views/dictionaries are
-    /// not subject to this check on load.
-    if (mode <= LoadingStrictnessLevel::CREATE && !is_temporary && !storage.isView() && !storage.isDictionary())
-        checkAllTypesAreAllowedInTable(metadata_snapshot->getColumns().getAll());
-
     if (mode <= LoadingStrictnessLevel::CREATE && hasColumnsWithDynamicStructure(metadata_snapshot->getColumns()) && !storage.supportsColumnsWithDynamicStructure())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -2040,11 +2021,11 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
+void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context)
 try
 {
     validateVirtualColumns(storage, context);
-    checkForUnsupportedColumns(storage, mode, context, is_temporary);
+    checkForUnsupportedColumns(storage, mode, context);
 }
 catch (...)
 {
@@ -2086,7 +2067,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 properties.constraints,
                 mode,
                 is_restore_from_backup);
-            validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+            validateStorage(*res, mode, getContext());
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2286,7 +2267,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext(), create.isTemporary());
+    validateStorage(*res, mode, getContext());
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
@@ -2680,17 +2661,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             [&current_context](const StorageID & to_drop_id)
             {
                 if (auto to_drop = DatabaseCatalog::instance().tryGetTable(to_drop_id, current_context))
-                {
-                    /// The replaced table is dropped after the swap, under an internal temporary name that
-                    /// grants cannot cover, so check the drop privilege for its kind here, on its real name.
-                    AccessType drop_access = AccessType::DROP_TABLE;
-                    if (to_drop->isView())
-                        drop_access = AccessType::DROP_VIEW;
-                    else if (to_drop->isDictionary())
-                        drop_access = AccessType::DROP_DICTIONARY;
-                    current_context->checkAccess(drop_access, to_drop_id);
                     to_drop->checkTableSizeBelowDropLimit(current_context);
-                }
             });
         try
         {
@@ -2718,10 +2689,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             /// kind than the new one (e.g. a dictionary replaced by a view), so the drop must match its kind.
             if (auto replaced = DatabaseCatalog::instance().tryGetTable(StorageID{create.getDatabase(), create.getTable()}, current_context))
                 ast_drop->is_dictionary = replaced->isDictionary();
-            /// `pre_swap_check` already authorized this drop against the replaced table's real name.
-            /// The temporary name cannot be covered by grants, so skip the access check on it.
-            ast_drop->no_access_check = true;
-            /// `pre_swap_check` also gated the size; bypass to avoid double-consuming
+            /// `pre_swap_check` already gated this; bypass to avoid double-consuming
             /// the `force_drop_table` flag inside `Context::checkCanBeDropped`.
             auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             InterpreterDropQuery(ast_drop, drop_context).execute();
@@ -2784,7 +2752,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
             properties.constraints,
             mode,
             is_restore_from_backup);
-        validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+        validateStorage(*res, mode, getContext());
         return res;
     };
 
@@ -3127,7 +3095,7 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion to replicated is supported only for Atomic databases");
 
-    if (!create.storage || !create.storage->engine || !create.storage->engine->name.contains("MergeTree"))
+    if (!create.storage || !create.storage->engine || create.storage->engine->name.find("MergeTree") == std::string::npos)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion is supported only for MergeTree family engines");
 

@@ -8,7 +8,7 @@ keywords: ['データレイク', 'レイクハウス', 'カタログ', 'glue', '
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 [前のセクション](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly)では、ストレージパスを直接指定してオープンテーブルフォーマットをクエリしました。実際には、ほとんどの組織がテーブルメタデータを **データカタログ** で管理しています。これは、テーブルの場所、スキーマ、パーティションを追跡するための中央レジストリです。[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンを使って ClickHouse をカタログに接続すると、カタログ全体が ClickHouse データベースとして公開されます。カタログ内の各テーブルは自動的に表示され、完全な ClickHouse SQL でクエリできます。個々のテーブルパスを把握したり、テーブルごとに認証情報を管理したりする必要はありません。
 
@@ -32,10 +32,11 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) は、Databricks のレイクハウスデータに対する一元的なガバナンスを提供します。
 
-Databricks は、レイクハウス向けに複数のデータフォーマットをサポートしています。ClickHouse では、外部ストレージロケーションを使用する Unity Catalog の Delta テーブルおよび Iceberg テーブルをクエリできます。
+Databricks は、レイクハウス向けに複数のデータフォーマットをサポートしています。ClickHouse では、Unity Catalog のテーブルを Delta と Iceberg の両方の形式でクエリできます。
 
 <Note>
-  このインテグレーションは現在、AWS でのみサポートされています。Databricks のマネージドストレージ上のテーブルは、Unity Catalog がそれらのロケーションに対する認証情報の払い出しを提供していないため、サポートされていません。詳細については、[Unity Catalog リファレンス](/ja/guides/use-cases/data-warehousing/unity-catalog) を参照してください。
+  Unity Catalog とのインテグレーションは、マネージドテーブルと外部テーブルで動作します。
+  このインテグレーションは現在、AWS でのみサポートされています。
 </Note>
 
 <div id="configuring-unity-in-databricks">

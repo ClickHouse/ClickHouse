@@ -6,9 +6,9 @@
 30
 -- DistinctTransform: max_bytes_in_distinct also returns a partial non-empty result
 1	1
--- the final distinct over a globally sorted stream is a second DistinctSortedStreamTransform (after the pre-distinct one)
+-- DistinctSortedTransform is used for distinct over a globally sorted stream
 1
--- final sorted distinct (globally sorted stream): the chunk that crosses the limit is returned, not dropped
+-- DistinctSortedTransform (distinct over globally sorted stream): the chunk that crosses the limit is returned, not dropped
 30
 -- DistinctSortedStreamTransform (in-order pre-distinct): partial result on limit trip
 3

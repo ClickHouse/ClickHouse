@@ -7,7 +7,7 @@ keywords: ['postgres', 'clickhouse integration', 'cdc', 'replicação', 'clickpi
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
@@ -25,23 +25,27 @@ Para acessar esse recurso, clique em **integração com o ClickHouse** na barra 
 Clique em **Replicate data in ClickHouse** para começar a configurar seu ClickPipe.
 
 <Steps>
-  <Step title="Configure o serviço de replicação" id="configure-replication-service">
+  <Step>
+    ## Configure o serviço de replicação
+
     Preencha as configurações de replicação:
 
     * **Integration name**: Um nome para este ClickPipe
     * **serviço ClickHouse**: Selecione um serviço do ClickHouse Cloud existente ou crie um novo
     * **Postgres database**: O banco de dados de origem a partir do qual replicar
-    * **Replication method**: Escolha uma das:
+    * **Replication method**: Escolha uma das opções:
       * **Initial load + CDC**: Importe os dados existentes e mantenha as tabelas atualizadas com novas alterações (recomendado)
       * **Initial load only**: Snapshot único dos dados existentes, sem atualizações contínuas
       * **CDC only**: Ignore o snapshot inicial e capture apenas novas alterações daqui em diante
 
     <Image img="/images/managed-postgres/replication-service-step.webp" alt="Configuração do serviço de replicação mostrando nome da integração, serviço de destino e opções de método de replicação" size="md" border />
 
-    Click **Next** to proceed.
+    Clique em **Next** para continuar.
   </Step>
 
-  <Step title="Configure replication settings" id="replication-settings">
+  <Step>
+    ## Configure as opções de replicação
+
     Ajuste como os dados são replicados:
 
     * **Sync interval (seconds)**: Com que frequência as alterações são extraídas do Postgres (padrão: 60)
@@ -52,25 +56,29 @@ Clique em **Replicate data in ClickHouse** para começar a configurar seu ClickP
 
     <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="Etapa de configurações de replicação mostrando intervalo de sincronização, threads em paralelo, tamanho do batch de extração e opções de configuração de snapshot" size="md" border />
 
-    Click **Next** to proceed.
+    Clique em **Next** para continuar.
   </Step>
 
-  <Step title="Selecione as tabelas a serem replicadas" id="select-tables">
+  <Step>
+    ## Selecione as tabelas a serem replicadas
+
     Escolha um banco de dados de destino e selecione quais tabelas replicar:
 
     * **Destination database**: Selecione um banco de dados ClickHouse existente ou crie um novo
     * **Prefix default destination table names with schema name**: Adiciona o schema do Postgres como prefixo para evitar conflitos de nomenclatura
-    * **Preserve NULL values from source**: Mantém os valores NULL em vez de convertê-los em valores padrão do tipo. Esta configuração se aplica a todas as tabelas no pipe e não pode ser alterada após a criação do pipe.
+    * **Preserve NULL values from source**: Mantém os valores NULL em vez de convertê-los em valores padrão
     * **Remove deleted rows during merges**: Para tabelas [ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree), remove fisicamente as linhas excluídas durante os merges em segundo plano
 
     Expanda os schemas e selecione tabelas individuais para replicar. Você também pode personalizar os nomes das tabelas de destino e as configurações de coluna.
 
     <Image img="/images/managed-postgres/select-tables-step.webp" alt="Etapa de seleção de tabelas mostrando a seleção do banco de dados, as opções de replicação e o seletor de tabelas agrupado por schema" size="md" border />
 
-    Click **Replicate data to ClickHouse** to start the replication.
+    Clique em **Replicate data to ClickHouse** para iniciar a replicação.
   </Step>
 
-  <Step title="Monitore seu ClickPipe" id="monitor-clickpipe">
+  <Step>
+    ## Monitore seu ClickPipe
+
     Assim que o ClickPipe iniciar, ele aparecerá listado no mesmo menu. O snapshot inicial de todos os dados pode levar algum tempo, dependendo do tamanho das suas tabelas.
 
     <Image img="/images/managed-postgres/integration-running.webp" alt="Lista da integração com o ClickHouse mostrando um ClickPipe em execução com seu serviço de destino e status" size="md" border />

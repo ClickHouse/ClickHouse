@@ -1310,7 +1310,7 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
     }
 
     if (backup_log)
-        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
+        backup_log->add(BackupLogElement{info});
 
     infos[id] = std::move(extended_info);
 
@@ -1355,7 +1355,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     }
 
     if (backup_log)
-        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
+        backup_log->add(BackupLogElement{info});
 
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);

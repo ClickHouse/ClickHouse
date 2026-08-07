@@ -280,7 +280,7 @@ bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWrit
         data_part_storage.precommitTransaction();
 
     storage.renameTempPartAndReplace(new_part, *transaction_ptr, /*rename_in_transaction=*/ true);
-    new_part->getDataPartStorage().commitTransaction();
+
     /// We must reset the task here, similarly to MergeFromLogEntryTask::finalize.
     /// The task holds RAII guards for temporary part directories (TemporaryParts).
     /// If checkPartChecksumsAndCommit fails with a checksum mismatch, the execution

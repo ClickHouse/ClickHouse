@@ -62,18 +62,13 @@ static std::atomic<uintptr_t> saved_fault_address{0};
 static_assert(std::atomic<uintptr_t>::is_always_lock_free, "saved_fault_address must be lock-free for use in signal handlers");
 
 
-void call_default_signal_handler([[maybe_unused]] int sig)
+void call_default_signal_handler(int sig)
 {
-#if !defined(OS_HAS_SIGNAL_HANDLERS)
-    /// Nothing to restore, and nothing to raise it with.
-    return;
-#else
     if (SIG_ERR == signal(sig, SIG_DFL))
         throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler");
 
     if (0 != raise(sig))
         throw ErrnoException(ErrorCodes::CANNOT_SEND_SIGNAL, "Cannot send signal");
-#endif
 }
 
 
@@ -209,10 +204,12 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
         }
         catch (const std::exception & e)
         {
-            const auto trace = getStackTraceOfThrow(e);
-            terminate_current_exception_trace_size = std::min(trace.size(), FRAMEPOINTER_CAPACITY);
+            const auto * stack_trace_frames = e.get_stack_trace_frames();
+            const size_t stack_trace_size = e.get_stack_trace_size();
+            __msan_unpoison(stack_trace_frames, stack_trace_size * sizeof(stack_trace_frames[0]));
+            terminate_current_exception_trace_size = std::min(stack_trace_size, FRAMEPOINTER_CAPACITY);
             for (size_t i = 0; i < terminate_current_exception_trace_size; ++i)
-                terminate_current_exception_trace[i] = trace[i];
+                terminate_current_exception_trace[i] = stack_trace_frames[i];
         }
         catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort in terminate handler
     }
@@ -305,14 +302,11 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
 #endif
 
 void HandledSignals::addSignalHandler(
-    [[maybe_unused]] const std::vector<int> & signals,
-    [[maybe_unused]] signal_function handler,
-    [[maybe_unused]] bool register_signal,
-    [[maybe_unused]] const std::vector<int> & additional_masked_signals)
+    const std::vector<int> & signals,
+    signal_function handler,
+    bool register_signal,
+    const std::vector<int> & additional_masked_signals)
 {
-#if !defined(OS_HAS_SIGNAL_HANDLERS)
-    return;
-#else
     struct sigaction sa{};
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = handler;
@@ -343,14 +337,10 @@ void HandledSignals::addSignalHandler(
 
     if (register_signal)
         std::copy(signals.begin(), signals.end(), std::back_inserter(handled_signals));
-#endif
 }
 
-void blockSignals([[maybe_unused]] const std::vector<int> & signals)
+void blockSignals(const std::vector<int> & signals)
 {
-#if !defined(OS_HAS_SIGNAL_HANDLERS)
-    return;
-#else
     sigset_t sig_set;
 
 #if defined(OS_DARWIN)
@@ -368,7 +358,6 @@ void blockSignals([[maybe_unused]] const std::vector<int> & signals)
 
     if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         throw Poco::Exception("Cannot block signal.");
-#endif
 }
 
 
@@ -765,9 +754,6 @@ void HandledSignals::reset(bool close_pipe)
     handled_signals_were_reset.test_and_set();
 
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
-    /// Nothing was ever installed where there are no signals, so `handled_signals` is empty there
-    /// and this loop does nothing; it is compiled out to keep `signal` out of the WebAssembly link.
-#if defined(OS_HAS_SIGNAL_HANDLERS)
     for (int sig : handled_signals)
     {
         if (SIG_ERR == signal(sig, SIG_DFL))
@@ -782,7 +768,6 @@ void HandledSignals::reset(bool close_pipe)
             }
         }
     }
-#endif
 
     if (close_pipe)
         signal_pipe.close();

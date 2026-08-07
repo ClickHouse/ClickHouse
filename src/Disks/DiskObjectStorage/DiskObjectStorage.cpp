@@ -22,6 +22,7 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
 #include <Disks/DiskObjectStorage/Replication/BlobKillerThread.h>
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
+#include <Disks/FakeDiskTransaction.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -72,6 +73,8 @@ namespace
 
 DiskTransactionPtr DiskObjectStorage::createTransaction()
 {
+    if (use_fake_transaction)
+        return std::make_shared<FakeDiskTransaction>(*this);
     return createObjectStorageTransaction();
 }
 
@@ -97,7 +100,8 @@ DiskObjectStorage::DiskObjectStorage(
     ObjectStorageRouterPtr object_storages_,
     DiskObjectStorageConstPtr wrapped_disk_,
     const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix)
+    const String & config_prefix,
+    bool use_fake_transaction_)
     : IDisk(name_, config, config_prefix)
     , wrapped_disk(std::move(wrapped_disk_))
     , log(getLogger("DiskObjectStorage(" + name + ")"))
@@ -114,6 +118,7 @@ DiskObjectStorage::DiskObjectStorage(
     , read_resource_name_from_config(config.getString(config_prefix + ".read_resource", ""))
     , write_resource_name_from_config(config.getString(config_prefix + ".write_resource", ""))
     , enable_distributed_cache(config.getBool(config_prefix + ".enable_distributed_cache", true))
+    , use_fake_transaction(use_fake_transaction_)
     , wait_blob_removal(config.getBool(config_prefix + ".wait_for_blob_removal", Context::getGlobalContextInstance()->getServerSettings()[ServerSetting::disk_transaction_wait_for_blob_removal]))
     , remove_shared_recursive_file_limit(config.getUInt64(config_prefix + ".remove_shared_recursive_file_limit", DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT))
 {
@@ -754,6 +759,7 @@ bool DiskObjectStorage::supportsHardLinks() const
 {
     return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
 }
+
 
 String DiskObjectStorage::getReadResourceName() const
 {

@@ -19,8 +19,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
 
-#include <algorithm>
-#include <limits>
 #include <unordered_set>
 
 
@@ -31,24 +29,6 @@ namespace ErrorCodes
 {
     extern const int CANNOT_SCHEDULE_TASK;
     extern const int ABORTED;
-}
-
-namespace
-{
-
-/// Delays are stored and waited on in microseconds, but `condition_variable::wait_for` widens its
-/// argument to nanoseconds internally, so only microsecond counts below this bound are usable
-/// (~292 years). Deadlines are bounded by the same value even though `Poco::Timestamp` could hold
-/// ~1000x more, so that a stored deadline always stays waitable.
-constexpr Poco::Timestamp::TimeDiff max_delay_microseconds = std::numeric_limits<Poco::Timestamp::TimeDiff>::max() / 1000;
-
-Poco::Timestamp::TimeDiff delayToMicroseconds(size_t milliseconds)
-{
-    if (milliseconds > static_cast<size_t>(max_delay_microseconds / 1000))
-        return max_delay_microseconds;
-    return static_cast<Poco::Timestamp::TimeDiff>(milliseconds) * 1000;
-}
-
 }
 
 ///
@@ -193,23 +173,24 @@ bool BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
             auto background_schedule_pool_log = context->getBackgroundSchedulePoolLog();
             if (background_schedule_pool_log && milliseconds >= background_schedule_pool_log->getDurationMillisecondsThreshold())
             {
-                background_schedule_pool_log->add([&](BackgroundSchedulePoolLogElement & element)
-                {
-                    const auto time_now = std::chrono::system_clock::now();
-                    element.event_time = timeInSeconds(time_now);
-                    element.event_time_microseconds = timeInMicroseconds(time_now);
+                BackgroundSchedulePoolLogElement elem;
 
-                    element.query_id = task_query_id_for_log;
-                    element.database_name = storage.database_name;
-                    element.table_name = storage.table_name;
-                    element.table_uuid = storage.uuid;
-                    element.log_name = log_name;
+                const auto time_now = std::chrono::system_clock::now();
+                elem.event_time = timeInSeconds(time_now);
+                elem.event_time_microseconds = timeInMicroseconds(time_now);
 
-                    element.duration_ms = milliseconds;
+                elem.query_id = task_query_id_for_log;
+                elem.database_name = storage.database_name;
+                elem.table_name = storage.table_name;
+                elem.table_uuid = storage.uuid;
+                elem.log_name = log_name;
 
-                    element.error = error_code;
-                    element.exception = exception_message;
-                });
+                elem.duration_ms = milliseconds;
+
+                elem.error = error_code;
+                elem.exception = exception_message;
+
+                background_schedule_pool_log->add(std::move(elem));
             }
         }
     }
@@ -558,7 +539,7 @@ void BackgroundSchedulePool::scheduleDelayedTask(TaskInfo & task, size_t ms, std
         if (task.delayed)
             delayed_tasks.erase(task.iterator);
 
-        task.iterator = delayed_tasks.emplace(current_time + delayToMicroseconds(ms), task.shared_from_this());
+        task.iterator = delayed_tasks.emplace(current_time + (ms * 1000), task.shared_from_this());
         task.delayed = true;
     }
 
@@ -689,10 +670,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
                 if (min_time > current_time)
                 {
-                    /// Deadlines are wall-clock, so the remaining time can exceed the bound even for a
-                    /// bounded delay. An early wake is harmless: both times are recomputed below.
-                    const auto wait_us = std::min(min_time - current_time, max_delay_microseconds);
-                    delayed_tasks_cond_var.wait_for(lock.getUnderlyingLock(), std::chrono::microseconds(wait_us));
+                    delayed_tasks_cond_var.wait_for(lock.getUnderlyingLock(), std::chrono::microseconds(min_time - current_time));
                     if (shutdown)
                         break;
                     continue;

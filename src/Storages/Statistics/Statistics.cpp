@@ -223,9 +223,9 @@ UInt64 IStatistics::estimateCardinality() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cardinality estimation is not implemented for this type of statistics");
 }
 
-std::optional<Float64> IStatistics::estimateEqual(const Field & /*val*/) const
+Float64 IStatistics::estimateEqual(const Field & /*val*/) const
 {
-    return std::nullopt;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Equality estimation is not implemented for this type of statistics");
 }
 
 std::optional<Float64> IStatistics::estimateLess(const Field & /*val*/) const
@@ -284,10 +284,6 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
     /// Comparisons with NaN are always false, so `x = NaN` has zero selectivity.
     if (val.isNaN())
         return 0;
-
-    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
-        if (auto estimate = it->second->estimateEqual(val))
-            return estimate;
 
     const IStatistics * uniq_stats = findUniqStats(stats);
     if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
@@ -358,15 +354,6 @@ bool ColumnStatistics::hasNullCount() const
     return false;
 }
 
-bool ColumnStatistics::hasMinMax() const
-{
-    if (stats.contains(StatisticsType::MinMax))
-        return true;
-    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
-        return assert_cast<const StatisticsBasic &>(*it->second).hasNumericMinMax();
-    return false;
-}
-
 UInt64 ColumnStatistics::getNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
@@ -386,17 +373,6 @@ UInt64 ColumnStatistics::getNonNullRowCount() const
         return null_count <= rows ? rows - null_count : 0;
     }
     return rows;
-}
-
-UInt64 ColumnStatistics::estimateDefaults() const
-{
-    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
-    {
-        const auto & basic = assert_cast<const StatisticsBasic &>(*it->second);
-        if (basic.hasDefaultCount())
-            return basic.getDefaultCount();
-    }
-    return 0;
 }
 
 Float64 ColumnStatistics::estimateIsNull() const
@@ -440,8 +416,6 @@ Estimate ColumnStatistics::getEstimate() const
         }
         if (basic_stats.hasNullCount())
             info.estimated_null_count = basic_stats.getNullCount();
-        if (basic_stats.hasDefaultCount())
-            info.estimated_default_count = basic_stats.getDefaultCount();
     }
     else if (auto minmax_it = stats.find(StatisticsType::MinMax); minmax_it != stats.end())
     {
