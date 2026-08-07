@@ -340,22 +340,31 @@ def test_inner_engines():
     check()
 
 
-# Checks that the `samples_index_granularity` and `tags_index_granularity` settings
-# set `index_granularity` of the samples and tags inner tables.
+# Checks that the `samples_index_granularity`, `samples_index_granularity_bytes` and
+# `tags_index_granularity` settings set `index_granularity` / `index_granularity_bytes`
+# of the samples and tags inner tables, and that the samples inner table prewarms the mark cache.
 def test_index_granularity():
     # The default value of `samples_index_granularity` is 32768,
+    # the default value of `samples_index_granularity_bytes` is 262144,
     # the default value of `tags_index_granularity` is 8192.
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
     check()
 
-    assert "index_granularity = 32768" in node.query(
+    samples_engine_full = node.query(
         "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
         "AND name = (SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1)"
     )
-    assert "index_granularity = 8192" in node.query(
+    assert "index_granularity = 32768" in samples_engine_full
+    assert "index_granularity_bytes = 262144" in samples_engine_full
+    assert "prewarm_mark_cache = 1" in samples_engine_full
+
+    tags_engine_full = node.query(
         "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
         "AND name = (SELECT _table FROM timeSeriesTags(prometheus) LIMIT 1)"
     )
+    assert "index_granularity = 8192" in tags_engine_full
+    assert "index_granularity_bytes" not in tags_engine_full
+    assert "prewarm_mark_cache" not in tags_engine_full
 
     drop_prometheus_table()
 
@@ -365,14 +374,35 @@ def test_index_granularity():
     )
     check()
 
-    assert "index_granularity = 16384" in node.query(
+    samples_engine_full = node.query(
         "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
         "AND name = (SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1)"
     )
+    assert "index_granularity = 16384" in samples_engine_full
+    # An explicitly chosen row-based granularity governs the granule size:
+    # the size-based default is not applied.
+    assert "index_granularity_bytes" not in samples_engine_full
     assert "index_granularity = 4096" in node.query(
         "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
         "AND name = (SELECT _table FROM timeSeriesTags(prometheus) LIMIT 1)"
     )
+
+    drop_prometheus_table()
+
+    # An explicitly set `samples_index_granularity_bytes` is applied together with
+    # the default row-based cap.
+    node.query(
+        "CREATE TABLE prometheus ENGINE=TimeSeries "
+        "SETTINGS samples_index_granularity_bytes = 131072"
+    )
+    check()
+
+    samples_engine_full = node.query(
+        "SELECT engine_full FROM system.tables WHERE database = currentDatabase() "
+        "AND name = (SELECT _table FROM timeSeriesSamples(prometheus) LIMIT 1)"
+    )
+    assert "index_granularity = 32768" in samples_engine_full
+    assert "index_granularity_bytes = 131072" in samples_engine_full
 
 
 # Checks that a TimeSeries table can be used to access pre-existing external tables

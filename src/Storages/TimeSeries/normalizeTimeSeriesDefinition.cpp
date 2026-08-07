@@ -45,6 +45,7 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
     extern const TimeSeriesSettingsUInt64 samples_index_granularity;
+    extern const TimeSeriesSettingsUInt64 samples_index_granularity_bytes;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsUInt64 tags_index_granularity;
     extern const TimeSeriesSettingsMap tags_to_columns;
@@ -800,8 +801,43 @@ namespace
             const auto & index_granularity = settings[(kind == ViewTarget::Samples)
                 ? TimeSeriesSetting::samples_index_granularity
                 : TimeSeriesSetting::tags_index_granularity];
+            bool row_granularity_customized = index_granularity.isChanged() || hasInnerEngineSetting(storage, "index_granularity");
             if (index_granularity.isChanged() || !hasInnerEngineSetting(storage, "index_granularity"))
                 setInnerEngineSetting(storage, "index_granularity", Field(index_granularity.value));
+
+            /// By default the granules of the samples table are limited in size by `samples_index_granularity_bytes`
+            /// (256 KiB), which makes their row count adapt to the width of a sample row (~6-8K rows for the default
+            /// samples schema) instead of always hitting the 32768-row cap. Timestamps of adjacent samples of one
+            /// series compress ~20x, so with the MergeTree default (10 MiB) the row cap always wins, and a selective
+            /// PromQL query (a short time window over many series) has to decompress and decode a whole 32768-row
+            /// granule (~1.3 MB of column data) per matching series to use a few of its rows. 256 KiB granules cut
+            /// that read amplification and the required IO ~4x, and also speed up full-table scans: with 32768-row
+            /// granules the compressed blocks of wide columns outgrow the decompress-to-destination fast path and L2
+            /// locality. The size-based default is applied only if the user did not customize the granularity in any
+            /// way: an explicitly chosen row-based granularity must keep governing the granule size (the MergeTree
+            /// default `index_granularity_bytes` = 10 MiB never interferes with it in practice).
+            if (kind == ViewTarget::Samples)
+            {
+                const auto & index_granularity_bytes = settings[TimeSeriesSetting::samples_index_granularity_bytes];
+                if (index_granularity_bytes.isChanged()
+                    || (!hasInnerEngineSetting(storage, "index_granularity_bytes") && !row_granularity_customized))
+                {
+                    setInnerEngineSetting(storage, "index_granularity_bytes", Field(index_granularity_bytes.value));
+                }
+            }
+        }
+
+        /// Every PromQL selector reads the inner samples table, and on a large part the first read after server
+        /// startup pays a fixed latency for loading the whole mark file of each read column (~125 ms per 1.9M-mark
+        /// part measured, CPU-bound). That fixed floor dominates the latency of the cheap instant queries which
+        /// Prometheus rule engines evaluate every 30-60 s, so keep the samples marks warm from startup and across
+        /// inserts, merges and fetches. Marks are small relative to the mark cache (< 3 bytes per mark in cache),
+        /// and prewarming respects `mark_cache_prewarm_ratio`, so this cannot evict a busier workload's marks
+        /// wholesale. A value specified in the engine declaration wins.
+        if (kind == ViewTarget::Samples && engine_name.ends_with("MergeTree")
+            && !hasInnerEngineSetting(storage, "prewarm_mark_cache"))
+        {
+            setInnerEngineSetting(storage, "prewarm_mark_cache", Field(static_cast<UInt64>(1)));
         }
 
         /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags`/`all_tags` Maps) outside

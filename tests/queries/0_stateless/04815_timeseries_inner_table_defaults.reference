@@ -1,0 +1,19 @@
+-- default TimeSeries table: samples get size-based granularity and mark-cache prewarm
+SETTINGS index_granularity = 32768, index_granularity_bytes = 262144, prewarm_mark_cache = 1
+-- the tags and metrics tables are unaffected
+SETTINGS index_granularity = 8192, allow_dimensions_outside_sorting_key = 1
+SETTINGS index_granularity = 8192
+-- inserted data is readable
+2	1.25
+-- explicit samples_index_granularity: the size-based default is not applied
+SETTINGS index_granularity = 16384, prewarm_mark_cache = 1
+-- explicit index_granularity in the samples engine declaration: the size-based default is not applied
+SETTINGS index_granularity = 4096, prewarm_mark_cache = 1
+-- explicit samples_index_granularity_bytes is applied together with the row-based cap
+SETTINGS index_granularity = 32768, index_granularity_bytes = 131072, prewarm_mark_cache = 1
+-- explicit samples_index_granularity_bytes overrides the engine declaration
+SETTINGS index_granularity_bytes = 131072, index_granularity = 32768, prewarm_mark_cache = 1
+-- both explicit: both are applied
+SETTINGS index_granularity = 16384, index_granularity_bytes = 131072, prewarm_mark_cache = 1
+-- explicit prewarm_mark_cache = 0 in the samples engine declaration wins
+SETTINGS prewarm_mark_cache = 0, index_granularity = 32768, index_granularity_bytes = 262144

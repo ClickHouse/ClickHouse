@@ -860,7 +860,7 @@ SAMPLES INNER COLUMNS
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
     `value` Float64 CODEC(Gorilla, ZSTD(1))
 )
-SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768, index_granularity_bytes = 262144, prewarm_mark_cache = 1
 TAGS INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID) DEFAULT tuple(sipHash64(metric_name), reinterpretAsUUID(sipHash128(metric_name, all_tags))),
@@ -897,7 +897,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
-SETTINGS index_granularity = 32768
+SETTINGS index_granularity = 32768, index_granularity_bytes = 262144, prewarm_mark_cache = 1
 ```
 
 ```sql
@@ -1075,7 +1075,19 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
+| `samples_index_granularity_bytes` | UInt64 | 262144 | Sets `index_granularity_bytes` of the inner [samples](#samples-table) table, which makes the size of granules adapt to the width of a sample row. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration; otherwise the default is applied only if the granularity of the samples table is not customized in any other way (neither `samples_index_granularity` nor `index_granularity` in the engine declaration is set explicitly). Set to 0 to disable the size-based limit. Ignored for an external samples table and a non-MergeTree engine |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
+
+The default size-based granularity keeps granules of the samples table small (a few thousand rows instead of the
+32768-row cap): timestamps of adjacent samples of one series compress ~20x, so row-count-based granules grow so
+large on disk that a query with a short time window has to decompress and decode a whole 32768-row granule per
+matching series to use a few of its rows.
+
+The inner [samples](#samples-table) table is also created with the MergeTree setting `prewarm_mark_cache = 1`
+unless the engine declaration for the samples table specifies that setting explicitly. This removes the fixed
+latency of loading marks on the first queries after server startup.
+
+These defaults apply at `CREATE` time: tables created before the defaults changed keep the settings they were created with.
 
 # Functions {#functions}
 
