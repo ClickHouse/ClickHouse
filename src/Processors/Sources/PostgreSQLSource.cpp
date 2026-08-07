@@ -119,7 +119,11 @@ void PostgreSQLSource<T>::onStart()
     {
         try
         {
-            tx->conn().cancel_query();
+            {
+                /// That cancel may still be inside cancel_query() on this same connection.
+                std::lock_guard lock(cancel_mutex);
+                tx->conn().cancel_query();
+            }
             stream->close();
         }
         catch (...)
@@ -246,6 +250,7 @@ void PostgreSQLSource<T>::onCancel() noexcept
         {
             try
             {
+                std::lock_guard lock(cancel_mutex);
                 tx_snapshot->conn().cancel_query();
             }
             catch (...)

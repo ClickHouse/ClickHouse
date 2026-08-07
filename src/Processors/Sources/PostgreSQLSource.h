@@ -61,6 +61,11 @@ private:
     /// cancelling thread while onStart() is still in flight. Must not be held across pqxx calls.
     std::mutex tx_mutex;
 
+    /// libpq forbids two threads from manipulating one connection at a time, and onStart() and
+    /// onCancel() can both cancel on the same one. Only ever held across cancel_query(), and only
+    /// ever taken with tx_mutex released.
+    std::mutex cancel_mutex;
+
     postgres::ConnectionHolderPtr connection_holder;
 
     UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> array_info;
