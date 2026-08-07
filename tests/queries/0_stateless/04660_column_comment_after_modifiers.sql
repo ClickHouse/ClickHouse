@@ -63,6 +63,11 @@ ALTER TABLE t_column_comment_order MODIFY COLUMN g COMMENT 'g newest comment' ST
 SHOW CREATE TABLE t_column_comment_order FORMAT TSVRaw;
 ALTER TABLE t_column_comment_order MODIFY COLUMN g COLLATE utf8_bin COMMENT 'g new comment'; -- { clientError SYNTAX_ERROR }
 
+-- A trailing `COLLATE` or `PRIMARY KEY` after `COMMENT` in a type-less `MODIFY COLUMN` parses,
+-- but is rejected the same way as the typed spellings above (not treated as a comment-only alter).
+ALTER TABLE t_column_comment_order MODIFY COLUMN g COMMENT 'g new comment' COLLATE utf8_bin; -- { serverError NOT_IMPLEMENTED }
+ALTER TABLE t_column_comment_order MODIFY COLUMN g COMMENT 'g new comment' PRIMARY KEY; -- { serverError BAD_ARGUMENTS }
+
 SELECT name, comment FROM system.columns WHERE database = currentDatabase() AND table = 't_column_comment_order' ORDER BY name;
 
 DROP TABLE t_column_comment_order;

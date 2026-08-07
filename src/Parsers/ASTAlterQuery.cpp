@@ -1178,7 +1178,9 @@ namespace
 /// resolved `AlterCommand::isCommentAlter` (Storages/AlterCommands.cpp) so DDL
 /// routing and the storage fast path agree. Placement (FIRST/AFTER), per-column
 /// SETTINGS and STATISTICS are excluded: they alter the replicated /columns and
-/// must take the full replicated path.
+/// must take the full replicated path. COLLATE and PRIMARY KEY are excluded too:
+/// they parse but are rejected by `AlterCommand::parse`, and the rejection must not
+/// happen after the query has already been routed as a comment-only alter.
 bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
 {
     if (command.type != ASTAlterCommand::MODIFY_COLUMN)
@@ -1195,6 +1197,8 @@ bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
         && col_decl->getTTL() == nullptr
         && col_decl->getSettings() == nullptr
         && col_decl->getStatisticsDesc() == nullptr
+        && col_decl->getCollation() == nullptr
+        && !col_decl->primary_key_specifier
         && command.settings_changes == nullptr
         && command.settings_resets == nullptr
         && command.column == nullptr
