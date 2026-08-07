@@ -2574,7 +2574,10 @@ void registerStorageURL(StorageFactory & factory)
 
             /// The frozen format settings make an invalid definition-supplied Parquet `field_id`
             /// map fail every later `INSERT` — validate a fresh definition up front instead.
+            /// When the definition relies on schema or format inference, the header-dependent
+            /// checks rerun after the storage has resolved them.
             validateParquetFieldIdSettingsInDefinition(args, config.format, format_settings);
+            const bool validate_field_ids_after_inference = args.columns.empty() || config.format == "auto";
 
             const bool use_object_storage
                 = config.http_method.empty()
@@ -2582,7 +2585,7 @@ void registerStorageURL(StorageFactory & factory)
 
             if (!use_object_storage)
             {
-                return std::make_shared<StorageURL>(
+                auto storage = std::make_shared<StorageURL>(
                     config.url,
                     args.table_id,
                     config.format,
@@ -2596,6 +2599,15 @@ void registerStorageURL(StorageFactory & factory)
                     config.http_method,
                     partition_by,
                     /* distributed_processing */ false);
+
+                if (validate_field_ids_after_inference)
+                {
+                    const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+                    validateParquetFieldIdSettingsAfterSchemaInference(
+                        args, storage->getFormatName(), metadata->getColumns().getAllPhysical(), format_settings);
+                }
+
+                return storage;
             }
 
             if (args.mode <= LoadingStrictnessLevel::CREATE)
@@ -2633,7 +2645,7 @@ void registerStorageURL(StorageFactory & factory)
             Settings settings_copy = args.getLocalContext()->getSettingsCopy();
             context_copy->setSettings(settings_copy);
 
-            return std::make_shared<StorageObjectStorage>(
+            auto storage = std::make_shared<StorageObjectStorage>(
                 configuration,
                 configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
                 context_copy,
@@ -2651,6 +2663,15 @@ void registerStorageURL(StorageFactory & factory)
                 /* order_by */ nullptr,
                 /* is_table_function */ false,
                 /* lazy_init */ false);
+
+            if (validate_field_ids_after_inference)
+            {
+                const auto metadata = storage->getInMemoryMetadataPtr(context, false);
+                validateParquetFieldIdSettingsAfterSchemaInference(
+                    args, storage->getFormatName(), metadata->getColumns().getAllPhysical(), format_settings);
+            }
+
+            return storage;
         },
         {
             .supports_settings = true,

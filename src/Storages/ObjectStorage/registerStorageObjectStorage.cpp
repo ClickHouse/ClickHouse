@@ -122,8 +122,10 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
 
     /// A plain (non-Iceberg) table freezes these settings the same way, so an invalid
     /// definition-supplied `field_id` map would be accepted here and then fail every `INSERT` —
-    /// validate a fresh definition up front instead.
+    /// validate a fresh definition up front instead. When the definition relies on schema or
+    /// format inference, the header-dependent checks rerun after the storage has resolved them.
     validateParquetFieldIdSettingsInDefinition(args, configuration->format, *format_settings);
+    const bool validate_field_ids_after_inference = args.columns.empty() || configuration->format == "auto";
 
     ASTPtr partition_by;
     if (args.storage_def->partition_by)
@@ -160,7 +162,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         && (args.table_id.table_name.ends_with("_s3") || args.table_id.table_name.ends_with("_s3queue")))
         configuration->force_anonymous_load_fallback = true;
 
-    return std::make_shared<StorageObjectStorage>(
+    auto storage = std::make_shared<StorageObjectStorage>(
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
@@ -178,6 +180,15 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         /* distributed_processing */ false,
         partition_by,
         order_by);
+
+    if (validate_field_ids_after_inference)
+    {
+        const auto metadata = storage->getInMemoryMetadataPtr(args.getLocalContext(), false);
+        validateParquetFieldIdSettingsAfterSchemaInference(
+            args, storage->getFormatName(), metadata->getColumns().getAllPhysical(), *format_settings);
+    }
+
+    return storage;
 }
 
 #endif

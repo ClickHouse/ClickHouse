@@ -17,10 +17,16 @@
 namespace DB
 {
 
-void validateParquetFieldIdSettingsInDefinition(
-    const StorageFactory::Arguments & args, const String & format_name, const FormatSettings & format_settings)
-{
 #if USE_PARQUET
+namespace
+{
+
+void validateParquetFieldIdSettingsInDefinitionImpl(
+    const StorageFactory::Arguments & args,
+    const String & format_name,
+    const NamesAndTypesList & physical_columns,
+    const FormatSettings & format_settings)
+{
     if (!args.storage_def || !args.storage_def->settings)
         return;
 
@@ -45,19 +51,45 @@ void validateParquetFieldIdSettingsInDefinition(
     if (!fresh_user_definition)
         return;
 
-    /// The settings only affect Parquet output. A format that is auto-detected later is left to the
-    /// write-time checks: it is not known here.
+    /// The settings only affect Parquet output. A format that is still `auto` here is validated by
+    /// the second phase once the engine has resolved it.
     if (!boost::iequals(format_name, "Parquet"))
         return;
 
     validateParquetColumnFieldIds(
-        args.columns.getAllPhysical(),
+        physical_columns,
         format_settings.parquet.column_field_ids,
         format_settings.parquet.auto_assign_field_ids,
         format_settings.parquet.write_geometadata);
+}
+
+}
+#endif
+
+void validateParquetFieldIdSettingsInDefinition(
+    const StorageFactory::Arguments & args, const String & format_name, const FormatSettings & format_settings)
+{
+#if USE_PARQUET
+    validateParquetFieldIdSettingsInDefinitionImpl(args, format_name, args.columns.getAllPhysical(), format_settings);
 #else
     (void)args;
     (void)format_name;
+    (void)format_settings;
+#endif
+}
+
+void validateParquetFieldIdSettingsAfterSchemaInference(
+    const StorageFactory::Arguments & args,
+    const String & resolved_format_name,
+    const NamesAndTypesList & resolved_columns,
+    const FormatSettings & format_settings)
+{
+#if USE_PARQUET
+    validateParquetFieldIdSettingsInDefinitionImpl(args, resolved_format_name, resolved_columns, format_settings);
+#else
+    (void)args;
+    (void)resolved_format_name;
+    (void)resolved_columns;
     (void)format_settings;
 #endif
 }

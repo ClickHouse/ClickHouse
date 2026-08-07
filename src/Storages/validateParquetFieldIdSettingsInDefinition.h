@@ -18,11 +18,31 @@ namespace DB
   *
   * When the definition declares its columns, the header-dependent checks (unknown columns, full
   * coverage of the schema, ambiguous dotted paths) run as well; a definition relying on schema
-  * inference gets only the header-independent checks.
+  * inference gets only the header-independent checks at this point — the engine then reruns the
+  * full validation through `validateParquetFieldIdSettingsAfterSchemaInference` once the schema
+  * and format are resolved.
   *
   * Throws `BAD_ARGUMENTS` on an invalid definition. No-op when Parquet support is compiled out.
   */
 void validateParquetFieldIdSettingsInDefinition(
     const StorageFactory::Arguments & args, const String & format_name, const FormatSettings & format_settings);
+
+/** Second phase of the validation above, run after the engine has resolved its schema and format.
+  * A definition without a column list (or with `format = 'auto'`) passes the first phase with only
+  * the header-independent checks, because the engine infers the real Parquet header later during
+  * `CREATE` (`StorageFile::setStorageMetadata`, the `IStorageURLBase` constructor,
+  * `StorageObjectStorage::resolveSchemaAndFormat`). Once that header is known — it is the one the
+  * engine freezes and every write will use — the header-dependent checks (unknown columns, full
+  * coverage, ambiguous dotted paths) must run against it, or the definition would be accepted and
+  * only fail on the first `INSERT`. The same definition-supplied / fresh-definition / Parquet
+  * gates apply, so replayed definitions and ambient values are exempt exactly as in the first
+  * phase. Call it only when the first phase ran without the final schema, i.e. when the
+  * definition's column list was empty or its format was still `auto`.
+  */
+void validateParquetFieldIdSettingsAfterSchemaInference(
+    const StorageFactory::Arguments & args,
+    const String & resolved_format_name,
+    const NamesAndTypesList & resolved_columns,
+    const FormatSettings & format_settings);
 
 }
