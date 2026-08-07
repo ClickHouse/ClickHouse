@@ -28,6 +28,7 @@
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/WriteBufferFromOStream.h>
 
 #include <Formats/FormatFactory.h>
@@ -137,6 +138,36 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "headers.header.value",
 };
 
+namespace
+{
+    /// Interpret the `body(...)` subquery. Executes it as a subquery (as `interpretSubquery` does),
+    /// and clears the session `limit`/`offset` settings, which apply only to top-level queries.
+    /// With top-level semantics the payload would depend on which send interprets the query: the
+    /// old planner folds these settings into the stored AST in place (so the schema-inference
+    /// request, the actual read, and any retries each mutate the AST again and the body drifts),
+    /// and the analyzer folds them into the query tree only when they are still set in the
+    /// interpreting context (so schema inference would truncate the body while the read would not).
+    QueryPipelineBuilder buildBodyQueryPipeline(const ASTPtr & body_query, const ContextPtr & context)
+    {
+        auto body_context = Context::createCopy(context);
+        body_context->setSetting("limit", UInt64(0));
+        body_context->setSetting("offset", UInt64(0));
+        auto subquery_options = SelectQueryOptions{}.subquery();
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            /// The analyzer accepts the `ASTSubquery` wrapper directly (it unwraps it internally).
+            return InterpreterSelectQueryAnalyzer(body_query, body_context, subquery_options).buildQueryPipeline();
+        }
+
+        /// The old planner's `InterpreterSelectWithUnionQuery` expects an `ASTSelectWithUnionQuery`,
+        /// not the `ASTSubquery` wrapper that is stored for the body. Unwrap it here.
+        ASTPtr select_query = body_query;
+        if (const auto * subquery = body_query->as<ASTSubquery>())
+            select_query = subquery->children.at(0);
+        return InterpreterSelectWithUnionQuery(select_query, body_context, subquery_options).buildQueryPipeline();
+    }
+}
+
 std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const ContextPtr & context) const
 {
     if (empty())
@@ -150,34 +181,22 @@ std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const Co
         };
     }
 
-    return [body_query = query, body_format = format.empty() ? "JSONLines" : format, context](std::ostream & os)
+    const String body_format = format.empty() ? "JSONLines" : format;
+
+    /// Preflight the full output-format construction before returning the callback. The callback
+    /// itself runs only after `ReadWriteBufferFromHTTP` has already sent the request to the remote
+    /// server, and some formats pass the name-level checks done while parsing `body(...)` but throw
+    /// in their constructor (for example, `AvroConfluent` without `output_format_avro_confluent_subject`).
+    /// Without the preflight such a locally-doomed query would still produce a remote `POST`.
     {
-        QueryPipelineBuilder builder;
-        /// Execute the body query as a subquery (as `interpretSubquery` does), and clear the session
-        /// `limit`/`offset` settings, which apply only to top-level queries. With top-level semantics
-        /// the payload would depend on which send interprets the query: the old planner folds these
-        /// settings into the stored AST in place (so the schema-inference request, the actual read,
-        /// and any retries each mutate the AST again and the body drifts), and the analyzer folds
-        /// them into the query tree only when they are still set in the interpreting context (so
-        /// schema inference would truncate the body while the read would not).
-        auto body_context = Context::createCopy(context);
-        body_context->setSetting("limit", UInt64(0));
-        body_context->setSetting("offset", UInt64(0));
-        auto subquery_options = SelectQueryOptions{}.subquery();
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        {
-            /// The analyzer accepts the `ASTSubquery` wrapper directly (it unwraps it internally).
-            builder = InterpreterSelectQueryAnalyzer(body_query, body_context, subquery_options).buildQueryPipeline();
-        }
-        else
-        {
-            /// The old planner's `InterpreterSelectWithUnionQuery` expects an `ASTSelectWithUnionQuery`,
-            /// not the `ASTSubquery` wrapper that is stored for the body. Unwrap it here.
-            ASTPtr select_query = body_query;
-            if (const auto * subquery = body_query->as<ASTSubquery>())
-                select_query = subquery->children.at(0);
-            builder = InterpreterSelectWithUnionQuery(select_query, body_context, subquery_options).buildQueryPipeline();
-        }
+        NullWriteBuffer null_buf;
+        auto builder = buildBodyQueryPipeline(query, context);
+        auto preflight_format = context->getOutputFormat(body_format, null_buf, materializeBlock(builder.getHeader()));
+    }
+
+    return [body_query = query, body_format, context](std::ostream & os)
+    {
+        QueryPipelineBuilder builder = buildBodyQueryPipeline(body_query, context);
 
         WriteBufferFromOStream out_buf(os);
         auto out_format = context->getOutputFormat(body_format, out_buf, materializeBlock(builder.getHeader()));

@@ -283,6 +283,23 @@ def test_invalid_body_format_sends_no_request(started_cluster):
         assert get_request_count() == 0
 
 
+def test_body_format_constructor_failure_sends_no_request(started_cluster):
+    # `AvroConfluent` passes the name-level checks done while parsing `body(...)` (it is a valid
+    # output format), but its constructor throws when the required registry/subject settings are
+    # missing. The output format is preflighted before any HTTP request is created, so a
+    # constructor-time failure is also a purely local error. Assert that the query fails and that
+    # the endpoint received zero requests.
+    for analyzer in (1, 0):
+        reset_request_count()
+        error = server.query_and_get_error(
+            "SELECT * FROM url('http://localhost:8002/', JSONEachRow, 'v UInt8', "
+            "body((SELECT 1), 'AvroConfluent')) "
+            f"SETTINGS enable_analyzer = {analyzer}"
+        )
+        assert "BAD_ARGUMENTS" in error
+        assert get_request_count() == 0
+
+
 def test_create_as_with_body_rejected_before_any_request(started_cluster):
     # `CREATE TABLE ... AS url(..., body(...))` is an insert-style use of the table function and is
     # rejected, because inserting into `url` sends the inserted rows as the request body. With the
