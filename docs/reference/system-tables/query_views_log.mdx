@@ -44,7 +44,7 @@ You can use the [log_queries_probability](/reference/settings/session-settings/l
 - `read_bytes` ([UInt64](/reference/data-types/int-uint)) — Number of read bytes.
 - `written_rows` ([UInt64](/reference/data-types/int-uint)) — Number of written rows.
 - `written_bytes` ([UInt64](/reference/data-types/int-uint)) — Number of written bytes.
-- `peak_memory_usage` ([Int64](/reference/data-types/int-uint)) — The maximum difference between the amount of allocated and freed memory in context of this view. Memory allocated by asynchronous background work scheduled from the view (for example, prefetched reads) is accounted at the thread or global level rather than to the view, so it is not included.
+- `peak_memory_usage` ([Int64](/reference/data-types/int-uint)) — The maximum difference between the amount of allocated and freed memory in context of this view.
 - `ProfileEvents` ([Map(LowCardinality(String), UInt64)](/reference/data-types/map)) — ProfileEvents that measure different metrics. The description of them could be found in the table system.events.
 - `status` ([Enum8('QueryStart' = 1, 'QueryFinish' = 2, 'ExceptionBeforeStart' = 3, 'ExceptionWhileProcessing' = 4)](/reference/data-types/enum)) — Status of the view. Values: 'QueryStart' = 1 — Successful start the view execution. Should not appear, 'QueryFinish' = 2 — Successful end of the view execution, 'ExceptionBeforeStart' = 3 — Exception before the start of the view execution., 'ExceptionWhileProcessing' = 4 — Exception during the view execution.
 - `exception_code` ([Int32](/reference/data-types/int-uint)) — Code of an exception.
