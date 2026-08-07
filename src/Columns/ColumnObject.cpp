@@ -2319,18 +2319,15 @@ void ColumnObject::SortedPathsIterator::serializeCurrentValueBinary(
     chassert(current_path_type == PathType::TYPED);
     const IColumn & col = *column_object.typed_paths.find(*typed_paths_it)->second;
     auto ser_it = typed_path_serializations.find(String(*typed_paths_it));
-    if (ser_it != typed_path_serializations.end())
-    {
-        /// Write the value bare — no type tag — so the blob can be deserialized
-        /// directly with the same serialization (§2/§3 of mergedJSONPatch design).
-        ser_it->second->serializeBinary(col, row, buf, getFormatSettings());
-        return;
-    }
+    if (ser_it == typed_path_serializations.end())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "No serialization found for typed path '{}' in serializeCurrentValueBinary",
+            *typed_paths_it);
 
-    /// No declared serialization available: fall back to Dynamic binary via Field.
-    Field field;
-    col.get(row, field);
-    DataTypeDynamic().getDefaultSerialization()->serializeBinary(field, buf, getFormatSettings());
+    /// Write the value bare — no type tag — so the blob can be deserialized
+    /// directly with the same serialization.
+    ser_it->second->serializeBinary(col, row, buf, getFormatSettings());
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
