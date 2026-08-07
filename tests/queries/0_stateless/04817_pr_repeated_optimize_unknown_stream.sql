@@ -11,6 +11,7 @@
 DROP TABLE IF EXISTS t_pr_ro;
 DROP TABLE IF EXISTS t2_pr_ro;
 DROP VIEW IF EXISTS v_pr_ro;
+DROP VIEW IF EXISTS v_ordered_pr_ro;
 
 CREATE TABLE t_pr_ro (timestamp DateTime, value UInt32)
 ENGINE = MergeTree
@@ -23,6 +24,8 @@ PARTITION BY toYYYYMMDD(timestamp)
 ORDER BY timestamp;
 
 CREATE VIEW v_pr_ro AS SELECT * FROM t_pr_ro;
+
+CREATE VIEW v_ordered_pr_ro AS SELECT * FROM t_pr_ro ORDER BY timestamp LIMIT 50000;
 
 INSERT INTO t_pr_ro
 SELECT toDateTime('2026-06-01 00:00:00') + number, number FROM numbers(100000);
@@ -79,6 +82,13 @@ SELECT 'merge ordered';
 SELECT value FROM merge(currentDatabase(), '^t_pr_ro$') ORDER BY timestamp LIMIT 3
 SETTINGS optimize_read_in_order = 1;
 
+-- Witness: the sort arrives from inside the view, so it sits within the child plan rather than above
+-- `ReadFromMerge`. Ordering is then decided by the union branch of read-in-order, not by
+-- `ReadFromMerge::requestReadingInOrder`, so this pins the decline on that second entry point.
+SELECT 'merge ordered view';
+SELECT sum(value) FROM merge(currentDatabase(), '^v_ordered_pr_ro$')
+SETTINGS optimize_read_in_order = 1;
+
 -- Control: the same ordered read with read-in-order off, the configuration that already worked.
 SELECT 'merge ordered no read in order';
 SELECT value FROM merge(currentDatabase(), '^t_pr_ro$') ORDER BY timestamp LIMIT 3
@@ -95,7 +105,7 @@ FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM merge(currentDatabase(), '^t_pr
 
 -- Witness: the merged child read must STILL be distributed after the guard. A result alone cannot
 -- show that, since parallel replicas is an optimization and a skipped one returns the same number,
--- so assert the plan shape for the merge() child directly. The guard must fire only on the second
+-- so assert the plan shape for the `merge` child directly. The guard must fire only on the second
 -- rewrite of this plan, never on the first.
 SELECT 'merge plan shape';
 SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0,
@@ -147,6 +157,7 @@ SELECT 'merge without parallel replicas';
 SELECT sum(value) FROM merge(currentDatabase(), '^t_pr_ro$')
 SETTINGS enable_parallel_replicas = 0;
 
+DROP VIEW v_ordered_pr_ro;
 DROP VIEW v_pr_ro;
 DROP TABLE t2_pr_ro;
 DROP TABLE t_pr_ro;
