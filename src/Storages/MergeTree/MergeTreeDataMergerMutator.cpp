@@ -507,14 +507,9 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     };
     context->setInteractiveCancelCallback(is_cancelled);
 
-    /// The same predicate also has to reach the IO layer, which does not observe the callback above:
-    /// `PipelineExecutor::cancel` is cooperative and cannot preempt a processor already inside `work()`,
-    /// so a read stuck in the S3 retry loop sleeps through the cancellation. Those loops poll
-    /// `CurrentThread::get().isQueryCanceled()` and `CurrentThread::checkIfNotCancelled()` instead, which
-    /// for a background task answer constant `false`: the predicates installed by the ThreadGroup
-    /// constructor resolve through the process-list element, and a merge/mutate context has none.
-    /// Called before the group's first attach - both mutation paths reach here from `prepare()`, while
-    /// their `ThreadGroupSwitcher` is still guarded by a not-yet-created merge-list entry.
+    /// The IO layer does not observe the callback above; it polls the thread's cancellation predicates,
+    /// which are constant `false` for a merge/mutate group because they resolve through a process-list
+    /// element it does not have. Installed here because this runs before the group's first attach.
     (*merge_entry)->thread_group->setCancellationPredicates(
         is_cancelled,
         [is_cancelled]
