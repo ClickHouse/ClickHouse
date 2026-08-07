@@ -23,6 +23,14 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
+/// Which `Representation` subclass occupies the union inside `AggregateFunctionTimeseriesSamples`.
+/// At namespace scope (rather than a member enum) only because clang-tidy's `bugprone-tagged-union-member-count` miscounts the enumerators of a member enum of a class template (always one tag, whatever the enumerator list; checked against clang-tidy 22.1.8) and would misfire on the tagged union below. With the enum out here the check counts correctly and keeps guarding the union against gaining an untagged member.
+enum class TimeseriesSamplesStorageType : UInt8
+{
+    Raw,
+    Packed,
+};
+
 /// Per-bucket storage of timeseries samples sorted by timestamp with duplicates keeping the larger value under the IEEE-754 total order (see `Representation::maxValue`).
 /// Two representations, each a `Representation` subclass with its own `add`, `serialize` and `deserialize`:
 ///  - `RawRepresentation`: a sorted-append vector, the bucket's form while it receives its in-order stream;
@@ -227,12 +235,8 @@ private:
     /// After this many unpack-repairs the bucket stays raw for good (see the class comment).
     static constexpr UInt8 MAX_REPAIR_UNPACKS = 3;
 
-    /// Which subclass of `Representation` occupies the union.
-    enum class StorageType : UInt8
-    {
-        Raw,
-        Packed,
-    };
+    /// Which subclass of `Representation` occupies the union (see `TimeseriesSamplesStorageType` on why the enum lives outside the class).
+    using StorageType = TimeseriesSamplesStorageType;
 
     /// What the two representations share: the sample semantics (the total-order dedup rule), the bit-pattern helpers and the wire reading.
     /// Stateless by design - the subclasses hold the actual storage.
