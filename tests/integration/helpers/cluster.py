@@ -454,8 +454,28 @@ def rabbitmq_debuginfo(rabbitmq_id, cookie):
     p.communicate()
 
 
-async def check_nats_is_available(cluster):
-    nc = await nats_connect_ssl(cluster, max_reconnect_attempts=1)
+async def check_nats_is_available(cluster, connect_timeout=10):
+    # `nats.connect` reports a TLS or an authentication failure through its error callback
+    # and then keeps retrying, so an unbounded await hangs until the pytest timeout instead
+    # of telling us what went wrong. Bound the attempt and log what the client saw.
+    client_errors = []
+
+    async def collect_error(error):
+        client_errors.append(error)
+
+    try:
+        nc = await asyncio.wait_for(
+            nats_connect_ssl(cluster, max_reconnect_attempts=1, error_cb=collect_error),
+            connect_timeout,
+        )
+    except asyncio.TimeoutError:
+        logging.warning(
+            "Cannot connect to NATS in %s seconds, client errors: %s",
+            connect_timeout,
+            client_errors,
+        )
+        return False
+
     available = nc.is_connected
     await nc.close()
     return available
@@ -2887,6 +2907,7 @@ class ClickHouseCluster:
     def wait_mysql8_to_start(self, timeout=180):
         self.mysql8_ip = self.get_instance_ip("mysql80")
         start = time.time()
+        errors = []
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
@@ -2899,10 +2920,11 @@ class ClickHouseCluster:
                 logging.debug("Mysql 8 Started")
                 return
             except Exception as ex:
-                logging.debug("Can't connect to MySQL 8 " + str(ex))
+                errors += [str(ex)]
                 time.sleep(0.5)
 
         run_and_check(["docker", "ps", "--all"])
+        logging.error("Can't connect to MySQL 8:{}".format(errors))
         raise Exception("Cannot wait MySQL 8 container")
 
     def wait_mysql_cluster_to_start(self, timeout=180):
@@ -3121,6 +3143,7 @@ class ClickHouseCluster:
                         self.base_rabbitmq_cmd + ["logs"], stdout=f
                     )
                 rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
+                break
             except Exception as ex:
                 logging.debug("Unable to get logs from docker: %s:", ex)
                 time.sleep(0.5)
