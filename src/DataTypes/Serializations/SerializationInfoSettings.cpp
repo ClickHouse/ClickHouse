@@ -28,11 +28,13 @@ SerializationInfoSettings::SerializationInfoSettings(
 {
     /// New type specialized serialization version is valid only when using MergeTreeSerializationInfoVersion::WITH_TYPES.
     /// For older versions, it is automatically defaulted to preserve compatibility.
+    /// This includes `propagate_types_serialization_versions_to_nested_types`, which older versions cannot persist.
     if (version < MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
         string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
         nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
         map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
+        propagate_types_serialization_versions_to_nested_types = false;
     }
 }
 

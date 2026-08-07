@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Common/CurrentThread.h>
 
 #include <memory>
 #include <string>
@@ -31,12 +32,7 @@ class FunctionGeohashesInBox final : public IFunction
 {
 public:
     static constexpr auto name = "geohashesInBox";
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionGeohashesInBox>(context); }
-
-    explicit FunctionGeohashesInBox(ContextPtr context)
-        : process_list_element(context ? context->getProcessListElement() : nullptr)
-    {
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeohashesInBox>(); }
 
     String getName() const override { return name; }
 
@@ -78,7 +74,8 @@ public:
         const IColumn * lat_max_column,
         const IColumn * precision_column,
         ColumnPtr & result,
-        size_t input_rows_count) const
+        size_t input_rows_count,
+        const QueryStatusPtr & process_list_element) const
     {
         static constexpr size_t max_array_size = 10'000'000;
         /// The span between two checkpoints is the work a cancelled query still has to finish, so it
@@ -154,7 +151,7 @@ public:
             if (items_since_check >= items_between_cancellation_checks)
             {
                 items_since_check = 0;
-                checkQueryTimeLimit();
+                checkQueryTimeLimit(process_list_element);
             }
 
             res_strings_offsets.reserve(res_strings_offsets.size() + prepared_args.items_count);
@@ -193,24 +190,28 @@ public:
         const IColumn * precision = arguments[4].column.get();
         ColumnPtr res;
 
+        /// Resolved from the executing thread rather than captured: this instance can be stored in table
+        /// metadata and then run by any later query.
+        QueryStatusPtr process_list_element;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            process_list_element = query_context->getProcessListElementSafe();
+
         // Dispatch on the declared argument type, not the runtime column class: a constant
         // coordinate stays wrapped in ColumnConst when the call mixes const and non-const
         // arguments, so checkColumn<ColumnVector<...>> on the raw column would misclassify it.
         if (WhichDataType(arguments[0].type).isFloat32())
-            execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
+            execute<Float32, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count, process_list_element);
         else
-            execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count);
+            execute<Float64, UInt8>(lon_min, lat_min, lon_max, lat_max, precision, res, input_rows_count, process_list_element);
 
         return res;
     }
 
 private:
-    QueryStatusPtr process_list_element;
-
     /// `checkTimeLimit` throws for `KILL QUERY` and the 'throw' overflow mode; for the 'break' mode it
     /// returns false instead. A half-filled `Array(String)` result is a wrong value, not a smaller one,
     /// so we throw on the false return too; the pipeline absorbs it into a clean cancellation.
-    void checkQueryTimeLimit() const
+    static void checkQueryTimeLimit(const QueryStatusPtr & process_list_element)
     {
         if (process_list_element && !process_list_element->checkTimeLimit())
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
