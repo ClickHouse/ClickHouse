@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: long, no-fasttest
 # Tag no-fasttest: FileLog requires inotify.
-# Tag long: three arms each wait 10s for the watcher to deliver its directory events.
+# Tag long: three arms each wait 2s for the watchers to arm and 10s for them to deliver events.
 #
 # The directory watch loop must not occupy a BackgroundSchedulePool slot: the pool caps
 # concurrent tasks per type at background_schedule_pool_size * ...max_parallel_tasks_per_type_ratio,
@@ -45,6 +45,10 @@ run_arm()
         done
         # Assert the pinned server settings are in effect for this arm.
         echo "SELECT 'pinned', getServerSetting('background_schedule_pool_size'), getServerSetting('background_schedule_pool_max_parallel_tasks_per_type_ratio');"
+        # CREATE TABLE returns once the watch thread is created, not once inotify_add_watch has
+        # run, so let every watcher arm before the files appear. A starved table's watch is never
+        # armed at all and nothing re-scans, so this cannot mask the failure under test.
+        echo "SELECT sleepEachRow(1) FROM numbers(2) FORMAT Null;"
         for i in $(seq 1 "${tables}"); do
             name=$(printf 't%02d' "${i}")
             echo "INSERT INTO FUNCTION file('dirs/${name}/new.tsv', 'TSV', 'v String') VALUES ('new_${name}');"
