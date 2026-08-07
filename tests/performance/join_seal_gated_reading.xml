@@ -45,11 +45,19 @@
         SETTINGS enable_join_seal_gated_reading = {gated}
     </query>
 
-    <!-- The read-time granule pruning by the same runtime filter, for comparison: it reads
-         through all the tasks and skips granules inside the readers instead of never creating
-         the tasks (and starts reading before the filter is complete). -->
+    <!-- The read-time granule pruning by the same runtime filter, for comparison: it skips
+         granules inside the readers instead of never creating the tasks. On local storage the
+         two are expected to be on par (the probe side cannot run far ahead of the build anyway:
+         the join does not consume it, so port backpressure stalls it after about a chunk per
+         stream); the structural difference of gating is that no read or prefetch is issued for
+         pruned ranges at all. -->
     <query>
         SELECT sum(v1), sum(v2), sum(v3) FROM t_seal_probe_perf AS p JOIN t_seal_build_sparse AS b ON p.k = b.k
+        SETTINGS enable_join_seal_gated_reading = 0, enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1
+    </query>
+
+    <query>
+        SELECT sum(v1), sum(v2), sum(v3) FROM t_seal_probe_perf AS p JOIN t_seal_build_band AS b ON p.k = b.k
         SETTINGS enable_join_seal_gated_reading = 0, enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1
     </query>
 
