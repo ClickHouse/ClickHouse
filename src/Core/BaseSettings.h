@@ -7,8 +7,6 @@
 #include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <string_view>
 #include <type_traits>
@@ -35,9 +33,6 @@ struct BaseSettingsHelpers
 {
     /// Error handling
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
-    [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name, std::string_view type);
-    [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name);
-    [[noreturn]] static void throwValuelessSettingHasValue(std::string_view name);
     static void warningSettingNotFound(std::string_view name);
     static void flushWarnings();
 
@@ -62,9 +57,8 @@ struct BaseSettingsHelpers
 
 private:
     /// For logging the summary of unknown settings instead of logging each one separately.
-    /// Defined out of line: a definition in the header gives every shared object its own copy.
-    static thread_local Strings unknown_settings;
-    static thread_local bool unknown_settings_warning_logged;
+    inline static thread_local Strings unknown_settings;
+    inline static thread_local bool unknown_settings_warning_logged = false;
 };
 
 /// Maps a Traits type to its owning settings class (e.g. `SettingsTraits` -> `Settings`,
@@ -154,7 +148,7 @@ class BaseSettings : public TTraits::Data
         using is_transparent = void;
         size_t operator()(std::string_view txt) const { return std::hash<std::string_view>{}(txt); }
     };
-    using CustomSettingMap = UnorderedMapWithMemoryTracking<String, SettingFieldCustom, StringHash, std::equal_to<>>;
+    using CustomSettingMap = std::unordered_map<String, SettingFieldCustom, StringHash, std::equal_to<>>;
 
 public:
     BaseSettings() = default;
@@ -214,14 +208,6 @@ public:
     /// Apply multiple setting changes
     void applyChanges(const SettingsChanges & changes);
 
-    /// Reject `SET name` with no value unless `name` is a Bool setting. Every path that applies or
-    /// validates a `SettingChange` has to call this, not only `applyChange`: `Context` applies
-    /// query-level changes through `Context::setSetting`, which takes a name and a value and cannot
-    /// see how the change was written, and its constraint check converts the value first, which
-    /// would report the type error as `BAD_GET` from the wrong layer.
-    void checkShorthandChange(const SettingChange & change) const;
-    void checkShorthandChanges(const SettingsChanges & changes) const;
-
     /// Resets all the settings to their default values
     void resetToDefault();
 
@@ -239,9 +225,6 @@ public:
 
     /// Get the type name of a setting (e.g., "UInt64", "String")
     std::string_view getTypeName(std::string_view name) const;
-
-    /// Get the default value of a setting as a string
-    String getDefaultValueString(std::string_view name) const;
 
     /// Get the description of a setting
     std::string_view getDescription(std::string_view name) const;
@@ -443,38 +426,8 @@ SettingsChanges BaseSettings<TTraits>::changes() const
 }
 
 template <typename TTraits>
-void BaseSettings<TTraits>::checkShorthandChange(const SettingChange & change) const
-{
-    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool
-    /// setting. This is where the settings schema is known, so this is where it is checked.
-    if (!change.shorthand)
-        return;
-
-    if (std::string_view type = getTypeName(change.name); type != "Bool")
-        BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name, type);
-
-    /// The type alone is not enough. The parser writes Bool `true` for the valueless form, but a
-    /// `SettingChange` can also arrive from the AST JSON dialect, which is free to pair the flag
-    /// with any other value - and for a `Bool` setting the check above lets that through. Such a
-    /// change would execute with the carried value while `ASTSetQuery::formatImpl` renders the bare
-    /// name, so `system.query_log` and every other formatter would under-report what ran. This is
-    /// the first point after deserialization where an exception is logged with the AST masked
-    /// rather than with the raw JSON text, so this is where it is rejected.
-    if (change.value != Field(true))
-        BaseSettingsHelpers::throwValuelessSettingHasValue(change.name);
-}
-
-template <typename TTraits>
-void BaseSettings<TTraits>::checkShorthandChanges(const SettingsChanges & changes) const
-{
-    for (const auto & change : changes)
-        checkShorthandChange(change);
-}
-
-template <typename TTraits>
 void BaseSettings<TTraits>::applyChange(const SettingChange & change)
 {
-    checkShorthandChange(change);
     set(change.name, change.value);
 }
 
@@ -538,18 +491,6 @@ std::string_view BaseSettings<TTraits>::getTypeName(std::string_view name) const
         return accessor.getTypeName(index);
     if (tryGetCustomSetting(name))
         return "Custom";
-    BaseSettingsHelpers::throwSettingNotFound(name);
-}
-
-template <typename TTraits>
-String BaseSettings<TTraits>::getDefaultValueString(std::string_view name) const
-{
-    name = TTraits::resolveName(name);
-    const auto & accessor = Traits::Accessor::instance();
-    if (size_t index = accessor.find(name); index != static_cast<size_t>(-1))
-        return accessor.getDefaultValueString(index);
-    if (tryGetCustomSetting(name))
-        return {};
     BaseSettingsHelpers::throwSettingNotFound(name);
 }
 
@@ -1111,7 +1052,7 @@ bool BaseSettings<TTraits>::SettingFieldRef::isHotReload() const
   * - Setting aliases
   */
 
-using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_view>;
+using AliasMap = std::unordered_map<std::string_view, std::string_view>;
 
 // ---------------------------------------------------------------------------
 // Helper macros for constexpr typed-array layout generation.
@@ -1285,9 +1226,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             /** Find setting index by name. Returns -1 if not found. */ \
             size_t find(std::string_view name) const; \
             \
-            /** Find setting index by its byte offset within Data (as stored in SettingIndex). Returns -1 if not found. */ \
-            size_t findByOffset(size_t data_offset) const; \
-            \
             /* Metadata accessors (by index) */ \
             const String & getName(size_t index) const { return field_infos[index].name; } \
             std::string_view getPath(size_t index) const { return field_infos[index].path; } \
@@ -1393,9 +1331,8 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
                 size_t data_offset;                             /* Byte offset within Data struct */ \
             }; \
             \
-            VectorWithMemoryTracking<FieldInfo> field_infos;                        /* Metadata for all settings */ \
-            UnorderedMapWithMemoryTracking<std::string_view, size_t> name_to_index_map; /* Fast name -> index lookup */ \
-            UnorderedMapWithMemoryTracking<size_t, size_t> offset_to_index_map; /* Fast data offset -> index lookup */ \
+            std::vector<FieldInfo> field_infos;                                     /* Metadata for all settings */ \
+            std::unordered_map<std::string_view, size_t> name_to_index_map;         /* Fast name -> index lookup */ \
             /* Canonical default-constructed instance. Used to reset individual settings to their */ \
             /* declared defaults via a typed copy (see resetValueToDefault) and to read the default */ \
             /* string representation (see getDefaultValueString). Initialized once via the tag */ \
@@ -1412,12 +1349,12 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
                    LIST_OF_SETTINGS_WITH_PATH_MACRO(SETTING_SKIP_TRAIT, DECLARE_SETTINGS_WITH_ALIAS_TRAITS_)}; \
         \
         /** Reverse map: setting name -> list of aliases */ \
-        using SettingsToAliasesMap = UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>>; \
+        using SettingsToAliasesMap = std::unordered_map<std::string_view, std::vector<std::string_view>>; \
         static inline const SettingsToAliasesMap & settingsToAliases() \
         { \
             static SettingsToAliasesMap setting_to_aliases_mapping = [] \
             { \
-                UnorderedMapWithMemoryTracking<std::string_view, VectorWithMemoryTracking<std::string_view>> map; \
+                std::unordered_map<std::string_view, std::vector<std::string_view>> map; \
                 for (const auto & [alias, destination] : aliases_to_settings) \
                     map[destination].push_back(alias); \
                 return map; \
@@ -1546,12 +1483,11 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
             LIST_OF_SETTINGS_WITHOUT_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_, IMPLEMENT_SETTINGS_TRAITS_) \
             LIST_OF_SETTINGS_WITH_PATH_MACRO(IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_, IMPLEMENT_SETTINGS_TRAITS_WITH_PATH_) \
             _Pragma("clang diagnostic pop") \
-            /* Build name -> index and data offset -> index maps for fast lookups */ \
+            /* Build name -> index map for fast lookups */ \
             for (size_t i = 0, size = res.field_infos.size(); i < size; ++i) \
             { \
                 const auto & info = res.field_infos[i]; \
                 res.name_to_index_map.emplace(info.name, i); \
-                res.offset_to_index_map.emplace(info.data_offset, i); \
             } \
             return res; \
         }(); \
@@ -1564,14 +1500,6 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
     { \
         auto it = name_to_index_map.find(name); \
         if (it != name_to_index_map.end()) \
-            return it->second; \
-        return static_cast<size_t>(-1); \
-    } \
-    \
-    size_t SETTINGS_TRAITS_NAME::Accessor::findByOffset(size_t data_offset) const \
-    { \
-        auto it = offset_to_index_map.find(data_offset); \
-        if (it != offset_to_index_map.end()) \
             return it->second; \
         return static_cast<size_t>(-1); \
     } \

@@ -1,21 +1,13 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
-#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Access/ContextAccess.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
-
-namespace ProfileEvents
-{
-    extern const Event ReadPoolRangeRefinerDroppedMarks;
-    extern const Event ReadPoolRangeRefinerDroppedCuts;
-}
 
 namespace DB
 {
@@ -135,7 +127,7 @@ static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & co
 
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.
 static Names
-getHeaviestSetOfColumnsAmongPrewhereSteps(const IMergeTreeDataPart & part, const NamesAndTypesLists & prewhere_steps_columns, const Settings & settings)
+getHeaviestSetOfColumnsAmongPrewhereSteps(const IMergeTreeDataPart & part, const std::vector<NamesAndTypesList> & prewhere_steps_columns, const Settings & settings)
 {
     const auto it = std::ranges::max_element(
         prewhere_steps_columns,
@@ -148,7 +140,7 @@ static std::pair<size_t, size_t> // (min_marks_per_task, avg_mark_bytes)
 calculateMinMarksPerTask(
     const RangesInDataPart & part,
     const Names & columns_to_read,
-    const NamesAndTypesLists & prewhere_steps_columns,
+    const std::vector<NamesAndTypesList> & prewhere_steps_columns,
     const MergeTreeReadPoolBase::PoolSettings & pool_settings,
     const Settings & settings)
 {
@@ -203,36 +195,29 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 {
     MergeTreeReadTaskInfo read_task_info;
 
-    const auto & data_part = part_with_ranges.data_part;
+    read_task_info.data_part = part_with_ranges.data_part;
     read_task_info.parent_part = part_with_ranges.parent_part;
 
-    if (data_part->isProjectionPart() && !read_task_info.parent_part)
+    if (read_task_info.data_part->isProjectionPart() && !read_task_info.parent_part)
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Did not find parent part {} for projection part {}",
-            data_part->getParentPartName(),
-            data_part->getDataPartStorage().getFullPath());
+            read_task_info.data_part->getParentPartName(),
+            read_task_info.data_part->getDataPartStorage().getFullPath());
     }
 
     read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
     read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
-    read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(data_part, mutations_snapshot, getContext()
-#if CLICKHOUSE_CLOUD
-        , getContext()->getAccess()->getEnabledMaskingPolicies()
-#endif
-    );
+    read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(read_task_info.data_part, mutations_snapshot, getContext());
     read_task_info.read_hints = part_with_ranges.read_hints;
 
     auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns();
 
-    /// The single part handle stored on the task: an owned part wrapped in the reader abstraction.
-    auto data_part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(data_part, read_task_info.alter_conversions);
-    read_task_info.data_part_info = data_part_info;
-    const auto & part_info = *data_part_info;
-    bool has_lightweight_delete = data_part->hasLightweightDelete() || read_task_info.alter_conversions->hasLightweightDelete();
+    LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
+    bool has_lightweight_delete = read_task_info.data_part->hasLightweightDelete() || read_task_info.alter_conversions->hasLightweightDelete();
 
     if (reader_settings.apply_deleted_mask && has_lightweight_delete)
     {
@@ -295,12 +280,12 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         Block sample_block_from_part;
         for (const auto & column_name : all_column_names)
         {
-            if (auto column_in_part = data_part->tryGetColumn(column_name))
+            if (auto column_in_part = read_task_info.data_part->tryGetColumn(column_name))
                 sample_block_from_part.insert(ColumnWithTypeAndName(column_in_part->type->createColumn(), column_in_part->type, column_in_part->name));
         }
 
         read_task_info.shared_size_predictor = std::make_unique<MergeTreeBlockSizePredictor>(
-            data_part,
+            read_task_info.data_part,
             Names(all_column_names.begin(), all_column_names.end()),
             sample_block_from_part,
             settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
@@ -332,15 +317,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
     ranges_in_patch_parts.optimize();
     patch_join_cache->init(ranges_in_patch_parts);
-}
-
-RangesInDataPartsDescription MergeTreeReadPoolBase::buildAnnouncementDescriptions() const
-{
-    auto descriptions = parts_ranges.getDescriptions();
-    chassert(descriptions.size() == per_part_infos.size());
-    for (size_t i = 0; i < descriptions.size(); ++i)
-        descriptions[i].min_marks_per_task = per_part_infos[i]->min_marks_per_task;
-    return descriptions;
 }
 
 std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const
@@ -390,24 +366,23 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
 {
     auto get_part_name = [](const auto & task_info) -> String
     {
-        const auto & data_part_info = task_info.data_part_info;
+        const auto & data_part = task_info.data_part;
 
-        if (data_part_info->isProjectionPart())
+        if (data_part->isProjectionPart())
         {
-            auto parent_part_name = data_part_info->getParentPartName();
+            auto parent_part_name = data_part->getParentPartName();
 
-            /// Projections are coordinator-only, so the concrete part is always present here.
-            auto parent_part = data_part_info->getDataPart()->storage.getPartIfExists(
+            auto parent_part = data_part->storage.getPartIfExists(
                 parent_part_name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
 
             if (!parent_part)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Did not find parent part {} for projection part {}",
-                            parent_part_name, data_part_info->getDataPartStorage()->getFullPath());
+                            parent_part_name, data_part->getDataPartStorage().getFullPath());
 
             return parent_part_name;
         }
 
-        return data_part_info->getPartName();
+        return data_part->name;
     };
 
     auto extras = getExtras();
@@ -437,8 +412,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MergeTreeReadTask * previous_task,
     RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
-    /// Patches are coordinator-only; the concrete part is present whenever patch_parts is non-empty.
-    auto patches_ranges = ranges_in_patch_parts.getRanges(read_info->data_part_info->getDataPart(), read_info->patch_parts, ranges);
+    auto patches_ranges = ranges_in_patch_parts.getRanges(read_info->data_part, read_info->patch_parts, ranges);
     return createTask(std::move(read_info), std::move(ranges), std::move(patches_ranges), previous_task, updater);
 }
 
@@ -453,29 +427,6 @@ MergeTreeReadTask::Extras MergeTreeReadPoolBase::getExtras() const
         .storage_snapshot = storage_snapshot,
         .profile_callback = profile_callback,
     };
-}
-
-MarkRanges MergeTreeReadPoolBase::refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const
-{
-    if (!ranges_refiner || ranges.empty())
-        return ranges;
-
-    size_t marks_before = ranges.getNumberOfMarks();
-    auto refined = ranges_refiner->refine(info, std::move(ranges));
-    size_t marks_after = refined.getNumberOfMarks();
-
-    if (marks_after > marks_before)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Ranges refiner returned {} marks for a cut of {} marks of part {}, refinement may only drop marks",
-            marks_after, marks_before, info.data_part_info->getPartName());
-
-    if (marks_after < marks_before)
-        ProfileEvents::increment(ProfileEvents::ReadPoolRangeRefinerDroppedMarks, marks_before - marks_after);
-
-    if (marks_after == 0)
-        ProfileEvents::increment(ProfileEvents::ReadPoolRangeRefinerDroppedCuts);
-
-    return refined;
 }
 
 }

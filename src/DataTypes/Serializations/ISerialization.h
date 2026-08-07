@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/defines.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <Core/Types.h>
@@ -8,14 +7,12 @@
 #include <base/demangle.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 
 #include <boost/noncopyable.hpp>
 #include <map>
 #include <unordered_map>
-#include <unordered_set>
 #include <functional>
 #include <memory>
 #include <set>
@@ -140,18 +137,6 @@ public:
         virtual ~DeserializeBinaryBulkState() = default;
 
         virtual std::shared_ptr<DeserializeBinaryBulkState> clone() const { return std::make_shared<DeserializeBinaryBulkState>(); }
-
-        /// Enumerates the columns owned by this state.
-        /// Used by ColumnsOwnershipValidator in debug and sanitizer builds.
-        virtual void forEachColumn(const std::function<void(const ColumnPtr &)> &) const {}
-
-        /// Enumerates the nested deserialize states held by this state. Composite serializations
-        /// (Variant, Dynamic, Tuple, Map, Object, Sparse, ...) keep the states of their nested
-        /// serializations as members, and such a nested state is not necessarily registered in any
-        /// SubstreamsDeserializeStatesCache (e.g. SerializationLowCardinality never registers its
-        /// state there), so the columns it owns are reachable only through this enumeration.
-        /// Used by ColumnsOwnershipValidator in debug and sanitizer builds.
-        virtual void forEachNestedState(const std::function<void(const std::shared_ptr<DeserializeBinaryBulkState> &)> &) const {}
     };
 
     using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
@@ -278,9 +263,6 @@ public:
             MapBucketsInfo,
             MapBucketIndexes,
 
-            QuantizedCodes,
-            ProductQuantizationCodebook,
-
             Regular,
         };
 
@@ -325,10 +307,6 @@ public:
     struct ISubstreamsCacheElement
     {
         virtual ~ISubstreamsCacheElement() = default;
-
-        /// Enumerates the columns owned by this cache element.
-        /// Used by ColumnsOwnershipValidator in debug and sanitizer builds.
-        virtual void forEachColumn(const std::function<void(const ColumnPtr &)> &) const {}
     };
 
     using SubstreamsCache = std::unordered_map<String, std::unique_ptr<ISubstreamsCacheElement>>;
@@ -487,9 +465,6 @@ public:
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
-        /// True when an ancestor parallel prefix-deserialization level already made the callbacks above
-        /// thread safe; a nested level then reuses them instead of wrapping again (avoids a second mutex).
-        bool prefix_deserialization_callbacks_are_thread_safe = false;
 
         /// If set to true, all prefixes and suffixes should be read from separate specialized substreams.
         /// For example prefix for discriminators in Variant column should be read from a separate
@@ -730,11 +705,6 @@ public:
     static bool isLowCardinalityDictionarySubcolumn(const SubstreamPath & path);
     static bool isMetadataStream(const SubstreamPath & path);
 
-    /// Returns true if the stream holds a single value for the whole part, which every granule reads
-    /// (the product quantization codebook). Such a value is written once, after the data of all granules,
-    /// so the marks do not delimit it and it has to be read as a whole file.
-    static bool isSingleValuePerPartStream(const SubstreamPath & path);
-
     /// Returns true if stream with specified path corresponds to Variant subcolumn.
     static bool isVariantSubcolumn(const SubstreamPath & path);
 
@@ -766,11 +736,6 @@ public:
     /// Throws LOGICAL_ERROR if the hash has not been set.
     UInt128 getHash() const;
 
-    /// Identity of a custom serialization (`IDataType::setCustomization`), which changes a column's
-    /// streams while being invisible to `IDataType::equals`. The class is enough while the serialization
-    /// follows from the type; override when it is configured elsewhere.
-    virtual String getCustomSerializationIdentity() const { return typeid(*this).name(); }
-
 protected:
     std::optional<UInt128> cached_hash;
 
@@ -789,55 +754,8 @@ protected:
     [[noreturn]] void throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
 };
 
-/// Sanity checker for COW reference counting of columns on the deserialization read path.
-/// Only active in debug and sanitizer builds; in release builds all methods are no-ops.
-///
-/// It enumerates the column references that provably exist: references held by substreams cache
-/// elements and by deserialize states, and references from the result columns and their subcolumn
-/// trees. Each enumerated reference is a live `ColumnPtr`, so a column that was enumerated N times
-/// must have a reference count of at least N. A smaller reference count means that the reference
-/// counting was broken somewhere: some holder obtained the column without a counted reference.
-/// Such a column is freed while it is still in use, which later manifests as a use-after-free,
-/// a double-free or a segfault far away from the code that broke the counting
-/// (see https://github.com/ClickHouse/ClickHouse/issues/105626). This check turns those flaky
-/// crashes into a deterministic exception (`LOGICAL_ERROR` aborts in debug and sanitizer builds)
-/// at a point where the inconsistency is still observable.
-class ColumnsOwnershipValidator
-{
-public:
-    void add(const ISerialization::SubstreamsCache & cache);
-    /// Also accepts any map from a stream/column name to a deserialize state,
-    /// e.g. DeserializeBinaryBulkStateMap of IMergeTreeReader.
-    void add(const ISerialization::SubstreamsDeserializeStatesCache & states);
-    void add(const ISerialization::DeserializeBinaryBulkStatePtr & state);
-    void add(const ColumnPtr & column);
-
-    /// Checks all collected column holders against the result columns and their subcolumn trees.
-    void validate(const Columns & result_columns) const;
-
-private:
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    /// How many references to a column were enumerated, split by the kind of the holder
-    /// (the split makes the failure message actionable).
-    struct References
-    {
-        size_t from_substreams_cache = 0;
-        size_t from_deserialize_states = 0;
-        size_t direct = 0;
-
-        size_t total() const { return from_substreams_cache + from_deserialize_states + direct; }
-    };
-
-    void addColumnReference(const ColumnPtr & column, size_t References::* counter);
-
-    /// The same state can be reachable through several maps; the columns of each state must be counted only once.
-    std::unordered_set<const ISerialization::DeserializeBinaryBulkState *> seen_states;
-    std::unordered_map<const IColumn *, References> known_references;
-#endif
-};
-
 using SerializationPtr = std::shared_ptr<const ISerialization>;
-using Serializations = VectorWithMemoryTracking<SerializationPtr>;
+using Serializations = std::vector<SerializationPtr>;
 using SerializationByName = std::unordered_map<String, SerializationPtr>;
 using SubstreamType = ISerialization::Substream::Type;
 

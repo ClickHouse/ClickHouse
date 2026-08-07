@@ -59,7 +59,7 @@ public:
 REGISTER_FUNCTION(LowCardinalityIndices)
 {
     FunctionDocumentation::Description description = R"(
-Returns the position of a value in the dictionary of a [LowCardinality](/reference/data-types/lowcardinality) column. Positions start at 1. Since LowCardinality have per-part dictionaries, this function may return different positions for the same value in different parts.
+Returns the position of a value in the dictionary of a [LowCardinality](../data-types/lowcardinality.md) column. Positions start at 1. Since LowCardinality have per-part dictionaries, this function may return different positions for the same value in different parts.
     )";
     FunctionDocumentation::Syntax syntax = "lowCardinalityIndices(col)";
     FunctionDocumentation::Arguments arguments = {

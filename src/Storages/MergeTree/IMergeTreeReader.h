@@ -100,18 +100,6 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot() const { return storage_snapshot; }
 
-    /// Read hints (currently vector-search results) are per-reader state: they are set once after the
-    /// reader is created and consumed later by `MergeTreeRangeReader`. They live on the reader rather
-    /// than on the shared `data_part_info_for_read`, which is one object per part and would otherwise
-    /// be mutated concurrently when several tasks read the same part from different threads.
-    void setReadHints(const RangesInDataPartReadHints & read_hints_, const NamesAndTypesList & read_columns)
-    {
-        if (read_columns.contains("_distance") || read_hints_.use_vector_search_result_filter)
-            read_hints = read_hints_;
-    }
-
-    const RangesInDataPartReadHints & getReadHints() const { return read_hints; }
-
 protected:
     /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
     /// propagated. Used when compiling default or virtual-column expressions at read time.
@@ -154,9 +142,6 @@ protected:
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
 
-    /// Per-reader read hints (see setReadHints/getReadHints above).
-    RangesInDataPartReadHints read_hints;
-
     /// Column, serialization and level (of nesting) of column
     /// which is used for reading offsets for missing nested column.
     struct ColumnForOffsets
@@ -180,9 +165,6 @@ protected:
     /// by a pending mutation that hasn't been applied to this part yet.
     /// Such columns should not be read from the part; defaults should be used instead.
     bool isColumnDroppedByPendingMutation(size_t pos) const;
-
-    /// Returns true if the column at position @pos in columns_to_read is a system column that was invalidated.
-    bool isSystemColumnInvalidated(size_t pos) const;
 
 private:
     friend class MergeTreeReaderIndex;

@@ -6,7 +6,6 @@
 
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
-#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -17,8 +16,6 @@
 #include <Parsers/ASTDataType.h>
 #include <Common/escapeForFileName.h>
 #include <Common/parseRemoteDescription.h>
-#include <Common/RemoteHostFilter.h>
-#include <IO/WriteHelpers.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
@@ -35,15 +32,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
-}
-
-namespace PostgreSQLSetting
-{
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_size;
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_wait_timeout;
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_retries;
-    extern const PostgreSQLSettingsBool postgresql_connection_pool_auto_close_connection;
-    extern const PostgreSQLSettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
 }
 
 namespace ErrorCodes
@@ -220,7 +213,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             return StoragePtr{};
 
         auto storage = std::make_shared<StoragePostgreSQL>(
-                StorageID(database_name, table_name), pool, TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
+                StorageID(database_name, table_name), pool, table_name,
                 ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
                 context_, configuration.schema, configuration.on_conflict);
 
@@ -523,14 +516,9 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;
 
-        /// The connection-pool parameters are seeded from the query-level `postgresql_*` settings
-        /// (preserving the historical behaviour); a named collection may override them.
-        PostgreSQLSettings postgresql_settings;
-        postgresql_settings.loadFromQueryContext(*args.context);
-
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
@@ -571,32 +559,14 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
                 use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
         }
 
-        /// Enforce the server's outbound-host policy, exactly like the table engine and the table
-        /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to reach a
-        /// host through the database engine that `remote_url_allow_hosts` forbids elsewhere.
-        /// Skip it only for an internal metadata replay (server startup / restore, the same
-        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
-        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
-        /// enforcing the policy there would turn one database created before the whitelist was
-        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
-        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
-        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
-        if (!is_internal_metadata_replay)
-        {
-            for (const auto & address : configuration.addresses)
-                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
-        }
-
-        if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
-
+        const auto & settings = args.context->getSettingsRef();
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_wait_timeout],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_retries],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection],
-            postgresql_settings[PostgreSQLSetting::postgresql_connection_attempt_timeout]);
+            settings[Setting::postgresql_connection_pool_size],
+            settings[Setting::postgresql_connection_pool_wait_timeout],
+            settings[Setting::postgresql_connection_pool_retries],
+            settings[Setting::postgresql_connection_pool_auto_close_connection],
+            settings[Setting::postgresql_connection_attempt_timeout]);
 
         return std::make_shared<DatabasePostgreSQL>(
             args.context,
@@ -636,28 +606,23 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 - `schema` — PostgreSQL schema.
 - `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
-<a id="data_types-support"></a>
-## Data types support {#data-types-support}
+## Data types support {#data_types-support}
 
 | PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
-| DATE             | [Date](/reference/data-types/date)               |
-| TIMESTAMP        | [DateTime](/reference/data-types/datetime)       |
-| REAL             | [Float32](/reference/data-types/float)           |
-| DOUBLE           | [Float64](/reference/data-types/float)           |
-| DECIMAL, NUMERIC | [Decimal](/reference/data-types/decimal) (see note below) |
-| SMALLINT         | [Int16](/reference/data-types/int-uint)          |
-| INTEGER          | [Int32](/reference/data-types/int-uint)          |
-| BIGINT           | [Int64](/reference/data-types/int-uint)          |
-| SERIAL           | [UInt32](/reference/data-types/int-uint)         |
-| BIGSERIAL        | [UInt64](/reference/data-types/int-uint)         |
-| TEXT, CHAR       | [String](/reference/data-types/string)           |
-| INTEGER          | Nullable([Int32](/reference/data-types/int-uint))|
-| ARRAY            | [Array](/reference/data-types/array)             |
-
-:::note
-PostgreSQL `numeric(p, 0)` with a precision `p` greater than 76 (the maximum supported by `Decimal256`) — for example `numeric(78, 0)`, commonly used to store 256-bit integers — is mapped to [`Int256`](/reference/data-types/int-uint) instead of `Decimal`. Values that do not fit into the `Int256` range are rejected with an error.
-:::
+| DATE             | [Date](../../sql-reference/data-types/date.md)               |
+| TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
+| REAL             | [Float32](../../sql-reference/data-types/float.md)           |
+| DOUBLE           | [Float64](../../sql-reference/data-types/float.md)           |
+| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md)       |
+| SMALLINT         | [Int16](../../sql-reference/data-types/int-uint.md)          |
+| INTEGER          | [Int32](../../sql-reference/data-types/int-uint.md)          |
+| BIGINT           | [Int64](../../sql-reference/data-types/int-uint.md)          |
+| SERIAL           | [UInt32](../../sql-reference/data-types/int-uint.md)         |
+| BIGSERIAL        | [UInt64](../../sql-reference/data-types/int-uint.md)         |
+| TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
+| INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
+| ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
 
 ## Examples of use {#examples-of-use}
 
