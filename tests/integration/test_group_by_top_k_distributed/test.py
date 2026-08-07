@@ -24,6 +24,13 @@ The result with the optimization enabled must always equal the result with
 it disabled; the EXPLAIN tests additionally pin where the `Top-K`
 annotation may and may not appear, and the profile-event test proves the
 follower-side heap actually runs on the text-planned path.
+
+The per-clause negative tests all run on the text-planned follower path
+(`serialize_query_plan = 0`, `parallel_replicas_local_plan = 0`) and pair
+every "no `Top-K`" assertion with a control query that must carry one - see
+`_assert_guard_blocks_top_k`.  Run with `serialize_query_plan = 1` they would
+instead stop at the serialization gate, which returns before any of the
+clause guards, and would keep passing with those guards deleted.
 """
 
 import json
@@ -162,6 +169,60 @@ def _assert_same_result(node, query):
         f"enable_group_by_top_k_optimization changed the result.\n"
         f"  query: {query}\n"
         f"  off:\n{off}\n  on:\n{on}\n"
+    )
+
+
+# Settings that make every replica a text-planned follower, which is the only
+# path where `applyTopKPushdownToPartialAggregation` reaches its clause guards:
+# with `serialize_query_plan = 1` the hook returns at the serialization gate,
+# before HAVING / QUALIFY / windows / DISTINCT / `exact_rows_before_limit` are
+# ever looked at.  A negative test run that way would prove the serialization
+# gate and nothing about the clause it names.
+_FOLLOWER_SETTINGS = {
+    "enable_parallel_replicas": 2,
+    "max_parallel_replicas": 2,
+    "cluster_for_parallel_replicas": "one_shard_two_replicas",
+    "serialize_query_plan": 0,
+    "parallel_replicas_local_plan": 0,
+    "query_plan_max_limit_for_top_k_optimization": 1000,
+}
+
+
+def _follower_plan(node, query, settings=None):
+    return node.query(
+        f"EXPLAIN distributed=1, actions=1 {query}",
+        settings=dict(
+            _FOLLOWER_SETTINGS,
+            enable_group_by_top_k_optimization=1,
+            **(settings or {}),
+        ),
+    )
+
+
+def _assert_guard_blocks_top_k(
+    node, query, control_query, settings=None, control_settings=None
+):
+    """`query` must carry no `Top-K`, while `control_query` - the same shape
+    minus the clause under test - must carry one under otherwise identical
+    settings.
+
+    The control is what ties the assertion to the clause: on its own, an absent
+    `Top-K` could equally mean the pushdown was gated off for some unrelated
+    reason (a mis-set setting, the serialization gate, a plan shape the hook
+    never matches), and the test would keep passing after the guard is deleted.
+    """
+    plan = _follower_plan(node, query, settings)
+    assert "Top-K:" not in plan, (
+        f"Top-K must not be pushed into partial aggregation.\n"
+        f"  query: {query}\nFull plan:\n{plan}"
+    )
+    control_plan = _follower_plan(
+        node, control_query, settings if control_settings is None else control_settings
+    )
+    assert "Top-K:" in control_plan, (
+        f"Control query must carry Top-K, otherwise the negative assertion "
+        f"above proves nothing about the clause under test.\n"
+        f"  control query: {control_query}\nFull plan:\n{control_plan}"
     )
 
 
@@ -537,30 +598,21 @@ def test_remote_partial_aggregation_no_top_k_with_having(start_cluster):
         f"SELECT k, sum(v) AS s FROM {table} GROUP BY k "
         "HAVING s = 1 ORDER BY k ASC LIMIT 1"
     )
-    settings_base = {
-        "enable_parallel_replicas": 2,
-        "max_parallel_replicas": 2,
-        "cluster_for_parallel_replicas": "one_shard_two_replicas",
-        "serialize_query_plan": 1,
-    }
     off = node1.query(
-        query, settings=dict(settings_base, enable_group_by_top_k_optimization=0)
+        query, settings=dict(_FOLLOWER_SETTINGS, enable_group_by_top_k_optimization=0)
     )
     on = node1.query(
-        query, settings=dict(settings_base, enable_group_by_top_k_optimization=1)
+        query, settings=dict(_FOLLOWER_SETTINGS, enable_group_by_top_k_optimization=1)
     )
     assert off == on == "10000\t1\n", (
         f"HAVING must disable the partial top-K pushdown.\n"
         f"  off:\n{off}\n  on:\n{on}\n"
     )
 
-    plan = node1.query(
-        f"EXPLAIN distributed=1, actions=1 {query}",
-        settings=dict(settings_base, enable_group_by_top_k_optimization=1),
-    )
-    assert "Top-K:" not in plan, (
-        f"Top-K must not be pushed into partial aggregation under HAVING.\n"
-        f"Full plan:\n{plan}"
+    _assert_guard_blocks_top_k(
+        node1,
+        query,
+        f"SELECT k, sum(v) AS s FROM {table} GROUP BY k ORDER BY k ASC LIMIT 1",
     )
 
 
@@ -574,33 +626,38 @@ def test_remote_partial_aggregation_no_top_k_with_post_aggregation_clauses(
     the Planner hook must not be more permissive."""
     table = "t_pr"
     _create_replicated_shards(table)
+    # Each pair is (query with the clause, the same query without it).  The
+    # control must carry `Top-K`, so a missing `Top-K` on the left can only be
+    # the clause's guard.
     queries = [
         # QUALIFY (with an inline window function)
-        f"SELECT k, sum(v) AS s, row_number() OVER (ORDER BY k ASC) AS rn "
-        f"FROM {table} GROUP BY k QUALIFY rn <= 3 ORDER BY k ASC LIMIT 10",
+        (
+            f"SELECT k, sum(v) AS s, row_number() OVER (ORDER BY k ASC) AS rn "
+            f"FROM {table} GROUP BY k QUALIFY rn <= 3 ORDER BY k ASC LIMIT 10",
+            f"SELECT k, sum(v) AS s FROM {table} GROUP BY k ORDER BY k ASC LIMIT 10",
+        ),
         # Inline window function without QUALIFY
-        f"SELECT k, sum(sum(v)) OVER () AS total "
-        f"FROM {table} GROUP BY k ORDER BY k ASC LIMIT 10",
+        (
+            f"SELECT k, sum(sum(v)) OVER () AS total "
+            f"FROM {table} GROUP BY k ORDER BY k ASC LIMIT 10",
+            f"SELECT k, sum(v) AS total "
+            f"FROM {table} GROUP BY k ORDER BY k ASC LIMIT 10",
+        ),
         # Named WINDOW clause
-        f"SELECT k, count() OVER w FROM {table} GROUP BY k "
-        f"WINDOW w AS (ORDER BY k ASC) ORDER BY k ASC LIMIT 10",
+        (
+            f"SELECT k, count() OVER w FROM {table} GROUP BY k "
+            f"WINDOW w AS (ORDER BY k ASC) ORDER BY k ASC LIMIT 10",
+            f"SELECT k, count() FROM {table} GROUP BY k ORDER BY k ASC LIMIT 10",
+        ),
         # DISTINCT between aggregation and ORDER BY / LIMIT
-        f"SELECT DISTINCT k, sum(v) FROM {table} GROUP BY k "
-        f"ORDER BY k ASC LIMIT 10",
+        (
+            f"SELECT DISTINCT k, sum(v) FROM {table} GROUP BY k "
+            f"ORDER BY k ASC LIMIT 10",
+            f"SELECT k, sum(v) FROM {table} GROUP BY k ORDER BY k ASC LIMIT 10",
+        ),
     ]
-    settings = {
-        "enable_parallel_replicas": 2,
-        "max_parallel_replicas": 2,
-        "cluster_for_parallel_replicas": "one_shard_two_replicas",
-        "serialize_query_plan": 1,
-        "enable_group_by_top_k_optimization": 1,
-    }
-    for query in queries:
-        plan = node1.query(f"EXPLAIN distributed=1, actions=1 {query}", settings=settings)
-        assert "Top-K:" not in plan, (
-            f"Top-K must not be pushed into partial aggregation.\n"
-            f"  query: {query}\nFull plan:\n{plan}"
-        )
+    for query, control_query in queries:
+        _assert_guard_blocks_top_k(node1, query, control_query)
 
 
 def test_remote_partial_aggregation_no_top_k_with_exact_rows_before_limit(
@@ -612,20 +669,21 @@ def test_remote_partial_aggregation_no_top_k_with_exact_rows_before_limit(
     table = "t_pr"
     _create_replicated_shards(table)
     query = f"SELECT k, sum(v) FROM {table} GROUP BY k ORDER BY k ASC LIMIT 10"
-    settings = {
-        "enable_parallel_replicas": 2,
-        "max_parallel_replicas": 2,
-        "cluster_for_parallel_replicas": "one_shard_two_replicas",
-        "serialize_query_plan": 1,
-        "enable_group_by_top_k_optimization": 1,
-        "exact_rows_before_limit": 1,
-    }
-    plan = node1.query(f"EXPLAIN distributed=1, actions=1 {query}", settings=settings)
-    assert "Top-K:" not in plan, (
-        f"Top-K must not be pushed down with exact_rows_before_limit.\n"
-        f"Full plan:\n{plan}"
+    # Here the clause under test is a setting, not query text, so the control is
+    # the same query with `exact_rows_before_limit` off.
+    _assert_guard_blocks_top_k(
+        node1,
+        query,
+        query,
+        settings={"exact_rows_before_limit": 1},
+        control_settings={"exact_rows_before_limit": 0},
     )
 
+    settings = dict(
+        _FOLLOWER_SETTINGS,
+        enable_group_by_top_k_optimization=1,
+        exact_rows_before_limit=1,
+    )
     # The dataset has 1010 distinct keys: 0..999 and 10000..10009.
     result = node1.query(f"{query} FORMAT JSON", settings=settings)
     rows_before_limit = json.loads(result)["rows_before_limit_at_least"]
