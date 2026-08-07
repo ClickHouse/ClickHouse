@@ -124,8 +124,11 @@ public:
                     arguments.back().type->getName());
         }
 
-        /// Fail at analysis time if the named dictionary is missing or does not have the XGBOOST layout.
-        validateDictionaryIsXGBoost(arguments);
+        const String dictionary_name = getConstString(arguments[0], "dictionary name");
+
+        checkAccess(dictionary_name);
+
+        validateDictionaryIsXGBoost(dictionary_name);
 
         return std::make_shared<DataTypeFloat64>();
     }
@@ -136,15 +139,7 @@ public:
 
         const auto & loader = context->getExternalDictionariesLoader();
 
-        if (!access_checked.load(std::memory_order_relaxed))
-        {
-            auto qualified = loader.qualifyDictionaryNameWithDatabase(dictionary_name, context);
-            context->checkAccess(
-                AccessType::dictGet,
-                qualified.database.empty() ? IDictionary::NO_DATABASE_TAG : qualified.database,
-                qualified.table);
-            access_checked.store(true, std::memory_order_relaxed);
-        }
+        checkAccess(dictionary_name);
 
         if (input_rows_count == 0)
             return result_type->createColumn();
@@ -186,6 +181,19 @@ public:
 private:
     ContextPtr context;
     mutable std::atomic<bool> access_checked{false};
+
+    void checkAccess(const String & dictionary_name) const
+    {
+        if (access_checked.load(std::memory_order_relaxed))
+            return;
+
+        auto qualified = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
+        context->checkAccess(
+            AccessType::dictGet,
+            qualified.database.empty() ? IDictionary::NO_DATABASE_TAG : qualified.database,
+            qualified.table);
+        access_checked.store(true, std::memory_order_relaxed);
+    }
 
     /// Index one past the last feature argument. The trailing `params` (a Map) is excluded; everything
     /// from index 1 up to this bound is a feature.
@@ -236,13 +244,8 @@ private:
         return static_cast<Int64>(unsigned_value);
     }
 
-    void validateDictionaryIsXGBoost(const ColumnsWithTypeAndName & arguments) const
+    void validateDictionaryIsXGBoost(const String & dictionary_name) const
     {
-        const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
-        if (!name_col)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument 'dictionary name' of function '{}' must be a constant String", getName());
-
-        const String dictionary_name = name_col->getValue<String>();
         const auto layout_type = context->getExternalDictionariesLoader().getDictionaryLayoutType(dictionary_name, context);
         if (layout_type != "xgboost")
             throw Exception(
