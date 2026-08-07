@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import uuid
 
@@ -157,6 +158,12 @@ def test_restarting_task_rearmed_after_failed_attach_startup(started_cluster):
         node.wait_for_log_line(
             f"{table} .*: Trying to startup table from right now", timeout=60
         )
+        # Wait for startupImpl to return as well: the trace above is emitted just before the
+        # inline run() and the re-arm, so sampling on it alone can precede them.
+        node.wait_for_log_line(
+            f"{table} .ReplicatedMergeTreeAttachThread.: Table is initialized",
+            timeout=60,
+        )
         assert (
             node.query(
                 f"SELECT is_readonly FROM system.replicas WHERE table = '{table}'"
@@ -266,3 +273,50 @@ def test_periodic_check_armed_after_successful_attach_startup_retry(started_clus
     finally:
         node.query("SYSTEM DISABLE FAILPOINT rmt_startup_fail_after_being_leader")
         node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+# The task is never deactivated here (no FP1), so the inline run() on the attach path fails
+# and arms its own 100 ms first-failure backoff. Re-arming must keep that delay: cancelling
+# it retries immediately, which is what an unconditional activateAndSchedule does.
+def test_attach_startup_keeps_the_retry_delay_chosen_by_the_restarting_thread(
+    started_cluster,
+):
+    start_clean_clickhouse()
+    node.query("DROP TABLE IF EXISTS replicated_table SYNC")
+    node.query("DROP TABLE IF EXISTS replicated_table_partitioned SYNC")
+
+    table = f"replicated_table_keep_delay_{uuid.uuid4().hex}"
+    node.query(
+        f"CREATE TABLE {table} (k UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/{table}', 'r1') ORDER BY k"
+    )
+    node.query(f"DETACH TABLE {table}")
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT rmt_restarting_thread_fail_startup")
+        node.query(f"ATTACH TABLE {table}")
+        node.wait_for_log_line(
+            f"{table} .*: Trying to startup table from right now", timeout=60
+        )
+        # Enough for the first few backoff steps (100, 300, 600 ms) to be logged.
+        time.sleep(4)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT rmt_restarting_thread_fail_startup")
+
+    log = node.grep_in_log(f"{table} .*Trying to start replica up") or ""
+    # grep_in_log can repeat a matching line, so key on the timestamp and sort.
+    stamps = sorted(
+        set(
+            re.findall(r"(\d{2}):(\d{2}):(\d{2}\.\d+).*Trying to start replica up", log)
+        )
+    )
+    assert (
+        len(stamps) >= 3
+    ), f"too few startup attempts to measure a delay: {len(stamps)}"
+    seconds = [int(h) * 3600 + int(m) * 60 + float(s) for h, m, s in stamps]
+    gaps_ms = [round((b - a) * 1000, 1) for a, b in zip(seconds, seconds[1:])]
+    # Every attempt follows a delay run() chose, the smallest being the 100 ms first failure.
+    # Cancelling one of them shows up as an attempt that follows the previous one at once.
+    assert (
+        min(gaps_ms) > 60
+    ), f"a retry delay chosen by run() was not preserved: {gaps_ms}"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
