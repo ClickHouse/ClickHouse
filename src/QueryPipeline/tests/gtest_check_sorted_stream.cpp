@@ -2,6 +2,8 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/FailPoint.h>
+#include <Common/Stopwatch.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -9,8 +11,19 @@
 #include <QueryPipeline/Pipe.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <atomic>
+#include <chrono>
+#include <thread>
+
 
 using namespace DB;
+
+
+namespace DB::FailPoints
+{
+extern const char check_sorted_transform_pause[];
+extern const char check_sorted_transform_after_loop_pause[];
+}
 
 
 static SortDescription getSortDescription(const std::vector<std::string> & column_names)
@@ -232,4 +245,63 @@ TEST(CheckSortedTransform, CheckEqualBlock)
     EXPECT_NO_THROW(executor.pull(chunk));
     EXPECT_NO_THROW(executor.pull(chunk));
     EXPECT_NO_THROW(executor.pull(chunk));
+}
+
+namespace
+{
+
+/// Check that a `CheckSortedTransform` paused at a failpoint is interrupted promptly when the
+/// pipeline is cancelled: the in-flight `pull` must finish without producing the chunk.
+void checkCancellation(const char * fail_point_name)
+{
+    std::vector<std::string> key_columns{"K1", "K2", "K3"};
+    auto sort_description = getSortDescription(key_columns);
+    BlocksList blocks;
+    blocks.push_back(getSortedBlockWithSize(key_columns, 10000, 1, 0));
+
+    Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
+    pipe.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<CheckSortedTransform>(header, sort_description);
+    });
+
+    QueryPipeline pipeline(std::move(pipe));
+    PullingPipelineExecutor executor(pipeline);
+
+    FailPointInjection::enableFailPoint(fail_point_name);
+
+    std::atomic<bool> pull_finished{false};
+    std::atomic<bool> pull_result{true};
+    std::thread pull_thread([&]
+    {
+        Chunk chunk;
+        pull_result = executor.pull(chunk);
+        pull_finished = true;
+    });
+
+    FailPointInjection::waitForPause(fail_point_name);
+
+    executor.cancel();
+    FailPointInjection::disableFailPoint(fail_point_name);
+
+    Stopwatch timer;
+    while (!pull_finished && timer.elapsedSeconds() < 10)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    pull_thread.join();
+
+    ASSERT_TRUE(pull_finished) << "Pull did not finish promptly after cancellation";
+    EXPECT_FALSE(pull_result);
+}
+
+}
+
+TEST(CheckSortedTransform, CheckCancellationBeforeLoop)
+{
+    checkCancellation(FailPoints::check_sorted_transform_pause);
+}
+
+TEST(CheckSortedTransform, CheckCancellationAfterLoop)
+{
+    checkCancellation(FailPoints::check_sorted_transform_after_loop_pause);
 }
