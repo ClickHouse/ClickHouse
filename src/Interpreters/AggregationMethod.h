@@ -14,6 +14,7 @@ class IColumn;
 template <typename TData>
 using AggregationMethodMapped
     = std::conditional_t<std::is_same_v<typename TData::mapped_type, VoidMapped>, void, typename TData::mapped_type>;
+
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,

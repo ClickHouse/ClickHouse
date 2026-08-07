@@ -83,11 +83,6 @@ public:
         }
     }
 
-    /** The mapped-value interface of `HashMapTable` for a table whose cells have no mapped value: every
-      * operation that visits mapped values visits nothing, so `func` is never called. `mergeToViaEmplace`
-      * still unions the keys - that part of it is the merge - and only drops the combining callback.
-      * Defined so the Aggregator's merges stay one generic body over map and set tables.
-      */
     template <typename Func>
     void forEachMapped(Func &&)
     {
