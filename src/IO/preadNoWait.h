@@ -33,4 +33,9 @@ struct PreadNoWaitSupport
 /// The system is probed once, on the first call.
 const PreadNoWaitSupport & getPreadNoWaitSupport();
 
+/// Whether the one-time probe has already run in this process. The probe is a raw `preadv2`
+/// system call that a kill-on-deny `seccomp` profile terminates the process for, so the code
+/// paths that do not need the page cache check must never trigger it; tests assert that with this.
+bool isPreadNoWaitProbed();
+
 }

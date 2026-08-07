@@ -15,9 +15,10 @@ LocalFSReadMethod resolveLocalFSReadMethod(LocalFSReadMethod requested, bool pre
 
 LocalFSReadMethod resolveLocalFSReadMethod(LocalFSReadMethod requested, bool direct_io)
 {
-    /// Other methods do not depend on `preadNoWait`, and must not reach the probe:
-    /// it is a raw system call that a kill-on-deny `seccomp` profile terminates the process for.
-    if (requested != LocalFSReadMethod::pread_threadpool)
+    /// Other methods do not depend on `preadNoWait`, and reads with O_DIRECT never look at
+    /// the page cache, so neither must reach the probe: it is a raw system call that
+    /// a kill-on-deny `seccomp` profile terminates the process for.
+    if (requested != LocalFSReadMethod::pread_threadpool || direct_io)
         return requested;
 
     return resolveLocalFSReadMethod(requested, getPreadNoWaitSupport().supported, direct_io);

@@ -63,8 +63,8 @@ LocalFSReadMethod resolveLocalFSReadMethod(LocalFSReadMethod requested, bool pre
 
 /// The same resolution with the support probed on demand (see `getPreadNoWaitSupport`).
 /// The probe is a raw `preadv2` system call, and a `seccomp` profile that kills the process
-/// on unknown system calls must only see it when 'pread_threadpool' is actually requested,
-/// so no other read method reaches the probe.
+/// on unknown system calls must only see it when the check is actually needed,
+/// so neither another read method nor an O_DIRECT read reaches the probe.
 LocalFSReadMethod resolveLocalFSReadMethod(LocalFSReadMethod requested, bool direct_io);
 
 }

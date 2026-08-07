@@ -7,6 +7,7 @@
 
 #include <fmt/format.h>
 
+#include <atomic>
 #include <cerrno>
 
 #if defined(OS_LINUX)
@@ -123,10 +124,18 @@ PreadNoWaitSupport probePreadNoWaitSupport()
 
 }
 
+static std::atomic<bool> pread_no_wait_probed{false};
+
 const PreadNoWaitSupport & getPreadNoWaitSupport()
 {
     static const PreadNoWaitSupport support = probePreadNoWaitSupport();
+    pread_no_wait_probed.store(true, std::memory_order_relaxed);
     return support;
+}
+
+bool isPreadNoWaitProbed()
+{
+    return pread_no_wait_probed.load(std::memory_order_relaxed);
 }
 
 }

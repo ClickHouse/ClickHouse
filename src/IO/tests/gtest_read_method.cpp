@@ -39,10 +39,15 @@ TEST(ReadMethod, OtherMethodsAreNotAffected)
     }
 }
 
-TEST(ReadMethod, OnDemandOverloadProbesOnlyForPreadThreadpool)
+TEST(ReadMethod, OnDemandOverloadDoesNotProbeWhenTheCheckIsNotNeeded)
 {
-    /// The overload that probes the support on demand: methods other than 'pread_threadpool'
-    /// pass through unchanged (and never reach the probe, which a `seccomp` profile can kill on)...
+    /// Resolutions that do not need the page cache check must not run the probe:
+    /// it is a raw `preadv2` system call that a kill-on-deny `seccomp` profile terminates
+    /// the process for. `isPreadNoWaitProbed` observes the one-time probe directly, so this
+    /// holds regardless of whether an earlier test has already probed.
+    const bool probed_before = isPreadNoWaitProbed();
+
+    /// Another read method never reaches the probe...
     for (auto method : {LocalFSReadMethod::read, LocalFSReadMethod::pread, LocalFSReadMethod::mmap,
                         LocalFSReadMethod::io_uring, LocalFSReadMethod::pread_fake_async})
     {
@@ -50,15 +55,25 @@ TEST(ReadMethod, OnDemandOverloadProbesOnlyForPreadThreadpool)
             EXPECT_EQ(resolveLocalFSReadMethod(method, direct_io), method);
     }
 
-    /// ...and 'pread_threadpool' resolves from the probed support.
+    /// ...and neither does an O_DIRECT read, which never looks at the page cache
+    /// and keeps the thread pool.
+    EXPECT_EQ(
+        resolveLocalFSReadMethod(LocalFSReadMethod::pread_threadpool, /*direct_io*/ true),
+        LocalFSReadMethod::pread_threadpool);
+
+    EXPECT_EQ(isPreadNoWaitProbed(), probed_before);
+}
+
+TEST(ReadMethod, OnDemandOverloadProbesOnlyForPreadThreadpool)
+{
+    /// A non-O_DIRECT 'pread_threadpool' read is the one case that needs the page cache check,
+    /// so it resolves from the probed support.
     EXPECT_EQ(
         resolveLocalFSReadMethod(LocalFSReadMethod::pread_threadpool, /*direct_io*/ false),
         resolveLocalFSReadMethod(
             LocalFSReadMethod::pread_threadpool, getPreadNoWaitSupport().supported, /*direct_io*/ false));
 
-    EXPECT_EQ(
-        resolveLocalFSReadMethod(LocalFSReadMethod::pread_threadpool, /*direct_io*/ true),
-        LocalFSReadMethod::pread_threadpool);
+    EXPECT_TRUE(isPreadNoWaitProbed());
 }
 
 TEST(PreadNoWait, UnavailabilityIsRecognized)

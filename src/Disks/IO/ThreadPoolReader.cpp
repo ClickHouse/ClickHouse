@@ -64,11 +64,13 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     /// Check if data is already in page cache with preadv2 syscall.
     /// It is not always usable: see `getPreadNoWaitSupport`. Then every read is handed off
     /// to the thread pool, and `createReadBufferFromFileBase` uses 'pread' instead of this reader.
-    static const bool has_pread_nowait_support = getPreadNoWaitSupport().supported;
-
+    ///
     /// RWF_NOWAIT is ignored for O_DIRECT (mostly, it may return EAGAIN if it cannot lock the inode in case of ext4, see [1])
     ///   [1]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=548feebec7e93e58b647dba70b3303dcb569c914
-    if (has_pread_nowait_support && !request.direct_io)
+    /// The O_DIRECT check comes first: the support check runs a raw `preadv2` probe on the first
+    /// call (see `getPreadNoWaitSupport`), and a kill-on-deny `seccomp` profile must not see
+    /// the probe for a read that never looks at the page cache.
+    if (!request.direct_io && getPreadNoWaitSupport().supported)
     {
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
