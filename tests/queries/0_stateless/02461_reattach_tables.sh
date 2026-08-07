@@ -71,14 +71,31 @@ check_if_detached "INSERT INTO t_reattach_2 SELECT * FROM t_reattach_1" "t_reatt
 check_if_detached "EXISTS TABLE t_reattach_1" "t_reattach_1"
 check_if_detached "SHOW CREATE TABLE t_reattach_1" "t_reattach_1"
 
-# Only the explicit `BACKUP TABLE` elements are covered. `BACKUP TABLE t` names the local table it reads,
-# so the reattach hook detaches it. `BACKUP DATABASE` and `BACKUP ALL` name no explicit table and expand
-# into per-table work only during execution, so they are deliberately out of scope and must NOT detach any
-# table (`RESTORE` is entirely out of scope — see the `RESTORE` cases below). Use a unique per-run
-# destination so parallel runs and flaky-check reruns never collide on an existing backup path.
+# `BACKUP` is entirely out of the hook's scope, including the explicit `BACKUP TABLE t` form that names the
+# local table it reads: `BackupsWorker::BackupStarter::doBackup` opens and validates the destination
+# (`openBackupForWriting`) before it builds `BackupEntriesCollector`, so a backup with an invalid
+# destination fails before the source table is ever read — detaching the source up front would give such a
+# failing query a `DETACH`/`ATTACH` side effect on a table it never touches. `BACKUP DATABASE` and
+# `BACKUP ALL` additionally name no explicit table and expand into per-table work only during execution
+# (`RESTORE` is out of scope too — see the `RESTORE` cases below). Use a unique per-run destination so
+# parallel runs and flaky-check reruns never collide on an existing backup path.
 BACKUP_SUFFIX="${CLICKHOUSE_TEST_UNIQUE_NAME}_$RANDOM"
-check_if_detached "BACKUP TABLE t_reattach_1 TO Disk('backups', '${BACKUP_SUFFIX}_table')" "t_reattach_1"
+check_if_not_detached "BACKUP TABLE t_reattach_1 TO Disk('backups', '${BACKUP_SUFFIX}_table')" "t_reattach_1"
 check_if_not_detached "BACKUP DATABASE ${CLICKHOUSE_DATABASE} TO Disk('backups', '${BACKUP_SUFFIX}_db')" "t_reattach_1"
+
+# The focused regression for the failing-backup case: the destination already holds a backup, so the second
+# backup to the same destination fails with BACKUP_ALREADY_EXISTS in `openBackupForWriting` before ever
+# reading the source table — which therefore must NOT be detached.
+check_if_detached_impl "BACKUP TABLE t_reattach_1 TO Disk('backups', '${BACKUP_SUFFIX}_table')" "t_reattach_1"
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (backup to an already existing destination unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "BACKUP_ALREADY_EXISTS"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_1"; then
+    echo "FAIL (source table was detached for a backup that fails before reading it)"
+else
+    echo "OK"
+fi
 
 # `RESTORE` is entirely out of the hook's scope, including the explicit `RESTORE TABLE old AS new` form:
 # `RestorerFromBackup::run` first resolves the source objects inside the backup
