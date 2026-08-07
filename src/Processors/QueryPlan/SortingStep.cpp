@@ -321,19 +321,30 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bo
     apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
+/// A hash scatter into `threads` shards followed by per-shard merges of the `streams` inputs wires up
+/// (threads * streams) connections in the pipeline. Bound this by a sane value so that a large
+/// `max_threads` cannot explode the port/processor count.
+static void checkScatterConnectionLimit(size_t threads, size_t streams)
+{
+    const size_t connection_count_limit = 1000000;
+    if (threads * streams > connection_count_limit)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
+            threads, streams, connection_count_limit);
+}
+
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 {
-    size_t threads = pipeline.getNumThreads();
+    /// For a hash-sharded merge join the partition count is fixed (see `convertToScatteredFullSort`), so
+    /// both sides of the join scatter into the same number of shards even if they read a different number
+    /// of streams; otherwise fall back to the pipeline's thread count (window-frame partitioned sort).
+    size_t threads = scatter_partitions > 0 ? scatter_partitions : pipeline.getNumThreads();
     size_t streams = pipeline.getNumStreams();
 
     if (!partition_by_description.empty() && threads > 1)
     {
         /// We are going to shuffle the data from streams to threads. This will create (threads * streams) connections in the pipeline.
         /// Let's limit this by some sane value to avoid explosion.
-        const size_t connection_count_limit = 1000000;
-        if (threads * streams > connection_count_limit)
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
-                threads, streams, connection_count_limit);
+        checkScatterConnectionLimit(threads, streams);
 
         auto stream_header = pipeline.getSharedHeader();
 
@@ -584,6 +595,10 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     if (type == Type::PartitionedFinishSorting)
     {
+        /// The input is already partitioned upstream: the primary-key-range join sharding path
+        /// (`convertToPartitionedFinishSorting`) feeds one pre-sorted stream per shard, so each stream only
+        /// needs its sort suffix finished. No scatter is inserted here - an order-preserving scatter feeding
+        /// the selective per-shard merge consumers can deadlock (see `optimizeParallelFullSortingMergeJoin`).
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);

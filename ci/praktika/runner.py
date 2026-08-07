@@ -18,6 +18,7 @@ from .gh import GH
 from .gh_auth import GHAuth
 from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
+from .host_metrics import HostMetricsCollector
 from .info import Info
 from .native_jobs import _check_and_link_open_issues, _is_praktika_job
 from .result import Result, ResultInfo
@@ -466,51 +467,63 @@ class Runner:
             cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
-        with TeePopen(
-            cmd,
-            timeout=job.timeout,
-            preserve_stdio=preserve_stdio,
-            timeout_shell_cleanup=job.timeout_shell_cleanup,
-        ) as process:
-            Utils.timestamp()
+        # Sample whole-VM CPU/RAM usage in the background for the duration of the
+        # job (see HostMetricsCollector). Runs on the host, so metrics cover the
+        # whole VM even when the job itself runs inside Docker.
+        host_metrics_collector = HostMetricsCollector().start()
+        try:
+            with TeePopen(
+                cmd,
+                timeout=job.timeout,
+                preserve_stdio=preserve_stdio,
+                timeout_shell_cleanup=job.timeout_shell_cleanup,
+            ) as process:
+                Utils.timestamp()
 
-            exit_code = process.wait()
+                exit_code = process.wait()
+                host_metrics = host_metrics_collector.stop()
 
-            # When running Docker containers as root (non-rootless mode), any files
-            # created by the job will be owned by root.  Fix ownership here, before
-            # reading the result file or writing the host-side result, so that the
-            # host user can open them without a PermissionError.
-            if job.run_in_docker and not no_docker and from_root:
-                print("--- Fixing file ownership after running docker as root")
-                uid = os.getuid()
-                gid = os.getgid()
-                chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-                Shell.run(chown_cmd)
+                # When running Docker containers as root (non-rootless mode), any files
+                # created by the job will be owned by root.  Fix ownership here, before
+                # reading the result file or writing the host-side result, so that the
+                # host user can open them without a PermissionError.
+                if job.run_in_docker and not no_docker and from_root:
+                    print("--- Fixing file ownership after running docker as root")
+                    uid = os.getuid()
+                    gid = os.getgid()
+                    chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+                    Shell.run(chown_cmd)
 
-            result = Result.from_fs(job.name)
-            if exit_code != 0:
-                if not result.is_completed():
-                    if process.timeout_exceeded:
-                        print(
-                            f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
-                        )
-                        result.add_error(ResultInfo.TIMEOUT)
-                    elif result.is_running():
-                        info = f"Job killed, exit code [{exit_code}]"
-                        print(f"ERROR: {info}")
-                        result.add_error(info)
-                    else:
-                        info = f"Invalid status [{result.status}] for exit code [{exit_code}]"
-                        print(f"ERROR: {info}")
-                        result.add_error(info)
-                    result.set_status(Result.Status.ERROR)
-                    result.set_info(
-                        process.get_latest_log(max_lines=20)
-                    )
-            result.dump()
-
-        print("INFO: disk status after running a job:")
-        Shell.run("df -h")
+                result = Result.from_fs(job.name)
+                if host_metrics:
+                    result.add_ext_key_value("metrics", host_metrics)
+                    # Flag over/under-utilized runners, but not for skipped jobs -
+                    # they did no real work, so their metrics are meaningless.
+                    if not result.is_skipped():
+                        for label, hint in HostMetricsCollector.classify(host_metrics):
+                            result.set_label(label, hint=hint)
+                if exit_code != 0:
+                    if not result.is_completed():
+                        if process.timeout_exceeded:
+                            print(
+                                f"WARNING: Job timed out: [{job.name}], timeout [{job.timeout}], exit code [{exit_code}]"
+                            )
+                            result.add_error(ResultInfo.TIMEOUT)
+                        elif result.is_running():
+                            info = f"Job killed, exit code [{exit_code}]"
+                            print(f"ERROR: {info}")
+                            result.add_error(info)
+                        else:
+                            info = f"Invalid status [{result.status}] for exit code [{exit_code}]"
+                            print(f"ERROR: {info}")
+                            result.add_error(info)
+                        result.set_status(Result.Status.ERROR)
+                        result.set_info(process.get_latest_log(max_lines=20))
+                result.dump()
+        finally:
+            # Idempotent: a no-op if stop() already ran above; guarantees the
+            # sampling thread is always joined even if TeePopen raised.
+            host_metrics_collector.stop()
 
         return exit_code
 
@@ -1134,6 +1147,10 @@ class Runner:
                 print("=== Post run script finished ===")
 
             result.dump()
+
+        # After the post hooks, so the numbers describe the disk the next job inherits.
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
 
         if not res and not job.force_success:
             sys.exit(1)

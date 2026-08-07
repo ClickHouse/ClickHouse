@@ -17,6 +17,7 @@
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/JoinUtils.h>
 #include <Formats/NativeWriter.h>
@@ -260,6 +261,13 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
     if (join_on.on_filter_condition_left || join_on.on_filter_condition_right)
         throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN, "ON section of JOIN with filter conditions is not implemented");
 
+    /// The prebuilt join is reused as is (see reuseJoinedData below), so it cannot serve an
+    /// expression the query derived: the names are unqualified, the saved block has a different
+    /// layout and the maps variant may differ.
+    if (analyzed_join->getMixedJoinExpression())
+        throw Exception(ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN,
+            "ON section of JOIN with a condition involving columns from both tables is not implemented for the Join table engine");
+
     const auto & key_names_right = join_on.key_names_right;
     const auto & key_names_left = join_on.key_names_left;
     if (key_names.size() != key_names_right.size() || key_names.size() != key_names_left.size())
@@ -412,6 +420,14 @@ void registerStorageJoin(StorageFactory & factory)
         {
             for (const auto & setting : args.storage_def->settings->changes)
             {
+                /// These settings are read here rather than applied to a `BaseSettings`, so there is no
+                /// settings schema to check the value-less form `SETTINGS name` against - it stands for
+                /// `name = true` and is only meaningful for the Bool ones. Without this check
+                /// `SETTINGS max_rows_in_join` would silently become `max_rows_in_join = 1`.
+                if (setting.shorthand && setting.name != "join_use_nulls" && setting.name != "join_any_take_last_row"
+                    && setting.name != "any_join_distinct_right_table_keys" && setting.name != "persistent")
+                    BaseSettingsHelpers::throwValuelessSettingIsNotBool(setting.name);
+
                 if (setting.name == "join_use_nulls")
                     join_use_nulls = setting.value;
                 else if (setting.name == "max_rows_in_join")
