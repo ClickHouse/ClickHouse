@@ -1,5 +1,7 @@
 --- explicit tuple call is sent as a row value
 1	x
+--- explicit tuple call as a single-row IN set keeps its outer parentheses
+1	x
 --- single-element tuple call is rejected by ClickHouse
 rejected
 --- Array literal is rejected by ClickHouse

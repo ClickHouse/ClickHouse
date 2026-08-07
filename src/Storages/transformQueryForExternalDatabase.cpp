@@ -228,19 +228,33 @@ bool containsUUIDColumn(const ASTPtr & node, const NamesAndTypesList & available
     return false;
 }
 
-/// When the parser's fast-path literal conversion produces `ASTLiteral(Tuple)` as the IN set
-/// (e.g. `(id, name) IN ((1, 'a'))` parsed as `in(tuple(id, name), ASTLiteral(Tuple{1, 'a'}))`),
-/// wrap it in a function with empty name so it formats with an extra pair of parentheses:
-/// `((1, 'a'))`. Without this, `ASTLiteral(Tuple)` formats as `(1, 'a')` and the IN clause becomes
+/// Returns true if the AST node is a tuple: either an `ASTLiteral` holding a `Tuple` field
+/// (the parser's fast-path literal conversion) or an explicit `tuple(...)` function call.
+bool isTupleNode(const ASTPtr & node)
+{
+    if (const auto * literal = node->as<ASTLiteral>())
+        return literal->value.getType() == Field::Types::Tuple;
+    if (const auto * function = node->as<ASTFunction>())
+        return function->name == "tuple";
+    return false;
+}
+
+/// A single-row multi-column IN set (e.g. `(id, name) IN ((1, 'a'))`) must keep its outer
+/// parentheses when re-serialized for the external database: without them the IN clause becomes
 /// `IN (1, 'a')` — which external databases misinterpret as two separate scalar values instead of
-/// one tuple.
+/// one tuple. Such a set arrives in one of two carriers, and we wrap either of them in a function
+/// with empty name so it formats with an extra pair of parentheses, `((1, 'a'))`:
+/// - the parser's fast-path literal conversion, `in(tuple(id, name), ASTLiteral(Tuple{1, 'a'}))`,
+///   whose `ASTLiteral(Tuple)` formats as `(1, 'a')`;
+/// - an explicit function call, `(id, name) IN (tuple(1, 'a'))`, whose `tuple` is later switched
+///   to the operator form and also formats as `(1, 'a')`.
 ///
 /// We only do this when:
 /// 1. The LHS of IN is a multi-column tuple (`ASTFunction("tuple")`). For scalar IN like
 ///    `id IN (1, 2)`, the `ASTLiteral(Tuple{1, 2})` is a flat list of values and must NOT be wrapped.
-/// 2. The tuple literal represents a single row (its elements are plain values, not nested tuples).
-///    For multi-row sets like `(id, name) IN ((1, 'a'), (2, 'b'))` the literal is
-///    `Tuple{Tuple{1, 'a'}, Tuple{2, 'b'}}` which already formats with the correct nested parentheses.
+/// 2. The tuple represents a single row (its elements are plain values, not nested tuples).
+///    For multi-row sets like `(id, name) IN ((1, 'a'), (2, 'b'))` the set is a tuple of tuples
+///    which already formats with the correct nested parentheses.
 void wrapSingleRowTupleSetForINNode(ASTFunction & function)
 {
     if (!(function.name == "in" || function.name == "notIn")
@@ -252,13 +266,30 @@ void wrapSingleRowTupleSetForINNode(ASTFunction & function)
         return;
 
     auto & rhs = function.arguments->children[1];
-    const auto * rhs_literal = rhs->as<ASTLiteral>();
-    if (!rhs_literal || rhs_literal->value.getType() != Field::Types::Tuple)
-        return;
 
-    const auto & tup = rhs_literal->value.safeGet<Tuple>();
-    if (!tup.empty() && tup[0].getType() != Field::Types::Tuple)
-        rhs = makeASTFunction("", rhs);
+    if (const auto * rhs_literal = rhs->as<ASTLiteral>())
+    {
+        if (rhs_literal->value.getType() != Field::Types::Tuple)
+            return;
+
+        const auto & tup = rhs_literal->value.safeGet<Tuple>();
+        if (!tup.empty() && tup[0].getType() != Field::Types::Tuple)
+            rhs = makeASTFunction("", rhs);
+        return;
+    }
+
+    if (const auto * rhs_func = rhs->as<ASTFunction>();
+        rhs_func && rhs_func->name == "tuple" && rhs_func->arguments)
+    {
+        /// The user's own parentheses around the RHS (`IN (tuple(...))`) set the `parenthesized`
+        /// flag on the `tuple` node; together with the parentheses of the operator form of `tuple`
+        /// (or of the wrapper added below) they would produce a redundant layer, `IN (((1, 'a')))`.
+        rhs->setParenthesized(false);
+
+        const auto & elements = rhs_func->arguments->children;
+        if (!elements.empty() && !isTupleNode(elements[0]))
+            rhs = makeASTFunction("", rhs);
+    }
 }
 
 bool isCompatible(ASTPtr & node, LiteralEscapingStyle literal_escaping_style, const NamesAndTypesList & available_columns)

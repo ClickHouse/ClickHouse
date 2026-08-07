@@ -37,6 +37,9 @@ chmod ugo+r "${DB_PATH}"
 echo "--- explicit tuple call is sent as a row value"
 ${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t WHERE tuple(id, val) IN ((1, 'x')))) ORDER BY id"
 
+echo "--- explicit tuple call as a single-row IN set keeps its outer parentheses"
+${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t WHERE tuple(id, val) IN (tuple(1, 'x')))) ORDER BY id"
+
 echo "--- single-element tuple call is rejected by ClickHouse"
 ${CLICKHOUSE_CLIENT} --query="SELECT id FROM sqlite('${DB_PATH}', (SELECT id FROM t WHERE tuple(val) = tuple('x')))" 2>&1 | grep -q "BAD_ARGUMENTS" && echo "rejected"
 

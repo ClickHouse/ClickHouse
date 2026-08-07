@@ -248,6 +248,14 @@ TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
     check(state, 1, {"field", "value"},
           "SELECT field, value FROM test.table WHERE (field, value) IN (('foo', 'bar'), ('qux', 'baz'))",
           R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar'), ('qux', 'baz')))");
+    /// The same single-row set carried by an explicit `tuple` call instead of the parser's
+    /// fast-path `ASTLiteral(Tuple)` must keep its outer parentheses too.
+    check(state, 1, {"field", "value"},
+          "SELECT field, value FROM test.table WHERE tuple(field, value) IN (tuple('foo', 'bar'))",
+          R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar')))");
+    check(state, 1, {"field", "value"},
+          "SELECT field, value FROM test.table WHERE tuple(field, value) IN (tuple(tuple('foo', 'bar'), tuple('qux', 'baz')))",
+          R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar'), ('qux', 'baz')))");
 }
 
 TEST(TransformQueryForExternalDatabase, InWithTable)
