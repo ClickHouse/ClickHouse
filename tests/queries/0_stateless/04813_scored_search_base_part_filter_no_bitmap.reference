@@ -1,0 +1,13 @@
+-- a _part predicate alone does not gate the scorer behind a bitmap subquery
+1
+-- the rows of the requested part
+0
+1
+-- the same, with the prefilter row budget exhausted: a _part predicate does not need it
+0
+1
+-- a mixed predicate still builds a bitmap, but only over the surviving part
+1
+-- rows put into the bitmaps: none for the _part-only query, one row of the surviving part for the mixed one
+04813_part_and_payload	1
+04813_part_only	0

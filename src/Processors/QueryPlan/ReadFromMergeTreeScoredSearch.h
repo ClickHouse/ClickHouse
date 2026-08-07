@@ -45,6 +45,11 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
 private:
+    /// True if a plain read of `filtered_ranges` would drop rows that the scorer, which reads the
+    /// index instead of the data, would otherwise score: lightweight deletes and pending
+    /// `ALTER DELETE` mutations.
+    bool hasRowsHiddenOnRead() const;
+
     std::shared_ptr<StorageMergeTreeScoredSearchBase> storage;
     RangesInDataPartsPtr ranges_in_data_parts;
     /// State shared with DelayedCreatingBitmapsStep.
@@ -58,7 +63,10 @@ private:
     /// Bounds the number of scorer worker sources.
     size_t num_streams;
 
-    ExpressionActionsPtr virtual_columns_filter;
+    /// `ranges_in_data_parts` after pruning by a `_part` predicate. Shared by the scorer and by
+    /// the bitmap subquery; set by `applyFilters`. Entries keep their original
+    /// `part_index_in_query`, so they still address `LazyBitmapSubqueryState::bitmaps`.
+    RangesInDataPartsPtr filtered_ranges;
     bool applied_filters = false;
     std::shared_ptr<IScorer> scorer_owned;
 };
