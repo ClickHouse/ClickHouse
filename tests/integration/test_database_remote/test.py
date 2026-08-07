@@ -441,3 +441,38 @@ def test_hidden_table_of_a_nested_remote_database_is_not_served_by_a_remote_repl
     for node in (node1, node2):
         node.query("DROP DATABASE nested_hidden_inner")
         node.query("DROP DATABASE nested_hidden_src")
+
+
+def test_unavailable_nested_remote_database_falls_back_to_a_healthy_replica(
+    started_cluster,
+):
+    # The local shard of the outer proxy is itself a `Remote` database whose own target is down. That
+    # failure means the local replica of the outer shard cannot answer, exactly as if the replica
+    # itself were unavailable, so the outer proxy must fall back to the other replica of the same
+    # shard (where the intermediate database resolves the table locally) instead of surfacing the
+    # error of the broken intermediate proxy.
+    node2.query("CREATE DATABASE nested_down_src")
+    node2.query(
+        "CREATE TABLE nested_down_src.t (x UInt64) ENGINE = MergeTree ORDER BY x"
+    )
+    node2.query("INSERT INTO nested_down_src.t VALUES (1), (2), (3)")
+    node2.query(
+        "CREATE DATABASE nested_down_inner ENGINE = Remote('127.0.0.1', 'nested_down_src', 'default', '')"
+    )
+    # The intermediate database on node1 points at an unreachable address.
+    node1.query(
+        "CREATE DATABASE nested_down_inner ENGINE = Remote('127.0.0.1:1', 'nested_down_src', 'default', '')"
+    )
+    node1.query(
+        "CREATE DATABASE nested_down_outer ENGINE = Remote('node1|node2', 'nested_down_inner', 'default', '')"
+    )
+
+    assert node1.query("SHOW TABLES FROM nested_down_outer") == "t\n"
+    assert node1.query("EXISTS TABLE nested_down_outer.t") == "1\n"
+    assert node1.query("DESCRIBE TABLE nested_down_outer.t").startswith("x\tUInt64")
+    assert node1.query("SELECT count(), sum(x) FROM nested_down_outer.t") == "3\t6\n"
+
+    node1.query("DROP DATABASE nested_down_outer")
+    for node in (node1, node2):
+        node.query("DROP DATABASE nested_down_inner")
+    node2.query("DROP DATABASE nested_down_src")

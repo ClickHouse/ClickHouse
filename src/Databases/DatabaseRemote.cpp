@@ -227,101 +227,120 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
             const bool underlying_listing_is_filtered_by_access = underlying_remote != nullptr;
             const auto access = local_context->getAccess();
 
-            if (only_table)
+            try
             {
-                /// Existence is a property of the name, so it must not depend on whether the table
-                /// can be described. A table invisible to the caller is reported as missing, like in
-                /// the listing below. When the local replica does not have the table, fall through to
-                /// the remote-replica fallback, mirroring `fetchTableStructure`.
-                ///
-                /// The name is resolved ignoring the caller's visibility first, so that a table hidden
-                /// from the caller can be told from a genuinely missing one: only the latter may fall
-                /// through to the same-shard remote replicas below, which would otherwise resolve —
-                /// under the stored engine credentials — exactly the table that this database hides.
-                /// `IDatabase::isTableExist` is already visibility-agnostic; a nested `Remote` database
-                /// filters its own answer, so it is asked explicitly.
-                const bool name_exists = underlying_remote
-                    ? underlying_remote->isTableExistIgnoringVisibility(*only_table, query_context)
-                    : local_database->isTableExist(*only_table, query_context);
-
-                if (name_exists)
+                if (only_table)
                 {
-                    if (ignore_visibility)
-                        return Strings{*only_table};
+                    /// Existence is a property of the name, so it must not depend on whether the table
+                    /// can be described. A table invisible to the caller is reported as missing, like in
+                    /// the listing below. When the local replica does not have the table, fall through to
+                    /// the remote-replica fallback, mirroring `fetchTableStructure`.
+                    ///
+                    /// The name is resolved ignoring the caller's visibility first, so that a table hidden
+                    /// from the caller can be told from a genuinely missing one: only the latter may fall
+                    /// through to the same-shard remote replicas below, which would otherwise resolve —
+                    /// under the stored engine credentials — exactly the table that this database hides.
+                    /// `IDatabase::isTableExist` is already visibility-agnostic; a nested `Remote` database
+                    /// filters its own answer, so it is asked explicitly.
+                    const bool name_exists = underlying_remote
+                        ? underlying_remote->isTableExistIgnoringVisibility(*only_table, query_context)
+                        : local_database->isTableExist(*only_table, query_context);
 
-                    if (underlying_remote)
-                        return underlying_remote->isTableExist(*only_table, query_context) ? Strings{*only_table} : Strings{};
+                    if (name_exists)
+                    {
+                        if (ignore_visibility)
+                            return Strings{*only_table};
 
-                    if (access->isGranted(AccessType::SHOW_TABLES, remote_database, *only_table))
-                        return Strings{*only_table};
-                    return {};
+                        if (underlying_remote)
+                            return underlying_remote->isTableExist(*only_table, query_context) ? Strings{*only_table} : Strings{};
+
+                        if (access->isGranted(AccessType::SHOW_TABLES, remote_database, *only_table))
+                            return Strings{*only_table};
+                        return {};
+                    }
+                }
+                else
+                {
+                    /// Enumerate through the lightweight iterator: only the names are needed here, and the
+                    /// underlying database may itself be an external one (e.g. another `Remote` database),
+                    /// whose plain `getTablesIterator` resolves the structure of every table and drops
+                    /// those that fail.
+                    const bool check_access_for_tables = !underlying_listing_is_filtered_by_access
+                        && !access->isGranted(AccessType::SHOW_TABLES, remote_database);
+                    Strings tables;
+                    NameSet local_names;
+                    for (const auto & table : local_database->getLightweightTablesIterator(query_context))
+                    {
+                        local_names.insert(table.name);
+                        if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, remote_database, table.name))
+                            continue;
+                        tables.push_back(table.name);
+                    }
+
+                    /// The local replica has the database, but it may still be missing a table that another
+                    /// replica of the shard has, and resolution (`EXISTS TABLE`, `SELECT`) does fall back to
+                    /// that replica, so the listing has to include such a table as well; otherwise the same
+                    /// name would be absent from `SHOW TABLES` and `system.tables` while it can be described
+                    /// and read. Only a name that the local replica does not have at all is taken from the
+                    /// fallback: a name it has but hides from the caller stays hidden, exactly like in the
+                    /// `only_table` branch above.
+                    if (!remote_only_cluster)
+                        return tables;
+
+                    Strings remote_tables;
+                    try
+                    {
+                        remote_tables = fetch_from_cluster(*remote_only_cluster);
+                    }
+                    catch (...)
+                    {
+                        /// The metadata is resolved from an arbitrary available replica, and the local one
+                        /// has just answered, so its list is a valid answer on its own: an unreachable
+                        /// second replica must not turn a `SHOW TABLES` that the local replica can serve
+                        /// into an error. Log at debug level for the same reason as in `getTablesIterator`.
+                        LOG_DEBUG(
+                            log,
+                            "Cannot complete the list of the tables of the remote database {} from its remote replicas: {}",
+                            backQuoteIfNeed(remote_database),
+                            getCurrentExceptionMessage(/* with_stacktrace = */ false));
+                        return tables;
+                    }
+
+                    for (const auto & table_name : remote_tables)
+                    {
+                        if (local_names.contains(table_name))
+                            continue;
+
+                        /// A table that the lightweight iterator did not return can still exist locally and
+                        /// merely be invisible to the caller (a nested `Remote` database filters its own
+                        /// listing), and such a name must not be served by another replica.
+                        const bool exists_locally = underlying_remote
+                            ? underlying_remote->isTableExistIgnoringVisibility(table_name, query_context)
+                            : local_database->isTableExist(table_name, query_context);
+                        if (exists_locally)
+                            continue;
+
+                        tables.push_back(table_name);
+                    }
+
+                    return tables;
                 }
             }
-            else
+            catch (const NetException &)
             {
-                /// Enumerate through the lightweight iterator: only the names are needed here, and the
-                /// underlying database may itself be an external one (e.g. another `Remote` database),
-                /// whose plain `getTablesIterator` resolves the structure of every table and drops
-                /// those that fail.
-                const bool check_access_for_tables = !underlying_listing_is_filtered_by_access
-                    && !access->isGranted(AccessType::SHOW_TABLES, remote_database);
-                Strings tables;
-                NameSet local_names;
-                for (const auto & table : local_database->getLightweightTablesIterator(query_context))
-                {
-                    local_names.insert(table.name);
-                    if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, remote_database, table.name))
-                        continue;
-                    tables.push_back(table.name);
-                }
-
-                /// The local replica has the database, but it may still be missing a table that another
-                /// replica of the shard has, and resolution (`EXISTS TABLE`, `SELECT`) does fall back to
-                /// that replica, so the listing has to include such a table as well; otherwise the same
-                /// name would be absent from `SHOW TABLES` and `system.tables` while it can be described
-                /// and read. Only a name that the local replica does not have at all is taken from the
-                /// fallback: a name it has but hides from the caller stays hidden, exactly like in the
-                /// `only_table` branch above.
-                if (!remote_only_cluster)
-                    return tables;
-
-                Strings remote_tables;
-                try
-                {
-                    remote_tables = fetch_from_cluster(*remote_only_cluster);
-                }
-                catch (...)
-                {
-                    /// The metadata is resolved from an arbitrary available replica, and the local one
-                    /// has just answered, so its list is a valid answer on its own: an unreachable
-                    /// second replica must not turn a `SHOW TABLES` that the local replica can serve
-                    /// into an error. Log at debug level for the same reason as in `getTablesIterator`.
-                    LOG_DEBUG(
-                        log,
-                        "Cannot complete the list of the tables of the remote database {} from its remote replicas: {}",
-                        backQuoteIfNeed(remote_database),
-                        getCurrentExceptionMessage(/* with_stacktrace = */ false));
-                    return tables;
-                }
-
-                for (const auto & table_name : remote_tables)
-                {
-                    if (local_names.contains(table_name))
-                        continue;
-
-                    /// A table that the lightweight iterator did not return can still exist locally and
-                    /// merely be invisible to the caller (a nested `Remote` database filters its own
-                    /// listing), and such a name must not be served by another replica.
-                    const bool exists_locally = underlying_remote
-                        ? underlying_remote->isTableExistIgnoringVisibility(table_name, query_context)
-                        : local_database->isTableExist(table_name, query_context);
-                    if (exists_locally)
-                        continue;
-
-                    tables.push_back(table_name);
-                }
-
-                return tables;
+                /// The local database is itself another `Remote` database, and the failure came from its
+                /// own remote target, not from this one: an answer of the local replica of this shard is
+                /// simply not available, exactly as if the replica itself were down. Fall through to the
+                /// same-shard remote replicas below instead of turning one bad intermediate proxy into a
+                /// failure of the whole database. The hidden-vs-missing distinction above is a property
+                /// of the answering replica, and the answering replica is now a remote one.
+                if (!underlying_remote || !remote_only_cluster)
+                    throw;
+                LOG_DEBUG(
+                    log,
+                    "Cannot list the tables of the remote database {} through the local database: {}. Trying the remote replicas",
+                    backQuoteIfNeed(remote_database),
+                    getCurrentExceptionMessage(/* with_stacktrace = */ false));
             }
         }
 
@@ -384,62 +403,83 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
             const bool name_is_visible = local_database_is_remote
                 || local_context->getAccess()->isGranted(AccessType::SHOW_TABLES, remote_database, table_name);
 
-            if (name_is_visible)
+            try
             {
-                if (auto storage = local_database->tryGetTable(table_name, local_context))
+                if (name_is_visible)
                 {
-                    /// Resolution reads the structure of the underlying local table, so it requires the
-                    /// same right as `DESCRIBE TABLE` on it (like the local-shard special case of
-                    /// `getStructureOfRemoteTable`). The check applies only when the local replica
-                    /// actually serves the table: on the remote-replica fallback below no local object
-                    /// is touched, so a caller without any grants on the local objects must not be
-                    /// rejected there.
-                    if (!local_database_is_remote)
-                        local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
-                    auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
-                    auto columns = metadata_snapshot->getColumns();
+                    if (auto storage = local_database->tryGetTable(table_name, local_context))
+                    {
+                        /// Resolution reads the structure of the underlying local table, so it requires the
+                        /// same right as `DESCRIBE TABLE` on it (like the local-shard special case of
+                        /// `getStructureOfRemoteTable`). The check applies only when the local replica
+                        /// actually serves the table: on the remote-replica fallback below no local object
+                        /// is touched, so a caller without any grants on the local objects must not be
+                        /// rejected there.
+                        if (!local_database_is_remote)
+                            local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
+                        auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
+                        auto columns = metadata_snapshot->getColumns();
 
-                    /// The columns can come back empty because of a race with concurrent DDL (e.g.
-                    /// `REPLACE TABLE` or lazy storage initialization). The table exists, so the empty
-                    /// set must not be returned as a successful resolution: `fetchTable` interprets an
-                    /// empty structure as an absent table, misreporting the race as `UNKNOWN_TABLE`.
-                    /// Treat it as a transient condition instead, exactly like `getStructureOfRemoteTable`
-                    /// does: fall through to the same-shard remote replicas, and when there are none,
-                    /// report the failed attempt so the caller can retry.
-                    if (!columns.empty())
-                        return columns;
+                        /// The columns can come back empty because of a race with concurrent DDL (e.g.
+                        /// `REPLACE TABLE` or lazy storage initialization). The table exists, so the empty
+                        /// set must not be returned as a successful resolution: `fetchTable` interprets an
+                        /// empty structure as an absent table, misreporting the race as `UNKNOWN_TABLE`.
+                        /// Treat it as a transient condition instead, exactly like `getStructureOfRemoteTable`
+                        /// does: fall through to the same-shard remote replicas, and when there are none,
+                        /// report the failed attempt so the caller can retry.
+                        if (!columns.empty())
+                            return columns;
 
-                    if (!remote_only_cluster)
-                        throw NetException(
-                            ErrorCodes::NO_REMOTE_SHARD_AVAILABLE,
-                            "The table {}.{} exists on the local shard, but its structure is temporarily unavailable "
-                            "(e.g. because of a concurrent REPLACE TABLE or lazy storage initialization), "
-                            "and there are no remote replicas to fall back to. Retry the query",
-                            backQuoteIfNeed(remote_database),
-                            backQuoteIfNeed(table_name));
+                        if (!remote_only_cluster)
+                            throw NetException(
+                                ErrorCodes::NO_REMOTE_SHARD_AVAILABLE,
+                                "The table {}.{} exists on the local shard, but its structure is temporarily unavailable "
+                                "(e.g. because of a concurrent REPLACE TABLE or lazy storage initialization), "
+                                "and there are no remote replicas to fall back to. Retry the query",
+                                backQuoteIfNeed(remote_database),
+                                backQuoteIfNeed(table_name));
+                    }
+                    else if (underlying_remote && underlying_remote->isTableExistIgnoringVisibility(table_name, local_context))
+                    {
+                        /// A nested `Remote` database answers `tryGetTable` with `nullptr` both for a table
+                        /// that it hides from the caller and for a genuinely missing one, and only the
+                        /// latter may use the fallback below: otherwise the outer proxy would resolve —
+                        /// through another replica of the same shard, under the stored engine credentials —
+                        /// the very table that the intermediate database hides, while `SHOW TABLES` and
+                        /// `EXISTS TABLE` keep reporting it as missing (see the direct local table below).
+                        return {};
+                    }
                 }
-                else if (underlying_remote && underlying_remote->isTableExistIgnoringVisibility(table_name, local_context))
+                else if (local_database->isTableExist(table_name, local_context))
                 {
-                    /// A nested `Remote` database answers `tryGetTable` with `nullptr` both for a table
-                    /// that it hides from the caller and for a genuinely missing one, and only the
-                    /// latter may use the fallback below: otherwise the outer proxy would resolve —
-                    /// through another replica of the same shard, under the stored engine credentials —
-                    /// the very table that the intermediate database hides, while `SHOW TABLES` and
-                    /// `EXISTS TABLE` keep reporting it as missing (see the direct local table below).
+                    /// The name does exist on the local shard, but the caller cannot see it. Reporting it
+                    /// as missing is not enough: falling through to the same-shard remote replicas below
+                    /// would resolve the very table that `SHOW TABLES` and `EXISTS TABLE` hide (the
+                    /// `only_table` branch of `fetchTablesList` stops at the local shard in exactly the
+                    /// same situation), so a caller holding rights only on the proxy database could
+                    /// `DESCRIBE`, `SHOW CREATE` or even `SELECT` a hidden local table through another
+                    /// replica of its shard. The fallback exists for a table the local replica genuinely
+                    /// lacks, not for a table it is not allowed to expose.
                     return {};
                 }
             }
-            else if (local_database->isTableExist(table_name, local_context))
+            catch (const NetException &)
             {
-                /// The name does exist on the local shard, but the caller cannot see it. Reporting it
-                /// as missing is not enough: falling through to the same-shard remote replicas below
-                /// would resolve the very table that `SHOW TABLES` and `EXISTS TABLE` hide (the
-                /// `only_table` branch of `fetchTablesList` stops at the local shard in exactly the
-                /// same situation), so a caller holding rights only on the proxy database could
-                /// `DESCRIBE`, `SHOW CREATE` or even `SELECT` a hidden local table through another
-                /// replica of its shard. The fallback exists for a table the local replica genuinely
-                /// lacks, not for a table it is not allowed to expose.
-                return {};
+                /// The local database is itself another `Remote` database, and the failure came from its
+                /// own remote target, not from this one: an answer of the local replica of this shard is
+                /// simply not available, exactly as if the replica itself were down. Fall through to the
+                /// same-shard remote replicas below instead of turning one bad intermediate proxy into a
+                /// failure of the whole database (`fetchTablesList` does the same for the listing). The
+                /// hidden-vs-missing distinction above is a property of the answering replica, and the
+                /// answering replica is now a remote one.
+                if (!local_database_is_remote || !remote_only_cluster)
+                    throw;
+                LOG_DEBUG(
+                    log,
+                    "Cannot resolve the table {}.{} through the local database: {}. Trying the remote replicas",
+                    backQuoteIfNeed(remote_database),
+                    backQuoteIfNeed(table_name),
+                    getCurrentExceptionMessage(/* with_stacktrace = */ false));
             }
         }
 
