@@ -460,8 +460,6 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
-    /// Aggregate-projection rewriting can make an aggregation merge-only, and merging bypasses
-    /// the top-K heap; drop the stale top-K state (and its synthesized sort) from such steps.
     if (optimization_settings.optimize_projection)
         abandonGroupByTopKForProjections(root);
 

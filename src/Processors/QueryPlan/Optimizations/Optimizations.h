@@ -256,8 +256,11 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
 
 void abandonUnprofitableGroupByTopK(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
-/// Aggregate-projection rewriting turns aggregation steps into merge-only ones, which bypass the
-/// top-K heap; abandon the optimization (and the sort synthesized for it) on such steps.
+/// Aggregate-projection rewriting runs after the top-K optimization and either makes the
+/// `AggregatingStep` merge-only (all parts have the projection) or replaces it with an
+/// `AggregatingProjectionStep` (only some do).  Merging of aggregation states bypasses the heap, so
+/// leaving `top_k` on such a step only disables hash-table size hints and keeps a stale `Top-K` in
+/// `EXPLAIN`.  Abandon it, together with the sort synthesized for the heap.
 void abandonGroupByTopKForProjections(QueryPlan::Node & root);
 
 bool removeSyntheticTopKSort(QueryPlan::Node * aggregating_node, QueryPlan::Node * sort_node, QueryPlan::Node * parent_of_sort);

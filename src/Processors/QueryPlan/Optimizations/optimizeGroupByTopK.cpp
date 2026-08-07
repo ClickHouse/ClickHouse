@@ -233,11 +233,6 @@ void abandonGroupByTopKForProjections(QueryPlan::Node & root)
             stack.push_back(child);
         }
 
-        /// Aggregate-projection rewriting happens after the top-K optimization. It either turns the
-        /// `AggregatingStep` into merge-only (all parts have the projection) or replaces it with an
-        /// `AggregatingProjectionStep` (only some parts do). Merging of aggregation states bypasses
-        /// the heap, so keeping `top_k` there only disables hash-table size hints and leaves a stale
-        /// `Top-K` mark in `EXPLAIN`; abandon it, together with the sort synthesized for the heap.
         bool synthetic_sort = false;
         auto * aggregating_step = typeid_cast<AggregatingStep *>(node->step.get());
         auto * aggregating_projection_step = typeid_cast<AggregatingProjectionStep *>(node->step.get());
