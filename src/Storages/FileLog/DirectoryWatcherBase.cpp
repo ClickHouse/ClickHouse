@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <poll.h>
 #include <Common/ErrnoException.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 #if defined(OS_LINUX)
@@ -64,7 +65,6 @@ DirectoryWatcherBase::DirectoryWatcherBase(
         throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot initialize inotify");
 #endif
 
-    watch_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "directory_watch", [this] { watchFunc(); });
     start();
 }
 
@@ -592,16 +592,34 @@ DirectoryWatcherBase::~DirectoryWatcherBase()
 
 void DirectoryWatcherBase::start()
 {
-    if (watch_task)
-        watch_task->activateAndSchedule();
+    /// The catch keeps a watch failure contained and logged here, as the schedule pool's execute
+    /// used to do. Letting it escape would instead become the global pool's first_exception and be
+    /// rethrown from an unrelated later scheduleOrThrow.
+    watch_thread = std::make_unique<ThreadFromGlobalPool>([this]
+    {
+        try
+        {
+            watchFunc();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    });
 }
 
 void DirectoryWatcherBase::stop()
 {
     stopped = true;
     (void)::write(event_pipe.fds_rw[1], "\0", 1);
-    if (watch_task)
-        watch_task->deactivate();
+    if (watch_thread)
+    {
+        /// Mandatory: ~ThreadFromGlobalPoolImpl aborts on a still-joinable thread. The write above
+        /// is what makes the blocking poll return, so this cannot hang.
+        if (watch_thread->joinable())
+            watch_thread->join();
+        watch_thread.reset();
+    }
 }
 
 }
