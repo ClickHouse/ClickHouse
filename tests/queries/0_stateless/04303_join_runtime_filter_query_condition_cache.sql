@@ -14,6 +14,9 @@
 
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
+-- The probe side is tiny (40 rows), so the randomized `join_runtime_filter_min_probe_rows` would skip
+-- building the runtime filter and the regression this test guards would not be exercised at all.
+SET join_runtime_filter_min_probe_rows = 0;
 SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;

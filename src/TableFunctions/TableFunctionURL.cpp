@@ -294,8 +294,21 @@ void TableFunctionURL::buildDelegate(URLSchemeTarget target, const ContextPtr & 
 StoragePtr TableFunctionURL::executeImpl(
     const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
+    /// The outer `execute` has already run the `CREATE TEMPORARY TABLE` privilege check when it
+    /// applies (it does not when a database engine resolves its table through this function), so
+    /// the delegate must not repeat it. The same holds for the source access check: this function
+    /// reports the delegate's engine name and access URI, so the outer check (or the caller that
+    /// explicitly disabled it and took over) has already covered exactly the delegate's source.
     if (delegate)
-        return delegate->execute(ast_function, context, table_name, std::move(cached_columns), /*use_global_context=*/false, is_insert_query);
+        return delegate->execute(
+            ast_function,
+            context,
+            table_name,
+            std::move(cached_columns),
+            /*use_global_context=*/false,
+            is_insert_query,
+            /*check_create_temporary_table=*/false,
+            /*check_source_access=*/false);
 
     return ITableFunctionFileLike::executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
 }
@@ -521,14 +534,25 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 
 std::optional<String> TableFunctionURL::tryGetFormatFromFirstArgument()
 {
-    return FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath());
+    /// The URL may arrive already resolved against a base URL (e.g. from a `URL` database), and
+    /// `resolveURLBase` tolerates inputs that `Poco::URI` rejects — e.g. `file://report:2026.csv`,
+    /// whose authority parses as a host with an invalid port. Failing to detect the format from
+    /// the file name is not an error.
+    try
+    {
+        return FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath());
+    }
+    catch (const Poco::Exception &)
+    {
+        return std::nullopt;
+    }
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>({.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
@@ -537,7 +561,7 @@ import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/
 ## Syntax {#syntax}
 
 ```sql
-url(URL [,format] [,structure] [,headers])
+url(URL [,format] [,structure] [,headers] [,body])
 ```
 
 ## Parameters {#parameters}
@@ -548,8 +572,9 @@ url(URL [,format] [,structure] [,headers])
 | `format`    | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
+| `body`      | Request body in `body(content [, format])` form. `content` is either a constant string or a `SELECT` subquery. When a subquery is used, its output rows are streamed into the request body using the given output `format` (defaults to `JSONLines`). Specifying a body promotes the request from `GET` to `POST`.                                              |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified format and structure and with data from the defined `URL`.
 
@@ -568,6 +593,60 @@ CREATE TABLE test_table (column1 String, column2 UInt32) ENGINE=Memory;
 INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FORMAT+CSV', 'CSV', 'column1 String, column2 UInt32') VALUES ('http interface', 42);
 SELECT * FROM test_table;
 ```
+
+## Sending an HTTP request body {#sending-a-body}
+
+When the remote endpoint expects a `POST` payload, pass the body via the `body(...)` argument. The body can be a constant string or the result of a `SELECT` subquery. Specifying a body promotes the request from `GET` to `POST`; the body is streamed to the server as the subquery produces rows, so no intermediate buffering is required.
+
+Constant string body:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/echo',
+    JSONEachRow,
+    headers('Content-Type'='application/json'),
+    body('{"user":"alice"}')
+);
+```
+
+Subquery body (default output format is `JSONLines`):
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    headers('Content-Type'='application/json'),
+    body((SELECT id, name FROM local_table WHERE active))
+);
+```
+
+Subquery body with an explicit output format:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    headers('Content-Type'='text/csv'),
+    body((SELECT id, name FROM local_table WHERE active), CSVWithNames)
+);
+```
+
+:::note
+When the `structure` argument is omitted, `url` first sends a request to infer the response schema and then sends a second request to read the data. This double request is the same behavior as for plain `GET` reads with automatic structure, but with a body it means the `POST` (and any subquery used to build the body) is sent twice. Specifying an explicit `structure` avoids the extra schema-inference request:
+
+```sql
+SELECT * FROM url(
+    'https://api.example.com/lookup',
+    JSONEachRow,
+    'id UInt64, name String',
+    body((SELECT id, name FROM local_table WHERE active))
+);
+```
+
+Even with an explicit `structure`, the request is not guaranteed to be delivered exactly once: the HTTP layer re-sends the same method and body when following redirects, and retries the request (re-running the subquery that builds the body) on retriable network failures. Endpoints that receive a body should be prepared to handle repeated delivery, for example by being idempotent.
+:::
+
+A subquery body is not supported for clustered reads: [`urlCluster`](/reference/functions/table-functions/urlCluster) rejects it, and `url` does not use parallel replicas when the body is a subquery. Every participating server would re-execute the subquery locally, so the request body could differ between the servers. A constant string body is identical everywhere and works with both.
 
 ## Dispatching by URL scheme {#scheme-dispatch}
 
@@ -654,7 +733,8 @@ The resolution rules are:
 - **Query-only** (e.g. `?x=1`): appended to the full base path, replacing any existing query or fragment.
 - **Fragment-only** (e.g. `#frag`): appended to the base URL, preserving the query, replacing any existing fragment.
 - **Empty**: returns the base URL without fragment.
-- **Absolute URL**: passed through unchanged; `url_base` is ignored.
+- **Absolute URL**: passed through unchanged; `url_base` is ignored. A URL is considered absolute only when it starts with `scheme://`: a name whose first path segment contains a colon (e.g. `report:2026.csv`), which RFC 3986 would parse as an absolute URI with the scheme `report`, is resolved as a path-relative reference instead, because such a name is not a usable URL.
+- **Scheme-only base** (e.g. `file://`): a path-relative URL is appended to the base directly: `file://` + `data.csv` = `file://data.csv`, which for the `file://` scheme means a path relative to the [user_files](/reference/settings/server-settings/settings/user#user_files_path) directory (the current directory for clickhouse-local). Dot segments are kept as-is in this case.
 
 **Example**
 

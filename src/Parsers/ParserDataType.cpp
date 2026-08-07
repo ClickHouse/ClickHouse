@@ -2,7 +2,6 @@
 
 #include <string_view>
 #include <unordered_set>
-#include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTTupleDataType.h>
@@ -262,7 +261,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// column attribute rather than type name.
     {
         String n = type_name;
-        boost::to_upper(n);
+        toUpperASCII(n);
         if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC")
         {
             expected.add(pos, "type name");
@@ -499,7 +498,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             DynamicArgumentParser parser;
             parser.parse(pos, arg, expected);
         }
-        else if (boost::to_lower_copy(type_name) == "json")
+        else if (equalsCaseInsensitive(type_name, "json"))
         {
             ObjectArgumentParser parser;
             parser.parse(pos, arg, expected);
