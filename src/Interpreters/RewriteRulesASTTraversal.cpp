@@ -47,10 +47,18 @@ namespace
 /// parameter `{p:UInt64}`, letting the rule be bypassed. Return the inner literal for such a wrapper so it
 /// is matched (and captured by `{x:Int}`) as the literal it stands for. This is read-only: the original
 /// query AST is never mutated, so a query that no rule matches still executes with its `_CAST` intact.
+///
+/// Only the wrappers marked by `makeASTForQueryParameter` are unwrapped
+/// (`isQueryParameterSubstitution`). A user may call the internal `_CAST` function directly
+/// (`SELECT _CAST(1, 'UInt8')`), and there the cast is part of the query's semantics: unwrapping
+/// it would let a rule written for the bare literal match (and rewrite away) a cast that matters,
+/// e.g. `_CAST(256, 'UInt8')` or a Nullable/Enum/Date cast. Such a call therefore matches only a
+/// template that spells out the same `_CAST` call.
 ASTPtr unwrapQueryParameterCast(const ASTPtr & node)
 {
     const auto * func = node->as<ASTFunction>();
-    if (func && func->name == "_CAST" && func->arguments && func->arguments->children.size() == 2
+    if (func && func->isQueryParameterSubstitution() && func->name == "_CAST" && func->arguments
+        && func->arguments->children.size() == 2
         && func->arguments->children[0]->as<ASTLiteral>() && func->arguments->children[1]->as<ASTLiteral>())
         return func->arguments->children[0];
     return node;
@@ -244,7 +252,10 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
                             is_template = false;
                             break;
                         }
-                        match_node = top1->children[0];
+                        /// The inner node may itself be a substituted typed-parameter `_CAST`
+                        /// wrapper (e.g. `SELECT {p:UInt64}` as the whole projection); capture
+                        /// the literal it stands for, like the top-level unwrap above.
+                        match_node = unwrapQueryParameterCast(top1->children[0]);
                     }
                     auto add_to_matching_map = [&](ASTPtr cloned_ast)
                     {

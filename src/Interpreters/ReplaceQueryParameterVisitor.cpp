@@ -8,6 +8,7 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
@@ -154,7 +155,11 @@ ASTPtr makeASTForQueryParameter(const Field & literal, const String & type_name,
 {
     if (typeid_cast<const DataTypeString *>(data_type.get()))
         return make_intrusive<ASTLiteral>(literal);
-    return addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
+    auto cast = addTypeConversionToAST(make_intrusive<ASTLiteral>(literal), type_name);
+    /// Mark the wrapper as parameter substitution so consumers that need to see through it
+    /// (the rewrite-rule matcher) can distinguish it from a user-written `_CAST(...)` call.
+    cast->as<ASTFunction &>().setIsQueryParameterSubstitution(true);
+    return cast;
 }
 
 }
