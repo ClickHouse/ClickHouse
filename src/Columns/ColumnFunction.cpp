@@ -1,5 +1,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/validateColumnType.h>
 #include <Common/HashTable/Hash.h>
@@ -34,12 +35,14 @@ ColumnFunction::ColumnFunction(
     const ColumnsWithTypeAndName & columns_to_capture,
     bool is_short_circuit_argument_,
     bool is_function_compiled_,
-    bool recursively_convert_result_to_full_column_if_low_cardinality_)
+    bool recursively_convert_result_to_full_column_if_low_cardinality_,
+    bool allow_lazy_replicated_captures_)
     : elements_size(size)
     , function(function_)
     , is_short_circuit_argument(is_short_circuit_argument_)
     , recursively_convert_result_to_full_column_if_low_cardinality(recursively_convert_result_to_full_column_if_low_cardinality_)
     , is_function_compiled(is_function_compiled_)
+    , allow_lazy_replicated_captures(allow_lazy_replicated_captures_)
 {
     appendArguments(columns_to_capture);
 }
@@ -50,7 +53,14 @@ MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
     for (auto & column : capture)
         column.column = column.column->cloneResized(size);
 
-    return ColumnFunction::create(size, function, capture, is_short_circuit_argument, is_function_compiled);
+    return ColumnFunction::create(
+        size,
+        function,
+        capture,
+        is_short_circuit_argument,
+        is_function_compiled,
+        /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
+        allow_lazy_replicated_captures);
 }
 
 ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
@@ -60,11 +70,33 @@ ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
                         offsets.size(), elements_size);
 
     ColumnsWithTypeAndName capture = captured_columns;
+    ColumnPtr replication_indexes;
     for (auto & column : capture)
-        column.column = column.column->replicate(offsets);
+    {
+        if (allow_lazy_replicated_captures && isLazyReplicationUseful(column.column))
+        {
+            /// Wrap the capture into ColumnReplicated instead of physically copying it.
+            if (!replication_indexes)
+                replication_indexes = convertOffsetsToIndexes(offsets);
+            /// All captures share the same indexes column, so that functions inside
+            /// the lambda can use the common-indexes fast path
+            column.column = ColumnReplicated::create(column.column, replication_indexes);
+        }
+        else
+        {
+            column.column = column.column->replicate(offsets);
+        }
+    }
 
     size_t replicated_size = 0 == elements_size ? 0 : offsets.back();
-    return ColumnFunction::create(replicated_size, function, capture, is_short_circuit_argument, is_function_compiled);
+    return ColumnFunction::create(
+        replicated_size,
+        function,
+        capture,
+        is_short_circuit_argument,
+        is_function_compiled,
+        /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
+        allow_lazy_replicated_captures);
 }
 
 ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
@@ -73,7 +105,14 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     for (auto & column : capture)
         column.column = column.column->cut(start, length);
 
-    return ColumnFunction::create(length, function, capture, is_short_circuit_argument, is_function_compiled);
+    return ColumnFunction::create(
+        length,
+        function,
+        capture,
+        is_short_circuit_argument,
+        is_function_compiled,
+        /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
+        allow_lazy_replicated_captures);
 }
 
 Field ColumnFunction::operator[](size_t n) const
@@ -184,7 +223,8 @@ ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) 
         capture,
         is_short_circuit_argument,
         is_function_compiled,
-        recursively_convert_result_to_full_column_if_low_cardinality);
+        recursively_convert_result_to_full_column_if_low_cardinality,
+        allow_lazy_replicated_captures);
 }
 
 void ColumnFunction::filter(const Filter & filt)
@@ -227,7 +267,8 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
         capture,
         is_short_circuit_argument,
         is_function_compiled,
-        recursively_convert_result_to_full_column_if_low_cardinality);
+        recursively_convert_result_to_full_column_if_low_cardinality,
+        allow_lazy_replicated_captures);
 }
 
 ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
@@ -242,7 +283,8 @@ ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
         capture,
         is_short_circuit_argument,
         is_function_compiled,
-        recursively_convert_result_to_full_column_if_low_cardinality);
+        recursively_convert_result_to_full_column_if_low_cardinality,
+        allow_lazy_replicated_captures);
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_columns,
@@ -277,7 +319,8 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnFunction::scatter(size_t num_co
             std::move(capture),
             is_short_circuit_argument,
             is_function_compiled,
-            recursively_convert_result_to_full_column_if_low_cardinality));
+            recursively_convert_result_to_full_column_if_low_cardinality,
+            allow_lazy_replicated_captures));
     }
 
     return columns;
@@ -384,7 +427,11 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
                         "got {}, but {} is expected.", argument_types.size(), column.type->getName(), argument_types[index]->getName());
 
     auto captured_column = column;
-    captured_column.column = captured_column.column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+    /// Keep replicated captures lazy if allowed: some functions inside the lambda handle
+    /// ColumnReplicated arguments themselves
+    if (!allow_lazy_replicated_captures)
+        captured_column.column = captured_column.column->convertToFullColumnIfReplicated();
+    captured_column.column = captured_column.column->convertToFullColumnIfSparse();
     captured_columns.push_back(std::move(captured_column));
 }
 
@@ -439,6 +486,9 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
         ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
 
     res.column = function->execute(columns, res.type, elements_size, dry_run);
+    /// The result can be lazily replicated (ColumnReplicated), e.g. when the lambda just returns a captured column. Materialize it here so
+    /// consumers of reduce don't have to handle ColumnReplicated.
+    res.column = res.column->convertToFullColumnIfReplicated();
     if (!columnMatchesType(*res.column, *res.type))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -456,7 +506,14 @@ ColumnWithTypeAndName ColumnFunction::reduce(bool dry_run) const
 
 ColumnPtr ColumnFunction::recursivelyConvertResultToFullColumnIfLowCardinality() const
 {
-    return ColumnFunction::create(elements_size, function, captured_columns, is_short_circuit_argument, is_function_compiled, true);
+    return ColumnFunction::create(
+        elements_size,
+        function,
+        captured_columns,
+        is_short_circuit_argument,
+        is_function_compiled,
+        /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ true,
+        allow_lazy_replicated_captures);
 }
 
 void ColumnFunction::forEachMutableSubcolumn(MutableColumnCallback callback)
