@@ -786,9 +786,9 @@ TEST(Statistics, BasicDefaultCountArray)
 namespace
 {
 
-/// Encode a single-stat V4 `ColumnStatistics` blob by hand (the current binary only ever writes
-/// V5, so a pre-fix on-disk layout can only be produced this way). `stat_payload` is the raw
-/// per-statistics bytes; `type` selects the mask bit. Framing mirrors ColumnStatistics::serialize.
+/// Encode a single-stat V4 `ColumnStatistics` blob by hand, so a payload predating the NaN flag can
+/// be produced (the writer always emits the flag). `stat_payload` is the raw per-statistics bytes;
+/// `type` selects the mask bit. Framing mirrors ColumnStatistics::serialize.
 String encodeV4ColumnStatistics(StatisticsType type, const DataTypePtr & data_type, UInt64 rows, const String & stat_payload)
 {
     String out;
@@ -952,7 +952,7 @@ TEST(Statistics, PreV5FloatStatisticsConservativeRead)
 /// Pins the V5 writer, which no other test covers: the pre-V5 conservative fallback forces
 /// has_nan = true for any float stat it reads, so a writer that never records the flag still looks
 /// correct to a reader. Building real statistics and round-tripping them through serialize keeps the
-/// flag observable on the V5 path, and the no-NaN cases pin that the flag is not set unconditionally
+/// flag observable, and the no-NaN cases pin that the flag is not set unconditionally
 /// (which would disable float pruning everywhere).
 TEST(Statistics, V5NaNFlagRoundTrip)
 {
@@ -987,12 +987,12 @@ TEST(Statistics, V5NaNFlagRoundTrip)
 
     for (auto type : {StatisticsType::MinMax, StatisticsType::Basic})
     {
-        /// A NaN seen by build must survive serialize -> deserialize on the V5 path.
+        /// A NaN seen by build must survive serialize -> deserialize.
         auto with_nan = build_stats(type, /*with_nan=*/true);
         ASSERT_TRUE(nan_flag_of(with_nan, type)) << "build must record a NaN before it can be persisted";
         auto restored_with_nan = round_trip(with_nan);
         ASSERT_TRUE(restored_with_nan != nullptr);
-        EXPECT_TRUE(nan_flag_of(restored_with_nan, type)) << "V5 must persist has_nan = true";
+        EXPECT_TRUE(nan_flag_of(restored_with_nan, type)) << "has_nan = true must be persisted";
 
         /// A float column without a NaN must round-trip as has_nan = false, so float pruning keeps
         /// working for the common case.
@@ -1000,7 +1000,7 @@ TEST(Statistics, V5NaNFlagRoundTrip)
         ASSERT_FALSE(nan_flag_of(without_nan, type));
         auto restored_without_nan = round_trip(without_nan);
         ASSERT_TRUE(restored_without_nan != nullptr);
-        EXPECT_FALSE(nan_flag_of(restored_without_nan, type)) << "V5 must persist has_nan = false";
+        EXPECT_FALSE(nan_flag_of(restored_without_nan, type)) << "has_nan = false must be persisted";
     }
 }
 
@@ -1041,4 +1041,43 @@ TEST(Statistics, ContainerVersionIsLowestThatRepresentsTheBlob)
     /// a NaN, so just float `minmax` is stamped V5.
     EXPECT_EQ(version_of(built(StatisticsType::MinMax, float_type, nan_field)), StatisticsFileVersion::V5);
     EXPECT_EQ(version_of(built(StatisticsType::MinMax, int_type, Field(Int64(1)))), StatisticsFileVersion::V4);
+}
+
+/// Merging a NaN-bearing part into a finite one must carry the flag over, otherwise the merged part
+/// prunes as if it held no NaN. Merges are what build statistics for most parts, and no other test
+/// calls merge on a NaN-bearing statistic.
+TEST(Statistics, NaNFlagSurvivesMerge)
+{
+    auto float_type = std::make_shared<DataTypeFloat64>();
+    auto build_one = [&](StatisticsType type, bool with_nan)
+    {
+        MutableColumnPtr col = float_type->createColumn();
+        col->insert(with_nan ? Field(std::numeric_limits<Float64>::quiet_NaN()) : Field(Float64(2.0)));
+        auto stats = createTestStats({type}, float_type);
+        stats->build(std::move(col));
+        return stats;
+    };
+    auto nan_flag_of = [](const ColumnStatisticsPtr & cs, StatisticsType type)
+    {
+        const auto & stat = *cs->getStats().find(type)->second;
+        if (type == StatisticsType::MinMax)
+            return dynamic_cast<const StatisticsMinMax &>(stat).hasNaN();
+        return dynamic_cast<const StatisticsBasic &>(stat).hasNaN();
+    };
+
+    for (auto type : {StatisticsType::MinMax, StatisticsType::Basic})
+    {
+        auto finite = build_one(type, /*with_nan=*/false);
+        auto with_nan = build_one(type, /*with_nan=*/true);
+        ASSERT_FALSE(nan_flag_of(finite, type));
+        ASSERT_TRUE(nan_flag_of(with_nan, type));
+
+        finite->merge(with_nan);
+        EXPECT_TRUE(nan_flag_of(finite, type)) << "merge must propagate has_nan from the other side";
+
+        /// Merging a finite part into a NaN-bearing one must not clear it either.
+        auto keeper = build_one(type, /*with_nan=*/true);
+        keeper->merge(build_one(type, /*with_nan=*/false));
+        EXPECT_TRUE(nan_flag_of(keeper, type)) << "merge must not clear an already-set has_nan";
+    }
 }
