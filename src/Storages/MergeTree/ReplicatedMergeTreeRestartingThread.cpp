@@ -169,18 +169,6 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
         return false;
     }
 
-    /// Publish this replica's region membership (and enter leader election) before starting queue processing.
-    /// Queue workers classify same-region fetch sources from `/replicas/<name>/region`, so the region node must
-    /// exist before they can execute fetches, otherwise a recovering replica could fetch cross-region purely
-    /// because region publication lagged behind queue startup. If publishing it failed, keep the table readonly
-    /// and retry the whole startup instead of starting the queue without region information.
-    if (!storage.geo_replication_controller.start())
-    {
-        LOG_WARNING(log, "Failed to publish the region for geo replication control. Will try again.");
-        chassert(storage.is_readonly);
-        return false;
-    }
-
     setNotReadonly();
 
 
@@ -207,6 +195,21 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     try
     {
         removeFailedQuorumParts();
+
+        /// Publish this replica's region membership (and enter leader election) before `activateReplica`
+        /// advertises `/replicas/<name>/is_active`. Peers classify same-region fetch sources from
+        /// `/replicas/<name>/region`: if `is_active` appeared first, peers could already select this replica as
+        /// an active source during the startup window and misclassify it as out-of-region because the `region`
+        /// node does not exist yet. The region node must also be published before this replica's own queue
+        /// starts (below), otherwise a recovering replica could fetch cross-region purely because region
+        /// publication lagged behind queue startup. If publishing it failed, keep the table readonly and retry
+        /// the whole startup instead of proceeding without region information.
+        if (!storage.geo_replication_controller.start())
+        {
+            LOG_WARNING(log, "Failed to publish the region for geo replication control. Will try again.");
+            return false;
+        }
+
         activateReplica();
 
         const auto & zookeeper = storage.getZooKeeper();

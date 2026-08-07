@@ -1469,7 +1469,7 @@ For testing. Do not change it.
     Maximum time a follower should wait to fetch within the region; on timeout the follower will fetch from any replica.
     )", 0) \
     DECLARE(Bool, fetch_merged_part_within_region_only, true, R"(
-    If true, always fetch merged parts from the same region only, unless the local merge results in an inconsistent part and we need to fetch from somewhere to bring all replicas to a consistent state.
+    If true, always fetch merged parts from the same region only, unless the local merge results in an inconsistent part and we need to fetch from somewhere to bring all replicas to a consistent state. While no replica in the region has the merged part, the log entry is postponed by `geo_replication_control_leader_wait` per attempt; after `geo_replication_control_leader_wait_timeout` the part may be fetched from any replica.
     )", 0) \
     DECLARE(Bool, fetch_covered_part_within_region_only, true, R"(
     If true, when fetching a part, only look for a covered part within the same region, unless the exact part cannot be found on any replica and we need to fetch a covered part from somewhere to bring all replicas to a consistent state.

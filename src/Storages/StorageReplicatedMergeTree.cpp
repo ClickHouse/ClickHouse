@@ -2640,9 +2640,13 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 
 bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_check_missing_part, bool only_fetch_within_region)
 {
-    /// Only enforce region constraints if geo replication control is configured for this table.
-    /// Some callers may not be aware of this.
-    only_fetch_within_region = only_fetch_within_region && geo_replication_controller.isConfigured();
+    /// Only enforce region constraints if geo replication control is configured for this table (some callers
+    /// may not be aware of this) and while the entry has not exhausted its same-region wait:
+    /// `wait_for_fetching_from_same_region == -1` marks an entry whose wait for an in-region source timed out
+    /// and which may be fetched from anywhere from now on. The timeout gate lives here so that it also covers
+    /// merge / mutation fetches, whose callers pass the raw `fetch_merged_part_within_region_only` policy.
+    only_fetch_within_region = only_fetch_within_region && geo_replication_controller.isConfigured()
+        && entry.wait_for_fetching_from_same_region >= 0;
     auto zookeeper = getZooKeeper();
     const auto & storage_settings_ptr = getSettings();
     bool fetch_cover_part_from_same_region
@@ -2716,7 +2720,25 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 /// Also during this time a completely new replica could be created.
                 /// But if a part does not appear on the old, then it can not be on the new one either.
 
-                if (replica.empty())
+                /// The check above deliberately spans all replicas: the quorum must not be marked as failed
+                /// while any replica has the part. But it must not turn into a fetch-source selector that
+                /// bypasses the region constraint: if the part exists only on an out-of-region replica, clear
+                /// the found replica and defer the fetch (below) instead of pulling the part cross-region.
+                bool part_exists_only_out_of_region = false;
+                if (!replica.empty() && only_fetch_within_region
+                    && std::find(get_result.replicas_same_region.begin(), get_result.replicas_same_region.end(), replica)
+                        == get_result.replicas_same_region.end())
+                {
+                    LOG_DEBUG(
+                        log,
+                        "Part {} needed for quorum exists only on out-of-region replica {}, will not fetch it cross-region",
+                        entry.new_part_name,
+                        replica);
+                    part_exists_only_out_of_region = true;
+                    replica.clear();
+                }
+
+                if (replica.empty() && !part_exists_only_out_of_region)
                 {
                     Coordination::Stat quorum_stat;
                     const String quorum_unparallel_path = fs::path(zookeeper_path) / "quorum" / "status";
@@ -2796,49 +2818,52 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
             {
                 ProfileEvents::increment(ProfileEvents::ReplicatedPartFailedFetches);
 
-                if (!need_to_check_missing_part)
-                    return false;
-
                 if (only_fetch_within_region)
                 {
-                    /// For GET_PART and ATTACH_PART, if wait long enough then loosen the constrains
-                    if (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
+                    /// No in-region replica has the part - it may well exist in another region, so this is not
+                    /// the "no replica has part" situation: defer the entry instead of checking the part or
+                    /// giving up. Installing the wait state below makes the queue postpone the entry by
+                    /// `geo_replication_control_leader_wait` per attempt (see `shouldExecuteLogEntry`). This
+                    /// applies to merge / mutation fetches as well as to `GET_PART` / `ATTACH_PART`: without the
+                    /// wait state a region-constrained merged-part fetch would be reselected immediately in a
+                    /// tight loop, starving the rest of the queue until an in-region replica produces the part.
+                    ///
+                    /// Measure how long *this replica* has actually been deferring this entry for same-region
+                    /// fetching, derived from the number of defers. We deliberately do not use `entry.create_time`:
+                    /// a replica recovering from a backlog can pick up an entry whose creation time is already
+                    /// older than the timeout and would then immediately fetch from any region, recreating the
+                    /// cross-region fan-out this feature is meant to avoid.
+                    auto same_region_waited_seconds
+                        = static_cast<Int64>(entry.wait_for_fetching_from_same_region)
+                        * (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait].totalSeconds();
+                    if (same_region_waited_seconds < (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait_timeout].totalSeconds())
                     {
-                        /// Measure how long *this replica* has actually been deferring this entry for same-region
-                        /// fetching, derived from the number of defers (the queue postpones each attempt by
-                        /// `geo_replication_control_leader_wait`). We deliberately do not use `entry.create_time`:
-                        /// a replica recovering from a backlog can pick up a `GET_PART`/`ATTACH_PART` whose creation
-                        /// time is already older than the timeout and would then immediately fetch from any region,
-                        /// recreating the cross-region fan-out this feature is meant to avoid.
-                        auto same_region_waited_seconds
-                            = static_cast<Int64>(entry.wait_for_fetching_from_same_region)
-                            * (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait].totalSeconds();
-                        if (same_region_waited_seconds < (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait_timeout].totalSeconds())
-                        {
-                            entry.wait_for_fetching_from_same_region++;
-                            LOG_TRACE(
-                                log,
-                                "Region {} doesn't have part {} or covering part yet, will defer executing {} : {}, deferred for total {} "
-                                "seconds)",
-                                geo_replication_controller.getRegion(),
-                                entry.new_part_name,
-                                entry.znode_name,
-                                entry.getDescriptionForLogs(format_version),
-                                same_region_waited_seconds);
-                        }
-                        else
-                        {
-                            entry.wait_for_fetching_from_same_region = -1;
-                            LOG_INFO(
-                                log,
-                                "Entry {} deferred for too long ({} seconds) to fetch from a replica in region {}, stop waiting and fetch from anywhere",
-                                entry.getDescriptionForLogs(format_version),
-                                same_region_waited_seconds,
-                                geo_replication_controller.getRegion());
-                        }
+                        entry.wait_for_fetching_from_same_region++;
+                        LOG_TRACE(
+                            log,
+                            "Region {} doesn't have part {} or covering part yet, will defer executing {} : {}, deferred for total {} "
+                            "seconds)",
+                            geo_replication_controller.getRegion(),
+                            entry.new_part_name,
+                            entry.znode_name,
+                            entry.getDescriptionForLogs(format_version),
+                            same_region_waited_seconds);
+                    }
+                    else
+                    {
+                        entry.wait_for_fetching_from_same_region = -1;
+                        LOG_INFO(
+                            log,
+                            "Entry {} deferred for too long ({} seconds) to fetch from a replica in region {}, stop waiting and fetch from anywhere",
+                            entry.getDescriptionForLogs(format_version),
+                            same_region_waited_seconds,
+                            geo_replication_controller.getRegion());
                     }
                     return false;
                 }
+
+                if (!need_to_check_missing_part)
+                    return false;
 
                 throw Exception(
                     ErrorCodes::NO_REPLICA_HAS_PART,

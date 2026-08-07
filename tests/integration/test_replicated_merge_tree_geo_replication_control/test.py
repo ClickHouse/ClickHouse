@@ -13,6 +13,7 @@ apac2 = cluster.add_instance(
     "apac2", main_configs=["configs/apac2.xml"], with_zookeeper=True
 )
 us3 = cluster.add_instance("us3", main_configs=["configs/us3.xml"], with_zookeeper=True)
+us4 = cluster.add_instance("us4", main_configs=["configs/us4.xml"], with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -304,6 +305,174 @@ def test_region_published_on_restart(start_cluster):
                 region
             )
             time.sleep(0.5)
+
+    finally:
+        for node in [apac1, apac2, us3]:
+            node.query("DROP TABLE IF EXISTS us_table SYNC")
+
+
+def test_region_published_before_is_active(start_cluster):
+    try:
+        for i, node in enumerate(
+            [apac1, apac2, us3]
+        ):  # apac1 will become leader of APAC
+            node.query(
+                f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 60"
+            )
+            time.sleep(1)
+
+        cluster.restart_instance(apac2)
+
+        # Wait until the restarted replica has fully started up and recreated both znodes.
+        timeout = 60.0
+        now = time.time()
+        while int(apac2.query("SELECT count() FROM system.replicas WHERE is_readonly")):
+            assert time.time() - now < timeout, "apac2 is still readonly after restart"
+            time.sleep(0.5)
+
+        # The region node must be created before `is_active`: peers pick fetch sources among active replicas
+        # and classify them by the `region` node, so an `is_active` without `region` would make peers
+        # misclassify this replica as out-of-region for the whole startup window. ZooKeeper czxid gives the
+        # global creation order.
+        czxids = {}
+        for name in ["region", "is_active"]:
+            czxids[name] = int(
+                us3.query(
+                    f"SELECT czxid FROM system.zookeeper WHERE path = '/clickhouse/tables/us_table/replicas/1' AND name = '{name}'"
+                )
+            )
+        assert (
+            czxids["region"] < czxids["is_active"]
+        ), "The region node must be published before is_active, got czxids {}".format(
+            czxids
+        )
+
+    finally:
+        for node in [apac1, apac2, us3]:
+            node.query("DROP TABLE IF EXISTS us_table SYNC")
+
+
+def test_quorum_get_part_does_not_bypass_region(start_cluster):
+    try:
+        for i, node in enumerate(
+            [apac1, apac2, us3, us4]
+        ):  # apac1 will become leader of APAC, us3 of US
+            node.query(
+                f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 60"
+            )
+            time.sleep(1)
+
+        # The APAC leader must not have the part, so the APAC follower's same-region probe fails and its
+        # quorum GET_PART handling has to decide about the out-of-region holders.
+        apac1.query("SYSTEM STOP FETCHES us_table")
+
+        # The quorum is reached within US (us3 + us4), so the part exists only out of the APAC region.
+        us3.query("INSERT INTO us_table SELECT 1, '0'", settings={"insert_quorum": 2})
+
+        time.sleep(5)
+
+        # The quorum branch of the fetch re-probes all replicas (the quorum must not be marked as failed
+        # while the part exists somewhere), but it must not use an out-of-region replica as a fetch source:
+        # the APAC follower has to keep deferring instead of fetching cross-region.
+        count = int(apac2.query("SELECT count() FROM us_table"))
+        assert (
+            count == 0
+        ), "Follower fetched a quorum part cross-region, but it should defer, got {} rows".format(
+            count
+        )
+
+        # ... and the quorum must not have been marked as failed either.
+        failed_parts = apac2.query(
+            "SELECT name FROM system.zookeeper WHERE path = '/clickhouse/tables/us_table/quorum/failed_parts'"
+        ).strip()
+        assert (
+            failed_parts == ""
+        ), "Quorum was marked as failed although the part exists: {}".format(
+            failed_parts
+        )
+
+        # Once the region leader may fetch, the part propagates: leader cross-region, follower from the leader.
+        apac1.query("SYSTEM START FETCHES us_table")
+
+        count_ref = int(us3.query("SELECT count() FROM us_table"))
+        timeout = 60.0
+        now = time.time()
+        while 1:
+            time.sleep(0.5)
+            count = int(apac2.query("SELECT count() FROM us_table"))
+            if count == count_ref:
+                break
+            assert (
+                time.time() - now < timeout
+            ), "After 60s the follower still has {} rows instead of {}".format(
+                count, count_ref
+            )
+
+    finally:
+        for node in [apac1, apac2, us3, us4]:
+            node.query("DROP TABLE IF EXISTS us_table SYNC")
+
+
+def test_merged_part_fetch_is_postponed_not_spinning(start_cluster):
+    try:
+        for i, node in enumerate(
+            [apac1, apac2, us3]
+        ):  # apac1 will become leader of APAC, us3 of US
+            node.query(
+                f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 60, fetch_merged_part_within_region_only = 1,"
+                + " always_fetch_merged_part = {}".format(int(node == apac2))
+            )
+            time.sleep(1)
+
+        for i in range(5):
+            apac1.query("INSERT INTO us_table SELECT 1, toString({})".format(i))
+
+        # No APAC replica can produce the merged part: apac1's merges are stopped and apac2 always fetches
+        # merged parts. The merge is executed by us3, out of the region.
+        apac1.query("SYSTEM STOP MERGES us_table")
+        us3.query("SYSTEM SYNC REPLICA us_table LIGHTWEIGHT")
+        us3.query("OPTIMIZE TABLE us_table FINAL")
+
+        # The region-constrained merged-part fetch must install a wait state so the queue postpones it,
+        # instead of reselecting the entry immediately in a tight loop at the head of the queue.
+        timeout = 30.0
+        now = time.time()
+        while 1:
+            postpone_reason = apac2.query(
+                "SELECT postpone_reason FROM system.replication_queue WHERE type = 'MERGE_PARTS'"
+            )
+            if "region leader may not be ready" in postpone_reason:
+                break
+            assert (
+                time.time() - now < timeout
+            ), "The merged-part fetch was not postponed with the region wait reason, got: {}".format(
+                postpone_reason
+            )
+            time.sleep(0.5)
+
+        # Once an in-region replica produces the merged part, the postponed entry completes within the region.
+        apac1.query("SYSTEM START MERGES us_table")
+
+        num_parts_ref = 1
+        timeout = 60.0
+        now = time.time()
+        while 1:
+            time.sleep(0.5)
+            num_parts = int(
+                apac2.query(
+                    "SELECT count() FROM system.parts WHERE database = 'default' AND table = 'us_table' AND active"
+                )
+            )
+            if num_parts == num_parts_ref:
+                break
+            assert (
+                time.time() - now < timeout
+            ), "After 60s apac2 still has {} active parts instead of {}".format(
+                num_parts, num_parts_ref
+            )
 
     finally:
         for node in [apac1, apac2, us3]:
