@@ -8,6 +8,10 @@
 -- filled during distributed execution, so header computation runs the function against an
 -- unready set. With a subquery the set is built beforehand and the mismatch never surfaces.
 
+-- The promotion under test is the new analyzer's: the old analyzer's `appendGroupByModifiers`
+-- returns early for GROUPING SETS, so no key is promoted there and `UInt8` is correct.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_04812;
 DROP TABLE IF EXISTS t_04812_empty;
 
