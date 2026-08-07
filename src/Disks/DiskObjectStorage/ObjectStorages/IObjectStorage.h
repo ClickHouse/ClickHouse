@@ -110,6 +110,12 @@ struct ObjectMetadata
     std::string etag;
     ObjectAttributes tags;
     ObjectAttributes attributes;
+
+    /// `etag` may be used as a content-cache key (filesystem cache, page cache, Parquet
+    /// metadata cache) only when it is present and a strong content identifier. A weak
+    /// etag (e.g. the second-precision HDFS token) must never key a cache, otherwise a
+    /// same-second, same-size rewrite could serve stale data.
+    bool isEtagUsableAsCacheKey() const { return !etag.empty(); }
 };
 
 struct DataLakeObjectMetadata;
