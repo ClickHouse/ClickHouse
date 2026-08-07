@@ -71,9 +71,17 @@ void StatisticsMinMax::serialize(WriteBuffer & buf)
     writeStringBinary(data_type->getName(), buf);
     writeFieldBinary(min, buf);
     writeFieldBinary(max, buf);
-    /// Trailing V5 field. Older readers stop after `max`; the per-stat size prefix in the enclosing
-    /// ColumnStatistics framing makes them skip this byte, so the format stays backward compatible.
+    /// Written unconditionally to keep one layout; a reader that stops after `max` skips this byte
+    /// via the per-stat size prefix in the enclosing ColumnStatistics framing.
     writeBinary(has_nan, buf);
+}
+
+StatisticsFileVersion StatisticsMinMax::requiredFileVersion() const
+{
+    /// Only a float can hold a NaN; for any other type an older reader derives the same false.
+    if (data_type && isFloat(removeLowCardinality(data_type)))
+        return StatisticsFileVersion::V5;
+    return StatisticsFileVersion::V4;
 }
 
 void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
@@ -114,12 +122,8 @@ void StatisticsMinMax::deserialize(ReadBuffer & buf, StatisticsFileVersion versi
     }
     else if (isFloat(removeLowCardinality(data_type)))
     {
-        /// Pre-V5 files never stored `has_nan`. A part like `[1.0, nan, 3.0]` was written with a
-        /// finite [min, max] that hides the NaN, so trusting `has_nan = false` would let the pruner
-        /// wrongly drop the part under a negated float range after upgrade. Only floats can hold a
-        /// NaN, so conservatively assume a pre-V5 float part might contain one. This can only cause
-        /// conservative keeps, never a wrong skip; the flag clears once statistics are
-        /// rematerialized (V5).
+        /// No flag stored: `[1.0, nan, 3.0]` was written with a finite [min, max] hiding the NaN, so
+        /// assume one may be there. A conservative keep, never a wrong skip.
         has_nan = true;
     }
 }

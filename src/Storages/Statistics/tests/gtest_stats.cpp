@@ -1003,3 +1003,42 @@ TEST(Statistics, V5NaNFlagRoundTrip)
         EXPECT_FALSE(nan_flag_of(restored_without_nan, type)) << "V5 must persist has_nan = false";
     }
 }
+
+/// A blob is stamped V5 only when a payload genuinely needs the new semantics. Anything a V4 reader
+/// could still understand keeps the V4 stamp, so an older binary in a mixed-version cluster does not
+/// refuse statistics it can read (it would throw ILLEGAL_STATISTICS and fail merges and mutations).
+TEST(Statistics, ContainerVersionIsLowestThatRepresentsTheBlob)
+{
+    auto version_of = [](const ColumnStatisticsPtr & stats)
+    {
+        WriteBufferFromOwnString wb;
+        stats->serialize(wb);
+        ReadBufferFromString rb(wb.str());
+        UInt16 version_raw = 0;
+        readIntBinary(version_raw, rb);
+        return static_cast<StatisticsFileVersion>(version_raw);
+    };
+    auto built = [&](StatisticsType type, const DataTypePtr & data_type, const Field & extra)
+    {
+        MutableColumnPtr col = data_type->createColumn();
+        col->insert(extra);
+        auto stats = createTestStats({type}, data_type);
+        stats->build(std::move(col));
+        return stats;
+    };
+
+    auto float_type = std::make_shared<DataTypeFloat64>();
+    auto int_type = std::make_shared<DataTypeInt64>();
+    const Field nan_field = std::numeric_limits<Float64>::quiet_NaN();
+
+    /// `basic` encodes the flag as a payload-free feature-mask bit, which an older reader ignores, so
+    /// it never needs a bump. This is the default auto statistics type, i.e. the common case.
+    EXPECT_EQ(version_of(built(StatisticsType::Basic, float_type, nan_field)), StatisticsFileVersion::V4);
+    EXPECT_EQ(version_of(built(StatisticsType::Basic, float_type, Field(Float64(1.0)))), StatisticsFileVersion::V4);
+    EXPECT_EQ(version_of(built(StatisticsType::Basic, int_type, Field(Int64(1)))), StatisticsFileVersion::V4);
+
+    /// `minmax` appends a positional byte only a V5 reader knows to expect, and only a float can hold
+    /// a NaN, so just float `minmax` is stamped V5.
+    EXPECT_EQ(version_of(built(StatisticsType::MinMax, float_type, nan_field)), StatisticsFileVersion::V5);
+    EXPECT_EQ(version_of(built(StatisticsType::MinMax, int_type, Field(Int64(1)))), StatisticsFileVersion::V4);
+}

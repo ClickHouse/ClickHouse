@@ -20,6 +20,7 @@ public:
 
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf, StatisticsFileVersion version) override;
+    StatisticsFileVersion requiredFileVersion() const override;
 
     const Field & getMin() const { return min; }
     const Field & getMax() const { return max; }

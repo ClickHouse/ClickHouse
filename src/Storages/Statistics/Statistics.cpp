@@ -26,6 +26,8 @@
 #include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
 
+#include <algorithm>
+
 #include "config.h" /// USE_DATASKETCHES
 
 namespace DB
@@ -520,17 +522,21 @@ Estimate ColumnStatistics::getEstimate() const
 
 void ColumnStatistics::serialize(WriteBuffer & buf) const
 {
-    /// Layout (V5, same framing as V4):
-    ///   UInt16  version (= V5)
+    /// Layout (V4/V5 share this framing):
+    ///   UInt16  version
     ///   UInt64  stat_types_mask
     ///   String  stored_type_name   — column type at write time; deserialization returns nullptr on mismatch
     ///   UInt64  rows
     ///   For each set bit in mask (in ascending bit order):
     ///       UInt64  stat_size
     ///       <stat_size> bytes of per-statistics payload
-    /// The per-stat size prefix lets a reader skip statistics types it doesn't recognize, and also
-    /// lets a V4 reader silently skip the extra `has_nan` byte a V5 `MinMax` payload carries.
-    writeIntBinary(StatisticsFileVersion::V5, buf);
+    /// The per-stat size prefix lets a reader skip statistics types it doesn't recognize.
+    /// Stamp the lowest version representing this blob, so one a V4 reader understands stays V4.
+    auto version = StatisticsFileVersion::V4;
+    for (const auto & [_, stat_ptr] : stats)
+        version = std::max(version, stat_ptr->requiredFileVersion());
+
+    writeIntBinary(version, buf);
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _] : stats)

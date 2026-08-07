@@ -27,13 +27,10 @@ enum class StatisticsFileVersion : UInt16
             /// the version field; deserialization returns nullptr if the stored type differs from
             /// the current column type, so stale statistics from a pending MODIFY COLUMN mutation
             /// are never used.
-    V5 = 5, /// numeric minmax statistics (`MinMax` and `Basic`) now persist a `has_nan` flag so part
-            /// pruning can keep a part whose float column contains NaN under a negated range
-            /// (issue #106533 / #106948). `MinMax` appends a trailing `UInt8 has_nan`; `Basic` adds a
-            /// self-describing `NaNFlag` feature-mask bit. Pre-V5 files carry no flag; they are read
-            /// conservatively — a pre-V5 float stat is assumed to possibly hold NaN, so an upgraded
-            /// cluster never wrongly prunes a NaN part before statistics are rematerialized. The
-            /// per-stat size prefix skips the extra V5 byte for older readers.
+    V5 = 5, /// float `MinMax` appends a trailing `UInt8 has_nan` (issue #106533 / #106948). The byte
+            /// is positional, so a file is stamped V5 only when it carries one; `Basic` conveys the
+            /// same flag through its feature mask and stays V4. A file written without the flag is
+            /// read conservatively (a float stat may hold NaN), never pruning a NaN part wrongly.
 };
 
 class Field;
@@ -87,6 +84,10 @@ public:
 
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf, StatisticsFileVersion version) = 0;
+
+    /// Lowest file version that can represent what serialize() is about to write. The container
+    /// stamps the maximum over its statistics.
+    virtual StatisticsFileVersion requiredFileVersion() const { return StatisticsFileVersion::V4; }
 
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.

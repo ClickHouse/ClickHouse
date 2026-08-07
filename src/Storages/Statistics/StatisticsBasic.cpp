@@ -33,6 +33,8 @@ enum BasicFeatureMask : UInt8
     StringLengthSum = 1u << 1,
     DefaultCount = 1u << 2,
     NaNFlag = 1u << 3,
+    /// Distinguishes "no NaN" from "written before the flag existed"; both bits carry no payload.
+    NaNChecked = 1u << 4,
 };
 
 const NullMap * tryGetNullMap(const IColumn & column)
@@ -160,8 +162,7 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::StringLengthSum;
 
     mask |= BasicFeatureMask::DefaultCount;
-    /// Only set the NaN bit when a NaN was actually seen, so files stay byte-identical to the pre-fix
-    /// layout for the common no-NaN case; a reader that lacks the bit ignores it (it carries no payload).
+    mask |= BasicFeatureMask::NaNChecked;
     if (has_nan)
         mask |= BasicFeatureMask::NaNFlag;
     writeIntBinary(mask, buf);
@@ -175,10 +176,9 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         writeIntBinary(string_total_bytes, buf);
 
     writeIntBinary(default_count, buf);
-    /// NaNFlag carries no payload: its presence in the mask is the value (has_nan == true).
 }
 
-void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion version)
+void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
     readIntBinary(row_count, buf);
 
@@ -200,18 +200,14 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion versio
     if (has_default_count)
         readIntBinary(default_count, buf);
 
-    if (version >= StatisticsFileVersion::V5)
+    if (mask & BasicFeatureMask::NaNChecked)
     {
         has_nan = (mask & BasicFeatureMask::NaNFlag) != 0;
     }
     else
     {
-        /// Pre-V5 files never carried the NaNFlag bit. A float part like `[1.0, nan, 3.0]` stored a
-        /// finite [min, max] that hides the NaN, so `has_nan = false` would let the pruner wrongly
-        /// drop it under a negated float range after upgrade. Only floats can hold a NaN, so
-        /// conservatively assume a pre-V5 float column might contain one (conservative keep, never a
-        /// wrong skip); `data_type` here is already LowCardinality/Nullable-stripped. The flag clears
-        /// once statistics are rematerialized (V5).
+        /// No flag stored: `[1.0, nan, 3.0]` was written with a finite [min, max] hiding the NaN, so
+        /// assume one may be there. A conservative keep, never a wrong skip. `data_type` is stripped.
         has_nan = tracks_numeric && isFloat(data_type);
     }
 }
