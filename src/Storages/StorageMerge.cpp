@@ -1,3 +1,4 @@
+#include <cmath>
 #include <functional>
 #include <iterator>
 #include <Access/ContextAccess.h>
@@ -12,6 +13,7 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Common/Logger.h>
+#include <Common/NaNUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnString.h>
@@ -103,6 +105,7 @@ extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
+extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 namespace
@@ -119,6 +122,22 @@ StoragePtr tableForRead(const DatabasePtr & database, const String & table_name,
         return table;
 
     return database->getTableForRead(table_name, table, local_context);
+}
+
+/// The planner bounds-checks only `max_streams * max_streams_to_max_threads_ratio`, so the product
+/// of the requested number of streams and the (clamped) `max_streams_multiplier_for_merge_tables`
+/// can still exceed the range of `size_t`, and casting such a `Float64` to `size_t` is undefined
+/// behavior.
+size_t applyStreamsMultiplier(size_t requested_num_streams, Float64 num_streams_multiplier)
+{
+    Float64 num_streams = static_cast<Float64>(requested_num_streams) * num_streams_multiplier;
+    if (!canConvertTo<size_t>(num_streams))
+        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+            "Exceeded limit for the number of streams with `max_streams_multiplier_for_merge_tables`. "
+            "Make sure that `max_streams * max_streams_multiplier_for_merge_tables` is in some reasonable boundaries, "
+            "current value: {}",
+            num_streams);
+    return static_cast<size_t>(num_streams);
 }
 
 }
@@ -669,9 +688,8 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         size_t tables_count = selected_tables.size();
         Float64 num_streams_multiplier = std::min(
             static_cast<Float64>(tables_count),
-            static_cast<Float64>(
-                std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables]))));
-        size_t num_streams = static_cast<size_t>(static_cast<double>(requested_num_streams) * num_streams_multiplier);
+            std::floor(std::max(1.0, static_cast<Float64>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables]))));
+        size_t num_streams = applyStreamsMultiplier(requested_num_streams, num_streams_multiplier);
 
         pipeline.narrow(num_streams);
     }
@@ -699,7 +717,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     Float64 num_streams_multiplier = std::min(
         static_cast<Float64>(tables_count),
         std::max(1.0, static_cast<double>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
-    size_t num_streams = static_cast<size_t>(static_cast<double>(requested_num_streams) * num_streams_multiplier);
+    size_t num_streams = applyStreamsMultiplier(requested_num_streams, num_streams_multiplier);
     size_t remaining_streams = num_streams;
 
     if (order_info)
