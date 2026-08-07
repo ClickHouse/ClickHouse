@@ -254,8 +254,8 @@ Int64 clampToTimestamp(const T & value, Int64 min_bound, Int64 max_bound)
     return static_cast<Int64>(value);
 }
 
-/// Coerce a numeric value into the seconds domain of a Time or DateTime column: `throw` raises on
-/// out-of-range, the other modes clamp to [min_bound, max_bound], and NaN counts as below the range.
+/// Coerce a numeric value into the seconds domain of a Time or DateTime column: a non-finite value is
+/// rejected, `throw` raises on out-of-range, and the other modes clamp to [min_bound, max_bound].
 /// Returns the target's canonical Field type (Int64 signed / UInt64 unsigned) so a clamped value still
 /// compares equal to the serializer's read-back in getPartitionIDFromQuery.
 template <typename T>
