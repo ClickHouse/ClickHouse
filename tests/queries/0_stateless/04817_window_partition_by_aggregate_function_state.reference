@@ -28,3 +28,4 @@
 6
 6
 -- a state inside Variant is refused, because Variant exposes its variants as children
+-- SimpleAggregateFunction storing a state is refused, like ORDER BY already refuses it

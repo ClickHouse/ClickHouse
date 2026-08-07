@@ -112,7 +112,19 @@ SELECT count() FROM (SELECT row_number() OVER (PARTITION BY v) FROM t_wpb_var) S
 SET enable_analyzer = 0;
 SELECT count() FROM (SELECT row_number() OVER (PARTITION BY v) FROM t_wpb_var) SETTINGS allow_suspicious_types_in_group_by = 1; -- { serverError ILLEGAL_COLUMN }
 
+SELECT '-- SimpleAggregateFunction storing a state is refused, like ORDER BY already refuses it';
+DROP TABLE IF EXISTS t_wpb_saf;
+CREATE TABLE t_wpb_saf (id UInt8, sn SimpleAggregateFunction(any, AggregateFunction(uniq, UInt64))) ENGINE = Memory;
+INSERT INTO t_wpb_saf SELECT number, uniqState(number) FROM numbers(6) GROUP BY number;
+SET enable_analyzer = 1;
+SELECT count() FROM (SELECT row_number() OVER (PARTITION BY sn) FROM t_wpb_saf); -- { serverError ILLEGAL_COLUMN }
+SELECT id FROM t_wpb_saf ORDER BY sn; -- { serverError ILLEGAL_COLUMN }
+SET enable_analyzer = 0;
+SELECT count() FROM (SELECT row_number() OVER (PARTITION BY sn) FROM t_wpb_saf); -- { serverError ILLEGAL_COLUMN }
+SELECT id FROM t_wpb_saf ORDER BY sn; -- { serverError ILLEGAL_COLUMN }
+
 DROP TABLE t_wpb_state;
 DROP TABLE t_wpb_qbit;
 DROP TABLE t_wpb_dyn;
 DROP TABLE t_wpb_var;
+DROP TABLE t_wpb_saf;
