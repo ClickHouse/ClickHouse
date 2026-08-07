@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Columns/IColumnImpl.h>
 #include <Core/Field.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
@@ -184,33 +183,6 @@ public:
         return data->serializeValueIntoMemory(0, memory, settings);
     }
 
-    void serializeAsComparable(size_t, String & out) const override
-    {
-        data->serializeAsComparable(0, out);
-    }
-
-    /// All rows are identical: encode row 0 once and append to every output row.
-    /// Permutation is irrelevant for a constant column. Rows masked by `null_map`
-    /// (set by a Nullable wrapper) are skipped, matching the other columns.
-    void batchSerializeAsComparable(
-        size_t num_rows,
-        VectorWithMemoryTracking<String> & out,
-        const IColumn::Permutation * permutation,
-        const UInt8 * null_map) const override
-    {
-        /// Match the base class no-op for empty batches: avoid touching the payload
-        /// (and a possible NOT_IMPLEMENTED from an unsupported nested type).
-        if (num_rows == 0)
-            return;
-
-        String encoded;
-        data->serializeAsComparable(0, encoded);
-        /// All rows share `encoded`; `src` only matters for the null-map check.
-        batchSerializeAsComparableImpl(
-            num_rows, out, permutation, null_map,
-            [&encoded](size_t /*src*/, String & dst) { dst.append(encoded); });
-    }
-
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override
     {
         data->deserializeAndInsertFromArena(in, settings);
@@ -228,7 +200,7 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
 
     void updateHashFast(SipHash & hash) const override
     {
@@ -269,11 +241,6 @@ public:
 #endif
     {
         return data->compareAt(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint);
-    }
-
-    int compareAtWithCollation(size_t, size_t, const IColumn & rhs, int nan_direction_hint, const Collator & collator) const override
-    {
-        return data->compareAtWithCollation(0, 0, *assert_cast<const ColumnConst &>(rhs).data, nan_direction_hint, collator);
     }
 
     void compareColumn(const IColumn & rhs, size_t rhs_row_num,
@@ -343,8 +310,7 @@ public:
     }
 
     bool isNullable() const override { return isColumnNullable(*data); }
-    /// Delegate to `data->onlyNull` so that e.g. `Const(Nullable(Nothing))` reports itself as only-null.
-    bool onlyNull() const override { return data->isNullAt(0) || data->onlyNull(); }
+    bool onlyNull() const override { return data->isNullAt(0); }
     bool isNumeric() const override { return data->isNumeric(); }
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }

@@ -87,10 +87,10 @@ public:
         std::optional<size_t> read_hint) const override
     {
         small_object_reads.fetch_add(1, std::memory_order_relaxed);
-        last_local_buffer_size.store(read_settings.local_fs_settings.buffer_size, std::memory_order_relaxed);
-        last_remote_buffer_size.store(read_settings.remote_fs_settings.buffer_size, std::memory_order_relaxed);
+        last_local_buffer_size.store(read_settings.local_fs_buffer_size, std::memory_order_relaxed);
+        last_remote_buffer_size.store(read_settings.remote_fs_buffer_size, std::memory_order_relaxed);
         last_max_size_bytes.store(max_size_bytes, std::memory_order_relaxed);
-        return LocalObjectStorage::readSmallObjectAndGetObjectMetadata(object, read_settings, max_size_bytes, read_hint);
+        return IObjectStorage::readSmallObjectAndGetObjectMetadata(object, read_settings, max_size_bytes, read_hint);
     }
 
     size_t getSmallObjectReads() const { return small_object_reads.load(std::memory_order_relaxed); }

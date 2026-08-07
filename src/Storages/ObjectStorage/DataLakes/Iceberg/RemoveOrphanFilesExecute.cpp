@@ -96,7 +96,7 @@ String resolveScanPath(const String & table_path, const RemoveOrphanFilesParams 
     if (params.location.has_value())
     {
         String loc = *params.location;
-        if (loc.contains("..") || loc.starts_with('/'))
+        if (loc.find("..") != String::npos || loc.starts_with('/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "location must be a relative path under the table root, got '{}'", loc);
 
         while (loc.starts_with("./"))
@@ -349,7 +349,7 @@ Pipe executeRemoveOrphanFiles(
     {
         String older_than_str = parsed.getAs<String>("older_than");
         ReadBufferFromString buf(older_than_str);
-        time_t ts = 0;
+        time_t ts;
         readDateTimeText(ts, buf);
 
         auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());

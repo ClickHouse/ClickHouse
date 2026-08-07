@@ -4,8 +4,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Common/SipHash.h>
-#include <Common/ThreadPool.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/setThreadName.h>
 
@@ -166,9 +164,7 @@ void StreamingStorageRegistry::shutdown()
     {
         runner.enqueueAndKeepTrack([&]()
         {
-            /// The StorageID may remain in `StreamingStorageRegistry::storages` while the table is gone from `DatabaseCatalog`.
-            if (auto table = DatabaseCatalog::instance().tryGetTable(storage, Context::getGlobalContextInstance()))
-                table->shutdown();
+            DatabaseCatalog::instance().tryGetTable(storage, Context::getGlobalContextInstance())->shutdown();
         });
     }
 

@@ -84,10 +84,10 @@ public:
     {
         size_t attributes_to_fetch_size = attributes_to_fetch_names.size();
 
-        chassert(attributes_to_fetch_size == attributes_to_fetch_types.size());
+        assert(attributes_to_fetch_size == attributes_to_fetch_types.size());
 
         bool has_default = attributes_to_fetch_default_values_columns;
-        chassert(!has_default || attributes_to_fetch_size == attributes_to_fetch_default_values_columns->size());
+        assert(!has_default || attributes_to_fetch_size == attributes_to_fetch_default_values_columns->size());
 
         for (size_t i = 0; i < attributes_to_fetch_size; ++i)
             attributes_to_fetch_name_to_index.emplace(attributes_to_fetch_names[i], i);
@@ -398,7 +398,7 @@ public:
         if (use_attribute_default_value)
             return static_cast<DefaultValueType>(default_value);
 
-        chassert(default_values_column != nullptr);
+        assert(default_values_column != nullptr);
 
         if constexpr (std::is_same_v<DefaultColumnType, ColumnArray>)
         {
@@ -472,7 +472,7 @@ public:
         : key_columns(key_columns_)
         , complex_key_arena(complex_key_arena_)
     {
-        chassert(!key_columns.empty());
+        assert(!key_columns.empty());
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
@@ -498,7 +498,7 @@ public:
 
     KeyType extractCurrentKey()
     {
-        chassert(current_key_index < keys_size);
+        assert(current_key_index < keys_size);
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {

@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import json
+import os
 import time
 import urllib
 from typing import List, Optional
@@ -403,7 +404,7 @@ ORDER BY day DESC
         # Create a session object
         params = {
             "database": Settings.CI_DB_DB_NAME,
-            "query": "SELECT 1",
+            "query": f"SELECT 1",
         }
         error = ""
         for retry in range(2):

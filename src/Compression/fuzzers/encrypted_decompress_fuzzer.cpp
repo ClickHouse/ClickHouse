@@ -5,7 +5,6 @@
 
 #include <Common/Arena.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -29,10 +28,6 @@ inline DB::CompressionCodecPtr getCompressionCodecEncrypted(DB::EncryptionMethod
 
 using namespace DB;
 ContextMutablePtr context;
-
-extern "C" int LLVMFuzzerInitialize(int *, char ***);
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
-
 extern "C" int LLVMFuzzerInitialize(int *, char ***)
 {
     if (context)
