@@ -987,6 +987,8 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             history_record.parent_id = 0;
 
         bool found_in_snapshot_log = false;
+        /// A snapshot-id can occur in snapshot-log more than once (a rollback makes an older
+        /// snapshot current again); made_current_at is the LAST such time, so do not stop early.
         for (size_t j = 0; j < snapshot_logs->size(); ++j)
         {
             const auto snapshot_log = snapshot_logs->getObject(static_cast<UInt32>(j));
@@ -994,7 +996,6 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             {
                 history_record.made_current_at = parse_timestamp_ms(snapshot_log);
                 found_in_snapshot_log = true;
-                break;
             }
         }
 
