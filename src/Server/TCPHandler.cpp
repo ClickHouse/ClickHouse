@@ -63,7 +63,6 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #if USE_SSL
