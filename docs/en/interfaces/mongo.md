@@ -141,7 +141,8 @@ A collection created explicitly with `createCollection` has no document to infer
 
 - An `update` is translated into `ALTER TABLE ... UPDATE`, which is asynchronous: the new value does not have to be visible to the next `find`.
 - The number of documents affected by `update` and `delete` is always reported as `0`.
-- Cursors are not implemented, so the whole result of a `find` or an `aggregate` is returned in the first batch. A result larger than the advertised `maxBsonObjectSize` (16 MiB) is an error rather than an oversized reply: ask for less at a time, with a filter, a projection, `limit` and `skip`.
+- Cursors are not implemented, so the whole result of a `find` or an `aggregate` is returned in the first batch. A result whose reply would exceed the advertised `maxBsonObjectSize` (16 MiB) is an error rather than an oversized reply: ask for less at a time, with a filter, a projection, `limit` and `skip`. The reply to `distinct` has the same bound.
+- A `Float32` or `Float64` column that holds `NaN` or an infinity reads back as a BSON double with that value, but such a value cannot be inserted over the wire protocol: BSON extended JSON has no plain-JSON form for it here, so the insert is an error.
 - An explicitly inserted `null` becomes a `Dynamic` column when it is the first value of its field, and the default of the column type otherwise: a typed column always has a value.
 - `$currentDate` supports `true` and `{"$type": "date"}`; the BSON `timestamp` type does not exist here, so `{"$type": "timestamp"}` is rejected.
 - A projection lists exactly the fields it names: `_id` is not added to it implicitly, because a ClickHouse table has no implicit `_id` column. An exclusion of `_id` inside an inclusion projection, as in `{"name": 1, "_id": 0}`, is accepted and has nothing left to do; an exclusion of any other field there is an error, as it is in MongoDB.

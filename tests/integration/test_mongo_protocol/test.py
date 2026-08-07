@@ -1080,3 +1080,88 @@ def test_oversized_result_is_an_error(started_cluster):
     # A bounded ask still works.
     assert [doc["id"] for doc in collection.find({}, {"id": 1}).sort("id", 1)] == [0, 1, 2, 3, 4]
     assert len(list(collection.find({}).limit(2))) == 2
+
+
+def test_oversized_reply_of_many_small_rows_is_an_error(started_cluster):
+    """The size bound of a reply must hold for the document sent on the wire, not only for the
+    sum of the embedded row documents: every row also costs an element header in the
+    `firstBatch` array, and with many small rows those headers alone add megabytes."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.small_rows (a Int32) ENGINE = MergeTree ORDER BY a",
+        password="123",
+    )
+    # 1.2 million rows of `{"a": <int32>}` embed as ~14.4 MB of row documents - under the
+    # 16 MiB `maxBsonObjectSize` - but the array headers add ~10 MB more on the wire.
+    node.query(
+        "INSERT INTO db.small_rows SELECT number FROM numbers(1200000)", password="123"
+    )
+
+    client = make_client()
+    collection = client["db"]["small_rows"]
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        list(collection.find({}))
+
+    # A bounded ask still works.
+    assert [doc["a"] for doc in collection.find({}).sort("a", 1).limit(3)] == [0, 1, 2]
+
+    node.query("DROP TABLE db.small_rows", password="123")
+
+
+def test_oversized_distinct_is_an_error(started_cluster):
+    """The reply to `distinct` holds all the values in one document, so it has the same size
+    bound as the reply to `find`."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.distinct_oversized (id Int32, s String) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    # 20 distinct strings of 1 MB each: any one value fits, together they exceed the 16 MiB
+    # `maxBsonObjectSize` a single reply may hold.
+    node.query(
+        "INSERT INTO db.distinct_oversized SELECT number, repeat(char(65 + number), 1000000) FROM numbers(20)",
+        password="123",
+    )
+
+    client = make_client()
+    collection = client["db"]["distinct_oversized"]
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.distinct("s")
+
+    # A bounded ask still works.
+    assert collection.distinct("s", {"id": {"$lt": 2}}) == ["A" * 1000000, "B" * 1000000]
+
+    node.query("DROP TABLE db.distinct_oversized", password="123")
+
+
+def test_float_denormals_round_trip(started_cluster):
+    """BSON doubles can hold `NaN` and the infinities, so a `Float32` / `Float64` column that
+    contains them reads back as those values rather than as BSON `null`."""
+    import math
+
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.denormals (id Int32, f32 Float32, f64 Float64) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query(
+        "INSERT INTO db.denormals VALUES (1, nan, nan), (2, inf, inf), (3, -inf, -inf), (4, 1.5, 2.5)",
+        password="123",
+    )
+
+    client = make_client()
+    collection = client["db"]["denormals"]
+
+    found = sorted((doc for doc in collection.find({})), key=lambda x: x["id"])
+    assert len(found) == 4
+    assert math.isnan(found[0]["f32"]) and math.isnan(found[0]["f64"])
+    assert found[1]["f32"] == math.inf and found[1]["f64"] == math.inf
+    assert found[2]["f32"] == -math.inf and found[2]["f64"] == -math.inf
+    assert found[3]["f32"] == 1.5 and found[3]["f64"] == 2.5
+
+    node.query("DROP TABLE db.denormals", password="123")

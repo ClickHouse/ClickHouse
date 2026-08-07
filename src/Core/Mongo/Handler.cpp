@@ -1,6 +1,9 @@
 #include <Core/Mongo/Handler.h>
 
+#include <limits>
 #include <memory>
+#include <optional>
+#include <base/defines.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Mongo/Document.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
@@ -237,7 +240,7 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
 {
     const int key_length = static_cast<int>(key.size());
 
-    /// `Nullable` of anything, and the JSON output of a denormal float.
+    /// `Nullable` of anything.
     if (value.IsNull())
     {
         bson_append_null(document, key.data(), key_length);
@@ -291,6 +294,27 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
     {
         bson_append_int64(document, key.data(), key_length, value.GetInt64());
         return;
+    }
+    if (which.isFloat() && value.IsString())
+    {
+        /// `output_format_json_quote_denormals` is pinned to `true` (see `MongoProtocol.cpp`), so
+        /// `NaN` and the infinities of a float column arrive as strings - the finite values arrive
+        /// as JSON numbers - and BSON doubles can hold them.
+        std::string_view text(value.GetString(), value.GetStringLength());
+        std::optional<double> denormal;
+        if (text == "nan")
+            denormal = std::numeric_limits<double>::quiet_NaN();
+        else if (text == "-nan")
+            denormal = -std::numeric_limits<double>::quiet_NaN();
+        else if (text == "inf")
+            denormal = std::numeric_limits<double>::infinity();
+        else if (text == "-inf")
+            denormal = -std::numeric_limits<double>::infinity();
+        if (denormal)
+        {
+            bson_append_double(document, key.data(), key_length, *denormal);
+            return;
+        }
     }
     if (which.isDecimal() && value.IsString())
     {
@@ -473,57 +497,14 @@ std::vector<std::pair<String, DataTypePtr>> extractResultColumns(const rapidjson
     return columns;
 }
 
-std::vector<Document>
-executeSelectIntoCursor(const String & sql_query, const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
+namespace
 {
-    std::vector<Document> selected;
-    {
-        auto output = executor->execute(sql_query);
 
-        rapidjson::Document result_json;
-        if (result_json.Parse(output.data()).HasParseError())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
-
-        auto columns = extractResultColumns(result_json);
-
-        FieldTree tree;
-        for (size_t i = 0; i < columns.size(); ++i)
-        {
-            /// A conflict - the columns `a` and `a.b` in one result - keeps the dotted name as
-            /// the literal key it always was, rather than dropping the column.
-            if (!insertColumnPath(tree, columns[i].first, i))
-                tree.entries.push_back({.name = columns[i].first, .column = i, .subtree = nullptr});
-        }
-
-        auto data_it = result_json.FindMember("data");
-        if (data_it == result_json.MemberEnd() || !data_it->value.IsArray())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no rows");
-
-        /// The reply is one BSON document holding the whole result: the cursor id is always 0,
-        /// so there is no `getMore` to continue from, and a result that does not fit into the
-        /// `maxBsonObjectSize` advertised by `isMaster` must be rejected rather than sent as an
-        /// oversized reply the driver would refuse to read. The bound is checked while the rows
-        /// are collected, so an oversized result is dropped before it is held whole in memory.
-        size_t batch_size = 0;
-        for (const auto & json_data : data_it->value.GetArray())
-        {
-            if (!json_data.IsObject())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "A row of the result is not a document");
-
-            bson_t * row_document = bson_new();
-            appendFieldTree(row_document, tree, json_data, columns);
-            selected.emplace_back(row_document);
-
-            batch_size += selected.back().getBson()->len;
-            if (batch_size > MAX_BSON_OBJECT_SIZE)
-                throw Exception(
-                    ErrorCodes::LIMIT_EXCEEDED,
-                    "The result is larger than the largest reply that can be sent ({} bytes). "
-                    "Ask for less at a time, with a filter, a projection, 'limit' and 'skip'",
-                    MAX_BSON_OBJECT_SIZE);
-        }
-    }
-
+/// The full reply document around the rows of a cursor. It is also built with no rows at all to
+/// measure the envelope, so the size bound of `executeSelectIntoCursor` is checked against the
+/// document that is actually sent on the wire.
+Document buildCursorReply(const std::vector<Document> & selected, const CollectionRef & collection)
+{
     /// `bson_append_array_begin` turns `first_batch` into a writer into `cursor` and
     /// `bson_append_array_end` finishes it, so it must not be allocated separately.
     bson_t cursor;
@@ -548,9 +529,72 @@ executeSelectIntoCursor(const String & sql_query, const CollectionRef & collecti
     BSON_APPEND_DOCUMENT(result_doc, "cursor", &cursor);
     BSON_APPEND_DOUBLE(result_doc, "ok", 1.0);
     bson_destroy(&cursor);
+    return Document(result_doc);
+}
+
+}
+
+std::vector<Document>
+executeSelectIntoCursor(const String & sql_query, const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
+{
+    /// The reply is one BSON document holding the whole result: the cursor id is always 0,
+    /// so there is no `getMore` to continue from, and a result that does not fit into the
+    /// `maxBsonObjectSize` advertised by `isMaster` must be rejected rather than sent as an
+    /// oversized reply the driver would refuse to read. The bound holds for the document sent
+    /// on the wire: besides the row documents themselves, every row costs an element header in
+    /// the `firstBatch` array - the type byte and the decimal index as a NUL-terminated key -
+    /// and the envelope around the batch is measured by building the reply with no rows. The
+    /// bound is checked while the rows are collected, so an oversized result is dropped before
+    /// it is held whole in memory.
+    size_t reply_size = buildCursorReply({}, collection).getBson()->len;
+
+    std::vector<Document> selected;
+    {
+        auto output = executor->execute(sql_query);
+
+        rapidjson::Document result_json;
+        if (result_json.Parse(output.data()).HasParseError())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
+
+        auto columns = extractResultColumns(result_json);
+
+        FieldTree tree;
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            /// A conflict - the columns `a` and `a.b` in one result - keeps the dotted name as
+            /// the literal key it always was, rather than dropping the column.
+            if (!insertColumnPath(tree, columns[i].first, i))
+                tree.entries.push_back({.name = columns[i].first, .column = i, .subtree = nullptr});
+        }
+
+        auto data_it = result_json.FindMember("data");
+        if (data_it == result_json.MemberEnd() || !data_it->value.IsArray())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no rows");
+
+        for (const auto & json_data : data_it->value.GetArray())
+        {
+            if (!json_data.IsObject())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "A row of the result is not a document");
+
+            bson_t * row_document = bson_new();
+            appendFieldTree(row_document, tree, json_data, columns);
+            selected.emplace_back(row_document);
+
+            reply_size += 2 + std::to_string(selected.size() - 1).size() + selected.back().getBson()->len;
+            if (reply_size > MAX_BSON_OBJECT_SIZE)
+                throw Exception(
+                    ErrorCodes::LIMIT_EXCEEDED,
+                    "The result is larger than the largest reply that can be sent ({} bytes). "
+                    "Ask for less at a time, with a filter, a projection, 'limit' and 'skip'",
+                    MAX_BSON_OBJECT_SIZE);
+        }
+    }
+
+    auto reply = buildCursorReply(selected, collection);
+    chassert(reply.getBson()->len == reply_size);
 
     std::vector<Document> result;
-    result.emplace_back(result_doc);
+    result.emplace_back(std::move(reply));
     return result;
 }
 

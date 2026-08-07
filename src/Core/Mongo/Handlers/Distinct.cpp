@@ -2,6 +2,7 @@
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/Handlers/Distinct.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
+#include <Core/Mongo/MongoProtocol.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/parseMongoQuery.h>
 
@@ -15,6 +16,7 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LIMIT_EXCEEDED;
 }
 
 namespace DB::MongoProtocol
@@ -111,6 +113,7 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     /// The reply is `{"values": [...], "ok": 1}`, and the values keep the types of the column
     /// (see `appendTypedValue`).
     bson_t * reply = bson_new();
+    try
     {
         static constexpr std::string_view key_identifier = "values";
         bson_t values;
@@ -122,10 +125,32 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
             auto value_it = row.FindMember("_id");
             if (value_it != row.MemberEnd())
                 appendTypedValue(&values, std::to_string(index++), value_it->value, columns[0].second);
+
+            /// The `values` array grows in place inside `reply`, so its running size is exact;
+            /// an oversized result is rejected before the whole reply is built.
+            if (values.len > MAX_BSON_OBJECT_SIZE)
+                throw Exception(
+                    ErrorCodes::LIMIT_EXCEEDED,
+                    "The result is larger than the largest reply that can be sent ({} bytes). "
+                    "Ask for less at a time, with a filter in 'query'",
+                    MAX_BSON_OBJECT_SIZE);
         }
         bson_append_array_end(reply, &values);
+        BSON_APPEND_DOUBLE(reply, "ok", 1.0);
+
+        /// The bound holds for the reply document sent on the wire, envelope included.
+        if (reply->len > MAX_BSON_OBJECT_SIZE)
+            throw Exception(
+                ErrorCodes::LIMIT_EXCEEDED,
+                "The result is larger than the largest reply that can be sent ({} bytes). "
+                "Ask for less at a time, with a filter in 'query'",
+                MAX_BSON_OBJECT_SIZE);
     }
-    BSON_APPEND_DOUBLE(reply, "ok", 1.0);
+    catch (...)
+    {
+        bson_destroy(reply);
+        throw;
+    }
 
     std::vector<Document> result;
     result.emplace_back(reply);
