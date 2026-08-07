@@ -21,8 +21,8 @@ struct JSONSubcolumnIndexInfo
 struct JSONAllValuesIndexInfo
 {
     JSONSubcolumnIndexInfo subcolumn;
-    bool is_string_cast;
-    bool missing_value_is_not_indexed;
+    bool is_string_cast = false;
+    bool missing_value_is_not_indexed = false;
 };
 
 /// Try to match a column name from the filter DAG to a JSON index column in the header.
