@@ -803,8 +803,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else if (type == ASTAlterCommand::MODIFY_PROJECTION)
     {
-        ostr << "MODIFY PROJECTION " << (if_exists ? "IF EXISTS " : "")
-                     ;
+        ostr << "MODIFY PROJECTION " << (if_exists ? "IF EXISTS " : "");
         projection_decl->format(ostr, settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_PROJECTION)

@@ -1008,7 +1008,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
                 metadata.projections.getHintsMessage(projection_name));
         }
 
-        /// create a new projection with the modifed settings
+        /// create a new projection with the modified settings
         auto new_projection = ProjectionDescription::getProjectionFromAST(
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
 

@@ -1289,7 +1289,7 @@ void MergeTreeData::checkProperties(
                 projection.name);
 
         /// A single `ALTER` may both add a projection granularity override and switch the table to fixed granularity
-        /// (`MODIFY`/`RESET SETTING index_granularity_bytes`), or switch to fixed granularity under a pre-existing override; 
+        /// (`MODIFY`/`RESET SETTING index_granularity_bytes`), or switch to fixed granularity under a pre-existing override.
         const bool effective_can_use_adaptive_granularity = effective_settings[MergeTreeSetting::index_granularity_bytes] != 0
             && (effective_settings[MergeTreeSetting::enable_mixed_granularity_parts] || !has_non_adaptive_index_granularity_parts);
 
