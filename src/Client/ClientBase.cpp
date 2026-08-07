@@ -402,7 +402,7 @@ public:
     using Exception::Exception;
 
     LocalFormatError * clone() const override { return new LocalFormatError(*this); }
-    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+    void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 };
 
 /// Wrapper for write buffer to execute callback before flush.
@@ -1028,7 +1028,7 @@ try
                 out_buf, default_output_compression_method, 3, 0, client_context->getSettingsRef()[Setting::snappy_mode]);
 
         auto format_settings = getFormatSettings(client_context);
-        format_settings.is_writing_to_terminal = stdout_is_a_tty;
+        format_settings.is_writing_to_terminal = stdout_is_a_tty && !select_into_file;
 
         /// If the result is written to a terminal that does not support UTF-8 (e.g. with LANG=C),
         /// fall back to ASCII for the Pretty formats. Otherwise Unicode box-drawing characters
