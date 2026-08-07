@@ -42,6 +42,13 @@ for lim in 340000000 360000000 380000000; do
         "SELECT groupArrayStateResampleTupleOrNullTuple(0, 1048576, 1)(((number, number + 1), (number + 2, number + 3)), ((number % 20, number % 20), (number % 20, number % 20)))
          FROM numbers(100000)
          FORMAT Null" >/dev/null 2>&1
+
+    # Same window through the implicit null adapter instead of `-OrNull`: a `Nullable(Tuple(...))`
+    # argument makes each element of the outer `-Tuple` nullable-returning.
+    $CLICKHOUSE_CLIENT --max_threads 1 --max_memory_usage $lim --max_rows_to_read 0 --enable_nullable_tuple_type 1 --query \
+        "SELECT groupArrayStateResampleTupleDistinctTuple(0, 1048576, 1)(CAST(((number, number + 1), (number + 2, number + 3)), 'Tuple(Nullable(Tuple(UInt64, UInt64)), Nullable(Tuple(UInt64, UInt64)))'), ((number % 20, number % 20), (number % 20, number % 20)))
+         FROM numbers(100000)
+         FORMAT Null" >/dev/null 2>&1
 done
 
 # The server is still up: correct results are produced without a memory limit.

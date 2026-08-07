@@ -279,9 +279,18 @@ public:
 
     void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
     {
-        /// Mirrors insertResultInto: only the non-nullable variant forwards the transfer into `to` itself.
-        if constexpr (!result_is_nullable)
+        /// Mirrors insertResultInto: it either transfers into `to` itself, or appends one null-map
+        /// entry and transfers into the nested column.
+        if constexpr (result_is_nullable)
+        {
+            ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
+            to_concrete.getNullMapData().reserve(to_concrete.getNullMapData().size() + 1);
+            nested_function->reserveForInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+        }
+        else
+        {
             nested_function->reserveForInsertResult(nestedPlace(place), to);
+        }
     }
 
     bool allocatesMemoryInArena() const override
