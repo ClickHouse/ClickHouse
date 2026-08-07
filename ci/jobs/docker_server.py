@@ -7,8 +7,9 @@ import shlex
 import tempfile
 import traceback
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
+from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika import Secret
 from ci.praktika.info import Info
@@ -238,8 +239,8 @@ def gen_tags(version_str: str, tag_type: str) -> List[str]:
 # registry/network/mirror *failure* signatures. None of these strings appear in
 # normal `--progress=plain` output (unlike progress text such as "resolve image
 # config"), so a real Dockerfile/build error (RUN/COPY/package install) still fails
-# fast on the first attempt.
-BUILDX_RETRIES = 5
+# fast on the first attempt. The count is bounded by the job budget below.
+BUILDX_RETRIES = 2
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
@@ -260,6 +261,48 @@ BUILDX_RETRY_ERRORS = [
     "Connection failed",
     "Connection timed out",
 ]
+
+# `Acquire::http::Timeout` is an inactivity timeout, so an apt mirror that keeps
+# trickling bytes is never bounded by it and the build runs until the job's own cap
+# kills it. Bound each invocation, above the slowest healthy attempt seen in 90 days.
+BUILDX_TIMEOUT = 2700
+BUILDX_TIMEOUT_MESSAGE = "ERROR: docker buildx timed out"
+# Logged by `timeout --verbose` under LC_ALL=C when it escalates to SIGKILL; a bare 137
+# is ambiguous (OOM, external kill), so only this proves the expiry. Same discrimination
+# as clickhouse_proc.py's _TIMEOUT_KILL_DIAG.
+BUILDX_TIMEOUT_KILL_DIAG = "sending signal KILL to command"
+# Both sentinels must go to stderr: Shell.run matches retry_errors against stderr only.
+BUILDX_RETRY_ERRORS += [BUILDX_TIMEOUT_MESSAGE, BUILDX_TIMEOUT_KILL_DIAG]
+BUILDX_TIMEOUT_KILL_AFTER = 120
+# A per-invocation bound does not bound the job: main() loops over os variants and tags,
+# so the invocation count is not fixed. Keep back this much of the cap for recording a
+# result, and give each invocation whatever is left.
+BUILDX_JOB_RESERVE = 3600
+# `timeout 0` runs unbounded (measured: rc 0 after the full command), so a deadline that
+# has passed must never reach `timeout` as 0. Clamp to a floor that still expires.
+BUILDX_TIMEOUT_FLOOR = 60
+
+
+def buildx_timeout(elapsed: float = 0.0, job_timeout: int = 0) -> int:
+    """Per-invocation bound, shrunk so the whole job stays inside its own cap."""
+    if not job_timeout:
+        return BUILDX_TIMEOUT
+    # One invocation may retry, so it costs up to BUILDX_RETRIES * (bound + kill-after).
+    attempts = max(BUILDX_RETRIES, 2)
+    budget = (job_timeout - BUILDX_JOB_RESERVE - elapsed) / attempts
+    return max(BUILDX_TIMEOUT_FLOOR, min(BUILDX_TIMEOUT, int(budget)))
+
+
+def with_timeout(cmd: str, seconds: int = BUILDX_TIMEOUT) -> str:
+    # A brace group, not `bash -c '...'`: cmd already contains single-quoted arguments,
+    # which a surrounding single-quoted string would break. LC_ALL=C pins timeout's
+    # diagnostic, which is a translated string.
+    return (
+        f"{{ LC_ALL=C timeout --verbose --signal=TERM "
+        f"--kill-after={BUILDX_TIMEOUT_KILL_AFTER} {seconds} {cmd}; "
+        f'rc=$?; if [ "$rc" = 124 ]; then '
+        f'echo "{BUILDX_TIMEOUT_MESSAGE} after {seconds}s" >&2; fi; exit $rc; }}'
+    )
 
 
 def buildx_args(
@@ -310,6 +353,8 @@ def build_and_push_image(
     run_url: str,
     sha: str,
     apt_mirror_region: str,
+    sw: Optional[Utils.Stopwatch] = None,
+    job_timeout: int = 0,
 ) -> List[Result]:
     result = []
     if os != "ubuntu":
@@ -388,7 +433,9 @@ def build_and_push_image(
         result.append(
             Result.from_commands_run(
                 name=f"{image.name}:{tag}-{arch}",
-                command=cmd,
+                command=with_timeout(
+                    cmd, buildx_timeout(sw.duration if sw else 0.0, job_timeout)
+                ),
                 retries=BUILDX_RETRIES,
                 retry_errors=BUILDX_RETRY_ERRORS,
             )
@@ -407,7 +454,9 @@ def build_and_push_image(
         result.append(
             Result.from_commands_run(
                 name=f"{image.name}:{tag}",
-                command=cmd,
+                command=with_timeout(
+                    cmd, buildx_timeout(sw.duration if sw else 0.0, job_timeout)
+                ),
                 retries=BUILDX_RETRIES,
                 retry_errors=BUILDX_RETRY_ERRORS,
             )
@@ -528,9 +577,11 @@ def main():
     if "server image" in info.job_name:
         image_path = args.image_path or "docker/server"
         image_repo = args.image_repo or "clickhouse/clickhouse-server"
+        job_timeout = JobConfigs.docker_server.timeout
     elif "keeper image" in info.job_name:
         image_path = args.image_path or "docker/keeper"
         image_repo = args.image_repo or "clickhouse/clickhouse-keeper"
+        job_timeout = JobConfigs.docker_keeper.timeout
     else:
         assert False, f"Unexpected job name [{info.job_name}]"
 
@@ -612,6 +663,8 @@ def main():
                     run_url=info.run_url,
                     sha=info.sha,
                     apt_mirror_region=apt_mirror_region,
+                    sw=sw,
+                    job_timeout=job_timeout,
                 )
             )
 
