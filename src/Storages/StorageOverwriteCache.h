@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Formats/FormatSettings.h>
@@ -43,13 +44,15 @@ struct OverwriteCacheSettings
     UInt64 max_pending_insert_bytes = 0;
     UInt64 max_concurrent_insert_preparations = 8;
     UInt64 max_insert_publication_threads = 8;
+    UInt64 background_compaction_target_segment_bytes = 64ULL * 1024 * 1024;
+    UInt64 background_compaction_min_segment_count = 8;
     Names equal_version_tiebreak_columns;
     bool compress_segments = false;
     OverwriteCachePersistMode persist_mode = OverwriteCachePersistMode::Async;
     String disk_name = "default";
 };
 
-class StorageOverwriteCache final : public IStorage, public IKeyValueEntity
+class StorageOverwriteCache final : public IStorage, public IKeyValueEntity, WithContext
 {
 public:
     using EntryId = UInt64;
@@ -142,9 +145,12 @@ public:
         OverwriteCacheSettings settings_,
         ASTPtr settings_changes_,
         DiskPtr disk_,
-        const String & relative_data_path_);
+        const String & relative_data_path_,
+        ContextPtr context_);
 
     String getName() const override { return "OverwriteCache"; }
+
+    void startup() override;
 
     bool prefersLargeBlocks() const override { return false; }
     bool supportsParallelInsert() const override { return true; }
@@ -154,18 +160,18 @@ public:
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        ContextPtr query_context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
 
     SinkToStoragePtr
-    write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
+    write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool async_insert) override;
 
     void truncate(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
-        ContextPtr context,
+        ContextPtr query_context,
         TableExclusiveLockHolder & table_lock_holder) override;
     void drop() override;
     void shutdown(bool is_drop) override;
@@ -178,14 +184,14 @@ public:
     void restoreDataFromBackup(
         RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
-    void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & lock_holder) override;
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr query_context) const override;
+    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & lock_holder) override;
 
     /// `DELETE FROM` is executed by the storage itself rather than translated into a lightweight
     /// update, because there is no part to rewrite and no `_row_exists` column to mask.
     bool supportsDelete() const override { return true; }
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
-    void mutate(const MutationCommands & commands, ContextPtr context) override;
+    void mutate(const MutationCommands & commands, ContextPtr query_context) override;
 
     std::optional<UInt64> totalRows(ContextPtr) const override;
     std::optional<UInt64> totalBytes(ContextPtr) const override;
@@ -617,10 +623,22 @@ private:
     void acquireInsertPreparation(UInt64 bytes);
     void releaseInsertPreparation(UInt64 bytes);
 
+    enum class SmallSegmentCompactionResult : uint8_t
+    {
+        NoWork,
+        Retry,
+        Compacted,
+    };
+    SmallSegmentCompactionResult compactSmallSegments();
+    void runSmallSegmentCompaction();
+    void scheduleSmallSegmentCompaction();
+    void stopSmallSegmentCompaction();
+
     const String version_column;
     const Names key_columns;
     std::vector<Names> lookup_index_columns;
     const OverwriteCacheSettings settings;
+    LoggerPtr log;
 
     Block sample_block;
     Serializations serializations;
@@ -675,7 +693,12 @@ private:
     std::atomic<UInt64> total_size_bytes = 0;
     std::atomic<UInt64> total_size_rows = 0;
 
+    /// Weak references enumerate current row segments without extending their lifetime after every row
+    /// has moved away. Only publications and the background compactor touch this under `writer_mutex`.
+    std::deque<std::weak_ptr<RowSegment>> row_segments;
+
     OverwriteCachePersistencePtr persistence;
+    BackgroundSchedulePoolTaskHolder small_segment_compaction_task;
     /// Set while the log is being replayed. Segment compaction is left alone during replay, so that the
     /// segments in memory keep mirroring the files one to one and no rewritten segment goes unrecorded.
     bool loading = false;

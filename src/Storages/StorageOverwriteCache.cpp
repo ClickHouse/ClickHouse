@@ -7,6 +7,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnVector.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Disks/IDisk.h>
@@ -53,6 +54,8 @@
 
 namespace ProfileEvents
 {
+extern const Event OverwriteCacheBackgroundCompactedSegments;
+extern const Event OverwriteCacheBackgroundCompactions;
 extern const Event OverwriteCacheEqualVersionTies;
 }
 
@@ -84,6 +87,7 @@ namespace FailPoints
 {
 extern const char overwrite_cache_pause_after_lookup_catalog_snapshot[];
 extern const char overwrite_cache_pause_after_lookup_ids[];
+extern const char overwrite_cache_pause_before_small_segment_compaction_publish[];
 extern const char overwrite_cache_pause_after_drop_index_publication[];
 extern const char overwrite_cache_pause_before_rollback[];
 extern const char overwrite_cache_pause_before_commit[];
@@ -95,6 +99,8 @@ extern const char overwrite_cache_throw_during_publish[];
 
 namespace
 {
+
+constexpr UInt64 max_background_compaction_source_segments = 64;
 
 Names parseColumnList(const String & value, const String & setting_name)
 {
@@ -216,6 +222,75 @@ Columns buildSelectedColumns(
     return result;
 }
 
+Columns buildMergedColumns(
+    const Block & header,
+    const StorageOverwriteCache::RowDataPtrs & rows,
+    const std::vector<bool> & keep_uncompressed,
+    UInt64 max_threads,
+    UInt64 & allocated_bytes)
+{
+    const auto build_column = [&](size_t position)
+    {
+        auto merged = header.getByPosition(position).type->createColumn();
+        merged->reserve(rows.size());
+
+        const StorageOverwriteCache::RowSegment * materialized_segment = nullptr;
+        ColumnPtr materialized_column;
+        for (const auto & row : rows)
+        {
+            if (materialized_segment != row.segment.get())
+            {
+                materialized_segment = row.segment.get();
+                materialized_column = row.segment->columns[position]->decompress();
+            }
+            merged->insertFrom(*materialized_column, row.segment_row);
+        }
+
+        ColumnPtr result = std::move(merged);
+        if (!keep_uncompressed[position])
+            result = result->compress(/*force_compression=*/true);
+        return result;
+    };
+
+    Columns result(header.columns());
+    std::vector<UInt64> column_bytes(header.columns());
+    const size_t thread_count = std::min<size_t>(max_threads, header.columns());
+    constexpr size_t min_rows_for_parallel_column_build = 8192;
+
+    if (thread_count <= 1 || rows.size() < min_rows_for_parallel_column_build)
+    {
+        for (size_t position = 0; position < header.columns(); ++position)
+        {
+            result[position] = build_column(position);
+            column_bytes[position] = result[position]->allocatedBytes();
+        }
+    }
+    else
+    {
+        ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, thread_count);
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DEFAULT_THREAD_POOL);
+        for (size_t position = 0; position < header.columns(); ++position)
+        {
+            runner.enqueueAndKeepTrack(
+                [&, position]
+                {
+                    result[position] = build_column(position);
+                    column_bytes[position] = result[position]->allocatedBytes();
+                });
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
+    }
+
+    allocated_bytes = 0;
+    for (const UInt64 bytes : column_bytes)
+    {
+        if (allocated_bytes > std::numeric_limits<UInt64>::max() - bytes)
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "`OverwriteCache` segment memory accounting overflow");
+        allocated_bytes += bytes;
+    }
+    return result;
+}
+
 OverwriteCacheSettings parseSettings(const ASTStorage & storage_def)
 {
     OverwriteCacheSettings result;
@@ -236,6 +311,10 @@ OverwriteCacheSettings parseSettings(const ASTStorage & storage_def)
                 result.max_concurrent_insert_preparations = getUInt64Setting(change);
             else if (change.name == "max_insert_publication_threads")
                 result.max_insert_publication_threads = getUInt64Setting(change);
+            else if (change.name == "background_compaction_target_segment_bytes")
+                result.background_compaction_target_segment_bytes = getUInt64Setting(change);
+            else if (change.name == "background_compaction_min_segment_count")
+                result.background_compaction_min_segment_count = getUInt64Setting(change);
             else if (change.name == "equal_version_tiebreak_columns")
                 result.equal_version_tiebreak_columns = parseColumnList(getStringSetting(change), change.name);
             else if (change.name == "compress_segments")
@@ -259,6 +338,17 @@ OverwriteCacheSettings parseSettings(const ASTStorage & storage_def)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage `OverwriteCache` requires positive `max_concurrent_insert_preparations`");
     if (!result.max_insert_publication_threads)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage `OverwriteCache` requires positive `max_insert_publication_threads`");
+    if (!result.background_compaction_target_segment_bytes)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Storage `OverwriteCache` requires positive `background_compaction_target_segment_bytes`");
+    if (result.background_compaction_min_segment_count < 2)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Storage `OverwriteCache` requires `background_compaction_min_segment_count` of at least 2");
+    if (result.background_compaction_min_segment_count > max_background_compaction_source_segments)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Storage `OverwriteCache` requires `background_compaction_min_segment_count` of at most {}",
+            max_background_compaction_source_segments);
     return result;
 }
 
@@ -305,7 +395,8 @@ bool isOverwriteCacheSetting(std::string_view name)
 {
     return name == "max_memory_bytes" || name == "equal_version_tiebreak_columns" || name == "compress_segments" || name == "persist_mode"
         || name == "disk" || name == "max_pending_insert_bytes" || name == "max_concurrent_insert_preparations"
-        || name == "max_insert_publication_threads";
+        || name == "max_insert_publication_threads" || name == "background_compaction_target_segment_bytes"
+        || name == "background_compaction_min_segment_count";
 }
 
 class OverwriteCacheSink final : public SinkToStorage
@@ -564,12 +655,15 @@ StorageOverwriteCache::StorageOverwriteCache(
     OverwriteCacheSettings settings_,
     ASTPtr settings_changes_,
     DiskPtr disk_,
-    const String & relative_data_path_)
+    const String & relative_data_path_,
+    ContextPtr context_)
     : IStorage(table_id_)
+    , WithContext(context_->getGlobalContext())
     , version_column(std::move(version_column_))
     , key_columns(std::move(key_columns_))
     , lookup_index_columns(std::move(lookup_indexes_))
     , settings(std::move(settings_))
+    , log(getLogger("StorageOverwriteCache (" + table_id_.getNameForLogs() + ")"))
 {
     StorageInMemoryMetadata metadata;
     metadata.setColumns(std::move(columns_description_));
@@ -629,6 +723,220 @@ StorageOverwriteCache::StorageOverwriteCache(
         getPersistenceFingerprint(),
         fmt::format("StorageOverwriteCache ({})", table_id_.getNameForLogs()));
     loadPersistedData();
+    small_segment_compaction_task = getContext()->getSchedulePool().createTask(
+        getStorageID(), log->name() + "/SmallSegmentCompaction", [this] { runSmallSegmentCompaction(); });
+}
+
+void StorageOverwriteCache::startup()
+{
+    small_segment_compaction_task->activateAndSchedule();
+}
+
+void StorageOverwriteCache::scheduleSmallSegmentCompaction()
+{
+    if (!loading && small_segment_compaction_task)
+        small_segment_compaction_task->schedule();
+}
+
+void StorageOverwriteCache::stopSmallSegmentCompaction()
+{
+    if (small_segment_compaction_task)
+        small_segment_compaction_task->deactivate();
+}
+
+void StorageOverwriteCache::runSmallSegmentCompaction()
+{
+    try
+    {
+        const auto result = compactSmallSegments();
+        if (result == SmallSegmentCompactionResult::Compacted)
+            small_segment_compaction_task->schedule();
+        else if (result == SmallSegmentCompactionResult::Retry)
+            small_segment_compaction_task->scheduleAfter(1000);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to compact small `OverwriteCache` segments");
+        small_segment_compaction_task->scheduleAfter(30000);
+    }
+}
+
+StorageOverwriteCache::SmallSegmentCompactionResult StorageOverwriteCache::compactSmallSegments()
+{
+    std::vector<std::shared_ptr<RowSegment>> source_segments;
+    RowDataPtrs source_rows;
+    std::vector<EntryId> source_entry_ids;
+    UInt64 selected_bytes = 0;
+    UInt64 selected_rows = 0;
+    {
+        std::unique_lock writer_lock(writer_mutex, std::try_to_lock);
+        if (!writer_lock.owns_lock())
+            return SmallSegmentCompactionResult::Retry;
+
+        std::deque<std::weak_ptr<RowSegment>> retained_segments;
+        for (auto & weak_segment : row_segments)
+        {
+            auto segment = weak_segment.lock();
+            if (!segment)
+                continue;
+            retained_segments.emplace_back(segment);
+
+            if (source_segments.size() >= max_background_compaction_source_segments
+                || segment->live_rows.load(std::memory_order_acquire) == 0
+                || segment->allocated_bytes >= settings.background_compaction_target_segment_bytes)
+                continue;
+            if (selected_bytes > settings.background_compaction_target_segment_bytes - segment->allocated_bytes)
+                continue;
+            const UInt64 live_rows = segment->live_rows.load(std::memory_order_relaxed);
+            if (selected_rows > std::numeric_limits<UInt32>::max() - live_rows)
+                continue;
+
+            selected_bytes += segment->allocated_bytes;
+            selected_rows += live_rows;
+            source_segments.push_back(std::move(segment));
+        }
+        row_segments.swap(retained_segments);
+
+        if (source_segments.size() < settings.background_compaction_min_segment_count)
+            return SmallSegmentCompactionResult::NoWork;
+
+        UInt64 source_live_rows = 0;
+        for (const auto & segment : source_segments)
+        {
+            const UInt64 live_rows = segment->live_rows.load(std::memory_order_acquire);
+            if (source_live_rows > std::numeric_limits<UInt64>::max() - live_rows)
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "`OverwriteCache` segment row-count overflow");
+            source_live_rows += live_rows;
+        }
+        source_rows.reserve(source_live_rows);
+        source_entry_ids.reserve(source_live_rows);
+
+        for (const auto & segment : source_segments)
+        {
+            size_t found_live_rows = 0;
+            for (size_t row = 0; row < segment->entry_ids.size(); ++row)
+            {
+                const EntryId entry_id = segment->entry_ids[row];
+                const auto & entry = entries.at(entry_id);
+                std::shared_lock row_lock(row_mutexes[rowLockIndex(entry_id)]);
+                if (!entry.head || entry.head->row.segment.get() != segment.get() || entry.head->row.segment_row != row)
+                    continue;
+                source_rows.push_back(entry.head->row);
+                source_entry_ids.push_back(entry_id);
+                ++found_live_rows;
+            }
+            if (found_live_rows != segment->live_rows.load(std::memory_order_relaxed))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted `OverwriteCache` row-segment references");
+        }
+    }
+
+    auto merged_segment = std::make_shared<RowSegment>();
+    merged_segment->columns = buildMergedColumns(
+        sample_block, source_rows, keep_uncompressed, settings.max_insert_publication_threads, merged_segment->allocated_bytes);
+
+    FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_before_small_segment_compaction_publish);
+
+    std::unique_lock writer_lock(writer_mutex);
+    for (size_t row = 0; row < source_rows.size(); ++row)
+    {
+        const EntryId entry_id = source_entry_ids[row];
+        if (entry_id > entries.size())
+            return SmallSegmentCompactionResult::Retry;
+        const auto & entry = entries.at(entry_id);
+        std::shared_lock row_lock(row_mutexes[rowLockIndex(entry_id)]);
+        if (!entry.head || entry.head->row.segment.get() != source_rows[row].segment.get()
+            || entry.head->row.segment_row != source_rows[row].segment_row)
+            return SmallSegmentCompactionResult::Retry;
+    }
+
+    const UInt64 bytes_before = total_size_bytes.load(std::memory_order_relaxed);
+    if (merged_segment->allocated_bytes > settings.max_memory_bytes
+        || bytes_before > settings.max_memory_bytes - merged_segment->allocated_bytes)
+        return SmallSegmentCompactionResult::NoWork;
+
+    const UInt64 current_generation = published_generation.load(std::memory_order_acquire);
+    if (current_generation == std::numeric_limits<UInt64>::max())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`OverwriteCache` publication generation space is exhausted");
+    const UInt64 new_generation = current_generation + 1;
+
+    std::vector<std::unique_ptr<EntryVersion>> versions;
+    versions.reserve(source_rows.size());
+    for (size_t row = 0; row < source_rows.size(); ++row)
+    {
+        auto version = takeVersion();
+        version->row = RowData{merged_segment, static_cast<UInt32>(row)};
+        version->generation = new_generation;
+        versions.push_back(std::move(version));
+    }
+
+    if (persistence->isEnabled())
+        merged_segment->persistent_id = persistence->allocateSegmentId();
+    merged_segment->entry_ids = source_entry_ids;
+    merged_segment->live_rows.store(source_rows.size(), std::memory_order_relaxed);
+
+    for (size_t row = 0; row < source_entry_ids.size(); ++row)
+    {
+        auto & entry = entries.at(source_entry_ids[row]);
+        std::unique_lock row_lock(row_mutexes[rowLockIndex(source_entry_ids[row])]);
+        versions[row]->older = std::move(entry.head);
+        entry.head = std::move(versions[row]);
+    }
+
+    published_generation.store(new_generation, std::memory_order_release);
+    row_segments.emplace_back(merged_segment);
+
+    std::vector<std::shared_ptr<RowSegment>> retired_segments;
+    retired_segments.reserve(source_segments.size());
+    UInt64 reclaimed_bytes = 0;
+    for (const auto & row : source_rows)
+    {
+        if (row.segment->live_rows.fetch_sub(1, std::memory_order_acq_rel) == 1)
+        {
+            reclaimed_bytes += row.segment->allocated_bytes;
+            retired_segments.push_back(row.segment);
+        }
+    }
+    chassert(retired_segments.size() == source_segments.size());
+    total_size_bytes.store(bytes_before + merged_segment->allocated_bytes - reclaimed_bytes, std::memory_order_relaxed);
+
+    if (persistence->isEnabled())
+    {
+        OverwriteCachePersistence::Commit commit;
+        commit.generation = new_generation;
+        commit.added.push_back({merged_segment->persistent_id, merged_segment->columns, merged_segment->entry_ids.size()});
+        commit.removed.reserve(retired_segments.size());
+        for (const auto & retired_segment : retired_segments)
+            commit.removed.push_back(retired_segment->persistent_id);
+        persistence->enqueue(std::move(commit));
+    }
+
+    std::shared_lock entry_lifetime_lock(entry_lifetime_mutex);
+    writer_lock.unlock();
+
+    const UInt64 watermark = oldestLiveGeneration();
+    for (const EntryId entry_id : source_entry_ids)
+    {
+        auto & entry = entries.at(entry_id);
+        std::unique_ptr<EntryVersion> obsolete;
+        {
+            std::unique_lock row_lock(row_mutexes[rowLockIndex(entry_id)]);
+            for (auto * version = entry.head.get(); version; version = version->older.get())
+            {
+                if (version->generation <= watermark)
+                {
+                    obsolete = std::move(version->older);
+                    break;
+                }
+            }
+        }
+        recycleVersions(std::move(obsolete));
+    }
+    entry_lifetime_lock.unlock();
+
+    ProfileEvents::increment(ProfileEvents::OverwriteCacheBackgroundCompactions);
+    ProfileEvents::increment(ProfileEvents::OverwriteCacheBackgroundCompactedSegments, retired_segments.size());
+    LOG_DEBUG(log, "Compacted {} small row segments with {} live rows into one segment", retired_segments.size(), source_rows.size());
+    return SmallSegmentCompactionResult::Compacted;
 }
 
 String StorageOverwriteCache::getPersistenceFingerprint() const
@@ -1098,6 +1406,7 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
     acquireInsertPreparation(pending_bytes);
     SCOPE_EXIT({ releaseInsertPreparation(pending_bytes); });
     insertBlock(input_block, 0);
+    scheduleSmallSegmentCompaction();
 }
 
 void StorageOverwriteCache::acquireInsertPreparation(UInt64 bytes)
@@ -1757,6 +2066,8 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
     total_size_rows.fetch_add(new_entries + resurrected_entries, std::memory_order_relaxed);
     for (size_t index = 0; index < lookup_indexes.size(); ++index)
         lookup_indexes[index]->accounted_bytes.fetch_add(lookup_bytes_delta[index], std::memory_order_relaxed);
+    for (const auto & added_segment : added_segments)
+        row_segments.emplace_back(added_segment);
 
     UInt64 reclaim_bytes = 0;
     for (const auto & mutation : mutations)
@@ -2127,6 +2438,8 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
     published_generation.store(new_generation, std::memory_order_release);
     total_size_bytes.store(prospective_bytes, std::memory_order_relaxed);
     total_size_rows.fetch_sub(deleted_rows, std::memory_order_relaxed);
+    for (const auto & added_segment : added_segments)
+        row_segments.emplace_back(added_segment);
 
     UInt64 reclaim_bytes = 0;
     std::vector<std::shared_ptr<RowSegment>> retired_segments;
@@ -2197,6 +2510,8 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
     if (persistence_sequence && settings.persist_mode == OverwriteCachePersistMode::Sync)
         persistence->waitDurable(persistence_sequence);
 
+    scheduleSmallSegmentCompaction();
+
     return deleted_rows;
 }
 
@@ -2212,14 +2527,14 @@ void StorageOverwriteCache::checkMutationIsPossible(const MutationCommands & com
             "Storage `OverwriteCache` supports only `DELETE` mutations; a stored row is replaced by inserting a greater version");
 }
 
-void StorageOverwriteCache::mutate(const MutationCommands & commands, ContextPtr context)
+void StorageOverwriteCache::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
     if (commands.empty())
         return;
-    checkMutationIsPossible(commands, context->getSettingsRef());
+    checkMutationIsPossible(commands, query_context->getSettingsRef());
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    const auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), context);
+    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    const auto storage_ptr = DatabaseCatalog::instance().getTable(getStorageID(), query_context);
 
     MutationsInterpreter::Settings mutation_settings(true);
     mutation_settings.return_all_columns = true;
@@ -2228,7 +2543,7 @@ void StorageOverwriteCache::mutate(const MutationCommands & commands, ContextPtr
     /// The rows to delete are produced by the read path, so a `DELETE` accepts exactly the predicates a
     /// `SELECT` accepts: a complete `KEYS` tuple, or one or more declared lookup indexes.
     MutationsInterpreter interpreter(
-        storage_ptr, metadata_snapshot, commands, metadata_snapshot->getColumns().getNamesOfPhysical(), context, mutation_settings);
+        storage_ptr, metadata_snapshot, commands, metadata_snapshot->getColumns().getNamesOfPhysical(), query_context, mutation_settings);
 
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter.execute());
     PullingPipelineExecutor executor(pipeline);
@@ -2468,7 +2783,7 @@ void StorageOverwriteCache::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    ContextPtr query_context,
     QueryProcessingStage::Enum,
     size_t max_block_size,
     size_t num_streams)
@@ -2477,7 +2792,7 @@ void StorageOverwriteCache::read(
     auto sample = std::make_shared<const Block>(storage_snapshot->metadata->getSampleBlock());
     query_plan.addStep(
         std::make_unique<ReadFromOverwriteCache>(
-            column_names, query_info, storage_snapshot, context, std::move(sample), *this, max_block_size, num_streams));
+            column_names, query_info, storage_snapshot, query_context, std::move(sample), *this, max_block_size, num_streams));
 }
 
 SinkToStoragePtr StorageOverwriteCache::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool)
@@ -2515,6 +2830,7 @@ void StorageOverwriteCache::clearData()
     min_pending_posting_removal_generation.store(std::numeric_limits<UInt64>::max(), std::memory_order_release);
     has_pending_posting_removals.store(false, std::memory_order_release);
     entries.clear();
+    row_segments.clear();
     next_entry_id = 1;
     published_generation.store(0, std::memory_order_release);
     total_size_bytes.store(0, std::memory_order_relaxed);
@@ -2554,9 +2870,9 @@ void StorageOverwriteCache::checkAlterIsPossible(const AlterCommands & commands,
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lookup `INDEX` does not exist");
 }
 
-void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder &)
+void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder &)
 {
-    checkAlterIsPossible(commands, context);
+    checkAlterIsPossible(commands, query_context);
     const auto & command = commands.front();
 
     Names columns = extractIdentifierList(*command.lookup_index, "lookup `INDEX` clause");
@@ -2574,7 +2890,7 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
     }
 
     const auto table_id = getStorageID();
-    const auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     ASTPtr metadata_indexes = new_metadata.lookup_indexes ? new_metadata.lookup_indexes->clone() : make_intrusive<ASTExpressionList>();
     auto & metadata_index_list = metadata_indexes->as<ASTExpressionList &>();
@@ -2616,7 +2932,7 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
 
         DatabaseCatalog::instance()
             .getDatabase(table_id.database_name)
-            ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+            ->alterTable(query_context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
         {
             std::unique_lock lock(lookup_catalog_mutex);
@@ -2748,7 +3064,7 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
     auto prepared_metadata = std::make_shared<const StorageInMemoryMetadata>(new_metadata);
     DatabaseCatalog::instance()
         .getDatabase(table_id.database_name)
-        ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+        ->alterTable(query_context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
     shadow->accounted_bytes.store(index_bytes, std::memory_order_relaxed);
     {
@@ -2764,24 +3080,36 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
 
 void StorageOverwriteCache::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
+    const bool resume_compaction = small_segment_compaction_task && small_segment_compaction_task->deactivate();
+    SCOPE_EXIT({
+        if (resume_compaction)
+            small_segment_compaction_task->activateAndSchedule();
+    });
     clearData();
     persistence->truncate();
 }
 
 void StorageOverwriteCache::drop()
 {
+    stopSmallSegmentCompaction();
     clearData();
     persistence->removeAllFiles();
 }
 
 void StorageOverwriteCache::shutdown(bool)
 {
+    stopSmallSegmentCompaction();
     /// Draining the queue makes a clean restart lose nothing even in `Async` mode.
     persistence->shutdown();
 }
 
 void StorageOverwriteCache::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
+    const bool resume_compaction = small_segment_compaction_task && small_segment_compaction_task->deactivate();
+    SCOPE_EXIT({
+        if (resume_compaction)
+            small_segment_compaction_task->activateAndSchedule();
+    });
     persistence->rename(new_path_to_table_data);
     renameInMemory(new_table_id);
 }
@@ -2832,6 +3160,11 @@ void StorageOverwriteCache::restoreDataFromBackup(
 
 void StorageOverwriteCache::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)
 {
+    const bool resume_compaction = small_segment_compaction_task && small_segment_compaction_task->deactivate();
+    SCOPE_EXIT({
+        if (resume_compaction)
+            small_segment_compaction_task->activateAndSchedule();
+    });
     const auto file_names = backup->listFiles(data_path_in_backup, /*recursive=*/false);
     if (std::ranges::find(file_names, OverwriteCachePersistence::manifest_file_name) == file_names.end())
         throw Exception(
@@ -2981,7 +3314,8 @@ void registerStorageOverwriteCache(StorageFactory & factory)
                 std::move(settings),
                 args.storage_def->settings ? args.storage_def->settings->clone() : nullptr,
                 std::move(disk),
-                args.relative_data_path);
+                args.relative_data_path,
+                args.getContext());
         },
         {
             .supports_settings = true,

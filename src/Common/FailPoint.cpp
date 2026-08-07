@@ -37,6 +37,7 @@ static struct InitFiu
     ONCE(overwrite_cache_throw_during_index_build) \
     PAUSEABLE_ONCE(overwrite_cache_pause_after_lookup_catalog_snapshot) \
     PAUSEABLE_ONCE(overwrite_cache_pause_after_lookup_ids) \
+    PAUSEABLE_ONCE(overwrite_cache_pause_before_small_segment_compaction_publish) \
     PAUSEABLE_ONCE(overwrite_cache_pause_after_drop_index_publication) \
     PAUSEABLE_ONCE(overwrite_cache_pause_before_rollback) \
     PAUSEABLE_ONCE(overwrite_cache_pause_before_commit) \

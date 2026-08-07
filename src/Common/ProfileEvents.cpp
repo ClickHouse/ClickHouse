@@ -617,6 +617,8 @@
     M(StorageBufferLayerLockWritersWaitMilliseconds, "Time for waiting free Buffer layer to write to (can be used to tune Buffer layers).", ValueType::Milliseconds) \
     \
     M(OverwriteCacheEqualVersionTies, "Number of rows inserted into an 'OverwriteCache' table that were ignored because a row with the same key already had the same version and tie-break values. A nonzero value means the tie-break columns do not fully determine the winner, so the stored payload depends on insertion order.", ValueType::Number) \
+    M(OverwriteCacheBackgroundCompactions, "Number of completed background small-segment compactions in `OverwriteCache` tables.", ValueType::Number) \
+    M(OverwriteCacheBackgroundCompactedSegments, "Number of source segments replaced by background small-segment compaction in `OverwriteCache` tables.", ValueType::Number) \
     \
     M(SystemLogErrorOnFlush, "Number of times any of the system logs have failed to flush to the corresponding system table. Attempts to flush are repeated.", ValueType::Number) \
     \
