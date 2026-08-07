@@ -42,6 +42,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -916,6 +917,20 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 }
             }
 
+            /// Filter DAGs can be modified by optimizations, so each child must own its own copy:
+            /// otherwise optimizing one child's plan invalidates the sibling headers that were
+            /// derived from the shared object.
+            if (modified_query_info.prewhere_info)
+                modified_query_info.prewhere_info = std::make_shared<PrewhereInfo>(modified_query_info.prewhere_info->clone());
+            if (modified_query_info.row_level_filter)
+            {
+                auto row_level_filter_copy = std::make_shared<FilterDAGInfo>();
+                row_level_filter_copy->actions = modified_query_info.row_level_filter->actions.clone();
+                row_level_filter_copy->column_name = modified_query_info.row_level_filter->column_name;
+                row_level_filter_copy->do_remove_column = modified_query_info.row_level_filter->do_remove_column;
+                modified_query_info.row_level_filter = std::move(row_level_filter_copy);
+            }
+
             if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 auto storage_columns = storage_metadata_snapshot->getColumns();
@@ -1240,6 +1255,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 {
                     column_node = std::make_shared<ColumnNode>(*resolved_pair, modified_query_info.table_expression);
                 }
+
+                /// The set registry of the freshly derived planner context is empty, and
+                /// `PlannerActionsVisitor` resolves `IN` through it.
+                collectSets(column_node, *modified_query_info.planner_context);
 
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
@@ -1699,6 +1718,9 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
             QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
             query_analysis_pass.run(query_tree, local_context);
+
+            /// On the query info cache path nothing registered this expression's sets.
+            collectSets(query_tree, *modified_query_info.planner_context);
 
             ColumnNodePtrWithHashSet empty_correlated_columns_set;
             PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
