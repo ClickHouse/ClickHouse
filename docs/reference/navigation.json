@@ -437,7 +437,7 @@
           "expanded": false,
           "group": "Regular functions",
           "pages": [
-            "reference/functions/regular-functions/regular-functions-index",
+            "reference/functions/regular-functions/overview",
             "reference/functions/regular-functions/ai-functions",
             "reference/functions/regular-functions/arithmetic-functions",
             "reference/functions/regular-functions/array-functions",
@@ -483,7 +483,6 @@
             "reference/functions/regular-functions/numeric-indexed-vector-functions",
             "reference/functions/regular-functions/other-functions",
             "reference/functions/regular-functions/random-functions",
-            "reference/functions/regular-functions/overview",
             "reference/functions/regular-functions/rounding-functions",
             "reference/functions/regular-functions/splitting-merging-functions",
             "reference/functions/regular-functions/string-functions",
