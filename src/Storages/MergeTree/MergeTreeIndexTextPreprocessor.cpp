@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>
@@ -122,6 +124,66 @@ ActionsDAG createActionsDAGForPreprocessor(
     return actions_dag;
 }
 
+/// `CAST` and `toNullable` widen a value to Nullable but never make a non-NULL value NULL, so the
+/// effective nullability of an expression is the one underneath them.
+bool isWideningWrapper(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::ALIAS)
+        return true;
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return false;
+
+    const auto & name = node.function_base->getName();
+    return name == "CAST" || name == "_CAST" || name == "toNullable";
+}
+
+/// A function relying on the default Nullable handling is NULL exactly where an argument is NULL, so it
+/// only propagates nullability (`lower`, `concat`, ...). Functions that opt out (`nullIf`, `ifNull`, ...)
+/// manage NULLs themselves and may synthesize or remove them.
+bool isNullPropagating(const ActionsDAG::Node & node)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION)
+        return false;
+
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get());
+    return adaptor && adaptor->getFunction()->useDefaultImplementationForNulls();
+}
+
+const ActionsDAG::Node & peelWideningWrappers(const ActionsDAG::Node & node)
+{
+    const auto * result = &node;
+    while (!result->children.empty() && isWideningWrapper(*result))
+        result = result->children.front();
+
+    return *result;
+}
+
+/// True when the expression can produce NULL from arguments that are all non-NULL, e.g. `nullIf(str, '')`.
+bool expressionCanSynthesizeNull(const ActionsDAG::Node & node)
+{
+    const auto & effective = peelWideningWrappers(node);
+
+    if (isNullPropagating(effective))
+        return std::ranges::any_of(effective.children, [](const auto * child) { return expressionCanSynthesizeNull(*child); });
+
+    return isNullableOrLowCardinalityNullable(effective.result_type);
+}
+
+/// True when the expression maps every source-NULL row to a non-NULL value, e.g. `ifNull(str, '')`.
+/// Mirror of expressionCanSynthesizeNull with the aggregation inverted: a null-propagating function
+/// removes the NULL only if all of its arguments do, so `lower(ifNull(str, ''))` does but
+/// `lower(toNullable(str))` does not.
+bool expressionRemovesSourceNull(const ActionsDAG::Node & node)
+{
+    const auto & effective = peelWideningWrappers(node);
+
+    if (isNullPropagating(effective) && !effective.children.empty())
+        return std::ranges::all_of(effective.children, [](const auto * child) { return expressionRemovesSourceNull(*child); });
+
+    return !isNullableOrLowCardinalityNullable(effective.result_type);
+}
+
 }
 
 MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
@@ -162,6 +224,14 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
                 is_lower_or_upper = arg->getColumnName() == index_description.column_names.front();
             }
         }
+
+        /// A validated preprocessor has exactly one output. actions_for_constant runs on a plain
+        /// non-nullable String, so a NULL there can only come from the expression itself.
+        introduces_null = expressionCanSynthesizeNull(*actions_for_constant.getActionsDAG().getOutputs().front());
+
+        /// original_actions runs on the real source column, so its output is the effective haystack.
+        if (isNullableOrLowCardinalityNullable(index_column_type))
+            removes_null = expressionRemovesSourceNull(*original_actions.getActionsDAG().getOutputs().front());
     }
 }
 

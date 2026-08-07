@@ -566,13 +566,42 @@ private:
         /// Taken from the original node because processTextIndexFunction may wrap it into an alias below.
         const auto * nullable_argument = findNullableDataArgument(function_node);
 
+        /// The preprocessor is only applied to the haystack of the functions it rewrites.
+        const bool preprocessed = nullable_argument && needApplyPreprocessor(function_name);
+
+        /// A preprocessor that can turn a non-NULL row into NULL (e.g. `nullIf(str, '')`) puts NULLs in the
+        /// index that the argument's null map cannot see, so materialized and unmaterialized parts would
+        /// disagree. Leave the predicate alone; every part then takes the same row-level path.
+        bool use_direct_read = direct_read_from_text_index
+            && !(preprocessed && anyPreprocessor(selected_conditions, [](const auto & p) { return p.canIntroduceNull(); }));
+
+        /// A preprocessor that strips the nullability (e.g. `ifNull(str, '')`) makes the predicate over a
+        /// NULL row a plain 0, so there is no NULL to restore.
+        if (preprocessed && anyPreprocessor(selected_conditions, [](const auto & p) { return p.removesNull(); }))
+            nullable_argument = nullptr;
+
         if (need_transform_function)
             processTextIndexFunction(replacement, selected_conditions, context);
 
-        if (direct_read_from_text_index)
+        if (use_direct_read)
             replaceFunctionsToVirtualColumns(replacement, selected_conditions, virtual_column_to_node, nullable_argument, context);
 
         return replacement;
+    }
+
+    /// Whether any condition that uses direct read has a preprocessor with the given property.
+    static bool anyPreprocessor(const std::vector<SelectedCondition> & selected_conditions, auto && property)
+    {
+        return std::ranges::any_of(selected_conditions, [&](const auto & condition)
+        {
+            if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
+                return false;
+
+            const auto & condition_text
+                = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->index->condition_template->generateUnsubstituted());
+            auto preprocessor = condition_text.getPreprocessor();
+            return preprocessor && preprocessor->hasActions() && property(*preprocessor);
+        });
     }
 
     /// Applies preprocessor, tokenizer and postprocessor for text-search functions.
