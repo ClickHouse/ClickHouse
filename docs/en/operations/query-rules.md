@@ -41,6 +41,8 @@ A `{name:Type}` placeholder used as an alias (`expr AS {name:Type}`) is not supp
 
 A rule template must not be an `INSERT` query carrying inline data (`INSERT ... VALUES ...` or `INSERT ... FORMAT ...`); such templates are rejected at `CREATE RULE` / `ALTER RULE` time. An `INSERT ... SELECT ...` template (without inline data) is allowed.
 
+A source template may only be built from statements whose exact-match checking has been verified to be sound: `SELECT` (including `UNION` / `INTERSECT` / `EXCEPT`, `INSERT ... SELECT`, `EXPLAIN`, window definitions and column matchers), `SHOW ...`, `DROP` / `TRUNCATE` / `UNDROP`, `RENAME` / `EXCHANGE`, `SYSTEM`, `KILL`, `BACKUP` / `RESTORE`, `USE`, `GRANT` / `CHECK GRANT`, access-entity DDL (`CREATE`/`DROP`/`MOVE` for users, roles, quotas, row policies, masking policies, settings profiles), named collections, workloads, resources, and rule DDL itself. A source template containing any other statement (for example `CREATE TABLE` or `ALTER TABLE`) is rejected at `CREATE RULE` / `ALTER RULE` time, because for such statements two semantically different queries may compare as equal and the rule could fire on a query it was not written for.
+
 A placeholder in the result template must be placed in a position compatible with the captured value — for example, a `String` or `Int` capture must not be substituted where an identifier (such as a table name) is expected. Result-side type compatibility for a placeholder name reused from the source template is validated at `CREATE RULE` / `ALTER RULE` time; the structural compatibility of a placeholder's position is not fully validated up front, so an incompatible placement may instead fail when the rule first matches a query.
 
 ## Syntax {#syntax}
@@ -132,7 +134,7 @@ The `query_rules` setting lists the names of the query rewrite rules that are ac
 
 ## Limitations {#limitations}
 
-Rules are matched against the query **after** its query parameters (`{name:Type}` of a prepared statement) have been substituted, so a value supplied through a query parameter is matched as the literal it became. In particular, a `REJECT` rule that blocks a specific literal cannot be bypassed by passing that literal through a query parameter.
+Rules are matched against the query **after** its query parameters (`{name:Type}` of a prepared statement) have been substituted, so a value supplied through a query parameter is matched as the literal it became. In particular, a `REJECT` rule that blocks a specific literal cannot be bypassed by passing that literal through a query parameter. This transparency applies only to the substitution wrappers synthesized for typed query parameters: a `_CAST(...)` call written directly in the query text is matched as the function call it is, not as its inner literal.
 
 Matching is structural and performs no backtracking, and placeholders support only the limited type vocabulary listed above (`String`, `Int`, `Expression`, `ExpressionList`, `Subquery`).
 

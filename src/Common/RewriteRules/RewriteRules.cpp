@@ -22,6 +22,63 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
+#include <Parsers/ASTAlterNamedCollectionQuery.h>
+#include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTCreateResourceQuery.h>
+#include <Parsers/ASTCreateWorkloadQuery.h>
+#include <Parsers/ASTDatabaseOrNone.h>
+#include <Parsers/ASTDropFunctionQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTDropResourceQuery.h>
+#include <Parsers/ASTDropWorkloadQuery.h>
+#include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInterpolateElement.h>
+#include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTSampleRatio.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowFunctionsQuery.h>
+#include <Parsers/ASTShowProcesslistQuery.h>
+#include <Parsers/ASTShowSettingQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSystemQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTUseQuery.h>
+#include <Parsers/ASTWindowDefinition.h>
+#include <Parsers/ASTWithElement.h>
+#include <Parsers/Access/ASTCheckGrantQuery.h>
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTDropAccessEntityQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ASTMoveAccessEntityQuery.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/Access/ASTSetRoleQuery.h>
+#include <Parsers/Access/ASTSettingsProfileElement.h>
+#include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
+#include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
+#include <Parsers/Access/ASTShowGrantsQuery.h>
+#include <Parsers/Access/ASTUserNameWithHost.h>
+#include <base/demangle.h>
+
+#include <typeindex>
 
 namespace DB
 {
@@ -280,12 +337,183 @@ namespace
         return {};
     }
 
+    /// Whether `node`'s AST class has been audited for complete tree-hash coverage: every data
+    /// member that affects the formatted text is folded into `getTreeHash(true)` (via an
+    /// `updateTreeHashImpl` override, membership in `children`, the `getID` string, or the
+    /// `forEachRewriteRuleNonChildAST` fold), so that for instances of this class an equal tree
+    /// hash implies semantic equality. The rewrite-rule matcher relies on exactly that invariant
+    /// when it declares a template subtree an exact match of a query subtree, so a rule template
+    /// may only be built from audited classes — anything else is rejected at DDL time (fail
+    /// closed) instead of silently over-matching queries that merely share a hash (e.g. a class
+    /// that keeps an `IF NOT EXISTS` flag outside both `children` and its hash).
+    ///
+    /// The check is by exact type: a derived class does not inherit its base's audit (it can add
+    /// unhashed members of its own). When auditing a new class, mind members whose subtree only
+    /// the class itself knows about (see `forEachRewriteRuleNonChildAST`) and flags whose only
+    /// trace is in the formatted text.
+    bool isExactMatchAuditedASTClass(const IAST & node)
+    {
+        static const std::unordered_set<std::type_index> audited = []
+        {
+            std::unordered_set<std::type_index> set;
+            /// Expression / SELECT family.
+            set.emplace(typeid(ASTExpressionList));
+            set.emplace(typeid(ASTFunction));
+            set.emplace(typeid(ASTLiteral));
+            set.emplace(typeid(ASTIdentifier));
+            set.emplace(typeid(ASTTableIdentifier));
+            set.emplace(typeid(ASTSubquery));
+            set.emplace(typeid(ASTQueryParameter));
+            set.emplace(typeid(ASTAsterisk));
+            set.emplace(typeid(ASTQualifiedAsterisk));
+            set.emplace(typeid(ASTColumnsRegexpMatcher));
+            set.emplace(typeid(ASTColumnsListMatcher));
+            set.emplace(typeid(ASTQualifiedColumnsRegexpMatcher));
+            set.emplace(typeid(ASTQualifiedColumnsListMatcher));
+            set.emplace(typeid(ASTColumnsTransformerList));
+            set.emplace(typeid(ASTColumnsApplyTransformer));
+            set.emplace(typeid(ASTColumnsExceptTransformer));
+            set.emplace(typeid(ASTColumnsReplaceTransformer));
+            set.emplace(typeid(ASTColumnsReplaceTransformer::Replacement));
+            set.emplace(typeid(ASTOrderByElement));
+            set.emplace(typeid(ASTAssignment));
+            set.emplace(typeid(ASTInterpolateElement));
+            set.emplace(typeid(ASTWithElement));
+            set.emplace(typeid(ASTSampleRatio));
+            set.emplace(typeid(ASTSetQuery));
+            set.emplace(typeid(ASTWindowDefinition));
+            set.emplace(typeid(ASTWindowListElement));
+            set.emplace(typeid(ASTSelectWithUnionQuery));
+            set.emplace(typeid(ASTSelectQuery));
+            set.emplace(typeid(ASTSelectIntersectExceptQuery));
+            set.emplace(typeid(ASTTablesInSelectQuery));
+            set.emplace(typeid(ASTTablesInSelectQueryElement));
+            set.emplace(typeid(ASTTableExpression));
+            set.emplace(typeid(ASTTableJoin));
+            set.emplace(typeid(ASTArrayJoin));
+            set.emplace(typeid(ASTInsertQuery));
+            set.emplace(typeid(ASTExplainQuery));
+            set.emplace(typeid(ASTUseQuery));
+            set.emplace(typeid(ASTShowProcesslistQuery));
+            /// Statements with an explicitly audited `updateTreeHashImpl`.
+            set.emplace(typeid(ASTAlterNamedCollectionQuery));
+            set.emplace(typeid(ASTBackupQuery));
+            set.emplace(typeid(ASTCreateNamedCollectionQuery));
+            set.emplace(typeid(ASTCreateResourceQuery));
+            set.emplace(typeid(ASTCreateWorkloadQuery));
+            set.emplace(typeid(ASTCreateRewriteRuleQuery));
+            set.emplace(typeid(ASTAlterRewriteRuleQuery));
+            set.emplace(typeid(ASTDropRewriteRuleQuery));
+            set.emplace(typeid(ASTDatabaseOrNone));
+            set.emplace(typeid(ASTDropFunctionQuery));
+            set.emplace(typeid(ASTDropNamedCollectionQuery));
+            set.emplace(typeid(ASTDropQuery));
+            set.emplace(typeid(ASTDropResourceQuery));
+            set.emplace(typeid(ASTDropWorkloadQuery));
+            set.emplace(typeid(ASTKillQueryQuery));
+            set.emplace(typeid(ASTRenameQuery));
+            set.emplace(typeid(ASTShowColumnsQuery));
+            set.emplace(typeid(ASTShowFunctionsQuery));
+            set.emplace(typeid(ASTShowIndexesQuery));
+            set.emplace(typeid(ASTShowSettingQuery));
+            set.emplace(typeid(ASTShowTablesQuery));
+            set.emplace(typeid(ASTSystemQuery));
+            /// Access-control DDL with an explicitly audited hash, and the nested classes their
+            /// trees are built from.
+            set.emplace(typeid(ASTCheckGrantQuery));
+            set.emplace(typeid(ASTCreateMaskingPolicyQuery));
+            set.emplace(typeid(ASTCreateQuotaQuery));
+            set.emplace(typeid(ASTCreateRoleQuery));
+            set.emplace(typeid(ASTCreateRowPolicyQuery));
+            set.emplace(typeid(ASTCreateSettingsProfileQuery));
+            set.emplace(typeid(ASTCreateUserQuery));
+            set.emplace(typeid(ASTDropAccessEntityQuery));
+            set.emplace(typeid(ASTGrantQuery));
+            set.emplace(typeid(ASTMoveAccessEntityQuery));
+            set.emplace(typeid(ASTRolesOrUsersSet));
+            set.emplace(typeid(ASTRowPolicyName));
+            set.emplace(typeid(ASTRowPolicyNames));
+            set.emplace(typeid(ASTSetRoleQuery));
+            set.emplace(typeid(ASTSettingsProfileElement));
+            set.emplace(typeid(ASTSettingsProfileElements));
+            set.emplace(typeid(ASTShowAccessEntitiesQuery));
+            set.emplace(typeid(ASTShowCreateAccessEntityQuery));
+            set.emplace(typeid(ASTShowGrantsQuery));
+            set.emplace(typeid(ASTUserNameWithHost));
+            set.emplace(typeid(ASTUserNamesWithHost));
+            return set;
+        }();
+        return audited.contains(std::type_index(typeid(node)));
+    }
+
+    /// Returns the first node reachable from a rule's source template whose AST class is not
+    /// audited for the exact-match invariant (see `isExactMatchAuditedASTClass`), or `nullptr`.
+    /// Walks everything the matcher's tree hash covers: ordinary `children`, the non-`children`
+    /// members of `forEachRewriteRuleNonChildAST`, and — for nested rule DDL — both nested
+    /// templates (the outer template's hash covers them through the rule-DDL node's
+    /// `updateTreeHashImpl`). Only the source template needs screening: hashes are compared
+    /// per class, so a false "exact match" requires the under-hashed class to be present in the
+    /// template; a result template never participates in matching itself, and once substituted
+    /// it is re-screened as the source side of whatever rule matches next.
+    const IAST * findUnauditedTemplateNode(const ASTPtr & ast)
+    {
+        if (!ast)
+            return nullptr;
+
+        if (!isExactMatchAuditedASTClass(*ast))
+            return ast.get();
+
+        if (const auto * create_rule = ast->as<ASTCreateRewriteRuleQuery>())
+        {
+            if (const auto * found = findUnauditedTemplateNode(create_rule->source_query))
+                return found;
+            if (const auto * found = findUnauditedTemplateNode(create_rule->resulting_query))
+                return found;
+        }
+        else if (const auto * alter_rule = ast->as<ASTAlterRewriteRuleQuery>())
+        {
+            if (const auto * found = findUnauditedTemplateNode(alter_rule->source_query))
+                return found;
+            if (const auto * found = findUnauditedTemplateNode(alter_rule->resulting_query))
+                return found;
+        }
+
+        const IAST * found = nullptr;
+        forEachRewriteRuleNonChildAST(*ast, [&](const ASTPtr & member)
+        {
+            if (!found)
+                found = findUnauditedTemplateNode(member);
+        });
+        if (found)
+            return found;
+
+        for (const auto & child : ast->children)
+            if (const auto * nested = findUnauditedTemplateNode(child))
+                return nested;
+
+        return nullptr;
+    }
+
     /// Validates a rule's source/result templates at DDL time so that invalid rule
     /// metadata is rejected on `CREATE RULE` / `ALTER RULE` instead of turning into
     /// runtime exceptions for every matching query later on.
     template <typename Query>
     void validateRuleTemplates(const Query & query)
     {
+        /// The matcher declares a template subtree an exact match of a query subtree when their
+        /// `getTreeHash(true)` values are equal, which is only sound for AST classes whose whole
+        /// semantics are folded into that hash. Reject (fail closed) a source template containing
+        /// any class that has not been audited for this invariant, instead of storing a rule that
+        /// can silently fire on a query that merely shares a hash with its template (e.g.
+        /// `CREATE TABLE t (...)` vs `CREATE TABLE IF NOT EXISTS t (...)` for a class that keeps
+        /// the flag outside both `children` and its hash).
+        if (const auto * unaudited = findUnauditedTemplateNode(query.source_query))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Rewrite rule `{}` uses a `{}` node ({}) in its source template; this construct is "
+                "not supported in rewrite rule templates because exact-match checking is not "
+                "guaranteed to be sound for it",
+                query.rule_name, unaudited->getID(), demangle(typeid(*unaudited).name()));
         /// Placeholders inside a nested `CREATE RULE` / `ALTER RULE` template are
         /// unreachable by the matcher and the substitution (both walk only `children`),
         /// so a rule using them could never match or rewrite as intended. Reject them up
