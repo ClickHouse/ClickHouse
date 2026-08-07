@@ -57,6 +57,7 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
 
     /// Also remove GROUP BY cause ExpressionAnalyzer would check if it has all aggregate columns but joined columns would be missed.
     select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
+    select.group_by_all = false;
     rewriter_result.aggregates.clear();
 
     /// Replace select list to remove joined columns
@@ -98,6 +99,10 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     replace_where(select, ASTSelectQuery::Expression::PREWHERE);
     select.setExpression(ASTSelectQuery::Expression::HAVING, {});
     select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
+    /// The `group_by_all`/`order_by_all` flags must not survive the removal of the corresponding
+    /// clauses: a re-analysis of this rewritten query (e.g. for a child plan of StorageMerge)
+    /// would otherwise try to expand `ORDER BY ALL` over the removed ORDER BY clause.
+    select.order_by_all = false;
 
     return true;
 }

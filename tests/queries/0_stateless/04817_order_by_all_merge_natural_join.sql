@@ -1,0 +1,21 @@
+-- Test for a crash in `expandOrderByAll`: a child plan of a `Merge` table re-analyzed the query
+-- after `removeJoin` had stripped the ORDER BY clause but left the `order_by_all` flag set.
+-- Only the old analyzer is affected.
+SET enable_analyzer = 0;
+
+DROP TABLE IF EXISTS t_order_by_all_merge_left;
+DROP TABLE IF EXISTS t_order_by_all_merge_right;
+
+CREATE TABLE t_order_by_all_merge_left (a UInt64, s String) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t_order_by_all_merge_right (a UInt64, t String) ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_order_by_all_merge_left VALUES (1, 'q'), (2, 'w');
+INSERT INTO t_order_by_all_merge_right VALUES (1, 'r'), (3, 'e');
+
+SELECT * FROM merge(currentDatabase(), '^t_order_by_all_merge_left$') AS m NATURAL INNER JOIN t_order_by_all_merge_right AS r ORDER BY ALL;
+SELECT * FROM merge(currentDatabase(), '^t_order_by_all_merge_left$') AS m NATURAL FULL OUTER JOIN t_order_by_all_merge_right AS r ORDER BY ALL;
+SELECT * FROM merge(currentDatabase(), '^t_order_by_all_merge_left$') AS m NATURAL FULL OUTER JOIN t_order_by_all_merge_right AS r GROUP BY a, s, t ORDER BY ALL;
+SELECT * FROM merge(currentDatabase(), '^t_order_by_all_merge_left$') AS m NATURAL FULL OUTER JOIN t_order_by_all_merge_right AS r GROUP BY ALL ORDER BY ALL;
+
+DROP TABLE t_order_by_all_merge_left;
+DROP TABLE t_order_by_all_merge_right;
