@@ -96,35 +96,14 @@ template <typename ValueType>
 struct KeyFixed
 {
     ValueType value{};
-    bool is_null = false;
 
     void set(const IColumn & column, size_t row)
     {
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-        {
-            if (nullable->isNullAt(row))
-            {
-                is_null = true;
-                value = {};
-                return;
-            }
-            is_null = false;
-            value = assert_cast<const ColumnVectorOrDecimal<ValueType> &>(nullable->getNestedColumn()).getData()[row];
-        }
-        else
-        {
-            is_null = false;
-            value = assert_cast<const ColumnVectorOrDecimal<ValueType> &>(column).getData()[row];
-        }
+        value = assert_cast<const ColumnVectorOrDecimal<ValueType> &>(column).getData()[row];
     }
 
     bool less(const KeyFixed & other) const
     {
-        if (is_null != other.is_null)
-            return is_null; // NULL sorts before any non-null key
-        if (is_null)
-            return false;
-
         // For floating-point types, use nan_direction_hint = -1 to treat NaN as the minimum value
         // (same as argMax / IColumn::compareAt semantics): finite sort keys always beat NaN.
         if constexpr (std::is_floating_point_v<ValueType>)
@@ -133,69 +112,26 @@ struct KeyFixed
             return value < other.value;
     }
 
-    void serialize(WriteBuffer & buffer) const
-    {
-        writeBinaryLittleEndian(is_null, buffer);
-        if (!is_null)
-            writeBinaryLittleEndian(value, buffer);
-    }
+    void serialize(WriteBuffer & buffer) const { writeBinaryLittleEndian(value, buffer); }
 
-    void deserialize(ReadBuffer & buffer)
-    {
-        readBinaryLittleEndian(is_null, buffer);
-        if (!is_null)
-            readBinaryLittleEndian(value, buffer);
-    }
+    void deserialize(ReadBuffer & buffer) { readBinaryLittleEndian(value, buffer); }
 };
 
 /// String sort keys: owns a String (avoids Field's wrapper)
 struct KeyString
 {
     String value;
-    bool is_null = false;
 
     void set(const IColumn & column, size_t row)
     {
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(&column))
-        {
-            if (nullable->isNullAt(row))
-            {
-                is_null = true;
-                value.clear();
-                return;
-            }
-            is_null = false;
-            value = nullable->getNestedColumn().getDataAt(row);
-        }
-        else
-        {
-            is_null = false;
-            value = column.getDataAt(row);
-        }
+        value = column.getDataAt(row);
     }
 
-    bool less(const KeyString & other) const
-    {
-        if (is_null != other.is_null)
-            return is_null; // NULL sorts before any non-null key
-        if (is_null)
-            return false;
-        return value < other.value;
-    }
+    bool less(const KeyString & other) const { return value < other.value; }
 
-    void serialize(WriteBuffer & buffer) const
-    {
-        writeBinaryLittleEndian(is_null, buffer);
-        if (!is_null)
-            writeStringBinary(value, buffer);
-    }
+    void serialize(WriteBuffer & buffer) const { writeStringBinary(value, buffer); }
 
-    void deserialize(ReadBuffer & buffer)
-    {
-        readBinaryLittleEndian(is_null, buffer);
-        if (!is_null)
-            readStringBinary(value, buffer);
-    }
+    void deserialize(ReadBuffer & buffer) { readStringBinary(value, buffer); }
 };
 
 /// Generic fallback: UUID, IPv*, Decimal256, any other comparable scalar — owns a Field
@@ -449,19 +385,10 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & data = this->data(place);
-
-        const IColumn * patch_column = columns[0];
-        if (const auto * nullable = typeid_cast<const ColumnNullable *>(patch_column))
-        {
-            if (nullable->isNullAt(row_num))
-                return;
-            patch_column = &nullable->getNestedColumn();
-        }
-
         KeyData sort_key;
         sort_key.set(*columns[1], row_num);
 
-        const auto & object_column = assert_cast<const ColumnObject &>(*patch_column);
+        const auto & object_column = assert_cast<const ColumnObject &>(*columns[0]);
         VectorWithMemoryTracking<typename Data::Entry> batch;
 
         ColumnObject::SortedPathsIterator iterator(object_column, row_num, /*skip_typed_nulls=*/true);
