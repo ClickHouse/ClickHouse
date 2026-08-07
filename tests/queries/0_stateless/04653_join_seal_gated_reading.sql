@@ -16,6 +16,9 @@ SET enable_join_runtime_filters_index_analysis = 0, use_skip_indexes_on_data_rea
 -- The asserts need the big table on the probe side: keep the join order deterministic (the
 -- CI randomization can flip the sides, which correctly falls back to ungated reading).
 SET query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false';
+-- A cached hash-table size hint can make an exact-set-only key (e.g. String) eligible for
+-- gating once a previous run recorded the build size: keep the decisions run-independent.
+SET join_runtime_filter_size_from_hash_table_stats = 0;
 
 DROP TABLE IF EXISTS t_seal_probe;
 DROP TABLE IF EXISTS t_seal_build;
@@ -95,6 +98,29 @@ DROP TABLE t_seal_probe_desc;
 -- read-time pruning.
 SELECT /* seal_gated_suppresses_read_time */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k
     SETTINGS enable_join_runtime_filters_index_analysis = 1, use_skip_indexes_on_data_read = 1;
+
+-- An ANTI join builds a NOT-contains filter which can never prune positively: the probe
+-- side must not be gated (gating would only delay it), and the result stays correct.
+SELECT count() FROM t_seal_probe AS p LEFT ANTI JOIN t_seal_build AS b ON p.k = b.k;
+SELECT count() > 0 AS has_gated_reads_anti FROM (
+    EXPLAIN PIPELINE SELECT count() FROM t_seal_probe AS p LEFT ANTI JOIN t_seal_build AS b ON p.k = b.k
+) WHERE explain LIKE '%SealGatedRead%';
+
+-- A String key tracks no [min, max] envelope, so the exact set may be lost to a bloom
+-- filter overflow; without a statistics hint that the build side fits, the probe side
+-- must not be gated.
+DROP TABLE IF EXISTS t_seal_probe_str;
+DROP TABLE IF EXISTS t_seal_build_str;
+CREATE TABLE t_seal_probe_str (s String) ENGINE = MergeTree ORDER BY s;
+INSERT INTO t_seal_probe_str SELECT toString(number) FROM numbers(10000);
+CREATE TABLE t_seal_build_str (s String) ENGINE = MergeTree ORDER BY s;
+INSERT INTO t_seal_build_str SELECT toString(number * 1000) FROM numbers(5);
+SELECT count() FROM t_seal_probe_str AS p JOIN t_seal_build_str AS b ON p.s = b.s;
+SELECT count() > 0 AS has_gated_reads_string_key FROM (
+    EXPLAIN PIPELINE SELECT count() FROM t_seal_probe_str AS p JOIN t_seal_build_str AS b ON p.s = b.s
+) WHERE explain LIKE '%SealGatedRead%';
+DROP TABLE t_seal_probe_str;
+DROP TABLE t_seal_build_str;
 
 -- Joins whose probe side cannot be gated fall back to ungated reading (fail-open).
 SELECT count(), sum(p.k) FROM t_seal_probe AS p LEFT JOIN t_seal_build AS b ON p.k = b.k WHERE b.k = 0;

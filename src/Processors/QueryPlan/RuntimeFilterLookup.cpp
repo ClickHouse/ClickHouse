@@ -42,10 +42,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
 /// Whether a min/max envelope over the key is usable (int/Date keys only).
-bool typeSupportsMinMaxRange(const DataTypePtr & type)
+bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & type)
 {
     if (!type)
         return false;
@@ -54,7 +52,6 @@ bool typeSupportsMinMaxRange(const DataTypePtr & type)
     WhichDataType which(inner);
     return which.isInt() || which.isUInt()
         || which.isDate() || which.isDate32() || which.isDateTime() || which.isDateTime64();
-}
 }
 
 IRuntimeFilter::IRuntimeFilter(
@@ -67,7 +64,7 @@ IRuntimeFilter::IRuntimeFilter(
     , pass_ratio_threshold_for_disabling(pass_ratio_threshold_for_disabling_)
     , blocks_to_skip_before_reenabling(blocks_to_skip_before_reenabling_)
 {
-    range_supported = typeSupportsMinMaxRange(filter_column_target_type);
+    range_supported = runtimeFilterKeySupportsMinMaxRange(filter_column_target_type);
 }
 
 std::optional<Range> IRuntimeFilter::getRecordedKeyRanges() const

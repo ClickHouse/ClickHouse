@@ -41,6 +41,14 @@ public:
     /// optimizations whose pruning consumes them, e.g. markSealGatedReading.
     void enableKeyRangeTracking() { track_key_range = true; }
 
+    /// Whether the completed filter is expected to convert into a positive primary-key
+    /// predicate (see convertRuntimeFilterToKeyConditionDAG): positive containment semantics
+    /// (an ANTI-join NOT-contains filter can never prune positively), and either a key type
+    /// whose [min, max] envelope survives an exact-set overflow, or a statistics hint that
+    /// the build side fits into the exact set. Gating a read on a seal that fails this would
+    /// only delay the probe side and then scan it unpruned.
+    bool canSealPrunePrimaryKey() const;
+
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;

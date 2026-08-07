@@ -392,6 +392,10 @@ struct RuntimeFilterIndexAnalysisDescriptor
     DataTypePtr key_column_type;
 };
 
+/// Whether a runtime filter over a key of this type tracks the [min, max] envelope, i.e.
+/// can produce a range predicate even after the exact value set overflows into a bloom filter.
+bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & type);
+
 /// Build a pruning predicate on the column: IN (exact values) else BETWEEN [min, max];
 /// nullptr if the filter recorded neither (fail-open).
 const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(

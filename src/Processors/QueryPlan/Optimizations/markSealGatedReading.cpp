@@ -121,6 +121,13 @@ void tryMarkJoin(QueryPlan::Node & node)
     if (!build_step)
         return;
 
+    /// Gating pays off only if the completed filter converts into a positive primary-key
+    /// predicate: a NOT-contains (ANTI) filter never does, and an exact-set-only key type
+    /// may lose its set to a bloom-filter overflow. Such probes are better read ungated,
+    /// overlapping with the build, with row-level filtering only.
+    if (!build_step->canSealPrunePrimaryKey())
+        return;
+
     /// The filter can prune ranges only through the primary key.
     const auto & primary_key_columns = reading->getStorageMetadata()->getPrimaryKey().column_names;
     if (std::find(primary_key_columns.begin(), primary_key_columns.end(), match->key_column_name) == primary_key_columns.end())

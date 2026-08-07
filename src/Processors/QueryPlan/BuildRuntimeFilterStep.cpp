@@ -1,6 +1,7 @@
 #include <string_view>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -142,6 +143,22 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             distinct_keys_hint,
             query_context);
     });
+}
+
+bool BuildRuntimeFilterStep::canSealPrunePrimaryKey() const
+{
+    /// A NOT-contains filter (ANTI join) can never be used as a positive predicate.
+    if (!allow_to_use_not_exact_filter)
+        return false;
+
+    /// For these key types the [min, max] envelope survives an exact-set overflow, so the
+    /// completed filter always yields at least a range predicate.
+    if (runtimeFilterKeySupportsMinMaxRange(filter_column_type))
+        return true;
+
+    /// Otherwise only the exact value set can prune, and it is lost on overflow: require a
+    /// statistics hint that the build side fits into it.
+    return distinct_keys_hint && *distinct_keys_hint <= exact_values_limit;
 }
 
 void BuildRuntimeFilterStep::updateOutputHeader()
