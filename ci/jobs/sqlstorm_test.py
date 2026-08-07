@@ -389,6 +389,7 @@ def main():
                 if not Shell.check(
                     f"git clone https://github.com/ClickHouse/SQLStorm.git {sqlstorm_repo}",
                     verbose=True,
+                    retries=3,
                 ):
                     return False
             else:
@@ -420,6 +421,7 @@ def main():
                 if not Shell.check(
                     f"git clone https://github.com/SQL-Storm/OLAPBench.git {olapbench_repo}",
                     verbose=True,
+                    retries=3,
                 ):
                     return False
             else:
