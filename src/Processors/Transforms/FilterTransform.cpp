@@ -199,7 +199,7 @@ std::optional<ConstantColumnPosition> tryGetConstantColumnPositionAfterFilter(
     if (!canReplaceColumnWithConstantAfterFilter(result_column.type, constant_node->result_type))
         return {};
 
-    return *position;
+    return position;
 }
 
 std::vector<ConstantColumnPosition> collectConstantColumnsAfterFilter(

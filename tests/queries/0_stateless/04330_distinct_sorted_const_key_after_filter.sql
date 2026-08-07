@@ -26,7 +26,7 @@ FROM
         query_plan_optimize_lazy_materialization = 0,
         query_plan_remove_unused_columns = 0
 )
-WHERE explain LIKE '%DistinctSortedTransform%';
+WHERE explain LIKE '%DistinctSortedStreamTransform%';
 
 SELECT DISTINCT a, b
 FROM distinct_sorted_const_key_after_filter
