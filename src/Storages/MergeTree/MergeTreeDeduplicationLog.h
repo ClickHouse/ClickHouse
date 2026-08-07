@@ -135,11 +135,15 @@ public:
 class MergeTreeDeduplicationLog
 {
 public:
-    /// `may_write_shared_state_`, when set, is consulted immediately before `load` rewrites
-    /// shared on-disk state (log rotation / dropping outdated logs). Used under
+    /// `may_write_shared_state_`, when set, is consulted immediately before every write to the
+    /// shared on-disk state: appending records and rotating / dropping outdated logs, both
+    /// during `load` and in the steady-state `addPart` / `dropPart` paths. Used under
     /// `leader_election`, where the log directory is shared between server processes and only
-    /// a node whose lease is still fresh may rewrite it: the post-failover reload can outlast
-    /// the lease, and rotating/dropping logs as a stale leader would race the next leader.
+    /// a node whose lease is still fresh may rewrite it: the caller's entry-point lease check
+    /// can go stale by the time the log mutation runs (a reload can outlast the lease, a
+    /// heartbeat can stall mid-INSERT), and on object storage without append support every
+    /// append finalizes and rotates whole log files, so a stale writer would clobber the log
+    /// files the next leader is writing.
     MergeTreeDeduplicationLog(
         const std::string & logs_dir_,
         size_t deduplication_window_,
@@ -157,7 +161,20 @@ public:
     /// Otherwise, in case of duplicate, return block_id with the collision and previous part name with same hash (useful for logging)
     std::vector<AddPartResult> addPart(const std::vector<std::string> & block_id, const MergeTreePartInfo & part);
 
-    /// Remove all covered parts from in memory table and add DROP records to the disk
+    /// The read-only half of `addPart`: return the conflicts an `addPart` with these block ids
+    /// would return, without writing anything. Under `leader_election` the insert path checks
+    /// for duplicates with this before publishing the part and calls `addPart` only after the
+    /// fenced commit succeeded, so a publish rejected by the leader fence cannot leave durable
+    /// block ids of a failed `INSERT` behind for the next leader to deduplicate retries against.
+    std::vector<AddPartResult> getDuplicates(const std::vector<std::string> & block_ids);
+
+    /// Remove all covered parts from in memory table and add DROP records to the disk.
+    /// Under `leader_election` this is also the reconciliation primitive: right after `load`,
+    /// the new leader calls it with the range of every active *empty* covering part — such a
+    /// part means all data in its range was dropped, so any surviving block id in it belongs
+    /// to a `DROP`/`DETACH`/`TRUNCATE`/`REPLACE PARTITION` whose deduplication-log `DROP`
+    /// records were never written (the previous leader died, or its lease went stale, between
+    /// retiring the partition and updating the log).
     void dropPart(const MergeTreePartInfo & drop_part_info);
 
     /// Load history from disk. Ignores broken logs.
@@ -213,6 +230,10 @@ private:
 
     /// Load single log from disk. In case of corruption throws exceptions
     size_t loadSingleLog(const std::string & path);
+
+    /// Throw `TABLE_IS_READ_ONLY` if `may_write_shared_state` is set and reports the lease as
+    /// no longer fresh. Called immediately before every mutation of the shared on-disk state.
+    void assertMayWriteSharedState() const;
 };
 
 }

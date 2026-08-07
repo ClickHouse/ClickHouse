@@ -13,6 +13,7 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -21,6 +22,11 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int TABLE_IS_READ_ONLY;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_leader_election_stale_lease_dedup_log_write[];
 }
 
 namespace
@@ -144,9 +150,7 @@ void MergeTreeDeduplicationLog::load()
         /// the post-failover reload runs on the heartbeat task, which cannot renew the lease
         /// meanwhile, so the lease can expire mid-load and rotating/dropping shared logs then
         /// would race the next leader's own deduplication log.
-        if (may_write_shared_state && !may_write_shared_state())
-            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
-                "Refusing to rotate the deduplication log: the leader lease is no longer fresh (leader_election)");
+        assertMayWriteSharedState();
 
         /// Start new log, drop previous
         rotateAndDropIfNeeded();
@@ -249,6 +253,42 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
     }
 }
 
+void MergeTreeDeduplicationLog::assertMayWriteSharedState() const
+{
+    if (!may_write_shared_state)
+        return;
+
+    bool lease_went_stale = !may_write_shared_state();
+
+    /// Test hook: deterministically simulate a heartbeat that stalled after the caller's
+    /// entry-point lease check but before the log mutation. Fires only for shared logs
+    /// (`may_write_shared_state` set), i.e. under `leader_election`.
+    fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_dedup_log_write, { lease_went_stale = true; });
+
+    if (lease_went_stale)
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "Refusing to write the deduplication log: the leader lease is no longer fresh (leader_election)");
+}
+
+std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::getDuplicates(const std::vector<std::string> & block_ids)
+{
+    std::lock_guard lock(state_mutex);
+
+    if (deduplication_window == 0)
+        return {};
+
+    std::vector<MergeTreeDeduplicationLog::AddPartResult> result;
+    for (const auto & block_id : block_ids)
+    {
+        if (deduplication_map.contains(block_id))
+        {
+            auto info = deduplication_map.get(block_id);
+            result.emplace_back(info, block_id);
+        }
+    }
+    return result;
+}
+
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
 {
     std::lock_guard lock(state_mutex);
@@ -281,6 +321,12 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     }
 
     chassert(current_writer != nullptr);
+
+    /// Under `leader_election`, re-check the lease immediately before mutating the shared log:
+    /// the caller checked it at its entry point, but the heartbeat can stall in between, and on
+    /// object storage without append support the rotation below finalizes and rewrites whole
+    /// log files, which a stale leader must not do — it would clobber the next leader's log.
+    assertMayWriteSharedState();
 
     for (const auto & block_id : block_ids)
     {
@@ -319,6 +365,11 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     }
 
     chassert(current_writer != nullptr);
+
+    /// See the matching check in `addPart`. Checked before the loop touches anything, so on a
+    /// stale lease neither the shared log nor the in-memory map is modified and the caller can
+    /// retry the whole drop later (or the next leader reconciles it after `load`).
+    assertMayWriteSharedState();
 
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
@@ -367,6 +418,10 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
         disk->createDirectories(logs_dir);
 
     deduplication_map.setMaxSize(deduplication_window);
+
+    /// Defense in depth: `ALTER ... MODIFY SETTING` is rejected under `leader_election`, so a
+    /// shared log should never get here, but the rotation below rewrites shared state.
+    assertMayWriteSharedState();
     rotateAndDropIfNeeded();
 
     /// Can happen in case we have unfinished log

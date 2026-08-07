@@ -1983,6 +1983,24 @@ void StorageMergeTree::loadDeduplicationLog()
             path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk,
             std::move(may_write_shared_state));
         deduplication_log->load();
+
+        /// Reconcile the loaded log with the part set. An active *empty* part is a covering
+        /// part: all data in its range was dropped (`DROP`/`DETACH`/`TRUNCATE`/`REPLACE
+        /// PARTITION` retire partitions by publishing covering empty parts under
+        /// `leader_election`). If the previous leader died — or its lease went stale — after
+        /// committing the covering part but before appending the matching deduplication-log
+        /// `DROP` records, the loaded map still holds block ids of the dropped data, and an
+        /// `INSERT` retrying that data on this leader would be silently deduplicated even
+        /// though the rows are gone. Dropping the covered entries here writes the missing
+        /// records under the fresh lease (this runs on the takeover path, after the part
+        /// refresh). For a range that was already reconciled the map holds no covered
+        /// entries and nothing is written.
+        if ((*settings)[MergeTreeSetting::leader_election])
+        {
+            for (const auto & part : getDataPartsVectorForInternalUsage())
+                if (part->rows_count == 0)
+                    deduplication_log->dropPart(part->info);
+        }
     }
 }
 
@@ -3118,9 +3136,36 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
 
 void StorageMergeTree::dropPartNoWaitNoThrow(const String & part_name)
 {
+    /// Under `leader_election`, update the shared deduplication log BEFORE retiring the part.
+    /// This path drops only empty covering parts and unused patch parts, so the covered block
+    /// ids always refer to data that is already gone and dropping them early is consistent.
+    /// The reverse order has a failover hole: once the part is outdated, the background cleanup
+    /// eventually removes it from shared storage even when the deduplication-log write below
+    /// failed its lease re-check, and with the covering part gone the next leader's post-`load`
+    /// reconciliation can no longer see that the surviving block ids belong to dropped data.
+    /// Writing the records first fails closed instead: if the lease re-check inside `dropPart`
+    /// throws, the part stays active and this cleanup is simply retried later.
+    if (hasLeaderElection() && deduplication_log)
+    {
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
+        if (!part)
+            return;
+
+        try
+        {
+            deduplication_log->dropPart(part->info);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format(
+                "Cannot update the deduplication log before dropping part {}; leaving the part to a later cleanup", part_name));
+            return;
+        }
+    }
+
     if (auto part = outdatePart(NO_TRANSACTION_RAW, part_name, /*force=*/ false, /*clear_without_timeout=*/ false))
     {
-        if (deduplication_log)
+        if (deduplication_log && !hasLeaderElection())
         {
             deduplication_log->dropPart(part->info);
         }

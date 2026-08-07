@@ -389,28 +389,41 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
     if (storage.hasLeaderElection())
         transaction.setPublishFenceEpoch(commit_epoch);
 
+    const bool leader_election = storage.hasLeaderElection();
+
     {
         auto lock = storage.lockParts();
 
         /// Under `leader_election`, enforce the leader/epoch check BEFORE anything in this critical
-        /// section touches shared object storage. The first shared write is `deduplication_log->addPart`
-        /// below: a stale leader that persisted a block id and then failed the later commit check
-        /// would make a never-published `INSERT` look like a duplicate to the new leader (the block
-        /// id exists, but the part was never renamed in), so the retry on the new leader would be
-        /// silently dropped. The part rename that follows is the second shared write. `transaction.commit`
-        /// re-checks leadership, but by then both writes have already happened, so the fence must be
+        /// section touches shared object storage (the part rename below). `transaction.commit`
+        /// re-checks leadership, but by then the rename has already happened, so the fence must be
         /// here. Checking here also rejects an `INSERT` admitted under a previous lease epoch (stale
         /// block numbers).
         storage.assertWritableLeaderAtEpoch(commit_epoch);
 
         auto block_holder = storage.fillNewPartName(part, lock);
 
+        std::vector<std::string> block_ids;
+        MergeTreeDeduplicationLog * deduplication_log = nullptr;
         if (!deduplication_hashes.empty())
         {
-            auto * deduplication_log = storage.getDeduplicationLog();
+            deduplication_log = storage.getDeduplicationLog();
             chassert(deduplication_log);
-            auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
-            auto result = deduplication_log->addPart(block_ids, part->info);
+            block_ids = getDeduplicationBlockIds(deduplication_hashes);
+
+            /// Under `leader_election` the deduplication log lives on shared storage, and the
+            /// `ADD` records must not become durable before the part publish is: `addPart`
+            /// finalizes/rotates shared log files, so a block id persisted here and then rejected
+            /// by the commit-time fence would make a never-published `INSERT` look like a
+            /// duplicate to the next leader (the block id exists, but the part was never renamed
+            /// in) — the retry would be silently dropped. So here only CHECK for duplicates;
+            /// the records are written after the fenced commit below. Concurrent inserts are
+            /// serialized by the parts lock held across this whole section, so check-then-add
+            /// stays atomic. Without `leader_election` the log is local and the pre-publish
+            /// `addPart` semantics are kept unchanged.
+            auto result = leader_election
+                ? deduplication_log->getDuplicates(block_ids)
+                : deduplication_log->addPart(block_ids, part->info);
 
             std::vector<std::string> conflict_block_ids;
             for (const auto & res : result)
@@ -435,6 +448,21 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         /// Hence, for now rename_in_transaction is false.
         storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
         transaction.commit(lock);
+
+        /// The fenced commit above succeeded, so the lease was fresh moments ago and no other
+        /// node can have taken over yet (`isLeader` fails closed at `2 * heartbeat_interval`
+        /// while a takeover needs the full session timeout) — writing the `ADD` records now is
+        /// safe, and `addPart` re-checks the lease itself right before touching the shared log.
+        /// If that re-check still fails, the client gets an error for a part that stays
+        /// published, and a retry may insert the rows again: that matches the pre-existing
+        /// crash-recovery semantics of the non-replicated deduplication log (records buffered
+        /// but lost on a crash), and losing at most the deduplication of one retry is strictly
+        /// better than silently losing the data of a retried `INSERT`.
+        if (leader_election && deduplication_log)
+        {
+            auto add_result = deduplication_log->addPart(block_ids, part->info);
+            chassert(add_result.empty());
+        }
     }
 
     return {};

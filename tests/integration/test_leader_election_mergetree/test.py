@@ -2593,3 +2593,153 @@ def test_merge_after_failover_does_not_collide_with_stale_tmp_dir(started_cluste
                 node.query(f"DROP TABLE IF EXISTS {table} SYNC")
             except Exception:
                 pass
+
+
+SHARED_UUID_DEDUP_FENCE = "12345678-abcd-abcd-abcd-12345678ab28"
+
+
+def test_insert_dedup_no_stale_block_ids_when_lease_goes_stale_before_commit(
+    started_cluster,
+):
+    """
+    Regression for the shared deduplication log vs. the commit-time publish fence: the insert
+    path used to persist the `ADD` records (`MergeTreeDeduplicationLog::addPart`) BEFORE the
+    fenced `transaction.commit`, so an `INSERT` rejected by the fence left durable block ids on
+    shared storage while its part was renamed back to a temporary directory. The next leader
+    would load those block ids and silently deduplicate — i.e. drop — the client's retry of the
+    failed `INSERT`. Now the insert path only checks for duplicates before publishing and writes
+    the `ADD` records after the fenced commit succeeded, so a rejected publish leaves no block
+    ids behind.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_before_commit"
+    table = "test_dedup_commit_fence"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DEDUP_FENCE}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, non_replicated_deduplication_window = 100
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        # Sanity check that deduplication is active: the identical retry is dropped.
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="between the publishing renames and the commit"):
+                node1.query(f"INSERT INTO {table} VALUES (10)")
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3
+
+        # The decisive check: reload the dedup log and the part set from shared storage, as the
+        # next leader would after a failover. The retry of the rejected INSERT must be accepted;
+        # with the old order the block id of the failed INSERT was already durable and the retry
+        # was silently dropped.
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (10)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4, (
+            "The retry of the fence-rejected INSERT was silently deduplicated: "
+            "the failed INSERT left durable block ids in the shared deduplication log"
+        )
+
+        # And the successful insert's own ADD records must be durable: after another reload the
+        # identical statement is deduplicated, not inserted twice.
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+        node1.query(f"INSERT INTO {table} VALUES (10)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4, (
+            "The ADD records of the successful INSERT were not durable on shared storage"
+        )
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
+SHARED_UUID_DEDUP_DROP = "12345678-abcd-abcd-abcd-12345678ab29"
+
+
+def test_dedup_log_reconciled_when_lease_goes_stale_during_drop_records(started_cluster):
+    """
+    Regression for the shared deduplication log lagging behind a committed partition retirement:
+    `TRUNCATE` (and `DROP`/`DETACH`/`REPLACE PARTITION`) retires partitions by committing
+    covering empty parts and only then appends the matching `DROP` records to the deduplication
+    log. `MergeTreeDeduplicationLog::dropPart` now re-checks the lease immediately before
+    writing (a stale leader finalizing/rotating shared log files would clobber the next
+    leader's log), so a lease that goes stale in that window leaves durable block ids for data
+    that is already dropped — and an `INSERT` retrying that data would be silently deduplicated.
+    The takeover reload now reconciles the loaded log against the part set: block ids covered by
+    an active empty (covering) part belong to dropped data and are dropped from the log under
+    the fresh lease.
+
+    The `merge_tree_leader_election_stale_lease_dedup_log_write` failpoint deterministically
+    fails the lease re-check inside the deduplication-log write, exactly the AI-review scenario
+    of a heartbeat stalling between the caller's entry-point lease check and the log mutation.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_dedup_log_write"
+    table = "test_dedup_drop_reconcile"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DEDUP_DROP}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, non_replicated_deduplication_window = 100
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3
+
+        # The retirement itself (covering empty parts) commits, then the deduplication-log
+        # update fails closed on the simulated stale lease: the client gets an error while the
+        # data is dropped and the block ids survive in the shared log.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="Refusing to write the deduplication log"):
+                node1.query(f"TRUNCATE TABLE {table}")
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0, (
+            "TRUNCATE did not retire the partition"
+        )
+
+        # Reload from shared storage, as the next leader would after a failover. The takeover
+        # reconciliation must drop the block ids covered by the active empty covering parts, so
+        # re-inserting the truncated data is accepted instead of being silently deduplicated.
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3, (
+            "Re-inserting truncated data was silently deduplicated: the shared deduplication "
+            "log still held block ids of dropped data after the takeover reload"
+        )
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
