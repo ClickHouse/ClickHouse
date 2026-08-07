@@ -117,10 +117,10 @@ void validateWindowSize(const char * func_name, size_t window_size)
 
 size_t getWindowSize(const ColumnsWithTypeAndName & arguments, const char * func_name)
 {
-    if (!isUInt(arguments[1].type))
+    if (!isNativeUInt(arguments[1].type))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Second argument (window_size) of function {} must be unsigned integer, got {}",
+            "Second argument (window_size) of function {} must be native unsigned integer (UInt8, UInt16, UInt32 or UInt64), got {}",
             func_name,
             arguments[1].type->getName());
 
@@ -137,10 +137,10 @@ size_t getWindowSize(const ColumnsWithTypeAndName & arguments, const char * func
 
 UInt64 getReverseProbability(const ColumnsWithTypeAndName & arguments, const char * func_name)
 {
-    if (!isUInt(arguments[2].type))
+    if (!isNativeUInt(arguments[2].type))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Third argument (reverse_probability) of function {} must be unsigned integer, got {}",
+            "Third argument (reverse_probability) of function {} must be native unsigned integer (UInt8, UInt16, UInt32 or UInt64), got {}",
             func_name,
             arguments[2].type->getName());
 
@@ -194,8 +194,8 @@ void validateContentDefinedCdcArguments(const ColumnsWithTypeAndName & arguments
     /// The numeric parameters are const-only: they determine chunking geometry for the whole column.
     FunctionArgumentDescriptors mandatory_args{
         {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
-        {"window_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), &isColumnConst, "const UInt*"},
-        {"reverse_probability", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt), &isColumnConst, "const UInt*"},
+        {"window_size", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), &isColumnConst, "const UInt8/16/32/64"},
+        {"reverse_probability", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), &isColumnConst, "const UInt8/16/32/64"},
     };
     validateFunctionArguments(func_name, arguments, mandatory_args);
 
@@ -383,16 +383,16 @@ Min chunk length is `window_size`; max chunk size depends on `reverse_probabilit
 )";
     FunctionDocumentation::Arguments cdc_args = {
         {"string", "Input string or binary data.", {"String", "FixedString"}},
-        {"window_size", "Sliding window size in bytes. Must be a constant in range [1, 256].", {"const UInt*"}},
+        {"window_size", "Sliding window size in bytes. Must be a constant native unsigned integer in range [1, 256].", {"const UInt8/16/32/64"}},
         {"reverse_probability",
-         "Unsigned divisor: cut when `(buzhash % reverse_probability) == 0`. Must be a constant >= 2. Typical values: 256–65536.",
-         {"const UInt*"}},
+         "Unsigned divisor: cut when `(buzhash % reverse_probability) == 0`. Must be a constant native unsigned integer >= 2. Typical values: 256–65536.",
+         {"const UInt8/16/32/64"}},
     };
     FunctionDocumentation::ReturnedValue cdc_chunks_ret = {"Array of substrings covering the whole input (empty array for empty string).", {"Array(String)"}};
     FunctionDocumentation::Examples cdc_chunks_ex = {
         {"Chunk binary data",
-         "SELECT contentDefinedChunks('abcdefghijklmnop', 4, 1000);",
-         "Returns an array of chunks with boundaries robust to insertions/deletions elsewhere."},
+         "SELECT contentDefinedChunks('abcdefghijklmnop', 4, 5);",
+         "['abcde','fghijkl','mnop']"},
     };
     FunctionDocumentation cdc_chunks_doc
         = {cdc_chunks_desc, "contentDefinedChunks(string, window_size, reverse_probability)", cdc_args, {}, cdc_chunks_ret, cdc_chunks_ex, introduced_in, category_cdc};
@@ -402,13 +402,18 @@ Min chunk length is `window_size`; max chunk size depends on `reverse_probabilit
 Same as `contentDefinedChunks`, but cuts only at UTF-8 code point boundaries so chunks never split a multibyte character.
 If the input is not valid UTF-8 (e.g. contains a run of continuation bytes longer than the maximum chunk size), a forced cut at the maximum chunk size may fall inside such a run; the maximum chunk size cap always holds.
 )";
+    FunctionDocumentation::Examples cdc_utf8_ex = {
+        {"Chunk UTF-8 text without splitting multibyte characters",
+         "SELECT contentDefinedChunksUTF8('привет мир', 2, 2);",
+         "['п','ри','в','ет',' м','и','р']"},
+    };
     FunctionDocumentation cdc_utf8_doc = {
         cdc_utf8_desc,
         "contentDefinedChunksUTF8(string, window_size, reverse_probability)",
         cdc_args,
         {},
         cdc_chunks_ret,
-        cdc_chunks_ex,
+        cdc_utf8_ex,
         introduced_in,
         category_cdc};
     factory.registerFunction<FunctionContentDefinedChunksUTF8>(cdc_utf8_doc);
@@ -417,13 +422,18 @@ If the input is not valid UTF-8 (e.g. contains a run of continuation bytes longe
 Returns start byte offsets of each chunk (first offset is always 0 for non-empty strings). The concatenation of substrings taken at these offsets to the next offset (or string end) covers the input.
 )";
     FunctionDocumentation::ReturnedValue cdc_off_ret = {"Array of UInt64 chunk start positions.", {"Array(UInt64)"}};
+    FunctionDocumentation::Examples cdc_off_ex = {
+        {"Get chunk start offsets",
+         "SELECT contentDefinedChunkOffsets('abcdefghijklmnop', 4, 5);",
+         "[0,5,12]"},
+    };
     FunctionDocumentation cdc_off_doc = {
         cdc_off_desc,
         "contentDefinedChunkOffsets(string, window_size, reverse_probability)",
         cdc_args,
         {},
         cdc_off_ret,
-        cdc_chunks_ex,
+        cdc_off_ex,
         introduced_in,
         category_cdc};
     factory.registerFunction<FunctionContentDefinedChunkOffsets>(cdc_off_doc);
@@ -432,13 +442,18 @@ Returns start byte offsets of each chunk (first offset is always 0 for non-empty
 Same as `contentDefinedChunkOffsets`, but only allows boundaries at UTF-8 code point starts.
 If the input is not valid UTF-8, a forced cut at the maximum chunk size may fall inside a malformed byte run; the maximum chunk size cap always holds.
 )";
+    FunctionDocumentation::Examples cdc_off_utf8_ex = {
+        {"Get chunk start offsets at UTF-8 code point boundaries",
+         "SELECT contentDefinedChunkOffsetsUTF8('привет мир', 2, 2);",
+         "[0,2,6,8,12,15,17]"},
+    };
     FunctionDocumentation cdc_off_utf8_doc = {
         cdc_off_utf8_desc,
         "contentDefinedChunkOffsetsUTF8(string, window_size, reverse_probability)",
         cdc_args,
         {},
         cdc_off_ret,
-        cdc_chunks_ex,
+        cdc_off_utf8_ex,
         introduced_in,
         category_cdc};
     factory.registerFunction<FunctionContentDefinedChunkOffsetsUTF8>(cdc_off_utf8_doc);
