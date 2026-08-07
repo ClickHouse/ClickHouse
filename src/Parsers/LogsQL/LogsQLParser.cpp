@@ -145,7 +145,12 @@ LogsQLParser::QueryScopeGuard::QueryScopeGuard(LogsQLParser & parser_)
     , saved_options_global_filter(parser_.options_global_filter)
     , saved_query_time_range_ns(parser_.query_time_range_ns)
     , saved_query_time_range_seconds_expr(parser_.query_time_range_seconds_expr)
+    , saved_query_time_lower_bound_expr(parser_.query_time_lower_bound_expr)
+    , saved_query_time_lower_bound_ns(parser_.query_time_lower_bound_ns)
+    , saved_query_time_upper_bound_expr(parser_.query_time_upper_bound_expr)
+    , saved_query_time_upper_bound_ns(parser_.query_time_upper_bound_ns)
     , saved_current_stats_time_bucket_ns(parser_.current_stats_time_bucket_ns)
+    , saved_current_stats_time_bucket_seconds_expr(parser_.current_stats_time_bucket_seconds_expr)
     , saved_current_stats_time_bucket_is_calendar(parser_.current_stats_time_bucket_is_calendar)
 {
 }
@@ -156,7 +161,12 @@ LogsQLParser::QueryScopeGuard::~QueryScopeGuard()
     parser.options_global_filter = saved_options_global_filter;
     parser.query_time_range_ns = saved_query_time_range_ns;
     parser.query_time_range_seconds_expr = saved_query_time_range_seconds_expr;
+    parser.query_time_lower_bound_expr = saved_query_time_lower_bound_expr;
+    parser.query_time_lower_bound_ns = saved_query_time_lower_bound_ns;
+    parser.query_time_upper_bound_expr = saved_query_time_upper_bound_expr;
+    parser.query_time_upper_bound_ns = saved_query_time_upper_bound_ns;
     parser.current_stats_time_bucket_ns = saved_current_stats_time_bucket_ns;
+    parser.current_stats_time_bucket_seconds_expr = saved_current_stats_time_bucket_seconds_expr;
     parser.current_stats_time_bucket_is_calendar = saved_current_stats_time_bucket_is_calendar;
 }
 
@@ -584,7 +594,7 @@ ASTPtr LogsQLParser::parseFilterEQ(const String & field_name, bool negative)
     }
     else
     {
-        condition = makeASTFunction("equals", columnExpr(field_name), makeValueLiteral(value, quoted));
+        condition = makeComparisonFilter(field_name, "equals", value, quoted);
     }
     return negative ? makeNot(condition) : condition;
 }
@@ -666,11 +676,11 @@ ASTPtr LogsQLParser::parseFilterRange(const String & field_name)
 
     ASTs conditions;
     if (!std::isinf(*min_value))
-        conditions.push_back(makeASTFunction(include_min ? "greaterOrEquals" : "greater",
-            numericColumnExpr(field_name), make_intrusive<ASTLiteral>(Field(*min_value))));
+        conditions.push_back(makeNumericComparison(field_name, include_min ? "greaterOrEquals" : "greater",
+            make_intrusive<ASTLiteral>(Field(*min_value))));
     if (!std::isinf(*max_value))
-        conditions.push_back(makeASTFunction(include_max ? "lessOrEquals" : "less",
-            numericColumnExpr(field_name), make_intrusive<ASTLiteral>(Field(*max_value))));
+        conditions.push_back(makeNumericComparison(field_name, include_max ? "lessOrEquals" : "less",
+            make_intrusive<ASTLiteral>(Field(*max_value))));
 
     return makeAnd(std::move(conditions));
 }
@@ -952,7 +962,7 @@ ASTPtr LogsQLParser::parseFilterExact(const String & field_name)
 
     if (is_prefix)
         return makeASTFunction("startsWith", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(value)));
-    return makeASTFunction("equals", columnExpr(field_name), makeValueLiteral(value, quoted));
+    return makeComparisonFilter(field_name, "equals", value, quoted);
 }
 
 ASTPtr LogsQLParser::parseFilterRegexpFunc(const String & field_name)
@@ -1459,21 +1469,44 @@ ASTPtr LogsQLParser::makeRegexpFilter(const String & field_name, const String & 
     return makeASTFunction("match", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(regexp)));
 }
 
-ASTPtr LogsQLParser::numericColumnExpr(const String & field_name) const
+ASTPtr LogsQLParser::makeNumericComparison(const String & field_name, const String & function_name, ASTPtr literal) const
 {
     /// In VictoriaLogs every field is a string, and a numeric comparison filter compares
     /// the numeric value of the field, skipping rows where the field is not a number.
-    /// The cast makes such comparisons work for string columns as well as for numeric ones:
+    /// The casts make such comparisons work for string columns as well as for numeric ones:
     /// a non-numeric value becomes NULL, and the comparison filters it out.
-    return makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Float64"))));
+    /// The integral values are compared exactly through `Int128`, because a `Float64` cast
+    /// rounds `UInt64`/`Int64` values above 2^53 and could compare adjacent values as equal;
+    /// fractional values (where the exact cast yields NULL) are compared as `Float64`.
+    ASTPtr exact = makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Int128"))));
+    ASTPtr lossy = makeASTFunction("accurateCastOrNull", columnExpr(field_name), make_intrusive<ASTLiteral>(Field(String("Float64"))));
+    return makeASTFunction("if",
+        makeASTFunction("isNotNull", exact->clone()),
+        makeASTFunction(function_name, exact, literal->clone()),
+        makeASTFunction(function_name, lossy, std::move(literal)));
 }
 
 ASTPtr LogsQLParser::makeComparisonFilter(const String & field_name, const String & function_name, const String & value, bool quoted)
 {
     ASTPtr literal = makeValueLiteral(value, quoted);
+
+    /// Comparison and equality filters accept the same numeric grammar as range()
+    /// and len_range(): besides plain numbers, also underscores ("1_000"), base
+    /// prefixes ("0x10"), durations, byte sizes ("10.5M"), and "inf". The prefix
+    /// check keeps words that merely start like a number ("inflight") textual.
     bool is_numeric = literal->as<ASTLiteral>()->value.getType() != Field::Types::String;
-    ASTPtr column = is_numeric ? numericColumnExpr(field_name) : columnExpr(field_name);
-    return makeASTFunction(function_name, std::move(column), std::move(literal));
+    if (!is_numeric && !quoted && isNumberPrefix(value))
+    {
+        if (auto number = tryParseNumber(value))
+        {
+            literal = make_intrusive<ASTLiteral>(Field(*number));
+            is_numeric = true;
+        }
+    }
+
+    if (is_numeric)
+        return makeNumericComparison(field_name, function_name, std::move(literal));
+    return makeASTFunction(function_name, columnExpr(field_name), std::move(literal));
 }
 
 ASTPtr LogsQLParser::makeValueLiteral(const String & text, bool quoted)
@@ -1614,6 +1647,64 @@ ASTPtr LogsQLParser::makeTimeRangeSecondsExpr(ASTPtr lower, ASTPtr upper)
         make_intrusive<ASTLiteral>(Field(1e9)));
 }
 
+void LogsQLParser::recordTimeLowerBound(ASTPtr expr, std::optional<Int64> ns, Int64 offset_ns)
+{
+    offset_ns += options_time_offset_ns;
+    ASTPtr shifted = shiftTime(expr->clone(), offset_ns);
+    std::optional<Int64> shifted_ns;
+    if (ns)
+        shifted_ns = *ns - offset_ns;
+
+    if (!query_time_lower_bound_expr)
+    {
+        query_time_lower_bound_expr = shifted;
+        query_time_lower_bound_ns = shifted_ns;
+        return;
+    }
+    /// Several lower bounds intersect into the largest one.
+    if (query_time_lower_bound_ns && shifted_ns)
+    {
+        if (*shifted_ns > *query_time_lower_bound_ns)
+        {
+            query_time_lower_bound_expr = shifted;
+            query_time_lower_bound_ns = shifted_ns;
+        }
+        return;
+    }
+    /// The bounds are not comparable at parse time (e.g. `now()` arithmetic against
+    /// an absolute timestamp): intersect them at runtime.
+    query_time_lower_bound_expr = makeASTFunction("greatest", query_time_lower_bound_expr, shifted);
+    query_time_lower_bound_ns.reset();
+}
+
+void LogsQLParser::recordTimeUpperBound(ASTPtr expr, std::optional<Int64> ns, Int64 offset_ns)
+{
+    offset_ns += options_time_offset_ns;
+    ASTPtr shifted = shiftTime(expr->clone(), offset_ns);
+    std::optional<Int64> shifted_ns;
+    if (ns)
+        shifted_ns = *ns - offset_ns;
+
+    if (!query_time_upper_bound_expr)
+    {
+        query_time_upper_bound_expr = shifted;
+        query_time_upper_bound_ns = shifted_ns;
+        return;
+    }
+    /// Several upper bounds intersect into the smallest one.
+    if (query_time_upper_bound_ns && shifted_ns)
+    {
+        if (*shifted_ns < *query_time_upper_bound_ns)
+        {
+            query_time_upper_bound_expr = shifted;
+            query_time_upper_bound_ns = shifted_ns;
+        }
+        return;
+    }
+    query_time_upper_bound_expr = makeASTFunction("least", query_time_upper_bound_expr, shifted);
+    query_time_upper_bound_ns.reset();
+}
+
 ASTPtr LogsQLParser::makeTimeCondition(ASTPtr lower, bool lower_inclusive, ASTPtr upper, bool upper_inclusive, Int64 offset_ns)
 {
     offset_ns += options_time_offset_ns;
@@ -1660,7 +1751,11 @@ ASTPtr LogsQLParser::parseFilterTime()
             auto offset = parseOptionalTimeOffset();
             ASTPtr instant = makeASTFunction("minus", makeASTFunction("now"), makeIntervalAST(*duration));
             if (is_greater)
+            {
+                recordTimeUpperBound(instant, {}, offset.value_or(0));
                 return makeTimeCondition(nullptr, false, instant, inclusive, offset.value_or(0));
+            }
+            recordTimeLowerBound(instant, {}, offset.value_or(0));
             return makeTimeCondition(instant, inclusive, nullptr, false, offset.value_or(0));
         }
         lex.restoreState(state);
@@ -1670,13 +1765,13 @@ ASTPtr LogsQLParser::parseFilterTime()
         if (is_greater)
         {
             /// _time:>2023-04-25Z means "after the whole day", _time:>=2023-04-25Z means "from the start of the day".
-            if (inclusive)
-                return makeTimeCondition(bound.start, true, nullptr, false, offset.value_or(0));
-            return makeTimeCondition(bound.end, true, nullptr, false, offset.value_or(0));
+            ASTPtr lower = inclusive ? bound.start : bound.end;
+            recordTimeLowerBound(lower, inclusive ? bound.start_ns : bound.end_ns, offset.value_or(0));
+            return makeTimeCondition(lower, true, nullptr, false, offset.value_or(0));
         }
-        if (inclusive)
-            return makeTimeCondition(nullptr, false, bound.end, false, offset.value_or(0));
-        return makeTimeCondition(nullptr, false, bound.start, false, offset.value_or(0));
+        ASTPtr upper = inclusive ? bound.end : bound.start;
+        recordTimeUpperBound(upper, inclusive ? bound.end_ns : bound.start_ns, offset.value_or(0));
+        return makeTimeCondition(nullptr, false, upper, false, offset.value_or(0));
     }
 
     if (lex.isKeyword("[") || lex.isKeyword("("))

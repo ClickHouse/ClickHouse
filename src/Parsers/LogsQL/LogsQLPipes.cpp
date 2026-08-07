@@ -1772,12 +1772,18 @@ void LogsQLParser::parsePipePack(Layer & layer, bool is_logfmt)
     ASTPtr expression;
     if (is_logfmt)
     {
-        /// Space-separated name=value pairs.
+        /// Space-separated name=value pairs. A value containing a space, '=', a quote,
+        /// a backslash, or a control character would make the output ambiguous or invalid
+        /// logfmt, so it is quoted and escaped as a JSON string - the same quoting
+        /// the unpack_logfmt pipe decodes, so such values round-trip.
         auto concat = makeASTFunction("concat");
         for (size_t i = 0; i < fields.size(); ++i)
         {
+            ASTPtr value = makeASTFunction("toString", columnExpr(fields[i]));
+            ASTPtr needs_quoting = makeASTFunction("match", value->clone(), makeStringLiteral(R"re([ ="\\[:cntrl:]])re"));
+            value = makeASTFunction("if", needs_quoting, makeASTFunction("toJSONString", value->clone()), value);
             concat->arguments->children.push_back(makeStringLiteral((i == 0 ? "" : " ") + fields[i] + "="));
-            concat->arguments->children.push_back(makeASTFunction("toString", columnExpr(fields[i])));
+            concat->arguments->children.push_back(value);
         }
         expression = concat;
     }
@@ -1809,6 +1815,7 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
         lex.nextToken();
 
     current_stats_time_bucket_ns.reset();
+    current_stats_time_bucket_seconds_expr = nullptr;
     current_stats_time_bucket_is_calendar = false;
 
     ASTs by_select;
@@ -1852,17 +1859,34 @@ void LogsQLParser::parsePipeStats(Layer & layer, bool need_keyword)
 
                     static const std::unordered_map<String, Int64> named_step_ns = {
                         {"nanosecond", 1LL}, {"microsecond", 1000LL}, {"millisecond", 1000000LL},
-                        {"second", 1000000000LL}, {"minute", 60000000000LL}, {"hour", 3600000000000LL},
-                        {"day", 86400000000000LL}, {"week", 604800000000000LL}};
+                        {"second", 1000000000LL}, {"minute", 60000000000LL}, {"hour", 3600000000000LL}};
 
                     ASTPtr interval;
                     if (auto it = named_steps.find(Poco::toLower(bucket)); it != named_steps.end())
                     {
+                        String step_name = Poco::toLower(bucket);
                         interval = makeASTFunction(it->second, makeUInt64Literal(1));
-                        if (auto it_ns = named_step_ns.find(Poco::toLower(bucket)); it_ns != named_step_ns.end())
+                        if (auto it_ns = named_step_ns.find(step_name); it_ns != named_step_ns.end())
+                        {
                             current_stats_time_bucket_ns = it_ns->second;
+                        }
+                        else if (step_name == "day")
+                        {
+                            /// A civil day is not fixed-length (the day of a DST transition is
+                            /// an hour shorter or longer), so the rate() denominator is the
+                            /// length of each bucket, computed at runtime from the bucket key
+                            /// of the group. This works for the day step because its key keeps
+                            /// the DateTime type (and so the timezone) of the column; the week
+                            /// step yields a timezone-less Date and is treated as a calendar
+                            /// bucket instead.
+                            ASTPtr bucket_start = make_intrusive<ASTIdentifier>(columnName(name));
+                            ASTPtr bucket_end = makeASTFunction("plus", bucket_start->clone(), makeASTFunction(it->second, makeUInt64Literal(1)));
+                            current_stats_time_bucket_seconds_expr = makeTimeRangeSecondsExpr(std::move(bucket_start), std::move(bucket_end));
+                        }
                         else
+                        {
                             current_stats_time_bucket_is_calendar = true;
+                        }
                     }
                     else if (auto duration = tryParseDuration(bucket))
                     {
@@ -2178,9 +2202,11 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
             throwSyntaxError("rate() does not accept arguments");
         if (name == "rate_sum" && (wildcard || args.size() != 1))
             throwNotImplemented("rate_sum() over all fields or over multiple fields");
-        /// Month and year buckets have variable lengths, so a constant denominator would be wrong.
+        /// Week, month and year buckets have variable lengths (weeks because of DST
+        /// transitions), so a constant denominator would be wrong; their bucket keys
+        /// are timezone-less Dates, so the length cannot be derived at runtime either.
         if (current_stats_time_bucket_is_calendar)
-            throwNotImplemented(fmt::format("{}() over month or year buckets", name));
+            throwNotImplemented(fmt::format("{}() over week, month, or year buckets", name));
 
         ASTPtr column = args.empty() ? nullptr : columnExpr(args[0]);
         std::optional<Float64> range_seconds;
@@ -2188,10 +2214,20 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
         /// A `_time` bucket of the same stats pipe takes precedence over the whole query range.
         if (current_stats_time_bucket_ns && *current_stats_time_bucket_ns > 0)
             range_seconds = static_cast<Float64>(*current_stats_time_bucket_ns) / 1e9;
+        else if (current_stats_time_bucket_seconds_expr)
+            range_seconds_expr = current_stats_time_bucket_seconds_expr;
         else if (query_time_range_ns && *query_time_range_ns > 0)
             range_seconds = static_cast<Float64>(*query_time_range_ns) / 1e9;
         else if (query_time_range_seconds_expr)
             range_seconds_expr = query_time_range_seconds_expr;
+        else if (query_time_lower_bound_ns && query_time_upper_bound_ns)
+        {
+            /// A window given as a pair of `_time` comparison filters.
+            if (*query_time_upper_bound_ns > *query_time_lower_bound_ns)
+                range_seconds = static_cast<Float64>(*query_time_upper_bound_ns - *query_time_lower_bound_ns) / 1e9;
+        }
+        else if (query_time_lower_bound_expr && query_time_upper_bound_expr)
+            range_seconds_expr = makeTimeRangeSecondsExpr(query_time_lower_bound_expr, query_time_upper_bound_expr);
         return {canonical, [column, range_seconds, range_seconds_expr](ASTPtr condition)
         {
             ASTPtr result = column

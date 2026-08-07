@@ -91,9 +91,21 @@ private:
     /// bounds without an explicit timezone: their epoch values depend on the session
     /// timezone, so the length is only known at execution time.
     ASTPtr query_time_range_seconds_expr;
+    /// The effective lower and upper `_time` bounds accumulated from standalone comparison
+    /// filters (`_time:>=...`, `_time:<...`). When both are present and the query has no
+    /// self-contained `_time` range, they define the `rate()` denominator: the intersection
+    /// of several bounds of the same kind is the maximum lower / minimum upper bound.
+    ASTPtr query_time_lower_bound_expr;
+    std::optional<Int64> query_time_lower_bound_ns;
+    ASTPtr query_time_upper_bound_expr;
+    std::optional<Int64> query_time_upper_bound_ns;
     /// The `_time` bucket step of the stats pipe being parsed, if any: it takes precedence
     /// over the query time range as the denominator of `rate()` and `rate_sum()`.
     std::optional<Int64> current_stats_time_bucket_ns;
+    /// The length in seconds of a `_time` bucket of variable length (a civil day or week,
+    /// which is not fixed-length across DST transitions), as a runtime expression
+    /// over the bucket key. Set instead of `current_stats_time_bucket_ns` for such buckets.
+    ASTPtr current_stats_time_bucket_seconds_expr;
     /// Whether that bucket is a calendar step (month or year) of variable length,
     /// over which `rate()` and `rate_sum()` cannot use a constant denominator.
     bool current_stats_time_bucket_is_calendar = false;
@@ -117,7 +129,12 @@ private:
         ASTPtr saved_options_global_filter;
         std::optional<Int64> saved_query_time_range_ns;
         ASTPtr saved_query_time_range_seconds_expr;
+        ASTPtr saved_query_time_lower_bound_expr;
+        std::optional<Int64> saved_query_time_lower_bound_ns;
+        ASTPtr saved_query_time_upper_bound_expr;
+        std::optional<Int64> saved_query_time_upper_bound_ns;
         std::optional<Int64> saved_current_stats_time_bucket_ns;
+        ASTPtr saved_current_stats_time_bucket_seconds_expr;
         bool saved_current_stats_time_bucket_is_calendar;
 
         explicit QueryScopeGuard(LogsQLParser & parser_);
@@ -129,7 +146,7 @@ private:
 
     /// The identifier for the column backing the given LogsQL field.
     ASTPtr columnExpr(const String & field_name) const;
-    ASTPtr numericColumnExpr(const String & field_name) const;
+    ASTPtr makeNumericComparison(const String & field_name, const String & function_name, ASTPtr literal) const;
     String columnName(const String & field_name) const;
 
     String parseFieldName();
@@ -201,6 +218,8 @@ private:
     static ASTPtr shiftTime(ASTPtr expr, Int64 offset_ns);
     static ASTPtr makeTimeRangeSecondsExpr(ASTPtr lower, ASTPtr upper);
     ASTPtr makeTimeCondition(ASTPtr lower, bool lower_inclusive, ASTPtr upper, bool upper_inclusive, Int64 offset_ns);
+    void recordTimeLowerBound(ASTPtr expr, std::optional<Int64> ns, Int64 offset_ns);
+    void recordTimeUpperBound(ASTPtr expr, std::optional<Int64> ns, Int64 offset_ns);
 
     /// ---- Pipes ----
 
