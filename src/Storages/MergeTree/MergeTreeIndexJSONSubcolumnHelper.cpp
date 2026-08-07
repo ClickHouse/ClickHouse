@@ -234,15 +234,4 @@ String serializeJSONValueAsText(const Field & value, const DataTypePtr & type)
     return buf.str();
 }
 
-bool isJSONAllValuesStringCastSourceDefault(
-    JSONAllValuesMatchKind match_kind,
-    const DataTypePtr & source_type,
-    const Field & value)
-{
-    if (match_kind != JSONAllValuesMatchKind::StringCast || canContainNull(*source_type))
-        return false;
-
-    return value == Field(serializeJSONValueAsText(source_type->getDefault(), source_type));
-}
-
 }

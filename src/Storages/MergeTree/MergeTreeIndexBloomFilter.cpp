@@ -648,9 +648,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             if (!canContainNull(*key_type) && value == key_type->getDefault())
                 return false;
 
-            if (isJSONAllValuesStringCastSourceDefault(json_info->match_kind, json_info->source_type, value))
-                return false;
-
             serialized_values->insert(serializeJSONValueAsText(value, serialization_type));
         }
 
@@ -971,10 +968,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         }
 
         if (!canContainNull(*key_type) && serialized_value == key_type->getDefault())
-            return false;
-
-        if (isJSONAllValuesStringCastSourceDefault(
-                json_info->match_kind, json_info->source_type, serialized_value))
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;

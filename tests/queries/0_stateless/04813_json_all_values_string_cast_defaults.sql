@@ -13,11 +13,11 @@ INSERT INTO json_all_values_string_cast_default VALUES ('{}'), ('{"x":1}');
 
 SELECT count() FROM json_all_values_string_cast_default WHERE data.x::String = '0';
 SELECT count() FROM json_all_values_string_cast_default
-WHERE data.x::String = '0' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+WHERE data.x::String = '0' SETTINGS force_data_skipping_indices = 'idx';
 
 SELECT count() FROM json_all_values_string_cast_default WHERE data.x::String IN ('0');
 SELECT count() FROM json_all_values_string_cast_default
-WHERE data.x::String IN ('0') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+WHERE data.x::String IN ('0') SETTINGS force_data_skipping_indices = 'idx';
 
 SELECT count() FROM json_all_values_string_cast_default
 WHERE data.x::String = '1' SETTINGS force_data_skipping_indices = 'idx';
@@ -40,15 +40,27 @@ INSERT INTO json_all_values_string_cast_default VALUES ('{}'), ('{"x":1}');
 
 SELECT count() FROM json_all_values_string_cast_default WHERE data.x::String = '0';
 SELECT count() FROM json_all_values_string_cast_default
-WHERE data.x::String = '0' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+WHERE data.x::String = '0' SETTINGS force_data_skipping_indices = 'idx';
 
 SELECT count() FROM json_all_values_string_cast_default WHERE data.x::String IN ('0');
 SELECT count() FROM json_all_values_string_cast_default
-WHERE data.x::String IN ('0') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+WHERE data.x::String IN ('0') SETTINGS force_data_skipping_indices = 'idx';
 
 SELECT count() FROM json_all_values_string_cast_default WHERE data.x::String LIKE '%0%';
 SELECT count() FROM json_all_values_string_cast_default
-WHERE data.x::String LIKE '%0%' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+WHERE data.x::String LIKE '%0%' SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT count() FROM json_all_values_string_cast_default
+WHERE startsWith(data.x::String, '0') SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT count() FROM json_all_values_string_cast_default
+WHERE endsWith(data.x::String, '0') SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT count() FROM json_all_values_string_cast_default
+WHERE hasToken(data.x::String, '0') SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT count() FROM json_all_values_string_cast_default
+WHERE multiSearchAny(data.x::String, ['missing', '0']) SETTINGS force_data_skipping_indices = 'idx';
 
 SELECT count() FROM json_all_values_string_cast_default
 WHERE data.x::String = '1' SETTINGS force_data_skipping_indices = 'idx';

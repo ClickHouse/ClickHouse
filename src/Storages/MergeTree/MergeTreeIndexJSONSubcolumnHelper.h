@@ -103,10 +103,4 @@ Field tryConvertJSONValueToType(
 /// Convert a value to the text representation stored by `JSONAllValues`.
 String serializeJSONValueAsText(const Field & value, const DataTypePtr & type);
 
-/// Check whether a `StringCast` comparison value equals the serialized default of the source type.
-bool isJSONAllValuesStringCastSourceDefault(
-    JSONAllValuesMatchKind match_kind,
-    const DataTypePtr & source_type,
-    const Field & value);
-
 }

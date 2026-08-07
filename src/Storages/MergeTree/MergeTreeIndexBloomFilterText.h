@@ -85,13 +85,11 @@ private:
             size_t key_index_,
             bool serialize_json_value_ = false,
             DataTypePtr key_type_ = nullptr,
-            DataTypePtr json_source_type_ = nullptr,
             JSONAllValuesMatchKind json_match_kind_ = JSONAllValuesMatchKind::Direct)
             : tuple_index(tuple_index_)
             , key_index(key_index_)
             , serialize_json_value(serialize_json_value_)
             , key_type(std::move(key_type_))
-            , json_source_type(std::move(json_source_type_))
             , json_match_kind(json_match_kind_)
         {
         }
@@ -100,7 +98,6 @@ private:
         size_t key_index;
         bool serialize_json_value;
         DataTypePtr key_type;
-        DataTypePtr json_source_type;
         JSONAllValuesMatchKind json_match_kind;
     };
     /// Uses RPN like KeyCondition

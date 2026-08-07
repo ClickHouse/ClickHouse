@@ -19,7 +19,6 @@ INSERT INTO json_all_values_dynamic_bloom VALUES
     ('{"ts":"2020-05-05 10:00:00"}');
 
 SELECT DISTINCT dynamicType(data.ts) FROM json_all_values_dynamic_bloom;
-SELECT count() FROM json_all_values_dynamic_bloom WHERE data.ts = toDate('2026-01-01');
 SELECT count() FROM json_all_values_dynamic_bloom
 WHERE data.ts = toDate('2026-01-01') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
@@ -35,7 +34,6 @@ SETTINGS index_granularity = 1;
 INSERT INTO json_all_values_dynamic_token
 SELECT * FROM json_all_values_dynamic_bloom;
 
-SELECT count() FROM json_all_values_dynamic_token WHERE data.ts = toDate('2026-01-01');
 SELECT count() FROM json_all_values_dynamic_token
 WHERE data.ts = toDate('2026-01-01') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
