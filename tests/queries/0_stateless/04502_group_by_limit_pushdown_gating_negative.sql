@@ -41,21 +41,30 @@ SELECT count() FROM (EXPLAIN actions = 1
     SETTINGS query_plan_max_limit_for_top_k_optimization = 1000, max_bytes_ratio_before_external_group_by = 0
 ) WHERE explain LIKE '%Top-K%';
 
+-- `enable_group_by_top_k_optimization` takes effect per query, not per
+-- subquery: inside a single statement the last `SETTINGS` clause wins for the
+-- whole query, so an on-versus-off comparison written as one `EXCEPT` or `JOIN`
+-- runs both sides in the same mode and proves nothing.  Every comparison below
+-- therefore materializes the unoptimized answer in its own statement first.
+DROP TABLE IF EXISTS gt_nullable_eviction;
+CREATE TABLE gt_nullable_eviction (k Nullable(String), c UInt64, s UInt64) ENGINE = Memory;
+
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_nullable_eviction
+SELECT k, count() AS c, sum(v) AS s FROM (
+    SELECT if(number % 500 = 0, NULL, toNullable(toString(999999 - number))) AS k, number AS v FROM numbers(40000)
+) GROUP BY k ORDER BY k ASC NULLS FIRST LIMIT 10;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'nullable key eviction: result matches optimization off';
 SELECT count(), countIf(same) FROM (
     SELECT l.c = r.c AND l.s = r.s AS same FROM (
         SELECT k, count() AS c, sum(v) AS s FROM (
             SELECT if(number % 500 = 0, NULL, toNullable(toString(999999 - number))) AS k, number AS v FROM numbers(40000)
         ) GROUP BY k ORDER BY k ASC NULLS FIRST LIMIT 10
-        SETTINGS enable_group_by_top_k_optimization = 1, max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, max_block_size = 4096
     ) AS l
-    INNER JOIN (
-        SELECT k, count() AS c, sum(v) AS s FROM (
-            SELECT if(number % 500 = 0, NULL, toNullable(toString(999999 - number))) AS k, number AS v FROM numbers(40000)
-        ) GROUP BY k ORDER BY k ASC NULLS FIRST LIMIT 10
-        SETTINGS enable_group_by_top_k_optimization = 0
-    ) AS r ON l.k IS NOT DISTINCT FROM r.k
-);
+    INNER JOIN gt_nullable_eviction AS r ON l.k IS NOT DISTINCT FROM r.k
+) SETTINGS max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0, max_block_size = 4096;
 
 SELECT 'non-prefix ORDER BY: not optimized';
 SELECT count() FROM (EXPLAIN actions = 1
@@ -67,15 +76,19 @@ SELECT count() FROM (EXPLAIN actions = 1
     SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(1000)) GROUP BY a, b ORDER BY b, a LIMIT 5
 ) WHERE explain LIKE '%Top-K%';
 
+DROP TABLE IF EXISTS gt_non_prefix_order_by;
+CREATE TABLE gt_non_prefix_order_by (a UInt64, b UInt64) ENGINE = Memory;
+
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_non_prefix_order_by
+SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(20000)) GROUP BY a, b ORDER BY b, a LIMIT 5;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'non-prefix ORDER BY: result matches optimization off';
 SELECT count() FROM (
     SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(20000)) GROUP BY a, b ORDER BY b, a LIMIT 5
-    SETTINGS enable_group_by_top_k_optimization = 1
 ) AS l
-INNER JOIN (
-    SELECT a, b FROM (SELECT number % 10 AS a, number % 7 AS b FROM numbers(20000)) GROUP BY a, b ORDER BY b, a LIMIT 5
-    SETTINGS enable_group_by_top_k_optimization = 0
-) AS r USING (a, b);
+INNER JOIN gt_non_prefix_order_by AS r USING (a, b);
 
 -- The GROUP BY top-K optimization cases that depend on how a colliding alias name
 -- (`-k AS k` with `prefer_column_name_to_alias`) is resolved in `ORDER BY` live in
@@ -101,88 +114,126 @@ SELECT
     number
 FROM numbers(50000);
 
+DROP TABLE IF EXISTS gt_limit_with_offset;
+DROP TABLE IF EXISTS gt_multiple_aggregates;
+DROP TABLE IF EXISTS gt_desc_order;
+DROP TABLE IF EXISTS gt_with_totals;
+DROP TABLE IF EXISTS gt_having;
+DROP TABLE IF EXISTS gt_order_by_aggregate;
+DROP TABLE IF EXISTS gt_multi_key;
+
+CREATE TABLE gt_limit_with_offset (k_u64 UInt64, c UInt64, s UInt64) ENGINE = Memory;
+CREATE TABLE gt_multiple_aggregates (k_u32 UInt32, c UInt64, s UInt64, mn UInt64, mx UInt64, av Float64) ENGINE = Memory;
+CREATE TABLE gt_desc_order (k_u64 UInt64, c UInt64) ENGINE = Memory;
+CREATE TABLE gt_with_totals (k_u32 UInt32, cnt UInt64) ENGINE = Memory;
+CREATE TABLE gt_having (k_u32 UInt32, cnt UInt64) ENGINE = Memory;
+CREATE TABLE gt_order_by_aggregate (k_u32 UInt32, cnt UInt64) ENGINE = Memory;
+CREATE TABLE gt_multi_key (k_u32 UInt32, k_u64 UInt64, c UInt64) ENGINE = Memory;
+
+SET enable_group_by_top_k_optimization = 0;
+
+INSERT INTO gt_limit_with_offset
+SELECT k_u64, count(), sum(val) FROM t_gbylimit_edge GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 5, 10;
+INSERT INTO gt_multiple_aggregates
+SELECT k_u32, count(), sum(val), min(val), max(val), avg(val) FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10;
+INSERT INTO gt_desc_order
+SELECT k_u64, count() FROM t_gbylimit_edge GROUP BY k_u64 ORDER BY k_u64 DESC LIMIT 10;
+INSERT INTO gt_with_totals
+SELECT k_u32, count() AS cnt FROM t_gbylimit_edge GROUP BY k_u32 WITH TOTALS ORDER BY k_u32 ASC LIMIT 10;
+INSERT INTO gt_having
+SELECT k_u32, count() AS cnt FROM t_gbylimit_edge GROUP BY k_u32 HAVING cnt > 1 ORDER BY k_u32 ASC LIMIT 10;
+INSERT INTO gt_order_by_aggregate
+SELECT k_u32, count() AS cnt FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY cnt DESC, k_u32 ASC LIMIT 10;
+INSERT INTO gt_multi_key
+SELECT k_u32, k_u64, count() FROM t_gbylimit_edge GROUP BY k_u32, k_u64 ORDER BY k_u32, k_u64 ASC LIMIT 10;
+
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'limit_with_offset';
 SELECT k_u64, count(), sum(val)
 FROM t_gbylimit_edge GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 5, 10
-SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
-SELECT k_u64, count(), sum(val)
-FROM t_gbylimit_edge GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 5, 10
-SETTINGS enable_group_by_top_k_optimization = 0;
+SELECT * FROM gt_limit_with_offset;
 
 SELECT 'multiple_aggregates';
 SELECT k_u32, count(), sum(val), min(val), max(val), avg(val)
 FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
-SELECT k_u32, count(), sum(val), min(val), max(val), avg(val)
-FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 0;
+SELECT * FROM gt_multiple_aggregates;
 
 SELECT 'desc_order';
 SELECT k_u64, count()
 FROM t_gbylimit_edge GROUP BY k_u64 ORDER BY k_u64 DESC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
-SELECT k_u64, count()
-FROM t_gbylimit_edge GROUP BY k_u64 ORDER BY k_u64 DESC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 0;
+SELECT * FROM gt_desc_order;
 
 SELECT 'negative_with_totals';
-WITH
-    a AS (SELECT k_u32, count() AS cnt FROM t_gbylimit_edge GROUP BY k_u32 WITH TOTALS ORDER BY k_u32 ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1),
-    b AS (SELECT k_u32, count() AS cnt FROM t_gbylimit_edge GROUP BY k_u32 WITH TOTALS ORDER BY k_u32 ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0)
-SELECT count() FROM (SELECT * FROM a EXCEPT SELECT * FROM b);
+SELECT count() FROM (
+    SELECT k_u32, count() AS cnt
+    FROM t_gbylimit_edge GROUP BY k_u32 WITH TOTALS ORDER BY k_u32 ASC LIMIT 10
+    EXCEPT
+    SELECT * FROM gt_with_totals
+);
 
 SELECT 'negative_having';
 SELECT k_u32, count() AS cnt
 FROM t_gbylimit_edge GROUP BY k_u32 HAVING cnt > 1 ORDER BY k_u32 ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
-SELECT k_u32, count() AS cnt
-FROM t_gbylimit_edge GROUP BY k_u32 HAVING cnt > 1 ORDER BY k_u32 ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 0;
+SELECT * FROM gt_having;
 
 SELECT 'negative_order_by_aggregate';
 SELECT k_u32, count() AS cnt
 FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY cnt DESC, k_u32 ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
-SELECT k_u32, count() AS cnt
-FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY cnt DESC, k_u32 ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 0;
+SELECT * FROM gt_order_by_aggregate;
 
 SELECT 'negative_multi_key';
 SELECT k_u32, k_u64, count()
 FROM t_gbylimit_edge GROUP BY k_u32, k_u64 ORDER BY k_u32, k_u64 ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 1
 EXCEPT
-SELECT k_u32, k_u64, count()
-FROM t_gbylimit_edge GROUP BY k_u32, k_u64 ORDER BY k_u32, k_u64 ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 0;
+SELECT * FROM gt_multi_key;
 
 -- CI randomizes group_by_two_level_threshold (can exceed the row count below);
 -- pin it so the two-level conversion is deterministic, and keep the row count
 -- moderate so a debug-build flaky-check run fits the timeout.
+DROP TABLE IF EXISTS gt_two_level;
+DROP TABLE IF EXISTS gt_two_level_string;
+CREATE TABLE gt_two_level (number UInt64, c UInt64) ENGINE = Memory;
+CREATE TABLE gt_two_level_string (k String, c UInt64) ENGINE = Memory;
+
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_two_level
+SELECT number, count() FROM numbers(600000) GROUP BY number ORDER BY number ASC LIMIT 10
+SETTINGS group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
+INSERT INTO gt_two_level_string
+SELECT toString(number) AS k, count() FROM numbers(600000) GROUP BY k ORDER BY k ASC LIMIT 10
+SETTINGS group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'two_level';
 SELECT number, count()
 FROM numbers(600000) GROUP BY number ORDER BY number ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 1, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000
 EXCEPT
-SELECT number, count()
-FROM numbers(600000) GROUP BY number ORDER BY number ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 0, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
+SELECT * FROM gt_two_level
+SETTINGS group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
 
 SELECT 'two_level_string';
 SELECT toString(number) AS k, count()
 FROM numbers(600000) GROUP BY k ORDER BY k ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 1, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000
 EXCEPT
-SELECT toString(number) AS k, count()
-FROM numbers(600000) GROUP BY k ORDER BY k ASC LIMIT 10
-SETTINGS enable_group_by_top_k_optimization = 0, group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
+SELECT * FROM gt_two_level_string
+SETTINGS group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
 
 DROP TABLE t_gbylimit_edge;
+DROP TABLE gt_limit_with_offset;
+DROP TABLE gt_multiple_aggregates;
+DROP TABLE gt_desc_order;
+DROP TABLE gt_with_totals;
+DROP TABLE gt_having;
+DROP TABLE gt_order_by_aggregate;
+DROP TABLE gt_multi_key;
+DROP TABLE gt_two_level;
+DROP TABLE gt_two_level_string;
 
 -- A `LIMIT` near the `size_t` range must keep every group and match the
 -- unoptimized result (it once hit "Too large size passed to allocator" from
@@ -205,13 +256,23 @@ SELECT k FROM (SELECT toString(number % 10) AS k FROM numbers(1000)) GROUP BY k 
 SELECT 'No ORDER BY, huge limit keeps all groups';
 SELECT count() FROM (SELECT k FROM (SELECT number % 10 AS k FROM numbers(1000)) GROUP BY k LIMIT 9223372036854775806 SETTINGS enable_group_by_top_k_optimization = 1, query_plan_max_limit_for_top_k_optimization = 0);
 
+DROP TABLE IF EXISTS gt_huge_limit;
+CREATE TABLE gt_huge_limit (k UInt32, s UInt64) ENGINE = Memory;
+
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_huge_limit
+SELECT k, sum(v) AS s FROM (SELECT toUInt32(999 - (number % 1000)) AS k, 1 AS v FROM numbers(4000)) GROUP BY k;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'Huge limit result matches the unoptimized aggregation';
 SELECT count(), countIf(complete) FROM
 (
     SELECT l.s = f.s AS complete
-    FROM (SELECT k, sum(v) AS s FROM (SELECT toUInt32(999 - (number % 1000)) AS k, 1 AS v FROM numbers(4000)) GROUP BY k ORDER BY k LIMIT 9223372036854775806 SETTINGS enable_group_by_top_k_optimization = 1, query_plan_max_limit_for_top_k_optimization = 0) AS l
-    INNER JOIN (SELECT k, sum(v) AS s FROM (SELECT toUInt32(999 - (number % 1000)) AS k, 1 AS v FROM numbers(4000)) GROUP BY k SETTINGS enable_group_by_top_k_optimization = 0) AS f USING (k)
-);
+    FROM (SELECT k, sum(v) AS s FROM (SELECT toUInt32(999 - (number % 1000)) AS k, 1 AS v FROM numbers(4000)) GROUP BY k ORDER BY k LIMIT 9223372036854775806) AS l
+    INNER JOIN gt_huge_limit AS f USING (k)
+) SETTINGS query_plan_max_limit_for_top_k_optimization = 0;
+
+DROP TABLE gt_huge_limit;
 
 -- Regression test: enable_group_by_top_k_optimization with the Distinct
 -- combinator caused a use-after-destroy.
@@ -235,3 +296,6 @@ DROP TABLE t_gbylimit_distinct;
 
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';
+
+DROP TABLE gt_nullable_eviction;
+DROP TABLE gt_non_prefix_order_by;

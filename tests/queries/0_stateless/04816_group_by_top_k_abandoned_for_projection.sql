@@ -1,9 +1,6 @@
--- Aggregate-projection rewriting runs after the top-K optimization and turns the
--- aggregation into merge-only (all parts have the projection) or into an
--- `AggregatingProjection` step (only some parts do).  Merging of aggregation states
--- bypasses the heap, so the rewrite must abandon `top_k`: otherwise the plan keeps
--- a stale `Top-K` annotation and, for the no-`ORDER BY` shape, the sort synthesized
--- for the heap, making the projection plan slower than the non-optimized one.
+-- An aggregation answered from an aggregate projection must not keep the top-K
+-- state: see `abandonGroupByTopKForProjections`.  The plan must lose the `Top-K`
+-- annotation and, for the no-`ORDER BY` shape, the sort synthesized for the heap.
 
 SET max_rows_to_group_by = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
@@ -59,18 +56,25 @@ SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM
 )
 WHERE explain LIKE '%Sorting%' OR explain LIKE '%Top-K%' OR explain LIKE '%AggregatingProjection%';
 
--- Results are unaffected.
+-- Results are unaffected.  `enable_group_by_top_k_optimization` takes effect per
+-- query, not per subquery, so the unoptimized answer needs its own statement.
+DROP TABLE IF EXISTS gt_projection;
+CREATE TABLE gt_projection ENGINE = Memory EMPTY AS
+SELECT k, sum(v) AS s FROM t_top_k_proj GROUP BY k ORDER BY k LIMIT 10;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_projection
+SELECT k, sum(v) AS s FROM t_top_k_proj GROUP BY k ORDER BY k LIMIT 10;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'results_match';
 SELECT count() FROM
 (
     SELECT k, sum(v) AS s FROM t_top_k_proj GROUP BY k ORDER BY k LIMIT 10
 ) AS o
-FULL JOIN
-(
-    SELECT k, sum(v) AS s FROM t_top_k_proj GROUP BY k ORDER BY k LIMIT 10
-    SETTINGS enable_group_by_top_k_optimization = 0
-) AS u USING (k)
+FULL JOIN gt_projection AS u USING (k)
 WHERE o.s != u.s;
+
+DROP TABLE gt_projection;
 
 DROP TABLE t_top_k_proj;
 
@@ -94,16 +98,22 @@ SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM
 )
 WHERE explain LIKE '%Sorting%' OR explain LIKE '%Top-K%' OR explain LIKE '%AggregatingProjection%';
 
+DROP TABLE IF EXISTS gt_projection_mixed;
+CREATE TABLE gt_projection_mixed ENGINE = Memory EMPTY AS
+SELECT k, sum(v) AS s FROM t_top_k_proj_mixed GROUP BY k ORDER BY k LIMIT 10;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_projection_mixed
+SELECT k, sum(v) AS s FROM t_top_k_proj_mixed GROUP BY k ORDER BY k LIMIT 10;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'mixed_results_match';
 SELECT count() FROM
 (
     SELECT k, sum(v) AS s FROM t_top_k_proj_mixed GROUP BY k ORDER BY k LIMIT 10
 ) AS o
-FULL JOIN
-(
-    SELECT k, sum(v) AS s FROM t_top_k_proj_mixed GROUP BY k ORDER BY k LIMIT 10
-    SETTINGS enable_group_by_top_k_optimization = 0
-) AS u USING (k)
+FULL JOIN gt_projection_mixed AS u USING (k)
 WHERE o.s != u.s;
+
+DROP TABLE gt_projection_mixed;
 
 DROP TABLE t_top_k_proj_mixed;

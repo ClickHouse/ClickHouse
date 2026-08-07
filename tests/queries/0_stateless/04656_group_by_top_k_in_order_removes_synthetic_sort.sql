@@ -48,36 +48,47 @@ WHERE explain LIKE '%Sorting%' OR explain LIKE '%Top-K%';
 
 -- The in-order plan must be the same shape the query gets without the
 -- optimization at all.
+DROP TABLE IF EXISTS gt_in_order_plan;
+CREATE TABLE gt_in_order_plan (n UInt64, without_top_k String) ENGINE = Memory;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_in_order_plan
+SELECT rowNumberInAllBlocks() AS n, explain FROM
+(
+    EXPLAIN SELECT k, sum(v) FROM t_top_k_in_order GROUP BY k LIMIT 10
+    SETTINGS optimize_aggregation_in_order = 1
+);
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'in_order_on_matches_optimization_off';
 SELECT countIf(with_top_k != without_top_k) FROM
 (
     SELECT rowNumberInAllBlocks() AS n, explain AS with_top_k FROM
     (
         EXPLAIN SELECT k, sum(v) FROM t_top_k_in_order GROUP BY k LIMIT 10
-        SETTINGS optimize_aggregation_in_order = 1, enable_group_by_top_k_optimization = 1
+        SETTINGS optimize_aggregation_in_order = 1
     )
 ) AS a
-FULL JOIN
-(
-    SELECT rowNumberInAllBlocks() AS n, explain AS without_top_k FROM
-    (
-        EXPLAIN SELECT k, sum(v) FROM t_top_k_in_order GROUP BY k LIMIT 10
-        SETTINGS optimize_aggregation_in_order = 1, enable_group_by_top_k_optimization = 0
-    )
-) AS b USING (n);
+FULL JOIN gt_in_order_plan AS b USING (n);
 
 -- Results are unaffected either way.
+DROP TABLE IF EXISTS gt_in_order_results;
+CREATE TABLE gt_in_order_results ENGINE = Memory EMPTY AS
+SELECT k, sum(v) AS s FROM t_top_k_in_order GROUP BY k LIMIT 10;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_in_order_results
+SELECT k, sum(v) AS s FROM t_top_k_in_order GROUP BY k LIMIT 10
+SETTINGS optimize_aggregation_in_order = 1;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'results_match';
 SELECT count() FROM
 (
     SELECT k, sum(v) AS s FROM t_top_k_in_order GROUP BY k LIMIT 10
-    SETTINGS optimize_aggregation_in_order = 1, enable_group_by_top_k_optimization = 1
+    SETTINGS optimize_aggregation_in_order = 1
 ) AS o
-FULL JOIN
-(
-    SELECT k, sum(v) AS s FROM t_top_k_in_order GROUP BY k LIMIT 10
-    SETTINGS optimize_aggregation_in_order = 1, enable_group_by_top_k_optimization = 0
-) AS u USING (k)
+FULL JOIN gt_in_order_results AS u USING (k)
 WHERE o.s != u.s;
 
 DROP TABLE t_top_k_in_order;
+DROP TABLE gt_in_order_plan;
+DROP TABLE gt_in_order_results;

@@ -70,16 +70,24 @@ WHERE event_date >= yesterday() AND current_database = currentDatabase()
 -- Results are unaffected: every group the no-`ORDER BY` query returns carries its
 -- complete count (which groups it returns is arbitrary - none of them tie here,
 -- but the LIMIT has no ordering to appeal to).
+-- `enable_group_by_top_k_optimization` takes effect per query, not per subquery,
+-- so the unoptimized reference answer needs its own statement.
+DROP TABLE IF EXISTS gt_no_order_freeze;
+CREATE TABLE gt_no_order_freeze ENGINE = Memory EMPTY AS
+SELECT k, count() AS c FROM t_no_order_freeze GROUP BY k;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_no_order_freeze
+SELECT k, count() AS c FROM t_no_order_freeze GROUP BY k;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'returned groups complete';
 SELECT count(), countIf(complete) FROM
 (
     SELECT l.c = f.c AS complete
     FROM (SELECT k, count() AS c FROM t_no_order_freeze GROUP BY k LIMIT 5) AS l
-    INNER JOIN
-    (
-        SELECT k, count() AS c FROM t_no_order_freeze GROUP BY k
-        SETTINGS enable_group_by_top_k_optimization = 0
-    ) AS f USING (k)
+    INNER JOIN gt_no_order_freeze AS f USING (k)
 );
+
+DROP TABLE gt_no_order_freeze;
 
 DROP TABLE t_no_order_freeze;

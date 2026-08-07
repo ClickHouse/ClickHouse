@@ -79,30 +79,42 @@ SELECT k, count(), sum(v) FROM (SELECT 2::UInt32 AS k, 1 AS v FROM numbers(5) UN
 -- LowCardinality eviction must not erase from the hash table: the State's
 -- per-dictionary-index cache cannot be invalidated, so a re-appearing index would
 -- return a destroyed aggregate state.  Result must match optimization off.
+DROP TABLE IF EXISTS gt_low_cardinality_eviction;
+CREATE TABLE gt_low_cardinality_eviction ENGINE = Memory EMPTY AS
+SELECT k, count() AS c, sum(v) AS s FROM (SELECT toLowCardinality(toString(999999 - number)) AS k, number AS v FROM numbers(30000)) GROUP BY k ORDER BY k ASC LIMIT 10;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_low_cardinality_eviction
+SELECT k, count() AS c, sum(v) AS s FROM (SELECT toLowCardinality(toString(999999 - number)) AS k, number AS v FROM numbers(30000)) GROUP BY k ORDER BY k ASC LIMIT 10;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'LowCardinality eviction: result matches optimization off';
 SELECT count() FROM
 (
-    SELECT k, count() AS c, sum(v) AS s FROM (SELECT toLowCardinality(toString(999999 - number)) AS k, number AS v FROM numbers(30000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1, max_block_size = 4096
+    SELECT k, count() AS c, sum(v) AS s FROM (SELECT toLowCardinality(toString(999999 - number)) AS k, number AS v FROM numbers(30000)) GROUP BY k ORDER BY k ASC LIMIT 10
 ) AS optimized
-INNER JOIN
-(
-    SELECT k, count() AS c, sum(v) AS s FROM (SELECT toLowCardinality(toString(999999 - number)) AS k, number AS v FROM numbers(30000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0
-) AS full USING (k, c, s);
+INNER JOIN gt_low_cardinality_eviction AS full USING (k, c, s)
+SETTINGS max_block_size = 4096;
 
 -- A mid-block eviction must invalidate the consecutive-key cache: a key admitted by
 -- the stale skip bitmap, pushed, then evicted, must not hand its destroyed state to
 -- a later equal row.  Runs of equal keys + a stateful aggregate make it observable.
 -- Small max_block_size guarantees multiple blocks (so the heap is full at a block
 -- start and the precomputed skip bitmap is exercised) without a large row count.
+DROP TABLE IF EXISTS gt_consecutive_key_cache;
+CREATE TABLE gt_consecutive_key_cache ENGINE = Memory EMPTY AS
+SELECT k, uniqExact(v) AS u, sum(v) AS s FROM (SELECT intDiv(999999 - number, 4)::UInt32 AS k, number AS v FROM numbers(40000)) GROUP BY k ORDER BY k ASC LIMIT 10;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_consecutive_key_cache
+SELECT k, uniqExact(v) AS u, sum(v) AS s FROM (SELECT intDiv(999999 - number, 4)::UInt32 AS k, number AS v FROM numbers(40000)) GROUP BY k ORDER BY k ASC LIMIT 10;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'consecutive-key cache after eviction: result matches optimization off';
 SELECT count() FROM
 (
-    SELECT k, uniqExact(v) AS u, sum(v) AS s FROM (SELECT intDiv(999999 - number, 4)::UInt32 AS k, number AS v FROM numbers(40000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1, max_block_size = 4096
+    SELECT k, uniqExact(v) AS u, sum(v) AS s FROM (SELECT intDiv(999999 - number, 4)::UInt32 AS k, number AS v FROM numbers(40000)) GROUP BY k ORDER BY k ASC LIMIT 10
 ) AS optimized
-INNER JOIN
-(
-    SELECT k, uniqExact(v) AS u, sum(v) AS s FROM (SELECT intDiv(999999 - number, 4)::UInt32 AS k, number AS v FROM numbers(40000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 0
-) AS full USING (k, u, s);
+INNER JOIN gt_consecutive_key_cache AS full USING (k, u, s)
+SETTINGS max_block_size = 4096;
 
 SELECT 'heap_engaged_guard';
 SYSTEM FLUSH LOGS query_log;
@@ -149,6 +161,16 @@ SELECT isNaN(k), uniqExact(v) FROM
 )
 GROUP BY k ORDER BY k ASC NULLS FIRST LIMIT 1;
 
+DROP TABLE IF EXISTS gt_zeros_tied;
+CREATE TABLE gt_zeros_tied ENGINE = Memory EMPTY AS
+SELECT k, uniqExact(v) AS u FROM (SELECT multiIf(number % 4 = 0, toFloat64(0), number % 4 = 1, reinterpretAsFloat64(reinterpretAsFixedString(toUInt64(9223372036854775808))), toFloat64(-1000000 + intDiv(toInt64(number), 4))) AS k, number % 5 AS v FROM numbers(100000))
+GROUP BY k;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_zeros_tied
+SELECT k, uniqExact(v) AS u FROM (SELECT multiIf(number % 4 = 0, toFloat64(0), number % 4 = 1, reinterpretAsFloat64(reinterpretAsFixedString(toUInt64(9223372036854775808))), toFloat64(-1000000 + intDiv(toInt64(number), 4))) AS k, number % 5 AS v FROM numbers(100000))
+GROUP BY k;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'zeros tied at the boundary among real eviction churn';
 SELECT count(), countIf(complete) FROM
 (
@@ -157,14 +179,8 @@ SELECT count(), countIf(complete) FROM
     (
         SELECT k, uniqExact(v) AS u FROM (SELECT multiIf(number % 4 = 0, toFloat64(0), number % 4 = 1, reinterpretAsFloat64(reinterpretAsFixedString(toUInt64(9223372036854775808))), toFloat64(-1000000 + intDiv(toInt64(number), 4))) AS k, number % 5 AS v FROM numbers(100000))
         GROUP BY k ORDER BY k DESC LIMIT 3
-        SETTINGS enable_group_by_top_k_optimization = 1
     ) AS l
-    INNER JOIN
-    (
-        SELECT k, uniqExact(v) AS u FROM (SELECT multiIf(number % 4 = 0, toFloat64(0), number % 4 = 1, reinterpretAsFloat64(reinterpretAsFixedString(toUInt64(9223372036854775808))), toFloat64(-1000000 + intDiv(toInt64(number), 4))) AS k, number % 5 AS v FROM numbers(100000))
-        GROUP BY k
-        SETTINGS enable_group_by_top_k_optimization = 0
-    ) AS f ON l.k = f.k
+    INNER JOIN gt_zeros_tied AS f ON l.k = f.k
 );
 
 -- A boundary tie-set that keeps growing must not grow the heap without bound.
@@ -183,12 +199,20 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comm
 
 -- Every group the frozen-heap query returns must carry its complete count
 -- (the freeze must not drop or corrupt accumulated state).
+DROP TABLE IF EXISTS gt_tie_overflow;
+CREATE TABLE gt_tie_overflow ENGINE = Memory EMPTY AS
+SELECT a, b, count() AS c FROM (SELECT if(number < 2000, number % 10, 0)::UInt32 AS a, number AS b FROM numbers(1300000)) GROUP BY a, b;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_tie_overflow
+SELECT a, b, count() AS c FROM (SELECT if(number < 2000, number % 10, 0)::UInt32 AS a, number AS b FROM numbers(1300000)) GROUP BY a, b;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'tie-overflow: every returned group complete';
 SELECT count(), countIf(complete) FROM
 (
     SELECT l.c = f.c AS complete
-    FROM (SELECT a, b, count() AS c FROM (SELECT if(number < 2000, number % 10, 0)::UInt32 AS a, number AS b FROM numbers(1300000)) GROUP BY a, b ORDER BY a ASC LIMIT 5 SETTINGS enable_group_by_top_k_optimization = 1) AS l
-    INNER JOIN (SELECT a, b, count() AS c FROM (SELECT if(number < 2000, number % 10, 0)::UInt32 AS a, number AS b FROM numbers(1300000)) GROUP BY a, b SETTINGS enable_group_by_top_k_optimization = 0) AS f USING (a, b)
+    FROM (SELECT a, b, count() AS c FROM (SELECT if(number < 2000, number % 10, 0)::UInt32 AS a, number AS b FROM numbers(1300000)) GROUP BY a, b ORDER BY a ASC LIMIT 5) AS l
+    INNER JOIN gt_tie_overflow AS f USING (a, b)
 );
 
 -- The adaptive freeze: the heap freezes once it has observed many rows while
@@ -197,32 +221,51 @@ SELECT count(), countIf(complete) FROM
 
 SET optimize_trivial_group_by_limit_query = 0;
 
+DROP TABLE IF EXISTS gt_freeze_smaller_keys;
+CREATE TABLE gt_freeze_smaller_keys ENGINE = Memory EMPTY AS
+SELECT k, count() AS c FROM (SELECT if(number < 400000, 1000 + number % 3, number % 100)::UInt32 AS k FROM numbers(600000)) GROUP BY k ORDER BY k ASC LIMIT 3;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_freeze_smaller_keys
+SELECT k, count() AS c FROM (SELECT if(number < 400000, 1000 + number % 3, number % 100)::UInt32 AS k FROM numbers(600000)) GROUP BY k ORDER BY k ASC LIMIT 3;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'freeze then smaller keys: result matches non-optimized';
 SELECT count() FROM
 (
     SELECT k, count() AS c FROM (SELECT if(number < 400000, 1000 + number % 3, number % 100)::UInt32 AS k FROM numbers(600000)) GROUP BY k ORDER BY k ASC LIMIT 3
-    SETTINGS enable_group_by_top_k_optimization = 1
 ) AS optimized
-INNER JOIN
-(
-    SELECT k, count() AS c FROM (SELECT if(number < 400000, 1000 + number % 3, number % 100)::UInt32 AS k FROM numbers(600000)) GROUP BY k ORDER BY k ASC LIMIT 3
-    SETTINGS enable_group_by_top_k_optimization = 0
-) AS full USING (k, c);
+INNER JOIN gt_freeze_smaller_keys AS full USING (k, c);
+
+DROP TABLE IF EXISTS gt_no_order_by_freeze;
+CREATE TABLE gt_no_order_by_freeze ENGINE = Memory EMPTY AS
+SELECT k, sum(v) AS s FROM (SELECT (number % 5)::UInt32 AS k, 1 AS v FROM numbers(600000)) GROUP BY k;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_no_order_by_freeze
+SELECT k, sum(v) AS s FROM (SELECT (number % 5)::UInt32 AS k, 1 AS v FROM numbers(600000)) GROUP BY k;
+SET enable_group_by_top_k_optimization = 1;
 
 SELECT 'no-ORDER-BY freeze (cardinality == LIMIT): every returned group complete';
 SELECT count(), countIf(complete) FROM
 (
     SELECT l.s = f.s AS complete
-    FROM (SELECT k, sum(v) AS s FROM (SELECT (number % 5)::UInt32 AS k, 1 AS v FROM numbers(600000)) GROUP BY k LIMIT 5 SETTINGS enable_group_by_top_k_optimization = 1) AS l
-    INNER JOIN (SELECT k, sum(v) AS s FROM (SELECT (number % 5)::UInt32 AS k, 1 AS v FROM numbers(600000)) GROUP BY k SETTINGS enable_group_by_top_k_optimization = 0) AS f USING (k)
+    FROM (SELECT k, sum(v) AS s FROM (SELECT (number % 5)::UInt32 AS k, 1 AS v FROM numbers(600000)) GROUP BY k LIMIT 5) AS l
+    INNER JOIN gt_no_order_by_freeze AS f USING (k)
 );
+
+DROP TABLE IF EXISTS gt_composite_no_order_by_freeze;
+CREATE TABLE gt_composite_no_order_by_freeze ENGINE = Memory EMPTY AS
+SELECT a, b, min(v) AS s FROM (SELECT number % 10 + 1 AS a, number % 10 + 2 AS b, number AS v FROM numbers(600000)) GROUP BY a, b;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_composite_no_order_by_freeze
+SELECT a, b, min(v) AS s FROM (SELECT number % 10 + 1 AS a, number % 10 + 2 AS b, number AS v FROM numbers(600000)) GROUP BY a, b;
+SET enable_group_by_top_k_optimization = 1;
 
 SELECT 'composite no-ORDER-BY freeze (cardinality == LIMIT, q3 shape)';
 SELECT count(), countIf(complete) FROM
 (
     SELECT l.s = f.s AS complete
-    FROM (SELECT a, b, min(v) AS s FROM (SELECT number % 10 + 1 AS a, number % 10 + 2 AS b, number AS v FROM numbers(600000)) GROUP BY a, b LIMIT 10 SETTINGS enable_group_by_top_k_optimization = 1) AS l
-    INNER JOIN (SELECT a, b, min(v) AS s FROM (SELECT number % 10 + 1 AS a, number % 10 + 2 AS b, number AS v FROM numbers(600000)) GROUP BY a, b SETTINGS enable_group_by_top_k_optimization = 0) AS f USING (a, b)
+    FROM (SELECT a, b, min(v) AS s FROM (SELECT number % 10 + 1 AS a, number % 10 + 2 AS b, number AS v FROM numbers(600000)) GROUP BY a, b LIMIT 10) AS l
+    INNER JOIN gt_composite_no_order_by_freeze AS f USING (a, b)
 );
 
 SELECT 'Eviction-heavy stream must not freeze (results stay top-K correct)';
@@ -317,3 +360,11 @@ WHERE current_database = currentDatabase()
     AND log_comment = '04501_state_arena_reuse'
     AND type = 'QueryFinish'
     AND event_date >= yesterday();
+
+DROP TABLE gt_low_cardinality_eviction;
+DROP TABLE gt_consecutive_key_cache;
+DROP TABLE gt_zeros_tied;
+DROP TABLE gt_tie_overflow;
+DROP TABLE gt_freeze_smaller_keys;
+DROP TABLE gt_no_order_by_freeze;
+DROP TABLE gt_composite_no_order_by_freeze;

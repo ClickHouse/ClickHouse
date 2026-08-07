@@ -55,30 +55,36 @@ GROUP BY log_comment
 ORDER BY log_comment;
 
 -- Results stay correct for either arrival order.
+DROP TABLE IF EXISTS gt_plateau_first;
+CREATE TABLE gt_plateau_first ENGINE = Memory EMPTY AS
+SELECT a, b, count() AS c FROM t_plateau_first GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 25;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_plateau_first
+SELECT a, b, count() AS c FROM t_plateau_first GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 25;
+SET enable_group_by_top_k_optimization = 1;
+
 SELECT 'plateau_first_matches_unoptimized';
 SELECT count() FROM
 (
     SELECT a, b, count() AS c FROM t_plateau_first GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 25
-    SETTINGS enable_group_by_top_k_optimization = 1
 ) AS o
-FULL JOIN
-(
-    SELECT a, b, count() AS c FROM t_plateau_first GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 25
-    SETTINGS enable_group_by_top_k_optimization = 0
-) AS u USING (a, b)
+FULL JOIN gt_plateau_first AS u USING (a, b)
 WHERE o.c != u.c OR isNull(o.c) OR isNull(u.c);
+
+DROP TABLE IF EXISTS gt_plateau_last;
+CREATE TABLE gt_plateau_last ENGINE = Memory EMPTY AS
+SELECT a, b, count() AS c FROM t_plateau_last GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 25;
+SET enable_group_by_top_k_optimization = 0;
+INSERT INTO gt_plateau_last
+SELECT a, b, count() AS c FROM t_plateau_last GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 25;
+SET enable_group_by_top_k_optimization = 1;
 
 SELECT 'plateau_last_matches_unoptimized';
 SELECT count() FROM
 (
     SELECT a, b, count() AS c FROM t_plateau_last GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 25
-    SETTINGS enable_group_by_top_k_optimization = 1
 ) AS o
-FULL JOIN
-(
-    SELECT a, b, count() AS c FROM t_plateau_last GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 25
-    SETTINGS enable_group_by_top_k_optimization = 0
-) AS u USING (a, b)
+FULL JOIN gt_plateau_last AS u USING (a, b)
 WHERE o.c != u.c OR isNull(o.c) OR isNull(u.c);
 
 -- A plateau that really does own the boundary (every key ties) still cannot be
@@ -95,3 +101,6 @@ SELECT count(), countIf(c = 2) FROM
 
 DROP TABLE t_plateau_first;
 DROP TABLE t_plateau_last;
+
+DROP TABLE gt_plateau_first;
+DROP TABLE gt_plateau_last;
