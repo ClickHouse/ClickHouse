@@ -184,3 +184,12 @@ out2=$($CLICKHOUSE_LOCAL -q "SELECT number, toString(number) FROM numbers(5) FOR
 
 # Unsupported types are rejected with a clear error.
 $CLICKHOUSE_LOCAL -q "SELECT map('k', 1) AS m FORMAT Flatbuffers" 2>&1 >/dev/null | grep -o -F "is not supported for Flatbuffers output format" | head -n 1
+
+# The format writes a single FlexBuffers root for the whole result, so appending a second root to
+# an existing file would corrupt it. The format is marked as not supporting appends, and an insert
+# into a non-empty file target is rejected instead of silently concatenating a second root.
+WORK_DIR="${CLICKHOUSE_TMP:?}/04490_${CLICKHOUSE_DATABASE:?}"
+mkdir -p "${WORK_DIR}"
+$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('${WORK_DIR}/no_append.fb', 'Flatbuffers', 'x UInt8') SELECT 1"
+$CLICKHOUSE_LOCAL -q "INSERT INTO FUNCTION file('${WORK_DIR}/no_append.fb', 'Flatbuffers', 'x UInt8') SELECT 2" 2>&1 >/dev/null | grep -o -F "CANNOT_APPEND_TO_FILE" | head -n 1
+rm -rf "${WORK_DIR}"

@@ -305,6 +305,7 @@ void registerOutputFormatFlatbuffers(FormatFactory & factory)
     });
 
     factory.markOutputFormatNotTTYFriendly("Flatbuffers");
+    factory.markFormatHasNoAppendSupport("Flatbuffers");
     factory.setContentType("Flatbuffers", "application/octet-stream");
 
     factory.setDocumentation("Flatbuffers", Documentation{
@@ -356,7 +357,7 @@ are written as little-endian byte sequences, so the output is identical on every
 ClickHouse `String` and `FixedString` values are arbitrary byte sequences that may contain invalid
 UTF-8 and embedded zero bytes, while FlexBuffers `String` values are expected to be valid UTF-8
 text, so these columns are serialized as `Blob` by default. Set
-`output_format_flatbuffers_string_as_string`
+[`output_format_flatbuffers_string_as_string`](/reference/settings/formats/output-format#output_format_flatbuffers_string_as_string)
 to serialize them as FlexBuffers `String` instead; the bytes are written verbatim, so it is the
 user's responsibility to ensure they are valid UTF-8. `UUID` is always serialized as its
 canonical text form, which is plain ASCII.
@@ -366,9 +367,15 @@ canonical text form, which is plain ASCII.
 ```bash
 $ clickhouse-client --query="SELECT number, toString(number) FROM numbers(10) FORMAT Flatbuffers" > tmp.fb;
 ```
+
+## Format settings {#format-settings}
+
+| Setting                                                                                                                                       | Description                                                                              | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------|---------|
+| [`output_format_flatbuffers_string_as_string`](/reference/settings/formats/output-format#output_format_flatbuffers_string_as_string) | serialize `String`/`FixedString` columns as FlexBuffers String instead of the default Blob. | `false` |
 )DOCS_MD",
         .examples = {{"Export to a file", "SELECT number, toString(number) FROM numbers(10) FORMAT Flatbuffers", ""}},
-        .introduced_in = {26, 7},
+        .introduced_in = {26, 8},
         .related = {"MsgPack", "RowBinary", "Native"},
     });
 }
