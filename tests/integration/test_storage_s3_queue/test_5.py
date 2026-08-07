@@ -1410,7 +1410,7 @@ def test_select_racing_drop(started_cluster):
 
         # DROP shuts the storage down without waiting for readers, so it can drop the
         # metadata handle while this SELECT is still building its query plan. The
-        # subquery holds the plan open long enough to make that window reachable.
+        # subquery sleeps for 3 seconds, so the DROP lands while the plan is still open.
         select = node.get_query_request(
             f"SELECT count() FROM {table_name} "
             f"WHERE column1 > (SELECT sum(sleepEachRow(0.2)) FROM numbers(15)) "
@@ -1419,9 +1419,10 @@ def test_select_racing_drop(started_cluster):
         time.sleep(1.2)
         node.query(f"DROP TABLE {table_name} SYNC")
 
-        # Winning or losing the race are both fine; surviving it is the contract.
+        # Also accepting a clean result would make this arm pass against the unfixed
+        # server: a SELECT that finished first never reads the dropped metadata.
         _, error = select.get_answer_and_error()
-        assert error == "" or "TABLE_IS_DROPPED" in error, f"iteration {i}: {error}"
+        assert "TABLE_IS_DROPPED" in error, f"iteration {i}: {error}"
 
         assert node.query("SELECT 1") == "1\n"
         assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
