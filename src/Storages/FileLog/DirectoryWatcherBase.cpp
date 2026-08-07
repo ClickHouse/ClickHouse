@@ -1,10 +1,10 @@
-#include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 
 #include <filesystem>
 #include <unistd.h>
@@ -22,7 +22,6 @@
 #include <fcntl.h>
 #include <sys/event.h>
 #include <sys/stat.h>
-#include <base/scope_guard.h>
 #endif
 
 namespace DB
@@ -63,9 +62,16 @@ DirectoryWatcherBase::DirectoryWatcherBase(
     inotify_fd = inotify_init();
     if (inotify_fd == -1)
         throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot initialize inotify");
+    /// Only the destructor closes this descriptor, and the destructor does not run if this
+    /// constructor throws.
+    scope_guard close_inotify_fd = [this] { ::close(inotify_fd); };
 #endif
 
     start();
+
+#if defined(OS_LINUX)
+    close_inotify_fd.release();
+#endif
 }
 
 #if defined(OS_LINUX)

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: long, no-fasttest
 # Tag no-fasttest: FileLog requires inotify.
+# Tag long: three arms each wait 10s for the watcher to deliver its directory events.
 #
 # The directory watch loop must not occupy a BackgroundSchedulePool slot: the pool caps
 # concurrent tasks per type at background_schedule_pool_size * ...max_parallel_tasks_per_type_ratio,
