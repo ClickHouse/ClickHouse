@@ -1893,6 +1893,25 @@ std::optional<std::pair<ColumnPtr, DataTypePtr>> removeNullableForCast(
     return std::nullopt;
 }
 
+/// Cheap type-only check for the Nullable->non-Nullable mismatch patterns that
+/// removeNullableForCast handles: top-level Nullable(T)/LowCardinality(Nullable(T)) with a
+/// non-Nullable destination, or the same nested inside matching Array(...) types.
+bool hasNullableMismatchForCast(const DataTypePtr & src_type, const DataTypePtr & dst_type)
+{
+    if (src_type->isNullable() && !dst_type->isNullable())
+        return true;
+
+    if (src_type->isLowCardinalityNullable() && !dst_type->isLowCardinalityNullable() && !dst_type->isNullable())
+        return true;
+
+    if (isArray(*src_type) && isArray(*dst_type))
+        return hasNullableMismatchForCast(
+            assert_cast<const DataTypeArray &>(*src_type).getNestedType(),
+            assert_cast<const DataTypeArray &>(*dst_type).getNestedType());
+
+    return false;
+}
+
 /// Returns true if CAST and format+parse produce different results for the given type,
 /// meaning we must fall back to format+parse. Checks the type itself and all nested subtypes.
 /// Cases:
@@ -2016,7 +2035,11 @@ DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSett
 
 /// Returns true if CAST(from_type, to_type) produces the same result as
 /// JSON format+parse for the same value.
-bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTypePtr & to_type)
+bool isDynamicElementToTypedCastSafe(
+    const DataTypePtr & from_type,
+    const DataTypePtr & to_type,
+    const FormatSettings & format_settings,
+    FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode)
 {
     auto from_inner = removeNullable(from_type);
     auto to_inner = removeNullable(to_type);
@@ -2067,9 +2090,16 @@ bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTy
     };
 
     /// From String → any simple non-nested type.
-    /// Both paths go through text parsing so semantics match.
+    /// Both paths go through text parsing so semantics match, except for date/time
+    /// targets: CAST parses with cast_string_to_date_time_mode while format+parse uses
+    /// date_time_input_format. When those differ, results can diverge, so fall back.
     if (isStringOrFixedString(*from_inner) && isSimpleNonNested(*to_inner))
+    {
+        if ((isDateTime(*to_inner) || isDateTime64(*to_inner))
+            && format_settings.date_time_input_format != cast_string_to_date_time_mode)
+            return false;
         return true;
+    }
 
     /// Any simple non-nested → String.
     if (isSimpleNonNested(*from_inner) && isStringOrFixedString(*to_inner))
@@ -2080,14 +2110,19 @@ bool isDynamicElementToTypedCastSafe(const DataTypePtr & from_type, const DataTy
     {
         const auto & from_arr = assert_cast<const DataTypeArray &>(*from_inner);
         const auto & to_arr = assert_cast<const DataTypeArray &>(*to_inner);
-        return isDynamicElementToTypedCastSafe(from_arr.getNestedType(), to_arr.getNestedType());
+        return isDynamicElementToTypedCastSafe(
+            from_arr.getNestedType(), to_arr.getNestedType(), format_settings, cast_string_to_date_time_mode);
     }
 
     return false;
 }
 
 /// Returns true if all variant types in the Dynamic column can be safely CAST to dest_type.
-bool canCastDynamicToTyped(const ColumnDynamic & col_dynamic, const DataTypePtr & dest_type)
+bool canCastDynamicToTyped(
+    const ColumnDynamic & col_dynamic,
+    const DataTypePtr & dest_type,
+    const FormatSettings & format_settings,
+    FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode)
 {
     const auto & variant_info = col_dynamic.getVariantInfo();
     const auto & variant_types = assert_cast<const DataTypeVariant &>(
@@ -2101,7 +2136,7 @@ bool canCastDynamicToTyped(const ColumnDynamic & col_dynamic, const DataTypePtr 
     {
         if (i == col_dynamic.getSharedVariantDiscriminator())
             continue;
-        if (!isDynamicElementToTypedCastSafe(variant_types[i], dest_type))
+        if (!isDynamicElementToTypedCastSafe(variant_types[i], dest_type, format_settings, cast_string_to_date_time_mode))
             return false;
     }
     return true;
@@ -2379,14 +2414,17 @@ ColumnPtr convertDynamicColumnToTyped(
 
 /// Convert a typed column from one type to another using format+parse.
 /// On each row, serializes the source value to JSON text, parses it, and inserts via
-/// the JSONExtractTree node for the destination type. Rows that fail parsing or type
-/// coercion get a default value (matches `type_json_skip_invalid_typed_paths` behavior).
-ColumnPtr convertTypedColumnToTypedSafe(
+/// the JSONExtractTree node for the destination type.
+/// When skip_on_failure is true, rows that fail parsing or type coercion get a default
+/// value (matches `type_json_skip_invalid_typed_paths` behavior); otherwise the failure
+/// is propagated as an exception, matching the strict legacy format+parse contract.
+ColumnPtr convertTypedColumnToTyped(
     const ColumnPtr & src_column,
     const DataTypePtr & src_type,
     const DataTypePtr & dest_type,
     size_t rows,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings,
+    bool skip_on_failure)
 {
     auto dest_column = dest_type->createColumn();
     auto src_serialization = src_type->getDefaultSerialization();
@@ -2406,13 +2444,27 @@ ColumnPtr convertTypedColumnToTypedSafe(
         JSONParserForConversion::Element element;
         if (!parser.parse(write_buf.str(), element))
         {
-            dest_column->insertDefault();
-            continue;
+            if (skip_on_failure)
+            {
+                dest_column->insertDefault();
+                continue;
+            }
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot parse JSON value during type conversion: {}",
+                write_buf.str().substr(0, 100));
         }
 
         String error;
         if (!typed_node->insertResultToColumn(*dest_column, element, insert_settings, json_format_settings, error))
-            dest_column->insertDefault();
+        {
+            if (skip_on_failure)
+            {
+                dest_column->insertDefault();
+                continue;
+            }
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert value into typed column during type conversion: {}", error);
+        }
     }
 
     return dest_column;
@@ -2529,9 +2581,19 @@ ColumnPtr convertObjectColumns(
         else
         {
             auto it = src_typed_paths.find(path);
-            if (skip_invalid || needsFormatParseFallback(from_tp, format_settings, cast_string_to_date_time_mode))
+
+            /// When the destination drops Nullable, format+parse only turns a source NULL
+            /// into the default when null_as_default is enabled; otherwise it raises. Stripping
+            /// Nullable before CAST would silently default those rows, so fall back to strict
+            /// format+parse when null_as_default is disabled and there is such a mismatch.
+            const bool nullable_mismatch = hasNullableMismatchForCast(from_tp, to_tp);
+
+            if (skip_invalid
+                || needsFormatParseFallback(from_tp, format_settings, cast_string_to_date_time_mode)
+                || (nullable_mismatch && !format_settings.null_as_default))
             {
-                dst_typed_columns[path] = convertTypedColumnToTypedSafe(it->second, from_tp, to_tp, rows, format_settings);
+                dst_typed_columns[path]
+                    = convertTypedColumnToTyped(it->second, from_tp, to_tp, rows, format_settings, /*skip_on_failure=*/skip_invalid);
             }
             else
             {
@@ -2539,11 +2601,15 @@ ColumnPtr convertObjectColumns(
                 auto src_type = from_tp;
 
                 /// Strip Nullable where destination is non-Nullable to avoid
-                /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST.
-                if (auto stripped = removeNullableForCast(src_col, src_type, to_tp))
+                /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN from CAST. Values under NULLs are
+                /// type-defaults, matching null_as_default = 1 (guaranteed enabled here).
+                if (nullable_mismatch)
                 {
-                    src_col = std::move(stripped->first);
-                    src_type = std::move(stripped->second);
+                    if (auto stripped = removeNullableForCast(src_col, src_type, to_tp))
+                    {
+                        src_col = std::move(stripped->first);
+                        src_type = std::move(stripped->second);
+                    }
                 }
 
                 dst_typed_columns[path] = castColumn({src_col, src_type, ""}, to_tp);
@@ -2565,7 +2631,7 @@ ColumnPtr convertObjectColumns(
             dst_typed_columns[path] = convertDynamicColumnToTyped(
                 it_col->second, it_type->second, rows, format_settings, /*skip_on_failure=*/true);
         }
-        else if (canCastDynamicToTyped(dynamic_col, it_type->second))
+        else if (canCastDynamicToTyped(dynamic_col, it_type->second, format_settings, cast_string_to_date_time_mode))
         {
             auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
             dst_typed_columns[path] = castColumnAccurate({it_col->second, dynamic_type, ""}, it_type->second);
