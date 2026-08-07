@@ -520,7 +520,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const MutableDataPartStoragePtr & data_part_storage_,
     Type part_type_,
     const IMergeTreeDataPart * parent_part_,
-    bool part_may_exist_on_disk)
+    PartDirIntent intent)
     : DataPartStorageHolder(data_part_storage_)
     , storage(storage_)
     , name(mutable_name)
@@ -534,7 +534,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , mutable_name(name_)
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::IMergeTreeDataPart");
-    version = std::make_unique<VersionMetadataOnDisk>(this);
+    version = std::make_unique<VersionMetadataOnDisk>(this, intent);
 
     if (parent_part)
     {
@@ -549,8 +549,15 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         DimensionalMetrics::MergeTreeParts,
         {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
 
-    if (part_may_exist_on_disk)
-        initializeIndexGranularityInfo(storage_settings);
+    if (intent == PartDirIntent::OpenExisting)
+    {
+        /// The on-disk mark type wins over the current settings, which the member initializer applied.
+        if (auto mrk_type = MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(getDataPartStorage()))
+            index_granularity_info = MergeTreeIndexGranularityInfo(storage_settings, *mrk_type);
+    }
+
+    /// It may be converted to constant index granularity after loading.
+    index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 
     /// By default set the order of common metadata files. Later on it can be changed by the part itself.
     getDataPartStorage().setPreferredFileOrder(COMMON_METADATA_FILES);
@@ -1534,17 +1541,36 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 }
 
 MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
-    const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection)
+    const String & projection_name, ProjectionDescriptionRawPtr projection, PartDirIntent intent, bool is_temp_projection)
 {
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
     /// The projection storage is stored on the resulting projection part for its lifetime, so create
     /// it in the dedicated arena (this is the part-lifetime projection-storage creation site).
+    /// `CreateFresh` takes the non-initializing variant, so nothing is seeded from a nested leftover.
     MutableDataPartStoragePtr projection_storage;
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+        projection_storage = intent == PartDirIntent::CreateFresh
+            ? getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection)
+            : getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
     }
-    MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings());
+    if (intent == PartDirIntent::CreateFresh && projection_storage->exists())
+    {
+        /// Nested projection directories have no claim (the cleaner cannot see inside part directories),
+        /// so a retried materialization reclaims the leftover of an interrupted attempt here.
+        /// A fresh projection is only ever written into a temporary parent directory, or as a
+        /// `.tmp_proj`. Anything else is the payload of a committed part and must never be removed,
+        /// the same rule `MergeTreeData::reclaimStaleTemporaryPartDirectory` enforces for part names.
+        if (!is_temp_projection && !startsWith(getDataPartStorage().getPartDirectory(), "tmp"))
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot reclaim projection directory {}: it belongs to a committed part",
+                projection_storage->getFullPath());
+
+        LOG_WARNING(storage.log, "Removing stale temporary projection directory {}", projection_storage->getFullPath());
+        projection_storage->removeRecursive();
+    }
+    MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings(), intent);
     return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this).withProjection(projection);
 }
 
@@ -1592,7 +1618,7 @@ void IMergeTreeDataPart::loadProjections(
             }
             else
             {
-                auto part = getProjectionPartBuilder(projection.name, &projection).withPartFormatFromDisk().build();
+                auto part = getProjectionPartBuilder(projection.name, &projection, PartDirIntent::OpenExisting).withPartFormatFromDisk().build();
 
                 try
                 {
@@ -1624,7 +1650,7 @@ void IMergeTreeDataPart::loadProjections(
         }
         else if (check_consistency && checksums.has(path))
         {
-            auto part = getProjectionPartBuilder(projection.name, &projection).withPartFormatFromDisk().build();
+            auto part = getProjectionPartBuilder(projection.name, &projection, PartDirIntent::OpenExisting).withPartFormatFromDisk().build();
             part->setBrokenReason(
                 "Projection directory " + path + " does not exist while loading projections. Stacktrace: " + StackTrace().toString(),
                 ErrorCodes::NO_FILE_IN_DATA_PART);
@@ -2317,7 +2343,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         Columns result;
         result.resize(1);
 
-        size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, 0, result);
+        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, 0, result);
         if (!rows_read)
         {
             LOG_WARNING(storage.log, "Part {} has lightweight delete, but _row_exists column not found", name);
@@ -2621,18 +2647,6 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
     }
 
     return storage.unlockSharedData(*this);
-}
-
-void IMergeTreeDataPart::initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings)
-{
-    auto mrk_type = MergeTreeIndexGranularityInfo::getMarksTypeFromFilesystem(getDataPartStorage());
-    if (mrk_type)
-        index_granularity_info = MergeTreeIndexGranularityInfo(storage_settings, *mrk_type);
-    else
-        index_granularity_info = MergeTreeIndexGranularityInfo(storage, storage_settings, part_type);
-
-    /// It may be converted to constant index granularity after loading it.
-    index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 }
 
 void IMergeTreeDataPart::remove()
@@ -3442,7 +3456,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 
     Columns result;
     result.resize(1);
-    reader->readRows(0, total_mark, false, 0, 0, result);
+    reader->readRows(0, false, 0, 0, result);
     return result[0];
 }
 
