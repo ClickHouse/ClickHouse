@@ -64,5 +64,31 @@ def test_array_count_mixed_version_remote(start_cluster):
     # to the `UInt32` header, matching the old (modular) semantics.
     assert old_node.query(query) == "6\tUInt32\n"
 
+    # A type-sensitive wrapper executed on the shard, however, observes the
+    # shard-local `arrayCount` type before the initiator can convert anything:
+    # during a rolling upgrade an old coordinator sees `byteSize(arrayCount())`
+    # jump from 4 to 8 on upgraded shards. This shard-local semantic shift is
+    # inherent to any function-signature change guarded by a per-server
+    # compatibility setting (an old coordinator cannot forward a setting it
+    # does not know, and rejects it as unknown when set explicitly); the
+    # mitigation is to set `array_count_legacy_uint32_result = 1` in the new
+    # servers' default profile for the duration of the rolling upgrade.
+    wrapped_query = (
+        "SELECT byteSize(arrayCount(x -> x >= 2, arr)) AS b "
+        "FROM remote('old_node,new_node', default, tab) ORDER BY b"
+    )
+
+    assert old_node.query(wrapped_query) == "4\n8\n"
+
+    # From a new coordinator the setting is forwarded to new shards and
+    # ignored by old ones, so the legacy behavior is uniform again.
+    assert (
+        new_node.query(
+            wrapped_query,
+            settings={"array_count_legacy_uint32_result": 1},
+        )
+        == "4\n4\n"
+    )
+
     for node in (new_node, old_node):
         node.query("DROP TABLE tab")
