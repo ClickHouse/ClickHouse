@@ -159,12 +159,14 @@ void SettingsConstraints::check(const Settings & current_settings, const AlterSe
     /// A dropped override reverts the setting to its compiled default; check that reversion like a MODIFY to
     /// it. `settingIsBuiltin` (not `Settings::hasBuiltin`) so a `merge_tree_`-prefixed name is recognized too;
     /// truly custom settings have no compiled default (and no tier), so they are left alone, same as before.
+    /// `skip_unchanged_check`: the caller already knows this drop changes the *target*'s value, so the check
+    /// must not be skipped just because the synthesized default happens to match the *caller*'s own session.
     for (const auto & element : profile_elements.drop_settings)
     {
         if (SettingsProfileElements::isAllowBackupSetting(element.setting_name) || !settingIsBuiltin(element.setting_name))
             continue;
         SettingChange change(element.setting_name, settingGetDefaultValue(element.setting_name));
-        check(current_settings, change, source);
+        check(current_settings, change, source, /*skip_unchanged_check=*/true);
     }
 }
 
@@ -216,9 +218,9 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
     }
 }
 
-void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change, SettingSource source) const
+void SettingsConstraints::check(const Settings & current_settings, const SettingChange & change, SettingSource source, bool skip_unchanged_check) const
 {
-    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION, source);
+    checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION, source, /*ignore_unchanged_settings=*/false, skip_unchanged_check);
 }
 
 void SettingsConstraints::check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const
@@ -260,12 +262,13 @@ void SettingsConstraints::checkOrClamp(const Settings & current_settings, Settin
 }
 
 /// Casts `change.value` to the setting's declared type and returns the result. Returns Null if we should skip the setting: either because
-/// the value is unchanged (when `ignore_unchanged_settings` is false) or because the cast failed (when `throw_on_failure` is false).
+/// the value is unchanged (when `ignore_unchanged_settings` is false and `skip_unchanged_check` is false) or because the cast failed
+/// (when `throw_on_failure` is false).
 template <typename SettingsT>
-Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange & change, bool ignore_unchanged_settings, bool throw_on_failure)
+Field getNewValueToCheck(const SettingsT & current_settings, const SettingChange & change, bool ignore_unchanged_settings, bool throw_on_failure, bool skip_unchanged_check = false)
 {
     Field current_value;
-    bool has_current_value = current_settings.tryGet(change.name, current_value);
+    bool has_current_value = !skip_unchanged_check && current_settings.tryGet(change.name, current_value);
 
     if (!ignore_unchanged_settings && has_current_value && change.value == current_value)
         return {};
@@ -295,7 +298,8 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
                                     SettingChange & change,
                                     ReactionOnViolation reaction,
                                     SettingSource source,
-                                    bool ignore_unchanged_settings) const
+                                    bool ignore_unchanged_settings,
+                                    bool skip_unchanged_check) const
 {
     std::string_view setting_name = Settings::resolveName(change.name);
 
@@ -323,11 +327,11 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
     else if (!access_control->isSettingNameAllowed(setting_name))
         return false;
 
-    Field new_value = getNewValueToCheck(current_settings, change, ignore_unchanged_settings, reaction == THROW_ON_VIOLATION);
+    Field new_value = getNewValueToCheck(current_settings, change, ignore_unchanged_settings, reaction == THROW_ON_VIOLATION, skip_unchanged_check);
     if (new_value.isNull())
         return false;
 
-    if (ignore_unchanged_settings)
+    if (ignore_unchanged_settings && !skip_unchanged_check)
     {
         Field current_value;
         if (current_settings.tryGet(change.name, current_value) && new_value == current_value)

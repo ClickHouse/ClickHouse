@@ -804,3 +804,127 @@ def test_drop_all_settings_bypassing_feature_tier_for_constraint_only_element(
     assert "0" == get_current_tier_value(instance)
     instance.query("DROP USER IF EXISTS admin_with_experimental")
     instance.query("DROP SETTINGS PROFILE IF EXISTS profile_constraint_only_bypass")
+
+
+def test_drop_setting_bypassing_feature_tier_for_ordinary_admin(start_cluster):
+    # DROP SETTING must be checked against the target's own value, not the acting admin's session: an
+    # ordinary admin who never touched the setting (so it reads as its compiled default in their own
+    # session) must not be able to strip a legitimately-granted EXPERIMENTAL override from someone else
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS ordinary_admin, user_drop_bypass_ordinary_admin")
+    instance.query("CREATE USER ordinary_admin IDENTIFIED WITH no_password")
+    instance.query("GRANT ACCESS MANAGEMENT ON *.* TO ordinary_admin")
+    instance.query(
+        "CREATE USER user_drop_bypass_ordinary_admin IDENTIFIED WITH no_password "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER USER user_drop_bypass_ordinary_admin DROP SETTING allow_experimental_time_series_table",
+        user="ordinary_admin",
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    output = instance.query(
+        "SELECT value FROM system.settings WHERE name = 'allow_experimental_time_series_table'",
+        user="user_drop_bypass_ordinary_admin",
+    )
+    assert output.strip() == "1"
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS ordinary_admin, user_drop_bypass_ordinary_admin")
+
+
+def test_replacing_inherited_profile_bypassing_feature_tier(start_cluster):
+    # A setting inherited only through an attached profile must be checked too: dropping or replacing
+    # that profile removes the effective EXPERIMENTAL/BETA value just as much as dropping it directly
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental, user_profile_bypass")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_experimental_inherited")
+    instance.query(
+        "CREATE USER admin_with_experimental IDENTIFIED WITH no_password "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+    instance.query("GRANT ACCESS MANAGEMENT ON *.* TO admin_with_experimental")
+    instance.query(
+        "CREATE SETTINGS PROFILE profile_with_experimental_inherited SETTINGS "
+        "allow_experimental_time_series_table = 1"
+    )
+    instance.query(
+        "CREATE USER user_profile_bypass IDENTIFIED WITH no_password "
+        "SETTINGS PROFILE 'profile_with_experimental_inherited'"
+    )
+
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "CREATE USER OR REPLACE user_profile_bypass IDENTIFIED WITH no_password SETTINGS max_memory_usage = 1",
+        user="admin_with_experimental",
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER USER user_profile_bypass DROP PROFILES profile_with_experimental_inherited",
+        user="admin_with_experimental",
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    output = instance.query(
+        "SELECT value FROM system.settings WHERE name = 'allow_experimental_time_series_table'",
+        user="user_profile_bypass",
+    )
+    assert output.strip() == "1"
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental, user_profile_bypass")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_with_experimental_inherited")
+
+
+def test_alias_mismatch_does_not_trigger_bogus_revert(start_cluster):
+    # findRevertedSettingNames must compare resolved (canonical) names: a setting kept across an ALTER
+    # but respelled through its alias must not be mistaken for a revert and blocked
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_beta, user_alias_no_bypass")
+    instance.query(
+        "CREATE USER admin_with_beta IDENTIFIED WITH no_password "
+        "SETTINGS allow_experimental_delta_lake_writes = 1"
+    )
+    instance.query("GRANT ACCESS MANAGEMENT ON *.* TO admin_with_beta")
+    instance.query(
+        "CREATE USER user_alias_no_bypass IDENTIFIED WITH no_password "
+        "SETTINGS allow_delta_lake_writes = 1"
+    )
+
+    instance.replace_in_config(feature_tier_path, "0", "2")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "2" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER USER user_alias_no_bypass SETTINGS allow_experimental_delta_lake_writes = 1",
+        user="admin_with_beta",
+    )
+    assert error == ""
+
+    output = instance.query(
+        "SELECT value FROM system.settings WHERE name = 'allow_experimental_delta_lake_writes'",
+        user="user_alias_no_bypass",
+    )
+    assert output.strip() == "1"
+
+    instance.replace_in_config(feature_tier_path, "2", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_beta, user_alias_no_bypass")

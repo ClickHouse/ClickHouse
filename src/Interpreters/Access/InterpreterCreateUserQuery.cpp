@@ -266,7 +266,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         {
             if (auto user = access_control.tryRead<User>(name))
             {
-                for (const auto & setting_name : user->settings.findRevertedSettingNames(*settings_from_query))
+                for (const auto & setting_name : user->settings.findRevertedSettingNames(*settings_from_query, access_control))
                 {
                     SettingsProfileElement element;
                     element.setting_name = setting_name;

@@ -76,7 +76,7 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
         {
             if (auto profile = access_control.tryRead<SettingsProfile>(name))
             {
-                for (const auto & setting_name : profile->elements.findRevertedSettingNames(*settings_from_query))
+                for (const auto & setting_name : profile->elements.findRevertedSettingNames(*settings_from_query, access_control))
                 {
                     SettingsProfileElement element;
                     element.setting_name = setting_name;

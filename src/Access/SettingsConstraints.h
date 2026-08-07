@@ -77,8 +77,10 @@ public:
 
     void merge(const SettingsConstraints & other);
 
-    /// Checks whether `change` violates these constraints and throws an exception if so.
-    void check(const Settings & current_settings, const SettingChange & change, SettingSource source) const;
+    /// Checks whether `change` violates these constraints and throws an exception if so. `skip_unchanged_check`
+    /// forces the check to run even if `change.value` matches `current_settings`: used when the caller already
+    /// knows this is a real change for someone other than the session `current_settings` belongs to.
+    void check(const Settings & current_settings, const SettingChange & change, SettingSource source, bool skip_unchanged_check = false) const;
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
@@ -166,7 +168,8 @@ private:
         SettingChange & change,
         ReactionOnViolation reaction,
         SettingSource source,
-        bool ignore_unchanged_settings = false) const;
+        bool ignore_unchanged_settings = false,
+        bool skip_unchanged_check = false) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 

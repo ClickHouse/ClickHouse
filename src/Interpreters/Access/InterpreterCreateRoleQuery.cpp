@@ -71,7 +71,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
         {
             if (auto role = access_control.tryRead<Role>(name))
             {
-                for (const auto & setting_name : role->settings.findRevertedSettingNames(*settings_from_query))
+                for (const auto & setting_name : role->settings.findRevertedSettingNames(*settings_from_query, access_control))
                 {
                     SettingsProfileElement element;
                     element.setting_name = setting_name;

@@ -2,6 +2,7 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
+#include <Access/resolveSetting.h>
 #include <Core/Settings.h>
 #include <Common/SettingConstraintWritability.h>
 #include <Common/SettingsChanges.h>
@@ -540,24 +541,53 @@ namespace
     {
         return element.value || element.min_value || element.max_value;
     }
+
+    /// Expands `parent_profile` references into the referenced profile's own elements, recursively, so a
+    /// setting inherited only through a profile is visible to the revert diff below. `visited` dedupes
+    /// repeated/cyclic profile references, same as SettingsProfilesCache::substituteProfiles.
+    SettingsProfileElements resolveProfiles(const SettingsProfileElements & elements, const AccessControl & access_control, boost::container::flat_set<UUID> & visited)
+    {
+        SettingsProfileElements result;
+        for (const auto & element : elements)
+        {
+            if (!element.parent_profile)
+            {
+                result.push_back(element);
+                continue;
+            }
+            if (!visited.insert(*element.parent_profile).second)
+                continue;
+            if (auto profile = access_control.tryRead<SettingsProfile>(*element.parent_profile))
+            {
+                auto nested = resolveProfiles(profile->elements, access_control, visited);
+                result.insert(result.end(), nested.begin(), nested.end());
+            }
+        }
+        return result;
+    }
 }
 
-Strings SettingsProfileElements::findRevertedSettingNames(const AlterSettingsProfileElements & changes) const
+Strings SettingsProfileElements::findRevertedSettingNames(const AlterSettingsProfileElements & changes, const AccessControl & access_control) const
 {
     SettingsProfileElements new_elements = *this;
     new_elements.applyChanges(changes);
 
+    boost::container::flat_set<UUID> visited_old, visited_new;
+    SettingsProfileElements old_effective = resolveProfiles(*this, access_control, visited_old);
+    SettingsProfileElements new_effective = resolveProfiles(new_elements, access_control, visited_new);
+
     Strings reverted;
-    for (const auto & old_element : *this)
+    for (const auto & old_element : old_effective)
     {
         if (!hasCheckableValue(old_element) || old_element.setting_name.empty())
             continue;
 
+        auto old_resolved = resolveSettingName(old_element.setting_name);
         auto it = std::find_if(
-            new_elements.begin(), new_elements.end(),
-            [&](const SettingsProfileElement & e) { return e.setting_name == old_element.setting_name; });
+            new_effective.begin(), new_effective.end(),
+            [&](const SettingsProfileElement & e) { return !e.setting_name.empty() && resolveSettingName(e.setting_name) == old_resolved; });
 
-        if (it == new_elements.end() || !hasCheckableValue(*it))
+        if (it == new_effective.end() || !hasCheckableValue(*it))
             reverted.push_back(old_element.setting_name);
     }
     return reverted;
