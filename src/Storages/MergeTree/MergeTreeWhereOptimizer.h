@@ -82,12 +82,10 @@ private:
         /// the lower the better
         UInt64 estimated_row_count = 0;
 
-        /// Combined I/O cost and selectivity score (lower is better).
-        /// Computed as: columns_size / max(1, total_rows - estimated_row_count).
-        /// This implements the classic conjunctive filter ordering rule:
-        /// put cheaper-per-rejected-row conditions first.
-        /// When per-column sizes are unavailable (columns_size=0, e.g. compact parts),
-        /// falls back to estimated_row_count so ordering by selectivity is preserved.
+        /// Combined I/O cost and selectivity score (lower is better): cost per rejected row,
+        /// columns_size / (total_rows - estimated_row_count). A condition that rejects no rows
+        /// gets +inf (scheduled last), and when per-column sizes are unavailable (columns_size=0,
+        /// e.g. compact parts) it falls back to estimated_row_count so selectivity ordering is kept.
         double cost_with_selectivity = 0;
 
         /// Does the condition contain primary key column?
