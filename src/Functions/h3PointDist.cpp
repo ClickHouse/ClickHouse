@@ -160,9 +160,9 @@ distance between pairs of GeoCoord points (latitude/longitude) in meters.
             "Calculate distance between two points in meters",
             "SELECT h3PointDistM(-10.0, 0.0, 10.0, 0.0) AS h3PointDistM",
             R"(
-┌──────h3PointDistM─┐
+┌───────h3PointDistM─┐
 │ 2223901.0395045886 │
-└───────────────────┘
+└────────────────────┘
             )"
         }
     };
@@ -193,9 +193,9 @@ distance between pairs of GeoCoord points (latitude/longitude) in kilometers.
             "Calculate distance between two points in kilometers",
             "SELECT h3PointDistKm(-10.0, 0.0, 10.0, 0.0) AS h3PointDistKm",
             R"(
-┌─────h3PointDistKm─┐
+┌──────h3PointDistKm─┐
 │ 2223.9010395045884 │
-└───────────────────┘
+└────────────────────┘
             )"
         }
     };

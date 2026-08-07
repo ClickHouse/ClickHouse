@@ -111,7 +111,7 @@ Returns the exact edge length of the unidirectional edge represented by the inpu
             "SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM",
             R"(
 ┌─exactEdgeLengthM─┐
-│   195449.631634 │
+│    195449.631634 │
 └──────────────────┘
             )"
         }
