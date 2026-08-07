@@ -2136,8 +2136,13 @@ static bool applyDeterministicDagToColumn(
     /// Hand the DAG the timezone it was built against; `equals` cannot see it, so the pair is
     /// interchangeable everywhere except inside the transform. Relabel, never convert.
     if (input_type->equals(*dag.input_type))
-        if (auto adopted = adoptDateTimeLeafTimezones(input_type, dag.input_type))
-            input_type = std::move(adopted);
+    {
+        auto adopted = adoptDateTimeLeafTimezones(input_type, dag.input_type);
+        /// A refusal means the pair is not interchangeable, so the DAG cannot be given either type.
+        if (!adopted)
+            return false;
+        input_type = std::move(adopted);
+    }
 
     /// This is the final check for the output column after DAG execution:
     /// - materialize output column (Const/LowCardinality)

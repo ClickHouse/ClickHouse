@@ -37,6 +37,14 @@ oracle_map_nullable	1
 partition_map_nullable	1
 oracle_array_tuple	1
 partition_array_tuple	1
+oracle_array_tuple_bool	1
+partition_array_tuple_bool	1
+control_array_tuple_bool_element_carries_key_timezone	1
+control_array_tuple_bool_other_month	0
+oracle_bool_in	1
+partition_bool_in	1
+partition_bool_in_false	1
+control_bool_in_absent	0
 oracle_array_array	1
 partition_array_array	1
 oracle_array_lowcardinality	1
@@ -69,3 +77,6 @@ control_bool_negation	2
 pruning_active_parts	2
 pruning_count	1
 pruning_selected_parts	1
+pruning_arr_active_parts	2
+pruning_arr_count	1
+pruning_arr_selected_parts	1

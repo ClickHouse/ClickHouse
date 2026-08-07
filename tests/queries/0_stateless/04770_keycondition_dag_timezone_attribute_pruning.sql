@@ -59,6 +59,11 @@ DROP TABLE IF EXISTS k_map_keytype;
 DROP TABLE IF EXISTS oracle_saf;
 DROP TABLE IF EXISTS k_saf;
 DROP TABLE IF EXISTS k_saf_arr;
+DROP TABLE IF EXISTS oracle_arr_tup_bool;
+DROP TABLE IF EXISTS k_arr_tup_bool;
+DROP TABLE IF EXISTS oracle_bool_in;
+DROP TABLE IF EXISTS k_bool_in;
+DROP TABLE IF EXISTS k_hour_arr;
 
 -- The oracle: identical data and predicate, no key transform to get wrong.
 CREATE TABLE oracle_utc (ts DateTime('UTC')) ENGINE = Memory;
@@ -227,6 +232,34 @@ INSERT INTO k_arr_tup SELECT [(toDateTime(1675195200, 'UTC'), 1)];
 SELECT 'oracle_array_tuple', count() FROM (SELECT a FROM oracle_arr_tup WHERE a IN (SELECT [(toDateTime(1675195200), 1)]));
 SELECT 'partition_array_tuple', count() FROM (SELECT a FROM k_arr_tup WHERE a IN (SELECT [(toDateTime(1675195200), 1)]));
 
+-- A `DateTime` leaf and a CUSTOM-NAMED leaf under the same wrapper. `Bool` is `UInt8` plus a custom
+-- name, and neither `DataTypeNumber::equals` nor the `Tuple`/`Array` `equals` that delegates to it can
+-- see the name, so this pair is `equals`-equal while the `Bool` leaf refuses relabelling. The refusal
+-- must make the whole transform DECLINE: running the DAG under the element's timezone instead is the
+-- wrong prune this file exists to catch, and it reads 0 on every binary that lacks the decline.
+CREATE TABLE oracle_arr_tup_bool (a Array(Tuple(DateTime('UTC'), Bool))) ENGINE = Memory;
+INSERT INTO oracle_arr_tup_bool SELECT [(toDateTime(1675195200, 'UTC'), true)];
+CREATE TABLE k_arr_tup_bool (a Array(Tuple(DateTime('UTC'), Bool))) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap((d, b) -> toYYYYMM(d) + b, a)) ORDER BY tuple();
+INSERT INTO k_arr_tup_bool SELECT [(toDateTime(1675195200, 'UTC'), true)];
+SELECT 'oracle_array_tuple_bool', count() FROM (SELECT a FROM oracle_arr_tup_bool WHERE a IN (SELECT [(toDateTime(1675195200), 1::UInt8)]));
+SELECT 'partition_array_tuple_bool', count() FROM (SELECT a FROM k_arr_tup_bool WHERE a IN (SELECT [(toDateTime(1675195200), 1::UInt8)]));
+SELECT 'control_array_tuple_bool_element_carries_key_timezone', count() FROM (SELECT a FROM k_arr_tup_bool WHERE a IN (SELECT [(toDateTime(1675195200, 'UTC'), true)]));
+SELECT 'control_array_tuple_bool_other_month', count() FROM (SELECT a FROM k_arr_tup_bool WHERE a IN (SELECT [(toDateTime(1677614400, 'UTC'), true)]));
+
+-- The same refusal reached WITHOUT a wrapper: a bare `Bool` key, whose element arrives as `UInt8`.
+-- Pre-decline the element transforms under the element's own type and names a partition that holds no
+-- row. `NOT IN` further down stays correct on both arms, so this is not the negation axis.
+CREATE TABLE oracle_bool_in (b Bool) ENGINE = Memory;
+INSERT INTO oracle_bool_in VALUES (false), (true);
+CREATE TABLE k_bool_in (b Bool) ENGINE = MergeTree PARTITION BY toString(b) ORDER BY tuple();
+INSERT INTO k_bool_in VALUES (false);
+INSERT INTO k_bool_in VALUES (true);
+SELECT 'oracle_bool_in', count() FROM (SELECT b FROM oracle_bool_in WHERE b IN (SELECT 1::UInt8));
+SELECT 'partition_bool_in', count() FROM (SELECT b FROM k_bool_in WHERE b IN (SELECT 1::UInt8));
+SELECT 'partition_bool_in_false', count() FROM (SELECT b FROM k_bool_in WHERE b IN (SELECT 0::UInt8));
+SELECT 'control_bool_in_absent', count() FROM (SELECT b FROM k_bool_in WHERE b IN (SELECT 2::UInt8));
+
 CREATE TABLE oracle_arr_arr (a Array(Array(DateTime('UTC')))) ENGINE = Memory;
 INSERT INTO oracle_arr_arr SELECT [[toDateTime(1675195200, 'UTC')]];
 CREATE TABLE k_arr_arr (a Array(Array(DateTime('UTC')))) ENGINE = MergeTree
@@ -368,6 +401,23 @@ SELECT 'pruning_selected_parts', ProfileEvents['SelectedParts'] FROM system.quer
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND log_comment = '04770_pruning_oracle';
 
+-- The same pruning-USE assertion one wrapper down. The block above is a BARE `DateTime` key, so it
+-- pins no recursive branch: every wrapper carrier asserts only `count()`, and a declined transform
+-- yields a full scan whose `count()` is still right. This row is what distinguishes "the wrapper was
+-- relabelled" from "the wrapper was declined". Same two load-bearing fixture properties as above: two
+-- parts, and the element inside the `a` range of both, so min-max keeps 2/2 and cannot stand in.
+CREATE TABLE k_hour_arr (a Array(DateTime('UTC'))) ENGINE = MergeTree
+    PARTITION BY arraySum(arrayMap(x -> toHour(x), a)) ORDER BY tuple();
+INSERT INTO k_hour_arr SELECT [toDateTime(1675267200, 'UTC')] UNION ALL SELECT [toDateTime(1675285200, 'UTC')]
+                UNION ALL SELECT [toDateTime(1675440000, 'UTC')] UNION ALL SELECT [toDateTime(1675458000, 'UTC')];
+OPTIMIZE TABLE k_hour_arr FINAL;
+SELECT 'pruning_arr_active_parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 'k_hour_arr' AND active;
+SELECT 'pruning_arr_count', count() FROM (SELECT a FROM k_hour_arr WHERE a IN (SELECT [toDateTime(1675440000)])) SETTINGS log_comment = '04770_pruning_arr';
+SYSTEM FLUSH LOGS query_log;
+SELECT 'pruning_arr_selected_parts', ProfileEvents['SelectedParts'] FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
+  AND current_database = currentDatabase() AND log_comment = '04770_pruning_arr';
+
 DROP TABLE oracle_utc;
 DROP TABLE k_yyyymm;
 DROP TABLE k_todate;
@@ -411,6 +461,11 @@ DROP TABLE k_arr_lc;
 DROP TABLE k_tup;
 DROP TABLE k_map_el;
 DROP TABLE k_arr_tup1;
+DROP TABLE oracle_arr_tup_bool;
+DROP TABLE k_arr_tup_bool;
+DROP TABLE oracle_bool_in;
+DROP TABLE k_bool_in;
+DROP TABLE k_hour_arr;
 DROP TABLE k_map_keytype;
 DROP TABLE oracle_saf;
 DROP TABLE k_saf;
