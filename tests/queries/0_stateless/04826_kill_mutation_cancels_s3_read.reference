@@ -2,3 +2,4 @@ mutation started: 1
 mutation stopped: 1
 cancelled, not S3 error: 1
 dropped: 0
+stop merges cancels the read: 1

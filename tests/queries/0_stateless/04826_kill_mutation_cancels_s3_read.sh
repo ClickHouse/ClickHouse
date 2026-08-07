@@ -66,3 +66,35 @@ echo "cancelled, not S3 error: $($CLICKHOUSE_CLIENT -q "
 # check reported. Bounded so a regression is reported as a diff rather than as a test timeout.
 timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_mut SYNC" >/dev/null 2>&1
 echo "dropped: $?"
+
+# The second cancellation source: stopping merges must reach the read as well, so that shutting a
+# table (or the server) down does not wait out the retry budget either. `KILL MUTATION` only sets the
+# merge-list entry's flag, so without this arm the `merges_blocker` half of the predicate is unpinned.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_stop (id UInt64) ENGINE = MergeTree ORDER BY id"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t_stop SELECT number FROM numbers(1000)"
+$CLICKHOUSE_CLIENT -q "
+    ALTER TABLE t_stop DELETE WHERE id IN (
+        SELECT * FROM s3('http://localhost:19999/dummy.parquet', 'NOSIGN', 'One')
+    ) SETTINGS mutations_sync = 0"
+for _ in {1..150}; do
+    started=$($CLICKHOUSE_CLIENT -q "
+        SELECT count() FROM system.merges
+        WHERE database = currentDatabase() AND table = 't_stop'")
+    [[ "$started" -ge 1 ]] && break
+    sleep 0.2
+done
+$CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_stop"
+stopped=0
+for _ in {1..300}; do
+    running=$($CLICKHOUSE_CLIENT -q "
+        SELECT count() FROM system.merges
+        WHERE database = currentDatabase() AND table = 't_stop'")
+    if [[ "$running" -eq 0 ]]; then
+        stopped=1
+        break
+    fi
+    sleep 0.2
+done
+echo "stop merges cancels the read: $stopped"
+$CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t_stop"
+timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_stop SYNC" >/dev/null 2>&1
