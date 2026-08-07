@@ -13,7 +13,7 @@
     CREATE TABLE text_index_build_{codec} (text String, INDEX idx_text (text) TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = '{codec}')) ENGINE = MergeTree ORDER BY tuple();
   </create_query>
   <create_query>
-    CREATE TABLE text_index_build_positions (text String, INDEX idx_text (text) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_phrase_search = 1;
+    CREATE TABLE text_index_build_positions (text String, INDEX idx_text (text) TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'bitpacking', support_phrase_search = 1)) ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_experimental_text_index_phrase_search = 1;
   </create_query>
   <create_query>
     CREATE TABLE text_index_build_src_50 (text String) ENGINE = Memory;
