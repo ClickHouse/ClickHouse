@@ -205,7 +205,7 @@ private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
     void cleanupPersistentProcessingNodes();
-    void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description, UInt64 ttl_seconds);
+    void cleanupTrackedNodes(const std::string & nodes_path, std::string_view description, UInt64 ttl_seconds, UInt64 nodes_limit);
 
     void migrateToBucketsInKeeper(size_t value);
 

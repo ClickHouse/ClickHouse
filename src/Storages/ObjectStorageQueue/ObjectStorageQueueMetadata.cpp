@@ -117,7 +117,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_failed_files(isUnordered(mode) && (table_metadata.tracked_files_limit || table_metadata.failed_files_ttl_sec))
+    , cleanup_failed_files(isUnordered(mode) && table_metadata.failed_files_ttl_sec)
     , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
@@ -438,6 +438,17 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 continue;
             }
             new_table_metadata.tracked_files_ttl_sec = value;
+        }
+        else if (change.name == "failed_file_ttl_sec")
+        {
+            const auto value = change.value.safeGet<UInt64>();
+            if (table_metadata.failed_files_ttl_sec == value)
+            {
+                LOG_TRACE(log, "Setting `failed_file_ttl_sec` already equals {}. "
+                        "Will do nothing", value);
+                continue;
+            }
+            new_table_metadata.failed_files_ttl_sec = value;
         }
         else if (change.name == "buckets")
         {
@@ -1248,10 +1259,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     if (table_metadata.hasTrackedFilesLimit() || cleanup_failed_files)
     {
         if (cleanup_processed_files)
-            cleanupTrackedNodes(zookeeper_path / "processed", "processed", table_metadata.tracked_files_ttl_sec);
+            cleanupTrackedNodes(zookeeper_path / "processed", "processed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
 
         if (cleanup_failed_files)
-            cleanupTrackedNodes(zookeeper_path / "failed", "failed", table_metadata.failed_files_ttl_sec);
+            cleanupTrackedNodes(zookeeper_path / "failed", "failed", table_metadata.failed_files_ttl_sec, 0);
     }
 
     LOG_TRACE(log, "Node limits check finished");
@@ -1260,7 +1271,8 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     const std::string & nodes_path,
     std::string_view description,
-    UInt64 ttl_seconds)
+    UInt64 ttl_seconds,
+    UInt64 nodes_limit)
 {
     LOG_TEST(log, "Checking {} nodes for tracking limits", description);
 
@@ -1287,14 +1299,14 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         return;
     }
 
-    const bool check_nodes_limit = table_metadata.tracked_files_limit > 0;
+    const bool check_nodes_limit = nodes_limit > 0;
     const bool check_nodes_ttl = ttl_seconds > 0;
     chassert(check_nodes_limit || check_nodes_ttl);
 
-    const bool nodes_limit_exceeded = nodes.size() > table_metadata.tracked_files_limit;
+    const bool nodes_limit_exceeded = nodes.size() > nodes_limit;
     if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
     {
-        LOG_TEST(log, "No limit exceeded (nodes: {}/{})", nodes.size(), table_metadata.tracked_files_limit.load());
+        LOG_TEST(log, "No limit exceeded (nodes: {}/{})", nodes.size(), nodes_limit);
         return;
     }
 
@@ -1362,7 +1374,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
 
     LOG_TEST(
         log, "Checking node limits (max size: {}, max age: {}) for {}",
-        table_metadata.tracked_files_limit.load(),
+        nodes_limit,
         ttl_seconds,
         get_nodes_str());
 
@@ -1373,7 +1385,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     remove_responses.reserve(keeper_multi_batch_size);
 
     size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded
-        ? nodes.size() - table_metadata.tracked_files_limit
+        ? nodes.size() - nodes_limit
         : 0;
 
     const auto remove_nodes = [&](bool node_limit)
@@ -1521,25 +1533,32 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
 
     LOG_TRACE(log, "Dropping {} failed files", failed_nodes.size());
 
-    /// Read metadata for all failed nodes to get file paths for cache cleanup
-    std::vector<std::string> paths_to_read;
+    /// Read metadata and delete only the specific nodes from our snapshot
+    /// to avoid race with concurrent failures
     std::vector<std::string> file_paths;
-    paths_to_read.reserve(failed_nodes.size());
     file_paths.reserve(failed_nodes.size());
 
     std::filesystem::path failed_fs_path(failed_path);
-    for (const auto & node : failed_nodes)
-    {
-        paths_to_read.push_back(failed_fs_path / node);
-    }
 
-    /// Batch-read metadata using the same pattern as cleanupTrackedNodes
+    /// Process in batches for both reading metadata and deleting nodes
     const size_t batch_size = keeper_multiread_batch_size;
-    for (size_t i = 0; i < paths_to_read.size(); i += batch_size)
-    {
-        size_t batch_end = std::min(i + batch_size, paths_to_read.size());
-        std::vector<std::string> batch_paths(paths_to_read.begin() + i, paths_to_read.begin() + batch_end);
+    static constexpr size_t keeper_multi_batch_size = 100;
 
+    /// Track failed deletions to report at the end
+    std::vector<std::pair<size_t, Coordination::Error>> failed_batches;
+
+    for (size_t i = 0; i < failed_nodes.size(); i += batch_size)
+    {
+        size_t batch_end = std::min(i + batch_size, failed_nodes.size());
+        std::vector<std::string> batch_paths;
+        batch_paths.reserve(batch_end - i);
+
+        for (size_t j = i; j < batch_end; ++j)
+        {
+            batch_paths.push_back(failed_fs_path / failed_nodes[j]);
+        }
+
+        /// Read metadata for this batch
         zkutil::ZooKeeper::MultiTryGetResponse response;
         zk_retries.resetFailures();
         zk_retries.retryLoop([&]
@@ -1547,36 +1566,81 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
             response = getZooKeeper()->tryGet(batch_paths);
         });
 
+        /// Delete nodes from this batch and collect file paths for cache cleanup
+        Coordination::Requests remove_requests;
+        remove_requests.reserve(std::min(batch_paths.size(), keeper_multi_batch_size));
+
         for (size_t j = 0; j < response.size(); ++j)
         {
+            const auto & zk_path = batch_paths[j];
+
             if (response[j].error == Coordination::Error::ZNONODE)
             {
-                LOG_TEST(log, "Failed file node already deleted: {}", batch_paths[j]);
+                LOG_TEST(log, "Failed file node already deleted: {}", zk_path);
                 continue;
             }
 
             if (response[j].error != Coordination::Error::ZOK)
             {
-                LOG_ERROR(log, "Failed to fetch metadata for {}: {}", batch_paths[j], magic_enum::enum_name(response[j].error));
+                LOG_ERROR(log, "Failed to fetch metadata for {}: {}", zk_path, magic_enum::enum_name(response[j].error));
                 continue;
             }
 
             auto metadata = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[j].data);
             file_paths.push_back(metadata.file_path);
             LOG_TEST(log, "Read metadata for failed file: {}", metadata.file_path);
+
+            remove_requests.push_back(zkutil::makeRemoveRequest(zk_path, -1));
+
+            /// Execute batch removes when we hit the limit
+            if (remove_requests.size() >= keeper_multi_batch_size)
+            {
+                Coordination::Responses remove_responses;
+                zk_retries.resetFailures();
+                zk_retries.retryLoop([&]
+                {
+                    code = getZooKeeper()->tryMulti(remove_requests, remove_responses);
+                });
+
+                if (code != Coordination::Error::ZOK)
+                {
+                    LOG_WARNING(log, "Batch remove of failed nodes returned: {}", magic_enum::enum_name(code));
+                    failed_batches.emplace_back(i, code);
+                }
+
+                remove_requests.clear();
+            }
+        }
+
+        /// Remove any remaining nodes in this batch
+        if (!remove_requests.empty())
+        {
+            Coordination::Responses remove_responses;
+            zk_retries.resetFailures();
+            zk_retries.retryLoop([&]
+            {
+                code = getZooKeeper()->tryMulti(remove_requests, remove_responses);
+            });
+
+            if (code != Coordination::Error::ZOK)
+            {
+                LOG_WARNING(log, "Final batch remove of failed nodes returned: {}", magic_enum::enum_name(code));
+                failed_batches.emplace_back(i, code);
+            }
         }
     }
 
-    /// Bulk delete all failed file nodes using removeChildren
-    try
+    LOG_TRACE(log, "Deleted {} failed file nodes from Keeper", file_paths.size());
+
+    /// Report failures after attempting all batches
+    if (!failed_batches.empty())
     {
-        getZooKeeper()->removeChildren(failed_path);
-        LOG_TRACE(log, "Deleted all failed file nodes from Keeper");
-    }
-    catch (...)
-    {
-        LOG_ERROR(log, "Failed to remove failed file nodes: {}", getCurrentExceptionMessage(true));
-        throw;
+        String error_msg = fmt::format("Failed to remove {} batch(es) of failed file nodes:", failed_batches.size());
+        for (const auto & [batch_idx, err] : failed_batches)
+        {
+            error_msg += fmt::format(" [batch starting at index {} failed with {}]", batch_idx, magic_enum::enum_name(err));
+        }
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "{}", error_msg);
     }
 
     /// Clear cache entries for each failed file

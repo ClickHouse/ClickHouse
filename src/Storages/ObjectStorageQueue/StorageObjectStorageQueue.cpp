@@ -120,6 +120,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool parallel_inserts;
     extern const ObjectStorageQueueSettingsUInt64 buckets;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
+    extern const ObjectStorageQueueSettingsUInt64 failed_file_ttl_sec;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
@@ -1298,6 +1299,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing",
     "tracked_files_limit",
     "tracked_file_ttl_sec",
+    "failed_file_ttl_sec",
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
@@ -1778,6 +1780,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::partition_regex] = table_metadata.partition_regex;
     settings[ObjectStorageQueueSetting::partition_component] = table_metadata.partition_component;
     settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
+    settings[ObjectStorageQueueSetting::failed_file_ttl_sec] = table_metadata.failed_files_ttl_sec;
     settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
 
