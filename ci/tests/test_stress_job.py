@@ -303,6 +303,7 @@ def test_shell_producers_append_escaped_output_with_printf():
     terminator = re.compile(r"format_custom_row_after_delimiter='(.*?)'")
 
     printf_sites = 0
+    terminator_settings = 0
     for name in ("stress_tests.lib", "upgrade_runner.sh"):
         source = (_DOCKER_SCRIPTS / name).read_text(encoding="utf-8")
         for number, line in enumerate(source.split("\n"), start=1):
@@ -314,11 +315,17 @@ def test_shell_producers_append_escaped_output_with_printf():
             assert "printf " in line, f"{where}: does not append with `printf`"
             printf_sites += 1
         for value in terminator.findall(source):
+            terminator_settings += 1
             # The emitted terminator is the two characters `\n`, which a
             # double-quoted bash string spells with four backslashes.
             assert value == "\\\\\\\\n", f"{name}: terminator is {value!r}"
 
     assert printf_sites == 9
+    # Counted over both files, since only `escaped()` sets it: left unset the
+    # terminator defaults to a real newline and every multi-line row splits.
+    assert (
+        terminator_settings == 1
+    ), f"format_custom_row_after_delimiter set {terminator_settings} times, want 1"
 
 
 def test_dpkg_progress_in_info_does_not_split_row(tmp_path):
