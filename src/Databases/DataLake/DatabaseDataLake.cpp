@@ -79,6 +79,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
     extern const DatabaseDataLakeSettingsString onelake_bearer_token;
+    extern const DatabaseDataLakeSettingsString onelake_refresh_token;
     extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
@@ -141,6 +142,10 @@ namespace FailPoints
 
 namespace
 {
+
+/// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
+/// catalog and Azure storage requests, so the scope must be the Azure storage audience.
+constexpr auto ONELAKE_STORAGE_AUTH_SCOPE = "https://storage.azure.com/.default";
 
 /// Translate the database-layer `TablesFilter` into the catalog-layer
 /// `TableNameFilter` so the catalog can restrict which namespaces it lists.
@@ -264,6 +269,11 @@ void DatabaseDataLake::initialize() const
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
+            /// The default `auth_scope` value targets Iceberg REST catalogs; for OneLake the
+            /// token audience is Azure storage unless the user overrides it explicitly.
+            const std::string onelake_auth_scope = settings[DatabaseDataLakeSetting::auth_scope].changed
+                ? settings[DatabaseDataLakeSetting::auth_scope].value
+                : ONELAKE_STORAGE_AUTH_SCOPE;
             catalog_impl = std::make_shared<DataLake::OneLakeCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
@@ -271,7 +281,8 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::onelake_client_id].value,
                 settings[DatabaseDataLakeSetting::onelake_client_secret].value,
                 settings[DatabaseDataLakeSetting::onelake_bearer_token].value,
-                settings[DatabaseDataLakeSetting::auth_scope].value,
+                settings[DatabaseDataLakeSetting::onelake_refresh_token].value,
+                onelake_auth_scope,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
                 Context::getGlobalContextInstance());
@@ -805,11 +816,17 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         if (!rest_catalog)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
         const auto auth = rest_catalog->getStateSnapshot();
+        /// In refresh-token mode the storage layer asks the catalog client for a valid
+        /// access token on every request; the catalog renews it transparently.
+        AzureBlobStorage::TokenProviderCredential::TokenProvider access_token_provider;
+        if (!auth->refresh_token.empty())
+            access_token_provider = [onelake_catalog = rest_catalog] { return onelake_catalog->getCurrentAccessToken(); };
         azure_configuration->setInitializationAsOneLake(
             auth->client_id,
             auth->client_secret,
             auth->tenant_id,
             auth->bearer_token,
+            std::move(access_token_provider),
             settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
         );
 #else
@@ -1445,19 +1462,55 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
 
                 if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
                 {
-                    /// Require exactly one auth method: a bearer token, or a client id + secret pair.
+                    /// Require exactly one auth method: a bearer token, a refresh token (needs a client id,
+                    /// a secret only for confidential app registrations), or a client id + secret pair.
                     const bool has_bearer = !database_settings[DatabaseDataLakeSetting::onelake_bearer_token].value.empty();
+                    const bool has_refresh = !database_settings[DatabaseDataLakeSetting::onelake_refresh_token].value.empty();
                     const bool has_client_id = !database_settings[DatabaseDataLakeSetting::onelake_client_id].value.empty();
                     const bool has_client_secret = !database_settings[DatabaseDataLakeSetting::onelake_client_secret].value.empty();
 
-                    const bool has_client_pair = has_client_id && has_client_secret;
-                    bool has_exactly_one_method = has_bearer != has_client_pair;
-                    bool has_conflicting_fields = has_client_id != has_client_secret;
-
-                    if (!has_exactly_one_method || has_conflicting_fields)
+                    const auto throw_invalid_auth = []
+                    {
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "OneLake catalog requires exactly one authentication method: either `onelake_bearer_token` "
-                            "or both `onelake_client_id` and `onelake_client_secret`");
+                            "OneLake catalog requires exactly one authentication method: `onelake_bearer_token`, "
+                            "or `onelake_refresh_token` with `onelake_client_id` (and `onelake_client_secret` "
+                            "for confidential app registrations), or both `onelake_client_id` and `onelake_client_secret`");
+                    };
+
+                    if (has_bearer)
+                    {
+                        if (has_refresh || has_client_id || has_client_secret)
+                            throw_invalid_auth();
+                    }
+                    else if (has_refresh)
+                    {
+                        if (!has_client_id)
+                            throw_invalid_auth();
+
+                        /// The refresh token grant always sends parameters in the request body,
+                        /// no matter whether it goes to the default Entra ID token endpoint or to
+                        /// a custom `oauth_server_uri`; the query-parameter flavor selected by
+                        /// this setting is not implemented for it.
+                        if (!database_settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "`oauth_server_use_request_body = 0` is not supported together with `onelake_refresh_token`: "
+                                "the refresh token grant always sends parameters in the request body, "
+                                "regardless of `oauth_server_uri`");
+
+                        /// In refresh-token mode the storage layer reuses the catalog access token,
+                        /// so a scope accepted by the catalog but not by Azure storage would pass
+                        /// CREATE and then fail on the first table read.
+                        if (database_settings[DatabaseDataLakeSetting::auth_scope].changed
+                            && database_settings[DatabaseDataLakeSetting::auth_scope].value != ONELAKE_STORAGE_AUTH_SCOPE)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "`onelake_refresh_token` requires `auth_scope` to be the Azure storage audience '{}' "
+                                "(or unset), because the same access token is used for both the catalog and Azure "
+                                "storage requests. Got `auth_scope` = '{}'",
+                                ONELAKE_STORAGE_AUTH_SCOPE,
+                                database_settings[DatabaseDataLakeSetting::auth_scope].value);
+                    }
+                    else if (!has_client_id || !has_client_secret)
+                        throw_invalid_auth();
                 }
 
                 engine_func->name = "Iceberg";
