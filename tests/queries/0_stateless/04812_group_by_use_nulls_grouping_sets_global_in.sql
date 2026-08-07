@@ -53,12 +53,14 @@ SETTINGS group_by_use_nulls = 1;
 
 -- LowCardinality left argument: the framework strips LowCardinality before calling the
 -- function, so this checks that such an argument does not change the reconciliation.
+-- `serialize_query_plan = 0` keeps this arm off the unrelated issue #112028, where a
+-- LowCardinality argument to `IN` loses that wrapper across plan serialization.
 SELECT 'low cardinality left';
 SELECT toTypeName(materialize(toLowCardinality(1)) GLOBAL IN (t_04812)) AS t,
        materialize(toLowCardinality(1)) GLOBAL IN (t_04812) AS s
 FROM remote('127.0.0.1', system, one)
 GROUP BY GROUPING SETS ((materialize(toLowCardinality(1)) GLOBAL IN (t_04812)))
-SETTINGS group_by_use_nulls = 1;
+SETTINGS group_by_use_nulls = 1, serialize_query_plan = 0;
 
 -- Control: with a literal set the declared type is LowCardinality(Nullable(UInt8)). The
 -- reconciliation must leave that wrapper alone, so the type must stay LowCardinality here.
