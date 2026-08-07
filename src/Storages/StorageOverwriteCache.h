@@ -46,6 +46,7 @@ struct OverwriteCacheSettings
     UInt64 max_insert_publication_threads = 8;
     UInt64 background_compaction_target_segment_bytes = 64ULL * 1024 * 1024;
     UInt64 background_compaction_min_segment_count = 8;
+    UInt64 background_compaction_min_interval_ms = 1000;
     Names equal_version_tiebreak_columns;
     bool compress_segments = false;
     OverwriteCachePersistMode persist_mode = OverwriteCachePersistMode::Async;

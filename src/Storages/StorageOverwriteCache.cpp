@@ -101,6 +101,10 @@ namespace
 {
 
 constexpr UInt64 max_background_compaction_source_segments = 64;
+/// A pass that lost its plan to a concurrent publication waits at least this long, and a pass that threw
+/// waits much longer, so a persistent failure cannot occupy the schedule pool.
+constexpr UInt64 background_compaction_retry_ms = 1000;
+constexpr UInt64 background_compaction_error_retry_ms = 30000;
 
 Names parseColumnList(const String & value, const String & setting_name)
 {
@@ -315,6 +319,8 @@ OverwriteCacheSettings parseSettings(const ASTStorage & storage_def)
                 result.background_compaction_target_segment_bytes = getUInt64Setting(change);
             else if (change.name == "background_compaction_min_segment_count")
                 result.background_compaction_min_segment_count = getUInt64Setting(change);
+            else if (change.name == "background_compaction_min_interval_ms")
+                result.background_compaction_min_interval_ms = getUInt64Setting(change);
             else if (change.name == "equal_version_tiebreak_columns")
                 result.equal_version_tiebreak_columns = parseColumnList(getStringSetting(change), change.name);
             else if (change.name == "compress_segments")
@@ -396,7 +402,7 @@ bool isOverwriteCacheSetting(std::string_view name)
     return name == "max_memory_bytes" || name == "equal_version_tiebreak_columns" || name == "compress_segments" || name == "persist_mode"
         || name == "disk" || name == "max_pending_insert_bytes" || name == "max_concurrent_insert_preparations"
         || name == "max_insert_publication_threads" || name == "background_compaction_target_segment_bytes"
-        || name == "background_compaction_min_segment_count";
+        || name == "background_compaction_min_segment_count" || name == "background_compaction_min_interval_ms";
 }
 
 class OverwriteCacheSink final : public SinkToStorage
@@ -729,13 +735,20 @@ StorageOverwriteCache::StorageOverwriteCache(
 
 void StorageOverwriteCache::startup()
 {
-    small_segment_compaction_task->activateAndSchedule();
+    small_segment_compaction_task->activate();
+    scheduleSmallSegmentCompaction();
 }
 
 void StorageOverwriteCache::scheduleSmallSegmentCompaction()
 {
-    if (!loading && small_segment_compaction_task)
-        small_segment_compaction_task->schedule();
+    if (loading || !small_segment_compaction_task)
+        return;
+
+    /// Always schedule through the delayed queue. `schedule` cancels a pending delay and runs the task
+    /// at once, so a publication calling it would defeat the pacing after every insert. `scheduleAfter`
+    /// leaves an already pending delay alone, which makes the interval a real floor between passes
+    /// however often publications ask for one.
+    small_segment_compaction_task->scheduleAfter(settings.background_compaction_min_interval_ms);
 }
 
 void StorageOverwriteCache::stopSmallSegmentCompaction()
@@ -749,15 +762,23 @@ void StorageOverwriteCache::runSmallSegmentCompaction()
     try
     {
         const auto result = compactSmallSegments();
+        /// A successful pass used to schedule the next one immediately, so a backlog was drained in a
+        /// tight loop that held `writer_mutex`, took an exclusive row mutex for every moved row, and
+        /// published a generation each time. Readers resolving one row per posting entry contend for the
+        /// same 4096 row mutexes, and every published generation lengthens the version chains an older
+        /// snapshot has to walk, so the loop degraded lookups for as long as it ran. Pace the passes
+        /// instead: the backlog still drains, at a rate the foreground can absorb.
         if (result == SmallSegmentCompactionResult::Compacted)
-            small_segment_compaction_task->schedule();
+            small_segment_compaction_task->scheduleAfter(settings.background_compaction_min_interval_ms);
         else if (result == SmallSegmentCompactionResult::Retry)
-            small_segment_compaction_task->scheduleAfter(1000);
+            small_segment_compaction_task->scheduleAfter(
+                std::max(background_compaction_retry_ms, settings.background_compaction_min_interval_ms));
     }
     catch (...)
     {
         tryLogCurrentException(log, "Failed to compact small `OverwriteCache` segments");
-        small_segment_compaction_task->scheduleAfter(30000);
+        small_segment_compaction_task->scheduleAfter(
+            std::max(background_compaction_error_retry_ms, settings.background_compaction_min_interval_ms));
     }
 }
 
