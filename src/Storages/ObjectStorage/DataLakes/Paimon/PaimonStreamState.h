@@ -37,6 +37,14 @@ namespace DB
 /// Note: committed_snapshot is advanced before data consumption completes
 /// (At-Most-Once). If processing fails after commit, the skipped snapshots
 /// will not be re-read on retry.
+///
+/// The watermark is committed together with a marker of the table generation
+/// it belongs to (the schema-0 `timeMillis`). A watermark carrying no marker
+/// or a foreign generation is discarded by PaimonMetadata::getCommittedSnapshotId
+/// (see PaimonMetadata::isCommittedWatermarkFromSameTable), so the snapshot
+/// current at that moment is re-delivered in full once — a bounded, one-time
+/// exception to the no-re-read rule above, preferred over silently skipping
+/// data that may belong to a different table.
 class PaimonStreamState
 {
 public:

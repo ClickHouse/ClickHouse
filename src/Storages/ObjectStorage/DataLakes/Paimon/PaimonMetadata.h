@@ -79,7 +79,10 @@ public:
     void update(const ContextPtr & local_context) override;
 
     /// Extract state from storage_metadata for snapshot isolation
-    /// For incremental read mode, this returns only new data since last committed snapshot
+    /// For incremental read mode, this returns only new data since last committed snapshot.
+    /// Exception: a watermark whose table generation is unknown or foreign is discarded
+    /// (see isCommittedWatermarkFromSameTable), so the current snapshot is re-delivered
+    /// in full once before the watermark is committed together with the generation marker.
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,

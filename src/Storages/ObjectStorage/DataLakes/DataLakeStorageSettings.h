@@ -69,6 +69,12 @@ Metadata format version.
     DECLARE(Bool, paimon_incremental_read, false, R"(
 Enable incremental read mode for Paimon tables. When enabled, the table will track the last committed snapshot
 in Keeper and only read new data since that snapshot. This is similar to Kafka streaming consumption.
+Delivery is at-most-once relative to the committed snapshot, and the snapshot watermark is bound to the
+table generation (the schema-0 creation timestamp). A watermark whose generation is unknown — written by a
+server version before generation tracking existed, or inherited from a Paimon table dropped and recreated at
+the same `paimon_keeper_path` — is discarded, and the next read delivers the current snapshot in full once
+before committing the watermark together with the generation marker (fail-close: a bounded one-time replay
+is preferred over silently skipping data).
 )", 0) \
     DECLARE(Int64, paimon_metadata_refresh_interval_sec, 30, R"(
 Background metadata refresh interval for Paimon tables (seconds).
