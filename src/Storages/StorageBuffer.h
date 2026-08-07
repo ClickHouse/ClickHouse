@@ -210,7 +210,7 @@ private:
     void backgroundFlush();
     void reschedule(size_t min_delay);
 
-    BackgroundSchedulePool & bg_pool;
+    BackgroundSchedulePoolPtr bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;
 
     static constexpr size_t BACKGROUND_RESCHEDULE_MIN_DELAY = 1;
