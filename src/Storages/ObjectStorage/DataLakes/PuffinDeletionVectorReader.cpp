@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
+#include <Core/Defines.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
@@ -301,6 +302,153 @@ std::vector<UInt64> readDeletionVectorFromPuffin(ReadBuffer & file, Int64 offset
     file.readStrict(blob_data.data() + sizeof(header), blob_data.size() - sizeof(header));
 
     return deserializeDeletionVectorV1Blob(blob_data, expected_cardinality);
+}
+
+void appendReadBufferWithAbsoluteSizeLimit(ReadBuffer & buf, std::vector<UInt8> & out, size_t max_buffered_size)
+{
+    if (out.size() > max_buffered_size)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin non-seekable buffer size {} exceeds absolute limit {}",
+            out.size(),
+            max_buffered_size);
+    }
+
+    std::vector<UInt8> tmp(DBMS_DEFAULT_BUFFER_SIZE);
+    while (!buf.eof())
+    {
+        const size_t capacity = max_buffered_size - out.size();
+        if (capacity == 0)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Puffin non-seekable input exceeds absolute buffer limit {} bytes; use seekable input for larger files",
+                max_buffered_size);
+        }
+
+        const size_t to_read = std::min(tmp.size(), capacity);
+        const size_t n = buf.read(reinterpret_cast<char *>(tmp.data()), to_read);
+        if (n == 0)
+            break;
+
+        out.insert(out.end(), tmp.data(), tmp.data() + n);
+
+        /// If we filled the remaining capacity and the stream still has data, fail closed.
+        if (n == capacity && !buf.eof())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Puffin non-seekable input exceeds absolute buffer limit {} bytes; use seekable input for larger files",
+                max_buffered_size);
+        }
+    }
+}
+
+const PuffinBlob & bindDeletionVectorBlob(
+    const std::vector<PuffinBlob> & blobs,
+    Int64 content_offset,
+    Int64 content_size_in_bytes,
+    std::string_view expected_referenced_data_file,
+    UInt64 expected_cardinality)
+{
+    const PuffinBlob * matched = nullptr;
+    size_t matched_index = 0;
+
+    for (size_t i = 0; i < blobs.size(); ++i)
+    {
+        if (blobs[i].offset != content_offset || blobs[i].length != content_size_in_bytes)
+            continue;
+
+        if (matched)
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Multiple Puffin blobs claim offset {} length {}",
+                content_offset,
+                content_size_in_bytes);
+        }
+
+        matched = &blobs[i];
+        matched_index = i;
+    }
+
+    if (!matched)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "No Puffin footer blob at offset {} length {}",
+            content_offset,
+            content_size_in_bytes);
+    }
+
+    if (matched->type != "deletion-vector-v1")
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {} at offset {} length {} has type '{}', expected deletion-vector-v1",
+            matched_index,
+            content_offset,
+            content_size_in_bytes,
+            matched->type);
+    }
+
+    if (!matched->compression_codec.empty())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 must omit compression-codec",
+            matched_index);
+    }
+
+    const auto ref_it = matched->properties.find("referenced-data-file");
+    if (ref_it == matched->properties.end() || ref_it->second.empty())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 missing required property 'referenced-data-file'",
+            matched_index);
+    }
+
+    if (ref_it->second != expected_referenced_data_file)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {} referenced-data-file '{}' does not match expected data file '{}'",
+            matched_index,
+            ref_it->second,
+            expected_referenced_data_file);
+    }
+
+    const auto card_it = matched->properties.find("cardinality");
+    if (card_it == matched->properties.end() || card_it->second.empty())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 missing required property 'cardinality'",
+            matched_index);
+    }
+
+    UInt64 footer_cardinality = 0;
+    if (!tryParse(footer_cardinality, card_it->second))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {}: deletion-vector-v1 property 'cardinality' must be an unsigned integer",
+            matched_index);
+    }
+
+    if (footer_cardinality != expected_cardinality)
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Puffin blob {} cardinality {} does not match expected cardinality {}",
+            matched_index,
+            footer_cardinality,
+            expected_cardinality);
+    }
+
+    return *matched;
 }
 
 }

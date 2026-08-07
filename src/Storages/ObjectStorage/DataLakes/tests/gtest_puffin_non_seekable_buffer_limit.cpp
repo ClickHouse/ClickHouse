@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
+
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromString.h>
-#include <Storages/ObjectStorage/DataLakes/PuffinFile.h>
 
 #include <vector>
 

@@ -3,7 +3,6 @@
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
-#include <Storages/ObjectStorage/DataLakes/PuffinFile.h>
 
 using namespace DB;
 
