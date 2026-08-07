@@ -346,7 +346,7 @@ public:
         /// All path types are serialized as atomic leaves — Map and JSON typed paths are
         /// never flattened into child paths.
         void serializeCurrentValueBinary(
-            const std::unordered_map<String, SerializationPtr> & typed_path_serializations, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+            const UnorderedMapWithMemoryTracking<String, SerializationPtr> & typed_path_serializations,
             WriteBuffer & buf) const;
 
     private:

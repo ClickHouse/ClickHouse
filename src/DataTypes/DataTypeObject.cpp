@@ -15,6 +15,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/quoteString.h>
 
 #include <Parsers/IAST.h>
@@ -854,6 +855,15 @@ DataTypePtr DataTypeObject::getTypeOfNestedObjects() const
 DataTypePtr DataTypeObject::getDynamicType() const
 {
     return std::make_shared<DataTypeDynamic>(max_dynamic_types);
+}
+
+UnorderedMapWithMemoryTracking<String, SerializationPtr> DataTypeObject::getTypedPathSerializations() const
+{
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> result;
+    result.reserve(typed_paths.size());
+    for (const auto & [path, type] : typed_paths)
+        result.emplace(path, type->getDefaultSerialization());
+    return result;
 }
 
 static DataTypePtr createJSON(const ASTPtr & arguments)

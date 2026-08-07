@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/IDataType.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -73,14 +74,7 @@ public:
 
     /// Returns a map from typed-path name to its default serialization, resolved once.
     /// Used by mergedJSONPatch to serialize/deserialize typed-path values without a type tag.
-    std::unordered_map<String, SerializationPtr> getTypedPathSerializations() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    {
-        std::unordered_map<String, SerializationPtr> result;
-        result.reserve(typed_paths.size());
-        for (const auto & [path, type] : typed_paths)
-            result.emplace(path, type->getDefaultSerialization());
-        return result;
-    }
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> getTypedPathSerializations() const;
     const std::unordered_set<String> & getPathsToSkip() const { return paths_to_skip; }
     const std::vector<String> & getPathRegexpsToSkip() const { return path_regexps_to_skip; }
 

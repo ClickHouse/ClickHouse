@@ -17,6 +17,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <Common/Arena.h>
 #include <Common/FieldBinaryEncoding.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 #include <Core/CompareHelper.h>
@@ -131,7 +132,7 @@ struct KeyFixed
 /// String sort keys: owns a String (avoids Field's wrapper)
 struct KeyString
 {
-    String value; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    String value;
 
     void set(const IColumn & column, size_t row)
     {
@@ -181,8 +182,8 @@ struct AggregateFunctionMergedJSONPatchData
 {
     struct Entry
     {
-        String path; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        String value_blob; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        String path;
+        String value_blob;
         KeyData sort_key;
 
         std::string_view pathView() const { return path; }
@@ -251,11 +252,11 @@ struct AggregateFunctionMergedJSONPatchData
 
     /// Insert batch atomically: filter survivors, erase shadowed entries, push survivors.
     /// This avoids siblings within the batch erasing each other.
-    void insertBatchAtomic(std::vector<Entry> & batch) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    void insertBatchAtomic(VectorWithMemoryTracking<Entry> & batch)
     {
         size_t existing_count = entries.size();
 
-        std::vector<size_t> survivors; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        VectorWithMemoryTracking<size_t> survivors;
         survivors.reserve(batch.size());
         for (size_t i = 0; i < batch.size(); ++i)
         {
@@ -292,7 +293,7 @@ struct AggregateFunctionMergedJSONPatchData
 
     void merge(const AggregateFunctionMergedJSONPatchData & other)
     {
-        std::vector<Entry> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        VectorWithMemoryTracking<Entry> batch;
         batch.reserve(other.entries.size());
         for (const auto & entry : other.entries)
             batch.push_back({String(entry.pathView()), String(entry.value_blob), entry.sort_key});
@@ -317,7 +318,7 @@ struct AggregateFunctionMergedJSONPatchData
         size_t size = 0;
         readVarUInt(size, buf);
 
-        std::vector<Entry> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        VectorWithMemoryTracking<Entry> batch;
         batch.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
@@ -333,7 +334,7 @@ struct AggregateFunctionMergedJSONPatchData
 
     void insertResultInto(
         IColumn & to,
-        const std::unordered_map<std::string, SerializationPtr> & typed_path_serializations) const // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        const UnorderedMapWithMemoryTracking<String, SerializationPtr> & typed_path_serializations) const
     {
         auto & result_column = assert_cast<ColumnObject &>(to);
 
@@ -400,14 +401,14 @@ class AggregateFunctionMergedJSONPatchImpl final
     : public IAggregateFunctionDataHelper<AggregateFunctionMergedJSONPatchData<KeyData>, AggregateFunctionMergedJSONPatchImpl<KeyData>>
 {
 private:
-    std::unordered_map<std::string, SerializationPtr> typed_path_serializations; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> typed_path_serializations;
 
     using Data = AggregateFunctionMergedJSONPatchData<KeyData>;
 
 public:
     explicit AggregateFunctionMergedJSONPatchImpl(
         const DataTypes & argument_types_,
-        const std::unordered_map<std::string, SerializationPtr> & typed_path_serializations_)  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        const UnorderedMapWithMemoryTracking<String, SerializationPtr> & typed_path_serializations_)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionMergedJSONPatchImpl<KeyData>>(
             argument_types_, {}, argument_types_[0])
         , typed_path_serializations(typed_path_serializations_)
@@ -425,7 +426,7 @@ public:
         sort_key.set(*columns[1], row_num);
 
         const auto & object_column = assert_cast<const ColumnObject &>(*columns[0]);
-        std::vector<typename Data::Entry> batch;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        VectorWithMemoryTracking<typename Data::Entry> batch;
 
         ColumnObject::SortedPathsIterator iterator(object_column, row_num);
         for (; !iterator.end(); iterator.next())
@@ -481,7 +482,7 @@ static AggregateFunctionPtr createAggregateFunctionMergedJSONPatch(
 
     // Build typed-path serializations map from JSON type (§3, §5)
     // Resolved once at construction; used in add() and insertResultInto()
-    std::unordered_map<std::string, SerializationPtr> typed_path_serializations; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    UnorderedMapWithMemoryTracking<String, SerializationPtr> typed_path_serializations;
     {
         const auto * obj_type = typeid_cast<const DataTypeObject *>(argument_types[0].get());
         if (obj_type)
