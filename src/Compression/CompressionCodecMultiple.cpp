@@ -21,8 +21,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// A codec never reserves less than its own input, so a smaller result means the UInt32 computation
-/// wrapped.
+/// A codec never reserves less than its own input, so a result below the input means the UInt32
+/// arithmetic wrapped. The check does not depend on where inside the callee the wrap happened.
 UInt32 getCheckedReserveSize(const CompressionCodecPtr & codec, UInt32 size, size_t codec_index, size_t codecs_count)
 {
     UInt32 reserve_size = codec->getCompressedReserveSize(size);
@@ -65,7 +65,9 @@ UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_si
 
     ///    TotalCodecs  ByteForEachCodec       data
     size_t total_size = sizeof(UInt8) + codecs.size() + compressed_size;
-    if (total_size > std::numeric_limits<UInt32>::max())
+    /// getCompressedReserveSize adds getHeaderSize() to this in UInt32, so leave room for it.
+    static constexpr size_t max_total_size = std::numeric_limits<UInt32>::max() - ICompressionCodec::getHeaderSize();
+    if (total_size > max_total_size)
         throw Exception(ErrorCodes::CANNOT_COMPRESS,
             "Too many codecs in the codec chain: the size reserved for compressing {} bytes ({}) exceeds 4 GiB. "
             "Use fewer codecs.",

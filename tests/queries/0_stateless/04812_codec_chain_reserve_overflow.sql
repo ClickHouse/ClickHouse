@@ -14,8 +14,9 @@ DROP TABLE IF EXISTS t_codec_chain_fpc_max;
 DROP TABLE IF EXISTS t_codec_chain_gorilla_max;
 DROP TABLE IF EXISTS t_codec_chain_short;
 
--- 150 FPC stages. Two rows are enough: the reserve overflows on the block size, not the row count,
--- and before the fix this crashed the server with a SIGSEGV.
+-- 150 FPC stages. Two rows are enough, and before the fix this crashed the server with a SIGSEGV.
+-- The block size sets the stage the reserve wraps at, later for smaller blocks: with these 2 rows
+-- it wraps at stage 148, the latest any block size can, so do not shorten the chain.
 CREATE TABLE t_codec_chain_overflow (x Float32 CODEC(FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC,FPC)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_codec_chain_overflow SELECT number / 7 FROM numbers(2); -- { serverError CANNOT_COMPRESS }
 SELECT count() FROM t_codec_chain_overflow;
