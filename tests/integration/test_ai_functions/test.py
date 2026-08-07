@@ -150,6 +150,13 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_refusal AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/refusal', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # Anthropic-provider collections, used to test the Anthropic `stop_reason` normalization.
         instance.query(
             f"CREATE NAMED COLLECTION ai_anthropic_stop_sequence AS "
@@ -400,6 +407,25 @@ def test_generate_content_filter_response_throw(started_cluster):
 def test_generate_content_filter_response_graceful(started_cluster):
     result = instance.query(
         "SELECT aiGenerate('hello', map('credentials', 'ai_content_filter'))",
+        settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
+    )
+    assert result.strip() == ""
+
+
+def test_generate_refusal_response_throw(started_cluster):
+    """A structured-output safety refusal keeps `finish_reason="stop"` and carries the explanation in
+    `message.refusal` with a null `content`. Checking `finish_reason` alone would accept it as a
+    complete empty answer, so the refusal field must be rejected on its own."""
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_refusal'))",
+        settings=AI_SETTINGS,
+    )
+    assert "AI_PROVIDER_RESPONSE_INCOMPLETE" in error
+
+
+def test_generate_refusal_response_graceful(started_cluster):
+    result = instance.query(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_refusal'))",
         settings={**AI_SETTINGS, "ai_function_throw_on_error": 0},
     )
     assert result.strip() == ""

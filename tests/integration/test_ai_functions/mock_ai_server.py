@@ -31,6 +31,9 @@ Endpoints:
       withheld). Exercises the incomplete-response rejection path.
   POST /v1/chat/unknown_reason       — HTTP 200 with an unrecognized `finish_reason`; must be
       accepted as complete, not misclassified as truncation.
+  POST /v1/chat/refusal              — HTTP 200 structured-output safety refusal: `message.refusal`
+      is populated, `content` is null and `finish_reason` stays "stop". Exercises the refusal
+      rejection path, which a `finish_reason`-only check would accept as a complete empty answer.
   POST /v1/anthropic/stop_sequence   — Anthropic-shaped HTTP 200 with `stop_reason="stop_sequence"`,
       a complete answer that must NOT be rejected as truncated.
   POST /v1/anthropic/max_tokens      — Anthropic-shaped HTTP 200 with `stop_reason="max_tokens"`,
@@ -259,6 +262,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # answer is incomplete and must be rejected.
             user_msg = extract_user_message(body)
             self._send_json(200, make_success_response(user_msg, finish_reason="content_filter"))
+            return
+
+        if parsed.path == "/v1/chat/refusal":
+            # Structured-output safety refusal: OpenAI returns the explanation in `message.refusal`
+            # with a null `content`, and leaves `finish_reason` as "stop" because the generation
+            # itself ended normally. Must be rejected rather than returned as an empty answer.
+            response = make_success_response(None, finish_reason="stop")
+            response["choices"][0]["message"]["refusal"] = "I cannot help with that request."
+            self._send_json(200, response)
             return
 
         if parsed.path == "/v1/chat/unknown_reason":
