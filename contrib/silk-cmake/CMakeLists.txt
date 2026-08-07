@@ -1,3 +1,10 @@
+option (ENABLE_SILK "Enable Silk (experimental fiber scheduler)" ${ENABLE_LIBRARIES})
+
+if(NOT ENABLE_SILK)
+    message(STATUS "Not building silk because ENABLE_SILK is disabled")
+    return()
+endif()
+
 if(NOT OS_LINUX)
     message(STATUS "Not building silk because it requires io_uring (Linux-only)")
     return()

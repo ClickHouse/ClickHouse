@@ -932,7 +932,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         .build();
 
     auto data_part_storage = new_data_part->getDataPartStoragePtr();
-    data_part_storage->beginTransaction();
+    data_part_storage->beginTransaction(*data_settings);
 
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
@@ -1148,7 +1148,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     auto data_settings = data.getSettings(&projection.settings_changes);
 
     if (is_temp)
-        projection_part_storage->beginTransaction();
+        projection_part_storage->beginTransaction(*data_settings);
 
     new_data_part->is_temp = is_temp;
 

@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/MapWithMemoryTracking.h>
-#include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <IO/PackedFilesIO.h>
-#include <IO/WriteBufferFromVector.h>
+#include <IO/SpillableMemoryWriteBuffer.h>
+#include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteSettings.h>
 
@@ -15,7 +15,9 @@ namespace DB
   * format into one data file (archive). Like the "tar" format
   * or similar, but much simpler. It buffers in memory all files
   * and writes them into one archive at @finalize method.
-  * Before finalization all data is stored RAM. @finalize streams
+  * The data of the files is kept in a shared SpillableMemoryWriteBuffer:
+  * once its capacity (passed as `max_memory_size`) is exceeded, buffered data
+  * is spilled to temporary files on the disk. @finalize streams
   * the archive into the provided buffer, so it does not need
   * a second copy of the whole archive in memory.
   * Each file is written continuously to avoid fragmentation
@@ -35,10 +37,24 @@ namespace DB
 class PackedFilesWriter
 {
 public:
+    static constexpr size_t DEFAULT_MAX_MEMORY_SIZE = 32 * 1024 * 1024;
+
+    using SpillConfig = SpillableMemoryWriteBuffer::SpillConfig;
+
     using OutBufferPtr = std::unique_ptr<WriteBufferFromFileBase>;
 
-    /// Creates memory buffer for the data of file
-    /// and returns fake WriteBufferFromFileBase.
+    /// All data is kept in memory (no spilling).
+    PackedFilesWriter() = default;
+
+    /// Buffered data spills to the disk once `spill_config->checker`'s capacity is
+    /// exceeded; the spill files are created lazily in the temp directory managed by
+    /// the config. The temp directory is removed on destruction.
+    explicit PackedFilesWriter(std::shared_ptr<SpillConfig> spill_config_);
+
+    ~PackedFilesWriter();
+
+    /// Creates a SpillableMemoryWriteBuffer for the data of the file and returns it
+    /// wrapped into a FakeWriteBufferFromFile.
     OutBufferPtr writeFile(const String & file_name);
 
     /// The same as above, but also updated settings to write file with archive.
@@ -122,67 +138,40 @@ public:
 private:
     static size_t getSizeOfHeader();
 
-    using Chars = PaddedPODArray<UInt8>;
-
-    struct Data
+    struct WrittenFile
     {
-        Chars chars;
+        explicit WrittenFile(std::shared_ptr<SpillableMemoryWriteBuffer> buffer_)
+            : buffer(std::move(buffer_))
+        {
+        }
+
+        std::shared_ptr<SpillableMemoryWriteBuffer> buffer;
         bool need_sync = false;
         UInt64 uncompressed_size = 0;
     };
 
-    /// Buffer that pretends to be WriteBufferFromFileBase but actually
-    /// writes all data into provided array and keeps it in memory.
+    /// WriteBuffer that pretends to be a WriteBufferFromFileBase but forwards all
+    /// writes to a shared SpillableMemoryWriteBuffer.
     class FakeWriteBufferFromFile : public WriteBufferFromFileBase
     {
     public:
-        using Impl = WriteBufferFromVectorImpl<Chars>;
+        explicit FakeWriteBufferFromFile(std::shared_ptr<WrittenFile> file_);
 
-        FakeWriteBufferFromFile(const String & file_name_, std::shared_ptr<Data> data_)
-            : WriteBufferFromFileBase(0, nullptr, 0)
-            , file_name(file_name_)
-            , data(data_)
-            , impl(std::make_unique<Impl>(data->chars))
-        {
-            swap(*impl);
-        }
-
-        ~FakeWriteBufferFromFile() override
-        {
-            swap(*impl);
-        }
+        ~FakeWriteBufferFromFile() override;
 
         void nextImpl() override;
         void finalizeImpl() override;
         void cancelImpl() noexcept override;
 
-        void sync() override { data->need_sync = true; }
-        std::string getFileName() const override { return file_name; }
+        void sync() override { file->need_sync = true; }
+        std::string getFileName() const override { return file->buffer->getFileName(); }
 
     private:
 
-        struct SwapGuard
-        {
-            explicit SwapGuard(FakeWriteBufferFromFile & buf_) : buf(buf_)
-            {
-                buf.swap(*buf.impl);
-            }
-
-            ~SwapGuard()
-            {
-                buf.swap(*buf.impl);
-            }
-
-        private:
-            FakeWriteBufferFromFile & buf;
-        };
-
-        const String file_name;
         /// We have shared_ptr here, because FakeWriteBufferFromFile
         /// can live longer than data stored in map of PackedFilesWriter.
         /// So shared_ptr here is just to avoid heap-use-after-free.
-        std::shared_ptr<Data> data;
-        const std::unique_ptr<Impl> impl;
+        std::shared_ptr<WrittenFile> file;
     };
 
     template <typename Map>
@@ -192,13 +181,15 @@ private:
     void applyRemoveFile(MetadataChange & change, Map & index_map);
 
     /// Map from the name of file to its content.
-    MapWithMemoryTracking<String, std::shared_ptr<Data>> written_files;
+    MapWithMemoryTracking<String, std::shared_ptr<WrittenFile>> written_files;
 
     /// Changes of metadata such as file renames or removes.
     VectorWithMemoryTracking<MetadataChange> metadata_changes;
 
     /// Settings that are used while flushing archive with data.
     std::optional<WriteSettings> write_settings;
+
+    std::shared_ptr<SpillConfig> spill_config;
 };
 
 }

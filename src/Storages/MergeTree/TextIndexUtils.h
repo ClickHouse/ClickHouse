@@ -158,7 +158,8 @@ private:
 
 using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
-MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
+MutableDataPartStoragePtr createTemporaryTextIndexStorage(
+    const DiskPtr & disk, const String & part_relative_path, const MergeTreeSettings & settings);
 
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,

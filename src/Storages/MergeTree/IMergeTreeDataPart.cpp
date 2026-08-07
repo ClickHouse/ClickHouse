@@ -1876,7 +1876,7 @@ void IMergeTreeDataPart::writeMetadata(const String & filename, const WriteSetti
 {
     auto & data_part_storage = getDataPartStorage();
 
-    data_part_storage.beginTransaction();
+    data_part_storage.beginTransaction(*storage.getSettings());
 
     {
         auto out = data_part_storage.writeFile(filename, 4096, settings);
@@ -1905,7 +1905,7 @@ void IMergeTreeDataPart::writeColumns(const NamesAndTypesList & columns_, const 
 
 void IMergeTreeDataPart::writeMetadataVersion(ContextPtr context, int32_t metadata_version_, bool sync)
 {
-    getDataPartStorage().beginTransaction();
+    getDataPartStorage().beginTransaction(*storage.getSettings());
     {
         // We need to remove the old file first to overwrite it only, not all its hard links.
         getDataPartStorage().removeFileIfExists(METADATA_VERSION_FILE_NAME);
@@ -2723,7 +2723,8 @@ DataPartStoragePtr IMergeTreeDataPart::makeCloneInDetached(const String & prefix
         Context::getGlobalContextInstance()->getReadSettings(),
         Context::getGlobalContextInstance()->getWriteSettings(),
         /* save_metadata_callback= */ {},
-        params);
+        params,
+        *storage_settings);
 }
 
 MutableDataPartStoragePtr IMergeTreeDataPart::makeCloneOnDisk(

@@ -17,6 +17,7 @@
 
 namespace DB
 {
+struct MergeTreeSettings;
 struct ReadSettings;
 class ReadBufferFromFileBase;
 class ReadPipeline;
@@ -296,7 +297,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
-        const ClonePartParams & params) const = 0;
+        const ClonePartParams & params,
+        const MergeTreeSettings & settings) const = 0;
 
     virtual std::shared_ptr<IDataPartStorage> freezeRemote(
     const std::string & to,
@@ -305,7 +307,8 @@ public:
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const = 0;
+    const ClonePartParams & params,
+    const MergeTreeSettings & settings) const = 0;
 
     /// Make a full copy of a data part into 'to/dir_path' (possibly to a different disk).
     virtual std::shared_ptr<IDataPartStorage> clonePart(
@@ -373,8 +376,9 @@ public:
         bool remove_new_dir_if_exists,
         bool fsync_part_dir) = 0;
 
-    /// Starts a transaction of mutable operations.
-    virtual void beginTransaction() = 0;
+    /// Starts a transaction of mutable operations. `settings` carry the table's
+    /// merge tree settings used to configure the underlying writer.
+    virtual void beginTransaction(const MergeTreeSettings & settings) = 0;
     /// Commits a transaction of mutable operations.
     virtual void commitTransaction() = 0;
     /// Prepares transaction to commit.

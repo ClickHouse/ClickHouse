@@ -79,7 +79,7 @@ public:
     void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
     void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
 
-    void beginTransaction() override;
+    void beginTransaction(const MergeTreeSettings & settings) override;
     void commitTransaction() override;
 
     void setPreferredFileOrder(const Strings & file_names) override { preferred_file_order = file_names; }
@@ -100,7 +100,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
-        const ClonePartParams & params) const override;
+        const ClonePartParams & params,
+        const MergeTreeSettings & settings) const override;
 
     MutableDataPartStoragePtr freezeRemote(
         const std::string & to,
@@ -109,7 +110,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
-        const ClonePartParams & params) const override;
+        const ClonePartParams & params,
+        const MergeTreeSettings & settings) const override;
 
 #if CLICKHOUSE_CLOUD
     void serializeAuxiliaryInfo(WriteBuffer &) const override;
@@ -125,6 +127,10 @@ private:
     std::optional<PackedFilesWriter> writer;
 
     bool is_precommitted = false;
+
+    /// Value of max_bytes_to_buffer_for_packed_part from the settings that configured
+    /// the writer; inherited by projection storages sharing the parent transaction.
+    std::optional<UInt64> buffered_part_max_bytes;
 
     Strings preferred_file_order;
 
@@ -164,7 +170,7 @@ private:
     std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string &) const override { return nullptr; }
 
     void resetReader(const ReadSettings & read_settings);
-    void resetWriterFromTransaction();
+    void resetWriterFromTransaction(UInt64 max_bytes_to_buffer_for_packed_part);
     void finalizeWriter();
 
     /// Modifying of files is possible only with transaction.
@@ -176,12 +182,14 @@ private:
     void executeBinaryWriteOperation(const String & from_name, const String & to_name, Op && op);
 
     /// Private constructor to create a storage for projection with shared transaction.
+    /// `buffered_part_max_bytes_` is inherited from the parent's writer settings.
     DataPartStorageOnDiskPacked(
         VolumePtr volume_,
         std::string root_path_,
         std::string part_dir_,
         DiskTransactionPtr transaction_,
         const ReadSettings & read_settings_,
+        std::optional<UInt64> buffered_part_max_bytes_ = {},
         bool initialize = true);
 
     MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const override;

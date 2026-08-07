@@ -538,7 +538,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const
+    const ClonePartParams & params,
+    const MergeTreeSettings & /*settings*/) const
 {
     auto disk = volume->getDisk();
     if (params.external_transaction)
@@ -613,7 +614,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const
+    const ClonePartParams & params,
+    const MergeTreeSettings & /*settings*/) const
 {
     auto src_disk = volume->getDisk();
     if (params.external_transaction)
