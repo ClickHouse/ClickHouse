@@ -26,7 +26,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 - `end_time` - The end time of the evaluation range.
 - `step` - The step used to iterate the evaluation time from `start_time` to `end_time` (inclusively).
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 The function can returns different columns depending on the result type of the query passed to parameter `promql_query`:
 
