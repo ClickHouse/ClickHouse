@@ -89,6 +89,18 @@ SELECT 'merge ordered view';
 SELECT sum(value) FROM merge(currentDatabase(), '^v_ordered_pr_ro$')
 SETTINGS optimize_read_in_order = 1;
 
+-- Witness: the arm above asserts only a sum, which a purely local read returns too, so it would go
+-- green if the plan for this shape ever stopped being distributed. Assert the shipped fragment is in
+-- the plan, with the same query at `enable_parallel_replicas = 0` as the control that the assertion
+-- discriminates rather than matching everything.
+SELECT 'merge ordered view plan shape';
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0
+FROM (EXPLAIN SELECT sum(value) FROM merge(currentDatabase(), '^v_ordered_pr_ro$')
+      SETTINGS optimize_read_in_order = 1);
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0
+FROM (EXPLAIN SELECT sum(value) FROM merge(currentDatabase(), '^v_ordered_pr_ro$')
+      SETTINGS optimize_read_in_order = 1, enable_parallel_replicas = 0);
+
 -- Control: the same ordered read with read-in-order off, the configuration that already worked.
 SELECT 'merge ordered no read in order';
 SELECT value FROM merge(currentDatabase(), '^t_pr_ro$') ORDER BY timestamp LIMIT 3
