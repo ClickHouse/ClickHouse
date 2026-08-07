@@ -284,6 +284,8 @@ void checkCancellation(const char * fail_point_name)
         }
         catch (...)
         {
+            /// Any exception during pull is treated as a failed pull; the test only asserts on
+            /// prompt termination after cancellation, not on the chunk content. Ok.
             pull_result = false;
         }
         pull_finished = true;
