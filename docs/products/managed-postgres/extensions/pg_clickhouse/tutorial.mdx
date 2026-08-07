@@ -192,6 +192,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 Here we've elected to use the binary driver, which uses the ClickHouse binary
 protocol. You can also use the "http" driver, which uses the HTTP interface.
 
+<Note>
+If you're using the ClickHouse Cloud console to run SQL, grant the console admin user access to the foreign server:
+
+```sql
+GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+```
+</Note>
+
 Next, map a PostgreSQL user to a ClickHouse user. The simplest way to do so
 is just to map the current PostgreSQL user to a remote user for the foreign
 server:
