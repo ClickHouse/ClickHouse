@@ -123,13 +123,20 @@ DROP TABLE t4;
 DROP NAMED COLLECTION ${NC}_2;
 "
 
-echo "--- a permanently detached table holds it, too: it can be attached back ---"
+echo "--- a permanently detached table does not hold it: it is not loaded at startup ---"
+# A permanently detached table cannot break the server start, so it does not block the drop - neither
+# right away nor after a restart (which would empty the in-memory list of detached dependencies anyway).
+# A later `ATTACH` fails cleanly with a missing collection; recreating the collection recovers the table.
 ${CLICKHOUSE_CLIENT} -m -q "
 CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'CSV';
 CREATE TABLE t (x UInt32) ENGINE = URL(${NC});
 DETACH TABLE t PERMANENTLY;
-DROP NAMED COLLECTION ${NC}; -- { serverError NAMED_COLLECTION_IS_USED }
+DROP NAMED COLLECTION ${NC};
 SELECT count() FROM system.named_collections WHERE name = '${NC}';
+"
+${CLICKHOUSE_CLIENT} -m -q "
+ATTACH TABLE t; -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+CREATE NAMED COLLECTION ${NC} AS url = 'http://localhost:8123', format = 'CSV';
 ATTACH TABLE t;
 DROP TABLE t;
 DROP NAMED COLLECTION ${NC};

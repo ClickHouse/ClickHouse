@@ -10,7 +10,7 @@
 --- and in a detached database, where the table has no metadata to be attached from ---
 0
 --- a dependency on another collection is not lost when a stale one is cleaned up ---
---- a permanently detached table holds it, too: it can be attached back ---
-1
+--- a permanently detached table does not hold it: it is not loaded at startup ---
+0
 --- check_named_collection_dependencies = 0 still allows dropping it ---
 0

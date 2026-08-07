@@ -302,19 +302,23 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-            /// The detached table cannot be looked up through `DatabaseCatalog` anymore, but its
-            /// metadata still references the named collections it uses, so they must not be dropped
-            /// while it can be attached back.
-            NamedCollectionFactory::instance().markDependenciesDetached(table_id);
-
             if (query.permanently)
             {
                 DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
+                /// A permanently detached table is not loaded at startup, so dropping a collection it
+                /// references cannot break the server start; its dependencies are simply removed. This
+                /// also keeps the behavior consistent across a restart, which empties the in-memory
+                /// list of detached dependencies.
+                NamedCollectionFactory::instance().removeDependencies(table_id);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(context_, table_id.table_name);
             }
             else
             {
+                /// The detached table cannot be looked up through `DatabaseCatalog` anymore, but the
+                /// `ATTACH` replayed at the next server start still references the named collections it
+                /// uses, so they must not be dropped while it can be attached back.
+                NamedCollectionFactory::instance().markDependenciesDetached(table_id);
                 /// Drop table from memory, don't touch data and metadata
                 database->detachTable(context_, table_id.table_name);
             }

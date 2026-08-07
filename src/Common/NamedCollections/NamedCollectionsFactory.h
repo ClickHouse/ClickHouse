@@ -101,8 +101,11 @@ public:
     /// `DETACH TABLE` moves the dependencies of the table here: a detached table is not in
     /// `DatabaseCatalog`, but the metadata it is attached from still references the collections, so they
     /// must not be dropped. `ATTACH` registers the dependencies again and removes the entries. The list
-    /// is kept in memory only and is deliberately imprecise: dropping the collection may still be
-    /// refused for a while after the detached table itself is gone.
+    /// is kept in memory only, which is consistent across a restart: a plainly detached table is
+    /// attached again at the next start (its dependencies are registered normally), and a permanently
+    /// detached table does not record entries at all - it is not loaded at startup, so a dropped
+    /// collection cannot break the start. The list is deliberately imprecise: dropping the collection
+    /// may still be refused for a while after the detached table itself is gone.
     void markDependenciesDetached(const StorageID & table_id);
     /// The names of the detached tables that referenced the collection when they were detached.
     std::vector<String> getDetachedDependents(const String & collection_name) const;
