@@ -47,11 +47,23 @@ SELECT count(), min(x), max(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH 
 SELECT count(), min(x), max(x) FROM (SELECT toInt8(-5) AS x ORDER BY x DESC WITH FILL TO -300 STALENESS -20);
 SELECT count(), min(x), max(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL TO 1000 STEP 3 STALENESS 21);
 
+SELECT 'an INTERVAL step can never reach an out of range TO, so such a TO is rejected';
+
+-- The calendar arithmetic of an INTERVAL step is performed in the column's own native type, so unlike a plain
+-- numeric step it wraps around within the column domain and never reaches a TO outside of it: without the check
+-- these fills generate wrapped-around values forever.
+SELECT * FROM (SELECT toDate(0) AS d ORDER BY d ASC WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDate('1970-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDateTime(0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime(0, 'UTC') TO 4294967297 STEP INTERVAL 50 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- STALENESS terminates the filling in-domain even with an INTERVAL step, so the TO bound is accepted.
+SELECT count(), min(d), max(d) FROM (SELECT toDate('2026-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 1 YEAR STALENESS INTERVAL 3 YEAR);
+
 SELECT 'in-range filling is unchanged';
 
 SELECT groupArray(x) FROM (SELECT toUInt8(5) AS x ORDER BY x ASC WITH FILL FROM 1 TO 10);
 SELECT groupArray(x) FROM (SELECT toInt8(-5) AS x ORDER BY x DESC WITH FILL FROM -1 TO -8);
 SELECT count(), min(d), max(d) FROM (SELECT toDate('2026-01-01') AS d ORDER BY d ASC WITH FILL FROM toDate('2025-12-30') TO toDate('2026-01-03'));
+SELECT count(), min(d), max(d) FROM (SELECT toDate('2026-01-01') AS d ORDER BY d ASC WITH FILL FROM toDate('2020-01-01') TO toDate('2027-01-01') STEP INTERVAL 1 YEAR);
 SELECT count(), min(d), max(d) FROM (SELECT toDate32('2026-01-01') AS d ORDER BY d ASC WITH FILL FROM toDate32('2025-12-30') TO toDate32('2026-01-03'));
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime('2020-06-16 03:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2020-06-16 00:00:00', 'UTC') TO toDateTime('2020-06-16 10:00:00', 'UTC') STEP 1800);
 SELECT groupArray(x) FROM (SELECT 5.5::Float32 AS x ORDER BY x ASC WITH FILL FROM 5 TO 6 STEP 0.25);

@@ -220,8 +220,9 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     return true;
 }
 
-/** A value that filling generates under the given TO bound and that therefore must be representable in the column
-  * type, or nullopt when no such value can be derived up front and the bound has to be accepted.
+/** A value that must be representable in the column type for filling under the given TO bound to behave - either
+  * a value the filling generates, or a bound it must be able to reach - or nullopt when no such value can be
+  * derived up front and the bound has to be accepted.
   *
   * Filling starts at FROM and advances by STEP while it stays strictly before TO, so with a FROM and a plain
   * numeric step the last generated value is known up front and can be far below TO: `WITH FILL FROM 0 TO 257 STEP 3`
@@ -235,8 +236,15 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
   * so that anchors close enough to TO to generate nothing (`WITH FILL TO 1000 STEP 5000` over a UInt8 column) keep
   * being accepted.
   *
-  * An INTERVAL step is not a constant number of the column type units, so with FROM only the value right before TO
-  * can be assumed, and without FROM nothing can be proven at all.
+  * An INTERVAL step makes an out-of-range TO fatal no matter where the sequence is anchored, so TO itself is the
+  * value required to fit. The step functions (see Add*Impl in FunctionDateOrDateTimeAddInterval.h) perform the
+  * calendar arithmetic in the column's own native integer type - UInt16 for Date, UInt32 for DateTime, Int32 for
+  * Date32 - so unlike a plain numeric step, which advances an Int64 that eventually exceeds any TO, an INTERVAL
+  * step wraps or saturates within the column domain and can never reach a TO outside of it: filling never
+  * terminates. `WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR` generates 1970-01-01 and 2070-01-01,
+  * then wraps around 1990 and cycles through the UInt16 domain forever, all of it below TO = 70000.
+  *
+  * STALENESS is the exception: it terminates the filling in-domain, see below.
   *
   * STALENESS caps the sequence at the last data value plus the staleness, replacing TO as the effective bound in
   * `FillingRow::updateConstraintsWithStalenessRow` whenever it comes first, so with STALENESS the sequence can stop
@@ -254,7 +262,12 @@ static std::optional<Int64> fillValueRequiredToFitColumnType(const FillColumnDes
 
     const Int64 to = descr.fill_to.safeGet<Int64>();
 
-    if (!descr.step_kind && descr.fill_step.getType() == Field::Types::Int64)
+    /// The calendar arithmetic of an INTERVAL step stays within the column's native type and can never reach a TO
+    /// outside of it, so the filling would generate wrapped-around values forever.
+    if (descr.step_kind)
+        return to;
+
+    if (descr.fill_step.getType() == Field::Types::Int64)
     {
         const Int64 step = descr.fill_step.safeGet<Int64>();
 
@@ -280,14 +293,7 @@ static std::optional<Int64> fillValueRequiredToFitColumnType(const FillColumnDes
         return static_cast<Int64>(best_case);
     }
 
-    if (descr.fill_from.isNull())
-        return {};
-
-    Int64 last_admitted_value = 0;
-    if (common::subOverflow(to, static_cast<Int64>(direction), last_admitted_value))
-        return {}; /// TO is at the very edge of Int64, on the side where filling stops immediately
-
-    return last_admitted_value;
+    return {};
 }
 
 /** The WITH FILL bound values are kept in a type wide enough for the arithmetic - Int64 for every integer column
@@ -321,6 +327,7 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
     /// representable: `WITH FILL FROM 0 TO 256` over a UInt8 column generates 0..255, and so does
     /// `WITH FILL FROM 0 TO 257 STEP 3`, which stops at 255 - all of which fit. When the generated values depend
     /// on the data (no FROM), the bound is rejected only if filling provably wraps for every possible anchor.
+    /// An INTERVAL step can never reach an out-of-range TO at all, so there the bound itself is required to fit.
     if (!descr.fill_to.isNull() && !is_representable(descr.fill_to))
     {
         const auto required_value = fillValueRequiredToFitColumnType(descr, direction);

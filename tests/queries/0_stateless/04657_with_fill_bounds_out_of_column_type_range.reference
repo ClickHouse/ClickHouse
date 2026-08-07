@@ -15,10 +15,13 @@ STALENESS caps the sequence before TO, so the TO bound is not rejected
 20	5	24
 20	-24	-5
 7	5	23
+an INTERVAL step can never reach an out of range TO, so such a TO is rejected
+3	2026-03-05	2028-03-05
 in-range filling is unchanged
 [1,2,3,4,5,6,7,8,9]
 [-1,-2,-3,-4,-5,-6,-7]
 4	2025-12-30	2026-01-02
+7	2020-01-01	2026-01-01
 4	2025-12-30	2026-01-02
 20	2020-06-16 00:00:00	2020-06-16 09:30:00
 [5,5.25,5.5,5.75]
