@@ -54,7 +54,7 @@ public:
     bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
 
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
-    std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding);
+    std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding) const;
 
 private:
     std::unordered_map<String, Int64> storage_encoding;
@@ -99,6 +99,14 @@ struct FormatFilterInfo
     Block additional_columns;
 
     ColumnMapperPtr column_mapper;
+
+    /// Only set when `column_mapper` above was swapped for a per-file mapper (data lake schema
+    /// evolution, e.g. Iceberg): the CURRENT/query-side mapper, i.e. the one `column_mapper` held
+    /// before the swap. Filters built from the query (like `filter_actions_dag`, or a `SpatialFilter`
+    /// extracted from it) reference columns by their current/query-side name, not the name they had
+    /// in the schema this particular file was written under, so resolving a filter's column name back
+    /// to a `field_id` requires this mapper, not the per-file one.
+    ColumnMapperPtr current_schema_column_mapper;
 
     std::optional<size_t> condition_hash;
 private:
