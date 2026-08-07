@@ -18,8 +18,6 @@
 #include <aws/s3/model/UploadPartRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/UploadPartCopyRequest.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
 
@@ -29,10 +27,7 @@
 #include <IO/ReadBufferFromEncryptedFile.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/ReadBufferFromS3.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadSettings.h>
 #include <IO/S3/Client.h>
-#include <IO/S3/copyS3File.h>
 
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
@@ -167,7 +162,7 @@ class S3MemStrore
 public:
     void CreateBucket(const std::string & bucket)
     {
-        chassert(!buckets.contains(bucket));
+        assert(!buckets.contains(bucket));
         buckets.emplace(bucket, BucketMemStore{});
     }
 
@@ -188,8 +183,6 @@ struct EventCounts
     size_t multiUploadComplete = 0;
     size_t multiUploadAbort = 0;
     size_t uploadParts = 0;
-    size_t copyObject = 0;
-    size_t uploadPartCopy = 0;
     size_t writtenSize = 0;
 
     size_t totalRequestsCount() const
@@ -199,28 +192,6 @@ struct EventCounts
 };
 
 struct Client;
-
-/// Read a request body the way the AWS SDK does: block reads of `content_length` bytes via
-/// istream::read (which routes to streambuf::xsgetn). `data << body->rdbuf()` instead reads
-/// char-by-char through sbumpc/uflow, which needs a streambuf get area -- StdStreamBufFromReadBuffer
-/// (used by the copyS3File body path) implements only xsgetn/underflow and leaves the get area empty,
-/// so the rdbuf() form segfaults on it. Reading by content length works for every body stream.
-inline std::string readRequestBody(const std::shared_ptr<Aws::IOStream> & body, size_t content_length)
-{
-    std::string data;
-    data.resize(content_length);
-    body->read(data.data(), static_cast<std::streamsize>(content_length));
-    data.resize(static_cast<size_t>(body->gcount()));
-    return data;
-}
-
-/// A CopyObject / UploadPartCopy `CopySource` has the form "bucket/key".
-inline std::pair<std::string, std::string> splitCopySource(const std::string & copy_source)
-{
-    auto slash = copy_source.find('/');
-    chassert(slash != std::string::npos);
-    return {copy_source.substr(0, slash), copy_source.substr(slash + 1)};
-}
 
 struct InjectionModel
 {
@@ -268,7 +239,7 @@ struct Client : DB::S3::Client
     static DB::S3::PocoHTTPClientConfiguration GetClientConfiguration()
     {
         DB::RemoteHostFilter remote_host_filter;
-        auto configuration = DB::S3::ClientFactory::instance().createClientConfiguration(
+        return DB::S3::ClientFactory::instance().createClientConfiguration(
             "some-region",
             remote_host_filter,
             /* s3_max_redirects = */ 100,
@@ -279,12 +250,6 @@ struct Client : DB::S3::Client
             /* for_disk_s3 = */ false,
             /* opt_disk_name = */ {},
             /* request_throttler = */ {});
-        /// createClientConfiguration leaves retryStrategy unset; ClientFactory::create() normally
-        /// fills it in. This mock builds DB::S3::Client directly, bypassing the factory, so replicate
-        /// that here -- otherwise chassert(client_configuration.retryStrategy) in Client::doRequest
-        /// aborts every request in debug/sanitizer builds.
-        configuration.retryStrategy = std::make_shared<DB::S3::Client::RetryStrategy>(configuration.retry_strategy);
-        return configuration;
     }
 
     void setInjectionModel(std::shared_ptr<MockS3::InjectionModel> injections_)
@@ -305,9 +270,10 @@ struct Client : DB::S3::Client
         }
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
-        const std::string data = readRequestBody(request.GetBody(), request.GetContentLength());
-        bStore.PutObject(request.GetKey(), data);
-        counters.writtenSize += data.length();
+        std::stringstream data;
+        data << request.GetBody()->rdbuf();
+        bStore.PutObject(request.GetKey(), data.str());
+        counters.writtenSize += data.str().length();
 
         Aws::S3::Model::PutObjectOutcome outcome;
         Aws::S3::Model::PutObjectResult result(outcome.GetResultWithOwnership());
@@ -393,11 +359,12 @@ struct Client : DB::S3::Client
             }
         }
 
-        const std::string data = readRequestBody(request.GetBody(), request.GetContentLength());
-        counters.writtenSize += data.length();
+        std::stringstream data;
+        data << request.GetBody()->rdbuf();
+        counters.writtenSize += data.str().length();
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
-        auto etag = bStore.UploadPart(request.GetUploadId(), data);
+        auto etag = bStore.UploadPart(request.GetUploadId(), data.str());
 
         Aws::S3::Model::UploadPartResult result;
         result.SetETag(etag);
@@ -447,48 +414,6 @@ struct Client : DB::S3::Client
         return Aws::S3::Model::AbortMultipartUploadOutcome(result);
     }
 
-    /// Whole-object server-side copy. A CopyObject request carries no byte range, so it always copies the
-    /// entire source object -- modelling the real S3 behaviour that makes it unsafe for a partial range.
-    Aws::S3::Model::CopyObjectOutcome CopyObject(const Aws::S3::Model::CopyObjectRequest & request) const override
-    {
-        ++counters.copyObject;
-
-        const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
-        const String & src_data = store->GetBucketStore(src_bucket).objects[src_key];
-        store->GetBucketStore(request.GetBucket()).PutObject(request.GetKey(), src_data);
-
-        Aws::S3::Model::CopyObjectResult result;
-        return Aws::S3::Model::CopyObjectOutcome(result);
-    }
-
-    /// Ranged server-side copy of one multipart part. Honours the `CopySourceRange` so only the requested
-    /// bytes are copied -- this is the path a partial-range copy must take.
-    Aws::S3::Model::UploadPartCopyOutcome UploadPartCopy(const Aws::S3::Model::UploadPartCopyRequest & request) const override
-    {
-        ++counters.uploadPartCopy;
-
-        const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
-        const String & src_data = store->GetBucketStore(src_bucket).objects[src_key];
-
-        size_t begin = 0;
-        size_t end = src_data.size() - 1;
-        const String & range = request.GetCopySourceRange();
-        if (const String prefix = "bytes="; range.starts_with(prefix))
-        {
-            int ret = sscanf(range.c_str(), "bytes=%zu-%zu", &begin, &end); /// NOLINT
-            chassert(ret == 2);
-        }
-
-        auto & dstStore = store->GetBucketStore(request.GetBucket());
-        auto etag = dstStore.UploadPart(request.GetUploadId(), src_data.substr(begin, end - begin + 1));
-
-        Aws::S3::Model::CopyPartResult copy_part_result;
-        copy_part_result.SetETag(etag);
-        Aws::S3::Model::UploadPartCopyResult result;
-        result.SetCopyPartResult(copy_part_result);
-        return Aws::S3::Model::UploadPartCopyOutcome(result);
-    }
-
     std::shared_ptr<S3MemStrore> store;
     mutable EventCounts counters;
     mutable std::shared_ptr<InjectionModel> injections;
@@ -533,31 +458,6 @@ struct UploadPartFailIngection: InjectionModel
     {
         return Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::VALIDATION, "FailInjection", "UploadPartFailIngection", false);
     }
-};
-
-/// Fails the first `fail_times` CompleteMultipartUpload calls with the un-typed MinIO `InvalidPart`
-/// eventual-consistency error, then lets the real mock store handle the rest. The AWS SDK cannot map
-/// <Code>InvalidPart</Code> to a typed model error, so it produces UNKNOWN as the error type and keeps
-/// the raw code only in the exception name -- exactly the shape WriteBufferFromS3 must recognise to
-/// retry (see AWSErrorMarshaller::Marshall).
-struct CompleteMPUInvalidPartOnceIngection : InjectionModel
-{
-    explicit CompleteMPUInvalidPartOnceIngection(size_t fail_times_) : fail_times(fail_times_) {}
-
-    std::optional<Aws::S3::Model::CompleteMultipartUploadOutcome> call(const Aws::S3::Model::CompleteMultipartUploadRequest & /*request*/) override
-    {
-        if (calls++ >= fail_times)
-            return std::nullopt;
-        return Aws::Client::AWSError<Aws::Client::CoreErrors>(
-            Aws::Client::CoreErrors::UNKNOWN,
-            "InvalidPart",
-            "One or more of the specified parts could not be found. The part may not have been uploaded, "
-            "or the specified entity tag may not match the part's entity tag.",
-            false);
-    }
-
-    size_t fail_times;
-    size_t calls = 0;
 };
 
 struct BaseSyncPolicy
@@ -621,13 +521,13 @@ struct SimpleAsyncTasks : BaseSyncPolicy
 
 using namespace DB;
 
-static void writeAsOneBlock(WriteBuffer& buf, size_t size)
+void writeAsOneBlock(WriteBuffer& buf, size_t size)
 {
     std::vector<char> data(size, 'a');
     buf.write(data.data(), data.size());
 }
 
-static void writeAsPieces(WriteBuffer& buf, size_t size)
+void writeAsPieces(WriteBuffer& buf, size_t size)
 {
     size_t ceil = 15ull*1024*1024*1024;
     size_t piece = 1;
@@ -931,188 +831,6 @@ TEST_P(SyncAsync, ExceptionOnCompleteMPU) {
             throw;
         }
       }, DB::S3Exception);
-}
-
-/// A transient MinIO `InvalidPart` on CompleteMultipartUpload must be retried, not surfaced as a
-/// hard failure. Regression test for the `Code: 499 ... InvalidPart` flake at hits_s3 fixture load.
-/// The injection fails the first completion attempt with `InvalidPart` (UNKNOWN type, name only),
-/// then succeeds; the write must finalize and store the object. Without the retry-predicate fix in
-/// WriteBufferFromS3::completeMultipartUpload the first failure is thrown straight through and this
-/// test fails.
-TEST_P(SyncAsync, CompleteMPURetriesInvalidPart) {
-    setInjectionModel(std::make_shared<MockS3::CompleteMPUInvalidPartOnceIngection>(/* fail_times= */ 1));
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
-    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
-
-    auto buffer = getWriteBuffer("complete_mpu_invalid_part_retry");
-    buffer->write('A');
-
-    getAsyncPolicy().setAutoExecute(true);
-    buffer->finalize();
-
-    /// The completion was attempted twice: once failing with InvalidPart, once succeeding.
-    EXPECT_EQ(client->counters.multiUploadComplete, 2u);
-    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
-
-    auto & bStore = client->store->GetBucketStore(bucket);
-    EXPECT_EQ(bStore.objects["complete_mpu_invalid_part_retry"].size(), 1u);
-}
-
-/// The same transient MinIO `InvalidPart` on CompleteMultipartUpload must also be retried by the
-/// copyDataToS3File / copyS3File helper path (UploadHelper::completeMultipartUpload), which backs
-/// MinIO-backed backups and DiskObjectStorage server-side copies. Injects `InvalidPart` on the first
-/// completion attempt, then succeeds; the copy must finalize and store the object. Without the shared
-/// retry predicate in UploadHelper::completeMultipartUpload the first failure is thrown straight
-/// through and this test fails.
-TEST_F(WBS3Test, CopyDataToS3FileRetriesInvalidPart) {
-    setInjectionModel(std::make_shared<MockS3::CompleteMPUInvalidPartOnceIngection>(/* fail_times= */ 1));
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
-    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
-    getSettings()[Setting::s3_check_objects_after_upload] = false;
-
-    S3::S3RequestSettings request_settings;
-    request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
-
-    client->resetCounters();
-
-    const String payload = "copy_invalid_part_payload";
-    auto create_read_buffer = [&]() -> std::unique_ptr<SeekableReadBuffer>
-    {
-        return std::make_unique<ReadBufferFromOwnString>(payload);
-    };
-
-    /// Empty schedule => the multipart upload (and completion) runs synchronously on this thread.
-    copyDataToS3File(
-        create_read_buffer,
-        /* offset= */ 0,
-        /* size= */ payload.size(),
-        client,
-        bucket,
-        "copy_data_invalid_part_retry",
-        request_settings,
-        /* blob_storage_log= */ nullptr,
-        /* schedule= */ {},
-        /* object_metadata= */ std::nullopt);
-
-    /// The completion was attempted twice: once failing with InvalidPart, once succeeding.
-    EXPECT_EQ(client->counters.multiUploadComplete, 2u);
-    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
-
-    auto & bStore = client->store->GetBucketStore(bucket);
-    EXPECT_EQ(bStore.objects["copy_data_invalid_part_retry"].size(), payload.size());
-}
-
-/// copyS3File routing between whole-object CopyObject and ranged UploadPartCopy. A small copy would take
-/// CopyObject, which carries no byte range and copies the ENTIRE source; a partial-range copy must therefore
-/// force UploadPartCopy, which sets a CopySourceRange per part -- but only when S3 would accept the source as
-/// a byte-range copy source (it must be greater than 5 MB), otherwise the range is read through buffers.
-class CopyS3FileRoutingTest : public WBS3Test
-{
-protected:
-    /// S3 rejects a byte-range copy source of 5 MB or less, so tests need sources on both sides of it.
-    static constexpr size_t min_source_size_for_range_copy = 5 * 1024 * 1024;
-
-    /// A source object with position-dependent bytes, so a wrong (whole-object) copy is detectable both by
-    /// size and by content.
-    String putSource(const String & key, size_t size)
-    {
-        String data;
-        data.reserve(size);
-        for (size_t i = 0; i < size; ++i)
-            data += static_cast<char>('0' + (i % 10));
-        client->store->GetBucketStore(bucket).PutObject(key, data);
-        return data;
-    }
-
-    S3::S3RequestSettings makeRequestSettings()
-    {
-        getSettings()[Setting::s3_check_objects_after_upload] = false;
-        S3::S3RequestSettings request_settings;
-        request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
-        return request_settings;
-    }
-
-    CreateReadBuffer wholeSourceReader(const String & src_key)
-    {
-        return [this, src_key]() -> std::unique_ptr<SeekableReadBuffer>
-        {
-            return std::make_unique<ReadBufferFromOwnString>(client->store->GetBucketStore(bucket).objects[src_key]);
-        };
-    }
-
-    void runWholeCopy(const String & src_key, size_t size, const String & dst_key)
-    {
-        auto request_settings = makeRequestSettings();
-        client->resetCounters();
-        copyS3File(
-            client, bucket, src_key, size,
-            /* dest_s3_client= */ client, bucket, dst_key,
-            request_settings, ReadSettings{},
-            /* blob_storage_log= */ nullptr, /* schedule= */ {},
-            wholeSourceReader(src_key));
-    }
-
-    void runRangeCopy(const String & src_key, size_t offset, size_t size, size_t src_object_size, const String & dst_key)
-    {
-        auto request_settings = makeRequestSettings();
-        client->resetCounters();
-        copyS3FileRange(
-            client, bucket, src_key, offset, size, src_object_size,
-            /* dest_s3_client= */ client, bucket, dst_key,
-            request_settings, ReadSettings{},
-            /* blob_storage_log= */ nullptr, /* schedule= */ {},
-            wholeSourceReader(src_key));
-    }
-};
-
-TEST_F(CopyS3FileRoutingTest, WholeObjectUsesCopyObject)
-{
-    const String source = putSource("src", /* size= */ 100);
-    runWholeCopy("src", /* size= */ source.size(), "dst");
-
-    EXPECT_EQ(client->counters.copyObject, 1u);
-    EXPECT_EQ(client->counters.uploadPartCopy, 0u);
-    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source);
-}
-
-/// A source above the 5 MB threshold can be range-copied server-side, so UploadPartCopy is used. The
-/// sub-range content check discriminates: a wrong whole-object copy would copy the entire source.
-TEST_F(CopyS3FileRoutingTest, RangedCopyOfLargeSourceUsesUploadPartCopy)
-{
-    const size_t source_size = min_source_size_for_range_copy + 1024;
-    const String source = putSource("src", source_size);
-    runRangeCopy("src", /* offset= */ 10, /* size= */ 20, source_size, "dst");
-
-    EXPECT_EQ(client->counters.copyObject, 0u);
-    EXPECT_GT(client->counters.uploadPartCopy, 0u);
-    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(10, 20));
-}
-
-/// A prefix range [0, n) with n < full size is still a range: starting at offset 0 must NOT make it a
-/// whole-object copy, which would copy the entire source instead of the first 20 bytes.
-TEST_F(CopyS3FileRoutingTest, PrefixRangeOfLargeSourceUsesUploadPartCopy)
-{
-    const size_t source_size = min_source_size_for_range_copy + 1024;
-    const String source = putSource("src", source_size);
-    runRangeCopy("src", /* offset= */ 0, /* size= */ 20, source_size, "dst");
-
-    EXPECT_EQ(client->counters.copyObject, 0u);
-    EXPECT_GT(client->counters.uploadPartCopy, 0u);
-    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(0, 20));
-}
-
-/// S3 rejects a byte-range copy source of 5 MB or less (InvalidRequest), so such a range must be read through
-/// buffers up front -- no server-side copy of either kind may be issued.
-TEST_F(CopyS3FileRoutingTest, RangedCopyOfSmallSourceUsesBuffers)
-{
-    const String source = putSource("src", /* size= */ 100);
-    runRangeCopy("src", /* offset= */ 10, /* size= */ 20, source.size(), "dst");
-
-    EXPECT_EQ(client->counters.uploadPartCopy, 0u);
-    EXPECT_EQ(client->counters.copyObject, 0u);
-    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(10, 20));
 }
 
 TEST_P(SyncAsync, ExceptionOnUploadPart) {
@@ -1468,7 +1186,7 @@ TEST_P(SyncAsync, StrictUploadPartSize) {
     }
 }
 
-[[maybe_unused]] static String fillStringWithPattern(String pattern, int n)
+String fillStringWithPattern(String pattern, int n)
 {
     String data;
     for (int i = 0; i < n; ++i)

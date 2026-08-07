@@ -3,7 +3,7 @@ import string
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, is_arm
 
 cluster = ClickHouseCluster(__file__)
 
@@ -101,7 +101,7 @@ def test_preconfigured_default_codec(start_cluster):
         )
         assert (
             node.query(
-                "SELECT count(*) FROM compression_codec_multiple_with_key GROUP BY somedate SETTINGS enable_sharding_aggregator = 0 -- TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk)."
+                "SELECT count(*) FROM compression_codec_multiple_with_key GROUP BY somedate"
             )
             == "10003\n"
         )

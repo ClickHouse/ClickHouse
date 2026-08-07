@@ -85,7 +85,7 @@ public:
     {
         Configuration::removeConfigValue(*config, key);
         [[maybe_unused]] auto removed = keys.erase(key);
-        chassert(removed);
+        assert(removed);
     }
 
     Keys getKeys(ssize_t depth, const std::string & prefix) const
@@ -262,18 +262,6 @@ bool NamedCollection::isOverridable(const Key & key, bool default_value) const
     return pimpl->isOverridable(key, default_value);
 }
 
-void NamedCollection::markQueryOverridden(const Key & key)
-{
-    std::lock_guard lock(mutex);
-    query_overridden_keys.insert(key);
-}
-
-bool NamedCollection::isQueryOverridden(const Key & key) const
-{
-    std::lock_guard lock(mutex);
-    return query_overridden_keys.contains(key);
-}
-
 template <bool Locked> void NamedCollection::remove(const Key & key)
 {
     assertMutable();
@@ -374,8 +362,8 @@ NamedCollectionFromSQL::NamedCollectionFromSQL(const ASTCreateNamedCollectionQue
     const auto config = NamedCollectionConfiguration::createConfiguration(collection_name, create_query_ptr.changes, create_query_ptr.overridability);
 
     std::set<std::string, std::less<>> keys;
-    for (const auto & change : create_query_ptr.changes)
-        keys.insert(change.name);
+    for (const auto & [name, _] : create_query_ptr.changes)
+        keys.insert(name);
 
     pimpl = Impl::create(*config, collection_name, "", keys);
 }
@@ -401,7 +389,7 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
     std::lock_guard lock(mutex);
 
     std::unordered_map<std::string, Field> result_changes_map;
-    for (const auto & [name, value, _] : alter_query.changes)
+    for (const auto & [name, value] : alter_query.changes)
     {
         auto [it, inserted] = result_changes_map.emplace(name, value);
         if (!inserted)
@@ -413,7 +401,7 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
         }
     }
 
-    for (const auto & [name, value, _] : create_query_ptr.changes)
+    for (const auto & [name, value] : create_query_ptr.changes)
         result_changes_map.emplace(name, value);
 
     std::unordered_map<std::string, bool> result_overridability_map;
@@ -451,7 +439,7 @@ void NamedCollectionFromSQL::update(const ASTAlterNamedCollectionQuery & alter_q
             collection_name);
 
     chassert(create_query_ptr.collection_name == alter_query.collection_name);
-    for (const auto & [name, value, _] : alter_query.changes)
+    for (const auto & [name, value] : alter_query.changes)
     {
         auto it_override = alter_query.overridability.find(name);
         if (it_override != alter_query.overridability.end())
