@@ -1,9 +1,40 @@
+import contextlib
 import logging
 import os
+import subprocess
 
 import pyspark
 from pyspark.context import SparkContext
 from pyspark.sql import SparkSession
+
+
+@contextlib.contextmanager
+def _fork_safe_popen():
+    """Replace pyspark's ``preexec_fn`` with ``start_new_session`` while the
+    gateway launches.
+
+    ``preexec_fn`` disables both of CPython's exec-only launch paths
+    (``posix_spawn`` and ``vfork`` each require it to be ``None``), so a plain
+    ``fork()`` runs Python in the child. A lock a sibling thread held at fork
+    time is then held in the child forever, so it never execs and the parent
+    blocks in ``os.read(errpipe_read)`` until the test times out.
+
+    ``start_new_session`` keeps SIGINT away from the JVM without running Python
+    in the child: the signal goes to the foreground process group, which the
+    child is no longer part of.
+    """
+    original_init = subprocess.Popen.__init__
+
+    def __init__(self, *args, **kwargs):
+        if kwargs.pop("preexec_fn", None) is not None:
+            kwargs.setdefault("start_new_session", True)
+        original_init(self, *args, **kwargs)
+
+    subprocess.Popen.__init__ = __init__
+    try:
+        yield
+    finally:
+        subprocess.Popen.__init__ = original_init
 
 
 def write_spark_log_config(log_dir):
@@ -103,7 +134,8 @@ class ResilientSparkSession:
         if SparkContext._gateway is not None and not _gateway_is_live():
             logging.warning("Cached py4j gateway is dead, discarding it")
             _reset_pyspark_class_state()
-        return self._create()
+        with _fork_safe_popen():
+            return self._create()
 
     def _restart(self):
         logging.warning("Spark session is dead, restarting...")

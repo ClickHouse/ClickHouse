@@ -1,5 +1,7 @@
 import os
 import signal
+import subprocess
+import threading
 
 import pyspark
 from pyspark.context import SparkContext
@@ -7,6 +9,58 @@ from pyspark.sql import SparkSession
 
 from helpers import spark_tools
 from helpers.spark_tools import ResilientSparkSession
+
+
+def test_gateway_launch_does_not_fork_deadlock():
+    """A relaunch must not run Python in the forked child.
+
+    pyspark's ``launch_gateway`` passes ``preexec_fn``, which rules out both
+    ``posix_spawn`` and ``vfork``, so the child runs Python and blocks on any
+    lock a sibling thread held at fork time; the parent then hangs in
+    ``os.read(errpipe_read)`` until the test times out. The factory below
+    reproduces that exact call, so without the fix this deadlocks rather than
+    fails.
+    """
+    held = threading.Lock()
+    held.acquire()
+    threading.Thread(target=held.acquire, daemon=True).start()
+
+    launched = []
+
+    def factory():
+        def preexec_func():
+            signal.signal(signal.SIGINT, signal.SIG_IGN)  # pyspark's own
+            held.acquire()  # stands in for inherited locked state
+
+        proc = subprocess.Popen(
+            ["/bin/true"],
+            stdin=subprocess.PIPE,
+            env=dict(os.environ),
+            preexec_fn=preexec_func,
+        )
+        proc.communicate()
+        launched.append(proc.returncode)
+        return "session"
+
+    with spark_tools._fork_safe_popen():
+        factory()
+    assert launched == [0]
+
+    # The shim is scoped: outside it pyspark's argument is untouched.
+    seen = {}
+    original_init = subprocess.Popen.__init__
+
+    def spy(self, *args, **kwargs):
+        seen.update(kwargs)
+        return original_init(self, *args, **kwargs)
+
+    subprocess.Popen.__init__ = spy
+    try:
+        subprocess.Popen(["/bin/true"], preexec_fn=lambda: None).communicate()
+    finally:
+        subprocess.Popen.__init__ = original_init
+    assert seen.get("preexec_fn") is not None
+    assert seen.get("start_new_session") is None
 
 
 def _jvm_proc():
