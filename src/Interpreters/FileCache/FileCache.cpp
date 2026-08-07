@@ -596,7 +596,7 @@ void FileCache::initializeImpl(bool load_metadata)
 
         /// The single maintenance task (invalidated-entries cleanup + idle eviction).
         /// Publish the wake notifier before loadMetadata can invalidate entries.
-        background_cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
+        background_cleanup_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(
             StorageID::createEmpty(), "FileCacheBackgroundCleanup", [this] { backgroundCleanupTaskFunc(); });
         main_priority->setInvalidateNotifier(
             invalidated_entries_cleanup_threshold, [this] { background_cleanup_task->schedule(); });
@@ -626,7 +626,7 @@ void FileCache::initializeImpl(bool load_metadata)
             /* max_free_threads */0,
             /* queue_size */keep_up_free_space_eviction_threads);
 
-        keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
+        keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
         keep_up_free_space_ratio_task->schedule();
     }
 

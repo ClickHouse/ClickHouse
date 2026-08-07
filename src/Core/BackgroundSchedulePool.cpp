@@ -329,11 +329,8 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
     }
     catch (...)
     {
-        /// The workers spawned so far are already running and only `join` stops them. The destructor is
-        /// not called for an object whose constructor threw, and destroying a still joinable thread
-        /// calls `std::abort`, so they have to be joined before the exception leaves the constructor.
-        join();
-
+        /// `~ThreadFromGlobalPoolImpl` aborts on a still-joinable thread, so `join()` must run
+        /// before the throw to tear down already-spawned workers.
         LOG_ERROR(
             logger,
             "Couldn't get {} threads from global thread pool: {}",
@@ -342,6 +339,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
                 ? "Not enough threads. Please make sure max_thread_pool_size is considerably "
                   "bigger than background_schedule_pool_size."
                 : getCurrentExceptionMessage(/* with_stacktrace */ true));
+        join();
         throw;
     }
 }
@@ -446,8 +444,8 @@ void BackgroundSchedulePool::join()
         {
             Stopwatch watch;
             LOG_TRACE(logger, "Waiting for threads to finish.");
-            /// May be absent when the constructor failed to spawn the initial workers and joins them
-            /// before letting the exception out, i.e. before it got to create the delayed thread.
+            /// delayed_thread may be null when join() is called from the constructor's failure
+            /// path before the delayed thread was constructed (a worker spawn threw first).
             if (delayed_thread)
             {
                 delayed_thread->join();
