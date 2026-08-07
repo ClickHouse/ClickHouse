@@ -557,7 +557,13 @@ void HTTPHandler::processQuery(
     SettingsChanges path_derived_changes;
     if (!path_info.compression.empty())
     {
-        const String & current_compression = settings[Setting::compression];
+        /// Only a compression supplied by this request (URL parameter or header, collected into
+        /// `settings_changes` above) counts as an explicit override that can conflict with the path.
+        /// A value inherited from a user profile or session default is a fallback, and the extension
+        /// written in the path is per-request and more specific, so the path wins over it — the same
+        /// precedence rule as for `default_format` below.
+        const Field * request_compression = settings_changes.tryGet("compression");
+        const String current_compression = request_compression ? request_compression->safeGet<String>() : String{};
         /// Compare the resolved `CompressionMethod`, not the raw strings: `chooseCompressionMethod`
         /// treats `gzip`/`gz`, `zstd`/`zst`, `lzma`/`xz`, `brotli`/`br` etc. as aliases, so
         /// `/hits.CSV.gz?compression=gzip` must not be rejected as a conflict.
