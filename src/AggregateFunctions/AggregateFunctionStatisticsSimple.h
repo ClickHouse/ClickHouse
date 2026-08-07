@@ -144,9 +144,10 @@ public:
             /// the lane kernel pays for them in arithmetic. `skewPop` and `kurtPop` therefore stay
             /// on it; no lane count catches up, the best being +7.2% at level 3.
             ///
-            /// For the two levels below, AArch64 only matches the per-row path rather than beating
-            /// it - the ~9% there is the inlined conversion, not the lanes - but folding the same
-            /// way as x86-64 is what keeps the two targets returning the same value.
+            /// At level 2, dividing inline only ties the per-row path on AArch64 - what
+            /// `Decimal32` and `Decimal64` gain there is the inlined conversion, not the lanes - but
+            /// it folds the way x86-64 does, so both targets return the same value. `Decimal128`
+            /// buffers on either target, and is where most of the gain is.
             if constexpr (StatFunc::num_args == 1 && StatFunc::level <= 2)
             {
                 if (if_argument_pos < 0)
