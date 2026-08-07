@@ -5,6 +5,7 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -19,7 +20,8 @@
 /// the columns are grouped into segments appended in a fixed order (see the note on
 /// `MergeTreePartMinMaxIndexColumns` in `Core/SettingsEnums.h`), and every reader expresses how much of the
 /// index a part carries as a single width. These tests pin the two places where `MinMaxIndex::store` has to
-/// stop rather than skip ahead to keep that true, and show what the second one protects against.
+/// stop rather than skip ahead to keep that true (and show what the second one protects against), and the one
+/// place where it has to skip: a file the caller has already carried over must not be written through.
 
 namespace
 {
@@ -101,6 +103,54 @@ TEST_F(MinMaxIndexStoreFixture, StoresEveryColumnWhenEveryRangeIsKnown)
     EXPECT_EQ(
         store("all_1_3_1_5", index, threeColumns()),
         (std::set<String>{"minmax_p.idx", "minmax__block_number.idx", "minmax__block_offset.idx"}));
+}
+
+TEST_F(MinMaxIndexStoreFixture, DoesNotWriteThroughAFileTheCallerCarriedOver)
+{
+    const NamesAndTypesList columns = {{"p", std::make_shared<DataTypeUInt64>()}};
+
+    /// The source part's index, stored the usual way.
+    IMergeTreeDataPart::MinMaxIndex source_index;
+    source_index.hyperrectangle = {Range(Field(UInt64(7)), true, Field(UInt64(7)), true)};
+    source_index.initialized = true;
+    ASSERT_EQ(store("all_1_1_0", source_index, columns), (std::set<String>{"minmax_p.idx"}));
+
+    const fs::path source_file = tmp_dir / "all_1_1_0" / "minmax_p.idx";
+    String content_before;
+    {
+        ReadBufferFromFile in(source_file.string());
+        readStringUntilEOF(content_before, in);
+    }
+
+    /// A mutation that does not rewrite the whole part hardlinks the source part's files into the new part
+    /// and records them in the new part's checksums before the index is stored, so the file in the new part
+    /// shares its inode with the source part.
+    fs::create_directories(tmp_dir / "all_1_1_0_2");
+    fs::create_hard_link(source_file, tmp_dir / "all_1_1_0_2" / "minmax_p.idx");
+
+    MergeTreeDataPartChecksums checksums;
+    checksums.addFile("minmax_p.idx", fs::file_size(source_file), {});
+
+    /// The index the mutation goes on to store may differ from what is in the file - a repair rewrites the
+    /// inherited range in memory. Writing it out through the hardlink would corrupt the source part: the
+    /// file that is already in the checksums has to be left alone.
+    IMergeTreeDataPart::MinMaxIndex inherited;
+    inherited.hyperrectangle = {Range(Field(UInt64(1)), true, Field(UInt64(100)), true)};
+    inherited.initialized = true;
+
+    DataPartStorageOnDiskFull part_storage(volume, "", "all_1_1_0_2");
+    auto written_files = inherited.store(columns, part_storage, checksums, settings);
+    for (auto & file : written_files)
+        file->finalize();
+
+    EXPECT_TRUE(written_files.empty());
+
+    String content_after;
+    {
+        ReadBufferFromFile in(source_file.string());
+        readStringUntilEOF(content_after, in);
+    }
+    EXPECT_EQ(content_after, content_before);
 }
 
 TEST_F(MinMaxIndexStoreFixture, StopsAtTheFirstUnknownRangeInsteadOfSkippingIt)
