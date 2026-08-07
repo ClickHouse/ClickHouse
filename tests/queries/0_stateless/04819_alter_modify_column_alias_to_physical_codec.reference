@@ -11,3 +11,4 @@ ALIAS	JSONExtractUInt(event, \'type_uid\')
 EPHEMERAL	1	CODEC(T64, LZ4)
 EPHEMERAL	1	CODEC(T64, LZ4)
 {"type_uid":7}	7
+ALIAS	JSONExtractUInt(event, \'type_uid\')	

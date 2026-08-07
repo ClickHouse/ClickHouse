@@ -106,6 +106,18 @@ ALTER TABLE t_mat_codec_to_alias MODIFY COLUMN type_uid UInt32 ALIAS JSONExtract
 INSERT INTO t_alias_to_mat VALUES ('{"type_uid":7}');
 SELECT event, type_uid FROM t_alias_to_mat;
 
+-- Below, only AlterCommands::validate can reject: max_query_size = 0 skips the CREATE-query
+-- revalidation, and a replicated table reaches the other one only in a Replicated database.
+-- The setting is session-scoped, so this section must stay last.
+SET max_query_size = 0;
+
+CREATE TABLE t_alias_rep_unvalidated (event String, type_uid UInt32 ALIAS JSONExtractUInt(event, 'type_uid'))
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04819_alias_codec_no_revalidation', 'r1') ORDER BY tuple();
+ALTER TABLE t_alias_rep_unvalidated MODIFY COLUMN type_uid UInt32 CODEC(T64, LZ4); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_alias_rep_unvalidated MODIFY COLUMN type_uid UInt32 AUTO_INCREMENT CODEC(T64, LZ4); -- { serverError BAD_ARGUMENTS }
+SELECT default_kind, default_expression, compression_codec FROM system.columns
+WHERE database = currentDatabase() AND table = 't_alias_rep_unvalidated' AND name = 'type_uid';
+
 DROP TABLE t_plain;
 DROP TABLE t_default;
 DROP TABLE t_mat;
@@ -122,3 +134,4 @@ DROP TABLE t_plain_to_ephemeral;
 DROP TABLE t_mat_codec_to_ephemeral;
 DROP TABLE t_plain_to_alias;
 DROP TABLE t_mat_codec_to_alias;
+DROP TABLE t_alias_rep_unvalidated;
