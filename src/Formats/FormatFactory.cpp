@@ -25,6 +25,7 @@
 #include <Common/tryGetFileNameByFileDescriptor.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsQuirks.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -113,11 +114,19 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
     format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];
     format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
-    format_settings.avro.schema_registry_timeouts.connection_timeout = settings[Setting::format_avro_schema_registry_connection_timeout];
-    format_settings.avro.schema_registry_timeouts.send_timeout = settings[Setting::format_avro_schema_registry_send_timeout];
-    format_settings.avro.schema_registry_timeouts.receive_timeout = settings[Setting::format_avro_schema_registry_receive_timeout];
-    format_settings.avro.schema_registry_retry.max_retries = settings[Setting::format_avro_schema_registry_max_retries];
-    format_settings.avro.schema_registry_retry.initial_backoff_ms = settings[Setting::format_avro_schema_registry_retry_initial_backoff_ms];
+    /// `doSettingsSanityCheckClamp` bounds these at apply time, but it does not run for
+    /// `ApplicationType::CLIENT`, which builds format settings of its own for every statement and
+    /// reaches the registry when it parses `INSERT ... FROM INFILE`. Clamp here to cover it too.
+    format_settings.avro.schema_registry_timeouts.connection_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_connection_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_timeouts.send_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_send_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_timeouts.receive_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_receive_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_retry.max_retries
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_max_retries], MAX_SCHEMA_REGISTRY_RETRIES);
+    format_settings.avro.schema_registry_retry.initial_backoff_ms
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_retry_initial_backoff_ms], MAX_SCHEMA_REGISTRY_INITIAL_BACKOFF_MS);
     format_settings.avro.string_column_pattern = settings[Setting::output_format_avro_string_column_pattern].toString();
     format_settings.avro.output_rows_in_file = settings[Setting::output_format_avro_rows_in_file];
     format_settings.avro.output_confluent_subject = settings[Setting::output_format_avro_confluent_subject].toString();
@@ -426,10 +435,10 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
     }
 
-    /// The Schema Registry timeout and retry settings used to be range-checked here. They are
-    /// now bounded when they are set - by their `NonZeroUInt64` type and by
-    /// `doSettingsSanityCheckClamp` - because this function runs for every query, so rejecting
-    /// an out-of-range value here failed even the `SET` putting it back, bricking the session.
+    /// The Schema Registry timeout and retry settings used to be range-checked here, and rejected
+    /// out of range. This function runs for every query, so such a value failed even the `SET`
+    /// putting it back, bricking the session. They are now bounded instead: below zero by their
+    /// `NonZeroUInt64` type, and above by the clamp applied where they are read, further up.
 
     if (context->getClientInfo().interface == ClientInfo::Interface::HTTP
         && context->getSettingsRef()[Setting::http_write_exception_in_output_format].value)

@@ -206,11 +206,8 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
 #undef CHECK_READ_BUFFER_SIZE
 
     /// These used to be rejected where they are read, on a path taken by every query, so an
-    /// out-of-range value failed even the `SET` putting it back, bricking the session.
-    static constexpr UInt64 max_schema_registry_timeout_seconds = 599;
-    static constexpr UInt64 max_schema_registry_max_retries = 20;
-    static constexpr UInt64 max_schema_registry_initial_backoff_ms = 60000;
-
+    /// out-of-range value failed even the `SET` putting it back, bricking the session. Reading
+    /// them clamps as well, for the application types this function does not run for.
 #define CHECK_SETTING_MAX_VALUE(SETTING_VALUE, MAX_VALUE) \
     if (UInt64 setting_value = current_settings[Setting::SETTING_VALUE]; setting_value > (MAX_VALUE)) \
     { \
@@ -219,11 +216,11 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
         current_settings[Setting::SETTING_VALUE] = (MAX_VALUE); \
     }
 
-    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_connection_timeout, max_schema_registry_timeout_seconds)
-    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_send_timeout, max_schema_registry_timeout_seconds)
-    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_receive_timeout, max_schema_registry_timeout_seconds)
-    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_max_retries, max_schema_registry_max_retries)
-    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_retry_initial_backoff_ms, max_schema_registry_initial_backoff_ms)
+    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_connection_timeout, MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS)
+    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_send_timeout, MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS)
+    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_receive_timeout, MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS)
+    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_max_retries, MAX_SCHEMA_REGISTRY_RETRIES)
+    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_retry_initial_backoff_ms, MAX_SCHEMA_REGISTRY_INITIAL_BACKOFF_MS)
     CHECK_SETTING_MAX_VALUE(temporary_files_buffer_size, MAX_TEMPORARY_FILES_BUFFER_SIZE)
 
 #undef CHECK_SETTING_MAX_VALUE

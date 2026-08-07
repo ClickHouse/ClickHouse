@@ -21,6 +21,13 @@ inline constexpr UInt64 MAX_SANE_READ_BUFFER_SIZE = 256 * 1024 * 1024; /// 256 M
 /// is clamped to it by `doSettingsSanityCheckClamp`.
 inline constexpr UInt64 MAX_TEMPORARY_FILES_BUFFER_SIZE = 1_GiB;
 
+/// Bounds for the Confluent Schema Registry client. `doSettingsSanityCheckClamp` applies them to
+/// the settings, and `getFormatSettings` applies them again on the way into `FormatSettings`,
+/// because the clamp does not run for `ApplicationType::CLIENT`.
+inline constexpr UInt64 MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS = 599;
+inline constexpr UInt64 MAX_SCHEMA_REGISTRY_RETRIES = 20;
+inline constexpr UInt64 MAX_SCHEMA_REGISTRY_INITIAL_BACKOFF_MS = 60000;
+
 /// Clamp a `temporary_files_buffer_size` that arrived in a serialized query plan, which does not
 /// go through `doSettingsSanityCheckClamp`. Warns when the value is reduced.
 UInt64 clampTemporaryFilesBufferSize(UInt64 buffer_size);
