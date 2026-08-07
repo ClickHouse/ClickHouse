@@ -179,6 +179,9 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
         instance.query(
             "CREATE TABLE test_input_nullable (x Nullable(String)) ENGINE = Memory"
         )
+        instance.query(
+            "CREATE TABLE test_input_pairs (id UInt8, a Nullable(String), b Nullable(String)) ENGINE = Memory"
+        )
 
         yield cluster
     finally:
@@ -1027,6 +1030,25 @@ def test_embed_retry_respects_api_call_quota(started_cluster):
     assert int(events["rows_skipped"]) == 1
 
 
+def test_embed_const_nullable_operand(started_cluster):
+    """`aiEmbed` reads its text via the same `isNullAt`/`getDataAt` path, so a `ColumnConst(ColumnNullable)`
+    input works: a const NULL yields an empty array with no request, a const non-null value is embedded."""
+    qid = unique_query_id("embed_const_null")
+    null_result = instance.query(
+        "SELECT aiEmbed(CAST(NULL AS Nullable(String)), 'test-embed-model', map('credentials', 'ai_embed'))",
+        settings=AI_SETTINGS,
+        query_id=qid,
+    )
+    assert parse_embedding(null_result) == []
+    # The const NULL yields `[]` locally, so no embedding request is made.
+    assert int(get_profile_events(qid)["api_calls"]) == 0
+    value_result = instance.query(
+        "SELECT aiEmbed(CAST('cat' AS Nullable(String)), 'test-embed-model', map('credentials', 'ai_embed'))",
+        settings=AI_SETTINGS,
+    )
+    assert len(parse_embedding(value_result)) > 0
+
+
 # ---------------------------------------------------------------------------
 # aiSimilarity
 # ---------------------------------------------------------------------------
@@ -1212,31 +1234,63 @@ def test_similarity_empty_input_table(started_cluster):
     assert int(events["rows_processed"]) == 0
 
 
-def test_similarity_pairs_are_row_aligned(started_cluster):
-    """Each row compares its own two operands: for rows (a, b) and (c, d) the results are
-    similarity(a, b) and similarity(c, d), never a cross-row pairing such as similarity(a, c)."""
-    instance.query("DROP TABLE IF EXISTS sim_pairs")
-    instance.query("CREATE TABLE sim_pairs (id UInt8, t1 String, t2 String) ENGINE = Memory")
-    instance.query("INSERT INTO sim_pairs VALUES (0, 'a', 'b'), (1, 'c', 'd')")
+def test_similarity_pairs_never_cross_rows(started_cluster):
+    """Each row is scored against its own two operands, never against a neighbouring row's text.
+
+    The embedding list is gapped with respect to rows: a row whose operand is NULL or empty
+    contributes no entry at all. A positional mapping (`inputs[2 * row]`) would therefore shift
+    every row after the first skipped one onto a neighbour's text, and the batch boundary would
+    shift it again. The texts are chosen so that the mock's vectors are far apart: a correct pair
+    scores exactly 1.0, while every possible cross-row pairing scores at most 0.95.
+    """
+    instance.query("TRUNCATE TABLE test_input_pairs")
+    instance.query(
+        "INSERT INTO test_input_pairs VALUES "
+        "(1, 'aa', 'aa'), (2, NULL, 'z0'), (3, 'z0', '0z'), (4, '0zh', ''), (5, '0zh', '0zh')"
+    )
+    qid = unique_query_id("sim_pairs")
     result = instance.query(
-        "SELECT aiSimilarity(t1, t2, 'test-embed-model', map('credentials', 'ai_embed')) FROM sim_pairs ORDER BY id",
-        settings=AI_SETTINGS,
+        "SELECT aiSimilarity(a, b, 'test-embed-model', map('credentials', 'ai_embed')) "
+        "FROM test_input_pairs ORDER BY id",
+        # 3 rows embed 2 operands each; a batch of 3 splits row 3's operands across two requests.
+        settings={**AI_SETTINGS, "ai_function_embedding_max_batch_size": 3},
+        query_id=qid,
     )
     scores = [parse_nullable_float(line) for line in result.strip().split("\n")]
-    assert scores[0] == pytest.approx(expected_similarity("a", "b"), abs=1e-4)
-    assert scores[1] == pytest.approx(expected_similarity("c", "d"), abs=1e-4)
-    instance.query("DROP TABLE sim_pairs")
+    expected = [
+        expected_similarity("aa", "aa"),
+        None,
+        expected_similarity("z0", "0z"),
+        None,
+        expected_similarity("0zh", "0zh"),
+    ]
+    assert len(scores) == 5
+    for score, want in zip(scores, expected):
+        if want is None:
+            assert score is None
+        else:
+            assert score == pytest.approx(want, abs=1e-4)
+    # Rows 1 and 5 pair a text with itself, so anything but an exact 1.0 means a mispairing.
+    assert scores[0] == pytest.approx(1.0, abs=1e-6)
+    assert scores[4] == pytest.approx(1.0, abs=1e-6)
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 2
+    assert int(events["rows_processed"]) == 3
 
 
 def test_similarity_const_nullable_operand(started_cluster):
     """`ColumnConst(ColumnNullable)` operands (a NULL or a value cast to Nullable(String) as a literal)
     are read via the same `isNullAt`/`getDataAt` path: a const NULL yields NULL, and const non-null
     values embed and score normally."""
+    qid = unique_query_id("sim_const_null")
     null_result = instance.query(
         "SELECT aiSimilarity(CAST(NULL AS Nullable(String)), 'hi', 'test-embed-model', map('credentials', 'ai_embed'))",
         settings=AI_SETTINGS,
+        query_id=qid,
     )
     assert parse_nullable_float(null_result) is None
+    # The const NULL operand short-circuits the row, so no embedding request is made.
+    assert int(get_profile_events(qid)["api_calls"]) == 0
     value_result = instance.query(
         "SELECT aiSimilarity(CAST('cat' AS Nullable(String)), CAST('kitten' AS Nullable(String)), 'test-embed-model', map('credentials', 'ai_embed'))",
         settings=AI_SETTINGS,
