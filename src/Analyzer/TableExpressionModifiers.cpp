@@ -25,11 +25,7 @@ void TableExpressionModifiers::dump(WriteBuffer & buffer) const
         buffer << ", sample_offset: " << ASTSampleRatio::toString(*sample_offset_ratio);
 
     if (stream_settings)
-    {
         buffer << ", stream";
-        if (!stream_settings->subscribe_for_updates)
-            buffer << " bounded";
-    }
 }
 
 void TableExpressionModifiers::updateTreeHash(SipHash & hash_state) const
@@ -113,8 +109,6 @@ String TableExpressionModifiers::formatForErrorMessage() const
         if (has_final || sample_size_ratio || sample_offset_ratio)
             buffer << ' ';
         buffer << "STREAM";
-        if (!stream_settings->subscribe_for_updates)
-            buffer << " BOUNDED";
     }
 
     return buffer.str();

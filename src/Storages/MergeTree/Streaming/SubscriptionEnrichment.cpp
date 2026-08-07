@@ -8,13 +8,13 @@ static bool partitionBelongsToSubscription(const String & partition_id, size_t s
     return std::hash<String>{}(partition_id) % subscriptions_count == subscription_index;
 }
 
-EnrichmentResult enrichSubscription(
+bool enrichSubscription(
     MergeTreeBoundsSubscription & subscription,
     const LocalPartsByPartition & local_parts,
     const CursorPromotersMap & promoters)
 {
     auto snapshot = subscription.snapshot();
-    EnrichmentResult result;
+    bool enriched = false;
 
     for (const auto & [partition_id, parts] : local_parts)
     {
@@ -56,11 +56,11 @@ EnrichmentResult enrichSubscription(
         if (cursor > starting_cursor)
         {
             subscription.advance(partition_id, cursor);
-            result.enriched = true;
+            enriched = true;
         }
     }
 
-    return result;
+    return enriched;
 }
 
 }

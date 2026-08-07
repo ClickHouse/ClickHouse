@@ -12307,8 +12307,7 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
     subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)
     {
         auto & bounds_subscription = *subscription->as<MergeTreeBoundsSubscription>();
-        auto result = enrichSubscription(bounds_subscription, local_parts, promoters);
-        any_enriched |= result.enriched;
+        any_enriched |= enrichSubscription(bounds_subscription, local_parts, promoters);
         bounds_subscription.onEnrichmentRound();
     });
 

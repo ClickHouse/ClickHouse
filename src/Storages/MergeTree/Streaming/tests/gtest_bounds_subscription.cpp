@@ -147,8 +147,7 @@ TEST(SubscriptionEnrichment, NotEnrichedWhenPromotionBlocked)
     ranges["p"].addPart(5, 5);
     auto promoters = constructPromoters(committing, ranges);
 
-    auto result = enrichSubscription(sub, local_parts, promoters);
-    ASSERT_FALSE(result.enriched);
+    ASSERT_FALSE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_TRUE(sub.snapshot().empty());
 }
 
@@ -165,8 +164,7 @@ TEST(SubscriptionEnrichment, EnrichedWhenContiguousFromStart)
     ranges["p"].addPart(0, 3);
     auto promoters = constructPromoters(committing, ranges);
 
-    auto result = enrichSubscription(sub, local_parts, promoters);
-    ASSERT_TRUE(result.enriched);
+    ASSERT_TRUE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_EQ(sub.snapshot().at("p"), 3);
 }
 
@@ -185,8 +183,7 @@ TEST(SubscriptionEnrichment, PartialRoundAdvancesReadablePartition)
     ranges["b"].addPart(0, 3);
     auto promoters = constructPromoters(committing, ranges);
 
-    auto result = enrichSubscription(sub, local_parts, promoters);
-    ASSERT_TRUE(result.enriched);
+    ASSERT_TRUE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_EQ(sub.snapshot().at("b"), 3);
     ASSERT_FALSE(sub.snapshot().contains("a"));
 }
@@ -202,7 +199,6 @@ TEST(SubscriptionEnrichment, PromoterOnlyPartitionIsNotEnriched)
     std::map<String, PartBlockNumberRanges> ranges;
     auto promoters = constructPromoters(committing, ranges);
 
-    auto result = enrichSubscription(sub, local_parts, promoters);
-    ASSERT_FALSE(result.enriched);
+    ASSERT_FALSE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_TRUE(sub.snapshot().empty());
 }
