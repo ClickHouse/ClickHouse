@@ -151,6 +151,8 @@ static constexpr auto DEFAULT_REMOVE_SHARED_RECURSIVE_FILE_LIMIT = 1000uz;
 
 static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS = 1'000'000uz;
 
-static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS = 1'000'000'000'000uz;
+/// Not `uz`: the value does not fit into `size_t` on 32-bit platforms, and it is compared against
+/// a row count read from the wire as `UInt64`.
+static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS = 1'000'000'000'000ULL;
 
 }

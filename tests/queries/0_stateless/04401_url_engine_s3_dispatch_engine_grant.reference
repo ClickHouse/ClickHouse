@@ -1,0 +1,6 @@
+--- TABLE ENGINE ON URL grant alone: ENGINE = URL('http://...') is allowed (URL engine) ---
+http-allowed
+--- TABLE ENGINE ON URL grant alone: ENGINE = URL('s3://...') is denied (dispatches to S3) ---
+s3-engine-denied
+--- TABLE ENGINE ON URL grant alone: ENGINE = URL('az://...') is denied (dispatches to AzureBlobStorage) ---
+azure-engine-denied

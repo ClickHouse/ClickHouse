@@ -33,6 +33,24 @@ html:not(.dark) .ch-usecase-arrow {
 .dark .ch-usecase-arrow {
     color: #FCFF74;
 }
+
+/* Restore the layout and appearance of the legacy Docusaurus VersionBadge. */
+.versionBadge {
+    background-color: #F6F7FA;
+    border-radius: 16px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    display: inline-flex;
+}
+
+.dark .versionBadge {
+    background-color: #282828;
+    color: white;
+}
+
 /* Highlight the `View` selector above the table of contents with theme accents. */
 html:not(.dark) .multi-view-dropdown-trigger {
     border-color: #135BE6 !important;

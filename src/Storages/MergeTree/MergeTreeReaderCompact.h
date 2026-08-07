@@ -120,7 +120,8 @@ private:
         const SerializationPtr & serialization,
         ISerialization::DeserializeBinaryBulkStatePtr & state,
         const InputStreamGetter & buffer_getter,
-        ISerialization::SubstreamsDeserializeStatesCache * cache);
+        ISerialization::SubstreamsDeserializeStatesCache * cache,
+        ISerialization::DeserializeBinaryBulkSettings::CheckStreamExistsCallback check_stream_exists_callback = {});
 
     NameAndTypePair getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column);
     void findPositionForMissedNested(size_t pos);
