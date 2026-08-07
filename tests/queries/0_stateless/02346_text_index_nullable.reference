@@ -19,6 +19,28 @@ Basic Nullable(String) expressions.
 -- NOT hasAnyTokens: rows 3 and 5 do not contain "world"
 3
 5
+-- NOT like with the index as a hint: only row 3
+3
+3
+-- NOT startsWith: only row 3
+3
+3
+-- NOT endsWith: rows 3 and 5
+3
+5
+3
+5
+-- NOT hasPhrase: rows 3 and 5
+3
+5
+3
+5
+-- NOT match: only row 3
+3
+3
+-- NOT hasToken in PREWHERE: only row 3
+3
+3
 -- isNull(hasToken): rows 2 and 4
 2
 4
@@ -34,6 +56,17 @@ Basic Nullable(String) expressions.
 0
 0
 0
+Nullable(String) with a partially materialized index.
+-- partially materialized: rows 1 and 5 have "hello"
+1
+5
+-- partially materialized: NOT hasToken is only row 3, the NULL rows are NULL
+3
+-- partially materialized: isNull(hasToken) is rows 2 and 4
+2
+4
+-- partially materialized, index as a hint: NOT like is only row 3
+3
 Nullable(String) consisting entirely of NULLs.
 -- all-NULL part: hasToken must return 0
 0
@@ -109,6 +142,9 @@ Nullable(String) with preprocessor = lower(str)
 0
 -- Preprocessor + Nullable: absent token returns no rows
 0
+-- Preprocessor + Nullable: NOT hasToken is only row 3, the NULL row is NULL
+3
+3
 -- has[Any|All]Token on NULL should not match anything
 0
 0
@@ -152,6 +188,9 @@ Map(String, Nullable(String))
 2
 -- hasAllTokens on map values: only row 1 has both "hello" and "world"
 1
+-- NOT hasToken on a map element: no NULL map value leaks in
+0
+0
 -- has[Any|All]Token on NULL should not match anything
 0
 0
@@ -189,3 +228,62 @@ LowCardinality(Nullable(String))
 0
 0
 0
+Nullable(String) with a null-removing preprocessor
+-- ifNull: a source NULL is 0, so NOT keeps it; both parts agree
+2
+3
+12
+13
+2
+3
+12
+13
+-- ifNull: unchanged after full materialization
+2
+3
+12
+13
+-- ifNull: direct read stays enabled and the null map is not restored
+1	0
+-- coalesce: same as ifNull
+2
+3
+2
+3
+-- assumeNotNull: same as ifNull
+2
+3
+2
+3
+-- CAST(ifNull(str, ...)) is still null-removing
+2
+3
+2
+3
+-- lower(CAST(ifNull(str, ...))) is still null-removing
+2
+3
+2
+3
+Nullable(String) with a null-producing preprocessor
+-- nullIf: row 2 (preprocessed to NULL) and row 4 (source NULL) are both filtered out
+3
+3
+-- nullIf: direct read is not used for a preprocessor-rewritten function
+0
+-- nullIf: endsWith keeps direct read and still excludes the NULL rows
+1
+2
+1
+2
+-- CAST(nullIf(str, ...)) is still null-producing
+3
+3
+-- lower(toNullable(str)) neither produces nor removes NULLs
+3
+3
+-- lower(toNullable(str)): direct read is kept
+1
+String with a null-producing preprocessor and a Nullable needle
+-- a Nullable needle over a String haystack keeps direct read
+1

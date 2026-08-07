@@ -41,13 +41,38 @@ SELECT count() FROM tab WHERE hasToken(str, 'hello') AND str IS NULL;
 SELECT '-- hasToken on absent token returns no rows';
 SELECT count() FROM tab WHERE hasToken(str, 'xyz');
 
--- On a Nullable column the predicate is NULL for the NULL rows. NULL and 0 are both falsy, so a plain
--- filter cannot tell them apart, but a negated one can: reading the text index must not turn NULL into 0.
+-- NULL and 0 are both falsy, so only a negated filter tells them apart: the index must not turn NULL into 0.
 SELECT '-- NOT hasToken: only row 3; the NULL rows are NULL, i.e. not a match';
 SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
 
 SELECT '-- NOT hasAnyTokens: rows 3 and 5 do not contain "world"';
 SELECT id FROM tab WHERE NOT hasAnyTokens(str, 'world') ORDER BY id;
+
+-- These use the index as a hint: its result is combined with the predicate rather than replacing it, and
+-- `and(0, NULL)` is 0. Each query is repeated with direct read off, which is the reference.
+SELECT '-- NOT like with the index as a hint: only row 3';
+SELECT id FROM tab WHERE NOT like(str, '%hello%') ORDER BY id;
+SELECT id FROM tab WHERE NOT like(str, '%hello%') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+SELECT '-- NOT startsWith: only row 3';
+SELECT id FROM tab WHERE NOT startsWith(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT startsWith(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+SELECT '-- NOT endsWith: rows 3 and 5';
+SELECT id FROM tab WHERE NOT endsWith(str, 'world') ORDER BY id;
+SELECT id FROM tab WHERE NOT endsWith(str, 'world') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+SELECT '-- NOT hasPhrase: rows 3 and 5';
+SELECT id FROM tab WHERE NOT hasPhrase(str, 'hello world') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasPhrase(str, 'hello world') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+SELECT '-- NOT match: only row 3';
+SELECT id FROM tab WHERE NOT match(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT match(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+SELECT '-- NOT hasToken in PREWHERE: only row 3';
+SELECT id FROM tab PREWHERE NOT hasToken(str, 'hello') ORDER BY id;
+SELECT id FROM tab PREWHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
 
 SELECT '-- isNull(hasToken): rows 2 and 4';
 SELECT id FROM tab WHERE isNull(hasToken(str, 'hello')) ORDER BY id;
@@ -55,8 +80,8 @@ SELECT id FROM tab WHERE isNull(hasToken(str, 'hello')) ORDER BY id;
 SELECT '-- the predicate evaluates to NULL for the NULL rows, not to 0';
 SELECT id, hasToken(str, 'hello') AS matched FROM tab WHERE matched OR isNull(matched) ORDER BY id;
 
--- The NULLs must not cost the direct read: only the null map is read instead of the column data.
--- Unlike the results above, the plan depends on the setting, so it is pinned for these two queries.
+-- Only the null map is read instead of the column data. The plan depends on the setting, unlike the
+-- results above, so it is pinned here.
 SELECT '-- the index is still read directly, and only the null map of the column with it';
 SELECT count() > 0 FROM
 (
@@ -78,6 +103,41 @@ SELECT '-- has[Any|All]Token on NULL should not match anything';
 SELECT count() FROM tab WHERE hasToken(str, NULL);
 SELECT count() FROM tab WHERE hasAllToken(str, NULL);
 SELECT count() FROM tab WHERE hasAnyToken(str, NULL);
+
+DROP TABLE tab;
+
+SELECT 'Nullable(String) with a partially materialized index.';
+-- The first part has no index, so its virtual column comes from the default expression, which must
+-- neither fail on the NULL rows nor report them as 0.
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    id  UInt32,
+    str Nullable(String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (1, 'hello world'), (2, NULL), (3, 'foo bar');
+ALTER TABLE tab ADD INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha');
+INSERT INTO tab VALUES (4, NULL), (5, 'hello there');
+
+SELECT '-- partially materialized: rows 1 and 5 have "hello"';
+SELECT id FROM tab WHERE hasToken(str, 'hello') ORDER BY id;
+
+SELECT '-- partially materialized: NOT hasToken is only row 3, the NULL rows are NULL';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+
+SELECT '-- partially materialized: isNull(hasToken) is rows 2 and 4';
+SELECT id FROM tab WHERE isNull(hasToken(str, 'hello')) ORDER BY id;
+
+-- Hint mode over the same mix: the virtual column is 1 where the index is missing, from the postings
+-- where it is not, and the NULLs must survive both.
+SELECT '-- partially materialized, index as a hint: NOT like is only row 3';
+SELECT id FROM tab WHERE NOT like(str, '%hello%') ORDER BY id;
 
 DROP TABLE tab;
 
@@ -284,6 +344,10 @@ SELECT count() FROM tab WHERE id = 2 AND hasToken(str, 'hello');
 SELECT '-- Preprocessor + Nullable: absent token returns no rows';
 SELECT count() FROM tab WHERE hasToken(str, 'xyz');
 
+SELECT '-- Preprocessor + Nullable: NOT hasToken is only row 3, the NULL row is NULL';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
 SELECT '-- has[Any|All]Token on NULL should not match anything';
 SELECT count() FROM tab WHERE hasToken(str, NULL);
 SELECT count() FROM tab WHERE hasAllToken(str, NULL);
@@ -398,6 +462,11 @@ SELECT count() FROM tab WHERE hasAnyTokens(mapValues(m), 'foo bar');
 SELECT '-- hasAllTokens on map values: only row 1 has both "hello" and "world"';
 SELECT id FROM tab WHERE hasAllTokens(mapValues(m), 'hello world') ORDER BY id;
 
+-- `m['key']` is an expression, not a column, so its null map cannot come from a subcolumn.
+SELECT '-- NOT hasToken on a map element: no NULL map value leaks in';
+SELECT countIf(m['key1'] IS NULL) FROM tab WHERE NOT hasToken(m['key1'], 'xyz');
+SELECT countIf(m['key1'] IS NULL) FROM tab WHERE NOT hasToken(m['key1'], 'xyz') SETTINGS query_plan_direct_read_from_text_index = 0;
+
 SELECT '-- has[Any|All]Token on NULL should not match anything';
 SELECT count() FROM tab WHERE hasToken(mapValues(m), NULL);
 SELECT count() FROM tab WHERE hasAllToken(mapValues(m), NULL);
@@ -477,5 +546,213 @@ SELECT '-- has[Any|All]Token on NULL should not match anything';
 SELECT count() FROM tab WHERE hasToken(str, NULL);
 SELECT count() FROM tab WHERE hasAllToken(str, NULL);
 SELECT count() FROM tab WHERE hasAnyToken(str, NULL);
+
+DROP TABLE tab;
+
+SELECT 'Nullable(String) with a null-removing preprocessor';
+-- These strip the source nullability, so the predicate over a source-NULL row is 0 and its null map must
+-- not be restored. The two parts below (written before and after ADD INDEX) must agree.
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    id  UInt32,
+    str Nullable(String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+SYSTEM STOP MERGES tab;
+
+INSERT INTO tab VALUES (1, 'hello'), (2, NULL), (3, 'foo');
+ALTER TABLE tab ADD INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = ifNull(str, '')) GRANULARITY 1;
+INSERT INTO tab VALUES (11, 'hello'), (12, NULL), (13, 'foo');
+
+SELECT '-- ifNull: a source NULL is 0, so NOT keeps it; both parts agree';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+-- Merges were stopped to keep the two parts apart; mutations need them running again.
+SYSTEM START MERGES tab;
+ALTER TABLE tab MATERIALIZE INDEX idx SETTINGS mutations_sync = 2;
+
+SELECT '-- ifNull: unchanged after full materialization';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+
+SELECT '-- ifNull: direct read stays enabled and the null map is not restored';
+SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') > 0, countIf(explain LIKE '%isNull(str)%') FROM
+(
+    EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT hasToken(str, 'hello')
+    SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, explain_query_plan_default = 'legacy'
+);
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id  UInt32,
+    str Nullable(String),
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = coalesce(str, '')) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'hello'), (2, NULL), (3, 'foo');
+
+SELECT '-- coalesce: same as ifNull';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id  UInt32,
+    str Nullable(String),
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = assumeNotNull(str)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'hello'), (2, NULL), (3, 'foo');
+
+SELECT '-- assumeNotNull: same as ifNull';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id  UInt32,
+    str Nullable(String),
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(ifNull(str, ''), 'Nullable(String)')) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'hello'), (2, NULL), (3, 'foo');
+
+-- Nullable again by the outer cast, which must be looked through to the inner ifNull.
+SELECT '-- CAST(ifNull(str, ...)) is still null-removing';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id  UInt32,
+    str Nullable(String),
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(CAST(ifNull(str, ''), 'Nullable(String)'))) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'Hello'), (2, NULL), (3, 'Foo');
+
+-- `lower` only propagates the nullability its argument no longer has.
+SELECT '-- lower(CAST(ifNull(str, ...))) is still null-removing';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
+SELECT 'Nullable(String) with a null-producing preprocessor';
+-- `nullIf` makes NULLs that exist only in the index, which the source null map cannot describe, so
+-- direct read is not used at all and every part answers alike.
+
+CREATE TABLE tab
+(
+    id  UInt32,
+    str Nullable(String),
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nullIf(str, '')) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'hello'), (2, ''), (3, 'foo'), (4, NULL);
+
+SELECT '-- nullIf: row 2 (preprocessed to NULL) and row 4 (source NULL) are both filtered out';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+SELECT '-- nullIf: direct read is not used for a preprocessor-rewritten function';
+SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') FROM
+(
+    EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT hasToken(str, 'hello')
+    SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, explain_query_plan_default = 'legacy'
+);
+
+-- endsWith is not rewritten through the preprocessor, so it reads the source value and keeps direct read.
+SELECT '-- nullIf: endsWith keeps direct read and still excludes the NULL rows';
+SELECT id FROM tab WHERE NOT endsWith(str, 'oo') ORDER BY id;
+SELECT id FROM tab WHERE NOT endsWith(str, 'oo') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id  UInt32,
+    str Nullable(String),
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = CAST(nullIf(str, ''), 'Nullable(String)')) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'hello'), (2, ''), (3, 'foo'), (4, NULL);
+
+-- Looking through the widening cast must not misclassify the inner nullIf as null-removing.
+SELECT '-- CAST(nullIf(str, ...)) is still null-producing';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
+CREATE TABLE tab
+(
+    id  UInt32,
+    str Nullable(String),
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(toNullable(str))) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'Hello'), (2, NULL), (3, 'Foo');
+
+-- Nullable, but only propagates the source nullability.
+SELECT '-- lower(toNullable(str)) neither produces nor removes NULLs';
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id;
+SELECT id FROM tab WHERE NOT hasToken(str, 'hello') ORDER BY id SETTINGS query_plan_direct_read_from_text_index = 0;
+
+SELECT '-- lower(toNullable(str)): direct read is kept';
+SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT id FROM tab WHERE NOT hasToken(str, 'hello')
+    SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, explain_query_plan_default = 'legacy'
+);
+
+DROP TABLE tab;
+
+SELECT 'String with a null-producing preprocessor and a Nullable needle';
+-- The predicate is Nullable only because of the needle, so there is no null map to restore.
+
+CREATE TABLE tab
+(
+    id  UInt32,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = nullIf(str, '')) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'hello'), (2, ''), (3, 'foo');
+
+SELECT '-- a Nullable needle over a String haystack keeps direct read';
+SELECT countIf(explain LIKE '%INPUT%\_\_text_index%') > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT id FROM tab WHERE hasToken(str, toNullable('hello'))
+    SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1, explain_query_plan_default = 'legacy'
+);
 
 DROP TABLE tab;
