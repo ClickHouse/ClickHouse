@@ -88,6 +88,31 @@ def test_password_from_env_var(started_cluster):
     assert "api_version" in data
 
 
+def test_multiple_cli_hosts(started_cluster):
+    data = node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "clickhouse keeper-client -h 127.0.0.1 -p 1 -h node1 -p 9181 --connection-timeout 1 -q \"ls '/keeper'\"",
+        ],
+        privileged=True,
+    )
+    assert "api_version" in data
+
+
+def test_multiple_cli_hosts_requires_port_between_hosts(started_cluster):
+    data = node1.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "clickhouse keeper-client -h node1 -h node2 -q \"ls '/keeper'\"",
+        ],
+        privileged=True,
+        nothrow=True,
+    )
+    assert "`--host` option must be followed by the `--port` option" in data
+
+
 def test_wrong_password_fails(started_cluster):
     """Keeper-client fails with a wrong password."""
     data = node1.exec_in_container(

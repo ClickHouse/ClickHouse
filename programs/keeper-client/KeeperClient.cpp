@@ -1,18 +1,19 @@
 #include <KeeperClient.h>
-#include <Client/ReplxxLineReader.h>
-#include <Client/ClientBase.h>
-#include <Common/VersionNumber.h>
-#include <Common/Config/ConfigProcessor.h>
 #include <Client/ClientApplicationBase.h>
+#include <Client/ClientBase.h>
+#include <Client/ReplxxLineReader.h>
+#include <Parsers/TokenIterator.h>
+#include <Poco/Util/HelpFormatter.h>
+#include <Poco/Util/OptionCallback.h>
+#include <Common/Config/ConfigProcessor.h>
+#include <Common/ErrnoException.h>
 #include <Common/EventNotifier.h>
+#include <Common/VersionNumber.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ErrnoException.h>
-#include <Parsers/TokenIterator.h>
-#include <Poco/Util/HelpFormatter.h>
 
 #if USE_SSL
 #include <Poco/Net/Context.h>
@@ -307,14 +308,16 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("help"));
 
     options.addOption(
-        Poco::Util::Option("host", "h", "server hostname. default `localhost`")
+        Poco::Util::Option("host", "h", "server hostname. default `localhost`. When repeated, `--host` and `--port` must alternate")
             .argument("<host>")
-            .binding("host"));
+            .repeatable(true)
+            .callback(Poco::Util::OptionCallback<KeeperClient>(this, &KeeperClient::handleHostOption)));
 
     options.addOption(
-        Poco::Util::Option("port", "p", "server port. default `9181`")
+        Poco::Util::Option("port", "p", "server port. default `9181`. When repeated, `--host` and `--port` must alternate")
             .argument("<port>")
-            .binding("port"));
+            .repeatable(true)
+            .callback(Poco::Util::OptionCallback<KeeperClient>(this, &KeeperClient::handlePortOption)));
 
     options.addOption(
         Poco::Util::Option("password", "", "password to connect to keeper server")
@@ -397,6 +400,44 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
             .binding("accept-invalid-certificate"));
 }
 
+void KeeperClient::handleHostOption(const std::string & /* name */, const std::string & value)
+{
+    if (value.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`--host` option cannot be empty");
+
+    if (!hosts.empty() && !hosts.back().empty() && !ports.empty() && ports.back().empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "`--host` option must be followed by the `--port` option if you want to specify another pair");
+
+    if (!hosts.empty() && hosts.back().empty() && !ports.empty() && !ports.back().empty())
+    {
+        hosts.back() = value;
+        return;
+    }
+
+    hosts.push_back(value);
+    ports.push_back("");
+}
+
+void KeeperClient::handlePortOption(const std::string & /* name */, const std::string & value)
+{
+    if (value.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`--port` option cannot be empty");
+
+    if (!hosts.empty() && hosts.back().empty() && !ports.empty() && !ports.back().empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "`--port` option must be followed by the `--host` option if you want to specify another pair");
+
+    if (!hosts.empty() && !hosts.back().empty() && !ports.empty() && ports.back().empty())
+    {
+        ports.back() = value;
+        return;
+    }
+
+    hosts.push_back("");
+    ports.push_back(value);
+}
+
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
 {
     suggest.setCompletionsCallback(
@@ -445,6 +486,15 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     const char * env_identity = getenv("CLICKHOUSE_KEEPER_IDENTITY"); // NOLINT(concurrency-mt-unsafe)
     if (env_identity && !config().has("identity"))
         config().setString("identity", env_identity);
+
+    if (!hosts.empty() && hosts.back().empty() && !ports.empty())
+    {
+        hosts.back() = "localhost";
+    }
+    if (!ports.empty() && ports.back().empty() && !hosts.empty())
+    {
+        ports.back() = "9181";
+    }
 }
 
 bool KeeperClient::processQueryText(const String & text, bool is_interactive)
@@ -661,7 +711,21 @@ void KeeperClient::connectToKeeper()
 
     zkutil::ZooKeeperArgs new_zk_args;
 
-    if (!config().has("host") && !config().has("port") && !keys.empty())
+    const bool secure_config = config().has("secure");
+    if (!hosts.empty() && !ports.empty())
+    {
+        chassert(hosts.size() == ports.size());
+        for (size_t i = 0; i < hosts.size(); ++i)
+        {
+            if (secure_config)
+            {
+                new_zk_args.hosts.push_back("secure://" + hosts[i] + ":" + ports[i]);
+                continue;
+            }
+            new_zk_args.hosts.push_back(hosts[i] + ":" + ports[i]);
+        }
+    }
+    else if (!keys.empty())
     {
         LOG_INFO(getLogger("KeeperClient"), "Found keeper node in the config.xml, will use it for connection");
 
@@ -674,7 +738,7 @@ void KeeperClient::connectToKeeper()
             String host = clickhouse_config.configuration->getString(prefix + ".host");
             String port = clickhouse_config.configuration->getString(prefix + ".port");
 
-            if (clickhouse_config.configuration->has(prefix + ".secure") || config().has("secure"))
+            if (clickhouse_config.configuration->has(prefix + ".secure") || secure_config)
                 host = "secure://" + host;
 
             new_zk_args.hosts.push_back(host + ":" + port);
@@ -682,13 +746,11 @@ void KeeperClient::connectToKeeper()
     }
     else
     {
-        String host = config().getString("host", "localhost");
-        String port = config().getString("port", "9181");
-
-        if (config().has("secure"))
-            host = "secure://" + host;
-
-        new_zk_args.hosts.push_back(host + ":" + port);
+        const String default_option = "localhost:9181";
+        if (secure_config)
+            new_zk_args.hosts.push_back("secure://" + default_option);
+        else
+            new_zk_args.hosts.push_back(default_option);
     }
 
     new_zk_args.availability_zones.resize(new_zk_args.hosts.size());
