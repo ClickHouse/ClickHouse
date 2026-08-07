@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int REWRITE_RULE_UNKNOWN_QUERY_PARAMETER;
     extern const int REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE;
     extern const int REWRITE_RULE_DOESNT_EXIST;
+    extern const int BAD_ARGUMENTS;
     extern const int TOO_BIG_AST;
     extern const int TOO_DEEP_AST;
 }
@@ -183,6 +184,16 @@ bool astTraversal(ASTPtr &ast, ContextPtr context, std::vector<String> & applied
                 "Rewrite rule `{}` listed in the `query_rules` setting does not exist",
                 name);
         const auto & rule = rule_it->second;
+        /// A rule that failed template screening when loaded from persisted storage must not
+        /// be applied — and silently skipping it would be worse (a `REJECT` rule that quietly
+        /// stops firing), so a query that explicitly requests it via `query_rules` fails.
+        if (const auto & rejection = rule->getLoadRejectionReason())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Rewrite rule `{}` listed in the `query_rules` setting failed template validation "
+                "when it was loaded from storage and cannot be applied (drop or recreate the rule "
+                "to resolve this): {}",
+                name, *rejection);
         const auto& query_rule = rule->getCreateQuery();
         std::queue<ASTPtr> queue_query;
         std::queue<ASTPtr> queue_rule;

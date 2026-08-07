@@ -37,4 +37,14 @@ const ASTCreateRewriteRuleQuery& RewriteRuleObject::getCreateQuery() const
     return create_query;
 }
 
+void RewriteRuleObject::rejectOnLoad(String reason)
+{
+    load_rejection_reason = std::move(reason);
+}
+
+const std::optional<String> & RewriteRuleObject::getLoadRejectionReason() const
+{
+    return load_rejection_reason;
+}
+
 }

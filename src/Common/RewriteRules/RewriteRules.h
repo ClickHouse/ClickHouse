@@ -62,6 +62,8 @@ protected:
 
     void reloadImpl(std::lock_guard<std::mutex> & lock);
 
+    void screenLoadedRules(RewriteRuleObjectsList & rules) const;
+
     const LoggerPtr log = getLogger("RewriteRule");
 
     mutable bool loaded = false;

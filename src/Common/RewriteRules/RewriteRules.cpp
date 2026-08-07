@@ -863,6 +863,32 @@ void RewriteRules::updateRule(const ASTAlterRewriteRuleQuery & query)
     it->second = std::move(ptr);
 }
 
+/// Rules loaded from persisted storage bypass the `CREATE RULE` / `ALTER RULE` entrypoints,
+/// so a template that would be rejected there (written directly into the storage, or persisted
+/// before a screening rule was introduced) could otherwise become active again after a restart
+/// or reload. Re-screen on load and deactivate (fail closed) every rule that no longer passes:
+/// it stays visible in `system.query_rules` and can be dropped, but the matcher refuses to
+/// apply it.
+void RewriteRules::screenLoadedRules(RewriteRuleObjectsList & rules) const
+{
+    for (auto & [rule_name, rule] : rules)
+    {
+        try
+        {
+            validateRuleTemplates(rule->getCreateQuery());
+        }
+        catch (const Exception & e)
+        {
+            rule->rejectOnLoad(e.message());
+            LOG_ERROR(
+                log,
+                "Rewrite rule `{}` loaded from storage failed template validation and will not be "
+                "applied; drop or recreate the rule to resolve this: {}",
+                rule_name, e.message());
+        }
+    }
+}
+
 bool RewriteRules::loadIfNot(std::lock_guard<std::mutex> & lock) const
 {
     if (loaded)
@@ -871,6 +897,7 @@ bool RewriteRules::loadIfNot(std::lock_guard<std::mutex> & lock) const
     auto context = Context::getGlobalContextInstance();
     storage = RewriteRulesStorage::create(context);
     auto rules = storage->getAll();
+    screenLoadedRules(rules);
     /// `add` is non-const but only mutates `mutable` `loaded_rewrite_rules`.
     const_cast<RewriteRules *>(this)->add(std::move(rules), lock);
 
@@ -915,6 +942,7 @@ void RewriteRules::reloadImpl(std::lock_guard<std::mutex> & lock)
     if (!storage)
         return;
     auto rules = storage->getAll();
+    screenLoadedRules(rules);
     loaded_rewrite_rules.clear();
     add(std::move(rules), lock);
 }
