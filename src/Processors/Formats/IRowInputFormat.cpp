@@ -130,11 +130,8 @@ Chunk IRowInputFormat::read()
              && continue_reading;
              ++rows)
         {
-            /// Ask the `QueryStatus` (not `IProcessor::isCancelled`) so that a
-            /// `CancelReason::PartialResult` early stop keeps returning its valid partial result
-            /// instead of failing the query: `ISource::cancel` raises the processor's cancel flag
-            /// ignoring the reason.
-            /// Row 0 is skipped: `read` is entered right after the caller's own cancellation check.
+            /// The `QueryStatus`, not `IProcessor::isCancelled`: the latter is also raised by a
+            /// `CancelReason::PartialResult` stop, which must still return its partial result.
             if (rows != 0 && rows % CANCELLATION_CHECK_PERIOD_ROWS == 0)
                 CurrentThread::checkIfNotCancelled();
 

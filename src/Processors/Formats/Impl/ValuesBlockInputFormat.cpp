@@ -125,10 +125,8 @@ Chunk ValuesBlockInputFormat::read()
     size_t rows_in_block = 0;
     for (; rows_in_block < params.max_block_size_rows; ++rows_in_block)
     {
-        /// This loop is not the one in `IRowInputFormat::read`, so it needs its own cancellation
-        /// checkpoint. It is bounded by the same `max_block_size_rows`, and the expression fallback
-        /// in `readRow` makes a single block expensive enough to outlive a `KILL QUERY` by minutes.
-        /// See the comment on `CANCELLATION_CHECK_PERIOD_ROWS` for why `QueryStatus` is asked here.
+        /// A loop of its own, so it needs its own checkpoint; see `CANCELLATION_CHECK_PERIOD_ROWS`
+        /// and the equivalent one in `IRowInputFormat::read`.
         if (rows_in_block != 0 && rows_in_block % CANCELLATION_CHECK_PERIOD_ROWS == 0)
             CurrentThread::checkIfNotCancelled();
 

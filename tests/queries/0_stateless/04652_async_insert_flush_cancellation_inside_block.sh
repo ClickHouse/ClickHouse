@@ -1,42 +1,10 @@
 #!/usr/bin/env bash
-# Regression test: a background async-insert flush must honor `max_execution_time` while it is still
-# parsing ONE block. The format is built with `max_insert_block_size`, so a single `read` call can run
-# for minutes and the per-chunk check in `StreamingFormatExecutor::execute` is not reached until it
-# returns.
+# A background async-insert flush must honour `max_execution_time` while still parsing ONE block.
+# One case per row loop, neither deriving from the other. Companion of
+# `04547_async_insert_flush_cancellation`, which pins the between-chunks case.
 #
-# Two row loops carry that invariant on this path, and each one is checked separately below:
-#   - `IRowInputFormat::read`        (row-based formats; a `JSON` column parsed from `TSV` here)
-#   - `ValuesBlockInputFormat::read` (a loop of its own, it does not derive from `IRowInputFormat`)
-#
-# The deadline is the flush's own: `ProcessListBase::insert` registers every async-insert flush with
-# `CancellationChecker` using the settings the flush inherited, so nothing here is shared with any
-# other query on the server. That is why this test needs no failpoint, no `KILL QUERY` and no
-# `no-parallel` tag - concurrent copies cannot perturb each other.
-#
-# What separates a fixed build from an unfixed one is the error code the FLUSH ITSELF recorded, not a
-# timing margin and not text scraped from the client:
-#   fixed   - the row loop polls the flush's `QueryStatus` mid-block and the deadline surfaces there,
-#             so the flush fails with `TIMEOUT_EXCEEDED` (159).
-#   unfixed - the loop has no checkpoint, so it parses the whole payload first and the deadline is
-#             only observed by the executor between chunks, which reports `QUERY_WAS_CANCELLED` (394).
-#             With a real payload that wait is minutes long and trips the stress hung check.
-#
-# The oracle is the flush's own `system.query_log` row, selected by `query_kind = 'AsyncInsertFlush'`,
-# because only that row can say WHICH query hit its deadline and WHERE:
-#   - the initiating `INSERT` inherits the same `max_execution_time`, and when its deadline wins it
-#     reports a byte-identical `Timeout exceeded` of its own, so the client's stderr cannot tell an
-#     in-loop abort from an initiator-side one and an unfixed build could satisfy a text assertion;
-#   - a `KILL` from elsewhere yields `CANCELLED_BY_USER`, which this oracle names instead of silently
-#     matching nothing, and each case is retried past it (see `MAX_ATTEMPTS`). Stress's own random
-#     killer cannot reach this flush: `KILLER_EXCLUSION` puts a token matching one of that killer's
-#     exclusions into the flush's query text.
-#
-# Companion of `04547_async_insert_flush_cancellation`, which pins the complementary case: a
-# cancellation observed by the executor BETWEEN chunks. How `StreamingFormatExecutor::execute` then
-# classifies the exception (rethrow versus route to `on_error`) is covered per code path by the unit
-# test `StreamingFormatExecutorCancellation.*`, and the checkpoint together with its
-# `CANCELLATION_CHECK_PERIOD_ROWS` period is pinned by `RowInputFormatCancellation.*`; both use no
-# server and no global state.
+# The verdict is the code the FLUSH ITSELF recorded, read off its own `system.query_log` row and not
+# the client's stderr: `TIMEOUT_EXCEEDED` (159) when the row loop polled mid-block, else (394).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -44,23 +12,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-# Every table this run creates carries this prefix, and `run_case` appends the case label and the
-# attempt number so that no two inserts of the run share a name. The `${CLICKHOUSE_DATABASE}`
-# component keeps concurrent copies of the test non-interfering, and `$$` makes the name unique per
-# INVOCATION as well: two invocations can land in the SAME database (Stress passes a fixed
-# `--database` to half of its threads, and the runner re-runs a FAILED test in the database it already
-# used), `DROP TABLE` does not delete `system.query_log` rows, and the oracle below matches on the
-# table name - so without `$$` a second invocation that left no row of its own would read the first
-# one's verdict and pass vacuously.
+# `$$` is load-bearing, not decoration: two invocations can land in the same database, `DROP TABLE`
+# does not delete `system.query_log` rows, and the oracle below matches on the table name - so
+# without it an invocation that left no row of its own would read an earlier one's verdict.
 TABLE_PREFIX="t_flush_cancel_in_block_${CLICKHOUSE_DATABASE}_$$"
 CLIENT_OUT="${CLICKHOUSE_TMP}/flush_cancel_in_block_$$.out"
 PAYLOAD="${CLICKHOUSE_TMP}/flush_cancel_in_block_$$.data"
-
-# The Stress runner injects `ignore_drop_queries_probability=0.2` into every client invocation, which
-# makes an unpinned `DROP` report success without dropping. Every `DROP` whose effect this test
-# depends on is pinned to 0 with statement-level `SETTINGS`, so that only the drop is exempted and
-# anything else running in the same client session keeps the injected value.
-DROP_SETTINGS="SETTINGS ignore_drop_queries_probability = 0"
 
 function cleanup()
 {
@@ -75,59 +32,31 @@ function cleanup()
     leftovers=$($CLICKHOUSE_CLIENT -q "SELECT name FROM system.tables WHERE database = currentDatabase() AND name LIKE '${TABLE_PREFIX}%'" 2>/dev/null ||:)
     local leftover
     for leftover in $leftovers; do
-        $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $leftover $DROP_SETTINGS" 2>/dev/null ||:
+        $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $leftover" 2>/dev/null ||:
     done
     rm -f "$CLIENT_OUT" "$PAYLOAD"
 }
 trap cleanup EXIT
 
-# One deadline for both cases, chosen from measured parse times (debug build, `ENGINE = Null` so the
-# figure is parsing alone): the `TSV`/`JSON` payload below parses in ~1.2 s and the `Values` one in
-# ~2.3 s, and an official release build is only modestly faster (~1.0 s / ~1.7 s). 500 ms therefore
-# lands inside the single block in both cases with a wide margin, and stays above the 100 ms grid that
-# `CancellationChecker` aligns deadlines to.
+# Measured parse times are ~1.2 s (`TSV`) and ~2.3 s (`Values`) on a debug build, ~1.0 s / ~1.7 s on
+# a release one, so 500 ms lands inside the single block either way. It also stays above the 100 ms
+# grid that `CancellationChecker` aligns deadlines to.
 MAX_EXECUTION_TIME=0.5
 
-# `ENGINE = Null`: this test is about aborting the PARSE, and a `MergeTree` write would add ~1 s of
-# unrelated work to the flush - work that happens after parsing and so cannot be what the deadline
-# interrupts.
-#
-# The URL settings force ONE block for the whole payload, which is the phase this fix is about:
-#   - `min_insert_block_size_*` = 0 and `max_insert_block_size` huge: the row loop does not stop
-#     early, so a single `read` call has to parse everything.
-#   - `async_insert_max_data_size` large: the payload is buffered and flushed as one entry rather than
-#     being sent synchronously (`PushResult::TOO_MUCH_DATA`).
-#   - the busy-timeout pair: flush promptly instead of waiting out the queue timer.
-#   - `timeout_overflow_mode = throw` is pinned explicitly: `'break'` routes the deadline to
-#     `checkTimeLimit` instead of `cancelQuery`, and the runner randomizes settings.
+# `ENGINE = Null` so that a `MergeTree` write does not add ~1 s of post-parse work. The settings
+# below force ONE block for the whole payload; `timeout_overflow_mode` is pinned because `'break'`
+# routes the deadline to `checkTimeLimit` instead of `cancelQuery` and the runner randomizes it.
 BLOCK_SETTINGS="min_insert_block_size_rows=0&min_insert_block_size_bytes=0&max_insert_block_size=100000000&max_insert_block_size_bytes=0&input_format_max_block_size_bytes=0"
 FLUSH_SETTINGS="async_insert=1&wait_for_async_insert=1&async_insert_busy_timeout_min_ms=10&async_insert_busy_timeout_max_ms=10&async_insert_max_data_size=2000000000"
 
-# Stress runs a background killer that picks a random victim from `system.processes` filtered only by
-# `query NOT LIKE '%system.processes%'`, `query NOT LIKE '%KILL QUERY%'` and `elapsed > 0.1`
-# (`ci/jobs/scripts/stress/stress.py`, `RandomQueryKiller`). The flush is registered under its own
-# serialized query text, so putting the literal `KILL QUERY` INSIDE that text makes it structurally
-# ineligible instead of relying on the retry to win three coin flips. `ASTInsertQuery::formatImpl`
-# formats `settings_ast` into the text, so a query-level `SETTINGS` clause is what survives
-# serialization, and `log_comment` is a plain String setting with no execution semantics. The token
-# sits in a string LITERAL, so the statement is an `INSERT` and never a `KILL QUERY`.
-#
-# Deliberately NOT the killer's other exclusion, `system.processes`: the runner's own hung check
-# filters on that same text (`get_processlist_size` in `tests/clickhouse-test`), so that token would
-# hide this flush from the very check this test exists to protect.
+# Stress's `RandomQueryKiller` skips any query whose text matches `KILL QUERY`, so carrying that
+# token in a string literal makes this flush structurally ineligible. NOT its other exclusion,
+# `system.processes`: the runner's own hung check filters on that text and would stop seeing us.
 KILLER_EXCLUSION="SETTINGS+log_comment%3D%2704652+not-a-KILL+QUERY%2C+excluded+from+the+stress+random+killer%27"
 
-# Two labels are transient rather than a verdict, and a retry is the only way to tell them from the
-# unfixed abort:
-#   - `cancelled-elsewhere`: some other `KILL` reached this flush. `KILLER_EXCLUSION` rules out the
-#     Stress random killer, so this is the second line of defence, not the first.
-#   - `between-chunks` when the deadline was already spent by the SETUP phase (it is armed at process
-#     list registration, before the format and the executor are built). That aborts at the executor's
-#     pre-chunk check, which throws from the same line with the same message as the unfixed mid-block
-#     abort, so text cannot separate the two.
-# Retrying cannot mask the bug: an unfixed build has no checkpoint in the row loop, so EVERY attempt
-# parses the whole payload and yields `between-chunks`, and exhausting the attempts prints the last
-# observed label rather than a synthesised pass.
+# `cancelled-elsewhere` and `between-chunks` are transient, not verdicts, so they are retried.
+# Retrying cannot mask the bug: an unfixed build yields `between-chunks` on EVERY attempt, and
+# exhausting the attempts prints the last observed label rather than a synthesised pass.
 MAX_ATTEMPTS=3
 
 # $1 - label, also used as the `FORMAT` clause. $2 - the column type.
@@ -149,7 +78,7 @@ function run_case()
         # predicate and be returned when THIS flush left no row of its own.
         table="${TABLE_PREFIX}_${case_id}_${attempt}"
 
-        $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $table $DROP_SETTINGS"
+        $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $table"
         $CLICKHOUSE_CLIENT -q "CREATE TABLE $table (x $column_type) ENGINE = Null"
 
         # Synchronous async insert over HTTP: the request waits for the background flush, so it
@@ -159,27 +88,9 @@ function run_case()
             "${CLICKHOUSE_URL}&${FLUSH_SETTINGS}&${BLOCK_SETTINGS}&max_execution_time=${MAX_EXECUTION_TIME}&timeout_overflow_mode=throw&query=INSERT+INTO+${table}+${KILLER_EXCLUSION}+FORMAT+${format}" \
             --data-binary @"$PAYLOAD" > "$CLIENT_OUT" 2>&1 ||:
 
-        # Read the verdict off the flush's own `system.query_log` row rather than the client's stderr.
-        #   `query_kind = 'AsyncInsertFlush'` - excludes the initiating `INSERT`, which carries the
-        #                                      same deadline and the same message when IT times out
-        #                                      first.
-        #   `has(databases, currentDatabase())` - scopes the row to this test's database. NOTE the
-        #                                      flush runs on a background thread whose
-        #                                      `current_database` is `default`, not the test database,
-        #                                      so the usual `current_database = currentDatabase()`
-        #                                      predicate matches NOTHING here; `databases` does carry
-        #                                      the target's database.
-        #   `query LIKE '%$table%'`          - the table name is unique per invocation, per case and
-        #                                      per attempt, and it is embedded in `query_for_logging`,
-        #                                      so it names THIS flush and no other. That is what makes
-        #                                      an absent row print nothing - and therefore FAIL -
-        #                                      instead of inheriting another invocation's, case's or
-        #                                      attempt's verdict. See `TABLE_PREFIX` for why the
-        #                                      invocation component is what closes the stale-row hole;
-        #                                      the `event_date` bound below is only a cheap partition
-        #                                      prune, it is not what keeps the row fresh.
-        #   `type != 'QueryStart'`           - `QueryStart` has no `exception_code` yet.
-        #   `ORDER BY ... DESC LIMIT 1`      - newest row only.
+        # `has(databases, ...)` and not `current_database`: the flush runs on a background thread
+        # whose `current_database` is `default`, so the usual predicate matches NOTHING here. The
+        # table name is what names THIS flush, so an absent row prints nothing and therefore FAILs.
         label=$($CLICKHOUSE_CLIENT -q "
             SYSTEM FLUSH LOGS query_log;
             SELECT multiIf(
@@ -206,10 +117,9 @@ function run_case()
     echo "$label"
 }
 
-# Row-based format: IRowInputFormat::read. A `JSON` column gives the loop enough work per row to
-# outlive the deadline from a payload of a few megabytes; a plain integer column parses ~100x faster
-# per byte and would need a payload too large for a stateless test. It is also the shape the original
-# hung check reported, which was stuck in `JSON` deserialization.
+# `IRowInputFormat::read`. A `JSON` column gives the loop enough work per row to outlive the deadline
+# from a few megabytes, where a plain integer would need a payload too large for a stateless test.
+# It is also the shape the original hung check reported.
 python3 - "$PAYLOAD" <<'END_OF_PYTHON'
 import json
 import sys

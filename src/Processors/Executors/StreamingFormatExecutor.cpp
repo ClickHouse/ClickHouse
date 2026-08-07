@@ -138,12 +138,8 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
     {
         format->resetParser();
         /// Cancellation aborts the whole execution; it is not a recoverable per-input parse error.
-        /// The format itself can now abort mid-block, and a cancelled `QueryStatus` reports an
-        /// arbitrary exception (a `KILL QUERY` records its own), so ask the cancellation callback
-        /// instead of matching on the error code alone. `TIMEOUT_EXCEEDED` is deliberately not
-        /// treated as cancellation on its own: a callback-less caller can see it from a single
-        /// message exceeding the query deadline in place, and for those callers `on_error`
-        /// implements the bad-message handling.
+        /// A cancelled `QueryStatus` reports an arbitrary exception, so ask the callback rather than
+        /// match on the code, which for a callback-less caller `on_error` must keep handling.
         if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || (is_cancelled && is_cancelled()))
             throw;
         return on_error(result_columns, checkpoints, e);
