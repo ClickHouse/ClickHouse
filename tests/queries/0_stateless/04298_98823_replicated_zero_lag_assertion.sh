@@ -13,11 +13,16 @@
 #
 # `0` has no sensible semantics for this setting (it asks for zero lag
 # tolerance, which is impossible to satisfy under concurrent commits), so
-# the fix forbids it at parse time. Switching the setting type to
-# `NonZeroUInt64` makes the parser reject `0` everywhere the value can be
-# supplied (`CREATE DATABASE ... SETTINGS` and the `<database_replicated>`
-# server-config block), in `ATTACH` replay, and on upgrade from older
-# versions whose metadata persists `0`. `1` is the smallest meaningful
+# the fix forbids it at parse time by switching the setting type to
+# `NonZeroUInt64`. This test exercises the two ingresses reachable from
+# SQL: `CREATE DATABASE ... SETTINGS` and an explicit `ATTACH DATABASE`
+# with an engine definition — the latter is the same query shape that
+# startup/upgrade replay of persisted metadata executes, through the same
+# `DatabaseReplicatedSettings::loadFromQuery` call in the database factory.
+# The remaining ingress, the `<database_replicated>` server-config block,
+# goes through the same `NonZeroUInt64` parser via
+# `DatabaseReplicatedSettings::loadFromConfig` but needs server-level
+# configuration and is not exercised here. `1` is the smallest meaningful
 # value: it means "consider the replica unsynced as soon as there is at
 # least one new entry to apply".
 
@@ -53,7 +58,27 @@ fi
 # 2. The database must not have been created.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.databases WHERE name = '${db_zero}'"
 
-# 3. The smallest valid value (1) still works and the post-recovery DDL
+# 3. The `ATTACH` path must reject `0` too. An explicit `ATTACH DATABASE`
+# with an engine definition is the same query shape that startup and
+# upgrade-time replay of persisted metadata executes, so this pins the
+# replay ingress: metadata persisting `0` (written by an older version)
+# fails to attach instead of reviving the aborting post-recovery check.
+uuid_zero=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
+if ${CLICKHOUSE_CLIENT} -q "
+    ATTACH DATABASE ${db_zero} UUID '${uuid_zero}'
+    ENGINE = Replicated('/test/${CLICKHOUSE_DATABASE}/rdb_zero_lag_zero', 's1', 'r1')
+    SETTINGS max_replication_lag_to_enqueue = 0
+" 2>&1 | grep -q -F "A setting's value has to be greater than 0"
+then
+    echo "attach rejected"
+else
+    echo "attach NOT rejected (bug)"
+fi
+
+# 4. The database must not have been attached either.
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.databases WHERE name = '${db_zero}'"
+
+# 5. The smallest valid value (1) still works and the post-recovery DDL
 # path stays alive, which is what was crashing on the original report.
 ${CLICKHOUSE_CLIENT} -q "
     CREATE DATABASE ${db_one}
@@ -63,6 +88,13 @@ ${CLICKHOUSE_CLIENT} -q "
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "CREATE TABLE ${db_one}.t (n Int) ENGINE = MergeTree ORDER BY n"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO ${db_one}.t VALUES (1), (2), (3)"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${db_one}.t"
+
+# 6. Replay of persisted metadata with a valid value: a DETACH/ATTACH
+# round-trip re-executes the stored `ATTACH` query through the same
+# parser, so the persisted setting must survive and keep its value.
+${CLICKHOUSE_CLIENT} -q "DETACH DATABASE ${db_one}"
+${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE ${db_one}"
+${CLICKHOUSE_CLIENT} -q "SELECT engine_full LIKE '%max_replication_lag_to_enqueue = 1%' FROM system.databases WHERE name = '${db_one}'"
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${db_zero} SYNC"
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${db_one} SYNC"
