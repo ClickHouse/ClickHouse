@@ -34,7 +34,7 @@ FROM (EXPLAIN header = 1
     SELECT sum(length(nb)), countIf(aid != arrayMap(x -> x + 10, range(id % 3 + 1)))
     FROM (SELECT id, `arr.nested`.b AS nb, `arr.id` AS aid FROM t_shared_offsets_wide));
 
-SET local_filesystem_read_prefetch = 1;
+SET local_filesystem_read_prefetch = 1, remote_filesystem_read_prefetch = 1;
 
 -- A nonzero `filesystem_prefetches_limit` below the number of columns read skips prefetching
 -- entirely, which would make every assertion below pass without taking the prefetch path. Read the
@@ -52,7 +52,7 @@ FROM (SELECT id, `arr.id` AS aid, `arr.nested`.b AS nb, `arr.s` AS s FROM t_shar
 
 SELECT 'prefetch off', sum(length(nb)), countIf(aid != arrayMap(x -> x + 10, range(id % 3 + 1)))
 FROM (SELECT id, `arr.nested`.b AS nb, `arr.id` AS aid FROM t_shared_offsets_wide)
-SETTINGS local_filesystem_read_prefetch = 0;
+SETTINGS local_filesystem_read_prefetch = 0, remote_filesystem_read_prefetch = 0;
 
 -- More than one granule, so group and type resolution must hold for every mark, not only the first.
 CREATE TABLE t_shared_offsets_granules
