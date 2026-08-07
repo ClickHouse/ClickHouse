@@ -59,6 +59,12 @@ enum class RemoteFSReadMethod : uint8_t
 ///
 /// When `preadNoWait` is unavailable, 'pread_threadpool' falls back to regular 'pread'.
 /// Reads with O_DIRECT are not affected.
+///
+/// Each call site passes its own view of `direct_io`, derived from its own estimate of the
+/// read size. A component that decides based on the read method before the buffer is created
+/// (e.g. `DiskLocal::prepareRead`) may estimate the size differently from the component that
+/// creates the buffer, and then the two resolve different methods for the same read.
+/// So the fallback is per decision point, not a global property of the read.
 LocalFSReadMethod resolveLocalFSReadMethod(LocalFSReadMethod requested, bool pread_no_wait_supported, bool direct_io);
 
 /// The same resolution with the support probed on demand (see `getPreadNoWaitSupport`).

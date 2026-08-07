@@ -199,7 +199,6 @@ namespace Setting
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsSeconds http_send_timeout;
     extern const SettingsString local_filesystem_read_method;
-    extern const SettingsUInt64 min_bytes_to_use_direct_io;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
 }
@@ -847,16 +846,16 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
 
     /// Only the 'pread_threadpool' read method depends on `preadNoWait`, and the probe
     /// is a raw `preadv2` system call that a kill-on-deny `seccomp` profile terminates
-    /// the process for. So a server whose default profile selects another method, or
-    /// enables direct IO (an O_DIRECT read never looks at the page cache and keeps the
-    /// thread pool), never reaches the probe; a session that switches to 'pread_threadpool'
-    /// later gets the same downgrade at read time, just without this startup warning.
-    /// The resolver hides the probe behind both conditions.
+    /// the process for. So a server whose default profile selects another method never
+    /// reaches the probe; a session that switches to 'pread_threadpool' later gets the
+    /// same downgrade at read time, just without this startup warning. When the default
+    /// profile does select 'pread_threadpool', the check is genuinely needed: even with
+    /// `min_bytes_to_use_direct_io` set, that is only a threshold, so the reads below it
+    /// (and every read on platforms without O_DIRECT support) still rely on the page
+    /// cache check, reach the probe at read time anyway, and downgrade to 'pread' —
+    /// which is why enabling direct IO must not suppress this warning.
     if (server.context()->getSettingsRef()[Setting::local_filesystem_read_method].value == "pread_threadpool"
-        && resolveLocalFSReadMethod(
-               LocalFSReadMethod::pread_threadpool,
-               /*direct_io=*/ server.context()->getSettingsRef()[Setting::min_bytes_to_use_direct_io] != 0)
-            == LocalFSReadMethod::pread)
+        && resolveLocalFSReadMethod(LocalFSReadMethod::pread_threadpool, /*direct_io=*/ false) == LocalFSReadMethod::pread)
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::PREAD_NO_WAIT_UNAVAILABLE,
             PreformattedMessage::create(
