@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <base/sleep.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
@@ -60,22 +61,19 @@ private:
     const char * function_name;
     FunctionSleepVariant variant;
     UInt64 max_microseconds;
-    QueryStatusPtr query_status;
 
 public:
-    FunctionSleep(const char * name_, FunctionSleepVariant variant_, UInt64 max_microseconds_, QueryStatusPtr query_status_)
+    FunctionSleep(const char * name_, FunctionSleepVariant variant_, UInt64 max_microseconds_)
         : function_name(name_)
         , variant(variant_)
         , max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
-        , query_status(query_status_)
     {
     }
 
     static FunctionPtr create(const char * name, FunctionSleepVariant variant, ContextPtr context)
     {
         return std::make_shared<FunctionSleep>(
-            name, variant,
-            context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block], context->getProcessListElementSafe());
+            name, variant, context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block]);
     }
 
     String getName() const override { return function_name; }
@@ -112,6 +110,12 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool dry_run) const
     {
+        /// Resolved from the executing thread rather than captured: this instance can be stored in table
+        /// metadata and then run by any later query.
+        QueryStatusPtr query_status;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+
         const IColumn * col = arguments[0].column.get();
 
         if (!isColumnConst(*col))
