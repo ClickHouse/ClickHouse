@@ -6,8 +6,9 @@
 -- hidden rows. A view that hides no rows, and an `INVOKER` view, keep the optimization.
 
 -- Pin everything the plan shape depends on: the test also runs with randomized settings.
+-- Lazy materialization exists only under the analyzer, so it is pinned on too.
 SET query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10,
-    optimize_move_to_prewhere = 0, enable_parallel_replicas = 0;
+    optimize_move_to_prewhere = 0, enable_parallel_replicas = 0, enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t04818;
 CREATE TABLE t04818 (key UInt64, value UInt64, payload String, owner String) ENGINE = MergeTree ORDER BY key;
