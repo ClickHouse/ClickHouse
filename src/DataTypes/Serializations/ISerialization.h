@@ -766,6 +766,11 @@ public:
     /// Throws LOGICAL_ERROR if the hash has not been set.
     UInt128 getHash() const;
 
+    /// Identity of a custom serialization (`IDataType::setCustomization`), which changes a column's
+    /// streams while being invisible to `IDataType::equals`. The class is enough while the serialization
+    /// follows from the type; override when it is configured elsewhere.
+    virtual String getCustomSerializationIdentity() const { return typeid(*this).name(); }
+
 protected:
     std::optional<UInt128> cached_hash;
 

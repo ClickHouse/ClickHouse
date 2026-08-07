@@ -1867,7 +1867,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (create.select && create.isView())
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor(getContext()).visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
@@ -2479,6 +2479,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         ContextMutablePtr internal_context = Context::createCopy(current_context->getGlobalContext());
         internal_context->makeQueryContext();
         internal_context->setSettings(current_context->getSettingsRef());
+        /// The settings copied above can make the internal DROPs below wait; the element is the only way out.
+        internal_context->setProcessListElement(current_context->getProcessListElementSafe());
         internal_context->setDDLOrOnClusterInternal(true);
         if (bypass_size_guard)
         {
