@@ -1847,6 +1847,11 @@ static void inlineConstantInputs(ActionsDAG & dag, const NameToColumnMap & const
     }
 }
 
+static bool areOppositeJoinSides(const JoinActionRef & lhs, const JoinActionRef & rhs)
+{
+    return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+}
+
 static bool canBeEvaluatedOnSide(
     const JoinActionRef & condition, JoinTableSide side, const NameToColumnMap & constants)
 {
@@ -1856,6 +1861,12 @@ static bool canBeEvaluatedOnSide(
         return true;
 
     if (constants.empty())
+        return false;
+
+    /// Skip evalutation of equiality conditions, since it's used for join key extraction
+    auto [op, lhs, rhs] = condition.asBinaryPredicate();
+    bool is_equality = op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals;
+    if (is_equality && areOppositeJoinSides(lhs, rhs))
         return false;
 
     bool reads_own_column = false;
