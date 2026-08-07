@@ -38,7 +38,7 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](/reference/statements/create/table#column_compression_codec) and `default_expr` (see the section [Default expressions](/reference/statements/create/table#default_values)). The modifiers that follow the type can be written in any order, and each of them at most once - see [column description](/reference/statements/create/table#with-explicit-schema).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](/reference/statements/create/table/codec) and `default_expr` (see the section [Default expressions](/reference/statements/create/table#default_values)). The modifiers that follow the type can be written in any order, and each of them at most once - see [column description](/reference/statements/create/table#with-explicit-schema).
 
 If the `IF NOT EXISTS` clause is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -165,7 +165,7 @@ This query changes the `name` column properties:
 
 - Enum Values for Enum/Enum8/Enum16 types
 
-For examples of columns compression CODECS modifying, see [Column Compression Codecs](/reference/statements/create/table#column_compression_codec).
+For examples of columns compression CODECS modifying, see [Column Compression Codecs](/reference/statements/create/table/codec).
 
 For examples of columns TTL modifying, see [Column TTL](/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
