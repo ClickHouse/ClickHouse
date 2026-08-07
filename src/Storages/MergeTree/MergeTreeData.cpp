@@ -3092,7 +3092,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             unexpected_data_parts_loading_finished = false;
         }
 
-        unexpected_data_parts_loading_task = getContext()->getSchedulePool().createTask(
+        unexpected_data_parts_loading_task = getContext()->getSchedulePool()->createTask(
             getStorageID(),
             "MergeTreeData::loadUnexpectedDataParts",
             [this, component_name = Coordination::getCurrentComponent()]
@@ -3120,7 +3120,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             outdated_data_parts_loading_finished = false;
         }
 
-        outdated_data_parts_loading_task = getContext()->getSchedulePool().createTask(
+        outdated_data_parts_loading_task = getContext()->getSchedulePool()->createTask(
             getStorageID(), "MergeTreeData::loadOutdatedDataParts",
             [this, component_name = Coordination::getCurrentComponent()]
             {
@@ -3138,7 +3138,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     auto refresh_parts_interval = (*settings)[MergeTreeSetting::refresh_parts_interval].totalMilliseconds();
     if (all_disks_are_readonly && refresh_parts_interval && !refresh_parts_task)
     {
-        refresh_parts_task = getContext()->getSchedulePool().createTask(
+        refresh_parts_task = getContext()->getSchedulePool()->createTask(
             getStorageID(), "MergeTreeData::refreshDataParts",
             [this, refresh_parts_interval, component_name = Coordination::getCurrentComponent()]
             {
@@ -3159,7 +3159,7 @@ void MergeTreeData::startStatisticsCache()
     if (refresh_statistics_seconds)
     {
         LOG_INFO(log, "Start to refresh statistics");
-        refresh_stats_task = getContext()->getSchedulePool().createTask(
+        refresh_stats_task = getContext()->getSchedulePool()->createTask(
             getStorageID(), "MergeTreeData::refreshStatistics",
             [this, refresh_statistics_seconds] { refreshStatistics(refresh_statistics_seconds); });
 
