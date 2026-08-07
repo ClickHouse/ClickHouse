@@ -75,6 +75,21 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
     return size_limits.check(rows_in_join, bytes_in_join, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
+void BlockNestedLoopJoinData::setBuildSideTotals(Block totals)
+{
+    if (isFinished())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set the totals of a finished block nested loop join build side");
+
+    std::lock_guard lock(mutex);
+    build_side_totals = std::move(totals);
+}
+
+const Block & BlockNestedLoopJoinData::getBuildSideTotals() const
+{
+    assertFinished("the build side totals");
+    return TSA_SUPPRESS_WARNING_FOR_READ(build_side_totals);
+}
+
 void BlockNestedLoopJoinData::finish()
 {
     std::lock_guard lock(mutex);
@@ -127,6 +142,14 @@ BlockNestedLoopBuildTransform::BlockNestedLoopBuildTransform(
 {
 }
 
+InputPort * BlockNestedLoopBuildTransform::addTotalsPort()
+{
+    if (inputs.size() > 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Totals port was already added to BlockNestedLoopBuildTransform");
+
+    return &inputs.emplace_back(inputs.front().getHeader(), this);
+}
+
 IProcessor::Status BlockNestedLoopBuildTransform::prepare()
 {
     auto & output = outputs.front();
@@ -134,18 +157,22 @@ IProcessor::Status BlockNestedLoopBuildTransform::prepare()
 
     if (output.isFinished())
     {
-        input.close();
+        for (auto & in : inputs)
+            in.close();
         finishBuild();
         return Status::Finished;
     }
 
     if (!output.canPush())
     {
-        input.setNotNeeded();
+        for (auto & in : inputs)
+            in.setNotNeeded();
         return Status::PortFull;
     }
 
-    if (!stop_reading && !input.isFinished())
+    if (stop_reading)
+        input.close();
+    else if (!input.isFinished())
     {
         input.setNeeded();
 
@@ -156,7 +183,23 @@ IProcessor::Status BlockNestedLoopBuildTransform::prepare()
         return Status::Ready;
     }
 
-    input.close();
+    /// The totals row is stored after the build rows, so that the store is closed only once it is in.
+    if (inputs.size() > 1)
+    {
+        auto & totals_input = inputs.back();
+        if (!totals_input.isFinished())
+        {
+            totals_input.setNeeded();
+
+            if (!totals_input.hasData())
+                return Status::NeedData;
+
+            chunk = totals_input.pull(true);
+            for_totals = true;
+            return Status::Ready;
+        }
+    }
+
     finishBuild();
     output.finish();
     return Status::Finished;
@@ -166,7 +209,10 @@ void BlockNestedLoopBuildTransform::work()
 {
     auto num_rows = chunk.getNumRows();
     auto block = inputs.front().getHeader().cloneWithColumns(chunk.detachColumns());
-    stop_reading = !data->addBlock(std::move(block), num_rows);
+    if (for_totals)
+        data->setBuildSideTotals(std::move(block));
+    else
+        stop_reading = !data->addBlock(std::move(block), num_rows);
 }
 
 void BlockNestedLoopBuildTransform::finishBuild()

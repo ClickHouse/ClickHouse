@@ -206,6 +206,11 @@ void QueryPipelineBuilder::dropTotalsAndExtremes()
     pipe.dropExtremes();
 }
 
+void QueryPipelineBuilder::dropExtremes()
+{
+    pipe.dropExtremes();
+}
+
 void QueryPipelineBuilder::addExtremesTransform()
 {
     checkInitializedAndNotCompleted();

@@ -3,26 +3,11 @@
 #include <Core/Joins.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/Transforms/BlockNestedLoopJoinTransform.h>
 #include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
-
-/// An arbitrary `JOIN ON` condition evaluated on (left row, right row) pairs inside the operator.
-struct BlockNestedLoopPredicate
-{
-    /// Where a required column of `actions` comes from: the input (0 = left, 1 = right)
-    /// and the column's position in that input's header.
-    struct Source
-    {
-        size_t side = 0;
-        size_t position = 0;
-    };
-
-    ExpressionActionsPtr actions;
-    /// One entry per required column of `actions`, in `getRequiredColumnsWithTypes` order.
-    std::vector<Source> inputs;
-};
 
 /// Joins two data streams by an arbitrary boolean `JOIN ON` condition with a block nested loop:
 /// the right input is materialized, then every left row is matched against it by evaluating the
@@ -42,6 +27,14 @@ public:
         size_t max_block_size_,
         size_t max_block_bytes_);
 
+    /// The two stages of execution, kept apart so that `EXPLAIN ANALYZE` attributes the time
+    /// of materializing the right input and the time of matching separately.
+    enum class Stage : size_t
+    {
+        Build = 1,
+        Probe = 2,
+    };
+
     /// Whether the step can execute this join type.
     static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
 
@@ -53,6 +46,9 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
+
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
 
 private:
     void updateOutputHeader() override;
@@ -66,9 +62,9 @@ private:
     /// Limits on the materialized right input, from `max_rows_in_join` / `max_bytes_in_join`.
     SizeLimits size_limits;
     /// Limits on a result block, from `max_block_size` / `max_joined_block_size_rows` and
-    /// `max_joined_block_size_bytes`. Read by the operator, which is not built yet.
-    [[maybe_unused]] size_t max_block_size;
-    [[maybe_unused]] size_t max_block_bytes;
+    /// `max_joined_block_size_bytes`.
+    size_t max_block_size;
+    size_t max_block_bytes;
 };
 
 }

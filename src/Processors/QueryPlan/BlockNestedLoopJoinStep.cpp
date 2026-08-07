@@ -2,7 +2,9 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/Transforms/BlockNestedLoopJoinData.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
@@ -12,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 bool BlockNestedLoopJoinStep::isSupportedJoinType(JoinKind kind, JoinStrictness strictness)
@@ -90,12 +91,85 @@ static SharedHeader concatHeaders(const SharedHeaders & headers)
     return std::make_shared<const Block>(std::move(result));
 }
 
-QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BlockNestedLoopJoinStep expects two input pipelines, got {}", pipelines.size());
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Block nested loop join is not implemented");
+    ///  (build) ┐                                                    (probe) ─> Probe ─> (joined)
+    ///          ╞> Resize ─> BlockNestedLoopBuild ─> Resize(1) ─╖
+    ///  (build) ┘                                               ╠> Delayed ports
+    ///                                                (probe) ──╢               ─> Probe ─> (joined)
+    ///                                               (totals) ──╜               ─> Totals
+
+    auto probe_pipeline = std::move(pipelines[0]);
+    auto build_pipeline = std::move(pipelines[1]);
+
+    /// Extremes of an input say nothing about the join result; they are recomputed above the join.
+    probe_pipeline->dropExtremes();
+    build_pipeline->dropExtremes();
+
+    /// The build side's totals row only lends its columns to the joined totals row, so the probe
+    /// side needs a totals row to attach them to even when it has none of its own.
+    const bool build_has_totals = build_pipeline->hasTotals();
+    const bool probe_totals_are_default = build_has_totals && !probe_pipeline->hasTotals();
+    if (probe_totals_are_default)
+        probe_pipeline->addDefaultTotals();
+
+    auto data = std::make_shared<BlockNestedLoopJoinData>(
+        build_pipeline->getSharedHeader(), kind, strictness, size_limits);
+
+    const size_t max_streams = std::max<size_t>(1, settings.max_threads);
+
+    {
+        QueryPipelineProcessorsCollector collector(*build_pipeline, this);
+
+        if (build_has_totals)
+        {
+            /// One store, one totals row: a single build stream owns the totals port.
+            build_pipeline->resize(1);
+            auto build_transform = std::make_shared<BlockNestedLoopBuildTransform>(
+                build_pipeline->getSharedHeader(), data, std::make_shared<FinishCounter>(1));
+            auto * totals_port = build_transform->addTotalsPort();
+            build_pipeline->addTransform(std::move(build_transform), totals_port, nullptr);
+        }
+        else
+        {
+            build_pipeline->resize(max_streams);
+            auto finish_counter = std::make_shared<FinishCounter>(build_pipeline->getNumStreams());
+            build_pipeline->addSimpleTransform([&](const SharedHeader & header)
+            {
+                return std::make_shared<BlockNestedLoopBuildTransform>(header, data, finish_counter);
+            });
+        }
+
+        /// The build transforms carry no data downstream, only the signal that the store is closed.
+        build_pipeline->resize(1);
+
+        auto build_processors = collector.detachProcessors(static_cast<size_t>(Stage::Build));
+        processors.insert(processors.end(), build_processors.begin(), build_processors.end());
+    }
+
+    {
+        QueryPipelineProcessorsCollector collector(*probe_pipeline, this);
+
+        probe_pipeline->resize(max_streams);
+        /// No probe stream, the totals stream included, may pull a row before the store is closed.
+        probe_pipeline->addPipelineBefore(std::move(*build_pipeline));
+
+        probe_pipeline->addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type == QueryPipelineBuilder::StreamType::Totals)
+                return std::make_shared<BlockNestedLoopTotalsTransform>(header, output_header, data, probe_totals_are_default);
+            return std::make_shared<BlockNestedLoopProbeTransform>(
+                header, output_header, data, predicate, max_block_size, max_block_bytes);
+        });
+
+        auto probe_processors = collector.detachProcessors(static_cast<size_t>(Stage::Probe));
+        processors.insert(processors.end(), probe_processors.begin(), probe_processors.end());
+    }
+
+    return probe_pipeline;
 }
 
 void BlockNestedLoopJoinStep::updateOutputHeader()
@@ -120,6 +194,21 @@ void BlockNestedLoopJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 void BlockNestedLoopJoinStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
+}
+
+std::vector<size_t> BlockNestedLoopJoinStep::getStepGroups() const
+{
+    return {static_cast<size_t>(Stage::Build), static_cast<size_t>(Stage::Probe)};
+}
+
+String BlockNestedLoopJoinStep::getStepGroupName(size_t group) const
+{
+    switch (static_cast<Stage>(group))
+    {
+        case Stage::Build: return "build";
+        case Stage::Probe: return "probe";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown block nested loop join stage {}", group);
 }
 
 }

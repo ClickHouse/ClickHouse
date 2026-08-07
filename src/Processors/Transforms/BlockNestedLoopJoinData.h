@@ -38,6 +38,13 @@ public:
     /// `join_overflow_mode = 'break'`, asking the caller to stop reading the build side.
     bool addBlock(Block block, size_t num_rows);
 
+    /// Records the build side's `WITH TOTALS` row. It is not a build row: it never takes part in
+    /// matching, it only contributes its columns to the joined totals row.
+    void setBuildSideTotals(Block totals);
+    /// The build side's totals row, or a block with no columns when it has none.
+    /// Valid only after `finish`.
+    const Block & getBuildSideTotals() const;
+
     /// Ends the build phase: assigns the global row numbers and makes the store read-only.
     /// Must be called exactly once, after every build stream is done appending.
     void finish();
@@ -73,6 +80,7 @@ private:
     mutable std::mutex mutex;
     std::vector<StoredBlock> blocks TSA_GUARDED_BY(mutex);
     std::vector<size_t> row_offsets TSA_GUARDED_BY(mutex);
+    Block build_side_totals TSA_GUARDED_BY(mutex);
 
     std::atomic<size_t> total_rows{0};
     std::atomic<size_t> total_bytes{0};
@@ -91,6 +99,10 @@ public:
 
     String getName() const override { return "BlockNestedLoopBuild"; }
 
+    /// Routes the build side's `WITH TOTALS` row into the store. Only one build stream may carry
+    /// it, so a pipeline with build-side totals uses a single build stream.
+    InputPort * addTotalsPort();
+
     Status prepare() override;
     void work() override;
 
@@ -102,6 +114,7 @@ private:
     FinishCounterPtr finish_counter;
     Chunk chunk;
     bool stop_reading = false;
+    bool for_totals = false;
     bool build_finished = false;
 };
 
