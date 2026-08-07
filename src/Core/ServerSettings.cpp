@@ -1761,6 +1761,8 @@ The server will not exit if IPv6 or IPv4 networks are unavailable while trying t
 Offset applied to all configured server ports. This allows shifting port numbers without
 modifying individual port configurations. Can be positive or negative. The resulting port
 must be in range 1-65535, otherwise the server will refuse to start.
+A port configured as `0` (an OS-assigned, ephemeral port) is never offset. An explicit
+client-side `port` setting (for example `--port` of `clickhouse-client`) is not affected.
 
 **Example**
 

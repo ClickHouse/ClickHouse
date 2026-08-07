@@ -103,6 +103,80 @@ def test_port_offset_system_tables(start_cluster):
     assert default_offset == "0"
 
 
+def test_port_offset_client_explicit_port_not_offset(start_cluster):
+    """An explicit client `--port` is the exact destination and is never shifted.
+
+    The client configuration contains `port_offset`, but `--port 9000` must dial
+    exactly 9000 (where the offset node listens: base 8900 + offset 100). If the
+    offset were wrongly applied to the explicit port, the client would dial 9100
+    and fail to connect.
+    """
+    node_offset.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo '<config><port_offset>100</port_offset></config>' > /tmp/client_with_offset.xml",
+        ]
+    )
+    result = node_offset.exec_in_container(
+        [
+            "clickhouse",
+            "client",
+            "--config-file=/tmp/client_with_offset.xml",
+            "--port=9000",
+            "--query=SELECT 1",
+        ]
+    )
+    assert result.strip() == "1"
+
+    # A port derived from `tcp_port` in the same configuration IS shifted:
+    # 8900 + 100 = 9000, the port the server actually listens on.
+    node_offset.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo '<config><tcp_port>8900</tcp_port><port_offset>100</port_offset></config>'"
+            " > /tmp/client_tcp_port_offset.xml",
+        ]
+    )
+    result = node_offset.exec_in_container(
+        [
+            "clickhouse",
+            "client",
+            "--config-file=/tmp/client_tcp_port_offset.xml",
+            "--query=SELECT 2",
+        ]
+    )
+    assert result.strip() == "2"
+
+
+def test_port_offset_clickhouse_local(start_cluster):
+    """`clickhouse-local` shifts its listeners by `port_offset` too.
+
+    The embedded client derives its port through the same configuration, so the
+    listener and the client must move together: with tcp_port 7000 and offset 100
+    the registered (bound) port is 7100. Runs inside the container, so the fixed
+    port cannot collide with anything on the test host.
+    """
+    node_offset.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo '<clickhouse><tcp_port>7000</tcp_port><port_offset>100</port_offset></clickhouse>'"
+            " > /tmp/local_with_offset.xml",
+        ]
+    )
+    result = node_offset.exec_in_container(
+        [
+            "clickhouse",
+            "local",
+            "--config-file=/tmp/local_with_offset.xml",
+            "--query=SYSTEM START LISTEN TCP; SELECT getServerPort('tcp_port')",
+        ]
+    )
+    assert result.strip() == "7100"
+
+
 def test_port_offset_all_protocols(start_cluster):
     """All configured ports are offset on the offset node."""
     # (port_name, default node port, offset node port).

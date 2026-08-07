@@ -190,11 +190,18 @@ UInt16 ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfigu
                                                const std::string & connection_host)
 {
     bool is_secure = enableSecureConnection(config, connection_host);
-    UInt16 port = static_cast<UInt16>(config.getInt(
-        "port",
-        static_cast<UInt16>(
-            config.getInt(is_secure ? "tcp_port_secure" : "tcp_port", is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT))));
 
+    /// An explicitly given `port` (e.g. `--port` on the client command line) is the exact
+    /// destination the user asked for, so it is never shifted by `port_offset`.
+    if (config.has("port"))
+        return static_cast<UInt16>(config.getInt("port"));
+
+    UInt16 port = static_cast<UInt16>(
+        config.getInt(is_secure ? "tcp_port_secure" : "tcp_port", is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
+
+    /// The port was derived from the server-side `tcp_port` / `tcp_port_secure` settings, so apply
+    /// the same `port_offset` the server applies to its listeners (this matters for `clickhouse-local`
+    /// and for a client reading a server configuration file).
     if (config.has("port_offset"))
     {
         Int32 offset = static_cast<Int32>(config.getInt64("port_offset"));

@@ -8,6 +8,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/getMultipleKeysFromConfig.h>
+#include <Common/PortUtils.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -623,6 +624,13 @@ ExchangeLookupPtr createExchangeLookup(
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
             "`distributed_query.streaming_exchange_port` must be in range 1..65535, got {}", streaming_exchange_port);
 
+    /// The server shifts its exchange listener by `port_offset`, so the same shift applies when this
+    /// server-level setting is used as the fallback port for peers (which are assumed to share the
+    /// configuration when no per-stream port was shipped).
+    streaming_exchange_port = applyPortOffset(
+        static_cast<UInt16>(streaming_exchange_port),
+        static_cast<Int32>(context->getConfigRef().getInt64("port_offset", 0)));
+
     /// The listener starts only when a listen host is also configured, so streaming peers are
     /// unreachable without one. Reject here instead of connecting to a listener that never started.
     if (getMultipleValuesFromConfig(context->getConfigRef(), "distributed_query", "streaming_exchange_listen_host").empty())
@@ -1001,9 +1009,13 @@ static WorkerAddress resolveWorkerAddress(
     if (server_level_exchange_port > 65535)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
             "`distributed_query.streaming_exchange_port` must be in range 0..65535, got {}", server_level_exchange_port);
+    /// A per-replica port from the cluster configuration is explicit and used as-is; only the
+    /// server-level fallback is shifted by `port_offset`, matching the listener in `Server.cpp`.
     address.streaming_exchange_port = cluster_streaming_exchange_port != 0
         ? cluster_streaming_exchange_port
-        : static_cast<UInt16>(server_level_exchange_port);
+        : applyPortOffset(
+              static_cast<UInt16>(server_level_exchange_port),
+              static_cast<Int32>(context->getConfigRef().getInt64("port_offset", 0)));
 
     /// Fall back to the global client port, then the interserver port (read lazily, since
     /// getInterserverIOAddress throws when unconfigured, so an explicit per-node port avoids it).

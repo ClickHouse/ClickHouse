@@ -2202,6 +2202,12 @@ try
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
                 "`distributed_query.streaming_exchange_port` must be in range 1..65535, got {}", streaming_exchange_port);
 
+        /// Shift by `port_offset` like every other listener, so multiple instances with different
+        /// offsets do not collide on this port. `DistributedPlanExecutor` applies the same offset
+        /// when it derives peer exchange ports from this server-level setting.
+        streaming_exchange_port = applyPortOffset(
+            static_cast<UInt16>(streaming_exchange_port), server_settings[ServerSetting::port_offset]);
+
         /// The exchange handshake is unauthenticated, so the listener is never bound to all interfaces
         /// implicitly: the streaming exchange is enabled only when explicit listen host(s) are given.
         Strings exchange_listen_hosts = DB::getMultipleValuesFromConfig(config(), "distributed_query", "streaming_exchange_listen_host");
