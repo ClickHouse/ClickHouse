@@ -564,6 +564,57 @@ public:
                 }
             }
 
+            /// Appends the whole posting to `result`. A posting is kept sorted and free of duplicates by
+            /// every path that mutates it, so a reader that matches a single key inherits both properties
+            /// from this copy and needs neither a sort nor a deduplication pass of its own.
+            void appendTo(std::vector<EntryId> & result) const
+            {
+                if (wide.empty())
+                    result.insert(result.end(), narrow.begin(), narrow.end());
+                else
+                    result.insert(result.end(), wide.begin(), wide.end());
+            }
+
+            /// Calls `mark` with the position of every element of the sorted, duplicate-free `entry_ids`
+            /// that this posting contains. Galloping over the posting costs one interleaved pass when the
+            /// two sequences are comparable in length, and stays logarithmic when one dwarfs the other,
+            /// where a binary search restarted from scratch for every element would pay the full
+            /// logarithm every time.
+            template <typename Marker>
+            void intersectSorted(const std::vector<EntryId> & entry_ids, Marker && mark) const
+            {
+                const auto scan = [&](const auto & values)
+                {
+                    if (values.empty())
+                        return;
+                    const auto less = [](auto value, EntryId bound) { return static_cast<EntryId>(value) < bound; };
+                    size_t position = 0;
+                    for (size_t probe = 0; probe < entry_ids.size(); ++probe)
+                    {
+                        const EntryId target = entry_ids[probe];
+                        size_t step = 1;
+                        while (position + step < values.size() && static_cast<EntryId>(values[position + step]) < target)
+                        {
+                            position += step;
+                            step *= 2;
+                        }
+                        position = static_cast<size_t>(
+                            std::lower_bound(
+                                values.begin() + position, values.begin() + std::min(position + step + 1, values.size()), target, less)
+                            - values.begin());
+                        if (position == values.size())
+                            return;
+                        if (static_cast<EntryId>(values[position]) == target)
+                            mark(probe);
+                    }
+                };
+
+                if (wide.empty())
+                    scan(narrow);
+                else
+                    scan(wide);
+            }
+
             bool contains(EntryId entry_id) const
             {
                 if (wide.empty())
@@ -639,10 +690,20 @@ private:
     UInt64 oldestLiveGeneration() const;
     void drainReaders();
     std::optional<EntryId> findEntry(std::string_view key, size_t hash) const;
-    std::vector<EntryId> getPostingIds(const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
-    UInt64 getPostingCardinality(const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
-    void
-    intersectPostingIds(std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
+    /// A distinct lookup key with its hash taken once. The same keys drive posting-cardinality
+    /// estimation, posting collection and intersection, and repeating the deduplication and the hashing
+    /// for each of them is pure overhead on the read path.
+    struct LookupKey
+    {
+        std::string_view key;
+        size_t hash = 0;
+    };
+    /// The views point into `serialized_keys`, which must outlive the result.
+    static std::vector<LookupKey> deduplicateLookupKeys(const std::vector<String> & serialized_keys);
+    std::vector<EntryId>
+    getPostingIds(const LookupIndexPtr & index, const std::vector<LookupKey> & keys, UInt64 expected_cardinality) const;
+    UInt64 getPostingCardinality(const LookupIndexPtr & index, const std::vector<LookupKey> & keys) const;
+    void intersectPostingIds(std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<LookupKey> & keys) const;
     void clearData();
     /// Runs under `writer_mutex`. Posting membership cannot disappear while an older snapshot may still
     /// need it to reach the row version preceding a tombstone.

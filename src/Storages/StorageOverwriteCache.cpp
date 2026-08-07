@@ -2579,92 +2579,135 @@ StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForPrimaryKeys(c
     ReadResult result;
     result.guard = std::make_shared<ReadGuard>(*this);
     result.entry_ids.reserve(serialized_keys.size());
-    std::unordered_set<EntryId> seen;
     for (const auto & key : serialized_keys)
     {
-        const auto entry = findEntry(key, StringViewHash{}(key));
-        if (!entry || !seen.emplace(*entry).second)
-            continue;
-        result.entry_ids.push_back(*entry);
+        if (const auto entry = findEntry(key, StringViewHash{}(key)))
+            result.entry_ids.push_back(*entry);
     }
+    /// The identifiers are sorted for the read to walk entries in allocation order, and two keys of the
+    /// request can name one entry only if the request repeats a key, so the sort doubles as the
+    /// deduplication a hash set would otherwise do.
     std::ranges::sort(result.entry_ids);
+    result.entry_ids.erase(std::unique(result.entry_ids.begin(), result.entry_ids.end()), result.entry_ids.end());
     return result;
 }
 
-UInt64 StorageOverwriteCache::getPostingCardinality(const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const
+std::vector<StorageOverwriteCache::LookupKey> StorageOverwriteCache::deduplicateLookupKeys(const std::vector<String> & serialized_keys)
 {
-    UInt64 result = 0;
-    std::unordered_set<String> seen_keys;
-    seen_keys.reserve(serialized_keys.size());
+    std::vector<LookupKey> result;
+    result.reserve(serialized_keys.size());
+    std::unordered_set<std::string_view, StringViewHash> seen;
+    seen.reserve(serialized_keys.size());
     for (const auto & key : serialized_keys)
     {
-        if (!seen_keys.emplace(key).second)
+        const std::string_view view = key;
+        if (!seen.emplace(view).second)
             continue;
-        const size_t hash = StringViewHash{}(key);
-        const auto & shard = index->shards[shardIndex(hash)];
+        result.push_back({view, StringViewHash{}(view)});
+    }
+    return result;
+}
+
+UInt64 StorageOverwriteCache::getPostingCardinality(const LookupIndexPtr & index, const std::vector<LookupKey> & keys) const
+{
+    UInt64 result = 0;
+    for (const auto & key : keys)
+    {
+        const auto & shard = index->shards[shardIndex(key.hash)];
         std::shared_lock lock(shard.mutex);
-        if (const auto * posting = shard.find(key, hash))
+        if (const auto * posting = shard.find(key.key, key.hash))
             result += posting->size();
     }
     return result;
 }
 
-std::vector<StorageOverwriteCache::EntryId>
-StorageOverwriteCache::getPostingIds(const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const
+std::vector<StorageOverwriteCache::EntryId> StorageOverwriteCache::getPostingIds(
+    const LookupIndexPtr & index, const std::vector<LookupKey> & keys, UInt64 expected_cardinality) const
 {
-    std::vector<EntryId> result;
-    result.reserve(getPostingCardinality(index, serialized_keys));
-    std::unordered_set<String> seen_keys;
-    seen_keys.reserve(serialized_keys.size());
-    for (const auto & key : serialized_keys)
+    const auto check_cancellation = []
     {
-        if (!seen_keys.emplace(key).second)
-            continue;
-        const size_t hash = StringViewHash{}(key);
-        const auto & shard = index->shards[shardIndex(hash)];
+        if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while reading an `OverwriteCache` posting");
+    };
+
+    /// A posting is already sorted and free of duplicates, so each key contributes one such run and the
+    /// runs are merged pairwise below. One key - the shape of an equality predicate, and the common case
+    /// by far - then leaves nothing to merge at all, where sorting the collected identifiers would cost
+    /// a full `n log n` pass over a posting that can hold every row a hot key ever received.
+    std::vector<EntryId> result;
+    result.reserve(expected_cardinality);
+    std::vector<size_t> run_ends;
+    run_ends.reserve(keys.size());
+    for (const auto & key : keys)
+    {
+        check_cancellation();
+        const auto & shard = index->shards[shardIndex(key.hash)];
         std::shared_lock lock(shard.mutex);
-        if (const auto * posting = shard.find(key, hash))
-        {
-            posting->forEach(
-                [&](EntryId entry_id)
-                {
-                    if ((result.size() & 4095) == 0 && CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while reading an `OverwriteCache` posting");
-                    result.push_back(entry_id);
-                });
-        }
+        if (const auto * posting = shard.find(key.key, key.hash))
+            posting->appendTo(result);
+        const size_t previous_end = run_ends.empty() ? 0 : run_ends.back();
+        if (result.size() != previous_end)
+            run_ends.push_back(result.size());
     }
-    std::ranges::sort(result);
-    result.erase(std::unique(result.begin(), result.end()), result.end());
+
+    /// Merging pairwise leaves one sorted run after a number of passes logarithmic in the number of
+    /// keys. `std::set_union` also removes the identifiers two runs share, which every indexed column
+    /// belonging to the immutable `KEYS` tuple currently rules out, and costs no more than the plain
+    /// merge that would rely on that.
+    std::vector<EntryId> merged;
+    std::vector<size_t> merged_run_ends;
+    while (run_ends.size() > 1)
+    {
+        merged.clear();
+        merged.reserve(result.size());
+        merged_run_ends.clear();
+        merged_run_ends.reserve((run_ends.size() + 1) / 2);
+        size_t begin = 0;
+        for (size_t run = 0; run < run_ends.size(); run += 2)
+        {
+            check_cancellation();
+            if (run + 1 < run_ends.size())
+            {
+                std::set_union(
+                    result.begin() + begin,
+                    result.begin() + run_ends[run],
+                    result.begin() + run_ends[run],
+                    result.begin() + run_ends[run + 1],
+                    std::back_inserter(merged));
+                begin = run_ends[run + 1];
+            }
+            else
+            {
+                merged.insert(merged.end(), result.begin() + begin, result.begin() + run_ends[run]);
+                begin = run_ends[run];
+            }
+            merged_run_ends.push_back(merged.size());
+        }
+        result.swap(merged);
+        run_ends.swap(merged_run_ends);
+    }
     return result;
 }
 
 void StorageOverwriteCache::intersectPostingIds(
-    std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const
+    std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<LookupKey> & keys) const
 {
     if (entry_ids.empty())
         return;
 
     std::vector<UInt8> matched(entry_ids.size(), 0);
-    std::unordered_set<String> seen_keys;
-    seen_keys.reserve(serialized_keys.size());
-    for (const auto & key : serialized_keys)
+    for (const auto & key : keys)
     {
-        if (!seen_keys.emplace(key).second)
-            continue;
-        const size_t hash = StringViewHash{}(key);
-        const auto & shard = index->shards[shardIndex(hash)];
+        if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while intersecting `OverwriteCache` postings");
+        const auto & shard = index->shards[shardIndex(key.hash)];
         std::shared_lock lock(shard.mutex);
-        const auto * posting = shard.find(key, hash);
+        const auto * posting = shard.find(key.key, key.hash);
         if (!posting)
             continue;
-        for (size_t position = 0; position < entry_ids.size(); ++position)
-        {
-            if ((position & 4095) == 0 && CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while intersecting `OverwriteCache` postings");
-            if (!matched[position] && posting->contains(entry_ids[position]))
-                matched[position] = 1;
-        }
+        /// Both sequences are sorted, so the identifiers this key keeps are found in one pass over them
+        /// instead of a membership test per identifier.
+        posting->intersectSorted(entry_ids, [&](size_t position) { matched[position] = 1; });
     }
 
     size_t output = 0;
@@ -2690,11 +2733,17 @@ StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForLookupRequest
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatched `OverwriteCache` lookup snapshot guards");
     }
     FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_during_lookup);
+    /// The views point into the requests, which outlive this call.
+    std::vector<std::vector<LookupKey>> keys;
+    keys.reserve(requests.size());
+    for (const auto & request : requests)
+        keys.push_back(deduplicateLookupKeys(request.serialized_keys));
+
     size_t driver = 0;
-    UInt64 driver_cardinality = getPostingCardinality(requests[0].index, requests[0].serialized_keys);
+    UInt64 driver_cardinality = getPostingCardinality(requests[0].index, keys[0]);
     for (size_t index = 1; index < requests.size(); ++index)
     {
-        const UInt64 cardinality = getPostingCardinality(requests[index].index, requests[index].serialized_keys);
+        const UInt64 cardinality = getPostingCardinality(requests[index].index, keys[index]);
         if (cardinality < driver_cardinality)
         {
             driver = index;
@@ -2702,11 +2751,13 @@ StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForLookupRequest
         }
     }
 
-    auto entry_ids = getPostingIds(requests[driver].index, requests[driver].serialized_keys);
+    /// The cardinality is only a reservation hint: a concurrent publication may have grown a posting
+    /// since it was taken.
+    auto entry_ids = getPostingIds(requests[driver].index, keys[driver], driver_cardinality);
     for (size_t index = 0; index < requests.size() && !entry_ids.empty(); ++index)
     {
         if (index != driver)
-            intersectPostingIds(entry_ids, requests[index].index, requests[index].serialized_keys);
+            intersectPostingIds(entry_ids, requests[index].index, keys[index]);
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_after_lookup_ids);

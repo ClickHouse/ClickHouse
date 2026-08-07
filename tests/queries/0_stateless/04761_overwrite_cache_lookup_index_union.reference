@@ -1,0 +1,15 @@
+one value	140	140
+two values	280	280
+three values	420	420
+four values	560	560
+five values	700	700
+repeated value	140
+unknown value	140
+intersection	20
+union intersection	120
+empty intersection	0
+after delete, one value	0
+after delete, union	280
+after delete, intersection	80
+after reinsert, one value	140	140	1
+after reinsert, union	420	420
