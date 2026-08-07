@@ -377,7 +377,7 @@ private:
     {
         UInt64 result = 0;
         UInt8 shift = 0;
-        UInt8 byte;
+        UInt8 byte = 0;
         do
         {
             chassert(shift < 64);
