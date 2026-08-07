@@ -4390,8 +4390,9 @@ struct ToStringMonotonicity
             return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
         }
 
+        /// `toString(String)` is the identity.
         if (checkDataTypes<DataTypeString>(type_ptr))
-            return {.is_monotonic = true, .is_strict = true};
+            return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
         /// `Date` is formatted as a zero-padded `YYYY-MM-DD` of a fixed width independently of the time zone,
         /// and the whole type range falls into the years 1970-2149, so the order is preserved exactly.
