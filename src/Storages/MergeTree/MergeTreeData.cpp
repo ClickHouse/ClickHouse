@@ -3877,7 +3877,7 @@ void MergeTreeData::reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, con
 {
     /// Only temporary names may be auto-reclaimed. Elsewhere (e.g. "detached/<dir>" during ATTACH) the
     /// directory contents are the payload, and reclaiming would destroy user data.
-    if (!startsWith(part_dir_name, "tmp") || part_dir_name.find('/') != String::npos)
+    if (!startsWith(part_dir_name, "tmp") || part_dir_name.contains('/'))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reclaim {}: not a temporary part directory name", part_dir_name);
 
     /// The claim is what makes the removal safe: with the name owned, an existing directory can only be
