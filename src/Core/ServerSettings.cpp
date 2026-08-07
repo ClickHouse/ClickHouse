@@ -239,7 +239,7 @@ The empty user name is resolved to this value before authentication, so the conn
 
 If set to an empty string, connections without a user name are rejected. HTTP handlers with a fixed user (the `user` key inside `handler` of an `http_handlers` rule, or the `user` key of a `prometheus` protocol) authenticate as their configured user and are not affected.
 
-Every such reject is recorded in [`system.session_log`](/operations/system-tables/session_log) as a `LoginFailure` event with an empty `user`, so that prohibited connections without a user name can be audited on every interface.
+When the `session_log` section is enabled in the server configuration, every such reject is recorded in [`system.session_log`](/operations/system-tables/session_log) as a `LoginFailure` event with an empty `user`, so that prohibited connections without a user name can be audited on every interface.
 
 The default session user is never applied to interserver connections: they identify themselves with a special marker instead of a user name and are authenticated by the cluster secret and the initial user.
 
