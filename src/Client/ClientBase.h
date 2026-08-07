@@ -23,6 +23,7 @@
 #include <boost/program_options.hpp>
 
 #include <atomic>
+#include <functional>
 #include <optional>
 #include <string_view>
 #include <string>
@@ -143,6 +144,12 @@ protected:
     /// only way to observe a connection that the server has already closed but whose close has not
     /// been delivered yet.
     void resynchronizeConnectionAfterError();
+
+    /// Start a query exchange: arm `connection_needs_resynchronization` for its duration and run
+    /// `send_query` (a `sendQuery` call on the shared connection). If the call fails before the
+    /// first byte of the query packet has been written, the flag is disarmed again: the protocol
+    /// never left sync, and the session must not pay for the failure with a round trip.
+    void armResynchronizationAndSendQuery(std::function<void()> send_query);
 
     virtual void processError(std::string_view query) const = 0;
     virtual String getName() const = 0;

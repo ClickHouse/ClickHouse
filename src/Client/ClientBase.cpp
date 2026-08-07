@@ -879,6 +879,33 @@ void ClientBase::resynchronizeConnectionAfterError()
 }
 
 
+void ClientBase::armResynchronizationAndSendQuery(std::function<void()> send_query)
+{
+    /// The query exchange starts here. If it does not complete cleanly, the protocol may be
+    /// desynchronized, and a session that continues after the error has to resynchronize the
+    /// connection with a round trip. The flag is cleared on the clean completion of the exchange
+    /// (see `onEndOfStream` and the callers).
+    connection_needs_resynchronization = true;
+    try
+    {
+        send_query();
+    }
+    catch (...)
+    {
+        /// `sendQuery` can also fail during its local preflight - for example, on the validation
+        /// of `network_compression_method` - before the first byte of the query packet has been
+        /// written. Such a failure leaves the protocol in sync, and resynchronizing it with a
+        /// round trip could time out on a slow server and silently reconnect away the session
+        /// state. A failure after `Connection::sendQuery` has started writing always disconnects
+        /// the connection (see the `SCOPE_EXIT` there), so a connection that is still alive
+        /// means that nothing has been sent.
+        if (connection->isConnected())
+            connection_needs_resynchronization = false;
+        throw;
+    }
+}
+
+
 void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 {
     if (profile_info.hasAppliedLimit() && output_format)
@@ -1682,23 +1709,23 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             try
             {
-                /// The query exchange starts here. If it does not complete cleanly, the protocol
-                /// may be desynchronized, and a session that continues after the error has to
-                /// resynchronize the connection with a round trip. A failure before this point is
-                /// purely local and leaves the connection in sync. The flag is cleared on the
-                /// successful completion of the query (see `processParsedSingleQuery`).
-                connection_needs_resynchronization = true;
-                connection->sendQuery(
-                    connection_parameters.timeouts,
-                    query,
-                    query_parameters,
-                    client_context->getCurrentQueryId(),
-                    query_processing_stage,
-                    settings_to_send,
-                    &client_context->getClientInfo(),
-                    true,
-                    {},
-                    [&](const Progress & progress) { onProgress(progress); });
+                /// A failure before this point is purely local and leaves the connection in
+                /// sync. The flag is cleared on the successful completion of the query
+                /// (see `processParsedSingleQuery`).
+                armResynchronizationAndSendQuery([&]
+                {
+                    connection->sendQuery(
+                        connection_parameters.timeouts,
+                        query,
+                        query_parameters,
+                        client_context->getCurrentQueryId(),
+                        query_processing_stage,
+                        settings_to_send,
+                        &client_context->getClientInfo(),
+                        true,
+                        {},
+                        [&](const Progress & progress) { onProgress(progress); });
+                });
 
                 if (send_external_tables)
                     sendExternalTables(parsed_query);
@@ -2286,18 +2313,20 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         = settings_without_compat ? &*settings_without_compat : &client_context->getSettingsRef();
 
     /// The query exchange starts here - see the comment at the same place of `processOrdinaryQuery`.
-    connection_needs_resynchronization = true;
-    connection->sendQuery(
-        connection_parameters.timeouts,
-        query,
-        query_parameters,
-        client_context->getCurrentQueryId(),
-        query_processing_stage,
-        settings_to_send,
-        &client_context->getClientInfo(),
-        true,
-        {},
-        [&](const Progress & progress) { onProgress(progress); });
+    armResynchronizationAndSendQuery([&]
+    {
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query,
+            query_parameters,
+            client_context->getCurrentQueryId(),
+            query_processing_stage,
+            settings_to_send,
+            &client_context->getClientInfo(),
+            true,
+            {},
+            [&](const Progress & progress) { onProgress(progress); });
+    });
 
     try
     {
@@ -3865,21 +3894,23 @@ std::string ClientBase::executeQueryForSingleString(const std::string & query)
         /// with `EndOfStream` or with a server exception.
         if (connection_needs_resynchronization)
             resynchronizeConnectionAfterError();
-        connection_needs_resynchronization = true;
 
         /// Send the query
-        connection->sendQuery(
-            connection_parameters.timeouts,
-            query,
-            {},  /// query_parameters
-            "",  /// query_id
-            QueryProcessingStage::Complete,
-            nullptr,  /// settings
-            nullptr,  /// client_info
-            false,    /// with_pending_data
-            {},       /// external_roles
-            {}        /// external_data
-        );
+        armResynchronizationAndSendQuery([&]
+        {
+            connection->sendQuery(
+                connection_parameters.timeouts,
+                query,
+                {},  /// query_parameters
+                "",  /// query_id
+                QueryProcessingStage::Complete,
+                nullptr,  /// settings
+                nullptr,  /// client_info
+                false,    /// with_pending_data
+                {},       /// external_roles
+                {}        /// external_data
+            );
+        });
 
         /// Receive and process results
         while (true)
@@ -3946,20 +3977,22 @@ Block ClientBase::fetchDocumentation(const String & query, const String & word)
     /// resynchronization discipline as the regular queries.
     if (connection_needs_resynchronization)
         resynchronizeConnectionAfterError();
-    connection_needs_resynchronization = true;
 
-    connection->sendQuery(
-        connection_parameters.timeouts,
-        query,
-        query_parameters_for_help,
-        "", /// query_id
-        QueryProcessingStage::Complete,
-        nullptr, /// settings
-        &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
-        false, /// with_pending_data
-        {}, /// external_roles
-        {} /// process_progress_callback
-    );
+    armResynchronizationAndSendQuery([&]
+    {
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query,
+            query_parameters_for_help,
+            "", /// query_id
+            QueryProcessingStage::Complete,
+            nullptr, /// settings
+            &client_context->getClientInfo(), /// a valid client info (with a query kind) is required by the TCP server
+            false, /// with_pending_data
+            {}, /// external_roles
+            {} /// process_progress_callback
+        );
+    });
 
     Blocks blocks;
     while (true)
