@@ -802,7 +802,10 @@ SinkToStoragePtr StorageObjectStorage::write(
                         raw_path.path);
     }
 
-    if (raw_path.hasGlobsIgnorePlaceholders(local_context->getSettingsRef()[Setting::use_glob_ast_parser]))
+    /// Deliberately setting-independent: whether a stored table path makes the table readonly
+    /// must not flip with the per-query `use_glob_ast_parser` setting, otherwise one session
+    /// could write literal keys that another session's reads expand differently.
+    if (raw_path.hasGlobsIgnorePlaceholders())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
@@ -855,7 +858,7 @@ bool StorageObjectStorage::optimize(
 void StorageObjectStorage::truncate(
     const ASTPtr & /* query */,
     const StorageMetadataPtr & /* metadata_snapshot */,
-    ContextPtr context,
+    ContextPtr /* context */,
     TableExclusiveLockHolder & /* table_holder */)
 {
     const auto path = configuration->getRawPath();
@@ -873,7 +876,8 @@ void StorageObjectStorage::truncate(
                         "Truncate is not supported for data lake engine");
     }
 
-    if (path.hasGlobsIgnorePlaceholders(context->getSettingsRef()[Setting::use_glob_ast_parser]))
+    /// Deliberately setting-independent, same as the readonly guard in `write`.
+    if (path.hasGlobsIgnorePlaceholders())
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,

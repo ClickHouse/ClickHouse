@@ -261,7 +261,10 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         columns.getOrdinary(),
         context,
         format,
-        getRawPath().hasGlobsIgnorePlaceholders(context->getSettingsRef()[Setting::use_glob_ast_parser]),
+        /// Deliberately setting-independent: this classifies persisted table metadata, and the same
+        /// stored path is revalidated on ATTACH / server startup / replicated-DDL replay with a
+        /// different context. Whether a table can start must not depend on `use_glob_ast_parser`.
+        getRawPath().hasGlobsIgnorePlaceholders(),
         getRawPath().hasPartitionWildcard(),
         partition_columns_in_data_file);
 
@@ -310,19 +313,6 @@ bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePlaceholders() const
     String cleaned = PartitionedSink::replaceWildcards(path, "");
     boost::replace_all(cleaned, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, "");
     return cleaned.find_first_of("*?{") != std::string::npos;
-}
-
-bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePlaceholders(bool use_glob_ast) const
-{
-    if (!use_glob_ast)
-        return hasGlobsIgnorePlaceholders();
-    if (!hasPartitionWildcard() && !hasSchemaHashWildcard())
-        return hasGlobs(use_glob_ast);
-    /// Strip the placeholders before parsing: to the glob parser "{_partition_id}" would
-    /// look like a single-alternative enum, not a placeholder.
-    String cleaned = PartitionedSink::replaceWildcards(path, "");
-    boost::replace_all(cleaned, StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD, "");
-    return GlobAST::GlobString(cleaned).hasGlobs();
 }
 
 bool StorageObjectStorageConfiguration::Path::hasGlobs() const
