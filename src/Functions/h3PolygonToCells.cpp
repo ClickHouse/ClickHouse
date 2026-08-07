@@ -16,6 +16,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Common/CurrentThread.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <constants.h>
@@ -63,12 +64,7 @@ class FunctionH3PolygonToCells final : public IFunction
 public:
     static constexpr auto name = "h3PolygonToCells";
     String getName() const override { return name; }
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3PolygonToCells>(context); }
-
-    explicit FunctionH3PolygonToCells(ContextPtr context)
-        : process_list_element(context ? context->getProcessListElement() : nullptr)
-    {
-    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3PolygonToCells>(); }
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -81,6 +77,12 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        /// Resolved from the executing thread rather than captured: this instance can be stored in table
+        /// metadata and then run by any later query.
+        QueryStatusPtr process_list_element;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            process_list_element = query_context->getProcessListElementSafe();
+
         const bool is_const_geometry = isColumnConst(*arguments[0].column);
 
         /// Avoid materializing const geometry to full column — extract the inner data column instead,
@@ -245,8 +247,6 @@ public:
     }
 
 private:
-    QueryStatusPtr process_list_element;
-
     class GeoPolygonContainer
     {
     private:
