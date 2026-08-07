@@ -873,6 +873,7 @@ void StorageOverwriteCache::pruneLookupTombstones()
 {
     if (pending_posting_removals.empty())
     {
+        min_pending_posting_removal_generation.store(std::numeric_limits<UInt64>::max(), std::memory_order_release);
         has_pending_posting_removals.store(false, std::memory_order_release);
         return;
     }
@@ -880,9 +881,9 @@ void StorageOverwriteCache::pruneLookupTombstones()
     struct ReadyRemoval
     {
         LookupIndexPtr index;
-        const String * key = nullptr;
-        size_t hash = 0;
         EntryId entry_id = 0;
+        UInt32 posting_position = 0;
+        UInt8 shard_index = 0;
     };
 
     const UInt64 watermark = oldestLiveGeneration();
@@ -890,7 +891,7 @@ void StorageOverwriteCache::pruneLookupTombstones()
     std::vector<ReadyRemoval> ready;
     for (size_t position = 0; position < pending_posting_removals.size(); ++position)
     {
-        const auto & pending = pending_posting_removals[position];
+        auto & pending = pending_posting_removals[position];
         UInt64 current_tombstone_generation = 0;
         {
             std::shared_lock row_lock(row_mutexes[rowLockIndex(pending.entry_id)]);
@@ -904,6 +905,7 @@ void StorageOverwriteCache::pruneLookupTombstones()
             }
             current_tombstone_generation = head->generation;
             chassert(current_tombstone_generation >= pending.tombstone_generation);
+            pending.tombstone_generation = current_tombstone_generation;
         }
 
         /// Check the current head rather than the queued generation. A key can be deleted, resurrected and
@@ -912,50 +914,56 @@ void StorageOverwriteCache::pruneLookupTombstones()
             continue;
 
         discard[position] = 1;
-        for (const auto & membership : pending.memberships)
-        {
-            if (auto index = membership.index.lock())
-                ready.push_back({std::move(index), &membership.key, membership.hash, pending.entry_id});
-        }
+        if (auto index = pending.index.lock())
+            ready.push_back({std::move(index), pending.entry_id, pending.posting_position, pending.shard_index});
+    }
+
+    const size_t retained_count = std::ranges::count(discard, UInt8{0});
+    if (retained_count == pending_posting_removals.size())
+    {
+        UInt64 min_generation = std::numeric_limits<UInt64>::max();
+        for (const auto & pending : pending_posting_removals)
+            min_generation = std::min(min_generation, pending.tombstone_generation);
+        min_pending_posting_removal_generation.store(min_generation, std::memory_order_release);
+        return;
     }
 
     const auto less = [&](const ReadyRemoval & lhs, const ReadyRemoval & rhs)
     {
         if (lhs.index.get() != rhs.index.get())
             return std::less<const LookupIndex *>{}(lhs.index.get(), rhs.index.get());
-        const size_t lhs_shard = shardIndex(lhs.hash);
-        const size_t rhs_shard = shardIndex(rhs.hash);
-        if (lhs_shard != rhs_shard)
-            return lhs_shard < rhs_shard;
-        if (lhs.hash != rhs.hash)
-            return lhs.hash < rhs.hash;
-        if (*lhs.key != *rhs.key)
-            return *lhs.key < *rhs.key;
+        if (lhs.shard_index != rhs.shard_index)
+            return lhs.shard_index < rhs.shard_index;
+        if (lhs.posting_position != rhs.posting_position)
+            return lhs.posting_position < rhs.posting_position;
         return lhs.entry_id < rhs.entry_id;
     };
     std::ranges::sort(ready, less);
+
+    std::vector<PendingPostingRemoval> retained;
+    retained.reserve(retained_count);
 
     size_t begin = 0;
     while (begin < ready.size())
     {
         size_t end = begin + 1;
-        while (end < ready.size() && ready[end].index == ready[begin].index && ready[end].hash == ready[begin].hash
-               && *ready[end].key == *ready[begin].key)
+        while (end < ready.size() && ready[end].index == ready[begin].index && ready[end].shard_index == ready[begin].shard_index
+               && ready[end].posting_position == ready[begin].posting_position)
             ++end;
 
         auto & index = ready[begin].index;
-        auto & shard = index->shards[shardIndex(ready[begin].hash)];
+        auto & shard = index->shards[ready[begin].shard_index];
         UInt64 bytes_before = 0;
         UInt64 bytes_after = 0;
         {
             std::unique_lock lock(shard.mutex);
-            if (auto * posting = shard.find(*ready[begin].key, ready[begin].hash))
-            {
-                bytes_before = posting->allocatedBytes();
-                posting->eraseSortedAndCompact(
-                    ready.begin() + begin, ready.begin() + end, [](const ReadyRemoval & removal) { return removal.entry_id; });
-                bytes_after = posting->allocatedBytes();
-            }
+            if (ready[begin].posting_position >= shard.postings.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid `OverwriteCache` lookup posting position during pruning");
+            auto & posting = shard.postings[ready[begin].posting_position];
+            bytes_before = posting.allocatedBytes();
+            posting.eraseSortedAndCompact(
+                ready.begin() + begin, ready.begin() + end, [](const ReadyRemoval & removal) { return removal.entry_id; });
+            bytes_after = posting.allocatedBytes();
         }
 
         if (bytes_before > bytes_after)
@@ -977,19 +985,31 @@ void StorageOverwriteCache::pruneLookupTombstones()
         begin = end;
     }
 
-    size_t output = 0;
+    UInt64 min_generation = std::numeric_limits<UInt64>::max();
     for (size_t position = 0; position < pending_posting_removals.size(); ++position)
     {
         if (!discard[position])
-            pending_posting_removals[output++] = std::move(pending_posting_removals[position]);
+        {
+            min_generation = std::min(min_generation, pending_posting_removals[position].tombstone_generation);
+            retained.push_back(std::move(pending_posting_removals[position]));
+        }
     }
-    pending_posting_removals.resize(output);
+    const UInt64 pending_bytes_before = static_cast<UInt64>(pending_posting_removals.capacity()) * sizeof(PendingPostingRemoval);
+    pending_posting_removals.swap(retained);
+    const UInt64 pending_bytes_after = static_cast<UInt64>(pending_posting_removals.capacity()) * sizeof(PendingPostingRemoval);
+    if (pending_bytes_before > pending_bytes_after)
+        total_size_bytes.fetch_sub(pending_bytes_before - pending_bytes_after, std::memory_order_relaxed);
+    else if (pending_bytes_after > pending_bytes_before)
+        total_size_bytes.fetch_add(pending_bytes_after - pending_bytes_before, std::memory_order_relaxed);
+    min_pending_posting_removal_generation.store(min_generation, std::memory_order_release);
     has_pending_posting_removals.store(!pending_posting_removals.empty(), std::memory_order_release);
 }
 
 void StorageOverwriteCache::tryPruneLookupTombstones() const
 {
     if (!has_pending_posting_removals.load(std::memory_order_acquire))
+        return;
+    if (oldestLiveGeneration() < min_pending_posting_removal_generation.load(std::memory_order_acquire))
         return;
     std::unique_lock writer_lock(writer_mutex, std::try_to_lock);
     if (!writer_lock.owns_lock())
@@ -1513,6 +1533,11 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
                 posting_entry_ids[prepared_postings[slot].entry_id_offset + filled[slot]++] = mutations[position].entry_id;
             }
         }
+        for (const auto & prepared : prepared_postings)
+        {
+            auto begin = posting_entry_ids.begin() + prepared.entry_id_offset;
+            std::ranges::sort(begin, begin + prepared.additional_rows);
+        }
     }
 
     /// Group new keys by primary shard with a counting sort so each shard is locked once.
@@ -1658,12 +1683,10 @@ void StorageOverwriteCache::insertBlock(const Block & input_block, UInt64 replay
             auto & shard = lookup_indexes[prepared.index]->shards[prepared.shard_index];
             std::unique_lock lock(shard.mutex);
             auto & posting = shard.postings[prepared.posting_position];
-            for (UInt32 position = 0; position < prepared.additional_rows; ++position)
-            {
-                if (!posting.insert(posting_entry_ids[prepared.entry_id_offset + position]))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate `OverwriteCache` lookup posting during publication");
-                ++prepared.inserted_rows;
-            }
+            auto begin = posting_entry_ids.begin() + prepared.entry_id_offset;
+            if (!posting.insertSorted(begin, begin + prepared.additional_rows))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate `OverwriteCache` lookup posting during publication");
+            prepared.inserted_rows = prepared.additional_rows;
         }
 
         fiu_do_on(FailPoints::overwrite_cache_throw_during_publish, {
@@ -2009,29 +2032,43 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`OverwriteCache` publication generation space is exhausted");
     const UInt64 new_generation = current_generation + 1;
 
-    /// Serialize membership before publication, while each deleted row is still directly available. The
-    /// queued strings let cleanup run after the old row version and its segment have been reclaimed.
+    /// Resolve stable posting coordinates before publication, while each deleted row is still directly
+    /// available. Posting slots are append-only for the lifetime of their lookup index.
     std::vector<PendingPostingRemoval> staged_posting_removals;
+    UInt64 pending_posting_bytes_delta = 0;
     if (!lookup_indexes.empty())
     {
-        staged_posting_removals.reserve(deleted_rows);
+        if (lookup_indexes.size() > std::numeric_limits<size_t>::max() / deleted_rows)
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "`OverwriteCache` pending posting-removal count overflow");
+        staged_posting_removals.reserve(deleted_rows * lookup_indexes.size());
         SegmentColumnCache lookup_segment_columns;
         for (size_t position = 0; position < deleted_rows; ++position)
         {
             const auto & deletion = deletions[position];
-            PendingPostingRemoval pending;
-            pending.entry_id = deletion.entry_id;
-            pending.tombstone_generation = new_generation;
-            pending.memberships.reserve(lookup_indexes.size());
             for (size_t index = 0; index < lookup_indexes.size(); ++index)
             {
                 String key = serializeRowColumns(*deletion.previous, lookup_index_positions[index], lookup_segment_columns);
                 const size_t hash = StringViewHash{}(key);
-                pending.memberships.push_back({lookup_indexes[index], std::move(key), hash});
+                const UInt8 shard_index = static_cast<UInt8>(shardIndex(hash));
+                auto & shard = lookup_indexes[index]->shards[shard_index];
+                std::shared_lock lock(shard.mutex);
+                const auto * posting = shard.index.find(key, hash);
+                if (!posting)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing `OverwriteCache` lookup posting during deletion");
+                staged_posting_removals.push_back(
+                    {lookup_indexes[index], deletion.entry_id, new_generation, posting->getMapped(), shard_index});
             }
-            staged_posting_removals.push_back(std::move(pending));
         }
+        const UInt64 pending_bytes_before = static_cast<UInt64>(pending_posting_removals.capacity()) * sizeof(PendingPostingRemoval);
         pending_posting_removals.reserve(pending_posting_removals.size() + staged_posting_removals.size());
+        const UInt64 pending_bytes_after = static_cast<UInt64>(pending_posting_removals.capacity()) * sizeof(PendingPostingRemoval);
+        pending_posting_bytes_delta = pending_bytes_after - pending_bytes_before;
+        if (prospective_bytes > std::numeric_limits<UInt64>::max() - pending_posting_bytes_delta)
+        {
+            total_size_bytes.fetch_add(pending_posting_bytes_delta, std::memory_order_relaxed);
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "`OverwriteCache` pending posting-removal accounting overflow");
+        }
+        prospective_bytes += pending_posting_bytes_delta;
     }
 
     try
@@ -2074,13 +2111,18 @@ size_t StorageOverwriteCache::deleteKeys(const std::vector<String> & serialized_
             recycleVersions(std::move(discarded));
         }
         /// Nothing was published, so the compacted segments are dropped here and were never accounted.
+        total_size_bytes.fetch_add(pending_posting_bytes_delta, std::memory_order_relaxed);
         throw;
     }
 
     for (auto & pending : staged_posting_removals)
         pending_posting_removals.push_back(std::move(pending));
     if (!staged_posting_removals.empty())
+    {
+        const UInt64 previous_min = min_pending_posting_removal_generation.load(std::memory_order_relaxed);
+        min_pending_posting_removal_generation.store(std::min(previous_min, new_generation), std::memory_order_release);
         has_pending_posting_removals.store(true, std::memory_order_release);
+    }
 
     published_generation.store(new_generation, std::memory_order_release);
     total_size_bytes.store(prospective_bytes, std::memory_order_relaxed);
@@ -2469,7 +2511,8 @@ void StorageOverwriteCache::clearData()
     /// outright has no alternative to waiting - and `TRUNCATE` and `DROP` already hold the table
     /// exclusively, so nothing can be reading through this storage anyway.
     drainReaders();
-    pending_posting_removals.clear();
+    std::vector<PendingPostingRemoval>().swap(pending_posting_removals);
+    min_pending_posting_removal_generation.store(std::numeric_limits<UInt64>::max(), std::memory_order_release);
     has_pending_posting_removals.store(false, std::memory_order_release);
     entries.clear();
     next_entry_id = 1;
@@ -2607,10 +2650,12 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
     UInt64 index_bytes = 0;
     size_t snapshot_entry_count = 0;
     SegmentColumnCache segment_columns;
+    using ShadowPostingLocation = std::pair<UInt8, UInt32>;
     const auto add_to_shadow = [&](EntryId entry_id, const RowData & row)
     {
         const String key = serializeRowColumns(row, positions, segment_columns);
-        auto & shard = shadow->shards[shardIndex(StringViewHash{}(key))];
+        const UInt8 shard_index = static_cast<UInt8>(shardIndex(StringViewHash{}(key)));
+        auto & shard = shadow->shards[shard_index];
         PostingShard::PostingMap::LookupResult it = nullptr;
         bool inserted = false;
         shard.index.emplace(ArenaKeyHolder{key, *shard.arena}, it, inserted, StringViewHash{}(key));
@@ -2619,7 +2664,15 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
             it->getMapped() = static_cast<UInt32>(shard.postings.size());
             shard.postings.emplace_back();
         }
-        shard.postings[it->getMapped()].push_back(entry_id);
+        if (!shard.postings[it->getMapped()].insert(entry_id))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate `OverwriteCache` lookup posting during index build");
+        return ShadowPostingLocation{shard_index, it->getMapped()};
+    };
+    const auto remove_from_shadow = [&](EntryId entry_id, const ShadowPostingLocation & location)
+    {
+        auto & shard = shadow->shards[location.first];
+        if (location.second >= shard.postings.size() || !shard.postings[location.second].erase(entry_id))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing `OverwriteCache` lookup posting during index catch-up");
     };
 
     std::unique_ptr<ReadGuard> snapshot_guard;
@@ -2628,15 +2681,16 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
         snapshot_entry_count = entries.size();
         snapshot_guard = std::make_unique<ReadGuard>(*this);
     }
+    std::vector<std::optional<ShadowPostingLocation>> snapshot_locations(snapshot_entry_count + 1);
     for (EntryId entry_id = 1; entry_id <= snapshot_entry_count; ++entry_id)
     {
         const auto row = resolveEntry(entry_id, snapshot_guard->generation());
         if (!row)
             continue;
-        add_to_shadow(entry_id, *row);
+        snapshot_locations[entry_id] = add_to_shadow(entry_id, *row);
     }
+    const UInt64 snapshot_generation = snapshot_guard->generation();
     snapshot_guard.reset();
-
     FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_during_index_build);
 
     fiu_do_on(FailPoints::overwrite_cache_throw_during_index_build, {
@@ -2646,12 +2700,21 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
     std::unique_lock writer_lock(writer_mutex);
     const size_t catch_up_entry_count = entries.size();
     ReadGuard catch_up_guard(*this);
-    for (EntryId entry_id = snapshot_entry_count + 1; entry_id <= catch_up_entry_count; ++entry_id)
+    for (EntryId entry_id = 1; entry_id <= catch_up_entry_count; ++entry_id)
     {
-        const auto row = resolveEntry(entry_id, catch_up_guard.generation());
-        if (!row)
-            continue;
-        add_to_shadow(entry_id, *row);
+        if (entry_id <= snapshot_entry_count)
+        {
+            std::shared_lock row_lock(row_mutexes[rowLockIndex(entry_id)]);
+            const auto * head = entries.at(entry_id).head.get();
+            if (!head || head->generation <= snapshot_generation)
+                continue;
+        }
+        const auto current_row = resolveEntry(entry_id, catch_up_guard.generation());
+        const bool snapshot_live = entry_id <= snapshot_entry_count && snapshot_locations[entry_id].has_value();
+        if (snapshot_live && !current_row)
+            remove_from_shadow(entry_id, *snapshot_locations[entry_id]);
+        else if (!snapshot_live && current_row)
+            add_to_shadow(entry_id, *current_row);
     }
     for (const auto & shard : shadow->shards)
     {

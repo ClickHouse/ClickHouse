@@ -133,15 +133,20 @@ $CLICKHOUSE_CLIENT -q "
     FROM system.tables
     WHERE database = currentDatabase() AND name = 'overwrite_cache_sharded_publication'"
 
+$CLICKHOUSE_CLIENT -q "DELETE FROM $table WHERE key = 1500 AND tag = 1"
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT overwrite_cache_pause_during_index_build"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE $table ADD INDEX (key)" >/dev/null &
 writer_pid=$!
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT overwrite_cache_pause_during_index_build PAUSE"
 $CLICKHOUSE_CLIENT -q "INSERT INTO $table VALUES (3000, 1, 1, 'index-catch-up')"
+$CLICKHOUSE_CLIENT -q "INSERT INTO $table VALUES (1500, 1, 4, 'index-resurrection-catch-up')"
+$CLICKHOUSE_CLIENT -q "DELETE FROM $table WHERE key = 1600 AND tag = 1"
 $CLICKHOUSE_CLIENT -q "SYSTEM NOTIFY FAILPOINT overwrite_cache_pause_during_index_build"
 wait "$writer_pid"
 writer_pid=""
 $CLICKHOUSE_CLIENT -q "SELECT 'index-catch-up', payload FROM $table WHERE key = 3000"
+$CLICKHOUSE_CLIENT -q "SELECT 'index-resurrection-catch-up', payload FROM $table WHERE key = 1500"
+$CLICKHOUSE_CLIENT -q "SELECT 'index-deletion-catch-up', count() FROM $table WHERE key = 1600"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT overwrite_cache_pause_after_lookup_catalog_snapshot"
 $CLICKHOUSE_CLIENT -q "INSERT INTO $table VALUES (4000, 77, 1, 'drop-race')" >/dev/null &

@@ -416,6 +416,48 @@ public:
                 return true;
             }
 
+            template <typename Iterator>
+            bool insertSorted(Iterator additions_begin, Iterator additions_end)
+            {
+                if (additions_begin == additions_end)
+                    return true;
+
+                const EntryId max_entry_id = *(additions_end - 1);
+                if (wide.empty() && max_entry_id > std::numeric_limits<UInt32>::max())
+                {
+                    wide.reserve(narrow.size() + static_cast<size_t>(additions_end - additions_begin));
+                    wide.assign(narrow.begin(), narrow.end());
+                    std::vector<UInt32>().swap(narrow);
+                }
+
+                const auto merge = [&](auto & values)
+                {
+                    auto existing = values.begin();
+                    auto addition = additions_begin;
+                    while (existing != values.end() && addition != additions_end)
+                    {
+                        const EntryId existing_id = static_cast<EntryId>(*existing);
+                        if (existing_id < *addition)
+                            ++existing;
+                        else if (*addition < existing_id)
+                            ++addition;
+                        else
+                            return false;
+                    }
+                    if (std::adjacent_find(additions_begin, additions_end) != additions_end)
+                        return false;
+
+                    const size_t old_size = values.size();
+                    values.insert(values.end(), additions_begin, additions_end);
+                    std::inplace_merge(values.begin(), values.begin() + old_size, values.end());
+                    return true;
+                };
+
+                if (!wide.empty() || max_entry_id > std::numeric_limits<UInt32>::max())
+                    return merge(wide);
+                return merge(narrow);
+            }
+
             bool erase(EntryId entry_id)
             {
                 if (wide.empty())
@@ -539,16 +581,11 @@ public:
 private:
     struct PendingPostingRemoval
     {
-        struct Membership
-        {
-            std::weak_ptr<LookupIndex> index;
-            String key;
-            size_t hash = 0;
-        };
-
+        std::weak_ptr<LookupIndex> index;
         EntryId entry_id = 0;
         UInt64 tombstone_generation = 0;
-        std::vector<Membership> memberships;
+        UInt32 posting_position = 0;
+        UInt8 shard_index = 0;
     };
 
     void serializeKeys(const Block & block, const std::vector<size_t> & positions, SerializedKeys & result) const;
@@ -617,6 +654,7 @@ private:
     std::vector<LookupIndexPtr> lookup_indexes;
     std::vector<PendingPostingRemoval> pending_posting_removals;
     std::atomic<bool> has_pending_posting_removals = false;
+    std::atomic<UInt64> min_pending_posting_removal_generation = std::numeric_limits<UInt64>::max();
     EntryTable entries;
     mutable std::array<SharedMutex, row_lock_count> row_mutexes;
     mutable std::mutex recycled_versions_mutex;

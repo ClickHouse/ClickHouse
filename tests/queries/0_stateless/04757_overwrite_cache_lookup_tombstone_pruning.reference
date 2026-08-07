@@ -1,4 +1,9 @@
 old-reader	20000	20000
 after-prune	0
+second-index-after-prune	0
 posting memory reclaimed
 resurrected	7
+resurrected-second-index	7
+rollback-resurrection	0
+middle-reader	8
+second-delete	0
