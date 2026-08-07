@@ -1,3 +1,4 @@
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
