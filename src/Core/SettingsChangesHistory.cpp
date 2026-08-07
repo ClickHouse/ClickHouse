@@ -380,6 +380,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
             {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"allow_experimental_version_type", false, false, "New setting. Allows to use a new experimental Version data type."},
             {"use_skip_indexes_for_top_k", false, false, "New setting."},
             {"use_top_k_dynamic_filtering", false, false, "New setting."},
             {"query_plan_max_limit_for_top_k_optimization", 0, 1000, "New setting."},

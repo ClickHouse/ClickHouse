@@ -44,6 +44,16 @@ public:
     bool shouldAlignRightInPrettyFormats() const override { return false; }
     bool textCanContainOnlyValidUTF8() const override { return true; }
     bool isComparable() const override { return true; }
+    /// NOTE: intentionally mirrors DataTypeIPv4 (not DataTypeIPv6, despite Version being 128-bit
+    /// like IPv6) for isValueRepresentedByNumber/Integer/UnsignedInteger. A full audit (see PR
+    /// review discussion) found no live bug from this: the one real-looking risk (Version compared
+    /// against a bare integer literal) already fails safely with NO_COMMON_TYPE because
+    /// TypeIndex::Version is not enumerated in getLeastSupertype.cpp's getNumericType(), unlike
+    /// IPv4. Flipping these to false (to match IPv6) would remove MinMax/TDigest/CountMinSketch/
+    /// Uniq statistics eligibility and top-k skip-index eligibility for Version columns (see
+    /// Statistics*.cpp, optimizeTopK.cpp) and would require a companion fix to
+    /// convertFieldToType.cpp -- deliberately deferred to a follow-up design decision, not part of
+    /// this fix pass.
     bool isValueRepresentedByNumber() const override { return true; }
     bool isValueRepresentedByInteger() const override { return true; }
     bool isValueRepresentedByUnsignedInteger() const override { return true; }
