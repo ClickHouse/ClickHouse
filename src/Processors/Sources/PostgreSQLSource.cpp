@@ -82,15 +82,24 @@ void PostgreSQLSource<T>::onStart()
 
     if (!tx)
     {
+        /// The transaction is created outside the lock (it talks to the server and can block), and only
+        /// the assignment to the shared `tx` is protected: a concurrent `onCancel` reads `tx` from
+        /// another thread, and an unsynchronized `shared_ptr` write would race with that read.
+        std::shared_ptr<T> new_tx;
         try
         {
             auto & conn = connection_holder->get();
-            tx = std::make_shared<T>(conn);
+            new_tx = std::make_shared<T>(conn);
         }
         catch (const pqxx::broken_connection &)
         {
             connection_holder->update();
-            tx = std::make_shared<T>(connection_holder->get());
+            new_tx = std::make_shared<T>(connection_holder->get());
+        }
+
+        {
+            std::lock_guard lock(tx_mutex);
+            tx = std::move(new_tx);
         }
     }
 
@@ -197,12 +206,22 @@ void PostgreSQLSource<T>::onCancel() noexcept
     if (is_completed.exchange(true))
         return;
 
+    /// Take a snapshot of `tx` under the lock: this runs on the cancelling thread while the execution
+    /// thread may be inside `onStart` assigning `tx`. The connection calls below are made on the
+    /// snapshot outside the lock - `pqxx::connection::cancel_query` is safe to call from another
+    /// thread, and holding the lock here would not serialize anything else anyway.
+    std::shared_ptr<T> tx_snapshot;
+    {
+        std::lock_guard lock(tx_mutex);
+        tx_snapshot = tx;
+    }
+
     /// The code is executed only if onStart() was not finished mainly due to freezing on pqxx::from_query
-    if (!started.load() && tx && tx->conn().is_open())
+    if (!started.load() && tx_snapshot && tx_snapshot->conn().is_open())
     {
         try
         {
-            tx->conn().cancel_query();
+            tx_snapshot->conn().cancel_query();
         }
         catch (...)
         {

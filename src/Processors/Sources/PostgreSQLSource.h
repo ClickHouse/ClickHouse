@@ -10,6 +10,8 @@
 #include <Core/PostgreSQL/ConnectionHolder.h>
 #include <Core/PostgreSQL/Utils.h>
 
+#include <mutex>
+
 
 namespace DB
 {
@@ -54,6 +56,11 @@ private:
 
     std::atomic<bool> started{false};
     std::atomic<bool> is_completed{false};
+
+    /// Guards `tx` between the execution thread that creates it (`onStart`) and a concurrent
+    /// `onCancel`. Only the pointer handoff is protected: the network calls stay outside the
+    /// lock, so a cancel does not have to wait for a frozen `pqxx::stream_from` constructor.
+    std::mutex tx_mutex;
 
     postgres::ConnectionHolderPtr connection_holder;
 
