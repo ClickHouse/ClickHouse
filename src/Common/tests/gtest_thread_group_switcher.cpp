@@ -90,6 +90,23 @@ TEST(ThreadGroupSwitcher, FailedConstructionRestoresPreviousState)
         EXPECT_EQ(getThreadName(), ThreadName::UNKNOWN)
             << "Post-attach failure must restore an UNKNOWN previous name; the restore is gated by a bool, not by the name value";
         CurrentThread::detachFromGroupIfNotDetached();
+
+        /// --- A detached thread with a direct query_id (e.g. `BgSchPool::<uuid>` assigned by
+        /// BackgroundSchedulePool without any group): the detach in the catch block clears the
+        /// query_id and there is no previous group to reestablish it, so the catch must restore
+        /// the saved one, exactly like the destructor does on the success path. ---
+        ts.setQueryId("BgSchPool::test-query-id");
+        ASSERT_EQ(CurrentThread::getQueryId(), "BgSchPool::test-query-id");
+        FailPointInjection::enableFailPoint(FailPoints::thread_group_switcher_post_attach_failure);
+        {
+            ThreadGroupSwitcher switcher(G1, ThreadName::REMOTE_FS_READ_THREAD_POOL);
+            EXPECT_EQ(getCurrentThreadGroup(), nullptr)
+                << "Post-attach failure from detached state must leave the thread detached";
+            EXPECT_EQ(CurrentThread::getQueryId(), "BgSchPool::test-query-id")
+                << "Post-attach failure must restore a direct query_id the failed group could not reestablish";
+        }
+        EXPECT_EQ(CurrentThread::getQueryId(), "BgSchPool::test-query-id")
+            << "The no-op destructor after a failed construction must not clear the restored query_id";
     });
     t.join();
 }

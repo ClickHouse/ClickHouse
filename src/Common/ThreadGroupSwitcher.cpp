@@ -105,6 +105,12 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
                 CurrentThread::attachToGroup(prev_thread_group);
             if (should_restore_prev_thread_name)
                 setThreadName(prev_thread_name);
+            /// Restore the query_id as well (mirrors the destructor): the detach above cleared it,
+            /// and reattaching the previous group may not reestablish it (e.g. a direct query_id
+            /// like `BgSchPool::<uuid>` assigned without any group). The destructor early-returns
+            /// on this path, so it must be restored here.
+            if (prev_thread && !prev_query_id.empty() && CurrentThread::getQueryId().empty())
+                prev_thread->setQueryId(std::string(prev_query_id));
         }
         catch (...)
         {
