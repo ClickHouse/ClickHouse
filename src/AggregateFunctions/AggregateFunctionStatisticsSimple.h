@@ -137,17 +137,27 @@ public:
         if constexpr (is_decimal<T1>)
         {
             /// A `Decimal` column holds unscaled integers, so a value is only recovered as
-            /// `value / 10^scale`, and the kernel knows nothing about scale.
+            /// `value / 10^scale`, and the kernel knows nothing about scale. Where that division
+            /// goes depends on what the target converts packed. `x86-64-v3` has no packed
+            /// `int64 -> double` at all - `vcvtqq2pd` arrived with AVX-512 - so it converts a tile
+            /// into a buffer and accumulates that; it does the same for `Decimal32`, which it could
+            /// convert with `vcvtdq2pd`, because the buffer still measured faster. AArch64 converts
+            /// and divides packed with `scvtf` up to 64-bit lanes, so `Decimal32` and `Decimal64`
+            /// divide inside the accumulation loop and copy nothing. `Decimal128` has no packed
+            /// conversion on either target and buffers on both - and is where most of the gain is,
+            /// -52.7% on AArch64 against -6.3% for `Decimal32`.
             ///
-            /// The per-row path accumulates each moment into its own dependency chain, so the third
-            /// and fourth are free to it - on AArch64 it measures the same at every level - while
-            /// the lane kernel pays for them in arithmetic. `skewPop` and `kurtPop` therefore stay
-            /// on it; no lane count catches up, the best being +7.2% at level 3.
+            /// Both shapes fold the moments at the same points and return the same bits, which is
+            /// what the AArch64 one is for: dividing inline only ties the per-row path there - what
+            /// `Decimal32` and `Decimal64` gain over the previous code is the inlined conversion,
+            /// not the lanes - but it keeps AArch64 agreeing with x86-64.
             ///
-            /// At level 2, dividing inline only ties the per-row path on AArch64 - what
-            /// `Decimal32` and `Decimal64` gain there is the inlined conversion, not the lanes - but
-            /// it folds the way x86-64 does, so both targets return the same value. `Decimal128`
-            /// buffers on either target, and is where most of the gain is.
+            /// That is also why `skewPop` and `kurtPop` are left out on every target rather than
+            /// just on AArch64. The per-row path gives each moment its own dependency chain, so the
+            /// third and fourth are free to it - it measures the same at every level - while the
+            /// lane kernel pays for them in arithmetic, and on AArch64 no lane count catches up,
+            /// +7.2% at level 3 being the best. Taking the path on x86-64 alone, where it measured
+            /// -7.2%, would leave the two targets disagreeing.
             if constexpr (StatFunc::num_args == 1 && StatFunc::level <= 2)
             {
                 if (if_argument_pos < 0)
