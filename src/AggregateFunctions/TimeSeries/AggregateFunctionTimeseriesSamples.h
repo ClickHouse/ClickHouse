@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <iterator>
 #include <utility>
 
 #include <base/sort.h>
@@ -76,26 +77,10 @@ public:
             return;
         }
 
-        /// Linear merge of two sorted arrays; equal timestamps collapse into one sample keeping the larger value.
         Buffer merged;
         merged.reserve(buffer.size() + rhs->size());
-        auto lhs_it = buffer.begin();
-        auto rhs_it = rhs->begin();
-        while (lhs_it != buffer.end() && rhs_it != rhs->end())
-        {
-            if (lhs_it->first < rhs_it->first)
-                merged.push_back(*lhs_it++);
-            else if (rhs_it->first < lhs_it->first)
-                merged.push_back(*rhs_it++);
-            else
-            {
-                merged.emplace_back(lhs_it->first, std::max(lhs_it->second, rhs_it->second));
-                ++lhs_it;
-                ++rhs_it;
-            }
-        }
-        merged.insert(merged.end(), lhs_it, buffer.end());
-        merged.insert(merged.end(), rhs_it, rhs->end());
+        std::merge(buffer.begin(), buffer.end(), rhs->begin(), rhs->end(), std::back_inserter(merged), lessByTimestamp);
+        deduplicateSorted(merged);
         buffer = std::move(merged);
     }
 
@@ -177,12 +162,14 @@ private:
         }
     }
 
-    /// Sorts by timestamp (stably, keeping equal-timestamp samples in arrival order), then folds each equal-timestamp run with `std::max` like the former hash map did: the larger value wins, the first arrival wins against a NaN (`std::max` returns its first argument when the comparison is false).
-    static void sortAndDeduplicate(Buffer & buf)
+    static bool lessByTimestamp(const std::pair<TimestampType, ValueType> & lhs, const std::pair<TimestampType, ValueType> & rhs)
     {
-        /// The comparator looks at timestamps only: comparing whole pairs would compare values, and `ValueType` can hold NaNs, which break the strict weak ordering the sort requires.
-        ::stableSort(buf.begin(), buf.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+        return lhs.first < rhs.first;
+    }
 
+    /// Collapses each equal-timestamp run of a sorted buffer into one sample with a left-to-right `std::max` fold: the larger value wins, the first sample wins against a NaN (`std::max` returns its first argument when the comparison is false).
+    static void deduplicateSorted(Buffer & buf)
+    {
         size_t last_unique = 0;
         for (size_t i = 1; i < buf.size(); ++i)
         {
@@ -193,6 +180,13 @@ private:
         }
         if (!buf.empty())
             buf.resize(last_unique + 1);
+    }
+
+    /// The sort is stable so that equal-timestamp samples keep their arrival order for the deduplication fold.
+    static void sortAndDeduplicate(Buffer & buf)
+    {
+        ::stableSort(buf.begin(), buf.end(), lessByTimestamp);
+        deduplicateSorted(buf);
     }
 
     /// Restores the invariant in place after out-of-order `add`s; no-op in the common (already sorted) case.

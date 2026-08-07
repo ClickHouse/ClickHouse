@@ -110,7 +110,6 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         void add(const Samples & samples, TimestampType bucket_end_timestamp)
         {
-            /// Preaggregate the bucket's samples (`forEachSample` visits them in ascending timestamp order) into a per-bucket summary; the bucket's latest timestamp is the summary's `last_timestamp`.
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
             {
