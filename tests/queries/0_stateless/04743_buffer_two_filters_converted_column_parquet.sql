@@ -23,10 +23,34 @@ SELECT 'P2 single row policy on the converted column';
 CREATE ROW POLICY p04743_pq ON t04743_pq_buf USING mapContains(m, 'a') TO ALL;
 SELECT m FROM t04743_pq_buf ORDER BY k;
 
+-- The rows above are the same whether the policy is forwarded into the destination read or applied
+-- above it, and only the forwarded path runs the converting prefix this test covers. The marker
+-- comes from query_info.row_level_filter, which both planners populate; pretty = 0 makes it
+-- unconditional.
+SELECT 'P2 the policy reached the destination read';
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT m FROM t04743_pq_buf ORDER BY k)
+WHERE explain LIKE '%Row level filter column:%';
+
+SET enable_analyzer = 0;
+SELECT 'P2 the same with the legacy analyzer';
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT m FROM t04743_pq_buf ORDER BY k)
+WHERE explain LIKE '%Row level filter column:%';
+SET enable_analyzer = 1;
+
 -- Both forwarded filters reference the same converted column. The row policy prefix leaves it
 -- holding this table's type, so the PREWHERE prefix must not convert it a second time.
 SELECT 'P3 row policy and PREWHERE on the converted column';
 SELECT m FROM t04743_pq_buf PREWHERE mapContains(m, 'b') ORDER BY k;
+
+SELECT 'P3 the policy reached the destination read';
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT m FROM t04743_pq_buf PREWHERE mapContains(m, 'b') ORDER BY k)
+WHERE explain LIKE '%Row level filter column:%';
+
+SET enable_analyzer = 0;
+SELECT 'P3 the same with the legacy analyzer';
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT m FROM t04743_pq_buf PREWHERE mapContains(m, 'b') ORDER BY k)
+WHERE explain LIKE '%Row level filter column:%';
+SET enable_analyzer = 1;
 
 DROP ROW POLICY p04743_pq ON t04743_pq_buf;
 DROP TABLE t04743_pq_buf;

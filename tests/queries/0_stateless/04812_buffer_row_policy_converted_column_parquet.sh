@@ -69,38 +69,57 @@ EOF
 
 run() { ${CLICKHOUSE_CLIENT} --user "${user}" --query "SET send_logs_level = 'fatal'; $1"; }
 
+# The row policy has to reach the destination read for this table's converting prefix to run at
+# all. If a later change stops forwarding it, every arm below still returns these rows through a
+# filter above the read, so assert the plan too. The marker comes from query_info.row_level_filter,
+# which both planners populate; pretty = 0 makes it unconditional.
+pushed_down() {
+    if ${CLICKHOUSE_CLIENT} --user "${user}" --query \
+        "SET send_logs_level = 'fatal'; SET enable_analyzer = $1; EXPLAIN actions = 1, pretty = 0 $2" \
+        2>/dev/null | grep -q 'Row level filter column:'
+    then echo 1; else echo 0; fi
+}
+
+# The implicit move is randomized away in about one run in ten, and either setting alone disables
+# it, so the arms that need it pin both. Without that they read like the control below them.
+moved="SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
+
 # The mistyped column only has to be projected: it need not appear in the filter.
 echo "--- B policy on the converted column, WHERE moved to PREWHERE ---"
-run "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k"
+run "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k ${moved}"
+
+echo "--- B the policy reached the destination read, analyzer and legacy ---"
+pushed_down 1 "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k ${moved}"
+pushed_down 0 "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k ${moved}"
 
 echo "--- L the converted column beside another ---"
-run "SELECT k, m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k"
+run "SELECT k, m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k ${moved}"
 
 echo "--- I the filter names the converted column too ---"
-run "SELECT m FROM ${db}.t04812_pq_buf WHERE mapContains(m, 'b') ORDER BY k"
+run "SELECT m FROM ${db}.t04812_pq_buf WHERE mapContains(m, 'b') ORDER BY k ${moved}"
 
 echo "--- D policy and explicit PREWHERE on the converted column ---"
 run "SELECT m FROM ${db}.t04812_pq_buf PREWHERE mapContains(m, 'b') ORDER BY k"
 
 # Controls: each holds without the fix, so a change here is a regression, not a repair.
 echo "--- C the same query with the move disabled ---"
-run "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k SETTINGS optimize_move_to_prewhere = 0"
+run "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0"
 
 echo "--- E no filter at all ---"
 run "SELECT m FROM ${db}.t04812_pq_buf ORDER BY k"
 
 echo "--- F the converted column is not projected ---"
-run "SELECT k FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k"
+run "SELECT k FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k ${moved}"
 
 echo "--- P the read is above FetchColumns ---"
-run "SELECT k, count() FROM ${db}.t04812_pq_buf WHERE k > 0 GROUP BY k ORDER BY k"
+run "SELECT k, count() FROM ${db}.t04812_pq_buf WHERE k > 0 GROUP BY k ORDER BY k ${moved}"
 
 # The predicate is the carried column itself, so it must keep both types at once.
 echo "--- ZS bare-column policy, the destination type is no filter ---"
-run "SELECT f FROM ${db}.t04812_str_buf WHERE k > 0 ORDER BY k"
+run "SELECT f FROM ${db}.t04812_str_buf WHERE k > 0 ORDER BY k ${moved}"
 
 echo "--- ZF bare-column policy, converting the predicate would change truthiness ---"
-run "SELECT f FROM ${db}.t04812_flt_buf WHERE k > 0 ORDER BY k"
+run "SELECT f FROM ${db}.t04812_flt_buf WHERE k > 0 ORDER BY k ${moved}"
 
 echo "--- ZF the same rows with no filter ---"
 run "SELECT f FROM ${db}.t04812_flt_buf ORDER BY k"
@@ -110,6 +129,10 @@ run "SELECT m FROM ${db}.t04812_url_buf WHERE k > 0 ORDER BY k"
 
 echo "--- U2 URL destination, policy alone ---"
 run "SELECT m FROM ${db}.t04812_url_buf ORDER BY k"
+
+echo "--- U2 the policy reached the second reader too, analyzer and legacy ---"
+pushed_down 1 "SELECT m FROM ${db}.t04812_url_buf ORDER BY k"
+pushed_down 0 "SELECT m FROM ${db}.t04812_url_buf ORDER BY k"
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 SET send_logs_level = 'fatal';

@@ -1,6 +1,9 @@
 --- B policy on the converted column, WHERE moved to PREWHERE ---
 {'a':1,'b':2}
 {'a':1}
+--- B the policy reached the destination read, analyzer and legacy ---
+1
+1
 --- L the converted column beside another ---
 1	{'a':1,'b':2}
 3	{'a':1}
@@ -33,3 +36,6 @@
 --- U2 URL destination, policy alone ---
 {'a':1,'b':2}
 {'a':1}
+--- U2 the policy reached the second reader too, analyzer and legacy ---
+1
+1
