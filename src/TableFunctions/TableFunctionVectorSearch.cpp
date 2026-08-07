@@ -4,6 +4,7 @@
 
 #include <Storages/StorageMergeTreeVectorSearch.h>
 #include <TableFunctions/ITableFunction.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -59,6 +60,11 @@ private:
     {
         return "";
     }
+
+    /// The structure the table function exposes: the source-table columns plus `_score`.
+    /// Unlike `getActualTableStructure` it performs no access check, because `executeImpl`
+    /// checks the source-table access on its own.
+    static ColumnsDescription buildTableStructure(const StoragePtr & source_table_ptr, const StorageMetadataPtr & metadata_snapshot);
 
     String source_database;
     String source_table;
@@ -140,11 +146,8 @@ void TableFunctionVectorSearch::parseArguments(const ASTPtr & ast_function, Cont
     }
 }
 
-ColumnsDescription TableFunctionVectorSearch::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+ColumnsDescription TableFunctionVectorSearch::buildTableStructure(const StoragePtr & source_table_ptr, const StorageMetadataPtr & metadata_snapshot)
 {
-    auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
-    auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
-
     ColumnsDescription result = metadata_snapshot->getColumns();
     StorageMergeTreeScoredSearchBase::checkSourceColumnsForReservedNames(result, source_table_ptr->getStorageID());
 
@@ -163,13 +166,38 @@ ColumnsDescription TableFunctionVectorSearch::getActualTableStructure(ContextPtr
     return result;
 }
 
+ColumnsDescription TableFunctionVectorSearch::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
+{
+    /// `DESCRIBE vectorSearch(...)` and `CREATE TABLE ... AS vectorSearch(...)` end here and never
+    /// reach `StorageMergeTreeScoredSearchBase::read`, so the source-table `SELECT` check done
+    /// there does not run. The structure returned below is the source table's column names and
+    /// types, and `SHOW_COLUMNS` is the privilege that guards them: `DESCRIBE TABLE` on the source
+    /// table itself checks exactly this.
+    context->checkAccess(AccessType::SHOW_COLUMNS, source_database, source_table);
+
+    auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
+    auto metadata_snapshot = source_table_ptr->getInMemoryMetadataPtr(context, false);
+    return buildTableStructure(source_table_ptr, metadata_snapshot);
+}
+
 StoragePtr TableFunctionVectorSearch::executeImpl(
     const ASTPtr & /*ast_function*/,
     ContextPtr context,
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/,
-    bool is_insert_query) const
+    bool /*is_insert_query*/) const
 {
+    /// The engine guard and the index resolution below disclose source-table metadata: whether the
+    /// source is a MergeTree table, whether an index of a given name exists and is a
+    /// `vector_similarity` one, and - in the 4-argument form - the names of all vector indexes.
+    /// The `SELECT` check on the columns the query reads happens later, in
+    /// `StorageMergeTreeScoredSearchBase::read`, so without a check here a user with no grants at
+    /// all could probe that metadata by varying the arguments. `SHOW_TABLES` is what lets a user
+    /// know that the source table exists; it is implied by any grant on the table, including the
+    /// column-level `SELECT` that a successful search needs, so requiring it here does not
+    /// tighten the privileges of a legitimate search.
+    context->checkAccess(AccessType::SHOW_TABLES, source_database, source_table);
+
     auto source_table_ptr = DatabaseCatalog::instance().getTable(StorageID{source_database, source_table}, context);
     const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(source_table_ptr.get());
 
@@ -245,7 +273,7 @@ StoragePtr TableFunctionVectorSearch::executeImpl(
     }
 
     auto vector_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, indices.getByName(resolved_index_name), *storage_settings);
-    auto columns = getActualTableStructure(context, is_insert_query);
+    auto columns = buildTableStructure(source_table_ptr, metadata_snapshot);
     StorageID storage_id(getDatabaseName(), table_name);
 
     auto res = std::make_shared<StorageMergeTreeVectorSearch>(
