@@ -27,8 +27,10 @@ CREATE TABLE t_glob_ast_partitioned (c1 Int32) ENGINE = S3(s3_conn, url = 'http:
 -- The queue engine validates its path with the legacy classification too: a literal brace
 -- group still counts as a glob, so the table is accepted (not rejected as "must contain
 -- globs") the same way in every session.
+-- No explicit `keeper_path`: the default path includes the table UUID, so repeated runs
+-- of this test cannot race on the cleanup of a shared Keeper node.
 DROP TABLE IF EXISTS t_glob_ast_queue;
 CREATE TABLE t_glob_ast_queue (c1 Int32)
 ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/metadata_guard/queue_{x}.csv', 'username', 'password', CSV)
-SETTINGS keeper_path = '/s3queue_04815', mode = 'unordered';
+SETTINGS mode = 'unordered';
 DROP TABLE t_glob_ast_queue;
