@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/clickpipes/_iam_authentication.mdx";
 
 ## Supported Postgres versions {#supported-postgres-versions}
 
@@ -92,11 +93,19 @@ Connect to your RDS Postgres instance as an admin user and execute the following
 
    The `clickpipes` publication defines the set of tables whose change events will be streamed to ClickPipes. We recommend against using `FOR ALL TABLES` unless you intend to replicate every table, as including unnecessary tables increases WAL traffic from Postgres to ClickPipes and reduces overall replication efficiency.
 
+### Using IAM authentication (optional) {#iam-authentication}
+
+<IAMAuthentication engine="postgres" service="rds">
+  <Note>
+  IAM authentication for replication requires the `rds.iam_auth_for_replication` parameter to be set to `1`. This is supported from PostgreSQL version 11 onwards; on earlier versions, you can only run `Initial Load Only` ClickPipes.
+  </Note>
+</IAMAuthentication>
+
 ## Configure network access {#configure-network-access}
 
 ### IP-based access control {#ip-based-access-control}
 
-If you want to restrict traffic to your RDS instance, please add the [documented static NAT IPs](/integrations/clickpipes/home#list-of-static-ips) to the `Inbound rules` of your RDS security group.
+If you want to restrict traffic to your RDS instance, please add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the `Inbound rules` of your RDS security group.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Where to find security group in RDS Postgres?" size="lg" border/>
 

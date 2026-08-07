@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -311,6 +312,8 @@ public:
         std::optional<std::unordered_set<String>> part_values;
     };
 
+    void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+
     static AnalysisResultPtr selectRangesToRead(
         const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
@@ -334,6 +337,14 @@ public:
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
+    /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
+    /// the query condition cache and without caching the analysis on the step. Used for the automatic
+    /// parallel-replicas sizing of a query which may still become a TopK read: that estimate runs before
+    /// `tryOptimizeTopK`, so it cannot know whether the `use_query_condition_cache_for_top_k` gate
+    /// applies, and the read that actually executes analyzes again with the gate that matches its final
+    /// shape.
+    AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache() const;
+
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
@@ -351,9 +362,14 @@ public:
     void replaceVectorColumnWithDistanceColumn(const String & vector_column);
     bool isVectorColumnReplaced() const;
 
+    /// Add one more column (or subcolumn) to the read list, recomputing the output header. Used by the brute-force
+    /// vector-search rewrite to additionally read the quantized-codes subcolumn of a vector column.
+    void addReadColumn(const String & column);
+
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();
     bool requestOutputEachPartitionThroughSeparatePortForLimitBy();
+    void requestOutputEachPartitionThroughSeparatePortForDistinct();
 
     bool willOutputEachPartitionThroughSeparatePort() const { return output_each_partition_through_separate_port; }
 
@@ -375,12 +391,25 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
-    void disableMergeTreePartsSnapshotRemoval() { enable_remove_parts_from_snapshot_optimization = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
+
+    /// Announce an empty read set to the parallel-replicas coordinator (what initializePipeline() sends
+    /// when there are no ranges). Callable from the projection optimizer when it replaces this step and
+    /// initializePipeline() will not run. No-op unless this is the initiator local plan; returns whether
+    /// an announcement was sent.
+    bool announceEmptyReadRangesToCoordinatorIfInitiator();
+
+    bool isParallelReplicasLocalPlanForInitiator() const;
+    bool isParallelReplicasLocalPlanForFollower() const;
+
+    /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
+    /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
+    /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
+    void enableParallelReadingFromReplicasForSerialization() { is_parallel_reading_from_replicas = true; }
 
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
@@ -428,12 +457,27 @@ public:
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
 
+    /// Carries the TopK stamp and the query condition cache gate over from a read step that this
+    /// step replaces (e.g. the projection read built by `optimizeUseNormalProjections`; `clone` and
+    /// `createLocalParallelReplicasReadingStep` do the same for the steps they rebuild internally).
+    /// `condition_hash` already has the part-set salt folded in by `setTopKColumn`, and the gate has
+    /// already been derived from the settings there, so both are copied as is; calling
+    /// `setTopKColumn` again would fold the part-set salt in twice.
+    void copyTopKFilterInfoAndQueryConditionCacheGate(const ReadFromMergeTree & replaced_step)
+    {
+        top_k_filter_info = replaced_step.top_k_filter_info;
+        allow_query_condition_cache = replaced_step.allow_query_condition_cache;
+    }
+
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_) { lazy_materializing_rows = std::move(lazy_materializing_rows_); }
 
     void deferFiltersAfterFinalIfNeeded();
+
+    /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
+    bool isPrewhereDeferredAfterFinal() const;
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
@@ -487,6 +531,13 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
+
+    /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
+    /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
+    /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
+    /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
+    /// only the optimization is lost); propagating it there is a follow-up.
+    std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
     FilterDAGInfoPtr deferred_row_level_filter;
@@ -575,6 +626,8 @@ private:
         std::optional<ActionsDAG> & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
+    bool isRowPolicyDeferredAfterFinal() const;
+
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -598,11 +651,13 @@ private:
 
     void logPredicateStatistics(const AnalysisResult & result) const;
 
+    /// Cost heuristic for per-partition (independent) processing, shared by GROUP BY and DISTINCT.
+    enum class ProcessorKind : uint8_t { Aggregation, Distinct };
+    bool isPartitionIndependentProcessingProfitable(ProcessorKind kind) const;
+
     int getSortDirection() const;
     void updateSortDescription();
 
-    bool isParallelReplicasLocalPlanForInitiator() const;
-    bool isParallelReplicasLocalPlanForFollower() const;
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
@@ -613,7 +668,6 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
-    bool enable_remove_parts_from_snapshot_optimization = true;
     bool allow_query_condition_cache = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;

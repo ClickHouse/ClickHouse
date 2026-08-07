@@ -1,0 +1,29 @@
+---
+title: GCS ClickPipe 생성
+---
+
+import GCSDataSource from '/snippets/ko/clickpipes/object-storage/google-cloud-storage/_1-data-source.mdx';
+import GCSConnection from '/snippets/ko/clickpipes/object-storage/google-cloud-storage/_2-connection.mdx';
+import CommonSteps from '/snippets/ko/_create_clickpipe.mdx';
+
+<Steps>
+  <Step title="데이터 소스 선택" id="1-select-the-data-source">
+    **1.** ClickHouse Cloud의 기본 탐색 메뉴에서 **Data sources**를 선택한 다음 **Create ClickPipe**를 클릭합니다.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="가져오기 항목 선택" />
+    </Frame>
+
+    <GCSDataSource />
+  </Step>
+
+  <Step title="ClickPipe 연결 설정" id="2-setup-your-clickpipe-connection">
+    **1.** 새 ClickPipe를 설정하려면 객체 스토리지 서비스에 연결하고 인증하는 데 필요한 세부 정보를 입력해야 합니다.
+
+    <GCSConnection />
+
+    **2.** **Incoming data**를 클릭합니다. ClickPipes가 다음 단계에 필요한 버킷 메타데이터를 가져옵니다.
+  </Step>
+
+  <CommonSteps />
+</Steps>
