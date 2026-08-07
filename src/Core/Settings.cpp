@@ -2269,6 +2269,8 @@ That setting has four possible values:
     DECLARE(Bool, insert_deduplicate, true, R"(
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
 
+This setting only takes effect when [`deduplicate_insert`](#deduplicate_insert) is set to `backward_compatible_choice`.
+
 Possible values:
 
 - 0 — Disabled.
@@ -2279,7 +2281,9 @@ For the replicated tables by default the only 100 of the most recent blocks for 
 For not replicated tables see [non_replicated_deduplication_window](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 )", 0) \
     DECLARE(Bool, async_insert_deduplicate, false, R"(
-For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed
+For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed.
+
+This setting only takes effect when [`deduplicate_insert`](#deduplicate_insert) is set to `backward_compatible_choice`.
 )", 0) \
     \
     DECLARE(UInt64Auto, insert_quorum, 0, R"(
@@ -3550,7 +3554,7 @@ Defines what action ClickHouse performs when a join reaches any of the following
 - [max_bytes_in_join](/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 - [max_rows_in_join](/reference/settings/session-settings/max-rows#max_rows_in_join)
 
-This setting is honored only by the `hash` and `parallel_hash`
+This setting is honored only by the `hash`, `parallel_hash`, and `ie_join`
 [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) values. Other
 algorithms (for example, `partial_merge`, `grace_hash`, `auto`) handle the
 limits differently — by spilling to disk, re-partitioning, or switching
@@ -3647,6 +3651,14 @@ Possible values:
 - full_sorting_merge
 
  [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
+
+- ie_join
+
+ The sort-based [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm for a `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables. Supports `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
+
+ The position in the list sets the priority: listed after other algorithms, IEJoin is used only when they do not apply (the `ON` section has no equality conditions); listed first, it is used whenever the `ON` section has two inequality conditions. The remaining conditions (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and evaluated inside the operator as a residual condition affecting matching for the other kinds. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
+
+ Both inputs are accumulated in memory before joining: [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join) and [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) limit the accumulated input of both sides together (not just the right side), with the action on overflow set by [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode); the sort indexes the operator builds on top of the accumulated input are not counted against the limit. The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
 - parallel_full_sorting_merge
 
@@ -6623,7 +6635,7 @@ Maximum number of bytes in the set for lazy FINAL optimization. If exceeded, fal
 Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. If less than this fraction of marks is filtered, falls back to normal FINAL. Value 0 disables this check.
 )", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
-Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
+Enables lazy columns replication in `JOIN`, `ARRAY JOIN` and lambda captures of higher-order functions (e.g. `arrayMap`), it allows to avoid unnecessary copy of the same rows multiple times in memory.
 )", 0) \
     DECLARE(UInt64, query_plan_max_set_size_for_projection_match, 10000, R"(
 Maximum number of rows in an `IN`-clause set for which the projection matcher computes and compares content hashes when deciding whether two sets are equal. Sets larger than this are treated as non-matching and skip the projection. Zero disables content-hash comparison entirely: a projection match never succeeds for nodes containing `IN`-clause sets.
@@ -7940,6 +7952,20 @@ Possible values:
 - 0 - `FINAL` applies only to the table it is specified on.
 - 1 - `FINAL` on the left-most table of a JOIN is applied to all joined tables.
 )", 0) \
+    DECLARE(Bool, analyzer_compatibility_multiple_joins_qualify_column_names, false, R"(
+When enabled and the `FROM` clause of a query contains two or more `JOIN`s (comma-separated tables count; `ARRAY JOIN` does not), the analyzer names result columns the way the old analyzer's multiple-joins rewrite did:
+- columns produced by expanding `*`, `<table>.*` or `COLUMNS('<regexp>')` get names of the form `<alias-or-table>.<column>` (the qualifier is the table expression's alias if it has one, otherwise the table name without the database, otherwise the CTE name; columns of a joined subquery without an alias are left unqualified). Two kinds of column keep their bare name because they belong to the join rather than to a single table expression: a column produced by `ARRAY JOIN`, and a key merged by `JOIN ... USING`. Outer references such as `SELECT ll.arr` or `SELECT ll.k` therefore do not resolve in those two shapes;
+- the identifier-list form `COLUMNS(col1, col2)` is not a matcher expansion: each column keeps the name exactly as its identifier was written, so `COLUMNS(x)` produces `x` and `COLUMNS(a.x)` produces `a.x`;
+- an unaliased column reference in the `SELECT` list keeps its name exactly as written (e.g. `SELECT a.x` produces a column named `a.x` even when `x` is unambiguous).
+
+This makes outer queries that reference such columns by their qualified names work, for example:
+
+```sql
+SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
+```
+
+Takes effect only when the analyzer is enabled (`enable_analyzer = 1`).
+)", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
 )", 0) \
@@ -8448,10 +8474,11 @@ Using the text index header cache can significantly reduce latency and increase 
 Whether to cache deserialized text index deserialized posting lists in memory.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
-    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::MATERIALIZE, R"(
+    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::LAZY, R"(
 Controls how posting lists are applied during text index queries.
-'materialize' (default) eagerly decodes posting lists into Roaring Bitmaps.
-'lazy' uses cursor-based on-demand decoding (requires an index format with a serialized codec).
+'materialize' eagerly decodes posting lists into Roaring Bitmaps.
+'lazy' (default) uses cursor-based on-demand decoding (requires an index format with a serialized codec).
+'lazy' is applied only where it is supported: queries with patterns (such as `LIKE`) and parts with an index written by an older version fall back to 'materialize'.
 )", 0) \
     DECLARE_WITH_ALIAS(Float, text_index_lazy_intersection_density_threshold, 0.2f, R"(
 Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
@@ -8526,9 +8553,9 @@ Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgre
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
 Trigger processor to spill data into external storage adpatively. grace join is supported at present.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
-Allow experimental delta-kernel-rs implementation.
-)", BETA) \
+    DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(
+Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
+)", BETA, allow_experimental_delta_kernel_rs) \
     DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
 Allow to execute `insert` queries into iceberg.
 )", BETA, allow_experimental_insert_into_iceberg) \
