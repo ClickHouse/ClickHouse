@@ -30,8 +30,33 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ABORTED;
+    extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+    extern const int TIMEOUT_EXCEEDED;
+}
+
 namespace
 {
+
+/// Partition constant folding is best-effort: if the predicate cannot be evaluated over a
+/// partition constant (for example division by zero while folding), the caller falls back to
+/// the unsubstituted condition, which is correct, just less selective. Non-semantic failures -
+/// resource limits, cancellation, timeouts, aborts, and logical errors - are not "cannot fold"
+/// signals and must propagate instead of being silently downgraded to the fallback.
+bool mustPropagateConstantFoldingException(int code)
+{
+    return code == ErrorCodes::ABORTED
+        || code == ErrorCodes::LOGICAL_ERROR
+        || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+        || code == ErrorCodes::QUERY_WAS_CANCELLED
+        || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+        || code == ErrorCodes::TIMEOUT_EXCEEDED;
+}
 
 void fillPartitionConstantsSubstitution(
     std::unordered_map<const ActionsDAG::Node *, ColumnWithTypeAndName> & substitutions,
@@ -205,12 +230,16 @@ const Cond & ConditionTemplate<Cond>::generateForPartition(const MergeTreePartit
     {
         specialized.emplace(substituteConstantInputs(dag->predicate, partition, partition_id, metadata_snapshot));
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
         /// Constant substitution is best-effort: only expected query-evaluation failures
-        /// (e.g. division by zero while folding a partition constant) are caught here.
-        /// Exceptions thrown by the condition factory below (`generate`) - such as memory-limit,
-        /// cancellation, or logical errors during condition construction - must propagate.
+        /// (e.g. division by zero while folding a partition constant) are caught here;
+        /// resource-limit, cancellation, and logical errors must propagate (see
+        /// `mustPropagateConstantFoldingException`). Exceptions thrown by the condition
+        /// factory below (`generate`) must propagate as well.
+        if (mustPropagateConstantFoldingException(e.code()))
+            throw;
+
         return generateUnsubstituted();
     }
 
