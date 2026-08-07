@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskPacked.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -16,6 +17,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_PART_TYPE;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
 }
 
 MergeTreeDataPartBuilder::MergeTreeDataPartBuilder(
@@ -75,6 +81,8 @@ std::shared_ptr<IMergeTreeDataPart> MergeTreeDataPartBuilder::build()
     if (!part_storage)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create part {}, because part storage is not set", name);
 
+    part_storage->setZeroCopyReplicationEnabled((*data.getSettings())[MergeTreeSetting::allow_remote_fs_zero_copy_replication]);
+
     if (parent_part && data.format_version == MERGE_TREE_DATA_OLD_FORMAT_VERSION)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create projection part in MergeTree table created in old syntax");
 
@@ -126,9 +134,20 @@ MutableDataPartStoragePtr MergeTreeDataPartBuilder::getPartStorageByType(
     switch (storage_type_.getValue())
     {
         case Type::Full:
-            return std::make_shared<DataPartStorageOnDiskFull>(volume_, root_path_, part_dir_);
+        {
+            auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume_, root_path_, part_dir_);
+            /// Seed empty: a fresh part registers projections via createProjection, a loaded part re-seeds in loadProjections; a disk scan
+            /// here could adopt residue of a same-named part.
+            storage->setProjections({});
+            return storage;
+        }
         case Type::Packed:
-            return std::make_shared<DataPartStorageOnDiskPacked>(volume_, root_path_, part_dir_, read_settings, part_may_exist_on_disk);
+        {
+            auto storage = std::make_shared<DataPartStorageOnDiskPacked>(volume_, root_path_, part_dir_, read_settings, part_may_exist_on_disk);
+            /// Same empty-seed rationale as the Full case above.
+            storage->setProjections({});
+            return storage;
+        }
         default:
             throw Exception(ErrorCodes::UNKNOWN_PART_TYPE,
                 "Unknown type of storage for part {}", fs::path(root_path_) / part_dir_);

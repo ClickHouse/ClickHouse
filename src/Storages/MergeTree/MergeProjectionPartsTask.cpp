@@ -60,7 +60,7 @@ bool MergeProjectionPartsTask::executeStep()
         if (next_level_parts.empty())
         {
             LOG_DEBUG(log, "Merged a projection part in level {}", current_level);
-            selected_parts[0]->renameTo(projection.name + ".proj", true);
+            selected_parts[0]->renameTo(IDataPartStorage::Projection::dirName(projection.name, false), true);
             selected_parts[0]->setName(projection.name);
             selected_parts[0]->is_temp = false;
             selected_parts[0]->temp_projection_block_number.reset();
@@ -117,7 +117,7 @@ bool MergeProjectionPartsTask::executeStep()
             /* need_prefix */ true,
             &projection,
             new_data_part.get(),
-            ".tmp_proj");
+            IDataPartStorage::Projection::extTmp());
 
         next_level_parts.push_back(executeHere(tmp_part_merge_task));
 
