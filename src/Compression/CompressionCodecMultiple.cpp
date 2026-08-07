@@ -59,6 +59,14 @@ void CompressionCodecMultiple::updateHash(SipHash & hash) const
 
 UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
+    /// doCompressData stores the number of codecs in one byte, and doDecompressData reads it back
+    /// from there, so a longer chain would write a part that cannot be read.
+    if (codecs.size() > std::numeric_limits<UInt8>::max())
+        throw Exception(ErrorCodes::CANNOT_COMPRESS,
+            "Too many codecs in the codec chain: {}. The number of codecs is stored in one byte, "
+            "so at most {} are supported.",
+            codecs.size(), static_cast<size_t>(std::numeric_limits<UInt8>::max()));
+
     UInt32 compressed_size = uncompressed_size;
     for (size_t idx = 0; idx < codecs.size(); ++idx)
         compressed_size = getCheckedReserveSize(codecs[idx], compressed_size, idx, codecs.size());
