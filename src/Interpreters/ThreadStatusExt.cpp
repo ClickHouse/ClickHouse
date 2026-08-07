@@ -255,25 +255,39 @@ void ThreadGroup::linkThreadImpl(UInt64 thread_id, bool directly_attached)
     /// this thread towards its own peak though: `peak_threads_usage` of a query is the peak number
     /// of threads of the query itself, not of nested scopes such as the async materialized-view
     /// executor (which is created via `createForMaterializedView` as a child of the `INSERT` group).
+    /// If a parent's own local step throws, it has already rolled back its ancestors (see below),
+    /// so nothing stays linked and the exception can propagate as-is.
     if (parent)
         parent->linkThreadImpl(thread_id, /*directly_attached=*/ false);
 
-    std::lock_guard lock(mutex);
-    thread_ids.insert(thread_id);
-
-    if (active_thread_count == 0)
-        effective_group_stopwatch.restart();
-
-    ++active_thread_count;
-
-    /// `peak_threads_usage` is computed from `directly_attached_thread_count`, not from
-    /// `active_thread_count`. The latter is shared between direct and propagated descendant attaches,
-    /// so a direct attach updating the peak from it would still observe the descendant scopes'
-    /// threads already accumulated in it, inflating the parent query's peak.
-    if (directly_attached)
+    try
     {
-        ++directly_attached_thread_count;
-        peak_threads_usage = std::max(peak_threads_usage, directly_attached_thread_count);
+        std::lock_guard lock(mutex);
+        thread_ids.insert(thread_id);
+
+        if (active_thread_count == 0)
+            effective_group_stopwatch.restart();
+
+        ++active_thread_count;
+
+        /// `peak_threads_usage` is computed from `directly_attached_thread_count`, not from
+        /// `active_thread_count`. The latter is shared between direct and propagated descendant attaches,
+        /// so a direct attach updating the peak from it would still observe the descendant scopes'
+        /// threads already accumulated in it, inflating the parent query's peak.
+        if (directly_attached)
+        {
+            ++directly_attached_thread_count;
+            peak_threads_usage = std::max(peak_threads_usage, directly_attached_thread_count);
+        }
+    }
+    catch (...)
+    {
+        /// The local step failed (e.g. `thread_ids.insert` on allocation failure) after the whole
+        /// ancestor chain was linked: unlink the ancestors, otherwise they would keep a phantom
+        /// `active_thread_count` and inflated elapsed time with no matching `unlinkThreadImpl`.
+        if (parent)
+            parent->unlinkThreadImpl(/*directly_attached=*/ false);
+        throw;
     }
 }
 
