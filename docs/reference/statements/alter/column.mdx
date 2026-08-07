@@ -354,9 +354,10 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 ```
 
 <Note>
-`MATERIALIZE COLUMN` always rewrites **column values**. Whether it also rebuilds [data skipping indexes](/sql-reference/statements/alter/skipping-index) (including text indexes) depends on part layout:
+`MATERIALIZE COLUMN` always rewrites **column values**. Whether it also rebuilds [data skipping indexes](/sql-reference/statements/alter/skipping-index) (including text indexes) depends on part layout and how the index is stored:
 
-- On **wide** parts with **full part storage**, secondary indexes are **not** automatically rebuilt when only the column is rewritten. After changing underlying column data that an index depends on, run [`ALTER TABLE ... MATERIALIZE INDEX`](/sql-reference/statements/alter/skipping-index#materialize-index) if you need the index files refreshed.
+- On **wide** parts with **full part storage**, **standalone** skipping-index files (and text indexes) are **not** automatically rebuilt when only the column is rewritten. After changing underlying column data that an index depends on, run [`ALTER TABLE ... MATERIALIZE INDEX`](/sql-reference/statements/alter/skipping-index#materialize-index) if you need those index files refreshed.
+- **Exception:** ordinary skip indexes packed into `skp_idx.packed` (small skip-index substreams under the default [`packed_skip_index_max_bytes`](/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes); full-text indexes are not packed this way) are force-recomputed even on wide + full-storage parts.
 - On parts that are **not full-storage** (including **compact** / **packed**, and **wide + packed**), the mutation rewrites the whole part and force-recalculates pre-existing secondary indexes on that part.
 
 Separately, `ADD INDEX` only updates metadata: it does **not** immediately materialize the new index (including text indexes) on historical parts. Historical parts become materialized either by an explicit [`MATERIALIZE INDEX`](/sql-reference/statements/alter/skipping-index#materialize-index), or by a later merge when [`materialize_skip_indexes_on_merge`](/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) is enabled and the index is not listed in [`exclude_materialize_skip_indexes_on_merge`](/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). Explicit `MATERIALIZE INDEX` is the deterministic path when you need the index built without waiting on merge settings.
