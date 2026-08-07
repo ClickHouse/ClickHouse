@@ -235,6 +235,10 @@ struct ArrayAggregateImpl
             || executeMinOrMaxNumeric<Int16>(mapped, offsets, res_ptr)
             || executeMinOrMaxNumeric<Int32>(mapped, offsets, res_ptr)
             || executeMinOrMaxNumeric<Int64>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<UInt128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<UInt256>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Int128>(mapped, offsets, res_ptr)
+            || executeMinOrMaxNumeric<Int256>(mapped, offsets, res_ptr)
             || executeMinOrMaxNumeric<Float32>(mapped, offsets, res_ptr)
             || executeMinOrMaxNumeric<Float64>(mapped, offsets, res_ptr))
             return;

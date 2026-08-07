@@ -17,6 +17,8 @@
 #include <Parsers/ASTDataType.h>
 #include <Common/escapeForFileName.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/RemoteHostFilter.h>
+#include <IO/WriteHelpers.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
@@ -83,7 +85,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         db_disk->createDirectories(metadata_path);
     }
 
-    cleaner_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
+    cleaner_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
 
@@ -569,6 +571,22 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
                 use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
         }
 
+        /// Enforce the server's outbound-host policy, exactly like the table engine and the table
+        /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to reach a
+        /// host through the database engine that `remote_url_allow_hosts` forbids elsewhere.
+        /// Skip it only for an internal metadata replay (server startup / restore, the same
+        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
+        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
+        /// enforcing the policy there would turn one database created before the whitelist was
+        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
+        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        if (!is_internal_metadata_replay)
+        {
+            for (const auto & address : configuration.addresses)
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+        }
+
         if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
 
@@ -618,7 +636,8 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 - `schema` — PostgreSQL schema.
 - `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
-## Data types support {#data_types-support}
+<a id="data_types-support"></a>
+## Data types support {#data-types-support}
 
 | PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|

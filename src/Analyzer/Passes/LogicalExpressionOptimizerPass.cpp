@@ -14,8 +14,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionFactory.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/convertFieldToType.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -163,8 +167,8 @@ static bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function,
     if (!first_src || !second_src)
         return false;
 
-    const auto & lhs_join = *join_node.getLeftTableExpression();
-    const auto & rhs_join = *join_node.getRightTableExpression();
+    const auto & lhs_join = join_node.getLeftTableExpression();
+    const auto & rhs_join = join_node.getRightTableExpression();
     return (first_src->isEqual(lhs_join) && second_src->isEqual(rhs_join)) ||
            (first_src->isEqual(rhs_join) && second_src->isEqual(lhs_join));
 }
@@ -2141,6 +2145,40 @@ private:
         function_node.resolveAsFunction(and_function_resolver);
     }
 
+    /// If one side is a constant `String`/`FixedString` compared with a non-string type, convert
+    /// the literal to that type as `executeWithConstString` does and return the edge's domain.
+    ComparisonOrderDomain tryNormalizeConstStringEdge(const String & function_name, QueryTreeNodePtr & lhs, QueryTreeNodePtr & rhs) const
+    {
+        const auto * lhs_constant = lhs->as<ConstantNode>();
+        const auto * rhs_constant = rhs->as<ConstantNode>();
+        if (static_cast<bool>(lhs_constant) == static_cast<bool>(rhs_constant))
+            return {};
+
+        auto & constant_side = lhs_constant ? lhs : rhs;
+        const auto & other_side = lhs_constant ? rhs : lhs;
+        const auto constant_type = removeLowCardinality(constant_side->getResultType());
+        const auto other_type = removeLowCardinality(other_side->getResultType());
+        if (!isStringOrFixedString(constant_type) || isStringOrFixedString(other_type) || other_type->isNullable())
+            return {};
+
+        const auto * constant_node = lhs_constant ? lhs_constant : rhs_constant;
+        auto converted = tryConvertFieldToType(
+            constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
+        if (converted.isNull())
+            return {};
+
+        auto typed_constant = std::make_shared<ConstantNode>(std::move(converted), other_type);
+        const auto typed_comparison = std::make_shared<FunctionNode>(function_name);
+        typed_comparison->markAsOperator();
+        typed_comparison->getArguments().getNodes().push_back(other_side);
+        typed_comparison->getArguments().getNodes().push_back(typed_constant);
+        typed_comparison->resolveAsFunction(FunctionFactory::instance().get(function_name, getContext()));
+        const auto domain = typed_comparison->getFunctionOrThrow()->getComparisonOrderDomain();
+        if (domain.isValid())
+            constant_side = std::move(typed_constant);
+        return domain;
+    }
+
     void tryOptimizeAndCompareChain(QueryTreeNodePtr & node)
     {
         if (node->getNodeType() != QueryTreeNodeType::FUNCTION)
@@ -2180,7 +2218,13 @@ private:
         QueryTreeNodePtrWithHashSet greater_constants;
         QueryTreeNodePtrWithHashSet less_constants;
         /// Record a > b, a >= b, a == b pairs or a < b, a <= b, a == b pairs
-        using QueryTreeNodeWithEquals = std::vector<std::pair<QueryTreeNodePtr, CompareType>>;
+        struct ComparisonEdge
+        {
+            QueryTreeNodePtr node;
+            CompareType type;
+            ComparisonOrderDomain domain;
+        };
+        using QueryTreeNodeWithEquals = std::vector<ComparisonEdge>;
         using ComparePairs = QueryTreeNodePtrWithHashMap<QueryTreeNodeWithEquals>;
         ComparePairs greater_pairs;
         ComparePairs less_pairs;
@@ -2213,8 +2257,8 @@ private:
 
             const auto function_name = argument_function->getFunctionName();
             const auto & function_arguments = argument_function->getArguments().getNodes();
-            const auto & lhs = function_arguments[0];
-            const auto & rhs = function_arguments[1];
+            auto lhs = function_arguments[0];
+            auto rhs = function_arguments[1];
 
             /// Conservatively skip comparisons whose operands contain a non-deterministic function.
             /// Common subexpression elimination makes structurally identical occurrences (e.g. two
@@ -2238,72 +2282,82 @@ private:
                 addComparisonFilter(derived_conjunct_filters, expression_node, std::move(seed_filter), true, getContext());
             }
 
+            /// Only comparisons within one order domain join transitive chains; the seeding above
+            /// is domain-agnostic (it converts constants to the expression's own type).
+            auto comparison_domain = argument_function->getFunctionOrThrow()->getComparisonOrderDomain();
+            /// A const string compares after a one-time conversion to the other side's type (see
+            /// `executeWithConstString`); mirror it so the edge carries a typed constant instead.
+            if (!comparison_domain.isValid())
+                comparison_domain = tryNormalizeConstStringEdge(function_name, lhs, rhs);
+            if (!comparison_domain.isValid())
+                continue;
+
             if (function_name == "less")
             {
                 if (rhs->as<ConstantNode>())
                     greater_constants.insert(rhs);
-                greater_pairs[rhs].push_back({lhs, CompareType::less});
+                greater_pairs[rhs].push_back({lhs, CompareType::less, comparison_domain});
                 if (lhs->as<ConstantNode>())
                     less_constants.insert(lhs);
-                less_pairs[lhs].push_back({rhs, CompareType::greater});
+                less_pairs[lhs].push_back({rhs, CompareType::greater, comparison_domain});
             }
             else if (function_name == "greater")
             {
                 if (lhs->as<ConstantNode>())
                     greater_constants.insert(lhs);
-                greater_pairs[lhs].push_back({rhs, CompareType::less});
+                greater_pairs[lhs].push_back({rhs, CompareType::less, comparison_domain});
                 if (rhs->as<ConstantNode>())
                     less_constants.insert(rhs);
-                less_pairs[rhs].push_back({lhs, CompareType::greater});
+                less_pairs[rhs].push_back({lhs, CompareType::greater, comparison_domain});
             }
             else if (function_name == "lessOrEquals")
             {
                 if (rhs->as<ConstantNode>())
                     greater_constants.insert(rhs);
-                greater_pairs[rhs].push_back({lhs, CompareType::lessOrEquals});
+                greater_pairs[rhs].push_back({lhs, CompareType::lessOrEquals, comparison_domain});
                 if (lhs->as<ConstantNode>())
                     less_constants.insert(lhs);
-                less_pairs[lhs].push_back({rhs, CompareType::greaterOrEquals});
+                less_pairs[lhs].push_back({rhs, CompareType::greaterOrEquals, comparison_domain});
             }
             else if (function_name == "greaterOrEquals")
             {
                 if (lhs->as<ConstantNode>())
                     greater_constants.insert(lhs);
-                greater_pairs[lhs].push_back({rhs, CompareType::lessOrEquals});
+                greater_pairs[lhs].push_back({rhs, CompareType::lessOrEquals, comparison_domain});
                 if (rhs->as<ConstantNode>())
                     less_constants.insert(rhs);
-                less_pairs[rhs].push_back({lhs, CompareType::greaterOrEquals});
+                less_pairs[rhs].push_back({lhs, CompareType::greaterOrEquals, comparison_domain});
             }
             else if (function_name == "equals")
             {
                 if (rhs->as<ConstantNode>())
                 {
                     greater_constants.insert(rhs);
-                    greater_pairs[rhs].push_back({lhs, CompareType::equals});
+                    greater_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain});
                     less_constants.insert(rhs);
-                    less_pairs[rhs].push_back({lhs, CompareType::equals});
+                    less_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain});
                 }
                 else if (lhs->as<ConstantNode>())
                 {
                     greater_constants.insert(lhs);
-                    greater_pairs[lhs].push_back({rhs, CompareType::equals});
+                    greater_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain});
                     less_constants.insert(lhs);
-                    less_pairs[lhs].push_back({rhs, CompareType::equals});
+                    less_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain});
                 }
                 else
                 {
                     /// Bidirection, needs to record visited
-                    greater_pairs[lhs].push_back({rhs, CompareType::equals});
-                    greater_pairs[rhs].push_back({lhs, CompareType::equals});
-                    less_pairs[lhs].push_back({rhs, CompareType::equals});
-                    less_pairs[rhs].push_back({lhs, CompareType::equals});
+                    greater_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain});
+                    greater_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain});
+                    less_pairs[lhs].push_back({rhs, CompareType::equals, comparison_domain});
+                    less_pairs[rhs].push_back({lhs, CompareType::equals, comparison_domain});
                 }
             }
         }
 
         /// To avoid endless loop in equal condition and during the DFS, for example, a>b AND b>a AND a<5,
         /// also avoid duplicate such as a>3 AND b>a AND c>b AND c>a.
-        QueryTreeNodePtrWithHashSet visited;
+        QueryTreeNodePtrWithHashMap<std::vector<ComparisonOrderDomain>> visited;
         /// To avoid duplicates of equals when starting from both sides, i.e. large and small constant.
         QueryTreeNodePtrWithHashMap<std::unordered_set<const ConstantNode *>> equal_funcs;
 
@@ -2322,8 +2376,12 @@ private:
         }
 
         /// Step 2: populate from constants, to generate new comparing pair with constant in one side
-        std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType)> find_pairs
-            = [&](const ComparePairs & pairs, QueryTreeNodePtr current, const ConstantNode * constant, CompareType type)
+        std::function<void(const ComparePairs &, QueryTreeNodePtr, const ConstantNode *, CompareType, ComparisonOrderDomain)> find_pairs
+            = [&](const ComparePairs & pairs,
+                  QueryTreeNodePtr current,
+                  const ConstantNode * constant,
+                  CompareType type,
+                  ComparisonOrderDomain domain)
         {
             if (auto it = pairs.find(current); it != pairs.end())
             {
@@ -2331,15 +2389,21 @@ private:
                 {
                     if (andCompareChainHashBudgetExceeded())
                         return;
-                    if (visited.contains(left.first))
-                        continue;
-                    visited.insert(left.first);
 
-                    CompareType compare_type = std::min(type, left.second);
+                    if (domain.isValid() && domain != left.domain)
+                        continue;
+
+                    const auto path_domain = domain.isValid() ? domain : left.domain;
+                    auto & visited_domains = visited[left.node];
+                    if (std::find(visited_domains.begin(), visited_domains.end(), path_domain) != visited_domains.end())
+                        continue;
+                    visited_domains.push_back(path_domain);
+
+                    CompareType compare_type = std::min(type, left.type);
 
                     /// Non-sense to have both sides as constant, and no repeat of equal function
-                    if (constant && !left.first->as<ConstantNode>()
-                        && (compare_type != CompareType::equals || equal_funcs[left.first].insert(constant).second))
+                    if (constant && !left.node->as<ConstantNode>()
+                        && (compare_type != CompareType::equals || equal_funcs[left.node].insert(constant).second))
                     {
                         String compare_function_name;
                         if (compare_type == CompareType::less)
@@ -2355,10 +2419,16 @@ private:
 
                         const auto and_node = std::make_shared<FunctionNode>(compare_function_name);
                         and_node->markAsOperator();
-                        and_node->getArguments().getNodes().push_back(left.first->clone());
+                        and_node->getArguments().getNodes().push_back(left.node->clone());
                         and_node->getArguments().getNodes().push_back(constant->clone());
                         and_node->resolveAsFunction(
                             FunctionFactory::instance().get(compare_function_name, getContext()));
+                        const auto inferred_domain = and_node->getFunctionOrThrow()->getComparisonOrderDomain();
+                        if (inferred_domain != path_domain)
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Inferred comparison {} has an inconsistent order domain",
+                                compare_function_name);
                         if (existing_conjuncts.emplace(and_node).second)
                         {
                             /// Do not append a derived conjunct implied by an existing or already-derived
@@ -2367,7 +2437,7 @@ private:
                             chassert(derived_func);
                             ComparisonFilterInfo derived_filter{constant, *derived_func, and_node, {}, 0};
                             auto add_result = addComparisonFilter(
-                                derived_conjunct_filters, left.first, std::move(derived_filter), true, getContext());
+                                derived_conjunct_filters, left.node, std::move(derived_filter), true, getContext());
                             if (add_result != AddComparisonFilterResult::ALWAYS_TRUE)
                                 function_node.getArguments().getNodes().push_back(and_node);
                         }
@@ -2377,8 +2447,8 @@ private:
                     /// redundant. E.g. `x < 3 AND y > 3 AND y < 10` builds the chain
                     /// 10 > y > 3 > x, and chaining through constant 3 would add `x < 10`
                     /// which is strictly weaker than the existing `x < 3`.
-                    if (!left.first->as<ConstantNode>())
-                        find_pairs(pairs, left.first, constant ? constant : current->as<ConstantNode>(), compare_type);
+                    if (!left.node->as<ConstantNode>())
+                        find_pairs(pairs, left.node, constant ? constant : current->as<ConstantNode>(), compare_type, path_domain);
                 }
             }
         };
@@ -2387,14 +2457,14 @@ private:
         for (const auto & constant : greater_constants)
         {
             visited.clear();
-            find_pairs(greater_pairs, constant.node, nullptr, CompareType::equals);
+            find_pairs(greater_pairs, constant.node, nullptr, CompareType::equals, {});
         }
 
         /// Start from small constant
         for (const auto & constant : less_constants)
         {
             visited.clear();
-            find_pairs(less_pairs, constant.node, nullptr, CompareType::equals);
+            find_pairs(less_pairs, constant.node, nullptr, CompareType::equals, {});
         }
 
         auto and_function_resolver = FunctionFactory::instance().get("and", getContext());
