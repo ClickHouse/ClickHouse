@@ -111,6 +111,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
+            {"filesystem_cache_wait_for_concurrent_download_timeout_milliseconds", 60000, 1000, "New setting to bound how long a read waits for a file segment being downloaded to the filesystem cache by a concurrent query; on timeout the read bypasses the cache instead of waiting indefinitely. The previous value 60000 corresponds to the old behavior (one full 60 s wait cycle on the downloader)."},
         });
         addSettingsChanges(settings_changes_history, "25.7",
         {

@@ -1,5 +1,7 @@
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <algorithm>
+#include <chrono>
+#include <optional>
 
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <Disks/ObjectStorages/Cached/CachedObjectStorage.h>
@@ -325,7 +327,20 @@ CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(FileSegment & file_s
                     return getCacheReadBuffer(file_segment);
                 }
 
-                download_state = file_segment.wait(file_offset_of_buffer_end);
+                download_state = file_segment.wait(
+                    file_offset_of_buffer_end, settings.filesystem_cache_wait_for_concurrent_download_timeout_milliseconds);
+
+                if (download_state == FileSegment::State::DOWNLOADING
+                    && !canStartFromCache(file_offset_of_buffer_end, file_segment))
+                {
+                    LOG_TEST(
+                        log, "Bypassing cache because waiting for a concurrent download did not succeed within the timeout. "
+                        "File segment info: {}", file_segment.getInfoForLog());
+
+                    read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
+                    return getRemoteReadBuffer(file_segment, read_type);
+                }
+
                 continue;
             }
             case FileSegment::State::DOWNLOADED:
