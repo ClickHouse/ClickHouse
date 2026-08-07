@@ -2841,7 +2841,7 @@ SELECT
 
     /// toMacAddressOrZero documentation
     FunctionDocumentation::Description description_toMacAddressOrZero = R"(
-Converts a string to a value of type [MacAddress](../data-types/macaddress.md) but returns zero MAC address in case of an error.
+Converts a string to a value of type [`MacAddress`](/reference/data-types/macaddress) but returns zero MAC address in case of an error.
 Like [`toMacAddress`](#toMacAddress) but returns zero MAC address (`00:00:00:00:00:00`) instead of throwing an exception on conversion errors.
 
 Supported arguments:

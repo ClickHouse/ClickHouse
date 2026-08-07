@@ -860,7 +860,7 @@ inline ReturnType readMacAddressTextImpl(MacAddress & mac, ReadBuffer & buf)
     }
 
     if constexpr (std::is_same_v<ReturnType, void>)
-        throw Exception(ErrorCodes::CANNOT_PARSE_MAC_ADDRESS, "Cannot parse MacAddress {}", std::string_view(buf.position(), buf.available()));
+        throw Exception(ErrorCodes::CANNOT_PARSE_MAC_ADDRESS, "Cannot parse MacAddress {}", std::string_view(buf.position(), std::min(buf.available(), MAC_ADDRESS_MAX_TEXT_LENGTH)));
     else
         return ReturnType(false);
 }

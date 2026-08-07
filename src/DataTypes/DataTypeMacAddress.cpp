@@ -28,7 +28,92 @@ MutableColumnPtr DataTypeMacAddress::createColumn() const
 
 void registerDataTypeMacAddress(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataType("MacAddress", [] { return DataTypePtr(std::make_shared<DataTypeMacAddress>()); });
+    factory.registerSimpleDataType("MacAddress", [] { return DataTypePtr(std::make_shared<DataTypeMacAddress>()); }, DataTypeFactory::Case::Sensitive,
+        Documentation{
+            .description = R"DOCS_MD(
+:::note
+This type is experimental and requires the setting `allow_experimental_macaddress_type` to be enabled in order to create a table with a `MacAddress` column.
+:::
+
+A MAC (Media Access Control) address is a 48-bit (6-byte) identifier used to uniquely identify network interfaces. ClickHouse stores MAC addresses efficiently in 8 bytes internally, using only the lower 48 bits.
+
+## Basic usage {#basic-usage}
+
+```sql
+CREATE TABLE devices (
+    device_id UInt32,
+    device_name String,
+    mac MacAddress
+) ENGINE = MergeTree()
+ORDER BY device_id;
+
+DESCRIBE TABLE devices;
+```
+
+```text
+┌─name────────┬─type───────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┐
+│ device_id   │ UInt32     │              │                    │         │                  │
+│ device_name │ String     │              │                    │         │                  │
+│ mac         │ MacAddress │              │                    │         │                  │
+└─────────────┴────────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
+```
+
+## Input formats {#input-formats}
+
+The `MacAddress` type supports multiple input formats for flexibility:
+
+```sql
+INSERT INTO devices VALUES (1, 'Router', toMacAddress('00:1A:2B:3C:4D:5E')); -- Colon-separated
+INSERT INTO devices VALUES (2, 'Switch', toMacAddress('AA:BB:CC:DD:EE:FF')); -- Colon-separated
+INSERT INTO devices VALUES (3, 'Server', toMacAddress('00-1A-2B-3C-4D-5E')); -- Hyphen-separated
+INSERT INTO devices VALUES (4, 'Cisco Router', toMacAddress('001A.2B3C.4D5E')); -- Cisco format
+INSERT INTO devices VALUES (5, 'Access Point', toMacAddress('001A2B3C4D5E')); -- Raw hexadecimal
+```
+
+## Output format {#output-format}
+
+MAC addresses are always displayed in lowercase colon-separated format:
+
+```sql
+SELECT * FROM devices ORDER BY device_id;
+```
+
+```text
+┌─device_id─┬─device_name──┬─mac───────────────┐
+│         1 │ Router       │ 00:1a:2b:3c:4d:5e │
+│         2 │ Switch       │ aa:bb:cc:dd:ee:ff │
+│         3 │ Server       │ 00:1a:2b:3c:4d:5e │
+│         4 │ Cisco Router │ 00:1a:2b:3c:4d:5e │
+│         5 │ Access Point │ 00:1a:2b:3c:4d:5e │
+└───────────┴──────────────┴───────────────────┘
+```
+
+## PostgreSQL compatibility {#postgresql-compatibility}
+
+For compatibility with PostgreSQL, ClickHouse supports the `MACADDR` alias:
+
+```sql
+CREATE TABLE devices_pg (
+    id UInt32,
+    mac MACADDR
+) ENGINE = Memory;
+
+DESCRIBE TABLE devices_pg;
+```
+
+```text
+┌─name─┬─type───────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┐
+│ id   │ UInt32     │              │                    │         │                  │
+│ mac  │ MacAddress │              │                    │         │                  │
+└──────┴────────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
+```
+
+**See Also**
+
+- [Functions for Working with IPv4 and IPv6 Addresses](/reference/functions/regular-functions/ip-address-functions)
+)DOCS_MD",
+            .syntax = "MacAddress",
+        });
     /// PostgreSQL compatibility alias
     factory.registerAlias("MACADDR", "MacAddress", DataTypeFactory::Case::Insensitive);
 }

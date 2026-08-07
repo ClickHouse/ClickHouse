@@ -1,21 +1,18 @@
 ---
 description: 'Documentation for the MacAddress data type in ClickHouse'
-sidebar_label: 'MacAddress'
-sidebar_position: 31
+sidebarTitle: 'MacAddress'
 slug: /sql-reference/data-types/macaddress
 title: 'MacAddress'
 doc_type: 'reference'
 ---
 
-# MacAddress
-
-:::note
+<Note>
 This type is experimental and requires the setting `allow_experimental_macaddress_type` to be enabled in order to create a table with a `MacAddress` column.
-:::
+</Note>
 
 A MAC (Media Access Control) address is a 48-bit (6-byte) identifier used to uniquely identify network interfaces. ClickHouse stores MAC addresses efficiently in 8 bytes internally, using only the lower 48 bits.
 
-## Basic Usage {#basic-usage}
+## Basic usage {#basic-usage}
 
 ```sql
 CREATE TABLE devices (
@@ -36,18 +33,19 @@ DESCRIBE TABLE devices;
 └─────────────┴────────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
 ```
 
-## Input Formats {#input-formats}
+## Input formats {#input-formats}
 
 The `MacAddress` type supports multiple input formats for flexibility:
 
 ```sql
-INSERT INTO devices VALUES (1, 'Router', toMacAddress('00:1A:2B:3C:4D:5E')); -- Colon-Separated
-INSERT INTO devices VALUES (3, 'Server', toMacAddress('00-1A-2B-3C-4D-5E')); -- Hyphen-Separated
-INSERT INTO devices VALUES (4, 'Cisco Router', toMacAddress('001A.2B3C.4D5E')); -- Cisco Format
-INSERT INTO devices VALUES (5, 'Access Point', toMacAddress('001A2B3C4D5E')); -- Raw Hexadecimal
+INSERT INTO devices VALUES (1, 'Router', toMacAddress('00:1A:2B:3C:4D:5E')); -- Colon-separated
+INSERT INTO devices VALUES (2, 'Switch', toMacAddress('AA:BB:CC:DD:EE:FF')); -- Colon-separated
+INSERT INTO devices VALUES (3, 'Server', toMacAddress('00-1A-2B-3C-4D-5E')); -- Hyphen-separated
+INSERT INTO devices VALUES (4, 'Cisco Router', toMacAddress('001A.2B3C.4D5E')); -- Cisco format
+INSERT INTO devices VALUES (5, 'Access Point', toMacAddress('001A2B3C4D5E')); -- Raw hexadecimal
 ```
 
-## Output Format {#output-format}
+## Output format {#output-format}
 
 MAC addresses are always displayed in lowercase colon-separated format:
 
@@ -65,7 +63,7 @@ SELECT * FROM devices ORDER BY device_id;
 └───────────┴──────────────┴───────────────────┘
 ```
 
-## PostgreSQL Compatibility {#postgresql-compatibility}
+## PostgreSQL compatibility {#postgresql-compatibility}
 
 For compatibility with PostgreSQL, ClickHouse supports the `MACADDR` alias:
 
@@ -87,4 +85,4 @@ DESCRIBE TABLE devices_pg;
 
 **See Also**
 
-- [Functions for Working with MAC Addresses](../functions/mac-address-functions.md)
+- [Functions for Working with IPv4 and IPv6 Addresses](/reference/functions/regular-functions/ip-address-functions)

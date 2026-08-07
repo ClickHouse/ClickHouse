@@ -232,7 +232,8 @@
           "group": "Network types",
           "pages": [
             "reference/data-types/ipv4",
-            "reference/data-types/ipv6"
+            "reference/data-types/ipv6",
+            "reference/data-types/macaddress"
           ]
         },
         {
