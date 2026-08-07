@@ -1,0 +1,24 @@
+left routed	1
+left pushed	1
+left nothing above	0
+right routed	1
+right pushed	1
+right nothing above	0
+semi routed	1
+semi pushed	1
+anti routed	1
+anti pushed	1
+full narrowed to left	1
+left narrowed to inner	1
+both sides routed	1
+both sides above	1
+left same	1
+right same	1
+full same	1
+semi same	1
+anti same	1
+both sides same	1
+redundant sorting removed	1
+sorted same	1
+top k same	1
+read in order same	1
