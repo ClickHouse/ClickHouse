@@ -28,6 +28,7 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -742,9 +743,16 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     };
     std::unordered_map<String, CachedModifiedQueryInfo> query_info_cache;
 
+    QueryStatusPtr query_status = context->getProcessListElementSafe();
+
     /// Settings will be modified when planning children tables.
     for (const auto & table : selected_tables)
     {
+        /// Building a plan (including query analysis) for every child table can take a long time when
+        /// the Merge table matches many tables, so honor `KILL QUERY` and `max_execution_time` between tables.
+        if (query_status)
+            query_status->checkTimeLimit();
+
         const auto & storage = std::get<1>(table);
 
         LOG_TRACE(logger, "Building plan for child table {}", storage->getStorageID().getNameForLogs());
