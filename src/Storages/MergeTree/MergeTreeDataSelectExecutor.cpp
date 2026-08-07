@@ -2730,12 +2730,28 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// regardless of the chunk boundary chosen here.
         constexpr size_t chunk_size_index_granules = DEFAULT_BLOCK_SIZE;
 
-        /// Granules survive in ascending global position order — ranges are processed in
-        /// order, chunks tile each range in order, and `getPossibleGranules` returns
-        /// chunk-local indices ascending — so the `res.back().end` merge below stays valid.
-        for (size_t i = 0; i < ranges_size; ++i)
+        /// One skip-index granule can cover several PK-pruned `ranges` (the scalar path below
+        /// keeps `last_index_mark` for exactly this case), so consecutive `index_ranges` may
+        /// overlap on a boundary granule — or coincide entirely for fragmented-PK workloads.
+        /// Merge them first so every granule is read and evaluated exactly once (no backwards
+        /// seeks, and `IndexBulkFilteringEvaluatedGranules` counts unique granules).
+        MarkRanges merged_index_ranges;
+        for (const auto & index_range : index_ranges)
         {
-            const MarkRange & index_range = index_ranges[i];
+            if (!merged_index_ranges.empty() && index_range.begin <= merged_index_ranges.back().end)
+                merged_index_ranges.back().end = std::max(merged_index_ranges.back().end, index_range.end);
+            else
+                merged_index_ranges.push_back(index_range);
+        }
+
+        /// Granules survive in ascending global position order — merged ranges are processed
+        /// in order, chunks tile each range in order, and `getPossibleGranules` returns
+        /// chunk-local indices ascending — so the `res.back().end` merge below stays valid.
+        /// A surviving granule's data-mark span is intersected with every original range it
+        /// covers; both sequences ascend, so a single cursor over `ranges` suffices.
+        size_t first_range_to_check = 0;
+        for (const auto & index_range : merged_index_ranges)
+        {
             size_t chunk_begin = index_range.begin;
             while (chunk_begin < index_range.end)
             {
@@ -2753,14 +2769,25 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 for (size_t local_idx : condition->getPossibleGranules(chunk_granules))
                 {
                     const size_t index_mark = chunk_begin + local_idx;
-                    MarkRange data_range(
-                        std::max(ranges[i].begin, index_mark * skip_index_granularity),
-                        std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
+                    const size_t span_begin = index_mark * skip_index_granularity;
+                    const size_t span_end = (index_mark + 1) * skip_index_granularity;
 
-                    if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
-                        res.push_back(data_range);
-                    else
-                        res.back().end = data_range.end;
+                    /// Ranges entirely before this granule's span can never intersect a later
+                    /// granule either (spans ascend), so the cursor may skip them for good.
+                    while (first_range_to_check < ranges_size && ranges[first_range_to_check].end <= span_begin)
+                        ++first_range_to_check;
+
+                    for (size_t i = first_range_to_check; i < ranges_size && ranges[i].begin < span_end; ++i)
+                    {
+                        MarkRange data_range(
+                            std::max(ranges[i].begin, span_begin),
+                            std::min(ranges[i].end, span_end));
+
+                        if (res.empty() || data_range.begin - res.back().end > min_marks_for_seek)
+                            res.push_back(data_range);
+                        else
+                            res.back().end = data_range.end;
+                    }
                 }
 
                 chunk_begin = chunk_end;
