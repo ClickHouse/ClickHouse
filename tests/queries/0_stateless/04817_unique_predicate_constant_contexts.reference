@@ -1,0 +1,39 @@
+limit
+1
+Output: 1
+
+Limit (preliminary LIMIT)
+│  Limit 1
+│  Offset 0
+└──ReadFromSystemOne
+1
+offset
+1
+2
+1
+2
+limit by
+0
+1
+window frame offset
+0	0
+1	1
+2	3
+3	5
+with fill
+0
+1
+2
+3
+4
+5
+table function argument
+0
+Output: number
+
+ReadFromSystemNumbers
+   Output: number
+0
+parameterized view argument
+0
+0

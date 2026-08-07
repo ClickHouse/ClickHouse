@@ -518,7 +518,15 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
     auto unique_projection_name = calculateFunctionProjectionName(
         function_node_ptr, {} /*parameters_projection_names*/, unique_subquery_projection_names);
 
-    if (only_analyze)
+    /// Table function and parameterized view arguments are resolved into a storage during
+    /// analysis (its header is needed), so they require real argument values even in
+    /// only_analyze mode — the same contract `evaluateScalarSubqueryIfNeeded` implements for
+    /// every scalar subquery. Fall through to real execution below in these contexts, e.g.
+    /// `EXPLAIN SELECT * FROM numbers(UNIQUE(SELECT number FROM numbers(3)))`.
+    const bool analysis_needs_real_value
+        = table_function_arguments_in_resolve_process || parameterized_view_arguments_in_resolve_process;
+
+    if (only_analyze && !analysis_needs_real_value)
     {
         /// Do not execute the scalar subquery in only_analyze mode (EXPLAIN, `CREATE VIEW`
         /// validation, distributed shard headers). Produce a typed `UInt8` `ConstantNode`
@@ -537,6 +545,20 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         placeholder_column->getData().push_back(static_cast<UInt8>(0));
         ConstantValue placeholder_value(ColumnConst::create(std::move(placeholder_column), 1), std::make_shared<DataTypeUInt8>());
         auto placeholder_const_node = std::make_shared<ConstantNode>(std::move(placeholder_value), new_unique_subquery);
+
+        /// Constant-only contexts (LIMIT/OFFSET, window frame offsets, WITH FILL) reject
+        /// anything but a plain `ConstantNode` at analysis time, so the `materialize` wrapper
+        /// below would turn a valid query such as
+        /// `EXPLAIN SELECT 1 LIMIT UNIQUE((SELECT number FROM numbers(3)))`
+        /// into "LIMIT expression must be constant". The wrapper exists to hide the fabricated
+        /// placeholder value from outer expressions, but in these contexts the value is consumed
+        /// by the analyzed plan itself and never observable by an outer expression, so a plain
+        /// constant is both required and sufficient.
+        if (constant_expression_in_resolve_process)
+        {
+            node = std::move(placeholder_const_node);
+            return {unique_projection_name};
+        }
 
         /// The placeholder value is fabricated, so it must not be observable by outer constant
         /// folding or branch pruning: `intDiv(1, UNIQUE(...))` would fold to `intDiv(1, 0)` and

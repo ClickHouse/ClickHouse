@@ -354,6 +354,12 @@ private:
     /// True while a parameterized view argument value is resolved: a scalar subquery there must
     /// fold to a literal, not a `__getScalar` reference. See `evaluateScalarSubqueryIfNeeded`.
     bool parameterized_view_arguments_in_resolve_process = false;
+
+    /// True while an expression that must resolve to a plain `ConstantNode` is resolved:
+    /// LIMIT/OFFSET and LIMIT BY LIMIT/OFFSET, window frame offsets, and WITH FILL expressions.
+    /// In only-analyze mode the `UNIQUE` predicate placeholder must stay a plain constant in
+    /// these contexts instead of being wrapped in `materialize`. See `resolveUniquePredicate`.
+    bool constant_expression_in_resolve_process = false;
 };
 
 }

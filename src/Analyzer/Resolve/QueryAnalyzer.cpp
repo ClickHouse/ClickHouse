@@ -2969,6 +2969,10 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
     ProjectionNames frame_begin_offset_projection_names;
     ProjectionNames frame_end_offset_projection_names;
 
+    bool previous_constant_expression_in_resolve_process = constant_expression_in_resolve_process;
+    constant_expression_in_resolve_process = true;
+    SCOPE_EXIT({ constant_expression_in_resolve_process = previous_constant_expression_in_resolve_process; });
+
     if (window_node.hasFrameBeginOffset())
     {
         frame_begin_offset_projection_names = resolveExpressionNode(window_node.getFrameBeginOffsetNode(),
@@ -3815,6 +3819,10 @@ ProjectionNames QueryAnalyzer::resolveSortNodeList(QueryTreeNodePtr & sort_node_
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Sort expression expected 1 projection name. Actual: {}",
                 sort_expression_projection_names_size);
+
+        bool previous_constant_expression_in_resolve_process = constant_expression_in_resolve_process;
+        constant_expression_in_resolve_process = true;
+        SCOPE_EXIT({ constant_expression_in_resolve_process = previous_constant_expression_in_resolve_process; });
 
         if (sort_node.hasFillFrom())
         {
@@ -6537,16 +6545,23 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     expandLimitByAll(query_node_typed);
 
-    if (query_node_typed.hasLimitByLimit())
+    if (query_node_typed.hasLimitByLimit() || query_node_typed.hasLimitByOffset())
     {
-        resolveExpressionNode(query_node_typed.getLimitByLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        convertLimitOffsetExpression(query_node_typed.getLimitByLimit(), "LIMIT BY LIMIT", scope);
-    }
+        bool previous_constant_expression_in_resolve_process = constant_expression_in_resolve_process;
+        constant_expression_in_resolve_process = true;
+        SCOPE_EXIT({ constant_expression_in_resolve_process = previous_constant_expression_in_resolve_process; });
 
-    if (query_node_typed.hasLimitByOffset())
-    {
-        resolveExpressionNode(query_node_typed.getLimitByOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        convertLimitOffsetExpression(query_node_typed.getLimitByOffset(), "LIMIT BY OFFSET", scope);
+        if (query_node_typed.hasLimitByLimit())
+        {
+            resolveExpressionNode(query_node_typed.getLimitByLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            convertLimitOffsetExpression(query_node_typed.getLimitByLimit(), "LIMIT BY LIMIT", scope);
+        }
+
+        if (query_node_typed.hasLimitByOffset())
+        {
+            resolveExpressionNode(query_node_typed.getLimitByOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            convertLimitOffsetExpression(query_node_typed.getLimitByOffset(), "LIMIT BY OFFSET", scope);
+        }
     }
 
     if (query_node_typed.hasLimitBy())
@@ -6556,16 +6571,23 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveExpressionNodeList(query_node_typed.getLimitByNode(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
     }
 
-    if (query_node_typed.hasLimit())
+    if (query_node_typed.hasLimit() || query_node_typed.hasOffset())
     {
-        resolveExpressionNode(query_node_typed.getLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        convertLimitOffsetExpression(query_node_typed.getLimit(), "LIMIT", scope);
-    }
+        bool previous_constant_expression_in_resolve_process = constant_expression_in_resolve_process;
+        constant_expression_in_resolve_process = true;
+        SCOPE_EXIT({ constant_expression_in_resolve_process = previous_constant_expression_in_resolve_process; });
 
-    if (query_node_typed.hasOffset())
-    {
-        resolveExpressionNode(query_node_typed.getOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-        convertLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
+        if (query_node_typed.hasLimit())
+        {
+            resolveExpressionNode(query_node_typed.getLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            convertLimitOffsetExpression(query_node_typed.getLimit(), "LIMIT", scope);
+        }
+
+        if (query_node_typed.hasOffset())
+        {
+            resolveExpressionNode(query_node_typed.getOffset(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            convertLimitOffsetExpression(query_node_typed.getOffset(), "OFFSET", scope);
+        }
     }
 
     if (scope.group_by_use_nulls)
