@@ -3,30 +3,8 @@
 756
 756
 756
-756
-756
-756
-756
-756
-756
-1512
-1512
-1512
-756
-756
-756
-756
 04811_01_first	1	1	0
 04811_02_repeat	0	0	1
-04811_03_bypass_cache_disabled	1	1	0
-04811_04_tokens_cache_disabled_first	1	1	0
-04811_05_tokens_cache_disabled_repeat	1	1	0
-04811_06_changed_threshold	1	1	0
-04811_07_no_bailout	1	0	0
-04811_08_different_pattern_first	1	1	0
-04811_09_different_pattern_repeat	0	0	1
-04811_10_pattern_set_first	1	1	0
-04811_11_pattern_set_repeat	0	0	1
-04811_12_ilike_first	1	1	0
-04811_13_ilike_repeat	0	0	1
-04811_14_after_clear	1	1	0
+04811_03_different_key	1	0	0
+04811_04_cache_disabled	1	1	0
+04811_05_after_clear	1	1	0

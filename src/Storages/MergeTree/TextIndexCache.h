@@ -73,19 +73,9 @@ public:
         set(key, notFoundEntry());
     }
 
-    void setPatternBypass(UInt128 key)
-    {
-        set(key, patternBypassEntry());
-    }
-
     static bool isNotFound(const MappedPtr & entry)
     {
         return entry == notFoundEntry();
-    }
-
-    static bool isPatternBypass(const MappedPtr & entry)
-    {
-        return entry == patternBypassEntry();
     }
 
     static UInt128 hashPatternBypass(const String & index_id, UInt128 patterns_hash, UInt64 max_postings_to_read)
@@ -97,14 +87,6 @@ public:
 private:
     static const MappedPtr & notFoundEntry()
     {
-        static const auto entry = std::make_shared<TokenPostingsInfo>();
-        return entry;
-    }
-
-    static const MappedPtr & patternBypassEntry()
-    {
-        /// An empty TokenPostingsInfo has a nonzero weight, so sentinel entries
-        /// remain bounded by both the byte and entry-count cache limits.
         static const auto entry = std::make_shared<TokenPostingsInfo>();
         return entry;
     }

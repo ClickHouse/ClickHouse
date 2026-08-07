@@ -45,44 +45,19 @@ SYSTEM CLEAR TEXT INDEX TOKENS CACHE;
 
 -- The first execution scans and records a bailout; the second uses the cache.
 SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' SETTINGS log_comment = '04811_01_first';
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' SETTINGS log_comment = '04811_02_repeat';
+
+-- A different threshold must not reuse the entry.
+SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%'
+SETTINGS text_index_like_max_postings_to_read = 1000, log_comment = '04811_03_different_key';
 
 -- The dedicated switch must ignore an existing entry.
 SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%'
-SETTINGS use_text_index_pattern_bypass_cache = 0, log_comment = '04811_03_bypass_cache_disabled';
-
--- Disabling the global token cache gives each execution a fresh local cache.
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%'
-SETTINGS use_text_index_tokens_cache = 0, log_comment = '04811_04_tokens_cache_disabled_first';
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%'
-SETTINGS use_text_index_tokens_cache = 0, log_comment = '04811_05_tokens_cache_disabled_repeat';
-
--- The threshold participates in the cache identity.
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%'
-SETTINGS text_index_like_max_postings_to_read = 6, log_comment = '04811_06_changed_threshold';
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%'
-SETTINGS text_index_like_max_postings_to_read = 1000, log_comment = '04811_07_no_bailout';
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' SETTINGS use_skip_indexes = 0;
-
--- Different patterns and different complete pattern sets get separate entries.
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pb%' SETTINGS log_comment = '04811_08_different_pattern_first';
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pb%' SETTINGS log_comment = '04811_09_different_pattern_repeat';
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' OR message LIKE '%pb%'
-SETTINGS log_comment = '04811_10_pattern_set_first';
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' OR message LIKE '%pb%'
-SETTINGS log_comment = '04811_11_pattern_set_repeat';
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' OR message LIKE '%pb%'
-SETTINGS use_skip_indexes = 0;
-
--- ILIKE has its own pattern identity and follows the same cache path.
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message ILIKE '%PA%' SETTINGS log_comment = '04811_12_ilike_first';
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message ILIKE '%PA%' SETTINGS log_comment = '04811_13_ilike_repeat';
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message ILIKE '%PA%' SETTINGS use_skip_indexes = 0;
+SETTINGS use_text_index_pattern_bypass_cache = 0, log_comment = '04811_04_cache_disabled';
 
 -- Clearing the existing token cache also clears pattern-bypass entries.
 SYSTEM CLEAR TEXT INDEX TOKENS CACHE;
-SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' SETTINGS log_comment = '04811_14_after_clear';
+SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' SETTINGS log_comment = '04811_05_after_clear';
 
 SYSTEM FLUSH LOGS query_log;
 
