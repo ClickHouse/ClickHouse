@@ -50,6 +50,17 @@ for _ in {1..300}; do
 done
 echo "mutation stopped: $gone"
 
+# It must stop *because it was cancelled*, not with whatever S3/network error the last attempt
+# happened to produce. That distinction is what covers the throwing half of the cancellation
+# predicate: `Client::HeadObject` reports a killed read through `CurrentThread::checkIfNotCancelled`,
+# and with only the boolean half installed the mutation ends in a misleading `S3_ERROR` instead.
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+echo "cancelled, not S3 error: $($CLICKHOUSE_CLIENT -q "
+    SELECT countIf(error = 236) > 0 AND countIf(error = 499) = 0
+    FROM system.part_log
+    WHERE database = currentDatabase() AND table = 't_mut'
+      AND event_type = 'MutatePart' AND error != 0")"
+
 # The table must now be droppable: before the fix the in-flight task held it and the DROP blocked in
 # MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage, which is what the stress-test hung
 # check reported. Bounded so a regression is reported as a diff rather than as a test timeout.
