@@ -294,15 +294,9 @@ public:
     /// instead of just copying pointer to this AggregateData. Used in WindowTransform.
     virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const;
 
-    /// Reserve capacity in `to` so that a subsequent insertResultInto for this place cannot reallocate
-    /// while transferring results. Only meaningful for functions whose insertResultInto aliases `-State`
-    /// sub-states into a ColumnAggregateFunction: a reallocation while transferring would throw after
-    /// ownership has partly transferred, and Aggregator::insertAggregatesIntoColumns would then
-    /// double-destroy the transferred states. The `-Tuple` combinator transfers each element's result
-    /// into a separate subcolumn one element at a time, so it calls this on every element before
-    /// transferring any of them: once the reservations are done, transferring the first element cannot
-    /// be followed by a throwing reservation while transferring a later element.
-    /// Default is a no-op: a scalar function produces its result value directly, with nothing to reserve.
+    /// Reserve capacity in `to` so that a subsequent insertResultInto for this place cannot reallocate.
+    /// Only meaningful for functions whose insertResultInto aliases `-State` sub-states into a
+    /// ColumnAggregateFunction, where a throw after a partial transfer double-destroys the states.
     virtual void reserveForInsertResult(ConstAggregateDataPtr __restrict /*place*/, IColumn & /*to*/) const {}
 
     /// Used for machine learning methods. Predict result from trained model.

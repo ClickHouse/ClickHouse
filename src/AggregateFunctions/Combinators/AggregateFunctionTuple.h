@@ -149,12 +149,8 @@ private:
     {
         auto & tuple_to = assert_cast<ColumnTuple &>(to);
 
-        /// Reserve every element subcolumn before transferring any of them. For a `-State` element
-        /// (directly, or under a looping combinator) the transfer aliases the state into a
-        /// ColumnAggregateFunction; once the first element has transferred, a reallocation thrown while
-        /// transferring a later element would make Aggregator::insertAggregatesIntoColumns
-        /// double-destroy the already-aliased state. Reserving every element up front removes the
-        /// allocation that would otherwise throw between element transfers.
+        /// Reserve every element subcolumn before transferring any of them: once one element has aliased
+        /// a `-State` result, a throw while transferring a later element would double-destroy it.
         for (size_t i = 0; i < nested_functions.size(); ++i)
             nested_functions[i]->reserveForInsertResult(place + state_offsets[i], tuple_to.getColumn(i));
 

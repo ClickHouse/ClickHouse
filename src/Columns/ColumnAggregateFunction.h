@@ -132,7 +132,7 @@ public:
     }
 
     /// Real reserve (base IColumn::reserve is a no-op): lets a caller make a run of `push_back`
-    /// non-throwing. Relied on by looping `-State` combinators, see AggregateFunctionResample.h.
+    /// non-throwing.
     void reserve(size_t n) override
     {
         data.reserve(n);

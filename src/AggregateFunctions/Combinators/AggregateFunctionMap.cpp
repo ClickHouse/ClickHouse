@@ -314,9 +314,7 @@ public:
         }
         ::sort(keys.begin(), keys.end());
 
-        // Insert all keys first, then transfer all values, so the aliasing value transfer into
-        // val_column cannot throw once started for a nested `-State` function (which would
-        // double-free the already-aliased states). See AggregateFunctionResample.h.
+        // All keys first, then all values: nothing may allocate once the value transfer has started.
         key_column.reserve(key_column.size() + keys.size());
         for (auto & key : keys)
             key_column.insert(key);
@@ -354,10 +352,8 @@ public:
 
         const auto & merged_maps = this->data(place).merged_maps;
 
-        /// Reserve the value column (which the `-State` value transfer aliases into) and the key column
-        /// row counts before the transfer, so the value aliasing cannot reallocate and throw once it
-        /// starts. Needed when this function is a `-Tuple` element (so a later tuple element cannot
-        /// throw here after an earlier element already aliased its states).
+        /// `val_column` is what the `-State` value transfer aliases into, so it cannot reallocate once
+        /// that transfer starts.
         key_column.reserve(key_column.size() + merged_maps.size());
         val_column.reserve(val_column.size() + merged_maps.size());
     }

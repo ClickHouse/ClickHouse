@@ -385,10 +385,7 @@ public:
 
     void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
     {
-        /// insertResultInto forwards the transfer to the nested function, into `to` itself unless the
-        /// result is Nullable. A `-State` nested function cannot be inside Nullable
-        /// (canBeInsideNullable() == false), so whenever there is a state to alias, `to` is exactly the
-        /// nested function's column; forward the reservation there so `-Tuple` closes the window.
+        /// Mirrors insertResultInto: these are the cases where it transfers into `to` itself.
         if (!result_is_nullable || inner_nullable)
             nested_function->reserveForInsertResult(place, to);
     }

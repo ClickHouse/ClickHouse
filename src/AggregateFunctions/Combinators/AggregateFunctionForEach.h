@@ -328,8 +328,7 @@ public:
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & elems_to = arr_to.getData();
 
-        /// Reserve before the loop so the per-element aliasing transfer into `elems_to` cannot
-        /// reallocate and throw mid-loop for a nested `-State` function. See AggregateFunctionResample.h.
+        /// Must stay before the loop: reserving after the first element has aliased its state is too late.
         reserveForInsertResult(place, to);
 
         char * nested_state = state.array_of_aggregate_datas;
@@ -363,10 +362,8 @@ public:
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & elems_to = arr_to.getData();
 
-        /// Reserve the offsets and the flat data column for all elements before the transfer, so the
-        /// per-element aliasing of a nested `-State` result cannot reallocate and throw once it starts.
-        /// Needed both standalone and when this function is a `-Tuple` element (so a later tuple element
-        /// cannot throw here after an earlier element already aliased its states).
+        /// Cover every element, so the per-element aliasing of a nested `-State` result cannot reallocate
+        /// once it starts.
         elems_to.reserve(elems_to.size() + state.dynamic_array_size);
         offsets_to.reserve(offsets_to.size() + 1);
     }
