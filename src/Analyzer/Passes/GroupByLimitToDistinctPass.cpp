@@ -7,8 +7,10 @@
 #include <Analyzer/QueryNode.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <base/arithmeticOverflow.h>
 
 namespace DB
@@ -16,7 +18,11 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool group_by_use_nulls;
+    extern const SettingsUInt64 max_bytes_before_external_group_by;
+    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
+    extern const SettingsUInt64 max_rows_to_group_by;
     extern const SettingsBool optimize_group_by_limit_to_distinct;
     extern const SettingsUInt64 optimize_group_by_limit_to_distinct_max_limit;
 }
@@ -91,6 +97,30 @@ public:
         if (required_distinct_rows == 0 || required_distinct_rows > settings[Setting::optimize_group_by_limit_to_distinct_max_limit])
             return;
 
+        /// `max_rows_to_group_by` caps the number of groups the aggregation may build and
+        /// `group_by_overflow_mode` decides what happens when the cap is hit (throw, stop, or keep
+        /// the first N groups). Dropping the aggregation drops that contract, so back off whenever
+        /// the user's cap can bind on this query:
+        ///   * a cap not above LIMIT + OFFSET would truncate (or reject) the very rows the query
+        ///     asks for, so the rewritten query would return more rows than the original;
+        ///   * an explicitly chosen non-`any` mode means the user wants the query to fail or stop
+        ///     rather than to silently return an arbitrary subset of the groups.
+        /// This mirrors OptimizeTrivialGroupByLimitPass, which backs off in the same two cases.
+        /// For a cap above LIMIT + OFFSET with the default mode, that pass — enabled by default —
+        /// already lowers the cap to LIMIT + OFFSET and switches the mode to `any` for exactly this
+        /// query shape, so the overflow can no longer be observed there either.
+        const UInt64 max_rows_to_group_by = settings[Setting::max_rows_to_group_by];
+        if (max_rows_to_group_by != 0)
+        {
+            if (max_rows_to_group_by <= required_distinct_rows)
+                return;
+
+            const bool mode_is_any = settings[Setting::group_by_overflow_mode] == OverflowMode::ANY;
+            const bool mode_is_changed = settings[Setting::group_by_overflow_mode].changed;
+            if (!mode_is_any && mode_is_changed)
+                return;
+        }
+
         if (query->hasHaving() || query->hasOrderBy() || query->hasWindow() || query->hasQualify() || query->hasLimitBy()
             || query->isLimitWithTies() || query->isGroupByWithTotals() || query->isGroupByWithRollup() || query->isGroupByWithCube()
             || query->isGroupByWithGroupingSets())
@@ -129,6 +159,37 @@ public:
             if (!is_contained_in(group_by_node, projection_nodes))
                 return;
 
+        /// Bounding the number of rows in the distinct set does not bound its memory: for keys of
+        /// unbounded width (String, Array, Map, ...) even LIMIT + OFFSET rows can hold arbitrarily
+        /// many bytes. That matters because aggregation can spill to disk once it crosses the
+        /// external-aggregation threshold while the DISTINCT set cannot, so a query that today
+        /// completes via external aggregation could start throwing MEMORY_LIMIT_EXCEEDED.
+        /// Rewrite only when the byte footprint is provably bounded — the key types have a maximum
+        /// size and the worst case fits in an explicitly configured threshold — or when external
+        /// aggregation is disabled for this query, in which case aggregation holds the very same
+        /// keys in memory and the two plans have the same footprint.
+        const UInt64 max_bytes_before_external_group_by = settings[Setting::max_bytes_before_external_group_by];
+        const bool aggregation_can_spill
+            = max_bytes_before_external_group_by != 0 || settings[Setting::max_bytes_ratio_before_external_group_by] != 0.;
+        if (aggregation_can_spill)
+        {
+            UInt64 max_bytes_per_row = 0;
+            for (const auto & group_by_node : group_by_nodes)
+            {
+                const auto & key_type = group_by_node->getResultType();
+                if (!key_type || !key_type->haveMaximumSizeOfValue())
+                    return;
+                if (common::addOverflow(max_bytes_per_row, UInt64(key_type->getMaximumSizeOfValueInMemory()), max_bytes_per_row))
+                    return;
+            }
+
+            UInt64 max_distinct_set_bytes = 0;
+            if (common::mulOverflow(max_bytes_per_row, required_distinct_rows, max_distinct_set_bytes))
+                return;
+            if (max_bytes_before_external_group_by != 0 && max_distinct_set_bytes > max_bytes_before_external_group_by)
+                return;
+        }
+
         const bool had_distinct = query->isDistinct();
 
         query->setIsDistinct(true);
@@ -140,9 +201,8 @@ public:
         /// the original query was not subject to them, and the rewritten query's distinct set is
         /// bounded by LIMIT + OFFSET <= optimize_group_by_limit_to_distinct_max_limit rows anyway.
         /// When the query already had DISTINCT on top of GROUP BY, the user's limits keep applying.
-        /// max_rows_to_group_by needs no special handling: there is no aggregation left, and its
-        /// resource-guard intent is preserved by the same bound on the distinct set (the default
-        /// optimize_trivial_group_by_limit_query already relaxes this cap for such queries).
+        /// max_rows_to_group_by is not transferred either: it stops applying together with the
+        /// aggregation it guards, and the cases where it could still bind are excluded above.
         if (!had_distinct)
         {
             auto & mutable_context = query->getMutableContext();

@@ -112,13 +112,80 @@ SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregatin
 -- The rewrite fires under DISTINCT/GROUP BY size limits (commonly set as global sanity
 -- limits, e.g. in the CI test configs) without changing which limits apply to the query:
 -- the DISTINCT limits are cleared for the rewritten query (the user did not write DISTINCT,
--- and the distinct set is bounded by LIMIT + OFFSET rows anyway), and max_rows_to_group_by
--- stops applying together with the aggregation it guards.
+-- and the distinct set is bounded by LIMIT + OFFSET rows anyway), and a max_rows_to_group_by
+-- above LIMIT + OFFSET cannot bind on the rows the query asks for.
 SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
     EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 SETTINGS max_rows_in_distinct = 100
 );
 SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
     EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 SETTINGS max_rows_to_group_by = 1000000
+);
+
+-- ... but the rewrite must NOT fire when the user's GROUP BY overflow contract can bind:
+
+-- ... max_rows_to_group_by below LIMIT + OFFSET (the cap would truncate or reject the rows
+-- the query asks for, so dropping the aggregation would return more rows than the original);
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 SETTINGS max_rows_to_group_by = 3
+);
+
+-- ... max_rows_to_group_by exactly at LIMIT + OFFSET (the cap is reached by the last group
+-- the query needs, so the overflow mode still decides the outcome);
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5 SETTINGS max_rows_to_group_by = 5
+);
+
+-- ... an explicitly chosen non-`any` overflow mode: the user wants the query to fail or to
+-- stop rather than to silently return an arbitrary subset of the groups, whatever the cap;
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5
+    SETTINGS max_rows_to_group_by = 1000000, group_by_overflow_mode = 'throw'
+);
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5
+    SETTINGS max_rows_to_group_by = 1000000, group_by_overflow_mode = 'break'
+);
+
+-- (`any` keeps an arbitrary subset of the groups, which is what the rewrite produces anyway)
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5
+    SETTINGS max_rows_to_group_by = 1000000, group_by_overflow_mode = 'any'
+);
+
+-- Behavioral check: a tight cap with `throw` still throws instead of returning rows
+-- (same shape as the corresponding case in 04213_optimize_trivial_group_by_limit_query).
+SELECT count() FROM (
+    SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5
+) SETTINGS max_rows_to_group_by = 3, group_by_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
+
+-- Keys of unbounded width: LIMIT + OFFSET rows do not bound the bytes of the distinct set, and
+-- unlike aggregation DISTINCT cannot spill, so the rewrite is skipped while external aggregation
+-- is possible. (Both settings are pinned because the test runner randomizes them.)
+DROP TABLE IF EXISTS t_group_by_limit_distinct_str;
+CREATE TABLE t_group_by_limit_distinct_str (s String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_group_by_limit_distinct_str SELECT toString(number % 10) FROM numbers(1000);
+
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT s FROM t_group_by_limit_distinct_str GROUP BY s LIMIT 5
+    SETTINGS max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0.5
+);
+
+-- (with external aggregation disabled, aggregation holds the same keys in memory as the
+-- distinct set would, so the footprint is the same and the rewrite is allowed)
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT s FROM t_group_by_limit_distinct_str GROUP BY s LIMIT 5
+    SETTINGS max_bytes_before_external_group_by = 0, max_bytes_ratio_before_external_group_by = 0
+);
+
+-- For keys of bounded width the worst case is computed from the key types and must fit in an
+-- explicitly configured external-aggregation threshold (5 UInt64 keys = 40 bytes here).
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5
+    SETTINGS max_bytes_before_external_group_by = 8, max_bytes_ratio_before_external_group_by = 0
+);
+SELECT countIf(explain LIKE '%Distinct%') > 0, countIf(explain LIKE '%Aggregating%') > 0 FROM (
+    EXPLAIN PLAN SELECT v FROM t_group_by_limit_distinct GROUP BY v LIMIT 5
+    SETTINGS max_bytes_before_external_group_by = 1000000, max_bytes_ratio_before_external_group_by = 0
 );
 
 -- Behavioral check: a distinct-rows limit smaller than the number of groups does not apply
@@ -171,3 +238,4 @@ SELECT count() FROM (
 );
 
 DROP TABLE t_group_by_limit_distinct;
+DROP TABLE t_group_by_limit_distinct_str;

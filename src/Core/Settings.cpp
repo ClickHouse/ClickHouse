@@ -4775,7 +4775,13 @@ Rewrites `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` into `SELECT DIS
 
 The rewrite applies only when `LIMIT + OFFSET` is a constant not exceeding [optimize_group_by_limit_to_distinct_max_limit](#optimize_group_by_limit_to_distinct_max_limit): for large limits `DISTINCT` is weaker than aggregation on high-cardinality data (the final distinct transform runs on a single stream, and the `DISTINCT` set cannot spill to disk).
 
-The rewrite does not change which size limits apply to the query: `max_rows_in_distinct` and `max_bytes_in_distinct` are cleared for the rewritten query (the user did not write `DISTINCT`, and the distinct set is bounded by `LIMIT + OFFSET` rows anyway) unless the original query already had `DISTINCT`, and `max_rows_to_group_by` stops applying together with the aggregation it guards. The rewrite is suppressed when `group_by_use_nulls` is enabled.
+The rewrite does not change which size limits apply to the query: `max_rows_in_distinct` and `max_bytes_in_distinct` are cleared for the rewritten query (the user did not write `DISTINCT`, and the distinct set is bounded by `LIMIT + OFFSET` rows anyway) unless the original query already had `DISTINCT`.
+
+The rewrite is suppressed whenever it could drop a contract of the original query or change its memory footprint:
+
+- `max_rows_to_group_by` is not above `LIMIT + OFFSET`, or `group_by_overflow_mode` was explicitly set to something other than `any` — the `GROUP BY` overflow contract would otherwise be dropped together with the aggregation;
+- external aggregation is possible (`max_bytes_before_external_group_by` or `max_bytes_ratio_before_external_group_by` is set) and the `GROUP BY` keys are of unbounded width (`String`, `Array`, `Map`, ...), or their worst-case size exceeds `max_bytes_before_external_group_by` — unlike aggregation, `DISTINCT` cannot spill to disk, so bounding the number of rows in the distinct set does not bound its bytes;
+- `group_by_use_nulls` is enabled.
 
 Disabled by default: the rewrite takes the query off the aggregation path, which changes observable query statistics — `rows_before_limit_at_least` and the number of rows read by a distributed query — and supersedes [optimize_trivial_group_by_limit_query](#optimize_trivial_group_by_limit_query) for the queries it matches.
 
