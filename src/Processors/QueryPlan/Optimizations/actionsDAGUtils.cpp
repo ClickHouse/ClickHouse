@@ -268,15 +268,6 @@ MatchedTrees::Matches matchTrees(
                                 monotonicity.child_match = &child_match;
                                 monotonicity.child_node = monotonic_child;
 
-                                /// `materialize` does not change values, so it is effectively
-                                /// strictly monotonic. Without this override the `ORDER BY`
-                                /// prefix that can be served from the sorting key gets truncated
-                                /// when filter push-down injects a `materialize(...)` wrapper
-                                /// (e.g. for queries through `ReadFromMerge` after
-                                /// `convertAndFilterSourceStream`).
-                                if (frame.node->function_base->getName() == "materialize")
-                                    monotonicity.strict = true;
-
                                 if (child_match.monotonicity)
                                 {
                                     monotonicity.direction *= child_match.monotonicity->direction;

@@ -497,6 +497,11 @@ class Runner:
                 result = Result.from_fs(job.name)
                 if host_metrics:
                     result.add_ext_key_value("metrics", host_metrics)
+                    # Flag over/under-utilized runners, but not for skipped jobs -
+                    # they did no real work, so their metrics are meaningless.
+                    if not result.is_skipped():
+                        for label, hint in HostMetricsCollector.classify(host_metrics):
+                            result.set_label(label, hint=hint)
                 if exit_code != 0:
                     if not result.is_completed():
                         if process.timeout_exceeded:
@@ -519,9 +524,6 @@ class Runner:
             # Idempotent: a no-op if stop() already ran above; guarantees the
             # sampling thread is always joined even if TeePopen raised.
             host_metrics_collector.stop()
-
-        print("INFO: disk status after running a job:")
-        Shell.run("df -h")
 
         return exit_code
 
@@ -1145,6 +1147,10 @@ class Runner:
                 print("=== Post run script finished ===")
 
             result.dump()
+
+        # After the post hooks, so the numbers describe the disk the next job inherits.
+        print("INFO: disk status after running a job:")
+        Shell.run("df -h")
 
         if not res and not job.force_success:
             sys.exit(1)
