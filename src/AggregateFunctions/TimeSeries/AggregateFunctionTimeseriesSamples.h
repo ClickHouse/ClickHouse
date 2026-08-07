@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-/// Per-bucket storage of timeseries samples: a flat array of (timestamp, value) pairs kept sorted by timestamp, where duplicate timestamps keep the larger value.
+/// Per-bucket storage of timeseries samples: a flat array of (timestamp, value) pairs kept sorted by timestamp, where duplicate timestamps keep the larger value (and the first arrival against a NaN).
 template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeseriesSamples
 {
@@ -177,11 +177,11 @@ private:
         }
     }
 
-    /// Sorts by timestamp, then collapses each equal-timestamp run into one sample keeping the larger value; when a run mixes NaN and a number, which one survives is unspecified (the sort is unstable).
+    /// Sorts by timestamp (stably, keeping equal-timestamp samples in arrival order), then folds each equal-timestamp run with `std::max` like the former hash map did: the larger value wins, the first arrival wins against a NaN (`std::max` returns its first argument when the comparison is false).
     static void sortAndDeduplicate(Buffer & buf)
     {
-        /// The comparator looks at timestamps only: comparing whole pairs would compare values, and `ValueType` can hold NaNs, which break the strict weak ordering `::sort` requires.
-        ::sort(buf.begin(), buf.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
+        /// The comparator looks at timestamps only: comparing whole pairs would compare values, and `ValueType` can hold NaNs, which break the strict weak ordering the sort requires.
+        ::stableSort(buf.begin(), buf.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
         size_t last_unique = 0;
         for (size_t i = 1; i < buf.size(); ++i)

@@ -19,6 +19,16 @@ NaN at a duplicate timestamp keeps the first arrival on the in-order path (delta
 [0]
 [1]
 [0]
+NaN at a duplicate timestamp keeps the first arrival on the out-of-order path (delta [nan] [0], changes [1] [0]):
+[nan]
+[0]
+[1]
+[0]
+NaN at a duplicate timestamp keeps the first arrival on merge and serialization paths (delta [nan] [0] twice):
+[nan]
+[0]
+[nan]
+[0]
 merging unsorted in-memory states equals the baseline (1):
 1
 single-threaded scan over interleaved parts equals the sorted part (all 1):

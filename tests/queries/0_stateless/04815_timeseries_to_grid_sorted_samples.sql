@@ -48,6 +48,30 @@ SELECT timeSeriesDeltaToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, '
 SELECT timeSeriesChangesToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 110, 120]), [nan, 5., 5.]);
 SELECT timeSeriesChangesToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 110, 120]), [5., nan, 5.]);
 
+-- The same NaN duplicates arriving out of order (the duplicate is no longer the last sample, so the bucket goes through lazy normalization): the stable sort keeps the equal-timestamp run in arrival order, so the first arrival must still win against NaN.
+SELECT 'NaN at a duplicate timestamp keeps the first arrival on the out-of-order path (delta [nan] [0], changes [1] [0]):';
+SELECT timeSeriesDeltaToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 120, 110]), [nan, 5., 5.]);
+SELECT timeSeriesDeltaToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 120, 110]), [5., 5., nan]);
+SELECT timeSeriesChangesToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 120, 110]), [nan, 5., 5.]);
+SELECT timeSeriesChangesToGrid(120, 120, 1, 60)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 120, 110]), [5., 5., nan]);
+
+-- The same unsorted states with the duplicate NaN, consumed by the `-Merge` combinator in memory (merge into an empty state normalizes the argument) and serialized to disk through an `AggregatingMergeTree` roundtrip (`serialize` normalizes a copy): the first arrival must win on both paths too.
+SELECT 'NaN at a duplicate timestamp keeps the first arrival on merge and serialization paths (delta [nan] [0] twice):';
+SELECT timeSeriesDeltaToGridMerge(120, 120, 1, 60)(st) FROM (SELECT initializeAggregation('timeSeriesDeltaToGridState(120, 120, 1, 60)', arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 120, 110]), [nan, 5., 5.]) AS st);
+SELECT timeSeriesDeltaToGridMerge(120, 120, 1, 60)(st) FROM (SELECT initializeAggregation('timeSeriesDeltaToGridState(120, 120, 1, 60)', arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 120, 110]), [5., 5., nan]) AS st);
+DROP TABLE IF EXISTS ts_nan_states;
+CREATE TABLE ts_nan_states (k UInt8, st AggregateFunction(timeSeriesDeltaToGrid(120, 120, 1, 60), DateTime64(3, 'UTC'), Float64)) ENGINE = AggregatingMergeTree ORDER BY k;
+INSERT INTO ts_nan_states
+SELECT 1, timeSeriesDeltaToGridState(120, 120, 1, 60)(toDateTime64(tv.1, 3, 'UTC'), tv.2)
+FROM (SELECT arrayJoin(arrayZip([110, 120, 110], [nan, 5., 5.])) AS tv)
+SETTINGS max_threads = 1;
+INSERT INTO ts_nan_states
+SELECT 2, timeSeriesDeltaToGridState(120, 120, 1, 60)(toDateTime64(tv.1, 3, 'UTC'), tv.2)
+FROM (SELECT arrayJoin(arrayZip([110, 120, 110], [5., 5., nan])) AS tv)
+SETTINGS max_threads = 1;
+SELECT timeSeriesDeltaToGridMerge(120, 120, 1, 60)(st) FROM ts_nan_states GROUP BY k ORDER BY k;
+DROP TABLE ts_nan_states;
+
 -- `initializeAggregation` over a shuffled array builds a state that is still unsorted when the `-Merge` combinator consumes it, deterministically covering merge-into-empty and overlapping-range merge with an unsorted argument.
 SELECT 'merging unsorted in-memory states equals the baseline (1):';
 SELECT timeSeriesRateToGridMerge(100, 200, 20, 100)(st) = (SELECT timeSeriesRateToGrid(100, 200, 20, 100)(arrayMap(x -> toDateTime64(x, 3, 'UTC'), [110, 125, 140, 155, 170, 185, 200]), [1., 3, 2, 5, 4, 6, 8]))
