@@ -93,7 +93,7 @@ SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 SELECT '-- inline subquery aliased b, with subcolumn (default fails) --';
 SELECT *
 FROM t2_compat a
-LEFT JOIN (SELECT * FROM t2_compat a INNER JOIN t2_compat b ON a.id = b.id) b ON a.id = b.id; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+LEFT JOIN (SELECT * FROM t2_compat a INNER JOIN t2_compat b ON a.id = b.id) b ON a.id = b.id; -- { serverError NOT_IMPLEMENTED }
 
 SELECT '-- inline subquery aliased b, with subcolumn (compat) --';
 SELECT *

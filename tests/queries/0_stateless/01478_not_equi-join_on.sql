@@ -1,7 +1,7 @@
 SELECT * FROM (SELECT NULL AS a, 1 AS b) AS foo
 LEFT JOIN (SELECT 1024 AS b) AS bar
-ON 1 = foo.b; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+ON 1 = foo.b; -- { serverError NOT_IMPLEMENTED }
 
 SELECT * FROM (SELECT NULL AS a, 1 AS b) AS foo
 RIGHT JOIN (SELECT 1024 AS b) AS bar
-ON 1 = bar.b; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+ON 1 = bar.b; -- { serverError NOT_IMPLEMENTED }

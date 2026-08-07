@@ -13,8 +13,9 @@ CREATE TABLE neg_r (k Int32, t Int32, v Int32) ENGINE = MergeTree ORDER BY k;
 INSERT INTO neg_l VALUES (1, 10), (1, 20);
 INSERT INTO neg_r VALUES (1, 5, 100), (1, 15, 200);
 
--- ANY strictness with only inequality conditions keeps the pre-existing error
-SELECT * FROM neg_l l ANY LEFT JOIN neg_r r ON l.k < r.v AND l.t > r.t; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+-- ANY strictness with only inequality conditions falls back to the block nested loop join,
+-- whose operator is not implemented yet
+SELECT * FROM neg_l l ANY LEFT JOIN neg_r r ON l.k < r.v AND l.t > r.t; -- { serverError NOT_IMPLEMENTED }
 
 -- ASOF join stays on the ASOF path (its ON has an equality plus one inequality)
 SELECT 'asof not routed', count() FROM (EXPLAIN SELECT * FROM neg_l l ASOF JOIN neg_r r ON l.k = r.k AND l.t >= r.t) WHERE explain LIKE '%IEJoin%';

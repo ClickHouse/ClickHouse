@@ -34,6 +34,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Processors/QueryPlan/BlockNestedLoopJoinStep.h>
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -1313,6 +1314,48 @@ static void constructIEJoinStep(
         nodes, makeDescription("Post Join Actions"));
 }
 
+static void constructBlockNestedLoopJoinStep(
+    QueryPlanNode & node,
+    ActionsDAG left_pre_join_actions,
+    ActionsDAG right_pre_join_actions,
+    ActionsDAG post_join_actions,
+    std::pair<String, bool> residual_filter_condition,
+    ExpressionActionsPtr predicate,
+    JoinKind kind,
+    JoinStrictness strictness,
+    const JoinSettings & join_settings,
+    QueryPlan::Nodes & nodes)
+{
+    if (node.children.size() != 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 children, got {}", node.children.size());
+
+    auto * join_left_node = node.children[0];
+    auto * join_right_node = node.children[1];
+
+    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, makeDescription("Left Pre Join Actions"));
+
+    makeExpressionNodeOnTopOf(*join_right_node, std::move(right_pre_join_actions), nodes, makeDescription("Right Pre Join Actions"));
+
+    /// `max_joined_block_size_rows = 0` means the result block size is bound by `max_block_size` alone.
+    size_t max_block_size = join_settings.max_joined_block_size_rows
+        ? std::min<size_t>(join_settings.max_block_size, join_settings.max_joined_block_size_rows)
+        : join_settings.max_block_size;
+
+    SizeLimits size_limits(join_settings.max_rows_in_join, join_settings.max_bytes_in_join, join_settings.join_overflow_mode);
+    node.step = std::make_unique<BlockNestedLoopJoinStep>(
+        join_left_node->step->getOutputHeader(), join_right_node->step->getOutputHeader(),
+        std::move(predicate), kind, strictness,
+        size_limits, max_block_size, join_settings.max_joined_block_size_bytes);
+
+    node.children = {join_left_node, join_right_node};
+
+    post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
+    makeFilterNodeOnTopOf(
+        node, std::move(post_join_actions),
+        residual_filter_condition.first, residual_filter_condition.second,
+        nodes, makeDescription("Post Join Actions"));
+}
+
 static QueryPlanNode buildPhysicalJoinImpl(
     std::vector<QueryPlanNode *> children,
     JoinOperator join_operator,
@@ -1373,6 +1416,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
 
     bool is_disjunctive_condition = false;
+    bool use_block_nested_loop = false;
     std::optional<IEJoinPlanDescription> ie_join_description;
     auto & table_join_clauses = table_join->getClauses();
     if (!is_join_without_expression && !table_join->isJoinWithConstant())
@@ -1405,18 +1449,28 @@ static QueryPlanNode buildPhysicalJoinImpl(
                     && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
                     && join_operator.strictness == JoinStrictness::All;
 
+                /// The last resort, which needs nothing to be determined about the keys: the whole
+                /// condition is evaluated on candidate pairs inside the nested loop operator.
+                bool can_use_block_nested_loop = BlockNestedLoopJoinStep::isSupportedJoinType(
+                    join_operator.kind, join_operator.strictness);
+
                 is_disjunctive_condition = tryAddDisjunctiveConditions(
-                    join_expression, table_join_clauses, used_expressions, join_settings, planning_context, !can_convert_to_cross);
+                    join_expression, table_join_clauses, used_expressions, join_settings, planning_context,
+                    !can_convert_to_cross && !can_use_block_nested_loop);
 
                 if (!is_disjunctive_condition)
                 {
-                    if (!can_convert_to_cross)
+                    if (can_convert_to_cross)
+                    {
+                        join_operator.kind = JoinKind::Cross;
+                        join_operator.residual_filter.append_range(join_expression);
+                        join_expression.clear();
+                    }
+                    else if (can_use_block_nested_loop)
+                        use_block_nested_loop = true;
+                    else
                         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
                             formatJoinCondition(join_expression));
-
-                    join_operator.kind = JoinKind::Cross;
-                    join_operator.residual_filter.append_range(join_expression);
-                    join_expression.clear();
                 }
             }
         }
@@ -1469,11 +1523,11 @@ static QueryPlanNode buildPhysicalJoinImpl(
         join_expression.erase(found_asof_predicate_it);
     }
 
-    /// For IEJoin there is no join clause to attach single-side conditions to; conditions
-    /// remaining in `join_expression` become a filter over the join result (ALL INNER) or the
-    /// operator's residual condition (the other kinds) below. Attaching eligible single-side
-    /// conditions as pre-join filters for IEJoin is a possible follow-up optimization.
-    if (!ie_join_description)
+    /// For IEJoin and the block nested loop join there is no join clause to attach single-side
+    /// conditions to; conditions remaining in `join_expression` become a filter over the join
+    /// result (ALL INNER) or the operator's own condition (the other kinds) below. Attaching
+    /// eligible single-side conditions as pre-join filters is a possible follow-up optimization.
+    if (!ie_join_description && !use_block_nested_loop)
     {
         if (auto left_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Left))
         {
@@ -1544,7 +1598,11 @@ static QueryPlanNode buildPhysicalJoinImpl(
     collect_required_input_nodes(residual_filter_condition);
 
     ExpressionActionsPtr ie_join_residual_condition;
-    if (on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator)))
+    ExpressionActionsPtr block_nested_loop_condition;
+    /// The block nested loop operator evaluates the whole ON condition itself, so `canPushDownFromOn`
+    /// is bypassed for it: turning the condition into a filter over the join result is exactly the
+    /// cartesian product materialization the operator exists to avoid.
+    if (on_clause_condition && (is_disjunctive_condition || use_block_nested_loop || !canPushDownFromOn(join_operator)))
     {
         auto on_clause_dag = JoinExpressionActions::getSubDAG(std::views::single(on_clause_condition));
         auto on_clause_expression = std::make_shared<ExpressionActions>(std::move(on_clause_dag), optimization_settings.actions_settings);
@@ -1552,6 +1610,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         /// mixed join expression is consumed only by the hash-family algorithms.
         if (ie_join_description)
             ie_join_residual_condition = std::move(on_clause_expression);
+        else if (use_block_nested_loop)
+            block_nested_loop_condition = std::move(on_clause_expression);
         else
             table_join->getMixedJoinExpression() = std::move(on_clause_expression);
         on_clause_condition = JoinActionRef(nullptr);
@@ -1644,8 +1704,22 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     ActionsDAG residual_dag = ActionsDAG::foldActionsByProjection(actions_after_join_fold, required_output_nodes);
 
-    /// The IEJoin path does not reach chooseJoinAlgorithm, so `table_join` (consumed only
-    /// there) is left untouched.
+    /// Neither the IEJoin nor the block nested loop path reaches chooseJoinAlgorithm, so
+    /// `table_join` (consumed only there) is left untouched.
+    if (use_block_nested_loop)
+    {
+        QueryPlanNode node;
+        node.children = std::move(children);
+        String bnl_residual_filter_condition_name = residual_filter_condition ? residual_filter_condition.getColumnName() : "";
+        constructBlockNestedLoopJoinStep(
+            node, std::move(left_dag), std::move(right_dag), std::move(residual_dag),
+            std::make_pair(bnl_residual_filter_condition_name, can_remove_residual_filter),
+            std::move(block_nested_loop_condition),
+            join_operator.kind, join_operator.strictness,
+            join_settings, nodes);
+        return node;
+    }
+
     if (ie_join_description)
     {
         QueryPlanNode node;

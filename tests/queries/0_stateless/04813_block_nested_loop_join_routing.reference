@@ -1,0 +1,23 @@
+left	1
+right	1
+full	1
+left semi	1
+left anti	1
+right semi	1
+right anti	1
+left any	1
+inner any	1
+function	1
+arithmetic	1
+one-sided	1
+not equals	1
+disjunction	1
+inner	0
+inner cross	1
+inner filter	1
+cross	0
+equi	0
+equi mixed	0
+equi disjunction	0
+ie join	0
+ie join step	1
