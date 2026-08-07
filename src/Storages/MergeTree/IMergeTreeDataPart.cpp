@@ -1147,6 +1147,8 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
 
 size_t IMergeTreeDataPart::getFileSizeOrZeroResolved(const String & stream_name, const String & extension) const
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::getFileSizeOrZeroResolved");
+
     /// Resolve the stream's actual on-disk name (original or hashed) from checksums and read its
     /// size there (no I/O). A stream with no checksums entry -- e.g. a substream bundled in
     /// skp_idx.packed -- is sized via the storage instead. Lets callers ask for a stream's size
@@ -3110,6 +3112,8 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
 
 bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
 {
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::hasSecondaryIndex");
+
     auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
     return getStreamNameOrHashResolved(file_name, ".idx").has_value()
         || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
