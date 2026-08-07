@@ -1184,11 +1184,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
 
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
-<<<<<<< HEAD
     const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT).generic_string();
-=======
-    const std::string endpoint = base_url / config.prefix / "namespaces";
->>>>>>> 7cd07274788 (Merge pull request #1808 from Altinity/antalya_26_3_s3_tables)
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
@@ -1216,11 +1212,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 {
     createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
 
-<<<<<<< HEAD
     const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
-=======
-    const std::string endpoint = base_url / config.prefix / "namespaces" / namespace_name / "tables";
->>>>>>> 7cd07274788 (Merge pull request #1808 from Altinity/antalya_26_3_s3_tables)
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("name", table_name);
@@ -1261,11 +1253,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
-<<<<<<< HEAD
     const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
-=======
-    const std::string endpoint = base_url / config.prefix / "namespaces" / namespace_name / "tables" / table_name;
->>>>>>> 7cd07274788 (Merge pull request #1808 from Altinity/antalya_26_3_s3_tables)
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
@@ -1393,18 +1381,9 @@ bool RestCatalog::updateSchema(
 
 void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
-<<<<<<< HEAD
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);
-=======
-    if (!allowed_namespaces.isNamespaceAllowed(namespace_name, /*nested*/ false))
-        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
-            "Failed to drop table {}, namespace {} is filtered by `namespaces` database parameter",
-            table_name, namespace_name);
-
     const std::string endpoint
         = (base_url / config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()
         + "?purgeRequested=False";
->>>>>>> 7cd07274788 (Merge pull request #1808 from Altinity/antalya_26_3_s3_tables)
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try

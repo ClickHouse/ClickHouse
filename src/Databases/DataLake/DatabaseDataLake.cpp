@@ -1089,15 +1089,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
         }
 
-<<<<<<< HEAD
-=======
-        if (database_engine_name == "Iceberg" && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_REST
-            && catalog_type != DatabaseDataLakeCatalogType::S3_TABLES)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `Iceberg` must use `rest` or `s3tables` catalog type only");
-        }
-
->>>>>>> 7cd07274788 (Merge pull request #1808 from Altinity/antalya_26_3_s3_tables)
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
 
