@@ -1849,7 +1849,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// stored metadata; the per-`UNION`-arm pass is not applied; and a refreshable materialized view
         /// refreshes through `InterpreterInsertQuery`, not `executeQuery`. Reject them in a view
         /// definition rather than shaping inconsistently — put them on the query that reads the view.
-        if (hasConstructionSettings(*create.select))
+        ///
+        /// Only a fresh, user-initiated CREATE is rejected. `ATTACH` (metadata load on startup,
+        /// upgrade, restore) and secondary replays (Replicated database DDL, ON CLUSTER, restore
+        /// from backup) must keep loading definitions that were stored before this rule existed:
+        /// `limit` and `offset` are pre-existing setting names, so `SETTINGS limit = 10` can
+        /// legitimately occur in old view metadata.
+        if (mode <= LoadingStrictnessLevel::CREATE && hasConstructionSettings(*create.select))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
                 "are not supported in a {} definition. Specify them on the query that reads the view instead.",
