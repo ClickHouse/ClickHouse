@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
+#include <mutex>
+
 /// `ExpressionActionsPtr` (used below only as a member pointer) is forward-declared via
 /// `KeyCondition.h`; the heavy `Interpreters/ExpressionActions.h` is included in the `.cpp`
 /// to keep this relatively high-fanout header light.
@@ -78,8 +80,9 @@ public:
     /// Whether the ActionsDAG-based bulk fast path is available. When true,
     /// `getPossibleGranules` will produce useful per-granule filtering; when false, the
     /// bulk call would just return "all granules pass" and the caller should skip it to
-    /// avoid paying deserialization cost for no benefit.
-    bool hasBulkFastPath() const { return minmax_actions != nullptr; }
+    /// avoid paying deserialization cost for no benefit. Triggers the lazy DAG lowering
+    /// on first call.
+    bool hasBulkFastPath() const { return getMinMaxActions() != nullptr; }
 
     /// Whether bulk evaluation stays precision-preserving when running alongside
     /// `use_skip_indexes_for_disjunctions`. Bulk does not populate the partial-disjunction
@@ -96,6 +99,17 @@ public:
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
+    /// Lazily builds (once) and returns `minmax_actions`. The condition object is
+    /// constructed during query analysis on every read of every minmax-indexed table,
+    /// but with the default `use_skip_indexes_on_data_read = 1` the ordinary
+    /// query-condition analysis never consumes the bulk path — only
+    /// `filterMarksUsingIndex` callers (analyze-time filtering, the join runtime-filter
+    /// pool) do, and they signal it by calling `hasBulkFastPath()`. Building the DAG
+    /// eagerly in the constructor would therefore be dead analysis work in the common
+    /// mode; defer it to the first caller that can actually consume it. Thread-safe:
+    /// one condition object is shared by concurrent per-part filtering threads.
+    const ExpressionActionsPtr & getMinMaxActions() const;
+
     /// Pre-built ExpressionActions that evaluates the KeyCondition against paired
     /// (min_c, max_c) columns per index column, producing two UInt8 output columns
     /// `__minmax_can_be_true` and `__minmax_can_be_false`. Non-null when every RPN
@@ -105,10 +119,14 @@ private:
     ///
     /// This is the fast path that powers `getPossibleGranules` (bulk) and optionally
     /// `mayBeTrueOnGranule` (scalar, 1-row block). When null, the caller falls back
-    /// to the generic `Field`-based path.
-    ExpressionActionsPtr minmax_actions;
+    /// to the generic `Field`-based path. Built lazily via `getMinMaxActions`.
+    mutable ExpressionActionsPtr minmax_actions;
     /// For each index column, the paired input names in the DAG, in order.
-    std::vector<std::pair<String, String>> minmax_input_names;
+    mutable std::vector<std::pair<String, String>> minmax_input_names;
+    mutable std::once_flag minmax_actions_built;
+    /// Kept alive only to lower the RPN lazily in `getMinMaxActions`; null when
+    /// `use_minmax_index_bulk_filtering` is off, making the disabled setting a true no-op.
+    ContextPtr lowering_context;
     /// Names of the two output UInt8 columns produced by `minmax_actions`.
     static constexpr const char * OUTPUT_CAN_BE_TRUE = "__minmax_can_be_true";
     static constexpr const char * OUTPUT_CAN_BE_FALSE = "__minmax_can_be_false";

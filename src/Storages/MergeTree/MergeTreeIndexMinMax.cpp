@@ -604,22 +604,34 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
 {
+    /// The RPN lowering into an ActionsDAG happens lazily in `getMinMaxActions` — only when a
+    /// caller that can actually consume the bulk path asks for it via `hasBulkFastPath()`.
+    /// Here just remember the context needed for the lowering. When
+    /// `use_minmax_index_bulk_filtering` is off (the default), keep it null so the DAG is
+    /// never built, making the disabled setting a true no-op.
+    if (context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering])
+        lowering_context = context;
+}
+
+const ExpressionActionsPtr & MergeTreeIndexConditionMinMax::getMinMaxActions() const
+{
     /// Lower the RPN into an ActionsDAG over paired (min, max) columns. When this succeeds,
     /// the bulk path can evaluate all granules at once via the column engine, avoiding all
     /// Field-variant dispatch. `minmax_actions` stays null for unsupported RPN shapes
     /// (monotonic chains, space-filling curves, polygons, bloom filters, relaxed predicates,
     /// non-collapsed IN_SET); in that case the caller falls back to the generic path.
     ///
-    /// The condition object is constructed during query analysis on every read of every
-    /// minmax-indexed table. When `use_minmax_index_bulk_filtering` is off (the default), the
-    /// bulk path is never taken, so building the DAG would be wasted query-analysis work; skip
-    /// it entirely and leave `minmax_actions` null, making the disabled setting a true no-op.
-    ///
-    if (context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering])
+    /// `std::call_once` because one condition object is shared by the per-part filtering
+    /// threads. If the lowering throws, the flag stays unset and the exception propagates to
+    /// every concurrent caller; a recoverable lowering failure records the null fallback.
+    std::call_once(minmax_actions_built, [this]
     {
+        if (!lowering_context)
+            return;
+
         try
         {
-            minmax_actions = tryBuildMinMaxActions(condition, index_data_types, context, minmax_input_names,
+            minmax_actions = tryBuildMinMaxActions(condition, index_data_types, lowering_context, minmax_input_names,
                                                    OUTPUT_CAN_BE_TRUE, OUTPUT_CAN_BE_FALSE);
         }
         catch (const Exception & e)
@@ -630,7 +642,9 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
             minmax_actions = nullptr;
             minmax_input_names.clear();
         }
-    }
+    });
+
+    return minmax_actions;
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
@@ -1215,10 +1229,10 @@ IMergeTreeIndexCondition::FilteredGranules MergeTreeIndexConditionMinMax::getPos
         return empty;
     }
 
-    /// Preferred path: delegate the RPN evaluation to the column engine. `minmax_actions` was
-    /// built at condition-construction time by lowering the RPN into operations over paired
+    /// Preferred path: delegate the RPN evaluation to the column engine. `minmax_actions` is
+    /// built lazily (see `getMinMaxActions`) by lowering the RPN into operations over paired
     /// (min, max) columns. We just assemble a Block with those columns and execute.
-    if (minmax_actions && minmax_input_names.size() == bulk.cols.size())
+    if (getMinMaxActions() && minmax_input_names.size() == bulk.cols.size())
     {
         /// Build a block with the (min_c, max_c) columns for each index column. The bulk
         /// container holds these as MutableColumnPtr; we hand the Block a shared ColumnPtr
