@@ -329,9 +329,9 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
     {
         children = zookeeper->getChildren(parent_path);
     }
-    catch (Coordination::Exception &)
+    catch (Coordination::Exception &) // NOLINT(bugprone-empty-catch) Ok: completion is best-effort if the parent path is missing.
     {
-    } // NOLINT(bugprone-empty-catch)
+    }
 
     struct CompletionCandidate
     {
@@ -405,9 +405,9 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
                     has_children[i] = responses[i].stat.numChildren > 0;
             }
         }
-        catch (Coordination::Exception &)
+        catch (Coordination::Exception &) // NOLINT(bugprone-empty-catch) Ok: treat exists() failure as unknown child counts.
         {
-        } // NOLINT(bugprone-empty-catch)
+        }
     }
 
     for (size_t i = 0; i < candidates.size(); ++i)
