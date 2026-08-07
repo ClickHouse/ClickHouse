@@ -166,7 +166,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int OK;
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int DEADLOCK_AVOIDED;
@@ -4756,14 +4755,16 @@ void ClientBase::runInteractive()
             /// protocol desynchronized, and the flag has to stay armed for the time of the
             /// exchange, because `load` swallows its failures - including a transport failure in
             /// the middle of the exchange, which the next query of the session would otherwise
-            /// run into. `load` reports the completion of the exchange (`EndOfStream`) through
-            /// `getLastError`; after a failure the flag simply stays armed, and the next query
-            /// resynchronizes the connection with a round trip.
+            /// run into. The flag is cleared when the exchange ended with the protocol in sync -
+            /// with `EndOfStream` or with a server exception, which is the terminal packet of
+            /// the exchange, just like in the `help` exchanges. After a mid-exchange transport
+            /// or client failure it stays armed, and the next query resynchronizes the
+            /// connection with a round trip.
             if (connection_needs_resynchronization)
                 resynchronizeConnectionAfterError();
             connection_needs_resynchronization = true;
             suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo());
-            if (suggest->getLastError() == ErrorCodes::OK)
+            if (suggest->lastExchangeEndedInSync())
                 connection_needs_resynchronization = false;
         }
 

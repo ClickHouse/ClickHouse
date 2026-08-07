@@ -40,6 +40,14 @@ public:
 
     int getLastError() const { return last_error.load(); }
 
+    /// Whether the last suggestions exchange ended with the connection protocol in sync: with
+    /// `EndOfStream` or with a server exception, which is the terminal packet of the exchange
+    /// (the query is sent with `with_pending_data` = false, and the server preserves the
+    /// connection after an ordinary exception). A transport or client-side failure in the middle
+    /// of the exchange leaves this false. Only meaningful for `load(IServerConnection &, ...)`,
+    /// which shares the connection with the regular queries of the session.
+    bool lastExchangeEndedInSync() const { return last_exchange_ended_in_sync.load(); }
+
 private:
     void fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query, const ClientInfo & client_info);
 
@@ -49,6 +57,8 @@ private:
     std::thread loading_thread;
 
     std::atomic<int> last_error { -1 };
+
+    std::atomic<bool> last_exchange_ended_in_sync { false };
 };
 
 }
