@@ -1,40 +1,45 @@
-import contextlib
 import logging
 import os
-import subprocess
 
 import pyspark
+import pyspark.java_gateway
 from pyspark.context import SparkContext
 from pyspark.sql import SparkSession
 
 
-@contextlib.contextmanager
-def _fork_safe_popen():
-    """Replace pyspark's ``preexec_fn`` with ``start_new_session`` while the
-    gateway launches.
+def _make_gateway_launch_fork_safe():
+    """Give pyspark's gateway launch ``start_new_session`` instead of ``preexec_fn``.
 
-    ``preexec_fn`` disables both of CPython's exec-only launch paths
+    ``preexec_fn`` rules out both of CPython's exec-only launch paths
     (``posix_spawn`` and ``vfork`` each require it to be ``None``), so a plain
     ``fork()`` runs Python in the child. A lock a sibling thread held at fork
     time is then held in the child forever, so it never execs and the parent
     blocks in ``os.read(errpipe_read)`` until the test times out.
 
     ``start_new_session`` keeps SIGINT away from the JVM without running Python
-    in the child: the signal goes to the foreground process group, which the
-    child is no longer part of.
-    """
-    original_init = subprocess.Popen.__init__
+    in the child: the signal is delivered to the foreground process group, which
+    the child is no longer part of.
 
-    def __init__(self, *args, **kwargs):
+    ``launch_gateway`` resolves ``Popen`` through its own module global, so only
+    that name is rebound. It is done once at import, because restoring a
+    process-wide default around each launch would let concurrent launches strip
+    each other's protection and leave the wrapper installed for good.
+    """
+    if getattr(pyspark.java_gateway.Popen, "_clickhouse_fork_safe", False):
+        return
+
+    launcher = pyspark.java_gateway.Popen
+
+    def popen(*args, **kwargs):
         if kwargs.pop("preexec_fn", None) is not None:
             kwargs.setdefault("start_new_session", True)
-        original_init(self, *args, **kwargs)
+        return launcher(*args, **kwargs)
 
-    subprocess.Popen.__init__ = __init__
-    try:
-        yield
-    finally:
-        subprocess.Popen.__init__ = original_init
+    popen._clickhouse_fork_safe = True
+    pyspark.java_gateway.Popen = popen
+
+
+_make_gateway_launch_fork_safe()
 
 
 def write_spark_log_config(log_dir):
@@ -134,8 +139,7 @@ class ResilientSparkSession:
         if SparkContext._gateway is not None and not _gateway_is_live():
             logging.warning("Cached py4j gateway is dead, discarding it")
             _reset_pyspark_class_state()
-        with _fork_safe_popen():
-            return self._create()
+        return self._create()
 
     def _restart(self):
         logging.warning("Spark session is dead, restarting...")
