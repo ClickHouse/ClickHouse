@@ -3281,7 +3281,8 @@ void executeQuery(
         /// half-written packet (see `IFramingFormat`): the client observes a truncated response and an
         /// aborted connection instead of a well-formed terminal packet. The generic HTTP error path
         /// enforces this too: `HTTPHandler::trySendExceptionToClient` appends nothing to a framed
-        /// response once its finalization has started (see `QueryResultDetails::framed`).
+        /// response once its transmission or finalization has started (see
+        /// `QueryResultDetails::framed`).
         if (query_finish_callback)
             query_finish_callback();
     }

@@ -728,15 +728,23 @@ try
         return wb.cancelWithException(request, exception_code, message, nullptr);
     }
 
-    /// A framed response fails closed once its finalization has started. `Output::finalize` pushes
-    /// the delayed results, finalizes the compression and closes the response stream, so a failure
-    /// in the middle of it has already put some (or all) of the framed success stream on the wire.
-    /// Appending anything at that point - whether a fresh framed `exception` stream or the generic
+    /// A framed response fails closed once its transmission has started. That covers a failure in
+    /// the middle of `Output::finalize` (which pushes the delayed results, finalizes the
+    /// compression and closes the response stream - `isFinalized` is set at its start) and a
+    /// failure of the framed exception delivery itself: when `handle_exception_in_output_format`
+    /// throws while writing the terminal `exception` packet (for example while draining the `log`
+    /// / `profile_events` queues) after `data` packets were already streamed, the escaped
+    /// exception lands here with the packet stream unterminated and `exception_is_written` still
+    /// false. In both cases some (or all) of the framed stream is already on the wire. Appending
+    /// anything at that point - whether a fresh framed `exception` stream or the generic
     /// `__exception__` block that `cancelWithException` writes into an already-sent response -
-    /// would follow a partial success response, breaking the "always a stream of packets" contract.
+    /// would follow a partial packet stream, breaking the "always a stream of packets" contract.
     /// The client observes a truncated response and an aborted connection instead - the same
-    /// fail-close rule as for a half-written packet (see `IFramingFormat`).
-    if (used_output.framed && used_output.isFinalized() && !used_output.exception_is_written)
+    /// fail-close rule as for a half-written packet (see `IFramingFormat`). A framed response
+    /// whose transmission has not started yet takes the paths below instead: the `exception_writer`
+    /// set up for `wait_end_of_query` discards the buffered stream and writes a fresh framed
+    /// exception response, and the generic path produces a proper HTTP error response.
+    if (used_output.framed && !used_output.exception_is_written && (used_output.isFinalized() || response.sent()))
     {
         used_output.cancel();
         return false;

@@ -28,6 +28,7 @@ namespace FailPoints
     extern const char framing_throw_after_writing_packet[];
     extern const char framing_throw_during_payload_reset[];
     extern const char framing_pump_logs_throw[];
+    extern const char framing_exception_packet_throw[];
 }
 
 IFramingFormat::IFramingFormat(WriteBuffer & out_, const FormatSettings & format_settings_)
@@ -124,7 +125,17 @@ void IFramingFormat::finalize()
         emitToOut([&] { writeProgressPacket(final_progress); });
 
     if (!exception_message.empty())
+    {
+        /// Test-only: emulate the exception recovery itself failing - a throw while the terminal
+        /// `exception` packet is being delivered, after `data` packets may already have been
+        /// streamed - to check that the generic HTTP error path appends nothing to the
+        /// already-started packet stream (see `HTTPHandler::trySendExceptionToClient`).
+        fiu_do_on(FailPoints::framing_exception_packet_throw,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault before writing the framed exception packet");
+        });
         emitToOut([&] { writeExceptionPacket(exception_message); });
+    }
 
     emitToOut([&] { finalizeImpl(); });
     flushOut();
