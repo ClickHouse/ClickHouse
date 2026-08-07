@@ -41,7 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "26.6.1.20001.altinityantalya",
+        addSettingsChanges(settings_changes_history, "26.8",
         {
             {"max_insert_threads", 1, 0, "Changed the default from 1 (no parallel execution) to auto (0), which resolves to the number of CPU cores available to the server, reduced under memory pressure via `max_insert_threads_min_free_memory_per_thread`. This parallelizes `INSERT SELECT` by default. Set to 1 to restore the previous single-threaded behavior."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
@@ -70,6 +70,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
             {"input_format_parquet_spatial_filter_push_down", false, true, "New setting: skip GeoParquet row groups and pages based on spatial predicates and bounding box statistics"},
             {"use_text_index_negative_tokens_cache", false, true, "New setting to cache absent text index tokens and avoid repeated dictionary lookups."},
+            {"use_puffin_files_cache", true, true, "Enables cache of parsed Puffin file content such as deletion vectors."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -128,7 +129,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
             {"use_constant_folding_in_index_analysis", false, false, "New setting to fold partition-level constants into the filter predicate per part during MergeTree index analysis, improving pruning for filters whose branches depend on partition values."},
             {"join_runtime_filter_size_from_hash_table_stats", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."},
-            {"use_puffin_files_cache", false, true, "Enables cache of parsed Puffin file content such as deletion vectors."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
@@ -235,7 +235,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_cleanup_old_data_files_compaction", false, false, "New setting"},
             {"iceberg_compaction_data_cleanup", 60 * 60 * 3, 60 * 60 * 3, "New setting"},
             {"allow_rank_dense_rank_arguments", true, false, "New setting. Before 26.5, the `RANK` and `DENSE_RANK` window functions silently ignored any provided arguments (equivalent to `allow_rank_dense_rank_arguments = 1`). From 26.5, they reject arguments by default with `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` because per SQL standard these functions take zero arguments. Set this to `1` to restore the legacy behavior."},
-            {"use_puffin_files_cache", false, true, "Enables cache of parsed Puffin file content such as deletion vectors."},
         });
         addSettingsChanges(settings_changes_history, "26.4",
         {
