@@ -294,8 +294,8 @@ def escape_like_literal(s):
 
 def test_namespace_filter_pushdown(started_cluster):
     """
-    Verify that `system.tables` predicates that fully bind the namespace
-    (`name = '<ns>.<table>'`, `name LIKE '<ns>.%'`) only fetch the table list
+    Verify that `system.tables` and `system.iceberg_history` predicates that fully bind the namespace
+    (`name`/`table = '<ns>.<table>'`, `name`/`table LIKE '<ns>.%'`) only fetch the table list
     from the targeted namespace instead of enumerating the whole catalog.
     See issue #105022.
 
@@ -395,6 +395,20 @@ def test_namespace_filter_pushdown(started_cluster):
         f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name = '{one_table}' ORDER BY name "
         "SETTINGS show_data_lake_catalogs_in_system_tables = true",
         one_table,
+    )
+
+    # `system.iceberg_history` exposes the catalog table name as `table`, but
+    # should pass the same namespace hint to the catalog.
+    assert_scoped(
+        f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' "
+        f"AND table LIKE '{escape_like_literal(namespace_1)}.%'",
+        "0",
+    )
+
+    assert_scoped(
+        f"SELECT count() FROM system.iceberg_history WHERE database = '{CATALOG_NAME}' "
+        f"AND table = '{one_table}'",
+        "0",
     )
 
 

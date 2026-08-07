@@ -27,6 +27,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
+#include <Storages/System/extractTableNameFilter.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #if USE_AVRO
@@ -160,6 +161,8 @@ void StorageSystemIcebergHistory::fillData(
     MutableColumnPtr database_column = ColumnString::create();
     MutableColumnPtr table_column = ColumnString::create();
 
+    const TablesFilter tables_filter = extractTableNameFilter(predicate, "table");
+
     for (size_t i = 0; i < filtered_databases.size(); ++i)
     {
         const String database_name{filtered_databases.getDataAt(i)};
@@ -167,10 +170,10 @@ void StorageSystemIcebergHistory::fillData(
         if (!database)
             continue;
 
-        for (auto iterator = database->getTablesIterator(context_copy, {}, true); iterator->isValid(); iterator->next())
+        for (const auto & table_details : database->getLightweightTablesIteratorWithHint(context_copy, {}, true, tables_filter))
         {
             database_column->insert(database_name);
-            table_column->insert(iterator->name());
+            table_column->insert(table_details.name);
         }
     }
 
