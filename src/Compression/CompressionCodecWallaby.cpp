@@ -493,6 +493,16 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
     ring_position = (ring_position + 1) % WALLABY_RING_SIZE;
     T previous = words[0];
 
+    /// suffix_differing[i] is the number of positions in [i, count) whose value differs from its
+    /// predecessor. A value equal to its predecessor can collapse into a run almost for free, but
+    /// a differing value costs at least the cheapest single-value branch (EQUAL: the '0' selector,
+    /// the 2-bit tag and a ring index), so these counts give a provable lower bound on the bits
+    /// the not-yet-encoded suffix must take. Filled back to front; entry 0 is never read.
+    std::array<UInt16, WALLABY_VECTOR_VALUES + 1> suffix_differing; // NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
+    suffix_differing[count] = 0;
+    for (UInt32 j = count; j > 1; --j)
+        suffix_differing[j - 1] = static_cast<UInt16>(suffix_differing[j] + (words[j - 1] != words[j - 2] ? 1 : 0));
+
     UInt32 i = 1;
     while (i < count)
     {
@@ -608,8 +618,13 @@ UInt32 encodeXor(const T * words, UInt32 count, char * scratch, UInt32 scratch_s
         previous = value;
         ++i;
 
-        /// Bail out early on incompressible data: the RAW mode will be chosen anyway.
-        if ((i & 255) == 0 && writer.count() > static_cast<UInt64>(i) * (width + 1))
+        /// Bail out early on incompressible data: abandon the XOR encoding once even the cheapest
+        /// conceivable encoding of the remaining suffix (runs for repeated values, the EQUAL
+        /// branch for everything else) cannot bring the total below the cost of the RAW mode,
+        /// which is always available as a candidate.
+        constexpr UInt32 min_single_bits = 3 + WALLABY_RING_INDEX_BITS;
+        if ((i & 255) == 0
+            && writer.count() + static_cast<UInt64>(suffix_differing[i]) * min_single_bits >= static_cast<UInt64>(count) * width)
             return 0;
     }
 
