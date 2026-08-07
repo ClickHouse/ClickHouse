@@ -4368,14 +4368,11 @@ void Server::updateServers(
                 std::string protocol = port_name.substr(0, port_name.find_last_of('.'));
                 has_host = config.has(protocol + ".host");
 
-                /// The per-endpoint default session user is fixed in the protocol handler factory,
-                /// so the endpoint must be restarted when its effective value changes. Compare the
-                /// effective value (the one closest to the endpoint wins, as in
-                /// `buildProtocolStackFromConfig`) rather than every node in the `impl` chain, so
-                /// that editing a shadowed base module does not force a needless restart.
-                default_session_user_changed =
-                    getEffectiveDefaultSessionUser(previous_config, protocol)
-                    != getEffectiveDefaultSessionUser(config, protocol);
+                /// Whether any handler in the `impl` chain actually consumes the default session
+                /// user. Keeper-metrics-only `prometheus` listeners serve metrics without
+                /// authentication (`KeeperPrometheusHandler-factory` only exposes `MetricsImpl`),
+                /// so a `default_session_user` change must not restart them.
+                bool consumes_default_session_user = false;
 
                 std::string conf_name = protocol;
                 std::string prefix = protocol + ".";
@@ -4388,10 +4385,14 @@ void Server::updateServers(
                         if (type == "http")
                         {
                             is_http = true;
+                            consumes_default_session_user = true;
                             if (config.has(conf_name + ".handlers"))
                                 handlers_key = config.getString(conf_name + ".handlers");
                             break;
                         }
+                        if (type == "tcp" || type == "mysql" || type == "postgres"
+                            || (type == "prometheus" && !server_settings[ServerSetting::prometheus_keeper_metrics_only]))
+                            consumes_default_session_user = true;
                     }
 
                     if (!config.has(prefix + "impl"))
@@ -4403,6 +4404,15 @@ void Server::updateServers(
                     if (!pset.insert(conf_name).second)
                         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
                 }
+
+                /// The per-endpoint default session user is fixed in the protocol handler factory,
+                /// so the endpoint must be restarted when its effective value changes. Compare the
+                /// effective value (the one closest to the endpoint wins, as in
+                /// `buildProtocolStackFromConfig`) rather than every node in the `impl` chain, so
+                /// that editing a shadowed base module does not force a needless restart.
+                default_session_user_changed = consumes_default_session_user
+                    && getEffectiveDefaultSessionUser(previous_config, protocol)
+                        != getEffectiveDefaultSessionUser(config, protocol);
             }
             else
             {

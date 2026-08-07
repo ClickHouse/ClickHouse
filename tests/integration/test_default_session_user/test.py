@@ -628,6 +628,26 @@ def test_prometheus_keeper_metrics_default_session_user():
     assert scrape_prometheus_status(9109) == 200
 
 
+def test_config_reload_keeper_metrics_prometheus_no_restart():
+    # A keeper-metrics-only `prometheus` listener ignores `default_session_user`
+    # (metrics are served without authentication), so changing the endpoint's
+    # override must not restart the listener on `SYSTEM RELOAD CONFIG`: a restart
+    # would interrupt scrapes for a setting change that is a no-op there.
+    config_path = "/etc/clickhouse-server/config.d/config.xml"
+
+    node1.replace_in_config(
+        config_path, "proto_prometheus_user", "proto_prometheus_user_changed"
+    )
+    node1.query("SYSTEM RELOAD CONFIG")
+
+    # `updateServers` runs within `SYSTEM RELOAD CONFIG`, so by now the decision
+    # not to restart has been made and logged (or not).
+    assert not node1.contains_in_log(
+        "<default_session_user> had been changed, will reload keeper-metrics-only prometheus protocol"
+    )
+    assert scrape_prometheus_status(9108) == 200
+
+
 def test_config_reload_default_session_user():
     config_path = "/etc/clickhouse-server/config.d/config.xml"
 
