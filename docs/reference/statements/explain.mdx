@@ -735,7 +735,7 @@ Let's examine the output. First let's look at the header.
 
 - `Time` — total time split into planning (i.e. creation of plan + optimization of plan + pipeline construction) and execution (running the pipeline) phases.
 - `Read` — rows and uncompressed bytes read from tables, with throughput - the same numbers the normal query footer reports as "Processed".
-- `Peak memory` — peak memory the query used.
+- `Peak memory` — peak memory the query used. Memory allocated by asynchronous background work started by the query (for example, prefetched reads) is accounted at the thread or global level rather than to the query being analyzed, so it is not included.
 
 Now let's look at the new lines that appear in the query plan.
 
