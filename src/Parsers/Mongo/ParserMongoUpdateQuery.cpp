@@ -114,7 +114,7 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
                     && it->value.MemberBegin()->value.IsString()
                     && stringView(it->value.MemberBegin()->value) == "timestamp")
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'timestamp' type of '$currentDate' is not supported, only 'date' is");
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$currentDate' must be true or {{\"$type\": \"date\"}}");
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, R"(The argument of '$currentDate' must be true or {{"$type": "date"}})");
             }
             assignments.push_back(makeAssignment(column, makeASTFunction("now64", make_intrusive<ASTLiteral>(Field(UInt64(3))))));
         }
