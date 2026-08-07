@@ -41,6 +41,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -1374,6 +1375,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     column_node = std::make_shared<ColumnNode>(*resolved_pair, modified_query_info.table_expression);
                 }
 
+                /// The set registry of the freshly derived planner context is empty, and
+                /// `PlannerActionsVisitor` resolves `IN` through it.
+                collectSets(column_node, *modified_query_info.planner_context);
+
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
                 actions_visitor.visit(*filter_actions_dag, column_node);
@@ -1867,6 +1872,9 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
             QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
             query_analysis_pass.run(query_tree, local_context);
+
+            /// On the query info cache path nothing registered this expression's sets.
+            collectSets(query_tree, *modified_query_info.planner_context);
 
             ColumnNodePtrWithHashSet empty_correlated_columns_set;
             PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
