@@ -426,39 +426,10 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
     }
 
-    /// Schema Registry timeouts must be greater than 0 and less than 10 minutes (600 seconds).
-    {
-        static constexpr UInt64 max_seconds = 600;
-        auto check_timeout = [](UInt64 value, const char * name)
-        {
-            if (value == 0 || value >= max_seconds)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Setting '{}' must be greater than 0 and less than {} seconds (10 minutes), got {}",
-                    name, max_seconds, value);
-        };
-        const auto & timeouts = format_settings.avro.schema_registry_timeouts;
-        check_timeout(timeouts.connection_timeout, "format_avro_schema_registry_connection_timeout");
-        check_timeout(timeouts.send_timeout, "format_avro_schema_registry_send_timeout");
-        check_timeout(timeouts.receive_timeout, "format_avro_schema_registry_receive_timeout");
-    }
-
-    /// Schema Registry retry policy: bound retries and backoff.
-    {
-        static constexpr UInt64 max_retries_limit = 20;
-        static constexpr UInt64 max_initial_backoff_ms = 60000;
-        const auto & retry = format_settings.avro.schema_registry_retry;
-        if (retry.max_retries > max_retries_limit)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'format_avro_schema_registry_max_retries' must be between 0 and {}, got {}",
-                max_retries_limit, retry.max_retries);
-        if (retry.initial_backoff_ms == 0 || retry.initial_backoff_ms > max_initial_backoff_ms)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'format_avro_schema_registry_retry_initial_backoff_ms' must be greater than 0 and less than or equal to {}, got {}",
-                max_initial_backoff_ms, retry.initial_backoff_ms);
-    }
+    /// The Schema Registry timeout and retry settings used to be range-checked here. They are
+    /// now bounded when they are set - by their `NonZeroUInt64` type and by
+    /// `doSettingsSanityCheckClamp` - because this function runs for every query, so rejecting
+    /// an out-of-range value here failed even the `SET` putting it back, bricking the session.
 
     if (context->getClientInfo().interface == ClientInfo::Interface::HTTP
         && context->getSettingsRef()[Setting::http_write_exception_in_output_format].value)
