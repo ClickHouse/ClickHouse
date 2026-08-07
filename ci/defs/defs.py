@@ -455,6 +455,8 @@ class ArtifactNames:
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
+    CH_AMD_DARWIN_PLAIN = "CH_AMD_DARWIN_PLAIN"
+    CH_ARM_DARWIN_PLAIN = "CH_ARM_DARWIN_PLAIN"
     CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
     CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
@@ -602,6 +604,17 @@ class ArtifactConfigs:
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
             ArtifactNames.CH_AMD_CFI,
+        ]
+    )
+    clickhouse_darwin_plain_binaries = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        compress_zst=True,
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ArtifactNames.CH_ARM_DARWIN_PLAIN,
         ]
     )
     llvm_profdata_file = Artifact.Config(
