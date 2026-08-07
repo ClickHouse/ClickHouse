@@ -2216,9 +2216,34 @@ void registerStorageDistributed(StorageFactory & factory)
 
         finalizeDistributedSettings(distributed_settings, context);
 
+        /// When the structure is not specified, infer it from the remote table under the user's
+        /// context. `StorageDistributed` stores only the global context and would otherwise infer
+        /// the structure under it, bypassing the `SHOW_COLUMNS` access check in
+        /// `getStructureOfRemoteTableInShard` for a local shard - that would let a user who can
+        /// create a `Distributed` table learn the schema of a local table they are not allowed
+        /// to describe. The `Remote` engine below gets the same treatment.
+        ///
+        /// The check must run when the definition is first introduced: a `CREATE`, a full-definition
+        /// `ATTACH` query, or a backup `RESTORE`. When the table is loaded back from the metadata
+        /// already stored on this server (server startup, short `ATTACH`), the definition was
+        /// validated when it was first created, there is no user to check against, and the target
+        /// table may not be loaded yet - so the inference is left to the constructor, which runs
+        /// it under the global context.
+        const bool loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+
+        ColumnsDescription columns = args.columns;
+        if (columns.empty() && !loading_from_existing_metadata)
+        {
+            StorageID remote_table_id = StorageID::createEmpty();
+            remote_table_id.database_name = remote_database;
+            remote_table_id.table_name = remote_table;
+            auto cluster = local_context->getCluster(local_context->getMacros()->expand(cluster_name));
+            columns = getStructureOfRemoteTable(*cluster, remote_table_id, local_context, /* table_func_ptr = */ nullptr);
+        }
+
         return std::make_shared<StorageDistributed>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             remote_database,

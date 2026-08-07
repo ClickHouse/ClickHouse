@@ -41,6 +41,37 @@ def test_structure_less_distributed_over_remote_shard(started_cluster):
     node1.query("DROP TABLE default.dist SYNC")
 
 
+def test_structure_inference_respects_show_columns_access(started_cluster):
+    """The structure of a structure-less `Distributed` table must be inferred under the
+    creator's context, not the storage's global context: on a cluster with a local shard
+    the inference performs a `SHOW_COLUMNS` access check on the target table, and under
+    the global context that check would pass for everyone, letting a user learn the
+    schema of a local table they are not allowed to describe."""
+    node1.query(
+        "CREATE TABLE default.local_data (key UInt64, value String) ENGINE = MergeTree ORDER BY key"
+    )
+    node1.query("CREATE USER restricted IDENTIFIED WITH no_password")
+    node1.query("GRANT CREATE TABLE, DROP TABLE ON default.* TO restricted")
+    node1.query("GRANT REMOTE ON *.* TO restricted")
+    try:
+        assert "ACCESS_DENIED" in node1.query_and_get_error(
+            "CREATE TABLE default.dist_local ENGINE = Distributed('local_cluster', default, local_data)",
+            user="restricted",
+        )
+        node1.query("GRANT SHOW COLUMNS ON default.local_data TO restricted")
+        node1.query(
+            "CREATE TABLE default.dist_local ENGINE = Distributed('local_cluster', default, local_data)",
+            user="restricted",
+        )
+        assert node1.query("DESC TABLE default.dist_local") == (
+            "key\tUInt64\t\t\t\t\t\nvalue\tString\t\t\t\t\t\n"
+        )
+    finally:
+        node1.query("DROP TABLE IF EXISTS default.dist_local SYNC")
+        node1.query("DROP USER restricted")
+        node1.query("DROP TABLE default.local_data SYNC")
+
+
 def test_structure_less_distributed_in_replicated_database(started_cluster):
     """The variant BuzzHouse found: the `CREATE` is replayed by the `DDLWorker` of a
     `Replicated` database, whose query context also carried no client version."""
