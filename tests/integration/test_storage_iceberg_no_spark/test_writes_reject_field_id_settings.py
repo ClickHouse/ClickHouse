@@ -290,7 +290,7 @@ def test_plain_object_storage_validates_field_ids_in_definition(
 
     cluster = started_cluster_iceberg_no_spark
     instance = cluster.instances["node1"]
-    base_url = f"http://{cluster.minio_host}:{cluster.minio_s3_port}/{cluster.minio_bucket}/plain_field_ids_{get_uuid_str()}"
+    base_url = f"http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/plain_field_ids_{get_uuid_str()}"
 
     def creation_expression(table_name, columns, settings):
         columns_clause = f" ({columns})" if columns else ""
@@ -372,3 +372,66 @@ def test_plain_object_storage_validates_field_ids_in_definition(
     instance.query(f"DETACH TABLE {ok_table}")
     instance.query(f"ATTACH TABLE {ok_table}")
     assert instance.query(f"SELECT * FROM {ok_table} ORDER BY ALL") == "1\t2\n"
+
+    # A definition without a column list resolves its schema from the existing
+    # Parquet object during CREATE; the header-dependent checks rerun against
+    # that inferred schema, so an unknown column is still rejected at CREATE
+    # time rather than on the first INSERT.
+    existing_object_url = f"{base_url}/{ok_table}.parquet"
+
+    def inferred_creation_expression(table_name, settings, explicit_format=True):
+        format_clause = ", 'Parquet'" if explicit_format else ""
+        return (
+            f"CREATE TABLE {table_name} "
+            f"ENGINE = S3('{existing_object_url}', "
+            f"'{minio_access_key}', '{minio_secret_key}'{format_clause}) "
+            f"SETTINGS {settings}"
+        )
+
+    inferred_unknown_table = make_table_name("inferred_unknown")
+    error = instance.query_and_get_error(
+        inferred_creation_expression(
+            inferred_unknown_table,
+            "output_format_parquet_column_field_ids = {'missing': '1'}",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "unknown column" in error
+    assert instance.query(f"EXISTS TABLE {inferred_unknown_table}") == "0\n"
+
+    # Same for a map that does not cover the whole inferred schema.
+    inferred_partial_table = make_table_name("inferred_partial")
+    error = instance.query_and_get_error(
+        inferred_creation_expression(
+            inferred_partial_table,
+            "output_format_parquet_column_field_ids = {'x': '1'}",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "does not cover" in error
+    assert instance.query(f"EXISTS TABLE {inferred_partial_table}") == "0\n"
+
+    # And when the format itself is inferred (no explicit format argument).
+    inferred_format_table = make_table_name("inferred_format")
+    error = instance.query_and_get_error(
+        inferred_creation_expression(
+            inferred_format_table,
+            "output_format_parquet_column_field_ids = {'missing': '1'}",
+            explicit_format=False,
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "unknown column" in error
+    assert instance.query(f"EXISTS TABLE {inferred_format_table}") == "0\n"
+
+    # A valid map over the inferred schema still works end to end.
+    inferred_ok_table = make_table_name("inferred_ok")
+    instance.query(
+        inferred_creation_expression(
+            inferred_ok_table,
+            "output_format_parquet_column_field_ids = {'x': '5', 'y': '7'}",
+        )
+    )
+    assert (
+        instance.query(f"SELECT * FROM {inferred_ok_table} ORDER BY ALL") == "1\t2\n"
+    )
