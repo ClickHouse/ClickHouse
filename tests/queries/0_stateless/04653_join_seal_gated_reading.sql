@@ -24,13 +24,13 @@ DROP TABLE IF EXISTS t_seal_probe;
 DROP TABLE IF EXISTS t_seal_build;
 
 CREATE TABLE t_seal_probe (k UInt64, v String) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 128;
-INSERT INTO t_seal_probe SELECT number, toString(number) FROM numbers(1000000);
+    SETTINGS index_granularity = 32;
+INSERT INTO t_seal_probe SELECT number, toString(number) FROM numbers(250000);
 OPTIMIZE TABLE t_seal_probe FINAL;
 
 CREATE TABLE t_seal_build (k UInt64) ENGINE = MergeTree ORDER BY k;
 -- 5 keys spread over the probe primary key range: almost all of the ~7800 marks are prunable.
-INSERT INTO t_seal_build SELECT number * 100000 FROM numbers(5);
+INSERT INTO t_seal_build SELECT number * 50000 FROM numbers(5);
 
 -- The gated result must match the ungated one.
 SELECT /* seal_gated_join */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t_seal_build AS b ON p.k = b.k;
@@ -77,9 +77,9 @@ SELECT /* seal_join_by_shards */ count(), sum(p.k) FROM t_seal_probe AS p JOIN t
 -- ... and FINAL.
 DROP TABLE IF EXISTS t_seal_probe_final;
 CREATE TABLE t_seal_probe_final (k UInt64, v String) ENGINE = ReplacingMergeTree ORDER BY k
-    SETTINGS index_granularity = 128;
-INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(100000);
-INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(100000);
+    SETTINGS index_granularity = 32;
+INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(50000);
+INSERT INTO t_seal_probe_final SELECT number, toString(number) FROM numbers(50000);
 SELECT /* seal_final */ count(), sum(p.k) FROM t_seal_probe_final AS p FINAL JOIN t_seal_build AS b ON p.k = b.k;
 DROP TABLE t_seal_probe_final;
 
@@ -87,8 +87,8 @@ DROP TABLE t_seal_probe_final;
 -- pruning has to keep exactly the marks containing the build keys.
 DROP TABLE IF EXISTS t_seal_probe_desc;
 CREATE TABLE t_seal_probe_desc (k UInt64, v String) ENGINE = MergeTree ORDER BY (k DESC)
-    SETTINGS index_granularity = 128;
-INSERT INTO t_seal_probe_desc SELECT number, toString(number) FROM numbers(1000000);
+    SETTINGS index_granularity = 32;
+INSERT INTO t_seal_probe_desc SELECT number, toString(number) FROM numbers(250000);
 OPTIMIZE TABLE t_seal_probe_desc FINAL;
 SELECT /* seal_gated_reverse_key */ count(), sum(p.k) FROM t_seal_probe_desc AS p JOIN t_seal_build AS b ON p.k = b.k;
 DROP TABLE t_seal_probe_desc;
@@ -145,7 +145,7 @@ WHERE current_database = currentDatabase()
 -- Without gating nothing is dropped by the refiner and the whole table is read.
 SELECT
     ProfileEvents['ReadPoolRangeRefinerDroppedMarks'] AS dropped_marks,
-    read_rows > 1000000 AS read_all_rows
+    read_rows >= 250000 AS read_all_rows
 FROM system.query_log
 WHERE current_database = currentDatabase()
     AND type = 'QueryFinish'
