@@ -1958,21 +1958,9 @@
 
     const COMPLETION_DISPLAY_LIMIT = 1000;
     let pending_completion_display = null;
-    /// Signature of the last match list already printed — used to avoid stacking
-    /// duplicate column listings on repeated Tab.
-    let last_listed_completion_signature = null;
-    /// Full signature (prefix + matches) waiting behind "Display all? (y/n)".
-    let pending_completion_signature = null;
 
-    function completionSignature(matches) {
-        if (!matches || matches.length === 0)
-            return "";
-        return matches.length + "\0" + matches[0] + "\0" + matches[matches.length - 1];
-    }
-
-    function setPendingCompletionDisplay(matches, signature = null) {
+    function setPendingCompletionDisplay(matches) {
         pending_completion_display = matches;
-        pending_completion_signature = matches ? signature : null;
         const prompt = document.querySelector(".command-prompt");
         if (prompt)
             prompt.classList.toggle("pending-completion", matches !== null);
@@ -2018,23 +2006,48 @@
         return result;
     }
 
+    /// Match replxx (keeper-client): only the shared prefix of all candidates is
+    /// bright-magenta; the distinguishing suffix stays default terminal color.
+    /// See contrib/replxx/src/replxx_impl.cxx (BRIGHTMAGENTA for longestCommonPrefix).
+    function formatCompletionColumns(items) {
+        if (items.length === 0) return "";
+        const lcp = longestCommonPrefix(items);
+        const maxLen = items.reduce((max, s) => Math.max(max, s.length), 0);
+        const colWidth = maxLen + 2;
+        const termWidth = 80;
+        const cols = Math.max(1, Math.floor(termWidth / colWidth));
+        const rows = Math.ceil(items.length / cols);
+        let result = "";
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const idx = r + c * rows;
+                if (idx >= items.length) break;
+                const item = items[idx];
+                const colored = lcp.length > 0
+                    ? ("\x1b[95m" + item.slice(0, lcp.length) + "\x1b[0m" + item.slice(lcp.length))
+                    : item;
+                /// Pad by visible length, not ANSI-expanded length.
+                if (c < cols - 1)
+                    result += colored + " ".repeat(colWidth - item.length);
+                else
+                    result += colored;
+            }
+            result += "\n";
+        }
+        return result;
+    }
+
     function showCompletionMatches(inputValue, matches) {
         const container = document.getElementById("command-scrolling-container");
-        const signature = completionSignature(matches);
-        if (signature !== "" && signature === last_listed_completion_signature) {
-            /// Same match set already printed — do not stack another copy.
-            container.scrollTop = container.scrollHeight;
-            return;
-        }
+        /// Mirror keeper-client: echo the prompt line, then the match columns, then
+        /// the live prompt below continues to show the same command.
+        appendToOutput(`➜ ${cli_cwd} ${inputValue}\n`);
         if (matches.length > COMPLETION_DISPLAY_LIMIT) {
-            /// Echo the line being completed, then hide the live prompt until y/n/Tab.
-            appendToOutput(`➜ ${cli_cwd} ${inputValue}\n`);
-            setPendingCompletionDisplay(matches, signature);
+            /// Hide the live prompt until y/n/Tab.
+            setPendingCompletionDisplay(matches);
             appendToOutput(`Display all ${matches.length} possibilities? (y/n) `);
         } else {
-            /// Do not echo another ➜ prompt line — the live prompt already shows it.
-            last_listed_completion_signature = signature;
-            appendToOutput(formatColumns(matches));
+            appendToOutput(formatCompletionColumns(matches));
         }
         container.scrollTop = container.scrollHeight;
     }
@@ -2086,7 +2099,8 @@
             }
 
             applyCompletion(longestCommonPrefix(matches));
-            showCompletionMatches(prefix, matches);
+            /// Echo the post-LCP line (same text the live prompt shows), like keeper-client.
+            showCompletionMatches(input.value, matches);
         } catch (e) { /* ignore fetch errors */ }
     }
 
@@ -2095,7 +2109,6 @@
         /// Cancel any in-flight "Display all N possibilities? (y/n)" so Clear /
         /// Ctrl+L cannot leave the prompt hidden via .pending-completion.
         setPendingCompletionDisplay(null);
-        last_listed_completion_signature = null;
     }
 
     function appendToOutput(text) {
@@ -2128,7 +2141,6 @@
         /// handler that dismisses y/n; clear pending state so the prompt is not
         /// left invisible under .pending-completion while the command runs.
         setPendingCompletionDisplay(null);
-        last_listed_completion_signature = null;
 
         appendToOutput(`➜ ${cli_cwd} ${command}\n`);
         command_container.scrollTop = command_container.scrollHeight;
@@ -2195,8 +2207,7 @@
                 if (event.key === "y" || event.key === "Y" || event.code === "Tab") {
                     event.preventDefault();
                     const answer = (event.code === "Tab") ? "" : "y";
-                    last_listed_completion_signature = pending_completion_signature;
-                    appendToOutput(answer + "\n" + formatColumns(pending_completion_display));
+                    appendToOutput(answer + "\n" + formatCompletionColumns(pending_completion_display));
                     setPendingCompletionDisplay(null);
                     command_container.scrollTop = command_container.scrollHeight;
                     return;
@@ -2204,7 +2215,6 @@
                 if (event.key === "n" || event.key === "N") {
                     event.preventDefault();
                     appendToOutput("n\n");
-                    last_listed_completion_signature = null;
                     setPendingCompletionDisplay(null);
                     command_container.scrollTop = command_container.scrollHeight;
                     return;
@@ -2214,7 +2224,6 @@
                 if (event.code === "Enter") {
                     event.preventDefault();
                     appendToOutput("\n");
-                    last_listed_completion_signature = null;
                     setPendingCompletionDisplay(null);
                     command_container.scrollTop = command_container.scrollHeight;
                     return;
@@ -2222,13 +2231,11 @@
                 if (event.code === "KeyC" && event.ctrlKey) {
                     event.preventDefault();
                     appendToOutput("^C\n");
-                    last_listed_completion_signature = null;
                     setPendingCompletionDisplay(null);
                     command_container.scrollTop = command_container.scrollHeight;
                     return;
                 }
                 appendToOutput("\n");
-                last_listed_completion_signature = null;
                 setPendingCompletionDisplay(null);
                 command_container.scrollTop = command_container.scrollHeight;
             }
