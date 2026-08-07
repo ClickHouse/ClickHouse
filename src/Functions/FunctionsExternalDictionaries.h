@@ -18,6 +18,7 @@
 #include <Columns/MaskOperations.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -1212,6 +1213,87 @@ private:
         auto key_column_cast = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
 
         ColumnPtr result = dictionary->getHierarchy(key_column_cast, hierarchical_attribute.type);
+
+        return result;
+    }
+
+    mutable FunctionDictHelper helper;
+};
+
+
+/// Returns the topmost ancestor (the root) of a key in a hierarchical dictionary.
+/// It is equivalent to taking the last element of dictGetHierarchy, i.e. dictGetHierarchy(dict_name, key)[-1],
+/// but returns the root directly as a scalar instead of the whole hierarchy array.
+class FunctionDictGetRoot final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetRoot";
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionDictGetRoot>(context);
+    }
+
+    explicit FunctionDictGetRoot(ContextPtr context_) : helper(context_) {}
+
+    String getName() const override { return name; }
+
+private:
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    bool useDefaultImplementationForConstants() const final { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
+    bool isDeterministic() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected a const string.",
+                arguments[0].type->getName(),
+                getName());
+
+        auto dictionary = helper.getDictionary(arguments[0].column);
+        const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
+
+        return removeNullable(hierarchical_attribute.type);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        auto dictionary = helper.getDictionary(arguments[0].column);
+        const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
+
+        auto key_column = ColumnWithTypeAndName{arguments[1].column, arguments[1].type, arguments[1].name};
+        auto key_column_cast = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
+
+        ColumnPtr hierarchy = dictionary->getHierarchy(key_column_cast, hierarchical_attribute.type);
+        const auto & hierarchy_array = assert_cast<const ColumnArray &>(*hierarchy);
+        const auto & hierarchy_offsets = hierarchy_array.getOffsets();
+        const auto & hierarchy_elements = hierarchy_array.getData();
+
+        auto result = result_type->createColumn();
+        result->reserve(input_rows_count);
+
+        IColumn::Offset previous_offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            IColumn::Offset current_offset = hierarchy_offsets[i];
+
+            /// The hierarchy of a key starts with the key itself and ends with its topmost ancestor.
+            /// Therefore the last element of the hierarchy is the root.
+            /// The hierarchy is empty only for keys that are absent from the dictionary; for them we return the default value.
+            if (current_offset > previous_offset)
+                result->insertFrom(hierarchy_elements, current_offset - 1);
+            else
+                result->insertDefault();
+
+            previous_offset = current_offset;
+        }
 
         return result;
     }

@@ -1,0 +1,89 @@
+---
+slug: /use-cases/observability/clickstack/sdks/java
+description: 'ClickStack용 Java SDK - ClickHouse Observability Stack'
+title: 'Java'
+doc_type: 'guide'
+keywords: ['Java SDK ClickStack', 'Java OpenTelemetry ClickStack', 'Java 관측성 SDK', 'ClickStack Java 통합', 'Java 애플리케이션 모니터링']
+---
+
+ClickStack은 텔레메트리 데이터(로그 및
+트레이스)를 수집하기 위해 OpenTelemetry 표준을 사용합니다. 트레이스는 자동 계측으로 생성되므로 트레이싱의 이점을 얻기 위해 수동
+계측은 필요하지 않습니다.
+
+**이 가이드는 다음을 통합합니다:**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ 로그</td>
+      <td className="pe-2">✅ 메트릭</td>
+      <td className="pe-2">✅ 트레이스</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="getting-started">
+  ## 시작하기
+</div>
+
+<Note>
+  현재 이 통합은 **Java 8+**만 지원합니다
+</Note>
+
+<div id="download-opentelemetry-java-agent">
+  ### OpenTelemetry Java agent 다운로드
+</div>
+
+[`opentelemetry-javaagent.jar`](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar)을 다운로드한 다음
+원하는 디렉터리에 JAR 파일을 저장합니다. 이 JAR 파일에는 에이전트와
+계측 라이브러리가 포함되어 있습니다. 다음 명령으로
+에이전트를 다운로드할 수도 있습니다:
+
+```shell
+curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
+```
+
+<div id="configure-environment-variables">
+  ### 환경 변수 설정
+</div>
+
+이후 OpenTelemetry collector를 통해 텔레메트리를 ClickStack으로 전송하려면 셸에서 다음 환경 변수를 설정해야 합니다:
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```shell
+    export JAVA_TOOL_OPTIONS="-javaagent:PATH/TO/opentelemetry-javaagent.jar" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_LOGS_EXPORTER=otlp \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```shell
+    export JAVA_TOOL_OPTIONS="-javaagent:PATH/TO/opentelemetry-javaagent.jar" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>' \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_LOGS_EXPORTER=otlp \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    ```
+  </Tab>
+</Tabs>
+
+*`OTEL_SERVICE_NAME` 환경 변수는 HyperDX 앱에서 서비스를 식별하는 데 사용되며, 이름은 원하는 대로 지정할 수 있습니다.*
+
+`OTEL_EXPORTER_OTLP_HEADERS` 환경 변수에는 HyperDX 앱의 `Team Settings → API Keys`에서 확인할 수 있는 API Key가 포함됩니다.
+
+<div id="run-the-application-with-otel-java-agent">
+  ### OpenTelemetry Java agent로 애플리케이션 실행하기
+</div>
+
+```shell
+java -jar target/<APPLICATION_JAR_FILE>
+```
+
+<br />
+
+Java OpenTelemetry 계측에 관한 자세한 내용은 다음을 참조하십시오: [https://opentelemetry.io/docs/instrumentation/java/](https://opentelemetry.io/docs/instrumentation/java/)

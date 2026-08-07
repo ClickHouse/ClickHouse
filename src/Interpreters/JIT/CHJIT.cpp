@@ -4,6 +4,9 @@
 
 #include <sys/mman.h>
 #include <cstring>
+#if defined(OS_DARWIN)
+#include <strings.h>
+#endif
 #include <boost/noncopyable.hpp>
 
 #include <llvm/Analysis/CGSCCPassManager.h>
@@ -446,11 +449,12 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("memcmpSmallCharsAllowOverflow15", reinterpret_cast<void *>(&memcmpSmallCharsAllowOverflow15));
 
 #if defined(OS_DARWIN)
-    /// On Apple targets LLVM lowers constant-pattern memsets to these libc helpers,
+    /// On Apple targets LLVM lowers constant-pattern memsets and zeroing to these libc helpers,
     /// so the JIT must be able to resolve them.
     symbol_resolver->registerSymbol("memset_pattern4", reinterpret_cast<void *>(&memset_pattern4));
     symbol_resolver->registerSymbol("memset_pattern8", reinterpret_cast<void *>(&memset_pattern8));
     symbol_resolver->registerSymbol("memset_pattern16", reinterpret_cast<void *>(&memset_pattern16));
+    symbol_resolver->registerSymbol("bzero", reinterpret_cast<void *>(&bzero));
 #endif
 
     symbol_resolver->registerSymbol("fmod", reinterpret_cast<void *>(static_cast<double (*)(double, double)>(&fmod)));

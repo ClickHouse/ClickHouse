@@ -85,6 +85,7 @@ void registerAggregateFunctionCramersV(AggregateFunctionFactory &);
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory &);
 void registerAggregateFunctionContingency(AggregateFunctionFactory &);
 void registerAggregateFunctionCramersVBiasCorrected(AggregateFunctionFactory &);
+void registerAggregateFunctionGini(AggregateFunctionFactory &);
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory &);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory &);
 void registerAggregateFunctionNothing(AggregateFunctionFactory &);
@@ -114,6 +115,7 @@ void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactor
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
+void registerAggregateFunctionCombinatorTuple(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinatorFactory & factory);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
@@ -182,6 +184,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionTheilsU(factory);
         registerAggregateFunctionContingency(factory);
         registerAggregateFunctionCramersVBiasCorrected(factory);
+        registerAggregateFunctionGini(factory);
         registerAggregateFunctionsBitmap(factory);
         registerAggregateFunctionsNumericIndexedVector(factory);
         registerAggregateFunctionsMaxIntersections(factory);
@@ -232,6 +235,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorResample(factory);
         registerAggregateFunctionCombinatorDistinct(factory);
         registerAggregateFunctionCombinatorMap(factory);
+        registerAggregateFunctionCombinatorTuple(factory);
         registerAggregateFunctionCombinatorsArgMinArgMax(factory);
     }
 }

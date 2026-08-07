@@ -21,6 +21,9 @@ enum class ColumnDefaultKind : uint8_t
 ColumnDefaultKind columnDefaultKindFromString(const std::string & str);
 std::string toString(ColumnDefaultKind kind);
 
+/// Both kinds are physical (Default/Materialized) or both are computed (Alias/Ephemeral).
+bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs);
+
 
 struct ColumnDefault
 {

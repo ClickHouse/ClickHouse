@@ -12,7 +12,6 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -38,16 +37,14 @@ class JoinUsedFlags;
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods;
 
-/** Data structure for implementation of JOIN.
-  * It is just a hash table: keys -> rows of joined ("right") table.
-  * Additionally, CROSS JOIN is supported: instead of hash table, it use just set of blocks without keys.
+/** Data structure for implementation of hash JOIN.
+  * It is a hash table: keys -> rows of joined ("right") table.
   *
   * JOIN-s could be of these types:
   * - ALL × LEFT/INNER/RIGHT/FULL
   * - ANY × LEFT/INNER/RIGHT
   * - SEMI/ANTI x LEFT/RIGHT
   * - ASOF x LEFT/INNER
-  * - CROSS
   *
   * ALL means usual JOIN, when rows are multiplied by number of matching rows from the "right" table.
   * ANY uses one line per unique key from right table. For LEFT JOIN it would be any row (with needed joined key) from the right table,
@@ -69,7 +66,7 @@ class HashJoinMethods;
   *
   * Thus, LEFT and RIGHT JOINs are not symmetric in terms of implementation.
   *
-  * All JOINs (except CROSS) are done by equality condition on keys (equijoin).
+  * All JOINs are done by equality condition on keys (equijoin).
   * Non-equality and other conditions are not supported.
   *
   * Implementation:
@@ -140,7 +137,8 @@ public:
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
     bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
-    bool addBlockToJoin(const Block & source_block_, size_t num_rows, bool check_limits) override;
+
+    using IJoin::addBlockToJoin;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
     bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits);
@@ -203,7 +201,7 @@ public:
     JoinStrictness getStrictness() const { return strictness; }
     const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
     ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
-    bool anyTakeLastRow() const { return any_take_last_row; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
 
@@ -267,8 +265,6 @@ public:
 
     enum class Type : uint8_t
     {
-        EMPTY,
-        CROSS,
         #define M(NAME) NAME,
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -357,9 +353,6 @@ public:
 
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
-
-                default:
-                    break;
             }
         }
 
@@ -367,9 +360,6 @@ public:
         {
             switch (which)
             {
-                case Type::EMPTY:            return 0;
-                case Type::CROSS:            return 0;
-
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->size() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -381,9 +371,6 @@ public:
         {
             switch (which)
             {
-                case Type::EMPTY:            return 0;
-                case Type::CROSS:            return 0;
-
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -395,9 +382,6 @@ public:
         {
             switch (which)
             {
-                case Type::EMPTY:            return 0;
-                case Type::CROSS:            return 0;
-
             #define M(NAME) \
                 case Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
@@ -413,22 +397,14 @@ public:
 
     using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
 
-    struct ScatteredColumns
-    {
-        ColumnsInfo columns_info;
-        ScatteredBlock::Selector selector;
-
-        size_t allocatedBytes() const;
-    };
-
     struct NullMapHolder
     {
-        const ScatteredColumns * columns{};
+        const StoredBlock * columns{};
         ColumnPtr column;
         size_t selector_rows = 0;
 
         NullMapHolder() = default;
-        explicit NullMapHolder(const ScatteredColumns * columns_, ColumnPtr column_)
+        explicit NullMapHolder(const StoredBlock * columns_, ColumnPtr column_)
             : columns(columns_), column(column_)
         {
             // we can cache the selector size at construction to make the holder robust
@@ -440,11 +416,11 @@ public:
     };
 
     using NullmapList = std::deque<NullMapHolder>;
-    using ScatteredColumnsList = std::list<ScatteredColumns>;
+    using StoredBlocksList = std::list<StoredBlock>;
 
     struct RightTableData
     {
-        Type type = Type::EMPTY;
+        Type type = Type::hashed;
 
         /// tab1 join tab2 on t1.x = t2.x or t1.y = t2.y
         /// =>
@@ -452,8 +428,13 @@ public:
         /// join tab2 on [not_joined(t1.x = t2.x)] and t1.y = t2.y
         std::vector<MapsVariant> maps;
         Block sample_block; /// Block as it would appear in the BlockList
-        ScatteredColumnsList columns; /// Columns of "right" table.
+        StoredBlocksList columns; /// Columns of "right" table.
         NullmapList nullmaps; /// Nullmaps for blocks of "right" table (if needed)
+
+        /// Resolves RowRef::block_no to the stored block.
+        /// Shared between all slots of a ConcurrentHashJoin so that block numbers stay
+        /// globally unique: cells built by any slot end up in the shared two-level map.
+        StoredColumnsIndexPtr stored_columns_index = std::make_shared<StoredColumnsIndex>();
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
@@ -510,7 +491,7 @@ public:
     const Block & savedBlockSample() const { return data->sample_block; }
 
     bool isUsed(size_t off) const;
-    bool isUsed(const Columns * columns_ptr, size_t row_idx) const;
+    bool isUsed(UInt32 block_no, size_t row_idx) const;
 
     void debugKeys() const;
 
@@ -543,7 +524,6 @@ public:
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
-    friend class CrossJoinResult;
 
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
@@ -572,14 +552,8 @@ private:
     /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
     RightTableDataPtr data;
-    bool have_compressed = false;
 
     std::vector<Sizes> key_sizes;
-
-    /// Needed to do external cross join
-    TemporaryDataOnDiskScopePtr tmp_data;
-    std::optional<TemporaryBlockStreamHolder> tmp_stream;
-    mutable std::once_flag finish_writing;
 
     /// Block with columns from the right-side table.
     Block right_sample_block;
@@ -629,11 +603,7 @@ private:
 
     void initRightBlockStructure(Block & saved_block_sample);
 
-    JoinResultPtr joinBlockImplCross(Block block) const;
-
     bool preferUseMapsAll() const;
-
-    bool empty() const;
 
     bool isUsedByAnotherAlgorithm() const;
     bool canRemoveColumnsFromLeftBlock() const;

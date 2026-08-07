@@ -1,0 +1,104 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/04/2026-04-17
+title: '演示日 - 2026-04-17'
+sidebarTitle: '2026-04-17'
+description: 'ClickStack 2026-04-17 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="summarize-logs-and-traces">
+  ## 总结日志和链路追踪
+</div>
+
+*演示者：[ @alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/TWsFyWt-tD8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+HyperDX 现已提供 AI summarize 功能，可用于日志、链路追踪和模式。新的 summarize 按钮会将遥测数据浓缩为易读的摘要，让你无需逐条手动查看事件，也能快速了解一组事件中发生了什么。
+
+该架构设计为可接入 Anthropic (或类似) 的 API，并支持后续对话，因此用户在生成初始摘要后还可以继续提问。
+
+**相关 PR：** [#2108](https://github.com/hyperdxio/hyperdx/pull/2108) feat: 支持可扩展 subject、trace 上下文和安全加固的 AI summarize，[#2100](https://github.com/hyperdxio/hyperdx/pull/2100) 实现支持智能语气模式的真实 AI summarize callbacks
+
+<div id="event-deltas-heatmap-into-chart-builder">
+  ## Event Deltas 热力图接入图表构建器
+</div>
+
+*由 [@alex-fedotyev](https://github.com/alex-fedotyev) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BLVhIQjocwE" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Event Deltas 热力图可视化正在迁移到主图表构建器中，成为一种标准图表类型，与 HyperDX 的其他可视化并列使用。此前，它只在专用视图中提供；现在，它已可在图表浏览器中与其他图表类型一起使用。
+
+完成后，用户将能够把 Event Deltas 热力图直接添加到仪表盘卡片中，并支持与其他图表一样的字段过滤和时间范围控制。这项工作目前仍在进行中。
+
+**相关 PR：** [#2107](https://github.com/hyperdxio/hyperdx/pull/2107) 将热力图图表接入仪表盘编辑器和卡片渲染，[#2102](https://github.com/hyperdxio/hyperdx/pull/2102) 实现支持 Event Deltas 的可复用热力图图表
+
+<div id="benchmarking-for-schema-improvements">
+  ## schema 改进的基准测试
+</div>
+
+*演示者：[ @knudtty ](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/_B7TmIiXZyM" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron 介绍了 HyperDX 更新后的默认 OpenTelemetry 日志 schema 的基准测试结果。关键变化是移除旧版 `timestamp_time` 列 (一个秒级粒度的 32 位 Unix timestamp) ，改为仅依赖 `timestamp`；后者提供纳秒级精度，同时也让 schema 少了一列。在覆盖广泛的一组查询基准测试中，更新后的 schema 在几乎所有情况下都与旧版表现相当或更好。
+
+最终版 schema 还包含读取顺序优化，在选择性查询上带来了明显收益。与基线相比，搜索相对少见的 Map 值时，速度大约提升了两倍；而高频值查找的提升更为明显。插入开销略有增加 (因为需要维护更多列) ，但整体查询性能基本持平或有所提升，因此这是一次相当直接的升级。
+
+**相关 PR：** [#2125](https://github.com/hyperdxio/hyperdx/pull/2125) feat: 优化默认 otel-logs schema
+
+<div id="improvements-to-autocomplete">
+  ## 自动补全功能的改进
+</div>
+
+*由 [@knudtty](https://github.com/knudtty) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/8zDZx49uYQo" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+HyperDX 的自动补全正在经历一次重大升级，以支持高得多的基数并加快值的加载速度。新实现基于 rollup 表 (即对 15 分钟时间桶中的键值对进行预聚合的 `AggregatingMergeTrees`) ，因此系统不必在每次输入时都查询原始数据，而是从规模小得多的预计算数据集中读取。在针对一个拥有 2.3 亿行的暂存实例进行的现场演示中，自动补全能够快速加载 `hostname` 这类高基数字段的值，且几乎没有可察觉的延迟。
+
+该系统同时支持仅键 rollup (返回所有键，但不返回关联值，以降低基数开销) 和完整的键值 rollup。如果只有键 rollup，系统会在值查找步骤回退到现有的 fetch-values 策略。如果完全未检测到 rollup 表，则会平滑回退到当前行为。Aaron 还提到，未来如果增加一个 allow-list UI，用于控制哪些键生成值 rollup，将对处理超高基数数据的客户非常有帮助。
+
+**相关 PR：** [#2128](https://github.com/hyperdxio/hyperdx/pull/2128) feat: 快速且完整的自动补全, [#2127](https://github.com/hyperdxio/hyperdx/pull/2127) feat: 更好的自动补全
+
+<div id="improvements-to-alerting-with-sql">
+  ## 使用 SQL 改进告警功能
+</div>
+
+*演示：[@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BOk-LC0y2no" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+继前一周为 Raw SQL 折线图和柱状图新增告警支持之后，HyperDX 现在也支持对 Raw SQL 数值图表设置告警。设置告警时不再要求必须提供时间过滤器参数：如果省略，会显示警告，但不包含任何时间维度的查询现在也完全有效。这让为那些不会随时间变化的配置值或系统指标设置告警变得更加容易，例如检查 ClickHouse cluster 计数是否等于预期值。
+
+此外，还新增了多种阈值类型：不等于、高于、至多、介于两者之间以及区间外。这让团队在表达告警条件时，相比简单的大于比较有了更高的灵活性。最后，告警历史现在会直接显示在卡片编辑器中，因此当某个已触发的告警链接到特定的 仪表盘 卡片时，用户可以查看完整历史记录，了解触发原因，并且无需离开 仪表盘 即可确认或静默该告警。
+
+**相关 PR：** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: 为基于 Raw SQL 的 仪表盘 卡片实现告警功能, [#2114](https://github.com/hyperdxio/hyperdx/pull/2114) feat: 支持对 Raw SQL 数值图表设置告警, [#2122](https://github.com/hyperdxio/hyperdx/pull/2122) feat: 添加更多告警阈值类型, [#2130](https://github.com/hyperdxio/hyperdx/pull/2130) feat: 添加 between 和 not-between 告警阈值, [#2123](https://github.com/hyperdxio/hyperdx/pull/2123) feat: 在告警编辑器中添加告警历史 + 确认
+
+<div id="errors-during-alert-execution">
+  ## 告警执行失败时的错误
+</div>
+
+*由 [@pulpdrew](https://github.com/pulpdrew) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/b3G8kFiQiUg" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+当告警执行失败时，HyperDX 现在会直接在 UI 中显示错误，而不是悄悄忽略。此前，用户可能会发现告警历史中有空白，却不知道原因：既没有错误信息，也无法排查到底出了什么问题。现在，系统会以内联方式为不同类型的失败显示不同的错误图标，包括无效查询、webhook 发送失败，以及 webhook 设置缺失或配置错误。
+
+点击错误图标后，会显示诊断和解决问题所需的具体信息，这样用户无需翻查服务器日志或提交支持请求，也能修复配置有误的告警。目标是让告警失败能够自助处理：看到错误、理解原因、完成修复。
+
+**相关 PR：** [#2132](https://github.com/hyperdxio/hyperdx/pull/2132) feat: 在 UI 中显示告警执行错误, [#2136](https://github.com/hyperdxio/hyperdx/pull/2136) fix: 隐藏可能敏感的告警错误

@@ -1,0 +1,195 @@
+---
+description: '`settings` 的约束可在 `user.xml` 配置文件的 `profiles` 部分中定义，并禁止用户通过 `SET` 查询更改其中的某些设置。'
+sidebarTitle: '设置约束'
+slug: /operations/settings/constraints-on-settings
+title: '设置约束'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+在 ClickHouse 中，设置上的“约束”指的是可应用于设置的限制和规则。这些约束有助于维持数据库的稳定性、安全性以及行为的可预测性。
+
+<div id="defining-constraints">
+  ## 定义约束
+</div>
+
+可以在 `user.xml`
+配置文件的 `profiles` 部分中定义设置约束。这样可以禁止用户使用
+[`SET`](/zh/reference/statements/set) 语句更改某些设置。
+
+约束的定义如下：
+
+```xml
+<profiles>
+  <user_name>
+    <constraints>
+      <setting_name_1>
+        <min>lower_boundary</min>
+      </setting_name_1>
+      <setting_name_2>
+        <max>upper_boundary</max>
+      </setting_name_2>
+      <setting_name_3>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+      </setting_name_3>
+      <setting_name_4>
+        <readonly/>
+      </setting_name_4>
+      <setting_name_5>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+        <changeable_in_readonly/>
+      </setting_name_5>
+      <setting_name_6>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+        <disallowed>value1</disallowed>
+        <disallowed>value2</disallowed>
+        <disallowed>value3</disallowed>
+        <changeable_in_readonly/>
+      </setting_name_6>
+    </constraints>
+  </user_name>
+</profiles>
+```
+
+如果用户试图违反这些约束，则会抛出异常，并且
+该设置保持不变。
+
+<div id="types-of-constraints">
+  ## 约束的类型
+</div>
+
+ClickHouse 支持以下几种约束：
+
+* `min`
+* `max`
+* `disallowed`
+* `readonly` (别名为 `const`)
+* `changeable_in_readonly`
+
+`min` 和 `max` 约束用于为数值型设置指定上下界，
+并且可以结合使用。
+
+`disallowed` 约束可用于指定某个设置不允许使用的特定值。
+
+`readonly` 或 `const` 约束表示用户完全无法更改相应设置。
+
+`changeable_in_readonly` 这种约束类型允许用户在 `min`/`max` 范围内更改该设置，
+即使 `readonly` 设置为 `1` 也是如此；
+否则，在 `readonly=1` 模式下将不允许更改设置。
+
+<Note>
+  仅当启用 `settings_constraints_replace_previous` 时，才支持 `changeable_in_readonly`：
+
+  ```xml
+  <access_control_improvements>
+    <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+  </access_control_improvements>
+  ```
+</Note>
+
+<div id="multiple-constraint-profiles">
+  ## 多个约束 profile
+</div>
+
+如果某个用户同时启用了多个 profile，则约束会合并。
+合并过程取决于 `settings_constraints_replace_previous`：
+
+* **true** (推荐) ：相同设置的约束会在
+  合并过程中被替换，因此会使用最后一个约束，之前的所有约束都会被忽略。
+  这也包括新约束中未设置的字段。
+* **false** (默认) ：相同设置的约束会按如下方式合并：
+  每种未设置的约束类型都会沿用前一个 profile 中的值，而每种
+  已设置的约束类型都会替换为新 profile 中的值。
+
+<div id="read-only">
+  ## 只读模式
+</div>
+
+只读模式通过 `readonly` 设置启用，不要将其与 `readonly` 约束类型
+混淆：
+
+* `readonly=0`：没有只读限制。
+* `readonly=1`：只允许执行读查询，且不能更改设置，
+  除非设置了 `changeable_in_readonly`。
+* `readonly=2`：只允许执行读查询，但可以更改设置，
+  `readonly` 设置本身除外。
+
+<div id="example-read-only">
+  ### 示例
+</div>
+
+让 `users.xml` 包含以下内容：
+
+```xml
+<profiles>
+  <default>
+    <max_memory_usage>10000000000</max_memory_usage>
+    <force_index_by_date>0</force_index_by_date>
+    ...
+    <constraints>
+      <max_memory_usage>
+        <min>5000000000</min>
+        <max>20000000000</max>
+      </max_memory_usage>
+      <force_index_by_date>
+        <readonly/>
+      </force_index_by_date>
+    </constraints>
+  </default>
+</profiles>
+```
+
+以下查询都会引发异常：
+
+```sql
+SET max_memory_usage=20000000001;
+SET max_memory_usage=4999999999;
+SET force_index_by_date=1;
+```
+
+```text
+Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be greater than 20000000000.
+Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be less than 5000000000.
+Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
+```
+
+<Note>
+  `default` profile 的处理方式较为特殊：为 `default` profile 定义的所有
+  约束都会成为默认约束，因此会对所有用户生效，
+  直到针对这些用户显式覆盖这些约束为止。
+</Note>
+
+<div id="constraints-on-merge-tree-settings">
+  ## MergeTree 设置的约束
+</div>
+
+可以为 [MergeTree 设置](/zh/reference/settings/merge-tree-settings)定义约束。
+这些约束会在创建使用 MergeTree 引擎的表时
+或更改其存储设置时生效。
+
+在 `<constraints>` 部分中引用时，
+MergeTree 设置名称必须添加 `merge_tree_` 前缀。
+
+<div id="example-read-only">
+  ### 示例
+</div>
+
+您可以禁止创建明确指定了 `storage_policy` 的新表
+
+```xml
+<profiles>
+  <default>
+    <constraints>
+      <merge_tree_storage_policy>
+        <const/>
+      </merge_tree_storage_policy>
+    </constraints>
+  </default>
+</profiles>
+```

@@ -1,0 +1,557 @@
+---
+slug: /guides/developer/deduplicating-inserts-on-retries
+title: '재시도 시 삽입 중복 제거'
+description: '삽입 작업 재시도 시 중복 데이터 방지'
+keywords: ['중복 제거', '중복 제거하다', '삽입 재시도', '삽입']
+doc_type: 'guide'
+---
+
+삽입 작업은 타임아웃과 같은 오류로 인해 때때로 실패할 수 있습니다. 삽입이 실패하면 데이터가 실제로 성공적으로 삽입되었을 수도 있고, 그렇지 않을 수도 있습니다. 이 가이드에서는 동일한 데이터가 두 번 이상 삽입되지 않도록 삽입 재시도 시 중복 제거를 활성화하는 방법을 설명합니다.
+
+삽입을 재시도하면 ClickHouse는 해당 데이터가 이미 성공적으로 삽입되었는지 확인합니다. 삽입된 데이터가 중복으로 표시되면 ClickHouse는 이를 대상 테이블에 삽입하지 않습니다. 하지만 사용자에게는 데이터가 정상적으로 삽입된 것과 동일하게 작업 성공 상태가 반환됩니다.
+
+<div id="limitations">
+  ## 제한 사항
+</div>
+
+<div id="uncertain-insert-status">
+  ### 불확실한 삽입 상태
+</div>
+
+삽입 작업이 성공할 때까지 재시도해야 합니다. 모든 재시도가 실패하면 데이터가 삽입되었는지 여부를 판단할 수 없습니다. materialized view가 관련되면 데이터가 어느 테이블에 반영되었을 수 있는지도 불분명합니다. materialized view가 원본 테이블과 동기화되지 않았을 수 있습니다.
+
+<div id="deduplication-window-limit">
+  ### 중복 제거 윈도우 제한
+</div>
+
+재시도하는 동안 다른 삽입 작업이 `*_deduplication_window`를 초과해 발생하면 중복 제거가 의도대로 작동하지 않을 수 있습니다. 이 경우 동일한 데이터가 여러 번 삽입될 수 있습니다.
+
+<div id="enabling-insert-deduplication-on-retries">
+  ## 재시도 시 삽입 중복 제거 활성화
+</div>
+
+<div id="insert-deduplication-for-tables">
+  ### 테이블의 삽입 중복 제거
+</div>
+
+**삽입 시 중복 제거는 `*MergeTree` 엔진에서만 지원됩니다.**
+
+`*ReplicatedMergeTree` 엔진에서는 삽입 중복 제거가 기본적으로 활성화되어 있으며, [`replicated_deduplication_window`](/ko/reference/settings/merge-tree-settings#replicated_deduplication_window) 및 [`replicated_deduplication_window_seconds`](/ko/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) 설정으로 제어됩니다. 복제되지 않은 `*MergeTree` 엔진에서는 중복 제거가 [`non_replicated_deduplication_window`](/ko/reference/settings/merge-tree-settings#non_replicated_deduplication_window) 설정으로 제어됩니다.
+
+위 설정은 테이블의 중복 제거 로그에 대한 매개변수를 결정합니다. 중복 제거 로그에는 제한된 개수의 `block_id`가 저장되며, 이 값이 중복 제거 동작 방식을 결정합니다(아래 참조).
+
+<div id="query-level-insert-deduplication">
+  ### 쿼리 수준 삽입 중복 제거
+</div>
+
+설정 `insert_deduplicate=1`을 사용하면 쿼리 수준의 중복 제거가 활성화됩니다. `insert_deduplicate=0`으로 데이터를 삽입한 경우, 이후 `insert_deduplicate=1`로 삽입을 다시 시도하더라도 해당 데이터는 중복 제거되지 않습니다. 이는 `insert_deduplicate=0`으로 삽입할 때는 각 블록에 대한 `block_id`가 기록되지 않기 때문입니다.
+
+<div id="how-insert-deduplication-works">
+  ## 삽입 중복 제거의 작동 방식
+</div>
+
+ClickHouse에 데이터를 삽입하면 행 수와 바이트 수를 기준으로 데이터를 블록으로 나눕니다.
+
+`*MergeTree` 엔진을 사용하는 테이블에서는 각 블록에 해당 블록 데이터의 해시값인 고유한 `block_id`가 할당됩니다. 이 `block_id`는 삽입 작업의 고유 키로 사용됩니다. 중복 제거 로그에서 동일한 `block_id`가 발견되면 해당 블록은 중복으로 간주되며 테이블에 삽입되지 않습니다.
+
+이 방식은 삽입마다 서로 다른 데이터가 포함되는 경우에 효과적입니다. 하지만 동일한 데이터를 의도적으로 여러 번 삽입해야 하는 경우에는 중복 제거 과정을 제어하기 위해 `insert_deduplication_token` 설정을 사용해야 합니다. 이 설정을 사용하면 각 삽입에 대해 고유한 토큰을 지정할 수 있으며, ClickHouse는 이를 기준으로 데이터가 중복인지 판단합니다.
+
+`INSERT ... VALUES` 쿼리의 경우, 삽입된 데이터를 블록으로 나누는 방식은 결정적이며 설정값에 따라 정해집니다. 따라서 삽입을 재시도할 때는 최초 작업과 동일한 설정값을 사용해야 합니다.
+
+`INSERT ... SELECT` 쿼리의 경우에는 쿼리의 `SELECT` 부분이 매 작업마다 동일한 순서로 동일한 데이터를 반환하는 것이 중요합니다. 다만 실제로는 이를 달성하기가 어렵습니다. 재시도 시 데이터 순서를 안정적으로 유지하려면 쿼리의 `SELECT` 부분에 `ORDER BY ALL` 절을 정의하십시오. 현재는 쿼리에서 반드시 정확히 `ORDER BY ALL`을 사용해야 합니다. `ORDER BY` 지원은 아직 구현되지 않았으므로, 쿼리의 `SELECT` 부분은 안정적인 것으로 간주되지 않습니다. 또한 재시도 사이에 선택 대상 테이블이 업데이트될 수 있다는 점도 유의해야 합니다. 이 경우 결과 데이터가 변경되어 중복 제거가 수행되지 않을 수 있습니다. 또한 대량의 데이터를 삽입하는 경우에는 삽입 후 생성되는 블록 수가 중복 제거 로그 윈도우를 초과할 수 있으며, 이 경우 ClickHouse가 해당 블록을 중복 제거해야 하는지 판단하지 못할 수 있습니다.
+현재 `INSERT ... SELECT`의 동작은 `insert_select_deduplicate` 설정으로 제어됩니다. 이 설정은 `INSERT ... SELECT` 쿼리로 삽입된 데이터에 중복 제거를 적용할지 여부를 결정합니다. 자세한 내용과 사용 예시는 링크된 문서를 참조하십시오.
+
+<div id="insert-deduplication-with-materialized-views">
+  ## materialized view에서의 삽입 중복 제거
+</div>
+
+테이블에 하나 이상의 materialized view가 있으면, 삽입된 데이터는 정의된 변환을 거쳐 해당 뷰의 대상에도 삽입됩니다. 변환된 데이터도 재시도 시 중복 제거됩니다. ClickHouse는 대상 테이블에 삽입된 데이터를 중복 제거하는 것과 동일한 방식으로 materialized view에 대해서도 중복 제거를 수행합니다.
+
+다음 소스 테이블 설정으로 이 과정을 제어할 수 있습니다.
+
+* [`replicated_deduplication_window`](/ko/reference/settings/merge-tree-settings#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/ko/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/ko/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+
+사용자 프로필 설정 [`deduplicate_blocks_in_dependent_materialized_views`](/ko/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views)도 활성화해야 합니다.
+`insert_deduplicate=1`을 활성화하면 삽입된 데이터가 소스 테이블에서 중복 제거됩니다. `deduplicate_blocks_in_dependent_materialized_views=1` 설정을 사용하면 종속 테이블에서도 추가로 중복 제거가 활성화됩니다. 전체 중복 제거가 필요하면 두 설정을 모두 활성화해야 합니다.
+
+materialized view의 대상 테이블에 블록을 삽입할 때 ClickHouse는 소스 테이블의 `block_id`와 추가 식별자를 결합한 문자열을 해시하여 `block_id`를 계산합니다. 이를 통해 materialized view 내에서 정확한 중복 제거가 보장되며, materialized view의 대상 테이블에 도달하기 전에 어떤 변환이 적용되었는지와 관계없이 원래 삽입된 기준에 따라 데이터를 구분할 수 있습니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+<div id="identical-blocks-after-materialized-view-transformations">
+  ### materialized view 변환 후 동일한 블록
+</div>
+
+materialized view 내부의 변환 과정에서 생성된 동일한 블록은 서로 다른 데이터가 삽입된 결과이므로 중복 제거되지 않습니다.
+
+다음은 예시입니다:
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+```
+
+```sql
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+위 설정을 사용하면 행(row)이 1개만 포함된 일련의 블록으로 이루어진 테이블(table)에서 데이터를 선택할 수 있습니다. 이러한 작은 블록은 더 큰 블록으로 합쳐지지 않으며, 테이블에 삽입될 때까지 그대로 유지됩니다.
+
+```sql
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+```
+
+materialized view에 대해 중복 제거를 활성화해야 합니다:
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+여기서는 `dst` 테이블에 2개의 파트가 삽입된 것을 확인할 수 있습니다. select에서 가져온 2개의 블록 -- 삽입 시 2개의 파트입니다. 이 파트들은 서로 다른 데이터를 포함하고 있습니다.
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+여기서는 `mv_dst` 테이블에 2개의 파트가 삽입된 것을 확인할 수 있습니다. 이 파트들은 동일한 데이터를 포함하지만, 중복 제거되지는 않습니다.
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+여기서는 삽입을 재시도하면 모든 데이터가 중복 제거되는 것을 확인할 수 있습니다. 중복 제거는 `dst` 테이블과 `mv_dst` 테이블 모두에 적용됩니다.
+
+<div id="identical-blocks-on-insertion">
+  ### 삽입 시 동일 블록
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+삽입:
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2);
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+위 설정에서는 select–의 결과로 두 개의 블록이 생성되므로, table `dst`에 삽입할 블록도 두 개여야 합니다. 그러나 실제로는 table `dst`에 하나의 블록만 삽입된 것을 확인할 수 있습니다. 이는 두 번째 블록이 중복 제거되었기 때문입니다. 이 블록은 데이터가 동일하고, 삽입된 데이터에서 해시로 계산되는 중복 제거 키 `block_id`도 같습니다. 이러한 동작은 예상한 결과가 아닙니다. 이런 경우는 드물지만 이론적으로는 발생할 수 있습니다. 이러한 경우를 올바르게 처리하려면 사용자가 `insert_deduplication_token`을 제공해야 합니다. 다음 예시에서 이를 수정해 보겠습니다:
+
+<div id="identical-blocks-in-insertion-with-insert_deduplication_token">
+  ### `insert_deduplication_token`을 사용한 삽입 중 동일한 블록
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+삽입:
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+예상대로 동일한 2개의 블록이 삽입되었습니다.
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+삽입을 재시도하면 예상대로 중복이 제거됩니다.
+
+```sql
+SELECT 'third attempt';
+
+INSERT INTO dst SELECT
+    1 AS key,
+    'b' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+해당 삽입도 실제로 삽입된 데이터가 다르더라도 중복 제거됩니다. `insert_deduplication_token`의 우선순위가 더 높다는 점에 유의하십시오. `insert_deduplication_token`이 제공되면 ClickHouse는 데이터의 해시값을 사용하지 않습니다.
+
+<div id="different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view">
+  ### materialized view의 기반 테이블에서 변환 후 동일한 데이터를 생성하는 여러 삽입 작업
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+select 'second attempt';
+
+INSERT INTO dst VALUES (2, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+│ from dst   │   2 │ A     │ all_1_1_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+매번 서로 다른 데이터를 삽입합니다. 그러나 `mv_dst` 테이블(table)에는 동일한 데이터가 삽입됩니다. 소스 데이터가 서로 달랐기 때문에 데이터는 중복 제거되지 않습니다.
+
+<div id="different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data">
+  ### 동등한 데이터를 하나의 기반 테이블에 삽입하는 여러 materialized view
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE TABLE mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_first
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+CREATE MATERIALIZED VIEW mv_second
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+동일한 2개의 블록이 예상대로 테이블 `mv_dst`에 삽입되었습니다.
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+해당 재시도 작업은 `dst`와 `mv_dst` 두 테이블(table) 모두에서 중복 제거 처리됩니다.

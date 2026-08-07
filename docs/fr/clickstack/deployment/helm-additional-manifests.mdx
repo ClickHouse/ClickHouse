@@ -1,0 +1,312 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-additional-manifests
+title: 'Manifestes Helm supplémentaires'
+description: "Déploiement d'objets Kubernetes personnalisés avec le chart Helm ClickStack à l'aide d'additionalManifests"
+doc_type: 'guide'
+keywords: ['manifestes supplémentaires ClickStack', 'ressources personnalisées Helm', 'NetworkPolicy', 'HPA', 'ALB Ingress', 'Kubernetes']
+---
+
+<Info>
+  **Version 2.x du chart uniquement**
+
+  La fonctionnalité `additionalManifests` est disponible uniquement dans le chart Helm **v2.x** basé sur des sous-charts.
+</Info>
+
+La valeur `additionalManifests` vous permet de déployer des objets Kubernetes arbitraires avec le chart ClickStack. Utilisez-la pour les ressources que le chart ne prend pas en charge nativement, comme `NetworkPolicy`, `HorizontalPodAutoscaler`, `ServiceAccount`, `PodMonitor`, des objets `Ingress` personnalisés ou tout autre objet de l&#39;API Kubernetes.
+
+<div id="how-it-works">
+  ## Fonctionnement
+</div>
+
+Chaque entrée dans `additionalManifests` est une définition complète de ressource Kubernetes. Le chart :
+
+1. Parcourt chaque entrée de la liste
+2. Convertit l&#39;entrée en YAML (`toYaml`)
+3. Évalue les expressions de template dans ce YAML à l&#39;aide de `tpl` dans Helm
+
+Les expressions de template peuvent faire référence à :
+
+* `.Release.Name`, `.Release.Namespace`
+* `include "clickstack.fullname" .` et les autres helpers du chart
+* `.Values.*`
+
+```yaml
+additionalManifests:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-custom'
+    data:
+      release: '{{ .Release.Name }}'
+```
+
+<div id="values-file-constraints">
+  ## Contraintes des fichiers values
+</div>
+
+`additionalManifests` se configure dans un fichier values, et les fichiers values sont analysés comme du YAML avant l’exécution de `tpl`.
+
+* Toute occurrence de `{{ ... }}` dans un fichier values doit se trouver dans une chaîne entre guillemets
+* Les blocs de template structurels ne sont pas valides dans un YAML de fichier values (par exemple, `{{- include ... | nindent ... }}` seul)
+* Pour les champs non textuels (par exemple, les ports numériques), utilisez des valeurs littérales ou des ports nommés
+* Si vous avez besoin de templating structurel, utilisez le template d’un wrapper chart plutôt qu’un fichier values brut
+
+```yaml
+# Valid in values.yaml
+name: '{{ include "clickstack.fullname" . }}-app'
+
+# Invalid in values.yaml (unquoted template expression)
+name: {{ include "clickstack.fullname" . }}-app
+
+# Invalid in values.yaml (structural template block)
+labels:
+  {{- include "clickstack.labels" . | nindent 2 }}
+```
+
+<div id="available-chart-helpers">
+  ## Helpers de chart disponibles
+</div>
+
+Ces helpers sont définis dans `templates/_helpers.tpl` :
+
+| Helper                           | Description                            | Utilisation dans le fichier values              |
+| -------------------------------- | -------------------------------------- | ----------------------------------------------- |
+| `clickstack.name`                | Nom du chart (tronqué à 63 caractères) | Sans risque dans les scalaires entre guillemets |
+| `clickstack.fullname`            | Nom qualifié par la release            | Sans risque dans les scalaires entre guillemets |
+| `clickstack.chart`               | Nom du chart + version                 | Sans risque dans les scalaires entre guillemets |
+| `clickstack.selectorLabels`      | Bloc de labels du selector             | Uniquement dans les templates de wrapper chart  |
+| `clickstack.labels`              | Bloc de labels standard                | Uniquement dans les templates de wrapper chart  |
+| `clickstack.mongodb.fullname`    | Nom de la CR MongoDB                   | Sans risque dans les scalaires entre guillemets |
+| `clickstack.clickhouse.fullname` | Nom de la CR ClickHouse                | Sans risque dans les scalaires entre guillemets |
+| `clickstack.otel.fullname`       | Nom du collector OTel                  | Sans risque dans les scalaires entre guillemets |
+
+<div id="examples">
+  ## Exemples
+</div>
+
+<div id="serviceaccount">
+  ### ServiceAccount
+</div>
+
+```yaml
+additionalManifests:
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}'
+      namespace: '{{ .Release.Namespace }}'
+      labels:
+        app.kubernetes.io/name: '{{ include "clickstack.name" . }}'
+        app.kubernetes.io/instance: '{{ .Release.Name }}'
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::123456789:role/my-role"
+```
+
+<div id="networkpolicy">
+  ### NetworkPolicy
+</div>
+
+Limitez le trafic entrant à destination des pods HyperDX :
+
+```yaml
+additionalManifests:
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-allow-ingress'
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: '{{ include "clickstack.name" . }}'
+          app.kubernetes.io/instance: '{{ .Release.Name }}'
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: ingress-nginx
+          ports:
+            - protocol: TCP
+              port: 3000
+            - protocol: TCP
+              port: 8000
+```
+
+<div id="horizontalpodautoscaler">
+  ### HorizontalPodAutoscaler
+</div>
+
+```yaml
+additionalManifests:
+  - apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-hpa'
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: '{{ include "clickstack.fullname" . }}-app'
+      minReplicas: 2
+      maxReplicas: 10
+      metrics:
+        - type: Resource
+          resource:
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 75
+```
+
+<div id="podmonitor">
+  ### PodMonitor (Prometheus Operator)
+</div>
+
+```yaml
+additionalManifests:
+  - apiVersion: monitoring.coreos.com/v1
+    kind: PodMonitor
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}'
+      labels:
+        release: prometheus
+    spec:
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: '{{ include "clickstack.name" . }}'
+          app.kubernetes.io/instance: '{{ .Release.Name }}'
+      podMetricsEndpoints:
+        - port: app
+          interval: 30s
+```
+
+<div id="aws-alb-ingress">
+  ### Ingress ALB sur AWS
+</div>
+
+Si vous utilisez l’[AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/), désactivez l’Ingress nginx intégré au chart et définissez un Ingress ALB personnalisé :
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: false
+
+additionalManifests:
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-alb'
+      annotations:
+        alb.ingress.kubernetes.io/scheme: internet-facing
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:123456789:certificate/abc-123"
+        alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+        alb.ingress.kubernetes.io/ssl-redirect: "443"
+        alb.ingress.kubernetes.io/group.name: clickstack
+        alb.ingress.kubernetes.io/healthcheck-path: /api/health
+    spec:
+      ingressClassName: alb
+      rules:
+        - host: clickstack.example.com
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: '{{ include "clickstack.fullname" . }}-app'
+                    port:
+                      name: app
+```
+
+Pour un exemple complet de configuration ALB, y compris l’Ingress interne du collecteur OTel et le HPA, consultez les [valeurs d’exemple ALB](https://github.com/ClickHouse/ClickStack-helm-charts/tree/main/examples/alb-ingress).
+
+<div id="targetgroupbinding">
+  ### TargetGroupBinding
+</div>
+
+Pour les scénarios ALB nécessitant des ressources `TargetGroupBinding` explicites :
+
+```yaml
+additionalManifests:
+  - apiVersion: elbv2.k8s.aws/v1beta1
+    kind: TargetGroupBinding
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-tgb'
+    spec:
+      serviceRef:
+        name: '{{ include "clickstack.fullname" . }}-app'
+        port: app
+      targetGroupARN: "arn:aws:elasticloadbalancing:us-east-1:123456789:targetgroup/my-tg/abc123"
+      targetType: ip
+```
+
+<div id="advanced-wrapper-chart-templates">
+  ## Avancé : templates de wrapper chart
+</div>
+
+Si vous avez besoin d’helpers structurels comme `include "clickstack.labels" . | nindent 4`, générez-les à partir d’un template de wrapper chart (`templates/*.yaml`) au lieu de placer directement ces blocs dans les fichiers values.
+
+Exemple d’extrait de template de wrapper chart :
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clickstack.fullname" . }}-extra
+  labels:
+    {{- include "clickstack.labels" . | nindent 4 }}
+data:
+  appPort: "{{ .Values.hyperdx.ports.app }}"
+```
+
+<div id="tips">
+  ## Astuces
+</div>
+
+<div id="helm-hooks">
+  ### Hooks de Helm
+</div>
+
+Chaque entrée `additionalManifests` est générée sous forme de document YAML distinct. Vous pouvez ajouter des annotations de hook Helm pour contrôler l’ordre d’installation et de mise à niveau :
+
+```yaml
+additionalManifests:
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: post-install-job
+      annotations:
+        helm.sh/hook: post-install
+        helm.sh/hook-delete-policy: hook-succeeded
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: migrate
+              image: my-migration-image:latest
+              command: ["./migrate.sh"]
+```
+
+<div id="crd-ordering">
+  ### Ordre des CRD
+</div>
+
+Si vos manifests supplémentaires incluent des ressources personnalisées (par exemple, `PodMonitor`), les CRD doivent déjà exister dans le cluster avant l’installation ou la mise à niveau.
+
+<div id="combining-multiple-resources">
+  ### Combiner plusieurs ressources
+</div>
+
+`additionalManifests` est une liste. Les éléments sont rendus dans l’ordre de la liste, et chaque élément devient un document YAML distinct.
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* [Guide principal de Helm](/fr/clickstack/deployment/helm) - Installation de base
+* [Guide de configuration](/fr/clickstack/deployment/helm-configuration) - Clés API, secrets et Ingress
+* [Déploiements Cloud](/fr/clickstack/deployment/helm-cloud) - Configurations GKE, EKS et AKS
+* [Dépôt des charts Helm ClickStack](https://github.com/ClickHouse/ClickStack-helm-charts) - Code source du chart et référence des valeurs

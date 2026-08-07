@@ -70,11 +70,9 @@ struct ClientCache
 class ClientCacheRegistry
 {
 public:
-    static ClientCacheRegistry & instance()
-    {
-        static ClientCacheRegistry registry;
-        return registry;
-    }
+    /// Defined out of line: a static local in a header-defined function gives every shared
+    /// object its own copy.
+    static ClientCacheRegistry & instance();
 
     void registerClient(const std::shared_ptr<ClientCache> & client_cache);
     void unregisterClient(ClientCache * client);
@@ -302,6 +300,8 @@ private:
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;
     std::optional<S3::URI> getURIFromError(const Aws::S3::S3Error & error) const;
     std::optional<Aws::S3::S3Error> updateURIForBucketForHead(const std::string & bucket) const;
+
+    Model::HeadObjectOutcome headObjectInternal(HeadObjectRequest & request) const;
 
     std::optional<S3::URI> getURIForBucket(const std::string & bucket) const;
 

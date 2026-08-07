@@ -1,0 +1,24 @@
+---
+title: 监听主机
+---
+
+通过启用 listen
+host 设置，即可允许通过网络接口进行外部通信。这可确保
+ClickHouse server 主机可被其他
+主机访问：
+
+```xml
+<listen_host>0.0.0.0</listen_host>
+```
+
+HTTP API 端口设为 `8123`：
+
+```xml
+<http_port>8123</http_port>
+```
+
+clickhouse-client 与其他原生 ClickHouse 工具之间，以及 clickhouse-server 与其他 clickhouse-servers 之间通过 ClickHouse 的原生协议进行交互所使用的 TCP 端口设置为 `9000`：
+
+```xml
+<tcp_port>9000</tcp_port>
+```

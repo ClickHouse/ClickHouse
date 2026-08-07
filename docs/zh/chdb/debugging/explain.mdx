@@ -1,0 +1,487 @@
+---
+title: 'explain() 方法'
+sidebarTitle: 'explain()'
+slug: /chdb/debugging/explain
+description: '通过 explain() 方法查看 DataStore 的执行计划'
+keywords: ['chdb', 'datastore', 'explain', 'execution', 'plan', 'sql']
+doc_type: 'reference'
+---
+
+`explain()` 方法可显示 DataStore 查询的执行计划，帮助你了解将执行哪些操作，以及会生成哪些 SQL。
+
+<div id="basic">
+  ## 基本用法
+</div>
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+query = (ds
+    .filter(ds['amount'] > 1000)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean']})
+    .sort('sum', ascending=False)
+)
+
+# 查看执行计划
+query.explain()
+```
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```python
+explain(verbose=False) -> None
+```
+
+**参数：**
+
+| 参数        | Type | 默认值     | 描述      |
+| --------- | ---- | ------- | ------- |
+| `verbose` | bool | `False` | 显示更多元数据 |
+
+<div id="output-format">
+  ## 输出格式
+</div>
+
+<div id="standard">
+  ### 标准输出
+</div>
+
+```text
+================================================================================
+执行计划（按执行顺序）
+================================================================================
+
+ [1] 📊 数据源: file('sales.csv', 'csv')
+
+操作:
+────────────────────────────────────────────────────────────────────────────────
+    ️  片段 1 [chDB]（来自数据源）：操作 2-5
+    ️  注意：Pandas 操作之后的 SQL 操作使用 Python() 表函数
+
+ [2] 🚀 [chDB] WHERE: "amount" > 1000
+ [3] 🚀 [chDB] GROUP BY: region
+ [4] 🚀 [chDB] AGGREGATE: sum(amount), avg(amount)
+ [5] 🚀 [chDB] ORDER BY: sum DESC
+
+────────────────────────────────────────────────────────────────────────────────
+最终状态：📊 待执行（惰性，尚未执行）
+             └─> 将在调用 print()、.to_df()、.execute() 时执行
+
+────────────────────────────────────────────────────────────────────────────────
+生成的 SQL 查询：
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT region, SUM(amount) AS sum, AVG(amount) AS mean
+FROM file('sales.csv', 'csv')
+WHERE "amount" > 1000
+GROUP BY region
+ORDER BY sum DESC
+
+================================================================================
+```
+
+<div id="icons">
+  ### 图标图例
+</div>
+
+| 图标 | 含义            |
+| -- | ------------- |
+| 📊 | 数据源           |
+| 🚀 | chDB (SQL) 操作 |
+| 🐼 | pandas 操作     |
+
+<div id="verbose">
+  ### 详细输出
+</div>
+
+```python
+query.explain(verbose=True)
+```
+
+详细模式会显示每个操作的更多细节，包括包含内部行顺序跟踪机制的完整 SQL 查询。
+
+***
+
+<div id="phases">
+  ## 三个执行阶段
+</div>
+
+EXPLAIN 输出展示了三个阶段中的操作：
+
+<div id="phase-1">
+  ### 第 1 阶段：SQL 查询构建 (惰性求值)
+</div>
+
+会被编译为 SQL 的操作：
+
+```text
+  1. Source: file('sales.csv', 'CSVWithNames')
+  2. Filter: amount > 1000      
+  3. GroupBy: region
+  4. Aggregate: sum(amount)
+```
+
+<div id="phase-2">
+  ### 阶段 2：执行时机
+</div>
+
+当触发条件满足时：
+
+```text
+  5. Execute SQL -> DataFrame
+     Trigger: to_df() called
+```
+
+<div id="phase-3">
+  ### 阶段 3：DataFrame 操作
+</div>
+
+执行后的操作：
+
+```text
+  6. [pandas] pivot_table(...)
+  7. [pandas] apply(custom_func)
+```
+
+***
+
+<div id="understanding">
+  ## 理解执行计划
+</div>
+
+<div id="source">
+  ### 源信息
+</div>
+
+```text
+Source: file('sales.csv', 'CSVWithNames')
+```
+
+* `file()` - ClickHouse `file()` 表函数
+* `'CSVWithNames'` - 包含列名行的文件格式
+
+其他源类型：
+
+```text
+Source: s3('bucket/data.parquet', ...)
+Source: mysql('host', 'db', 'table', ...)
+Source: __dataframe__  (pandas DataFrame input)
+```
+
+<div id="filter">
+  ### 过滤操作
+</div>
+
+```text
+Filter: amount > 1000 AND status = 'active'
+```
+
+显示将应用的 WHERE 子句。
+
+<div id="groupby">
+  ### GroupBy 与聚合
+</div>
+
+```text
+GroupBy: region, category
+Aggregate: sum(amount), avg(amount), count(id)
+```
+
+显示 GROUP BY 使用的列和聚合函数。
+
+<div id="sort">
+  ### 排序操作
+</div>
+
+```text
+Sort: sum DESC, region ASC
+```
+
+显示 ORDER BY 子句。
+
+<div id="limit">
+  ### 操作限制
+</div>
+
+```text
+Limit: 10
+Offset: 100
+```
+
+显示 LIMIT 和 OFFSET。
+
+***
+
+<div id="engine">
+  ## 引擎信息
+</div>
+
+启用详细模式后，您可以看到将使用哪个引擎：
+
+```text
+Filter: amount > 1000
+  - Engine: chdb
+  - Pushdown: Yes
+
+Apply: custom_function
+  - Engine: pandas
+  - Pushdown: No
+```
+
+<div id="pushdown">
+  ### 下推
+</div>
+
+* **是**：操作将在数据源端 (SQL) 执行
+* **否**：操作需要由 pandas 执行
+
+***
+
+<div id="examples">
+  ## 示例
+</div>
+
+<div id="example-simple">
+  ### 简单查询
+</div>
+
+```python
+from pathlib import Path
+Path("data.csv").write_text("""\
+name,age,city,salary,department
+Alice,25,NYC,55000,Engineering
+Bob,30,LA,65000,Product
+Charlie,35,NYC,80000,Engineering
+Diana,28,SF,70000,Design
+Eve,42,NYC,95000,Product
+""")
+
+ds = pd.read_csv("data.csv")
+ds.filter(ds['age'] > 25).explain()
+```
+
+```text
+================================================================================
+执行计划（按执行顺序）
+================================================================================
+
+ [1] 📊 数据源: file('data.csv', 'csv')
+
+操作：
+────────────────────────────────────────────────────────────────────────────────
+    ️  片段 1 [chDB]（来自数据源）：操作 2-2
+
+ [2] 🚀 [chDB] WHERE: "age" > 25
+
+────────────────────────────────────────────────────────────────────────────────
+生成的 SQL 查询：
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT * FROM file('data.csv', 'csv') WHERE "age" > 25
+
+================================================================================
+```
+
+<div id="example-complex">
+  ### 复杂聚合
+</div>
+
+```python
+query = (ds
+    .filter(ds['date'] >= '2024-01-01')
+    .filter(ds['amount'] > 100)
+    .select('region', 'category', 'amount')
+    .groupby('region', 'category')
+    .agg({
+        'amount': ['sum', 'mean', 'count']
+    })
+    .sort('sum', ascending=False)
+    .limit(20)
+)
+query.explain()
+```
+
+```text
+================================================================================
+执行计划（按执行顺序）
+================================================================================
+
+ [1] 📊 数据源: file('sales.csv', 'csv')
+
+操作：
+────────────────────────────────────────────────────────────────────────────────
+    ️  片段 1 [chDB] (from source): 操作 2-8
+
+ [2] 🚀 [chDB] WHERE: "date" >= '2024-01-01'
+ [3] 🚀 [chDB] WHERE: "amount" > 100
+ [4] 🚀 [chDB] SELECT: region, category, amount
+ [5] 🚀 [chDB] GROUP BY: region, category
+ [6] 🚀 [chDB] AGGREGATE: sum(amount), avg(amount), count(amount)
+ [7] 🚀 [chDB] ORDER BY: sum DESC
+ [8] 🚀 [chDB] LIMIT: 20
+
+────────────────────────────────────────────────────────────────────────────────
+生成的 SQL 查询：
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT region, category, 
+       SUM(amount) AS sum, 
+       AVG(amount) AS mean, 
+       COUNT(amount) AS count
+FROM file('sales.csv', 'csv')
+WHERE "date" >= '2024-01-01' AND "amount" > 100
+GROUP BY region, category
+ORDER BY sum DESC
+LIMIT 20
+
+================================================================================
+```
+
+<div id="example-mixed">
+  ### 混合使用 SQL 和 pandas
+</div>
+
+当操作无法完全下推到 SQL 时，执行计划会显示多个分段：
+
+```python
+query = (ds
+    .filter(ds['age'] > 25)           # SQL
+    .groupby('city')                   # SQL
+    .agg({'salary': 'mean'})           # SQL
+    .apply(lambda x: x * 1.1)          # pandas (触发分段拆分)
+    .filter(ds['mean'] > 50000)        # SQL (新分段)
+)
+query.explain()
+```
+
+```text
+================================================================================
+执行计划（按执行顺序）
+================================================================================
+
+ [1] 📊 数据源: file('data.csv', 'csv')
+
+操作：
+────────────────────────────────────────────────────────────────────────────────
+    ️  片段 1 [chDB] (来自数据源): 操作 2-4
+    ️  片段 2 [Pandas] (在 DataFrame 上): 操作 5
+    ️  片段 3 [chDB] (在 DataFrame 上): 操作 6
+    ️  注意: Pandas 操作之后的 SQL 操作使用 Python() 表函数
+
+ [2] 🚀 [chDB] WHERE: "age" > 25
+ [3] 🚀 [chDB] GROUP BY: city
+ [4] 🚀 [chDB] AGGREGATE: avg(salary)
+ [5] 🐼 [Pandas] APPLY: lambda
+ [6] 🚀 [chDB] WHERE: "mean" > 50000
+
+================================================================================
+```
+
+***
+
+<div id="debugging">
+  ## 使用 explain() 调试
+</div>
+
+<div id="debug-filter">
+  ### 检查过滤逻辑
+</div>
+
+```python
+# 验证过滤器是否正确
+query = ds.filter((ds['age'] > 25) & (ds['city'] == 'NYC'))
+query.explain()
+# 输出显示：Filter: age > 25 AND city = 'NYC'
+```
+
+<div id="debug-select">
+  ### 检查列选择
+</div>
+
+```python
+# 检查列裁剪
+query = ds.select('name', 'age').filter(ds['age'] > 25)
+query.explain()
+# 输出显示：SELECT name, age FROM ... WHERE age > 25
+```
+
+<div id="debug-agg">
+  ### 理解聚合
+</div>
+
+```python
+# 检查聚合函数
+query = ds.groupby('dept').agg({'salary': ['sum', 'mean', 'std']})
+query.explain()
+# 输出显示：SELECT dept, SUM(salary), AVG(salary), stddevPop(salary)
+```
+
+***
+
+<div id="best-practices">
+  ## 最佳实践
+</div>
+
+<div id="best-practice-1">
+  ### 1. 执行大型查询前先检查
+</div>
+
+```python
+# 对于大数据量，始终先执行 explain
+query = ds.complex_pipeline()
+query.explain()  # 检查执行计划
+
+# 如果执行计划看起来正确
+result = query.to_df()  # 执行
+```
+
+<div id="best-practice-2">
+  ### 2. 使用 Verbose 模式进行调试
+</div>
+
+```python
+# 当出现异常时
+query.explain(verbose=True)
+# 显示引擎选择和下推信息
+```
+
+<div id="best-practice-3">
+  ### 3. 与 to_sql() 对比
+</div>
+
+```python
+# explain() 显示执行计划
+query.explain()
+
+# to_sql() 仅显示 SQL
+print(query.to_sql())
+
+# 两者用途各异
+```
+
+<div id="best-practice-4">
+  ### 4. 检查下推状态
+</div>
+
+```python
+# 详细模式显示操作是否已下推
+query.explain(verbose=True)
+
+# 若下推状态为 No，则操作在 pandas 中执行
+# 请考虑重构查询以提升性能
+```

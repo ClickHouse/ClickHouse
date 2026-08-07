@@ -1,0 +1,171 @@
+---
+description: 'ClickHouse 对 Prometheus 协议支持的文档'
+sidebarTitle: 'Prometheus 协议'
+slug: /interfaces/prometheus
+title: 'Prometheus 协议'
+doc_type: 'reference'
+---
+
+<div id="expose">
+  ## 暴露指标
+</div>
+
+<Note>
+  如果你使用的是 ClickHouse Cloud，可以通过 [Prometheus 集成](/zh/products/cloud/features/monitoring/prometheus) 向 Prometheus 暴露指标。
+</Note>
+
+ClickHouse 可以暴露自身指标，供 Prometheus 抓取：
+
+````xml
+<prometheus>
+    <port>9363</port>
+    <endpoint>/metrics</endpoint>
+    <metrics>true</metrics>
+    <asynchronous_metrics>true</asynchronous_metrics>
+    <events>true</events>
+    <errors>true</errors>
+    <histograms>true</histograms>
+    <dimensional_metrics>true</dimensional_metrics>
+</prometheus>
+
+`<prometheus.handlers>` 部分可用于配置更复杂的处理程序。
+该部分与 [<http_handlers>](/concepts/features/interfaces/http) 类似，但适用于 Prometheus 协议：
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+````
+
+设置：
+
+| 名称                           | 默认值        | 描述                                                                                            |
+| ---------------------------- | ---------- | --------------------------------------------------------------------------------------------- |
+| `port`                       | 无          | 用于提供指标暴露协议服务的端口。                                                                              |
+| `endpoint`                   | `/metrics` | 供 Prometheus 服务器抓取指标的 HTTP 端点。以 `/` 开头。不得与 `<handlers>` 部分一起使用。                               |
+| `url` / `headers` / `method` | 无          | 用于查找与请求匹配的处理程序的过滤条件。类似于 [`<http_handlers>`](/zh/concepts/features/interfaces/http) 部分中的同名字段。     |
+| `metrics`                    | true       | 导出 [system.metrics](/zh/reference/system-tables/metrics) 表中的指标。                                  |
+| `asynchronous_metrics`       | true       | 导出 [system.asynchronous&#95;metrics](/zh/reference/system-tables/asynchronous_metrics) 表中的当前指标值。 |
+| `events`                     | true       | 导出 [system.events](/zh/reference/system-tables/events) 表中的指标。                                    |
+| `errors`                     | true       | 导出自上次服务器重启以来按错误代码统计的错误数。也可从 [system.errors](/zh/reference/system-tables/errors) 中获取该信息。          |
+| `histograms`                 | true       | 导出 [system.histogram&#95;metrics](/zh/reference/system-tables/histogram_metrics) 中的直方图指标         |
+| `dimensional_metrics`        | true       | 导出 [system.dimensional&#95;metrics](/zh/reference/system-tables/dimensional_metrics) 中的带维度指标     |
+
+检查 (将 `127.0.0.1` 替换为你的 ClickHouse 服务器 IP 地址或主机名) ：
+
+```bash
+curl 127.0.0.1:9363/metrics
+```
+
+## Remote-write 协议
+
+ClickHouse 支持 [remote-write](https://prometheus.io/docs/specs/remote_write_spec/) 协议。
+通过该协议接收到的数据会被写入 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表
+(该表应预先创建) 。
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+设置：
+
+| Name                         | Default | Description                                                                                                              |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `port`                       | none    | 用于提供 `remote-write` 协议服务的端口。                                                                                             |
+| `url` / `headers` / `method` | none    | 用于为请求查找匹配处理程序的过滤条件。与 [`<http_handlers>`](/zh/concepts/features/interfaces/http) 部分中同名字段类似。                                  |
+| `table`                      | none    | 用于写入通过 `remote-write` 协议接收的数据的 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表名。该名称也可以包含数据库名称。 |
+| `database`                   | none    | 如果 `table` 设置中未指定数据库，则使用此项指定 `table` 设置中所指表所在的数据库名称。                                                                     |
+
+## Remote-read 协议
+
+ClickHouse 支持 [remote-read](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) 协议。
+数据会从 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表中读取，并通过该协议发送。
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+设置：
+
+| Name                         | Default | Description                                                                                                              |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `port`                       | none    | 用于提供 `remote-read` 协议服务的端口。                                                                                              |
+| `url` / `headers` / `method` | none    | 用于查找与请求匹配的处理程序的过滤器。与 [`<http_handlers>`](/zh/concepts/features/interfaces/http) 部分中的同名字段类似。                                 |
+| `table`                      | none    | 用于读取数据并通过 `remote-read` 协议发送的 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 表名称。该名称也可以包含数据库名称。 |
+| `database`                   | none    | 如果 `table` 设置中未指定数据库，则为 `table` 设置中指定的表所在数据库的名称。                                                                         |
+
+## 多种协议的配置
+
+可以在同一位置统一指定多种协议：
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+            </handler>
+        </my_rule_1>
+        <my_rule_2>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_2>
+        <my_rule_3>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_3>
+    </handlers>
+</prometheus>
+```

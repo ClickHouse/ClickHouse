@@ -1,0 +1,274 @@
+---
+description: 'Documentação do driver ODBC do ClickHouse'
+sidebarTitle: 'Driver ODBC'
+slug: /interfaces/odbc
+title: 'Driver ODBC'
+doc_type: 'reference'
+---
+
+O driver ODBC do ClickHouse fornece uma interface em conformidade com os padrões para conectar aplicações compatíveis com ODBC ao
+ClickHouse. Ele implementa a API ODBC e permite que aplicações, ferramentas de BI e ambientes de scripts executem consultas SQL,
+recuperem resultados e interajam com o ClickHouse por meio de mecanismos conhecidos.
+
+O driver se comunica com o servidor ClickHouse usando o [protocolo HTTP](/pt-BR/concepts/features/interfaces/http), que é o principal
+protocolo compatível em todas as implantações do ClickHouse. Isso permite que o driver opere de forma consistente em diversos
+ambientes, incluindo instalações locais, serviços gerenciados na nuvem e ambientes em que apenas o acesso baseado em HTTP
+está disponível.
+
+O código-fonte do driver está disponível no
+[repositório GitHub do ClickHouse-ODBC](https://github.com/ClickHouse/clickhouse-odbc).
+
+<Tip>
+  Para melhor compatibilidade, recomendamos fortemente que você atualize seu servidor ClickHouse para a versão 24.11 ou posterior.
+</Tip>
+
+<Note>
+  Este driver está em desenvolvimento ativo. Alguns recursos do ODBC talvez ainda não estejam totalmente implementados. A versão atual
+  se concentra em fornecer conectividade essencial e a funcionalidade principal do ODBC, com recursos adicionais planejados para
+  lançamentos futuros.
+
+  Seu feedback é extremamente valioso e ajuda a orientar a priorização de novos recursos e melhorias. Se você encontrar
+  limitações, funcionalidades ausentes ou comportamento inesperado, compartilhe suas observações ou solicitações de recursos por
+  meio do rastreador de issues em
+  [https://github.com/ClickHouse/clickhouse-odbc/issues](https://github.com/ClickHouse/clickhouse-odbc/issues)
+</Note>
+
+<div id="installation-on-windows">
+  ## Instalação no Windows
+</div>
+
+Você pode encontrar a versão mais recente do driver em
+[https://github.com/ClickHouse/clickhouse-odbc/releases/latest](https://github.com/ClickHouse/clickhouse-odbc/releases/latest).
+Lá, você pode baixar e executar o instalador MSI e seguir as etapas simples de instalação.
+
+<div id="testing">
+  ## Teste
+</div>
+
+Você pode testar o driver executando este script simples do PowerShell. Copie o texto abaixo, defina a URL, o usuário e a senha e
+cole o texto no prompt de comando do PowerShell — após executar `$reader.GetValue(0)`, ele deverá mostrar a versão do servidor
+ClickHouse.
+
+```powershell
+$url = "http://127.0.0.1:8123/"
+$username = "default"
+$password = ""
+$conn = New-Object System.Data.Odbc.OdbcConnection("`
+    Driver={ClickHouse ODBC Driver (Unicode)};`
+    Url=$url;`
+    Username=$username;`
+    Password=$password")
+$conn.Open()
+$cmd = $conn.CreateCommand()
+$cmd.CommandText = "select version()"
+$reader = $cmd.ExecuteReader()
+$reader.Read()
+$reader.GetValue(0)
+$reader.Close()
+$conn.Close()
+```
+
+<div id="configuration-parameters">
+  ## Parâmetros de configuração
+</div>
+
+Os parâmetros abaixo representam as configurações mais usadas para estabelecer uma conexão com o driver ODBC do ClickHouse.
+Eles abrangem opções essenciais de autenticação, comportamento da conexão e manipulação de dados. Uma lista completa dos
+parâmetros compatíveis está disponível na página do GitHub do projeto
+[https://github.com/ClickHouse/clickhouse-odbc](https://github.com/ClickHouse/clickhouse-odbc).
+
+* `Url`: Especifica o endpoint HTTP(S) completo do servidor ClickHouse. Isso inclui o protocolo, host, porta e
+  caminho opcional.
+* `Username`: O nome de usuário usado para autenticação com o servidor ClickHouse.
+* `Password`: A senha associada ao nome de usuário especificado. Se não for fornecida, o driver se conecta sem
+  autenticação por senha.
+* `Database`: O banco de dados padrão a ser usado na conexão.
+* `Timeout`: O tempo máximo (em segundos) que o driver espera por uma resposta do servidor antes de abortar a solicitação.
+* `ClientName`: Um identificador personalizado enviado ao servidor ClickHouse como parte dos metadados do cliente. Útil para rastreamento ou
+  distinguir o tráfego de diferentes aplicações. Esse parâmetro fará parte do cabeçalho User-Agent nas solicitações HTTP
+  produzidas pelo driver.
+* `Compression`: Habilita ou desabilita a compressão HTTP para payloads de solicitação e resposta. Quando habilitada, ela pode reduzir
+  o uso de largura de banda e melhorar o desempenho para grandes conjuntos de resultados.
+* `SqlCompatibilitySettings`: Habilita configurações de consulta que fazem o ClickHouse se comportar mais como um
+  banco de dados relacional tradicional. Isso é útil quando consultas são geradas automaticamente por ferramentas de terceiros,
+  por exemplo, o Power BI. Essas ferramentas geralmente não conhecem determinados comportamentos específicos do ClickHouse
+  e podem produzir consultas que resultam em erros ou resultados inesperados. Consulte [Configurações do ClickHouse usadas pelo parâmetro de configuração SqlCompatibilitySettings
+  ](#sql-compatibility-settings) para mais detalhes.
+
+Aqui estão alguns exemplos da string de conexão completa passada ao driver para configurar uma conexão.
+
+* Um servidor ClickHouse instalado localmente em uma instância WSL
+
+```plaintext
+Driver={ClickHouse ODBC Driver (Unicode)};Url=http://localhost:8123/;Username=default
+```
+
+* Uma instância do ClickHouse Cloud.
+
+```plaintext
+Driver={ClickHouse ODBC Driver (Unicode)};Url=https://you-instance-url.gcp.clickhouse.cloud:8443/;Username=default;Password=your-password
+```
+
+<div id="powerbi-integration">
+  ## Integração com o Microsoft Power BI
+</div>
+
+Você pode usar o driver ODBC para conectar o Microsoft Power BI a um servidor ClickHouse. O Power BI oferece duas opções
+de conexão: o conector ODBC genérico e o ClickHouse Connector, ambos incluídos nas instalações padrão do Power BI.
+
+Ambos os conectores usam ODBC internamente, mas diferem em seus recursos:
+
+* ClickHouse Connector (recomendado)
+  Usa ODBC nos bastidores, mas oferece suporte ao modo DirectQuery. Nesse modo, o Power BI gera automaticamente consultas SQL e
+  recupera apenas os dados necessários para cada visualização ou operação de filtro.
+
+* ODBC Connector
+  Oferece suporte apenas ao modo Import. O Power BI executa a consulta fornecida pelo usuário (ou seleciona a tabela inteira) e importa todo o
+  conjunto de resultados para o Power BI. As atualizações subsequentes reimportam todo o conjunto de dados.
+
+Escolha o conector com base no seu caso de uso. O DirectQuery funciona melhor para dashboards interativos com grandes conjuntos de dados.
+Escolha o modo Import quando precisar de cópias locais completas dos dados.
+
+Para mais informações sobre a integração do Microsoft Power BI com o ClickHouse, consulte a [página da documentação do ClickHouse sobre a integração com o Power
+BI](/pt-BR/integrations/connectors/data-visualization/powerbi-and-clickhouse).
+
+<div id="sql-compatibility-settings">
+  ## Configurações de compatibilidade com SQL
+</div>
+
+O ClickHouse tem seu próprio dialeto SQL e, em alguns casos, se comporta de forma diferente de outros bancos de dados, como MS SQL
+Server, MySQL ou PostgreSQL. Muitas vezes, essas diferenças são uma vantagem, pois introduzem uma sintaxe aprimorada que facilita
+o uso dos recursos do ClickHouse.
+
+No entanto, o driver ODBC costuma ser usado em ambientes nos quais as consultas são geradas por ferramentas de terceiros, como o Power
+BI, em vez de serem escritas pelos usuários. Essas consultas geralmente dependem de um subconjunto mínimo do padrão SQL. Nesses casos,
+os desvios do ClickHouse em relação ao padrão SQL podem não se comportar como o esperado e produzir resultados inesperados ou erros.
+O driver ODBC fornece um parâmetro de configuração adicional, `SqlCompatibilitySettings`, que habilita configurações específicas de consulta
+para alinhar o comportamento do ClickHouse de forma mais próxima ao SQL padrão.
+
+<div id="sql-compatibility-settings-list">
+  ### Configurações do ClickHouse habilitadas pelo parâmetro de configuração SqlCompatibilitySettings
+</div>
+
+Esta seção descreve quais configurações o driver ODBC modifica e por quê.
+
+**[cast&#95;keep&#95;nullable](/pt-BR/reference/settings/session-settings#cast_keep_nullable)**
+
+Por padrão, o ClickHouse não permite converter tipos Nullable em tipos não Nullable. No entanto, muitas ferramentas de BI não
+distinguem entre tipos Nullable e não Nullable ao realizar conversões de tipo. Como resultado, é comum
+ver consultas como a seguir geradas por ferramentas de BI:
+
+```sql
+SELECT sum(CAST(value, 'Int32'))
+FROM values
+```
+
+Por padrão, quando a coluna `value` permite NULL, esta consulta falhará com a seguinte mensagem:
+
+```plaintext
+DB::Exception: Cannot convert NULL value to non-Nullable type: while executing 'FUNCTION CAST(__table1.value :: 2,
+'Int32'_String :: 1) -> CAST(__table1.value, 'Int32'_String) Int32 : 0'. (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN)
+```
+
+Ativar `cast_keep_nullable` altera o comportamento de `CAST` para preservar a capacidade de seus argumentos aceitarem valores nulos. Isso
+aproxima o comportamento do ClickHouse ao de outros bancos de dados e ao padrão SQL para esse tipo de conversão.
+
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/pt-BR/reference/settings/session-settings#prefer_column_name_to_alias)**
+
+O ClickHouse permite referenciar expressões na mesma lista `SELECT` pelos seus aliases. Por exemplo, esta consulta evita
+repetições e é mais fácil de escrever:
+
+```sql
+SELECT
+    sum(value) AS S,
+    count() AS C,
+    S / C
+FROM test
+```
+
+Esse recurso é amplamente usado, mas outros bancos de dados normalmente não resolvem aliases dessa forma na mesma lista `SELECT`,
+e essas consultas gerariam um erro. Os problemas ficam mais evidentes quando um alias tem o mesmo nome de uma coluna. Por exemplo:
+
+```sql
+SELECT
+    sum(value) AS value,
+    avg(value)
+FROM test
+```
+
+Qual `value` o `avg(value)` deve agregar? Por padrão, o ClickHouse prefere o alias, o que na prática transforma isso em um
+agregado aninhado, algo que não é o que a maioria das ferramentas espera.
+
+Por si só, isso raramente é um problema, mas algumas ferramentas de BI geram consultas com subconsultas que reutilizam aliases de coluna. Por
+exemplo, o Power BI frequentemente gera consultas semelhantes à seguinte:
+
+```sql
+SELECT
+    sum(C1) AS C1,
+    count(C1) AS C2
+FROM
+(
+    SELECT sum(value) AS C1
+    FROM test
+    GROUP BY group_index
+) AS TBL
+```
+
+Referências a `C1` podem resultar no seguinte erro:
+
+```plaintext
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function sum(C1) AS C1 is found
+inside another aggregate function in query. (ILLEGAL_AGGREGATION)
+```
+
+Outros bancos de dados normalmente não resolvem aliases no mesmo nível dessa forma e, em vez disso, tratam `C1` como uma coluna da
+subconsulta. Para preservar um comportamento semelhante no ClickHouse e permitir que essas consultas sejam executadas sem erros, o driver ODBC
+ativa `prefer_column_name_to_alias`.
+
+Na maioria dos casos, ativar essas configurações não deve ser um problema. No entanto, usuários com a configuração `readonly` definida como `1`
+não podem alterar nenhuma configuração, nem mesmo em consultas `SELECT`. Para esses usuários, ativar `SqlCompatibilitySettings` resultará
+em erro. A seção a seguir explica como fazer esse parâmetro de configuração funcionar para usuários somente leitura.
+
+<div id="readonly-users">
+  ## Como fazer as configurações de compatibilidade com SQL funcionarem para usuários somente leitura
+</div>
+
+Ao se conectar ao ClickHouse por meio do driver ODBC com o parâmetro `SqlCompatibilitySettings` habilitado, um usuário com
+a configuração readonly definida como `1` encontrará um erro, porque o driver tenta modificar as configurações da consulta:
+
+```plaintext
+Code: 164. DB::Exception: Cannot modify 'cast_keep_nullable' setting in readonly mode. (READONLY)
+Code: 164. DB::Exception: Cannot modify 'prefer_column_name_to_alias' setting in readonly mode. (READONLY)
+```
+
+Isso acontece porque usuários em modo somente leitura não têm permissão para alterar configurações, mesmo em consultas `SELECT` individuais.
+Há várias maneiras de resolver isso.
+
+**Opção 1. Definir `readonly` como `2`**
+
+Esta é a opção mais simples. Definir `readonly` como `2` permite alterar configurações e, ao mesmo tempo, manter o usuário em modo somente leitura.
+
+```sql
+ALTER USER your_odbc_user MODIFY SETTING
+    readonly = 2
+```
+
+Na maioria dos casos, definir `readonly` como 2 é a maneira mais fácil e recomendada de resolver esse problema. Se
+isso não funcionar no seu caso, use a segunda opção.
+
+**Opção 2. Alterar as configurações do usuário para que correspondam às configurações definidas pelo driver ODBC.**
+
+Isso também é simples: atualize as configurações do usuário para que já correspondam ao que o driver ODBC tenta definir.
+
+```sql
+ALTER USER your_odbc_user MODIFY SETTING
+    cast_keep_nullable = 1,
+    prefer_column_name_to_alias = 1
+```
+
+Com essa mudança, o driver ODBC ainda pode tentar aplicar as configurações, mas, como os valores já coincidem, nenhuma
+alteração efetiva é feita, e o erro é evitado.
+
+Essa opção também é simples, mas exige manutenção: versões mais recentes do driver podem alterar a lista de configurações ou adicionar
+novas por compatibilidade. Se você definir essas configurações de forma fixa no seu usuário ODBC, talvez precise atualizá-las sempre que o
+driver ODBC passar a aplicar configurações adicionais.

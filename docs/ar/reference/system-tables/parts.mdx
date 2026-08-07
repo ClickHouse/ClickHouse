@@ -1,0 +1,227 @@
+---
+description: 'جدول النظام الذي يحتوي على معلومات عن أجزاء MergeTree'
+keywords: ['جدول النظام', 'الأجزاء']
+slug: /operations/system-tables/parts
+title: 'system.parts'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يتضمن معلومات عن أجزاء البيانات في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+
+يمثل كل صف جزء بيانات واحدًا.
+
+<div id="columns">
+  ## الأعمدة
+</div>
+
+{/*بداية_مُنشأة_تلقائيًا*/}
+
+* `partition` ([String](/ar/reference/data-types/index)) — معرّف التقسيم (تمثيل نصي مشتق من تعبير مفتاح تقسيم الجدول).
+* `name` ([String](/ar/reference/data-types/index)) —
+  اسم جزء البيانات. ويمكن استخدام بنية تسمية الجزء لتحديد العديد من جوانب البيانات، وأنماط إدخالها ودمجها. ويكون تنسيق تسمية الجزء كما يلي:
+
+```text
+<partition_id>_<minimum_block_number>_<maximum_block_number>_<level>_<data_version>
+```
+
+* التعريفات:
+  * `partition_id` - يحدِّد مفتاح التقسيم
+  * `minimum_block_number` - يحدِّد الحد الأدنى لرقم الكتلة في الجزء. يدمج ClickHouse دائمًا الكتل المتتالية
+  * `maximum_block_number` - يحدِّد الحد الأقصى لرقم الكتلة في الجزء
+  * `level` - تزداد قيمته بمقدار واحد مع كل عملية دمج إضافية على الجزء. يشير المستوى 0 إلى أن هذا جزء جديد لم يخضع للدمج بعد. من المهم تذكّر أن جميع الأجزاء في ClickHouse غير قابلة للتغيير دائمًا
+  * `data_version` - قيمة اختيارية، تزداد عندما يخضع الجزء لتعديل (ومرة أخرى، لا تُكتب البيانات المعدّلة إلا في جزء جديد، لأن الأجزاء غير قابلة للتغيير)
+
+* `uuid` ([UUID](/ar/reference/data-types/index)) — معرّف UUID لجزء البيانات.
+
+* `part_type` ([String](/ar/reference/data-types/index)) — تنسيق تخزين جزء البيانات. Possible values: `Wide` — يُخزَّن كل عمود في ملف منفصل، `Compact` — تُخزَّن جميع الأعمدة في ملف واحد. يتحكم إعدادا `min_bytes_for_wide_part` و `min_rows_for_wide_part` في جدول MergeTree في تنسيق تخزين البيانات.
+
+* `active` ([UInt8](/ar/reference/data-types/index)) — علامة تشير إلى ما إذا كان جزء البيانات نشطًا. إذا كان جزء البيانات نشطًا، فسيُستخدم في الجدول. وإلا فإنه على وشك الحذف. تظهر أجزاء البيانات غير النشطة بعد عمليات الدمج والتعديل.
+
+* `marks` ([UInt64](/ar/reference/data-types/index)) — عدد العلامات. للحصول على العدد التقريبي للصفوف في جزء البيانات، اضرب عدد العلامات في دقة الفهرس (عادةً 8192) (لا تعمل هذه الملاحظة مع الدقة التكيفية).
+
+* `rows` ([UInt64](/ar/reference/data-types/index)) — عدد الصفوف.
+
+* `files` ([UInt64](/ar/reference/data-types/index)) — عدد الملفات في جزء البيانات.
+
+* `bytes_on_disk` ([UInt64](/ar/reference/data-types/index)) — الحجم الإجمالي لجميع ملفات جزء البيانات بالبايت.
+
+* `data_compressed_bytes` ([UInt64](/ar/reference/data-types/index)) — الحجم الإجمالي للبيانات المضغوطة في جزء البيانات. لا يشمل ذلك الملفات المساعدة، مثل الملفات التي تحتوي على العلامات.
+
+* `data_uncompressed_bytes` ([UInt64](/ar/reference/data-types/index)) — الحجم الإجمالي للبيانات غير المضغوطة في جزء البيانات. لا يشمل ذلك الملفات المساعدة، مثل الملفات التي تحتوي على العلامات.
+
+* `primary_key_size` ([UInt64](/ar/reference/data-types/index)) — مقدار الذاكرة (بالبايت) المستخدمة بواسطة قيم المفتاح الأساسي في الملف primary.idx/cidx على القرص.
+
+* `marks_bytes` ([UInt64](/ar/reference/data-types/index)) — حجم الملف الذي يحتوي على العلامات.
+
+* `secondary_indices_compressed_bytes` ([UInt64](/ar/reference/data-types/index)) — الحجم الإجمالي للبيانات المضغوطة الخاصة بالفهارس الثانوية في جزء البيانات. لا يشمل ذلك الملفات المساعدة، مثل الملفات التي تحتوي على العلامات.
+
+* `secondary_indices_uncompressed_bytes` ([UInt64](/ar/reference/data-types/index)) — الحجم الإجمالي للبيانات غير المضغوطة الخاصة بالفهارس الثانوية في جزء البيانات. لا يشمل ذلك الملفات المساعدة، مثل الملفات التي تحتوي على العلامات.
+
+* `secondary_indices_marks_bytes` ([UInt64](/ar/reference/data-types/index)) — حجم الملف الذي يحتوي على علامات الفهارس الثانوية.
+
+* `modification_time` ([DateTime](/ar/reference/data-types/index)) — الوقت الذي عُدِّل فيه الدليل الذي يحتوي على جزء البيانات. يتوافق هذا عادةً مع وقت إنشاء جزء البيانات.
+
+* `remove_time` ([DateTime](/ar/reference/data-types/index)) — الوقت الذي أصبح فيه جزء البيانات غير نشط.
+
+* `refcount` ([UInt32](/ar/reference/data-types/index)) — عدد المواضع التي يُستخدم فيها جزء البيانات. تشير قيمة أكبر من 2 إلى أن جزء البيانات يُستخدم في الاستعلامات أو عمليات الدمج.
+
+* `min_date` ([Date](/ar/reference/data-types/index)) — الحد الأدنى لقيمة مفتاح التاريخ في جزء البيانات.
+
+* `max_date` ([Date](/ar/reference/data-types/index)) — الحد الأقصى لقيمة مفتاح التاريخ في جزء البيانات.
+
+* `min_time` ([DateTime](/ar/reference/data-types/index)) — الحد الأدنى لقيمة مفتاح التاريخ والوقت في جزء البيانات.
+
+* `max_time` ([DateTime](/ar/reference/data-types/index)) — الحد الأقصى لقيمة مفتاح التاريخ والوقت في جزء البيانات.
+
+* `partition_id` ([String](/ar/reference/data-types/index)) — معرّف القسم.
+
+* `min_block_number` ([Int64](/ar/reference/data-types/index)) — الحد الأدنى لعدد أجزاء البيانات التي تكوّن الجزء الحالي بعد الدمج.
+
+* `max_block_number` ([Int64](/ar/reference/data-types/index)) — الحد الأقصى لعدد أجزاء البيانات التي تكوّن الجزء الحالي بعد الدمج.
+
+* `level` ([UInt32](/ar/reference/data-types/index)) — عمق شجرة الدمج. يعني الصفر أن الجزء الحالي أُنشئ بعملية إدراج، لا عبر دمج أجزاء أخرى.
+
+* `data_version` ([UInt64](/ar/reference/data-types/index)) — رقم يُستخدم لتحديد عمليات mutation التي يجب تطبيقها على جزء البيانات (عمليات mutation ذات الإصدار الأعلى من data&#95;version).
+
+* `primary_key_bytes_in_memory` ([UInt64](/ar/reference/data-types/index)) — مقدار الذاكرة (بالبايت) المستخدم لقيم المفتاح الأساسي. تكون القيمة 0 عندما يكون `primary_key_lazy_load` مُمكّنًا ولا يكون المفتاح محمّلًا. وعندما تكون غير صفرية، تكون هذه البايتات موجودة داخل الجزء نفسه وتُحتسب ضمن `jemalloc.mergetree_arena.active_bytes`. ولا تُحتسب مطلقًا ضمن `PrimaryIndexCacheBytes` — فهذان المؤشران متنافيان لكل جزء: إذ يكون الفهرس إما داخل الجزء (هذا المقياس) أو في `PrimaryIndexCache` المشتركة (المقياس الآخر)، وذلك بحسب `primary_key_lazy_load` و`use_primary_key_cache`.
+
+* `primary_key_bytes_in_memory_allocated` ([UInt64](/ar/reference/data-types/index)) — مقدار الذاكرة (بالبايت) المحجوز لقيم المفتاح الأساسي. تكون القيمة 0 عندما يكون `primary_key_lazy_load` مُمكّنًا ولا يكون المفتاح محمّلًا. وعندما تكون غير صفرية، تُحتسب ضمن `jemalloc.mergetree_arena.active_bytes`. راجع الملاحظة الخاصة بـ `primary_key_bytes_in_memory` لمعرفة العلاقة مع `PrimaryIndexCacheBytes`.
+
+* `index_granularity_bytes_in_memory` ([UInt64](/ar/reference/data-types/index)) — مقدار الذاكرة (بالبايت) المستخدم لقيم index granularity (سيكون 0 في حالة primary&#95;key&#95;lazy&#95;load=1 و use&#95;primary&#95;key&#95;cache=1). وعندما تكون غير صفرية، تكون هذه البايتات مملوكة للجزء وتُحتسب ضمن `jemalloc.mergetree_arena.active_bytes`.
+
+* `index_granularity_bytes_in_memory_allocated` ([UInt64](/ar/reference/data-types/index)) — مقدار الذاكرة (بالبايت) المحجوز لقيم index granularity (سيكون 0 في حالة primary&#95;key&#95;lazy&#95;load=1 و use&#95;primary&#95;key&#95;cache=1). وعندما تكون غير صفرية، تُحتسب ضمن `jemalloc.mergetree_arena.active_bytes`.
+
+* `is_frozen` ([UInt8](/ar/reference/data-types/index)) — إشارة تُظهر ما إذا كانت هناك نسخة احتياطية لبيانات القسم. 1، النسخة الاحتياطية موجودة. 0، النسخة الاحتياطية غير موجودة. لمزيد من التفاصيل، راجع FREEZE PARTITION.
+
+* `database` ([String](/ar/reference/data-types/index)) — اسم قاعدة البيانات.
+
+* `table` ([String](/ar/reference/data-types/index)) — اسم الجدول.
+
+* `engine` ([String](/ar/reference/data-types/index)) — اسم محرك الجدول بدون معلمات.
+
+* `disk_name` ([String](/ar/reference/data-types/index)) — اسم القرص الذي يخزن جزء البيانات.
+
+* `path` ([String](/ar/reference/data-types/index)) — المسار المطلق إلى المجلد الذي يحتوي على ملفات جزء البيانات.
+
+* `hash_of_all_files` ([String](/ar/reference/data-types/index)) — قيمة sipHash128 للملفات المضغوطة.
+
+* `hash_of_uncompressed_files` ([String](/ar/reference/data-types/index)) — قيمة sipHash128 للملفات غير المضغوطة (مثل ملفات العلامات وملف الفهرس وما إلى ذلك).
+
+* `uncompressed_hash_of_compressed_files` ([String](/ar/reference/data-types/index)) — قيمة sipHash128 للبيانات الموجودة في الملفات المضغوطة كما لو كانت غير مضغوطة.
+
+* `delete_ttl_info_min` ([DateTime](/ar/reference/data-types/index)) — القيمة الدنيا لمفتاح التاريخ والوقت لقاعدة TTL DELETE.
+
+* `delete_ttl_info_max` ([DateTime](/ar/reference/data-types/index)) — القيمة القصوى لمفتاح التاريخ والوقت لقاعدة TTL DELETE.
+
+* `move_ttl_info.expression` ([Array(String)](/ar/reference/data-types/index)) — مصفوفة من التعبيرات. يحدد كل تعبير قاعدة TTL MOVE.
+
+* `move_ttl_info.min` ([Array(DateTime)](/ar/reference/data-types/index)) — مصفوفة من قيم التاريخ والوقت. يصف كل عنصر الحد الأدنى لقيمة المفتاح لقاعدة TTL MOVE.
+
+* `move_ttl_info.max` ([Array(DateTime)](/ar/reference/data-types/index)) — مصفوفة من قيم التاريخ والوقت. يصف كل عنصر الحد الأقصى لقيمة المفتاح لقاعدة TTL MOVE.
+
+* `default_compression_codec` ([String](/ar/reference/data-types/index)) — اسم الـ codec المستخدم لضغط جزء البيانات هذا (في حال عدم وجود codec صريح للأعمدة).
+
+* `recompression_ttl_info.expression` ([Array(String)](/ar/reference/data-types/index)) — تعبير TTL.
+
+* `recompression_ttl_info.min` ([Array(DateTime)](/ar/reference/data-types/index)) — القيمة الدنيا لتعبير TTL المحسوب داخل هذا الجزء. وتُستخدم لمعرفة ما إذا كان هناك صف واحد على الأقل انتهت مدة TTL الخاصة به.
+
+* `recompression_ttl_info.max` ([Array(DateTime)](/ar/reference/data-types/index)) — القيمة القصوى لتعبير TTL المحسوب ضمن هذا الجزء. تُستخدم لمعرفة ما إذا كانت جميع الصفوف ذات TTL منتهي الصلاحية موجودة.
+
+* `group_by_ttl_info.expression` ([Array(String)](/ar/reference/data-types/index)) — تعبير TTL.
+
+* `group_by_ttl_info.min` ([Array(DateTime)](/ar/reference/data-types/index)) — القيمة الدنيا لتعبير TTL المحسوب ضمن هذا الجزء. تُستخدم لمعرفة ما إذا كان هناك صف واحد على الأقل انتهت صلاحية TTL الخاصة به.
+
+* `group_by_ttl_info.max` ([Array(DateTime)](/ar/reference/data-types/index)) — القيمة القصوى لتعبير TTL المحسوب ضمن هذا الجزء. تُستخدم لمعرفة ما إذا كانت جميع الصفوف ذات TTL منتهي الصلاحية موجودة.
+
+* `rows_where_ttl_info.expression` ([Array(String)](/ar/reference/data-types/index)) — تعبير TTL.
+
+* `rows_where_ttl_info.min` ([Array(DateTime)](/ar/reference/data-types/index)) — القيمة الدنيا لتعبير TTL المحسوب ضمن هذا الجزء. تُستخدم لمعرفة ما إذا كان هناك صف واحد على الأقل انتهت صلاحية TTL الخاصة به.
+
+* `rows_where_ttl_info.max` ([Array(DateTime)](/ar/reference/data-types/index)) — القيمة القصوى لتعبير TTL المحسوب ضمن هذا الجزء. تُستخدم لمعرفة ما إذا كانت جميع الصفوف ذات TTL منتهي الصلاحية موجودة.
+
+* `projections` ([Array(String)](/ar/reference/data-types/index)) — قائمة أسماء الإسقاطات المحسوبة لهذا الجزء.
+
+* `visible` ([UInt8](/ar/reference/data-types/index)) — علامة تشير إلى ما إذا كان هذا الجزء مرئيًا لاستعلامات SELECT.
+
+* `creation_tid` ([Tuple(UInt64, UInt64, UUID)](/ar/reference/data-types/index)) — معرّف المعاملة التي أنشأت هذا الكائن أو تحاول إنشاءه.
+
+* `removal_tid_lock` ([UInt64](/ar/reference/data-types/index)) — تجزئة `removal_tid`، وتُستخدم لقفل كائن تمهيدًا لإزالته.
+
+* `removal_tid` ([Tuple(UInt64, UInt64, UUID)](/ar/reference/data-types/index)) — معرّف المعاملة التي أزالت هذا الكائن أو تحاول إزالته
+
+* `creation_csn` ([UInt64](/ar/reference/data-types/index)) — CSN للمعاملة التي أنشأت هذا الكائن
+
+* `removal_csn` ([UInt64](/ar/reference/data-types/index)) — CSN للمعاملة التي أزالت هذا الكائن
+
+* `has_lightweight_delete` ([UInt8](/ar/reference/data-types/index)) — علامة تشير إلى ما إذا كان الجزء يحتوي على قناع حذف خفيف.
+
+* `last_removal_attempt_time` ([DateTime](/ar/reference/data-types/index)) — آخر وقت حاول فيه الخادم حذف هذا الجزء.
+
+* `removal_state` ([String](/ar/reference/data-types/index)) — الحالة الحالية لعملية إزالة الجزء.
+
+{/*AUTOGENERATED_END*/}
+
+<div id="example">
+  ## مثال
+</div>
+
+```sql
+SELECT * FROM system.parts LIMIT 1 FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+partition:                             tuple()
+name:                                  all_1_4_1_6
+part_type:                             Wide
+active:                                1
+marks:                                 2
+rows:                                  6
+bytes_on_disk:                         310
+data_compressed_bytes:                 157
+data_uncompressed_bytes:               91
+secondary_indices_compressed_bytes:    58
+secondary_indices_uncompressed_bytes:  6
+secondary_indices_marks_bytes:         48
+marks_bytes:                           144
+modification_time:                     2020-06-18 13:01:49
+remove_time:                           1970-01-01 00:00:00
+refcount:                              1
+min_date:                              1970-01-01
+max_date:                              1970-01-01
+min_time:                              1970-01-01 00:00:00
+max_time:                              1970-01-01 00:00:00
+partition_id:                          all
+min_block_number:                      1
+max_block_number:                      4
+level:                                 1
+data_version:                          6
+primary_key_bytes_in_memory:           8
+primary_key_bytes_in_memory_allocated: 64
+is_frozen:                             0
+database:                              default
+table:                                 months
+engine:                                MergeTree
+disk_name:                             default
+path:                                  /var/lib/clickhouse/data/default/months/all_1_4_1_6/
+hash_of_all_files:                     2d0657a16d9430824d35e327fcbd87bf
+hash_of_uncompressed_files:            84950cc30ba867c77a408ae21332ba29
+uncompressed_hash_of_compressed_files: 1ad78f1c6843bbfb99a2c931abe7df7d
+delete_ttl_info_min:                   1970-01-01 00:00:00
+delete_ttl_info_max:                   1970-01-01 00:00:00
+move_ttl_info.expression:              []
+move_ttl_info.min:                     []
+move_ttl_info.max:                     []
+```
+
+<div id="see-also">
+  ## راجع أيضًا
+</div>
+
+* [عائلة MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)
+* [TTL للأعمدة والجداول](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)

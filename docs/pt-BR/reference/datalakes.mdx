@@ -1,0 +1,60 @@
+---
+description: 'Documentação sobre lagos de dados'
+sidebarTitle: 'Lagos de dados'
+slug: /sql-reference/datalakes
+title: 'Lagos de dados'
+doc_type: 'reference'
+---
+
+Nesta seção, veremos o suporte do ClickHouse a lagos de dados.
+O ClickHouse oferece suporte a muitos dos formatos de tabela e catálogos de dados mais populares, incluindo Iceberg, Delta Lake, Hudi, AWS Glue, REST Catalog, Unity Catalog e Microsoft OneLake.
+
+<div id="open-table-formats">
+  # Formatos abertos de tabela
+</div>
+
+<div id="iceberg">
+  ## Iceberg
+</div>
+
+Consulte [iceberg](/pt-BR/reference/functions/table-functions/iceberg), que oferece suporte à leitura a partir do Amazon S3 e de serviços compatíveis com S3, HDFS, Azure e sistemas de arquivos locais. [icebergCluster](/pt-BR/reference/functions/table-functions/icebergCluster) é a variante distribuída da função `iceberg`.
+
+<div id="delta-lake">
+  ## Delta Lake
+</div>
+
+Consulte [deltaLake](/pt-BR/reference/functions/table-functions/deltalake), que oferece suporte à leitura no Amazon S3, em serviços compatíveis com S3, no Azure e em sistemas de arquivos locais. [deltaLakeCluster](/pt-BR/reference/functions/table-functions/deltalakeCluster) é a variante distribuída da função `deltaLake`.
+
+<div id="hudi">
+  ## Hudi
+</div>
+
+Consulte [hudi](/pt-BR/reference/functions/table-functions/hudi), que oferece suporte à leitura a partir do Amazon S3 e de serviços compatíveis com S3. [hudiCluster](/pt-BR/reference/functions/table-functions/hudiCluster) é a variante distribuída da função `hudi`.
+
+<div id="data-catalogs">
+  # Catálogos de dados
+</div>
+
+<div id="aws-glue">
+  ## AWS Glue
+</div>
+
+O AWS Glue Data Catalog pode ser usado com tabelas Iceberg. Você pode usá-lo com o motor de tabela `iceberg` ou com o mecanismo de banco de dados [DataLakeCatalog](/pt-BR/reference/engines/database-engines/datalake).
+
+<div id="iceberg-rest-catalog">
+  ## Catálogo REST do Iceberg
+</div>
+
+O Catálogo REST do Iceberg pode ser usado com tabelas Iceberg. Você pode utilizá-lo com o motor de tabela `iceberg` ou com o motor de banco de dados [DataLakeCatalog](/pt-BR/reference/engines/database-engines/datalake).
+
+<div id="unity-catalog">
+  ## Unity Catalog
+</div>
+
+O Unity Catalog pode ser usado com tabelas Delta Lake e Iceberg. Você pode usá-lo com os motores de tabela `iceberg` ou `deltaLake`, ou com o mecanismo de banco de dados [DataLakeCatalog](/pt-BR/reference/engines/database-engines/datalake).
+
+<div id="microsoft-onelake">
+  ## Microsoft OneLake
+</div>
+
+O Microsoft OneLake pode ser usado com tabelas Delta Lake e Iceberg. Você pode usá-lo com o mecanismo de banco de dados [DataLakeCatalog](/pt-BR/reference/engines/database-engines/datalake).

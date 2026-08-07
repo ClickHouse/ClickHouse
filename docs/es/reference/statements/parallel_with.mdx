@@ -1,0 +1,57 @@
+---
+description: 'Documentación de la cláusula PARALLEL WITH'
+sidebarTitle: 'PARALLEL WITH'
+slug: /sql-reference/statements/parallel_with
+title: 'Cláusula PARALLEL WITH'
+doc_type: 'reference'
+---
+
+Permite ejecutar varias sentencias en paralelo.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
+```
+
+Ejecuta las sentencias `statement1`, `statement2`, `statement3`, ... en paralelo entre sí. La salida de esas sentencias se descarta.
+
+En muchos casos, ejecutar sentencias en paralelo puede ser más rápido que ejecutarlas simplemente en secuencia. Por ejemplo, `statement1 PARALLEL WITH statement2 PARALLEL WITH statement3` probablemente sea más rápido que `statement1; statement2; statement3`.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Crea dos tablas en paralelo:
+
+```sql
+CREATE TABLE table1(x Int32) ENGINE = MergeTree ORDER BY tuple()
+PARALLEL WITH
+CREATE TABLE table2(y String) ENGINE = MergeTree ORDER BY tuple();
+```
+
+Elimina dos tablas en paralelo:
+
+```sql
+DROP TABLE table1
+PARALLEL WITH
+DROP TABLE table2;
+```
+
+<div id="settings">
+  ## Configuración
+</div>
+
+La configuración [max&#95;threads](/es/reference/settings/session-settings#max_threads) controla cuántos hilos se crean.
+
+<div id="comparison-with-union">
+  ## Comparación con UNION
+</div>
+
+La cláusula `PARALLEL WITH` se parece un poco a [UNION](/es/reference/statements/select/union), que también ejecuta sus operandos en paralelo. Sin embargo, hay algunas diferencias:
+
+* `PARALLEL WITH` no devuelve ningún resultado de la ejecución de sus operandos; solo puede relanzar una excepción si se produce alguna;
+* `PARALLEL WITH` no requiere que sus operandos tengan el mismo conjunto de columnas de resultados;
+* `PARALLEL WITH` puede ejecutar cualquier sentencia (no solo `SELECT`).

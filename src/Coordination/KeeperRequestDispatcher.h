@@ -15,9 +15,10 @@ extern template class NonblockingBoundedQueue<DB::KeeperResponseForSession>;
 namespace DB
 {
 
-/// Takes client requests from KeeperTCPHandler (or whoever else calls putRequest), passes them
-/// to nuraft leader, detects when they're committed (or failed), and passes responses back to
-/// KeeperTCPHandler (or whoever registers their response callback by calling registerSession).
+/// KeeperRequestDispatcher takes client requests from KeeperTCPHandler (or whoever else calls
+/// putRequest), passes them to nuraft leader, detects when they're committed (or failed), and
+/// passes responses back to KeeperTCPHandler (or whoever registers their response callback by
+/// calling registerSession).
 ///
 /// Considerations:
 ///  * Forwarding. If nuraft leader is not on this node, requests are sent to the leader node.
@@ -80,6 +81,7 @@ namespace DB
 ///  equally fast because KeeperRequestDispatcher shouldn't be the bottleneck.
 ///  One part where performance may matter is commit callback; we shouldn't waste any time there
 ///  because the commit thread is likely a bottleneck.)
+
 class KeeperRequestDispatcher
 {
 public:
@@ -93,9 +95,16 @@ public:
     /// uses `raft_instance` to open a client append stream.
     void startupDispatchThread();
 
+    /// Shutdown is split in two because responses are produced by nuraft's commit thread, which
+    /// only `KeeperServer::shutdown` joins. Call order must be:
+    ///   shutdownRequests() -> KeeperServer::shutdown() -> drainAndCheckQueues(...)
+    /// shutdownRequests must run first because it needs a live `raft_instance` to send the
+    /// session Close requests, and `KeeperServer::shutdown` destroys it.
+    void shutdownRequests();
+
     /// closed_all_connections is used just for an assert: if true, we expect that all
     /// onResponseDeallocated calls were made, so the tracked response queue size should be zero.
-    void shutdown(bool closed_all_connections);
+    void drainAndCheckQueues(bool closed_all_connections);
 
     /// May block for up to operation_timeout_ms if queue is full.
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id, bool use_xid_64);
@@ -332,6 +341,11 @@ private:
 
     void popBatch(size_t batch_idx);
     bool tryPopRequest(KeeperRequestForSession & request); // call instead of requests_queue.tryPop
+
+    /// Pop everything from requests_queue and responses_queue, discarding it.
+    /// Returns the number of response bytes released, i.e. how much response_bytes_in_all_queues
+    /// was decremented by.
+    size_t drainQueues();
 
     void recreateStreamWithBackoff();
     void dropInFlightRequests();

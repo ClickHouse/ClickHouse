@@ -1,0 +1,11 @@
+ok
+Array(Tuple(UInt32, Float32))
+`id` Tuple(UInt64, UUID), `timestamp` UInt32 CODEC(DoubleDelta, ZSTD(1)), `value` Float32 CODEC(Gorilla, ZSTD(1))
+metric_name	String
+tags	Map(String, String)
+time_series	Array(Tuple(DateTime64(3), Float64))
+metric_family	String
+type	String
+unit	String
+help	String
+attach round-trip ok

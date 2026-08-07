@@ -1,0 +1,4 @@
+\N	Nullable(UInt32)
+\N	Nullable(Tuple(class_id UInt32, probability Float64))
+[]	Array(Tuple(\n    class_id UInt32,\n    probability Float64))
+\N	Nullable(UInt32)
