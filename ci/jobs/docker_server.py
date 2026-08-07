@@ -7,7 +7,7 @@ import shlex
 import tempfile
 import traceback
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
@@ -353,8 +353,9 @@ def build_and_push_image(
     run_url: str,
     sha: str,
     apt_mirror_region: str,
-    sw: Optional[Utils.Stopwatch] = None,
-    job_timeout: int = 0,
+    # Required: a default here silently selects the fixed bound.
+    sw: Utils.Stopwatch,
+    job_timeout: int,
 ) -> List[Result]:
     result = []
     if os != "ubuntu":
@@ -433,9 +434,7 @@ def build_and_push_image(
         result.append(
             Result.from_commands_run(
                 name=f"{image.name}:{tag}-{arch}",
-                command=with_timeout(
-                    cmd, buildx_timeout(sw.duration if sw else 0.0, job_timeout)
-                ),
+                command=with_timeout(cmd, buildx_timeout(sw.duration, job_timeout)),
                 retries=BUILDX_RETRIES,
                 retry_errors=BUILDX_RETRY_ERRORS,
             )
@@ -454,9 +453,7 @@ def build_and_push_image(
         result.append(
             Result.from_commands_run(
                 name=f"{image.name}:{tag}",
-                command=with_timeout(
-                    cmd, buildx_timeout(sw.duration if sw else 0.0, job_timeout)
-                ),
+                command=with_timeout(cmd, buildx_timeout(sw.duration, job_timeout)),
                 retries=BUILDX_RETRIES,
                 retry_errors=BUILDX_RETRY_ERRORS,
             )

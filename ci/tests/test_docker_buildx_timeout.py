@@ -17,8 +17,10 @@ brace-group form does not mangle the already-quoted buildx arguments, and a bare
 """
 
 import ast
+import inspect
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -273,20 +275,28 @@ def test_the_whole_job_worst_case_fits_inside_the_jobs_own_cap():
             )
 
 
-def test_the_scheduled_jobs_only_ever_build_one_tag():
-    """The premise scoping the envelope above, made executable.
+def _effective_args(command, monkeypatch):
+    """Resolve a scheduled command through the shipped parser, not by substring."""
+    monkeypatch.setattr(sys, "argv", shlex.split(command)[1:])
+    return docker_server.parse_args()
+
+
+def test_the_scheduled_jobs_only_ever_build_one_tag(monkeypatch):
+    """The premise scoping the envelope above, resolved rather than matched.
 
     The group count is variants x tags, and `--tag-type release` yields four
-    tags, which the envelope does not fit. Both scheduled commands pass
-    `--tag-type head`; if one ever switches, this fails and points at the
-    envelope rather than letting the job wedge in production.
+    tags, which the envelope does not fit (23948s). A substring check passes when
+    the option is duplicated rather than replaced, because argparse takes the
+    last occurrence.
     """
     for job in (JobConfigs.docker_server, JobConfigs.docker_keeper):
-        assert "--tag-type head" in job.command, (
-            f"[{job.name}] no longer builds a single tag, so the worst-case "
-            "envelope no longer holds; re-price it before changing this"
+        args = _effective_args(job.command, monkeypatch)
+        assert args.tag_type == "head", (
+            f"[{job.name}] resolves --tag-type to {args.tag_type!r}, so it no longer "
+            "builds a single tag and the worst-case envelope no longer holds; "
+            "re-price it before changing this"
         )
-    assert len(gen_tags("26.8.1.1", "head")) == 1
+        assert len(gen_tags("26.8.1.1", args.tag_type)) == 1
 
 
 def test_a_healthy_first_build_still_gets_the_full_bound():
@@ -412,6 +422,46 @@ def test_every_produced_command_gets_the_stopwatch_derived_bound(tmp_path, monke
                 f"push={push}: bound {bound} is not the stopwatch-derived value, so "
                 "the call site is not passing the elapsed time"
             )
+
+
+def test_main_passes_the_stopwatch_and_the_job_cap_to_every_build():
+    """The shrinking deadline is inert unless main() supplies its two inputs.
+
+    The arm above supplies them itself, so it pins the two inner call sites but
+    cannot see main(), the only production caller. Measured: dropping them from
+    main() leaves the whole suite green while the scheduled shape goes from
+    16334s to 50058s against an 18000s cap. AST rather than a substring count,
+    because a count cannot tell a keyword from a comment mentioning one.
+    """
+    src = open(docker_server.__file__, encoding="utf-8").read()
+    mains = [
+        node
+        for node in ast.parse(src).body
+        if isinstance(node, ast.FunctionDef) and node.name == "main"
+    ]
+    assert len(mains) == 1, "expected exactly one main() to inspect"
+    calls = [
+        node
+        for node in ast.walk(mains[0])
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "build_and_push_image"
+    ]
+    assert len(calls) == 1, "main() no longer has exactly one build call"
+    passed = {kw.arg for kw in calls[0].keywords}
+    assert "sw" in passed, "main() does not pass the stopwatch, so the bound never shrinks"
+    assert "job_timeout" in passed, (
+        "main() does not pass the job cap, so the bound never shrinks"
+    )
+
+
+def test_the_build_helper_cannot_be_called_without_its_budget_context():
+    """A default for either parameter silently restores the fixed bound."""
+    params = inspect.signature(docker_server.build_and_push_image).parameters
+    for name in ("sw", "job_timeout"):
+        assert params[name].default is inspect.Parameter.empty, (
+            f"{name} has a default, so omitting it silently selects a fixed bound"
+        )
 
 
 # --- the retry layer, driven through the real Shell.run ----------------------
