@@ -335,6 +335,28 @@ TEST(AzureRequestSettings, WriterRejectsZeroMinUploadPartSize)
         "azure_min_upload_part_size");
 }
 
+TEST(AzureRequestSettings, WriterRejectsStrictPartSizeAboveMax)
+{
+    /// `azure_max_upload_part_size` must stay a real maximum even when
+    /// `azure_strict_upload_part_size` selects the fixed-size allocation policy: a fixed part size
+    /// above the maximum is a contradictory configuration and must be rejected early instead of
+    /// staging oversized blocks.
+    auto settings = std::make_shared<AzureBlobStorage::RequestSettings>();
+    settings->strict_upload_part_size = 200;
+    settings->max_upload_part_size = 100;
+
+    ASSERT_THROW_ERROR_CODE(
+        WriteBufferFromAzureBlobStorage(
+            /* blob_container_client_ */ nullptr,
+            /* blob_path_ */ "test_blob",
+            /* buf_size_ */ 1024,
+            WriteSettings{},
+            settings),
+        Exception,
+        ErrorCodes::INVALID_SETTING_VALUE,
+        "azure_strict_upload_part_size");
+}
+
 TEST(AzureRequestSettings, GetRequestSettingsDoesNotValidate)
 {
     /// A zero `azure_min_upload_part_size` must resolve without throwing, so that endpoints which do

@@ -613,7 +613,14 @@ void RequestSettings::validateUploadSettings() const
             "Setting azure_max_blocks_in_multipart_upload cannot be zero");
 
     /// When strict_upload_part_size is set, a fixed-size allocation policy is used and the
-    /// exponential-growth settings below are irrelevant.
+    /// exponential-growth settings below are irrelevant. The maximum part size, however, is a
+    /// contract of its own and must hold for the fixed size too.
+    if (strict_upload_part_size > max_upload_part_size)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_strict_upload_part_size ({}) can't be greater than setting azure_max_upload_part_size ({})",
+            ReadableSize(strict_upload_part_size), ReadableSize(max_upload_part_size));
+
     if (strict_upload_part_size == 0)
     {
         if (min_upload_part_size == 0)
