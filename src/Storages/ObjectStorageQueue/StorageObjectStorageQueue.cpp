@@ -1204,7 +1204,6 @@ void StorageObjectStorageQueue::commit(
     if (mode == ObjectStorageQueueMode::EXCLUSIVE)
     {
         commitExclusive(successful_objects, processed_objects, sources, transaction_start_time);
-
     }
     else
     {
@@ -1289,8 +1288,7 @@ void StorageObjectStorageQueue::commit(
         }
     }
 
-    if (mode == ObjectStorageQueueMode::EXCLUSIVE
-        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+    if (mode == ObjectStorageQueueMode::EXCLUSIVE)
     {
         for (const auto & object : successful_objects)
             files_metadata->releaseExclusiveProcessing(object.remote_path);
@@ -1332,6 +1330,11 @@ void StorageObjectStorageQueue::commitExclusive(
     std::vector<std::shared_ptr<ObjectStorageQueueSource>> & sources,
     time_t transaction_start_time) const
 {
+    if (files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::KEEP)
+    {
+        return;
+    }
+
     std::vector<String> failed_to_delete_paths = getFailedPaths(successful_objects, processed_objects);
 
     if (!failed_to_delete_paths.empty())
