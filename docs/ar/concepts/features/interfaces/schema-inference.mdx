@@ -2007,7 +2007,7 @@ $$)
   ### Avro
 </div>
 
-في صيغة Avro، يستخلص ClickHouse المخطط من البيانات ويحوّله إلى مخطط ClickHouse باستخدام مطابقات الأنواع التالية:
+في صيغة Avro، يقرأ ClickHouse المخطط من البيانات ويحوّله إلى مخطّط ClickHouse باستخدام مطابقات الأنواع التالية:
 
 | نوع بيانات Avro                    | نوع بيانات ClickHouse                                                 |
 | ---------------------------------- | --------------------------------------------------------------------- |
@@ -2026,7 +2026,7 @@ $$)
 | `string (uuid)` *                  | [UUID](/ar/reference/data-types/uuid)                                    |
 | `binary (decimal)` *               | [Decimal(P, S)](/ar/reference/data-types/decimal)                        |
 
-* [الأنواع المنطقية في Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+* [الأنواع المنطقية في Avro](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 أنواع Avro الأخرى غير مدعومة.
 

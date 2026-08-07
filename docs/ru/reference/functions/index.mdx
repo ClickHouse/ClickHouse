@@ -4,11 +4,31 @@ sidebar: 'sqlreference'
 slug: /sql-reference/functions
 title: 'Обзор функций'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| Страница                                                                          | Описание                                                                                      |
-| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| [Обычные функции](/ru/reference/functions/regular-functions/regular-functions-index) | Функции, результат которых для каждой строки не зависит от других строк.                      |
-| [Агрегатные функции](/ru/reference/functions/aggregate-functions/index)              | Функции, которые агрегируют набор значений по нескольким строкам.                             |
-| [Табличные функции](/ru/reference/functions/table-functions/index)                   | Способы построения таблиц.                                                                    |
-| [Оконные функции](/ru/reference/functions/window-functions/index)                    | Функции, которые позволяют выполнять вычисления по набору строк, связанных с текущей строкой. |
+<CardGroup cols={2}>
+  <Card title="Обычные функции" icon="function" href="/ru/reference/functions/regular-functions/overview">
+    Функции, результат которых для каждой строки не зависит от всех остальных строк.
+  </Card>
+
+  <Card title="Агрегатные функции" icon="calculator" href="/ru/reference/functions/aggregate-functions/index">
+    Функции, которые агрегируют набор значений из нескольких строк.
+  </Card>
+
+  <Card title="Табличные функции" icon="table" href="/ru/reference/functions/table-functions/index">
+    Способы создания таблиц.
+  </Card>
+
+  <Card title="Оконные функции" icon="chart-column" href="/ru/reference/functions/window-functions/index">
+    Функции, позволяющие выполнять вычисления по набору строк, связанных с текущей строкой.
+  </Card>
+
+  <Card title="Пользовательские функции" icon="code" href="/ru/reference/functions/regular-functions/udf">
+    Пользовательские исполняемые функции, определяемые пользователем.
+  </Card>
+
+  <Card title="WebAssembly UDF" icon="cube" href="/ru/reference/functions/regular-functions/wasm_udf">
+    Пользовательские функции, реализованные с помощью WebAssembly.
+  </Card>
+</CardGroup>

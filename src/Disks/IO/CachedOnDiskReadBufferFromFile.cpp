@@ -188,37 +188,38 @@ void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
         return;
 
     const auto range = file_segment.range();
-    FilesystemCacheLogElement elem
+    cache_log->add([&](FilesystemCacheLogElement & element)
     {
-        .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
-        .query_id = query_id,
-        .source_file_path = info.source_file_path,
-        .file_segment_range = { range.left, range.right },
-        .requested_range = { first_offset, info.read_until_position },
-        .file_segment_key = file_segment.key().toString(),
-        .file_segment_offset = file_segment.offset(),
-        .file_segment_size = range.size(),
-        .read_from_cache_attempted = true,
-        .read_buffer_id = current_buffer_id,
-        .user_id = origin.user_id,
-    };
+        element = FilesystemCacheLogElement
+        {
+            .event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()),
+            .query_id = query_id,
+            .source_file_path = info.source_file_path,
+            .file_segment_range = { range.left, range.right },
+            .requested_range = { first_offset, info.read_until_position },
+            .file_segment_key = file_segment.key().toString(),
+            .file_segment_offset = file_segment.offset(),
+            .file_segment_size = range.size(),
+            .read_from_cache_attempted = true,
+            .read_buffer_id = current_buffer_id,
+            .user_id = origin.user_id,
+        };
 
-    switch (type)
-    {
-        case CachedOnDiskReadBufferFromFile::ReadType::NONE:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read type cannot be None");
-        case CachedOnDiskReadBufferFromFile::ReadType::CACHED:
-            elem.cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_CACHE;
-            break;
-        case CachedOnDiskReadBufferFromFile::ReadType::REMOTE_FS_READ_BYPASS_CACHE:
-            elem.cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE;
-            break;
-        case CachedOnDiskReadBufferFromFile::ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
-            elem.cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE;
-            break;
-    }
-
-    cache_log->add(std::move(elem));
+        switch (type)
+        {
+            case CachedOnDiskReadBufferFromFile::ReadType::NONE:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Read type cannot be None");
+            case CachedOnDiskReadBufferFromFile::ReadType::CACHED:
+                element.cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_CACHE;
+                break;
+            case CachedOnDiskReadBufferFromFile::ReadType::REMOTE_FS_READ_BYPASS_CACHE:
+                element.cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_BYPASSING_CACHE;
+                break;
+            case CachedOnDiskReadBufferFromFile::ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
+                element.cache_type = FilesystemCacheLogElement::CacheType::READ_FROM_FS_AND_DOWNLOADED_TO_CACHE;
+                break;
+        }
+    });
 }
 
 bool CachedOnDiskReadBufferFromFile::nextFileSegmentsBatch()

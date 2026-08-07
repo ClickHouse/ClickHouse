@@ -28,6 +28,8 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 
+#include <Databases/LoadingStrictnessLevel.h>
+
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -639,6 +641,35 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
         /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext(), /*storage_settings=*/ nullptr);
+
+        /// A named collection may specify the endpoint as `addresses_expr`, which fills only
+        /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
+        /// below is built from `host` / `port`. This engine keeps a single replication connection,
+        /// so exactly one address is accepted; canonicalize it back into `host` / `port`. This mirrors
+        /// `registerDatabaseMaterializedPostgreSQL`.
+        if (configuration.host.empty())
+        {
+            if (configuration.addresses.size() == 1)
+            {
+                configuration.host = configuration.addresses.front().first;
+                configuration.port = configuration.addresses.front().second;
+            }
+            else if (!isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Engine `MaterializedPostgreSQL` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
+                                configuration.addresses.size());
+            }
+            /// When replaying previously persisted metadata (server startup, and DETACH / ATTACH
+            /// with the short syntax, which re-reads the stored definition) a legacy multi-address
+            /// definition keeps its historical behavior: it could be created before this validation
+            /// existed (replication starts asynchronously, so the broken connection string never
+            /// aborted the CREATE), and the table must keep loading with replication failing and
+            /// retrying in the background rather than abort startup. A user ATTACH with a full
+            /// table definition is a fresh definition, not a replay, and stays fail-closed
+            /// (the same distinction `StorageDistributed` draws for its skipping-indices check).
+        }
+
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,
@@ -703,7 +734,7 @@ SET allow_experimental_materialized_postgresql_table=1
 ```
 :::
 
-If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
+If more than one table is required, it is highly recommended to use the [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine instead of the table engine and use the `materialized_postgresql_tables_list` setting, which specifies the tables to be replicated (will also be possible to add database `schema`). It will be much better in terms of CPU, fewer connections and fewer replication slots inside the remote PostgreSQL database.
 
 ## Creating a table {#creating-a-table}
 
@@ -725,7 +756,7 @@ PRIMARY KEY key;
 
 1. The [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) setting must have a value `logical` and `max_replication_slots` parameter must have a value at least `2` in the PostgreSQL config file.
 
-2. A table with `MaterializedPostgreSQL` engine must have a primary key — the same as a replica identity index (by default: primary key) of a PostgreSQL table (see [details on replica identity index](../../../engines/database-engines/materialized-postgresql.md#requirements)).
+2. A table with `MaterializedPostgreSQL` engine must have a primary key — the same as a replica identity index (by default: primary key) of a PostgreSQL table (see [details on replica identity index](/reference/engines/database-engines/materialized-postgresql#requirements)).
 
 3. Only database [Atomic](https://en.wikipedia.org/wiki/Atomicity_(database_systems)) is allowed.
 
@@ -733,9 +764,9 @@ PRIMARY KEY key;
 
 ## Virtual columns {#virtual-columns}
 
-- `_version` — Transaction counter. Type: [UInt64](../../../sql-reference/data-types/int-uint.md).
+- `_version` — Transaction counter. Type: [UInt64](/reference/data-types/int-uint).
 
-- `_sign` — Deletion mark. Type: [Int8](../../../sql-reference/data-types/int-uint.md). Possible values:
+- `_sign` — Deletion mark. Type: [Int8](/reference/data-types/int-uint). Possible values:
   - `1` — Row is not deleted,
   - `-1` — Row is deleted.
 

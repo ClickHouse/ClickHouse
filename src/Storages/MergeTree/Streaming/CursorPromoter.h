@@ -39,9 +39,6 @@ public:
 
     bool canPromote(Int64 block_number, Int64 left) const;
 
-    /// Whether the promoter knows of an in-flight (committing) or not-yet-visible block after `block_number`.
-    bool hasInFlightAfter(Int64 block_number) const;
-
     String dumpStructure() const;
 
 private:

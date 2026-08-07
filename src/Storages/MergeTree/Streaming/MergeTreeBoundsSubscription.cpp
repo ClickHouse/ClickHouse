@@ -3,31 +3,24 @@
 namespace DB
 {
 
-MergeTreeBoundsSubscription::MergeTreeBoundsSubscription(size_t query_subscriptions_count_, size_t current_subscription_index_, bool bounded_)
+MergeTreeBoundsSubscription::MergeTreeBoundsSubscription(size_t query_subscriptions_count_, size_t current_subscription_index_)
     : query_subscriptions_count(query_subscriptions_count_)
     , current_subscription_index(current_subscription_index_)
-    , bounded(bounded_)
 {
 }
 
 void MergeTreeBoundsSubscription::advance(const String & partition_id, Int64 new_cursor)
 {
+    std::lock_guard guard(mutex);
+    if (is_disabled)
+        return;
+
+    auto [it, inserted] = safe_block_numbers.try_emplace(partition_id, new_cursor);
+    if (!inserted)
     {
-        std::lock_guard guard(mutex);
-        if (is_disabled)
-            return;
-
-        auto [it, inserted] = safe_block_numbers.try_emplace(partition_id, new_cursor);
-        if (!inserted)
-        {
-            chassert(new_cursor > it->second);
-            it->second = new_cursor;
-        }
+        chassert(new_cursor > it->second);
+        it->second = new_cursor;
     }
-
-    /// Bounded streams are woken only by onEnrichmentRound (not per-advance), to avoid a partial mid-round read.
-    if (!bounded)
-        wake.notify();
 }
 
 std::map<String, Int64> MergeTreeBoundsSubscription::snapshot() const
@@ -52,41 +45,23 @@ void MergeTreeBoundsSubscription::disable()
     wake.notify();
 }
 
-void MergeTreeBoundsSubscription::beginEnrichmentRound()
-{
-    std::lock_guard guard(mutex);
-    if (is_disabled)
-        return;
-    /// Not determined while the round advances the map; onEnrichmentRound republishes it once pending is known.
-    safe_segment_determined = false;
-}
-
-void MergeTreeBoundsSubscription::onEnrichmentRound(bool pending)
+void MergeTreeBoundsSubscription::onEnrichmentRound()
 {
     {
         std::lock_guard guard(mutex);
         if (is_disabled)
             return;
-        safe_segment_determined = !pending;
+        ++updates_count;
     }
 
-    /// Wake a bounded source only on a resolved round; while a partition is blocked there is nothing to do.
-    if (bounded && !pending)
-        wake.notify();
+    /// Wake readers once the round has finished advancing the map, avoiding a partial mid-round read.
+    wake.notify();
 }
 
-bool MergeTreeBoundsSubscription::safeSegmentDetermined() const
+size_t MergeTreeBoundsSubscription::updatesCount() const
 {
     std::lock_guard guard(mutex);
-    return safe_segment_determined;
-}
-
-std::optional<std::map<String, Int64>> MergeTreeBoundsSubscription::snapshotIfDetermined() const
-{
-    std::lock_guard guard(mutex);
-    if (!safe_segment_determined)
-        return std::nullopt;
-    return safe_block_numbers;
+    return updates_count;
 }
 
 }

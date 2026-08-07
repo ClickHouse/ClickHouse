@@ -42,16 +42,12 @@ Para iniciar o processo de onboarding, [entre em contato conosco](https://clickh
 Prepare uma nova conta AWS, um projeto GCP ou uma assinatura do Azure na sua organização.
 
 <Steps>
-  <Step>
-    ### Escolha um provedor de Cloud
-
+  <Step title="Escolha um provedor de Cloud" id="choose-cloud-provider">
     <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background="black" />
   </Step>
 
-  <Step>
-    ### Configuração da conta/projeto/assinatura
-
-    A configuração inicial do BYOC pode ser feita usando um [template do CloudFormation (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), um [módulo do Terraform (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) ou um [módulo do Terraform (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). Isso cria uma identidade com privilégios elevados (função do IAM/conta de serviço/principal de serviço), permitindo que os controladores de BYOC do ClickHouse Cloud gerenciem sua infraestrutura.
+  <Step title="Configuração da conta/projeto/assinatura" id="account-setup">
+    A configuração inicial do BYOC pode ser feita usando um [template do CloudFormation (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), um [módulo do Terraform (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) ou um [módulo do Terraform (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). Isso cria uma identidade com privilégios elevados (função do IAM/conta de serviço/principal de serviço), permitindo que os controllers do BYOC do ClickHouse Cloud gerenciem sua infraestrutura.
 
     <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
 
@@ -73,14 +69,12 @@ Prepare uma nova conta AWS, um projeto GCP ou uma assinatura do Azure na sua org
     ```
   </Step>
 
-  <Step>
-    ### Configure a infraestrutura do BYOC
-
+  <Step title="Configure a infraestrutura do BYOC" id="setup-byoc-infrastructure">
     Você será solicitado a configurar a infraestrutura, incluindo buckets de armazenamento de objetos, VPC/VNet e o cluster do Kubernetes, no console do ClickHouse Cloud. Algumas configurações precisam ser definidas nesta etapa, pois não poderão ser alteradas depois. Especificamente:
 
-    * **Região**: Todas as **regiões públicas** listadas na nossa documentação de [regiões compatíveis](/pt-BR/products/cloud/reference/supported-regions) estão disponíveis para implantações de BYOC. Regiões privadas não têm suporte no momento.
+    * **Região**: Todas as **regiões públicas** listadas na nossa documentação de [regiões compatíveis](/pt-BR/products/cloud/reference/supported-regions) estão disponíveis para implantações de BYOC. No momento, regiões privadas não são compatíveis.
 
-    * **Intervalo CIDR da VPC/VNet**: Por padrão, usamos `10.0.0.0/16` para o intervalo CIDR da VPC (AWS/GCP) ou VNet (Azure) do BYOC. Se você pretende usar VPC/VNet peering com outra conta, certifique-se de que os intervalos CIDR não se sobreponham. Aloque um intervalo CIDR adequado para o BYOC, com tamanho mínimo de `/23`, para acomodar as cargas de trabalho necessárias.
+    * **Intervalo CIDR da VPC/VNet**: Por padrão, usamos `10.0.0.0/16` para o intervalo CIDR da VPC (AWS/GCP) ou VNet (Azure) do BYOC. Se você pretende usar VPC/VNet peering com outra conta, certifique-se de que os intervalos CIDR não se sobreponham. Aloque um intervalo CIDR adequado para o BYOC, com tamanho mínimo de `/23`, para acomodar as workloads necessárias.
 
     * **Zonas de disponibilidade**: Se você pretende usar VPC peering, alinhar as zonas de disponibilidade entre as contas de origem e do BYOC pode ajudar a reduzir os custos de tráfego entre AZs. Por exemplo, na AWS, os sufixos de zona de disponibilidade (`a`, `b`, `c`) podem representar IDs de zonas físicas diferentes entre contas. Consulte o [guia da AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) para mais detalhes.
 

@@ -1,0 +1,13 @@
+held replica still at metadata version 0: 1
+other replica advanced to metadata version 1: 1
+ALTER_METADATA still queued on the held replica: 1
+held replica fetched the part containing h: 1
+MUTATE_PART postponed because the source part is ahead of the table: 1
+both replicas reached metadata version 1: 1
+mutation finished without a failure: 1
+data on data_r1:
+1	10	7
+3	30	98
+data on data_r2:
+1	10	7
+3	30	98

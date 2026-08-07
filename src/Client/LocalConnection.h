@@ -27,6 +27,20 @@ struct LocalQueryState
 
     /// Query text.
     String query;
+    /// Parser-affecting settings captured when the query was received, before any query-local `SETTINGS`
+    /// from the query itself are applied during execution. The `input()` initializer reparses `query` and
+    /// must use the dialect/gate the query was originally accepted with — a JSON
+    /// `INSERT ... FROM input(...) SETTINGS dialect = 'clickhouse'` (or `... allow_experimental_json_ast_dialect = 0`)
+    /// would otherwise be reparsed with the changed settings and fail.
+    bool parsed_as_json_dialect = false;
+    bool allow_experimental_json_ast_dialect = false;
+    /// AST-size limits captured at the same point. The JSON branch of the `input()` initializer reparses
+    /// `query` through `IAST::createFromJSON`; it must use the limits the original parse was accepted with,
+    /// so a JSON `INSERT ... FROM input(...) SETTINGS max_ast_depth = 1` (or `max_query_size` /
+    /// `max_ast_elements`) cannot make that second parse fail under limits the first parse never saw.
+    UInt64 json_ast_max_query_size = 0;
+    UInt64 json_ast_max_depth = 0;
+    UInt64 json_ast_max_elements = 0;
     /// Streams of blocks, that are processing the query.
     BlockIO io;
     /// Current stream to pull blocks from.

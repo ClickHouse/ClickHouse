@@ -9,7 +9,6 @@
 
 #include <map>
 #include <mutex>
-#include <optional>
 
 namespace DB
 {
@@ -18,7 +17,7 @@ namespace DB
 class MergeTreeBoundsSubscription : public IStreamSubscription
 {
 public:
-    MergeTreeBoundsSubscription(size_t query_subscriptions_count_, size_t current_subscription_index_, bool bounded_ = false);
+    MergeTreeBoundsSubscription(size_t query_subscriptions_count_, size_t current_subscription_index_);
 
     /// Promote the partition's `safe_block_number` to `new_cursor`.
     void advance(const String & partition_id, Int64 new_cursor);
@@ -27,20 +26,11 @@ public:
     bool isDisabled() const;
     void disable();
 
-    /// Whether this subscription backs a bounded stream (read the first snapshot, then finish).
-    bool isBounded() const { return bounded; }
+    /// Record that one enrichment round finished (an empty round counts too) and wake readers.
+    void onEnrichmentRound();
 
-    /// Mark the start of a round: clears "determined" while the map is advanced (onEnrichmentRound republishes it).
-    void beginEnrichmentRound();
-
-    /// Record a round; `pending` = a block still in flight (not determined), and a resolved round wakes a bounded source.
-    void onEnrichmentRound(bool pending);
-
-    /// Whether the safe segment is fully determined (a round completed with no partition still blocked).
-    bool safeSegmentDetermined() const;
-
-    /// Atomically returns the safe-block-number map iff the segment is determined, else nullopt.
-    std::optional<std::map<String, Int64>> snapshotIfDetermined() const;
+    /// How many enrichment rounds have been applied to this subscription (a bounded source compares this with 0).
+    size_t updatesCount() const;
 
     /// Read end of the wakeup pipe;
     int fd() const { return wake.fd(); }
@@ -50,13 +40,10 @@ public:
     const size_t current_subscription_index;
 
 private:
-    const bool bounded;
-
     mutable std::mutex mutex;
     std::map<String, Int64> safe_block_numbers TSA_GUARDED_BY(mutex);
     bool is_disabled TSA_GUARDED_BY(mutex) = false;
-    /// True once the latest round fully determined the safe segment (no partition still blocked).
-    bool safe_segment_determined TSA_GUARDED_BY(mutex) = false;
+    size_t updates_count TSA_GUARDED_BY(mutex) = 0;
 
     WakeupFd wake;
 };

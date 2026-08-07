@@ -27,7 +27,7 @@ struct StorageSnapshot
     };
 
     using DataPtr = std::unique_ptr<Data>;
-    DataPtr data;
+    const DataPtr data;
 
     StorageSnapshot(
         const IStorage & storage_,

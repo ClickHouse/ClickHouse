@@ -67,14 +67,6 @@ bool MergeTreeCursorPromoter::canPromote(Int64 block_number, Int64 left) const
     return true;
 }
 
-bool MergeTreeCursorPromoter::hasInFlightAfter(Int64 block_number) const
-{
-    if (committing_parts.upper_bound(block_number) != committing_parts.end())
-        return true;
-
-    return virtual_parts.getNext(block_number).has_value();
-}
-
 String MergeTreeCursorPromoter::dumpStructure() const
 {
     std::vector<String> committing_parts_strs;
@@ -95,14 +87,6 @@ CursorPromotersMap constructPromoters(
             std::piecewise_construct,
             std::forward_as_tuple(partition_id),
             std::forward_as_tuple(std::move(committing_block_numbers[partition_id]), std::move(ranges)));
-
-    /// Partitions with in-flight (committing) blocks but no visible/virtual range yet still need a promoter.
-    for (auto && [partition_id, committing] : committing_block_numbers)
-        if (!committing.empty() && !promoters.contains(partition_id))
-            promoters.emplace(
-                std::piecewise_construct,
-                std::forward_as_tuple(partition_id),
-                std::forward_as_tuple(std::move(committing), PartBlockNumberRanges{}));
 
     return promoters;
 }

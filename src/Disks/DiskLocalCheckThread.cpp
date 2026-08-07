@@ -42,8 +42,8 @@ DiskLocalCheckThread::~DiskLocalCheckThread()
 
 void DiskLocalCheckThread::startup()
 {
-    task->activateAndSchedule();
     LOG_INFO(log, "Disk check for disk {} started with period {}", disk->getName(), formatReadableTime(static_cast<double>(check_period.getCurrentDelay()) * 1e6));
+    task->activateAndSchedule();
 }
 
 void DiskLocalCheckThread::run()

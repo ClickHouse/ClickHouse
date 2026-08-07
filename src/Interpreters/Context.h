@@ -148,6 +148,8 @@ class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
+class DistributedCacheLog;
+class DistributedCacheServerLog;
 class FilesystemReadPrefetchesLog;
 class ObjectStorageQueueLog;
 class AsynchronousInsertLog;
@@ -590,8 +592,9 @@ protected:
     /// so view-inner queries on the same node are unaffected.
     bool positional_arguments_already_resolved = false;
 
-    inline static ContextPtr global_context_instance;
-    inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static ContextPtr global_context_instance;
+    static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
@@ -754,13 +757,17 @@ public:
     String getPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
-    String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
     String getDynamicUserDefinedExecutableFunctionsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
     DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter) const;
+
+    /// Remove a qualified name from the per-query storage cache. Called after this query renames or
+    /// exchanges a table so its own later lookups of the affected names re-resolve to the current
+    /// tables instead of the version pinned before the swap.
+    void dropStorageCacheEntry(const StorageID & id) const;
 
     // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
@@ -782,6 +789,7 @@ public:
         LINUX_MAX_PID_TOO_LOW,
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
         LINUX_MEMORY_OVERCOMMIT_DISABLED,
+        LINUX_RSEQ_UNAVAILABLE,
         LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
         MAX_ACTIVE_PARTS,
         MAX_ATTACHED_DATABASES,
@@ -794,6 +802,7 @@ public:
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
         MAYBE_BROKEN_TABLES,
+        MERGE_TREE_JEMALLOC_ARENA_POOL_DEGRADED,
         OBSOLETE_MONGO_TABLE_DEFINITION,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
@@ -831,7 +840,6 @@ public:
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
-    void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
     void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
 
@@ -1627,6 +1635,9 @@ public:
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
     void reloadClusterConfig() const;
 
+    bool isDistributedCacheServer() const;
+    void setDistributedCacheServer();
+
     Compiler & getCompiler();
 
     /// Call after initialization before using system logs. Call for global context.
@@ -1659,6 +1670,10 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getS3QueueLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getAzureQueueLog() const;
+#if ENABLE_DISTRIBUTED_CACHE
+    std::shared_ptr<DistributedCacheLog> getDistributedCacheLog() const;
+    std::shared_ptr<DistributedCacheServerLog> getDistributedCacheServerLog() const;
+#endif
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
@@ -1769,6 +1784,7 @@ public:
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
         DISKS,          /// clickhouse-disks
+        DISTRIBUTED_CACHE, /// clickhouse-distributed-cache
     };
 
     ApplicationType getApplicationType() const;

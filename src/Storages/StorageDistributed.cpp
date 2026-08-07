@@ -1,3 +1,4 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Storages/StorageDistributed.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -852,7 +853,7 @@ public:
             if (!query)
                 return;
             bool no_replace = true;
-            for (const auto & table_node : extractTableExpressions(query->getJoinTree(), false, true))
+            for (const auto & table_node : extractTableExpressions(query->getJoinTreeNodeTyped(), false, true))
             {
                 const StorageDistributed * storage_distributed = nullptr;
                 if (const TableNode * table_node_typed = table_node->as<TableNode>())
@@ -893,10 +894,10 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
     if (!join)
         return rewrite;
 
-    auto table_expression = join->getRightTableExpression();
+    auto table_expression = join->getRightTableExpressionNode();
 
     if (QueryNode * query = table_expression->as<QueryNode>())
-        rewrite = rewriteJoinToGlobalJoinIfNeeded(query->getJoinTree());
+        rewrite = rewriteJoinToGlobalJoinIfNeeded(query->getJoinTreeNode());
     else if (const TableNode * table_node_typed = table_expression->as<TableNode>())
     {
         if (!typeid_cast<const StorageDistributed *>(table_node_typed->getStorage().get()))
@@ -911,7 +912,7 @@ bool rewriteJoinToGlobalJoinIfNeeded(QueryTreeNodePtr join_tree)
     if (rewrite)
         join->setLocality(JoinLocality::Global);
 
-    rewriteJoinToGlobalJoinIfNeeded(join->getLeftTableExpression());
+    rewriteJoinToGlobalJoinIfNeeded(join->getLeftTableExpressionNode());
 
     return rewrite;
 }
@@ -931,7 +932,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
     else if (auto * query_info_table_function_node = query_info.table_expression->as<TableFunctionNode>())
         table_expression_modifiers = query_info_table_function_node->getTableExpressionModifiers();
 
-    QueryTreeNodePtr replacement_table_expression;
+    TableExpressionNodePtr replacement_table_expression;
 
     if (remote_table_function)
     {
@@ -1001,7 +1002,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
             visitor.visit(query_node.getWhere());
         }
 
-        rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTree());
+        rewriteJoinToGlobalJoinIfNeeded(query_node.getJoinTreeNode());
     }
 
     return buildQueryTreeForShard(query_info.planner_context, query_tree_to_modify, /*allow_global_join_for_right_table*/ false);
@@ -1453,7 +1454,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
         {
             if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
                 ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor(local_context).visit(select.list_of_selects->children.at(0));
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
 
@@ -2240,7 +2241,7 @@ void registerStorageDistributed(StorageFactory & factory)
     Documentation{
         .description = R"DOCS_MD(
 :::warning Distributed engine in Cloud
-To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](../../../sql-reference/table-functions/remote) table functions.
+To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](/reference/functions/table-functions/remote) table functions.
 The `Distributed(...)` syntax cannot be used in ClickHouse Cloud.
 :::
 
@@ -2278,9 +2279,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
     name2 [type2],
     ...
 ) ENGINE = Remote(addresses_expr, [db, table, [user [, password], sharding_key]])
+[SETTINGS name = value, ...]
 ```
 
 `RemoteSecure` accepts the same arguments and connects over a secure connection (the secure TCP port is used by default). The arguments are interpreted exactly as for the `remote` and `remoteSecure` table functions, see their description for the supported signatures. The table structure may be omitted, in which case it is inferred from the remote table.
+
+The [settings of the created storage](#distributed-settings), such as `skip_unavailable_shards`, are specified after the engine definition, for example `ENGINE = Remote('127.0.0.1', system, one) SETTINGS skip_unavailable_shards = 1`. Note that the `remote` and `remoteSecure` table functions accept the `SETTINGS` clause among their arguments instead, `remote('127.0.0.1', system.one, SETTINGS skip_unavailable_shards = 1)`, because a table function has nowhere else to put it; the engines do not accept that form.
 
 For example:
 
@@ -2305,8 +2309,8 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 
 **See Also**
 
-- [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
-- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
+- [distributed_foreground_insert](/reference/settings/session-settings/distributed#distributed_foreground_insert) setting
+- [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) for the examples
 ### Distributed settings {#distributed-settings}
 
 | Setting                                    | Description                                                                                                                                                                                                                           | Default value |
@@ -2318,10 +2322,10 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 | `bytes_to_throw_insert`                    | If more than this number of compressed bytes will be pending for background `INSERT`, an exception will be thrown. `0` - do not throw.                                                                                                | `0`           |
 | `bytes_to_delay_insert`                    | If more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay.                                                                                                      | `0`           |
 | `max_delay_to_insert`                      | Max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for background send.                                                                                                               | `60`          |
-| `background_insert_batch`                  | The same as [`distributed_background_insert_batch`](../../../operations/settings/settings.md#distributed_background_insert_batch)                                                                                                     | `0`           |
-| `background_insert_split_batch_on_failure` | The same as [`distributed_background_insert_split_batch_on_failure`](../../../operations/settings/settings.md#distributed_background_insert_split_batch_on_failure)                                                                   | `0`           |
-| `background_insert_sleep_time_ms`          | The same as [`distributed_background_insert_sleep_time_ms`](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms)                                                                                     | `0`           |
-| `background_insert_max_sleep_time_ms`      | The same as [`distributed_background_insert_max_sleep_time_ms`](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)                                                                             | `0`           |
+| `background_insert_batch`                  | The same as [`distributed_background_insert_batch`](/reference/settings/session-settings/distributed-background#distributed_background_insert_batch)                                                                                                     | `0`           |
+| `background_insert_split_batch_on_failure` | The same as [`distributed_background_insert_split_batch_on_failure`](/reference/settings/session-settings/distributed-background#distributed_background_insert_split_batch_on_failure)                                                                   | `0`           |
+| `background_insert_sleep_time_ms`          | The same as [`distributed_background_insert_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_sleep_time_ms)                                                                                     | `0`           |
+| `background_insert_max_sleep_time_ms`      | The same as [`distributed_background_insert_max_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms)                                                                             | `0`           |
 | `flush_on_detach`                          | Flush data to remote nodes on `DETACH`/`DROP`/server shutdown.                                                                                                                                                                        | `true`        |
 
 :::note
@@ -2333,8 +2337,8 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 
 For **Insert limit settings** (`..._insert`) see also:
 
-- [`distributed_foreground_insert`](../../../operations/settings/settings.md#distributed_foreground_insert) setting
-- [`prefer_localhost_replica`](/operations/settings/settings#prefer_localhost_replica) setting
+- [`distributed_foreground_insert`](/reference/settings/session-settings/distributed#distributed_foreground_insert) setting
+- [`prefer_localhost_replica`](/reference/settings/session-settings/prefer#prefer_localhost_replica) setting
 - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
 :::
 
@@ -2354,7 +2358,7 @@ Instead of the database name, you can use a constant expression that returns a s
 
 ## Clusters {#distributed-clusters}
 
-Clusters are configured in the [server configuration file](../../../operations/configuration-files.md):
+Clusters are configured in the [server configuration file](/concepts/features/configuration/server-config/configuration-files):
 
 ```xml
 <remote_servers>
@@ -2420,13 +2424,13 @@ The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `com
 |---------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|
 | `host`        | The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server does not start. If you change the DNS record, restart the server. | -            |
 | `port`        | The TCP port for messenger activity (`tcp_port` in the config, usually set to 9000). Not to be confused with `http_port`.                                                                                                                                                                                                                | -            |
-| `user`        | Name of the user for connecting to a remote server. This user must have access to connect to the specified server. Access is configured in the `users.xml` file. For more information, see the section [Access rights](../../../guides/sre/user-management/index.md).                                                                    | `default`    |
+| `user`        | Name of the user for connecting to a remote server. This user must have access to connect to the specified server. Access is configured in the `users.xml` file. For more information, see the section [Access rights](/concepts/features/security/access-rights).                                                                    | `default`    |
 | `password`    | The password for connecting to a remote server (not masked).                                                                                                                                                                                                                                                                             | ''           |
 | `secure`      | Whether to use a secure SSL/TLS connection. Usually also requires specifying the port (the default secure port is `9440`). The server should listen on `<tcp_port_secure>9440</tcp_port_secure>` and be configured with correct certificates.                                                                                            | `false`      |
 | `compression` | Use data compression.                                                                                                                                                                                                                                                                                                                    | `true`       |
 | `bind_host`   | The source address to use when connecting to the remote server from this node. IPv4 address only supported. Intended for advanced deployment use cases where setting the source IP address used by ClickHouse distributed queries is needed.                                                                                             | -            |
 
-When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load_balancing](../../../operations/settings/settings.md#load_balancing) setting. If the connection with the server is not established, there will be an attempt to connect with a short timeout. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way, several times. This works in favour of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
+When specifying replicas, one of the available replicas will be selected for each of the shards when reading. You can configure the algorithm for load balancing (the preference for which replica to access) – see the [load_balancing](/reference/settings/session-settings/load-balancing#load_balancing) setting. If the connection with the server is not established, there will be an attempt to connect with a short timeout. If the connection failed, the next replica will be selected, and so on for all the replicas. If the connection attempt failed for all the replicas, the attempt will be repeated the same way, several times. This works in favour of resiliency, but does not provide complete fault tolerance: a remote server might accept the connection, but might not work, or work poorly.
 
 You can specify just one of the shards (in this case, query processing should be called remote, rather than distributed) or up to any number of shards. In each shard, you can specify from one to any number of replicas. You can specify a different number of replicas for each shard.
 
@@ -2436,7 +2440,7 @@ To view your clusters, use the `system.clusters` table.
 
 The `Distributed` engine allows working with a cluster like a local server. However, the cluster's configuration cannot be specified dynamically, it has to be configured in the server config file. Usually, all servers in a cluster will have the same cluster config (though this is not required). Clusters from the config file are updated on the fly, without restarting the server.
 
-If you need to send a query to an unknown set of shards and replicas each time, you do not need to create a `Distributed` table – use the `remote` table function instead. See the section [Table functions](../../../sql-reference/table-functions/index.md).
+If you need to send a query to an unknown set of shards and replicas each time, you do not need to create a `Distributed` table – use the `remote` table function instead. See the section [Table functions](/reference/functions/table-functions/index).
 
 ## Writing data {#distributed-writing-data}
 
@@ -2463,7 +2467,7 @@ You should be concerned about the sharding scheme in the following cases:
 - Queries are used that require joining data (`IN` or `JOIN`) by a specific key. If data is sharded by this key, you can use local `IN` or `JOIN` instead of `GLOBAL IN` or `GLOBAL JOIN`, which is much more efficient.
 - A large number of servers is used (hundreds or more) with a large number of small queries, for example, queries for data of individual clients (e.g. websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, you can set up bi-level sharding: divide the entire cluster into "layers", where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. `Distributed` tables are created for each layer, and a single shared distributed table is created for global queries.
 
-Data is written in background. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The periodicity for sending data is managed by the [distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms) and [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`. The number of threads performing background tasks can be set by [background_distributed_schedule_pool_size](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting.
+Data is written in background. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The periodicity for sending data is managed by the [distributed_background_insert_sleep_time_ms](/reference/settings/session-settings/distributed-background#distributed_background_insert_sleep_time_ms) and [distributed_background_insert_max_sleep_time_ms](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed_background_insert_batch](/reference/settings/session-settings/distributed-background#distributed_background_insert_batch) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`. The number of threads performing background tasks can be set by [background_distributed_schedule_pool_size](/reference/settings/server-settings/settings/background#background_distributed_schedule_pool_size) setting.
 
 If the server ceased to exist or had a rough restart (for example, due to a hardware failure) after an `INSERT` to a `Distributed` table, the inserted data might be lost. If a damaged data part is detected in the table directory, it is transferred to the `broken` subdirectory and no longer used.
 
@@ -2471,7 +2475,7 @@ If the server ceased to exist or had a rough restart (for example, due to a hard
 
 When querying a `Distributed` table, `SELECT` queries are sent to all shards and work regardless of how data is distributed across the shards (they can be distributed completely randomly). When you add a new shard, you do not have to transfer old data into it. Instead, you can write new data to it by using a heavier weight – the data will be distributed slightly unevenly, but queries will work correctly and efficiently.
 
-When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](../../../operations/settings/settings.md#max_parallel_replicas).
+When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](/reference/settings/session-settings/max#max_parallel_replicas).
 
 To learn more about how distributed `in` and `global in` queries are processed, refer to [this](/sql-reference/operators/in#distributed-subqueries) documentation.
 
@@ -2479,17 +2483,17 @@ To learn more about how distributed `in` and `global in` queries are processed, 
 
 #### _Shard_num {#_shard_num}
 
-`_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
+`_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](/reference/data-types/int-uint).
 
 :::note
-Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table, `_shard_num` is available there too.
+Since [`remote`](/reference/functions/table-functions/remote) and [`cluster`](/reference/functions/table-functions/cluster) table functions internally create temporary Distributed table, `_shard_num` is available there too.
 :::
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns) description
-- [`background_distributed_schedule_pool_size`](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting
-- [`shardNum()`](../../../sql-reference/functions/other-functions.md#shardNum) and [`shardCount()`](../../../sql-reference/functions/other-functions.md#shardCount) functions
+- [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns) description
+- [`background_distributed_schedule_pool_size`](/reference/settings/server-settings/settings/background#background_distributed_schedule_pool_size) setting
+- [`shardNum()`](/reference/functions/regular-functions/other-functions#shardNum) and [`shardCount()`](/reference/functions/regular-functions/other-functions#shardCount) functions
 )DOCS_MD",
         .syntax = "ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]])",
         .related = {"Merge"}});
@@ -2687,6 +2691,12 @@ If `db` and `table` are omitted, `system.one` is used.
 
 The remaining arguments are `user` (default: `default`), `password` (default: empty) and a `sharding_key` expression.
 
+The settings of the created storage, such as `skip_unavailable_shards`, are specified after the engine definition:
+`ENGINE = Remote('127.0.0.1', system, one) SETTINGS skip_unavailable_shards = 1`.
+Note that the `remote` and `remoteSecure` table functions accept the `SETTINGS` clause among their arguments instead,
+`remote('127.0.0.1', system.one, SETTINGS skip_unavailable_shards = 1)`, because a table function has nowhere else to put it;
+the engines do not accept that form.
+
 The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` error.
 )DOCS_MD";
 
@@ -2698,7 +2708,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
         .description = common_description + R"DOCS_MD(
 `Remote` connects over the plain TCP port (`tcp_port`, `9000` by default) when the port is omitted.
 )DOCS_MD",
-        .syntax = "ENGINE = Remote(addresses_expr[, db, table, user[, password], sharding_key])",
+        .syntax = "ENGINE = Remote(addresses_expr[, db, table, user[, password], sharding_key]) [SETTINGS name = value, ...]",
         .related = {"Distributed"}});
 
     factory.registerStorage("RemoteSecure", [create](const StorageFactory::Arguments & args)
@@ -2709,7 +2719,7 @@ The target may also be a table function, e.g. `Remote('127.0.0.1', numbers(10))`
         .description = common_description + R"DOCS_MD(
 `RemoteSecure` connects over a secure TLS connection using the secure TCP port (`tcp_port_secure`, `9440` by default) when the port is omitted.
 )DOCS_MD",
-        .syntax = "ENGINE = RemoteSecure(addresses_expr[, db, table, user[, password], sharding_key])",
+        .syntax = "ENGINE = RemoteSecure(addresses_expr[, db, table, user[, password], sharding_key]) [SETTINGS name = value, ...]",
         .related = {"Distributed"}});
 }
 

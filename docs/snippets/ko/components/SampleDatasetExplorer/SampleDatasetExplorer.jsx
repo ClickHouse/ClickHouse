@@ -25,6 +25,18 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/brown-benchmark-dark.jpg"
         },
         {
+          title: "Criteo 테라바이트 클릭 로그",
+          href: "/ko/get-started/sample-datasets/criteo",
+          imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
+          imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
+        },
+        {
+          title: "JOB 벤치마크",
+          href: "/ko/get-started/sample-datasets/job",
+          imgLight: "/images/sample-datasets-grid/benchmarks-light.jpg",
+          imgDark: "/images/sample-datasets-grid/benchmarks-dark.jpg"
+        },
+        {
           title: "Star Schema Benchmark (SSB)",
           href: "/ko/get-started/sample-datasets/star-schema",
           imgLight: "/images/sample-datasets-grid/star-schema-light.jpg",
@@ -75,6 +87,12 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/covid19-dark.jpg"
         },
         {
+          title: "메뉴에 무엇이 있나요? (NYPL)",
+          href: "/ko/get-started/sample-datasets/menus",
+          imgLight: "/images/sample-datasets-grid/menus-light.jpg",
+          imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
+        },
+        {
           title: "NYPD 민원 데이터",
           href: "/ko/get-started/sample-datasets/nypd-complaint-data",
           imgLight: "/images/sample-datasets-grid/nypd-complaint-data-light.jpg",
@@ -91,12 +109,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           href: "/ko/get-started/sample-datasets/uk-price-paid",
           imgLight: "/images/sample-datasets-grid/uk-price-paid-light.jpg",
           imgDark: "/images/sample-datasets-grid/uk-price-paid-dark.jpg"
-        },
-        {
-          title: "메뉴에 무엇이 있나요? (NYPL)",
-          href: "/ko/get-started/sample-datasets/menus",
-          imgLight: "/images/sample-datasets-grid/menus-light.jpg",
-          imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
         }
       ]
     },
@@ -124,7 +136,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
           href: "/ko/get-started/sample-datasets/tw-weather",
           imgLight: "/images/sample-datasets-grid/tw-weather-light.jpg",
           imgDark: "/images/sample-datasets-grid/tw-weather-dark.jpg"
-        }
+        },
+        { title: "WikiStat", href: "/ko/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" }
       ]
     },
     {
@@ -147,16 +160,16 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/hacker-news-vector-search-dark.jpg"
         },
         {
-          title: "LAION 5B dataset",
-          href: "/ko/get-started/sample-datasets/laion5b",
-          imgLight: "/images/sample-datasets-grid/laion5b-light.jpg",
-          imgDark: "/images/sample-datasets-grid/laion5b-dark.jpg"
-        },
-        {
           title: "Laion-400M dataset",
           href: "/ko/get-started/sample-datasets/laion",
           imgLight: "/images/sample-datasets-grid/laion-400m-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion-400m-dark.jpg"
+        },
+        {
+          title: "LAION 5B dataset",
+          href: "/ko/get-started/sample-datasets/laion5b",
+          imgLight: "/images/sample-datasets-grid/laion5b-light.jpg",
+          imgDark: "/images/sample-datasets-grid/laion5b-dark.jpg"
         }
       ]
     },
@@ -174,22 +187,16 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/amazon-reviews-dark.jpg"
         },
         {
-          title: "Stack Overflow 데이터 분석",
-          href: "/ko/get-started/sample-datasets/stackoverflow",
-          imgLight: "/images/sample-datasets-grid/stackoverflow-light.jpg",
-          imgDark: "/images/sample-datasets-grid/stackoverflow-dark.jpg"
-        },
-        {
           title: "익명화된 웹 분석",
           href: "/ko/get-started/sample-datasets/anon-web-analytics-metrica",
           imgLight: "/images/sample-datasets-grid/anon-web-analytics-light.jpg",
           imgDark: "/images/sample-datasets-grid/anon-web-analytics-dark.jpg"
         },
         {
-          title: "Criteo 테라바이트 클릭 로그",
-          href: "/ko/get-started/sample-datasets/criteo",
-          imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
-          imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
+          title: "GitHub 데이터 쿼리",
+          href: "/ko/get-started/sample-datasets/github",
+          imgLight: "/images/sample-datasets-grid/github-light.jpg",
+          imgDark: "/images/sample-datasets-grid/github-dark.jpg"
         },
         {
           title: "GitHub 이벤트 데이터셋",
@@ -204,12 +211,11 @@ export const SampleDatasetExplorer = ({ categories }) => {
           imgDark: "/images/sample-datasets-grid/hacker-news-dark.jpg"
         },
         {
-          title: "GitHub 데이터 쿼리",
-          href: "/ko/get-started/sample-datasets/github",
-          imgLight: "/images/sample-datasets-grid/github-light.jpg",
-          imgDark: "/images/sample-datasets-grid/github-dark.jpg"
+          title: "Stack Overflow 데이터 분석",
+          href: "/ko/get-started/sample-datasets/stackoverflow",
+          imgLight: "/images/sample-datasets-grid/stackoverflow-light.jpg",
+          imgDark: "/images/sample-datasets-grid/stackoverflow-dark.jpg"
         },
-        { title: "WikiStat", href: "/ko/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" },
         {
           title: "YouTube 비추천 데이터셋",
           href: "/ko/get-started/sample-datasets/youtube-dislikes",
@@ -220,7 +226,10 @@ export const SampleDatasetExplorer = ({ categories }) => {
     }
   ]
 
-  const cats = categories || CATEGORIES
+  // 탐색기를 사이드바와 동일한 순서로 유지합니다. 플레이그라운드는 탐색기 위에 있는
+  // 독립 페이지 링크이며, 그 다음에 이 카테고리들이 이어집니다.
+  const categoryOrder = ["benchmarks", "vector-search", "web-social", "geo-location", "time-series-sensors", "public-records"]
+  const cats = (categories || CATEGORIES).slice().sort((a, b) => categoryOrder.indexOf(a.id) - categoryOrder.indexOf(b.id))
 
   const [selectedId, setSelectedId] = useState(null)
   const selected = cats.find((c) => c.id === selectedId) || null

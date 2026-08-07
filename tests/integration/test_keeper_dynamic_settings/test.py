@@ -39,14 +39,15 @@ def get_coordination_settings(node):
 
 DYNAMIC_CONFIG_PATH = "/etc/clickhouse-server/config.d/keeper_dynamic.xml"
 
-UPDATED_DYNAMIC_CONFIG = """
+UPDATED_MAX_REQUEST_SIZE = "10240"
+UPDATED_DYNAMIC_CONFIG = f"""
 <clickhouse>
     <keeper_server>
         <coordination_settings>
             <snapshot_distance>99999</snapshot_distance>
             <max_requests_batch_size>42</max_requests_batch_size>
             <quorum_reads>true</quorum_reads>
-            <max_request_size>1024</max_request_size>
+            <max_request_size>{UPDATED_MAX_REQUEST_SIZE}</max_request_size>
         </coordination_settings>
     </keeper_server>
 </clickhouse>
@@ -105,22 +106,33 @@ def test_max_request_size_hot_reload(started_cluster):
         "VALUES ('big_before', '/test_max_req', repeat('x', 3000))"
     )
 
-    # 2. Reload config with max_request_size=1024.
+    # 2. Reload config with a small max_request_size
     with node.with_replace_config(DYNAMIC_CONFIG_PATH, UPDATED_DYNAMIC_CONFIG, reload_after=True):
         for _ in range(30):
             time.sleep(1)
             settings = get_coordination_settings(node)
-            if settings.get("max_request_size") == "1024":
+            if settings.get("max_request_size") == UPDATED_MAX_REQUEST_SIZE:
                 break
         else:
             assert False, (
-                "max_request_size did not change to 1024 after config reload; "
+                "max_request_size hasn't been updated after config reload; "
                 f"current value: {settings.get('max_request_size')}"
             )
 
-        # 3. A large write should now be rejected. Connection loss and Operation
-        # timeout are both valid client surfaces of the connection-level rejection.
-        with pytest.raises(Exception, match=r"Connection loss|Operation timeout"):
+        # 3. A large write should now be rejected. `Connection loss`, `Operation timeout`
+        # and `exceeds limit` are valid client surfaces of the connection-level rejection.
+        with pytest.raises(Exception, match=r"exceeds limit|Connection loss|Operation timeout"):
+            node.query(
+                "INSERT INTO system.zookeeper (name, path, value) "
+                "SELECT number::String, '/test_max_req', repeat('x', 3000) "
+                "FROM numbers(100)"
+            )
+
+        # 4. A fresh session learns the advertised limit at connect, so after a
+        # restart the rejection is client-side and deterministic (`exceeds limit`).
+        node.restart_clickhouse()
+        keeper_utils.wait_until_connected(cluster, node)
+        with pytest.raises(Exception, match="exceeds limit"):
             node.query(
                 "INSERT INTO system.zookeeper (name, path, value) "
                 "SELECT number::String, '/test_max_req', repeat('x', 3000) "

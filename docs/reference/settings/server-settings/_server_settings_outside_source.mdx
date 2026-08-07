@@ -35,6 +35,8 @@ To disable `asynchronous_metric_log` setting, you should create the following fi
 ## auth_use_forwarded_address {#auth_use_forwarded_address}
 Use originating address for authentication for clients connected through proxy.
 
+- **Default:** `false`
+
 <Note>
 This setting should be used with extra caution since forwarded addresses can be easily spoofed - servers accepting such authentication should not be accessed directly but rather exclusively through a trusted proxy.
 </Note>
@@ -115,6 +117,8 @@ Contains information about all background tasks that are executed via various ba
 Work factor for the `bcrypt_password` authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 The work factor defines the amount of computations and time needed to compute the hash and verify the password.
 
+- **Default:** `12`
+
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
@@ -127,6 +131,8 @@ bcrypt's computational overhead at higher work factors.
 
 ## table_engines_require_grant {#table_engines_require_grant}
 If set to true, users require a grant to create a table with a specific engine e.g. `GRANT TABLE ENGINE ON TinyLog to user`.
+
+- **Default:** `false`
 
 <Note>
 By default, for backward compatibility creating table with a specific table engine ignores grant, however you can change this behaviour by setting this to true.
@@ -343,6 +349,8 @@ Hard limit is configured via system tools
 ## default_profile {#default_profile}
 Default settings profile. Settings profiles are located in the file specified in the setting `user_config`.
 
+- **Default:** `default`
+
 **Example**
 
 ```xml
@@ -511,6 +519,8 @@ Example:
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
 The default value is "Ok." (with a line feed at the end)
 
+- **Default:** `"Ok.\n"`
+
 **Example**
 
 Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
@@ -566,6 +576,8 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 ## interserver_listen_host {#interserver_listen_host}
 Restriction on hosts that can exchange data between ClickHouse servers.
 If Keeper is used, the same restriction will be applied to the communication between different Keeper instances.
+
+- **Default:** `listen_host`
 
 <Note>
 By default, the value is equal to the [`listen_host`](#listen_host) setting.
@@ -1039,7 +1051,7 @@ Replica group name for database Replicated.
 The cluster created by Replicated database will consist of replicas in the same group.
 DDL queries will only wait for the replicas in the same group.
 
-Empty by default.
+- **Default:** `""`
 
 **Example**
 
@@ -1278,11 +1290,13 @@ curl 127.0.0.1:9363/metrics
 ```
 
 ## query_log {#query_log}
-Setting for logging queries received with the [log_queries=1](/reference/settings/session-settings) setting.
+Setting for logging queries received with the [log_queries=1](/reference/settings/session-settings/log-queries#log_queries) setting.
 
 Queries are logged in the [system.query_log](/reference/system-tables/query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 <SystemLogParameters/>
+
+The `enable_user_query_log` parameter (enabled by default) creates [`system.user_query_log`](/reference/system-tables/user_query_log), which shows every user their own records of the configured query log table without requiring access to the table itself. This only works when the query log is stored locally: if `engine` delegates to another server (for example, `Distributed`), disable `enable_user_query_log`, since `system.user_query_log` cannot enforce the per-user access check across a ClickHouse-protocol server boundary and refuses to read from such a backend.
 
 If the table does not exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 
@@ -1298,6 +1312,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
+    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -1364,7 +1379,7 @@ The following settings are available:
 ```
 
 ## query_thread_log {#query_thread_log}
-Setting for logging threads of queries received with the [log_query_threads=1](/reference/settings/session-settings#log_query_threads) setting.
+Setting for logging threads of queries received with the [log_query_threads=1](/reference/settings/session-settings/log-query#log_query_threads) setting.
 
 Queries are logged in the [system.query_thread_log](/reference/system-tables/query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -1388,7 +1403,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 ```
 
 ## query_views_log {#query_views_log}
-Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](/reference/settings/session-settings#log_query_views) setting.
+Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](/reference/settings/session-settings/log-query#log_query_views) setting.
 
 Queries are logged in the [system.query_views_log](/reference/system-tables/query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -1458,7 +1473,7 @@ The default server configuration file `config.xml` contains the following settin
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>false</symbolize>
+    <symbolize>true</symbolize>
 </trace_log>
 ```
 
@@ -1519,6 +1534,34 @@ The default server configuration file `config.xml` contains the following settin
     <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
+```
+
+## create_union_system_log_tables {#create_union_system_log_tables}
+
+Requests the creation of `all_...` tables next to the system log tables (`system.all_query_log` for `system.query_log`, `system.all_text_log` for `system.text_log`, and so on). Such a table is a union of the corresponding log table, its rotated versions (`query_log_0`, `query_log_1`, ...) and/or the same tables across all replicas of a cluster, and allows querying them all at once without remembering constructs like `clusterAllReplicas(default, merge(system, '^query_log'))`.
+
+The section is optional. If it is present, at least one of the following settings has to be specified:
+
+| Setting                | Description                                                                                                                                     |
+|------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| `merge_rotated_tables` | If `true`, the `all_...` table selects from the log table and its rotated versions with the `merge` table function.                            |
+| `cluster`              | If specified, the `all_...` table selects from all replicas of this cluster with the `clusterAllReplicas` table function (with `SETTINGS skip_unavailable_shards = 1`, so that unavailable replicas do not fail the queries). |
+
+If both settings are specified, the table is a union of the rotated tables across all replicas of the cluster.
+
+The option applies to all system log tables; it does not allow for a different configuration for different system logs. The tables are created in the same database as the system log tables at the first flush of each log and are automatically recreated when the structure of the log table changes (on rotation). They have no state, so it is safe to drop them at any time. The creation is supported only for the `Atomic`, `Replicated` and `Shared` database engines.
+
+<Note>
+When the `cluster` setting is used, the table definition references the cluster, and the cluster has to exist for the table to be loaded. If you remove the cluster from the configuration, also drop the `all_...` tables (they will be recreated according to the new configuration at the next flush).
+</Note>
+
+**Example**
+
+```xml
+<create_union_system_log_tables>
+    <merge_rotated_tables>true</merge_rotated_tables>
+    <cluster>default</cluster>
+</create_union_system_log_tables>
 ```
 
 ## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
@@ -1624,7 +1667,7 @@ For the value of the `incl` attribute, see the section "[Configuration files](/c
 
 **See Also**
 
-- [skip_unavailable_shards](/reference/settings/session-settings#skip_unavailable_shards)
+- [skip_unavailable_shards](/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 - [Cluster Discovery](/guides/oss/deployment-and-scaling/cluster-discovery)
 - [Replicated database engine](/reference/engines/database-engines/replicated)
 
@@ -1661,7 +1704,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 
 **See also**
 
-- [session_timezone](/reference/settings/session-settings#session_timezone)
+- [session_timezone](/reference/settings/session-settings/other#session_timezone)
 
 ## tcp_port {#tcp_port}
 Port for communicating with clients over the TCP protocol.
@@ -1675,7 +1718,7 @@ Port for communicating with clients over the TCP protocol.
 ## tcp_port_secure {#tcp_port_secure}
 TCP port for secure communication with clients. Use it with [OpenSSL](#openSSL) settings.
 
-**Default value**
+- **Default:** `9440`
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>
@@ -1900,7 +1943,7 @@ Data part headers already stored with this setting can't be restored to their pr
 
 ## distributed_ddl {#distributed_ddl}
 Manage executing [distributed ddl queries](/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) on cluster.
-Works only if [ZooKeeper](/reference/settings/server-settings/settings#zookeeper) is enabled.
+Works only if [ZooKeeper](/reference/settings/server-settings/settings/zookeeper#zookeeper) is enabled.
 
 The configurable settings within `<distributed_ddl>` include:
 
@@ -1951,12 +1994,16 @@ Path to a folder where a ClickHouse server stores user and role configurations c
 ## allow_plaintext_password {#allow_plaintext_password}
 Sets whether plaintext-password types (insecure) are allowed or not.
 
+- **Default:** `true`
+
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
 ## allow_no_password {#allow_no_password}
 Sets whether an insecure password type of no_password is allowed or not.
+
+- **Default:** `true`
 
 ```xml
 <allow_no_password>1</allow_no_password>
@@ -1965,12 +2012,16 @@ Sets whether an insecure password type of no_password is allowed or not.
 ## allow_implicit_no_password {#allow_implicit_no_password}
 Forbids creating a user with no password unless 'IDENTIFIED WITH no_password' is explicitly specified.
 
+- **Default:** `true`
+
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
 ## default_session_timeout {#default_session_timeout}
 Default session timeout, in seconds.
+
+- **Default:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
@@ -1985,6 +2036,8 @@ Accepted values are:
 - `double_sha1_password`
 - `bcrypt_password`
 
+- **Default:** `sha256_password`
+
 ```xml
 <default_password_type>sha256_password</default_password_type>
 ```
@@ -1995,7 +2048,7 @@ Section of the configuration file that contains settings:
 - Path to folder where users created by SQL commands are stored.
 - ZooKeeper node path where users created by SQL commands are stored and replicated.
 
-If this section is specified, the path from [users_config](/reference/settings/server-settings/settings#users_config) and [access_control_path](/reference/settings/server-settings/settings#access_control_path) won't be used.
+If this section is specified, the path from [users_config](/reference/settings/server-settings/settings/users#users_config) and [access_control_path](/reference/settings/server-settings/settings/access-control#access_control_path) won't be used.
 
 The `user_directories` section can contain any number of items, the order of the items means their precedence (the higher the item the higher the precedence).
 
@@ -2206,6 +2259,8 @@ This also allows a mix of resolver types can be used.
 ## disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
 By default, tunneling (i.e, `HTTP CONNECT`) is used to make `HTTPS` requests over `HTTP` proxy. This setting can be used to disable it.
 
+- **Default:** `false`
+
 **no_proxy**
 
 By default, all requests will go through the proxy. In order to disable it for specific hosts, the `no_proxy` variable must be set.
@@ -2232,6 +2287,8 @@ The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` 
 
 ## workload_path {#workload_path}
 The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` queries. By default `/workload/` folder under server working directory is used.
+
+- **Default:** `<path>/workload/`
 
 **Example**
 

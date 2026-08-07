@@ -125,6 +125,8 @@ public:
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be LineString", getName());
             if constexpr (std::is_same_v<ColumnToMultiLineStringsConverter<SphericalPoint>, Converter>)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be MultiLineString", getName());
+            if constexpr (std::is_same_v<ColumnToMultiPointsConverter<SphericalPoint>, Converter>)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument of function {} must not be MultiPoint", getName());
 
             if (input_rows_count == 0)
                 return;

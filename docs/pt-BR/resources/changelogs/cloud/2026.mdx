@@ -2,14 +2,62 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Changelog do ClickHouse Cloud - 2026'
-description: 'Changelog do ClickHouse Cloud com descrições das novidades de cada versão do ClickHouse Cloud'
+description: 'Changelog do ClickHouse Cloud com descrições das novidades de cada lançamento do ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['changelog', 'notas de versão', 'atualizações', 'novidades', 'alterações do ClickHouse Cloud']
+keywords: ['changelog', 'notas de lançamento', 'atualizações', 'novos recursos', 'alterações na nuvem']
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-Além deste changelog do ClickHouse Cloud, consulte também a página [Compatibilidade com o Cloud](/pt-BR/products/cloud/guides/cloud-compatibility).
+Além deste Cloud changelog do ClickHouse Cloud, consulte também a página [Compatibilidade com a Cloud](/pt-BR/products/cloud/guides/cloud-compatibility).
+
+<Update label="13 de julho de 2026">
+  As atualizações desta semana incluem roteamento sticky de réplicas por HTTPS padrão, datas de início personalizadas para o período de faturamento e novos controles de carga inicial para ClickPipes de armazenamento de objetos.
+
+  ### Roteamento sticky de réplicas por HTTPS (prévia privada)
+
+  Agora você pode fixar consultas em uma réplica específica por HTTPS padrão adicionando um parâmetro `?session_id=` à URL normal do seu serviço, sem necessidade de nomes de host especiais nem de alterações no DNS. Isso mantém disponíveis entre consultas objetos com escopo de sessão, como tabelas temporárias, e ajuda consultas repetidas a aproveitar caches locais da réplica já aquecidos. O recurso está sendo disponibilizado em prévia privada para todos os clientes Enterprise e, mediante solicitação, para clientes Scale. O roteamento existente baseado em subdomínio continua funcionando, mas acabará migrando para essa abordagem. Consulte a documentação de [replica-aware routing](/manage/replica-aware-routing).
+
+  ### Datas de início personalizadas do período de faturamento
+
+  Agora você pode solicitar uma alteração na data de faturamento da sua organização, ou seja, o dia do mês em que cada período de faturamento começa, por exemplo para alinhar as faturas ao mês-calendário. Abra um ticket de suporte com a data desejada. As datas de faturamento são aplicadas em UTC, e cada fatura cobre o uso desde a data de faturamento até a mesma data do mês seguinte (sem incluí-la).
+
+  ### Ignorar carga inicial para ClickPipes de armazenamento de objetos
+
+  Os [ClickPipes](/pt-BR/integrations/clickpipes) de armazenamento de objetos (S3, GCS e Azure Blob Storage) agora oferecem duas formas de controlar a carga inicial ao criar um pipe: **Start after**, que ignora arquivos até uma determinada chave de objeto, inclusive, e **Skip initial load**, que ignora completamente os arquivos preexistentes e processa apenas notificações de novos objetos. Antes, um novo pipe sempre fazia backfill de todos os arquivos no caminho. As duas opções são mutuamente exclusivas e permanentes para um determinado pipe: um backfill ignorado não pode ser acionado depois. Disponível na UI, na API da Cloud e no Terraform v3.18.0 ou posterior.
+</Update>
+
+<Update label="30 de junho de 2026">
+  As atualizações desta semana incluem novos recursos de observabilidade para Postgres e para os componentes internos do ClickHouse, controles expandidos do ClickPipes, incluindo entrega exactly-once do Kafka, além de várias novidades na plataforma: BYOC no Azure Marketplace, o provider oficial do Airflow e atualizações do ClickHouse Agents.
+
+  ### Entrega exactly-once do Kafka no ClickPipes
+
+  Agora você pode ativar a entrega exactly-once para importações do Kafka diretamente no fluxo de importação do [ClickPipes](/pt-BR/integrations/clickpipes/kafka/index), com a mesma opção disponível pela API pública para configuração programática.
+
+  ### Controles unificados de TLS para fontes de CDC
+
+  A ativação do TLS e os níveis de verificação agora são consistentes em todas as fontes de CDC. Os endpoints de criação e atualização da OpenAPI propagam os campos `postgres_skip_cert_verification`, `postgres_disable_tls` e `mongo_skip_cert_verification`, para que você possa gerenciar o tratamento de certificados via API.
+
+  ### Bancos de dados Replicated voltam ao seletor do ClickPipes
+
+  Os bancos de dados Replicated voltaram a poder ser selecionados no seletor de destino do ClickPipes.
+
+  ### Atualizações do ClickHouse Agents (beta pública)
+
+  O [ClickHouse Agents](/pt-BR/products/cloud/features/ai-ml/agents/index) agora oferece suporte a Chat Projects para organizar conversas, um medidor de uso de contexto que mostra o consumo de tokens e da janela de contexto, Skills criadas por agentes e Skills com práticas recomendadas do ClickHouse incluídas no pacote. Este lançamento também inclui melhorias em configurações, navegação, atalhos e fixação.
+
+  ### ClickHouse BYOC no Azure Marketplace
+
+  O ClickHouse [Bring Your Own Cloud](/pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview) agora está listado no Azure Marketplace, permitindo que clientes comprem por meio de oferta privada e implantem o BYOC com cobrança pela conta do Azure. Também foi adicionado, no lado da plataforma, suporte de faturamento para listagens do marketplace do Azure BYOC e IDs de produto.
+
+  ### Provider oficial do ClickHouse para Airflow
+
+  Um provider oficial do Apache Airflow para ClickHouse agora está disponível no PyPI e listado no registro do Airflow, substituindo a dependência do plugin legado da comunidade para direcionar dados para dentro e para fora do ClickHouse.
+
+  ### Visibilidade de faturamento e melhorias no marketplace
+
+  O faturamento agora inclui uma tabela self-service de histórico de créditos, um resumo de pré-pagamento mostrando os valores usados e expirados, e suporte a e-mail do GCP MPPO.
+</Update>
 
 <Update label="3 de junho de 2026">
   A semana Open House 2026 trouxe uma onda de lançamentos focados em executar o ClickHouse onde seus dados residem e em integrar fluxos de trabalho agênticos assistidos por IA à plataforma.
@@ -139,7 +187,7 @@ Além deste changelog do ClickHouse Cloud, consulte também a página [Compatibi
 
   ### Expansão das integrações com catálogos de dados
 
-  Expandimos o suporte a [integrações com catálogos de dados](/pt-BR/products/cloud/features/data-catalogs) pela UI de Data Sources, com mais métodos de autenticação, formatos de tabela e opções de catálogo de dados:
+  Expandimos o suporte a [integrações com catálogos de dados](/pt-BR/products/cloud/features/data-catalogs) pela UI de fontes de dados, com mais métodos de autenticação, formatos de tabela e opções de catálogo de dados:
 
   * Suporte a IAM para [AWS Glue Catalog](/pt-BR/guides/use-cases/data-warehousing/glue-catalog)
   * Suporte ao [BigLake Metastore](/pt-BR/guides/use-cases/data-warehousing/biglake-catalog) para integração com catálogo de dados
@@ -159,7 +207,7 @@ Além deste changelog do ClickHouse Cloud, consulte também a página [Compatibi
 
   ### Terraform e OpenAPI para ClickPipes (disponibilidade geral)
 
-  Os recursos do ClickPipes no [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) do ClickHouse agora estão oficialmente disponíveis como parte das versões estáveis, e os [endpoints OpenAPI](/pt-BR/api-reference/organization/get-list-of-available-organizations) não são mais marcados como beta. Isso inclui cobertura completa para conectores CDC (Postgres, MySQL, MongoDB). Consulte a [documentação do Terraform](/pt-BR/integrations/clickpipes/programmatic-access/terraform), a [documentação da OpenAPI](/pt-BR/integrations/clickpipes/programmatic-access/openapi) e a [postagem no blog](https://clickhouse.com/blog/terraform-ga) para mais detalhes.
+  Os recursos do ClickPipes no [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) do ClickHouse agora estão oficialmente disponíveis como parte das versões estáveis, e os [endpoints OpenAPI](/pt-BR/products/cloud/api-reference/organization/get-list-of-available-organizations) não são mais marcados como beta. Isso inclui cobertura completa para conectores CDC (Postgres, MySQL, MongoDB). Consulte a [documentação do Terraform](/pt-BR/integrations/clickpipes/programmatic-access/terraform), a [documentação da OpenAPI](/pt-BR/integrations/clickpipes/programmatic-access/openapi) e a [postagem no blog](https://clickhouse.com/blog/terraform-ga) para mais detalhes.
 </Update>
 
 <Update label="17 de abril de 2026">
@@ -216,7 +264,7 @@ Além deste changelog do ClickHouse Cloud, consulte também a página [Compatibi
 </Update>
 
 <Update label="13 de fevereiro de 2026">
-  * O [BigQuery Connector](/pt-BR/integrations/clickpipes/bigquery/overview) agora está em Private Preview. Leia esta [postagem no blog](https://clickhouse.com/blog/bigquery-clickpipe-private-preview) para mais detalhes e entre na [lista de espera](https://clickhouse.com/cloud/clickpipes/bigquery-connector) para obter acesso.
+  * O [BigQuery Connector](/pt-BR/integrations/clickpipes/bigquery/overview) agora está em prévia privada. Leia esta [postagem no blog](https://clickhouse.com/blog/bigquery-clickpipe-private-preview) para mais detalhes e entre na [lista de espera](https://clickhouse.com/cloud/clickpipes/bigquery-connector) para obter acesso.
   * Temos o prazer de anunciar suporte a implantações PCI no Google Cloud. Regiões com suporte:
     * GCP europe-west4 (Países Baixos)
     * GCP us-central1 (Iowa)
@@ -234,6 +282,6 @@ Além deste changelog do ClickHouse Cloud, consulte também a página [Compatibi
   * **Filtragem de custos de uso por serviço via API:** Nossa API agora oferece suporte à filtragem dos custos de uso da sua organização por tags de serviço específicas, facilitando a análise dos gastos em um nível mais granular.
   * **Integração com catálogo de dados:** Agora você pode conectar um catálogo de dados externo como fonte de dados. O ClickHouse Cloud oferece suporte ao AWS Glue e ao Unity Catalog (com mais opções em breve). Depois de conectado, o catálogo aparece como um banco de dados, permitindo ler tabelas Iceberg diretamente, sem duplicar os dados. Para obter acesso, entre em contato com o suporte.
   * **ClickPipes:**
-    * O conector do MongoDB foi promovido a Public Beta e agora está disponível para clientes novos e atuais do ClickHouse Cloud, em todos os níveis de serviço. Leia a [postagem no blog](https://clickhouse.com/blog/mongodb-cdc-connector-clickpipes-beta) para ver uma visão geral dos novos recursos e acesse a [documentação](/pt-BR/integrations/clickpipes/mongodb/index) para começar.
+    * O conector do MongoDB foi promovido a beta pública e agora está disponível para clientes novos e atuais do ClickHouse Cloud, em todos os níveis de serviço. Leia a [postagem no blog](https://clickhouse.com/blog/mongodb-cdc-connector-clickpipes-beta) para ver uma visão geral dos novos recursos e acesse a [documentação](/pt-BR/integrations/clickpipes/mongodb/index) para começar.
     * O [S3 ClickPipe](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview) agora é compatível com o OVH Object Storage, o serviço de armazenamento de objetos compatível com a API S3 da OVHcloud.
 </Update>

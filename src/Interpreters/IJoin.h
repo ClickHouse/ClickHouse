@@ -86,9 +86,9 @@ public:
         SharedHeader left_sample_block_,
         SharedHeader right_sample_block_) const
     {
-        (void)(table_join_);
-        (void)(left_sample_block_);
-        (void)(right_sample_block_);
+        (void)table_join_;
+        (void)left_sample_block_;
+        (void)right_sample_block_;
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Clone method is not supported for {}", getName());
     }
 
@@ -105,7 +105,7 @@ public:
     /// (e.g., when PREWHERE consumed all columns from the right side of a cross join).
     virtual bool addBlockToJoin(const Block & block, size_t num_rows, bool check_limits = true) /// NOLINT
     {
-        /// Default implementation ignores num_rows; HashJoin overrides this for CROSS joins.
+        /// Default implementation ignores num_rows; joins that need row-count-only blocks override it.
         (void)num_rows;
         return addBlockToJoin(block, check_limits);
     }

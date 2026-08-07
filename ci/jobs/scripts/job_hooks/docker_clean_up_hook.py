@@ -22,7 +22,9 @@ def check():
     Shell.check("docker builder prune -a -f", verbose=True)
     print("Clean up stopped containers")
     Shell.check("docker container prune -f", verbose=True)
-    Shell.check("docker system prune", verbose=True)
+    # Without `-f` it only asks for a confirmation on a terminal that is not there, and
+    # exits without deleting anything.
+    Shell.check("docker system prune -f", verbose=True)
     return True
 
 

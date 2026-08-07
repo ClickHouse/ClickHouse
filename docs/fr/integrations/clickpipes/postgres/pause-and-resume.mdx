@@ -15,10 +15,10 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 Il existe des situations où il peut être utile de mettre en pause un Postgres ClickPipe. Par exemple, vous pouvez vouloir effectuer des analyses sur des données existantes dans un état figé. Il se peut aussi que vous soyez en train d’effectuer des mises à niveau de Postgres. Voici comment mettre en pause puis reprendre un Postgres ClickPipe.
 
 <div id="pause-clickpipe-steps">
-  ## Étapes pour mettre en pause un Postgres ClickPipe
+  ## Étapes pour mettre en pause un ClickPipe Postgres
 </div>
 
-1. Dans l’onglet Sources de données, cliquez sur le Postgres ClickPipe que vous souhaitez mettre en pause.
+1. Dans l’onglet Sources de données, cliquez sur le ClickPipe Postgres que vous souhaitez mettre en pause.
 2. Accédez à l’onglet **Paramètres**.
 3. Cliquez sur le bouton **Pause**.
 
@@ -32,16 +32,16 @@ Il existe des situations où il peut être utile de mettre en pause un Postgres 
 5. Après environ 5 secondes (et également après actualisation de la page), le statut du pipe devrait être **En pause**.
 
 <Warning>
-  Mettre en pause un Postgres ClickPipe n’arrête pas l’augmentation des slots de réplication.
+  Mettre en pause un ClickPipe Postgres n’arrête pas l’augmentation des slots de réplication.
 </Warning>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
 
 <div id="resume-clickpipe-steps">
-  ## Étapes pour reprendre un Postgres ClickPipe
+  ## Étapes pour reprendre un ClickPipe Postgres
 </div>
 
-1. Dans l’onglet Sources de données, cliquez sur le Postgres ClickPipe que vous souhaitez reprendre. Le statut du miroir doit initialement être **En pause**.
+1. Dans l’onglet Sources de données, cliquez sur le ClickPipe Postgres que vous souhaitez reprendre. Le statut du miroir doit initialement être **En pause**.
 2. Accédez à l’onglet **Paramètres**.
 3. Cliquez sur le bouton **Reprendre**.
 

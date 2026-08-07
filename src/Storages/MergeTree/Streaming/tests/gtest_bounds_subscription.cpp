@@ -56,15 +56,31 @@ TEST(MergeTreeBoundsSubscription, FdIsExposed)
     ASSERT_GE(sub.fd(), 0);
 }
 
-TEST(MergeTreeBoundsSubscription, FdReadableAfterAdvance)
+TEST(MergeTreeBoundsSubscription, AdvanceDoesNotWakeFd)
 {
     MergeTreeBoundsSubscription sub(1, 0);
 
-    /// Before any advance, fd is not readable.
+    /// Readers are woken per enrichment round, not per per-partition advance, to avoid a partial mid-round read.
+    sub.advance("p1", 1);
+
     pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
     ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
 
+    /// The advance still updated the safe block number.
+    ASSERT_EQ(sub.snapshot().at("p1"), 1);
+}
+
+TEST(MergeTreeBoundsSubscription, FdReadableAfterEnrichmentRound)
+{
+    MergeTreeBoundsSubscription sub(1, 0);
+
+    /// Before any enrichment round, fd is not readable.
+    pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
+    ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
+
+    /// A round that advanced nothing must still wake readers (e.g. empty table).
     sub.advance("p1", 1);
+    sub.onEnrichmentRound();
 
     p = {.fd = sub.fd(), .events = POLLIN, .revents = 0};
     ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/1000), 1);
@@ -74,20 +90,6 @@ TEST(MergeTreeBoundsSubscription, FdReadableAfterAdvance)
     sub.drain();
     p = {.fd = sub.fd(), .events = POLLIN, .revents = 0};
     ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
-}
-
-TEST(MergeTreeBoundsSubscription, BoundedAdvanceDoesNotWakeFd)
-{
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
-
-    /// A bounded subscription must not wake on a per-partition advance (only onEnrichmentRound wakes it).
-    sub.advance("p1", 1);
-
-    pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
-    ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
-
-    /// The advance still updated the safe block number.
-    ASSERT_EQ(sub.snapshot().at("p1"), 1);
 }
 
 TEST(MergeTreeBoundsSubscription, FdReadableAfterDisable)
@@ -100,125 +102,41 @@ TEST(MergeTreeBoundsSubscription, FdReadableAfterDisable)
     ASSERT_TRUE(p.revents & POLLIN);
 }
 
-TEST(MergeTreeBoundsSubscription, DefaultIsUnbounded)
+TEST(MergeTreeBoundsSubscription, UpdatesCountStartsAtZero)
 {
     MergeTreeBoundsSubscription sub(1, 0);
-    ASSERT_FALSE(sub.isBounded());
-    ASSERT_FALSE(sub.safeSegmentDetermined());
+    ASSERT_EQ(sub.updatesCount(), 0u);
 }
 
-TEST(MergeTreeBoundsSubscription, ResolvedRoundResolvesSnapshot)
+TEST(MergeTreeBoundsSubscription, UpdatesCountIncrementsPerRound)
 {
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/false);
-    ASSERT_FALSE(sub.safeSegmentDetermined());
+    MergeTreeBoundsSubscription sub(1, 0);
 
-    sub.onEnrichmentRound(/*pending=*/false);
-    ASSERT_TRUE(sub.safeSegmentDetermined());
-}
+    /// An empty round counts too — it is the signal a bounded source waits for.
+    sub.onEnrichmentRound();
+    ASSERT_EQ(sub.updatesCount(), 1u);
 
-TEST(MergeTreeBoundsSubscription, BeginRoundClearsDetermined)
-{
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
-
-    /// A resolved round determines the safe segment.
-    sub.onEnrichmentRound(/*pending=*/false);
-    ASSERT_TRUE(sub.safeSegmentDetermined());
-
-    /// While the next round advances the map, the segment is no longer determined, blocking a stale partial read.
-    sub.beginEnrichmentRound();
-    ASSERT_FALSE(sub.safeSegmentDetermined());
-
-    /// The round republishes it once pending is known.
-    sub.onEnrichmentRound(/*pending=*/false);
-    ASSERT_TRUE(sub.safeSegmentDetermined());
-}
-
-TEST(MergeTreeBoundsSubscription, SnapshotIfDeterminedIsAtomic)
-{
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
-
-    /// Mid-round: one partition advanced but the round isn't published, so the partial map must not be exposed.
-    sub.beginEnrichmentRound();
-    sub.advance("a", 5);
-    ASSERT_FALSE(sub.snapshotIfDetermined().has_value());
-
-    /// After the round publishes a resolved result, the full map is exposed atomically (never a partial one).
-    sub.advance("b", 3);
-    sub.onEnrichmentRound(/*pending=*/false);
-
-    auto view = sub.snapshotIfDetermined();
-    ASSERT_TRUE(view.has_value());
-    ASSERT_EQ(view->size(), 2u);
-    ASSERT_EQ(view->at("a"), 5);
-    ASSERT_EQ(view->at("b"), 3);
-}
-
-TEST(MergeTreeBoundsSubscription, BoundedEnrichmentRoundWakesFd)
-{
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
-    ASSERT_TRUE(sub.isBounded());
-
-    /// Before any enrichment, fd is not readable.
-    pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
-    ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
-
-    /// An enrichment round that advanced nothing must still wake a bounded subscription (e.g. empty table).
-    sub.onEnrichmentRound(/*pending=*/false);
-    ASSERT_TRUE(sub.safeSegmentDetermined());
-
-    p = {.fd = sub.fd(), .events = POLLIN, .revents = 0};
-    ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/1000), 1);
-    ASSERT_TRUE(p.revents & POLLIN);
-}
-
-TEST(MergeTreeBoundsSubscription, UnboundedEnrichmentRoundDoesNotWakeFd)
-{
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/false);
-
-    /// A round that advanced nothing must not wake an unbounded subscription.
-    sub.onEnrichmentRound(/*pending=*/false);
-
-    pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
-    ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
+    sub.advance("p1", 1);
+    sub.onEnrichmentRound();
+    ASSERT_EQ(sub.updatesCount(), 2u);
 }
 
 TEST(MergeTreeBoundsSubscription, EnrichmentRoundIsNoOpAfterDisable)
 {
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
+    MergeTreeBoundsSubscription sub(1, 0);
     sub.disable();
     sub.drain();
 
-    sub.onEnrichmentRound(/*pending=*/false);
-    ASSERT_FALSE(sub.safeSegmentDetermined());
-}
-
-TEST(MergeTreeBoundsSubscription, PendingRoundDoesNotResolve)
-{
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
-
-    /// A round that left a partition blocked must not resolve the snapshot; the bounded source keeps waiting.
-    sub.onEnrichmentRound(/*pending=*/true);
-    ASSERT_FALSE(sub.safeSegmentDetermined());
-
-    /// A later resolved round clears the pending state.
-    sub.onEnrichmentRound(/*pending=*/false);
-    ASSERT_TRUE(sub.safeSegmentDetermined());
-}
-
-TEST(MergeTreeBoundsSubscription, PendingRoundDoesNotWakeFd)
-{
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
-
-    /// A pending round has nothing for the source to do, so it must not wake it.
-    sub.onEnrichmentRound(/*pending=*/true);
+    sub.onEnrichmentRound();
+    ASSERT_EQ(sub.updatesCount(), 0u);
 
     pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
     ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
 }
 
-TEST(SubscriptionEnrichment, PendingWhenPromotionBlocked)
+TEST(SubscriptionEnrichment, NotEnrichedWhenPromotionBlocked)
 {
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
+    MergeTreeBoundsSubscription sub(1, 0);
 
     /// Part [5, 5] is visible but a committing block at 2 sits in the gap below it, so promotion is blocked.
     LocalPartsByPartition local_parts;
@@ -229,15 +147,13 @@ TEST(SubscriptionEnrichment, PendingWhenPromotionBlocked)
     ranges["p"].addPart(5, 5);
     auto promoters = constructPromoters(committing, ranges);
 
-    auto result = enrichSubscription(sub, local_parts, promoters);
-    ASSERT_FALSE(result.enriched);
-    ASSERT_TRUE(result.pending);
+    ASSERT_FALSE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_TRUE(sub.snapshot().empty());
 }
 
-TEST(SubscriptionEnrichment, ResolvedWhenContiguousFromStart)
+TEST(SubscriptionEnrichment, EnrichedWhenContiguousFromStart)
 {
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
+    MergeTreeBoundsSubscription sub(1, 0);
 
     /// Partition "p" is contiguous from the beginning, so it is fully consumed with no gap.
     LocalPartsByPartition local_parts;
@@ -248,17 +164,15 @@ TEST(SubscriptionEnrichment, ResolvedWhenContiguousFromStart)
     ranges["p"].addPart(0, 3);
     auto promoters = constructPromoters(committing, ranges);
 
-    auto result = enrichSubscription(sub, local_parts, promoters);
-    ASSERT_TRUE(result.enriched);
-    ASSERT_FALSE(result.pending);
+    ASSERT_TRUE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_EQ(sub.snapshot().at("p"), 3);
 }
 
-TEST(SubscriptionEnrichment, PartialRoundIsPending)
+TEST(SubscriptionEnrichment, PartialRoundAdvancesReadablePartition)
 {
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
+    MergeTreeBoundsSubscription sub(1, 0);
 
-    /// "b" is readable but "a" has an in-flight block in its gap, so the round advances "b" yet stays pending.
+    /// "b" is readable but "a" has an in-flight block in its gap, so the round advances "b" and leaves "a" untouched.
     LocalPartsByPartition local_parts;
     local_parts["a"].emplace_back("a", 5, 5, 0);
     local_parts["b"].emplace_back("b", 0, 3, 0);
@@ -269,19 +183,14 @@ TEST(SubscriptionEnrichment, PartialRoundIsPending)
     ranges["b"].addPart(0, 3);
     auto promoters = constructPromoters(committing, ranges);
 
-    auto result = enrichSubscription(sub, local_parts, promoters);
-    ASSERT_TRUE(result.enriched);
-    ASSERT_TRUE(result.pending);
+    ASSERT_TRUE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_EQ(sub.snapshot().at("b"), 3);
     ASSERT_FALSE(sub.snapshot().contains("a"));
-
-    sub.onEnrichmentRound(result.pending);
-    ASSERT_FALSE(sub.safeSegmentDetermined());
 }
 
-TEST(SubscriptionEnrichment, PromoterOnlyPartitionIsPending)
+TEST(SubscriptionEnrichment, PromoterOnlyPartitionIsNotEnriched)
 {
-    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
+    MergeTreeBoundsSubscription sub(1, 0);
 
     /// Partition "p" has an in-flight (committing) block known to the promoter but no visible local part yet.
     LocalPartsByPartition local_parts;
@@ -290,8 +199,6 @@ TEST(SubscriptionEnrichment, PromoterOnlyPartitionIsPending)
     std::map<String, PartBlockNumberRanges> ranges;
     auto promoters = constructPromoters(committing, ranges);
 
-    auto result = enrichSubscription(sub, local_parts, promoters);
-    ASSERT_FALSE(result.enriched);
-    ASSERT_TRUE(result.pending);
+    ASSERT_FALSE(enrichSubscription(sub, local_parts, promoters));
     ASSERT_TRUE(sub.snapshot().empty());
 }

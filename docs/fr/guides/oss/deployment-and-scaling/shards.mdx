@@ -63,9 +63,9 @@ Le diagramme ci-dessous illustre comment les INSERT dans une table distribuée s
 
 <br />
 
-① Un INSERT (avec une seule ligne) visant la table distribuée est envoyé à un serveur ClickHouse qui héberge la table, soit directement, soit via un répartiteur de charge.
+① Un INSERT (avec une seule ligne) ciblant la table distribuée est envoyé à un serveur ClickHouse qui héberge la table, soit directement, soit via un répartiteur de charge.
 
-② Pour chaque ligne de l’INSERT (une seule dans notre exemple), ClickHouse évalue la clé de sharding (ici, rand()), calcule le modulo du résultat par le nombre de serveurs shards, et utilise la valeur obtenue comme ID du serveur cible (les ID commencent à 0 et sont incrémentés de 1). La ligne est ensuite transmise puis ③ insérée dans le shard de table du serveur correspondant.
+② Pour chaque ligne de l’INSERT (une seule dans notre exemple), ClickHouse évalue la clé de sharding (ici, rand()), prend le résultat modulo le nombre de serveurs de shard, et utilise cette valeur comme ID du serveur cible (les ID commencent à 0 et sont incrémentés de 1). La ligne est ensuite transmise puis ③ insérée dans le shard de table du serveur correspondant.
 
 La section suivante explique comment fonctionne le transfert des SELECT.
 
