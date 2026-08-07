@@ -138,41 +138,35 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 /// consults the parallel-replica settings) — it counts as eligible when any of its
 /// children does. A `Merge` whose children are all local cannot engage parallel replicas
 /// under the analyzer — the storage-level `MergeTree` parallel-replica paths are
-/// old-analyzer-only, and the planner's rule rejects `Merge` itself — and such a table
-/// does not reach this function anyway (`StorageMerge::isRemote` is false).
+/// old-analyzer-only, and the planner's rule rejects `Merge` itself — so it counts as
+/// not eligible here.
+/// A wrapper target that is an ordinary `VIEW` is not remote either, but its read
+/// re-interprets the inner query with the reading context's settings and can engage
+/// parallel replicas all the same, so unwrapped storages are judged with
+/// `mayEngageParallelReplicasForWrappedStorage`, which sees through views.
+bool mayEngageParallelReplicasForWrappedStorage(const StoragePtr & storage, const ContextPtr & context);
+
 bool mayEngageParallelReplicasForRemoteStorage(const IStorage & storage, const ContextPtr & context)
 {
     /// `isRemote` on these wrappers already forced the nested/target storage, so unwrapping
     /// it here has no extra side effect.
     if (const auto * proxy = dynamic_cast<const StorageProxy *>(&storage))
-    {
-        const auto nested = proxy->getNested();
-        return nested && nested->isRemote() && mayEngageParallelReplicasForRemoteStorage(*nested, context);
-    }
+        return mayEngageParallelReplicasForWrappedStorage(proxy->getNested(), context);
 
     if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(&storage))
-    {
-        const auto target = materialized_view->tryGetTargetTable();
-        return target && target->isRemote() && mayEngageParallelReplicasForRemoteStorage(*target, context);
-    }
+        return mayEngageParallelReplicasForWrappedStorage(materialized_view->tryGetTargetTable(), context);
 
     if (const auto * alias = dynamic_cast<const StorageAlias *>(&storage))
-    {
-        const auto target = alias->getTargetTable();
-        return target && target->isRemote() && mayEngageParallelReplicasForRemoteStorage(*target, context);
-    }
+        return mayEngageParallelReplicasForWrappedStorage(alias->getTargetTable(), context);
 
     if (const auto * buffer = dynamic_cast<const StorageBuffer *>(&storage))
-    {
-        const auto destination = buffer->getDestinationTable();
-        return destination && destination->isRemote() && mayEngageParallelReplicasForRemoteStorage(*destination, context);
-    }
+        return mayEngageParallelReplicasForWrappedStorage(buffer->getDestinationTable(), context);
 
     if (const auto * merge = dynamic_cast<const StorageMerge *>(&storage))
     {
         return merge->hasChildTable([&context](const StoragePtr & child)
         {
-            return child && child->isRemote() && mayEngageParallelReplicasForRemoteStorage(*child, context);
+            return mayEngageParallelReplicasForWrappedStorage(child, context);
         });
     }
 
@@ -286,6 +280,28 @@ bool mayEngageParallelReplicasForView(const StorageView & view, const StorageSna
     return mayEngageParallelReplicas(inner_query_tree.get(), view_context);
 }
 
+/// Storage-level eligibility of a storage reached by unwrapping a delegating wrapper
+/// (`StorageProxy` / materialized view target / `Alias` / `Buffer` / `Merge` child).
+/// An ordinary `VIEW` must be judged with the view rule — `StorageView::isRemote` is
+/// `false`, so an `isRemote` gate would silently miss a wrapper whose target is a view
+/// over a remote table. Everything else goes through the remote-storage rule directly:
+/// it returns `false` for local non-wrapper storages on its own, and gating it on
+/// `isRemote` would wrongly stop at wrappers that do not forward `isRemote`
+/// (`StorageMerge::isRemote` is `false` even with a remote child).
+bool mayEngageParallelReplicasForWrappedStorage(const StoragePtr & storage, const ContextPtr & context)
+{
+    if (!storage)
+        return false;
+
+    if (const auto * view = typeid_cast<const StorageView *>(storage.get()))
+    {
+        const auto metadata_handle = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+        return mayEngageParallelReplicasForView(*view, storage->getStorageSnapshot(metadata_handle, context), context);
+    }
+
+    return mayEngageParallelReplicasForRemoteStorage(*storage, context);
+}
+
 /// Whether parallel replicas could actually be engaged for a query subtree.
 ///
 /// A recursive step that reads nothing but local, non-`MergeTree` storages — in
@@ -349,8 +365,13 @@ bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_c
 
         if (const auto * table_node = subtree_node->as<TableNode>())
         {
+            /// Not gated on `isRemote`: the rule itself returns `false` for local
+            /// non-delegating storages, while a delegating wrapper must be unwrapped even
+            /// when it does not report itself remote — `Merge` and `Alias` forward
+            /// `isRemote` to their targets, and a target that is an ordinary `VIEW` over a
+            /// remote table is not remote itself yet can engage parallel replicas.
             const auto & storage = table_node->getStorage();
-            if (storage && storage->isRemote() && mayEngageParallelReplicasForRemoteStorage(*storage, scope_context))
+            if (storage && mayEngageParallelReplicasForRemoteStorage(*storage, scope_context))
                 return true;
 
             if (canUseTableForParallelReplicas(*table_node, scope_context))
@@ -368,7 +389,7 @@ bool mayEngageParallelReplicas(IQueryTreeNode * root, const ContextPtr & scope_c
             /// function and a parameterized-view invocation resolve to a `StorageView`, whose
             /// read re-interprets the inner query — check it like a view table.
             const auto & storage = table_function_node->getStorage();
-            if (storage && storage->isRemote() && mayEngageParallelReplicasForRemoteStorage(*storage, scope_context))
+            if (storage && mayEngageParallelReplicasForRemoteStorage(*storage, scope_context))
                 return true;
 
             if (const auto * view = typeid_cast<const StorageView *>(storage.get());

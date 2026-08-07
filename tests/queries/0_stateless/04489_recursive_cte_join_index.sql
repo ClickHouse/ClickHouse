@@ -1099,6 +1099,70 @@ SELECT sum(n) FROM view_fn_pr_throw
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
+-- A delegating wrapper whose target is an ordinary `VIEW` must be judged with the view rule:
+-- `StorageView` is not remote, so an `isRemote` gate on the unwrapped target would silently
+-- miss it. A `Merge` over a view over a local table cannot engage parallel replicas (with the
+-- default `parallel_replicas_for_non_replicated_merge_tree = 0` the inner `MergeTree` is not
+-- eligible either way), so it must keep running under the forcing mode.
+DROP VIEW IF EXISTS edges_view_wrapped;
+DROP TABLE IF EXISTS edges_merge_view_local;
+CREATE VIEW edges_view_wrapped AS SELECT * FROM edges;
+CREATE TABLE edges_merge_view_local AS edges ENGINE = Merge(currentDatabase(), '^edges_view_wrapped$');
+
+WITH RECURSIVE merge_view_local_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM merge_view_local_pr AS t INNER JOIN edges_merge_view_local AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM merge_view_local_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    automatic_parallel_replicas_mode = 0;
+
+DROP TABLE edges_merge_view_local;
+DROP VIEW edges_view_wrapped;
+
+-- A `Merge` over a view over a `Distributed` table reads the view with the same query
+-- context, and the view re-interprets its inner query, which reaches `ClusterProxy` and
+-- can engage parallel replicas — the forcing mode must fail closed instead of silently
+-- downgrading to a plain read.
+DROP VIEW IF EXISTS edges_view_wrapped_dist;
+DROP TABLE IF EXISTS edges_merge_view_dist;
+CREATE VIEW edges_view_wrapped_dist AS SELECT * FROM edges_dist_replicas;
+CREATE TABLE edges_merge_view_dist AS edges ENGINE = Merge(currentDatabase(), '^edges_view_wrapped_dist$');
+
+WITH RECURSIVE merge_view_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM merge_view_pr_throw AS t INNER JOIN edges_merge_view_dist AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM merge_view_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE edges_merge_view_dist;
+
+-- An `Alias` table over such a view forwards the read to it the same way.
+DROP TABLE IF EXISTS edges_alias_view_dist;
+CREATE TABLE edges_alias_view_dist ENGINE = Alias(currentDatabase(), 'edges_view_wrapped_dist');
+
+WITH RECURSIVE alias_view_pr_throw AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM alias_view_pr_throw AS t INNER JOIN edges_alias_view_dist AS e ON e.from_id = t.n
+    WHERE n < 10
+)
+SELECT sum(n) FROM alias_view_pr_throw
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
+DROP TABLE edges_alias_view_dist;
+DROP VIEW edges_view_wrapped_dist;
+
 DROP TABLE edges_dist_replicas;
 
 DROP TABLE edges;
