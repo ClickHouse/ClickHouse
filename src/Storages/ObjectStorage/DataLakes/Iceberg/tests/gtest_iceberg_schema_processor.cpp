@@ -51,7 +51,7 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDate)
 TEST(IcebergSchemaProcessor, GetSimpleTypeTime)
 {
     auto type = IcebergSchemaProcessor::getSimpleType("time");
-    EXPECT_EQ(type->getName(), "Int64");
+    EXPECT_EQ(type->getName(), "Time64(6)");
 }
 
 TEST(IcebergSchemaProcessor, GetSimpleTypeTimestamp)
