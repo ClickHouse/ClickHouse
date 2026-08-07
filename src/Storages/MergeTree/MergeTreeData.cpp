@@ -1179,14 +1179,6 @@ void MergeTreeData::checkProperties(
                 true /* allow_nullable_key */,
                 local_context);
 
-            if (!canUseAdaptiveGranularity() && projection.has_index_granularity_overrides)
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
-                    "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
-                    projection.name);
-            }
             projections_names.insert(projection.name);
         }
     }
@@ -1294,6 +1286,18 @@ void MergeTreeData::checkProperties(
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Projection {} uses `_block_offset` column, but MergeTree setting `enable_block_offset_column` is disabled",
+                projection.name);
+
+        /// A single `ALTER` may both add a projection granularity override and switch the table to fixed granularity
+        /// (`MODIFY`/`RESET SETTING index_granularity_bytes`), or switch to fixed granularity under a pre-existing override; 
+        const bool effective_can_use_adaptive_granularity = effective_settings[MergeTreeSetting::index_granularity_bytes] != 0
+            && (effective_settings[MergeTreeSetting::enable_mixed_granularity_parts] || !has_non_adaptive_index_granularity_parts);
+
+        if (projection.has_index_granularity_overrides && !effective_can_use_adaptive_granularity)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projection {} specifies index_granularity-related overrides, but the parent table uses fixed granularity. "
+                "Such overrides are supported with adaptive granularity (e.g. index_granularity_bytes > 0)",
                 projection.name);
     }
 

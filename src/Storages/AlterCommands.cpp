@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
@@ -993,35 +994,45 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
     }
     else if (type == MODIFY_PROJECTION)
-    {   /// create a new projection with the modifed settings
+    {
+        if (!metadata.projections.has(projection_name))
+        {
+            /// With `IF EXISTS` the whole command must be a no-op
+            if (if_exists)
+                return;
+
+            throw Exception(
+                ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+                "There is no projection {} in table{}",
+                projection_name,
+                metadata.projections.getHintsMessage(projection_name));
+        }
+
+        /// create a new projection with the modifed settings
         auto new_projection = ProjectionDescription::getProjectionFromAST(
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
 
-        if (metadata.projections.has(projection_name))
+        /// Existing parts store projection data built from the query body, so only the `WITH SETTINGS` clause may change
+        auto definition_without_settings = [](const IAST & definition_ast)
         {
-            /// Existing parts store projection data built from the query body, so only the
-            /// `WITH SETTINGS` clause may change; a body change would desynchronize them.
-            auto definition_without_settings = [](const IAST & definition_ast)
-            {
-                auto cloned = definition_ast.clone();
-                auto & decl = cloned->as<ASTProjectionDeclaration &>();
-                cloned->reset(decl.with_settings);
-                return cloned->formatWithSecretsOneLine();
-            };
+            auto cloned = definition_ast.clone();
+            auto & decl = cloned->as<ASTProjectionDeclaration &>();
+            cloned->reset(decl.with_settings);
+            return cloned->formatWithSecretsOneLine();
+        };
 
-            const auto & old_projection = metadata.projections.get(projection_name);
-            if (definition_without_settings(*old_projection.definition_ast) != definition_without_settings(*new_projection.definition_ast))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
-                    "but the projection query differs from the existing one. "
-                    "Use DROP PROJECTION and ADD PROJECTION to change the query",
-                    projection_name);
-        }
+        const auto & old_projection = metadata.projections.get(projection_name);
+        if (definition_without_settings(*old_projection.definition_ast) != definition_without_settings(*new_projection.definition_ast))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
+                "but the projection query differs from the existing one. "
+                "Use DROP PROJECTION and ADD PROJECTION to change the query",
+                projection_name);
 
         /// Intentionally not a mutation because the new settings apply lazily
         /// to parts written by future inserts and merges; `MATERIALIZE PROJECTION` forces a rebuild.
-        metadata.projections.replace(std::move(new_projection), if_exists);
+        metadata.projections.replace(std::move(new_projection));
     }
     else if (type == DROP_PROJECTION)
     {

@@ -898,20 +898,15 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     map.erase(it);
 }
 
-void ProjectionsDescription::replace(ProjectionDescription && projection, bool if_exists)
+void ProjectionsDescription::replace(ProjectionDescription && projection)
 {
     auto it = map.find(projection.name);
     if (it == map.end())
-    {
-        if (if_exists)
-            return;
-
         throw Exception(
             ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
             "There is no projection {} in table{}",
             projection.name,
             getHintsMessage(projection.name));
-    }
 
     *it->second = std::move(projection);
 }
