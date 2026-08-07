@@ -12,6 +12,9 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -99,6 +102,10 @@ MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
 
 void MergeTreeDeduplicationLog::load()
 {
+    /// Table state: not charged to the query that happens to touch it, and kept in the arena for state
+    /// that outlives queries rather than fragmenting the ones serving them.
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     if (!disk->existsDirectory(logs_dir))
     {
         if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
@@ -239,6 +246,8 @@ void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
 
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
 {
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(state_mutex);
 
     /// We support zero case because user may want to disable deduplication with
@@ -292,6 +301,8 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
 
 void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info)
 {
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(state_mutex);
 
     /// We support zero case because user may want to disable deduplication with
@@ -342,6 +353,8 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 
 void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_window_)
 {
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(state_mutex);
 
     if (stopped)
@@ -365,6 +378,8 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
 
 void MergeTreeDeduplicationLog::shutdown()
 {
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    ScopedJemallocThreadArena table_state_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(state_mutex);
     if (stopped)
         return;
@@ -392,6 +407,12 @@ void MergeTreeDeduplicationLog::shutdown()
 MergeTreeDeduplicationLog::~MergeTreeDeduplicationLog()
 {
     shutdown();
+
+    /// Same reason as everywhere above: the map and the log descriptions go with the table, not with whoever
+    /// drops it.
+    MemoryTrackerBlockerInThread table_state_not_charged_to_the_query;
+    deduplication_map.clear();
+    existing_logs.clear();
 }
 
 }
