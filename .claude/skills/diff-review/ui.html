@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>diff review</title>
+<script>
+  // Surface init failures (including module-load failures) in the page body.
+  window.addEventListener('error', function (e) {
+    var el = document.getElementById('loading');
+    if (el == null) return;
+    el.textContent = 'Failed to load review UI: ' +
+      (e.message ? e.message + ' @ ' + (e.filename || '') + ':' + (e.lineno || 0)
+                 : 'resource failed: ' + ((e.target && (e.target.src || e.target.href)) || 'unknown'));
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    var el = document.getElementById('loading');
+    if (el != null) el.textContent = 'Failed to load review UI: ' + String((e.reason && e.reason.stack) || e.reason);
+  });
+  // Test hook: ?waitload=<ms> holds the window load event open so headless
+  // screenshot tools capture the fully rendered page.
+  if (new URLSearchParams(location.search).has('waitload')) {
+    document.write('<img src="/slow?ms=' + (Number(new URLSearchParams(location.search).get('waitload')) || 10000) + '" style="display:none" alt="">');
+  }
+</script>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: light-dark(#fff, #000);
+    color: light-dark(#111, #eee);
+    display: flex; flex-direction: column; height: 100vh;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid light-dark(#e2e2e2, #262626);
+    flex: 0 0 auto;
+  }
+  header .meta { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  header .meta .repo { font-weight: 700; }
+  header .meta .base { color: light-dark(#666, #999); font-size: 12px; margin-left: 8px; }
+  select, button, textarea {
+    font: inherit;
+    color: inherit;
+    background: light-dark(#f6f6f6, #161616);
+    border: 1px solid light-dark(#d5d5d5, #333);
+    border-radius: 6px;
+    padding: 6px 10px;
+  }
+  button { cursor: pointer; }
+  button:hover { background: light-dark(#ececec, #222); }
+  button.primary {
+    background: light-dark(#0969da, #2f81f7);
+    border-color: transparent;
+    color: #fff;
+    font-weight: 600;
+  }
+  button.primary:hover { filter: brightness(1.1); }
+  #ccount { font-size: 13px; color: light-dark(#666, #999); white-space: nowrap; }
+  #skipped {
+    flex: 0 0 auto;
+    padding: 6px 16px;
+    font-size: 12px;
+    background: light-dark(#fff8e1, #2a2410);
+    color: light-dark(#7a5d00, #d4b64d);
+    border-bottom: 1px solid light-dark(#eee2b0, #3a3218);
+  }
+  #hint {
+    flex: 0 0 auto;
+    padding: 5px 16px;
+    font-size: 12px;
+    color: light-dark(#666, #999);
+    border-bottom: 1px solid light-dark(#efefef, #1c1c1c);
+  }
+  #review-root { flex: 1 1 auto; overflow: auto; }
+  #loading { padding: 40px; text-align: center; color: light-dark(#666, #999); }
+  .backdrop[hidden] { display: none; }
+  .backdrop {
+    position: fixed; inset: 0;
+    background: rgb(0 0 0 / .45);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .modal {
+    background: light-dark(#fff, #141414);
+    border: 1px solid light-dark(#ddd, #333);
+    border-radius: 10px;
+    padding: 20px;
+    width: min(560px, 90vw);
+    box-shadow: 0 12px 40px rgb(0 0 0 / .3);
+  }
+  .modal h2 { margin: 0 0 6px; font-size: 16px; }
+  .modal .sub { margin: 0 0 12px; font-size: 13px; color: light-dark(#666, #999); }
+  .modal textarea { width: 100%; min-height: 90px; resize: vertical; }
+  .modal .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+  #done-overlay .modal { text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <div class="meta"><span class="repo" id="repo"></span><span class="base" id="base"></span></div>
+  <select id="jump" title="Jump to file"></select>
+  <button id="styleToggle" title="Toggle split / unified diff view">Unified view</button>
+  <span id="ccount">0 comments</span>
+  <button id="finish" class="primary">Finish review</button>
+</header>
+<div id="skipped" hidden></div>
+<div id="hint">Click the <b>+</b> that appears over a line number (or drag across several line numbers) to leave a comment. When you're done, hit <b>Finish review</b> — your comments go back to the Claude session.</div>
+<div id="review-root"><div id="loading">Loading review UI…</div></div>
+
+<div class="backdrop" id="finish-overlay" hidden>
+  <div class="modal">
+    <h2>Submit review</h2>
+    <p class="sub" id="finish-summary"></p>
+    <textarea id="overall" placeholder="Overall comment (optional)"></textarea>
+    <div class="row">
+      <button id="finish-cancel">Keep reviewing</button>
+      <button id="finish-approve">Approve ✓</button>
+      <button id="finish-request" class="primary">Send comments</button>
+    </div>
+  </div>
+</div>
+
+<div class="backdrop" id="done-overlay" hidden>
+  <div class="modal">
+    <h2>Review submitted ✓</h2>
+    <p class="sub">Your comments were handed back to the Claude session. You can close this tab.</p>
+  </div>
+</div>
+
+<script type="module">
+import { CodeView, parseDiffFromFile } from 'https://esm.sh/@pierre/diffs@1.2.12';
+
+const $ = (id) => document.getElementById(id);
+const root = $('review-root');
+
+const data = await (await fetch('/data')).json();
+$('repo').textContent = data.repo.split('/').pop();
+$('base').textContent = `vs ${data.base} · ${data.files.length} file(s)`;
+document.title = `review: ${data.repo.split('/').pop()}`;
+if (data.skipped.length > 0) {
+  $('skipped').hidden = false;
+  $('skipped').textContent =
+    'Not shown: ' + data.skipped.map((s) => `${s.path} (${s.reason})`).join(', ');
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+// comment: { id, file, side, start, end, text, saved }
+const comments = new Map();
+let nextCommentId = 1;
+let diffStyle = 'split';
+let viewer = null;
+const versions = new Map();
+const fileDiffs = new Map();
+
+function fileDiffFor(f) {
+  if (!fileDiffs.has(f.path)) {
+    fileDiffs.set(
+      f.path,
+      parseDiffFromFile(
+        { name: f.oldPath ?? f.path, contents: f.old },
+        { name: f.path, contents: f.new },
+      ),
+    );
+  }
+  return fileDiffs.get(f.path);
+}
+
+function annotationsFor(path) {
+  return [...comments.values()]
+    .filter((c) => c.file === path)
+    .sort((a, b) => a.end - b.end)
+    .map((c) => ({ side: c.side, lineNumber: c.end, metadata: { commentId: c.id } }));
+}
+
+function buildItems() {
+  return data.files.map((f) => ({
+    id: f.path,
+    type: 'diff',
+    fileDiff: fileDiffFor(f),
+    annotations: annotationsFor(f.path),
+    version: versions.get(f.path) ?? 0,
+  }));
+}
+
+function refreshItem(path) {
+  const item = viewer.getItem(path);
+  if (item == null) return;
+  const v = (versions.get(path) ?? 0) + 1;
+  versions.set(path, v);
+  viewer.updateItem({ ...item, annotations: annotationsFor(path), version: v });
+  updateCount();
+}
+
+function updateCount() {
+  const saved = [...comments.values()].filter((c) => c.saved).length;
+  $('ccount').textContent = `${saved} comment${saved === 1 ? '' : 's'}`;
+}
+
+// ── Comment creation ─────────────────────────────────────────────────────────
+function resolveItemId(ctx) {
+  if (ctx == null) return null;
+  if (typeof ctx === 'string') return ctx;
+  if (typeof ctx.item?.id === 'string') return ctx.item.id;
+  if (typeof ctx.id === 'string') return ctx.id;
+  return null;
+}
+
+function startDraft(range, ctx) {
+  const itemId = resolveItemId(ctx) ?? viewer.getSelectedLines?.()?.id ?? null;
+  if (itemId == null || range == null) return;
+  const start = Math.min(range.start, range.end ?? range.start);
+  const end = Math.max(range.start, range.end ?? range.start);
+  const id = nextCommentId++;
+  comments.set(id, {
+    id,
+    file: itemId,
+    side: range.endSide ?? range.side ?? 'additions',
+    start,
+    end,
+    text: '',
+    saved: false,
+  });
+  refreshItem(itemId);
+}
+
+// Rendered inside the component's shadow DOM, so styling must be inline.
+function renderComment(annotation) {
+  const c = comments.get(annotation?.metadata?.commentId);
+  const box = document.createElement('div');
+  if (c == null) return box;
+  box.style.cssText =
+    'margin:6px 12px;padding:10px 12px;border-radius:8px;' +
+    'font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.45;' +
+    'background:light-dark(#f3f7ff,#10161f);border:1px solid light-dark(#c9dcf5,#23334a);' +
+    'border-left:3px solid light-dark(#0969da,#2f81f7);';
+
+  const lines = c.start === c.end ? `line ${c.end}` : `lines ${c.start}–${c.end}`;
+  const sideLabel = c.side === 'deletions' ? 'old' : 'new';
+
+  const header = document.createElement('div');
+  header.style.cssText =
+    'font-weight:600;font-size:12px;margin-bottom:6px;color:light-dark(#555,#aaa);';
+  header.textContent = `Your comment · ${lines} (${sideLabel})`;
+  box.appendChild(header);
+
+  const btn = (label, primary) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.style.cssText =
+      'font:inherit;font-size:12px;padding:4px 10px;border-radius:6px;cursor:pointer;' +
+      (primary
+        ? 'background:light-dark(#0969da,#2f81f7);color:#fff;border:none;font-weight:600;'
+        : 'background:transparent;color:inherit;border:1px solid light-dark(#ccc,#444);');
+    return b;
+  };
+
+  if (!c.saved) {
+    const ta = document.createElement('textarea');
+    ta.value = c.text;
+    ta.placeholder = 'Leave a comment… (Ctrl+Enter to save, Esc to discard)';
+    ta.style.cssText =
+      'width:100%;min-height:64px;resize:vertical;font:inherit;padding:6px 8px;' +
+      'border-radius:6px;border:1px solid light-dark(#ccc,#444);' +
+      'background:light-dark(#fff,#0a0a0a);color:inherit;';
+    ta.addEventListener('input', () => (c.text = ta.value));
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save();
+      if (e.key === 'Escape') discard();
+      e.stopPropagation();
+    });
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;margin-top:6px;';
+    const saveBtn = btn('Add comment', true);
+    const cancelBtn = btn('Cancel', false);
+    const save = () => {
+      if (c.text.trim() === '') return;
+      c.text = c.text.trim();
+      c.saved = true;
+      refreshItem(c.file);
+    };
+    const discard = () => {
+      comments.delete(c.id);
+      refreshItem(c.file);
+    };
+    saveBtn.addEventListener('click', save);
+    cancelBtn.addEventListener('click', discard);
+    row.append(cancelBtn, saveBtn);
+    box.append(ta, row);
+    setTimeout(() => ta.focus(), 50);
+  } else {
+    const body = document.createElement('div');
+    body.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;';
+    body.textContent = c.text;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;justify-content:flex-end;margin-top:8px;';
+    const editBtn = btn('Edit', false);
+    const delBtn = btn('Delete', false);
+    editBtn.addEventListener('click', () => {
+      c.saved = false;
+      refreshItem(c.file);
+    });
+    delBtn.addEventListener('click', () => {
+      comments.delete(c.id);
+      refreshItem(c.file);
+    });
+    row.append(delBtn, editBtn);
+    box.append(body, row);
+  }
+  return box;
+}
+
+// ── Viewer ───────────────────────────────────────────────────────────────────
+function createViewer() {
+  if (viewer != null) {
+    viewer.cleanUp();
+    root.innerHTML = '';
+  }
+  viewer = new CodeView({
+    theme: { dark: 'pierre-dark', light: 'pierre-light' },
+    stickyHeaders: true,
+    diffStyle,
+    layout: { paddingTop: 12, paddingBottom: 160, gap: 10 },
+    lineHoverHighlight: 'both',
+    enableLineSelection: true,
+    enableGutterUtility: true,
+    onGutterUtilityClick(range, ctx) {
+      startDraft(range, ctx);
+    },
+    renderAnnotation(annotation) {
+      return renderComment(annotation);
+    },
+  });
+  viewer.setup(root);
+  viewer.setItems(buildItems());
+}
+
+$('loading').remove();
+createViewer();
+
+// Test hook: ?testannotation seeds one saved and one draft comment so headless
+// screenshots can verify annotation rendering.
+if (new URLSearchParams(location.search).has('testannotation') && data.files.length > 0) {
+  const f = data.files[0].path;
+  const a = nextCommentId++;
+  const b = nextCommentId++;
+  comments.set(a, { id: a, file: f, side: 'additions', start: 1, end: 2, text: 'Saved test comment: please rename this.', saved: true });
+  comments.set(b, { id: b, file: f, side: 'additions', start: 5, end: 5, text: '', saved: false });
+  refreshItem(f);
+}
+
+// ── Toolbar ──────────────────────────────────────────────────────────────────
+const jump = $('jump');
+for (const f of data.files) {
+  const opt = document.createElement('option');
+  opt.value = f.path;
+  opt.textContent = f.path;
+  jump.appendChild(opt);
+}
+jump.addEventListener('change', () => {
+  viewer.scrollTo({ type: 'item', id: jump.value, align: 'start' });
+});
+
+$('styleToggle').addEventListener('click', () => {
+  diffStyle = diffStyle === 'split' ? 'unified' : 'split';
+  $('styleToggle').textContent = diffStyle === 'split' ? 'Unified view' : 'Split view';
+  createViewer();
+});
+
+// ── Submit ───────────────────────────────────────────────────────────────────
+$('finish').addEventListener('click', () => {
+  const drafts = [...comments.values()].filter((c) => !c.saved);
+  if (drafts.length > 0 && !confirm(`${drafts.length} unsaved draft comment(s) will be discarded. Continue?`)) {
+    return;
+  }
+  const saved = [...comments.values()].filter((c) => c.saved);
+  $('finish-summary').textContent =
+    saved.length === 0
+      ? 'No line comments. You can still leave an overall comment below.'
+      : `${saved.length} line comment(s) will be sent back to the session.`;
+  $('finish-overlay').hidden = false;
+  $('overall').focus();
+});
+$('finish-cancel').addEventListener('click', () => ($('finish-overlay').hidden = true));
+
+async function submit(verdict) {
+  const saved = [...comments.values()]
+    .filter((c) => c.saved)
+    .sort((a, b) => (a.file === b.file ? a.end - b.end : a.file < b.file ? -1 : 1));
+  const payload = {
+    verdict,
+    overall: $('overall').value.trim(),
+    comments: saved.map((c) => ({
+      file: c.file,
+      side: c.side === 'deletions' ? 'old' : 'new',
+      startLine: c.start,
+      endLine: c.end,
+      comment: c.text,
+    })),
+  };
+  const res = await fetch('/submit', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (res.ok) {
+    $('finish-overlay').hidden = true;
+    $('done-overlay').hidden = false;
+  } else {
+    alert('Submitting the review failed — is the server still running?');
+  }
+}
+$('finish-approve').addEventListener('click', () => submit('approve'));
+$('finish-request').addEventListener('click', () => submit('request_changes'));
+</script>
+</body>
+</html>
