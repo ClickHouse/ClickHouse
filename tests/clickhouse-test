@@ -1126,6 +1126,11 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
     settings_str = " ".join(
         [
             get_additional_client_options(args),
+            # The options above can repeat: they come from both the environment
+            # and `--client-option`. `add_effective_settings` adds this flag only
+            # while a test runs, and this collector runs from the hung check and
+            # the per-test timeout handler, where it may not be set.
+            "--allow_repeated_settings",
             "--allow_introspection_functions=1",
             "--skip_unavailable_shards=1",
         ]

@@ -41,7 +41,9 @@ public:
 #if USE_JIEBA
         Chinese,
 #endif
+#if USE_ICU
         Icu,
+#endif
 #if USE_MECAB
         Japanese,
 #endif
@@ -489,6 +491,8 @@ private:
     ChineseTokenizationGranularity granularity;
 };
 #endif
+
+#if USE_ICU
 /// Tokenizer based on ICU's word break iteration (UAX #29). For scripts without whitespace between
 /// words (e.g. Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so such text is
 /// split into meaningful word tokens rather than single characters.
@@ -512,6 +516,7 @@ struct IcuTokenizer final : public ITokenizerHelper<IcuTokenizer>
 private:
     String locale;
 };
+#endif
 
 /// The Japanese (MeCab) tokenizer is declared in its own header (`JapaneseTokenizer.h`) so that this
 /// widely-included header does not pull in `<mecab.h>`. `forEachToken` dispatches it via the base
@@ -598,12 +603,14 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             return;
         }
 #endif
+#if USE_ICU
         case ITokenizer::Type::Icu:
         {
             const auto & icu_tokenizer = assert_cast<const IcuTokenizer &>(tokenizer);
             detail::forEachTokenImpl(icu_tokenizer, data, length, callback);
             return;
         }
+#endif
 #if USE_MECAB
         case ITokenizer::Type::Japanese:
             /// Dispatch through the base virtual `nextInString` so this header needn't see the
