@@ -23,11 +23,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 /// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
 void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
-/// Rejects IN-subquery sets that cannot cross the distributed-plan fragment boundary (currently:
-/// sets backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, which has no transport channel in
-/// worker tasks). Called before the plan is cut into fragments; throws `SUPPORT_IS_DISABLED`.
-void validateSetsForDistributedPlan(QueryPlan::Node & root);
-
 /// Optimization (first pass) is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
 /// It return the number of updated layers of subtree if some change happened.

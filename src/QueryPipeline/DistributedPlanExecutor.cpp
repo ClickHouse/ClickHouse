@@ -82,7 +82,6 @@ namespace Setting
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
-    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ErrorCodes
@@ -655,9 +654,11 @@ ExchangeLookupPtr createExchangeLookup(
 
 static String serializeQueryPlan(const QueryPlan & query_plan, const ContextPtr & context)
 {
+    /// A shipped set must be complete, so the overflow mode is always throw;
+    /// `transfer_overflow_mode = 'break'` does not apply to it.
     const auto & settings = context->getSettingsRef();
     SizeLimits sets_transfer_limits(
-        settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+        settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], OverflowMode::THROW);
 
     WriteBufferFromOwnString out;
     query_plan.serializeForDistributedTask(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, sets_transfer_limits);

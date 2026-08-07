@@ -8,5 +8,5 @@
 50
 -- GLOBAL JOIN executes as a distributed join (no external table under the analyzer)
 1000
--- value-producing IN needs the explicit rewrite until sets are built at execution start
+-- value-producing IN builds its set once on the initiator
 50

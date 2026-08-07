@@ -18,7 +18,7 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Sinks/NullSink.h>
@@ -102,29 +102,6 @@ static QueryPlanOptimizationSettings makeInplaceBuildOptimizationSettings(const 
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.make_distributed_plan = false;
     return optimization_settings;
-}
-
-/// Distributes the set subquery itself: the values are deduplicated on the workers and the
-/// initiator receives the distinct values through the final gather, filling the set locally,
-/// so the set-filling step stays out of the fragments. A subquery that collapses to a single
-/// stage runs locally.
-static void convertSetSourceForDistributedPlan(QueryPlan & source_plan, const ContextPtr & context)
-{
-    /// The transfer limits bound the values while they are deduplicated, so an over-limit set
-    /// fails during the build instead of after full materialization and transfer. Truncating a
-    /// membership set would change results, so the mode is forced to throw; the check at task
-    /// serialization remains as the backstop for sets built without this step.
-    const auto & settings = context->getSettingsRef();
-    SizeLimits transfer_limits(
-        settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], OverflowMode::THROW);
-
-    auto header = source_plan.getCurrentHeader();
-    source_plan.addStep(
-        std::make_unique<DistinctStep>(header, transfer_limits, 0, header->getNames(), /*pre_distinct_=*/false));
-
-    QueryPlanOptimizationSettings optimization_settings(context);
-    source_plan.optimize(optimization_settings);
-    source_plan.convertToDistributed(optimization_settings);
 }
 
 static bool equals(const DataTypes & lhs, const DataTypes & rhs)
@@ -439,6 +416,22 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
     return plan;
 }
 
+void FutureSetFromSubquery::prepareForDistributedPlan(const ContextPtr & context)
+{
+    if (set_and_key->set->isCreated())
+        return;
+
+    /// Correlated subqueries contain PLACEHOLDER actions that cannot be executed standalone.
+    /// They will be decorrelated and executed as part of the outer query instead.
+    if (source && hasCorrelatedExpressions(source->getRootNode()))
+        return;
+
+    if (!set_and_key->set->hasExplicitSetElements())
+        set_and_key->set->fillSetElements();
+    if (source)
+        convertSetSourceForDistributedPlan(*source, context);
+}
+
 void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 {
     if (external_table_set)
@@ -453,15 +446,10 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
 
-    /// A distributed plan ships the set's elements to worker tasks: retain them, and skip the
-    /// cache, because a cached set was built elsewhere, without the elements.
     if (settings[Setting::make_distributed_plan])
     {
-        if (!set_and_key->set->hasExplicitSetElements())
-            set_and_key->set->fillSetElements();
+        prepareForDistributedPlan(context);
         prepared_sets_cache = nullptr;
-        if (source)
-            convertSetSourceForDistributedPlan(*source, context);
     }
 
     auto plan = build(network_transfer_limits, prepared_sets_cache);

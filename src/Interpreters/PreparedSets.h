@@ -185,6 +185,11 @@ public:
         const SizeLimits & network_transfer_limits,
         const PreparedSetsCachePtr & prepared_sets_cache);
 
+    /// Prepare the set for a distributed plan, which ships its values with the worker tasks:
+    /// retain the values, and make the source run as a distributed plan when its shape allows
+    /// it. The following `build` call must skip the cache: a cached set has no values.
+    void prepareForDistributedPlan(const ContextPtr & context);
+
     void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }
