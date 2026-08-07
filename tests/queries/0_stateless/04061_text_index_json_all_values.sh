@@ -14,13 +14,12 @@ function run_query()
 {
     local query=$1
     echo "$query"
-    $MY_CLICKHOUSE_CLIENT --query "$query"
-
     # Pick the text index record out of the structured plan by its own name, so that an
     # unrelated index stat (a MinMax stat, for instance, which some settings add) cannot
     # shift the assertion. 'Initial Parts'/'Initial Granules' are the preceding stat's
     # counters, which is what the 'selected/initial' text form prints.
     $MY_CLICKHOUSE_CLIENT --query "
+        $query;
         WITH
             assumeNotNull((SELECT explain FROM (EXPLAIN indexes = 1, json = 1 $query))) AS plan_json,
             extract(plan_json, '(\{[^{}]*\"Name\": \"json_idx\".*?\n *\})') AS idx
@@ -141,11 +140,9 @@ $MY_CLICKHOUSE_CLIENT --query "
     INSERT INTO tab VALUES (1, '{\"key1\": \"lazy dog jumps\", \"key2\": \"goodbye world\"}');
     INSERT INTO tab VALUES (2, '{\"key1\": \"quick silver\", \"num\": 42}');
     INSERT INTO tab VALUES (3, '{\"key1\": \"nothing special\", \"num\": 100}');
-"
 
-# The extra stat must be present for the rows below to mean anything. Count the two stats
-# by their own names, not the plan's lines, which any newly emitted field would also change.
-$MY_CLICKHOUSE_CLIENT --query "
+    -- The extra stat must be present for the rows below to mean anything. Count the two
+    -- stats by name, not the plan's lines, which any newly emitted field would also change.
     SELECT countIf(trimLeft(explain) = 'Min-Max'), countIf(trimLeft(explain) = 'Name: json_idx')
     FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE data.key1 = 'the quick brown fox' ORDER BY id);
 "

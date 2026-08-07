@@ -12,13 +12,12 @@ function run_query()
 {
     local query=$1
     echo "$query"
-    $MY_CLICKHOUSE_CLIENT --query "$query"
-
     # Pick the text index record out of the structured plan by its own name, so that an
     # unrelated index stat (a MinMax stat, for instance, which some settings add) cannot
     # shift the assertion. 'Initial Parts'/'Initial Granules' are the preceding stat's
     # counters, which is what the 'selected/initial' text form prints.
     $MY_CLICKHOUSE_CLIENT --query "
+        $query;
         WITH
             assumeNotNull((SELECT explain FROM (EXPLAIN indexes = 1, json = 1 $query))) AS plan_json,
             extract(plan_json, '(\{[^{}]*\"Name\": \"json_idx\".*?\n *\})') AS idx
