@@ -449,10 +449,19 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & data = this->data(place);
+
+        const IColumn * patch_column = columns[0];
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(patch_column))
+        {
+            if (nullable->isNullAt(row_num))
+                return;
+            patch_column = &nullable->getNestedColumn();
+        }
+
         KeyData sort_key;
         sort_key.set(*columns[1], row_num);
 
-        const auto & object_column = assert_cast<const ColumnObject &>(*columns[0]);
+        const auto & object_column = assert_cast<const ColumnObject &>(*patch_column);
         VectorWithMemoryTracking<typename Data::Entry> batch;
 
         ColumnObject::SortedPathsIterator iterator(object_column, row_num, /*skip_typed_nulls=*/true);

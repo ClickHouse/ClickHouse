@@ -535,5 +535,18 @@ FROM t_left_comp LEFT JOIN t_right_comp ON t_left_comp.id = t_right_comp.id;
 DROP TABLE t_left_comp;
 DROP TABLE t_right_comp;
 
+-- Outer join test where patch column itself comes from the nullable side of a LEFT JOIN.
+-- The NULL patch from unmatched rows must be ignored without crashing (e.g. Bad cast from ColumnNullable to ColumnObject).
+CREATE TABLE t_left_base (id UInt32) ENGINE = Memory;
+CREATE TABLE t_right_patches (id UInt32, patch JSON, ver UInt32) ENGINE = Memory;
+
+INSERT INTO t_left_base VALUES (1), (2);
+INSERT INTO t_right_patches VALUES (1, '{"x":100}', 1);
+
+SELECT toJSONString(mergedJSONPatch(t_right_patches.patch, t_right_patches.ver))
+FROM t_left_base LEFT JOIN t_right_patches ON t_left_base.id = t_right_patches.id;
+
+DROP TABLE t_left_base;
+DROP TABLE t_right_patches;
 
 DROP TABLE t_bad_sort_keys;
