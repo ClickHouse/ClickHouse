@@ -1463,6 +1463,11 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
                 /// The last resort, which needs nothing to be determined about the keys: the whole
                 /// condition is evaluated on candidate pairs inside the nested loop operator.
+                /// TODO: the operator could also take over the two paths below - the cartesian
+                /// product with a filter on top, and the disjunction of equi-clauses - both of which
+                /// it subsumes. Both work today, so taking them over needs perf validation first.
+                /// TODO: build the smaller side rather than always the right one, which means
+                /// swapping the inputs here as `IEJoinStep::swap_inputs` does.
                 bool can_use_block_nested_loop = BlockNestedLoopJoinStep::isSupportedJoinType(
                     join_operator.kind, join_operator.strictness);
 

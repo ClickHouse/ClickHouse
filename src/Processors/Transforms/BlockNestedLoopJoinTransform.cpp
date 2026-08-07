@@ -275,6 +275,9 @@ void BlockNestedLoopProbeTransform::work()
     }
 }
 
+/// TODO: prune tiles by interval arithmetic over the condition against the min/max of the tile's
+/// values on each side, to skip a provably-empty tile and to shortcut a provably-all-true one without
+/// evaluating the condition on it at all.
 size_t BlockNestedLoopProbeTransform::matchNextTile()
 {
     if (!current_build_block)

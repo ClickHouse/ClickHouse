@@ -178,6 +178,9 @@ void BlockNestedLoopJoinData::spillBlock(BuildBlockEntry & entry, const StoredBl
     entry.spill_ordinal = num_spilled_blocks.fetch_add(1, std::memory_order_relaxed);
 }
 
+/// TODO: a build side that does not fit in memory is spilled sequentially and re-read once per probe
+/// chunk. Grace partitioning - partitioning both sides on a monotone part of the condition, if any -
+/// would replace that with one pass per partition pair.
 bool BlockNestedLoopJoinData::spillInMemoryBlocks(size_t min_bytes)
 {
     std::lock_guard lock(mutex);

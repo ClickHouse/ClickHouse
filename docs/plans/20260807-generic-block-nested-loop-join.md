@@ -37,15 +37,21 @@ cartesian product and the predicate is evaluated above the join.
 ### Deliberately out of scope
 
 These are the follow-ups that make a BNL fast rather than merely correct. They are listed here so the
-first version is not accidentally scoped to include them, and so they are not forgotten:
+first version is not accidentally scoped to include them, and so they are not forgotten. Each is also
+recorded as a `TODO` at the code site where it would land, which is the only place for follow-up notes
+this repository has (see the decisions in task 11):
 
 - Per-tile min/max pruning: interval arithmetic over the predicate against each stored block's
-  min/max, to skip provably-empty tiles and shortcut provably-all-true ones.
+  min/max, to skip provably-empty tiles and shortcut provably-all-true ones
+  (`BlockNestedLoopJoinTransform.cpp`, `matchNextTile`).
 - Choosing the smaller side as the inner side (requires the planner to swap inputs, as
-  `IEJoinStep::swap_inputs` does for right-side `SEMI`/`ANTI`).
-- Grace partitioning when the build side does not fit memory (v1 spills sequentially instead).
+  `IEJoinStep::swap_inputs` does for right-side `SEMI`/`ANTI`) (`JoinStepLogical.cpp`, at the site
+  that selects the operator).
+- Grace partitioning when the build side does not fit memory (v1 spills sequentially instead)
+  (`BlockNestedLoopJoinData.cpp`, `spillInMemoryBlocks`).
 - Absorbing the existing `CROSS` + post-filter rewrite and the disjunctive path. Both work today;
-  taking them over risks regressions and needs perf validation first.
+  taking them over risks regressions and needs perf validation first (`JoinStepLogical.cpp`, at the
+  same site).
 
 ## Context (from discovery)
 
@@ -692,10 +698,34 @@ first version is not accidentally scoped to include them, and so they are not fo
 
 ### Task 11: [Final] Update documentation
 
-- [ ] update this plan with the decisions recorded during implementation (`WITH TOTALS`,
+- [x] update this plan with the decisions recorded during implementation (`WITH TOTALS`,
       `join_any_take_last_row`/etc)
-- [ ] add the follow-up optimizations from "Deliberately out of scope" to the repository's issue
-      tracker notes if a place for them exists
+- [x] add the follow-up optimizations from "Deliberately out of scope" to the repository's issue
+      tracker notes if a place for them exists (as `TODO` comments at the code sites - see below)
+
+**Decisions recorded in task 11**
+
+- The decisions taken while implementing were written down in each task's own section as that task
+  landed, so this task only had to reconcile the parts of the plan that describe the *design* with
+  what was actually built. `WITH TOTALS` is in task 3 (supported, with `JoinCommon::joinTotals`'
+  semantics), `join_any_take_last_row` in task 6 (ignored on this path), the spill trigger in task 7,
+  and the optimizer-pass audit in task 8.
+- "Technical Details" was rewritten where it had gone stale against the code: the store keeps
+  `BuildBlockEntry` rather than `StoredBlock` and hands blocks out by index through a
+  `BuildSideBlockReader`; `matched_flags` also covers `ANY INNER`; the happens-before edge is
+  `DelayedPortsProcessor` rather than the `FinishCounter`; the pipeline diagram now shows the two
+  `DelayedPortsProcessor`s and the totals transform; the tile is bounded in pairs by
+  `DEFAULT_BLOCK_SIZE` rather than by the output limit; the match mask comes from `FilterDescription`;
+  and the early exit is off for the kinds that pad unmatched build rows.
+- **The repository has no file for issue-tracker notes** - no `ROADMAP`, no `TODO` file, and the one
+  precedent in `docs/plans/completed/` records its follow-ups in the plan's own "Post-Completion"
+  section. The repository's actual convention for a deliberate limitation is a `/// TODO:` comment at
+  the code site (112 of them under `src/Processors/` alone), so each of the four follow-ups from
+  "Deliberately out of scope" is now stated as one there, next to the code that would change:
+  tile pruning at `matchNextTile`, grace partitioning at `spillInMemoryBlocks`, and both the
+  smaller-side swap and the takeover of the cross-plus-filter and disjunctive paths at the routing
+  site in `buildPhysicalJoinImpl`. The list in "Deliberately out of scope" now points at each site,
+  so the plan and the code do not drift apart.
 
 *Note: ralphex automatically moves completed plans to `docs/plans/completed/`*
 
@@ -703,17 +733,25 @@ first version is not accidentally scoped to include them, and so they are not fo
 
 ### Data structures
 
-`BlockNestedLoopJoinData` — shared between the build transform, every probe transform, and the
-unmatched-emit processor:
+`BlockNestedLoopJoinData` (`src/Processors/Transforms/BlockNestedLoopJoinData.h`) — shared between the
+build transform, every probe transform, and the unmatched-emit processor:
 
-- `std::vector<StoredBlock> blocks` plus the global row offset of each block, so a global build row
-  number maps to `(block, offset)` and stays stable when a block spills.
-- `total_rows`, `total_bytes`, `SizeLimits`.
-- `matched_flags` — allocated only for kinds that need them (`RIGHT`, `FULL`, right-driven
-  `SEMI`/`ANTI`). Written with relaxed atomics during the probe; the `FinishCounter` that ends the
-  probe phase provides the happens-before edge for the unmatched scan.
+- `std::vector<BuildBlockEntry> blocks` plus the global row offset of each block, so a global build
+  row number maps to `(block, offset)` and stays stable when a block spills. An entry holds a
+  `StoredBlock` (`ScatteredBlock.h:376`) that is in memory, compressed, or written out to the
+  temporary file and named only by its position in it; `num_rows` is kept either way. A block is
+  named by its index and read back through a `BuildSideBlockReader`, so there is no `getBlocks()`.
+- `total_rows`, `total_bytes` (the whole build side, spilled blocks included, which is what
+  `max_bytes_in_join` limits), `in_memory_bytes`, and `SizeLimits`.
+- `matched_flags` — one `std::atomic_bool` per build row, allocated by `finish` and only for the
+  kinds that need it: `RIGHT`, `FULL`, right-driven `SEMI`/`ANTI`, and `ANY INNER` (which claims a
+  build row so that each row of either side is taken at most once). Both the writes and the reads are
+  relaxed: a flag is only ever set, and the happens-before edge for the unmatched scan comes from the
+  pipeline — a probe stream finishes its output port only after its last write, and the
+  `DelayedPortsProcessor` above it observes that finish before the unmatched stage produces a row.
 
-The predicate, mirroring `IEJoinResidualCondition`:
+The predicate, mirroring `IEJoinResidualCondition` and living next to the probe transform in
+`src/Processors/Transforms/BlockNestedLoopJoinTransform.h`:
 
 ```cpp
 struct BlockNestedLoopPredicate
@@ -727,24 +765,50 @@ struct BlockNestedLoopPredicate
 ### Processing flow
 
 ```
-build pipeline  ─> resize(max_streams) ─> BlockNestedLoopBuildTransform x N ─┐
-                                                                             ├─> BlockNestedLoopJoinData
-probe pipeline  ─> resize(max_streams) ─> BlockNestedLoopProbeTransform x N ─┘
-                                                                             └─> UnmatchedBuildRows x N (RIGHT/FULL)
+build pipeline ─> resize(max_streams) ─> BlockNestedLoopBuildTransform x N ─> DelayedPortsProcessor ─┐
+                                                    │                              (main ports)     │
+                                                    v                                               │
+                                       BlockNestedLoopJoinData                                      │
+                                                    │                                               │
+probe pipeline ─> resize(max_streams) ─> BlockNestedLoopProbeTransform x N <──(delayed ports)────────┘
+                                                    │
+                                                    ├─> DelayedPortsProcessor ─> UnmatchedBuildRows x N
+                                                    │                            (RIGHT/FULL/RIGHT ANTI)
+                                                    └─> BlockNestedLoopTotals (WITH TOTALS)
 ```
+
+The build-then-probe edge is `QueryPipelineBuilder::addPipelineBefore`: the build transforms'
+empty-header output ports are the main ports of a `DelayedPortsProcessor` whose delayed ports are the
+probe streams and the probe totals stream. The unmatched-build-rows stage is a second
+`DelayedPortsProcessor`, this time with the probe streams as its main ports — the shape
+`joinPipelinesRightLeft` uses for `NonJoinedBlocksTransform`.
 
 Per probe chunk, per stored build block:
 
 1. Build the tile: `probe_tile[i] = ColumnReplicated(probe_col, repeat_each(i, build_rows))`,
-   `build_tile[j] = ColumnReplicated(build_col, tile_of(j))`. No source column is copied.
-2. Evaluate the predicate over the tile; a `Nullable` result's NULL counts as not matched.
-3. Append surviving `(probe_index, build_index)` pairs; set `matched_flags[build_index]` and the
-   per-probe-row match bit as required by the kind.
-4. When the accumulated pair count reaches `max_joined_block_size_rows` (or the byte estimate reaches
-   `max_joined_block_size_bytes`), materialise one output chunk and yield; the cursor state resumes
-   the walk on the next `work()`.
-5. For `ANY`/`SEMI`/`ANTI`, a probe row that has matched is excluded from subsequent tiles; when every
-   probe row in the chunk has matched, the build-side walk stops.
+   `build_tile[j] = ColumnReplicated(build_col, tile_of(j))` — but only where
+   `isLazyReplicationUseful` says the indirection beats a gather, mirroring `replicateColumnsLazily`.
+   The two sides do not share an index column, so a condition over both materialises the tile, which
+   is the intended bound: one tile rather than the cartesian product.
+2. Evaluate the predicate over the tile and turn the condition column into a match mask with
+   `FilterDescription`, which is where "a `Nullable` result's NULL is not a match" comes from,
+   together with the handling of a `LowCardinality`, `Sparse` or non-`UInt8` numeric condition.
+   `ConstantFilterDescription` short-cuts a condition that folded to a constant.
+3. Append the surviving `(probe row, row in block)` pairs, as many of them as the strictness selects
+   (`PairSelection`); set `matched_flags[build_index]` — or claim it with an atomic `exchange` for a
+   right-driven `ANY`/`SEMI` — and the per-probe-row match bit, where the kind needs them.
+4. When the accumulated pair count reaches `max_block_size` (`max_joined_block_size_rows`) or the byte
+   estimate reaches `max_block_bytes` (`max_joined_block_size_bytes`), materialise one output chunk
+   and yield; the cursor state resumes the walk on the next `work()`. An output chunk may span several
+   stored blocks, so the pairs carry a `BuildRun` per block, which keeps that block alive — the walk
+   may have passed it, and a compressed or spilled block would otherwise be read back twice.
+   `work` also yields with no output every `8 * max(DEFAULT_BLOCK_SIZE, max_block_size)` evaluated
+   pairs, so a walk that matches nothing stays cancellable.
+5. For a left-driven `ANY`/`SEMI`/`ANTI`, a probe row that has matched is excluded from subsequent
+   tiles; when every probe row in the chunk has matched, the build-side walk stops. This early exit is
+   off for the kinds that pad the build rows nothing matched (`RIGHT`/`FULL` with the old `ANY`, and
+   `RIGHT ANTI`), because a probe row that stopped early would leave build rows it would have matched
+   unflagged and the scan after the probe would emit them as unmatched.
 
 Unmatched rows are emitted by inserting each padded column's default, because `addToNullableIfNeeded`
 (`JoinStepLogical.cpp:175`) already made those columns `Nullable` in the pre-join actions when
@@ -752,10 +816,11 @@ Unmatched rows are emitted by inserting each padded column's default, because `a
 
 ### Tile sizing
 
-The tile row count is `probe_rows x build_block_rows`, which is bounded because build blocks are
-already bounded by `max_block_size` on the build pipeline. If a build block is large enough that the
-tile exceeds the output block limit, the walk splits the build block into sub-ranges rather than
-growing the tile.
+The tile is sized in pairs — `DEFAULT_BLOCK_SIZE` of them — independently of the output limit: it
+bounds the intermediate columns the condition is evaluated on, while the output chunk is cut to
+`max_block_size` when the accumulated pairs are materialised. A build block is therefore walked in
+sub-ranges of `max(1, DEFAULT_BLOCK_SIZE / probe_rows)` rows, so the tile never grows with the size of
+a build block.
 
 ## Post-Completion
 
