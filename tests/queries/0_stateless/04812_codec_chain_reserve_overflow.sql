@@ -1,7 +1,7 @@
 -- Tags: no-fasttest, no-parallel
 -- Tag no-fasttest: a codec chain long enough to overflow a 32-bit reserve needs a second or two.
--- Tag no-parallel: the 104-stage arm below allocates just under 4 GiB, and concurrent copies of
--- this test would share one per-user memory limit, which no query-level setting can raise.
+-- Tag no-parallel: the 104-stage arm below allocates just under 4 GiB against a per-user memory
+-- limit that concurrent copies of this test share, and that SET max_memory_usage = 0 does not lift.
 
 -- CompressionCodecMultiple compounded each stage's reserved size in a UInt32 without checking for
 -- overflow. Every codec reserves more than its input, so a long enough chain wrapped the reserve
@@ -20,6 +20,9 @@ DROP TABLE IF EXISTS t_codec_chain_overflow;
 DROP TABLE IF EXISTS t_codec_chain_fpc_max;
 DROP TABLE IF EXISTS t_codec_chain_fpc_over;
 DROP TABLE IF EXISTS t_codec_chain_gorilla_max;
+DROP TABLE IF EXISTS t_codec_chain_gorilla_over;
+DROP TABLE IF EXISTS t_codec_chain_dd_max;
+DROP TABLE IF EXISTS t_codec_chain_dd_over;
 DROP TABLE IF EXISTS t_codec_chain_short;
 DROP TABLE IF EXISTS t_codec_chain_255;
 DROP TABLE IF EXISTS t_codec_chain_256;
@@ -56,6 +59,28 @@ CREATE TABLE t_codec_chain_gorilla_max (i UInt32, x Float32 CODEC(Gorilla,Gorill
 INSERT INTO t_codec_chain_gorilla_max SELECT number, number / 7 FROM numbers(5000);
 SELECT count(), countIf(x != toFloat32(i / 7)) FROM t_codec_chain_gorilla_max;
 
+-- The reserve is compounded the same way whatever the codec, so the boundary below is Gorilla's own
+-- and one stage past it is rejected, as for FPC above. The three arms that follow pin the sibling
+-- formulas, so that rejection cannot silently narrow to FPC alone.
+CREATE TABLE t_codec_chain_gorilla_over (i UInt32, x Float32 CODEC(Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla)) ENGINE = MergeTree ORDER BY i
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
+             min_compress_block_size = 20000, max_compress_block_size = 20000;
+INSERT INTO t_codec_chain_gorilla_over SELECT number, number / 7 FROM numbers(5000); -- { serverError CANNOT_COMPRESS }
+SELECT count() FROM t_codec_chain_gorilla_over;
+
+-- DoubleDelta reserves more per stage still: 13 is the longest chain that fits, 14 is rejected.
+CREATE TABLE t_codec_chain_dd_max (i UInt32, x Float32 CODEC(DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta)) ENGINE = MergeTree ORDER BY i
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
+             min_compress_block_size = 20000, max_compress_block_size = 20000;
+INSERT INTO t_codec_chain_dd_max SELECT number, number / 7 FROM numbers(5000);
+SELECT count(), countIf(x != toFloat32(i / 7)) FROM t_codec_chain_dd_max;
+
+CREATE TABLE t_codec_chain_dd_over (i UInt32, x Float32 CODEC(DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta)) ENGINE = MergeTree ORDER BY i
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
+             min_compress_block_size = 20000, max_compress_block_size = 20000;
+INSERT INTO t_codec_chain_dd_over SELECT number, number / 7 FROM numbers(5000); -- { serverError CANNOT_COMPRESS }
+SELECT count() FROM t_codec_chain_dd_over;
+
 -- 255 codecs is the longest chain the one-byte count can describe. Delta does not expand, so the
 -- reserve stays small and only the count matters here.
 CREATE TABLE t_codec_chain_255 (i UInt32, x Float32 CODEC(Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,Delta,ZSTD)) ENGINE = MergeTree ORDER BY i;
@@ -76,6 +101,9 @@ DROP TABLE t_codec_chain_overflow;
 DROP TABLE t_codec_chain_fpc_max;
 DROP TABLE t_codec_chain_fpc_over;
 DROP TABLE t_codec_chain_gorilla_max;
+DROP TABLE t_codec_chain_gorilla_over;
+DROP TABLE t_codec_chain_dd_max;
+DROP TABLE t_codec_chain_dd_over;
 DROP TABLE t_codec_chain_short;
 DROP TABLE t_codec_chain_255;
 DROP TABLE t_codec_chain_256;
