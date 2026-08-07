@@ -356,16 +356,28 @@ public:
 
             void reserve(size_t capacity, EntryId max_entry_id)
             {
+                /// `std::vector::reserve` allocates exactly what it is asked for, so asking for the exact
+                /// required size would reallocate and copy the whole posting on every publication. Growing
+                /// geometrically keeps appending to a large posting amortized constant. The reservation must
+                /// still cover the whole batch, because the append that follows it runs after this
+                /// accounting point and must not allocate behind its back.
+                const auto grow = [](auto & values, size_t required)
+                {
+                    if (required <= values.capacity())
+                        return;
+                    values.reserve(std::max(required, values.capacity() + values.capacity() / 2));
+                };
+
                 if (wide.empty() && max_entry_id > std::numeric_limits<UInt32>::max())
                 {
-                    wide.reserve(capacity);
+                    grow(wide, capacity);
                     wide.assign(narrow.begin(), narrow.end());
                     std::vector<UInt32>().swap(narrow);
                 }
                 else if (wide.empty())
-                    narrow.reserve(capacity);
+                    grow(narrow, capacity);
                 else
-                    wide.reserve(capacity);
+                    grow(wide, capacity);
             }
 
             void push_back(EntryId entry_id)
