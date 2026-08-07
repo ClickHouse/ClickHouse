@@ -5687,15 +5687,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
             for (const auto & ttl : all_ttls)
             {
-                auto offending_expr = ttl_offending_expr(ttl);
-                if (!offending_expr)
-                    continue;
-                throw Exception(
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "ALTER of column {} changes the on-disk type of a subcolumn used by the TTL expression ({}); "
-                    "a metadata-only ALTER cannot recompute the TTL. Disable setting "
-                    "'allow_experimental_json_lazy_type_hints' to run this change as a full mutation, or drop the TTL",
-                    backQuoteIfNeed(command.column_name), offending_expr->formatForErrorMessage());
+                if (auto offending_expr = ttl_offending_expr(ttl))
+                    throw Exception(
+                        ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "ALTER of column {} changes the on-disk type of a subcolumn used by the TTL expression ({}); "
+                        "a metadata-only ALTER cannot recompute the TTL. Drop the TTL to run this change",
+                        backQuoteIfNeed(command.column_name), offending_expr->formatForErrorMessage());
+
+                /// GROUP BY ... SET assignments are stored as prebuilt ExpressionActions, not as an AST above.
+                for (const auto & set_part : ttl.set_parts)
+                    if (expression_uses_changed_subcolumn(set_part.expression))
+                        throw Exception(
+                            ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "ALTER of column {} changes the on-disk type of a subcolumn used by the TTL GROUP BY SET "
+                            "assignment to column '{}'; a metadata-only ALTER cannot recompute the TTL. Drop the TTL to run this change",
+                            backQuoteIfNeed(command.column_name), set_part.column_name);
             }
         }
     }

@@ -261,6 +261,16 @@ ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(ts Int64); -- { serverError A
 DROP TABLE t_json_key_safety;
 
 -- ============================================================
+-- REJECT: subcolumn feeds only a GROUP BY ... SET assignment (stored in set_parts, not in the
+-- time expression). The aggregated value column keeps stale bytes in already-aggregated parts.
+-- ============================================================
+CREATE TABLE t_json_key_safety (id UInt32, d DateTime, v String, j JSON(a Int32)) ENGINE = MergeTree ORDER BY id
+TTL d + INTERVAL 1 DAY GROUP BY id SET v = argMax(reinterpretAsString(j.a), d);
+SELECT 'GROUP BY SET TTL on subcolumn, subcolumn type change -> reject:';
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int64); -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+DROP TABLE t_json_key_safety;
+
+-- ============================================================
 -- REJECT: subcolumn feeds a RECOMPRESS TTL expression.
 -- ============================================================
 CREATE TABLE t_json_key_safety (id UInt32, j JSON(ts UInt32)) ENGINE = MergeTree ORDER BY id
@@ -331,6 +341,18 @@ SELECT 'TTL sibling change -> metadata-only mutations:',
 DETACH TABLE t_json_key_safety;
 ATTACH TABLE t_json_key_safety;
 SELECT 'TTL sibling change, read after reload:', id, j.a FROM t_json_key_safety ORDER BY id;
+DROP TABLE t_json_key_safety;
+
+-- GROUP BY SET assignment reads j.a; change sibling j.b (time expr is on plain column d).
+CREATE TABLE t_json_key_safety (id UInt32, d DateTime, v String, j JSON(a Int32, b Int32)) ENGINE = MergeTree ORDER BY id
+TTL d + INTERVAL 1 DAY GROUP BY id SET v = argMax(reinterpretAsString(j.a), d);
+INSERT INTO t_json_key_safety SELECT number, now(), '', toJSONString(map('a', number, 'b', number)) FROM numbers(4);
+ALTER TABLE t_json_key_safety MODIFY COLUMN j JSON(a Int32, b Int64);
+SELECT 'GROUP BY SET sibling change -> metadata-only mutations:',
+    count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_json_key_safety';
+DETACH TABLE t_json_key_safety;
+ATTACH TABLE t_json_key_safety;
+SELECT 'GROUP BY SET sibling change, read after reload:', id, j.a, j.b FROM t_json_key_safety ORDER BY id;
 DROP TABLE t_json_key_safety;
 
 -- ============================================================
