@@ -90,8 +90,7 @@
                 "products/cloud/guides/data-sources/secure-gcs",
                 "products/cloud/guides/data-sources/accessing-iceberg-data-securely"
               ]
-            },
-            "products/cloud/guides/migration/oss-to-cloud-backup-restore"
+            }
           ]
         },
         {
