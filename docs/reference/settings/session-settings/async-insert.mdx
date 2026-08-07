@@ -61,7 +61,9 @@ If auto-adjusting is enabled through async_insert_use_adaptive_busy_timeout, min
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed
+For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed.
+
+This setting only takes effect when [`deduplicate_insert`](/reference/settings/session-settings/deduplicate-insert#deduplicate_insert) is set to `backward_compatible_choice`.
 
 ## async_insert_max_data_size {#async_insert_max_data_size}
 
