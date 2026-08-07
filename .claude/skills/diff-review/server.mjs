@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // diff-review: serve pending git changes for in-browser review and collect the
-// user's comments. Zero npm dependencies; the UI loads @pierre/diffs from esm.sh.
+// user's comments. Zero npm dependencies; the UI renders with a vendored
+// @pierre/diffs bundle (see vendor/README.md) — nothing is loaded from a CDN.
 //
 // Usage:
 //   node server.mjs [--repo <path>] [--base <ref>] [--committed] [--port 3000] [--out <file>] [--no-open]
@@ -15,6 +16,7 @@
 import { createServer } from 'node:http';
 import { spawnSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { readFileSync, writeFileSync, lstatSync, readlinkSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -148,6 +150,19 @@ const DATA = JSON.stringify({
   skipped,
 });
 
+// Vendored UI dependencies (see vendor/README.md). The @pierre/diffs bundle was
+// built by esm.sh and imports its node polyfills by absolute path, so those are
+// served at the exact /node/*.mjs specifiers the bundle expects. Fixed
+// allowlist — nothing else under vendor/ or elsewhere is ever served.
+const VENDOR_FILES = new Map([
+  ['/vendor/pierre-diffs.mjs', { file: 'pierre-diffs-1.2.12.mjs.gz', gzipped: true }],
+  ['/node/process.mjs', { file: 'node_process.mjs' }],
+  ['/node/buffer.mjs', { file: 'node_buffer.mjs' }],
+  ['/node/events.mjs', { file: 'node_events.mjs' }],
+  ['/node/tty.mjs', { file: 'node_tty.mjs' }],
+  ['/node/async_hooks.mjs', { file: 'node_async_hooks.mjs' }],
+]);
+
 // ── HTTP server ──────────────────────────────────────────────────────────────
 const server = createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -163,6 +178,22 @@ const server = createServer((req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain' });
       res.end('ok');
     }, ms);
+  } else if (req.method === 'GET' && VENDOR_FILES.has(url.pathname)) {
+    const { file, gzipped } = VENDOR_FILES.get(url.pathname);
+    const buf = readFileSync(join(__dirname, 'vendor', file));
+    if (!gzipped) {
+      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
+      res.end(buf);
+    } else if ((req.headers['accept-encoding'] ?? '').includes('gzip')) {
+      res.writeHead(200, {
+        'content-type': 'text/javascript; charset=utf-8',
+        'content-encoding': 'gzip',
+      });
+      res.end(buf);
+    } else {
+      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8' });
+      res.end(gunzipSync(buf));
+    }
   } else if (req.method === 'GET' && url.pathname === '/data') {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
     res.end(DATA);

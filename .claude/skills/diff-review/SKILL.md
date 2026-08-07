@@ -30,7 +30,9 @@ line comments, and hands them back to you as JSON. You must address every commen
      `--base $(git merge-base origin/master HEAD) --committed`.
    - The server prints the URL, opens the user's browser automatically, and stays
      alive until the user clicks **Finish review** in the UI, then exits 0.
-   - The UI loads `@pierre/diffs` from esm.sh, so the browser needs network access.
+   - The UI is fully self-contained: `@pierre/diffs` is vendored (see
+     `vendor/README.md`), so no network access is needed and no third-party CDN
+     ever sees the diff.
 
 2. Tell the user the review is ready at `http://localhost:3000`, then **wait**.
    Do not poll and do not proceed with the commit/PR — you will be notified when
