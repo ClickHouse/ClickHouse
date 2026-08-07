@@ -385,9 +385,18 @@ public:
 
     void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
     {
-        /// Mirrors insertResultInto: these are the cases where it transfers into `to` itself.
+        /// Mirrors insertResultInto: it either transfers into `to` itself, or appends one null-map
+        /// entry and transfers into the nested column.
         if (!result_is_nullable || inner_nullable)
+        {
             nested_function->reserveForInsertResult(place, to);
+        }
+        else
+        {
+            ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
+            col.getNullMapData().reserve(col.getNullMapData().size() + 1);
+            nested_function->reserveForInsertResult(place, col.getNestedColumn());
+        }
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

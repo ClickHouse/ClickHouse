@@ -33,6 +33,17 @@ for lim in 200000000 285000000 400000000; do
          FORMAT Null" >/dev/null 2>&1
 done
 
+# `-OrNull` around a Tuple-of-`-State` result: `Tuple` can be inside `Nullable`, so the result really
+# is `Nullable(Tuple(...))` and the transfer goes into the nested column. The outer `-Tuple` reserves
+# each element by asking the element function, so a nullable wrapper that reserved nothing left the
+# window open. Segfaults at 360000000 on an unfixed server.
+for lim in 340000000 360000000 380000000; do
+    $CLICKHOUSE_CLIENT --max_threads 1 --max_memory_usage $lim --max_rows_to_read 0 --query \
+        "SELECT groupArrayStateResampleTupleOrNullTuple(0, 1048576, 1)(((number, number + 1), (number + 2, number + 3)), ((number % 20, number % 20), (number % 20, number % 20)))
+         FROM numbers(100000)
+         FORMAT Null" >/dev/null 2>&1
+done
+
 # The server is still up: correct results are produced without a memory limit.
 $CLICKHOUSE_CLIENT --query \
     "SELECT arrayMap(x -> finalizeAggregation(x), groupArrayStateResample(0, 5, 1)(number, number % 5)) FROM numbers(20)"
