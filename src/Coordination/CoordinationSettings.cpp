@@ -58,6 +58,7 @@ namespace ErrorCodes
     DECLARE(NonZeroUInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_requests_append_bytes_size, 10*1024*1024, "Max size in bytes of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_flush_batch_size, 1000, "Max size of batch of requests that can be flushed together", 0) \
+    DECLARE(UInt64, min_time_between_fsyncs_ms, 5, "Min time between changelog flushes (fsyncs if force_sync is enabled), counted from the start of the previous flush. Flush requests that arrive earlier are delayed to batch more appends into one flush", 0) \
     DECLARE(UInt64, max_requests_quick_batch_size, 100, "Obsolete setting, does nothing." , SettingsTierType::OBSOLETE) \
     DECLARE(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consensus with similar speed", HOT_RELOAD) \
     DECLARE(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
