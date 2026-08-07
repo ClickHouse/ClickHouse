@@ -7,12 +7,25 @@ examples made of a query and the response it produces. The same content is expos
 `system.documentation` table and published on the website, so a broken example is a broken
 documentation page.
 
-This runner takes every example from a running server, executes it, and compares the output with
+This runner takes the examples from a running server, executes them, and compares the output with
 the response the documentation claims. The examples of one entity are executed in order in a single
 session and in a database of their own, because a documentation page is written to be followed from
 top to bottom: one example commonly creates the table that a later example queries.
 
-Each example gets one of three outcomes:
+The runner covers the structured `examples` fields of the embedded documentation - the ones
+`FunctionDocumentation::examplesAsString` renders as unquoted ```sql title=Query fences. Examples
+spelled by hand inside free-form description Markdown (quoted ```sql title="Query" fences, often
+paired with `text`, `json` or unmarked response fences) are not parsed and not run; extending the
+parser to that form is a known follow-up, so edits to those pages are not checked by this runner
+yet.
+
+An example whose statements create global, server-wide objects (users, roles, quotas, databases)
+cannot be isolated inside the scratch database of its entity, so by default it is skipped and
+reported as `skipped`: the runner can be pointed at an arbitrary existing server, and must not
+touch global state there. Pass `--global-objects` to run these examples too - which is only safe
+against a dedicated server, such as the one the CI job starts for the purpose.
+
+Each example that runs gets one of three outcomes:
 
   * `ok`     - the example ran, and its output matches the documented response (or the example
                documents no response, or it documents an exception and indeed threw it);
@@ -86,6 +99,19 @@ OUTPUT_SETTINGS = {
 OK, ERROR, OUTPUT = "ok", "error", "output"
 # Not an outcome, only a known-failures entry: accept whatever this example does.
 UNSTABLE = "unstable"
+# The example creates global, server-wide objects and `--global-objects` was not given.
+SKIPPED = "skipped"
+
+# A statement that creates, changes or removes an object that lives outside the scratch database of
+# the entity: RBAC objects, databases, named collections, and the grants that go with them. Such an
+# example cannot run concurrently with another invocation of itself, and must not run against a
+# server that is not dedicated to this check.
+GLOBAL_OBJECT_RE = re.compile(
+    r"^\s*(?:CREATE|ATTACH|ALTER|DROP|RENAME)\s+(?:OR\s+REPLACE\s+)?"
+    r"(?:USER|ROLE|ROW\s+POLICY|QUOTA|SETTINGS\s+PROFILE|PROFILE|DATABASE|NAMED\s+COLLECTION)\b"
+    r"|^\s*(?:GRANT|REVOKE)\b",
+    re.IGNORECASE,
+)
 
 
 class Example:
@@ -104,6 +130,10 @@ class Example:
     @property
     def expects_exception(self):
         return bool(DOCUMENTED_EXCEPTION_RE.match(self.result))
+
+    @property
+    def creates_global_objects(self):
+        return any(GLOBAL_OBJECT_RE.match(statement) for statement in split_statements(self.query))
 
     @property
     def output_format(self):
@@ -263,7 +293,7 @@ def normalize(text):
 RUN_ID = uuid.uuid4().hex[:8]
 
 
-def run_entity(client, entity_index, examples):
+def run_entity(client, entity_index, examples, global_objects):
     """Run all examples of one entity, in order, in one session and one database of its own."""
     database = f"docs_examples_{RUN_ID}_{entity_index}"
     session = f"docs_examples_{RUN_ID}_{entity_index}"
@@ -275,7 +305,13 @@ def run_entity(client, entity_index, examples):
 
     try:
         for example in examples:
-            outcomes.append(run_example(client, database, session, example))
+            if not global_objects and example.creates_global_objects:
+                outcomes.append(Outcome(
+                    example, SKIPPED,
+                    "The example creates global, server-wide objects; pass --global-objects to run it",
+                ))
+            else:
+                outcomes.append(run_example(client, database, session, example))
     finally:
         client.query(f"DROP DATABASE IF EXISTS {database} SYNC")
 
@@ -362,11 +398,14 @@ def load_known_failures(path):
 def save_known_failures(path, outcomes, known):
     """Write the baseline, keeping the comment of every entry that is still there."""
     unstable = {i for i, (status, _) in known.items() if status == UNSTABLE}
-    entries = [
-        (o.example, UNSTABLE if o.example.id in unstable else o.status)
-        for o in outcomes
-        if o.status != OK or o.example.id in unstable
-    ]
+    entries = []
+    for o in outcomes:
+        # A skipped example did not run, so nothing new is known about it: keep its entry as it is.
+        if o.status == SKIPPED:
+            if o.example.id in known:
+                entries.append((o.example, known[o.example.id][0]))
+        elif o.status != OK or o.example.id in unstable:
+            entries.append((o.example, UNSTABLE if o.example.id in unstable else o.status))
     entries.sort(key=lambda e: (e[0].entity_type, e[0].entity_name, e[0].index))
     width = max((len(e[0].id) for e in entries), default=0)
     with open(path, "w", encoding="utf-8") as f:
@@ -393,9 +432,12 @@ HEADER = """\
 def classify(outcome, known):
     """The verdict of one outcome against the baseline: how the run treats it.
 
-    `ok` and `known` pass. `unstable` passes whatever the status is. `unexpected` fails the run,
-    and so does `fixed`, because the baseline entry has to be removed.
+    `ok` and `known` pass. `unstable` passes whatever the status is. `skipped` passes as well: the
+    example did not run, so nothing can be said about it, and its baseline entry, if any, is kept.
+    `unexpected` fails the run, and so does `fixed`, because the baseline entry has to be removed.
     """
+    if outcome.status == SKIPPED:
+        return SKIPPED
     known_status = known.get(outcome.example.id, (None, ""))[0]
     if known_status == UNSTABLE:
         return "unstable"
@@ -417,10 +459,14 @@ def report(outcomes, known, verbose):
     stale = stale_entries(outcomes, known)
 
     total = len(outcomes)
-    failing = sum(1 for o in outcomes if o.status != OK)
+    skipped = sum(1 for o in outcomes if o.status == SKIPPED)
+    failing = sum(1 for o in outcomes if o.status not in (OK, SKIPPED))
     entities = {(o.example.entity_type, o.example.entity_name) for o in outcomes}
-    print(f"\nRan {total} examples of {len(entities)} entities: "
-          f"{total - failing} ok, {failing} not ok ({len(known)} known)")
+    print(f"\nRan {total - skipped} examples of {len(entities)} entities: "
+          f"{total - skipped - failing} ok, {failing} not ok ({len(known)} known)")
+    if skipped:
+        print(f"{skipped} example(s) create global, server-wide objects and were skipped;"
+              " pass --global-objects to run them against a dedicated server")
 
     if unexpected:
         print(f"\n{len(unexpected)} example(s) unexpectedly not ok:\n")
@@ -470,6 +516,12 @@ def main():
     parser.add_argument("--known-failures", default=DEFAULT_KNOWN_FAILURES)
     parser.add_argument("--update-known-failures", action="store_true", help="rewrite the known failures from this run")
     parser.add_argument("--filter", help="run only the entities whose name matches this regular expression")
+    parser.add_argument(
+        "--global-objects",
+        action="store_true",
+        help="run the examples that create global, server-wide objects (users, roles, databases);"
+        " only safe against a server dedicated to this check",
+    )
     parser.add_argument("--report", help="write the outcome of every example to this file, as JSON")
     parser.add_argument("--verbose", action="store_true", help="list the outcome of every example")
     args = parser.parse_args()
@@ -498,7 +550,10 @@ def main():
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         outcomes = [
             outcome
-            for group in pool.map(lambda i: run_entity(client, i, by_entity[entities[i]]), range(len(entities)))
+            for group in pool.map(
+                lambda i: run_entity(client, i, by_entity[entities[i]], args.global_objects),
+                range(len(entities)),
+            )
             for outcome in group
         ]
 

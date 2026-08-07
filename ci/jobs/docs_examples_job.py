@@ -141,8 +141,10 @@ def main():
         def run():
             # Not piped into `tee`: the shell praktika runs commands with has neither `PIPESTATUS`
             # nor `pipefail`, so the exit code of the runner would be lost.
+            # `--global-objects`: the server above is started for this job alone, so the examples
+            # that create users, roles or databases can run without disturbing anything.
             ok = Shell.check(
-                f"python3 ./tests/docs_examples/runner.py --report {REPORT} > {RUNNER_LOG} 2>&1",
+                f"python3 ./tests/docs_examples/runner.py --global-objects --report {REPORT} > {RUNNER_LOG} 2>&1",
                 verbose=True,
             )
             print(Shell.get_output(f"cat {RUNNER_LOG}"))
