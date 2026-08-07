@@ -431,7 +431,7 @@ AggregateFunctionPtr createAggregateFunctionArgMinMax(
             return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataString>, isMin>(
                 argument_types, return_both));
 
-        if (canUseFieldForValueData(value_type))
+        if (shouldUseFieldForValueData(value_type))
             return AggregateFunctionPtr(
                 new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataGeneric>, isMin>(
                     argument_types, return_both));

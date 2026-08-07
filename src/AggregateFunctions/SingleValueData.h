@@ -356,7 +356,7 @@ struct SingleValueDataGenericWithColumn final : public SingleValueDataBase
 
 private:
     using Self = SingleValueDataGenericWithColumn;
-    ColumnPtr value;
+    MutableColumnPtr value; /// exclusively owned, so it can be mutated in place on replacement
 
 public:
     bool has() const override { return value.operator bool(); }
@@ -409,7 +409,7 @@ struct SingleValueReference final : public SingleValueDataBase
 
 static_assert(sizeof(SingleValueReference) <= SingleValueDataBase::MAX_STORAGE_SIZE, "Incorrect size of SingleValueReference struct");
 
-bool canUseFieldForValueData(const DataTypePtr & value_type);
+bool shouldUseFieldForValueData(const DataTypePtr & value_type);
 
 /// min, max, any, anyLast, anyHeavy, etc...
 template <template <typename, bool...> class AggregateFunctionTemplate, bool unary, bool... isMin>
@@ -437,7 +437,7 @@ createAggregateFunctionSingleValue(const String & name, const DataTypes & argume
     if (which.idx == TypeIndex::String)
         return new AggregateFunctionTemplate<SingleValueDataString, isMin...>(argument_types);
 
-    if (canUseFieldForValueData(value_type))
+    if (shouldUseFieldForValueData(value_type))
         return new AggregateFunctionTemplate<SingleValueDataGeneric, isMin...>(argument_types);
     return new AggregateFunctionTemplate<SingleValueDataGenericWithColumn, isMin...>(argument_types);
 }

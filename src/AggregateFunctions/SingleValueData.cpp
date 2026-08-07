@@ -1,4 +1,6 @@
 #include <AggregateFunctions/SingleValueData.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -6,6 +8,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
+#include <Common/typeid_cast.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
@@ -1518,7 +1521,7 @@ bool SingleValueDataGeneric::setIfSmaller(const IColumn & column, size_t row_num
     column.get(row_num, new_value);
     if (new_value < value)
     {
-        value = new_value;
+        value = std::move(new_value);
         return true;
     }
     return false;
@@ -1547,7 +1550,7 @@ bool SingleValueDataGeneric::setIfGreater(const IColumn & column, size_t row_num
     column.get(row_num, new_value);
     if (new_value > value)
     {
-        value = new_value;
+        value = std::move(new_value);
         return true;
     }
     return false;
@@ -1610,19 +1613,60 @@ bool SingleValueDataGenericWithColumn::isEqualTo(const SingleValueDataBase & oth
     return has() && to.has() && !to.value->compareAt(0, 0, *value, -1);
 }
 
+namespace
+{
+/// ColumnAggregateFunction shares state ownership via `src`, reassigned on mutation - reusing
+/// it in place can drop a reference another column depends on. ColumnLowCardinality::popBack
+/// never shrinks the dictionary. Checked recursively over the whole column.
+bool mustAvoidInPlaceReuse(const IColumn & column)
+{
+    auto is_unsafe_column = [](const IColumn & col)
+    { return typeid_cast<const ColumnAggregateFunction *>(&col) || typeid_cast<const ColumnLowCardinality *>(&col); };
+
+    if (is_unsafe_column(column))
+        return true;
+
+    bool found = false;
+    column.forEachSubcolumnRecursively([&](const IColumn & sub) { found |= is_unsafe_column(sub); });
+    return found;
+}
+}
+
 void SingleValueDataGenericWithColumn::set(const IColumn & column, size_t row_num, Arena *)
 {
+    /// Reuse the exclusively-owned, structurally-matching stored column instead of reallocating.
+    /// Both sides are checked: structureEquals doesn't imply the same runtime layout (e.g. two
+    /// Dynamic columns of the same declared type can have different active variants).
+    if (value && value->structureEquals(column) && !mustAvoidInPlaceReuse(*value) && !mustAvoidInPlaceReuse(column))
+    {
+        value->popBack(1);
+        try
+        {
+            value->insertFrom(column, row_num);
+        }
+        catch (...)
+        {
+            value = nullptr; /// keep the invariant: non-null value holds exactly one row
+            throw;
+        }
+        return;
+    }
+
+    /// No reserve(1): for ColumnArray it sizes the nested column for 1 element, which insertFrom
+    /// then has to reallocate anyway for multi-element rows.
     auto new_value = column.cloneEmpty();
-    new_value->reserve(1);
     new_value->insertFrom(column, row_num);
-    value = removeSpecialRepresentations(std::move(new_value));
+    value = IColumn::mutate(removeSpecialRepresentations(std::move(new_value)));
 }
 
 void SingleValueDataGenericWithColumn::set(const SingleValueDataBase & other, Arena *)
 {
+    /// Deep-copies rather than aliasing: set() above mutates the stored column in place, so a
+    /// shared ColumnPtr would let one state corrupt another's value (same bug class as #108928).
     auto const & to = assert_cast<const Self &>(other);
-    if (other.has())
-        value = to.value;
+    if (!to.has() || this == &to)
+        return;
+    set(*to.value, 0, nullptr);
 }
 
 bool SingleValueDataGenericWithColumn::setIfSmaller(const IColumn & column, size_t row_num, Arena * arena)
@@ -1646,7 +1690,7 @@ bool SingleValueDataGenericWithColumn::setIfSmaller(const SingleValueDataBase & 
     auto const & to = assert_cast<const Self &>(other);
     if (to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) < 0))
     {
-        value = to.value;
+        set(*to.value, 0, nullptr);
         return true;
     }
     return false;
@@ -1673,7 +1717,7 @@ bool SingleValueDataGenericWithColumn::setIfGreater(const SingleValueDataBase & 
     auto const & to = assert_cast<const Self &>(other);
     if (to.has() && (!has() || to.value->compareAt(0, 0, *value, -1) > 0))
     {
-        value = to.value;
+        set(*to.value, 0, nullptr);
         return true;
     }
     return false;
@@ -1755,19 +1799,31 @@ bool SingleValueReference::setIfGreater(const SingleValueDataBase & /*other*/, A
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SingleValueReference::setIfGreater is not implemented");
 }
 
-bool canUseFieldForValueData(const DataTypePtr & value_type)
+bool shouldUseFieldForValueData(const DataTypePtr & value_type)
 {
-    bool result = true;
+    bool needs_column = false;
+    bool has_array = false;
+    bool has_aggregate_function = false;
     auto check = [&](const IDataType & type)
     {
-        /// Variant, Dynamic and Object types doesn't work well with Field
-        /// because they can store values of different data types in a single column.
-        result &= !isVariant(type) && !isDynamic(type) && !isObject(type);
+        /// Variant, Dynamic and Object don't work well with Field (mixed types in one column).
+        needs_column |= isVariant(type) || isDynamic(type) || isObject(type);
+        has_array |= isArray(type);
+        has_aggregate_function |= WhichDataType(type).isAggregateFunction();
     };
 
     check(*value_type);
     value_type->forEachChild(check);
-    return result;
+
+    if (needs_column)
+        return false;
+
+    /// Array is faster via SingleValueDataGenericWithColumn, but AggregateFunction serializes
+    /// differently as a column (no length prefix), so keep Field when both are present.
+    if (has_array && !has_aggregate_function)
+        return false;
+
+    return true;
 };
 
 void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMemoryBlock & data)
@@ -1807,7 +1863,7 @@ void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMe
         return;
     }
 
-    if (canUseFieldForValueData(type))
+    if (shouldUseFieldForValueData(type))
     {
         static_assert(sizeof(SingleValueDataGeneric) <= sizeof(SingleValueDataBaseMemoryBlock::memory));
         static_assert(alignof(SingleValueDataGeneric) <= alignof(SingleValueDataBaseMemoryBlock));
