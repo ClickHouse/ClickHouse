@@ -207,7 +207,9 @@ public:
             }
 
             /// Conditional aggregation, the two-argument kinds and the higher moments stay on the
-            /// generic per-row path.
+            /// generic per-row path, as does `Nullable` through `addBatchSinglePlaceNotNull`. Those
+            /// forms still gain for `Decimal128`, where `convertOne` alone is worth about 45%, but
+            /// not for the narrower types, where the batched loop is the whole gain.
             Base::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
         }
         else
