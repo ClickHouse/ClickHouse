@@ -5920,8 +5920,8 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
             restarting_thread.run();
             /// The task may still be deactivated here by an earlier startup attempt whose cleanup
             /// called shutdown(false), in which case the inline run() above could not re-arm itself.
-            /// Activate and schedule so the task is owned by the pool in every case.
-            restarting_thread.start(true);
+            /// Arm it so the task is owned by the pool in every case.
+            restarting_thread.ensureArmed();
         }
         else
         {

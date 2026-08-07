@@ -71,6 +71,14 @@ void ReplicatedMergeTreeRestartingThread::start(bool schedule)
         task->activate();
 }
 
+void ReplicatedMergeTreeRestartingThread::ensureArmed()
+{
+    LOG_TRACE(log, "Making sure the restarting thread is armed");
+    task->activate();
+    /// overwrite=false keeps a delay that is already armed, so only a refused re-arm is replaced.
+    task->scheduleAfter(0, /*overwrite=*/false);
+}
+
 void ReplicatedMergeTreeRestartingThread::wakeup()
 {
     task->schedule();

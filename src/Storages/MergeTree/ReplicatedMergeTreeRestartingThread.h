@@ -27,6 +27,9 @@ public:
 
     void start(bool schedule);
 
+    /// Activate the task and arm a retry only if it is not armed already.
+    void ensureArmed();
+
     void wakeup();
 
     void shutdown(bool part_of_full_shutdown);
