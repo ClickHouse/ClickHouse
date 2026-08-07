@@ -3143,6 +3143,7 @@ class ClickHouseCluster:
                         self.base_rabbitmq_cmd + ["logs"], stdout=f
                     )
                 rabbitmq_debuginfo(self.rabbitmq_docker_id, self.rabbitmq_cookie)
+                break
             except Exception as ex:
                 logging.debug("Unable to get logs from docker: %s:", ex)
                 time.sleep(0.5)
