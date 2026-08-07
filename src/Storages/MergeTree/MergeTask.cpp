@@ -164,7 +164,6 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
@@ -546,13 +545,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ProfileEvents::increment(ProfileEvents::Merge);
     ProfileEvents::increment(ProfileEvents::MergeSourceParts, global_ctx->future_part->parts.size());
 
-    String local_tmp_prefix;
-    if (global_ctx->need_prefix)
-    {
-        // projection parts have different prefix and suffix compared to normal parts.
-        // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
-        local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
-    }
+    // projection parts have different prefix and suffix compared to normal parts.
+    // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
+    String local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
 
     const String local_tmp_suffix = global_ctx->parent_part ? global_ctx->suffix : "";
 
@@ -586,20 +581,26 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// dedicated arena (same as `MergeTreeData::loadDataPart` / `DataPartsExchange`). The rest of
     /// `prepare` (storage snapshot, column extraction, pipeline/transform setup) is merge-lifetime
     /// scratch and is deliberately left in the default per-CPU arenas.
+    /// The name is deterministic (`tmp_merge_<part>`), so claim it and reclaim a leftover of an
+    /// interrupted merge. Projection merges write nested inside the parent's directory, which has no claim.
+    if (!global_ctx->parent_part)
+        global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
+
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
         std::optional<MergeTreeDataPartBuilder> builder;
         if (global_ctx->parent_part)
         {
-            auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename,  /* use parent transaction */ false);
-            builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings());
+            /// Non-initializing, so nothing is seeded from an existing directory.
+            auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjectionNoInitialize(local_tmp_part_basename,  /* use parent transaction */ false);
+            builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings(), PartDirIntent::CreateFresh);
             builder->withParentPart(global_ctx->parent_part);
         }
         else
         {
             auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, global_ctx->disk, 0);
-            builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename, getReadSettings()));
+            builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename, getReadSettings(), PartDirIntent::CreateFresh));
             builder->withPartStorageType(global_ctx->future_part->part_format.storage_type);
         }
 
@@ -610,15 +611,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
-    if (data_part_storage->exists())
-        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
+    /// Top-level merges are covered by the claim above. A projection merge writes into a directory this
+    /// same operation just created, so finding one means a logic bug.
+    if (global_ctx->parent_part && data_part_storage->exists())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection merge directory {} already exists", data_part_storage->getFullPath());
 
     data_part_storage->beginTransaction();
-
-    /// Background temp dirs cleaner will not touch tmp projection directory because
-    /// it's located inside part's directory
-    if (!global_ctx->parent_part)
-        global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
@@ -1538,7 +1536,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(),
+            *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
             global_ctx->compression_codec, ++ctx->projection_block_num, global_ctx->context);
 
         tmp_part->finalize();
@@ -1581,7 +1579,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(),
+                *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
                 global_ctx->compression_codec, ++ctx->projection_block_num, global_ctx->context);
 
             temp_part->finalize();
@@ -2239,7 +2237,6 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             global_ctx->deduplicate_by_columns,
             global_ctx->cleanup,
             projection_merging_params,
-            global_ctx->need_prefix,
             projection,
             global_ctx->new_data_part.get(),
             projection->with_parent_part_offset ? global_ctx->merged_part_offsets : nullptr,
