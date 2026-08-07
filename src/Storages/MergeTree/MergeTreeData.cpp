@@ -69,6 +69,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/stripArtificialParens.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -10491,9 +10492,16 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
+    /// The `parenthesized` flag is cosmetic, but only one of the two tables may carry it (one was
+    /// declared `PARTITION BY (a)` and the other `PARTITION BY a`), which would make two identical
+    /// definitions differ as text.
     auto query_to_string = [] (const ASTPtr & ast)
     {
-        return ast ? ast->formatWithSecretsOneLine() : "";
+        if (!ast)
+            return String{};
+        auto cloned = ast->clone();
+        stripArtificialParens(*cloned);
+        return cloned->formatWithSecretsOneLine();
     };
 
     if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
@@ -10509,7 +10517,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
         != query_to_string(src_snapshot->getPrimaryKey().expression_list_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
 
-    const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)
+    const auto check_definitions = [this, &query_to_string](const auto & my_descriptions, const auto & src_descriptions)
     {
         bool strict_match = (*getSettings())[MergeTreeSetting::enforce_index_structure_match_on_partition_manipulation];
         if ((my_descriptions.size() < src_descriptions.size()) ||
@@ -10518,10 +10526,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
         std::unordered_set<std::string> my_query_strings;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(description.definition_ast->formatWithSecretsOneLine());
+            my_query_strings.insert(query_to_string(description.definition_ast));
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(src_description.definition_ast->formatWithSecretsOneLine()))
+            if (!my_query_strings.contains(query_to_string(src_description.definition_ast)))
                 return false;
 
         return true;

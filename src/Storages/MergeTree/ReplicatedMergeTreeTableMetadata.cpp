@@ -5,6 +5,7 @@
 #include <Storages/IndicesDescription.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/stripArtificialParens.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -31,18 +32,6 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int METADATA_MISMATCH;
-}
-
-/// User-written parentheses around individual key elements (e.g. `PRIMARY KEY (col)`) are
-/// syntactically meaningless in stored metadata. Strip them so the canonical form matches
-/// what `KeyDescription::parse` produces when reading metadata back from ZooKeeper.
-static void stripArtificialParens(IAST & ast)
-{
-    ast.setParenthesized(false);
-    if (auto * list = ast.as<ASTExpressionList>())
-        for (auto & child : list->children)
-            if (child)
-                child->setParenthesized(false);
 }
 
 static String formattedAST(const ASTPtr & ast)

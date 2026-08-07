@@ -25,9 +25,13 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
+#include <Core/Defines.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/stripArtificialParens.h>
 
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -117,6 +121,35 @@ std::string formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
+    /// The metadata below is written to Keeper and compared as text against the metadata a
+    /// server of any other version wrote there, so it must not depend on whether the user
+    /// happened to write `PRIMARY KEY (key)` or `PRIMARY KEY key`.
+    auto cloned = ast->clone();
+    stripArtificialParens(*cloned);
+    return cloned->formatWithSecretsOneLine();
+}
+
+/// Versions 26.5 and 26.6 stored the primary key with the parentheses the user wrote
+/// (`(key)` instead of `key`), so a table created by one of them is still out there and has to
+/// be recognized. Re-format the stored expression without them before comparing.
+std::string canonicalPrimaryKey(const std::string & primary_key)
+{
+    ParserExpressionList parser(/*allow_alias_without_as_keyword_=*/ false);
+    const char * begin = primary_key.data();
+    const char * end = begin + primary_key.size();
+    std::string error_message;
+
+    ASTPtr ast = tryParseQuery(
+        parser, begin, end, error_message, /*hilite=*/ false, /*description=*/ "KeeperMap primary key",
+        /*allow_multi_statements=*/ false, DBMS_DEFAULT_MAX_QUERY_SIZE,
+        DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, /*skip_insignificant=*/ true);
+
+    /// Not parseable: keep the stored text as it is, so the comparison stays strict and the
+    /// caller reports a mismatch instead of silently accepting unknown metadata.
+    if (!ast)
+        return primary_key;
+
+    stripArtificialParens(*ast);
     return ast->formatWithSecretsOneLine();
 }
 
@@ -690,7 +723,7 @@ bool StorageKeeperMap::isMetadataStringEqual(
     auto zk_pk = zk_metadata_string.substr(zk_pk_pos + primary_key_header.size());
     auto local_pk = local_metadata_string.substr(local_pk_pos + primary_key_header.size());
 
-    bool pk_equal = zk_pk == local_pk;
+    bool pk_equal = zk_pk == local_pk || canonicalPrimaryKey(zk_pk) == canonicalPrimaryKey(local_pk);
 
     if (columns_equal && pk_equal)
         return true;
@@ -700,8 +733,8 @@ bool StorageKeeperMap::isMetadataStringEqual(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Path {} is already used but the stored {} definition doesn't match. Stored metadata: {}, local metadata: {}",
-            columns_equal ? "columns" : "primary key",
             zk_root_path,
+            columns_equal ? "primary key" : "columns",
             zk_metadata_string,
             local_metadata_string);
     }
@@ -710,8 +743,8 @@ bool StorageKeeperMap::isMetadataStringEqual(
         log,
         "Path {} is already used but the stored {} definition doesn't match. Stored metadata: {}, local metadata: {}. "
         "Will use stored metadata",
-        columns_equal ? "columns" : "primary key",
         zk_root_path,
+        columns_equal ? "primary key" : "columns",
         zk_metadata_string,
         local_metadata_string);
 
