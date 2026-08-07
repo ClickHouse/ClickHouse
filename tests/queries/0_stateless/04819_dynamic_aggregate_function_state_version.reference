@@ -7,6 +7,7 @@ no revision: no version, round trip 492708
 binary encoding: round trip 492708
 flattened: no version, round trip 492708
 remote: 492708
+lopsided split via Dynamic: 506014
 shared variant: AggregateFunction(quantileDeterministic, UInt64, UInt64) true
 shared variant merge: 492708
 shared variant round trip: 492708

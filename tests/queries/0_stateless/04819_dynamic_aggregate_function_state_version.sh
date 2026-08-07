@@ -89,6 +89,20 @@ FROM (SELECT d FROM remote('127.0.0.2', currentDatabase(), dynamic_qd))
 SETTINGS prefer_localhost_replica = 0;
 "
 
+# The cost of all of the above, pinned so it does not change silently: a state inside a `Dynamic`
+# value keeps state version 0, so the skip degree is not preserved across a `Dynamic` serialization
+# boundary and a merge of two differently thinned states stays under-weighted, exactly as before the
+# fix. The same 990000/10000 split stored in a plain `AggregateFunction` column merges to the correct
+# 492708 (see 04653 and 04820).
+$CLICKHOUSE_CLIENT -m -q "
+DROP TABLE IF EXISTS dynamic_qd_split;
+CREATE TABLE dynamic_qd_split (d Dynamic) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO dynamic_qd_split SELECT quantileDeterministicState(number, number) FROM numbers(990000);
+INSERT INTO dynamic_qd_split SELECT quantileDeterministicState(number, number) FROM numbers(990000, 10000);
+SELECT 'lopsided split via Dynamic: ' || toString(medianDeterministicMerge(d.\`AggregateFunction(quantileDeterministic, UInt64, UInt64)\`)) FROM dynamic_qd_split;
+DROP TABLE dynamic_qd_split;
+"
+
 # A value in the shared variant embeds its type through the version-less binary encoding, followed
 # by the serialized value - at rest and on the wire - so the state must be written there at version 0.
 $CLICKHOUSE_CLIENT -m -q "
