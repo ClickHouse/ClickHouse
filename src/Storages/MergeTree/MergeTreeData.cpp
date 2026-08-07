@@ -62,8 +62,13 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/InDepthNodeVisitor.h>
-#include <Storages/ReplaceAliasByExpressionVisitor.h>
+#include <Interpreters/SelectQueryOptions.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/TableExpressionData.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -4820,6 +4825,32 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
     }
 }
 
+/// Source columns an expression reads, resolved against `columns` via the query analyzer over a fake
+/// table. keep_alias_columns=false expands ALIAS chains to their base columns.
+Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & columns, const ContextPtr & context)
+{
+    if (!ast)
+        return {};
+
+    auto analysis_context = Context::createCopy(context);
+    auto expression = buildQueryTree(ast, analysis_context);
+
+    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, columns);
+    auto table_node = std::make_shared<TableNode>(storage, analysis_context);
+
+    QueryAnalyzer analyzer(/*only_analyze=*/ true);
+    analyzer.resolve(expression, table_node, analysis_context);
+
+    auto global_planner_context
+        = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto planner_context = std::make_shared<PlannerContext>(analysis_context, global_planner_context, SelectQueryOptions{});
+    collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
+
+    if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node))
+        return table_expression_data->getSelectedColumnsNames();
+    return {};
+}
+
 }
 
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
@@ -5525,39 +5556,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 return expr && names_use_changed_subcolumn(expr->getRequiredColumns());
             };
 
-            /// Subcolumn-level required columns of an AST (analyzed with subcolumns, like an index
-            /// expression), for structures with no prebuilt ExpressionActions. Table ALIAS columns are
-            /// expanded first so a MATERIALIZED column reaching the subcolumn through an alias is seen.
-            /// Un-analyzable ASTs (e.g. a group key that is a SELECT alias) are skipped.
+            /// For structures with no prebuilt ExpressionActions (MATERIALIZED columns, projection group/WHERE keys).
             auto ast_uses_changed_subcolumn = [&](const ASTPtr & ast) -> bool
             {
-                if (!ast)
-                    return false;
-
-                ASTPtr list = make_intrusive<ASTExpressionList>();
-                if (const auto * existing = ast->as<ASTExpressionList>())
-                {
-                    for (const auto & child : existing->children)
-                        list->children.push_back(child->clone());
-                }
-                else
-                    list->children.push_back(ast->clone());
-
-                try
-                {
-                    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
-                    ReplaceAliasToExprVisitor::Data alias_data{old_columns_desc};
-                    ReplaceAliasToExprVisitor{alias_data}.visit(list);
-
-                    auto syntax = TreeRewriter(local_context).analyze(
-                        list, old_columns_desc.get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()));
-                    auto actions = ExpressionAnalyzer(list, syntax, local_context).getActions(/*add_aliases=*/ true);
-                    return names_use_changed_subcolumn(actions->getRequiredColumns());
-                }
-                catch (const Exception &)
-                {
-                    return false;
-                }
+                return names_use_changed_subcolumn(expressionSourceColumns(ast, old_columns_desc, local_context));
             };
 
             /// Primary/sorting key: forbidden (a full mutation cannot alter a key subcolumn either).
