@@ -102,7 +102,6 @@ public:
 
     void addColumn(const String & logical_name, const String & column_id);
     void removeColumn(const String & logical_name);
-    void renameColumn(const String & old_logical_name, const String & new_logical_name);
 
     /// Two-phase rename for crash safety.
     ///
@@ -178,6 +177,9 @@ public:
     static ColumnIdMapping fromString(const String & str);
 
 private:
+    /// Drop `it`'s forward entry and repair the reverse map.
+    void detachLogicalName(std::unordered_map<String, String>::iterator it);
+
     bool active = false;
     UInt64 next_column_id = 1;
     std::unordered_map<String, String> logical_to_id;

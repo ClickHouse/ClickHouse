@@ -686,6 +686,67 @@ ParsedJSON parseJSONEnvelope(const std::string & json_str)
     return {columns_array, settings};
 }
 
+using ColumnByRecordKey = std::unordered_map<String, const NameAndTypePair *>;
+
+ColumnByRecordKey indexByName(const NamesAndTypesList & columns)
+{
+    ColumnByRecordKey index;
+    index.reserve(columns.size());
+    for (const auto & column : columns)
+        index.emplace(column.name, &column);
+    return index;
+}
+
+/// A record in a file written with column ids is keyed by the stamped id, but a part activated
+/// mid-life still holds records written under the logical name. Ids claim keys first: a key equal to
+/// some column's id belongs to that id's owner, never to a same-named column.
+ColumnByRecordKey indexByColumnIdThenName(const NamesAndTypesList & columns)
+{
+    ColumnByRecordKey index;
+    index.reserve(columns.size());
+    for (const auto & column : columns)
+        index.emplace(column.getColumnId().value(), &column);
+
+    for (const auto & column : columns)
+    {
+        if (!column.column_id.empty() && column.column_id.value() != column.name)
+            index.emplace(column.name, &column);
+    }
+    return index;
+}
+
+/// Records are stored under each column's storage id, which for an unstamped column is its name --
+/// so this keys a name-written file exactly as that file keys it.
+/// A record with no matching column is corruption in a name-keyed file, but ordinary in an id-keyed
+/// one: a dropped column's record outlives the column, and only its id could have identified it.
+void readRecords(
+    const Poco::JSON::Array & records, const ColumnByRecordKey & column_by_key, bool skip_unknown_keys, SerializationInfoByName & infos)
+{
+    for (const auto & elem : records)
+    {
+        const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
+
+        if (!elem_object->has(KEY_NAME))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing field '{}' in serialization infos", KEY_NAME);
+
+        auto record_key = elem_object->getValue<String>(KEY_NAME);
+        auto it = column_by_key.find(record_key);
+
+        if (it == column_by_key.end())
+        {
+            if (skip_unknown_keys)
+                continue;
+
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Found unexpected column '{}' in serialization infos", record_key);
+        }
+
+        const auto & column = *it->second;
+        auto info = column.type->createSerializationInfo(infos.getSettings());
+        info->fromJSON(*elem_object);
+        infos.emplace(column.getColumnId().value(), std::move(info));
+    }
+}
+
 } /// anonymous namespace
 
 SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str)
@@ -694,31 +755,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
 
     SerializationInfoByName infos(settings);
     if (columns_array)
-    {
-        std::unordered_map<std::string_view, const IDataType *> column_type_by_name;
-        for (const auto & [name, type] : columns)
-            column_type_by_name.emplace(name, type.get());
-
-        for (const auto & elem : *columns_array)
-        {
-            const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
-
-            if (!elem_object->has(KEY_NAME))
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Missing field '{}' in serialization infos", KEY_NAME);
-
-            auto name = elem_object->getValue<String>(KEY_NAME);
-            auto it = column_type_by_name.find(name);
-
-            if (it == column_type_by_name.end())
-                throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "Found unexpected column '{}' in serialization infos", name);
-
-            auto info = it->second->createSerializationInfo(infos.settings);
-            info->fromJSON(*elem_object);
-            infos.emplace(name, std::move(info));
-        }
-    }
+        readRecords(*columns_array, indexByName(columns), /*skip_unknown_keys=*/false, infos);
 
     return infos;
 }
@@ -737,35 +774,8 @@ SerializationInfoByName SerializationInfoByName::readJSONWithColumnIds(const Nam
     auto [columns_array, settings] = parseJSONEnvelope(json_str);
 
     SerializationInfoByName infos(settings);
-    if (!columns_array)
-        return infos;
-
-    /// A record's on-disk key is the columns.txt token: the stamped column ID, or the
-    /// logical name for pre-activation parts.  IDs claim keys first -- a key equal to
-    /// some column's ID belongs to that ID's owner, never to a same-named column.
-    std::unordered_map<String, const NameAndTypePair *> column_by_stored_key = columns.getIndexByStorageColumnId();
-    for (const auto & column : columns)
-    {
-        if (!column.column_id.empty() && column.column_id.value() != column.name)
-            column_by_stored_key.emplace(column.name, &column);
-    }
-
-    for (const auto & elem : *columns_array)
-    {
-        const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
-
-        if (!elem_object->has(KEY_NAME))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing field '{}' in serialization infos", KEY_NAME);
-
-        auto stored_name = elem_object->getValue<String>(KEY_NAME);
-        auto it = column_by_stored_key.find(stored_name);
-        if (it == column_by_stored_key.end())
-            continue;
-
-        auto info = it->second->type->createSerializationInfo(infos.getSettings());
-        info->fromJSON(*elem_object);
-        infos.emplace(it->second->getColumnId().value(), std::move(info));
-    }
+    if (columns_array)
+        readRecords(*columns_array, indexByColumnIdThenName(columns), /*skip_unknown_keys=*/true, infos);
 
     return infos;
 }

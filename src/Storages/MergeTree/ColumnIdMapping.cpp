@@ -162,15 +162,13 @@ void ColumnIdMapping::addColumn(const String & logical_name, const String & colu
     id_to_logical.emplace(column_id, logical_name);
 }
 
-void ColumnIdMapping::removeColumn(const String & logical_name)
+void ColumnIdMapping::detachLogicalName(std::unordered_map<String, String>::iterator it)
 {
-    auto it = logical_to_id.find(logical_name);
-    if (it == logical_to_id.end())
-        throwMissingLogicalName(logical_name);
-
     const String column_id = it->second;
     logical_to_id.erase(it);
 
+    /// A second name can still hold the id -- that is the transient state `beginRename` leaves --
+    /// so the reverse entry is re-pointed at the survivor rather than erased.
     for (const auto & [other_logical, other_column_id] : logical_to_id)
     {
         if (other_column_id == column_id)
@@ -182,25 +180,13 @@ void ColumnIdMapping::removeColumn(const String & logical_name)
     id_to_logical.erase(column_id);
 }
 
-void ColumnIdMapping::renameColumn(const String & old_logical_name, const String & new_logical_name)
+void ColumnIdMapping::removeColumn(const String & logical_name)
 {
-    auto it = logical_to_id.find(old_logical_name);
+    auto it = logical_to_id.find(logical_name);
     if (it == logical_to_id.end())
-        throwMissingLogicalName(old_logical_name);
+        throwMissingLogicalName(logical_name);
 
-    if (logical_to_id.contains(new_logical_name))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical column name '{}' is already registered in `ColumnIdMapping`", new_logical_name);
-
-    auto column_id = it->second;
-
-    if (id_to_logical.contains(new_logical_name) && new_logical_name != column_id)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Cannot rename column '{}' to '{}': the new name collides with an existing column ID",
-            old_logical_name, new_logical_name);
-
-    logical_to_id.erase(it);
-    logical_to_id.emplace(new_logical_name, column_id);
-    id_to_logical[column_id] = new_logical_name;
+    detachLogicalName(it);
 }
 
 void ColumnIdMapping::beginRename(const String & old_logical_name, const String & new_logical_name)
@@ -242,18 +228,7 @@ void ColumnIdMapping::finishRename(const String & old_logical_name)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "`finishRename` of logical column name '{}' without a matching `beginRename`", old_logical_name);
 
-    const String column_id = it->second;
-    logical_to_id.erase(it);
-
-    for (const auto & [logical, other_column_id] : logical_to_id)
-    {
-        if (other_column_id == column_id)
-        {
-            id_to_logical[column_id] = logical;
-            return;
-        }
-    }
-    id_to_logical.erase(column_id);
+    detachLogicalName(it);
 }
 
 Names ColumnIdMapping::logicalNames() const

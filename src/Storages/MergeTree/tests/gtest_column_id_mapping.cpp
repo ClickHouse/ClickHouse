@@ -59,7 +59,8 @@ TEST(ColumnIdMapping, RenamePreservesColumnId)
 {
     auto mapping = ColumnIdMapping::createIdentity(makeColumns({"a", "b"}));
 
-    mapping.renameColumn("a", "c");
+    mapping.beginRename("a", "c");
+    mapping.finishRename("a");
 
     EXPECT_FALSE(mapping.hasLogicalName("a"));
     EXPECT_TRUE(mapping.hasLogicalName("c"));
@@ -72,7 +73,8 @@ TEST(ColumnIdMapping, SerializeDeserializeRoundTrip)
     auto mapping = ColumnIdMapping::createIdentity(makeColumns({"10", "a"}));
     auto new_column_id = mapping.allocateColumnId();
     mapping.addColumn("c", new_column_id);
-    mapping.renameColumn("a", "b");
+    mapping.beginRename("a", "b");
+    mapping.finishRename("a");
 
     auto restored = ColumnIdMapping::fromString(mapping.toString());
 
@@ -207,7 +209,6 @@ TEST(ColumnIdMapping, RenameToExistingColumnIdIsRejected)
     ASSERT_EQ(id, "1");
 
     /// Renaming "a" to "1" collides with column c's id "1".
-    EXPECT_THROW(mapping.renameColumn("a", id), Exception);
     EXPECT_THROW(mapping.beginRename("a", id), Exception);
 
     /// Two-phase rotation: after a->x, "x" holds id "a", so renaming "b" to "a" is rejected.
@@ -217,7 +218,8 @@ TEST(ColumnIdMapping, RenameToExistingColumnIdIsRejected)
     EXPECT_THROW(rot.beginRename("b", "a"), Exception);
 
     /// Self-case: renaming "c" to its own id "1" is allowed.
-    EXPECT_NO_THROW(mapping.renameColumn("c", id));
+    EXPECT_NO_THROW(mapping.beginRename("c", id));
+    EXPECT_NO_THROW(mapping.finishRename("c"));
     EXPECT_EQ(mapping.getColumnId(id), id);
 }
 
@@ -269,7 +271,8 @@ TEST(ColumnIdMapping, RemapEvictsDroppedNameCollision)
 
     auto mapping = load_mapping;
     mapping.removeColumn("q");
-    mapping.renameColumn("p", "q");
+    mapping.beginRename("p", "q");
+    mapping.finishRename("p");
 
     ColumnsDescription part_columns(loaded);
     MutationHelpers::remapPartColumnsToCurrentNames(part_columns, part_id_columns, mapping);

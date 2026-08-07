@@ -184,8 +184,8 @@ public:
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
 
     /// True when at least one of this part's columns carries a `column_id` (stamped at write /
-    /// merge time), i.e. this part's files are named by column IDs.
-    bool hasStampedColumnIds() const;
+    /// merge time), i.e. this part's files are named by column IDs. Derived from `columns`.
+    bool hasStampedColumnIds() const { return has_stamped_column_ids; }
 
     /// Re-home the small, part-lifetime metadata that build paths may populate outside the
     /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_column_ids`, and for patch parts
@@ -836,6 +836,9 @@ protected:
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
 
+    /// Derived from `columns` by `setColumns`, its only writer -- see `hasStampedColumnIds`.
+    bool has_stamped_column_ids = false;
+
     /// List of substreams in order of serialization/deserialization for each column.
     ColumnsSubstreams columns_substreams;
 
@@ -856,6 +859,10 @@ protected:
 
     /// Calculate the size of all files required to read a specified subcolumn.
     virtual ColumnSize calculateSubcolumnSize(const NameAndTypePair & /*subcolumn*/) const { return {}; }
+
+    /// Check `substreams`' column keys against this part's column names, where that comparison is
+    /// meaningful at all.
+    void validateSubstreamColumnNames(const ColumnsSubstreams & substreams) const;
 
     /// Fail closed before resolving a column's streams: on a part written with column IDs a column
     /// without one would fall back to resolution by logical name, which binds a foreign or absent

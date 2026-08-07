@@ -182,8 +182,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     NameSet all_updated_columns;
     for (const auto & part : unique_parts)
     {
-        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(
-            part, mutations_snapshot, context
+        auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
 #if CLICKHOUSE_CLOUD
             , context->getAccess()->getEnabledMaskingPolicies()
 #endif

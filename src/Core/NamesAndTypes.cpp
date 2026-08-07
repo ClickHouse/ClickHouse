@@ -238,15 +238,6 @@ UnorderedMapWithMemoryTracking<std::string, DataTypePtr> NamesAndTypesList::getN
     return res;
 }
 
-std::unordered_map<String, const NameAndTypePair *> NamesAndTypesList::getIndexByStorageColumnId() const
-{
-    std::unordered_map<String, const NameAndTypePair *> res;
-    res.reserve(size());
-    for (const NameAndTypePair & column : *this)
-        res.emplace(column.getColumnId().value(), &column);
-    return res;
-}
-
 DataTypes NamesAndTypesList::getTypes() const
 {
     DataTypes res;

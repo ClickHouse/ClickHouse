@@ -769,6 +769,9 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     serialization_infos = new_infos;
     metadata_version = new_metadata_version;
 
+    has_stamped_column_ids = std::any_of(
+        columns.begin(), columns.end(), [](const auto & column) { return !column.column_id.empty(); });
+
     serializations.clear();
     column_storage_key_to_position.clear();
     column_storage_key_to_position.reserve(new_columns.size());
@@ -2510,12 +2513,12 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     setColumns(loaded_columns, infos, *loaded_metadata_version);
 }
 
-bool IMergeTreeDataPart::hasStampedColumnIds() const
+/// The substream keys in `columns_substreams.txt` are logical names only for a part written without
+/// column ids; for an id part they are ids, which a check against column names can never match.
+void IMergeTreeDataPart::validateSubstreamColumnNames(const ColumnsSubstreams & substreams) const
 {
-    for (const auto & col : getColumns())
-        if (!col.column_id.empty())
-            return true;
-    return false;
+    if (!has_stamped_column_ids)
+        substreams.validateColumns(getColumns().getNames());
 }
 
 void IMergeTreeDataPart::checkColumnIdIsStamped(const NameAndTypePair & column) const
@@ -2541,8 +2544,7 @@ void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_
     /// rationale as `setColumns` above.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-    if (!hasStampedColumnIds())
-        columns_substreams_.validateColumns(getColumns().getNames());
+    validateSubstreamColumnNames(columns_substreams_);
     columns_substreams = columns_substreams_;
 }
 
@@ -2603,8 +2605,7 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
             }
         }
 
-        if (!hasStampedColumnIds())
-            columns_substreams.validateColumns(getColumns().getNames());
+        validateSubstreamColumnNames(columns_substreams);
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
     else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
