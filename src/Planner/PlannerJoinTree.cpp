@@ -1863,8 +1863,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 /// query plan cache can bind both the stored dependencies and the execution of the plan
                 /// to exactly the storages that were analyzed here - a name can start resolving to a
                 /// different table right after this point (see `Context::PlanCacheStorageIdentities`).
+                /// The collector pointer is set only while a cacheable logical plan is being built, but
+                /// it is deliberately not gated on `select_query_options.cacheable_logical_plan` here:
+                /// scalar subqueries are executed during that same analysis through a nested regular
+                /// interpreter whose options do not carry the flag, while their contexts are copies
+                /// that share the pointer. Their results are baked into the plan as constants, so the
+                /// tables they read are analyzed storages in exactly the same sense.
                 /// Temporary tables are never cacheable dependencies, so they are not recorded.
-                if (select_query_options.cacheable_logical_plan && table_node && table_node->getTemporaryTableName().empty())
+                if (table_node && table_node->getTemporaryTableName().empty())
                     if (auto identities = query_context->getPlanCacheStorageIdentities())
                         identities->add(table_node->getStorageID());
 

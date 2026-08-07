@@ -1302,11 +1302,15 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     /// The dependencies were resolved by name after the plan was built. If any of them is not the
     /// storage that was analyzed, the entry would fingerprint one table while the plan carries the
     /// semantics of another, and executing the plan here would run the swapped table with the old
-    /// table's row policies or schema. Neither store nor execute such a plan: fall back to the normal
-    /// interpreter, which analyzes the current tables from scratch.
-    /// A dependency that is not among the analyzed identities is a table that has no place in the
-    /// plan at all - a table read only inside a scalar subquery, whose result is folded into a
-    /// constant during analysis (only possible with `query_plan_cache_allow_scalar_subqueries`).
+    /// table's row policies or schema - or, for a table read only inside a scalar subquery, keep
+    /// serving a constant folded from the old table while validating against the new one. Neither
+    /// store nor execute such a plan: fall back to the normal interpreter, which analyzes the
+    /// current tables from scratch.
+    /// Scalar subqueries execute during analysis and record the storages they read into the same
+    /// collector (see `PlannerJoinTree.cpp`), so their sources are covered by this check too. A
+    /// dependency that is not among the analyzed identities is a name the raw AST walk
+    /// over-collected without analysis ever reading it (e.g. a CTE name that shadows a real
+    /// table); the plan does not depend on it, so it only widens invalidation.
     const auto analyzed_identities = planning_identities->get();
     for (const auto & dep : *dependencies)
     {
