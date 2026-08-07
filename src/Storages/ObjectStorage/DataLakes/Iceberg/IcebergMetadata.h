@@ -182,6 +182,9 @@ public:
 
     void drop(ContextPtr context) override;
 
+    std::optional<String> partitionKey(ContextPtr) const override;
+    std::optional<String> sortingKey(ContextPtr) const override;
+
 private:
     static Iceberg::PersistentTableComponents initializePersistentTableComponents(
         ObjectStoragePtr object_storage,
@@ -201,6 +204,9 @@ private:
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
 
+    std::optional<String> getPartitionKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
+    KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
+
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
     mutable std::shared_ptr<SecondaryStorages> secondary_storages;
@@ -208,8 +214,6 @@ private:
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;
-
-    KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 
     void backgroundMetadataPrefetcherThread();
 };

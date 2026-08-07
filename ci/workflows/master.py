@@ -23,6 +23,7 @@ for artifact in ArtifactConfigs.clickhouse_binaries + ArtifactConfigs.clickhouse
 workflow = Workflow.Config(
     name="MasterCI",
     event=Workflow.Event.DISPATCH,
+    tags=["*"],
     inputs=[
         Workflow.Config.InputConfig(
             name="no_cache",
@@ -106,6 +107,7 @@ workflow = Workflow.Config(
     enable_commit_status_on_failure=True,
     enable_slack_feed=False,
     pre_hooks=[
+        '[ "$GITHUB_REF_TYPE" != "tag" ] || python3 ./tests/ci/version_helper.py --check-tag',
         # "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py", # NOTE (carlosfelipeor): we don't use this in master CI
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/parse_ci_tags.py",

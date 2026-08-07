@@ -719,6 +719,7 @@
             cursor: pointer;
             position: relative;
             font-size: 100%;
+            border: none;
         }
 
         .copy-balloon
@@ -762,6 +763,7 @@
             cursor: pointer;
             position: relative;
             font-size: 100%;
+            border: none;
         }
 
         #download
@@ -983,10 +985,17 @@
 
 <body>
     <div id="menu">
-        <div id="databases-icon" class="menu-icon">
+        <a id="databases-icon" class="menu-icon" href="" title="Databases and tables">
             <svg id="databases-toggle" viewBox="0 0 150 150">
                 <path d="m19 72 82-48L75 9 19 42zm5 3 23 14V62zm49 34L19 78v62zm28-52 29-17-24-13-28 17zm3 7v60l28 16V80zm2-4 26 15V45z" fill="#199DCF"/>
             </svg>
+        </a>
+        <button id="databases-hide" type="button" title="Hide the database panel">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><line x1="3" y1="12" x2="15" y2="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="9,6 3,12 9,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="20" y1="4" x2="20" y2="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+        <div id="databases"></div>
+        <div id="terminal-icon" class="menu-icon" title="Web Terminal (~)">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </div>
         <!-- https://github.com/logos -->
         <div id="github-icon" class="menu-icon">
@@ -1011,19 +1020,19 @@
                 <button type="button" class="shadow" id="run-all">Run all</button>
                 <div id="hint">&nbsp;(Ctrl/Cmd+Enter, +Shift to run all)</div>
                 <query-progress id="query-progress"></query-progress>
-                <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
+                <button type="button" id="copy-div" class="shadow" title="Copy raw result to clipboard" aria-label="Copy raw result to clipboard">
                     <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
                     </svg>
-                </div>
-                <div id="download-div" class="shadow">
+                </button>
+                <button type="button" id="download-div" class="shadow" title="Download query result" aria-label="Download query result">
                     <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="7 10 12 15 17 10"/>
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
-                </div>
+                </button>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
         </form>

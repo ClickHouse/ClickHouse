@@ -86,6 +86,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type);
+Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
@@ -128,6 +129,11 @@ enum class FileCategory : uint8_t
 FileCategory inspectFileCategory(const String & relative_path);
 
 KeyDescription getSortingKeyDescriptionFromMetadata(
+    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
+/// Returns Iceberg/Spark-style display string for sort order, e.g. "id desc, hour(ts) asc".
+std::optional<String> getSortingKeyDisplayStringFromMetadata(
+    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema);
+std::optional<String> getPartitionKeyStringFromMetadata(
     Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
 
