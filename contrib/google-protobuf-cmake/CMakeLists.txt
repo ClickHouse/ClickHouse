@@ -117,7 +117,9 @@ target_link_libraries(_libprotobuf-lite
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     target_link_libraries(_libprotobuf-lite log)
 endif()
-target_include_directories(_libprotobuf-lite SYSTEM PUBLIC ${protobuf_source_dir}/src)
+target_include_directories(_libprotobuf-lite SYSTEM PUBLIC
+  ${protobuf_source_dir}/src
+  ${protobuf_source_dir}/third_party/utf8_range)
 add_library(protobuf::libprotobuf-lite ALIAS _libprotobuf-lite)
 
 
@@ -188,6 +190,7 @@ set(libprotobuf_files
   ${protobuf_source_dir}/src/google/protobuf/repeated_field.cc
   ${protobuf_source_dir}/src/google/protobuf/repeated_ptr_field.cc
   ${protobuf_source_dir}/src/google/protobuf/service.cc
+  ${protobuf_source_dir}/src/google/protobuf/symbol_checker.cc
   ${protobuf_source_dir}/src/google/protobuf/stubs/common.cc
   ${protobuf_source_dir}/src/google/protobuf/text_format.cc
   ${protobuf_source_dir}/src/google/protobuf/unknown_field_set.cc
@@ -215,7 +218,9 @@ target_link_libraries(_libprotobuf
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     target_link_libraries(_libprotobuf log)
 endif()
-target_include_directories(_libprotobuf SYSTEM PUBLIC ${protobuf_source_dir}/src)
+target_include_directories(_libprotobuf SYSTEM PUBLIC
+  ${protobuf_source_dir}/src
+  ${protobuf_source_dir}/third_party/utf8_range)
 add_library(protobuf::libprotobuf ALIAS _libprotobuf)
 
 
@@ -322,6 +327,7 @@ set(libprotoc_files
   ${protobuf_source_dir}/src/google/protobuf/compiler/python/helpers.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/python/pyi_generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/retention.cc
+  ${protobuf_source_dir}/src/google/protobuf/compiler/ruby/rbs_generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/ruby/ruby_generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/accessor_case.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/accessors/accessors.cc
@@ -337,6 +343,7 @@ set(libprotoc_files
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/context.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/crate_mapping.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/enum.cc
+  ${protobuf_source_dir}/src/google/protobuf/compiler/rust/extension.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/generator.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/message.cc
   ${protobuf_source_dir}/src/google/protobuf/compiler/rust/naming.cc
@@ -374,6 +381,7 @@ set(libprotoc_files
   ${protobuf_source_dir}/upb/mini_descriptor/link.c
   ${protobuf_source_dir}/upb/mini_table/compat.c
   ${protobuf_source_dir}/upb/mini_table/extension_registry.c
+  ${protobuf_source_dir}/upb/mini_table/generated_registry.c
   ${protobuf_source_dir}/upb/mini_table/internal/message.c
   ${protobuf_source_dir}/upb/mini_table/message.c
   ${protobuf_source_dir}/upb/reflection/cmake/google/protobuf/descriptor.upb_minitable.c
@@ -396,10 +404,12 @@ set(libprotoc_files
   ${protobuf_source_dir}/upb/reflection/service_def.c
   ${protobuf_source_dir}/upb/wire/decode.c
   ${protobuf_source_dir}/upb/wire/encode.c
+  ${protobuf_source_dir}/upb/wire/eps_copy_input_stream.c
+  ${protobuf_source_dir}/upb/wire/internal/decoder.c
+  ${protobuf_source_dir}/upb/wire/reader.c
   ${protobuf_source_dir}/upb_generator/common.cc
   ${protobuf_source_dir}/upb_generator/common/names.cc
   ${protobuf_source_dir}/upb_generator/file_layout.cc
-  ${protobuf_source_dir}/upb_generator/minitable/fasttable.cc
   ${protobuf_source_dir}/upb_generator/minitable/generator.cc
   ${protobuf_source_dir}/upb_generator/minitable/names.cc
   ${protobuf_source_dir}/upb_generator/minitable/names_internal.cc

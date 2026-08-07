@@ -163,6 +163,7 @@ static struct InitFiu
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(keeper_fault_on_watch_request) \
+    REGULAR(keeper_shutdown_delay_before_queue_check) \
     REGULAR(lazy_pipe_fds_fail_close) \
     ONCE(create_empty_part_inject_stale_dir) \
     PAUSEABLE(infinite_sleep) \
@@ -249,6 +250,7 @@ static struct InitFiu
     REGULAR(database_replicated_force_metadata_digest_check) \
     ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
+    PAUSEABLE(database_materialized_postgresql_pause_before_table_drop) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     REGULAR(datalake_try_get_table_throw) \
     REGULAR(datalake_get_tables_throw) \
@@ -495,7 +497,19 @@ std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints
 
 #else // USE_LIBFIU
 
+/// These are hooks in regular code paths, so they must be no-ops rather than throw.
+/// In particular, `disableFailPoint` is called unconditionally during quorum cleanup
+/// in `StorageReplicatedMergeTree` and `ReplicatedMergeTreeRestartingThread`.
+
 void FailPointInjection::pauseFailPoint(const String &)
+{
+}
+
+void FailPointInjection::notifyPauseAndWaitForResume(const String &)
+{
+}
+
+void FailPointInjection::disableFailPoint(const String &)
 {
 }
 
@@ -504,43 +518,33 @@ bool FailPointInjection::hasAnyFailPointBeenRegistered()
     return false;
 }
 
+/// The rest are only reachable through SYSTEM ... FAILPOINT queries (whose interpreter
+/// already throws in builds without libfiu), and pretending to succeed would leave the
+/// caller waiting for a fail point that can never fire.
+
+[[noreturn]] static void throwDisabled()
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Fail points are disabled because ClickHouse was built without libfiu");
+}
+
 void FailPointInjection::enableFailPoint(const String &)
 {
-}
-
-void FailPointInjection::enablePauseFailPoint(const String &, UInt64)
-{
-}
-
-void FailPointInjection::disableFailPoint(const String &)
-{
+    throwDisabled();
 }
 
 void FailPointInjection::notifyFailPoint(const String &)
 {
-}
-
-void FailPointInjection::wait(const String &)
-{
+    throwDisabled();
 }
 
 void FailPointInjection::waitForPause(const String &)
 {
+    throwDisabled();
 }
 
 void FailPointInjection::waitForResume(const String &)
 {
-}
-
-void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    String root_key = "fail_points_active";
-
-    Poco::Util::AbstractConfiguration::Keys fail_point_names;
-    config.keys(root_key, fail_point_names);
-
-    if (!fail_point_names.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FIU is not enabled");
+    throwDisabled();
 }
 
 std::vector<FailPointInjection::FailPointInfo> FailPointInjection::getFailPoints()
