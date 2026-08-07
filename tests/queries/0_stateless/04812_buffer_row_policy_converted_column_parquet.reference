@@ -1,0 +1,35 @@
+--- B policy on the converted column, WHERE moved to PREWHERE ---
+{'a':1,'b':2}
+{'a':1}
+--- L the converted column beside another ---
+1	{'a':1,'b':2}
+3	{'a':1}
+--- I the filter names the converted column too ---
+{'a':1,'b':2}
+--- D policy and explicit PREWHERE on the converted column ---
+{'a':1,'b':2}
+--- C the same query with the move disabled ---
+{'a':1,'b':2}
+{'a':1}
+--- E no filter at all ---
+{'a':1,'b':2}
+{'a':1}
+--- F the converted column is not projected ---
+1
+3
+--- P the read is above FetchColumns ---
+1	1
+3	1
+--- ZS bare-column policy, the destination type is no filter ---
+1
+1
+--- ZF bare-column policy, converting the predicate would change truthiness ---
+2
+--- ZF the same rows with no filter ---
+2
+--- U1 URL destination, policy and WHERE ---
+{'a':1,'b':2}
+{'a':1}
+--- U2 URL destination, policy alone ---
+{'a':1,'b':2}
+{'a':1}
