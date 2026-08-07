@@ -62,7 +62,6 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageDistributed.h>
-#include <Storages/FileLog/StorageFileLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
@@ -75,6 +74,9 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#if USE_FILELOG
+#include <Storages/FileLog/StorageFileLog.h>
+#endif
 #if USE_LIBPQXX
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
@@ -1510,9 +1512,14 @@ bool declaresFileLikeSelfStampedTable(const ColumnsDescription & columns, const 
 /// are followed, so a nested `Merge`, which prunes by name itself, is not.
 bool readIsNotSelfNamed(const IStorage & child, String & file_like_target_table, size_t depth = 0)
 {
-    /// `StorageFileLog` is the one streaming engine outside `IStreamingStorage`.
-    if (child.isStreamingStorage() || dynamic_cast<const StorageFileLog *>(&child))
+    if (child.isStreamingStorage())
         return true;
+#if USE_FILELOG
+    /// `StorageFileLog` is the one streaming engine outside `IStreamingStorage`. It is built only where
+    /// `Storages/FileLog` is, so the cast has to be compiled out elsewhere to keep its vtable resolvable.
+    if (dynamic_cast<const StorageFileLog *>(&child))
+        return true;
+#endif
 
     /// `StorageLoop` re-reads its inner storage forever, and `StorageWindowView` forwards the read to an
     /// arbitrary `TO` target. Neither declares `_database`/`_table`, so a query that selects one by name
