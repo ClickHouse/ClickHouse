@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h|utils/wasm-parser/shim/'
 # Heuristic style checks must skip the verbatim Markdown documentation embedded into
 # the format source files as R"DOCS_MD( ... )DOCS_MD" raw-string literals (literal tabs
 # in TabSeparated/TSV examples, Pretty result tables indented by one to three spaces,
@@ -51,6 +51,7 @@ rg $@ -n --glob '*.h' --glob '*.cpp' \
     --glob '!**/AvroSchema.h' \
     --glob '!**/*Settings.cpp' --glob '!**/FormatFactorySettings.h' \
     --glob '!**/StorageSystemDashboards.cpp' \
+    --glob '!**/wasm-parser/shim/**' \
     '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|^ {1,3}[^\* ]\S|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' \
     $ROOT_PATH/{src,base,programs,utils} |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
@@ -400,7 +401,7 @@ grep -v StorageSystemContributors.generated.cpp "$STYLE_TMPDIR/nobase_all" | \
 
 # 13: Orphaned header files
 {
-join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | sed 's:.*/::'  | sort -u) <(rg --no-filename -o '[\w-]+\.h' --glob '*.cpp' --glob '*.c' --glob '*.h' --glob '*.S' $ROOT_PATH/src $ROOT_PATH/programs $ROOT_PATH/utils $ROOT_PATH/tests/lexer | sort -u) |
+join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | grep -v 'utils/wasm-parser/shim/' | sed 's:.*/::'  | sort -u) <(rg --no-filename -o '[\w-]+\.h' --glob '*.cpp' --glob '*.c' --glob '*.h' --glob '*.S' $ROOT_PATH/src $ROOT_PATH/programs $ROOT_PATH/utils $ROOT_PATH/tests/lexer | sort -u) |
     grep . && echo '^ Found orphan header files.'
 } > "$O.13" 2>&1 &
 
@@ -476,6 +477,41 @@ xargs < "$STYLE_TMPDIR/all_excluded" rg -n '\bassert[[:space:]]*\(' |
     rg -v ':[[:space:]]*(//|/\*|\*)' &&
     echo "Use chassert instead of assert"
 } > "$O.18" 2>&1 &
+
+# 19: The SQL parser must not use exceptions to decide between alternatives
+{
+# An alternative that does not match is an ordinary parse outcome, not an exceptional one, and a
+# parser says so by returning false. Routing it through throw/catch also drags the whole exception
+# machinery into a component that otherwise does not need it - see utils/wasm-parser, which builds
+# src/Parsers on its own.
+#
+# The harnesses under tests/, examples/ and fuzzers/ are expected to catch. Kusto is the one part
+# of the parser that has not been cleaned up yet: it still catches to fall back between a number
+# and a timespan, and to turn a failed cast into NULL. The AST JSON deserialization is not a
+# parser of SQL text at all: it maps Poco JSON exceptions to BAD_ARGUMENTS at the boundary, and
+# nothing in it is on the standalone parser's call graph.
+find $ROOT_PATH/src/Parsers \( -name '*.h' -or -name '*.cpp' \) |
+    grep -vP '/(tests|examples|fuzzers|Kusto)/|/(ASTFromJSON|ASTJSONReadHelpers)\.(h|cpp)$' |
+    xargs rg -n '\bcatch[[:space:]]*\(' |
+    grep . &&
+    echo "Do not catch exceptions in src/Parsers: a parser that does not match should return false. See check 19 in ci/jobs/scripts/check_style/check_cpp.sh"
+} > "$O.19" 2>&1 &
+
+# 20: No locale-dependent case conversion where the locale must not be linked
+{
+# `boost::to_lower` and friends convert according to `std::locale`, which is wrong for SQL keywords,
+# identifiers and access-type names - all of which are ASCII - and drags `<locale>` into the binary:
+# libc++'s locale.cpp alone is over 150 KB. Use `toLowerASCII` / `toUpperASCII` /
+# `toLowerCopyASCII` / `toUpperCopyASCII` from `Common/StringUtils.h`.
+#
+# Enforced for the parser and the access code, which a standalone build of the parser links and
+# which are therefore already free of it. The rest of the tree still has around ninety call sites;
+# widen the paths below as they are converted.
+find $ROOT_PATH/src/Parsers $ROOT_PATH/src/Access $ROOT_PATH/base/poco \( -name '*.h' -or -name '*.cpp' \) |
+    xargs rg -n 'boost::(algorithm::)?to_(lower|upper)(_copy)?\b' |
+    grep . &&
+    echo "Do not use boost::to_lower/to_upper here: they depend on the locale and pull <locale> into the binary. Use toLowerASCII/toUpperASCII from Common/StringUtils.h. See check 20 in ci/jobs/scripts/check_style/check_cpp.sh"
+} > "$O.20" 2>&1 &
 
 # Wait for all parallel checks to complete, then output results in order
 wait

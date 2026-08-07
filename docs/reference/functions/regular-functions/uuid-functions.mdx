@@ -328,13 +328,9 @@ SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))
 
 Introduced in: v25.8.0
 
-Converts a [DateTime](/reference/data-types/datetime) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
+Converts a [DateTime](/reference/data-types/datetime) value to a [UUIDv7](https://www.rfc-editor.org/rfc/rfc9562) at the given time, as defined by [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
-
-<Note>
-As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
-</Note>
     
 
 <Note>
@@ -514,13 +510,9 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
 
 Introduced in: v24.5.0
 
-Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](/reference/data-types/uuid).
+Generates a [version 7](https://www.rfc-editor.org/rfc/rfc9562) [UUID](/reference/data-types/uuid) as defined by [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
-
-<Note>
-As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
-</Note>
     
 
 <Note>

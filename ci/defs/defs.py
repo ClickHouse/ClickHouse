@@ -50,12 +50,6 @@ azure_secret = Secret.Config(
     type=Secret.Type.AWS_SSM_PARAMETER,
 )
 
-chcache_secret = Secret.Config(
-    name="chcache_password",
-    type=Secret.Type.AWS_SSM_PARAMETER,
-    region="us-east-1",
-)
-
 SECRETS = [
     Secret.Config(
         name="dockerhub_robot_password",
@@ -77,7 +71,6 @@ SECRETS = [
         region="us-east-1",
     ),
     azure_secret,
-    chcache_secret,
     Secret.Config(
         name="/github-app/clickhouse-gh.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -374,7 +367,6 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
-    DOCS = "Docs check"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
@@ -387,6 +379,7 @@ class JobNames:
     # Utils.normalize_string, and '+' is not a valid id character.
     SQLANCER_PP = "SQLancerPP"
     LLVM_COVERAGE = "LLVM Coverage"
+    BUILD_PROFILE_DIFF = "Build profile diff"
     INSTALL_TEST = "Install packages"
     ASTFUZZER = "AST fuzzer"
     BUZZHOUSE = "BuzzHouse"

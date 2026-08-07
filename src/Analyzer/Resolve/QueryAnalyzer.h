@@ -121,9 +121,9 @@ public:
     explicit QueryAnalyzer(bool only_analyze_);
     ~QueryAnalyzer();
 
-    void resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
+    void resolve(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
 
-    void resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context);
+    void resolveConstantExpression(QueryTreeNodePtr & node, const TableExpressionNodePtr & table_expression, ContextPtr context);
 
 private:
     /// Utility functions
@@ -218,7 +218,7 @@ private:
     /// Resolve query tree nodes functions
 
     void qualifyColumnNodesWithProjectionNames(const QueryTreeNodes & column_nodes,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         const IdentifierResolveScope & scope);
 
     static GetColumnsOptions buildGetColumnsOptions(QueryTreeNodePtr & matcher_node, const ContextPtr & context);
@@ -226,7 +226,7 @@ private:
     using QueryTreeNodesWithNames = std::vector<std::pair<QueryTreeNodePtr, std::string>>;
 
     QueryTreeNodesWithNames getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
-        const QueryTreeNodePtr & table_expression_node,
+        const TableExpressionNodePtr & table_expression_node,
         const NamesAndTypes & matched_columns,
         IdentifierResolveScope & scope);
 
@@ -253,9 +253,10 @@ private:
         bool allow_lambda_expression,
         bool allow_table_expression,
         bool ignore_alias = false,
-        bool allow_niladic_functions = true);
+        bool allow_niladic_functions = true,
+        bool is_top_level_projection = false);
 
-    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true);
+    ProjectionNames resolveExpressionNodeList(QueryTreeNodePtr & node_list, IdentifierResolveScope & scope, bool allow_lambda_expression, bool allow_table_expression, bool allow_niladic_functions = true, bool is_top_level_projection = false);
 
     ProjectionNames resolveSortNodeList(QueryTreeNodePtr & sort_node_list, IdentifierResolveScope & scope);
 
@@ -273,7 +274,7 @@ private:
 
     void initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, IdentifierResolveScope & scope);
 
-    void initializeTableExpressionData(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    void initializeTableExpressionData(const TableExpressionNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     void resolveTableFunction(QueryTreeNodePtr & table_function_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor, bool nested_table_function);
 
