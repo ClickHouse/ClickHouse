@@ -148,8 +148,13 @@
   message: 'All iterations has been failed. Unable to test snapshot sharing disabled'
   check_types:
   - asan
+- name: 03572_export_merge_tree_part_limits_and_table_functions
+  reason: 'INVESTIGATE - Unstable on tsan'
+  message: 'timeout: 60s'
+  check_types:
+  - tsan
 - name: 00157_cache_dictionary
-  reason: INVESTIGATE - Timeout when enable_filesystem_cache=0
+  reason: 'KNOWN: Timeout on slow Altinity runners (passes upstream)'
   message: 'DB::Exception: Timeout exceeded'
 - name: test_storage_s3_queue/test_5.py::test_migration[1-s3queue_]
   reason: KNOWN - Sometimes fails due to test order
@@ -170,6 +175,12 @@
   - tsan
   - asan
 - name: test_scheduler_cpu_preemptive/test.py::test_cpu_time_fairness[fixed_longer_prd]
+  reason: INVESTIGATE - Unstable on tsan, msan
+  message: 'Failed: Timeout (>900.0s)'
+  check_types:
+  - tsan
+  - msan
+- name: test_scheduler_cpu_preemptive/test.py::test_cpu_time_fairness[random_longer_prd]
   reason: INVESTIGATE - Unstable on tsan, msan
   message: 'Failed: Timeout (>900.0s)'
   check_types:
