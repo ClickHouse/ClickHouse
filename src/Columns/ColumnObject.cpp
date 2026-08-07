@@ -2163,13 +2163,14 @@ void ColumnObject::fillPathColumnFromSharedData(IColumn & path_column, std::stri
     }
 }
 
-ColumnObject::SortedPathsIterator::SortedPathsIterator(const ColumnObject & column_object_, size_t row_)
+ColumnObject::SortedPathsIterator::SortedPathsIterator(const ColumnObject & column_object_, size_t row_, bool skip_typed_nulls_)
     : column_object(column_object_)
     , typed_paths_it(column_object.sorted_typed_paths.begin())
     , typed_paths_end(column_object.sorted_typed_paths.end())
     , dynamic_paths_it(column_object.sorted_dynamic_paths.begin())
     , dynamic_paths_end(column_object.sorted_dynamic_paths.end())
     , row(row_)
+    , skip_typed_nulls(skip_typed_nulls_)
 {
     std::tie(shared_data_paths, shared_data_values) = column_object.getSharedDataPathsAndValues();
     const auto & shared_data_offsets = column_object.getSharedDataOffsets();
@@ -2223,6 +2224,11 @@ void ColumnObject::SortedPathsIterator::setCurrentPath()
     /// Null in dynamic path is considered as absence of this path.
     while (dynamic_paths_it != dynamic_paths_end && column_object.dynamic_paths.find(*dynamic_paths_it)->second->isNullAt(row))
         ++dynamic_paths_it;
+
+    /// If requested, skip typed paths whose value is null (treat them as absent).
+    if (skip_typed_nulls)
+        while (typed_paths_it != typed_paths_end && column_object.typed_paths.find(*typed_paths_it)->second->isNullAt(row))
+            ++typed_paths_it;
 
     std::array<std::pair<PathType, std::optional<std::string_view>>, 3> paths{
         std::pair{PathType::TYPED, typed_paths_it == typed_paths_end ? std::nullopt : std::optional<std::string_view>(*typed_paths_it)},
@@ -2289,13 +2295,6 @@ ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::g
     path_info.path = getCurrentPath();
     std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
     return path_info;
-}
-
-bool ColumnObject::SortedPathsIterator::isCurrentTypedNull() const
-{
-    if (current_path_type != PathType::TYPED)
-        return false;
-    return column_object.typed_paths.find(*typed_paths_it)->second->isNullAt(row);
 }
 
 void ColumnObject::SortedPathsIterator::serializeCurrentValueBinary(

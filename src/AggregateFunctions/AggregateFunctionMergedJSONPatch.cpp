@@ -404,12 +404,9 @@ public:
         const auto & object_column = assert_cast<const ColumnObject &>(*columns[0]);
         VectorWithMemoryTracking<typename Data::Entry> batch;
 
-        ColumnObject::SortedPathsIterator iterator(object_column, row_num);
+        ColumnObject::SortedPathsIterator iterator(object_column, row_num, /*skip_typed_nulls=*/true);
         for (; !iterator.end(); iterator.next())
         {
-            if (iterator.isCurrentTypedNull())
-                continue;
-
             WriteBufferFromOwnString value_buffer;
             iterator.serializeCurrentValueBinary(typed_path_serializations, value_buffer);
             batch.push_back({String(iterator.getCurrentPath()), std::move(value_buffer.str()), sort_key});

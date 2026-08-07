@@ -319,7 +319,7 @@ public:
             size_t row{};
         };
 
-        SortedPathsIterator(const ColumnObject & column_object_, size_t row_);
+        SortedPathsIterator(const ColumnObject & column_object_, size_t row_, bool skip_typed_nulls_ = false);
 
         void next();
         bool end();
@@ -332,10 +332,6 @@ public:
 
         /// Path string of the current entry.
         std::string_view getCurrentPath() const;
-
-        /// True if the current TYPED-path value is null (i.e. the patch omitted this member).
-        /// Always false for DYNAMIC and SHARED_DATA (null dynamic paths are skipped by the iterator).
-        bool isCurrentTypedNull() const;
 
         /// Serialize the current path's value into `buf`.
         ///
@@ -364,6 +360,7 @@ public:
         const ColumnString * shared_data_values{};
         PathType current_path_type{};
         size_t row;
+        bool skip_typed_nulls;
     };
 
 private:
