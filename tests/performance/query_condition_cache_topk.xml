@@ -76,7 +76,7 @@
 
     <!-- QCC enabled: prewarm primes the cache with a "skip all granules" entry
          for every part, measured runs reuse it and return without reading data. -->
-    <query>SELECT v FROM qcc_topk_test WHERE payload = 'no_match' ORDER BY v ASC LIMIT 10 SETTINGS use_query_condition_cache = 1 FORMAT Null</query>
+    <query>SELECT v FROM qcc_topk_test WHERE payload = 'no_match' ORDER BY v ASC LIMIT 10 SETTINGS use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 1 FORMAT Null</query>
 
     <!-- QCC disabled: baseline, every run pays the full WHERE-filter cost. -->
     <query>SELECT v FROM qcc_topk_test WHERE payload = 'no_match' ORDER BY v ASC LIMIT 10 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
