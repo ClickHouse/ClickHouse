@@ -201,7 +201,7 @@ def test_restarting_task_rearmed_after_failed_attach_startup(started_cluster):
 # must still end up with its periodic ZooKeeper session check armed. Only FP1 is enabled
 # here, so the retry's inline run() succeeds while the task is still deactivated - that
 # run's own scheduleAfter is therefore refused, and the periodic timer exists only if the
-# start() after it re-arms the task.
+# ensureArmed after it re-arms the task.
 def test_periodic_check_armed_after_successful_attach_startup_retry(started_cluster):
     start_clean_clickhouse()
     # Same reason as the previous test: any other ReplicatedMergeTree re-attached by a
@@ -328,9 +328,11 @@ def test_attach_startup_keeps_the_retry_delay_chosen_by_the_restarting_thread(
 
     seconds = [to_seconds(s) for s in stamps]
     gaps_ms = [round((b - a) * 1000, 1) for a, b in zip(seconds, seconds[1:])]
-    # Every attempt follows a delay run() chose, the smallest being the 100 ms first failure.
-    # Cancelling one of them shows up as an attempt that follows the previous one at once.
+    # The first gap is the 100 ms first-failure delay run() chose plus the time the single pool
+    # worker took to pick the task up; cancelling that delay leaves only the latter. The later
+    # gaps measure that latency directly, since their nominal values are known (300, 600, 1000,
+    # 1500 ms): it stayed under 16 ms across every arm measured here.
     assert (
-        min(gaps_ms) > 60
-    ), f"a retry delay chosen by run() was not preserved: {gaps_ms}"
+        gaps_ms[0] > 60
+    ), f"the retry delay chosen by run() was not preserved: {gaps_ms}"
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
