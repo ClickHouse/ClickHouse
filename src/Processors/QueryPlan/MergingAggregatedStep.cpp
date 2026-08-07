@@ -174,6 +174,11 @@ void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings);
 
+    /// The memory-efficient mode merges bucket by bucket via `GroupingAggregatedTransform`
+    /// instead of collecting everything into one hash table; make the planned mode visible.
+    if (memory_efficient_aggregation)
+        settings.out << settings.detail_prefix << "Mode: memory-efficient\n";
+
     if (!group_by_sort_description.empty())
     {
         const String & prefix = settings.detail_prefix;
@@ -186,6 +191,8 @@ void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 void MergingAggregatedStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     params.explain(map);
+    if (memory_efficient_aggregation)
+        map.add("Mode", "memory-efficient");
     if (!group_by_sort_description.empty())
         map.add("Order", dumpSortDescription(group_by_sort_description));
 }

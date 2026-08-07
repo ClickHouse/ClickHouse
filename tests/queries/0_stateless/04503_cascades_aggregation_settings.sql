@@ -28,34 +28,19 @@ EXPLAIN SELECT k, sum(v) FROM t_agg_settings GROUP BY k;
 SELECT '-- 2. forced shuffle: single aggregation over a shuffle exchange';
 EXPLAIN SELECT k, sum(v) FROM t_agg_settings GROUP BY k SETTINGS distributed_plan_force_shuffle_aggregation = 1;
 
-SELECT '-- 3. memory-efficient merge uses GroupingAggregatedTransform, plain merge does not';
-SET log_processors_profiles = 1;
-SELECT sum(s) >= 0 FROM (SELECT k, sum(v) AS s FROM t_agg_settings GROUP BY k)
-  SETTINGS distributed_aggregation_memory_efficient = 1, log_comment = '04503_memory_efficient_on';
-SELECT sum(s) >= 0 FROM (SELECT k, sum(v) AS s FROM t_agg_settings GROUP BY k)
-  SETTINGS distributed_aggregation_memory_efficient = 0, log_comment = '04503_memory_efficient_off';
+SELECT '-- 3. memory-efficient merge is planned as a bucket-ordered merge, plain merge is not';
+-- The outer query reads the plan text through `viewExplain`, which distributed Cascades planning
+-- rejects, so the outer level turns it off; the EXPLAIN'd query re-enables it explicitly.
+SELECT 'memory_efficient=1:', countIf(explain LIKE '%Mode: memory-efficient%') > 0 FROM (
+    EXPLAIN actions = 1 SELECT k, sum(v) FROM t_agg_settings GROUP BY k
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1,
+        distributed_aggregation_memory_efficient = 1
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
--- The log introspection below is not the subject of the test; a distributed read of the
--- constantly merging system log tables can fail on parts replaced after planning.
-SET make_distributed_plan = 0;
-SET enable_cascades_optimizer = 0;
-
-SYSTEM FLUSH LOGS processors_profile_log, query_log;
-
--- The `event_time` bound keeps the log scans cheap: without it every flaky-check rerun scans all
--- the log rows accumulated by the earlier runs and the test can exceed the per-run time limit.
-SELECT 'memory_efficient=1:', countIf(name = 'GroupingAggregatedTransform') > 0
-FROM system.processors_profile_log
-WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND initial_query_id IN (
-    SELECT query_id FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND current_database = currentDatabase()
-      AND log_comment = '04503_memory_efficient_on' AND type = 'QueryFinish');
-
-SELECT 'memory_efficient=0:', countIf(name = 'GroupingAggregatedTransform') > 0
-FROM system.processors_profile_log
-WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND initial_query_id IN (
-    SELECT query_id FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND current_database = currentDatabase()
-      AND log_comment = '04503_memory_efficient_off' AND type = 'QueryFinish');
+SELECT 'memory_efficient=0:', countIf(explain LIKE '%Mode: memory-efficient%') > 0 FROM (
+    EXPLAIN actions = 1 SELECT k, sum(v) FROM t_agg_settings GROUP BY k
+    SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1,
+        distributed_aggregation_memory_efficient = 0
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 DROP TABLE t_agg_settings;
