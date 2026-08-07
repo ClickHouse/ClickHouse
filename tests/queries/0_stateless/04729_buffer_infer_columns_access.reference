@@ -1,0 +1,16 @@
+-- 1. the destination's schema is not visible by the sanctioned route
+1
+-- 1. omitted columns, no rights on the destination: rejected
+1
+-- 2. omitted columns, with SHOW COLUMNS: allowed and inferred from the destination
+x	UInt64
+secret_column	String
+-- 3. a short ATTACH still works after the grant is revoked
+x	UInt64
+secret_column	String
+-- 4. explicit columns, no rights on the destination: still allowed
+x	UInt64
+-- 5. a temporary table with omitted columns is checked too
+1
+-- 6. SELECT on the destination implies SHOW COLUMNS, so reading users are unaffected
+42	shh
