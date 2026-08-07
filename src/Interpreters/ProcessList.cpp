@@ -815,7 +815,7 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
 
 CancellationCode ProcessList::sendCancelToPostgreSQLQuery(const String & current_query_id)
 {
-    String current_user;
+    QueryStatusPtr elem;
 
     {
         LockAndBlocker lock(mutex);
@@ -829,15 +829,26 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(const String & current
         /// query id (e.g. the HTTP `query_id` parameter), so a query of another user could impersonate the
         /// shape. The secret key is only a credential for ids the server assigned, so a query that did not
         /// arrive through the PostgreSQL interface is treated as not found rather than cancelled.
-        auto elem = tryGetProcessListElement(current_query_id, query_user->second);
+        elem = tryGetProcessListElement(current_query_id, query_user->second);
         if (!elem || elem->getClientInfo().interface != ClientInfo::Interface::POSTGRESQL)
             return CancellationCode::NotFound;
 
-        current_user = query_user->second;
+        /// The verified entry is marked under the same lock and cancelled below by pointer. Re-resolving
+        /// the query id after releasing the lock would open a race: the PostgreSQL query could finish and
+        /// the freed id could be taken by a new query of the same user from another interface, and the
+        /// cancel would hit a query that never passed the interface check above.
+        elem->is_cancelling = true;
     }
 
-    /// The query may have finished in the meantime, which `sendCancelToQuery` reports as `NotFound`.
-    return sendCancelToQuery(current_query_id, current_user);
+    SCOPE_EXIT({
+        DENY_ALLOCATIONS_IN_SCOPE;
+
+        Lock lock(mutex);
+        elem->is_cancelling = false;
+        cancelled_cv.notify_all();
+    });
+
+    return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
 
 
