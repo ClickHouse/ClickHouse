@@ -1,3 +1,4 @@
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
@@ -52,6 +53,31 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
         old_type.isString() && (old_type.extract<String>() == "float" ||  old_type.extract<String>() == "double"))
     {
         return true;
+    }
+
+    if (old_type.isString() && new_type.isString())
+    {
+        auto old_str = old_type.extract<String>();
+        auto new_str = new_type.extract<String>();
+        if (old_str.starts_with("decimal(") && old_str.ends_with(')')
+            && new_str.starts_with("decimal(") && new_str.ends_with(')'))
+        {
+            auto parse = [](const String & s) -> std::pair<size_t, size_t>
+            {
+                DB::ReadBufferFromString buf(std::string_view(s.begin() + 8, s.end() - 1));
+                size_t p = 0, sc = 0;
+                readIntText(p, buf);
+                skipWhitespaceIfAny(buf);
+                assertChar(',', buf);
+                skipWhitespaceIfAny(buf);
+                tryReadIntText(sc, buf);
+                return {p, sc};
+            };
+            auto [old_precision, old_scale] = parse(old_str);
+            auto [new_precision, new_scale] = parse(new_str);
+            if (old_precision <= new_precision && old_scale <= new_scale)
+                return true;
+        }
     }
 
     if (!old_type.isString() && !new_type.isString())

@@ -549,13 +549,7 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         case TypeIndex::Decimal64:
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
-        {
-            Poco::JSON::Object::Ptr result = new Poco::JSON::Object;
-            result->set("type", "decimal");
-            result->set("precision", static_cast<Int32>(getDecimalPrecision(*type)));
-            result->set("scale", static_cast<Int32>(getDecimalScale(*type)));
-            return {result, true};
-        }
+            return {"decimal(" + std::to_string(getDecimalPrecision(*type)) + ", " + std::to_string(getDecimalScale(*type)) + ")", true};
         case TypeIndex::Tuple:
         {
             auto type_tuple = std::static_pointer_cast<const DataTypeTuple>(type);
