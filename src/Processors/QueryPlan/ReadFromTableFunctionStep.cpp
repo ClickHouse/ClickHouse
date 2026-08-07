@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -10,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 ReadFromTableFunctionStep::ReadFromTableFunctionStep(
@@ -36,6 +38,15 @@ enum class TableFunctionSerializationKind : UInt8
 
 void ReadFromTableFunctionStep::serialize(Serialization & ctx) const
 {
+    /// A peer below this version does not know the parallel-replicas flag bit: it would ignore the
+    /// bit, leave the trailing byte unread and misparse the rest of the plan stream. Fail closed
+    /// rather than write bytes an older peer cannot understand.
+    if (use_parallel_replicas && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing a parallel-replicas read from a table function requires query plan serialization "
+            "version >= {}; all nodes must run the same version",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS);
+
     writeIntBinary(TableFunctionSerializationKind::AST, ctx.out);
 
     writeStringBinary(serialized_ast, ctx.out);
@@ -90,7 +101,17 @@ QueryPlanStepPtr ReadFromTableFunctionStep::deserialize(Deserialization & ctx)
 
     char use_parallel_replicas = 0;
     if (flags & 8)
+    {
+        /// Mirrors the guard in `serialize`: a peer below this version never legitimately writes the
+        /// parallel-replicas flag bit, so a set bit in an older stream is a sign of stream corruption.
+        if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Deserializing a parallel-replicas read from a table function requires query plan serialization "
+                "version >= {}; all nodes must run the same version",
+                DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS);
+
         readIntBinary(use_parallel_replicas, ctx.in);
+    }
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
     return std::make_unique<ReadFromTableFunctionStep>(

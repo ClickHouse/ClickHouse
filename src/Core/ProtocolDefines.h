@@ -78,7 +78,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// unknown name (`QueryPlanSerializationSettings::readBinary` throws), so towards such a peer the name is
 /// written only when omitting it could corrupt two-level distributed merging - failing closed on an explicit
 /// error instead of silently mixing the two hash methods, whose two-level bucket numbering differs.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 5;
+/// Version 6 adds the parallel-replicas flag (bit 8) and its trailing byte on a serialized
+/// `ReadFromTableFunction` step. An older peer would ignore the unknown flag bit, leave the trailing
+/// byte unread and misparse the rest of the plan stream, so the serializer fails closed when the flag
+/// is set towards a peer below version 6.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 6;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -91,6 +95,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP
 /// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
 /// `MergingAggregatedStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING = 5;
+/// First query-plan serialization version that reads the parallel-replicas flag (bit 8) and its
+/// trailing byte on a `ReadFromTableFunction` step. Gates writing them in
+/// `ReadFromTableFunctionStep::serialize`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_TABLE_FUNCTION_PARALLEL_REPLICAS = 6;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
