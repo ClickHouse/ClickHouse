@@ -144,11 +144,18 @@ public:
             ///
             /// AArch64 has the room, with 32 SIMD registers and a conversion that works in place on
             /// the loaded vector: 40 packed ops, no calls, 6 stack accesses for `Decimal64`.
-            /// x86-64 has 16 `ymm` and does not. Its fused loop spills every iteration and the
-            /// vectorizer falls back to a mix of two-wide and scalar glued with shuffles - 11
-            /// scalar `vcvtsi2sd` against 3 packed `vcvtdq2pd`, 14 in-loop stack accesses - so it
-            /// converts into a tile at every width, including `Decimal32`, which does have a packed
-            /// convert. Measured on `Decimal32`: 0.194s buffered against 0.237s fused.
+            /// x86-64 does not, at any level, so it converts into a tile at every width - including
+            /// `Decimal32`, which has a packed convert. At `v3` its 16 `ymm` cannot hold the lanes
+            /// and the conversion at once: the fused loop spills every iteration and drops to a mix
+            /// of two-wide and scalar glued with shuffles, 11 scalar `vcvtsi2sd` against 3 packed
+            /// `vcvtdq2pd`. `v4` lifts both of those - the fused kernel there does get `vcvtqq2pd`
+            /// on `zmm` and stops spilling - but it still vectorizes only lanes 0 to 7 and leaves
+            /// the rest scalar, so the tile stays ahead. Measured on a `v4` host, `Decimal32`:
+            /// 0.194s buffered against 0.238s fused; `Decimal64` 0.220s against 0.276s. Hence the
+            /// compile-time branch rather than a runtime one - no x86-64 level wants the fused
+            /// shape. Fewer lanes do not rescue it either: at 8 the spilling stops but the
+            /// vectorization goes with it, 0.205s, and at 4 too few chains remain to hide the
+            /// add latency, 0.218s.
             ///
             /// `wide::integer` has no conversion instruction at all and lowers to soft-float quad
             /// calls, which clobber the vector registers by calling convention - 102 calls and 291

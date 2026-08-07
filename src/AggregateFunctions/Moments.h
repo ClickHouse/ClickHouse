@@ -111,13 +111,12 @@ struct VarMoments
     }
 
     /// `addManyImpl` for elements that carry a scale: the division happens inside the accumulation
-    /// loop. Worth it only where the target converts and divides packed (AArch64 `scvtf`/`fdiv`);
-    /// elsewhere the caller should convert into a buffer and use `addMany`.
-    MULTITARGET_FUNCTION_X86_V4(
-    MULTITARGET_FUNCTION_HEADER(
+    /// loop. Only callers on targets without x86-64's register pressure use this - see
+    /// `AggregateFunctionVarianceSimple::addBatchSinglePlace` - so there is no multitarget variant.
+    /// One was tried: on `x86-64-v4` it does get `vcvtqq2pd` on `zmm` and stops spilling, but it
+    /// still vectorizes only half its lanes and measured slower than converting into a buffer.
     template <typename Value>
-    void NO_INLINE
-    ), addManyDividedImpl, MULTITARGET_FUNCTION_BODY((const Value * __restrict ptr, T divisor, size_t row_begin, size_t row_end) /// NOLINT
+    void NO_INLINE addManyDividedImpl(const Value * __restrict ptr, T divisor, size_t row_begin, size_t row_end)
     {
         T partials[_level][unroll_count]{};
         size_t i = row_begin;
@@ -138,20 +137,11 @@ struct VarMoments
                 m[k] += partials[k - 1][j];
         for (; i < row_end; ++i)
             add(static_cast<T>(ptr[i].value) / divisor);
-    })
-    )
+    }
 
     template <typename Value>
     void addManyDivided(const Value * __restrict ptr, T divisor, size_t row_begin, size_t row_end)
     {
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
-        {
-            addManyDividedImpl_x86_64_v4(ptr, divisor, row_begin, row_end);
-            return;
-        }
-#endif
-
         addManyDividedImpl(ptr, divisor, row_begin, row_end);
     }
 
