@@ -163,6 +163,7 @@ static struct InitFiu
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(keeper_fault_on_watch_request) \
+    REGULAR(keeper_shutdown_delay_before_queue_check) \
     REGULAR(lazy_pipe_fds_fail_close) \
     ONCE(create_empty_part_inject_stale_dir) \
     PAUSEABLE(infinite_sleep) \
@@ -249,6 +250,7 @@ static struct InitFiu
     REGULAR(database_replicated_force_metadata_digest_check) \
     ONCE(oom_canary_force_oom_evidence) \
     PAUSEABLE(truncate_database_tables_pause) \
+    PAUSEABLE(database_materialized_postgresql_pause_before_table_drop) \
     REGULAR(datalake_try_get_table_return_nullptr) \
     REGULAR(datalake_try_get_table_throw) \
     REGULAR(datalake_get_tables_throw) \

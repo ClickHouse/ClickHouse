@@ -1,4 +1,8 @@
+#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Processors/Formats/Impl/ArrowGeoTypes.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
@@ -10,12 +14,12 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Common/HashTable/HashSet.h>
-#include <Common/ProfileEvents.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/GeoFilter.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
@@ -46,6 +50,7 @@ namespace ProfileEvents
 {
     extern const Event ParquetRowsFilterExpression;
     extern const Event ParquetColumnsFilterExpression;
+    extern const Event ParquetPrunedPages;
 }
 
 namespace DB::Parquet
@@ -294,11 +299,13 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     return file_metadata;
 }
 
-void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const
+void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox) const
 {
     for (const PrimitiveColumnInfo & column_info : primitive_columns)
     {
         if (!column_info.used_by_key_condition)
+            continue;
+        if (only_spatial_bbox && !column_info.is_spatial_bbox_column)
             continue;
         if (!column_info.decoder.allow_stats)
             continue;
@@ -336,10 +343,29 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
         }
         catch (Exception & e)
         {
+            /// covering.bbox columns exist only for this optimization (they're never part of the
+            /// query's own output or WHERE columns) - malformed helper stats must fail closed
+            /// (skip pruning for this row group) rather than aborting the whole read, and
+            /// "input_format_parquet_filter_push_down=0" would not even disable this path.
+            if (column_info.is_spatial_bbox_column)
+                continue;
             e.addMessage("in column chunk statistics for column '{}'; use input_format_parquet_filter_push_down=0 to ignore", column_info.name);
             throw;
         }
     }
+}
+
+bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
+{
+    for (size_t bbox_pc_idx : spatial_key_condition_bbox_col_indices.at(spatial_key_condition_idx))
+    {
+        if (bbox_pc_idx == SIZE_MAX)
+            return false;
+        const auto & stats = meta.columns.at(primitive_columns[bbox_pc_idx].column_idx).meta_data.statistics;
+        if (!stats.__isset.null_count || stats.null_count != 0)
+            return false;
+    }
+    return true;
 }
 
 void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read)
@@ -347,12 +373,206 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     extended_sample_block = *sample_block;
     for (const auto & col : format_filter_info->additional_columns)
         extended_sample_block.insert(col);
+
+    /// Parse GeoParquet metadata once. Used by both Phase A (covering.bbox column injection)
+    /// and SchemaConverter (geo type resolution). Parsing here avoids a redundant second parse
+    /// in the SchemaConverter constructor when both allow_geoparquet_parser and
+    /// spatial_filter_push_down are on.
+    ///
+    /// std::optional distinguishes three states for SchemaConverter:
+    ///   nullopt      — not parsed here; SchemaConverter parses if its own setting allows
+    ///   Some(empty)  — parsed (or failed); SchemaConverter must not re-parse (avoids rethrow
+    ///                  on malformed metadata when the try/catch above already issued a warning)
+    ///   Some(map)    — parsed successfully with geo columns; use directly
+    std::optional<std::unordered_map<String, DB::GeoColumnMetadata>> geo_meta;
+    if (options.format.parquet.allow_geoparquet_parser
+        || options.format.parquet.spatial_filter_push_down)
+    {
+        geo_meta.emplace(); // Mark as "parsed" upfront; filled in on success, left empty on failure.
+        for (const auto & kv : file_metadata.key_value_metadata)
+        {
+            if (kv.key != "geo")
+                continue;
+            try
+            {
+                *geo_meta = DB::parseGeoMetadataEncoding(&kv.value);
+            }
+            catch (...)
+            {
+                if (options.format.parquet.allow_geoparquet_parser)
+                    throw;
+                LOG_WARNING(getLogger("ParquetReader"), "Failed to parse GeoParquet metadata, spatial pruning and geo type resolution disabled: {}", getCurrentExceptionMessage(false));
+            }
+            break;
+        }
+    }
+
+    /// `geo_meta` is keyed by raw parquet column names (the "geo" metadata is part of the file
+    /// itself), but `SpatialFilter::geometry_column_name` lives in a different naming domain when
+    /// `format_filter_info->column_mapper` has been swapped for a per-file mapper (data lake schema
+    /// evolution, e.g. after an Iceberg `RENAME COLUMN`): it is the ClickHouse name as of the
+    /// CURRENT/query-side schema, not the raw name the file's OWN schema used.
+    ///
+    /// Join `current_schema_column_mapper` (query-side ClickHouse name -> field_id) with the
+    /// per-file `column_mapper` (field_id -> the name this file's OWN schema used) via
+    /// `ColumnMapper::makeMapping`, which handles arbitrary (including nested) column paths and,
+    /// crucially, never touches the Parquet footer's own `field_id` metadata - it works purely from
+    /// Iceberg schema metadata, which our writer always has even though it currently omits
+    /// per-column `field_id` from the footer.
+    ///
+    /// Note this is a one-way translation (query-side -> raw). `covering.bbox` sub-column paths
+    /// from `geo_meta` are already raw parquet-side names and need no translation: `SchemaConverter`
+    /// resolves `primitive_columns[i].name` via the same per-file `column_mapper`
+    /// (`useColumnMapperIfNeeded`), which returns each field's name as of the file's OWN schema -
+    /// i.e. the very same raw name `geo_meta` already carries. Translating them to the query-side
+    /// name (as an earlier version of this code did) breaks the match against
+    /// `primitive_columns[i].name` for any bbox sub-column that was itself renamed.
+    std::unordered_map<String, String> clickhouse_to_parquet_name;
+    const auto * query_side_column_mapper = format_filter_info->current_schema_column_mapper
+        ? format_filter_info->current_schema_column_mapper.get()
+        : format_filter_info->column_mapper.get();
+    if (query_side_column_mapper && format_filter_info->column_mapper)
+        clickhouse_to_parquet_name =
+            query_side_column_mapper->makeMapping(format_filter_info->column_mapper->getFieldIdToClickHouseName()).first;
+    auto resolve_geo_meta = [&](const String & ch_name) -> std::unordered_map<String, DB::GeoColumnMetadata>::const_iterator
+    {
+        if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
+            return geo_meta->find(it->second);
+        return geo_meta->find(ch_name);
+    };
+    /// `rowGroupFailsSpatialFilters` (the `geospatial_statistics.bbox` fallback) matches
+    /// `filter.geometry_column_name` directly against `primitive_columns[i].name`, which - like
+    /// the `covering.bbox` sub-columns above - is a raw/file-side name in the per-file
+    /// `column_mapper` case. Translate it the same way `resolve_geo_meta` does, or a renamed
+    /// geometry column with only `geospatial_statistics.bbox` (no `covering.bbox`) silently loses
+    /// pruning.
+    auto to_raw_geometry_name = [&](const String & ch_name) -> String
+    {
+        if (auto it = clickhouse_to_parquet_name.find(ch_name); it != clickhouse_to_parquet_name.end())
+            return it->second;
+        return ch_name;
+    };
+
+    /// Phase A: inject covering.bbox sub-columns into extended_sample_block BEFORE
+    /// SchemaConverter runs, so the bbox primitives get proper idx_in_output_block and stats support.
+    std::vector<SpatialFilter> all_spatial_filters;
+    std::vector<SpatialFilter> geostats_spatial_filters;
+    /// Tracks bbox column names that Phase A actually injected (not already present in
+    /// extended_sample_block). Used in Phase B to suppress data decoding for those columns:
+    /// they exist only for row-group statistics, not for query output or filter evaluation.
+    std::unordered_set<String> injected_bbox_columns;
+    if (options.format.parquet.spatial_filter_push_down && format_filter_info->filter_actions_dag)
+    {
+        all_spatial_filters = extractSpatialFilters(*format_filter_info->filter_actions_dag, extended_sample_block);
+
+        /// Collect all leaf column paths from the Parquet schema.
+        /// Used below to guard covering.bbox injection: a bbox path from GeoParquet metadata
+        /// might not exist in the actual file schema (stale/malformed metadata). Without this
+        /// check, SchemaConverter throws THERE_IS_NO_COLUMN for the injected column when
+        /// input_format_parquet_allow_missing_columns = 0, turning a readable file into an exception.
+        std::unordered_set<String> schema_leaf_paths;
+        {
+            const auto & schema = file_metadata.schema;
+            if (schema.size() >= 2 && schema.at(0).num_children > 0)
+            {
+                size_t schema_idx = 1;
+                std::function<void(const String &)> dfs = [&](const String & parent)
+                {
+                    if (schema_idx >= schema.size())
+                        return;
+                    const auto & elem = schema.at(schema_idx++);
+                    String path = parent.empty() ? String(elem.name) : parent + "." + elem.name;
+                    bool is_primitive = !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
+                    if (is_primitive)
+                        schema_leaf_paths.insert(path);
+                    else
+                        for (int i = 0; i < elem.num_children; ++i)
+                            dfs(path);
+                };
+                for (int i = 0; i < schema.at(0).num_children; ++i)
+                    dfs({});
+            }
+        }
+
+        auto float64 = std::make_shared<DataTypeFloat64>();
+        for (const auto & sf : all_spatial_filters)
+        {
+            auto geo_it = resolve_geo_meta(sf.geometry_column_name);
+            if (geo_it == geo_meta->end() || !geo_it->second.covering_bbox.has_value())
+            {
+                SpatialFilter raw_sf = sf;
+                raw_sf.geometry_column_name = to_raw_geometry_name(sf.geometry_column_name);
+                geostats_spatial_filters.push_back(std::move(raw_sf));
+                continue;
+            }
+
+            const auto & bbox_cov = *geo_it->second.covering_bbox;
+
+            const std::array<const String *, 4> raw_bbox_col_ptrs = {
+                &bbox_cov.xmin_column, &bbox_cov.ymin_column,
+                &bbox_cov.xmax_column, &bbox_cov.ymax_column};
+
+            /// Skip injection if any bbox column is absent from the actual file schema. Checked
+            /// against raw parquet-side paths, matching `schema_leaf_paths` (built from the file's
+            /// own schema). Falls back to geostats pruning; avoids THERE_IS_NO_COLUMN when
+            /// input_format_parquet_allow_missing_columns = 0 with stale metadata.
+            bool all_bbox_in_schema = true;
+            for (const String * col : raw_bbox_col_ptrs)
+                if (!schema_leaf_paths.contains(*col))
+                { all_bbox_in_schema = false; break; }
+            if (!all_bbox_in_schema)
+            {
+                SpatialFilter raw_sf = sf;
+                raw_sf.geometry_column_name = to_raw_geometry_name(sf.geometry_column_name);
+                geostats_spatial_filters.push_back(std::move(raw_sf));
+                continue;
+            }
+
+            /// Raw parquet-side names, matching what SchemaConverter will produce for these
+            /// primitives (see comment above on the per-file column_mapper).
+            const std::array<String, 4> bbox_cols = {
+                bbox_cov.xmin_column, bbox_cov.ymin_column,
+                bbox_cov.xmax_column, bbox_cov.ymax_column};
+
+            /// Skip injection if parent struct column (e.g. "location_bbox") is already in block.
+            bool conflict = false;
+            for (const String & col : bbox_cols)
+            {
+                auto dot = col.find('.');
+                if (dot != String::npos && extended_sample_block.has(col.substr(0, dot)))
+                { conflict = true; break; }
+            }
+            if (conflict)
+            {
+                SpatialFilter raw_sf = sf;
+                raw_sf.geometry_column_name = to_raw_geometry_name(sf.geometry_column_name);
+                geostats_spatial_filters.push_back(std::move(raw_sf));
+                continue;
+            }
+
+            for (const String & col : bbox_cols)
+                if (!extended_sample_block.has(col))
+                {
+                    extended_sample_block.insert({float64->createColumn(), float64, col});
+                    injected_bbox_columns.insert(col);
+                }
+        }
+    }
+
     extended_sample_block_data_types = extended_sample_block.getDataTypes();
     const auto & row_level_filter = format_filter_info->row_level_filter;
     const auto & prewhere_info = format_filter_info->prewhere_info;
 
-    /// Process schema.
-    SchemaConverter schemer(file_metadata, options, &extended_sample_block);
+    /// Pass pre-parsed geo_meta to SchemaConverter only when allow_geoparquet_parser is set,
+    /// so that spatial_filter_push_down alone does not change column types to Geometry.
+    /// geo_meta is not moved so Phase B can still look up covering_bbox entries directly.
+    /// Pass std::nullopt when allow_geoparquet_parser is disabled so SchemaConverter skips
+    /// geo type resolution entirely (it will not re-parse).
+    SchemaConverter schemer(
+        file_metadata,
+        options,
+        &extended_sample_block,
+        options.format.parquet.allow_geoparquet_parser ? geo_meta : std::nullopt);
     auto add_prewhere_outputs = [&](const ActionsDAG & actions)
     {
         for (const auto * node : actions.getOutputs())
@@ -398,6 +618,75 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
     }
 
+    /// Phase B: build spatial KeyConditions now that SchemaConverter has set idx_in_output_block
+    /// for the injected bbox columns. Also mark those primitives as used_by_key_condition so
+    /// getHyperrectangleForRowGroup() reads their min/max stats.
+    if (options.format.parquet.spatial_filter_push_down && !all_spatial_filters.empty())
+    {
+        if (auto ctx = format_filter_info->context.lock())
+        {
+            for (const auto & sf : all_spatial_filters)
+            {
+                auto geo_it = resolve_geo_meta(sf.geometry_column_name);
+                if (geo_it == geo_meta->end() || !geo_it->second.covering_bbox.has_value())
+                    continue; // already in geostats_spatial_filters
+
+                const auto & bbox_cov = *geo_it->second.covering_bbox;
+                /// Raw parquet-side bbox paths - matches Phase A, and what extended_sample_block /
+                /// primitive_columns[i].name actually use (see comment above on the per-file
+                /// column_mapper).
+                const std::array<String, 4> bbox_cols = {
+                    bbox_cov.xmin_column, bbox_cov.ymin_column,
+                    bbox_cov.xmax_column, bbox_cov.ymax_column};
+                auto sc = buildBboxKeyCondition(sf,
+                    bbox_cols[0], bbox_cols[1],
+                    bbox_cols[2], bbox_cols[3],
+                    ctx, extended_sample_block);
+                if (!sc)
+                    continue;
+                spatial_key_conditions.push_back(sc);
+
+                /// Mark bbox primitives so getHyperrectangleForRowGroup reads their stats.
+                /// Also record their primitive_columns indices for null_count checks at
+                /// row-group pruning time (NULL bbox = unknown extent, must not prune).
+                std::array<size_t, 4> bbox_pc_indices = {SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX};
+                for (size_t bi = 0; bi < 4; ++bi)
+                    for (size_t ci = 0; ci < primitive_columns.size(); ++ci)
+                        if (primitive_columns[ci].name == bbox_cols[bi])
+                        {
+                            bbox_pc_indices[bi] = ci;
+                            break;
+                        }
+                spatial_key_condition_bbox_col_indices.push_back(bbox_pc_indices);
+
+                for (const String & col : bbox_cols)
+                    for (auto & pc : primitive_columns)
+                        if (pc.name == col)
+                        {
+                            pc.used_by_key_condition = true;
+                            pc.is_spatial_bbox_column = true;
+                            /// Columns that Phase A injected are statistics-only: they are not
+                            /// user outputs and not needed for filter evaluation. Suppress data
+                            /// decoding by using SIZE_MAX as a sentinel step index that
+                            /// ReadManager never matches. Columns already present before Phase A
+                            /// (user-selected or used in WHERE/PREWHERE) are not in
+                            /// injected_bbox_columns and keep their normal scheduling.
+                            if (injected_bbox_columns.contains(col))
+                                pc.first_step_to_calculate = SIZE_MAX;
+                        }
+            }
+        }
+        else
+        {
+            /// Context expired: covering.bbox pruning is unavailable (buildBboxKeyCondition needs
+            /// it), so everything falls back to the geospatial_statistics.bbox path and needs the
+            /// same query-side -> raw-name translation as above.
+            for (auto & sf : all_spatial_filters)
+                sf.geometry_column_name = to_raw_geometry_name(sf.geometry_column_name);
+            geostats_spatial_filters = std::move(all_spatial_filters);
+        }
+    }
+
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
     size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
@@ -413,13 +702,50 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         total_rows += size_t(meta->num_rows); // before potentially skipping the row group
 
         Hyperrectangle hyperrectangle(extended_sample_block.columns(), Range::createWholeUniverse());
+        if ((options.format.parquet.filter_push_down && format_filter_info->key_condition)
+            || !spatial_key_conditions.empty())
+        {
+            /// When filter_push_down is disabled, only read bbox column stats to preserve the
+            /// escape hatch for malformed non-spatial stats: spatial pruning builds its own
+            /// hyperrectangle from the four bbox primitives only.
+            bool only_spatial_bbox = !options.format.parquet.filter_push_down || !format_filter_info->key_condition;
+            getHyperrectangleForRowGroup(meta, hyperrectangle, only_spatial_bbox);
+        }
+
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
         {
-            getHyperrectangleForRowGroup(meta, hyperrectangle);
             if (!format_filter_info->key_condition->checkInHyperrectangle(
                     hyperrectangle, extended_sample_block_data_types).can_be_true)
                 continue;
         }
+
+        /// Check spatial KeyConditions (covering.bbox column stats via hyperrectangle).
+        /// All spatial conditions here come from AND-conjunctive extraction, so if ANY
+        /// single condition cannot be satisfied in this row group, the full conjunction
+        /// cannot be true — prune the row group.
+        /// A spatial condition is skipped when any of its four bbox columns has non-zero or
+        /// unknown null_count: NULL bbox means unknown spatial extent and must not be pruned.
+        if (!spatial_key_conditions.empty())
+        {
+            bool prune_by_spatial = false;
+            for (size_t sci = 0; sci < spatial_key_conditions.size(); ++sci)
+            {
+                if (!spatialBboxStatsHaveNoNulls(*meta, sci))
+                    continue;
+                if (!spatial_key_conditions[sci]->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true)
+                {
+                    prune_by_spatial = true;
+                    break;
+                }
+            }
+            if (prune_by_spatial)
+                continue;
+        }
+
+        /// Fallback: geospatial_statistics on the geometry column itself.
+        if (!geostats_spatial_filters.empty()
+            && rowGroupFailsSpatialFilters(*meta, primitive_columns, geostats_spatial_filters))
+            continue;
 
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
@@ -472,7 +798,36 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
             if (!output_info.is_primitive || !primitive_columns[output_info.primitive_start].decoder.allow_stats)
                 continue;
-            primitive_columns[output_info.primitive_start].column_index_condition = key_condition.get();
+            primitive_columns[output_info.primitive_start].column_index_conditions.push_back({key_condition.get(), SIZE_MAX});
+        }
+    }
+
+    /// Page-level pruning for spatial bbox columns: extract per-column conditions from each
+    /// spatial KeyCondition (covering.bbox) and wire them to the bbox primitive columns.
+    /// Bbox columns are hidden auxiliaries — they have no output_columns entry, so we match
+    /// primitive_columns directly by idx_in_output_block.
+    if (options.format.parquet.page_filter_push_down && !spatial_key_conditions.empty())
+    {
+        for (size_t sci = 0; sci < spatial_key_conditions.size(); ++sci)
+        {
+            const size_t prev_size = spatial_column_conditions.size();
+            spatial_key_conditions[sci]->extractSingleColumnConditions(spatial_column_conditions, nullptr);
+            for (size_t i = prev_size; i < spatial_column_conditions.size(); ++i)
+            {
+                const auto & [idx_in_output_block, key_condition] = spatial_column_conditions[i];
+                for (auto & pc : primitive_columns)
+                {
+                    if (pc.idx_in_output_block != idx_in_output_block)
+                        continue;
+                    if (!pc.decoder.allow_stats)
+                        break;
+                    /// Remember which spatial predicate this single-column condition came from:
+                    /// it may only prune a page when all four of that predicate's bbox columns
+                    /// are known to be null-free (see `applyColumnIndex`).
+                    pc.column_index_conditions.push_back({key_condition.get(), sci});
+                    break;
+                }
+            }
         }
     }
 
@@ -609,7 +964,7 @@ void Reader::prepareBloomFilterCondition()
 void Reader::initializePrefetches()
 {
     bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
-        || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return c.column_index_condition; });
+        || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return !c.column_index_conditions.empty(); });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
     for (RowGroup & row_group : row_groups)
@@ -708,7 +1063,7 @@ void Reader::initializePrefetches()
             }
 
             /// Column index.
-            column.use_column_index = primitive_columns[column_idx].column_index_condition
+            column.use_column_index = !primitive_columns[column_idx].column_index_conditions.empty()
                 && column.offset_index_prefetch
                 && column.meta->__isset.column_index_offset && column.meta->__isset.column_index_length;
             if (column.use_column_index)
@@ -1517,7 +1872,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
     try
     {
         chassert(column.use_column_index);
-        chassert(column_info.column_index_condition);
+        chassert(!column_info.column_index_conditions.empty());
 
         auto data = prefetcher.getRangeData(column.column_index_prefetch);
         parq::ColumnIndex column_index;
@@ -1557,8 +1912,28 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                 adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
             }
 
-            bool passes_filter = column_info.column_index_condition->checkInHyperrectangle(
-                hyperrectangle, extended_sample_block_data_types).can_be_true;
+            /// All conjunctive predicates on this column (e.g. two `pointInPolygon` calls sharing
+            /// the same bbox column) must agree the page can match; any one of them ruling it out
+            /// is enough to prune, so an unproductive later `checkInHyperrectangle` call is skipped.
+            bool passes_filter = std::all_of(
+                column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
+                [&](const PrimitiveColumnInfo::ColumnIndexCondition & c)
+                {
+                    /// A `covering.bbox` predicate may only prune when the full bbox is known for
+                    /// every row the page covers. A NULL bbox means unknown spatial extent, and
+                    /// min/max statistics describe the non-null values only, so the predicate can
+                    /// come out false while a NULL-bbox row still matches. Page boundaries are
+                    /// per column, so it is not enough that this column's page is null-free: a
+                    /// sibling bbox column may hold NULLs on the very rows this page covers.
+                    /// Require the same four-column guarantee the row-group path checks, plus
+                    /// this page's own null counts (which also fail closed when the column index
+                    /// omits `null_counts` or contradicts itself with an all-null page).
+                    if (c.spatial_key_condition_idx != SIZE_MAX
+                        && (can_be_null || always_null
+                            || !spatialBboxStatsHaveNoNulls(*row_group.meta, c.spatial_key_condition_idx)))
+                        return true;
+                    return c.condition->checkInHyperrectangle(hyperrectangle, extended_sample_block_data_types).can_be_true;
+                });
 
             if (!passes_filter)
             {
@@ -1568,6 +1943,7 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
                 if (start_row > prev_row_idx)
                     column.row_ranges_after_column_index.emplace_back(prev_row_idx, start_row);
                 prev_row_idx = end_row;
+                ProfileEvents::increment(ProfileEvents::ParquetPrunedPages);
             }
         }
 
@@ -1576,6 +1952,21 @@ void Reader::applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & 
     }
     catch (Exception & e)
     {
+        /// A `covering.bbox` column that only carries spatial conditions was injected for this
+        /// optimization alone: it is neither an output column nor part of the query's own filter.
+        /// Malformed page statistics for it must fail closed (no page pruning for this column)
+        /// rather than abort the read, matching `getHyperrectangleForRowGroup`. A bbox column the
+        /// query itself reads or filters on has non-spatial conditions too and keeps throwing.
+        const bool only_spatial_conditions = std::all_of(
+            column_info.column_index_conditions.begin(), column_info.column_index_conditions.end(),
+            [](const PrimitiveColumnInfo::ColumnIndexCondition & c) { return c.spatial_key_condition_idx != SIZE_MAX; });
+        if (column_info.is_spatial_bbox_column && only_spatial_conditions)
+        {
+            column.row_ranges_after_column_index.clear();
+            if (row_group.meta->num_rows > 0)
+                column.row_ranges_after_column_index.emplace_back(0, size_t(row_group.meta->num_rows));
+            return;
+        }
         e.addMessage("in column index; use input_format_parquet_page_filter_push_down=0 to ignore");
         throw;
     }

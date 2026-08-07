@@ -434,6 +434,7 @@ namespace
         bool has_time_units = false;
         Int64 seconds = 0;
         Int64 milliseconds = 0;
+        size_t last_unit_order = 0;
 
         /// Iterate through all {number, time unit} pairs.
         size_t pos = 0;
@@ -472,21 +473,43 @@ namespace
 
             Int64 seconds_per_unit = 0;
             Int64 ms_per_unit = 0;
+            size_t unit_order = 0;
 
             if (unit_name == "y")
+            {
+                unit_order = 1;
                 seconds_per_unit = 365ULL * 24 * 60 * 60;  /// 1y equals 365d (ignoring leap days)
+            }
             else if (unit_name == "w")
+            {
+                unit_order = 2;
                 seconds_per_unit = 7 * 24 * 60 * 60;  /// 1w equals 7d
+            }
             else if (unit_name == "d")
+            {
+                unit_order = 3;
                 seconds_per_unit = 24 * 60 * 60;  /// 1d equals 24h
+            }
             else if (unit_name == "h")
+            {
+                unit_order = 4;
                 seconds_per_unit = 60 * 60;  /// 1h equals 60m
+            }
             else if (unit_name == "m")
+            {
+                unit_order = 5;
                 seconds_per_unit = 60;  /// 1m equals 60s
+            }
             else if (unit_name == "s")
+            {
+                unit_order = 6;
                 seconds_per_unit = 1;  /// 1s equals 1000ms
+            }
             else if (unit_name == "ms")
+            {
+                unit_order = 7;
                 ms_per_unit = 1;
+            }
             else
             {
                 setErrorMessage(error_message,
@@ -495,6 +518,16 @@ namespace
                 setErrorPos(error_pos, unit_start_pos);
                 return false;
             }
+
+            if (unit_order <= last_unit_order)
+            {
+                setErrorMessage(error_message,
+                                "Cannot parse {} {} in duration format: Time units must be ordered from longest to shortest and must not be repeated",
+                                getTypeName<T>(), quoteString(input));
+                setErrorPos(error_pos, unit_start_pos);
+                return false;
+            }
+            last_unit_order = unit_order;
 
             if (seconds_per_unit)
             {

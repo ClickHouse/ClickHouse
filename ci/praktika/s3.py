@@ -273,11 +273,16 @@ class S3:
                 break
             elif "Unknown options" in stderr:
                 print("ERROR: Invalid AWS CLI command or CLI client version:")
-                print(f"  | awc error: {stderr}")
+                print(f"  | aws error: {stderr}")
                 break
-            elif "PreconditionFailed" in stderr:
-                print("ERROR: AWS API Call Precondition Failed")
-                print(f"  | awc error: {stderr}")
+            elif (
+                "PreconditionFailed" in stderr
+                or "ConditionalRequestConflict" in stderr
+            ):
+                # Lost optimistic-lock race. Suppress the raise and return False so the caller retries.
+                no_strict = True
+                print("AWS API conditional request failed (concurrent write detected)")
+                print(f"  | aws error: {stderr}")
                 break
             if ret_code != 0:
                 print(
@@ -670,8 +675,8 @@ class S3:
 
             except ClientError as e:
                 error_code = e.response.get("Error", {}).get("Code", "")
-                if error_code == "PreconditionFailed":
-                    print("Precondition failed (concurrent write detected)")
+                if error_code in ("PreconditionFailed", "ConditionalRequestConflict"):
+                    print(f"{error_code} (concurrent write detected)")
                     return False
                 print(f"ERROR: Failed to upload file using boto3: {error_code}")
                 if not no_strict:
