@@ -867,7 +867,7 @@ Introducido en: v20.1.0
 
 Calcula JavaHash a partir de:
 
-* [String](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452),
+* [string](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452),
 * [Byte](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Byte.java#l405),
 * [Short](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Short.java#l410),
 * [Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959),
@@ -1893,7 +1893,7 @@ Introducido en: v23.2.0
 Igual que [`sipHash128`](#sipHash128), pero además acepta un argumento de clave explícito en lugar de usar una clave fija.
 
 <Tip>
-  **use sipHash128ReferenceKeyed para proyectos nuevos**
+  **usa sipHash128ReferenceKeyed para proyectos nuevos**
 
   Esta variante de 128 bits difiere de la implementación de referencia y es más débil.
   Esta versión existe porque, cuando se escribió, no había una extensión oficial de 128 bits para SipHash.
@@ -2689,6 +2689,46 @@ SELECT xxHash64('Hello, world!');
 ┌─xxHash64('Hello, world!')─┐
 │      17691043854468224118 │
 └───────────────────────────┘
+```
+
+<div id="xxHash64Spark">
+  ## xxHash64Spark
+</div>
+
+Introducida en: v26.7.0
+
+Calcula un [xxHash](http://cyan4973.github.io/xxHash/) a partir de una cadena con la misma seed que Spark.
+
+Esta función es igual que [`xxHash64`](#xxHash64), pero usa la seed `42` y devuelve el resultado como `Int64`.
+Solo admite entradas `String` y `NULL`.
+Para `NULL`, la función devuelve `42`, en consonancia con el comportamiento de la seed en Spark.
+
+**Sintaxis**
+
+```sql
+xxHash64Spark(arg)
+```
+
+**Argumentos**
+
+* `arg` — Cadena de entrada para calcular el `hash`. [`String`](/es/reference/data-types/string)
+
+**Valor devuelto**
+
+Devuelve el `hash` de 64 bits calculado a partir de la cadena de entrada. [`Int64`](/es/reference/data-types/int-uint)
+
+**Ejemplos**
+
+**Ejemplo de uso**
+
+```sql title=Query
+SELECT xxHash64Spark('ABC');
+```
+
+```response title=Response
+┌─xxHash64Spark('ABC')─┐
+│  4105715581806190027 │
+└──────────────────────┘
 ```
 
 <div id="xxh3">

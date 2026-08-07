@@ -1,15 +1,13 @@
 {
-  "item": "Guides",
-  "icon": "/images/icons/icon-guides.svg",
   "groups": [
     {
       "group": "ClickHouse guides",
-      "root": "guides/clickhouse/index",
       "pages": [
+        "guides/clickhouse/index",
         {
           "group": "Data formats",
-          "root": "guides/clickhouse/data-formats/intro",
           "pages": [
+            "guides/clickhouse/data-formats/intro",
             "guides/clickhouse/data-formats/csv-tsv",
             "guides/clickhouse/data-formats/parquet",
             "guides/clickhouse/data-formats/arrow-avro-orc",
@@ -18,8 +16,8 @@
             "guides/clickhouse/data-formats/templates-regex",
             {
               "group": "JSON",
-              "root": "guides/clickhouse/data-formats/json/intro",
               "pages": [
+                "guides/clickhouse/data-formats/json/intro",
                 "guides/clickhouse/data-formats/json/loading",
                 "guides/clickhouse/data-formats/json/inference",
                 "guides/clickhouse/data-formats/json/schema",
@@ -32,8 +30,8 @@
         },
         {
           "group": "Data modelling",
-          "root": "guides/clickhouse/data-modelling/index",
           "pages": [
+            "guides/clickhouse/data-modelling/index",
             "guides/clickhouse/data-modelling/schema-design",
             "guides/clickhouse/data-modelling/sparse-primary-indexes",
             "guides/clickhouse/data-modelling/denormalization",
@@ -42,8 +40,8 @@
             "guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements",
             "guides/clickhouse/data-modelling/generating-test-data",
             {
-              "group": "Compression",
               "expanded": false,
+              "group": "Compression",
               "pages": [
                 "guides/clickhouse/data-modelling/compression/compression-in-clickhouse",
                 "guides/clickhouse/data-modelling/compression/compression-modes"
@@ -63,8 +61,8 @@
           ]
         },
         {
-          "group": "Aggregate combinator examples",
           "expanded": false,
+          "group": "Aggregate combinator examples",
           "pages": [
             "guides/clickhouse/examples/aggregate-function-combinators/anyIf",
             "guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
@@ -103,9 +101,8 @@
           ]
         },
         {
-          "group": "Deployment and scaling",
           "expanded": false,
-          "root": "guides/oss/deployment-and-scaling/index",
+          "group": "Deployment and scaling",
           "pages": [
             "guides/oss/deployment-and-scaling/terminology",
             "guides/oss/deployment-and-scaling/shards",
@@ -113,24 +110,24 @@
             "guides/oss/deployment-and-scaling/separation-storage-compute",
             "guides/oss/deployment-and-scaling/cluster-discovery",
             {
-              "group": "Keeper",
               "expanded": false,
-              "root": "guides/oss/deployment-and-scaling/keeper/index",
+              "group": "Keeper",
               "pages": [
+                "guides/oss/deployment-and-scaling/keeper/index",
                 "guides/oss/deployment-and-scaling/keeper/ssl-zookeeper"
               ]
             },
             {
-              "group": "Monitoring",
               "expanded": false,
+              "group": "Monitoring",
               "pages": [
                 "guides/oss/deployment-and-scaling/monitoring/monitoring",
                 "guides/oss/deployment-and-scaling/monitoring/opentelemetry"
               ]
             },
             {
-              "group": "Examples",
               "expanded": false,
+              "group": "Examples",
               "pages": [
                 "guides/oss/deployment-and-scaling/examples/1-shard-2-replicas",
                 "guides/oss/deployment-and-scaling/examples/2-shards-1-replica",
@@ -142,18 +139,18 @@
       ]
     },
     {
-      "group": "Use case guides",
-      "root": "guides/use-cases/index",
       "expanded": true,
+      "group": "Use case guides",
       "pages": [
+        "guides/use-cases/index",
         {
           "group": "Real-time analytics",
           "pages": [
             {
-              "group": "Time series",
               "expanded": false,
-              "root": "guides/use-cases/real-time-analytics/time-series/index",
+              "group": "Time series",
               "pages": [
+                "guides/use-cases/real-time-analytics/time-series/index",
                 "guides/use-cases/real-time-analytics/time-series/date-time-data-types",
                 "guides/use-cases/real-time-analytics/time-series/basic-operations",
                 "guides/use-cases/real-time-analytics/time-series/analysis-functions",
@@ -167,14 +164,14 @@
         },
         {
           "group": "Observability",
-          "root": "guides/use-cases/observability/index",
           "pages": [
+            "guides/use-cases/observability/index",
             "guides/use-cases/observability/cloud-monitoring",
             "guides/use-cases/observability/self-managed-monitoring",
             {
               "group": "Build your own",
-              "root": "guides/use-cases/observability/build-your-own/index",
               "pages": [
+                "guides/use-cases/observability/build-your-own/index",
                 "guides/use-cases/observability/build-your-own/introduction",
                 "guides/use-cases/observability/build-your-own/schema-design",
                 "guides/use-cases/observability/build-your-own/integrating-opentelemetry",
@@ -187,22 +184,23 @@
         },
         {
           "group": "Data warehousing",
-          "root": "guides/use-cases/data-warehousing/index",
           "pages": [
+            "guides/use-cases/data-warehousing/index",
             {
               "group": "Getting started",
-              "root": "guides/use-cases/data-warehousing/getting-started/overview",
               "pages": [
+                "guides/use-cases/data-warehousing/getting-started/overview",
                 "guides/use-cases/data-warehousing/getting-started/querying-directly",
                 "guides/use-cases/data-warehousing/getting-started/connecting-catalogs",
                 "guides/use-cases/data-warehousing/getting-started/accelerating-analytics",
-                "guides/use-cases/data-warehousing/getting-started/writing-data"
+                "guides/use-cases/data-warehousing/getting-started/writing-data",
+                "guides/use-cases/data-warehousing/getting-started/best-practices"
               ]
             },
             {
               "group": "Catalogs",
-              "root": "guides/use-cases/data-warehousing/reference/index",
               "pages": [
+                "guides/use-cases/data-warehousing/reference/index",
                 "guides/use-cases/data-warehousing/glue-catalog",
                 "guides/use-cases/data-warehousing/lakekeeper-catalog",
                 "guides/use-cases/data-warehousing/nessie-catalog",
@@ -218,8 +216,8 @@
         },
         {
           "group": "AI/ML",
-          "root": "guides/use-cases/ai-ml/index",
           "pages": [
+            "guides/use-cases/ai-ml/index",
             "guides/use-cases/ai-ml/vector-search",
             "guides/use-cases/ai-ml/ai-powered-sql-generation",
             {
@@ -231,8 +229,8 @@
             },
             {
               "group": "MCP",
-              "root": "guides/use-cases/ai-ml/MCP/index",
               "pages": [
+                "guides/use-cases/ai-ml/MCP/index",
                 "guides/use-cases/ai-ml/MCP/claude-desktop",
                 "guides/use-cases/ai-ml/MCP/librechat",
                 "guides/use-cases/ai-ml/MCP/anythingllm",
@@ -241,8 +239,8 @@
                 "guides/use-cases/ai-ml/MCP/janai",
                 {
                   "group": "AI agent libraries",
-                  "root": "guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
                   "pages": [
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
                     "guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
                     "guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
                     "guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
@@ -266,5 +264,7 @@
         }
       ]
     }
-  ]
+  ],
+  "icon": "/images/icons/icon-guides.svg",
+  "item": "Guides"
 }
