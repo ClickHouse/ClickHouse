@@ -249,16 +249,9 @@ struct AggregateFunctionMergedJSONPatchData
         entries.insert(it, std::move(entry));
     }
 
-    struct LeafRef
-    {
-        String path; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        String value_blob; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        KeyData sort_key;
-    };
-
     /// Insert batch atomically: filter survivors, erase shadowed entries, push survivors.
     /// This avoids siblings within the batch erasing each other.
-    void insertBatchAtomic(std::vector<LeafRef> & batch) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    void insertBatchAtomic(std::vector<Entry> & batch) // STYLE_CHECK_ALLOW_STD_CONTAINERS
     {
         size_t existing_count = entries.size();
 
@@ -299,7 +292,7 @@ struct AggregateFunctionMergedJSONPatchData
 
     void merge(const AggregateFunctionMergedJSONPatchData & other)
     {
-        std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<Entry> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         batch.reserve(other.entries.size());
         for (const auto & entry : other.entries)
             batch.push_back({String(entry.pathView()), String(entry.value_blob), entry.sort_key});
@@ -324,12 +317,12 @@ struct AggregateFunctionMergedJSONPatchData
         size_t size = 0;
         readVarUInt(size, buf);
 
-        std::vector<LeafRef> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<Entry> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         batch.reserve(size);
 
         for (size_t i = 0; i < size; ++i)
         {
-            LeafRef & lv = batch.emplace_back();
+            Entry & lv = batch.emplace_back();
             readStringBinary(lv.path, buf);
             readStringBinary(lv.value_blob, buf);
             lv.sort_key.deserialize(buf);
@@ -432,7 +425,7 @@ public:
         sort_key.set(*columns[1], row_num);
 
         const auto & object_column = assert_cast<const ColumnObject &>(*columns[0]);
-        std::vector<typename Data::LeafRef> batch;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<typename Data::Entry> batch;  // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
         ColumnObject::SortedPathsIterator iterator(object_column, row_num);
         for (; !iterator.end(); iterator.next())
