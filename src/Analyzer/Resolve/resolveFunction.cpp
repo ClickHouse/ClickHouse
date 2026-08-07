@@ -1578,13 +1578,38 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     QueryTreeNodes tuple_args;
                     if (is_tuple_function)
                     {
-                        const bool left_is_tuple = isTuple(removeNullable(in_first_argument->getResultType()));
+                        const auto & left_type = in_first_argument->getResultType();
+                        const bool left_is_tuple = isTuple(removeNullable(left_type));
                         const auto & candidate_arguments = non_const_set_candidate->getArguments().getNodes();
-                        const bool tuple_function_is_set = wrapped_column_rhs || !left_is_tuple || std::any_of(candidate_arguments.begin(), candidate_arguments.end(),
-                            [](const auto & arg) { return isTuple(removeNullable(arg->getResultType())); });
+                        const auto * nullable_left_type = typeid_cast<const DataTypeNullable *>(left_type.get());
+                        const auto * nullable_left_tuple_type = nullable_left_type
+                            ? typeid_cast<const DataTypeTuple *>(nullable_left_type->getNestedType().get())
+                            : nullptr;
+                        const bool rhs_tuple_all_null = nullable_left_tuple_type
+                            && !wrapped_column_rhs
+                            && !candidate_arguments.empty()
+                            && std::all_of(candidate_arguments.begin(), candidate_arguments.end(),
+                                [](const auto & arg) { return arg->getResultType()->onlyNull(); });
+                        const bool tuple_function_is_set = wrapped_column_rhs
+                            || !left_is_tuple
+                            || rhs_tuple_all_null
+                            || std::any_of(candidate_arguments.begin(), candidate_arguments.end(),
+                                [](const auto & arg) { return isTuple(removeNullable(arg->getResultType())); });
 
                         if (tuple_function_is_set)
+                        {
                             tuple_args = candidate_arguments;
+                            /// For a `Nullable(Tuple(...))` LHS, the constant `Set` path interprets an
+                            /// explicit all-`NULL` RHS tuple as both top-level `NULL` set elements and,
+                            /// when its elements are nullable, the tuple value itself. Preserve both
+                            /// interpretations in the row-wise rewrite.
+                            if (rhs_tuple_all_null
+                                && compare_nulls
+                                && candidate_arguments.size() == nullable_left_tuple_type->getElements().size()
+                                && std::all_of(nullable_left_tuple_type->getElements().begin(), nullable_left_tuple_type->getElements().end(),
+                                    [](const auto & type) { return type->isNullable(); }))
+                                tuple_args.push_back(fn_args[1]);
+                        }
                         else
                             tuple_args = {fn_args[1]};
                     }

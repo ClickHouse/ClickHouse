@@ -316,6 +316,7 @@ ASTPtr makeArrayForNonConstantInRightOperand(
     const ASTPtr & right_operand,
     bool right_operand_is_array,
     bool right_operand_tuple_function_is_set,
+    bool include_right_operand_tuple_value,
     const DataTypePtr & right_operand_type,
     bool left_operand_is_tuple)
 {
@@ -328,9 +329,11 @@ ASTPtr makeArrayForNonConstantInRightOperand(
         {
             auto array_function = makeASTFunction("array");
             auto & array_arguments = array_function->arguments->children;
-            array_arguments.reserve(function->arguments->children.size());
+            array_arguments.reserve(function->arguments->children.size() + include_right_operand_tuple_value);
             for (const auto & child : function->arguments->children)
                 array_arguments.push_back(child->clone());
+            if (include_right_operand_tuple_value)
+                array_arguments.push_back(right_operand->clone());
             return array_function;
         }
     }
@@ -363,6 +366,7 @@ ASTPtr makeNonConstantInReplacement(
     const ASTFunction & node,
     bool right_operand_is_array,
     bool right_operand_tuple_function_is_set,
+    bool include_right_operand_tuple_value,
     const DataTypePtr & right_operand_type,
     bool left_operand_is_tuple,
     size_t left_operand_tuple_size)
@@ -375,6 +379,7 @@ ASTPtr makeNonConstantInReplacement(
         right_operand,
         right_operand_is_array,
         right_operand_tuple_function_is_set,
+        include_right_operand_tuple_value,
         right_operand_type,
         left_operand_is_tuple);
 
@@ -998,6 +1003,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             {
                 bool right_argument_is_array = false;
                 bool right_argument_tuple_function_is_set = false;
+                bool include_right_argument_tuple_value = false;
                 DataTypePtr right_argument_type;
                 const auto * right_argument_function = right_argument->as<ASTFunction>();
                 if (right_argument_function && right_argument_function->name == "tuple")
@@ -1012,19 +1018,40 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         if (auto name_and_type = getNameAndTypeFromAST(right_argument, data))
                             right_argument_type = name_and_type->type;
 
+                        bool rhs_tuple_all_null = !right_argument_function->arguments->children.empty();
                         for (const auto & child : right_argument_function->arguments->children)
                         {
                             if (isTupleFunction(child))
                             {
                                 right_argument_tuple_function_is_set = true;
+                                rhs_tuple_all_null = false;
                                 break;
                             }
 
-                            if (auto name_and_type = getNameAndTypeFromAST(child, data); name_and_type && isTupleType(name_and_type->type))
+                            auto name_and_type = getNameAndTypeFromAST(child, data);
+                            if (name_and_type && isTupleType(name_and_type->type))
                             {
                                 right_argument_tuple_function_is_set = true;
+                                rhs_tuple_all_null = false;
                                 break;
                             }
+                            if (!name_and_type || !name_and_type->type->onlyNull())
+                                rhs_tuple_all_null = false;
+                        }
+
+                        const auto * nullable_left_type = typeid_cast<const DataTypeNullable *>(left_argument_type.get());
+                        const auto * nullable_left_tuple_type = nullable_left_type
+                            ? typeid_cast<const DataTypeTuple *>(nullable_left_type->getNestedType().get())
+                            : nullptr;
+                        if (nullable_left_tuple_type && rhs_tuple_all_null)
+                        {
+                            right_argument_tuple_function_is_set = true;
+                            /// Match the constant `Set` path: an explicit all-`NULL` tuple contributes
+                            /// top-level `NULL` set elements and, when representable, the tuple value too.
+                            include_right_argument_tuple_value = inFunctionComparesNulls(node.name)
+                                && right_argument_function->arguments->children.size() == nullable_left_tuple_type->getElements().size()
+                                && std::all_of(nullable_left_tuple_type->getElements().begin(), nullable_left_tuple_type->getElements().end(),
+                                    [](const auto & type) { return type->isNullable(); });
                         }
                     }
                 }
@@ -1050,6 +1077,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         node,
                         right_argument_is_array,
                         right_argument_tuple_function_is_set,
+                        include_right_argument_tuple_value,
                         right_argument_type,
                         left_argument_is_tuple,
                         getTupleElementCount(left_argument_type, node.arguments->children.at(0)));
