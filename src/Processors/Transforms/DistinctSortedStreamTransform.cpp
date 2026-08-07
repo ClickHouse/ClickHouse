@@ -20,8 +20,8 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-/// Cancellation is polled every this many rows while skipping plain ranges (no hash table),
-/// so KILL QUERY can interrupt long equal-key runs instead of waiting for the whole chunk.
+/// Poll cancellation every this many rows while skipping plain (no-hash-table) ranges,
+/// so KILL QUERY interrupts long equal-key runs instead of waiting for the whole chunk.
 constexpr size_t poll_interval = 4096;
 
 DistinctSortedStreamTransform::DistinctSortedStreamTransform(
@@ -190,8 +190,8 @@ std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(c
     const size_t range_end = getEqualRangeEndAssumeSorted(sorted_columns, sorted_columns_descr, 0, chunk_rows);
     if (other_columns.empty())
     {
-        /// skip rows already included in distinct on previous transform(); poll cancellation
-        /// inside the carried-over prefix so a long all-same-key chunk can be interrupted
+        /// Skip the carried-over prefix from the previous transform, polling cancellation
+        /// inside it so a long all-same-key chunk stays interruptible.
         if (!fillFilterRangeWithPolling(filter, 0, range_end))
         {
             LOG_TEST(getLogger("DistinctSortedStreamTransform"), "Cancelled during continuation from previous chunk");
