@@ -1,0 +1,18 @@
+-- plain table, ADD/DROP COLUMN cycles (counts include entries held by pinned Outdated parts)
+1
+2
+2
+3
+3	6
+-- Nested table: the entry of a detached part must be evicted once its object is gone
+-- (this was the leak in issue 102926: entries for schemas with a distinct collected-nested description were never evicted)
+1
+2
+1
+1
+1
+-- the same with share_nested_offsets disabled
+1
+2
+1
+1
