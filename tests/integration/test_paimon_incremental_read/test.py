@@ -94,7 +94,10 @@ def _run_writer(
 
 
 def _create_clickhouse_table_for_paimon_incremental_read(
-    table_name: str, table_path: str, refresh_interval_sec: int = 1
+    table_name: str,
+    table_path: str,
+    refresh_interval_sec: int = 1,
+    keeper_path: str = "/clickhouse/tables/{uuid}",
 ):
     node.query(f"DROP TABLE IF EXISTS {table_name} SYNC;")
     node.query(
@@ -102,11 +105,12 @@ def _create_clickhouse_table_for_paimon_incremental_read(
         "ENGINE = PaimonLocal('{table_path}') "
         "SETTINGS "
         "paimon_incremental_read = 1, "
-        "paimon_keeper_path = '/clickhouse/tables/{{uuid}}', "
+        "paimon_keeper_path = '{keeper_path}', "
         "paimon_replica_name = '{{replica}}', "
         "paimon_metadata_refresh_interval_sec = {refresh_interval_sec}".format(
             table_name=table_name,
             table_path=table_path,
+            keeper_path=keeper_path.replace("{", "{{").replace("}", "}}"),
             refresh_interval_sec=refresh_interval_sec,
         ),
         settings={"allow_experimental_paimon_storage_engine": 1},
@@ -316,3 +320,84 @@ def test_paimon_to_mergetree_via_refresh_mv(started_cluster):
     node.query(f"DROP VIEW IF EXISTS {CH_MV_NAME} SYNC;")
     node.query(f"DROP TABLE IF EXISTS {CH_MV_MERGETREE_TABLE} SYNC;")
     node.query(f"DROP TABLE IF EXISTS {CH_MV_PAIMON_TABLE} SYNC;")
+
+
+def test_paimon_discards_watermark_after_external_recreate(started_cluster):
+    """
+    The incremental-read watermark in Keeper is a bare snapshot id, so it is only
+    meaningful for the table generation it was committed for. Dropping the ClickHouse
+    table does not remove the Keeper state, and an external DROP + re-CREATE of the
+    Paimon table restarts snapshot numbering from 1. A ClickHouse table re-created at
+    the same `paimon_keeper_path` must therefore discard the inherited watermark
+    (recorded for the old generation) and read the recreated table from its first
+    snapshot, instead of treating `committed_snapshot >= LATEST` as "nothing new"
+    and returning no rows forever.
+    """
+    table_name = "paimon_inc_read_recreate"
+    # Deliberately NOT {uuid}-based: the path must survive DROP + re-CREATE of the
+    # ClickHouse table so that the new table inherits the old generation's watermark.
+    keeper_path = "/clickhouse/paimon_watermark_recreate_test"
+
+    writer_container_id = cluster.get_instance_docker_id("paimon-incremental-writer")
+
+    warehouse_name = "warehouse_recreate"
+    warehouse_uri = f"file://{USER_FILES_PATH}/{warehouse_name}/"
+    warehouse_dir = f"{USER_FILES_PATH}/{warehouse_name}"
+    table_path = f"{USER_FILES_PATH}/{warehouse_name}/test.db/test_table"
+
+    _clean_warehouse(writer_container_id, warehouse_dir)
+
+    # First generation: warm-up snapshot for schema inference, then one more snapshot
+    # so the committed watermark advances to snapshot 2 — at or past any snapshot id
+    # the recreated table restarts from.
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=0, rows_per_commit=1, commit_times=1)
+    _create_clickhouse_table_for_paimon_incremental_read(
+        table_name, table_path, keeper_path=keeper_path
+    )
+    _wait_until_query_result(
+        f"SELECT count() FROM {table_name}",
+        "1\n",
+        database="default",
+    )
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=1, rows_per_commit=10, commit_times=1)
+    _wait_until_query_result(
+        f"SELECT count() FROM {table_name}",
+        "10\n",
+        database="default",
+    )
+    _wait_until_query_result(
+        f"SELECT count() FROM {table_name}",
+        "0\n",
+        database="default",
+    )
+
+    # Externally recreate the Paimon table at the same location. Drop the ClickHouse
+    # table first: a live table detects the recreation via the schema-0 identity check
+    # and refuses to serve, telling the user to re-create it — which is exactly the
+    # flow reproduced here. The Keeper watermark (committed snapshot 2 of the old
+    # generation) survives the DROP.
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC;")
+    _clean_warehouse(writer_container_id, warehouse_dir)
+    _run_writer(writer_container_id, warehouse_uri=warehouse_uri, start_id=100, rows_per_commit=5, commit_times=1)
+
+    # Re-create the ClickHouse table at the same keeper path. The recreated Paimon
+    # table is at snapshot 1 while the inherited watermark is 2: without generation
+    # tracking the first read would return 0 rows forever. With it, the stale
+    # watermark is discarded and the new table is read from its beginning.
+    _create_clickhouse_table_for_paimon_incremental_read(
+        table_name, table_path, keeper_path=keeper_path
+    )
+    _wait_until_query_result(
+        f"SELECT count() FROM {table_name}",
+        "5\n",
+        database="default",
+    )
+    # The discarded watermark is replaced (and latched to the new generation) by that
+    # first read, so subsequent incremental reads proceed normally from snapshot 1.
+    _wait_until_query_result(
+        f"SELECT count() FROM {table_name}",
+        "0\n",
+        database="default",
+    )
+
+    node.query(f"DROP TABLE IF EXISTS {table_name} SYNC;")
