@@ -115,6 +115,7 @@ UInt64 roundTripJoinStep(const JoinStepLogical & source, const String & serializ
     return static_cast<JoinStepLogical &>(*restored).getJoinSettings().grace_hash_join_initial_buckets;
 }
 
+#ifndef DEBUG_OR_SANITIZER_BUILD
 void expectZeroExternalJoinThresholdRejected(bool concurrent)
 {
     auto table_join = std::make_shared<TableJoin>(
@@ -141,6 +142,7 @@ void expectZeroExternalJoinThresholdRejected(bool concurrent)
         EXPECT_TRUE(e.message().contains("greater than 0"));
     }
 }
+#endif
 
 }
 
@@ -282,6 +284,10 @@ TEST(GraceHashJoinBuckets, LimitsAutomaticTemporaryFileBufferMemory)
 
 TEST(SpillingHashJoin, RejectsZeroExternalJoinThreshold)
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "`LOGICAL_ERROR` aborts in debug and sanitizer builds";
+#else
     expectZeroExternalJoinThresholdRejected(/*concurrent=*/false);
     expectZeroExternalJoinThresholdRejected(/*concurrent=*/true);
+#endif
 }
