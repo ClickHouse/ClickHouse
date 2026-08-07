@@ -126,6 +126,48 @@ public:
             return static_cast<ResultType>(v);
     }
 
+    /// Accumulate a `Decimal` range through the batched path, optionally masked by `flags`, which
+    /// follows `addManyConditional`: a row counts when `!flags[i] == add_if_zero`. The comment in
+    /// `addBatchSinglePlace` explains why the conversion sits where it does.
+    template <bool conditional, bool add_if_zero>
+    void addManyDecimal(
+        typename StatFunc::Data & data,
+        const T1 * __restrict vec,
+        [[maybe_unused]] const UInt8 * __restrict flags,
+        size_t row_begin,
+        size_t row_end) const
+    {
+#if defined(__x86_64__)
+        static constexpr bool convert_into_buffer = true;
+#else
+        static constexpr bool convert_into_buffer = is_big_int_v<typename T1::NativeType>;
+#endif
+        static constexpr size_t TILE = 1024; /// `ResultType[TILE]` stays in L1
+
+        [[maybe_unused]] ResultType buf[convert_into_buffer ? TILE : 1];
+        for (size_t off = row_begin; off < row_end; off += TILE)
+        {
+            const size_t tile = std::min(TILE, row_end - off);
+            if constexpr (convert_into_buffer)
+            {
+                for (size_t k = 0; k < tile; ++k)
+                    buf[k] = convertOne(vec[off + k], decimal_divisor);
+                if constexpr (conditional)
+                    data.template addManyConditional<ResultType, add_if_zero>(buf, flags + off, /*row_begin=*/0, tile);
+                else
+                    data.addMany(buf, /*row_begin=*/0, tile);
+            }
+            else
+            {
+                if constexpr (conditional)
+                    data.template addManyConditionalDivided<T1, add_if_zero>(
+                        vec + off, decimal_divisor, flags + off, /*row_begin=*/0, tile);
+                else
+                    data.addManyDivided(vec + off, decimal_divisor, /*row_begin=*/0, tile);
+            }
+        }
+    }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
@@ -178,38 +220,29 @@ public:
             /// two targets disagreeing.
             if constexpr (StatFunc::num_args == 1 && StatFunc::level <= 2)
             {
+                const auto & vec = static_cast<const ColVecT1 &>(*columns[0]).getData();
+                auto & data = this->data(place);
+
                 if (if_argument_pos < 0)
                 {
-#if defined(__x86_64__)
-                    static constexpr bool convert_into_buffer = true;
-#else
-                    static constexpr bool convert_into_buffer = is_big_int_v<typename T1::NativeType>;
-#endif
-                    static constexpr size_t TILE = 1024; /// `ResultType[TILE]` stays in L1
-                    const auto & vec = static_cast<const ColVecT1 &>(*columns[0]).getData();
-                    auto & data = this->data(place);
+                    addManyDecimal<false, false>(data, vec.data(), nullptr, row_begin, row_end);
+                    return;
+                }
 
-                    [[maybe_unused]] ResultType buf[convert_into_buffer ? TILE : 1];
-                    for (size_t off = row_begin; off < row_end; off += TILE)
-                    {
-                        const size_t tile = std::min(TILE, row_end - off);
-                        if constexpr (convert_into_buffer)
-                        {
-                            for (size_t k = 0; k < tile; ++k)
-                                buf[k] = convertOne(vec[off + k], decimal_divisor);
-                            data.addMany(buf, /*row_begin=*/0, tile);
-                        }
-                        else
-                            data.addManyDivided(vec.data() + off, decimal_divisor, /*row_begin=*/0, tile);
-                    }
+                /// Masked, the batch converts rows the condition then discards, which only pays
+                /// while the conversion is cheap. For a wide integer it is the dominant cost, and
+                /// converting twice as many elements cost more than the batching saved - 1.033s
+                /// against 0.554s on `varPopIf` over `Decimal128` - so those keep the per-row path,
+                /// which converts only what it accumulates.
+                if constexpr (!is_big_int_v<typename T1::NativeType>)
+                {
+                    const auto * flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+                    addManyDecimal<true, false>(data, vec.data(), flags, row_begin, row_end);
                     return;
                 }
             }
 
-            /// Conditional aggregation, the two-argument kinds and the higher moments stay on the
-            /// generic per-row path, as does `Nullable` through `addBatchSinglePlaceNotNull`. Those
-            /// forms still gain for `Decimal128`, where `convertOne` alone is worth about 45%, but
-            /// not for the narrower types, where the batched loop is the whole gain.
+            /// The two-argument kinds and the higher moments stay on the generic per-row path.
             Base::addBatchSinglePlace(row_begin, row_end, place, columns, arena, if_argument_pos);
         }
         else
@@ -251,6 +284,31 @@ public:
     {
         if constexpr (is_decimal<T1>)
         {
+            /// Same reasoning as the masked case in `addBatchSinglePlace`: the batch converts rows
+            /// the null map discards, so wide decimals stay on the per-row path.
+            if constexpr (StatFunc::num_args == 1 && StatFunc::level <= 2 && !is_big_int_v<typename T1::NativeType>)
+            {
+                const auto & vec = static_cast<const ColVecT1 &>(*columns[0]).getData();
+                auto & data = this->data(place);
+
+                if (if_argument_pos < 0)
+                {
+                    addManyDecimal<true, true>(data, vec.data(), null_map, row_begin, row_end);
+                    return;
+                }
+
+                /// Merging the two sets of flags into a temporary buffer vectorizes better
+                /// than fusing both flags into the accumulation loop.
+                const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+                /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+                std::unique_ptr<UInt8[]> final_flags(new UInt8[row_end]);
+                for (size_t i = row_begin; i < row_end; ++i)
+                    final_flags[i] = (!null_map[i]) & !!if_flags[i];
+
+                addManyDecimal<true, false>(data, vec.data(), final_flags.get(), row_begin, row_end);
+                return;
+            }
+
             Base::addBatchSinglePlaceNotNull(row_begin, row_end, place, columns, null_map, arena, if_argument_pos);
         }
         else
