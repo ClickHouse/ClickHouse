@@ -110,7 +110,7 @@ public:
     /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects, 
+        const StoredObjects & objects,
         StoredObjects * successful_objects = nullptr) override;
 
     void tagObjects( /// NOLINT

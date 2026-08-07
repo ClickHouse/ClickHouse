@@ -1809,7 +1809,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
         if (table_mode == ObjectStorageQueueMode::EXCLUSIVE)
         {
-            std::vector<String> failed_to_delete_paths = 
+            std::vector<String> failed_to_delete_paths =
                 StorageObjectStorageQueue::getFailedPaths(successful_objects, processed_objects);
 
             if (!failed_to_delete_paths.empty())

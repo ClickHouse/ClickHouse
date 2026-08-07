@@ -86,7 +86,7 @@ public:
     void removeObjectIfExists(const StoredObject & object) override;
 
     void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects, 
+        const StoredObjects & objects,
         StoredObjects * successful_objects = nullptr) override;
 
     void tagObjects( /// NOLINT
