@@ -105,7 +105,17 @@ ASTPtr parseFieldOperator(
             array->arguments->children.push_back(std::move(constant));
         }
 
-        auto condition = makeASTFunction("has", array, identifier());
+        /** Mongo applies `$in` to an array field element wise: the document matches when any
+          * element of the array is among the candidates. The type of the column is not known
+          * here, so one expression has to fit both shapes: wrapping the field into an array and
+          * flattening turns a scalar into the one element array of itself and leaves an array
+          * field as its elements, and `hasAny` is the membership test over them. What this does
+          * not cover is the whole-array match - a candidate that is itself an array - because the
+          * candidates are constants; and a field of nested arrays is flattened through every
+          * level rather than one.
+          */
+        auto field_elements = makeASTFunction("flatten", makeASTFunction("array", identifier()));
+        auto condition = makeASTFunction("hasAny", array, std::move(field_elements));
         return name == "$in" ? condition : makeASTFunction("not", condition);
     }
 
@@ -147,7 +157,15 @@ ASTPtr parseFieldOperator(
         auto size = tryParseMongoConstant(argument);
         if (!size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$size' must be a number");
-        return makeASTFunction("equals", makeASTFunction("length", identifier()), size);
+        /** `$size` is defined on arrays only. A string also has a `length`, but to Mongo a
+          * document whose field is not an array matches no `$size` at all, so the length test is
+          * guarded by the type of the column. A column of a type that has no `length` (a number,
+          * for instance) makes the query fail instead of matching nothing - a controlled
+          * rejection, since the type is not known when this is lowered.
+          */
+        auto is_array = makeASTFunction(
+            "startsWith", makeASTFunction("toTypeName", identifier()), make_intrusive<ASTLiteral>(Field(String("Array"))));
+        return makeASTFunction("and", std::move(is_array), makeASTFunction("equals", makeASTFunction("length", identifier()), size));
     }
 
     if (name == "$all")

@@ -87,14 +87,13 @@ std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, co
     {
         const char * suffix_begin = getSettingsSubstring(begin, end).second + 1;
 
-        /** The text handed here reaches to the end of everything the client sent, so the suffix
+        /** The text handed here may reach to the end of everything the client sent, so the suffix
           * stops at the terminator of this query - otherwise a `find` without a limit would take
-          * the one of a later query of the same multi query. The statements are told apart by
-          * their `;` here the same way `tryParseMongoQuery` tells them apart.
+          * the one of a later query of the same multi query. The statements are told apart the
+          * same way `tryParseMongoQuery` tells them apart: by a `;` outside a string literal, a
+          * `;` inside the argument of a `.sort(...)` is part of the argument.
           */
-        const char * suffix_end = suffix_begin;
-        while (suffix_end != end && *suffix_end != ';')
-            ++suffix_end;
+        const char * suffix_end = findStatementEnd(suffix_begin, end);
 
         MongoQueryKeyNameExtractor limit_extractor(".limit");
         limit = limit_extractor.extractInt(suffix_begin, suffix_end);

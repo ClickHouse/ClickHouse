@@ -57,11 +57,20 @@ ASTPtr tryParseMongoQuery(
         }
     }
 
-    auto [data_begin, data_end] = getSettingsSubstring(_out_query_end, end);
-    metadata = extractMetadataFromRequest(_out_query_end, end);
+    /** The statement reaches to its terminator - a `;` outside a string literal - or, when there
+      * is none, to the end of the input: a single query needs no trailing `;`, and a `;` inside a
+      * value such as `{"name": "a;b"}` is data. Everything the statement consists of is read from
+      * within this bound, so that the `.limit` of a later statement of a multi query cannot leak
+      * into this one.
+      */
+    const char * statement_end = findStatementEnd(_out_query_end, end);
+
+    auto [data_begin, data_end] = getSettingsSubstring(_out_query_end, statement_end);
+    metadata = extractMetadataFromRequest(_out_query_end, statement_end);
     dynamic_cast<ParserMongoQuery &>(parser).setParsingData(parseData(data_begin, data_end, metadata->getAllocator()), metadata);
 
-    _out_query_end = findKth<';'>(_out_query_end, end, 1) + 1;
+    /// The terminator belongs to the statement, so the next one starts after it.
+    _out_query_end = statement_end == end ? end : statement_end + 1;
     const bool parse_res = parser.parse(token_iterator, res, expected);
     if (!parse_res)
     {

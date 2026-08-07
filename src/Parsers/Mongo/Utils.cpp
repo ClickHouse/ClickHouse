@@ -3,6 +3,8 @@
 #include <optional>
 #include <string>
 
+#include <Common/StringUtils.h>
+
 namespace DB
 {
 
@@ -65,6 +67,109 @@ std::pair<const char *, const char *> getSettingsSubstring(const char * begin, c
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find settings in your query ");
+}
+
+const char * findStatementEnd(const char * begin, const char * end)
+{
+    bool inside_string = false;
+    char quote = 0;
+    for (const char * position = begin; position != end; ++position)
+    {
+        if (inside_string)
+        {
+            if (*position == '\\' && position + 1 != end)
+                ++position;
+            else if (*position == quote)
+                inside_string = false;
+        }
+        else if (*position == '"' || *position == '\'')
+        {
+            inside_string = true;
+            quote = *position;
+        }
+        else if (*position == ';')
+            return position;
+    }
+    return end;
+}
+
+std::optional<UInt32> decimalScaleOfNumberDecimal(std::string_view text)
+{
+    /// The precision of `Decimal128`.
+    static constexpr Int64 max_precision = 38;
+
+    size_t pos = 0;
+    if (pos < text.size() && (text[pos] == '+' || text[pos] == '-'))
+        ++pos;
+
+    const size_t integer_begin = pos;
+    while (pos < text.size() && isNumericASCII(text[pos]))
+        ++pos;
+    const size_t integer_end = pos;
+
+    size_t fractional_begin = pos;
+    size_t fractional_end = pos;
+    if (pos < text.size() && text[pos] == '.')
+    {
+        ++pos;
+        fractional_begin = pos;
+        while (pos < text.size() && isNumericASCII(text[pos]))
+            ++pos;
+        fractional_end = pos;
+    }
+
+    if (integer_end == integer_begin && fractional_end == fractional_begin)
+        return std::nullopt;
+
+    Int64 exponent = 0;
+    if (pos < text.size() && (text[pos] == 'e' || text[pos] == 'E'))
+    {
+        ++pos;
+        bool negative_exponent = false;
+        if (pos < text.size() && (text[pos] == '+' || text[pos] == '-'))
+            negative_exponent = text[pos++] == '-';
+        const size_t exponent_begin = pos;
+        while (pos < text.size() && isNumericASCII(text[pos]))
+        {
+            exponent = exponent * 10 + (text[pos] - '0');
+            /// Mongo caps the exponent at four digits; anything this far out cannot fit anyway,
+            /// and the early exit keeps the accumulator from overflowing.
+            if (exponent > 10000)
+                return std::nullopt;
+            ++pos;
+        }
+        if (pos == exponent_begin)
+            return std::nullopt;
+        if (negative_exponent)
+            exponent = -exponent;
+    }
+
+    if (pos != text.size())
+        return std::nullopt;
+
+    /// The count of significant digits of the coefficient: leading zeros carry no information,
+    /// while trailing fractional zeros do - they widen the scale.
+    size_t first_significant = integer_begin;
+    while (first_significant < integer_end && text[first_significant] == '0')
+        ++first_significant;
+    Int64 significant = integer_end - first_significant;
+    if (significant == 0)
+    {
+        first_significant = fractional_begin;
+        while (first_significant < fractional_end && text[first_significant] == '0')
+            ++first_significant;
+        significant = fractional_end - first_significant;
+    }
+    else
+        significant += fractional_end - fractional_begin;
+
+    const Int64 fractional_digits = fractional_end - fractional_begin;
+    const Int64 scale = std::max<Int64>(0, fractional_digits - exponent);
+    /// The value scaled by `10^scale` is an integer of this many digits; it must fit the type.
+    const Int64 precision = significant + std::max<Int64>(0, exponent - fractional_digits);
+    if (scale > max_precision || precision > max_precision)
+        return std::nullopt;
+    return static_cast<UInt32>(scale);
 }
 
 std::optional<rapidjson::Value>

@@ -4,6 +4,7 @@
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
+#include <Parsers/Mongo/Utils.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -79,10 +80,20 @@ convertExtendedJSONWrapper(const rapidjson::Value & wrapper, const String & fiel
 
     if (name == "$numberDecimal" && member.value.IsString())
     {
-        /// The same type the filters use for `$numberDecimal`.
+        /// The scale is derived from the value, the same way the filters do it for
+        /// `$numberDecimal`: a fixed scale would silently round part of the value space of
+        /// Mongo's `Decimal128`, which is a decimal floating point type.
+        std::string_view text(member.value.GetString(), member.value.GetStringLength());
+        auto scale = Mongo::decimalScaleOfNumberDecimal(text);
+        if (!scale)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value '{}' of '$numberDecimal' of the field '{}' cannot be represented exactly by a Decimal128",
+                text,
+                field_name);
         rapidjson::Value value;
         value.CopyFrom(member.value, allocator);
-        return {"Decimal128(10)", std::move(value)};
+        return {fmt::format("Decimal128({})", *scale), std::move(value)};
     }
 
     if (name == "$date")
@@ -165,6 +176,23 @@ rapidjson::Value convertWrappersDeep(const rapidjson::Value & value, const Strin
   * an array of `$date` values becomes `Array(DateTime64(3, 'UTC'))`; otherwise the elements keep
   * their converted serializations and the column type is inferred from them as usual.
   */
+/// The widest of two decimal types when both are decimal, so that an array of `$numberDecimal`
+/// values of different scales still becomes one decimal column: every value fits a scale that is
+/// the maximum of the individual ones, only padded with zeros. Nothing when either type is not a
+/// decimal - such a pair has no common type here.
+std::optional<String> mergeDecimalTypes(const String & left, const String & right)
+{
+    UInt32 left_scale = 0;
+    UInt32 right_scale = 0;
+    ReadBufferFromMemory left_buffer(left.data(), left.size());
+    ReadBufferFromMemory right_buffer(right.data(), right.size());
+    if (!checkString("Decimal128(", left_buffer) || !tryReadText(left_scale, left_buffer) || !checkString(")", left_buffer)
+        || !left_buffer.eof() || !checkString("Decimal128(", right_buffer) || !tryReadText(right_scale, right_buffer)
+        || !checkString(")", right_buffer) || !right_buffer.eof())
+        return std::nullopt;
+    return fmt::format("Decimal128({})", std::max(left_scale, right_scale));
+}
+
 std::optional<String> convertWrappersInArray(
     const rapidjson::Value & array, const String & field_name, rapidjson::Value & out, rapidjson::Document::AllocatorType & allocator)
 {
@@ -179,7 +207,12 @@ std::optional<String> convertWrappersInArray(
             if (!common_type)
                 common_type = std::move(type);
             else if (*common_type != type)
-                all_wrappers = false;
+            {
+                if (auto merged = mergeDecimalTypes(*common_type, type))
+                    common_type = std::move(merged);
+                else
+                    all_wrappers = false;
+            }
             out.PushBack(value, allocator);
         }
         else

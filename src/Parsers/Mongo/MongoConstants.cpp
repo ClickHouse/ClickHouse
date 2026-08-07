@@ -5,7 +5,10 @@
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/Mongo/Utils.h>
 #include <Common/Exception.h>
+
+#include <fmt/format.h>
 
 namespace DB
 {
@@ -93,9 +96,16 @@ ASTPtr tryParseMongoConstant(const rapidjson::Value & value)
     {
         if (!member.value.IsString())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '$numberDecimal' must be a string");
-        /// Mongo's `Decimal128` is a 34 digit decimal floating point number; `Decimal128(10)` is the
-        /// closest fixed point type that keeps the integer part of every value it can represent.
-        return makeASTFunction("CAST", makeLiteral(Field(String(stringView(member.value)))), makeLiteral(Field(String("Decimal128(10)"))));
+        /// Mongo's `Decimal128` is a 34 digit decimal floating point number with an exponent of its
+        /// own, so no single fixed point type holds all of them: the scale is derived from the
+        /// value, and a value that fits no scale is rejected rather than silently rounded.
+        std::string_view text = stringView(member.value);
+        auto scale = decimalScaleOfNumberDecimal(text);
+        if (!scale)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "The value '{}' of '$numberDecimal' cannot be represented exactly by a Decimal128", text);
+        return makeASTFunction(
+            "CAST", makeLiteral(Field(String(text))), makeLiteral(Field(String(fmt::format("Decimal128({})", *scale)))));
     }
     if (wrapper == "$oid")
     {

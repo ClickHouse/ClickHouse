@@ -904,9 +904,9 @@ def test_dollar_field_path_is_an_error(started_cluster):
 
 
 def test_insert_decimal_round_trip(started_cluster):
-    """A BSON decimal128 arrives as `{"$numberDecimal": ...}` and becomes a `Decimal128(10)`
-    column, and the reply encodes the column back as a BSON decimal128 - not as a double,
-    which could not hold all of its digits."""
+    """A BSON decimal128 arrives as `{"$numberDecimal": ...}` and becomes a `Decimal128`
+    column of the scale of the value, and the reply encodes the column back as a BSON
+    decimal128 - not as a double, which could not hold all of its digits."""
     from bson.decimal128 import Decimal128
 
     client = make_client()
@@ -1165,3 +1165,72 @@ def test_float_denormals_round_trip(started_cluster):
     assert found[3]["f32"] == 1.5 and found[3]["f64"] == 2.5
 
     node.query("DROP TABLE db.denormals", password="123")
+
+
+def test_insert_decimal_scale_is_preserved(started_cluster):
+    """A `$numberDecimal` keeps the scale of its value: `0.00000000001` has eleven fractional
+    digits, which a fixed `Decimal128(10)` column would silently round away. An array of
+    decimals of different scales becomes one column of the widest scale, so its values read
+    back padded to that scale - other members of the same cohorts."""
+    from bson.decimal128 import Decimal128
+
+    client = make_client()
+
+    # One collection per value: the column type is inferred from the first document of a
+    # collection, so this is what pins the scale each value gets for itself.
+    eleven = client["db"]["decimal_scale_eleven"]
+    eleven.drop()
+    eleven.insert_one({"id": 1, "d": Decimal128("0.00000000001")})
+    assert list(eleven.find({})) == [{"id": 1, "d": Decimal128("0.00000000001")}]
+
+    twenty = client["db"]["decimal_scale_twenty"]
+    twenty.drop()
+    twenty.insert_one({"id": 1, "d": Decimal128("1E-20")})
+    assert list(twenty.find({})) == [
+        {"id": 1, "d": Decimal128("0.00000000000000000001")}
+    ]
+
+    arrays = client["db"]["decimal_scale_arrays"]
+    arrays.drop()
+    arrays.insert_one({"id": 1, "prices": [Decimal128("1.5"), Decimal128("1.25")]})
+    assert list(arrays.find({})) == [
+        {"id": 1, "prices": [Decimal128("1.50"), Decimal128("1.25")]}
+    ]
+
+
+def test_insert_decimal_that_fits_no_decimal128_is_an_error(started_cluster):
+    """Mongo's decimal128 is a floating point type with an exponent of its own, so some of its
+    values fit no ClickHouse `Decimal128` of any scale. Such a value is rejected with an error
+    rather than silently rounded."""
+    from bson.decimal128 import Decimal128
+
+    client = make_client()
+    collection = client["db"]["decimal_rejects"]
+    collection.drop()
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.insert_one({"id": 1, "d": Decimal128("1E+40")})
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.insert_one({"id": 2, "d": Decimal128("NaN")})
+
+
+def test_in_on_array_field_tests_the_elements(started_cluster):
+    """Mongo applies `$in` to an array field by asking whether any element of it is among the
+    candidates, and `$nin` is its negation. `$size` matches arrays only: a string of the right
+    length is not a match."""
+    client = make_client()
+    collection = client["db"]["tagged"]
+
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "name": "alpha", "tags": ["red", "blue"]},
+            {"id": 2, "name": "beta", "tags": ["green"]},
+        ]
+    )
+
+    assert [doc["id"] for doc in collection.find({"tags": {"$in": ["red"]}})] == [1]
+    assert [doc["id"] for doc in collection.find({"tags": {"$nin": ["red"]}})] == [2]
+    assert [doc["id"] for doc in collection.find({"name": {"$in": ["alpha"]}})] == [1]
+    assert [doc["id"] for doc in collection.find({"tags": {"$size": 2}})] == [1]
+    assert [doc["id"] for doc in collection.find({"name": {"$size": 5}})] == []
