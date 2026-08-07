@@ -4,7 +4,6 @@
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Names.h>
-#include <Core/ParallelReplicasMode.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -134,13 +133,11 @@ namespace Setting
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 max_subquery_depth;
     extern const SettingsUInt64 max_rows_in_distinct;
-    extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
-    extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool query_cache_compress_entries;
     extern const SettingsUInt64 query_cache_max_entries;
@@ -2292,52 +2289,24 @@ void Planner::buildPlanForQueryNode()
         }
     }
 
-    /// STREAM must be refused for every mode that can distribute the read: the task-based coordinator, the two
-    /// custom-key modes and the sampling-key offset split reach the storage through different code, and none of
-    /// them gates STREAM. FINAL stays scoped to the task-based mode; the other modes return the expected result.
-    const bool task_based_parallel_replicas = query_context->canUseTaskBasedParallelReplicas();
-    const bool offset_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0
-        && settings[Setting::max_parallel_replicas] > 1
-        && (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING
-            || settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE
-            || settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY);
-    if (task_based_parallel_replicas || offset_parallel_replicas)
+    if (query_context->canUseTaskBasedParallelReplicas())
     {
         auto & query_node_typed = query_tree->as<QueryNode &>();
         const auto & table_expression_nodes = extractTableExpressions(query_node_typed.getJoinTreeNodeTyped(), true, true);
         for (const auto & it : table_expression_nodes)
         {
-            /// A table expression carrying STREAM can be either node: validateTableExpressionModifiers
-            /// checks both, and the parallel-replicas path is keyed on the storage, not the carrier.
-            const auto * table_node = it->as<TableNode>();
-            const auto * table_function_node = it->as<TableFunctionNode>();
-            if (!table_node && !table_function_node)
+            auto * table_node = it->as<TableNode>();
+            if (!table_node)
                 continue;
 
-            const auto & modifiers
-                = table_node ? table_node->getTableExpressionModifiers() : table_function_node->getTableExpressionModifiers();
-            if (!modifiers.has_value())
-                continue;
-
-            /// FINAL and STREAM cannot both be set: the analyzer rejects that combination.
-            /// FINAL keeps base's scope - a TableNode under the task-based mode - so this fix does
-            /// not turn queries the other modes accept today into a new refusal.
-            const char * modifier_name = nullptr;
-            if (modifiers->hasFinal() && task_based_parallel_replicas && table_node)
-                modifier_name = "FINAL";
-            else if (modifiers->hasStream())
-                modifier_name = "STREAM";
-
-            if (modifier_name)
+            const auto & modifiers = table_node->getTableExpressionModifiers();
+            if (modifiers.has_value() && (modifiers->hasFinal() || modifiers->hasStream()))
             {
+                const auto * modifier = modifiers->hasFinal() ? "FINAL" : "STREAM";
                 if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
-                    throw Exception(
-                        ErrorCodes::SUPPORT_IS_DISABLED, "{} modifier is not supported with parallel replicas", modifier_name);
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "{} modifier is not supported with parallel replicas", modifier);
 
-                LOG_DEBUG(
-                    log,
-                    "{} modifier is not supported with parallel replicas. Query will be executed without using them.",
-                    modifier_name);
+                LOG_DEBUG(log, "{} modifier is not supported with parallel replicas. Query will be executed without using them.", modifier);
                 auto & mutable_context = planner_context->getMutableQueryContext();
                 mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
                 break;
