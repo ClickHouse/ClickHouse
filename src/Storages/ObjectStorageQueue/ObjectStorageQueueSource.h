@@ -114,9 +114,18 @@ public:
         std::mutex next_mutex;
         size_t index = 0;
 
+        /// Files skipped because a foreign `processing` node observation was fresh.
+        /// They are rechecked at the next batch boundary after the observation expires
+        /// (`foreign_processing_node_cache_ttl_seconds`), so the recheck does not wait
+        /// for the current listing pass to end. Entries left when the listing is
+        /// exhausted are dropped: the observation timestamps live in the shared file
+        /// status cache, so the next listing pass re-queues them with the original deadlines.
+        std::deque<ObjectInfoPtr> foreign_processing_files_to_recheck TSA_GUARDED_BY(next_mutex);
+
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
-        void filterProcessableFiles(ObjectInfos & objects);
-        void filterOutProcessedAndFailed(ObjectInfos & objects);
+        void filterProcessableFiles(ObjectInfos & objects) TSA_REQUIRES(next_mutex);
+        ObjectInfos takeDueForeignProcessingRechecks() TSA_REQUIRES(next_mutex);
+        void recheckForeignProcessingLater(ObjectInfoPtr object_info, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
@@ -139,8 +148,6 @@ public:
         /// Set when a bucket lock refresh or release fails (e.g. lost ownership):
         /// next() stops returning keys, isFinished returns true.
         std::atomic_bool iterator_invalidated = false;
-
-        bool is_path_with_hive_partitioning = false;
 
         /// Only for processing without buckets.
         std::deque<std::pair<ObjectInfoPtr, FileMetadataPtr>> objects_to_retry TSA_GUARDED_BY(mutex);

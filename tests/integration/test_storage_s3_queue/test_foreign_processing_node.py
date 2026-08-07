@@ -134,6 +134,73 @@ def test_file_is_retried_after_foreign_processing_node_disappears(started_cluste
         )
 
 
+def test_file_is_retried_in_ordered_mode(started_cluster):
+    """Same as above, but for `ordered` mode.
+
+    `Ordered` mode tracks a max processed file name instead of per-file `processed` nodes,
+    but the `processing` nodes are per-file, so losing the race for one is handled the same
+    way: the cached foreign `Processing` observation must stay a retryable hint.
+
+    The foreign processor holds the lexicographically greatest file: committing the other
+    files must not advance the max processed path past a file which was never committed.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_foreign_processing_node_ordered_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    files_to_generate = 5
+    generate_random_files(started_cluster, files_path, files_to_generate, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 100,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 5,
+        },
+    )
+
+    # `test_4.csv` sorts after every other generated file, so the max processed path
+    # of this table never reaches it while it is held by the foreign processor.
+    conflict_file = f"{files_path}/test_4.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.ensure_path(f"{keeper_path}/processing")
+    zk.create(f"{keeper_path}/processing/{conflict_node}", b"another processor")
+
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        def get_count():
+            return int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+
+        # Every file except the one held by the foreign processor is processed.
+        run_with_retry(lambda x: x == files_to_generate - 1, get_count)
+        assert node.query(f"SELECT count() FROM {dst_table_name} WHERE _path LIKE '%test_4.csv'").strip() == "0"
+
+        # The foreign processor released the file without committing it.
+        zk.delete(f"{keeper_path}/processing/{conflict_node}")
+
+        # The file is retried when the cached observation expires: it was not
+        # swallowed by the max processed path of the files committed around it.
+        run_with_retry(lambda x: x == files_to_generate, get_count)
+    finally:
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
+
+
 def test_cached_state_updated_when_foreign_processor_commits(started_cluster):
     """A file committed by another processor must not stay cached as `Processing`.
 
