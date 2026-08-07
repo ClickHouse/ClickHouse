@@ -294,9 +294,9 @@ OwnedRefreshTask RefreshTask::create(
 
     auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, start_paused, is_restore_from_backup);
 
-    task->scheduling_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshSched",
+    task->scheduling_task = context->getSchedulePool()->createTask(view->getStorageID(), "RefreshSched",
         [self = task.get()] { self->doScheduling(/*is_shutdown=*/ false); });
-    task->execution_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshExec",
+    task->execution_task = context->getSchedulePool()->createTask(view->getStorageID(), "RefreshExec",
         [self = task.get()] { self->executeRefresh(); });
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
