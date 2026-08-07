@@ -296,7 +296,7 @@ String ASTBackupQuery::getID(char) const
 
 void ASTBackupQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
     /// `ASTBackupQuery` keeps almost all of its semantic state outside `children` (it is empty), and
     /// `getID` only distinguishes `BACKUP` from `RESTORE`. Fold every distinguishing field in so that
     /// e.g. `BACKUP TABLE a TO Disk('d', 'p')` and `BACKUP TABLE b TO Disk('d', 'p')` (differ in the

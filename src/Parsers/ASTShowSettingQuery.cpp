@@ -19,7 +19,7 @@ ASTPtr ASTShowSettingQuery::clone() const
 
 void ASTShowSettingQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
     /// Fold in the selected setting name, which is not part of `children` (the base implementation
     /// only hashes `getID`), so `SHOW SETTING a` and `SHOW SETTING b` do not share a tree hash —
     /// see the header comment.

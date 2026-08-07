@@ -5,6 +5,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Common/quoteString.h>
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 
 #include <array>
@@ -60,6 +61,26 @@ ASTPtr ASTWindowDefinition::clone() const
 String ASTWindowDefinition::getID(char) const
 {
     return "WindowDefinition";
+}
+
+void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The parent window name and the frame description are kept outside `children` (only the
+    /// PARTITION BY / ORDER BY lists and the frame offsets are children), and `getID` is
+    /// constant. Fold them in so that e.g. `ROWS BETWEEN 1 PRECEDING AND CURRENT ROW` and
+    /// `RANGE BETWEEN CURRENT ROW AND 1 FOLLOWING` (identical children) do not share a tree
+    /// hash: the rewrite-rule matcher treats an equal `getTreeHash(true)` as semantic equality.
+    hash_state.update(parent_window_name.size());
+    hash_state.update(parent_window_name);
+    hash_state.update(frame_is_default);
+    hash_state.update(frame_type);
+    hash_state.update(frame_begin_type);
+    hash_state.update(frame_begin_preceding);
+    hash_state.update(frame_begin_offset != nullptr);
+    hash_state.update(frame_end_type);
+    hash_state.update(frame_end_preceding);
+    hash_state.update(frame_end_offset != nullptr);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,
@@ -171,6 +192,17 @@ ASTPtr ASTWindowListElement::clone() const
 String ASTWindowListElement::getID(char) const
 {
     return "WindowListElement";
+}
+
+void ASTWindowListElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `name` is the window's name in `WINDOW <name> AS (<definition>)` — a plain member, not an
+    /// `ASTWithAlias` alias — and `getID` is constant, so without folding it in `WINDOW w1 AS
+    /// (...)` and `WINDOW w2 AS (...)` share a tree hash while being referenced by different
+    /// `OVER wN` clauses.
+    hash_state.update(name.size());
+    hash_state.update(name);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTWindowListElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings,

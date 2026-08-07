@@ -13,6 +13,8 @@
 #include <IO/Operators.h>
 #include <Parsers/QueryParameterVisitor.h>
 
+#include <map>
+
 namespace DB
 {
 
@@ -53,10 +55,24 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_with_totals);
     hash_state.update(group_by_with_rollup);
     hash_state.update(group_by_with_cube);
+    hash_state.update(group_by_with_grouping_sets);
     hash_state.update(limit_with_ties);
     hash_state.update(group_by_all);
     hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
+    /// The children carry no clause tag of their own: which clause a child belongs to is kept in
+    /// `positions`. Without folding it in, two selects with the same child ASTs under different
+    /// clauses share a tree hash — e.g. `SELECT ... WHERE x` vs `SELECT ... HAVING x` (or
+    /// `PREWHERE` / `QUALIFY`), and `LIMIT 5` vs `OFFSET 5`. The rewrite-rule matcher treats an
+    /// equal `getTreeHash(true)` as semantic equality, so fold the (clause, child index) pairs in
+    /// a deterministic order (`positions` is an unordered map).
+    std::map<Expression, size_t> ordered_positions(positions.begin(), positions.end());
+    hash_state.update(ordered_positions.size());
+    for (const auto & [expression, position] : ordered_positions)
+    {
+        hash_state.update(static_cast<UInt8>(expression));
+        hash_state.update(position);
+    }
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 

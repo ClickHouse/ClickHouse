@@ -16,7 +16,7 @@ ASTPtr ASTShowFunctionsQuery::clone() const
 
 void ASTShowFunctionsQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
     /// Fold in the semantic fields that are not part of `children` (the base implementation only
     /// hashes `getID`) so two `SHOW FUNCTIONS` queries that differ only in these fields do not share
     /// a tree hash — see the header comment.

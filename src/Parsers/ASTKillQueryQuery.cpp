@@ -21,7 +21,7 @@ String ASTKillQueryQuery::getID(char delim) const
 
 void ASTKillQueryQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
     /// Fold in the semantic fields kept outside `children` (`where_expression` is hashed through the
     /// child recursion) — see the header comment.
     hash_state.update(type);

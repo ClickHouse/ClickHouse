@@ -5,6 +5,7 @@
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 
 namespace DB
@@ -24,6 +25,23 @@ ASTPtr ASTWithElement::clone() const
         res->aliases = aliases->clone();
     res->children.emplace_back(res->subquery);
     return res;
+}
+
+void ASTWithElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `name`, `is_materialized` and `aliases` all change the formatted text (`WITH <name>
+    /// [(<aliases>)] AS [MATERIALIZED] (<subquery>)`) but are kept outside `children` (only the
+    /// subquery is a child) and `getID` is constant. Fold them in so that e.g. `WITH a AS
+    /// (SELECT 1)` and `WITH b AS (SELECT 1)` do not share a tree hash: the rewrite-rule matcher
+    /// treats an equal `getTreeHash(true)` as semantic equality. `aliases` is hashed as a whole
+    /// subtree (`updateTreeHash`) because its identifiers live in its children.
+    hash_state.update(name.size());
+    hash_state.update(name);
+    hash_state.update(is_materialized);
+    hash_state.update(aliases != nullptr);
+    if (aliases)
+        aliases->updateTreeHash(hash_state, ignore_aliases);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTWithElement::writeJSON(WriteBuffer & out) const

@@ -84,11 +84,15 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state, bool i
 {
     hash_state.update(func_name.size());
     hash_state.update(func_name);
+    /// `parameters` and `lambda` are kept outside `children`, so hash their whole subtrees
+    /// (`updateTreeHash`), not just the node itself (`updateTreeHashImpl`) — the parameter
+    /// values / lambda body live in the subtree, and without them `APPLY quantile(0.9)` and
+    /// `APPLY quantile(0.5)` would share a tree hash.
     if (parameters)
-        parameters->updateTreeHashImpl(hash_state, ignore_aliases);
+        parameters->updateTreeHash(hash_state, ignore_aliases);
 
     if (lambda)
-        lambda->updateTreeHashImpl(hash_state, ignore_aliases);
+        lambda->updateTreeHash(hash_state, ignore_aliases);
 
     hash_state.update(lambda_arg.size());
     hash_state.update(lambda_arg);

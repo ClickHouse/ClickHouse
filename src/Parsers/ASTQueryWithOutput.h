@@ -83,6 +83,9 @@ public:
     virtual void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
 
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
+
+    /// Folds the `INTO OUTFILE` modifier flags, which are kept outside `children`.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 };
 
 

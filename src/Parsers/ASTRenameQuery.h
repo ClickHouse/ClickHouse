@@ -94,7 +94,7 @@ public:
 
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override
     {
-        IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+        ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
         /// `getID` is the constant `"Rename"` for every RENAME / EXCHANGE variant, and the flags
         /// and element structure below are kept outside `children` (only the database / table
         /// identifier ASTs are children, hashed through the child recursion). Fold them in so that

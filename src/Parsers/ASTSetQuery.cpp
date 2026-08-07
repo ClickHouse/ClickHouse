@@ -75,12 +75,32 @@ public:
 
 void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases*/) const
 {
+    hash_state.update(changes.size());
     for (const auto & change : changes)
     {
         hash_state.update(change.name.size());
         hash_state.update(change.name);
         hash_state.update(change.shorthand);
         applyVisitor(FieldVisitorHash(hash_state), change.value);
+    }
+    /// `SET a = DEFAULT` entries and `SET param_x = '...'` entries are formatted from these two
+    /// members, not from `changes`, so without folding them in e.g. `SET param_p = 'a'` and
+    /// `SET param_p = 'b'` would share a tree hash. The rewrite-rule matcher treats an equal
+    /// `getTreeHash(true)` as semantic equality. The size prefixes keep the concatenation of the
+    /// three lists unambiguous.
+    hash_state.update(default_settings.size());
+    for (const auto & setting_name : default_settings)
+    {
+        hash_state.update(setting_name.size());
+        hash_state.update(setting_name);
+    }
+    hash_state.update(query_parameters.size());
+    for (const auto & [parameter_name, parameter_value] : query_parameters)
+    {
+        hash_state.update(parameter_name.size());
+        hash_state.update(parameter_name);
+        hash_state.update(parameter_value.size());
+        hash_state.update(parameter_value);
     }
 }
 

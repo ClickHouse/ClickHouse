@@ -54,7 +54,7 @@ ASTPtr ASTDropQuery::clone() const
 
 void ASTDropQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
     /// Fold the semantic flags and selectors that decide what is dropped and how, and that live
     /// outside `children` (the `database` / `table` identifiers and the `database_and_tables` list
     /// are part of `children` and are hashed through the child recursion, so they are not repeated

@@ -3,6 +3,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -23,6 +24,16 @@ ASTPtr ASTSelectIntersectExceptQuery::clone() const
 
     res->final_operator = final_operator;
     return res;
+}
+
+void ASTSelectIntersectExceptQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The operator printed between the child selects is kept outside `children`, so without
+    /// folding it in `a INTERSECT ALL b` and `a EXCEPT DISTINCT b` share a tree hash (`getID` is
+    /// constant). The rewrite-rule matcher treats an equal `getTreeHash(true)` as semantic
+    /// equality.
+    hash_state.update(final_operator);
+    ASTSelectQuery::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTSelectIntersectExceptQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

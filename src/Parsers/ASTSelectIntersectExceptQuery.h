@@ -36,6 +36,9 @@ public:
     /// Final operator after applying visitor.
     Operator final_operator = Operator::UNKNOWN;
 
+    /// Folds `final_operator`, which is kept outside `children`.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };

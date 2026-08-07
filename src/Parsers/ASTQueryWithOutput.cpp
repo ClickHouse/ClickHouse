@@ -5,6 +5,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Common/SipHash.h>
 
 
 namespace DB
@@ -103,6 +104,19 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
     for (auto member : output_option_members)
         if (this->*member)
             cloned.set(cloned.*member, (this->*member)->clone());
+}
+
+void ASTQueryWithOutput::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// The output-option ASTs (`out_file`, `format_ast`, ...) are children, but the `INTO
+    /// OUTFILE` modifier flags are not, and they change the formatted text (`APPEND` /
+    /// `TRUNCATE` / `AND STDOUT`). Fold them in so that e.g. `SELECT 1 INTO OUTFILE 'f'` and
+    /// `SELECT 1 INTO OUTFILE 'f' APPEND` do not share a tree hash: the rewrite-rule matcher
+    /// treats an equal `getTreeHash(true)` as semantic equality.
+    hash_state.update(isIntoOutfileWithStdout());
+    hash_state.update(isOutfileAppend());
+    hash_state.update(isOutfileTruncate());
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
 void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const

@@ -40,7 +40,7 @@ String ASTShowCreateAccessEntityQuery::getID(char) const
 
 void ASTShowCreateAccessEntityQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    ASTQueryWithOutput::updateTreeHashImpl(hash_state, ignore_aliases);
     /// Fold the semantic fields kept outside `children`. See the header comment for why the
     /// rewrite-rule matcher needs this. Each field is produced by the formatter, so it survives the
     /// format -> parse round-trip that the debug-build AST consistency check requires.

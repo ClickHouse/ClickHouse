@@ -5,6 +5,8 @@
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 
+#include <map>
+
 
 namespace DB
 {
@@ -31,6 +33,18 @@ void ASTOrderByElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_ali
     hash_state.update(nulls_direction);
     hash_state.update(nulls_direction_was_explicitly_specified);
     hash_state.update(with_fill);
+    /// The role of each optional child (COLLATE / FILL FROM / FILL TO / FILL STEP / FILL
+    /// STALENESS) is kept in `positions`; the children themselves are hashed positionally. Fold
+    /// the (role, index) pairs in a deterministic order so that e.g. `x WITH FILL FROM 1` and
+    /// `x WITH FILL TO 1` (identical child sequences) do not share a tree hash: the rewrite-rule
+    /// matcher treats an equal `getTreeHash(true)` as semantic equality.
+    std::map<Child, size_t> ordered_positions(positions.begin(), positions.end());
+    hash_state.update(ordered_positions.size());
+    for (const auto & [child, position] : ordered_positions)
+    {
+        hash_state.update(static_cast<UInt8>(child));
+        hash_state.update(position);
+    }
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
