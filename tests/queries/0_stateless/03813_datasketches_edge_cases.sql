@@ -76,7 +76,8 @@ SELECT cardinalityFromHLL(serializedHLL(concat('user_', toString(number), '_ãƒ†ã
 FROM numbers(100);
 
 SELECT 'Test 16: Empty string';
-SELECT cardinalityFromHLL(serializedHLL('')) = 1
+-- Apache DataSketches string semantics: empty strings are ignored, the sketch stays empty.
+SELECT cardinalityFromHLL(serializedHLL('')) = 0
 FROM numbers(100);
 
 SELECT 'Test 17: Very long strings';

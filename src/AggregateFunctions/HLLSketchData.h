@@ -69,6 +69,12 @@ public:
 
     void insertOriginal(std::string_view value)
     {
+        /// Match Apache DataSketches string semantics: `hll_sketch::update(const std::string &)`
+        /// ignores empty strings, while the raw-bytes overload used below would hash a
+        /// zero-length buffer and count it as a distinct element, producing sketches
+        /// incompatible with native DataSketches string producers.
+        if (value.empty())
+            return;
         getHLLUpdate()->update(value.data(), value.size());
     }
 
@@ -165,6 +171,13 @@ public:
             type_explicit = true;
         }
 
+        /// Do not materialize a union when the other state holds no data. Otherwise a group
+        /// consisting only of logically empty states would return a serialized empty sketch
+        /// under partial (multi-stage) aggregation, while a single-stage aggregate returns
+        /// an empty string - making the result plan-dependent.
+        if (!rhs.sk_update && !rhs.sk_union)
+            return;
+
         datasketches::hll_union * u = getHLLUnion();
 
         if (sk_update)
@@ -200,7 +213,11 @@ public:
         }
         else if (sk_union)
         {
-            auto bytes = sk_union->get_result().serialize_compact();
+            /// Serialize the partial state with the configured (possibly inferred) target type.
+            /// `get_result` defaults to `HLL_4`, which would lose an inferred `HLL_6`/`HLL_8`
+            /// representation across an aggregate-state round-trip (`read` re-adopts the type
+            /// from the deserialized sketch), making the final sketch plan-dependent.
+            auto bytes = sk_union->get_result(type).serialize_compact();
             writeVectorBinary(bytes, out);
         }
         else

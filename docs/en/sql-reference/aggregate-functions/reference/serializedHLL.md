@@ -17,7 +17,7 @@ serializedHLL([lg_k, type])(expression)
 
 ## Arguments {#arguments}
 
-- `expression` — Column expression. Supported types: [Int](../../data-types/int-uint.md), [UInt](../../data-types/int-uint.md), [Float](../../data-types/float.md), [String](../../data-types/string.md), [FixedString](../../data-types/fixedstring.md). 128/256-bit integers are not supported because they have no Apache DataSketches-compatible encoding; convert them explicitly (e.g. with `toString`) first.
+- `expression` — Column expression. Supported types: [Int](../../data-types/int-uint.md), [UInt](../../data-types/int-uint.md), [Float](../../data-types/float.md), [String](../../data-types/string.md), [FixedString](../../data-types/fixedstring.md). 128/256-bit integers are not supported because they have no Apache DataSketches-compatible encoding; convert them explicitly (e.g. with `toString`) first. Following the Apache DataSketches string contract, empty strings are ignored and do not contribute to the cardinality.
 
 ## Parameters (optional) {#parameters}
 
