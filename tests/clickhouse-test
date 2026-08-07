@@ -6199,7 +6199,9 @@ ORDER BY (test_name, callee_offset)
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(processlist.decode())
+            # The query text of a hung query may contain arbitrary bytes, so a strict decode
+            # could throw and mask the whole hung-query report.
+            print(processlist.decode(errors="replace"))
             print(get_transactions_list(args))
 
             # `processlist` above already shows per-thread stacks for
