@@ -190,38 +190,38 @@ coordinates:
 ```sql title="Query"
 CREATE TABLE foursquare_mercator
 (
-    fsq_place_id String,
-    name String,
+    fsq_place_id Nullable(String),
+    name Nullable(String),
     latitude Float64,
     longitude Float64,
-    address String,
-    locality String,
-    region LowCardinality(String),
-    postcode LowCardinality(String),
-    admin_region LowCardinality(String),
-    post_town LowCardinality(String),
-    po_box LowCardinality(String),
-    country LowCardinality(String),
+    address Nullable(String),
+    locality Nullable(String),
+    region LowCardinality(Nullable(String)),
+    postcode LowCardinality(Nullable(String)),
+    admin_region LowCardinality(Nullable(String)),
+    post_town LowCardinality(Nullable(String)),
+    po_box LowCardinality(Nullable(String)),
+    country LowCardinality(Nullable(String)),
     date_created Nullable(Date),
     date_refreshed Nullable(Date),
     date_closed Nullable(Date),
-    tel String,
-    website String,
-    email String,
-    facebook_id String,
-    instagram String,
-    twitter String,
-    fsq_category_ids Array(String),
-    fsq_category_labels Array(String),
-    placemaker_url String,
-    geom String,
+    tel Nullable(String),
+    website Nullable(String),
+    email Nullable(String),
+    facebook_id Nullable(Int64),
+    instagram Nullable(String),
+    twitter Nullable(String),
+    fsq_category_ids Array(Nullable(String)),
+    fsq_category_labels Array(Nullable(String)),
+    placemaker_url Nullable(String),
+    geom Nullable(String),
     bbox Tuple(
         xmin Nullable(Float64),
         ymin Nullable(Float64),
         xmax Nullable(Float64),
         ymax Nullable(Float64)
     ),
-    category LowCardinality(String) ALIAS fsq_category_labels[1],
+    category LowCardinality(Nullable(String)) ALIAS fsq_category_labels[1],
     mercator_x UInt32 MATERIALIZED 0xFFFFFFFF * ((longitude + 180) / 360),
     mercator_y UInt32 MATERIALIZED 0xFFFFFFFF * ((1 / 2) - ((log(tan(((latitude + 90) / 360) * pi())) / 2) / pi())),
     INDEX idx_x mercator_x TYPE minmax,
@@ -290,14 +290,69 @@ same data, so ensure that `foursquare_mercator` is empty before retrying the imp
 
 ```sql title="Query"
 INSERT INTO foursquare_mercator
-SELECT * EXCEPT (unresolved_flags)
+(
+    fsq_place_id,
+    name,
+    latitude,
+    longitude,
+    address,
+    locality,
+    region,
+    postcode,
+    admin_region,
+    post_town,
+    po_box,
+    country,
+    date_created,
+    date_refreshed,
+    date_closed,
+    tel,
+    website,
+    email,
+    facebook_id,
+    instagram,
+    twitter,
+    fsq_category_ids,
+    fsq_category_labels,
+    placemaker_url,
+    geom,
+    bbox
+)
+SELECT
+    fsq_place_id,
+    name,
+    assumeNotNull(latitude),
+    assumeNotNull(longitude),
+    address,
+    locality,
+    region,
+    postcode,
+    admin_region,
+    post_town,
+    po_box,
+    country,
+    date_created,
+    date_refreshed,
+    date_closed,
+    tel,
+    website,
+    email,
+    facebook_id,
+    instagram,
+    twitter,
+    fsq_category_ids,
+    fsq_category_labels,
+    placemaker_url,
+    geom,
+    bbox
 FROM places.`datasets.places_os`
-SETTINGS insert_null_as_default = 1;
+WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 ```
 
-The `unresolved_flags` column is excluded because it is not needed by the local table.
-The `insert_null_as_default` setting converts null source values to the defaults of the
-corresponding non-nullable destination columns.
+The explicit source and destination column lists prevent changes to the catalog's column
+order from misaligning imported values. The query excludes `unresolved_flags` because it
+is not needed by the local table and filters out rows without coordinates because they
+cannot be placed on the map. Other nullable source values remain null in the local table.
 
 ## Visualize the data {#data-visualization}
 
