@@ -31,10 +31,11 @@ namespace ErrorCodes
   *  arrayPackBitGroupsToString(f, g, arr)           groups are packed contiguously, one after another.
   *  arrayPackBitGroupsToFixedString(f, n, g, arr)
   *
-  * Bits are written most-significant-bit first and groups follow the order of the array elements (the first element
-  * occupies the most significant bits of the result). For the `UInt64` variants the result is a number, so only the
-  * leading whole groups that fit into 64 bits are kept. For the `String`/`FixedString` variants the bit stream is laid
-  * out across bytes, and a trailing partial byte keeps its bits in the most significant positions.
+  * Groups follow the order of the array elements and the bit stream is laid out across bytes most-significant-bit
+  * first (like `bin`/`unbin`); a trailing partial byte keeps its bits in the most significant positions. The `UInt64`
+  * variants interpret that byte stream in little-endian byte order (as requested by issue #48830), so
+  * `arrayPackBitsToUInt64(f, arr) == reinterpretAsUInt64(arrayPackBitsToString(f, arr))`; only the leading whole
+  * groups that fit into 64 bits are kept.
   */
 template <typename ResultType, bool PackGroups = false>
 struct ArrayPackBitsImpl
@@ -162,14 +163,31 @@ struct ArrayPackBitsImpl
                 const size_t row_size = offsets[row] - prev_offset;
                 const size_t num_groups = std::min(row_size, max_groups);
 
+                /// The bytes are the same as in the String / FixedString variants (bits within a byte are written
+                /// most-significant-bit first) and are interpreted in little-endian byte order, so the result equals
+                /// reinterpretAsUInt64 of the corresponding String variant.
                 UInt64 result = 0;
+                UInt8 current_byte = 0;
+                size_t filled_bits = 0;
+                size_t byte_index = 0;
                 for (size_t j = 0; j < num_groups; ++j)
                 {
-                    /// Shift only between groups; shifting an empty result by `bits_per_element == 64` would be UB.
-                    if (j != 0)
-                        result <<= bits_per_element;
-                    result |= get_value(prev_offset + j);
+                    const UInt64 value = get_value(prev_offset + j);
+                    for (size_t bit = bits_per_element; bit-- > 0;)
+                    {
+                        current_byte = static_cast<UInt8>((current_byte << 1) | ((value >> bit) & 1));
+                        if (++filled_bits == 8)
+                        {
+                            result |= static_cast<UInt64>(current_byte) << (8 * byte_index);
+                            ++byte_index;
+                            current_byte = 0;
+                            filled_bits = 0;
+                        }
+                    }
                 }
+                /// A trailing partial byte keeps its bits in the most significant positions, as in the String variant.
+                if (filled_bits != 0)
+                    result |= static_cast<UInt64>(static_cast<UInt8>(current_byte << (8 - filled_bits))) << (8 * byte_index);
 
                 data.push_back(result);
                 prev_offset = offsets[row];
@@ -276,8 +294,10 @@ REGISTER_FUNCTION(ArrayPackBits)
     FunctionDocumentation::Description description_to_uint64 = R"(
 Applies a lambda function to each element of the array and packs the resulting bits into a `UInt64`.
 For each element the lambda returns an integer that is treated as a single bit (zero or non-zero).
-Bits are written most-significant-bit first, so the first element occupies the most significant bit; only the first 64 elements are used.
-If the array has fewer than 64 elements the result is the packed bits as a number (the unused high bits are zero).
+The bit stream is laid out across bytes most-significant-bit first (the same bytes as `arrayPackBitsToString`),
+and the bytes are interpreted in little-endian order, so
+`arrayPackBitsToUInt64(f, arr) = reinterpretAsUInt64(arrayPackBitsToString(f, arr))`.
+Only the first 64 elements are used; the remaining bits are assumed to be zero.
     )";
     FunctionDocumentation::Syntax syntax_to_uint64 = "arrayPackBitsToUInt64(f, arr)";
     FunctionDocumentation::Arguments arguments_to_uint64 = {
@@ -286,7 +306,7 @@ If the array has fewer than 64 elements the result is the packed bits as a numbe
     };
     FunctionDocumentation::ReturnedValue returned_value_to_uint64 = {"Returns the packed bits.", {"UInt64"}};
     FunctionDocumentation::Examples examples_to_uint64 = {
-        {"Example", "SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])", "32"},
+        {"Example", "SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0])", "128"},
     };
     factory.registerFunction<FunctionArrayPackBitsToUInt64>(
         {description_to_uint64, syntax_to_uint64, arguments_to_uint64, {}, returned_value_to_uint64, examples_to_uint64, introduced_in, category});
@@ -329,8 +349,10 @@ if it has fewer, the result is zero-padded to `n` bytes. The size `n` must be a 
 
     FunctionDocumentation::Description description_groups_to_uint64 = R"(
 The same as `arrayPackBitsToUInt64`, but the lambda returns an integer whose low `g` bits form a group, and the groups
-are packed contiguously (most-significant-bit first). Because the result is a `UInt64`, only the leading whole groups
-that fit into 64 bits are kept. The group size `g` must be a constant between 1 and 64.
+are packed contiguously (most-significant-bit first within each byte, bytes interpreted in little-endian order, so
+`arrayPackBitGroupsToUInt64(f, g, arr) = reinterpretAsUInt64(arrayPackBitGroupsToString(f, g, arr))`). Because the
+result is a `UInt64`, only the leading whole groups that fit into 64 bits are kept. The group size `g` must be a
+constant between 1 and 64.
     )";
     FunctionDocumentation::Syntax syntax_groups_to_uint64 = "arrayPackBitGroupsToUInt64(f, g, arr)";
     FunctionDocumentation::Arguments arguments_groups_to_uint64 = {
@@ -340,7 +362,7 @@ that fit into 64 bits are kept. The group size `g` must be a constant between 1 
     };
     FunctionDocumentation::ReturnedValue returned_value_groups_to_uint64 = {"Returns the packed bits.", {"UInt64"}};
     FunctionDocumentation::Examples examples_groups_to_uint64 = {
-        {"Example", "SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])", "291"},
+        {"Example", "SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3])", "12306"},
     };
     factory.registerFunction<FunctionArrayPackBitGroupsToUInt64>(
         {description_groups_to_uint64, syntax_groups_to_uint64, arguments_groups_to_uint64, {}, returned_value_groups_to_uint64, examples_groups_to_uint64, introduced_in, category});

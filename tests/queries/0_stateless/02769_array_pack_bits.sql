@@ -1,4 +1,5 @@
--- arrayPackBits*: one bit per element, packed most-significant-bit first.
+-- arrayPackBits*: one bit per element, packed most-significant-bit first within each byte.
+-- The UInt64 variants interpret the packed byte stream in little-endian byte order (issue #48830).
 SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0]);
 SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 1]);
 SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 0, 0, 0, 0, 0, 0, 0]);
@@ -29,6 +30,11 @@ SELECT arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0, 3, 1]);
 SELECT arrayPackBitGroupsToFixedString(x -> x, 1, 4, [3, 0, 3, 1]); -- only the first 2 groups fit into 1 byte
 SELECT hex(arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0])); -- zero-padded to 2 bytes
 SELECT length(arrayPackBitGroupsToFixedString(x -> x, 2, 4, [3, 0]));
+
+-- The UInt64 result equals the little-endian reinterpretation of the byte stream of the String variant.
+SELECT arrayPackBitsToUInt64(x -> x, [1, 0, 1, 1, 0, 0, 1, 0, 1]) = reinterpretAsUInt64(arrayPackBitsToString(x -> x, [1, 0, 1, 1, 0, 0, 1, 0, 1]));
+SELECT arrayPackBitGroupsToUInt64(x -> x, 4, [1, 2, 3]) = reinterpretAsUInt64(arrayPackBitGroupsToString(x -> x, 4, [1, 2, 3]));
+SELECT arrayPackBitGroupsToUInt64(x -> x, 64, [12345678901234567890]) = reinterpretAsUInt64(arrayPackBitGroupsToString(x -> x, 64, [12345678901234567890]));
 
 -- Wide-integer lambda results are supported: the bit (getBool) and group (getUInt) values are read from the full
 -- value, so a wide result behaves like its native counterpart and a group keeps its low `g` bits.
