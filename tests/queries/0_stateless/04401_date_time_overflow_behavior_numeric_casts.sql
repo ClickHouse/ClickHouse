@@ -61,11 +61,8 @@ SELECT '-- non-finite floats are rejected as unconvertible, whatever the overflo
 SELECT CAST(inf::Float64, 'Date'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST((-inf)::Float64, 'Date'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST(nan::Float64, 'Date'); -- { serverError CANNOT_CONVERT_TYPE }
--- Date32's float path has no non-finite guard, so it rejects Inf/NaN through the ordinary
--- out-of-range check in throw mode and saturates them in the other modes (asserted below).
--- Aligning it with the CANNOT_CONVERT_TYPE contract of the sibling targets is a follow-up.
-SELECT CAST(inf::Float64, 'Date32'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-SELECT CAST(nan::Float64, 'Date32'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(inf::Float64, 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT CAST(nan::Float64, 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST(inf::Float64, 'DateTime'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST(nan::Float64, 'DateTime'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST(inf::Float64, 'Time'); -- { serverError CANNOT_CONVERT_TYPE }
@@ -163,7 +160,7 @@ SELECT '-- saturate: NaN is unconvertible for every target, not silently narrowe
 -- It is now rejected before that cast, consistently with the sibling Date32 / DateTime / Time paths.
 SELECT CAST(nan::Float64, 'Date'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST(nan::Float32, 'Date'); -- { serverError CANNOT_CONVERT_TYPE }
-SELECT CAST(nan::Float64, 'Date32');
+SELECT CAST(nan::Float64, 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST(nan::Float64, 'Time'); -- { serverError CANNOT_CONVERT_TYPE }
 
 SELECT '-- ignore (default): out-of-range numeric casts keep the legacy behavior';
@@ -185,6 +182,6 @@ SELECT CAST(340282366920938463463374607431768211455::UInt128, 'DateTime');
 SELECT CAST(99999999999999999999999999::Int256, 'DateTime');
 SELECT '-- ignore: NaN is unconvertible here too, not fall through to a narrowing cast';
 SELECT CAST(nan::Float64, 'Date'); -- { serverError CANNOT_CONVERT_TYPE }
-SELECT CAST(nan::Float64, 'Date32');
+SELECT CAST(nan::Float64, 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST(nan::Float64, 'DateTime'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT CAST(nan::Float64, 'Time'); -- { serverError CANNOT_CONVERT_TYPE }

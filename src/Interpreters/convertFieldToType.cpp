@@ -243,12 +243,10 @@ constexpr Int64 DATE32_MAX_TIMESTAMP_FIELD = 10413791999LL;                  ///
 /// Clamp an in-bounds numeric value to a time_t (mirrors saturateToRange in FunctionsConversion.h):
 /// the value is proven inside [min_bound, max_bound] with accurate comparisons before the narrowing
 /// cast, so it never wraps (unsigned/wide above INT64_MAX) or is undefined (float out of time_t range).
+/// Every caller rejects a non-finite value before reaching this point.
 template <typename T>
 Int64 clampToTimestamp(const T & value, Int64 min_bound, Int64 max_bound)
 {
-    if constexpr (is_floating_point<T>)
-        if (isNaN(value))
-            return min_bound;
     if (accurate::greaterOp(value, max_bound))
         return max_bound;
     if (accurate::lessOp(value, min_bound))
@@ -372,11 +370,12 @@ Field coerceNumericToDate32Field(const T & value, const DateLUTImpl & time_zone,
     const bool throw_mode = overflow == FormatSettings::DateTimeOverflowBehavior::Throw;
     const Int64 daynum_min_offset = -static_cast<Int64>(DateLUTImpl::getDayNumOffsetEpoch());
 
-    bool is_nan = false;
+    /// A non-finite value is unrepresentable rather than out of range, so no mode may clamp it.
     if constexpr (is_floating_point<T>)
-        is_nan = isNaN(value);
+        if (!isFinite(value))
+            throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
 
-    if (is_nan || accurate::lessOp(value, daynum_min_offset))
+    if (accurate::lessOp(value, daynum_min_offset))
     {
         if (throw_mode)
             throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", value);

@@ -5,9 +5,9 @@ inf::Float64 -> Date: Unexpected inf or nan to integer conversion
 nan::Float64 -> Date: Unexpected inf or nan to integer conversion
 1e300::Float64 -> Date32: Timestamp value 1e+300 is out of bounds of type Date32
 3e38::Float32 -> Date32: Timestamp value 3.0000000054977558e+38 is out of bounds of type Date32
-inf::Float64 -> Date32: Timestamp value inf is out of bounds of type Date32
--inf::Float64 -> Date32: Timestamp value -inf is out of bounds of type Date32
-nan::Float64 -> Date32: Timestamp value nan is out of bounds of type Date32
+inf::Float64 -> Date32: Unexpected inf or nan to integer conversion
+-inf::Float64 -> Date32: Unexpected inf or nan to integer conversion
+nan::Float64 -> Date32: Unexpected inf or nan to integer conversion
 1e300::Float64 -> DateTime: Timestamp value 1e+300 is out of bounds of type DateTime
 3e38::Float32 -> DateTime: Timestamp value 3.0000000054977558e+38 is out of bounds of type DateTime
 inf::Float64 -> DateTime: Unexpected inf or nan to integer conversion

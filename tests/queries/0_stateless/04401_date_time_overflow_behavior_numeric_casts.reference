@@ -51,7 +51,6 @@
 3599999
 -3599999
 -- saturate: NaN is unconvertible for every target, not silently narrowed
-1900-01-01
 -- ignore (default): out-of-range numeric casts keep the legacy behavior
 2106-02-07 06:28:15
 2106-02-07 06:28:15
@@ -69,4 +68,3 @@
 2106-02-07 06:28:15
 2106-02-07 06:28:15
 -- ignore: NaN is unconvertible here too, not fall through to a narrowing cast
-1900-01-01

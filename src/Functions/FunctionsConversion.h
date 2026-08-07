@@ -396,12 +396,16 @@ struct ToDate32TransformFromSecondsOrDays
         constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
         constexpr Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
 
+        /// A non-finite value is unrepresentable rather than out of range, so no mode may clamp it.
+        if constexpr (is_floating_point<FromType>)
+        {
+            if (!isFinite(from)) [[unlikely]]
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Unexpected inf or nan to integer conversion");
+        }
+
         if constexpr (is_signed_v<FromType>)
         {
-            bool is_nan = false;
-            if constexpr (is_floating_point<FromType>)
-                 is_nan = isNaN(from);
-            if (is_nan || from < daynum_min_offset)
+            if (from < daynum_min_offset)
             {
                 if constexpr (overflow_throw)
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", formatOutOfBoundsValue(from));

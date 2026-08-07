@@ -162,9 +162,15 @@ SELECT toString(c), toString(CAST(1e30 AS Date)) FROM values('c Date', 1e30);
 SELECT toInt32(c) FROM values('c Time', nan); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toString(c) FROM values('c DateTime', inf); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toString(c) FROM values('c Date', nan); -- { serverError CANNOT_CONVERT_TYPE }
--- Date32 is the one target whose CAST float path has no non-finite guard, so both sides saturate here
--- instead of rejecting (the values() rows keep matching CAST, which is what this section asserts).
-SELECT toString(c), toString(CAST(-inf AS Date32)) FROM values('c Date32', -inf) SETTINGS date_time_overflow_behavior = 'saturate';
+-- Date32 rejects a non-finite float like the other three targets: it used to be the one target that
+-- saturated inf to 2299-12-31 and NaN to 1900-01-01 in every mode, so the same numeric CAST answered
+-- CANNOT_CONVERT_TYPE for Date/DateTime/Time and a boundary date for Date32.
+SELECT toString(c) FROM values('c Date32', -inf) SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toString(CAST(inf AS Date32)) SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toString(CAST(nan AS Date32)) SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
+-- Control: a finite value outside the Date32 range still saturates, so the rows above cannot pass by
+-- rejecting every float.
+SELECT toString(CAST(1e30 AS Date32)) SETTINGS date_time_overflow_behavior = 'saturate';
 SELECT toInt32(c) FROM values('c Time', nan) SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toString(c) FROM values('c Date', nan) SETTINGS date_time_overflow_behavior = 'saturate'; -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toString(c) FROM values('c DateTime', inf) SETTINGS date_time_overflow_behavior = 'ignore'; -- { serverError CANNOT_CONVERT_TYPE }
@@ -187,10 +193,18 @@ SELECT toString(CAST(toUInt64(18446744073709551615) AS DateTime)), toString(CAST
 -- Both are wrong results, so the offset now always takes the storage-type arm in every overflow mode.
 DROP TABLE IF EXISTS t_win_date;
 DROP TABLE IF EXISTS t_win_time;
+DROP TABLE IF EXISTS t_win_date32;
+DROP TABLE IF EXISTS t_win_datetime;
 CREATE TABLE t_win_date (d Date) ENGINE = Memory;
 INSERT INTO t_win_date VALUES ('2020-01-01'), ('2020-01-02'), ('2020-01-03');
 CREATE TABLE t_win_time (t Time) ENGINE = Memory;
 INSERT INTO t_win_time VALUES (-200000), (0), (3599999);
+-- Date32 day numbers spanning the extended day-number boundary (DATE_LUT_MAX_EXTEND_DAY_NUM = 120530),
+-- so an offset above it discriminates the storage-type arm from the timestamp reinterpretation.
+CREATE TABLE t_win_date32 (d Date32) ENGINE = Memory;
+INSERT INTO t_win_date32 VALUES (toDate32(-25567)), (toDate32(0)), (toDate32(120000));
+CREATE TABLE t_win_datetime (d DateTime) ENGINE = Memory;
+INSERT INTO t_win_datetime VALUES (toDateTime(0)), (toDateTime(100)), (toDateTime(4294967295));
 
 SELECT '-- window frame offset: ignore mode';
 SET date_time_overflow_behavior = 'ignore';
@@ -200,24 +214,43 @@ SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 65536 PRECEDING AND CURRENT ROW
 -- Asserted through frame membership: verbatim reaches -400001 from the last row and includes -200000
 -- (3 rows), while clamping the offset to 3599999 would reach 0 and exclude it (2 rows).
 SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+-- A Date32 offset of 150000 days is a legitimate distance and fits Int32, so it must be taken verbatim.
+-- 150000 is above DATE_LUT_MAX_EXTEND_DAY_NUM, so reading it as a unix timestamp instead would turn it
+-- into ~1 day and shrink the frame to 1 row on every row; verbatim it reaches every earlier row (1/2/3).
+SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 150000 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
+-- A DateTime offset of 2147483646 seconds is a legitimate distance inside both Int32 and UInt32, so it is
+-- taken verbatim and reaches the 0 and 100 rows from the 4294967295 row is not (2147483646 < 4294967195).
+SELECT toUInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 2147483646 PRECEDING AND CURRENT ROW) FROM t_win_datetime ORDER BY d;
 -- In-range controls, so the rows above cannot pass by rejecting or shrinking everything.
 SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d;
 SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 200000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 100 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
+SELECT toUInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 100 PRECEDING AND CURRENT ROW) FROM t_win_datetime ORDER BY d;
 
 SELECT '-- window frame offset: saturate mode';
 SET date_time_overflow_behavior = 'saturate';
 SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 65536 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 150000 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
+SELECT toUInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 2147483646 PRECEDING AND CURRENT ROW) FROM t_win_datetime ORDER BY d;
 SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d;
 SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 200000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 100 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
+SELECT toUInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 100 PRECEDING AND CURRENT ROW) FROM t_win_datetime ORDER BY d;
 
 SELECT '-- window frame offset: throw mode';
 SET date_time_overflow_behavior = 'throw';
 SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 65536 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 4000000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 150000 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
+SELECT toUInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 2147483646 PRECEDING AND CURRENT ROW) FROM t_win_datetime ORDER BY d;
 SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d;
 SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 200000 PRECEDING AND CURRENT ROW) FROM t_win_time ORDER BY t;
+SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 100 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
+SELECT toUInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 100 PRECEDING AND CURRENT ROW) FROM t_win_datetime ORDER BY d;
 SET date_time_overflow_behavior = 'ignore';
 
 DROP TABLE t_win_date;
 DROP TABLE t_win_time;
+DROP TABLE t_win_date32;
+DROP TABLE t_win_datetime;

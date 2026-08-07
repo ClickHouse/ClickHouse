@@ -340,8 +340,6 @@ TEST(ConvertFieldToTypeStrictness, TemporalExactContractAllOverflowModes)
         FormatSettings format_settings;
         format_settings.date_time_overflow_behavior = overflow;
 
-        const bool coerce_helper_path = overflow != FormatSettings::DateTimeOverflowBehavior::Ignore;
-
         for (const auto * type_name : temporal_types)
         {
             const auto to_type = type_factory.get(type_name);
@@ -363,15 +361,13 @@ TEST(ConvertFieldToTypeStrictness, TemporalExactContractAllOverflowModes)
                                             /*strict=*/ false, /*convert_inexact_floats=*/ false).isNull())
                 << "type=" << type_name << " overflow=" << static_cast<int>(overflow);
 
-            /// Value-materialization path (convert_inexact_floats=true) on the overflow-aware coerce helper
-            /// (saturate/throw): the lossy CAST-like truncation is still allowed, so an inexact float is
-            /// accepted (truncated), not rejected. In ignore mode Date/Date32/Time instead route through the
-            /// exact convertNumericType<integer> storage-range check, which returns Null for a non-integral
-            /// float regardless of convert_inexact_floats -- that legacy path is covered by the 04401 SQL test.
-            if (coerce_helper_path)
-                EXPECT_FALSE(convertFieldToType(inexact, *to_type, from_type.get(), format_settings,
-                                                /*strict=*/ false, /*convert_inexact_floats=*/ true).isNull())
-                    << "type=" << type_name << " overflow=" << static_cast<int>(overflow);
+            /// Value-materialization caller (convert_inexact_floats=true): the lossy CAST-like truncation is
+            /// still allowed, so an inexact float is accepted (truncated), not rejected. This holds in every
+            /// mode, including ignore: `convert_inexact_floats` clears the exact contract, so the coerce
+            /// helpers take the value rather than the exact convertNumericType<integer> storage-range check.
+            EXPECT_FALSE(convertFieldToType(inexact, *to_type, from_type.get(), format_settings,
+                                            /*strict=*/ false, /*convert_inexact_floats=*/ true).isNull())
+                << "type=" << type_name << " overflow=" << static_cast<int>(overflow);
         }
     }
 }
