@@ -62,10 +62,10 @@ BlockIO InterpreterCreateRoleQuery::execute()
     else if (query.settings)
         settings_from_query = AlterSettingsProfileElements{SettingsProfileElements(*query.settings, access_control)};
 
-    /// A settings clause can drop a setting explicitly, or by omission (`DROP ALL SETTINGS`, or an
-    /// old-style `SETTINGS ...` full replacement). Either way it must still be checked against the tier,
-    /// so add every name each target currently has that this change would drop to `drop_settings` too.
-    if (settings_from_query && query.alter && !query.attach)
+    /// A settings clause can drop a setting explicitly, or by omission (`DROP ALL SETTINGS`, or a full
+    /// replacement via old-style `SETTINGS ...` or `OR REPLACE`). Either way it must still be checked
+    /// against the tier, so add every name each target currently has that this change would drop.
+    if (settings_from_query && (query.alter || query.or_replace) && !query.attach)
     {
         for (const auto & name : query.names)
         {

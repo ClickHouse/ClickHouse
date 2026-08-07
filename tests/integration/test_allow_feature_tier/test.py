@@ -727,3 +727,80 @@ def test_alter_preserves_aliased_merge_tree_setting(start_cluster):
     assert error == ""
 
     instance.query("DROP TABLE IF EXISTS test_alias_preserved")
+
+
+def test_create_or_replace_user_bypassing_feature_tier(start_cluster):
+    # `CREATE USER OR REPLACE` is a full replacement too (like an old-style `ALTER ... SETTINGS`), so it
+    # must be checked the same way when it drops a previously granted EXPERIMENTAL/BETA override
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental, user_or_replace_bypass")
+    instance.query(
+        "CREATE USER admin_with_experimental IDENTIFIED WITH no_password "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+    instance.query("GRANT ACCESS MANAGEMENT ON *.* TO admin_with_experimental")
+    instance.query(
+        "CREATE USER user_or_replace_bypass IDENTIFIED WITH no_password "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "CREATE USER OR REPLACE user_or_replace_bypass IDENTIFIED WITH no_password SETTINGS max_memory_usage = 1",
+        user="admin_with_experimental",
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    output = instance.query(
+        "SELECT value FROM system.settings WHERE name = 'allow_experimental_time_series_table'",
+        user="user_or_replace_bypass",
+    )
+    assert output.strip() == "1"
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental, user_or_replace_bypass")
+
+
+def test_drop_all_settings_bypassing_feature_tier_for_constraint_only_element(
+    start_cluster,
+):
+    # A profile element that only carries MIN/MAX (no plain value) must be checked too when dropped:
+    # SettingsConstraints::check() gates min_value/max_value against the tier just like value
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_constraint_only_bypass")
+    instance.query(
+        "CREATE USER admin_with_experimental IDENTIFIED WITH no_password "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+    instance.query("GRANT ACCESS MANAGEMENT ON *.* TO admin_with_experimental")
+    instance.query(
+        "CREATE SETTINGS PROFILE profile_constraint_only_bypass SETTINGS "
+        "allow_experimental_time_series_table MIN 0 MAX 1"
+    )
+
+    instance.replace_in_config(feature_tier_path, "0", "1")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "1" == get_current_tier_value(instance)
+
+    output, error = instance.query_and_get_answer_with_error(
+        "ALTER SETTINGS PROFILE profile_constraint_only_bypass DROP ALL SETTINGS",
+        user="admin_with_experimental",
+    )
+    assert output == ""
+    assert "Changes to EXPERIMENTAL settings are disabled" in error
+
+    output = instance.query("SHOW CREATE SETTINGS PROFILE profile_constraint_only_bypass")
+    assert "allow_experimental_time_series_table" in output
+
+    instance.replace_in_config(feature_tier_path, "1", "0")
+    instance.query("SYSTEM RELOAD CONFIG")
+    assert "0" == get_current_tier_value(instance)
+    instance.query("DROP USER IF EXISTS admin_with_experimental")
+    instance.query("DROP SETTINGS PROFILE IF EXISTS profile_constraint_only_bypass")

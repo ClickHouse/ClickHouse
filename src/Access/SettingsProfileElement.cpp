@@ -533,6 +533,15 @@ void SettingsProfileElements::applyChanges(const AlterSettingsProfileElements & 
     normalize();
 }
 
+namespace
+{
+    /// Matches what SettingsConstraints::check(const SettingsProfileElements &) checks against the tier.
+    bool hasCheckableValue(const SettingsProfileElement & element)
+    {
+        return element.value || element.min_value || element.max_value;
+    }
+}
+
 Strings SettingsProfileElements::findRevertedSettingNames(const AlterSettingsProfileElements & changes) const
 {
     SettingsProfileElements new_elements = *this;
@@ -541,14 +550,14 @@ Strings SettingsProfileElements::findRevertedSettingNames(const AlterSettingsPro
     Strings reverted;
     for (const auto & old_element : *this)
     {
-        if (!old_element.value || old_element.setting_name.empty())
+        if (!hasCheckableValue(old_element) || old_element.setting_name.empty())
             continue;
 
         auto it = std::find_if(
             new_elements.begin(), new_elements.end(),
             [&](const SettingsProfileElement & e) { return e.setting_name == old_element.setting_name; });
 
-        if (it == new_elements.end() || !it->value)
+        if (it == new_elements.end() || !hasCheckableValue(*it))
             reverted.push_back(old_element.setting_name);
     }
     return reverted;
