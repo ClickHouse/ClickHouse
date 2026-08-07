@@ -3065,11 +3065,32 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         if (ignore_error)
         {
-            Tokens tokens(this_query_begin, all_queries_end);
-            IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
-            while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
-                ++token_iterator;
-            this_query_begin = token_iterator->end;
+            if (client_context->getSettingsRef()[Setting::dialect] == Dialect::logsql)
+            {
+                /// The ClickHouse lexer stops at the first LogsQL-only token (`~`, `!`, ...)
+                /// as at an erroneous one, which would resume parsing in the middle of the
+                /// failed statement. Skip to the next ';' with the lexer of the dialect itself.
+                try
+                {
+                    LogsQLLexer logsql_lexer(this_query_begin, all_queries_end);
+                    while (!logsql_lexer.isEnd() && !logsql_lexer.isKeyword(";"))
+                        logsql_lexer.nextToken();
+                    this_query_begin = logsql_lexer.isEnd() ? all_queries_end : logsql_lexer.backupState().current;
+                }
+                catch (const Exception &)
+                {
+                    /// Malformed input (e.g. an unterminated string): nothing more can be lexed.
+                    this_query_begin = all_queries_end;
+                }
+            }
+            else
+            {
+                Tokens tokens(this_query_begin, all_queries_end);
+                IParser::Pos token_iterator(tokens, max_parser_depth, max_parser_backtracks);
+                while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
+                    ++token_iterator;
+                this_query_begin = token_iterator->end;
+            }
 
             /// Mirror the per-query reset at the top of `processParsedSingleQuery` so the skip
             /// matches the state a successful query would leave behind. Otherwise stale
