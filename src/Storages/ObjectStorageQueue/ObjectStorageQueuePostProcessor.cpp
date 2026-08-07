@@ -288,7 +288,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
         }
         task_tracker.waitAll();
 
-        std::erase_if(successful_objects, [](const StoredObject& object) { object.remote_path.empty(); });
+        std::erase_if(successful_objects, [](const StoredObject& object) { return object.remote_path.empty(); });
     }
     catch (...)
     {
@@ -301,7 +301,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(
 
         task_tracker.safeWaitAll();
 
-        std::erase_if(successful_objects, [](const StoredObject& object) { object.remote_path.empty(); });
+        std::erase_if(successful_objects, [](const StoredObject& object) { return object.remote_path.empty(); });
 
         throw;
     }

@@ -1741,7 +1741,7 @@ void ObjectStorageQueueSource::finalizeExclusiveCommitAfterDelete(
                 {
                     if (file_metadata->wasProcessingResetWithoutFailure())
                         file_metadata->finalizeResetProcessing();
-                    else if (failed_path_set.contains(file_metadata->getPath()))
+                    else if (failed_paths_set.contains(file_metadata->getPath()))
                         file_metadata->finalizeFailed(exception_message);
                     else
                         file_metadata->finalizeProcessed();
@@ -1789,7 +1789,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     preparePartitionProcessedRequests(requests, last_processed_file_per_partition);
 
     const auto table_mode = files_metadata->getTableMetadata().getMode();
-    const auto after_processing = files_metadata->getTableMetadata().after_processing;
+    const auto after_processing = files_metadata->getTableMetadata().after_processing.load();
 
     if (table_mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())
         return;
