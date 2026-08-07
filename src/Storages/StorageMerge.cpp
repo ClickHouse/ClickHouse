@@ -635,6 +635,14 @@ static void preferMultipleStreamsForResidualCPUWork(QueryPlan::Node * node, bool
         return;
     }
 
+    /// Unlike `findReadingStep`, a non-trivial `ExpressionStep` is NOT counted here: only filters
+    /// of the outer query are pushed into the child plans, while its expressions (e.g. a monotonic
+    /// `ORDER BY` key) stay above `ReadFromMerge`, where `findReadingStep` sees them and forwards
+    /// the opt-out via `ReadFromMerge::setPreferMultipleStreams`. The child plans do contain
+    /// `ExpressionStep`s, but those are `ReadFromMerge`'s own plumbing added by
+    /// `convertAndFilterSourceStream` (header conversion with `materialize` / casts, alias
+    /// materialization, missing defaults) - counting them would disable
+    /// `PrefetchingConcatProcessor` for every `Merge` table read.
     passed_residual_cpu_step = passed_residual_cpu_step
         || typeid_cast<FilterStep *>(node->step.get()) != nullptr
         || typeid_cast<ArrayJoinStep *>(node->step.get()) != nullptr;

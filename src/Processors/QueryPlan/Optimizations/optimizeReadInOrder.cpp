@@ -124,9 +124,9 @@ struct FindReadingStepContext
 
     /// Set to true when the traversal descends through an order-preserving step that performs
     /// per-row CPU work above the reading step (a residual `FilterStep`, i.e. a `WHERE` not pushed
-    /// into `PREWHERE`, or an `ArrayJoinStep`). Callers use this to keep the per-stream reading
-    /// pipeline parallel so that `PrefetchingConcatProcessor` does not collapse it into a single
-    /// stream and serialize that residual work.
+    /// into `PREWHERE`, an `ArrayJoinStep`, or a non-trivial `ExpressionStep`). Callers use this
+    /// to keep the per-stream reading pipeline parallel so that `PrefetchingConcatProcessor` does
+    /// not collapse it into a single stream and serialize that residual work.
     bool passed_residual_cpu_step = false;
 };
 
@@ -139,8 +139,15 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
     if (node.children.empty())
         return nullptr;
 
-    if (typeid_cast<ExpressionStep *>(step))
+    if (const auto * expression = typeid_cast<ExpressionStep *>(step))
+    {
+        /// A non-trivial expression (one that computes functions, e.g. materializing a monotonic
+        /// sort key such as `toDate(d)`) performs per-row CPU work above the reading step, just
+        /// like a residual filter. A trivial projection (inputs and aliases only) does not.
+        if (!expression->getExpression().trivial())
+            data.passed_residual_cpu_step = true;
         return findReadingStep(*node.children.front(), data);
+    }
 
     /// A residual `FilterStep` (a `WHERE` not pushed into `PREWHERE`) or an `ArrayJoinStep`
     /// performs per-row CPU work above the reading step. Record it so the caller can keep the
