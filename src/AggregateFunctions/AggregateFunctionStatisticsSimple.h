@@ -138,14 +138,18 @@ public:
         {
             /// A `Decimal` column holds unscaled integers, so a value is only recovered as
             /// `value / 10^scale`, and the kernel knows nothing about scale. Where that division
-            /// goes depends on what the target converts packed. `x86-64-v3` has no packed
-            /// `int64 -> double` at all - `vcvtqq2pd` arrived with AVX-512 - so it converts a tile
-            /// into a buffer and accumulates that; it does the same for `Decimal32`, which it could
-            /// convert with `vcvtdq2pd`, because the buffer still measured faster. AArch64 converts
-            /// and divides packed with `scvtf` up to 64-bit lanes, so `Decimal32` and `Decimal64`
-            /// divide inside the accumulation loop and copy nothing. `Decimal128` has no packed
-            /// conversion on either target and buffers on both - and is where most of the gain is,
-            /// -52.7% on AArch64 against -6.3% for `Decimal32`.
+            /// goes depends on whether converting one element takes a call.
+            ///
+            /// Up to 64 bits AArch64 converts and divides with plain instructions, packed at that,
+            /// so the division sits inside the accumulation loop, which stays call-free and
+            /// vectorizes - 40 packed ops, no calls, 6 stack accesses for `Decimal64`.
+            /// `wide::integer<128>` has no such instruction and lowers to soft-float quad calls
+            /// (`__floatunditf`, `__multf3`, `__addtf3`); a call in the loop spills the lane
+            /// accumulators around every element, 102 calls and 291 stack accesses against 37. So
+            /// wide decimals convert into a buffer first and the accumulation reads that instead,
+            /// which measured 0.950s against 1.004s. x86-64 buffers at every width: it has no
+            /// packed `int64 -> double` (`vcvtqq2pd` needs AVX-512), and even `Decimal32`, which
+            /// `vcvtdq2pd` could convert, measured faster through the buffer.
             ///
             /// Both shapes fold the moments at the same points and return the same bits, which is
             /// what the AArch64 one is for: dividing inline only ties the per-row path there - what
