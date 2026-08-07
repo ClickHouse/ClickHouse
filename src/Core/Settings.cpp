@@ -2269,6 +2269,8 @@ That setting has four possible values:
     DECLARE(Bool, insert_deduplicate, true, R"(
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
 
+This setting only takes effect when [`deduplicate_insert`](#deduplicate_insert) is set to `backward_compatible_choice`.
+
 Possible values:
 
 - 0 — Disabled.
@@ -2279,7 +2281,9 @@ For the replicated tables by default the only 100 of the most recent blocks for 
 For not replicated tables see [non_replicated_deduplication_window](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 )", 0) \
     DECLARE(Bool, async_insert_deduplicate, false, R"(
-For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed
+For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed.
+
+This setting only takes effect when [`deduplicate_insert`](#deduplicate_insert) is set to `backward_compatible_choice`.
 )", 0) \
     \
     DECLARE(UInt64Auto, insert_quorum, 0, R"(
@@ -3550,7 +3554,7 @@ Defines what action ClickHouse performs when a join reaches any of the following
 - [max_bytes_in_join](/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 - [max_rows_in_join](/reference/settings/session-settings/max-rows#max_rows_in_join)
 
-This setting is honored only by the `hash` and `parallel_hash`
+This setting is honored only by the `hash`, `parallel_hash`, and `ie_join`
 [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) values. Other
 algorithms (for example, `partial_merge`, `grace_hash`, `auto`) handle the
 limits differently — by spilling to disk, re-partitioning, or switching
@@ -3647,6 +3651,14 @@ Possible values:
 - full_sorting_merge
 
  [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
+
+- ie_join
+
+ The sort-based [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) algorithm for a `JOIN` whose `ON` section has two inequality comparisons (`<`, `<=`, `>`, `>=`) between expressions of the joined tables. Supports `ALL INNER/LEFT/RIGHT/FULL JOIN` and `SEMI`/`ANTI` `LEFT/RIGHT JOIN`.
+
+ The position in the list sets the priority: listed after other algorithms, IEJoin is used only when they do not apply (the `ON` section has no equality conditions); listed first, it is used whenever the `ON` section has two inequality conditions. The remaining conditions (including equalities) are applied as a filter over the join result for `ALL INNER JOIN`, and evaluated inside the operator as a residual condition affecting matching for the other kinds. Without `ie_join` in the list, an `INNER JOIN` with only inequality conditions is executed as a `CROSS JOIN` with a filter, and the other kinds are not supported.
+
+ Both inputs are accumulated in memory before joining: [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join) and [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) limit the accumulated input of both sides together (not just the right side), with the action on overflow set by [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode); the sort indexes the operator builds on top of the accumulated input are not counted against the limit. The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
 - parallel_full_sorting_merge
 
@@ -8169,6 +8181,13 @@ Either to throw error or not if we don't have rights to get table's metadata in 
 Allow memory-efficient aggregation (see `distributed_aggregation_memory_efficient`) to produce buckets out of order.
 It may improve performance when aggregation bucket sizes are skewed by letting a replica to send buckets with higher id-s to the initiator while it is still processing some heavy buckets with lower id-s.
 The downside is potentially higher memory usage.
+)", 0) \
+    DECLARE(Bool, enable_packed_string_keys_in_aggregation, true, R"(
+Use a hash table keyed by 16-byte packed string references (`PackedStringRef`) for `GROUP BY` with a single non-nullable `String` key. Keys of up to 11 bytes are stored inline in the packed reference; longer keys are referenced in an arena.
+This is faster for most workloads, but can be slower than the legacy method for `GROUP BY` with very few distinct keys longer than 11 bytes (most noticeably 12..24 bytes), where the legacy hash table keeps keys inline in the cell while the packed one dereferences the arena pointer on every probe.
+When disabled, the legacy `StringHashTable`-based method (the default before 26.8) is used.
+
+All servers participating in a distributed query must agree on this value: with `distributed_aggregation_memory_efficient`, two-level bucket numbers depend on the key hash, which differs between the two methods, so servers disagreeing on this setting may split the same key into different buckets and produce an incorrectly merged result. To guarantee agreement, the initiator always sends its effective value with the secondary queries (even when it comes only from server/profile defaults), overriding the remote servers' own defaults.
 )", 0) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
     DECLARE(Bool, enable_parallel_single_level_merge, true, R"(
