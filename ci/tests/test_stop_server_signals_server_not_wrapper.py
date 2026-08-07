@@ -656,6 +656,66 @@ def test_stop_server_wins_the_restart_gap_even_when_startup_discovery_failed(
         _cleanup(proc, ClickHouseProc._current_server_pid(pid_file) or startup_pid)
 
 
+def test_startup_snapshot_over_a_dead_server_is_not_proof_of_no_watchdog(
+    monkeypatch, tmp_path
+):
+    # The first server can die between writing its pid file and `start` taking
+    # the watchdog snapshot - its watchdog already counting down to the
+    # respawn. The walk then runs over a corpse: a dead pid has no readable
+    # parent, so the chain comes back empty and definitive-looking, and
+    # recording that `()` reopens the leak this fix exists for - a teardown
+    # that begins inside the restart gap trusts the snapshot, believes the
+    # empty pid file immediately, and returns milliseconds before the still
+    # live watchdog republishes a server that holds `<run_path>/status`
+    # against the scraping `clickhouse local`. A walk over a dead pid must be
+    # recorded as unknown (None), exactly like a walk that failed.
+    pid_file = tmp_path / "clickhouse-server.pid"
+    respawn_delay = 5
+    proc, startup_pid = _start_fake_server(
+        tmp_path, restart_mode="delayed", restart_delay=respawn_delay
+    )
+    watchdogs = ClickHouseProc._server_watchdog_pids(startup_pid)
+    try:
+        assert watchdogs, "the fake watchdog is not above the fake server"
+        # The server dies *before* the snapshot this time, unlike in
+        # `test_stop_server_wins_when_teardown_starts_inside_the_restart_gap`
+        # where the snapshot catches the live server.
+        os.kill(startup_pid, signal.SIGKILL)
+        deadline = time.monotonic() + 60
+        while _pid_alive(startup_pid):
+            assert time.monotonic() < deadline, "the fake server did not die"
+            time.sleep(0.05)
+        # `_make_proc` takes the startup snapshot, as `start` does - here from
+        # a pid that is already dead.
+        ch = _make_proc(monkeypatch, tmp_path, proc, startup_pid)
+        assert ch.watchdogs_0 is None, (
+            "a startup snapshot walked over a dead server must be recorded as "
+            f"unknown, not as {ch.watchdogs_0!r}"
+        )
+        # Well above the fake watchdog's respawn delay, well below the test's
+        # patience (see the same override in the restart-gap tests above).
+        monkeypatch.setattr(ClickHouseProc, "RESPAWN_GRACE_TIMEOUT", 10)
+        ch.stop_server()
+        for watchdog in watchdogs:
+            assert not _pid_alive(watchdog), (
+                f"the watchdog {watchdog} outlived a teardown whose startup "
+                "snapshot was walked over a dead server"
+            )
+        time.sleep(respawn_delay + 1)
+        assert not ClickHouseProc._current_server_pid(pid_file), (
+            f"a server ({pid_file.read_text().strip()}) came up after "
+            "stop_server returned"
+        )
+        assert _status_lock_is_free(tmp_path), (
+            "the status lock was still held after stop_server returned; "
+            "`clickhouse local` cannot scrape this replica's system tables"
+        )
+    finally:
+        for watchdog in watchdogs:
+            _cleanup(proc, watchdog)
+        _cleanup(proc, ClickHouseProc._current_server_pid(pid_file) or startup_pid)
+
+
 def test_watchdog_discovery_sees_the_renamed_watchdog(tmp_path):
     # `BaseDaemon::setupWatchdog` renames the watchdog to `clickhouse-watchdog`
     # in place, so a server started as `clickhouse-server` leaves it named
@@ -902,6 +962,14 @@ def test_startup_snapshot_retries_a_transient_discovery_failure(monkeypatch):
         ClickHouseProc,
         "_server_watchdog_pids_checked",
         classmethod(lambda cls, pid: next(answers)),
+    )
+    # The snapshot confirms the walked pid is still the server before trusting
+    # a completed walk; this test's stand-in pid is the test runner, not a
+    # `clickhouse-server`, so answer that confirmation directly.
+    monkeypatch.setattr(
+        ClickHouseProc,
+        "_server_process_alive",
+        classmethod(lambda cls, pid, unknown_alive=True: True),
     )
     assert ClickHouseProc._startup_watchdog_snapshot(os.getpid()) == (42,), (
         "a transient walk failure at startup must be retried, not recorded"

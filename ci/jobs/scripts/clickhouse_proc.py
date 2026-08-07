@@ -1139,11 +1139,36 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         snapshot: the empty snapshot is what later lets the teardown take an
         empty pid file as proof that no server is coming back (see
         `_stop_respawned_server`), and "the discovery failed" is no such proof.
+
+        "Known to be up" has to hold at the walk itself, not merely at the pid
+        file read a moment earlier: a first server that dies in between (its
+        watchdog already counting down to the respawn) leaves the walk running
+        over a corpse, whose parent cannot be read and whose chain therefore
+        comes back empty *and* definitive-looking. So a completed walk counts
+        only while `pid` is still a live server - a walk over a dead pid is
+        recorded as None too, for the same reason as the failed one: "the
+        server died before its watchdogs could be discovered" is no proof that
+        there is no watchdog.
         """
         for attempt in range(cls.WATCHDOG_SNAPSHOT_ATTEMPTS):
             watchdogs, definitive = cls._server_watchdog_pids_checked(pid)
             if definitive:
-                return tuple(watchdogs)
+                try:
+                    if cls._server_process_alive(pid, unknown_alive=None):
+                        return tuple(watchdogs)
+                except ProcessIdentityUnknown as e:
+                    # Neither the walk nor the liveness check is trustworthy
+                    # during a `ps` outage - retry like a failed walk.
+                    print(
+                        f"WARNING: cannot confirm that process {pid} is still "
+                        f"the server ({e})"
+                    )
+                else:
+                    print(
+                        f"WARNING: process {pid} died before its watchdogs "
+                        "could be discovered - recording them as unknown"
+                    )
+                    return None
             if attempt + 1 < cls.WATCHDOG_SNAPSHOT_ATTEMPTS:
                 Utils.sleep(1)
         print(
@@ -1249,7 +1274,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         return True
 
     @classmethod
-    def _server_process_alive(cls, pid) -> bool:
+    def _server_process_alive(cls, pid, unknown_alive=True) -> bool:
         """Whether `pid` is still a live ClickHouse server process.
 
         Checks what the process *is* instead of merely probing the pid: once the
@@ -1272,8 +1297,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         burns the host for good. Signalling a recycled pid needs that pid to be
         both reused and re-handed out inside the teardown window, which is the
         far smaller risk of the two.
+
+        `unknown_alive=None` (raise) is for the one caller that must tell an
+        unreadable identity from a definitive answer either way
+        (`_startup_watchdog_snapshot`).
         """
-        return cls._process_alive_as(pid, lambda name: name == cls.SERVER_ARGV0)
+        return cls._process_alive_as(
+            pid, lambda name: name == cls.SERVER_ARGV0, unknown_alive=unknown_alive
+        )
 
     @classmethod
     def _watchdog_process_alive(cls, pid, unknown_alive=True) -> bool:
