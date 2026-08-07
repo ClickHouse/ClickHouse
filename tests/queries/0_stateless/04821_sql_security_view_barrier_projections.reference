@@ -1,0 +1,9 @@
+invoker view uses normal projection:	1
+invoker view uses aggregate projection:	1
+definer view uses normal projection:	0
+definer view uses aggregate projection:	0
+definer view results:	1	1
+definer view aggregate results:	1
+0
+0
+reading the view costs the same whatever the hidden value is:	same
