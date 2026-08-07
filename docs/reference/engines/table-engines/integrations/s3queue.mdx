@@ -92,8 +92,8 @@ To get a list of settings, configured for the table, use `system.s3_queue_settin
 **Setting Names (24.7+)**
 
 Starting from version 24.7, S3Queue settings can be specified with or without the `s3queue_` prefix:
-- **Modern syntax** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec`, `failed_file_ttl_sec`, etc.
-- **Legacy syntax** (all versions): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, `s3queue_failed_file_ttl_sec`, etc.
+- **Modern syntax** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec`, etc.
+- **Legacy syntax** (all versions): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, etc.
 
 Both forms are supported in 24.7+. The examples on this page use the modern syntax with no prefix.
 </Info>
@@ -329,7 +329,7 @@ After the specified number of seconds, old failed file entries are automatically
 This setting only applies to **unordered mode** tables. For ordered mode tables, the setting is ignored and failed files are stored indefinitely.
 </Note>
 
-You can also manually clear all failed files using the [`SYSTEM DROP S3QUEUE FAILED FILES`](/sql-reference/statements/system#drop-s3queue-failed-files) command.
+You can also manually clear all failed files using the [`SYSTEM DROP S3QUEUE FAILED FILES`](/reference/statements/system#drop-s3queue-failed-files) command.
 
 Possible values:
 

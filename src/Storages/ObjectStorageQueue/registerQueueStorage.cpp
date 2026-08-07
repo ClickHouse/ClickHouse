@@ -195,6 +195,7 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [last_processed_path = "",]
     [tracked_files_limit = 1000,]
     [tracked_file_ttl_sec = 0,]
+    [failed_file_ttl_sec = 0,]
     [polling_min_timeout_ms = 1000,]
     [polling_max_timeout_ms = 600000,]
     [polling_backoff_ms = 30000,]
@@ -479,6 +480,34 @@ Possible values:
 - Positive integer.
 
 Default value: `0`.
+
+### `failed_file_ttl_sec` {#failed_file_ttl_sec}
+
+Maximum number of seconds to store failed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
+Failed files are files that could not be processed due to parsing errors, schema mismatches, or other exceptions.
+After the specified number of seconds, old failed file entries are automatically removed from ZooKeeper and the in-memory cache by the periodic cleanup task.
+
+:::note
+This setting only applies to **unordered mode** tables. For ordered mode tables, the setting is ignored and failed files are stored indefinitely.
+:::
+
+You can also manually clear all failed files using the [`SYSTEM DROP S3QUEUE FAILED FILES`](/sql-reference/statements/system#drop-s3queue-failed-files) command.
+
+Possible values:
+
+- Positive integer.
+
+Default value: `0` (store forever).
+
+**Example**
+
+```sql
+CREATE TABLE s3_queue_engine_table (name String, value UInt32)
+ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
+SETTINGS
+    mode = 'unordered',
+    failed_file_ttl_sec = 3600;  -- Remove failed files older than 1 hour
+```
 
 ### `cleanup_interval_min_ms` {#cleanup_interval_min_ms}
 
