@@ -4,6 +4,7 @@
 #include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 
@@ -133,9 +134,10 @@ const MemoryTracker & MergeListElement::getMemoryTracker() const
 
 MergeListElement::~MergeListElement()
 {
-    /// The merge leaves its part to the table and may hand memory to other threads, so its tracker ends
-    /// non-zero; mark it expected (and for the query that started it) so `settleDriftOnQueryEnd` doesn't warn.
+    /// The merge hands the part it produced to the table, so its tracker can end non-zero; that is a hand-off,
+    /// not something unaccounted. Marks the merge's chain and the caller's, for an `OPTIMIZE` merging inline.
     thread_group->memory_tracker.setDriftExpected();
+    setCurrentQueryMemoryDriftExpected();
 }
 
 }
