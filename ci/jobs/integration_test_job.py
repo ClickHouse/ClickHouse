@@ -1477,7 +1477,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     force_ok_exit = False
     if R:
         failures_cnt = len([r for r in R.results if not r.is_ok()])
-        if failures_cnt > 0 and failures_cnt < 4:
+        if failures_cnt > 0 and failures_cnt < 2:
             print(
                 f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
             )
