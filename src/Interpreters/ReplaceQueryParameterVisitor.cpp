@@ -54,7 +54,7 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
         visit(function->query_parameter_name);
         const auto & resolved_name = function->query_parameter_name->as<ASTIdentifier &>();
         function->name = resolved_name.name();
-        function->setIsCompoundName(resolved_name.compound());
+        function->setIsCompoundName(function->name.contains('.'));
         function->reset(function->query_parameter_name);
         visitChildren(ast);
     }
