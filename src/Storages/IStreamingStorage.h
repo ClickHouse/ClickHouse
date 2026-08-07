@@ -57,8 +57,6 @@ public:
     bool isConsumeCancelRequested(UInt64 epoch_snapshot) const { return stream_control.isCancelRequested(epoch_snapshot); }
 
 protected:
-    static constexpr UInt64 STREAMING_TO_VIEWS_DISABLED_RESCHEDULE_PERIOD_MS = 5000;
-
     StreamingBackgroundControl stream_control;
 
     /// Set when storage starts shutting down, so background tasks finish asap.

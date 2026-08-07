@@ -3667,6 +3667,9 @@ def test_rabbitmq_default_mode_nack_on_parse_error(rabbitmq_cluster, db, unique)
     ["message_queue_disable_insertion", "disable_insertion_and_mutation"],
 )
 def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_name):
+    def apply_config_change():
+        instance.restart_clickhouse()
+
     assert (
         "false"
         == instance.query(f"SELECT getServerSetting('{setting_name}')").strip()
@@ -3678,7 +3681,7 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
             f"<{setting_name}>0</{setting_name}>",
             f"<{setting_name}>1</{setting_name}>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        apply_config_change()
 
         assert (
             "true"
@@ -3695,7 +3698,8 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
                          rabbitmq_exchange_name = '{exchange}',
                          rabbitmq_format = 'JSONEachRow',
                          rabbitmq_flush_interval_ms = 1000,
-                         rabbitmq_queue_base = '{exchange}';
+                         rabbitmq_queue_base = '{exchange}',
+                         rabbitmq_queue_consume = 1;
             CREATE TABLE {db}.view (key UInt64, value UInt64)
                 ENGINE = MergeTree()
                 ORDER BY key;
@@ -3711,6 +3715,9 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
         )
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
+        channel.exchange_declare(exchange=exchange, exchange_type="fanout", durable=True)
+        channel.queue_declare(queue=exchange, durable=True)
+        channel.queue_bind(exchange=exchange, queue=exchange)
 
         error_patterns = [
             "Insert queries are prohibited",
@@ -3731,6 +3738,9 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
         # Wait — no rows should appear
         time.sleep(10)
         assert 0 == int(instance.query(f"SELECT count() FROM {db}.view"))
+        queue_state = channel.queue_declare(queue=exchange, passive=True).method
+        assert 10 == queue_state.message_count
+        assert 0 == queue_state.consumer_count
 
         for pattern, count in error_counts.items():
             assert count == int(instance.count_in_log(pattern))
@@ -3747,7 +3757,7 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
             f"<{setting_name}>1</{setting_name}>",
             f"<{setting_name}>0</{setting_name}>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        apply_config_change()
 
         assert (
             "false"
@@ -3764,4 +3774,4 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
             f"<{setting_name}>1</{setting_name}>",
             f"<{setting_name}>0</{setting_name}>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        apply_config_change()

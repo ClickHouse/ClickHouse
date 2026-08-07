@@ -3948,13 +3948,13 @@ def test_message_queue_disable_insertion(kafka_cluster):
     )
 
     try:
-        # Enable message_queue_disable_insertion via config replacement + reload
+        # Enable message_queue_disable_insertion via config replacement + restart
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
             "<message_queue_disable_insertion>0</message_queue_disable_insertion>",
             "<message_queue_disable_insertion>1</message_queue_disable_insertion>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
 
         assert (
             "true"
@@ -4008,6 +4008,12 @@ def test_message_queue_disable_insertion(kafka_cluster):
                 f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
             )
         )
+        assert 0 == int(
+            instance.query(
+                f"SELECT coalesce(sum(num_rebalance_assignments), 0) "
+                f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
+            )
+        )
 
         # Direct INSERT INTO the Kafka table (producer write) must still work
         instance.query(
@@ -4021,7 +4027,7 @@ def test_message_queue_disable_insertion(kafka_cluster):
             "<message_queue_disable_insertion>1</message_queue_disable_insertion>",
             "<message_queue_disable_insertion>0</message_queue_disable_insertion>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
 
         assert (
             "false"
@@ -4049,7 +4055,7 @@ def test_message_queue_disable_insertion(kafka_cluster):
             "<message_queue_disable_insertion>1</message_queue_disable_insertion>",
             "<message_queue_disable_insertion>0</message_queue_disable_insertion>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
         instance.query(
             f"""
             DROP TABLE IF EXISTS test.{kafka_table}_mv;
@@ -4079,7 +4085,8 @@ def test_disable_insertion_and_mutation_disables_message_queue_insertion(
             "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
             "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        # `disable_insertion_and_mutation` is a startup-only server setting.
+        instance.restart_clickhouse()
 
         assert (
             "true"
@@ -4145,13 +4152,19 @@ def test_disable_insertion_and_mutation_disables_message_queue_insertion(
                 f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
             )
         )
+        assert 0 == int(
+            instance.query(
+                f"SELECT coalesce(sum(num_rebalance_assignments), 0) "
+                f"FROM system.kafka_consumers WHERE database = 'test' AND table = '{kafka_table}'"
+            )
+        )
 
         instance.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
             "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
             "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
 
         assert 11 == int(
             instance.query_with_retry(
@@ -4166,7 +4179,7 @@ def test_disable_insertion_and_mutation_disables_message_queue_insertion(
             "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
             "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
         instance.query(
             f"""
             DROP TABLE IF EXISTS test.{kafka_table}_mv;

@@ -729,7 +729,7 @@ def test_disable_insertion_and_mutation(started_cluster):
             "<disable_insertion_and_mutation>true</disable_insertion_and_mutation>",
             "<disable_insertion_and_mutation>false</disable_insertion_and_mutation>",
         )
-        node.query("SYSTEM RELOAD CONFIG")
+        node.restart_clickhouse()
 
         expected_rows = files_to_generate
         for _ in range(100):
@@ -744,7 +744,7 @@ def test_disable_insertion_and_mutation(started_cluster):
             "<disable_insertion_and_mutation>false</disable_insertion_and_mutation>",
             "<disable_insertion_and_mutation>true</disable_insertion_and_mutation>",
         )
-        node.query("SYSTEM RELOAD CONFIG")
+        node.restart_clickhouse()
 
 
 def test_shutdown_logs(started_cluster):

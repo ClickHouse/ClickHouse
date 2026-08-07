@@ -833,11 +833,13 @@ void StorageObjectStorageQueue::threadFunc(size_t streaming_tasks_index)
     }
     else if (getContext()->getS3QueueDisableStreaming())
     {
+        static constexpr UInt64 disabled_streaming_reschedule_period_ms = 5000;
+
         LOG_TRACE(
-            log, "Streaming to views is disabled, rescheduling next check in {} ms", STREAMING_TO_VIEWS_DISABLED_RESCHEDULE_PERIOD_MS);
+            log, "Streaming to views is disabled, rescheduling next check in {} ms", disabled_streaming_reschedule_period_ms);
 
         std::lock_guard lock(mutex);
-        reschedule_processing_interval_ms = STREAMING_TO_VIEWS_DISABLED_RESCHEDULE_PERIOD_MS;
+        reschedule_processing_interval_ms = disabled_streaming_reschedule_period_ms;
     }
     else
     {

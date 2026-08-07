@@ -125,6 +125,13 @@ async def add_durable_consumer(cluster_inst, stream_name, consumer_name):
 
     await nc.close()
 
+
+async def get_consumer_info(cluster_inst, stream_name, consumer_name):
+    nc = await nats_helpers.nats_connect_ssl(cluster_inst)
+    consumer_info = await nc.jetstream().consumer_info(stream_name, consumer_name)
+    await nc.close()
+    return consumer_info
+
 async def delete_durable_consumer(cluster_inst, stream_name, consumer_name):
     nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
@@ -229,7 +236,15 @@ def test_disable_insertion_and_mutation_disables_streaming(nats_cluster):
             "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
             "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        # `disable_insertion_and_mutation` is a startup-only server setting.
+        instance.restart_clickhouse()
+
+        assert (
+            "true"
+            == instance.query(
+                "SELECT getServerSetting('disable_insertion_and_mutation')"
+            ).strip()
+        )
 
         instance.query(
             """
@@ -270,6 +285,9 @@ def test_disable_insertion_and_mutation_disables_streaming(nats_cluster):
 
         time.sleep(10)
         assert 0 == int(instance.query("SELECT count() FROM test.view"))
+        assert 0 == asyncio.run(
+            get_consumer_info(nats_cluster, "test_stream", "test_consumer")
+        ).num_ack_pending
         for pattern, count in error_counts.items():
             assert count == int(instance.count_in_log(pattern))
 
@@ -278,7 +296,7 @@ def test_disable_insertion_and_mutation_disables_streaming(nats_cluster):
             "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
             "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
 
         assert 11 == int(
             instance.query_with_retry(
@@ -293,7 +311,7 @@ def test_disable_insertion_and_mutation_disables_streaming(nats_cluster):
             "<disable_insertion_and_mutation>1</disable_insertion_and_mutation>",
             "<disable_insertion_and_mutation>0</disable_insertion_and_mutation>",
         )
-        instance.query("SYSTEM RELOAD CONFIG")
+        instance.restart_clickhouse()
 
 
 def test_nats_json_without_delimiter(nats_cluster):

@@ -573,6 +573,12 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 
 void StorageKafka2::startup()
 {
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        LOG_INFO(log, "Streaming to views is disabled");
+        return;
+    }
+
     const auto replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
     {
         std::lock_guard lock(consumers_mutex);
@@ -1256,16 +1262,6 @@ void StorageKafka2::threadFunc(size_t idx)
         std::lock_guard lock(consumers_mutex);
         if (idx >= consumers.size() || !consumers[idx])
             return;
-    }
-
-    if (getContext()->getMessageQueueDisableInsertion())
-    {
-        LOG_TRACE(
-            log, "Streaming to views is disabled, rescheduling next check in {} ms", STREAMING_TO_VIEWS_DISABLED_RESCHEDULE_PERIOD_MS);
-
-        if (!task->stream_cancelled)
-            task->holder->scheduleAfter(STREAMING_TO_VIEWS_DISABLED_RESCHEDULE_PERIOD_MS);
-        return;
     }
 
     std::optional<StallKind> maybe_stall_reason;
