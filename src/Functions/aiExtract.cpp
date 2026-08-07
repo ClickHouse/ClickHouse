@@ -50,8 +50,6 @@ private:
     static constexpr float default_temp = 0.0f;
     static constexpr size_t instruction_arg_index = 1;
 
-    String functionName() const override { return name; }
-
     AIParamSpecs functionParams() const override
     {
         return {{"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))}};
@@ -135,7 +133,7 @@ private:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "aiExtract: 'instruction_or_schema' must be a JSON object mapping field names to descriptions");
 
-                Strings keys;
+                std::vector<String> keys;
                 user_obj->getNames(keys);
                 for (const auto & key : keys)
                 {

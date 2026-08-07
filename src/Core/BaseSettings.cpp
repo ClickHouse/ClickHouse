@@ -36,7 +36,7 @@ void BaseSettingsHelpers::writeFlags(Flags flags, WriteBuffer & out)
 
 UInt64 BaseSettingsHelpers::readFlags(ReadBuffer & in)
 {
-    UInt64 res = 0;
+    UInt64 res;
     readVarUInt(res, in);
     return res;
 }

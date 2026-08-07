@@ -61,7 +61,9 @@ NATSSettings::NATSSettings(const NATSSettings & settings) : impl(std::make_uniqu
 {
 }
 
-NATSSettings::NATSSettings(NATSSettings && settings) noexcept = default;
+NATSSettings::NATSSettings(NATSSettings && settings) noexcept : impl(std::make_unique<NATSSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 NATSSettings::~NATSSettings() = default;
 

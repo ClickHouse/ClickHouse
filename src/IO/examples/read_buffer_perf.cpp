@@ -5,7 +5,6 @@
 #include <base/types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleReadBufferPerf(int, char **)
@@ -25,7 +24,7 @@ int mainEntryExampleReadBufferPerf(int, char **)
             DB::readIntText(a, in);
             in.ignore();
 
-            DB::readFloatTextPrecise(b, in);
+            DB::readFloatText(b, in);
             in.ignore();
 
             DB::readEscapedString(c, in);

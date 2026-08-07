@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-replicated-database, no-shared-merge-tree
-# Tag long: concurrent CLEAR COLUMN + INSERT race test exceeds 180s flaky-check
-# budget under contention; flaky-check enforces TEST_MAX_RUN_TIME_IN_SECONDS
-# only for tests without the `long` tag (see tests/clickhouse-test).
+# Tags: zookeeper, no-replicated-database, no-shared-merge-tree
 # Tag no-replicated-database: Old syntax is not allowed
 # no-shared-merge-tree -- old syntax
 

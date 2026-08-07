@@ -177,7 +177,7 @@ public:
         readBinary(encoding_mode, buf);
         if (encoding_mode == enc.BinEncodingContiguousCounts)
         {
-            UInt64 num_bins = 0;
+            UInt64 num_bins;
             readVarUInt(num_bins, buf);
             if (num_bins > max_bins_deserialize)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many bins in DDSketch dense store: {}", num_bins);
@@ -189,7 +189,7 @@ public:
 
             for (UInt64 i = 0; i < num_bins; ++i)
             {
-                Float64 bin_count = 0;
+                Float64 bin_count;
                 readFloatBinary(bin_count, buf);
                 if (!std::isfinite(bin_count) || bin_count < 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bin count in DDSketch dense store: {}", bin_count);
@@ -205,7 +205,7 @@ public:
         }
         else if (encoding_mode == enc.BinEncodingIndexDeltasAndCounts)
         {
-            UInt64 num_non_empty_bins = 0;
+            UInt64 num_non_empty_bins;
             readVarUInt(num_non_empty_bins, buf);
             if (num_non_empty_bins > max_bins_deserialize)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Too many bins in DDSketch sparse store: {}", num_non_empty_bins);
@@ -215,7 +215,7 @@ public:
             {
                 Int64 index_delta = 0;
                 readVarInt(index_delta, buf);
-                Float64 bin_count = 0;
+                Float64 bin_count;
                 readFloatBinary(bin_count, buf);
                 if (!std::isfinite(bin_count) || bin_count < 0)
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid bin count in DDSketch sparse store: {}", bin_count);

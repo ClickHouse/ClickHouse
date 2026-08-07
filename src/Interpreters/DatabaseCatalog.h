@@ -72,9 +72,11 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     StoragePtr getTable() const;
 
+    std::shared_ptr<IDatabase> getDatabase() const;
+
     operator bool () const { return id != UUIDHelpers::Nil; } /// NOLINT
 
-    IDatabase * temporary_tables = nullptr;
+    std::weak_ptr<IDatabase> temporary_tables;
     UUID id = UUIDHelpers::Nil;
     FutureSetFromSubqueryPtr future_set;
 };
@@ -369,9 +371,7 @@ private:
 
     TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
     TablesMarkedAsDropped::iterator first_async_drop_in_queue TSA_GUARDED_BY(tables_marked_dropped_mutex);
-    /// A multiset: the same UUID may appear more than once when a fixed explicit UUID is reused across
-    /// CREATE OR REPLACE TABLE, which enqueues several intermediate tables sharing that UUID for drop.
-    std::unordered_multiset<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
+    std::unordered_set<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;

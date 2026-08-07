@@ -10,8 +10,6 @@
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
 #include <Common/LockGuardWithStopWatch.h>
-#include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
 
 namespace CurrentMetrics
@@ -169,7 +167,7 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     return true;
 }
 
-static void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
+void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
 {
     std::exception_ptr ex = std::current_exception();
 

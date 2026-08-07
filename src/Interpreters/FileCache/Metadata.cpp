@@ -6,9 +6,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ErrnoException.h>
-#include <Common/ThreadPool.h>
 #include <filesystem>
-#include <unordered_set>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 
 namespace fs = std::filesystem;
@@ -114,22 +112,6 @@ CacheMetadata::OriginInfoPtr CacheMetadata::getOrCreateSharedOrigin(const Origin
     });
 }
 
-void CacheMetadata::removeSharedOrigins(const UserID & user_id)
-{
-    /// A single client can own several pool keys (distinct weight / segment_type), which the
-    /// pool spreads across shards by the full key's hash, so scan every shard.
-    origins.forEachShard([&](auto & map)
-    {
-        for (auto it = map.begin(); it != map.end();)
-        {
-            if (it->first.user_id == user_id)
-                it = map.erase(it);
-            else
-                ++it;
-        }
-    });
-}
-
 LockedKeyPtr KeyMetadata::lock()
 {
     auto locked = tryLock();
@@ -162,29 +144,42 @@ KeyMetadata::KeyState KeyMetadata::getState()
     return key_state;
 }
 
-std::error_code KeyMetadata::createBaseDirectory()
+bool KeyMetadata::createBaseDirectory(bool throw_if_failed)
 {
     if (created_base_directory.load())
-        return {};
+        return true;
 
     std::shared_lock lock(cache_metadata->key_prefix_directory_mutex);
 
     if (created_base_directory.load(std::memory_order_relaxed))
-        return {};
+        return true;
 
-    std::error_code ec;
-    fs::create_directories(getPath(), ec);
-
-    if (!ec)
+    try
     {
+        fs::create_directories(getPath());
         created_base_directory.store(true);
         ProfileEvents::increment(ProfileEvents::FilesystemCacheCreatedKeyDirectories);
     }
-    else if (ec != std::errc::no_space_on_device && ec != std::errc::too_many_files_open)
-        LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, {}", key, ec.message());
+    catch (const fs::filesystem_error & e)
+    {
+        created_base_directory = false;
 
+        if (!throw_if_failed &&
+            (e.code() == std::errc::no_space_on_device
+                || e.code() == std::errc::read_only_file_system
+                || e.code() == std::errc::permission_denied
+                || e.code() == std::errc::too_many_files_open
+                || e.code() == std::errc::operation_not_permitted))
+        {
+            LOG_TRACE(cache_metadata->log, "Failed to create base directory for key {}, "
+                        "because no space left on device", key);
 
-    return ec;
+            return false;
+        }
+        throw;
+    }
+
+    return true;
 }
 
 std::string KeyMetadata::getPath() const
@@ -216,8 +211,6 @@ CacheMetadata::CacheMetadata(
     , download_threads_num(background_download_threads_)
 {
 }
-
-CacheMetadata::~CacheMetadata() = default;
 
 String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
 {
@@ -312,46 +305,27 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
     const OriginInfo & origin,
     bool is_initial_load)
 {
-    KeyMetadataPtr result;
+    auto & bucket = getMetadataBucket(key);
+    auto lock = bucket.lock();
+
+    auto it = bucket.find(key);
+    if (it == bucket.end())
     {
-        auto & bucket = getMetadataBucket(key);
-        auto lock = bucket.lock();
+        if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
+        if (key_not_found_policy == KeyNotFoundPolicy::THROW_LOGICAL)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
+        if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
+            return nullptr;
 
-        auto it = bucket.find(key);
-        if (it == bucket.end())
-        {
-            if (key_not_found_policy == KeyNotFoundPolicy::THROW)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
-            if (key_not_found_policy == KeyNotFoundPolicy::THROW_LOGICAL)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
-            if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
-                return nullptr;
+        it = bucket.emplace(
+            key, std::make_shared<KeyMetadata>(key, getOrCreateSharedOrigin(origin), this, is_initial_load)).first;
 
-            it = bucket.emplace(
-                key, std::make_shared<KeyMetadata>(key, getOrCreateSharedOrigin(origin), this, is_initial_load)).first;
-
-            CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
-        }
-
-        it->second->assertAccess(origin.user_id);
-        result = it->second;
+        CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
     }
 
-    /// Refresh idle-client TTL after releasing the bucket lock: prevents
-    /// lock-order inversion with the eviction task. Skip internal/common ids
-    /// and probe-only lookups (result == nullptr).
-    if (result && on_client_access)
-    {
-        const auto & user_id = origin.user_id;
-        if (!user_id.empty()
-            && user_id != FileCache::getInternalOrigin().user_id
-            && user_id != FileCache::getCommonOrigin().user_id)
-        {
-            on_client_access(user_id);
-        }
-    }
-
-    return result;
+    it->second->assertAccess(origin.user_id);
+    return it->second;
 }
 
 bool CacheMetadata::isEmpty() const
@@ -547,9 +521,8 @@ CacheMetadata::IteratorPtr CacheMetadata::getIterator(const UserID & user_id)
     return std::make_unique<Iterator>(user_id, metadata_buckets);
 }
 
-bool CacheMetadata::removeAllKeys(const UserID & user_id)
+void CacheMetadata::removeAllKeys(const UserID & user_id)
 {
-    bool fully_removed = true;
     for (auto & bucket : metadata_buckets)
     {
         auto lock = bucket.lock();
@@ -570,21 +543,10 @@ bool CacheMetadata::removeAllKeys(const UserID & user_id)
                     it = removeEmptyKey(bucket, it, *locked_key, lock);
                     continue;
                 }
-                /// Non-releasable segments remain (held by some FileSegmentsHolder).
-                fully_removed = false;
             }
             ++it;
         }
     }
-
-    /// With all of this client's keys gone, the origins deduplicated for it in the pool are no
-    /// longer referenced by any key, so drop them too; otherwise the pool grows without bound as
-    /// clients come and go (e.g. idle-client TTL eviction). Skip when some segment is still held:
-    /// its key (and thus its shared origin) survives, and a re-access would re-create the entry.
-    if (fully_removed)
-        removeSharedOrigins(user_id);
-
-    return fully_removed;
 }
 
 void CacheMetadata::removeKey(const Key & key, bool if_exists, const UserID & user_id)
@@ -658,21 +620,9 @@ CacheMetadata::removeEmptyKey(
         {
             fs::remove(key_prefix_directory);
             LOG_TEST(log, "Prefix directory ({}) for key {} removed", key_prefix_directory.string(), key);
-
-            /// Also drop the per-user-id directory once empty. Safe under the
-            /// same mutex: createBaseDirectory takes it as a shared_lock, so
-            /// no other thread can recreate this directory while we hold the
-            /// unique_lock here.
-            if (write_cache_per_user_directory)
-            {
-                const fs::path user_directory = key_prefix_directory.parent_path();
-                if (fs::exists(user_directory) && fs::is_empty(user_directory))
-                {
-                    fs::remove(user_directory);
-                    LOG_TEST(log, "User directory ({}) for key {} removed", user_directory.string(), key);
-                }
-            }
         }
+
+        /// TODO: Remove empty user directories.
     }
     catch (...)
     {
@@ -688,7 +638,7 @@ class CleanupQueue
 public:
     void add(const FileCacheKey & key)
     {
-        bool inserted = false;
+        bool inserted;
         {
             std::lock_guard lock(mutex);
             if (cancelled)
@@ -829,7 +779,7 @@ void CacheMetadata::downloadThreadFunc(const bool & stop_flag)
     while (true)
     {
         Key key;
-        size_t offset = 0;
+        size_t offset;
         std::weak_ptr<FileSegment> file_segment_weak;
 
         {
@@ -949,7 +899,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     buf->set(memory->data(), std::min(size_to_download, memory->size()));
 
     const auto reserve_space_lock_wait_timeout_milliseconds =
-        Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_settings.reserve_space_wait_lock_timeout_milliseconds;
+        Context::getGlobalContextInstance()->getReadSettings().filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
 
     size_t offset = file_segment.getCurrentWriteOffset();
     if (offset != static_cast<size_t>(buf->getPosition()))
