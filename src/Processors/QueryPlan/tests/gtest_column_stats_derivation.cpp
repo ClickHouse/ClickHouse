@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -18,9 +19,9 @@ namespace
 {
 
 /// Build statistics for a single column with the given distinct-value count.
-std::unordered_map<String, ColumnStats> statsOf(const String & name, UInt64 num_distinct_values)
+UnorderedMapWithMemoryTracking<String, ColumnStats> statsOf(const String & name, UInt64 num_distinct_values)
 {
-    std::unordered_map<String, ColumnStats> stats;
+    UnorderedMapWithMemoryTracking<String, ColumnStats> stats;
     stats[name] = ColumnStats{.num_distinct_values = num_distinct_values};
     return stats;
 }
@@ -128,7 +129,7 @@ TEST(ColumnStatsDerivation, AttributesDerivedColumnToCorrectSource)
     addOutputFunction(dag, "toYear", {&date_input}, "year");
     addOutputFunction(dag, "negate", {&int_input}, "neg");
 
-    std::unordered_map<String, ColumnStats> stats;
+    UnorderedMapWithMemoryTracking<String, ColumnStats> stats;
     stats["d"] = ColumnStats{.num_distinct_values = 2556};
     stats["n"] = ColumnStats{.num_distinct_values = 1000};
     remapColumnStats(stats, dag);
@@ -258,7 +259,7 @@ TEST(ColumnStatsDerivation, FirstNonDefaultDoesNotPropagateBound)
 
     addOutputFunction(dag, "firstNonDefault", {&left, &right}, "merged");
 
-    std::unordered_map<String, ColumnStats> stats;
+    UnorderedMapWithMemoryTracking<String, ColumnStats> stats;
     stats["a"] = ColumnStats{.num_distinct_values = 10};
     stats["b"] = ColumnStats{.num_distinct_values = 1000};
     remapColumnStats(stats, dag);
@@ -321,7 +322,7 @@ TEST(ColumnStatsDerivation, ChainOfFunctionsPropagatesBound)
         FunctionFactory::instance().get("plus", getContext().context), {&int_input, &int_input}, "doubled");
     addOutputFunction(dag, "negate", {&doubled}, "neg_doubled");
 
-    std::unordered_map<String, ColumnStats> stats;
+    UnorderedMapWithMemoryTracking<String, ColumnStats> stats;
     stats["d"] = ColumnStats{.num_distinct_values = 2556};
     stats["n"] = ColumnStats{.num_distinct_values = 1000};
     remapColumnStats(stats, dag);
