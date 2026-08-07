@@ -55,7 +55,11 @@ $CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_diale
 # `SETTINGS (min_compress_block_size)` that the column grammar then fails to parse back.
 CRAFTED_COLUMN="replaceAll(parseQueryToJSON(\$\$CREATE TABLE test_04699_column (k UInt64, v UInt64 SETTINGS (min_compress_block_size = true)) ENGINE = MergeTree ORDER BY k\$\$), '{\"name\":\"min_compress_block_size\"', '{\"name\":\"min_compress_block_size\",\"shorthand\":true')"
 CRAFTED_COLUMN_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_COLUMN FORMAT TSVRaw")
-$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_COLUMN_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+# Sent over HTTP: under `--allow_merge_tree_settings` with changed MergeTree settings (the test
+# harness randomization), `ClientBase::addMergeTreeSettings` rewrites a parsed `CREATE ... MergeTree`
+# and re-sends it as SQL text, where the crafted change is re-rendered in the valueless form and the
+# column grammar rejects it with a syntax error before the server-side check can see the flag.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&dialect=clickhouse_json&allow_experimental_json_ast_dialect=1" --data-binary "$CRAFTED_COLUMN_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
 
 CRAFTED_EXPLAIN_TRUE="replaceAll(parseQueryToJSON(\$\$EXPLAIN header = true SELECT 1\$\$), '{\"name\":\"header\"', '{\"name\":\"header\",\"shorthand\":true')"
 CRAFTED_EXPLAIN_TRUE_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_EXPLAIN_TRUE FORMAT TSVRaw")
