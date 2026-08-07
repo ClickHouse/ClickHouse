@@ -173,6 +173,14 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     /// read-ahead is not started here: it begins only once the merge has actually advanced
     /// past a source (see `merge`), so that a limit satisfied from the front source alone —
     /// even over several blocks — does not pull in the sources deferred behind it.
+    ///
+    /// The deferral/read-ahead contract intentionally covers only the initial virtual rows
+    /// collected here: with `read_in_order_use_virtual_row_per_block`, a source emits a
+    /// further virtual row before each subsequent block, but those later virtual rows are
+    /// merged as plain boundary markers and do not put the source back into the deferred
+    /// set (`releaseDeferredSource` permanently releases a source once it delivers real
+    /// data). Re-deferring a source on a later virtual row is a possible follow-up for the
+    /// per-block mode, which is disabled by default.
     if (virtual_row_prefetch_window && !has_collation)
     {
         source_deferral_state.assign(current_inputs.size(), SourceDeferralState::NotDeferred);
