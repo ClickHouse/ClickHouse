@@ -40,6 +40,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/formatReadable.h>
 #include <Common/ThrottlerArray.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 
@@ -582,6 +583,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
 
         schedule([starter]
             {
+                auto component_guard = Coordination::setCurrentComponent("BackupStarter::doBackup");
                 try
                 {
                     starter->doBackup();
@@ -626,6 +628,9 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.data_file_name_prefix_length = *backup_settings.data_file_name_prefix_length;
     backup_create_params.backup_coordination = backup_coordination;
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
+    /// The logical backup id, not BackupStarter's `-internal-` suffixed infos-map key -- internal ON CLUSTER
+    /// workers never write a manifest (writeBackupMetadata asserts !is_internal_backup), so this is the id readers see.
+    backup_create_params.backup_id = backup_settings.id.empty() ? toString(*backup_settings.backup_uuid) : backup_settings.id;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
     backup_create_params.allow_s3_native_copy = backup_settings.allow_s3_native_copy;
     backup_create_params.allow_azure_native_copy = backup_settings.allow_azure_native_copy;
@@ -767,7 +772,7 @@ void BackupsWorker::writeBackupEntries(
     LOG_TRACE(log, "{}, num backup entries={}", Stage::WRITING_BACKUP, backup_entries.size());
     backup_coordination->setStage(Stage::WRITING_BACKUP, "", /* sync = */ true);
 
-    auto file_infos = backup_coordination->getFileInfos();
+    const auto & file_infos = backup_coordination->getFileInfos();
     if (file_infos.size() != backup_entries.size())
     {
         throw Exception(
@@ -801,13 +806,22 @@ void BackupsWorker::writeBackupEntries(
         size_t index = !writing_order.empty() ? writing_order[i] : i;
 
         auto & entry = backup_entries[index].second;
+
+        if (entry->isFromRemoteFile())
+        {
+            backup->setOriginalEndpointAndNamespaceIfEmpty(entry->getEndpointURI(), entry->getNamespace());
+            continue;
+        }
+
         const auto & file_info = file_infos[index];
 
         /// Using references here is fine as the variables reference objects either belonging to `this` or passed as references in the
         /// function. The exception is file_info, which is itself a reference to `file_infos`, created before the runner (so it will be
         /// destroyed after)
-        auto job = [&failed, &process_list_element, &backup, &file_info, &entry, this, is_internal_backup, &backup_id]()
+        auto job = [&failed, &process_list_element, &backup, &file_info, &entry, this, is_internal_backup, &backup_id,
+                    current_component = Coordination::getCurrentComponent()]()
         {
+            auto local_component_guard = Coordination::setCurrentComponent(current_component);
             if (failed)
                 return;
             try
@@ -1296,7 +1310,7 @@ std::pair<bool, BackupStatus> BackupsWorker::addInfo(const OperationID & id, con
     }
 
     if (backup_log)
-        backup_log->add(BackupLogElement{info});
+        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
 
     infos[id] = std::move(extended_info);
 
@@ -1341,7 +1355,7 @@ void BackupsWorker::setStatus(const String & id, BackupStatus status, bool throw
     }
 
     if (backup_log)
-        backup_log->add(BackupLogElement{info});
+        backup_log->add([&](BackupLogElement & element) { BackupLogElement::fromInfo(element, info); });
 
     num_active_backups += getNumActiveBackupsChange(status) - getNumActiveBackupsChange(old_status);
     num_active_restores += getNumActiveRestoresChange(status) - getNumActiveRestoresChange(old_status);

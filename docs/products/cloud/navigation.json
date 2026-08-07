@@ -1,14 +1,12 @@
 {
-  "item": "ClickHouse Cloud",
-  "icon": "/images/icons/icon-clickhouse-cloud.svg",
   "groups": [
     {
       "group": "ClickHouse Cloud",
       "pages": [
         {
           "group": "Get started",
-          "root": "products/cloud/getting-started/cloud-get-started",
           "pages": [
+            "products/cloud/getting-started/cloud-get-started",
             "products/cloud/getting-started/intro",
             "products/cloud/getting-started/resource-tour"
           ]
@@ -23,25 +21,25 @@
             "products/cloud/reference/architecture",
             "products/cloud/reference/supported-regions",
             {
-              "group": "SQL console",
               "expanded": false,
+              "group": "SQL console",
               "pages": [
                 "products/cloud/features/sql-console-features/sql-console",
                 "products/cloud/features/sql-console-features/query-insights",
                 "products/cloud/features/sql-console-features/query-endpoints",
                 "products/cloud/features/sql-console-features/dashboards",
-                "products/cloud/features/sql-console-features/hyperdx",
+                "products/cloud/features/sql-console-features/clickstack",
                 "products/cloud/features/sql-console-features/user-defined-functions"
               ]
             },
             {
-              "group": "Infrastructure",
               "expanded": false,
+              "group": "Infrastructure",
               "pages": [
                 {
                   "group": "Automatic scaling",
-                  "root": "products/cloud/features/autoscaling/overview",
                   "pages": [
+                    "products/cloud/features/autoscaling/overview",
                     "products/cloud/features/autoscaling/vertical",
                     "products/cloud/features/autoscaling/horizontal",
                     "products/cloud/features/autoscaling/make-before-break",
@@ -58,12 +56,11 @@
               ]
             },
             {
-              "group": "Admin",
               "expanded": false,
+              "group": "Admin",
               "pages": [
                 {
                   "group": "Cloud API",
-                  "root": "products/cloud/features/admin-features/api/index",
                   "pages": [
                     "products/cloud/features/admin-features/api/api-overview",
                     "products/cloud/features/admin-features/api/openapi",
@@ -75,8 +72,8 @@
             },
             "products/cloud/features/security",
             {
-              "group": "Monitoring",
               "expanded": false,
+              "group": "Monitoring",
               "pages": [
                 "products/cloud/features/monitoring/overview",
                 "products/cloud/features/monitoring/cloud-console",
@@ -89,17 +86,17 @@
             },
             {
               "group": "Backups",
-              "root": "products/cloud/features/backups/overview",
               "pages": [
+                "products/cloud/features/backups/overview",
                 "products/cloud/features/backups/faq"
               ]
             },
             "products/cloud/features/support",
             {
-              "group": "AI/ML",
               "expanded": false,
-              "root": "products/cloud/features/ai-ml/index",
+              "group": "AI/ML",
               "pages": [
+                "products/cloud/features/ai-ml/index",
                 "products/cloud/features/ai-ml/ask-ai",
                 "products/cloud/features/ai-ml/aichat/using-ai-chat",
                 "products/cloud/features/ai-ml/aichat/customizing-semantic-layer",
@@ -108,14 +105,14 @@
                 "products/cloud/features/ai-ml/mcp/remote-mcp",
                 {
                   "group": "ClickHouse Agents",
-                  "root": "products/cloud/features/ai-ml/agents/index",
                   "pages": [
+                    "products/cloud/features/ai-ml/agents/index",
                     "products/cloud/features/ai-ml/agents/quickstart",
                     "products/cloud/features/ai-ml/agents/chat",
                     {
                       "group": "Agent Builder",
-                      "root": "products/cloud/features/ai-ml/agents/builder/index",
                       "pages": [
+                        "products/cloud/features/ai-ml/agents/builder/index",
                         "products/cloud/features/ai-ml/agents/builder/model-parameters",
                         "products/cloud/features/ai-ml/agents/builder/code-interpreter",
                         "products/cloud/features/ai-ml/agents/builder/web-search",
@@ -139,8 +136,8 @@
         },
         {
           "group": "Cloud reference",
-          "root": "products/cloud/reference/index",
           "pages": [
+            "products/cloud/reference/index",
             "products/cloud/reference/service-uptime",
             "products/cloud/reference/account-close",
             "products/cloud/reference/data-resiliency",
@@ -154,13 +151,11 @@
         },
         {
           "group": "Billing",
-          "root": "products/cloud/reference/billing/index",
           "pages": [
             "products/cloud/reference/billing/billing-overview",
             {
-              "group": "Marketplace",
               "expanded": false,
-              "root": "products/cloud/reference/billing/marketplace/index",
+              "group": "Marketplace",
               "pages": [
                 "products/cloud/reference/billing/marketplace/overview",
                 "products/cloud/reference/billing/marketplace/aws-marketplace-committed",
@@ -173,10 +168,10 @@
               ]
             },
             {
-              "group": "ClickPipes",
               "expanded": false,
-              "root": "products/cloud/reference/billing/clickpipes/index",
+              "group": "ClickPipes",
               "pages": [
+                "products/cloud/reference/billing/clickpipes/index",
                 "products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
                 "products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage"
               ]
@@ -190,50 +185,49 @@
         },
         {
           "group": "Guides",
-          "root": "products/cloud/guides/index",
           "pages": [
+            "products/cloud/guides/index",
             {
               "group": "Best practices",
-              "root": "products/cloud/guides/best-practices/index",
               "pages": [
+                "products/cloud/guides/best-practices/index",
                 "products/cloud/guides/best-practices/multitenancy",
                 "products/cloud/guides/best-practices/usagelimits"
               ]
             },
             {
-              "group": "General",
               "expanded": false,
+              "group": "General",
               "pages": [
                 "products/cloud/guides/cloud-compatibility",
                 "products/cloud/guides/production-readiness"
               ]
             },
             {
-              "group": "Migration",
               "expanded": false,
+              "group": "Migration",
               "pages": [
-                "products/cloud/guides/migration/upload-a-csv-file",
-                "products/cloud/guides/migration/oss-to-cloud-backup-restore"
+                "products/cloud/guides/migration/upload-a-csv-file"
               ]
             },
             {
-              "group": "SQL console",
               "expanded": false,
+              "group": "SQL console",
               "pages": [
                 "products/cloud/guides/sql-console/connection-details",
                 "products/cloud/guides/sql-console/query-endpoints"
               ]
             },
             {
-              "group": "Backups",
               "expanded": false,
-              "root": "products/cloud/guides/backups/index",
+              "group": "Backups",
               "pages": [
+                "products/cloud/guides/backups/index",
                 "products/cloud/guides/backups/review-and-restore-backups",
                 "products/cloud/guides/backups/configurable-backups",
                 {
-                  "group": "Bring Your Own Backup",
                   "expanded": false,
+                  "group": "Bring Your Own Backup",
                   "pages": [
                     "products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                     "products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -243,10 +237,10 @@
               ]
             },
             {
-              "group": "Data sources",
               "expanded": false,
-              "root": "products/cloud/guides/data-sources/index",
+              "group": "Data sources",
               "pages": [
+                "products/cloud/guides/data-sources/index",
                 "products/cloud/guides/data-sources/cloud-endpoints-api",
                 "products/cloud/guides/data-sources/accessing-s3-data-securely",
                 "products/cloud/guides/data-sources/secure-azure",
@@ -255,51 +249,52 @@
               ]
             },
             {
-              "group": "Infrastructure",
               "expanded": false,
+              "group": "Infrastructure",
               "pages": [
                 {
-                  "group": "Deployment modes",
                   "expanded": false,
+                  "group": "Deployment modes",
                   "pages": [
                     "products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
-                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-government",
-                    "products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+                    "products/cloud/guides/infrastructure/deployment-options/clickhouse-government"
                   ]
                 }
               ]
             },
             {
-              "group": "Security",
               "expanded": false,
+              "group": "Security",
               "pages": [
                 {
-                  "group": "Cloud access management",
                   "expanded": false,
-                  "root": "products/cloud/guides/security/cloud-access-management/index",
+                  "group": "Cloud access management",
                   "pages": [
+                    "products/cloud/guides/security/cloud-access-management/index",
                     "products/cloud/guides/security/cloud-access-management/manage-my-account",
                     "products/cloud/guides/security/cloud-access-management/manage-cloud-users",
                     "products/cloud/guides/security/cloud-access-management/manage-custom-roles",
+                    "products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
                     "products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments",
                     "products/cloud/guides/security/cloud-access-management/manage-database-users",
                     "products/cloud/guides/security/cloud-access-management/saml-sso-setup",
                     "products/cloud/guides/security/cloud-access-management/scim-setup",
+                    "products/cloud/guides/security/cloud-access-management/scim-setup-entra",
                     "products/cloud/guides/security/cloud-access-management/common-access-management-queries",
                     "products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
                     "products/cloud/guides/security/saml-sso-removal"
                   ]
                 },
                 {
-                  "group": "Connectivity",
                   "expanded": false,
+                  "group": "Connectivity",
                   "pages": [
                     "products/cloud/guides/security/connectivity/setting-ip-filters",
                     {
-                      "group": "Private networking",
                       "expanded": false,
-                      "root": "products/cloud/guides/security/connectivity/private-networking/index",
+                      "group": "Private networking",
                       "pages": [
+                        "products/cloud/guides/security/connectivity/private-networking/index",
                         "products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
                         "products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
                         "products/cloud/guides/security/connectivity/private-networking/azure-privatelink"
@@ -308,26 +303,26 @@
                   ]
                 },
                 {
-                  "group": "Audit logging",
                   "expanded": false,
-                  "root": "products/cloud/guides/security/audit-logging/index",
+                  "group": "Audit logging",
                   "pages": [
+                    "products/cloud/guides/security/audit-logging/index",
                     "products/cloud/guides/security/audit-logging/console-audit-log",
                     "products/cloud/guides/security/audit-logging/database-audit-log",
                     "products/cloud/guides/security/audit-logging/byoc-security-playbook"
                   ]
                 },
                 {
-                  "group": "Data security",
                   "expanded": false,
+                  "group": "Data security",
                   "pages": [
                     "products/cloud/guides/security/data-masking",
                     "products/cloud/guides/security/cmek"
                   ]
                 },
                 {
-                  "group": "Compliance",
                   "expanded": false,
+                  "group": "Compliance",
                   "pages": [
                     "products/cloud/guides/security/compliance/hipaa-onboarding",
                     "products/cloud/guides/security/compliance/pci-onboarding"
@@ -337,14 +332,16 @@
             }
           ]
         },
-        {
-          "group": "API reference",
-          "openapi": "https://api.clickhouse.cloud/v1"
-        }
+        { "group": "API reference", "openapi": { "source": "_specs/cloud-openapi.json", "directory": "products/cloud/api-reference" }, "pages": { "$ref": "./api-reference/navigation.json" } }
       ]
     },
     {
       "$ref": "../bring-your-own-cloud/navigation.json"
+    },
+    {
+      "sourceRef": "ClickHouse/airgap-docs"
     }
-  ]
+  ],
+  "icon": "/images/icons/icon-clickhouse-cloud.svg",
+  "item": "ClickHouse Cloud"
 }

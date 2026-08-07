@@ -38,9 +38,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 * На вашем компьютере установлен Docker
 
 <Steps>
-  <Step>
-    ## Настройка структуры каталогов и тестовой среды
-
+  <Step title="Настройка структуры каталогов и тестовой среды" id="set-up">
     <ExampleFiles />
 
     В этом руководстве вы будете использовать [Docker compose](https://docs.docker.com/compose/) для
@@ -53,12 +51,12 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     mkdir cluster_2S_2R
     cd cluster_2S_2R
 
-    # Создать директории clickhouse-keeper
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Создать директории clickhouse-server
+    # Create clickhouse-server directories
     for i in {01..04}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -172,9 +170,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## Настройка узлов ClickHouse
-
+  <Step title="Настройка узлов ClickHouse" id="configure-clickhouse-servers">
     ### Настройка сервера
 
     Теперь измените каждый пустой файл конфигурации `config.xml`, расположенный по пути
@@ -295,11 +291,11 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     ```xml
     <remote_servers>
-       <!-- имя кластера (не должно содержать точек) -->
+       <!-- cluster name (should not contain dots) -->
       <cluster_2S_2R>
           <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
           <shard>
-              <!-- Необязательно. Записывать ли данные только на одну из реплик. По умолчанию: false (записывать данные на все реплики). -->
+              <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
               <internal_replication>true</internal_replication>
               <replica>
                   <host>clickhouse-01</host>
@@ -425,9 +421,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## Настройка ClickHouse Keeper
-
+  <Step title="Настройка ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     Далее вы настроите ClickHouse Keeper, который используется для координации работы.
 
     ### Настройка Keeper
@@ -445,9 +439,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## Проверка настройки
-
+  <Step title="Проверка настройки" id="test-the-setup">
     Убедитесь, что на вашей машине запущен Docker.
     Запустите кластер командой `docker-compose up` из корня каталога `cluster_2S_2R`:
 
@@ -474,7 +466,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     следующий запрос. Ниже показана команда для подключения к первому узлу:
 
     ```bash
-    # Подключитесь к любому узлу
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -530,9 +522,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     На следующем шаге вы создадите в кластере таблицу.
   </Step>
 
-  <Step>
-    ## Создайте базу данных
-
+  <Step title="Создайте базу данных" id="creating-a-database">
     Теперь, когда вы убедились, что cluster настроен правильно и работает, вам
     предстоит заново создать ту же таблицу, что использовалась в руководстве по
     примеру набора данных [UK property prices](/ru/get-started/sample-datasets/uk-price-paid).
@@ -591,9 +581,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Создайте таблицу в кластере
-
+  <Step title="Создайте таблицу в кластере" id="creating-a-table">
     Теперь, когда база данных создана, создайте таблицу с репликацией.
 
     Выполните следующий запрос с любого клиентского хоста:
@@ -664,9 +652,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Вставка данных в distributed таблицу
-
+  <Step title="Вставка данных в distributed таблицу" id="inserting-data-using-distributed">
     Чтобы вставить данные в таблицу, `ON CLUSTER` использовать нельзя, так как это предложение
     не применяется к DML-запросам (языку манипулирования данными), таким как `INSERT`, `UPDATE`
     и `DELETE`. Для вставки данных необходимо использовать
@@ -747,11 +733,11 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     ```response
        ┌──count()─┐
-    1. │ 30212555 │ -- 30,21 миллиона
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
 
        ┌──count()─┐
-    1. │ 15105983 │ -- 15,11 миллиона
+    1. │ 15105983 │ -- 15.11 million
        └──────────┘
     ```
   </Step>
@@ -762,11 +748,11 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 </div>
 
 Преимущество этой топологии кластера с 2 сегментами и 2 репликами в том, что она обеспечивает и масштабируемость, и отказоустойчивость.
-Данные распределяются по отдельным хостам, что снижает требования к хранилищу и операциям ввода-вывода на каждом узле, а запросы обрабатываются параллельно в обоих сегментах, повышая производительность и эффективность использования памяти.
+Данные распределяются по отдельным хостам, что снижает требования к хранилищу и I/O для каждого узла, а запросы обрабатываются параллельно в обоих сегментах, повышая производительность и эффективность использования памяти.
 Что особенно важно, кластер может пережить потерю одного узла и продолжать обслуживать запросы без перерыва, поскольку для каждого сегмента на другом узле доступна резервная реплика.
 
-Основной недостаток этой топологии кластера — повышенные требования к хранилищу: по сравнению с конфигурацией без реплик ей требуется вдвое больше места, поскольку каждый сегмент дублируется.
+Главный недостаток этой топологии кластера — дополнительные затраты на хранилище: ей требуется вдвое больше места по сравнению с конфигурацией без реплик, поскольку каждый сегмент дублируется.
 Кроме того, хотя кластер может пережить отказ одного узла, одновременная потеря двух узлов может сделать его неработоспособным — в зависимости от того, какие именно узлы выйдут из строя и как распределены сегменты.
-Эта топология представляет собой компромисс между доступностью и стоимостью, поэтому хорошо подходит для производственных сред, где требуется определенный уровень отказоустойчивости, но без затрат, связанных с более высокими коэффициентами репликации.
+Эта топология обеспечивает баланс между доступностью и стоимостью, что делает ее подходящей для продакшн-сред, где нужен определенный уровень отказоустойчивости без затрат, связанных с более высоким коэффициентом репликации.
 
 Чтобы узнать, как ClickHouse Cloud обрабатывает запросы, обеспечивая одновременно масштабируемость и отказоустойчивость, см. раздел [&quot;Параллельные реплики&quot;](/ru/products/cloud/features/infrastructure/parallel-replicas).

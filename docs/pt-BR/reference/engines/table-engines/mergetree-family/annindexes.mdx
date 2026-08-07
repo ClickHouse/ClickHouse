@@ -370,13 +370,15 @@ Observamos que definir `vector_search_index_fetch_multiplier` pode mitigar o pro
 
 Os skip indexes no ClickHouse geralmente filtram no nível de grânulo, ou seja, uma busca em um skip index (internamente) retorna uma lista de grânulos com possível correspondência, o que reduz a quantidade de dados lidos na varredura subsequente.
 Isso funciona bem para skip indexes em geral, mas, no caso dos índices de similaridade vetorial, cria um &quot;descompasso de granularidade&quot;.
-Em mais detalhes, o índice de similaridade vetorial determina os números das linhas dos N vetores mais semelhantes para um determinado vetor de referência, mas depois precisa extrapolar esses números de linha para números de grânulos.
-Em seguida, o ClickHouse carrega esses grânulos do disco e repete o cálculo de distância para todos os vetores nesses grânulos.
-Essa etapa é chamada de rescoring e, embora teoricamente possa melhorar a precisão — lembre-se de que o índice de similaridade vetorial retorna apenas um resultado *aproximado* —, ela claramente não é ideal em termos de desempenho.
+Em mais detalhes, o índice de similaridade vetorial determina os números das linhas dos N vetores mais semelhantes para um determinado vetor de referência.
+Com a configuração `vector_search_with_rescoring = 1`, o ClickHouse lê os vetores originais com precisão total das linhas candidatas e calcula a distância final no pipeline SQL normal.
+Quando o plano de consulta permite, o ClickHouse filtra a varredura para as linhas candidatas retornadas pelo índice vetorial antes do cálculo final da distância.
+Essa etapa é chamada de rescoring e pode melhorar a precisão, especialmente com índices vetoriais quantizados, porque o ranking final usa os vetores armazenados em vez das distâncias do índice.
+Se filtros adicionais removerem candidatos demais ou se for necessário maior recall, aumente a configuração `vector_search_index_fetch_multiplier` para que o índice vetorial retorne mais linhas candidatas para rescoring.
 
 Por isso, o ClickHouse fornece uma otimização que desativa o rescoring e retorna diretamente do índice os vetores mais semelhantes e suas distâncias.
 Essa otimização vem habilitada por padrão; consulte a configuração [vector&#95;search&#95;with&#95;rescoring](/pt-BR/reference/settings/session-settings#vector_search_with_rescoring).
-Em alto nível, ela funciona assim: o ClickHouse disponibiliza os vetores mais semelhantes e suas distâncias como uma coluna virtual `_distances`.
+Em alto nível, ela funciona assim: o ClickHouse disponibiliza os vetores mais semelhantes e suas distâncias como uma coluna virtual `_distance`.
 Para ver isso, execute uma consulta de busca vetorial com `EXPLAIN header = 1`:
 
 ```sql
@@ -595,15 +597,16 @@ Quando um usuário define um índice de similaridade vetorial em uma coluna, o C
 O subíndice é &quot;local&quot;, no sentido de que conhece apenas as linhas do bloco de índice ao qual pertence.
 No exemplo anterior, supondo que uma coluna tenha 65536 linhas, obtemos quatro blocos de índice (abrangendo oito grânulos) e um subíndice de similaridade vetorial para cada bloco de índice.
 Em teoria, um subíndice consegue retornar diretamente as linhas com os N pontos mais próximos dentro do seu bloco de índice.
-No entanto, como o ClickHouse carrega dados do disco para a memória na granularidade de grânulos, os subíndices extrapolam as linhas correspondentes para a granularidade dos grânulos.
-Isso difere dos índices de skipping regulares, que ignoram dados na granularidade dos blocos de índice.
+Para consultas com `vector_search_with_rescoring = 1`, o ClickHouse pode usar essas posições de linhas para filtrar linhas antes de calcular a distância final a partir dos vetores armazenados, quando o plano de consulta permite essa otimização.
+Sem rescoring, o ClickHouse usa diretamente as distâncias do índice vetorial por meio da coluna virtual `_distance`.
+Ambos os modos ainda usam os intervalos de grânulos subjacentes para agendar leituras, o que difere dos índices de skipping regulares, que ignoram dados na granularidade dos blocos de índice.
 
 O parâmetro `GRANULARITY` determina quantos subíndices de similaridade vetorial são criados.
-Valores maiores de `GRANULARITY` significam menos subíndices de similaridade vetorial, porém maiores, até o ponto em que uma coluna (ou o data part de uma coluna) tenha apenas um único subíndice.
-Nesse caso, o subíndice tem uma visão &quot;global&quot; de todas as linhas da coluna e pode retornar diretamente todos os grânulos da coluna (part) com linhas relevantes (há no máximo `LIMIT [N]` desses grânulos).
-Em uma segunda etapa, o ClickHouse carregará esses grânulos e identificará as linhas realmente melhores realizando um cálculo de distância por força bruta sobre todas as linhas dos grânulos.
-Com um valor pequeno de `GRANULARITY`, cada subíndice retorna até `LIMIT N` grânulos.
-Como resultado, mais grânulos precisam ser carregados e pós-filtrados.
+Valores maiores de `GRANULARITY` significam menos subíndices de similaridade vetorial, porém maiores, até o ponto em que uma coluna (ou a parte de dados de uma coluna) tenha apenas um único subíndice.
+Nesse caso, o subíndice tem uma visão &quot;global&quot; de todas as linhas da coluna e pode retornar diretamente todos os grânulos da coluna (parte) com linhas relevantes (há no máximo `LIMIT [N]` desses grânulos).
+Com `vector_search_with_rescoring = 1`, o ClickHouse pode então ler as posições de linhas correspondentes e calcular a distância exata para essas linhas.
+Com um valor pequeno de `GRANULARITY`, cada subíndice pode retornar até `LIMIT N` linhas candidatas.
+Como resultado, mais linhas candidatas talvez precisem ser lidas e pós-filtradas.
 Observe que a precisão da busca é igualmente boa nos dois casos; apenas o desempenho do processamento difere.
 Em geral, recomenda-se usar um `GRANULARITY` alto para índices de similaridade vetorial e recorrer a valores menores de `GRANULARITY` apenas em caso de problemas, como consumo excessivo de memória pelas estruturas de similaridade vetorial.
 Se nenhum `GRANULARITY` tiver sido especificado para índices de similaridade vetorial, o valor padrão será 100 milhões.
@@ -641,15 +644,118 @@ Mais conjuntos de dados de exemplo que usam busca vetorial aproximada:
 * [dbpedia](/pt-BR/get-started/sample-datasets/dbpedia)
 * [hackernews](/pt-BR/get-started/sample-datasets/hacker-news-vector-search)
 
+<div id="vector-search-with-quantized-codecs">
+  ### Busca vetorial com codecs quantizados
+</div>
+
+<Note>
+  O codec `Quantized` é experimental. Ative-o com `SET allow_experimental_codecs = 1`.
+  Se encontrar problemas, abra uma issue no [repositório do ClickHouse](https://github.com/clickhouse/clickhouse/issues).
+</Note>
+
+<div id="quantized-codecs-introduction">
+  #### Introdução
+</div>
+
+Um [índice de similaridade vetorial](#vector-similarity-index) responde a uma consulta de vizinho mais próximo percorrendo um grafo e tem desempenho muito bom quando o grafo pode ser mantido em memória.
+Duas condições limitam sua aplicabilidade:
+
+* **Escala.** O tempo para construir o grafo e a memória necessária para armazená-lo — além dos próprios vetores — passam a ser o custo predominante.
+* **Filtragem.** Com um filtro `WHERE` seletivo, o percurso de grafo se torna ineficaz, porque ou não consegue alcançar o pequeno conjunto de linhas que satisfaz o predicado, ou precisa inspecionar um número desproporcional de candidatos para encontrá-las.
+
+Uma varredura exaustiva não sofre nenhuma dessas limitações: não requer nenhuma estrutura auxiliar, as partes são mescladas por concatenação, e um filtro simplesmente reduz o número de linhas a serem varridas.
+Sua única desvantagem é o volume de dados que precisa ler: uma varredura em vetores armazenados com precisão total `Float32` é dominada pela E/S de armazenamento, porque toda a coluna de vetores precisa ser lida do disco (ou do armazenamento de objetos) — no caso de uma coluna de embedding denso, essa é a maior coluna da tabela e tem baixa taxa de compressão.
+
+O codec de coluna `Quantized` resolve essa desvantagem.
+Cada vetor é armazenado duas vezes: os valores originais em precisão total, inalterados, junto com um *código quantizado* compacto em um fluxo complementar.
+Uma consulta de busca vetorial primeiro varre os códigos usando uma função de distância de baixo custo, compatível com SIMD, para montar uma lista curta dos candidatos mais promissores e, em seguida, reclassifica essa lista com base nos vetores em precisão total.
+Como um código ocupa apenas uma fração do tamanho do vetor bruto, a varredura dessa lista curta lê muito menos bytes do armazenamento — e acessa a coluna em precisão total apenas para o pequeno conjunto de candidatos selecionados — enquanto o ranking final permanece preciso.
+
+<div id="quantized-codecs-declaring">
+  #### Declarando o codec
+</div>
+
+Adicione um codec `Quantized(...)` a uma coluna `Array(Float32)` (ou `Array(Float64)` / `Array(BFloat16)`).
+Como o codec é experimental, primeiro ative `allow_experimental_codecs`:
+
+```sql
+SET allow_experimental_codecs = 1;
+
+CREATE TABLE vectors
+(
+    id UInt32,
+    vec Array(Float32) CODEC(Quantized('rabitq', 1536))
+)
+ENGINE = MergeTree ORDER BY id;
+```
+
+Os dados com precisão total são armazenados normalmente; o codec apenas adiciona o fluxo de códigos complementar.
+O codec é definido na criação da tabela e não pode ser adicionado nem alterado com `ALTER TABLE`.
+
+<div id="quantized-codecs-methods">
+  #### Métodos de quantização
+</div>
+
+Cada método representa um ponto diferente no trade-off entre tamanho / precisão / métrica. O argumento `dimensions` é o comprimento do vetor.
+
+* `Quantized('rabitq', dimensions)` — um bit de sinal por coordenada, mais um fator de correção de cosseno sem viés (`dimensions/8 + 4` bytes). Uma opção padrão forte, pequena e com baixo custo de `popcount`. Apenas `cosineDistance`.
+* `Quantized('turboquant', dimensions)` — dois bits por coordenada (um código MSE de 1 bit e um código residual de 1 bit) para candidatos de maior fidelidade (`dimensions/4 + 4` bytes). Apenas `cosineDistance`.
+* `Quantized('int8', dimensions)` — um código `Int8` por coordenada, mais a norma do vetor (`dimensions + 4` bytes); é o maior, mas também o código flat mais fiel. Suporta `L2Distance` e `cosineDistance`.
+* `Quantized('prefix', dimensions, leading_dimensions, 'int8'|'bf16')` — Matryoshka: mantém apenas as `leading_dimensions` coordenadas iniciais, como `Int8` (com uma escala por vetor) ou `BFloat16`. Códigos muito pequenos para embeddings treinados com Matryoshka Representation Learning. Suporta `L2Distance` e `cosineDistance`.
+* `Quantized('product', dimensions, nbits, m)` — Quantização de Produto: um codebook por partição treinado com k-means; cada vetor se torna `m` códigos de `nbits` bits (portanto, `dimensions` deve ser múltiplo de `m`). É a opção mais compacta e com maior recall por byte, ao custo de uma etapa de treinamento durante o insert. Suporta `L2Distance` e `cosineDistance`.
+
+`rabitq` e `turboquant` exigem que `dimensions` seja múltiplo de 8.
+
+<div id="quantized-codecs-searching">
+  #### Pesquisa transparente
+</div>
+
+Não há nenhuma sintaxe de consulta especial — escreva a mesma consulta top-`k` que você usaria na [busca exata](#exact-nearest-neighbor-search):
+
+```sql
+WITH [/* reference vector of `dimensions` floats */] AS reference_vec
+SELECT id
+FROM vectors
+ORDER BY cosineDistance(vec, reference_vec) ASC
+LIMIT 10
+SETTINGS vector_search_use_quantized_codes = 1;
+```
+
+Com `vector_search_use_quantized_codes = 1`, o otimizador reescreve automaticamente a consulta em um plano de dois estágios: ele varre os códigos quantizados para montar uma lista curta e, em seguida, recalcula a pontuação dessa lista em relação ao `vec` com precisão total.
+A configuração vem desativada por padrão, portanto, sem ela, a mesma consulta é executada como uma varredura exata simples — o codec nunca altera os resultados; ele apenas oferece um caminho mais rápido quando você opta por usá-lo.
+Use uma função de distância compatível com o método escolhido: `cosineDistance` para todos os métodos e `L2Distance`, adicionalmente, para `int8`, `prefix` e `product`.
+
+<div id="quantized-codecs-settings">
+  #### Configurações
+</div>
+
+* `allow_experimental_codecs` — deve ser habilitado para declarar um codec `Quantized` (padrão: `0`).
+* `vector_search_use_quantized_codes` — habilita a reescrita em dois estágios de lista curta e rescoring (padrão: `0`). Quando desativada, as consultas fazem uma varredura exata dos vetores em precisão total.
+* `vector_search_index_fetch_multiplier` — quantos candidatos entram na lista curta em relação ao `LIMIT` da consulta: a varredura mantém os `LIMIT × multiplier` melhores códigos antes do rescoring. Valores maiores melhoram o recall, à custa de mais rescoring. O padrão é `1` (sem oversampling), portanto geralmente é necessário aumentá-lo — por exemplo, para `10` ou mais — para obter bom recall.
+
+<div id="quantized-codecs-built-for-scale">
+  #### Projetado para escalar
+</div>
+
+O codec se encaixa bem no ClickHouse porque a parte cara — a varredura — é exatamente o que o mecanismo do ClickHouse foi projetado para fazer bem:
+
+* **Vetorizado.** Os kernels de varredura são escritos para SIMD, com encaminhamento em tempo de execução para as instruções mais largas compatíveis com a CPU: `popcount` em hardware para os métodos de código de sinal (`rabitq`, `turboquant`) e fused multiply-add largo para os demais.
+* **Em paralelo entre núcleos e partes.** Uma varredura plana é trivialmente paralela, e o ClickHouse a trata assim: as distâncias são calculadas em todas as threads disponíveis e em todas as partes de uma tabela ao mesmo tempo, com apenas a mesclagem final do top-`k` sendo serializada.
+* **Distribuído.** Em um cluster com shards, o trabalho é distribuído entre as máquinas — cada shard varre sua própria fatia em paralelo, e o coordenador mescla as listas curtas.
+* **Colunar e compatível com filtros.** Os códigos quantizados ocupam sua própria coluna, comprimidos e lidos pelo mesmo caminho de E/S que todas as outras colunas, de modo que um `WHERE` seletivo simplesmente deixa menos códigos para varrer.
+* **Sem etapa de compilação separada.** Os códigos são produzidos à medida que os vetores são gravados e mesclados por concatenação — não há índice para construir, ajustar ou reconstruir, então uma tabela está pronta para busca assim que seus dados chegam.
+
+Os códigos servem apenas para gerar candidatos; a coluna de precisão total, mantida no lugar, fornece o ranking final preciso.
+
 <div id="approximate-nearest-neighbor-search-qbit">
   ### Quantized Bit (QBit)
 </div>
 
 Uma abordagem comum para acelerar a busca vetorial exata é usar um [tipo de dado float](/pt-BR/reference/data-types/float) com menor precisão.
 Por exemplo, se os vetores forem armazenados como `Array(BFloat16)` em vez de `Array(Float32)`, o tamanho dos dados será reduzido pela metade, e espera-se que o tempo de execução das consultas diminua proporcionalmente.
-Esse método é conhecido como quantização. Embora acelere o processamento, ele pode reduzir a precisão dos resultados, apesar de realizar uma varredura exaustiva de todos os vetores.
+Esse método é conhecido como quantização. Embora acelere o processamento, ele pode reduzir a exatidão dos resultados, apesar de realizar uma varredura exaustiva de todos os vetores.
 
-Com a quantização tradicional, perdemos precisão tanto durante a busca quanto no armazenamento dos dados. No exemplo acima, armazenaríamos `BFloat16` em vez de `Float32`, o que significa que nunca poderemos realizar uma busca mais precisa depois, mesmo que isso seja desejado. Uma alternativa é armazenar duas cópias dos dados: uma quantizada e outra com precisão total. Embora isso funcione, exige armazenamento redundante. Considere um cenário em que temos `Float64` como dado original e queremos executar buscas com diferentes níveis de precisão (16 bits, 32 bits ou 64 bits completos). Precisaríamos armazenar três cópias separadas dos dados.
+Com a quantização tradicional, perdemos precisão tanto durante a busca quanto no armazenamento dos dados. No exemplo acima, armazenaríamos `BFloat16` em vez de `Float32`, o que significa que nunca poderemos realizar uma busca mais exata depois, mesmo que isso seja desejado. Uma alternativa é armazenar duas cópias dos dados: uma quantizada e outra com precisão total. Embora isso funcione, exige armazenamento redundante. Considere um cenário em que temos `Float64` como dado original e queremos executar buscas com diferentes níveis de precisão (16 bits, 32 bits ou 64 bits completos). Precisaríamos armazenar três cópias separadas dos dados.
 
 O ClickHouse oferece o tipo de dado Quantized Bit (`QBit`), que resolve essas limitações ao:
 
@@ -661,13 +767,14 @@ Isso é feito armazenando os dados em um formato agrupado por bits (ou seja, tod
 Para declarar uma coluna do tipo `QBit`, use a seguinte sintaxe:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 Onde:
 
-* `element_type` – o tipo de cada elemento do vetor. Os tipos aceitos são `BFloat16`, `Float32` e `Float64`
+* `element_type` – o tipo de cada elemento do vetor. Os tipos aceitos são `Int8`, `BFloat16`, `Float32` e `Float64`
 * `dimension` – o número de elementos em cada vetor
+* `stride` – opcional. Um divisor de `dimension` que particiona as dimensões em `dimension / stride` grupos contíguos armazenados em streams separados, de modo que uma busca apenas nas dimensões iniciais leia menos streams (útil para embeddings Matryoshka). O padrão é `dimension`, caso em que o tipo é idêntico em bytes a um `QBit` sem `stride`. Consulte a [página do tipo de dado `QBit`](/pt-BR/reference/data-types/qbit) para mais detalhes.
 
 <div id="qbit-create">
   #### Criando uma tabela `QBit` e adicionando dados

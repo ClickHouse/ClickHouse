@@ -1138,19 +1138,18 @@ FunctionCast::WrapperType FunctionCast::createQBitWrapper(const DataTypePtr & fr
     /// From another QBit
     if (from_qbit_type)
     {
-        if (from_qbit_type->getDimension() != to_type.getDimension() || from_qbit_type->getStride() != to_type.getStride())
+        /// A QBit -> QBit cast keeps the dimension (the number of vector elements), but may change the element type
+        /// and/or the stride (the number of stride groups). Changing the dimension would change the vector itself, so
+        /// it is rejected. Identical types never reach here — they take createIdentityWrapper in prepareImpl.
+        if (from_qbit_type->getDimension() != to_type.getDimension())
             throw Exception(
                 ErrorCodes::TYPE_MISMATCH,
-                "CAST AS between two QBits can only be performed if they have the same number of elements and stride. From: {}, To: {}",
+                "CAST AS between two QBits can only be performed if they have the same number of elements (dimension). "
+                "From: {}, To: {}",
                 from_qbit_type->getName(),
                 to_type.getName());
-        else if (!from_qbit_type->getElementType()->equals(*to_type.getElementType()))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "CAST AS between two QBits containing different types isn't implemented. From: {}, To: {}",
-                from_qbit_type->getName(),
-                to_type.getName());
-        /// For identical types we create createIdentityWrapper in prepareImpl, so this is unreachable
-        UNREACHABLE();
+
+        return createQBitToQBitWrapper(*from_qbit_type, to_type);
     }
 
     /// From Array to QBit
@@ -1485,6 +1484,195 @@ FunctionCast::WrapperType FunctionCast::createQBitToArrayWrapper(const DataTypeQ
         ColumnsWithTypeAndName nested_columns{{col_array.getDataPtr(), from_nested_type, ""}};
         auto converted_nested = nested_function(nested_columns, to_nested_type, nullptr, col_array.getData().size());
         return ColumnArray::create(converted_nested, col_array.getOffsetsPtr());
+    };
+}
+
+ColumnPtr FunctionCast::repackQBit(
+    const ColumnQBit & src,
+    size_t from_element_size,
+    size_t to_element_size,
+    size_t dimension,
+    size_t from_stride,
+    size_t to_stride)
+{
+    /// Repack the bit planes into the target layout without reconstructing the vector through floats. This is possible
+    /// whenever the target's bit planes are made only of bytes that already exist in the source, which covers two casts:
+    ///   * a stride change with the same element type — a pure regrouping of the bit-plane bytes;
+    ///   * a Float32 <-> BFloat16 change — BFloat16 is Float32 truncated to its top 16 bits, so the two share their top
+    ///     16 bit planes, and Float32's other 16 planes are exactly the low mantissa bits that truncation drops (and
+    ///     that widening back to Float32 fills with zeros).
+    /// Bit plane `b` holds the (b+1)-th most significant bit of every element, so the shared planes are `0 .. min` and
+    /// BFloat16's 16 planes coincide with Float32's first 16. Extra target planes (Float32 <- BFloat16) stay zero; extra
+    /// source planes (Float32 -> BFloat16) are dropped.
+    const size_t shared_planes = std::min(from_element_size, to_element_size);
+
+    const size_t rows = src.size();
+    const ColumnTuple & src_tuple = src.getNestedData();
+
+    const size_t from_num_strides = dimension / from_stride;
+    const size_t to_num_strides = dimension / to_stride;
+    const size_t from_bytes = DataTypeQBit::bitsToBytes(from_stride);
+    const size_t to_bytes = DataTypeQBit::bitsToBytes(to_stride);
+    const size_t to_num_columns = to_element_size * to_num_strides;
+
+    /// Allocate the target bit-plane FixedStrings, zero-filled and grouped as [stride group][bit plane] to match
+    /// createColumn / convertArrayToQBit. The zero fill is what leaves the extra Float32 planes (Float32 <- BFloat16)
+    /// zero; every occupied byte is overwritten below, and the same-stride path re-clears the padding bits it copies.
+    MutableColumns dst_columns(to_num_columns);
+    VectorWithMemoryTracking<UInt8 *> dst_data(to_num_columns);
+    for (size_t c = 0; c < to_num_columns; ++c)
+    {
+        auto col = ColumnFixedString::create(to_bytes);
+        col->getChars().resize_fill(rows * to_bytes);
+        dst_data[c] = col->getChars().data();
+        dst_columns[c] = std::move(col);
+    }
+
+    /// Stable base pointers into each source bit-plane FixedString.
+    const size_t from_num_columns = from_element_size * from_num_strides;
+    VectorWithMemoryTracking<const UInt8 *> src_data(from_num_columns);
+    for (size_t c = 0; c < from_num_columns; ++c)
+        src_data[c] = assert_cast<const ColumnFixedString &>(src_tuple.getColumn(c)).getChars().data();
+
+    if (from_stride == to_stride)
+    {
+        /// The stride is unchanged, so the shared bit planes have byte-identical layouts. Copy each one wholesale. This
+        /// is the Float32 <-> BFloat16 case; a same-stride same-element-type cast is the identity and never reaches here.
+        ///
+        /// When the stride is not a multiple of 8 each bit plane ends in a partial byte whose top bits are unused
+        /// padding. A tuple-backed source (a QBit value from a VALUES / IN section) is not required to zero that padding
+        /// -- convertFieldToType checks only the string count and length -- so copying the plane wholesale would carry
+        /// stray padding bits into the target. The reconstruct-and-convert path always leaves them zero and QBit equality
+        /// compares the raw bytes, so we must clear them here to keep the fast path's output canonical. The padded byte is
+        /// the one at offset 0 of each stride group (it holds the group's highest dimensions, matching the else branch's
+        /// `dst_off`); its low `to_stride % 8` bits are the valid ones. Every other byte is fully occupied.
+        const size_t padding_bits = to_bytes * 8 - to_stride;
+        const UInt8 valid_mask = static_cast<UInt8>(0xFF >> padding_bits);
+        for (size_t group = 0; group < to_num_strides; ++group)
+            for (size_t b = 0; b < shared_planes; ++b)
+            {
+                UInt8 * d = dst_data[group * to_element_size + b];
+                std::memcpy(d, src_data[group * from_element_size + b], rows * to_bytes);
+                if (padding_bits)
+                    for (size_t row = 0; row < rows; ++row)
+                        d[row * to_bytes] &= valid_mask;
+            }
+    }
+    else
+    {
+        /// The stride changes. Every valid such cast is octet-aligned: a stride below the dimension must be a multiple of
+        /// 8 (and divide it), forcing the dimension — and a stride equal to it — to be a multiple of 8 too. So each bit
+        /// plane is a whole number of bytes and every byte holds exactly one dimension-octet.
+        chassert(dimension % 8 == 0 && from_stride % 8 == 0 && to_stride % 8 == 0);
+        const size_t num_octets = dimension / 8;
+        for (size_t j = 0; j < num_octets; ++j)
+        {
+            /// A byte holds bit `b` of the 8 dimensions in octet `j`; its content is stride-independent, so restriding
+            /// only moves it. Byte offsets run high-row-first, hence `bytes - 1 - ...`.
+            const size_t src_group = j / from_bytes;
+            const size_t src_off = from_bytes - 1 - (j % from_bytes);
+            const size_t dst_group = j / to_bytes;
+            const size_t dst_off = to_bytes - 1 - (j % to_bytes);
+            for (size_t b = 0; b < shared_planes; ++b)
+            {
+                const UInt8 * s = src_data[src_group * from_element_size + b];
+                UInt8 * d = dst_data[dst_group * to_element_size + b];
+                for (size_t row = 0; row < rows; ++row)
+                    d[row * to_bytes + dst_off] = s[row * from_bytes + src_off];
+            }
+        }
+    }
+
+    ColumnPtr tuple = ColumnTuple::create(std::move(dst_columns));
+    return ColumnQBit::create(tuple, dimension, to_stride);
+}
+
+FunctionCast::WrapperType FunctionCast::createQBitToQBitWrapper(const DataTypeQBit & from_qbit_type, const DataTypeQBit & to_qbit_type) const
+{
+    /// A QBit -> QBit cast keeps the dimension but may change the element type and/or the stride (the number of stride
+    /// groups). We reconstruct the source vector at its native precision into an Array, then reuse the Array -> QBit path
+    /// to convert the element type and transpose it into the target layout. This reuses the existing, tested conversions
+    /// and inherits their element-conversion (widening/narrowing) and NULL semantics for free. Because the dimension is
+    /// preserved, the reconstructed Array always has exactly the size the target layout expects.
+
+    /// Fast path: a pure byte operation on the bit planes (see repackQBit), avoiding float reconstruction. It applies
+    /// when the target's planes are a subset (or a zero-padded superset) of the source's: either the element type is
+    /// unchanged and only the stride differs (identical types never reach here — they take createIdentityWrapper in
+    /// prepareImpl), or the element type changes between Float32 and BFloat16 (BFloat16 being Float32 truncated to its
+    /// top 16 bits). NULL rows carry zero bytes that repack to zeros, so the outer machinery can mask them without any
+    /// special handling here. Everything else (Float64, Int8, or a genuine numeric conversion) falls through.
+    const TypeIndex from_tid = from_qbit_type.getElementType()->getTypeId();
+    const TypeIndex to_tid = to_qbit_type.getElementType()->getTypeId();
+    const bool same_element_type = from_qbit_type.getElementType()->equals(*to_qbit_type.getElementType());
+    const bool float32_bfloat16_pair = (from_tid == TypeIndex::Float32 && to_tid == TypeIndex::BFloat16)
+        || (from_tid == TypeIndex::BFloat16 && to_tid == TypeIndex::Float32);
+
+    /// Under accurate / accurateOrNull, a narrowing Float32 -> BFloat16 element cast must reject (throw / NULL) any value
+    /// that does not survive the round trip — for example 0.1f — matching accurate::convertNumeric. The byte-repack
+    /// drops the low mantissa bits unconditionally and can neither throw nor null a row, so this one direction must fall
+    /// through to the reconstruct-and-convert path in those modes. The fast path's other cases stay exact regardless of
+    /// mode: a stride-only regrouping never changes a value, and widening BFloat16 -> Float32 is always representable.
+    const bool accurate = cast_type == CastType::accurate || cast_type == CastType::accurateOrNull;
+    const bool narrowing_float32_to_bfloat16 = from_tid == TypeIndex::Float32 && to_tid == TypeIndex::BFloat16;
+    if (same_element_type || (float32_bfloat16_pair && !(accurate && narrowing_float32_to_bfloat16)))
+    {
+        return [from_element_size = from_qbit_type.getElementSize(),
+                to_element_size = to_qbit_type.getElementSize(),
+                dimension = from_qbit_type.getDimension(),
+                from_stride = from_qbit_type.getStride(),
+                to_stride = to_qbit_type.getStride()](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr & /*result_type*/,
+                   const ColumnNullable * /*nullable_source*/,
+                   size_t /*input_rows_count*/) -> ColumnPtr
+        {
+            const auto & src = assert_cast<const ColumnQBit &>(*arguments.front().column);
+            return repackQBit(src, from_element_size, to_element_size, dimension, from_stride, to_stride);
+        };
+    }
+
+    /// Kernel that reconstructs the source QBit into an Array of its own (native) element type, chosen by the source
+    /// element size. `convertQBitToArray` is a static function, so a plain function pointer suffices.
+    using ReconstructFn = ColumnPtr (*)(ColumnsWithTypeAndName &, const ColumnNullable *, size_t, size_t);
+    ReconstructFn reconstruct = nullptr;
+    switch (from_qbit_type.getElementSize())
+    {
+        case 8: reconstruct = &FunctionCast::convertQBitToArray<Int8>; break;
+        case 16: reconstruct = &FunctionCast::convertQBitToArray<BFloat16>; break;
+        case 32: reconstruct = &FunctionCast::convertQBitToArray<Float32>; break;
+        case 64: reconstruct = &FunctionCast::convertQBitToArray<Float64>; break;
+        default: UNREACHABLE();
+    }
+
+    /// The reconstructed Array carries the source element type; the Array -> QBit wrapper (chosen by the target element
+    /// size) converts it to the target element type and transposes it into the target (possibly restrided) layout.
+    auto native_array_type = std::make_shared<DataTypeArray>(from_qbit_type.getElementType());
+    WrapperType array_to_qbit;
+    switch (to_qbit_type.getElementSize())
+    {
+        case 8: array_to_qbit = createArrayToQBitWrapper<Int8>(*native_array_type, to_qbit_type); break;
+        case 16: array_to_qbit = createArrayToQBitWrapper<BFloat16>(*native_array_type, to_qbit_type); break;
+        case 32: array_to_qbit = createArrayToQBitWrapper<Float32>(*native_array_type, to_qbit_type); break;
+        case 64: array_to_qbit = createArrayToQBitWrapper<Float64>(*native_array_type, to_qbit_type); break;
+        default: UNREACHABLE();
+    }
+
+    return [reconstruct,
+            array_to_qbit,
+            native_array_type,
+            dimension = from_qbit_type.getDimension(),
+            stride = from_qbit_type.getStride()](
+               ColumnsWithTypeAndName & arguments,
+               const DataTypePtr & result_type,
+               const ColumnNullable * nullable_source,
+               size_t input_rows_count) -> ColumnPtr
+    {
+        /// Reconstruct at native precision using the source dimension and stride, then convert the element type and
+        /// transpose into the target layout. `nullable_source` is threaded through so both halves skip NULL rows
+        /// (avoiding a wasted untranspose/transpose) and the outer machinery re-wraps the result as Nullable.
+        ColumnPtr native_array = reconstruct(arguments, nullable_source, dimension, stride);
+        ColumnsWithTypeAndName array_arguments{{native_array, native_array_type, arguments.front().name}};
+        return array_to_qbit(array_arguments, result_type, nullable_source, input_rows_count);
     };
 }
 

@@ -38,6 +38,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
 
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
+    /// Not arena-scoped: most callers use this only as a short-lived filesystem handle (CHECK TABLE,
+    /// mutation hardlink/copy, existence probes). The part-lifetime projection storage is created via
+    /// `getProjectionPartBuilder`, which scopes the arena itself.
     return std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
 }
 
@@ -95,6 +98,14 @@ Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & fi
 size_t DataPartStorageOnDiskFull::getFileSizeImpl(const String & file_name) const
 {
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
+}
+
+std::optional<UInt64> DataPartStorageOnDiskFull::getPackedFileUncompressedSize(const std::string & file_name) const
+{
+    if (looksLikePackedSkipIndexFile(file_name))
+        if (auto reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
+            return reader->getFileUncompressedSize(file_name);
+    return {};
 }
 
 UInt32 DataPartStorageOnDiskFull::getRefCount(const String & file_name) const

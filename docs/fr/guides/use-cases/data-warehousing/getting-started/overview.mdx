@@ -18,9 +18,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse Cloud](https://console.clickhouse.cloud). Toutes les requêtes fonctionnent aussi bien sur Cloud que sur des déploiements auto-gérés.
 
 <Steps>
-  <Step>
-    ## Interroger directement des données Iceberg
-
+  <Step title="Interroger directement des données Iceberg" id="query-directly">
     Le moyen le plus rapide pour démarrer consiste à utiliser la table function [`icebergS3()`](/fr/reference/functions/table-functions/iceberg) : pointez-la vers une table Iceberg dans S3 et lancez immédiatement une query, sans aucune configuration préalable.
 
     Inspectez le schéma :
@@ -48,9 +46,7 @@ Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse
     **Pour en savoir plus :** [Interroger directement les formats de table ouverts](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly) couvre les quatre formats, les variantes de cluster pour les lectures distribuées et les options de backend de stockage (S3, Azure, HDFS, local).
   </Step>
 
-  <Step>
-    ## Créer une table persistante avec le moteur de table Iceberg
-
+  <Step title="Créer une table persistante avec le moteur de table Iceberg" id="table-engine">
     Pour éviter d’avoir à spécifier le chemin à chaque fois, créez une table à l’aide du moteur de table Iceberg. Les données restent dans S3 — aucune donnée n’est dupliquée :
 
     ```sql
@@ -75,9 +71,7 @@ Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse
     Le moteur de table prend en charge la mise en cache des données, la mise en cache des métadonnées, l’évolution du schéma et le time travel. Consultez le guide [Interroger directement](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly) pour en savoir plus sur les fonctionnalités du moteur de table, ainsi que la [matrice de compatibilité](/fr/guides/use-cases/data-warehousing/support-matrix) pour une comparaison complète des fonctionnalités.
   </Step>
 
-  <Step>
-    ## Se connecter à un catalogue
-
+  <Step title="Se connecter à un catalogue" id="connect-catalog">
     La plupart des organisations gèrent les tables Iceberg via un catalogue de données afin de centraliser les métadonnées des tables et la découverte des données. ClickHouse permet de se connecter à votre catalogue à l’aide du moteur de base de données [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake), qui expose toutes les tables du catalogue sous forme de base de données ClickHouse. Il s’agit de l’approche la plus évolutive : ainsi, à mesure que de nouvelles tables Iceberg sont créées, elles restent accessibles dans ClickHouse sans configuration supplémentaire.
 
     Voici un exemple de connexion à [AWS Glue](/fr/guides/use-cases/data-warehousing/glue-catalog) :
@@ -111,9 +105,7 @@ Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse
     **Pour en savoir plus :** [Se connecter à un catalogue de données](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) explique pas à pas une configuration complète d’Unity Catalog avec des exemples Delta et Iceberg.
   </Step>
 
-  <Step>
-    ## Exécuter une requête
-
+  <Step title="Exécuter une requête" id="issue-query">
     Quelle que soit la méthode utilisée ci-dessus — fonction de table, moteur de table ou catalogue — le même SQL ClickHouse fonctionne dans tous les cas :
 
     ```sql
@@ -136,9 +128,7 @@ Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse
     La syntaxe de la requête est identique — seule la clause `FROM` change. Toutes les fonctions, jointures et agrégations de ClickHouse SQL fonctionnent de la même façon, quelle que soit la source de données.
   </Step>
 
-  <Step>
-    ## Charger un sous-ensemble dans ClickHouse
-
+  <Step title="Charger un sous-ensemble dans ClickHouse" id="load-data">
     Interroger Iceberg directement est pratique, mais les performances restent limitées par le débit du réseau et l’organisation des fichiers. Pour les charges de travail analytiques, chargez les données dans une table MergeTree native.
 
     Commencez par exécuter une requête filtrée sur la table Iceberg afin d’établir une référence :
@@ -199,9 +189,7 @@ Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse
     **Pour en savoir plus :** [Accélérer l’analytique avec MergeTree](/fr/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) couvre l’optimisation du schéma, l’indexation en texte intégral et une comparaison complète des performances avant/après.
   </Step>
 
-  <Step>
-    ## Écrire à nouveau dans Iceberg
-
+  <Step title="Écrire à nouveau dans Iceberg" id="write-back">
     ClickHouse peut également écrire des données dans des tables Iceberg, ce qui permet des workflows ETL inversés — publier des résultats agrégés ou des sous-ensembles pour qu’ils soient exploités par d’autres outils (Spark, Trino, DuckDB, etc.).
 
     Créez une table Iceberg de sortie :
@@ -239,10 +227,11 @@ Les captures d’écran de ce guide proviennent de la console SQL de [ClickHouse
   ## Étapes suivantes
 </div>
 
-Maintenant que vous avez vu l’ensemble du workflow, approfondissez chaque domaine :
+Maintenant que vous avez vu l’ensemble du processus, approfondissez chaque domaine :
 
-* [Interroger directement](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly) — Les quatre formats, les variantes de cluster, les moteurs de table, la mise en cache
-* [Se connecter aux catalogues](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Guide complet de Unity Catalog avec Delta et Iceberg
-* [Accélérer l’analytique](/fr/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — Optimisation du schéma, indexation, démo avec une accélération d’environ 40x
-* [Écrire dans les lacs de données](/fr/guides/use-cases/data-warehousing/getting-started/writing-data) — Écritures brutes, écritures agrégées, correspondance de types
-* [Matrice de compatibilité](/fr/guides/use-cases/data-warehousing/support-matrix) — Comparaison des fonctionnalités entre les formats et les backends de stockage
+* [Interrogation directe](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly) — Les quatre formats, les variantes de cluster, les moteurs de table, la mise en cache
+* [Connexion aux catalogues](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Guide complet de Unity Catalog avec Delta et Iceberg
+* [Accélérer l’analytique](/fr/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — Optimisation du schéma, indexation, démonstration d’une accélération d’environ 40x
+* [Écriture dans des lacs de données](/fr/guides/use-cases/data-warehousing/getting-started/writing-data) — Écritures brutes, écritures agrégées, correspondance de types
+* [Matrice de compatibilité](/fr/guides/use-cases/data-warehousing/support-matrix) — Comparaison des fonctionnalités selon les formats et les backends de stockage
+* [Bonnes pratiques](/fr/guides/use-cases/data-warehousing/getting-started/best-practices) — Sélection de la méthode d’accès, paramètres de performance et modèles de charge de travail

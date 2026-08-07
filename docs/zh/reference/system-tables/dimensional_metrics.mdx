@@ -68,6 +68,30 @@ FORMAT Prometheus
 
 MergeTree 数据分区片段的数量，按分区片段状态、分区片段类型以及是否为投影分区片段区分。
 
+<div id="filesystem-cache-evictions-total">
+  ### `filesystem_cache_evictions_total`
+</div>
+
+从文件系统缓存中逐出的 File 段数量，按缓存名称标记。默认禁用；可通过 `expose_prometheus_eviction_metrics` 启用。
+
+<div id="filesystem-cache-evicted-bytes-total">
+  ### `filesystem_cache_evicted_bytes_total`
+</div>
+
+从文件系统缓存中被逐出的 File 段总字节数，按缓存名称加标签。默认禁用；可通过 `expose_prometheus_eviction_metrics` 启用。
+
+<div id="filesystem-cache-evictions-by-user-total">
+  ### `filesystem_cache_evictions_by_user_total`
+</div>
+
+从文件系统缓存中逐出的 File 段数量，按缓存名称和用户 ID 标记。默认禁用；可通过 `expose_prometheus_eviction_metrics` 和 `expose_prometheus_eviction_metrics_per_user` 启用。
+
+<div id="filesystem-cache-evicted-bytes-by-user-total">
+  ### `filesystem_cache_evicted_bytes_by_user_total`
+</div>
+
+从文件系统缓存中淘汰的 File 段总字节数，按缓存名称和用户 ID 进行标记。默认禁用；可通过 `expose_prometheus_eviction_metrics` 和 `expose_prometheus_eviction_metrics_per_user` 启用。
+
 <div id="see-also">
   ## 另请参阅
 </div>

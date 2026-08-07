@@ -15,6 +15,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [SET variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
     [DROP SETTINGS variable [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
@@ -67,6 +68,8 @@ Les mots-clés `ADD`, `MODIFY` et `DROP` modifient des entrées individuelles to
 * `DROP ALL SETTINGS` / `DROP ALL PROFILES` — supprime tous les paramètres ou tous les profils parents.
 
 Plusieurs de ces clauses peuvent être combinées dans une seule instruction, par exemple `DROP SETTINGS a ADD SETTINGS b = 1`.
+
+`SET variable = value` est un alias de `MODIFY SETTINGS variable = value`. Il est proposé parce que `SET` est naturel et que saisir la clause `SETTINGS` de remplacement alors qu&#39;une modification incrémentale était prévue est une erreur courante.
 
 <div id="examples">
   ## Exemples

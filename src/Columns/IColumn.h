@@ -132,19 +132,23 @@ public:
     /// If column is ColumnReplicated, transforms it to full column.
     [[nodiscard]] virtual Ptr convertToFullColumnIfReplicated() const { return getPtr(); }
 
-    [[nodiscard]] virtual Ptr convertToFullIfNeeded() const
+    /// Recursively strip internal representation wrappers (Const, Replicated, Sparse)
+    /// from this column and all its subcolumns. Does NOT strip LowCardinality — that is
+    /// a semantic type, not a representation wrapper. Callers that also need LowCardinality
+    /// removed should chain ->convertToFullColumnIfLowCardinality() for top-level removal,
+    /// or use recursiveRemoveLowCardinality for recursive removal.
+    [[nodiscard]] virtual Ptr convertToFullIfWrapped() const
     {
         Ptr converted = convertToFullColumnIfConst()
             ->convertToFullColumnIfReplicated()
-            ->convertToFullColumnIfSparse()
-            ->convertToFullColumnIfLowCardinality();
+            ->convertToFullColumnIfSparse();
 
         Columns new_subcolumns;
         bool any_changed = false;
 
         converted->forEachSubcolumn([&](const WrappedPtr & subcolumn)
         {
-            auto new_sub = subcolumn->convertToFullIfNeeded();
+            auto new_sub = subcolumn->convertToFullIfWrapped();
             any_changed |= (new_sub.get() != subcolumn.get());
             new_subcolumns.push_back(std::move(new_sub));
         });
@@ -363,6 +367,25 @@ public:
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
     virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */, const SerializationSettings * settings) const;
 
+    /// Append byte-comparable encoding of row n to `out`.
+    /// memcmp on the output preserves the same ordering as compareAt.
+    virtual void serializeAsComparable(size_t n, String & out) const;
+
+    /// Batch serialize rows: append the encoding of row `src` (where
+    /// `src = permutation ? (*permutation)[r] : r`) to `out[r]`. `out` is
+    /// grown to `num_rows` if needed; existing contents are preserved.
+    /// When `null_map` is non-null, rows with `null_map[src]` set are skipped.
+    ///
+    /// Precondition: `num_rows <= size()`; `permutation` (if non-null) has
+    /// `num_rows` entries each < `size()`; `null_map` (if non-null) has at
+    /// least `size()` elements. The caller must validate; no bounds checking.
+    using Permutation = IColumnPermutation;
+    virtual void batchSerializeAsComparable(
+        size_t num_rows,
+        VectorWithMemoryTracking<String> & out,
+        const Permutation * permutation,
+        const UInt8 * null_map) const;
+
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Note that it needs to deal with user input
     virtual void deserializeAndInsertFromArena(ReadBuffer & in, const SerializationSettings * settings) = 0;
@@ -438,7 +461,6 @@ public:
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
-    using Permutation = IColumnPermutation;
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.

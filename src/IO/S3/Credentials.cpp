@@ -1345,6 +1345,20 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::Reload()
     LOG_TRACE(logger, "Successfully retrieved credentials");
 }
 
+/// Actionable tail of the "server-managed credentials refused" messages. In ClickHouse Cloud the
+/// setting is fixed by a profile constraint and cannot be enabled per query, so the Cloud build points
+/// to the supported access method (an IAM role) instead of naming a setting the user cannot change.
+#if CLICKHOUSE_CLOUD
+#define S3_SERVER_CREDENTIALS_HINT \
+    "Grant access through an IAM role passed as extra_credentials(role_arn = '...'), or provide explicit " \
+    "credentials (use NOSIGN for public buckets). See " \
+    "https://clickhouse.com/docs/products/cloud/guides/data-sources/accessing-s3-data-securely"
+#else
+#define S3_SERVER_CREDENTIALS_HINT \
+    "Provide explicit credentials, use NOSIGN for public buckets, grant access through an IAM role passed " \
+    "as extra_credentials(role_arn = '...'), or enable the setting `s3_allow_server_credentials_in_user_queries`."
+#endif
+
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     const DB::S3::PocoHTTPClientConfiguration & configuration,
     const Aws::Auth::AWSCredentials & credentials,
@@ -1356,10 +1370,10 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
     /// metadata load, via `anonymous_fallback_for_server_credentials`). Treated like `no_sign_request` below.
     bool force_anonymous_fallback = false;
 
-    /// For S3 access originating from user SQL, refuse every server-managed credential source. Explicit
-    /// credentials (optionally with a `role_arn`, which then assumes the role using the user's own keys) and
-    /// NOSIGN are still allowed. A server-configured `role_arn` is stripped by the storage/backup layers
-    /// before this point, so any `role_arn` reaching here was supplied by the query or named collection.
+    /// For S3 access originating from user SQL, refuse the server-managed credential sources. Explicit
+    /// credentials, NOSIGN, and `role_arn`-based STS assume-role are still allowed. A server-configured
+    /// `role_arn` is stripped by the storage/backup layers before this point, so any `role_arn` reaching
+    /// here was supplied by the query or named collection.
     if (credentials_configuration.forbid_implicit_credentials)
     {
         /// Only a complete key pair counts as explicit user credentials.
@@ -1373,10 +1387,12 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
             && !configuration.google_adc_client_secret.empty()
             && !configuration.google_adc_refresh_token.empty();
 
-        /// Refuse only when a server-managed mechanism is explicitly requested. Otherwise the request is sent
-        /// unsigned (the provider chain below adds no implicit provider), keeping public-bucket access working.
-        const bool wants_server_credentials
-            = credentials_configuration.use_environment_credentials || !credentials_configuration.role_arn.empty();
+        /// `role_arn`-based STS assume-role stays allowed even under the restriction: the target role must
+        /// explicitly trust the identity the server runs under, and only the assumed role's credentials ever
+        /// sign the query's S3 requests, so the server's own credentials are not exposed to the query. This
+        /// is the documented way to grant ClickHouse Cloud access to a private bucket.
+        const bool uses_sts_assume_role = !credentials_configuration.role_arn.empty() && !uses_gcp_oauth
+            && !credentials_configuration.no_sign_request;
 
         if (uses_gcp_oauth)
         {
@@ -1390,22 +1406,33 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
                         "S3 access from user queries is not allowed to use `http_client = gcp_oauth` without an "
                         "explicit Google Application Default Credentials triple (google_adc_client_id, "
                         "google_adc_client_secret, google_adc_refresh_token), because it would otherwise mint a "
-                        "token from the server's GCP metadata service. Enable the setting "
-                        "`s3_allow_server_credentials_in_user_queries` to allow it.");
+                        "token from the server's GCP metadata service. " S3_SERVER_CREDENTIALS_HINT);
             }
         }
-        else if (!credentials_configuration.no_sign_request && !has_explicit_credentials && wants_server_credentials)
+        else if (!credentials_configuration.no_sign_request && !has_explicit_credentials)
         {
-            if (credentials_configuration.anonymous_fallback_for_server_credentials)
-                force_anonymous_fallback = true;
-            else
-                throw DB::Exception(
-                    DB::ErrorCodes::ACCESS_DENIED,
-                    "S3 access from user queries is not allowed to use server-managed credentials "
-                    "(environment variables, instance metadata, IRSA, instance profile, AWS config files, "
-                    "or role_arn-based STS assume-role). "
-                    "Provide explicit credentials, use NOSIGN, or enable the setting "
-                    "`s3_allow_server_credentials_in_user_queries`.");
+            if (uses_sts_assume_role)
+            {
+                /// The STS AssumeRole call itself must be signed with the server's ambient credentials, so let
+                /// the provider chain resolve them. The chain only serves as the base of the assume-role
+                /// provider added below; the resulting client signs S3 requests with the assumed role.
+                credentials_configuration.forbid_implicit_credentials = false;
+                credentials_configuration.use_environment_credentials = true;
+            }
+            else if (credentials_configuration.use_environment_credentials)
+            {
+                /// Refuse only when a server-managed mechanism is explicitly requested. Otherwise the request
+                /// is sent unsigned (the provider chain below adds no implicit provider), keeping public-bucket
+                /// access working.
+                if (credentials_configuration.anonymous_fallback_for_server_credentials)
+                    force_anonymous_fallback = true;
+                else
+                    throw DB::Exception(
+                        DB::ErrorCodes::ACCESS_DENIED,
+                        "S3 access from user queries is not allowed to use the server's own credentials "
+                        "(environment variables, instance metadata, IRSA, instance profile, or AWS config files). "
+                        S3_SERVER_CREDENTIALS_HINT);
+            }
         }
 
         if (force_anonymous_fallback)
@@ -1417,7 +1444,8 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
                 "setting s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.");
 
         /// Belt and suspenders: never let the provider chain fall back to the server's environment credentials.
-        credentials_configuration.use_environment_credentials = false;
+        if (credentials_configuration.forbid_implicit_credentials)
+            credentials_configuration.use_environment_credentials = false;
     }
 
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;
@@ -1451,6 +1479,8 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
 
     return credentials_provider;
 }
+
+#undef S3_SERVER_CREDENTIALS_HINT
 
 }
 

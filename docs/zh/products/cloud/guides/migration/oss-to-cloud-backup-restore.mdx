@@ -271,40 +271,32 @@ FROM s3(
 按照以下步骤创建新的 Cloud 服务。
 
 <Steps>
-  <Step>
-    #### 打开 Cloud Console
-
+  <Step title="打开 Cloud Console" id="open-cloud-console">
     前往 [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/)
   </Step>
 
-  <Step>
-    #### 创建新的服务
-
+  <Step title="创建新的服务" id="create-new-service">
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="创建新的服务" />
   </Step>
 
-  <Step>
-    #### 配置并创建服务
-
+  <Step title="配置并创建服务" id="configure-and-create">
     选择所需的区域和配置，然后点击 `Create service`
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="设置服务偏好" />
   </Step>
 
-  <Step>
-    #### 创建访问角色
-
+  <Step title="创建访问角色" id="create-an-access-role">
     打开 SQL 控制台
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="设置服务偏好" />
 
     ### 设置 S3 访问
 
-    要从 S3 恢复备份，你需要在 ClickHouse Cloud 与 S3 存储桶 之间配置安全访问。
+    要从 S3 恢复备份，你需要在 ClickHouse Cloud 与 S3 存储桶之间配置安全访问。
 
-    1. 按照[&quot;安全访问 S3 数据&quot;](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)中的步骤创建访问角色，并获取该角色的 ARN。
+    1. 按照[&quot;安全访问 S3 数据&quot;](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)中的步骤创建访问角色，并获取角色 ARN。
 
-    2. 更新你在[&quot;如何创建 S3 存储桶 和 IAM 角色&quot;](/zh/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)中创建的 S3 存储桶 policy，加入上一步中的角色 ARN。
+    2. 更新你在[&quot;如何创建 S3 存储桶 和 IAM role&quot;](/zh/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)中创建的 S3 存储桶 policy，加入上一步中的角色 ARN。
 
     更新后的 S3 存储桶 policy 将大致如下所示：
 
@@ -334,7 +326,7 @@ FROM s3(
 
     该 policy 同时包含两个 ARN：
 
-    * **IAM user** (`docs-s3-user`)：允许你的自管理 ClickHouse 集群将备份写入 S3
+    * **IAM 用户** (`docs-s3-user`)：允许你的自管理 ClickHouse 集群将备份写入 S3
     * **ClickHouse Cloud 角色** (`ClickHouseAccess-001`)：允许你的 Cloud 服务从 S3 恢复
   </Step>
 </Steps>
@@ -441,8 +433,8 @@ BACKUP DATABASE my_database
 TO S3('https://your-bucket.s3.amazonaws.com/backup.zip', 'key', 'secret')
 ASYNC;
        
--- 立即返回备份 ID
--- 示例结果：
+-- Returns immediately with backup ID
+-- Example result:
 -- ┌─id──────────────────────────────────┬─status────────────┐
 -- │ abc123-def456-789                   │ CREATING_BACKUP   │
 -- └─────────────────────────────────────┴───────────────────┘

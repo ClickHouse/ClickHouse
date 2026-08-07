@@ -46,17 +46,19 @@ To connect to the built-in Prometheus stack:
 
 1. **Contact ClickHouse Support** to enable the private load balancer for your BYOC environment.
 2. **Request the Prometheus endpoint URL** from ClickHouse Support.
-3. **Verify private network connectivity** to the Prometheus endpoint—typically via VPC peering or other private network setup.
+3. **Verify private network connectivity** to the Prometheus endpoint—typically via VPC/VNet peering or other private network setup.
 
 Endpoint formats vary by connectivity type:
 
 | Connectivity | Endpoint format |
 |---|---|
-| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
-| PrivateLink | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| VPC/VNet peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| Private endpoint | `https://prometheus.<label>.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+
+`<cloud>` is `aws`, `gcp`, or `azure`. For private endpoints, `<label>` is cloud-specific: `vpce` on AWS, `p` on GCP, and `privatelink` on Azure.
 
 <Note>
-The Prometheus stack URL is only accessible via private network connections and doesn't require authentication. Access is restricted to networks that can reach your BYOC VPC through VPC peering or other private connectivity options.
+The Prometheus stack URL is only accessible via private network connections and doesn't require authentication. Access is restricted to networks that can reach your BYOC VPC/VNet through peering or other private connectivity options.
 </Note>
 
 ### Integrating with Your Monitoring Tools {#prometheus-stack-integration}
@@ -101,7 +103,7 @@ ClickHouse services expose a Prometheus-compatible metrics endpoint that you can
 The metrics endpoint is available at `/metrics_all` on your ClickHouse service endpoint:
 
 ```bash
-curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443/metrics_all
 ```
 
 **Sample Response:**
@@ -157,7 +159,7 @@ global:
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443"]
     scheme: https
     metrics_path: "/metrics_all"
     basic_auth:
@@ -167,7 +169,7 @@ scrape_configs:
 ```
 
 Replace:
-- `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` with your actual service endpoint
+- `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443` with your actual service endpoint
 - `<username>` and `<password>` with your scraping user credentials
 
 ## ClickHouse Mixin {#clickhouse-mixin}

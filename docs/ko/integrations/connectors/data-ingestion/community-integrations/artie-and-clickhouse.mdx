@@ -26,25 +26,19 @@ Artie는 Netflix, DoorDash, Instacart가 사내에서 구축한 수준의 스트
 ClickUp, Substack, Alloy와 같은 선도 기업들은 현재의 파이프라인 문제를 해결하는 데 그치지 않고, AI 전략이 가속화됨에 따라 데이터 스택을 미래에도 안정적으로 운영할 수 있도록 Artie를 활용하고 있습니다.
 
 <Steps>
-  <Step>
-    ## Artie 계정 만들기
-
+  <Step title="Artie 계정 만들기" id="1-create-an-artie-account">
     <a href="https://www.artie.com/contact" target="_blank">artie.com/contact</a>에 방문하여 양식을 작성하고 액세스를 요청하세요.
 
     <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp" size="md" border alt="Artie 가입 페이지" />
   </Step>
 
-  <Step>
-    ## ClickHouse 자격 증명 찾기
-
+  <Step title="ClickHouse 자격 증명 찾기" id="2-find-your-clickhouse-credentials">
     ClickHouse Cloud에서 서비스를 생성한 후 다음 필수 설정을 확인하세요.
 
     <ConnectionDetails />
   </Step>
 
-  <Step>
-    ## Artie에서 새 파이프라인 만들기
-
+  <Step title="Artie에서 새 파이프라인 만들기" id="3-create-a-new-pipeline-in-artie">
     이전 단계에서 수집한 정보를 바탕으로 Artie에서 다음 3단계에 따라 새 파이프라인을 만드세요.
 
     1. **원본 연결** - 원본 데이터베이스(Postgres, MySQL, Events API 등)를 구성합니다

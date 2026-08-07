@@ -4,6 +4,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
@@ -99,27 +100,6 @@ extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
-}
-
-namespace
-{
-
-bool columnIsPhysical(ColumnDefaultKind kind)
-{
-    return kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Materialized;
-}
-
-bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
-{
-    if (lhs == rhs)
-        return true;
-
-    if (columnIsPhysical(lhs) == columnIsPhysical(rhs))
-        return true;
-
-    return false;
-}
-
 }
 
 StorageMerge::DatabaseNameOrRegexp::DatabaseNameOrRegexp(
@@ -315,6 +295,11 @@ bool StorageMerge::supportsPrewhere() const
     return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
 }
 
+bool StorageMerge::supportsOptimizationToSubcolumns() const
+{
+    return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToSubcolumns(); }) == nullptr;
+}
+
 bool StorageMerge::canMoveConditionsToPrewhere() const
 {
     /// NOTE: This check and the above check are used during query analysis as condition for applying
@@ -368,9 +353,36 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
                 supported_columns.erase(column.name);
             }
         }
+
+        /// A column the child does not declare at all fails the same way: it is stripped from the
+        /// child's read list and filled with defaults only after the read, so a filter pushed into
+        /// that read has no input for it.
+        std::erase_if(supported_columns, [&](const auto & name) { return !table_columns.has(name); });
+
+        /// The loop above compares the root type against the child's *declared* columns. When the
+        /// child aggregates other tables itself (a nested `Merge`, a `MaterializedView`, ...), its
+        /// declared type can match while a leaf's differs. PREWHERE would then be built against the
+        /// root type and re-derived against the leaf's, so `ActionsDAG` sees a return type that
+        /// disagrees with the node it stored and throws `Unexpected return type from ...`.
+        /// Intersect with what the child itself allows, so the constraint holds transitively.
+        /// `supportsPrewhere` above is already transitive - it recurses through virtual dispatch.
+        if (const auto nested_supported_columns = table->supportedPrewhereColumns())
+            std::erase_if(supported_columns, [&](const auto & name) { return !nested_supported_columns->contains(name); });
     });
 
     return supported_columns;
+}
+
+bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    /// The filter is re-derived against every child, so a subcolumn rides its origin column
+    /// only if all of them resolve it.
+    bool include_subcolumns = true;
+    forEachTable([&](const StoragePtr & table)
+    {
+        include_subcolumns = include_subcolumns && table->supportedPrewhereColumnsIncludeSubcolumns();
+    });
+    return include_subcolumns;
 }
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
@@ -962,7 +974,7 @@ namespace
 class ApplyAliasColumnExpressionsVisitor : public InDepthQueryTreeVisitor<ApplyAliasColumnExpressionsVisitor>
 {
 public:
-    explicit ApplyAliasColumnExpressionsVisitor(QueryTreeNodePtr replacement_table_expression_)
+    explicit ApplyAliasColumnExpressionsVisitor(TableExpressionNodePtr replacement_table_expression_)
         : replacement_table_expression(replacement_table_expression_)
     {}
 
@@ -979,12 +991,12 @@ public:
             else
             {
                 /// Do not replace column source for lambda arguments.
-                /// Lambda argument columns reference the LambdaNode as their source,
+                /// Lambda argument columns reference the lambda arguments node as their source,
                 /// and replacing it with the table expression would cause toAST()
                 /// to qualify them with the table alias (e.g. `__table1.x` instead of `x`),
                 /// which is invalid for lambda argument identifiers.
                 auto column_source = column->getColumnSourceOrNull();
-                if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+                if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
                     return;
 
                 column->setColumnSource(replacement_table_expression);
@@ -992,18 +1004,18 @@ public:
         }
     }
 private:
-    QueryTreeNodePtr replacement_table_expression;
+    TableExpressionNodePtr replacement_table_expression;
 };
 
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
-    QueryTreeNodePtr original_table_expression,
-    QueryTreeNodePtr replacement_table_expression,
+    TableExpressionNodePtr original_table_expression,
+    TableExpressionNodePtr replacement_table_expression,
     const ContextPtr & context,
     const Names & required_column_names)
 {
     auto * query_node = query->as<QueryNode>();
-    auto join_tree_type = query_node->getJoinTree()->getNodeType();
+    auto join_tree_type = query_node->getJoinTreeNode()->getNodeType();
     auto modified_query = query_node->cloneAndReplace(original_table_expression, replacement_table_expression);
 
     // For the case when join tree is just a table or a table function we don't need to do anything more.
@@ -1016,7 +1028,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     auto * modified_query_node = modified_query->as<QueryNode>();
 
     // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
-    modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTree(), replacement_table_expression);
+    modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTreeNodeTyped(), replacement_table_expression);
     modified_query_node = modified_query->as<QueryNode>();
 
     query_node = modified_query->as<QueryNode>();
@@ -1276,6 +1288,13 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
         /// However, it's needed for Materialized...SQL and it's unlikely that someone will use it with Merge tables.
         modified_select.setFinal();
+
+        if (modified_query_info.query_tree)
+        {
+            if (!modified_query_info.table_expression_modifiers)
+                modified_query_info.table_expression_modifiers.emplace();
+            modified_query_info.table_expression_modifiers->setHasFinal(true);
+        }
     }
 
     bool use_analyzer = modified_context->getSettingsRef()[Setting::allow_experimental_analyzer];
@@ -1323,6 +1342,11 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
+        /// The child plan is united into this pipeline in the same process, where nothing
+        /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
+        auto child_select_query_options = SelectQueryOptions(processed_stage);
+        child_select_query_options.is_local_plan_for_distributed_query = true;
+
         if (use_analyzer)
         {
             /// Converting query to AST because types might be different in the source table.
@@ -1330,7 +1354,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             auto ast = modified_query_info.query_tree->toAST();
             InterpreterSelectQueryAnalyzer interpreter(ast,
                 modified_context,
-                SelectQueryOptions(processed_stage));
+                child_select_query_options);
 
             auto & planner = interpreter.getPlanner();
             planner.buildQueryPlanIfNeeded();
@@ -1342,7 +1366,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             /// TODO: Find a way to support projections for StorageMerge
             InterpreterSelectQuery interpreter{modified_query_info.query,
                 modified_context,
-                SelectQueryOptions(processed_stage)};
+                child_select_query_options};
 
             interpreter.buildQueryPlan(plan);
         }
@@ -1366,21 +1390,38 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
+
+    /// The filter column is dropped from the stream after filtering, so it must be a dedicated
+    /// column that does not coincide with a data column. Wrap the policy predicate in a
+    /// uniquely-named alias and make the post-filter outputs exactly the source columns plus that
+    /// alias. Dropping the alias then leaves the data columns intact, and no synthetic predicate
+    /// output (e.g. greater(a, 1) for "USING a > 1") leaks downstream. See commit message.
+    const auto & filter_node = actions_dag.findInOutputs(expr->getColumnName());
+
+    /// The alias name must be unique against the current DAG outputs and against the child table's
+    /// real columns: a source table may legitimately have a column named __row_policy_filter, and
+    /// on SELECT * it flows into the same block as the alias, so a clash makes Block::insert throw.
+    NameSet reserved_names;
+    for (const auto & column : needed_columns)
+        reserved_names.insert(column.name);
+
+    filter_column_name = "__row_policy_filter";
+    for (size_t i = 0; actions_dag.tryFindInOutputs(filter_column_name) != nullptr || reserved_names.contains(filter_column_name); ++i)
+        filter_column_name = "__row_policy_filter_" + std::to_string(i);
+
+    const auto & alias_node = actions_dag.addAlias(filter_node, filter_column_name);
+
+    /// Keep only the source (input) columns and the alias as outputs. This drops the raw predicate
+    /// output regardless of query_plan_enable_optimizations, so a single table does not leak it and
+    /// a Merge over children with different policies keeps matching headers in Pipe::unitePipes.
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    for (const auto * output : actions_dag.getOutputs())
+        if (output->type == ActionsDAG::ActionType::INPUT)
+            new_outputs.push_back(output);
+    new_outputs.push_back(&alias_node);
+    actions_dag.getOutputs() = std::move(new_outputs);
+
     filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(), ExpressionActionsSettings(local_context, CompileExpressions::yes));
-    const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
-    const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();
-
-    NamesAndTypesList added;
-    NamesAndTypesList deleted;
-    sample_block_columns.getDifference(required_columns, added, deleted);
-    if (!deleted.empty() || added.size() != 1)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot determine row level filter; {} columns deleted, {} columns added",
-            deleted.size(), added.size());
-    }
-
-    filter_column_name = added.getNames().front();
 }
 
 void ReadFromMerge::RowPolicyData::extendNames(Names & names) const
@@ -1790,6 +1831,19 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
     return column_sizes;
 }
 
+IStorage::ColumnSizeByName StorageMerge::getColumnSizes(const Names & columns) const
+{
+    ColumnSizeByName column_sizes;
+
+    forEachTable([&](const auto & table)
+    {
+        for (const auto & [name, size] : table->getColumnSizes(columns))
+            column_sizes[name].add(size);
+    });
+
+    return column_sizes;
+}
+
 std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() const
 {
     try
@@ -1979,16 +2033,16 @@ SELECT * FROM WatchLog;
 
 ## Virtual columns {#virtual-columns}
 
-- `_table` — The name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
+- `_table` — The name of the table from which data was read. Type: [String](/reference/data-types/string).
 
     If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
 
-- `_database` — Contains the name of the database from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
+- `_database` — Contains the name of the database from which data was read. Type: [String](/reference/data-types/string).
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
-- [merge](../../../sql-reference/table-functions/merge.md) table function
+- [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
+- [merge](/reference/functions/table-functions/merge) table function
 )DOCS_MD",
         .syntax = "ENGINE = Merge(db_name, tables_regexp)",
         .related = {"Distributed"}});

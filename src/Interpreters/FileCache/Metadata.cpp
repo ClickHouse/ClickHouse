@@ -8,6 +8,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/ThreadPool.h>
 #include <filesystem>
+#include <unordered_set>
 #include <Interpreters/FileCache/FileSegmentInfo.h>
 
 namespace fs = std::filesystem;
@@ -113,6 +114,22 @@ CacheMetadata::OriginInfoPtr CacheMetadata::getOrCreateSharedOrigin(const Origin
     });
 }
 
+void CacheMetadata::removeSharedOrigins(const UserID & user_id)
+{
+    /// A single client can own several pool keys (distinct weight / segment_type), which the
+    /// pool spreads across shards by the full key's hash, so scan every shard.
+    origins.forEachShard([&](auto & map)
+    {
+        for (auto it = map.begin(); it != map.end();)
+        {
+            if (it->first.user_id == user_id)
+                it = map.erase(it);
+            else
+                ++it;
+        }
+    });
+}
+
 LockedKeyPtr KeyMetadata::lock()
 {
     auto locked = tryLock();
@@ -177,7 +194,18 @@ std::string KeyMetadata::getPath() const
 
 std::string KeyMetadata::getFileSegmentPath(const FileSegment & file_segment) const
 {
-    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), *origin);
+    /// A fully downloaded regular segment carries its size in the file name; until then
+    /// (while downloading) the file is named just by its offset. `hasSizeInFileName` tells
+    /// which of the two names the file currently has on disk.
+    std::optional<size_t> size;
+    if (file_segment.hasSizeInFileName())
+        size = file_segment.range().size();
+    return cache_metadata->getFileSegmentPath(key, file_segment.offset(), file_segment.getKind(), *origin, size);
+}
+
+std::string KeyMetadata::getFileSegmentPath(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size) const
+{
+    return cache_metadata->getFileSegmentPath(key, offset, segment_kind, *origin, size);
 }
 
 LoggerPtr KeyMetadata::logger() const
@@ -202,27 +230,31 @@ CacheMetadata::CacheMetadata(
 
 CacheMetadata::~CacheMetadata() = default;
 
-String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind)
+String CacheMetadata::getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size)
 {
-    String file_suffix;
     switch (segment_kind)
     {
         case FileSegmentKind::Ephemeral:
-            file_suffix = "_temporary";
-            break;
+            /// Temporary (ephemeral) segments are removed on startup, so there is no point
+            /// in encoding their size; keep the historic "_temporary" marker instead.
+            return std::to_string(offset) + "_temporary";
         case FileSegmentKind::Regular:
-            break;
+            /// `<offset>_<size>` once the segment is fully downloaded, just `<offset>` while
+            /// it is still being written (final size not yet known).
+            if (size.has_value())
+                return std::to_string(offset) + "_" + std::to_string(*size);
+            return std::to_string(offset);
     }
-    return std::to_string(offset) + file_suffix;
 }
 
 String CacheMetadata::getFileSegmentPath(
     const Key & key,
     size_t offset,
     FileSegmentKind segment_kind,
-    const OriginInfo & origin) const
+    const OriginInfo & origin,
+    std::optional<size_t> size) const
 {
-    return  fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind);
+    return fs::path(getKeyPath(key, origin)) / getFileNameForFileSegment(offset, segment_kind, size);
 }
 
 String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) const
@@ -295,27 +327,46 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
     const OriginInfo & origin,
     bool is_initial_load)
 {
-    auto & bucket = getMetadataBucket(key);
-    auto lock = bucket.lock();
-
-    auto it = bucket.find(key);
-    if (it == bucket.end())
+    KeyMetadataPtr result;
     {
-        if (key_not_found_policy == KeyNotFoundPolicy::THROW)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
-        if (key_not_found_policy == KeyNotFoundPolicy::THROW_LOGICAL)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
-        if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
-            return nullptr;
+        auto & bucket = getMetadataBucket(key);
+        auto lock = bucket.lock();
 
-        it = bucket.emplace(
-            key, std::make_shared<KeyMetadata>(key, getOrCreateSharedOrigin(origin), this, is_initial_load)).first;
+        auto it = bucket.find(key);
+        if (it == bucket.end())
+        {
+            if (key_not_found_policy == KeyNotFoundPolicy::THROW)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No such key `{}` in cache", key);
+            if (key_not_found_policy == KeyNotFoundPolicy::THROW_LOGICAL)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "No such key `{}` in cache", key);
+            if (key_not_found_policy == KeyNotFoundPolicy::RETURN_NULL)
+                return nullptr;
 
-        CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
+            it = bucket.emplace(
+                key, std::make_shared<KeyMetadata>(key, getOrCreateSharedOrigin(origin), this, is_initial_load)).first;
+
+            CurrentMetrics::add(CurrentMetrics::FilesystemCacheKeys);
+        }
+
+        it->second->assertAccess(origin.user_id);
+        result = it->second;
     }
 
-    it->second->assertAccess(origin.user_id);
-    return it->second;
+    /// Refresh idle-client TTL after releasing the bucket lock: prevents
+    /// lock-order inversion with the eviction task. Skip internal/common ids
+    /// and probe-only lookups (result == nullptr).
+    if (result && on_client_access)
+    {
+        const auto & user_id = origin.user_id;
+        if (!user_id.empty()
+            && user_id != FileCache::getInternalOrigin().user_id
+            && user_id != FileCache::getCommonOrigin().user_id)
+        {
+            on_client_access(user_id);
+        }
+    }
+
+    return result;
 }
 
 bool CacheMetadata::isEmpty() const
@@ -511,8 +562,9 @@ CacheMetadata::IteratorPtr CacheMetadata::getIterator(const UserID & user_id)
     return std::make_unique<Iterator>(user_id, metadata_buckets);
 }
 
-void CacheMetadata::removeAllKeys(const UserID & user_id)
+bool CacheMetadata::removeAllKeys(const UserID & user_id)
 {
+    bool fully_removed = true;
     for (auto & bucket : metadata_buckets)
     {
         auto lock = bucket.lock();
@@ -533,10 +585,21 @@ void CacheMetadata::removeAllKeys(const UserID & user_id)
                     it = removeEmptyKey(bucket, it, *locked_key, lock);
                     continue;
                 }
+                /// Non-releasable segments remain (held by some FileSegmentsHolder).
+                fully_removed = false;
             }
             ++it;
         }
     }
+
+    /// With all of this client's keys gone, the origins deduplicated for it in the pool are no
+    /// longer referenced by any key, so drop them too; otherwise the pool grows without bound as
+    /// clients come and go (e.g. idle-client TTL eviction). Skip when some segment is still held:
+    /// its key (and thus its shared origin) survives, and a re-access would re-create the entry.
+    if (fully_removed)
+        removeSharedOrigins(user_id);
+
+    return fully_removed;
 }
 
 void CacheMetadata::removeKey(const Key & key, bool if_exists, const UserID & user_id)
@@ -610,9 +673,21 @@ CacheMetadata::removeEmptyKey(
         {
             fs::remove(key_prefix_directory);
             LOG_TEST(log, "Prefix directory ({}) for key {} removed", key_prefix_directory.string(), key);
-        }
 
-        /// TODO: Remove empty user directories.
+            /// Also drop the per-user-id directory once empty. Safe under the
+            /// same mutex: createBaseDirectory takes it as a shared_lock, so
+            /// no other thread can recreate this directory while we hold the
+            /// unique_lock here.
+            if (write_cache_per_user_directory)
+            {
+                const fs::path user_directory = key_prefix_directory.parent_path();
+                if (fs::exists(user_directory) && fs::is_empty(user_directory))
+                {
+                    fs::remove(user_directory);
+                    LOG_TEST(log, "User directory ({}) for key {} removed", user_directory.string(), key);
+                }
+            }
+        }
     }
     catch (...)
     {

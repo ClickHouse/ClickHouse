@@ -474,7 +474,7 @@ private:
 
         const auto & structure = dict->getStructure();
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
-        ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type)->convertToFullIfNeeded();
+        ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type)->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
 
         chassert(values_column != nullptr);
         chassert(values_column->size() == input_rows_count);
