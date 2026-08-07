@@ -345,12 +345,13 @@ struct ProcessListForUser
 
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
-    /// Drops the user's limits and peak so the next query starts a fresh period; the amount is left alone
-    /// on purpose, each query settles its own drift on end, see `MemoryTracker::settleDriftOnQueryEnd`.
-    void resetTrackers()
+    /// Starts a fresh period for the user. The amount is left alone on purpose, each query settles its own
+    /// drift on end, see `MemoryTracker::settleDriftOnQueryEnd`, and so are the limits, which the query
+    /// starting the period writes itself: clearing them here would leave the user unlimited for a moment.
+    void startNewPeriod()
     {
         /// TODO: should we drop user_temp_data_on_disk here?
-        user_memory_tracker.resetLimitsAndPeak();
+        user_memory_tracker.resetPeak();
 
         /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
     }

@@ -345,16 +345,11 @@ public:
     /// Reset the accumulated data.
     void reset();
 
-    /// Everything `resetCounters` clears except the outstanding amount, which belongs to whatever is still
+    /// Starts a new measurement period. Never below what is currently held, which belongs to whoever is still
     /// charged here rather than to the period being ended.
-    void resetLimitsAndPeak()
+    void resetPeak()
     {
-        /// Whatever is still charged here was not part of the period being ended, but the peak cannot read below
-        /// what is currently held.
         peak.store(std::max<Int64>(amount.load(std::memory_order_relaxed), 0), std::memory_order_relaxed);
-        soft_limit.store(0, std::memory_order_relaxed);
-        hard_limit.store(0, std::memory_order_relaxed);
-        profiler_limit.store(0, std::memory_order_relaxed);
     }
 
     /// update values based on external information (e.g. jemalloc's stat)

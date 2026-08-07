@@ -298,8 +298,9 @@ ProcessList::EntryPtr ProcessList::insert(
 
         /// A user without queries starts a new period here rather than when its previous query left, so that
         /// whatever that query settled on the way out is already accounted for.
-        if (user_process_list.queries.empty())
-            user_process_list.resetTrackers();
+        const bool starts_a_new_period = user_process_list.queries.empty();
+        if (starts_a_new_period)
+            user_process_list.startNewPeriod();
 
         /// Actualize thread group info
         CurrentThread::attachQueryForLog(query_);
@@ -410,8 +411,13 @@ ProcessList::EntryPtr ProcessList::insert(
             ++user_process_list.non_internal_queries;
         }
 
-        /// Track memory usage for all simultaneously running queries from single user.
-        user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
+        /// Track memory usage for all simultaneously running queries from single user. The first query of a
+        /// period writes the limit instead of raising it, so that a lower one takes effect without the tracker
+        /// ever being left unlimited while groups of the previous period are still allocating.
+        if (starts_a_new_period)
+            user_process_list.user_memory_tracker.setHardLimit(settings[Setting::max_memory_usage_for_user]);
+        else
+            user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
         user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
         user_process_list.user_memory_tracker.setDescription("User");
 
