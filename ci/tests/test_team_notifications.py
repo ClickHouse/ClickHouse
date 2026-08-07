@@ -48,7 +48,28 @@ def test_get_docs_teams_to_request(changed_files, expected_teams):
     assert team_notifications.get_docs_teams_to_request(changed_files) == expected_teams
 
 
-def test_check_requests_docs_teams(monkeypatch):
+def test_check_skips_docs_teams_without_repository_access(monkeypatch):
+    class FakeInfo:
+        event_action = "opened"
+
+        def get_kv_data(self, key):
+            assert key == "changed_files"
+            return [
+                "docs/integrations/clickpipes/home.mdx",
+                "docs/integrations/language-clients/python/index.mdx",
+            ]
+
+    monkeypatch.setattr(team_notifications, "Info", FakeInfo)
+    monkeypatch.setattr(
+        team_notifications.GH,
+        "request_team_reviews",
+        staticmethod(lambda *_args: pytest.fail("unexpected review request")),
+    )
+
+    assert team_notifications.check()
+
+
+def test_check_requests_docs_teams_when_enabled(monkeypatch):
     class FakeInfo:
         event_action = "opened"
 
@@ -65,6 +86,9 @@ def test_check_requests_docs_teams(monkeypatch):
         requested.extend(team_slugs)
 
     monkeypatch.setattr(team_notifications, "Info", FakeInfo)
+    monkeypatch.setattr(
+        team_notifications, "ENABLE_DOCS_TEAM_REVIEW_REQUESTS", True
+    )
     monkeypatch.setattr(
         team_notifications.GH, "request_team_reviews", staticmethod(fake_request)
     )
