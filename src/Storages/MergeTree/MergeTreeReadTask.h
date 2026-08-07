@@ -4,6 +4,7 @@
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
@@ -96,9 +97,11 @@ struct MergeTreeReadTaskColumns
 
 struct MergeTreeReadTaskInfo
 {
-    /// Data part which should be read while performing this task
-    DataPartPtr data_part;
-    /// Parent part of the projection part
+    /// Part (owned or borrowed) to read while performing this task.
+    /// Owned parts wrap a concrete IMergeTreeDataPart (LoadedMergeTreeDataPartInfoForReader);
+    /// stateless-worker parts use BorrowedMergeTreeDataPartInfoForReader.
+    MergeTreeDataPartInfoForReaderPtr data_part_info;
+    /// Parent part of the projection part (projections are coordinator-only)
     DataPartPtr parent_part;
     /// For `part_index` virtual column
     size_t part_index_in_query{};
@@ -110,6 +113,9 @@ struct MergeTreeReadTaskInfo
     MergedPartOffsetsPtr merged_part_offsets;
     /// Prewhere steps that should be applied to execute on-fly mutations for part.
     PrewhereExprSteps mutation_steps;
+    /// Whether `mutation_steps` holds steps for on-fly mutations, as opposed to only the step that
+    /// applies an already materialized lightweight-delete mask.
+    bool has_on_fly_mutation_steps = false;
     /// Patches that should be applied for part.
     PatchPartsForReader patch_parts;
     /// Column names to read during PREWHERE and WHERE
@@ -163,7 +169,7 @@ public:
         MergeTreePatchReaders patches;
         MergeTreeReaderPtr prepared_index;
 
-        void updateAllMarkRanges(const MarkRanges & ranges);
+        void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
         void updatePlannedLastMark(size_t planned_last_mark);
         void updateRequestMap(std::vector<std::pair<size_t, size_t>> planned_mark_ranges);
     };

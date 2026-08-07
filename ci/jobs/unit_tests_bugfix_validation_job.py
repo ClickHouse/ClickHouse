@@ -53,7 +53,11 @@ BEFORE_BINARY = f"{BEFORE_SRC}/build/src/unit_tests_dbms"
 BUILD_TYPE = BuildTypes.AMD_ASAN_UBSAN
 
 # gtest test-registration macros whose first argument is the test-suite name.
+# `TEST`/`TEST_F` are `#define`d to `GTEST_TEST`/`GTEST_TEST_F`, so both spellings of
+# each register a suite and both must be listed here.
 _GTEST_MACROS = (
+    "GTEST_TEST",
+    "GTEST_TEST_F",
     "TEST",
     "TEST_F",
     "TEST_P",

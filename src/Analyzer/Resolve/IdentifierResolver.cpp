@@ -1030,6 +1030,67 @@ static bool resolvedIdenfiersFromJoinAreEquals(
     return left_resolved_to_compare->isEqual(*right_resolved_to_compare, IQueryTreeNode::CompareOptions{.compare_aliases = false});
 }
 
+/** For an INNER JOIN with an ON expression, an unqualified identifier that resolves to a column on
+  * both sides is not truly ambiguous when the two columns are equated by a top-level `equals` conjunct
+  * of the ON condition: every joined row then has equal values on both sides, so resolving to either
+  * side yields the same result.
+  *
+  * This holds only for INNER joins (for OUTER joins the non-preserved side becomes default/NULL on
+  * unmatched rows) and only when the equality is reachable through a chain of `and` (an equality under
+  * `or` does not guarantee equal values), so we recurse through `and` and require a direct `equals` of
+  * the two resolved columns.
+  *
+  * Example: SELECT id FROM a INNER JOIN b ON a.id = b.id;
+  */
+static bool innerJoinKeyColumnsAreEquated(
+    const JoinNode & join_node,
+    const QueryTreeNodePtr & left_resolved_identifier,
+    const QueryTreeNodePtr & right_resolved_identifier)
+{
+    if (join_node.getKind() != JoinKind::Inner || !join_node.isOnJoinExpression())
+        return false;
+
+    if (left_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN
+        || right_resolved_identifier->getNodeType() != QueryTreeNodeType::COLUMN)
+        return false;
+
+    const auto compare_options = IQueryTreeNode::CompareOptions{.compare_aliases = false};
+
+    /// `ColumnNode::isEqual` compares the column source too, so this distinguishes `a.id` from `b.id`.
+    const auto is_equi_key = [&](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    {
+        return (lhs->isEqual(*left_resolved_identifier, compare_options) && rhs->isEqual(*right_resolved_identifier, compare_options))
+            || (lhs->isEqual(*right_resolved_identifier, compare_options) && rhs->isEqual(*left_resolved_identifier, compare_options));
+    };
+
+    QueryTreeNodes conjuncts;
+    conjuncts.push_back(join_node.getJoinExpression());
+
+    while (!conjuncts.empty())
+    {
+        auto node = conjuncts.back();
+        conjuncts.pop_back();
+
+        const auto * function_node = node->as<FunctionNode>();
+        if (!function_node)
+            continue;
+
+        const auto & function_name = function_node->getFunctionName();
+        const auto & arguments = function_node->getArguments().getNodes();
+
+        if (function_name == "and")
+            conjuncts.insert(conjuncts.end(), arguments.begin(), arguments.end());
+        /// `isNotDistinctFrom` (`<=>`) is a join-key carrier for the planner just like `equals`
+        /// (see `PlannerJoins.cpp`), and it is even stronger here: a surviving row either has the
+        /// same non-NULL value on both sides, or `NULL` on both sides.
+        else if ((function_name == "equals" || function_name == "isNotDistinctFrom") && arguments.size() == 2
+            && is_equi_key(arguments[0], arguments[1]))
+            return true;
+    }
+
+    return false;
+}
+
 /* Creates a projection expression for columns specified in JOIN USING clause.
  *
  * In SQL, when joining tables with USING(column_name), the result should contain only one
@@ -1385,6 +1446,20 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 resolved_side = JoinTableSide::Left;
                 resolved_identifier = left_resolved_identifier;
             }
+        }
+        else if (identifier_lookup.identifier.isShort()
+            && innerJoinKeyColumnsAreEquated(from_join_node, left_resolved_identifier, right_resolved_identifier))
+        {
+            /// The column is an equated key of an INNER JOIN, so both sides carry the same value.
+            /// Resolve to the left side, exactly as `single_join_prefer_left_table` would, so that this
+            /// only turns a previously-thrown ambiguity into the same result the default already gives.
+            ///
+            /// Restricted to unqualified (one-part) identifiers: this is a relaxation for a bare column
+            /// name that binds to both sides, and it must not change how qualified or subcolumn paths
+            /// (e.g. `SELECT p.q FROM t INNER JOIN u AS p ON t.p.q = p.q`, where `p.q` is both a left
+            /// subcolumn and a right column) resolve.
+            resolved_side = JoinTableSide::Left;
+            resolved_identifier = left_resolved_identifier;
         }
         else if (scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
         {
