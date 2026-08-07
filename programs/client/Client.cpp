@@ -9,7 +9,9 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
+#include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
 
 #include <Access/AccessControl.h>
 
@@ -28,6 +30,7 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -1399,6 +1402,13 @@ int mainEntryClickHouseClient(int argc, char ** argv);
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
     DB::MainThreadStatus::getInstance();
+
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
 
     try
     {
