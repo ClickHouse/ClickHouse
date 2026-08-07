@@ -8,9 +8,7 @@
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/MultiSearchImpl.h>
@@ -23,7 +21,6 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -45,7 +42,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
-    extern const int TYPE_MISMATCH;
 }
 
 namespace Setting
@@ -862,17 +858,10 @@ static String serializeFieldAsText(const Field & value, const DataTypePtr & type
     return buf.str();
 }
 
-enum class JSONAllValuesMatchKind : uint8_t
-{
-    Direct,
-    IdentityCast,
-    StringCast,
-};
-
 /// Match a JSON subcolumn against a `JSONAllValues` index without accepting casts that can change
 /// the indexed representation. A cast to `String` is safe because `JSONAllValues` uses the same
 /// `serializeText` representation for JSON values.
-static std::optional<JSONAllValuesMatchKind> tryMatchNodeToJSONAllValuesIndex(
+static bool matchesNodeToJSONAllValuesIndex(
     const RPNBuilderTreeNode & node,
     const Block & header)
 {
@@ -884,114 +873,19 @@ static std::optional<JSONAllValuesMatchKind> tryMatchNodeToJSONAllValuesIndex(
         {
             auto argument = function.getArgumentAt(0);
             if (!tryMatchJSONSubcolumnToIndex(argument.getColumnName(), header, "JSONAllValues"))
-                return std::nullopt;
+                return false;
 
             const auto * node_dag = node.getDAGNode();
             const auto * argument_dag = argument.getDAGNode();
             if (!node_dag || !argument_dag)
-                return std::nullopt;
+                return false;
 
-            if (node_dag->result_type->equals(*argument_dag->result_type))
-                return JSONAllValuesMatchKind::IdentityCast;
-
-            if (node_dag->result_type->getTypeId() == TypeIndex::String)
-                return JSONAllValuesMatchKind::StringCast;
-
-            return std::nullopt;
+            return node_dag->result_type->equals(*argument_dag->result_type)
+                || node_dag->result_type->getTypeId() == TypeIndex::String;
         }
     }
 
-    if (tryMatchJSONSubcolumnToIndex(node.getColumnName(), header, "JSONAllValues"))
-        return JSONAllValuesMatchKind::Direct;
-
-    return std::nullopt;
-}
-
-/// `convertFieldToType` needs the source type to preserve domain-specific representations such as
-/// `Date` to `DateTime`. Propagate that information recursively through composite constants.
-static Field tryConvertFieldToTypeForJSONAllValues(
-    const Field & value,
-    const DataTypePtr & source_type,
-    const DataTypePtr & target_type)
-{
-    const auto * source_array = typeid_cast<const DataTypeArray *>(source_type.get());
-    const auto * target_array = typeid_cast<const DataTypeArray *>(target_type.get());
-    if (source_array && target_array && value.getType() == Field::Types::Array)
-    {
-        const auto & source_values = value.safeGet<Array>();
-        Array converted_values;
-        converted_values.reserve(source_values.size());
-
-        for (const auto & source_value : source_values)
-        {
-            auto converted_value = tryConvertFieldToTypeForJSONAllValues(
-                source_value, source_array->getNestedType(), target_array->getNestedType());
-            if (converted_value.isNull() && !canContainNull(*target_array->getNestedType()))
-                return {};
-
-            converted_values.emplace_back(std::move(converted_value));
-        }
-
-        return converted_values;
-    }
-
-    const auto * source_tuple = typeid_cast<const DataTypeTuple *>(source_type.get());
-    const auto * target_tuple = typeid_cast<const DataTypeTuple *>(target_type.get());
-    if (source_tuple && target_tuple && value.getType() == Field::Types::Tuple)
-    {
-        const auto & source_types = source_tuple->getElements();
-        const auto & target_types = target_tuple->getElements();
-        const auto & source_values = value.safeGet<Tuple>();
-        if (source_types.size() != target_types.size() || source_values.size() != target_types.size())
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", source_type->getName(), target_type->getName());
-
-        Tuple converted_values;
-        converted_values.reserve(source_values.size());
-
-        for (size_t i = 0; i < source_values.size(); ++i)
-        {
-            auto converted_value = tryConvertFieldToTypeForJSONAllValues(source_values[i], source_types[i], target_types[i]);
-            if (converted_value.isNull() && !canContainNull(*target_types[i]))
-                return {};
-
-            converted_values.emplace_back(std::move(converted_value));
-        }
-
-        return converted_values;
-    }
-
-    const auto * source_map = typeid_cast<const DataTypeMap *>(source_type.get());
-    const auto * target_map = typeid_cast<const DataTypeMap *>(target_type.get());
-    if (source_map && target_map && value.getType() == Field::Types::Map)
-    {
-        const auto & source_values = value.safeGet<Map>();
-        Map converted_values;
-        converted_values.reserve(source_values.size());
-
-        for (const auto & source_entry_field : source_values)
-        {
-            const auto & source_entry = source_entry_field.safeGet<Tuple>();
-            if (source_entry.size() != 2)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert {} to {}", source_type->getName(), target_type->getName());
-
-            Tuple converted_entry(2);
-            converted_entry[0] = tryConvertFieldToTypeForJSONAllValues(
-                source_entry[0], source_map->getKeyType(), target_map->getKeyType());
-            if (converted_entry[0].isNull() && !canContainNull(*target_map->getKeyType()))
-                return {};
-
-            converted_entry[1] = tryConvertFieldToTypeForJSONAllValues(
-                source_entry[1], source_map->getValueType(), target_map->getValueType());
-            if (converted_entry[1].isNull() && !canContainNull(*target_map->getValueType()))
-                return {};
-
-            converted_values.emplace_back(std::move(converted_entry));
-        }
-
-        return converted_values;
-    }
-
-    return tryConvertFieldToType(value, *target_type, source_type.get());
+    return tryMatchJSONSubcolumnToIndex(node.getColumnName(), header, "JSONAllValues").has_value();
 }
 
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)
@@ -1044,7 +938,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// because we have to match the specific key to the value and therefore execute a real filter.
         direct_read_mode = getHintOrNoneMode();
     }
-    else if (auto json_match = tryMatchNodeToJSONAllValuesIndex(index_column_node, header))
+    else if (matchesNodeToJSONAllValuesIndex(index_column_node, header))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
@@ -1054,10 +948,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// Keep array values as-is for special text index functions.
         if (!is_special_text_index_function)
         {
-            DataTypePtr serialization_type = value_type;
             const auto * key_dag = index_column_node.getDAGNode();
 
-            if (*json_match != JSONAllValuesMatchKind::StringCast && key_dag)
+            if (key_dag)
             {
                 const auto & key_type = key_dag->result_type;
                 const auto key_data_type = WhichDataType(key_type);
@@ -1071,20 +964,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                         target_type = key_array->getNestedType();
                 }
 
-                if (target_type)
-                {
-                    auto converted_value = tryConvertFieldToTypeForJSONAllValues(value_field, value_type, target_type);
-                    if (converted_value.isNull())
-                        return false;
-
-                    value_field = std::move(converted_value);
-                    serialization_type = std::move(target_type);
-                }
+                if (target_type && !target_type->equals(*value_type))
+                    return false;
             }
 
-            if (!WhichDataType(serialization_type).isStringOrFixedString())
+            if (!WhichDataType(value_type).isStringOrFixedString())
             {
-                value_field = serializeFieldAsText(value_field, serialization_type);
+                value_field = serializeFieldAsText(value_field, value_type);
                 value_type = std::make_shared<DataTypeString>();
             }
         }
@@ -1827,7 +1713,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     {
         return hasIndexForColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
-            || tryMatchNodeToJSONAllValuesIndex(node, header).has_value();
+            || matchesNodeToJSONAllValuesIndex(node, header);
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")

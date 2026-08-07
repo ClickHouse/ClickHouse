@@ -76,6 +76,15 @@ SELECT count() FROM ghdata WHERE hasAnyTokens(JSONAllValues(data), ['football', 
 Condition: (mode: Any; tokens: ["calculator", "football"])
 Parts: 1/1
 Granules: 7/50
+-- Array: has() on nested array of labels in pull requests
+SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'bug')
+3
+-- Array: has() on nested array of labels in issues
+SELECT count() FROM ghdata WHERE has(data.payload.issue.labels[].name::Array(String), 'bug')
+14
+-- Array: has() with a less common label
+SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'enhancement')
+2
 -- Array: equality on array subcolumn
 SELECT count() FROM ghdata WHERE data.payload.pull_request.labels[].name = ['dependencies', 'submodules']
 5
@@ -83,11 +92,8 @@ Condition: (mode: All; tokens: ["dependencies", "submodules"])
 Parts: 1/1
 Granules: 3/50
 -- SELECT JSONAllValues with filter returning 1 row
-SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id = '14690746673'
+SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id::UInt64 = 14690746673
 310	1997184657549209849	310	15450791830078104110
-Condition: (mode: All; tokens: ["14690746673"])
-Parts: 1/1
-Granules: 1/50
 -- Verify correctness: results match with index disabled
 33
 3
@@ -102,5 +108,8 @@ Granules: 1/50
 3
 3
 11
+3
+14
+2
 5
 310	1997184657549209849	310	15450791830078104110

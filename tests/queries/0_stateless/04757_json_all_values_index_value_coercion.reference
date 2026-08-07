@@ -1,53 +1,5 @@
-ipv4 from uint32 index  	4
-ipv4 from uint32 noindex	4
-datetime from date index  	4
-datetime from date noindex	4
-ipv4 array index  	4
-ipv4 array noindex	4
-ipv4 has index  	4
-ipv4 has noindex	4
-ipv4 tuple index  	4
-ipv4 tuple noindex	4
-ipv4 map index  	4
-ipv4 map noindex	4
-ipv4 tuple array index  	4
-ipv4 tuple array noindex	4
-ipv4 map array index  	4
-ipv4 map array noindex	4
-absent int default index  	8
-absent int default noindex	8
-missing typed default index  	4
-missing typed default noindex	4
-missing string default index  	4
-missing string default noindex	4
-missing string in index  	4
-missing string in noindex	4
-missing string tokens index  	4
-missing string tokens noindex	4
-absent datetime default index  	8
-absent datetime default noindex	8
-absent int non-default index  	0
-absent int non-default noindex	0
-typed narrowing cast index  	4
-typed narrowing cast noindex	4
-dynamic narrowing cast index  	4
-dynamic narrowing cast noindex	4
-ipv4 from ipv4 index  	4
-ipv4 from ipv4 noindex	4
-identity cast index  	4
-identity cast noindex	4
-dynamic string index  	4
-dynamic string noindex	4
-string cast index  	4
-string cast noindex	4
-Description: text GRANULARITY 100000000
-Condition: (mode: All; tokens: ["1", "2", "3", "4"])
-Granules: 1/3
-Granules: 1/3
-Granules: 1/3
-Granules: 1/3
-typed default pruned indexes	1
-typed string default pruned indexes	1
-typed string in pruned indexes	1
-typed string tokens pruned indexes	1
-has default indexes	1
+4
+4
+4
+4
+1

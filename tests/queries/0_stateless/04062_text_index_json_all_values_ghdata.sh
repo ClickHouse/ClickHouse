@@ -98,11 +98,20 @@ run_query "SELECT count() FROM ghdata WHERE hasAllTokens(JSONAllValues(data), ['
 echo "-- Schema-agnostic search with JSONAllValues and hasAnyTokens"
 run_query "SELECT count() FROM ghdata WHERE hasAnyTokens(JSONAllValues(data), ['football', 'calculator'])"
 
+echo "-- Array: has() on nested array of labels in pull requests"
+run_query "SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'bug')"
+
+echo "-- Array: has() on nested array of labels in issues"
+run_query "SELECT count() FROM ghdata WHERE has(data.payload.issue.labels[].name::Array(String), 'bug')"
+
+echo "-- Array: has() with a less common label"
+run_query "SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'enhancement')"
+
 echo "-- Array: equality on array subcolumn"
 run_query "SELECT count() FROM ghdata WHERE data.payload.pull_request.labels[].name = ['dependencies', 'submodules']"
 
 echo "-- SELECT JSONAllValues with filter returning 1 row"
-run_query "SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id = '14690746673'"
+run_query "SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id::UInt64 = 14690746673"
 
 echo "-- Verify correctness: results match with index disabled"
 run_query_no_idx "SELECT count() FROM ghdata WHERE data.actor.login = 'dependabot[bot]'"
@@ -118,7 +127,10 @@ run_query_no_idx "SELECT count() FROM ghdata WHERE data.payload.action::String I
 run_query_no_idx "SELECT count() FROM ghdata WHERE data.type = 'WatchEvent' AND data.repo.name = 'leonardomso/33-js-concepts'"
 run_query_no_idx "SELECT count() FROM ghdata WHERE hasAllTokens(JSONAllValues(data), ['football', 'team'])"
 run_query_no_idx "SELECT count() FROM ghdata WHERE hasAnyTokens(JSONAllValues(data), ['football', 'calculator'])"
+run_query_no_idx "SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'bug')"
+run_query_no_idx "SELECT count() FROM ghdata WHERE has(data.payload.issue.labels[].name::Array(String), 'bug')"
+run_query_no_idx "SELECT count() FROM ghdata WHERE has(data.payload.pull_request.labels[].name::Array(String), 'enhancement')"
 run_query_no_idx "SELECT count() FROM ghdata WHERE data.payload.pull_request.labels[].name = ['dependencies', 'submodules']"
-run_query_no_idx "SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id = '14690746673'"
+run_query_no_idx "SELECT length(JSONAllPaths(data)), cityHash64(JSONAllPaths(data)), length(JSONAllValues(data)), cityHash64(JSONAllValues(data)) FROM ghdata WHERE data.id::UInt64 = 14690746673"
 
 $MY_CLICKHOUSE_CLIENT --query "DROP TABLE ghdata;"
