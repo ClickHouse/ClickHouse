@@ -9,6 +9,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -540,6 +541,10 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
             return {"timestamp", true};
         case TypeIndex::Time:
             return {"time", true};
+        case TypeIndex::Time64:
+            if (getDecimalScale(*type) <= 6)
+                return {"time", true};
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
         case TypeIndex::String:
             return {"string", true};
         case TypeIndex::UUID:
@@ -623,13 +628,21 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
-        case TypeIndex::Time:
             return "int";
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
+        case TypeIndex::Time:
             return "long";
+        case TypeIndex::Time64:
+        {
+            auto scale = getDecimalScale(*type);
+            if (scale <= 6)
+                return "long";
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+        }
         case TypeIndex::Float32:
             return "float";
         case TypeIndex::Float64:
@@ -651,6 +664,27 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         default:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
     }
+}
+
+Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type)
+{
+    if (type->isNullable())
+    {
+        auto type_nullable = std::static_pointer_cast<const DataTypeNullable>(type);
+        return getAvroLogicalType(type_nullable->getNestedType());
+    }
+
+    const WhichDataType which(type);
+    if (which.isTime())
+        return "time-micros";
+    if (which.isTime64())
+    {
+        auto scale = getDecimalScale(*type);
+        if (scale <= 6)
+            return "time-micros";
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported time precision for avro {}({})", type->getName(), scale);
+    }
+    return Poco::Dynamic::Var();
 }
 
 static Poco::JSON::Object::Ptr getPartitionField(
@@ -1338,6 +1372,11 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
 
 KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
 {
+    // sort-orders / default-sort-order-id are optional in Iceberg V1 metadata
+    // (required only from V2); an unsorted table uses the no-op order-id 0.
+    // Treat their absence as "no sort order" rather than dereferencing a missing field.
+    if (!metadata_object->has(f_default_sort_order_id) || !metadata_object->has(f_sort_orders))
+        return KeyDescription{};
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
     std::unordered_map<Int64, String> source_id_to_column_name;
@@ -1402,6 +1441,124 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
         return KeyDescription{};
     order_by_str.pop_back();
     return KeyDescription::parse(order_by_str, column_description, {}, local_context, true);
+}
+
+/// Format one partition field for display in Iceberg/Spark style, e.g. "day(ts)" or "bucket(16, id)".
+static String formatPartitionFieldDisplay(const String & iceberg_transform_name, const String & column_name)
+{
+    std::string name = Poco::toLower(iceberg_transform_name);
+    if (name == "identity")
+        return column_name;
+    if (name == "year" || name == "years")
+        return "year(" + column_name + ")";
+    if (name == "month" || name == "months")
+        return "month(" + column_name + ")";
+    if (name == "day" || name == "date" || name == "days" || name == "dates")
+        return "day(" + column_name + ")";
+    if (name == "hour" || name == "hours")
+        return "hour(" + column_name + ")";
+    if (name.starts_with("truncate") && name.back() == ']')
+    {
+        auto p = name.find('[');
+        if (p != std::string::npos)
+            return "truncate(" + name.substr(p + 1, name.size() - p - 2) + ", " + column_name + ")";
+    }
+    if (name.starts_with("bucket") && name.back() == ']')
+    {
+        auto p = name.find('[');
+        if (p != std::string::npos)
+            return "bucket(" + name.substr(p + 1, name.size() - p - 2) + ", " + column_name + ")";
+    }
+    return column_name;
+}
+
+std::optional<String> getPartitionKeyStringFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & /* ch_schema */, ContextPtr /* local_context */)
+{
+    if (!metadata_object->has(f_partition_specs) || !metadata_object->has(f_default_spec_id))
+        return std::nullopt;
+    auto partition_spec_id = metadata_object->getValue<Int64>(f_default_spec_id);
+    Poco::JSON::Array::Ptr partition_specs = metadata_object->getArray(f_partition_specs);
+    std::unordered_map<Int64, String> source_id_to_column_name;
+    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+    auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
+    for (const auto & [col_name, source_id] : mapper)
+        source_id_to_column_name[source_id] = col_name;
+
+    Poco::JSON::Object::Ptr partition_spec;
+    for (size_t i = 0; i < partition_specs->size(); ++i)
+    {
+        auto spec = partition_specs->getObject(static_cast<UInt32>(i));
+        if (spec->getValue<Int64>(f_spec_id) == partition_spec_id)
+        {
+            partition_spec = spec;
+            break;
+        }
+    }
+    if (!partition_spec || !partition_spec->has(f_fields))
+        return std::nullopt;
+    auto fields = partition_spec->getArray(f_fields);
+    if (fields->size() == 0)
+        return std::nullopt;
+
+    std::vector<String> part_exprs;
+    for (UInt32 i = 0; i < fields->size(); ++i)
+    {
+        auto field = fields->getObject(i);
+        auto source_id = field->getValue<Int64>(f_source_id);
+        auto it = source_id_to_column_name.find(source_id);
+        if (it == source_id_to_column_name.end())
+            return std::nullopt;
+        String column_name = it->second;
+        auto iceberg_transform_name = field->getValue<String>(f_transform);
+        part_exprs.push_back(formatPartitionFieldDisplay(iceberg_transform_name, column_name));
+    }
+    String result;
+    for (size_t i = 0; i < part_exprs.size(); ++i)
+    {
+        if (i != 0)
+            result += ", ";
+        result += part_exprs[i];
+    }
+    return result;
+}
+
+std::optional<String> getSortingKeyDisplayStringFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & /* ch_schema */)
+{
+    if (!metadata_object->has(f_sort_orders) || !metadata_object->has(f_default_sort_order_id))
+        return std::nullopt;
+    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
+    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+    std::unordered_map<Int64, String> source_id_to_column_name;
+    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+    auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
+    for (const auto & [col_name, source_id] : mapper)
+        source_id_to_column_name[source_id] = col_name;
+
+    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    {
+        auto sort_order = sort_orders->getObject(i);
+        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
+            continue;
+        auto sort_fields = sort_order->getArray(f_fields);
+        String result;
+        for (UInt32 j = 0; j < sort_fields->size(); ++j)
+        {
+            auto field = sort_fields->getObject(j);
+            auto source_id = field->getValue<Int64>(f_source_id);
+            auto it = source_id_to_column_name.find(source_id);
+            if (it == source_id_to_column_name.end())
+                return std::nullopt;
+            String column_name = it->second;
+            String direction = field->getValue<String>(f_direction) == "asc" ? " asc" : " desc";
+            auto iceberg_transform_name = field->getValue<String>(f_transform);
+            String expr = formatPartitionFieldDisplay(iceberg_transform_name, column_name);
+            if (!result.empty())
+                result += ", ";
+            result += expr + direction;
+        }
+        return result.empty() ? std::nullopt : std::optional<String>(result);
+    }
+    return std::nullopt;
 }
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)

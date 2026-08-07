@@ -4,6 +4,7 @@
 
 #if USE_AVRO
 
+#include <optional>
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
@@ -82,6 +83,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
 std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
 Poco::Dynamic::Var getAvroType(DataTypePtr type);
+Poco::Dynamic::Var getAvroLogicalType(DataTypePtr type);
 
 /// Converts a ClickHouse PARTITION BY AST into the corresponding Iceberg partition-spec JSON object.
 /// column_name_to_source_id maps each column name to the Iceberg field-id from the table schema.
@@ -132,6 +134,11 @@ enum class FileCategory : uint8_t
 FileCategory inspectFileCategory(const String & relative_path);
 
 KeyDescription getSortingKeyDescriptionFromMetadata(
+    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
+/// Returns Iceberg/Spark-style display string for sort order, e.g. "id desc, hour(ts) asc".
+std::optional<String> getSortingKeyDisplayStringFromMetadata(
+    Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema);
+std::optional<String> getPartitionKeyStringFromMetadata(
     Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
 
