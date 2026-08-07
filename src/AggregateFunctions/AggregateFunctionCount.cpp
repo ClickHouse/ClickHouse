@@ -350,7 +350,10 @@ AggregateFunctionPtr createAggregateFunctionCount(const std::string & name, cons
     /// of the state with plain `count()` provided by `getNormalizedStateType`).
     /// The `aggregate_functions_skip_variant_nulls` setting restores the previous behavior, where every row was
     /// counted; the state representation is the same in both modes, so it is not consulted when there is no query
-    /// context (a background operation, or a table loaded at startup).
+    /// context (a background operation, or a table loaded at startup). When `count` is resolved as the nested
+    /// function of a -Distinct combinator, the factory disables the setting in the settings passed here, so that
+    /// the replay of a stored countDistinct history counts its NULL keys independently of the current setting
+    /// (see AggregateFunctionFactory::getImpl).
     if (argument_types.size() == 1 && isVariant(argument_types[0])
         && (!settings || (*settings)[Setting::aggregate_functions_skip_variant_nulls]))
         return std::make_shared<AggregateFunctionCountNotNullVariant>(argument_types[0], parameters);

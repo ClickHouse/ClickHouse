@@ -108,6 +108,14 @@ public:
     FunctionDocumentation getDocumentation(const String & name) const;
 
 private:
+    /// `allow_skipping_variant_nulls` controls whether the resolved function is allowed to skip the NULL rows of
+    /// a Variant argument (the AggregateFunctionVariantNull wrapper applied at the leaf of `getImpl`, or a
+    /// creator that implements the skipping itself, like `count`). The `-Distinct` combinator resolves its
+    /// nested function with it unset: the combinator replays its stored distinct-key history into the nested
+    /// function on merge and finalization, so the nested function's treatment of the NULL rows is part of the
+    /// meaning of an already written `...Distinct` state and must not depend on the current value of the
+    /// `aggregate_functions_skip_variant_nulls` setting. The NULL rows of newly aggregated data are skipped
+    /// before they enter the history instead (see the combinator branch of `getImpl`).
     AggregateFunctionPtr getImpl(
         const String & name,
         NullsAction action,
@@ -116,7 +124,8 @@ private:
         AggregateFunctionProperties & out_properties,
         bool has_null_arguments,
         AggregateFunctionStateVariant state_variant,
-        bool apply_variant_adapter_to_nested) const;
+        bool apply_variant_adapter_to_nested,
+        bool allow_skipping_variant_nulls = true) const;
 
     /// Resolve the function applying only the LowCardinality/Nullable/combinator handling, without the
     /// Variant fallback. `types_without_low_cardinality` must already have LowCardinality removed.
@@ -133,7 +142,8 @@ private:
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         AggregateFunctionStateVariant state_variant,
-        bool apply_variant_adapter_to_nested) const;
+        bool apply_variant_adapter_to_nested,
+        bool allow_skipping_variant_nulls = true) const;
 
     /// Try to wrap the function in AggregateFunctionVariantAdapter so it can be applied to Variant arguments by
     /// aggregating over the least common supertype of the variants. Returns nullptr if that is not possible.

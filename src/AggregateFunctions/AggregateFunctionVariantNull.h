@@ -40,7 +40,11 @@ namespace DB
   * The wrapper is applied by AggregateFunctionFactory at the point where a function is resolved over argument
   * types that contain a Variant (unless the function declares AggregateFunctionProperties::skips_variant_nulls,
   * i.e. implements the contract itself, like `count`, or is a window function, which must handle its argument
-  * types itself -- see AggregateFunctionFactory::getImpl).
+  * types itself -- see AggregateFunctionFactory::getImpl). The one exception is the -Distinct combinator, which
+  * replays its stored distinct-key history into its nested function on merge and finalization: there the nested
+  * function is resolved without the skipping (so an already written ...Distinct state keeps its meaning
+  * independently of the current setting) and the wrapper is applied over the combined function instead, keeping
+  * the NULL rows of newly aggregated data out of the history (see the combinator branch of getImpl).
   */
 class AggregateFunctionVariantNull final : public IAggregateFunctionHelper<AggregateFunctionVariantNull>
 {

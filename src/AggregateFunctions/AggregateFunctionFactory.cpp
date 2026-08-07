@@ -192,7 +192,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
     AggregateFunctionStateVariant state_variant,
-    bool apply_variant_adapter_to_nested) const
+    bool apply_variant_adapter_to_nested,
+    bool allow_skipping_variant_nulls) const
 {
     /// If one of the types is Nullable, we apply aggregate function combinator "Null" if it's not window function.
     /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
@@ -214,7 +215,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
-        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant, apply_variant_adapter_to_nested);
+        AggregateFunctionPtr nested_function = getImpl(
+            name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant,
+            apply_variant_adapter_to_nested, allow_skipping_variant_nulls);
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
@@ -225,7 +228,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
             return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
-    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant, apply_variant_adapter_to_nested);
+    auto with_original_arguments = getImpl(
+        name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant,
+        apply_variant_adapter_to_nested, allow_skipping_variant_nulls);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
@@ -563,7 +568,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     AggregateFunctionProperties & out_properties,
     bool has_null_arguments,
     AggregateFunctionStateVariant state_variant,
-    bool apply_variant_adapter_to_nested) const
+    bool apply_variant_adapter_to_nested,
+    bool allow_skipping_variant_nulls) const
 {
     String name = getAliasToOrName(name_param);
     String case_insensitive_name;
@@ -607,6 +613,24 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
 
+        /// The nested function of a -Distinct combinator over a Variant argument is resolved with
+        /// `allow_skipping_variant_nulls` unset (see the combinator branch below): the combinator replays its
+        /// stored distinct-key history into the nested function on merge and finalization, so the nested
+        /// function must aggregate the NULL rows the history contains regardless of the current setting. For
+        /// most functions that means not applying the AggregateFunctionVariantNull wrapper below; a function
+        /// whose creator implements the skipping itself by consulting the setting (`count`, declared by
+        /// AggregateFunctionProperties::skips_variant_nulls) is resolved with the setting disabled in the
+        /// settings its creator sees, so it produces its non-skipping implementation.
+        std::unique_ptr<Settings> settings_without_variant_null_skipping;
+        if (!allow_skipping_variant_nulls && out_properties.skips_variant_nulls
+            && (!settings || (*settings)[Setting::aggregate_functions_skip_variant_nulls])
+            && std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return isVariant(type); }))
+        {
+            settings_without_variant_null_skipping = settings ? std::make_unique<Settings>(*settings) : std::make_unique<Settings>();
+            (*settings_without_variant_null_skipping)[Setting::aggregate_functions_skip_variant_nulls] = false;
+            settings = settings_without_variant_null_skipping.get();
+        }
+
         AggregateFunctionPtr function;
         if (state_variant == AggregateFunctionStateVariant::Window && found.window_creator)
             function = found.window_creator(name, argument_types, parameters, settings);
@@ -628,7 +652,10 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// a user who depends on it. It can only affect how new values are aggregated, not the meaning of an
         /// already written state: the state representation is the same in both modes, so it is deliberately not
         /// consulted when there is no query context (a background operation, or a table loaded at startup).
-        if (!out_properties.is_window_function && !out_properties.skips_variant_nulls
+        /// The one state that replays raw values into a nested function -- the distinct-key history of the
+        /// -Distinct combinator -- keeps that rule by resolving its nested function with the skipping disabled
+        /// and filtering the new rows in front of the history instead (see above and the combinator branch).
+        if (!out_properties.is_window_function && !out_properties.skips_variant_nulls && allow_skipping_variant_nulls
             && (!settings || (*settings)[Setting::aggregate_functions_skip_variant_nulls])
             && std::any_of(argument_types.begin(), argument_types.end(), [](const auto & type) { return isVariant(type); }))
         {
@@ -712,7 +739,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             nested_functions.reserve(nested_arguments_list.size());
             for (const auto & nested_arguments : nested_arguments_list)
                 nested_functions.push_back(getWithoutVariantAdapter(
-                    nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant, apply_variant_adapter_to_nested));
+                    nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant,
+                    apply_variant_adapter_to_nested, allow_skipping_variant_nulls));
 
             /// A `-State` round-trip reconstructs every element from this one shared name, so it must be
             /// the action-adjusted base aggregate name, not one element's instantiation (which can collapse
@@ -745,13 +773,36 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 [](const auto & type) { return typeid_cast<const DataTypeAggregateFunction *>(type.get()) != nullptr; });
             bool nested_has_variant = std::any_of(
                 nested_types.begin(), nested_types.end(), [](const auto & type) { return isVariant(type); });
+
+            /// The -Distinct combinator stores the distinct argument values and replays them into the nested
+            /// function on merge and finalization, so how the nested function treats the NULL rows of a Variant
+            /// argument is part of the meaning of an already written ...Distinct state: it must not depend on
+            /// the current `aggregate_functions_skip_variant_nulls` value, or a state written before an upgrade
+            /// would change its result after it (e.g. a stored countDistinctState over a Variant with a NULL
+            /// row would flip between counting and not counting it). Resolve the nested function with the NULL
+            /// skipping disabled -- the replay then always aggregates the NULL keys a history contains, exactly
+            /// like the versions that wrote states before the skipping contract existed -- and skip the NULL
+            /// rows of newly aggregated data in front of the history instead (the AggregateFunctionVariantNull
+            /// applied below over the combined function, under the same setting as the leaf wrapper above). The
+            /// setting then only controls which rows enter the history, never how a history is replayed, which
+            /// is the rule that holds for every other aggregate state.
+            bool distinct_replays_variant_nulls = combinator_name == "Distinct" && nested_has_variant;
+
             /// The Variant here provably comes from an already declared AggregateFunction(...) state type, so the
             /// adapter must reconstruct it exactly as declared, independently of the current query settings.
             AggregateFunctionPtr nested_function = (apply_variant_adapter_to_nested && nested_has_variant && consumes_aggregate_state)
                 ? get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant,
                       /*from_declared_state_type=*/ true)
-                : getWithoutVariantAdapter(nested_name, action, nested_types, nested_parameters, out_properties, state_variant, apply_variant_adapter_to_nested);
+                : getWithoutVariantAdapter(nested_name, action, nested_types, nested_parameters, out_properties, state_variant,
+                      apply_variant_adapter_to_nested, allow_skipping_variant_nulls && !distinct_replays_variant_nulls);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+
+            if (distinct_replays_variant_nulls && allow_skipping_variant_nulls)
+            {
+                const Settings * settings = query_context ? &query_context->getSettingsRef() : nullptr;
+                if (!settings || (*settings)[Setting::aggregate_functions_skip_variant_nulls])
+                    combined_function = std::make_shared<AggregateFunctionVariantNull>(combined_function, argument_types, parameters);
+            }
         }
 
         /// Same invariant as above.
