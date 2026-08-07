@@ -188,7 +188,7 @@ public:
     bool hasStampedColumnIds() const;
 
     /// Re-home the small, part-lifetime metadata that build paths may populate outside the
-    /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
+    /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_column_ids`, and for patch parts
     /// `source_parts_set`) into that arena. A cheap copy of small objects; call once these members
     /// are final. `columns` / `serializations` are handled by `setColumns`, the minmax index by
     /// `setMinMaxIndex` / the population sites.
@@ -438,16 +438,16 @@ public:
 
         using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-        /// `part_columns` is the part's stamped column list: minmax files are named after
-        /// the stamped column IDs so all of the part's artifacts agree by construction.
+        /// Resolves the partition key's column ids against `part_columns` (see getColumnIdInPart).
         [[nodiscard]] WrittenFiles store(StorageMetadataPtr metadata_snapshot, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings, const NamesAndTypesList & part_columns) const;
+        /// Names each file after the matching pair in `columns`, whose names must be column ids already.
         [[nodiscard]] WrittenFiles store(const NamesAndTypesList & columns, IDataPartStorage & part_storage, Checksums & checksums, const MergeTreeSettingsPtr & storage_settings) const;
 
         void update(const Block & block, const NamesAndTypesList & columns);
         void merge(const MinMaxIndex & other);
         Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
         /// The only place a minmax file name is spelled. Its argument comes from one of the
-        /// getFileColumnName overloads below -- i.e. an already resolved (minmaxFileKey) and
+        /// getFileColumnName overloads below -- i.e. an already resolved (minmaxColumnId) and
         /// escaped key, never a raw logical column name.
         static String getFileName(const String & file_column_name) { return "minmax_" + file_column_name + ".idx"; }
         /// For Store
@@ -471,8 +471,9 @@ public:
 
     Checksums checksums;
 
-    /// Columns with values, that all have been zeroed by expired ttl
-    NameSet expired_columns;
+    /// Columns with values, that all have been zeroed by expired ttl. Keyed by column ID, so
+    /// consumers match it against a part's own columns without resolving a logical name.
+    ColumnIdSet expired_column_ids;
 
     NameSet invalidated_system_columns;
     bool isSystemColumnInvalidated(const String & column_name) const;
@@ -613,10 +614,11 @@ public:
         bool if_not_loaded = false,
         bool only_metadata = false);
 
-    /// If checksums.txt exists, reads file's checksums (and sizes) from it without fallback recovery.
-    void tryPreloadChecksums();
+    /// Reads checksums (and sizes) from checksums.txt, without the recovery `loadChecksums` does.
+    /// False only when the file is absent -- i.e. exactly when that recovery is needed.
+    bool tryPreloadChecksums();
 
-    /// If checksums.txt exists, reads file's checksums (and sizes) from it
+    /// As above, but recovers by recalculating the checksums when checksums.txt is absent.
     void loadChecksums(bool require);
     bool areChecksumsLoaded() const { return !checksums.empty(); }
 
@@ -975,11 +977,9 @@ private:
 
     void checkConsistencyBase() const;
 
-    /// Key of a partition-key column's `minmax_<key>.idx` in THIS part: its stamped id, or the
-    /// name for a part predating column ids (getColumnId() falls back). Answered from the part's
-    /// own columns, never the live mapping -- after DROP + re-ADD the mapping holds a fresh id
-    /// while this part's file still carries the old one.
-    String minmaxFileKey(const String & column_name) const;
+    /// Id under which a partition-key column's `minmax_<id>.idx` is named in THIS part (see getColumnIdInPart). Never
+    /// the live mapping -- after DROP + re-ADD it holds a fresh id while this part's file carries the old.
+    String minmaxColumnId(const String & column_name) const;
 
     /// Returns the name of projection for projection part, empty string for regular part.
     String getProjectionName() const;

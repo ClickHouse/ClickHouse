@@ -12,9 +12,9 @@ set -e
 
 CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_column_ids=1"
 
-# Every `columns.txt` token must own a stream file: `checkDataPart` skips a token it cannot
-# resolve, so a slot naming nothing survives CHECK TABLE.  Not a bijection -- a metadata-only
-# DROP leaves the dropped column's stream behind as an orphan, with no slot naming it.
+# Every `columns.txt` token must own a stream file named after it -- not a bijection, since a
+# metadata-only DROP leaves an orphan stream no slot names.  Tables inspected this way must pin
+# `replace_long_file_name_to_hash = 0`: randomized `max_file_name_length = 0` hashes every name.
 slots_own_streams() {
     local dir=$1
     local missing
@@ -103,9 +103,11 @@ $CLIENT --query "ATTACH TABLE t_settings_enable"
 # `min_bytes_for_full_part_storage = 0` keeps `columns.txt` a standalone file: under
 # Packed storage it lives inside one blob and cannot be read or moved on its own.
 $CLIENT --query "CREATE TABLE t_fmt_ids (a UInt32, b String, c Float64) ENGINE = MergeTree ORDER BY a
-SETTINGS serialization_info_version = 'with_column_ids', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0"
+SETTINGS serialization_info_version = 'with_column_ids', min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+         replace_long_file_name_to_hash = 0"
 $CLIENT --query "CREATE TABLE t_fmt_plain (a UInt32, b String, c Float64) ENGINE = MergeTree ORDER BY a
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0"
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
+         replace_long_file_name_to_hash = 0"
 
 # DROP + re-ADD gives `c` the numeric column ID "1", so the part's columns.txt token
 # for `c` is not its logical name and the destination cannot guess it.

@@ -139,7 +139,7 @@ static bool haveMutationsOfDynamicColumns(
     /// RENAME/DROP names its column as it was BEFORE the mutation (already gone from the snapshot, still
     /// in the part); a metadata-only RENAME is the mirror case. Both domains must be asked: a miss here
     /// picks the partial-mutation path, which cannot enumerate a dynamic column's dependent substreams.
-    auto hasDynamicSubcolumnsInPart = [&](const String & column_name)
+    auto has_dynamic_subcolumns_in_part = [&](const String & column_name)
     {
         auto column = data_part->tryGetColumnBySnapshotName(column_name, metadata_snapshot);
         if (!column)
@@ -149,7 +149,7 @@ static bool haveMutationsOfDynamicColumns(
 
     for (const auto & command : commands)
     {
-        if (!command.column_name.empty() && hasDynamicSubcolumnsInPart(command.column_name))
+        if (!command.column_name.empty() && has_dynamic_subcolumns_in_part(command.column_name))
             return true;
 
         auto alter = command.ast();
@@ -157,7 +157,7 @@ static bool haveMutationsOfDynamicColumns(
             continue;
         for (const auto & child : alter->update_assignments->children)
         {
-            if (hasDynamicSubcolumnsInPart(child->as<ASTAssignment &>().column_name))
+            if (has_dynamic_subcolumns_in_part(child->as<ASTAssignment &>().column_name))
                 return true;
         }
     }
@@ -283,8 +283,8 @@ static void splitAndModifyMutationCommands(
     if (auto column_id_mapping = metadata_snapshot->getActiveColumnIdMapping())
         remapPartColumnsToCurrentNames(part_columns, part->getColumns(), *column_id_mapping);
 
-    /// Does the part physically contain the column named by its CURRENT logical name?
-    auto partHasCurrentColumn = [&](const String & current_name) -> bool
+    /// Does the part hold the column the current schema calls `current_name`?
+    auto part_has_column_under_current_name = [&](const String & current_name) -> bool
     {
         return part->tryGetColumnBySnapshotName(current_name, metadata_snapshot).has_value();
     };
@@ -305,7 +305,7 @@ static void splitAndModifyMutationCommands(
                 /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
                 /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
                 auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                if (!column_ordinary || !partHasCurrentColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                if (!column_ordinary || !part_has_column_under_current_name(command.column_name) || !part->hasColumnFiles(*column_ordinary))
                 {
                     for_interpreter.push_back(command);
                     mutated_columns.emplace(command.column_name);
@@ -602,7 +602,7 @@ static void splitAndModifyMutationCommands(
                 /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
                 /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
                 auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                if (!column_ordinary || !partHasCurrentColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                if (!column_ordinary || !part_has_column_under_current_name(command.column_name) || !part->hasColumnFiles(*column_ordinary))
                     for_interpreter.push_back(command);
 
                 /// Materialize column in case of complex data types like tuple can remove some nested columns
@@ -762,11 +762,10 @@ getColumnsForNewDataPart(
     for (const auto & [name, _] : storage_columns)
         storage_columns_set.insert(name);
 
-    /// The source part keeps its load-time names after a metadata-only RENAME, so a command that
-    /// names a column by its current name (e.g. CLEAR COLUMN on a renamed column) is not found by
-    /// name in `part_columns`. Resolve current name -> id -> part slot so such DROP/CLEAR commands
-    /// are still recognized and the column is dropped from the new part.
-    auto partHasCurrentColumn = [&](const String & current_name)
+    /// Either name: a command may address a column by the name this part was loaded with, or by the
+    /// current one a metadata-only RENAME gave it (e.g. CLEAR COLUMN on a renamed column, which the
+    /// name lookup misses). Both must be recognized or the column is not dropped from the new part.
+    auto part_has_column_under_either_name = [&](const String & current_name)
     {
         if (part_columns.has(current_name))
             return true;
@@ -783,7 +782,7 @@ getColumnsForNewDataPart(
             deleted_mask_updated |= isDeletedMaskUpdated(command, storage_columns_set);
 
         /// If we don't have this column in source part, than we don't need to materialize it
-        if (!partHasCurrentColumn(command.column_name))
+        if (!part_has_column_under_either_name(command.column_name))
         {
             /// For RENAME commands, handle chained renames:
             /// e.g., if column A was already renamed to B, and now B is renamed to C,
@@ -950,44 +949,34 @@ getColumnsForNewDataPart(
     if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos, {}};
 
-    /// Metadata-only RENAME does not reload parts, so `col.name` in
-    /// `source_part->getColumns()` may be stale.  Filter slots whose
-    /// effective column-id is no longer in the mapping (orphan after
-    /// DROP+ADD reuses the name with a fresh id), and key
-    /// `source_columns_name_to_type` by the CURRENT logical name so the
-    /// downstream `storage_columns` lookups align regardless of load order.
-    const auto & source_columns_raw = source_part->getColumns();
+    /// Metadata-only RENAME does not reload parts, so `col.name` in `source_part->getColumns()` may
+    /// be stale: key the lookups below by the CURRENT logical name so they align with
+    /// `storage_columns` regardless of load order, and drop a slot whose id has left the mapping (an
+    /// orphan after DROP + re-ADD handed its name to a fresh id). The pairs keep their own names.
     NamesAndTypesList source_columns;
     std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
     std::unordered_map<String, ColumnId> source_id_by_current_logical;
 
-    if (has_column_ids)
+    for (const auto & column : source_part->getColumns())
     {
-        for (const auto & col : source_columns_raw)
+        String current_name = column.name;
+        if (has_column_ids)
         {
-            auto current_logical = column_id_mapping->tryGetLogicalName(col.getColumnId());
+            auto current_logical = column_id_mapping->tryGetLogicalName(column.getColumnId());
             if (!current_logical)
                 continue;
-            source_columns.push_back(col);
+            current_name = *current_logical;
+        }
 
-            source_columns_name_to_type[*current_logical] = col.type;
-            source_id_by_current_logical[*current_logical] = col.getColumnId();
-        }
-    }
-    else
-    {
-        source_columns = source_columns_raw;
-        for (const auto & it : source_columns)
-        {
-            source_columns_name_to_type[it.name] = it.type;
-            source_id_by_current_logical[it.name] = it.getColumnId();
-        }
+        source_columns.push_back(column);
+        source_columns_name_to_type[current_name] = column.type;
+        source_id_by_current_logical[current_name] = column.getColumnId();
     }
 
     /// Resolve a CURRENT logical name to the source part's slot via its stable id. Falls back to the
     /// name-resolving `getColumnPosition` when the name is not a known source column (identity for a
     /// table without column ids, where id == name).
-    auto sourcePosition = [&](const String & current_name) -> std::optional<size_t>
+    auto source_position = [&](const String & current_name) -> std::optional<size_t>
     {
         if (auto it = source_id_by_current_logical.find(current_name);
             it != source_id_by_current_logical.end())
@@ -1045,7 +1034,7 @@ getColumnsForNewDataPart(
                         it->type = source_col->second;
 
                         if (fill_columns_substreams)
-                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, source_col->first, *sourcePosition(source_col->first), has_column_ids);
+                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, source_col->first, *source_position(source_col->first), has_column_ids);
 
                         ++it;
                     }
@@ -1094,7 +1083,7 @@ getColumnsForNewDataPart(
                         it->type = maybe_name_and_type->type;
 
                         if (fill_columns_substreams)
-                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, renamed_from, *sourcePosition(renamed_from), has_column_ids);
+                            addRenamedColumnToColumnsSubstreams(new_columns_substreams, source_columns_substreams, it->name, renamed_from, *source_position(renamed_from), has_column_ids);
                     }
                     else
                     {
@@ -1104,7 +1093,7 @@ getColumnsForNewDataPart(
                         if (fill_columns_substreams)
                         {
                             new_columns_substreams.addColumn(it->name);
-                            new_columns_substreams.addSubstreamsToLastColumn(source_columns_substreams.getColumnSubstreams(*sourcePosition(it->name)));
+                            new_columns_substreams.addSubstreamsToLastColumn(source_columns_substreams.getColumnSubstreams(*source_position(it->name)));
                         }
                     }
                     ++it;
@@ -1210,9 +1199,9 @@ static std::unordered_map<String, size_t> getStreamCounts(
 
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                /// Resolve through the part's own pair so the stream keys by its stamped id, not by a
-                /// logical name that might equal a foreign column's id and miscount the shared-stream
-                /// refcount. A legacy id-less part (no pair) falls back to the name as the stream key.
+                /// Key the stream by the part's stamped id, not by a logical name that might equal a
+                /// foreign column's id and miscount the shared-stream refcount. No pair (an id-less
+                /// part, or a current name this part predates) keys by the name and finds nothing.
                 std::optional<String> stream_name = part_column
                     ? IMergeTreeDataPart::getStreamNameForColumn(*part_column, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings())
                     : IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());

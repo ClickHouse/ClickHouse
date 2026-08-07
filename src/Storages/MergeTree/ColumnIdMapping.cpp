@@ -411,4 +411,18 @@ void ColumnIdMapping::stampColumnIdsLenient(NamesAndTypesList & columns) const
     }
 }
 
+ColumnId getColumnIdInPart(const NamesAndTypesList & part_columns, const String & column_name)
+{
+    auto column = part_columns.tryGetByName(column_name);
+    return column ? column->getColumnId() : ColumnId{column_name};
+}
+
+String getColumnNameByIdInPart(const NamesAndTypesList & part_columns, const ColumnId & column_id)
+{
+    for (const auto & column : part_columns)
+        if (column.getColumnId() == column_id)
+            return column.name;
+    return column_id.value();
+}
+
 }

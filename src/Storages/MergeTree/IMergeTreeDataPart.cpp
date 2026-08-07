@@ -197,7 +197,7 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
             continue;
         }
 
-        const String file_name = getFileName(getFileColumnName(part.minmaxFileKey(column_name), part.checksums));
+        const String file_name = getFileName(getFileColumnName(part.minmaxColumnId(column_name), part.checksums));
 
         /// Treat missing columns as universe range so they don't prune; the file gets created on the next merge or mutation.
         auto file = part.readFileIfExists(file_name);
@@ -231,13 +231,9 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
 {
     auto minmax_columns = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), storage_settings);
 
-    /// Name minmax files after the stamped column IDs; columns absent from the part
-    /// (e.g. block-number virtuals) keep their name.
+    /// The overload below names each file after the pair it is given, so hand it this part's ids.
     for (auto & column : minmax_columns)
-    {
-        if (auto part_column = part_columns.tryGetByName(column.name))
-            column.name = part_column->getColumnId().value();
-    }
+        column.name = getColumnIdInPart(part_columns, column.name).value();
 
     return store(minmax_columns, part_storage, out_checksums, storage_settings);
 }
@@ -371,7 +367,7 @@ Names IMergeTreeDataPart::MinMaxIndex::getProbablyWrittenFiles(const IMergeTreeD
         minmax_columns.resize(hyperrectangle.size());
 
     return minmax_columns.getNames()
-        | std::views::transform([&](const auto & column_name) { return getFileName(getFileColumnName(part.minmaxFileKey(column_name), data_settings, data_part_storage)); })
+        | std::views::transform([&](const auto & column_name) { return getFileName(getFileColumnName(part.minmaxColumnId(column_name), data_settings, data_part_storage)); })
         | std::ranges::to<Names>();
 }
 
@@ -790,11 +786,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
 
     for (const auto & column : columns)
     {
-        auto it = serialization_infos.find(column.getColumnId().value());
-        auto serialization = it == serialization_infos.end()
-            ? IDataType::getSerialization(column, serialization_infos.getSettings())
-            : IDataType::getSerialization(column, *it->second);
-
+        auto serialization = serialization_infos.getSerialization(column);
         serializations.emplace(column.getColumnId().value(), serialization);
 
         IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
@@ -1251,20 +1243,11 @@ static const ColumnDescription * getColumnForStatisticsFile(
     chassert(filename.ends_with(STATS_FILE_SUFFIX));
 
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
-    String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
+    const ColumnId id_in_filename{unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate))};
 
-    /// New parts name statistics files by the stamped column ID; resolve it to the
-    /// part's logical name first.  Files matching no ID keep the token as a name --
-    /// legacy name-based files and dropped-column orphans (the latter then fail the
-    /// lookups below and are skipped).
-    for (const auto & part_column : part_columns)
-    {
-        if (part_column.getColumnId().value() == column_name)
-        {
-            column_name = part_column.name;
-            break;
-        }
-    }
+    /// A dropped column's orphan file matches no id, so it passes through as a name and then fails
+    /// the lookups below -- which is how such a file gets skipped.
+    const String column_name = getColumnNameByIdInPart(part_columns, id_in_filename);
 
     /// `<col>.null` subcolumn may appear in required_columns when
     /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
@@ -2070,46 +2053,33 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
             getDataPartStorage().getFullPath(), calculated_partition_id, info.getPartitionId());
 }
 
-void IMergeTreeDataPart::tryPreloadChecksums()
+bool IMergeTreeDataPart::tryPreloadChecksums()
 {
     if (!checksums.empty())
-        return;
+        return true;
 
-    if (auto buf = readFileIfExists("checksums.txt"))
+    auto buf = readFileIfExists("checksums.txt");
+    if (!buf)
+        return false;
+
+    if (checksums.read(*buf))
     {
-        if (checksums.read(*buf))
-        {
-            assertEOF(*buf);
-            bytes_on_disk = checksums.getTotalSizeOnDisk();
-            bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
-        }
-        else
-        {
-            bytes_on_disk = getDataPartStorage().calculateTotalSizeOnDisk();
-        }
+        assertEOF(*buf);
+        bytes_on_disk = checksums.getTotalSizeOnDisk();
+        bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
     }
+    else
+        bytes_on_disk = getDataPartStorage().calculateTotalSizeOnDisk();
+
+    return true;
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)
 {
-    if (!checksums.empty())
-        return;
-
     /// Arena-agnostic: the real part-load callers (`loadColumnsChecksumsIndexes`, the projection load)
     /// already run inside the parts-arena scope, while transient checksum-only probes must stay on the
     /// default arenas. So the caller picks the arena rather than pinning it here.
-    if (auto buf = readFileIfExists("checksums.txt"))
-    {
-        if (checksums.read(*buf))
-        {
-            assertEOF(*buf);
-            bytes_on_disk = checksums.getTotalSizeOnDisk();
-            bytes_uncompressed_on_disk = checksums.getTotalSizeUncompressedOnDisk();
-        }
-        else
-            bytes_on_disk = getDataPartStorage().calculateTotalSizeOnDisk();
-    }
-    else
+    if (!tryPreloadChecksums())
     {
         if (require)
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No checksums.txt in part {}", name);
@@ -2410,55 +2380,41 @@ NamesAndTypesList IMergeTreeDataPart::remapColumnIdsToLogicalNames(
     NamesAndTypesList remapped_columns;
     for (const auto & column : loaded_columns)
     {
-        /// Persistent virtual columns are not managed by the mapping.
-        if (isPersistentVirtualColumn(column.name))
-        {
-            auto remapped_column = column;
-            remapped_column.setColumnId(ColumnId{column.getNameInStorage()});
-            remapped_columns.push_back(remapped_column);
-            continue;
-        }
-
-        /// The counter only grows, and every load raises it past every ID in the mapping.
-        if (mapping.isColumnIdAtOrAboveCounter(column.name))
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Part {} of table {} lists column ID '{}' in columns.txt, at or above the table's next "
-                "column ID counter ({}). The part cannot be attached here -- it most likely comes from "
-                "another table -- because a later ADD COLUMN would be given that same ID and would read "
-                "this part's data as its own.",
-                name, storage.getStorageID().getNameForLogs(), column.name, mapping.getNextColumnIdCounter());
-
-        if (mapping.hasColumnId(column.name))
-        {
-            /// A live column ID -- resolve to its logical name.
-            auto remapped_column = column;
-            remapped_column.name = mapping.getLogicalName(column.name);
-            remapped_column.setColumnId(ColumnId{column.name});
-            remapped_columns.push_back(remapped_column);
-            continue;
-        }
-
-        if (mapping.hasLogicalName(column.name))
-        {
-            /// A dropped column's orphan stream, whose stale name a RENAME or DROP+ADD may since
-            /// have handed to a live column. Pin the on-disk key and give it a placeholder name so
-            /// the orphan's identity stays distinct from every live column's.
-            auto remapped_column = column;
-            remapped_column.setColumnId(ColumnId{column.getNameInStorage()});
-            String placeholder = column.name;
-            do
-                placeholder += "_";
-            while (reserved_names.contains(placeholder));
-            reserved_names.insert(placeholder);
-            remapped_column.name = placeholder;
-            remapped_columns.push_back(remapped_column);
-            continue;
-        }
-
-        /// Unknown to the mapping (predates column IDs) -- pass through with identity.
+        /// The token in columns.txt IS this part's key for the column, whatever the mapping says
+        /// about it; only the logical name has to be resolved.
         auto remapped_column = column;
-        remapped_column.setColumnId(ColumnId{column.getNameInStorage()});
-        remapped_columns.push_back(remapped_column);
+        remapped_column.setColumnId(ColumnId{column.name});
+
+        /// A persistent virtual column is not managed by the mapping, and a column unknown to it
+        /// predates column ids -- both keep the token as their name.
+        if (!isPersistentVirtualColumn(column.name))
+        {
+            /// The counter only grows, and every load raises it past every ID in the mapping.
+            if (mapping.isColumnIdAtOrAboveCounter(column.name))
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Part {} of table {} lists column ID '{}' in columns.txt, at or above the table's next "
+                    "column ID counter ({}). The part cannot be attached here -- it most likely comes from "
+                    "another table -- because a later ADD COLUMN would be given that same ID and would read "
+                    "this part's data as its own.",
+                    name, storage.getStorageID().getNameForLogs(), column.name, mapping.getNextColumnIdCounter());
+
+            if (mapping.hasColumnId(column.name))
+                remapped_column.name = mapping.getLogicalName(column.name);
+            else if (mapping.hasLogicalName(column.name))
+            {
+                /// A dropped column's orphan stream, whose stale name a RENAME or DROP + re-ADD may
+                /// since have handed to a live column. A placeholder name keeps the orphan's identity
+                /// distinct from every live column's.
+                String placeholder = column.name;
+                do
+                    placeholder += "_";
+                while (reserved_names.contains(placeholder));
+                reserved_names.insert(placeholder);
+                remapped_column.name = placeholder;
+            }
+        }
+
+        remapped_columns.push_back(std::move(remapped_column));
     }
 
     return remapped_columns;
@@ -2489,6 +2445,12 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
         for (auto & column : loaded_columns)
             setVersionToAggregateFunctions(column.type, true);
+
+        /// Only this branch: its columns are named by their on-disk token, which is what the remap
+        /// resolves. The other already holds ids and current names, and remapping would overwrite
+        /// each id with the name -- every stream would then be sought under a name no file carries.
+        if (column_id_mapping)
+            loaded_columns = remapColumnIdsToLogicalNames(loaded_columns, *column_id_mapping);
     }
     else
     {
@@ -2518,9 +2480,6 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         if (!is_readonly_storage)
             writeColumns(loaded_columns, {});
     }
-
-    if (column_id_mapping)
-        loaded_columns = remapColumnIdsToLogicalNames(loaded_columns, *column_id_mapping);
 
     SerializationInfoByName infos({});
     if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
@@ -2599,7 +2558,7 @@ void IMergeTreeDataPart::moveMetadataToDedicatedArena()
     /// Re-home the members built outside the arena into it (copy under the scope, then adopt).
     reallocateByCopy(partition);
     reallocateByCopy(ttl_infos);
-    reallocateByCopy(expired_columns);
+    reallocateByCopy(expired_column_ids);
     /// The minmax index is re-homed at its population sites instead (`setMinMaxIndex`, the lazy
     /// `getMinMaxIndex` build, and the in-place merge/update sites in MergeTask): here it is either not
     /// yet populated (merge/mutation) or would be reset again later (zero-level virtual columns).
@@ -2955,10 +2914,9 @@ IndexSize IMergeTreeDataPart::getIndexSizeFromFile() const
     return {};
 }
 
-String IMergeTreeDataPart::minmaxFileKey(const String & column_name) const
+String IMergeTreeDataPart::minmaxColumnId(const String & column_name) const
 {
-    auto column = getColumns().tryGetByName(column_name);
-    return column ? column->getColumnId().value() : column_name;
+    return getColumnIdInPart(getColumns(), column_name).value();
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const
@@ -2993,7 +2951,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
                 {
                     /// getFileColumnName returns whichever of the escaped / hashed variants the
                     /// checksums hold, else the escaped one -- which is then absent, as required.
-                    auto file_column = MinMaxIndex::getFileColumnName(minmaxFileKey(col_name), checksums);
+                    auto file_column = MinMaxIndex::getFileColumnName(minmaxColumnId(col_name), checksums);
                     if (!checksums.files.contains(MinMaxIndex::getFileName(file_column)))
                         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No minmax idx file checksum for column {}", col_name);
                 }
@@ -3063,7 +3021,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
 
                 for (const String & col_name : partition_key.expression->getRequiredColumns())
                 {
-                    auto escaped = escapeForFileName(minmaxFileKey(col_name));
+                    auto escaped = escapeForFileName(minmaxColumnId(col_name));
                     if (!try_file(MinMaxIndex::getFileName(escaped))
                         && !try_file(MinMaxIndex::getFileName(sipHash128String(escaped))))
                         check_file_not_empty(MinMaxIndex::getFileName(escaped));

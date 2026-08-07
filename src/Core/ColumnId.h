@@ -3,6 +3,7 @@
 #include <base/types.h>
 
 #include <functional>
+#include <unordered_set>
 #include <utility>
 
 
@@ -38,4 +39,11 @@ namespace std
     {
         size_t operator()(const DB::ColumnId & column_id) const { return hash<String>()(column_id.value()); }
     };
+}
+
+namespace DB
+{
+
+using ColumnIdSet = std::unordered_set<ColumnId>;
+
 }

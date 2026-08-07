@@ -243,7 +243,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         new_serialization_infos.reKeyToColumnIds(part_columns);
         serialization_infos.replaceData(new_serialization_infos);
         files_to_remove_after_sync
-            = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, serialization_infos, checksums);
+            = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_column_ids, serialization_infos, checksums);
 
         new_part->setColumns(part_columns, serialization_infos, metadata_snapshot->getMetadataVersion());
     }

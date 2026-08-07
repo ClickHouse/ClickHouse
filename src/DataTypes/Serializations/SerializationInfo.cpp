@@ -7,6 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Block.h>
+#include <Core/NamesAndTypes.h>
 #include <base/EnumReflection.h>
 
 #include <Poco/JSON/JSON.h>
@@ -434,6 +435,23 @@ MutableSerializationInfoPtr SerializationInfoByName::tryGet(const String & name)
     return it == end() ? nullptr : it->second;
 }
 
+SerializationPtr SerializationInfoByName::getSerialization(const NameAndTypePair & column) const
+{
+    /// Records are keyed by the stamped column id -- the column's name in a part without ids.
+    return getSerialization(column, column.getColumnId().value());
+}
+
+/// For the one caller whose key does not come from `column`: a reader holds the requested column's
+/// id but must build the serialization from the part's own pair.
+SerializationPtr SerializationInfoByName::getSerialization(const NameAndTypePair & column, const String & record_key) const
+{
+    auto it = find(record_key);
+    if (it == end())
+        return IDataType::getSerialization(column, settings);
+
+    return IDataType::getSerialization(column, *it->second);
+}
+
 void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
 {
     for (const auto & [name, new_info] : other)
@@ -472,27 +490,6 @@ void SerializationInfoByName::reKeyToColumnIds(const NamesAndTypesList & columns
         rekeyed.emplace(it == id_by_name.end() ? name : it->second, std::move(info));
     }
     swap(rekeyed);
-}
-
-SerializationInfoByName SerializationInfoByName::reKeyToLogicalNames(const NamesAndTypesList & columns, bool drop_orphans) const
-{
-    std::unordered_map<String, String> name_by_id;
-    for (const auto & column : columns)
-        name_by_id.emplace(column.getColumnId().value(), column.name);
-
-    SerializationInfoByName rekeyed(settings);
-    for (const auto & [id, info] : *this)
-    {
-        auto it = name_by_id.find(id);
-        if (it == name_by_id.end())
-        {
-            if (!drop_orphans)
-                rekeyed.emplace(id, info);
-            continue;
-        }
-        rekeyed.emplace(it->second, info);
-    }
-    return rekeyed;
 }
 
 ISerialization::KindStack SerializationInfoByName::getKindStack(const String & column_name) const

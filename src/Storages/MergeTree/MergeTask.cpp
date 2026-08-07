@@ -321,8 +321,6 @@ private:
     size_t final_size = 0;
 };
 
-using ColumnIdSet = std::unordered_set<ColumnId>;
-
 static void addMissedColumnsToSerializationInfos(
     size_t num_rows_in_parts,
     const NamesAndTypesList & part_columns,
@@ -331,7 +329,7 @@ static void addMissedColumnsToSerializationInfos(
     const SerializationInfo::Settings & info_settings,
     SerializationInfoByName & new_infos)
 {
-    /// Match by stamped column ID: the part's logical names may be stale after a
+    /// Keyed by stamped column ID throughout: the part's logical names may be stale after a
     /// metadata-only RENAME, while IDs are stable.
     ColumnIdSet part_column_ids;
     for (const auto & column : part_columns)
@@ -348,7 +346,7 @@ static void addMissedColumnsToSerializationInfos(
 
         auto new_info = column.type->createSerializationInfo(info_settings);
         new_info->addDefaults(num_rows_in_parts);
-        new_infos.emplace(column.name, std::move(new_info));
+        new_infos.emplace(column.getStorageKey().value(), std::move(new_info));
     }
 }
 
@@ -695,19 +693,21 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// 2. Default expressions may introduce semantic changes if re-evaluated during merges, leading to
     ///    non-deterministic results across parts.
     {
+        /// Two vocabularies, asked two different questions below: a pending rename names its source
+        /// logically, while "does this column have data anywhere" is a question about column IDs.
         NameSet columns_present_in_parts;
+        ColumnIdSet column_ids_present_in_parts;
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
+        column_ids_present_in_parts.reserve(global_ctx->storage_columns.size());
 
-        /// Collect all column names that actually exist in the source parts.
-        /// With column IDs, a column may appear under old logical names (before rename)
-        /// or under its column ID, so we add both to recognize the column as present.
+        /// Collect what actually exists in the source parts. A part's names go stale on a
+        /// metadata-only RENAME; its IDs do not.
         for (const auto & part : global_ctx->future_part->parts)
         {
             for (const auto & col : part->getColumns())
             {
                 columns_present_in_parts.emplace(col.name);
-                if (!col.column_id.empty())
-                    columns_present_in_parts.emplace(col.getColumnId().value());
+                column_ids_present_in_parts.emplace(col.getColumnId());
             }
         }
 
@@ -756,17 +756,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// Any storage column not present in any part and without a default expression is considered expired
         for (const auto & storage_column : global_ctx->storage_columns)
         {
-            bool present = columns_present_in_parts.contains(storage_column.name)
+            /// Base parts answer by ID -- a rename leaves their names stale. Patch parts carry no
+            /// IDs, and a rename target is by definition a name, so both of those stay by name.
+            bool present = column_ids_present_in_parts.contains(storage_column.getColumnId())
                 || columns_present_in_patch_parts.contains(storage_column.name)
                 || renamed_column_targets.contains(storage_column.name);
 
-            /// A part written before a rename holds the column under its ID, not the current name.
-            /// Patch parts carry no IDs, so only the base-part set needs the fallback.
-            if (!present && !storage_column.column_id.empty())
-                present = columns_present_in_parts.contains(storage_column.getColumnId().value());
-
             if (!present && !columns_desc.getDefault(storage_column.name))
-                global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
+                global_ctx->new_data_part->expired_column_ids.emplace(storage_column.getColumnId());
         }
     }
 
@@ -800,17 +797,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(global_ctx->metadata_snapshot->getPartitionKey(), global_ctx->data_settings, has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
     extractMergingAndGatheringColumns(exclude_index_names);
 
-    const auto & expired_columns = global_ctx->new_data_part->expired_columns;
-    if (!expired_columns.empty())
+    const auto & expired_column_ids = global_ctx->new_data_part->expired_column_ids;
+    if (!expired_column_ids.empty())
     {
-        global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(expired_columns);
+        global_ctx->gathering_columns.remove_if([&](const auto & column) { return expired_column_ids.contains(column.getColumnId()); });
 
         auto filter_columns = [&](const NamesAndTypesList & input, NamesAndTypesList & expired_out)
         {
             NamesAndTypesList result;
             for (const auto & column : input)
             {
-                bool is_expired = expired_columns.contains(column.name);
+                bool is_expired = expired_column_ids.contains(column.getColumnId());
                 bool is_required_for_merge = global_ctx->merge_required_columns.contains(column.name);
 
                 if (is_expired)
@@ -923,16 +920,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
+    /// Accumulate in the same key space the source parts and the new part use, so a source part's
+    /// records join directly and a record for a column no longer in the schema joins nothing.
+    infos.reKeyToColumnIds(global_ctx->storage_columns);
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
 
     for (const auto & part : global_ctx->future_part->parts)
     {
         if (!info_settings.isAlwaysDefault())
         {
-            /// Translate the source part's ID-keyed records to this merge's logical
-            /// names so `add` matches the keys of `infos`.
-            SerializationInfoByName part_infos
-                = part->getSerializationInfos().reKeyToLogicalNames(global_ctx->storage_columns, /*drop_orphans=*/true);
+            auto part_infos = part->getSerializationInfos();
 
             addMissedColumnsToSerializationInfos(
                 part->rows_count,
@@ -959,12 +956,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->setSourcePartsSet(std::move(set));
     }
 
-    /// The part's records are keyed by stamped column ID; `infos` was accumulated
-    /// in the logical-name domain above.
-    infos.reKeyToColumnIds(global_ctx->storage_columns);
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
 
-    /// partition / ttl_infos / minmax / expired_columns (and patch source parts) are populated
+    /// partition / ttl_infos / minmax / expired_column_ids (and patch source parts) are populated
     /// above interleaved with merge-only scratch, so they were allocated in the default arenas.
     /// Re-home them into the dedicated arena; the interleaved scratch stays out.
     global_ctx->new_data_part->moveMetadataToDedicatedArena();
@@ -1288,10 +1282,17 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
     for (const auto & projection : projections)
     {
         const auto & required_columns = projection.getRequiredColumns();
+        /// A projection names its sources logically, so resolve each against the schema the merge
+        /// reads -- `storage_columns` carries the stamped ids and is filled before this runs.
         bool some_source_column_expired = std::any_of(
             required_columns.begin(),
             required_columns.end(),
-            [&](const String & name) { return global_ctx->new_data_part->expired_columns.contains(name); });
+            [&](const String & name)
+            {
+                auto storage_column = global_ctx->storage_columns.tryGetByName(name);
+                return global_ctx->new_data_part->expired_column_ids.contains(
+                    storage_column ? storage_column->getColumnId() : ColumnId{name});
+            });
 
         /// The IGNORE mode is checked here purely for backward compatibility.
         /// However, if the projection contains `_parent_part_offset`, it must still be rebuilt,
@@ -1780,7 +1781,7 @@ bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
     ctx->use_prefetch = all_parts_on_remote_disks && storage_settings[MergeTreeSetting::vertical_merge_remote_filesystem_prefetch];
 
     if (ctx->use_prefetch && ctx->it_name_and_type != global_ctx->gathering_columns.end())
-        ctx->prepared_pipeline = createPipelineForReadingOneColumn(ctx->it_name_and_type->name);
+        ctx->prepared_pipeline = createPipelineForReadingOneColumn(*ctx->it_name_and_type);
 
     return false;
 }
@@ -1858,8 +1859,9 @@ private:
 };
 
 MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline
-MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & column_name) const
+MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const NameAndTypePair & column) const
 {
+    const auto & column_name = column.name;
     /// Read from all parts
     std::vector<QueryPlanPtr> plans;
     size_t part_starting_offset = 0;
@@ -1927,12 +1929,10 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
         else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
-        /// Probe the fresh output part's serialization by the merge column's storage key (id off the snapshot).
-        auto snapshot_column = global_ctx->metadata_snapshot->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
-        auto result_serialization = snapshot_column
-            ? global_ctx->new_data_part->tryGetSerialization(snapshot_column->getStorageKey())
-            : nullptr;
-        bool is_result_sparse = result_serialization && ISerialization::hasKind(result_serialization->getKindStack(), ISerialization::Kind::SPARSE);
+        /// The gathering column carries its own storage key, which is how the fresh output part
+        /// keys its serializations.
+        bool is_result_sparse = ISerialization::hasKind(
+            global_ctx->new_data_part->getSerialization(column.getStorageKey())->getKindStack(), ISerialization::Kind::SPARSE);
         auto merge_step = std::make_unique<ColumnGathererStep>(
             merge_column_query_plan.getCurrentHeader(),
             RowsSourcesTemporaryFile::FILE_ID,
@@ -1987,11 +1987,11 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         /// Prepare next column pipeline to initiate prefetching
         auto next_column_it = std::next(ctx->it_name_and_type);
         if (next_column_it != global_ctx->gathering_columns.end())
-            ctx->prepared_pipeline = createPipelineForReadingOneColumn(next_column_it->name);
+            ctx->prepared_pipeline = createPipelineForReadingOneColumn(*next_column_it);
     }
     else
     {
-        column_pipepline = createPipelineForReadingOneColumn(column_name);
+        column_pipepline = createPipelineForReadingOneColumn(*ctx->it_name_and_type);
     }
 
     ctx->build_statistics_transforms = std::move(column_pipepline.build_statistics_transforms);

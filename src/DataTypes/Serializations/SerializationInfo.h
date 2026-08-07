@@ -125,6 +125,10 @@ public:
     MutableSerializationInfoPtr tryGet(const String & name);
     ISerialization::KindStack getKindStack(const String & column_name) const;
 
+    /// Serialization of a part's column, from its own record if there is one.
+    SerializationPtr getSerialization(const NameAndTypePair & column) const;
+    SerializationPtr getSerialization(const NameAndTypePair & column, const String & record_key) const;
+
     /// Takes data from @other, but keeps current serialization kinds.
     /// If column exists in @other infos, but not in current infos,
     /// it's cloned to current infos.
@@ -135,14 +139,6 @@ public:
     /// records (matches the on-disk key). The map must be name-keyed: on an ID-keyed map
     /// a key that is one column's ID and another column's name would be re-bound wrongly.
     void reKeyToColumnIds(const NamesAndTypesList & columns);
-
-    /// Inverse of reKeyToColumnIds. Returns a name-keyed copy of this
-    /// (ID-keyed) map, resolving each record's stamped ID to its logical name in
-    /// `columns` (the join key is the ID, which is stable across RENAME). Records
-    /// whose ID is absent from `columns` are dropped-column orphans: dropped when
-    /// @drop_orphans, else kept under their ID. Used at part-producing boundaries
-    /// that feed a name-keyed accumulator (see the contract in ColumnIdMapping.h).
-    SerializationInfoByName reKeyToLogicalNames(const NamesAndTypesList & columns, bool drop_orphans) const;
 
     void writeJSON(WriteBuffer & out) const;
 

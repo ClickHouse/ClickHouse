@@ -18,6 +18,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -1008,8 +1009,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     for (const auto & [name, ttl_entry] : metadata_snapshot->getColumnTTLs())
     {
-        auto column_in_part = columns.tryGetByName(name);
-        String ttl_key = column_in_part ? column_in_part->getColumnId().value() : name;
+        const String ttl_key = getColumnIdInPart(columns, name).value();
         updateTTL(context, ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[ttl_key], block, true);
     }
 

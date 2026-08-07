@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
@@ -53,17 +48,14 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
-    const NameSet & empty_columns,
+    const ColumnIdSet & empty_column_ids,
     SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
     /// For compact part we have to override whole file with data, it's not
     /// worth it
-    if (empty_columns.empty() || isCompactPart(data_part))
+    if (empty_column_ids.empty() || isCompactPart(data_part))
         return {};
-
-    for (const auto & column : empty_columns)
-        LOG_TRACE(data_part->storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
@@ -78,36 +70,23 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             });
     }
 
-    const bool part_has_column_ids = std::any_of(
-        columns.begin(), columns.end(), [](const auto & column) { return !column.column_id.empty(); });
-
     NameSet remove_files;
     const String mrk_extension = data_part->getMarksFileExtension();
-    for (const auto & column_name : empty_columns)
+    for (const auto & column : columns)
     {
-        auto column_in_part = columns.tryGetByName(column_name);
+        if (!empty_column_ids.contains(column.getColumnId()))
+            continue;
 
-        /// When the empty column is absent from the list, fall back to the name resolver (legacy/non-id parts).
-        auto serialization = column_in_part
-            ? data_part->tryGetSerialization(column_in_part->getStorageKey())
-            : data_part->tryGetSerializationByNameUnsafe(column_name); /// legacy id-less part fallback
+        LOG_TRACE(data_part->storage.log, "Skipping expired/empty column {} for part {}", column.name, data_part->name);
+
+        auto serialization = data_part->tryGetSerialization(column.getStorageKey());
         if (!serialization)
             continue;
 
-        /// Deriving stream names from the logical name alone would produce
-        /// filenames that cannot exist on disk for an ID-stamped part.
-        if (!column_in_part && part_has_column_ids)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Empty column {} is not in the column list of part {} with column IDs",
-                column_name, data_part->name);
-
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            std::optional<String> stream_name;
-            if (column_in_part)
-                stream_name = IMergeTreeDataPart::getStreamNameForColumn(*column_in_part, substream_path, ".bin", checksums, data_part->storage.getSettings());
-            else
-                stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, data_part->storage.getSettings());
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+                column, substream_path, ".bin", checksums, data_part->storage.getSettings());
 
             /// Delete files if they are no longer shared with another column.
             if (stream_name && --stream_counts[*stream_name] == 0)
@@ -118,11 +97,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         };
 
         serialization->enumerateStreams(callback);
-        /// Records may sit under the stamped column ID (canonical) or under the
-        /// logical name (freshly produced by the write path); drop both.
-        serialization_infos.erase(column_name);
-        if (column_in_part)
-            serialization_infos.erase(column_in_part->getColumnId().value());
+        serialization_infos.erase(column.getStorageKey().value());
     }
 
     /// Remove files on disk and checksums
@@ -140,19 +115,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         }
     }
 
-    /// Remove columns from columns array
-    for (const String & empty_column_name : empty_columns)
-    {
-        auto find_func = [&empty_column_name](const auto & pair) -> bool
-        {
-            return pair.name == empty_column_name;
-        };
-        auto remove_it
-            = std::find_if(columns.begin(), columns.end(), find_func);
-
-        if (remove_it != columns.end())
-            columns.erase(remove_it);
-    }
+    columns.remove_if([&](const auto & column) { return empty_column_ids.contains(column.getColumnId()); });
 
     return remove_files;
 }

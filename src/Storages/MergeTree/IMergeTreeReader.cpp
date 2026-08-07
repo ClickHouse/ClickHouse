@@ -438,20 +438,13 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         return serialization;
     }
 
-    /// Records are keyed by the stamped column ID; `column_in_part` may come from the columns
-    /// description, which drops IDs, so probe the requested column's ID first.
-    if (!required_column.column_id.empty())
-    {
-        if (auto it = infos.find(required_column.getColumnId().value()); it != infos.end())
-            return IDataType::getSerialization(*column_in_part, *it->second);
+    /// `column_in_part` can come from the columns description, which drops ids, so the requested
+    /// column's id is the better key -- the part-own name only when it carries none.
+    const String record_key = required_column.column_id.empty()
+        ? column_in_part->getNameInStorage()
+        : required_column.getColumnId().value();
 
-        return IDataType::getSerialization(*column_in_part, infos.getSettings());
-    }
-
-    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
-        return IDataType::getSerialization(*column_in_part, *it->second);
-
-    return IDataType::getSerialization(*column_in_part, infos.getSettings());
+    return infos.getSerialization(*column_in_part, record_key);
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const

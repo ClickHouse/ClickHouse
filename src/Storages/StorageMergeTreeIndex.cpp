@@ -78,7 +78,7 @@ protected:
         const auto & index_granularity = part->index_granularity;
 
         /// Both caches below describe one part, so drop what the previous part left.
-        part_streams_by_header_name.reset();
+        part_streams_by_logical_name.reset();
         marks_loaders.clear();
 
         size_t num_columns = header->columns();
@@ -197,15 +197,16 @@ private:
         ISerialization::SubstreamPath substream_path;
     };
 
-    /// An escaped stream name as the header spells it: from the source table's current logical
-    /// column names (see TableFunctionMergeTreeIndex), which is all `fillMarks` is handed.
-    using HeaderStreamName = String;
+    /// A stream name as `getFileNameForStream` derives it from a column's CURRENT logical name --
+    /// never `getFileNameForStreamByColumnId`. The header's `<stream>.mark` columns are named this way
+    /// (see TableFunctionMergeTreeIndex), and the name is all `fillMarks` is handed.
+    using LogicalStreamName = String;
 
-    using PartStreamByHeaderName = std::unordered_map<HeaderStreamName, PartStream>;
+    using PartStreamByLogicalName = std::unordered_map<LogicalStreamName, PartStream>;
 
-    PartStreamByHeaderName buildPartStreamsByHeaderName(const MergeTreeDataPartPtr & part) const
+    PartStreamByLogicalName buildPartStreamsByLogicalName(const MergeTreeDataPartPtr & part) const
     {
-        PartStreamByHeaderName streams;
+        PartStreamByLogicalName streams;
         ISerialization::StreamFileNameSettings stream_file_name_settings(*part->storage.getSettings());
 
         for (const auto & column : source_metadata->getColumns().getAllPhysical())
@@ -233,15 +234,15 @@ private:
         return streams;
     }
 
-    ColumnPtr fillMarks(const MergeTreeDataPartPtr & part, const IDataType & data_type, const HeaderStreamName & header_stream_name)
+    ColumnPtr fillMarks(const MergeTreeDataPartPtr & part, const IDataType & data_type, const LogicalStreamName & logical_stream_name)
     {
         size_t num_rows = part->index_granularity->getMarksCount();
 
-        if (!part_streams_by_header_name)
-            part_streams_by_header_name = buildPartStreamsByHeaderName(part);
+        if (!part_streams_by_logical_name)
+            part_streams_by_logical_name = buildPartStreamsByLogicalName(part);
 
         std::optional<ColumnMarksLocation> marks_location;
-        if (auto it = part_streams_by_header_name->find(header_stream_name); it != part_streams_by_header_name->end())
+        if (auto it = part_streams_by_logical_name->find(logical_stream_name); it != part_streams_by_logical_name->end())
             marks_location = part->getColumnMarksLocation(it->second.column_in_part, it->second.substream_path);
 
         /// The part stores nothing for this stream, so the column has no marks here.
@@ -286,7 +287,7 @@ private:
 
     size_t part_index = 0;
 
-    std::optional<PartStreamByHeaderName> part_streams_by_header_name;
+    std::optional<PartStreamByLogicalName> part_streams_by_logical_name;
     /// Keyed by marks stream name, so a Wide part gets a loader per column and a Compact part one.
     std::unordered_map<String, std::shared_ptr<MergeTreeMarksLoader>> marks_loaders;
 };

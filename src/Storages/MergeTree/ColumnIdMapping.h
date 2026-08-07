@@ -184,4 +184,14 @@ private:
     std::unordered_map<String, String> id_to_logical;
 };
 
+/// The id a part's per-column artifacts carry for a column -- `minmax_<id>.idx`,
+/// `statistics_<id>.stats`, `ttl.txt` entries: `getColumnId()` of the part's column of that name, so a
+/// metadata-only RENAME cannot orphan them. A name the part does not hold passes through as an id, the
+/// same fallback `getColumnId()` itself makes. Whole columns only -- for the subcolumn-aware form that
+/// keys `getSerialization`, see `NameAndTypePair::getStorageKey`.
+ColumnId getColumnIdInPart(const NamesAndTypesList & part_columns, const String & column_name);
+
+/// Inverse of getColumnIdInPart.
+String getColumnNameByIdInPart(const NamesAndTypesList & part_columns, const ColumnId & column_id);
+
 }

@@ -4,6 +4,7 @@
 #include <IO/PackedFilesWriter.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Storages/MergeTree/ColumnIdMapping.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Common/escapeForFileName.h>
 
@@ -13,9 +14,7 @@ namespace DB
 static String getStatisticsFilename(const String & column_name, const NamesAndTypesList & part_columns)
 {
     /// Note, we cannot use replaceFileNameToHashIfNeeded(), since we do not handle hashes->column names for statistics in getColumnForStatisticsFile()
-    auto column_in_part = part_columns.tryGetByName(column_name);
-    String file_key = column_in_part ? column_in_part->getColumnId().value() : column_name;
-    return String(STATS_FILE_PREFIX) + escapeForFileName(file_key) + String(STATS_FILE_SUFFIX);
+    return String(STATS_FILE_PREFIX) + escapeForFileName(getColumnIdInPart(part_columns, column_name).value()) + String(STATS_FILE_SUFFIX);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(

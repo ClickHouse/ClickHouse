@@ -68,12 +68,12 @@ public:
     }
 
 protected:
-    /// Remove all columns in @empty_columns. Also, clears checksums
+    /// Remove every column of @empty_column_ids. Also, clears checksums
     /// and columns array. Return set of removed files names.
     NameSet removeEmptyColumnsFromPart(
         const MergeTreeDataPartPtr & data_part,
         NamesAndTypesList & columns,
-        const NameSet & empty_columns,
+        const ColumnIdSet & empty_column_ids,
         SerializationInfoByName & serialization_infos,
         MergeTreeData::DataPart::Checksums & checksums);
 

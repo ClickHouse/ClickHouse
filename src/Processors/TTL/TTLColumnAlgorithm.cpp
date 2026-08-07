@@ -51,7 +51,7 @@ void TTLColumnAlgorithm::execute(Block & block)
     /// will logically read. Evaluate the DDL `DEFAULT` expression (matching the per-row slow
     /// path below), falling back to the type default only when the column has no `DEFAULT`.
     /// Filling the type default here would make a rebuilt projection materialize the type
-    /// default (e.g. `0`) while the base reads the DDL default (e.g. `-1`) via `expired_columns`.
+    /// default (e.g. `0`) while the base reads the DDL default (e.g. `-1`) via `expired_column_ids`.
     if (isMaxTTLExpired() && !is_compact_part)
     {
         auto result_column = column_with_type.column->cloneEmpty();
@@ -108,7 +108,7 @@ void TTLColumnAlgorithm::finalize(const MutableDataPartPtr & data_part) const
     data_part->ttl_infos.columns_ttl[column_id.value()] = new_ttl_info;
     data_part->ttl_infos.updatePartMinMaxTTL(new_ttl_info);
     if (is_fully_empty)
-        data_part->expired_columns.insert(column_name);
+        data_part->expired_column_ids.insert(column_id);
 }
 
 }

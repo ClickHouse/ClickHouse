@@ -414,25 +414,14 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
             }
         }
 
-        /// Substreams are keyed by the part's own key: the column ID when the part carries one,
-        /// the logical name otherwise.
-        String column_id_for_substreams = column;
-        String logical_name_for_substreams;
-        if (!first_column.column_id.empty())
-        {
-            column_id_for_substreams = first_column.getColumnId().value();
-            logical_name_for_substreams = first_column.getNameInStorage();
-        }
-
         /// Set check_stream_exists_callback so that enumerateStreams can skip substreams
         /// that do not exist in this part (e.g. MapBucketIndexes in old bucketed Map parts).
-        /// Go through the id-aware lookup, which tries the column ID before the logical name.
         enumerate_settings.check_stream_exists_callback = [&, column_pos = *pos](const ISerialization::SubstreamPath & substream_path) -> bool
         {
             return columns_substreams.tryGetSubstreamPosition(column_pos, first_column, substream_path, storage_settings).has_value();
         };
 
-        auto order = getSubcolumnsDeserializationOrder(column_id_for_substreams, logical_name_for_substreams, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
+        auto order = getSubcolumnsDeserializationOrder(first_column, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
         deserialization_order.reserve(subcolumns_indexes.size());
         for (size_t i : order)
             deserialization_order.push_back(subcolumn_data_index_to_subcolumn_index[i]);

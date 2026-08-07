@@ -479,7 +479,7 @@ private:
         bool executeVerticalMergeForOneColumn() const;
         void finalizeVerticalMergeForOneColumn() const;
 
-        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
+        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const NameAndTypePair & column) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;

@@ -231,14 +231,14 @@ size_t MergeTreeReaderWide::readRows(
                     cache,
                     deserialize_states_cache);
 
-                /// Flattened Nested subcolumns with column IDs (e.g. "n.x", "n.y")
-                /// use separate SubstreamsCaches but share a single on-disk offset stream.
-                /// Without column IDs they would be subcolumns of a common parent "n"
-                /// and share `caches["n"]`, so the first sibling's offsets are reused via
-                /// cache hit. With column IDs the caches diverge, forcing the second
-                /// sibling to re-read the stream whose position was already advanced by the
-                /// first sibling (and possibly not re-seekable due to prefetching on S3).
-                /// Pre-populate upcoming siblings' caches with the offsets we just read.
+                /// Flattened Nested siblings ("n.x", "n.y") share one on-disk offsets stream. Without
+                /// ids they resolve as subcolumns of a common parent "n", share `caches["n"]`, and the
+                /// second sibling gets the first one's offsets from the cache. Ids make them separate
+                /// top-level columns, so each gets its own cache and the second would re-read a stream
+                /// the first already advanced -- which does NOT self-correct: the siblings then report
+                /// different row counts and a plain SELECT trips `ReadResult::checkInternalConsistency`.
+                /// Hand the offsets we just read to the siblings still to come. Only the offsets: a
+                /// shared cache would alias the value substreams, whose cache keys are equal too.
                 if (column_offset_stream[pos])
                 {
                     if (auto cached = ISerialization::getColumnWithNumReadRowsFromSubstreamsCache(&cache, offsets_path))
@@ -463,10 +463,9 @@ ReadBuffer * MergeTreeReaderWide::getStream(
         && substream_path.back().type == ISerialization::Substream::ArraySizes
         && Nested::extractTableName(name_and_type.getNameInStorage()) != name_and_type.getNameInStorage())
     {
-        /// Defense-in-depth: normally the cache-sharing logic in `readRows`
-        /// pre-populates siblings' caches so this branch is not reached.
-        /// But if offset caching was skipped (e.g. exception during readData,
-        /// or a code path bypassing readRows), this ensures correct re-read.
+        /// The markless whole-part read (merges, mutations) reaches this on every offsets substream
+        /// of a flattened Nested sibling: the cache sharing in `readRows` covers reads that go
+        /// through it, and there is no mark here to seek back to, so rewind to the stream's start.
         stream.seekToStart();
     }
 

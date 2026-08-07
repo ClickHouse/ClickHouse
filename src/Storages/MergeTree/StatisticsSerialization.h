@@ -17,9 +17,7 @@ using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
 
-/// Statistics filenames are derived from the part's stamped column IDs
-/// (`part_columns`), matching the data-stream naming; the logical name is
-/// used only for columns absent from the list.
+/// Both name each file after the column's id in `part_columns` (see getColumnIdInPart).
 
 /// Serialize statistics into a single packed archive file (statistics.packed).
 std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
