@@ -50,6 +50,22 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     if (!isDefaultGCSHost(Poco::URI(url.endpoint).getHost()))
         gcs_settings.endpoint_override = url.endpoint;
 
+    /// A presigned URL carries its authentication in the query string (`GoogleAccessId` / `Signature`
+    /// / `Expires` for V2, `X-Goog-*` for V4; `S3::URI` deliberately preserves these parameters). The
+    /// S3-compatibility path forwards them with every request, but the native client authenticates
+    /// with its own credentials and never sends the query parameters, so it would silently replace
+    /// the signature the user supplied with the server's ambient Google identity. Fail close instead.
+    for (const auto & [query_key, query_value] : url.uri.getQueryParameters())
+    {
+        if (query_key == "GoogleAccessId" || query_key == "Signature" || query_key == "Expires"
+            || query_key == "AWSAccessKeyId" || query_key.starts_with("X-Goog-") || query_key.starts_with("X-Amz-"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Presigned URLs (query parameter `{}`) are not supported by the native GCS backend: "
+                "it authenticates with its own credentials and would ignore the URL's signature. "
+                "Disable `use_native_gcs` to access the presigned URL through the S3-compatibility API",
+                query_key);
+    }
+
     const auto & auth = s3_settings->auth_settings;
 
     /// The argument grammar is shared with `s3(...)`, so a query or named collection can supply
