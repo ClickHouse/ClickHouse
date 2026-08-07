@@ -2184,18 +2184,23 @@ LogsQLParser::StatsFunc LogsQLParser::parseStatsFunc()
 
         ASTPtr column = args.empty() ? nullptr : columnExpr(args[0]);
         std::optional<Float64> range_seconds;
+        ASTPtr range_seconds_expr;
         /// A `_time` bucket of the same stats pipe takes precedence over the whole query range.
         if (current_stats_time_bucket_ns && *current_stats_time_bucket_ns > 0)
             range_seconds = static_cast<Float64>(*current_stats_time_bucket_ns) / 1e9;
         else if (query_time_range_ns && *query_time_range_ns > 0)
             range_seconds = static_cast<Float64>(*query_time_range_ns) / 1e9;
-        return {canonical, [column, range_seconds](ASTPtr condition)
+        else if (query_time_range_seconds_expr)
+            range_seconds_expr = query_time_range_seconds_expr;
+        return {canonical, [column, range_seconds, range_seconds_expr](ASTPtr condition)
         {
             ASTPtr result = column
                 ? makeAggregate("sum", {column->clone()}, condition)
                 : makeAggregate("count", {}, condition);
             if (range_seconds)
                 result = makeASTFunction("divide", result, make_intrusive<ASTLiteral>(Field(*range_seconds)));
+            else if (range_seconds_expr)
+                result = makeASTFunction("divide", result, range_seconds_expr->clone());
             return result;
         }};
     }
@@ -2480,8 +2485,8 @@ ASTPtr LogsQLParser::parseMathExpr(int max_priority)
 
         if (String(it->second.function) == "__default")
         {
-            /// `a default b` returns b when a is not a finite number.
-            left = makeASTFunction("if", makeASTFunction("isNaN", left->clone()), right, left);
+            /// `a default b` returns b when a is not a finite number (NaN or infinity).
+            left = makeASTFunction("if", makeASTFunction("isFinite", left->clone()), left, right);
         }
         else
         {
