@@ -131,6 +131,15 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/fasttest"],
     ),
+    # AMD only: the signing job runs on x86_64, and the pinned aws-kms-pkcs11
+    # asset is per OS release and per architecture, so arm would need a second
+    # pinned hash for no current benefit.
+    Docker.Config(
+        name="clickhouse/macos-signer",
+        path="./ci/docker/macos-signer",
+        platforms=[Docker.Platforms.AMD],
+        depends_on=["clickhouse/fasttest"],
+    ),
     Docker.Config(
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
