@@ -123,6 +123,10 @@ by default). The data is also collected when the query finishes if the query tak
 - `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/reference/data-types/int-uint)) — Total number of returned object infos from iceberg iterator.
 - `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
 - `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
+- `ProfileEvent_OneLakeAccessTokenRequests` ([UInt64](/reference/data-types/int-uint)) — Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.
+- `ProfileEvent_OneLakeAccessTokenRequestFailures` ([UInt64](/reference/data-types/int-uint)) — Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).
+- `ProfileEvent_OneLakeAccessTokenRequestMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Total time spent requesting access tokens via the Entra ID refresh token grant in the OneLake catalog.
+- `ProfileEvent_OneLakeAccessTokenExpirations` ([UInt64](/reference/data-types/int-uint)) — Number of times the cached OneLake access token was found expired and renewed transparently.
 - `ProfileEvent_VectorSimilarityIndexCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times an index granule has been found in the vector index cache.
 - `ProfileEvent_VectorSimilarityIndexCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times an index granule has not been found in the vector index cache and had to be read from disk.
 - `ProfileEvent_VectorSimilarityIndexCacheWeightLost` ([UInt64](/reference/data-types/int-uint)) — Approximate number of bytes evicted from the vector index cache.

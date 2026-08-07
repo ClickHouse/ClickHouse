@@ -70,6 +70,18 @@ Enable custom error code in function throwIf(). If true, thrown exceptions may h
 
 If it is set to true, then a user is allowed to executed DDL queries.
 
+## allow_delta_kernel_rs {#allow_delta_kernel_rs}
+
+<BetaBadge/>
+
+**Aliases**: `allow_experimental_delta_kernel_rs`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New name of `allow_experimental_delta_kernel_rs`, which is no longer experimental and is kept as an alias. The default is unchanged."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "1"},{"label": "New setting. Introduced under the name `allow_experimental_delta_kernel_rs`, which is now an alias of it; the row is carried forward under the canonical name so that it keeps the whole history."}]}]}/>
+
+Allow the `delta-kernel-rs` implementation for reading Delta Lake tables.
+
 ## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

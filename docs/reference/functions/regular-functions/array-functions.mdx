@@ -4964,6 +4964,11 @@ Returns the index of the first element with value 'x' (starting from 1) if it is
 If the array does not contain the searched-for value, the function returns `0`.
 
 Elements set to `NULL` are handled as normal values.
+
+`NaN` elements do not follow the `NULL` rule above.
+A scalar comparison of two `NaN` values (`NaN = NaN`) is `0`, but `indexOf` may still report a `NaN` element as found.
+Whether it does is an implementation detail. Do not rely on a specific behavior.
+To find one, test for it: `arrayFirstIndex(x -> isNaN(x), arr)` returns its position, `arrayExists(x -> isNaN(x), arr)` a flag.
     
 
 **Syntax**
