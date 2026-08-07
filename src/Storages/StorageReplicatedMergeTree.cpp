@@ -1781,11 +1781,42 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
 
     ReplicatedMergeTreeTableMetadata old_metadata(*this, metadata_snapshot);
 
-    Coordination::Stat metadata_stat;
-    String metadata_str = zookeeper->get(fs::path(zookeeper_prefix) / "metadata", &metadata_stat);
+    const String metadata_path = fs::path(zookeeper_prefix) / "metadata";
+    const String columns_path = fs::path(zookeeper_prefix) / "columns";
 
-    Coordination::Stat columns_stat;
-    auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns", &columns_stat));
+    /// The ZooKeeper-side metadata is parsed against the ZooKeeper-side columns below, so the two
+    /// nodes must come from the same metadata version: a concurrent `ALTER_METADATA` landing
+    /// between two unchecked `get`s could pair old metadata (e.g. an index over a since-renamed
+    /// column) with new columns and make the parsing throw before the non-strict
+    /// concurrent-`ALTER` handling below. Validate the pair with `check` requests and re-read it
+    /// on a version mismatch, the same way `cloneMetadataIfNeeded` does.
+    Coordination::Stat metadata_stat;
+    String metadata_str;
+    String columns_str;
+    while (true)
+    {
+        if (shutdown_called)
+            throw Exception(ErrorCodes::ABORTED, "Cannot check table structure because shutdown was called");
+
+        Coordination::Stat columns_stat;
+        metadata_str = zookeeper->get(metadata_path, &metadata_stat);
+        columns_str = zookeeper->get(columns_path, &columns_stat);
+
+        Coordination::Requests ops;
+        Coordination::Responses responses;
+        ops.emplace_back(zkutil::makeCheckRequest(metadata_path, metadata_stat.version));
+        ops.emplace_back(zkutil::makeCheckRequest(columns_path, columns_stat.version));
+
+        Coordination::Error code = zookeeper->tryMulti(ops, responses, /* check_session_valid */ true);
+        if (code == Coordination::Error::ZOK)
+            break;
+        if (code == Coordination::Error::ZBADVERSION)
+            LOG_WARNING(log, "Table metadata in ZooKeeper was changed concurrently (path: {}), will read it again", zookeeper_prefix);
+        else
+            zkutil::KeeperMultiException::check(code, ops, responses);
+    }
+
+    auto columns_from_zk = ColumnsDescription::parse(columns_str);
 
     /// Parse the ZooKeeper-side metadata against the ZooKeeper-side columns: if the table was
     /// altered concurrently, the metadata may reference a column the local snapshot does not
