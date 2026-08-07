@@ -589,16 +589,46 @@ def check_compose_images(files) -> str:
 
 
 def check_settings_changes_history():
-    """Every setting added or value-changed in src/Core/SettingsChangesHistory.cpp by this
-    change must be recorded under the CURRENT version block (in addition to any older block
+    """Every setting added, value-changed, removed, moved to another block, or sitting in a
+    block whose `addSettingsChanges` header changed, in src/Core/SettingsChangesHistory.cpp by
+    this change must be recorded under the CURRENT version block (in addition to any older block
     used for backports), so the settings history stays consistent with the release version
     (together with the 03999_stateless_settings_history functional test, which checks that
     the recorded value matches the final Settings state).
+
+    Removals count too: the functional test only compares the current default with the NEWEST
+    recorded value, so a change that reverts a default to an older value could delete the record
+    of the original change instead of recording the revert, and both guards would stay green
+    while `compatibility` would hand out the wrong value for the release that shipped the other
+    default. Deleting a phantom record stays possible - see the gate below, it is a change that
+    touches this file alone. Moves count for the same reason: re-adding an unchanged record under
+    an older block leaves the newest recorded value intact, so the functional test passes while
+    `compatibility` attributes the default flip to the wrong release. A block header edit does
+    the same to every record of that block at once, without touching a single entry line, so
+    such a change reports the whole block.
+
+    A record RENAMED in place - removed and re-added in the same block, identical apart from the
+    setting name - is reported under the new name only (see `parse_settings_history_changes`).
+    The old name cannot be demanded here: the setting is gone, and 03999_stateless_settings_history
+    rejects a documented name that no longer exists, so requiring it would leave no history file
+    that satisfies both guards.
 
     Runs only when that file changed; the list of changed setting names is provided by the
     store_data.py workflow hook (which parses the PR / merge-queue diff). Returns "" on
     success or a non-empty error string on failure (consumed by Result.from_commands_run).
     Pure text parsing - no C++ syntax analysis.
+
+    A change that touches no C++ source at all besides SettingsChangesHistory.cpp cannot have
+    changed any setting's compiled default, so it is a historical correction - fixing what a past
+    release recorded - not a default change made now, and it is allowed (the check skips).
+    Requiring it under the current version block would tell `compatibility` the value changed
+    again in this release. The gate deliberately keys off any src/ source file rather than the
+    declaration files alone: a default can come from a constant defined elsewhere (for example
+    `DEFAULT_INSERT_BLOCK_SIZE` or `DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC` in src/Core/Defines.h),
+    and a narrower gate would let such a change be recorded in an older block unnoticed. Build
+    definitions are treated the same way: defaults also switch on compile definitions such as
+    `CLICKHOUSE_CLOUD` and `ENABLE_DISTRIBUTED_CACHE`, which come from CMake files and config
+    templates, so changes to CMakeLists.txt / *.cmake / *.h.in also enforce the rule.
 
     Fail-close: if the file changed but the hook could not fetch the diff (e.g. in the merge
     queue), fail rather than silently pass - a green here would defeat the purpose."""
@@ -617,6 +647,30 @@ def check_settings_changes_history():
         # The history file was not changed in this run - nothing to validate.
         return ""
 
+    # A change that touches no default-bearing source besides this file cannot have changed any
+    # setting's compiled default, so it is a historical correction (fixing what a past release
+    # recorded), not a default change made now - it must not be forced into the current version
+    # block. Enforce the current-block rule as soon as any other source file changed: defaults
+    # are not only written in the declaration files, they can come from constants defined
+    # anywhere (for example src/Core/Defines.h). Build definitions count as sources too:
+    # defaults switch on compile definitions such as `CLICKHOUSE_CLOUD` and
+    # `ENABLE_DISTRIBUTED_CACHE`, which are driven by CMake files and config templates
+    # (CMakeLists.txt, *.cmake, src/Common/config.h.in), so anything narrower would leave a
+    # silent hole. The price is over-strictness for a change that corrects an old entry and
+    # edits unrelated code in the same commit - the message below says how to proceed.
+    def is_default_bearing_source(f):
+        if f == path:
+            return False
+        if f.startswith("src/") and f.endswith((".h", ".cpp", ".inc")):
+            return True
+        return f.rsplit("/", 1)[-1] == "CMakeLists.txt" or f.endswith(
+            (".cmake", ".cmake.in", ".h.in", ".hpp.in")
+        )
+
+    other_sources_changed = any(is_default_bearing_source(f) for f in changed_files)
+    if not other_sources_changed:
+        return ""
+
     fetch_error = kv.get("settings_history_fetch_error")
     changed = kv.get("settings_history_changed_settings")
     if fetch_error or changed is None:
@@ -626,8 +680,9 @@ def check_settings_changes_history():
             f"Error: {fetch_error or 'no data recorded by the store_data.py workflow hook'}."
         )
     if not changed:
-        # The file changed but no setting entries were added (e.g. only reason-text edits or
-        # removals) - nothing to validate against the current version block.
+        # The file changed but no setting record was added, value-edited, removed or moved and
+        # no block header changed (e.g. only reason-text edits, or entries reordered inside one
+        # block) - nothing to validate against the current version block.
         return ""
 
     version_txt = Path("cmake/autogenerated_versions.txt").read_text(encoding="utf-8")
@@ -669,10 +724,17 @@ def check_settings_changes_history():
 
     if violations:
         return (
-            f"These settings were added or value-changed in {path} but are not recorded under "
-            f"the current version ('{current_version}') block of SettingsChangesHistory.cpp. Add "
+            f"These settings were added, value-changed, removed, moved to another block, or "
+            f"sit in a block whose `addSettingsChanges` header changed, in {path}, "
+            f"but are not recorded "
+            f"under the current version ('{current_version}') block of "
+            f"SettingsChangesHistory.cpp. Add "
             f"an entry for each under the '{current_version}' block (older blocks may keep their "
-            f"entries for backports):\n" + "\n".join(sorted(set(violations)))
+            f"entries for backports). If this is a correction of what an older release recorded "
+            f"and not a default change made here, split it into a change that touches only "
+            f"{path}. If you RENAMED a setting, keep its record in the same block and change "
+            f"only the name in it - the values and the reason text must stay identical for the "
+            f"rename to be recognized:\n" + "\n".join(sorted(set(violations)))
         )
     return ""
 

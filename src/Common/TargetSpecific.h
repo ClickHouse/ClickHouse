@@ -97,7 +97,7 @@ enum class TargetArch : UInt32
 UInt32 getSupportedArchs();
 inline ALWAYS_INLINE bool isArchSupported(TargetArch arch)
 {
-    static UInt32 arches = getSupportedArchs();
+    static const UInt32 arches = getSupportedArchs();
     return arch == TargetArch::Default || (arches & static_cast<UInt32>(arch));
 }
 

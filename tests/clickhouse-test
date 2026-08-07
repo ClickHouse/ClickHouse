@@ -141,6 +141,54 @@ IGNORED_SANITIZER_ERRORS = [
     # "LLVM ERROR: IO failure on output stream: Broken pipe",
 ]
 
+LSAN_PTRACE_WARNING = "WARNING: ptrace appears to be blocked (is seccomp enabled?)"
+LSAN_PTRACE_CHILD_EXIT_RE = re.compile(r"Child exited with signal (\d+)\.")
+
+# Tag for a test that signals every process it finds by grepping /proc/*/cmdline for its own mark.
+# Such a test also hits sanitizer-internal forks, which inherit the client's argv.
+KILLS_PROCESSES_BY_CMDLINE_TAG = "kills-processes-by-cmdline"
+
+
+def find_benign_lsan_ptrace_probe_lines(lines, kills_processes_by_cmdline):
+    """Return indexes of LSan `TestPTrace` lines that are safe to drop from a sanitizer log.
+
+    `TestPTrace` forks a short-lived child that issues one throwaway `ptrace` call to find out
+    whether `ptrace` is blocked, and prints these two lines back to back if that child dies from a
+    signal. Neither line can be whitelisted on its own, because the same pair also reports a real
+    seccomp `ptrace` block, so two conditions must hold together.
+
+    First, only a test that signals processes it found in `/proc/*/cmdline` can produce the benign
+    case: the probe child inherits the client's argv, so it matches such a test's own mark. That is
+    what the `kills-processes-by-cmdline` tag marks, and it keeps every other test's diagnostics
+    untouched.
+
+    Second, the reported signal must not be `SIGSYS`, which is how seccomp kills the child when it
+    really denies the `ptrace` call. It cannot be narrowed further than that: `WTERMSIG` reports
+    whatever signal reaped the child, not what the test sent, and in CI this pair has carried
+    signal 42 and signal 36.
+
+    The signal is not a reliable discriminator on its own, which is why the tag is required too.
+    `TestPTrace` ignores the result of its `internal_waitpid` and reads a possibly untouched
+    `wstatus`, so a wait interrupted by `EINTR` reports a stale signal number: measured on a
+    seccomp-blocked probe raced with `SIGINT`, 812 of 2000 real blocks were reported with a stale
+    non-`SIGSYS` signal, versus 0 of 2000 without the race. The guarantee this gives is therefore
+    scoped, not absolute - outside the tagged test nothing is ever dropped, so a real block is
+    always reported, while inside it a real block that the upstream bug misreports can be dropped.
+    That is the trade the tag exists to bound.
+    """
+    if not kills_processes_by_cmdline:
+        return set()
+
+    benign = set()
+    for index, line in enumerate(lines):
+        if LSAN_PTRACE_WARNING not in line or index + 1 >= len(lines):
+            continue
+        match = LSAN_PTRACE_CHILD_EXIT_RE.search(lines[index + 1])
+        if match and int(match.group(1)) != signal.SIGSYS:
+            benign.update((index, index + 1))
+    return benign
+
+
 MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
@@ -1002,58 +1050,12 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-_LLDB_INSTALL_ATTEMPTED = False
-
-
-def _ensure_lldb_installed():
-    """Make sure `lldb` is on PATH, installing it on the fly if not.
-
-    TEMPORARY scaffolding: the CI base images currently ship `gdb` (from the
-    `clickhouse/cctools` layer), not `lldb`. While the switch to `lldb` is in
-    flight, install it at runtime so `print_c_stacktraces` keeps working.
-    Once `ci/docker/cctools/Dockerfile` (and the images that copy from it)
-    install `lldb` permanently, this helper and its single call site below
-    should be removed.
-
-    Never raise: `print_c_stacktraces` is a best-effort diagnostic. If the
-    install fails (no sudo, no network, no `brew`, ...), let
-    `shell_get_output` return "" so the surrounding diagnostic flow keeps
-    going instead of crashing during an already-broken run.
-
-    Bounded and idempotent: each subprocess call has a hard timeout so a
-    stalled package mirror cannot wedge stacktrace collection for minutes,
-    and a process-wide flag ensures only the first call attempts the
-    install — `print_c_stacktraces` iterates over every server PID, and we
-    must not pay the install cost (or timeout) for each one if the first
-    attempt already failed.
-    """
-    global _LLDB_INSTALL_ATTEMPTED
-    if shutil.which("lldb"):
-        return
-    if _LLDB_INSTALL_ATTEMPTED:
-        return
-    _LLDB_INSTALL_ATTEMPTED = True
-    try:
-        if platform.system() == "Darwin":
-            subprocess.run(["brew", "install", "llvm"], check=True, timeout=180)
-        else:
-            env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
-            subprocess.run(["apt-get", "update"], check=True, env=env, timeout=60)
-            subprocess.run(
-                ["apt-get", "install", "-y", "lldb"],
-                check=True, env=env, timeout=120,
-            )
-    except Exception as e:
-        print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
-
-
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
 def get_stacktraces_from_lldb(pid):
     # 30s ceiling: `thread backtrace all` should finish in seconds even on a
     # debug build with many threads; anything beyond that means lldb itself
     # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
     # leaves the server process untouched.
-    _ensure_lldb_installed()  # TEMPORARY: see _ensure_lldb_installed docstring.
     # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
     # attach to the server on a CI runner (the user is not in the _developer
     # group and there is no interactive authorization), so it exits 1. The
@@ -1078,6 +1080,11 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
     settings_str = " ".join(
         [
             get_additional_client_options(args),
+            # The options above can repeat: they come from both the environment
+            # and `--client-option`. `add_effective_settings` adds this flag only
+            # while a test runs, and this collector runs from the hung check and
+            # the per-test timeout handler, where it may not be set.
+            "--allow_repeated_settings",
             "--allow_introspection_functions=1",
             "--skip_unavailable_shards=1",
         ]
@@ -1134,7 +1141,46 @@ def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[
         ps = [p for p in ps if command in p[3]]
     return ps
 
-def get_all_server_pids():
+def _is_server_cmdline(cmdline: str, binary: str = "clickhouse") -> bool:
+    """True when argv IS the server, not a process that merely mentions it.
+
+    Accepts both shapes find_clickhouse_command() can pick: the `-server`
+    symlink, else the multicall selector, bare or `--`-prefixed.
+    """
+    parts = cmdline.split()
+    if not parts:
+        return False
+    argv0 = os.path.basename(parts[0])
+    base = os.path.basename(binary)
+    if argv0 in ("clickhouse-server", base + "-server"):
+        return True
+    if argv0 not in ("clickhouse", base):
+        return False
+    return len(parts) > 1 and parts[1] in ("server", "--server")
+
+
+# src/Common/setThreadName.h maps ThreadName::CLICKHOUSE_WATCH to this literal,
+# and src/Daemon/BaseDaemon.cpp applies it to the watchdog parent.  15 bytes, so
+# the kernel's 16-byte comm limit does not truncate it.
+WATCHDOG_COMM = "ClickHouseWatch"
+
+
+def _process_comm(pid: int) -> str:
+    """Short process name from /proc/<pid>/comm, or "" when unreadable.
+
+    Never raises: the process can exit between the `ps` scan and this read, and
+    on non-Linux there is no /proc at all.  Both cases mean "no watchdog
+    evidence", which keeps the pid helpers usable on the abort path where an
+    exception would replace the diagnostics we came to collect.
+    """
+    try:
+        with open(f"/proc/{pid}/comm", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def get_all_server_pids(args):
     """Get PIDs of all clickhouse-server processes visible to the current user.
 
     No pgid scoping: in every real scenario where this helper is useful the
@@ -1142,8 +1188,31 @@ def get_all_server_pids():
     Docker, systemd, and the `ClickHouseService` test fixture all spawn the
     server with `start_new_session=True` or equivalent).  A pgid filter
     silently filters out everything we are meant to find.
+
+    Two watchdog tests, because a watchdog can present a server argv:
+
+    1. It parents another match.  Not "drop the lowest pid": sibling replicas
+       share a ppid and both must survive.
+    2. Its comm is the watchdog's AND no watchdog is above it.  The comm half is
+       only sound for a survivor with no watchdog parent, since comm is
+       inherited across fork: a server restarted by its own watchdog carries
+       WATCHDOG_COMM.  A watchdog parent is recognised by comm, not by argv,
+       because it renames itself to `clickhouse-watchdog` and so stops matching.
+       Tie-breaker only: if it leaves nothing, keep the matches.
     """
-    return [p[0] for p in pgrep(command="clickhouse-server")]
+    binary = getattr(args, "binary", "clickhouse")
+    matches = [p for p in pgrep() if _is_server_cmdline(p[3], binary)]
+    match_pids = {p[0] for p in matches}
+    parents = {p[1] for p in matches}
+    survivors = [p for p in matches if p[0] not in parents]
+    serving = [
+        p[0]
+        for p in survivors
+        if p[1] in match_pids
+        or _process_comm(p[1]) == WATCHDOG_COMM
+        or _process_comm(p[0]) != WATCHDOG_COMM
+    ]
+    return serving or [p[0] for p in survivors]
 
 
 def is_asan_build(args):
@@ -1216,8 +1285,11 @@ def print_c_stacktraces(args) -> None:
         )
         return
 
-    server_pid = get_server_pid()
-    all_pids = get_all_server_pids()
+    # One process-table snapshot for both values.  Calling get_server_pid()
+    # here would run a second, independent `ps`; on a changing table the two
+    # could disagree and then no pid gets the "main server" label at all.
+    all_pids = get_all_server_pids(args)
+    server_pid = all_pids[0] if all_pids else None
     if not all_pids:
         print(
             colored(
@@ -1266,16 +1338,14 @@ def print_sql_stacktraces(args) -> None:
         print(f"(full system.stack_trace dump saved to {SQL_STACKTRACES_LOG})")
 
 
-def get_server_pid():
-    # Use the portable pgrep helper (built on `ps -eo pid,ppid,pgid,command`)
-    # so this works on both Linux and macOS — `pidof` does not exist on
-    # macOS, and `lsof -i tcp:PORT` would require knowing the port (only
-    # available on `args`, which is undefined in multiprocessing children
-    # spawned with the `spawn` start method).
-    procs = pgrep(command="clickhouse-server")
-    if not procs:
+def get_server_pid(args):
+    # Delegate to get_all_server_pids so the two helpers cannot disagree about
+    # which process is the server. They did, which is how a shell wrapper got
+    # labelled "main server" while the real server was labelled "replica".
+    pids = get_all_server_pids(args)
+    if not pids:
         return None  # most likely server is dead
-    return procs[0][0]
+    return pids[0]
 
 
 def colored(text, args, color=None, on_color=None, attrs=None):
@@ -1424,6 +1494,12 @@ class SettingsRandomizer:
         "fsync_metadata": lambda: random.randint(0, 1),
         "output_format_parallel_formatting": lambda: random.randint(0, 1),
         "input_format_parallel_parsing": lambda: random.randint(0, 1),
+        # Exercise the disabled path (0), a small limit that only applies to tiny dictionaries, and
+        # the default limit for the Parquet v3 dictionary-based row group filter. Tests that depend
+        # on a fixed pruning behaviour set this setting explicitly (per query or per session).
+        "input_format_parquet_dictionary_filter_push_down": lambda: random.choices(
+            [0, 256, 1048576], weights=[1, 1, 3]
+        )[0],
         "min_chunk_bytes_for_parallel_parsing": lambda: max(
             1024, int(random.gauss(10 * 1024 * 1024, 5 * 1000 * 1000))
         ),
@@ -2192,6 +2268,13 @@ class TestCase:
         testcase_args.debug_log_file = (
             os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".debuglog"
         )
+        # The bash xtrace (`BASH_XTRACEFD`, see `shell_config.sh`) gets its OWN file. Sharing the
+        # expect trace's path is what lost records: `shell_config.sh` used to open that path with
+        # O_TRUNC on every `source`, i.e. once per `spawn`, discarding what expect had appended.
+        # With separate files each writer owns its artifact and appends to it.
+        testcase_args.bash_tracing_file = (
+            os.path.join(testcase_args.test_tmp_dir, testcase_basename) + ".bashlog"
+        )
 
         testcase_args.testcase_client = (
             f"{testcase_args.client} --log_comment '{testcase_args.testcase_basename}-{testcase_args.testcase_database}'"
@@ -2654,6 +2737,8 @@ class TestCase:
 
         self.testcase_args = None
         self.runs_count = 0
+        # Set by `process_result_impl`; read by `retry_matcher_input`.
+        self.debug_log_retry_substitution = None
 
         has_no_random_settings_tag = self.tags and "no-random-settings" in self.tags
         has_no_random_merge_tree_settings_tag = (
@@ -3085,6 +3170,24 @@ class TestCase:
 
         return None, ""
 
+    def retry_matcher_input(self, description):
+        """`description` with each diagnostic dump reduced to the retry matcher's window.
+
+        `check_if_need_retry` is handed a failure's description as both stdout and stderr, so
+        every line of a dump that is only meant for a human reader is matched against
+        `MESSAGES_TO_RETRY`, whose entries are as generic as `No such file or directory`.  The
+        dumps are therefore reported at full width and matched at the historical bound.
+
+        Narrowed rather than removed: for an `.expect` test the trace is the only place the
+        spawned client's output lands (they all run with `log_user 0`), so dropping it would
+        lose the transient-error retries this matcher exists to catch.
+        """
+        substitution = self.debug_log_retry_substitution
+        if not substitution:
+            return description
+        shown, matched = substitution
+        return description.replace(shown, matched)
+
     def process_result_impl(self, proc, total_time: float) -> TestResult:
         args = self.args
         kill_output = ""
@@ -3099,12 +3202,68 @@ class TestCase:
 
         description = ""
 
+        # The two diagnostic blocks are trimmed SEPARATELY, with different limits: the expect
+        # trace uses the shared default (its verdict sequence is what makes a timeout readable,
+        # and one progress-table redraw is one very long line), while the bash xtrace keeps the
+        # historical 100-line bound because `set -x` emits ~2 lines per loop iteration and some
+        # .sh tests loop millions of times.
+        #
+        # That wider REPORT must not widen retry matching: `run` feeds the description to
+        # `check_if_need_retry` as both stdout and stderr, and `MESSAGES_TO_RETRY` holds
+        # substrings as generic as `No such file or directory`, so every diagnostic line the
+        # matcher sees can retry a deterministic failure. The matcher's copy is therefore ONE
+        # trim over the untrimmed dumps - the window this code has always had, rather than one
+        # such window per artifact.
         debug_log = ""
+        expect_body = ""
+        bash_body = ""
         if os.path.exists(self.testcase_args.debug_log_file):
             with open(self.testcase_args.debug_log_file, "rb") as stream:
-                debug_log += self.testcase_args.debug_log_file + ":\n"
-                debug_log += str(stream.read(), errors="replace", encoding="utf-8")
-                debug_log += "\n"
+                expect_body = str(stream.read(), errors="replace", encoding="utf-8")
+            debug_log += trim_for_log(
+                self.testcase_args.debug_log_file + ":\n" + expect_body + "\n"
+            )
+        # Emptiness is tolerated here, unlike for the expect trace above: `shell_config.sh` opens
+        # this file the moment it is sourced and only writes once a traced command runs, so a
+        # zero-length one carries no diagnostics - and reporting its name would add a bare header
+        # with an empty body to every consumer of `debug_log` below.
+        bash_tracing_file = self.testcase_args.bash_tracing_file
+        if os.path.exists(bash_tracing_file) and os.path.getsize(bash_tracing_file) > 0:
+            with open(bash_tracing_file, "rb") as stream:
+                bash_body = str(stream.read(), errors="replace", encoding="utf-8")
+            debug_log += trim_for_log(bash_tracing_file + ":\n" + bash_body + "\n", 100)
+        # Read by `run` through `retry_matcher_input`: the reported dumps are replaced by this
+        # single historically-bounded trim before the description reaches the retry matcher.
+        #
+        # Assembled to be line-for-line what the one shared file used to hold, because that file
+        # is what set this window's contract. So the raw BODIES are joined under a single
+        # header and trailer - decorating each dump first would add a header and a trailer per
+        # artifact, and those extra lines shift the window's own boundary, hiding markers near it
+        # that the pre-split shape kept.
+        #
+        # And the xtrace body goes FIRST, opposite to the report order above: bash owns fd 3 from
+        # the moment `shell_config.sh` is sourced and writes while the test runs, whereas expect's
+        # trace is dominated by the verdict lines it emits once the spawned program has produced
+        # its output. Joining in report order instead puts the xtrace behind however long the
+        # expect trace is, which pushes an early xtrace line out of this window's visible head.
+        # Either departure silently drops retries the single-file code would have made.
+        #
+        # Only assembled when there is a reported block to substitute FOR. `str.replace` treats an
+        # empty needle as matching between every character, so pairing an empty `debug_log` with a
+        # non-empty payload would splice that payload through the whole description and break the
+        # very phrases the matcher looks for. A test with no diagnostics at all - every ordinary
+        # `.sql` one - is exactly the case that arrives here with `debug_log` empty.
+        debug_log_for_retry = ""
+        if debug_log:
+            retry_header = (
+                bash_tracing_file if bash_body else self.testcase_args.debug_log_file
+            )
+            debug_log_for_retry = trim_for_log(
+                retry_header + ":\n" + bash_body + expect_body + "\n", 100
+            )
+        self.debug_log_retry_substitution = (
+            (debug_log, debug_log_for_retry) if debug_log != debug_log_for_retry else None
+        )
 
         stdout = ""
         if os.path.exists(self.stdout_file):
@@ -3116,7 +3275,14 @@ class TestCase:
             with open(path, "rb") as stream:
                 content = str(stream.read(), errors="replace", encoding="utf-8")
 
-                def ignore_sanitizer_line(line):
+                lines = content.splitlines()
+                benign_ptrace_probe_lines = find_benign_lsan_ptrace_probe_lines(
+                    lines, KILLS_PROCESSES_BY_CMDLINE_TAG in self.tags
+                )
+
+                def ignore_sanitizer_line(index, line):
+                    if index in benign_ptrace_probe_lines:
+                        return True
                     return any(
                         filter(
                             lambda exception: exception in line,
@@ -3125,10 +3291,9 @@ class TestCase:
                     )
 
                 content = "\n".join(
-                    filter(
-                        lambda line: not ignore_sanitizer_line(line),
-                        content.splitlines(),
-                    )
+                    line
+                    for index, line in enumerate(lines)
+                    if not ignore_sanitizer_line(index, line)
                 ).strip()
                 if content:
                     stderr += f"Path: {path}\n"
@@ -3148,9 +3313,6 @@ class TestCase:
                 for line in stderr.splitlines()
                 if not line.startswith("LLVM Profile Error:")
             ).strip()
-
-        if debug_log:
-            debug_log = trim_for_log(debug_log, 100)
 
         if proc:
             if proc.returncode is None:
@@ -3387,6 +3549,8 @@ class TestCase:
             os.remove(path)
         if os.path.exists(self.testcase_args.debug_log_file):
             os.remove(self.testcase_args.debug_log_file)
+        if os.path.exists(self.testcase_args.bash_tracing_file):
+            os.remove(self.testcase_args.bash_tracing_file)
 
         return TestResult(self.name, TestStatus.OK, None, total_time, description)
 
@@ -3433,6 +3597,19 @@ class TestCase:
         # Ensure that we start with empty files
         for path in glob.glob(self.fatal_sanitizer_prefix + "*"):
             os.remove(path)
+        # Same reason, for the expect trace: `exp_internal -f` opens for append, and since the
+        # bash xtrace no longer shares this path nothing else truncates it. Removing (not
+        # emptying) it matters - the report block above keys on existence alone, so an empty file
+        # would add a bare header to every failing test.
+        if os.path.exists(args.debug_log_file):
+            os.remove(args.debug_log_file)
+        # And the xtrace. Unconditionally, NOT under the `--trace` guard below that exports its
+        # path: the report block keys on the FILE, not on this run's flags, so a run without
+        # `--trace` would otherwise report whatever a previous traced run left behind in the same
+        # tmp dir. Removing rather than emptying, for the same reason as the expect trace above,
+        # and it is safe because `shell_config.sh`'s `3>>` creates the file when it is absent.
+        if os.path.exists(args.bash_tracing_file):
+            os.remove(args.bash_tracing_file)
 
         log_opt = " --client_logs_file=" + self.fatal_sanitizer_prefix + " "
         client_options += log_opt
@@ -3496,7 +3673,7 @@ class TestCase:
 
         tests_env = os.environ.copy()
         if args.trace:
-            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.debug_log_file
+            tests_env["CLICKHOUSE_BASH_TRACING_FILE"] = args.bash_tracing_file
 
         if self.ext == ".sql":
             pattern = (
@@ -3683,8 +3860,9 @@ class TestCase:
                 )
 
                 result = self.process_result_impl(proc, total_time)
+                retry_input = self.retry_matcher_input(result.description)
                 result.check_if_need_retry(
-                    args, result.description, result.description, self.runs_count
+                    args, retry_input, retry_input, self.runs_count
                 )
                 # to avoid breaking CSV parser
                 result.description = result.description.replace("\0", "")
@@ -3729,10 +3907,11 @@ class TestCase:
 
                     result = self.process_result_impl(proc, total_time)
 
+                    retry_input = self.retry_matcher_input(result.description)
                     result.check_if_need_retry(
                         args,
-                        result.description,
-                        result.description,
+                        retry_input,
+                        retry_input,
                         self.runs_count,
                     )
                     # to avoid breaking CSV parser
@@ -4779,20 +4958,34 @@ def check_server_liveness(args, max_retries=10) -> bool:
     return False
 
 
+def _read_process_rss(pid: Optional[int]) -> Optional[int]:
+    """Resident set size in bytes from /proc/<pid>/statm, or None when unreadable."""
+    if pid is None:
+        return None
+    try:
+        # fields: size resident shared text lib data dt, in pages
+        with open(f"/proc/{pid}/statm", encoding="utf-8") as f:
+            rss_pages = int(f.read().split()[1])
+    except (OSError, IndexError, ValueError):
+        return None
+    return rss_pages * os.sysconf("SC_PAGE_SIZE")
+
+
 def get_server_memory_fraction(args) -> Optional[float]:
-    """Return the fraction of max_server_memory_usage currently in use (0.0–1.0).
+    """Return the fraction of max_server_memory_usage currently in use (0.0-1.0).
 
     Reads the server process RSS from /proc/<pid>/statm, which is more reliable
-    than querying MemoryTracking from system.metrics — the latter can be far
+    than querying MemoryTracking from system.metrics: the latter can be far
     below actual RSS under sanitizer builds where jemalloc is disabled and the
     memory tracker is not corrected to match RSS.
 
     The max_server_memory_usage value is fetched once from the server and cached.
+    The server PID is cached as a hint and re-resolved whenever it stops reading.
 
-    Returns None when the server PID is unavailable, the limit is unconfigured
-    (0), or the query/read fails.
+    Returns None when no server PID reads, the limit is unconfigured (0), or the
+    query/read fails.
     """
-    # Cache the hard limit — it does not change at runtime.
+    # Cache the hard limit: it does not change at runtime.
     if not hasattr(get_server_memory_fraction, "_max_memory"):
         try:
             get_server_memory_fraction._max_memory = int(
@@ -4812,22 +5005,16 @@ def get_server_memory_fraction(args) -> Optional[float]:
     if maximum == 0:
         return None
 
-    # Cache the server PID — it does not change during a test run.
-    if not hasattr(get_server_memory_fraction, "_server_pid"):
-        get_server_memory_fraction._server_pid = get_server_pid()
-    pid = get_server_memory_fraction._server_pid
-    if pid is None:
+    # The cached pid is a hint, not an invariant: a watchdog restart replaces the
+    # server mid-run, and the first lookup can miss it entirely before it is up.
+    rss = _read_process_rss(getattr(get_server_memory_fraction, "_server_pid", None))
+    if rss is None:
+        get_server_memory_fraction._server_pid = get_server_pid(args)
+        rss = _read_process_rss(get_server_memory_fraction._server_pid)
+    if rss is None:
         return None
 
-    try:
-        # /proc/<pid>/statm fields: size resident shared text lib data dt (in pages)
-        with open(f"/proc/{pid}/statm", "r") as f:
-            parts = f.read().split()
-        rss_pages = int(parts[1])
-        rss_bytes = rss_pages * os.sysconf("SC_PAGE_SIZE")
-        return rss_bytes / maximum
-    except Exception:
-        return None
+    return rss / maximum
 
 
 def check_server_started(args):
