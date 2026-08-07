@@ -322,6 +322,7 @@ NamesAndTypesList VortexSchemaReader::readSchema()
         "Vortex",
         format_settings,
         /* skip_columns_with_unsupported_types */ false,
+        /* allow_arrow_null_type */ true,
         format_settings.schema_inference_make_columns_nullable != 0,
         /* case_insensitive_matching */ false,
         format_settings.parquet.allow_geoparquet_parser);

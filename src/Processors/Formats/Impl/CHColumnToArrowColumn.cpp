@@ -1367,6 +1367,16 @@ namespace DB
             case TypeIndex::Time:
                 fillArrowArrayWithTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 break;
+            case TypeIndex::Nothing:
+            {
+                /// This case is reachable only when the schema allowed it (see `output_nothing_as_null`).
+                /// A `Nothing` column has no values, so every entry of the Arrow Null array is null
+                /// regardless of the null bytemap.
+                arrow::NullBuilder & builder = assert_cast<arrow::NullBuilder &>(*array_builder);
+                arrow::Status status = builder.AppendNulls(end - start);
+                checkStatus(status, column->getName(), format_name);
+                break;
+            }
             case TypeIndex::Array:
                 arrow_array = buildArrowListArrayWithArrayColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, settings, dictionary_values);
                 break;
@@ -1546,6 +1556,14 @@ namespace DB
             auto arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, settings, out_is_column_nullable, for_builder);
             *out_is_column_nullable = true;
             return arrow_type;
+        }
+
+        if (isNothing(column_type) && settings.output_nothing_as_null)
+        {
+            /// Every value of the Nothing type is null, so the Arrow field must be nullable
+            /// even when the ClickHouse type is not wrapped in Nullable (e.g. Array(Nothing)).
+            *out_is_column_nullable = true;
+            return arrow::null();
         }
 
         if (isDecimal(column_type))
