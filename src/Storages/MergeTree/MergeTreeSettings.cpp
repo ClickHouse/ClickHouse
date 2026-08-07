@@ -1323,13 +1323,14 @@ they are still applied locally when parts are merged. Enable
 application of patch parts) to other replicas.
 
 Because this replica does not execute mutations, and mutation failure
-status is local to each replica, a synchronous mutation
-(`mutations_sync` = 1 or 2) issued on this replica cannot observe
-mutation failures that happen on the replicas executing it: the wait
-continues until the mutated parts are fetched, the query is cancelled or
-times out, or the mutation is killed with `KILL MUTATION`. To get
-failure reporting, issue synchronous mutations on a replica that
-executes them.
+status is local to each replica, a synchronous wait on this replica
+cannot observe mutation failures that happen on the replicas executing
+the mutation. Therefore synchronous mutations (`mutations_sync` = 1
+or 2) and synchronous `ALTER` queries that mutate data
+(`alter_sync` = 1 or 2) are rejected on such a replica with a
+`SUPPORT_IS_DISABLED` error instead of a wait that would hang if the
+mutation fails. Use `mutations_sync` = 0 (`alter_sync` = 0), or issue
+these queries on a replica that executes mutations.
 
 Possible values:
 - true, false

@@ -745,16 +745,18 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
     /// Error detection below relies on the local replica executing the mutation: if a mutation fails,
     /// it fails on every replica that executes it, so the local in-memory failure status is enough.
     /// A replica with `always_fetch_mutated_part` enabled does not execute mutations, and per-replica
-    /// failure status is not replicated, so failures on other replicas cannot be observed here:
-    /// the wait continues until the mutated parts are fetched, the query is cancelled or times out,
-    /// or the mutation is killed with `KILL MUTATION`.
+    /// failure status is not replicated, so failures on other replicas cannot be observed here, and
+    /// the wait could hang until the query is cancelled or the mutation is killed. Fail closed
+    /// instead of starting a wait that cannot detect failures.
     if ((*getSettings())[MergeTreeSetting::always_fetch_mutated_part])
-        LOG_WARNING(
-            log,
-            "The 'always_fetch_mutated_part' setting is enabled on this replica, so mutations are not executed locally, "
-            "and failures of mutation {} on other replicas cannot be observed here. If the mutation cannot succeed, "
-            "the wait will not detect that: cancel the query and use KILL MUTATION, or issue synchronous mutations "
-            "on a replica that executes them.",
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot wait for mutation {} on a replica with the 'always_fetch_mutated_part' setting enabled: "
+            "such a replica does not execute mutations, and mutation failures on the replicas executing them "
+            "cannot be observed here, so the wait would hang if the mutation fails. The operation has been "
+            "submitted and will be applied asynchronously (monitor the system.mutations table). "
+            "Use mutations_sync = 0 (alter_sync = 0 for ALTER queries), or issue the query on a replica "
+            "that executes mutations.",
             mutation_id);
 
     /// Current replica must always be present in the list as the first element because we use local mutation status
@@ -8456,6 +8458,20 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, Conte
 
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::mutate");
     delayMutationOrThrowIfNeeded(&partial_shutdown_event, query_context);
+
+    /// Fail closed before creating the mutation entry: this replica does not execute mutations,
+    /// so a synchronous wait cannot observe mutation failures on the replicas that execute them
+    /// and would hang if the mutation fails (see waitMutationToFinishOnReplicas).
+    if (query_context->getSettingsRef()[Setting::mutations_sync] > 0
+        && (*getSettings())[MergeTreeSetting::always_fetch_mutated_part])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Synchronous mutation (mutations_sync = {}) is not supported on a replica with the "
+            "'always_fetch_mutated_part' setting enabled: such a replica does not execute mutations, and "
+            "mutation failures on the replicas executing them cannot be observed here, so the wait would "
+            "hang if the mutation fails. Use mutations_sync = 0, or issue the mutation on a replica "
+            "that executes mutations.",
+            query_context->getSettingsRef()[Setting::mutations_sync].value);
 
     ReplicatedMergeTreeMutationEntry mutation_entry;
     mutation_entry.source_replica = replica_name;

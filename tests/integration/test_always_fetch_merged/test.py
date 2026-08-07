@@ -202,3 +202,75 @@ def test_no_mutation_failure_while_waiting_for_mutated_part(started_cluster):
 
     node1.query_with_retry("DROP TABLE test_mutated_wait_table SYNC")
     node2.query_with_retry("DROP TABLE test_mutated_wait_table SYNC")
+
+
+def test_sync_mutation_rejected_on_fetch_only_replica(started_cluster):
+    """A replica with `always_fetch_mutated_part` does not execute mutations and cannot
+    observe mutation failures on the replicas executing them, so a synchronous wait there
+    could hang if the mutation fails. Such waits must be rejected explicitly (fail closed)
+    instead."""
+    node1.query_with_retry(
+        """
+        CREATE TABLE IF NOT EXISTS test_mutated_sync_table(
+            key UInt64,
+            value String
+        ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_mutated_sync_table/replicated', '1')
+        ORDER BY tuple()
+    """
+    )
+    node2.query_with_retry(
+        """
+        CREATE TABLE IF NOT EXISTS test_mutated_sync_table(
+            key UInt64,
+            value String
+        ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_mutated_sync_table/replicated', '2')
+        ORDER BY tuple()
+        SETTINGS always_fetch_mutated_part=1
+    """
+    )
+
+    node1.query("INSERT INTO test_mutated_sync_table VALUES (1, 'value')")
+    node2.query("SYSTEM SYNC REPLICA test_mutated_sync_table")
+
+    # A synchronous mutation on the fetch-only replica is rejected up front,
+    # before the mutation entry is created.
+    for mutations_sync in (1, 2):
+        error = node2.query_and_get_error(
+            "ALTER TABLE test_mutated_sync_table UPDATE value = 'mutated' WHERE 1",
+            settings={"mutations_sync": mutations_sync},
+        )
+        assert "SUPPORT_IS_DISABLED" in error, error
+        assert "always_fetch_mutated_part" in error, error
+
+    assert (
+        node2.query(
+            "SELECT count() FROM system.mutations WHERE table = 'test_mutated_sync_table'"
+        )
+        == "0\n"
+    )
+
+    # A synchronous ALTER that mutates data is rejected as well; the ALTER itself is
+    # submitted and applies asynchronously.
+    error = node2.query_and_get_error(
+        "ALTER TABLE test_mutated_sync_table DROP COLUMN value",
+        settings={"alter_sync": 1},
+    )
+    assert "SUPPORT_IS_DISABLED" in error, error
+    assert "always_fetch_mutated_part" in error, error
+
+    for node in (node1, node2):
+        assert_eq_with_retry(
+            node,
+            "SELECT count() FROM system.columns WHERE database = currentDatabase() AND table = 'test_mutated_sync_table' AND name = 'value'",
+            "0",
+        )
+
+    # The same mutation issued on the executing replica still works synchronously.
+    node1.query(
+        "ALTER TABLE test_mutated_sync_table UPDATE key = 42 WHERE 1",
+        settings={"mutations_sync": 2},
+    )
+    assert node2.query("SELECT key FROM test_mutated_sync_table") == "42\n"
+
+    node1.query_with_retry("DROP TABLE test_mutated_sync_table SYNC")
+    node2.query_with_retry("DROP TABLE test_mutated_sync_table SYNC")
