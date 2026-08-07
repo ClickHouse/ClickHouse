@@ -1,0 +1,30 @@
+-- new analyzer: refused
+-- old analyzer: refused
+-- comparable types are untouched, new analyzer
+6
+6
+6
+6
+-- comparable types are untouched, old analyzer
+6
+6
+6
+6
+-- GROUP BY and DISTINCT over a state stay accepted
+6
+6
+6
+6
+-- ORDER BY over a state was already refused
+-- QBit is not an aggregate state and keeps working
+6
+6
+6
+6
+-- the pre-existing Dynamic/Variant gate is undisturbed
+3
+3
+-- a state reached through Dynamic is a known gap, still accepted with the opt-in
+6
+6
+-- a state inside Variant is refused, because Variant exposes its variants as children

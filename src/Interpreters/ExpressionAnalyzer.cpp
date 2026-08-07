@@ -686,7 +686,10 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
             for (const auto & col : actions_dag->getResultColumns())
             {
                 if (col.name == with_alias->getColumnName())
+                {
                     DB::validateGroupByKeyType(col.type, context_.getSettingsRef()[Setting::allow_suspicious_types_in_group_by]);
+                    DB::validateWindowPartitionByKeyType(col.type);
+                }
             }
 
             desc.partition_by_actions.push_back(std::move(actions_dag));
