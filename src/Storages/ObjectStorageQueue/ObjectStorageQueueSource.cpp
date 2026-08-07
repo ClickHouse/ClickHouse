@@ -512,8 +512,15 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
         if (!status)
             continue;
 
+        const auto cached_state = status->state.load();
+
+        /// The cached record already has this terminal state: it describes a local attempt
+        /// (e.g. `rows_processed` of a file processed by this server), so keep it.
+        if (cached_state == terminal_state.state)
+            continue;
+
         /// A locally owned `Processing` state is updated by its owner on commit.
-        if (status->state.load() == FileStatus::State::Processing && !status->isProcessingByAnotherProcessor())
+        if (cached_state == FileStatus::State::Processing && !status->isProcessingByAnotherProcessor())
             continue;
 
         status->onTerminalStateByAnotherProcessor(terminal_state.state, terminal_state.exception, terminal_state.retries);

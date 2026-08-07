@@ -240,6 +240,17 @@ def test_cached_state_updated_when_foreign_processor_commits(started_cluster):
         assert get_count() == files_to_generate - 2
         assert node.query(f"SELECT count() FROM {dst_table_name} WHERE _path LIKE '%test_1.csv'").strip() == "0"
         assert node.query(f"SELECT count() FROM {dst_table_name} WHERE _path LIKE '%test_2.csv'").strip() == "0"
+
+        # The write-back must not touch the cached record of a file processed by THIS
+        # server: `test_0.csv` has been relisted many times by now (the TTL is zero),
+        # and its `processed` node is discovered by the pre-filter on every pass.
+        assert (
+            node.query(
+                f"SELECT status, rows_processed FROM system.s3queue_metadata_cache "
+                f"WHERE file_path LIKE '%{files_path}/test_0.csv'"
+            ).strip()
+            == "Processed\t1"
+        )
     finally:
         node.query(
             f"""
