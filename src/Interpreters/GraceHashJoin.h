@@ -121,7 +121,7 @@ public:
 
     static size_t getTemporaryFilesBufferSize(
         size_t configured_buffer_size,
-        size_t initial_num_buckets,
+        size_t max_num_buckets,
         size_t max_bytes_before_external_join);
 
     void forceSpill() { force_spill = true; }

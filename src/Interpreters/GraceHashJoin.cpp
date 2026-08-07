@@ -285,7 +285,7 @@ GraceHashJoin::GraceHashJoin(
             .num_files = ProfileEvents::ExternalJoinWritePart,
         },
         initial_num_buckets_ == 0
-            ? getTemporaryFilesBufferSize(table_join->temporaryFilesBufferSize(), initial_num_buckets, external_join_threshold_)
+            ? getTemporaryFilesBufferSize(table_join->temporaryFilesBufferSize(), max_num_buckets, external_join_threshold_)
             : table_join->temporaryFilesBufferSize(),
         table_join->temporaryFilesCodec()))
     , hash_join(makeInMemoryJoin("grace0"))
@@ -372,19 +372,21 @@ size_t GraceHashJoin::getInitialNumBuckets(
 
 size_t GraceHashJoin::getTemporaryFilesBufferSize(
     size_t configured_buffer_size,
-    size_t initial_num_buckets,
+    size_t max_num_buckets,
     size_t max_bytes_before_external_join)
 {
     chassert(configured_buffer_size > 0);
-    chassert(initial_num_buckets > 0);
-
-    if (max_bytes_before_external_join == 0)
-        return configured_buffer_size;
+    chassert(max_num_buckets > 0);
 
     /// Every bucket owns two temporary streams. Each stream has an uncompressed buffer and
-    /// a compressed buffer, so reserve at most half of the external JOIN threshold for all
-    /// four buffers. Divide one factor at a time to avoid overflowing on a large bucket count.
-    size_t buffer_size = max_bytes_before_external_join / initial_num_buckets / 4 / 2;
+    /// a compressed buffer. Standalone automatic `GraceHashJoin` has no external JOIN threshold,
+    /// so divide the configured buffer size by the maximum bucket count to target an aggregate
+    /// allocation of four configured buffers even after rehashing. For spilling joins, target half
+    /// of the external JOIN threshold for all four buffers. The result is clamped to at least one
+    /// byte, and factors are divided one at a time to avoid overflow.
+    size_t buffer_size = max_bytes_before_external_join == 0
+        ? configured_buffer_size / max_num_buckets
+        : max_bytes_before_external_join / max_num_buckets / 4 / 2;
     return std::clamp(buffer_size, 1uz, configured_buffer_size);
 }
 
