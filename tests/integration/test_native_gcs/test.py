@@ -22,7 +22,9 @@ cluster = ClickHouseCluster(__file__)
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        cluster.add_instance("node", with_gcs=True)
+        cluster.add_instance(
+            "node", main_configs=["configs/forbid_headers.xml"], with_gcs=True
+        )
         cluster.start()
 
         node = cluster.instances["node"]
@@ -140,3 +142,51 @@ def test_schema_inference_cache(started_cluster):
         ).strip()
         == "0"
     )
+
+
+def test_forbidden_header_rejected(started_cluster):
+    """Headers destined for the native client must pass the server-wide `<http_forbid_headers>`
+    filter (`configs/forbid_headers.xml` forbids `X-ClickHouse-Native-GCS-Forbidden`), whatever
+    surface supplied them: `headers(...)` in the query or a disk `<header>` entry. A header not
+    on the forbidden list keeps working."""
+    node = started_cluster.instances["node"]
+    url = gcs_url("forbid_headers/data.tsv")
+
+    # The query surface: headers(...) of the table function.
+    err = node.query_and_get_error(
+        f"SELECT * FROM gcs('{url}', NOSIGN, 'TSV', 'a UInt64', "
+        f"headers('X-ClickHouse-Native-GCS-Forbidden' = '1')) "
+        f"SETTINGS use_native_gcs = 1"
+    )
+    assert "forbidden in configuration file" in err
+
+    # The disk surface: a <header> entry of the disk configuration, checked when the client
+    # is built during disk (and therefore table) creation.
+    node.query("DROP TABLE IF EXISTS gcs_forbidden_header SYNC")
+    err = node.query_and_get_error(
+        "CREATE TABLE gcs_forbidden_header (a UInt64) ENGINE = MergeTree ORDER BY a "
+        "SETTINGS disk = disk("
+        "  name = 'gcs_disk_forbidden_header',"
+        "  type = object_storage,"
+        "  object_storage_type = gcs,"
+        "  metadata_type = local,"
+        f"  endpoint = '{gcs_url('forbid_headers_disk/')}',"
+        "  no_sign_request = true,"
+        "  header = 'X-ClickHouse-Native-GCS-Forbidden: 1'"
+        ")"
+    )
+    assert "forbidden in configuration file" in err
+
+    # A header that is not forbidden passes the filter and the request succeeds.
+    node.query(
+        f"INSERT INTO FUNCTION gcs('{url}', NOSIGN, 'TSV', 'a UInt64', "
+        f"headers('X-ClickHouse-Native-GCS-Allowed' = '1')) "
+        f"SELECT number FROM numbers(5) "
+        f"SETTINGS use_native_gcs = 1"
+    )
+    res = node.query(
+        f"SELECT count() FROM gcs('{url}', NOSIGN, 'TSV', 'a UInt64', "
+        f"headers('X-ClickHouse-Native-GCS-Allowed' = '1')) "
+        f"SETTINGS use_native_gcs = 1"
+    )
+    assert res.strip() == "5"

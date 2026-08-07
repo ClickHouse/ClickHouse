@@ -14,6 +14,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Common/Exception.h>
+#include <Common/HTTPHeaderFilter.h>
 #include <Common/Macros.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Common/RemoteHostFilter.h>
@@ -314,8 +315,17 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
 
     if (!settings.headers.empty())
     {
+        /// The server-wide `<http_forbid_headers>` filter applies to every header the client will
+        /// send, whatever surface supplied it — `headers(...)` in a query, an endpoint `<header>` /
+        /// `<access_header>` entry, or a disk `<header>` entry. The S3 transports validate their
+        /// final header set before the client is built; do the same here so switching to the native
+        /// backend cannot smuggle a forbidden header past the filter. checkAndNormalizeHeaders
+        /// mutates (normalizes) the entries, so run it on the copy the client options are built from.
+        auto headers = settings.headers;
+        context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+
         gc::CustomHeadersOption::Type custom_headers;
-        for (const auto & header : settings.headers)
+        for (const auto & header : headers)
             custom_headers.emplace(header.name, header.value);
         options.set<gc::CustomHeadersOption>(std::move(custom_headers));
     }
