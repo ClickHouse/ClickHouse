@@ -56,12 +56,20 @@ public:
     class Cancellation
     {
     public:
-        /// Called from a cancellation handler, which is not allowed to throw.
-        void cancel() noexcept
+        /// Called from a cancellation handler, which is not allowed to throw. `softly` means the
+        /// cancellation is one after which the query must still succeed with what it has already
+        /// read (see StorageURLSource::cancel): the code in between the requests may then report
+        /// the interruption with a cancellation error of its own, which the owner of this flag
+        /// discards. After a hard teardown - the query is killed, the pipeline has already failed
+        /// elsewhere, or the client has disconnected - a synthesized error could mask the failure
+        /// that really happened, so nothing is allowed to invent one, see
+        /// StorageURLSource::getFirstAvailableURIAndReadBuffer.
+        void cancel(bool softly) noexcept
         {
             {
                 std::lock_guard lock(mutex);
                 cancelled = true;
+                cancelled_softly |= softly;
             }
             changed.notify_all();
         }
@@ -81,10 +89,18 @@ public:
             return cancelled;
         }
 
+        /// Whether the read has been cancelled softly, see cancel.
+        bool isCancelledSoftly()
+        {
+            std::lock_guard lock(mutex);
+            return cancelled_softly;
+        }
+
     private:
         std::mutex mutex;
         std::condition_variable changed;
         bool cancelled = false;
+        bool cancelled_softly = false;
     };
 
     using CancellationPtr = std::shared_ptr<Cancellation>;

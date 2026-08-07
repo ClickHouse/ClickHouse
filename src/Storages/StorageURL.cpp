@@ -643,10 +643,11 @@ void StorageURLSource::cancel(CancelReason reason) noexcept
     ///   CancelReason::PartialResult, and CancelReason::CancelledByTimeout, which despite its name only
     ///   ever comes from PipelineExecutor::checkTimeLimitSoft, that is from `max_execution_time` with
     ///   the `break` overflow mode - a query which is not killed and returns what it has read so far.
-    if (reason == CancelReason::CancelledByTimeout || reason == CancelReason::PartialResult)
+    const bool soft = reason == CancelReason::CancelledByTimeout || reason == CancelReason::PartialResult;
+    if (soft)
         discard_read_errors = true;
 
-    cancellation->cancel();
+    cancellation->cancel(soft);
 
     ISource::cancel(reason);
 }
@@ -675,14 +676,19 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         /// Do not go on probing the failover options if the query has been killed meanwhile.
         CurrentThread::checkIfNotCancelled();
 
-        /// The check above is a no-op for the cancellations which do not kill the query: the soft
-        /// `max_execution_time` timeout with the `break` overflow mode, a consumer which has enough
-        /// data, or a pipeline torn down without a reason - see cancel. Such a cancellation landing
-        /// between the options - after an empty file has been skipped, or after a failed probe -
-        /// finds no request in flight to interrupt, so check the flag itself before starting the
-        /// next option. The source discards this error or fails with it depending on the reason of
-        /// the cancellation, see generate.
-        if (cancellation && cancellation->isCancelled())
+        /// The check above is a no-op for the cancellations which do not kill the query. For the soft
+        /// ones - the `max_execution_time` timeout with the `break` overflow mode, or a consumer which
+        /// has enough data - the query must still succeed with what it has already read, and such a
+        /// cancellation landing between the options - after an empty file has been skipped, or after a
+        /// failed probe - finds no request in flight to interrupt. So check the flag itself before
+        /// starting the next option; the source discards this error, see generate.
+        ///
+        /// A hard teardown which does not kill the query - the pipeline has already failed elsewhere,
+        /// or the client has disconnected - must not be reported with a synthesized error like this:
+        /// generate would not discard it, and it could reach the user in place of the failure that
+        /// really happened. It does not need one either: the next attempt notices the flag as soon as
+        /// it fails and its real error propagates through the catch below, see doWithRetries.
+        if (cancellation && cancellation->isCancelledSoftly())
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The URL read has been cancelled while choosing the URI to read from");
 
         bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
@@ -742,6 +748,10 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             continue;
         }
     }
+
+    /// A query killed after the last option has failed, with no request left for the cancellation to
+    /// interrupt, must be reported as cancelled rather than with the aggregate error below.
+    CurrentThread::checkIfNotCancelled();
 
     /// If all options are unreachable except empty ones that we skipped,
     /// return last empty result. It will be skipped later.
