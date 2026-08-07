@@ -39,27 +39,35 @@ SELECT x FROM shard_0.t_sus ORDER BY x;
 # Background poller: dumps system.processes / system.stack_trace every 3s, from right before the
 # failing insert until this script kills it (after DROP DATABASE shard_0 returns, or ~90s max as
 # a safety net so it can't outlive the test).
+#
+# Output is kept deliberately compact (TSVRaw, truncated stacks, and stack_trace filtered down to
+# only queries that have already run suspiciously long) so that ~30 snapshots spanning the full
+# poll window fit inside the CI harness's ~16KB captured-output cap on a timeout kill. Previously
+# each snapshot used FORMAT Vertical with full demangled stacks for every thread on the server
+# (including unrelated concurrently-running fast-test queries), which alone exceeded the cap after
+# 1-2 iterations -- so only the very first (t=+0s, uninformative) snapshot ever made it into a CI
+# report, never the state right before the actual hang/kill.
 (
     START=$(date +%s)
     while :; do
         NOW=$(date +%s)
-        echo "--- DEBUG snapshot at t=+$((NOW - START))s ---" >&2
+        echo "t+${NOW}-${START}=$((NOW - START))s" >&2
         $CLICKHOUSE_CLIENT --query "
-        SELECT query_id, elapsed, query
+        SELECT query_id, elapsed, substring(query, 1, 60)
         FROM system.processes
         WHERE query NOT LIKE '%system.processes%'
         ORDER BY elapsed DESC
-        FORMAT Vertical
+        FORMAT TSVRaw
         " >&2 2>&1 ||:
         $CLICKHOUSE_CLIENT --query "
         SET allow_introspection_functions = 1;
         SELECT
             thread_id,
             query_id,
-            arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n<- ') AS stack
+            arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), arraySlice(trace, 1, 5)), ' <- ') AS top_frames
         FROM system.stack_trace
-        WHERE query_id != ''
-        FORMAT Vertical
+        WHERE query_id IN (SELECT query_id FROM system.processes WHERE elapsed > 2)
+        FORMAT TSVRaw
         " >&2 2>&1 ||:
         if [ $((NOW - START)) -ge 90 ]; then
             break
