@@ -45,9 +45,15 @@ public:
 
     bool isDeterministic() const override { return false; }
 
-    /// The result differs between servers (the headers are only known on the initiator), and the
-    /// built function captures the scope-local `is_distributed` flag below, so it must also be
-    /// excluded from the analyzer function cache, which is shared across scopes.
+    /// The behavior depends on the scope-local `allow_get_client_http_header` setting, and the
+    /// permission check in the constructor runs when the function is built for a scope. Sharing
+    /// a built `FunctionBase` across scopes through the analyzer function cache would let a
+    /// scope with the setting disabled reuse a base built under an enabled sibling scope and
+    /// read the header instead of throwing `FUNCTION_NOT_ALLOWED` - a permission bypass. This
+    /// keeps every scope building (and permission-checking) its own function.
+    bool isDeterministicInScopeOfQuery() const override { return false; }
+
+    /// The result differs between servers (the headers are only known on the initiator).
     bool isServerConstant() const override { return true; }
 
     /// The headers are not propagated to secondary queries: in a distributed query the function
