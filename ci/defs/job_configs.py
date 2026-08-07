@@ -568,9 +568,14 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
+        # Unpacking the packages needs ~4.4 GB, so reclaim another job's leftover
+        # images before installing, not just afterwards. Best-effort: praktika does
+        # not propagate a hook's exit code to the job status.
+        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
@@ -602,9 +607,12 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
+        # See install_check_jobs above.
+        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
@@ -1298,6 +1306,9 @@ class JobConfigs:
                 "./ci/jobs/compatibility_check.py",
             ],
         ),
+        # Shares the style-checker runners with Install packages and leaves ~4 GB of docker
+        # residue per run, which is what the next job on that runner inherits.
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
