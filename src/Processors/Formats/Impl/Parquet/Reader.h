@@ -181,11 +181,29 @@ struct Reader
         UInt8 max_array_def = 0;
 
         bool use_bloom_filter = false;
-        const KeyCondition * column_index_condition = nullptr;
+
+        /// A single-column `KeyCondition` used for page-level pruning through the column index.
+        struct ColumnIndexCondition
+        {
+            const KeyCondition * condition = nullptr;
+
+            /// Index into `spatial_key_conditions` when this condition was extracted from a
+            /// GeoParquet `covering.bbox` spatial predicate, `SIZE_MAX` otherwise. A NULL bbox
+            /// means the row's spatial extent is unknown, so such a condition may prune a page
+            /// only under the same four-column zero-nulls guarantee the row-group path requires
+            /// (see `spatialBboxStatsHaveNoNulls`).
+            size_t spatial_key_condition_idx = SIZE_MAX;
+        };
+
+        /// Multiple conjunctive predicates on the same column (e.g. two `pointInPolygon` calls
+        /// on the same geometry, or a regular WHERE condition plus a spatial one on the same bbox
+        /// column) each contribute their own KeyCondition here; a page must pass all of them.
+        std::vector<ColumnIndexCondition> column_index_conditions;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
+        bool is_spatial_bbox_column = false; // one of the four covering.bbox primitives
 
         /// The hashes to look up in the bloom filter (a subset of the query constants hashed for this
         /// column). Values from an `IN` set larger than `bloom_filter_max_set_size` are deliberately
@@ -516,8 +534,22 @@ struct Reader
 
     /// Per-column KeyConditions for page-level filter push-down (column index).
     /// Stored here to keep the shared_ptrs alive, since raw pointers from them
-    /// are referenced by PrimitiveColumnInfo::column_index_condition.
+    /// are referenced by PrimitiveColumnInfo::column_index_conditions.
     std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
+
+    /// KeyConditions built from GeoParquet covering.bbox spatial filters.
+    /// One per spatial predicate; checked against the hyperrectangle of bbox column stats.
+    std::vector<std::shared_ptr<KeyCondition>> spatial_key_conditions;
+    /// For each spatial_key_conditions[i], the primitive_columns indices of its four bbox
+    /// columns (xmin, ymin, xmax, ymax). SIZE_MAX means not found. Used to check null_count
+    /// before applying row-group and page pruning: NULL bbox means unknown extent, must not prune.
+    std::vector<std::array<size_t, 4>> spatial_key_condition_bbox_col_indices;
+
+    /// Per-column KeyConditions extracted from spatial_key_conditions for page-level
+    /// spatial bbox pruning. Stored here (not as a local variable) to keep the shared_ptrs
+    /// alive, since raw pointers from them are referenced by
+    /// PrimitiveColumnInfo::column_index_conditions.
+    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
 
     std::optional<KeyCondition> bloom_filter_condition;
 
@@ -603,7 +635,13 @@ private:
     /// headers (and their transitive includes) into every translation unit that includes Reader.h.
     struct DictionaryLookup;
 
-    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
+    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox = false) const;
+    /// Whether all four `covering.bbox` columns of `spatial_key_conditions[spatial_key_condition_idx]`
+    /// report a known `null_count` of zero in this row group. Spatial pruning (both row-group and
+    /// page level) is only allowed then: a NULL in any bbox column means the row's spatial extent is
+    /// unknown, and min/max statistics summarize the non-null values only, so a bbox predicate can
+    /// look false for the row group or page while a NULL-bbox row inside it still matches.
+    bool spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const;
     void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
     void prepareBloomFilterCondition();
     void initializePrefetches();

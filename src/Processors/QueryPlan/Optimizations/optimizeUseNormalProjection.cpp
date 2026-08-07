@@ -584,6 +584,7 @@ std::optional<String> optimizeUseNormalProjections(
             metadata,
             *parent_reading_select_result,
             projection_query_info,
+            reading->getTopKFilterInfo(),
             context);
 
         if (!analyzed)
@@ -704,6 +705,19 @@ std::optional<String> optimizeUseNormalProjections(
         best_candidate->merge_tree_projection_select_result_ptr,
         reading->isParallelReadingEnabled(),
         reading->getParallelReadingExtension());
+
+    /// `tryOptimizeTopK` runs in the first optimization pass, so this rewrite can replace a read that
+    /// is already stamped for TopK filtering. Carry the stamp and the query condition cache gate over,
+    /// otherwise the projection read would degrade into an apparent plain read: with
+    /// `use_query_condition_cache_for_top_k = 0` its reader would write plain-keyed cache entries the
+    /// setting is supposed to gate off, and with the setting enabled it would write threshold-dependent
+    /// entries under unsalted keys. The part-set salt in `condition_hash` was folded from the parent
+    /// parts, and the projection parts are in one-to-one correspondence with them, so the copied value
+    /// discriminates projection entries equally well. (The analysis-side consult is gated separately,
+    /// by passing the stamp into `analyzeProjectionCandidate` above.)
+    if (projection_reading)
+        if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
+            projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
 
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
     filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);

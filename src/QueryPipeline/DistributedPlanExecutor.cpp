@@ -1,3 +1,4 @@
+#include <chrono>
 #include <condition_variable>
 #include <future>
 #include <memory>
@@ -24,6 +25,7 @@
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -226,16 +228,19 @@ public:
         has_data.notify_all();
     }
 
-    Chunk getChunk()
+    /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
+    /// An empty chunk is the producer's end-of-data marker (also reported when cancelled).
+    std::optional<Chunk> getChunk(std::chrono::milliseconds timeout)
     {
         LOG_TEST(log, "Waiting for chunk from exchange '{}'", name);
 
         Chunk chunk;
         {
             std::unique_lock lock(mutex);
-            has_data.wait(lock, [this] { return !chunks.empty() || cancelled; });
+            if (!has_data.wait_for(lock, timeout, [this] { return !chunks.empty() || cancelled; }))
+                return std::nullopt;
             if (chunks.empty())
-                return {};   /// Cancelled: report end of data.
+                return Chunk{};   /// Cancelled: report end of data.
             chunk = std::move(chunks.front());
             chunks.pop_front();
         }
@@ -348,6 +353,10 @@ private:
 
         void consume(Chunk chunk) override
         {
+            /// Zero-row chunks are scheduling ticks from an upstream `SourceFromInMemoryExchange`;
+            /// forwarding them would only grow the queue and wake the consumer for nothing.
+            if (!chunk.hasRows() && chunk.getChunkInfos().empty())
+                return;
             exchange->appendChunk(std::move(chunk));
         }
 
@@ -371,23 +380,65 @@ private:
 
         String getName() const override { return "SourceFromInMemoryExchange"; }
 
-        Chunk generate() override
+        std::optional<Chunk> tryGenerate() override
         {
-            return exchange->getChunk();
+            /// A processor must not block the pipeline thread, so wait with a timeout. On the
+            /// timeout, push a chunk with no rows: a source that yields without producing output
+            /// stays ready and gets rescheduled at once, monopolizing the thread, while pushed
+            /// output makes the port full and lets other processors run.
+            auto chunk = exchange->getChunk(waitTimeout());
+            if (!chunk)
+                return Chunk(getPort().getHeader().cloneEmptyColumns(), 0);
+            if (chunk->empty())
+                return std::nullopt;   /// End-of-data marker.
+            return chunk;
         }
 
-        /// Wake a generate() blocked in getChunk; pipeline cancellation alone cannot interrupt it.
+        /// Wake the timed wait so the source finishes right away instead of on its next poll.
         void onCancel() noexcept override
         {
             exchange->cancel();
         }
 
     private:
+        /// A stream with no columns (case of `SELECT count()`) cannot fill the output port, so this
+        /// source polls instead of yielding - keep its wait short so other processors run sooner.
+        std::chrono::milliseconds waitTimeout() const
+        {
+            return getPort().getHeader().empty() ? std::chrono::milliseconds(1) : std::chrono::milliseconds(10);
+        }
+
         InMemoryExchangePtr exchange;
     };
 
     const String query_id;
 };
+
+
+/// Drops zero-row chunks emitted as scheduling ticks by `SourceFromInMemoryExchange`; without
+/// this filter they would escape the exchange path, e.g. to the client as empty `Data` packets.
+class SkipZeroRowChunksTransform final : public ISimpleTransform
+{
+public:
+    explicit SkipZeroRowChunksTransform(SharedHeader header_)
+        : ISimpleTransform(header_, header_, /*skip_empty_chunks_=*/ true)
+    {
+    }
+
+    String getName() const override { return "SkipZeroRowChunksTransform"; }
+
+    void transform(Chunk & chunk) override
+    {
+        /// Keep zero-row chunks that carry chunk infos: they are not ticks.
+        if (!chunk.hasRows() && chunk.getChunkInfos().empty())
+            chunk = Chunk();
+    }
+};
+
+std::shared_ptr<IProcessor> makeSkipZeroRowChunksTransform(SharedHeader header)
+{
+    return std::make_shared<SkipZeroRowChunksTransform>(std::move(header));
+}
 
 
 /// A wrapper that looks up exchanges by their kind and delegates to the corresponding exchange lookup: Persistent or Streaming

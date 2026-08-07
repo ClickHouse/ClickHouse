@@ -124,6 +124,25 @@ FROM ( EXPLAIN actions = 0
              max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 );
 
+-- parallel_full_sorting_merge path: physicalizes to the same `FullSortingMergeJoin` as
+-- `full_sorting_merge` (the sharding rewrite only changes the pre-join sorts), so the
+-- same pre-join `Sort` blocks `optimizeReadInOrder`'s `findReadingStep` and the deferral
+-- must NOT fire either. `topKThroughJoin` is expected to inject its own `Sort + Limit`,
+-- mirroring the `full_sorting_merge` case.
+SELECT 'parallel_full_sorting_merge' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, countIf(explain LIKE '%Limit%') AS limit_count
+FROM ( EXPLAIN actions = 0
+    SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS optimize_read_in_order = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
+             enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
+             query_plan_optimize_lazy_materialization = 0,
+             enable_parallel_replicas = 0,
+             join_algorithm = 'parallel_full_sorting_merge',
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
 -- Result equivalence across flag combinations.
 -- `enable_parallel_replicas = 0`: under parallel replicas, `ORDER BY l.k DESC`
 -- combined with `t_l ORDER BY k` engages read-in-order (`ReverseOrder`), and
@@ -157,6 +176,13 @@ SELECT 'result_full_sorting_merge' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS join_algorithm = 'full_sorting_merge', query_plan_read_in_order = 1,
+             query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
+);
+
+SELECT 'result_parallel_full_sorting_merge' AS label, count(*), max(k), min(k) FROM (
+    SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS join_algorithm = 'parallel_full_sorting_merge', query_plan_read_in_order = 1,
              query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
 );
 
