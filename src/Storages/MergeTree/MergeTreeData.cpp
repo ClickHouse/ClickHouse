@@ -907,11 +907,12 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
-    /// The storage-wide `cached_estimator` supports subset matching: a query that
-    /// requests a subset of parts (e.g. after partition pruning) or a subset of
-    /// columns can still reuse a cached estimator that was populated by the background
-    /// refresher or a previous wider-scope request.  Part-order reordering is also
-    /// tolerated (the check uses a name-set rather than positional comparison).
+    /// The storage-wide `cached_estimator` can be reused by a query that requests the
+    /// same set of parts (order-insensitive) and a subset of the cached columns — e.g.
+    /// an estimator populated by the background refresher or a previous wider-column
+    /// request.  A different part set (e.g. after partition pruning) cannot reuse it:
+    /// the estimator's aggregates are merged over all its parts and cannot be
+    /// restricted afterwards.
     const bool use_cache = local_context->getSettingsRef()[Setting::use_statistics_cache];
 
     DataPartsVector data_parts;

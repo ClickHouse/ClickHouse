@@ -217,29 +217,40 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
 
 bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts, const Names & required_columns) const
 {
-    /// Build a name-set of the cached parts for O(1) lookups instead of
-    /// requiring exact position match (parts can be reordered by a caller).
-    NameSet cached_parts(parts_names.begin(), parts_names.end());
+    /// The estimator stores one merged `total_rows` and one merged set of column
+    /// statistics for all `parts_names`; those aggregates cannot be restricted to a
+    /// narrower part set afterwards.  Reusing a superset estimator for a subset of
+    /// parts (e.g. after partition pruning) would return whole-table estimates for a
+    /// partial read, so require the exact same part set.  Only reordering is
+    /// tolerated (the check uses a name-set rather than positional comparison).
+    if (data_parts.size() != parts_names.size())
+        return true;
 
-    /// When a caller passes specific columns it is a query that only needs a
-    /// subset of the cached statistics; a superset of parts is OK.  When
-    /// `required_columns` is empty (background refresh, whole-table load) we
-    /// still require every requested part to exist, which naturally rejects a
-    /// cached estimator that lost a part (merge/mutation) while accepting
-    /// reordering and partition-pruned subsets.
+    NameSet cached_parts(parts_names.begin(), parts_names.end());
     for (const auto & data_part : data_parts)
     {
         if (!cached_parts.contains(data_part->name))
             return true;
     }
 
-    if (!required_columns.empty())
+    /// A cached estimator built for a superset of columns can serve a narrower
+    /// column request: per-column estimates are independent of each other.
+    for (const auto & col : required_columns)
     {
-        for (const auto & col : required_columns)
-        {
-            if (!column_estimators.contains(col))
-                return true;
-        }
+        if (column_estimators.contains(col))
+            continue;
+
+        /// `<col>.null` may appear in `required_columns` when
+        /// `optimize_functions_to_subcolumns = 1`, but statistics are loaded and
+        /// stored under the physical parent column name (see
+        /// `getColumnForStatisticsFile`).  Normalize the same way here, otherwise a
+        /// repeated `IS NULL` query would miss the cache on every run.
+        static constexpr std::string_view null_subcolumn_suffix = ".null";
+        if (col.ends_with(null_subcolumn_suffix)
+            && column_estimators.contains(col.substr(0, col.size() - null_subcolumn_suffix.size())))
+            continue;
+
+        return true;
     }
 
     return false;
