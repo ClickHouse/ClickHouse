@@ -1,0 +1,11 @@
+-- comma join, conjunctive WHERE --
+1	10	100	1000
+3	30	300	3000
+-- nested conjunctions --
+1	10	100	1000
+3	30	300	3000
+3	2	0
+-- alias-wrapped conjunction --
+1	1000
+3	3000
+2	2	0	0

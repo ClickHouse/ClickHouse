@@ -1,9 +1,9 @@
   JoinLogical
-  Join: sq ⋈ rs[200] ⋈ pc[300]
-  ResultRows: 200
+  Join: sq[no_stats~?] ⋈ rs[200] ⋈ pc[300]
+  ResultRows: ~~200
     JoinLogical
-    Join: sq ⋈ rs[200]
-    ResultRows: 200
+    Join: sq[no_stats~?] ⋈ rs[200]
+    ResultRows: ~~200
         Aggregating
             JoinLogical
             Join: s[50000] ⋈ p[10000]

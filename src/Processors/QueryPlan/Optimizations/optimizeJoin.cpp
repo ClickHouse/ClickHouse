@@ -776,11 +776,20 @@ static void mergeStepIntoQueryGraph(QueryGraphBuilder & child_graph, IQueryPlanS
     if (remove_filter_column)
         std::erase(child_dag->getOutputs(), condition_node);
 
-    JoinActionRef condition(condition_node, child_graph.expression_actions);
-    if (condition.isFunction(JoinConditionOperator::And))
-        child_graph.join_edges.append_range(condition.getArguments());
-    else
-        child_graph.join_edges.push_back(condition);
+    /// Flatten the condition into conjunction atoms: unwrap aliases and split nested `and`s
+    /// recursively, so that each atom becomes a separate join-graph edge with its own source
+    /// relations. Keeping a composite `and` as a single edge would force the solvers to wait
+    /// until all its relations are joined before applying any part of it.
+    std::vector<JoinActionRef> pending{JoinActionRef(condition_node, child_graph.expression_actions)};
+    while (!pending.empty())
+    {
+        auto condition = pending.back().resolveAliases();
+        pending.pop_back();
+        if (condition.isFunction(JoinConditionOperator::And))
+            pending.append_range(condition.getArguments());
+        else
+            child_graph.join_edges.push_back(condition);
+    }
 }
 
 void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -1210,7 +1219,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         }
     }
 
-    std::stack<QueryPlan::Node *> nodeStack;
+    std::stack<QueryPlan::Node *> node_stack;
     auto & input_nodes = query_graph_builder.inputs;
 
     if (!query_graph_builder.context)
@@ -1251,15 +1260,15 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             size_t relation_id = safe_cast<size_t>(entry->relation_id);
             if (relation_id >= input_nodes.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid relation id: {}, input nodes size: {}", relation_id, input_nodes.size());
-            nodeStack.push(input_nodes[relation_id]);
+            node_stack.push(input_nodes[relation_id]);
         }
         else
         {
             /// Combine two nodes from the stack into a single join operation
-            auto * left_child_node = nodeStack.top();
-            nodeStack.pop();
-            auto * right_child_node = nodeStack.top();
-            nodeStack.pop();
+            auto * left_child_node = node_stack.top();
+            node_stack.pop();
+            auto * right_child_node = node_stack.top();
+            node_stack.pop();
 
             auto join_operator = std::move(entry->join_operator);
             join_operator.strictness = join_strictness;
@@ -1487,11 +1496,11 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
-            nodeStack.push(&new_node);
+            node_stack.push(&new_node);
         }
     }
 
-    if (nodeStack.size() != 1 || nodeStack.top() != &nodes.back())
+    if (node_stack.size() != 1 || node_stack.top() != &nodes.back())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal join sequence produced: [{}]",
             fmt::join(sequence | std::views::transform([](const auto * e) { return e ? e->dump() : "null"; }), ", "));
 
