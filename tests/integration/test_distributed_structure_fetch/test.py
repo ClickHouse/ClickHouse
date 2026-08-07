@@ -11,9 +11,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance(
-    "node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True
-)
+node1 = cluster.add_instance("node1", main_configs=["configs/remote_servers.xml"], with_zookeeper=True)
 node2 = cluster.add_instance("node2")
 
 
@@ -21,9 +19,7 @@ node2 = cluster.add_instance("node2")
 def started_cluster():
     try:
         cluster.start()
-        node2.query(
-            "CREATE TABLE default.remote_data (key UInt64, value String) ENGINE = MergeTree ORDER BY key"
-        )
+        node2.query("CREATE TABLE default.remote_data (key UInt64, value String) ENGINE = MergeTree ORDER BY key")
         node2.query("INSERT INTO default.remote_data VALUES (1, 'one'), (2, 'two')")
         yield cluster
     finally:
@@ -31,12 +27,8 @@ def started_cluster():
 
 
 def test_structure_less_distributed_over_remote_shard(started_cluster):
-    node1.query(
-        "CREATE TABLE default.dist ENGINE = Distributed('remote_only_cluster', default, remote_data)"
-    )
-    assert node1.query("DESC TABLE default.dist") == (
-        "key\tUInt64\t\t\t\t\t\nvalue\tString\t\t\t\t\t\n"
-    )
+    node1.query("CREATE TABLE default.dist ENGINE = Distributed('remote_only_cluster', default, remote_data)")
+    assert node1.query("DESC TABLE default.dist") == ("key\tUInt64\t\t\t\t\t\nvalue\tString\t\t\t\t\t\n")
     assert node1.query("SELECT sum(key) FROM default.dist") == "3\n"
     node1.query("DROP TABLE default.dist SYNC")
 
@@ -47,9 +39,7 @@ def test_structure_inference_respects_show_columns_access(started_cluster):
     the inference performs a `SHOW_COLUMNS` access check on the target table, and under
     the global context that check would pass for everyone, letting a user learn the
     schema of a local table they are not allowed to describe."""
-    node1.query(
-        "CREATE TABLE default.local_data (key UInt64, value String) ENGINE = MergeTree ORDER BY key"
-    )
+    node1.query("CREATE TABLE default.local_data (key UInt64, value String) ENGINE = MergeTree ORDER BY key")
     node1.query("CREATE USER restricted IDENTIFIED WITH no_password")
     node1.query("GRANT CREATE TABLE, DROP TABLE ON default.* TO restricted")
     node1.query("GRANT REMOTE ON *.* TO restricted")
@@ -63,9 +53,7 @@ def test_structure_inference_respects_show_columns_access(started_cluster):
             "CREATE TABLE default.dist_local ENGINE = Distributed('local_cluster', default, local_data)",
             user="restricted",
         )
-        assert node1.query("DESC TABLE default.dist_local") == (
-            "key\tUInt64\t\t\t\t\t\nvalue\tString\t\t\t\t\t\n"
-        )
+        assert node1.query("DESC TABLE default.dist_local") == ("key\tUInt64\t\t\t\t\t\nvalue\tString\t\t\t\t\t\n")
     finally:
         node1.query("DROP TABLE IF EXISTS default.dist_local SYNC")
         node1.query("DROP USER restricted")
@@ -75,13 +63,9 @@ def test_structure_inference_respects_show_columns_access(started_cluster):
 def test_structure_less_distributed_in_replicated_database(started_cluster):
     """The variant BuzzHouse found: the `CREATE` is replayed by the `DDLWorker` of a
     `Replicated` database, whose query context also carried no client version."""
-    node1.query(
-        "CREATE DATABASE replicated_db ENGINE = Replicated('/clickhouse/databases/replicated_db', 'shard1', 'replica1')"
-    )
+    node1.query("CREATE DATABASE replicated_db ENGINE = Replicated('/clickhouse/databases/replicated_db', 'shard1', 'replica1')")
     try:
-        node1.query(
-            "CREATE TABLE replicated_db.dist ENGINE = Distributed('remote_only_cluster', default, remote_data)"
-        )
+        node1.query("CREATE TABLE replicated_db.dist ENGINE = Distributed('remote_only_cluster', default, remote_data)")
         assert node1.query("SELECT sum(key) FROM replicated_db.dist") == "3\n"
     finally:
         node1.query("DROP DATABASE replicated_db SYNC")
