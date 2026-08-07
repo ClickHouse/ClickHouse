@@ -108,7 +108,7 @@ UInt8 getPcoTypeByte(const IDataType & column_type)
             size);
 
     bool is_signed = which.isInt() || which.isDate32() || which.isEnum() || which.isDecimal() || which.isDateTime64()
-        || which.isInt128() || which.isInt256() || which.isInterval();
+        || which.isTime() || which.isTime64() || which.isInt128() || which.isInt256() || which.isInterval();
 
     switch (size)
     {

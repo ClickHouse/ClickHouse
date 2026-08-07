@@ -59,7 +59,9 @@ OPTIMIZE TABLE t_pco FINAL;
 SELECT 'after_merge', sum(i64 != toInt64(id * 1000000 - 500)) FROM t_pco;
 
 -- Backed types accepted via their underlying integer representation: the type mapper treats
--- Decimal32/Decimal64 and DateTime64 as signed, IPv4 as unsigned, Enum as signed, Date32 as signed.
+-- Decimal32/Decimal64, DateTime64, Enum, Date32, Time and Time64 as signed, IPv4 as unsigned.
+-- Time/Time64 hold negative values, so they must map to the signed pcodec number types.
+SET enable_time_time64_type = 1;
 DROP TABLE IF EXISTS t_pco_backed;
 CREATE TABLE t_pco_backed
 (
@@ -70,7 +72,9 @@ CREATE TABLE t_pco_backed
     e8    Enum8('a' = 1, 'b' = 2, 'c' = 3) CODEC(PCO),
     e16   Enum16('x' = -300, 'y' = 5, 'z' = 1000) CODEC(PCO),
     d32   Date32 CODEC(PCO),
-    dt64  DateTime64(3) CODEC(PCO)
+    dt64  DateTime64(3) CODEC(PCO),
+    t     Time CODEC(PCO),
+    t64   Time64(3) CODEC(PCO)
 )
 ENGINE = MergeTree ORDER BY id;
 
@@ -83,7 +87,9 @@ SELECT
     CAST(toInt8(number % 3 + 1) AS Enum8('a' = 1, 'b' = 2, 'c' = 3)),
     CAST([-300, 5, 1000][number % 3 + 1] AS Enum16('x' = -300, 'y' = 5, 'z' = 1000)),
     toDate32('1950-01-01') + (number % 20000),
-    addMilliseconds(toDateTime64('2000-01-01 00:00:00', 3), number * 123)
+    addMilliseconds(toDateTime64('2000-01-01 00:00:00', 3), number * 123),
+    toTime(toInt32(number) * 7 - 50000),
+    toTime64(toInt64(number) * 123 - 1000000, 3)
 FROM numbers(20000);
 
 SELECT 'Decimal32',  sum(dec32 != toDecimal32(toInt32(id % 100000) - 50000, 4)) FROM t_pco_backed;
@@ -93,6 +99,8 @@ SELECT 'Enum8',      sum(toInt8(e8) != toInt8(id % 3 + 1)) FROM t_pco_backed;
 SELECT 'Enum16',     sum(toInt16(e16) != [-300, 5, 1000][id % 3 + 1]) FROM t_pco_backed;
 SELECT 'Date32',     sum(d32 != toDate32('1950-01-01') + (id % 20000)) FROM t_pco_backed;
 SELECT 'DateTime64', sum(dt64 != addMilliseconds(toDateTime64('2000-01-01 00:00:00', 3), id * 123)) FROM t_pco_backed;
+SELECT 'Time',       sum(t != toTime(toInt32(id) * 7 - 50000)) FROM t_pco_backed;
+SELECT 'Time64',     sum(t64 != toTime64(toInt64(id) * 123 - 1000000, 3)) FROM t_pco_backed;
 
 -- 16/32-byte and non-numeric types are rejected.
 CREATE TABLE t_pco_bad (x Decimal128(10) CODEC(PCO)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }

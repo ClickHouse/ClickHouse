@@ -18,6 +18,8 @@ Enum8	0
 Enum16	0
 Date32	0
 DateTime64	0
+Time	0
+Time64	0
 chain_a	0
 chain_b	0
 small	0
