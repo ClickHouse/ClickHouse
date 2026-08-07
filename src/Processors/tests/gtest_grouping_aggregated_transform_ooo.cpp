@@ -61,7 +61,8 @@ AggregatingTransformParamsPtr makeMergeParams(const SharedHeader & header)
         /*max_threads_=*/ 1,
         /*max_block_size_=*/ 65536,
         /*min_hit_rate_to_use_consecutive_keys_optimization_=*/ 0.5f,
-        /*serialize_string_with_zero_byte_=*/ false);
+        /*serialize_string_with_zero_byte_=*/ false,
+        /*enable_packed_string_keys_=*/ true);
     return std::make_shared<AggregatingTransformParams>(header, params, /*final=*/ false);
 }
 
