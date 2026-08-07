@@ -18,7 +18,7 @@
 #include <Poco/NullChannel.h>
 #include <Poco/SimpleFileChannel.h>
 #include <Databases/registerDatabases.h>
-#include <Databases/DatabaseFilesystem.h>
+#include <Databases/DatabaseURL.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOverlay.h>
@@ -491,7 +491,12 @@ DatabasePtr createClickHouseLocalDatabaseOverlay(const String & name_, ContextPt
         DatabaseCatalog::getStoreDirPath(default_database_uuid);
 
     overlay->registerNextDatabase(std::make_shared<DatabaseAtomic>(name_, default_database_metadata_path, default_database_uuid, context));
-    overlay->registerNextDatabase(std::make_shared<DatabaseFilesystem>(name_, "", context));
+    /// The URL database handles local files, URLs and object storage uniformly: with the `file://`
+    /// base URL, a plain table name resolves to `file://<name>` -- a path relative to the current
+    /// directory, read by the File engine (globs included) -- while a name with a URL scheme
+    /// (`https://`, `s3://`, ...) is dispatched by the scheme to the matching engine. This enables
+    /// queries like `SELECT * FROM 'data.csv'` and `SELECT * FROM 'https://example.com/data.csv'`.
+    overlay->registerNextDatabase(std::make_shared<DatabaseURL>(name_, "file://", context));
     return overlay;
 }
 
@@ -1059,6 +1064,10 @@ void LocalServer::setupUsers()
     access_control.setEnableReadWriteGrants(config.getBool("access_control_improvements.enable_read_write_grants", true));
     access_control.setEnableUserNameAccessType(config.getBool("access_control_improvements.enable_user_name_access_type", true));
     access_control.setThrowOnInvalidReplicatedAccessEntities(config.getBool("access_control_improvements.throw_on_invalid_replicated_access_entities", true));
+
+    /// Keep in sync with `AccessControl::setupFromMainConfig` and `attachSystemTables`: `system.user_query_log`
+    /// is attached (and thus safe to grant SELECT on implicitly) only when this is enabled.
+    access_control.setUserQueryLogEnabled(config.getBool("query_log.enable_user_query_log", true));
 
     /// Apply user-level configuration from a loaded config file (including those
     /// auto-discovered via `getLocalConfigPath`, e.g. `~/.clickhouse-local/config.xml`).
