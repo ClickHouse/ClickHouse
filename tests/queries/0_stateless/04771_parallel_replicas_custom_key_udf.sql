@@ -26,6 +26,9 @@ SET max_parallel_replicas = 3;
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 SET parallel_replicas_mode = 'custom_key_range';
+-- Parallel replicas with a custom key are not implemented with `serialize_query_plan`,
+-- and that check fires before the key validation under test.
+SET serialize_query_plan = 0;
 
 -- A subquery hidden in a UDF is rejected in the custom key.
 SELECT count() FROM custom_key_udf
