@@ -86,6 +86,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
+            {"allow_experimental_database_s3_tables", false, false, "New setting to enable experimental database S3 tables (AWS Iceberg REST catalog)."},
         });
 
         addSettingsChanges(settings_changes_history, "26.5",
@@ -229,7 +230,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_expire_default_max_ref_age_ms", 9223372036854775807, 9223372036854775807, "New setting."},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
-            {"allow_experimental_database_s3_tables", false, false, "New setting to enable experimental database S3 tables (AWS Iceberg REST catalog)."},
         });
         addSettingsChanges(settings_changes_history, "26.2",
         {

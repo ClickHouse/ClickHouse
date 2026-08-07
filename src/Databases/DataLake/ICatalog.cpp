@@ -103,7 +103,18 @@ void TableMetadata::setLocation(const std::string & location_)
     auto pos_to_path = location_.substr(pos_to_bucket).find('/');
 
     if (pos_to_path == std::string::npos)
+    {
+        /// An empty path is allowed for AWS S3 Tables: the table location is just `s3://<bucket>`.
+        if (storage_type_str == "s3://")
+        {
+            location_without_path = location_;
+            path.clear();
+            bucket = location_.substr(pos_to_bucket);
+            return;
+        }
+
         throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unexpected location format: {}", location_);
+    }
 
     pos_to_path = pos_to_bucket + pos_to_path;
 
@@ -284,8 +295,22 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
             metadata_location = metadata_location.substr(storage_type_str.size());
         if (data_location.starts_with(storage_type_str))
             data_location = data_location.substr(storage_type_str.size());
-        else if (!endpoint.empty() && data_location.starts_with(endpoint))
-            data_location = data_location.substr(endpoint.size());
+        else if (!endpoint.empty())
+        {
+            std::string normalized_endpoint = endpoint;
+            if (normalized_endpoint.ends_with('/'))
+                normalized_endpoint.pop_back();
+
+            if (data_location.starts_with(normalized_endpoint))
+            {
+                data_location = data_location.substr(normalized_endpoint.size());
+                /// `metadata_location` is relative to the bucket (the `s3://` prefix is stripped above),
+                /// while `data_location` still has the leading slash left over from the endpoint,
+                /// e.g. "/bucket/table-uuid/". Drop it so that the prefix comparison below works.
+                if (azure_account_with_suffix.empty() && data_location.starts_with('/'))
+                    data_location = data_location.substr(1);
+            }
+        }
 
         if (metadata_location.starts_with(data_location))
         {

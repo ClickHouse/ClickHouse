@@ -334,7 +334,6 @@ void DatabaseDataLake::initialize() const
                 url,
                 settings[DatabaseDataLakeSetting::region].value,
                 catalog_parameters,
-                settings[DatabaseDataLakeSetting::namespaces].value,
                 Context::getGlobalContextInstance());
 #else
             throw Exception(

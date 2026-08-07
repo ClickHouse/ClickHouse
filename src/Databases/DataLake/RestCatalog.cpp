@@ -793,7 +793,6 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
 
     try
     {
-<<<<<<< HEAD
         while (true)
         {
             /// The Iceberg REST OpenAPI spec uses `pageToken` (request) / `next-page-token` (response)
@@ -804,6 +803,8 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
             if (!page_token.empty())
                 params.push_back({"pageToken", page_token});
 
+            ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetNamespaces);
+            auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetNamespacesMicroseconds);
             auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
             String next_page_token;
             auto page_namespaces = parseNamespaces(*buf, base_namespace, next_page_token);
@@ -832,14 +833,6 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
             page_token = std::move(next_page_token);
         }
         return all_namespaces;
-=======
-        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetNamespaces);
-        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetNamespacesMicroseconds);
-        auto buf = createReadBuffer(config.prefix / NAMESPACES_ENDPOINT, params);
-        auto namespaces = parseNamespaces(*buf, base_namespace);
-        LOG_DEBUG(log, "Loaded {} namespaces in base namespace {}", namespaces.size(), base_namespace);
-        return namespaces;
->>>>>>> 383c8d11e60 (Merge pull request #1868 from Altinity/fix/datalake-rest-catalog-profile-events)
     }
     catch (const DB::HTTPException & e)
     {
@@ -944,7 +937,6 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
     auto encoded_namespace = encodeNamespaceForURI(base_namespace);
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encoded_namespace / "tables";
 
-<<<<<<< HEAD
     DB::Names tables;
     String page_token;
     /// Cycle-detection guard: tracks every non-empty `next-page-token` we have seen on this
@@ -963,6 +955,8 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
         if (!page_token.empty())
             params.push_back({"pageToken", page_token});
 
+        ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetTables);
+        auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetTablesMicroseconds);
         auto buf = createReadBuffer(config.prefix / endpoint, params);
 
         /// Pass through the remaining limit so that single-page short-circuiting still works
@@ -994,12 +988,6 @@ DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limi
     }
 
     return tables;
-=======
-    ProfileEvents::increment(ProfileEvents::DataLakeRestCatalogGetTables);
-    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::DataLakeRestCatalogGetTablesMicroseconds);
-    auto buf = createReadBuffer(config.prefix / endpoint);
-    return parseTables(*buf, base_namespace, limit);
->>>>>>> 383c8d11e60 (Merge pull request #1868 from Altinity/fix/datalake-rest-catalog-profile-events)
 }
 
 DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const

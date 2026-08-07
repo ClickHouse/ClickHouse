@@ -29,7 +29,6 @@ public:
         const String & base_url_,
         const String & region_,
         const DataLake::CatalogSettings & catalog_settings_,
-        const String & namespaces_,
         DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override { return DB::DatabaseDataLakeCatalogType::S3_TABLES; }
@@ -39,7 +38,6 @@ public:
     bool tryGetTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
-        DB::ContextPtr context_,
         TableMetadata & result) const override;
 
     void dropTable(const String & namespace_name, const String & table_name) const override;

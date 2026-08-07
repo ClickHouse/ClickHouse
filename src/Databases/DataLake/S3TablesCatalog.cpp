@@ -33,7 +33,6 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
-    extern const int CATALOG_NAMESPACE_DISABLED;
 }
 
 namespace DB::Setting
@@ -64,9 +63,8 @@ S3TablesCatalog::S3TablesCatalog(
     const String & base_url_,
     const String & region_,
     const CatalogSettings & catalog_settings_,
-    const String & namespaces_,
     DB::ContextPtr context_)
-    : RestCatalog(warehouse_, base_url_, "", "", false, namespaces_, context_)
+    : RestCatalog(warehouse_, base_url_, "", "", false, context_)
     , region(region_)
     , storage_endpoint(catalog_settings_.storage_endpoint)
 {
@@ -138,8 +136,6 @@ DB::Names S3TablesCatalog::getTables() const
     std::mutex mutex;
     for (const auto & ns : namespaces)
     {
-        if (!allowed_namespaces.isNamespaceAllowed(ns, /*nested*/ false))
-            continue;
         runner.enqueueAndKeepTrack(
             [&, ns]
             {
@@ -155,10 +151,9 @@ DB::Names S3TablesCatalog::getTables() const
 bool S3TablesCatalog::tryGetTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
-    DB::ContextPtr context_,
     TableMetadata & result) const
 {
-    if (!RestCatalog::tryGetTableMetadata(namespace_name, table_name, context_, result))
+    if (!RestCatalog::tryGetTableMetadata(namespace_name, table_name, result))
         return false;
 
     if (!result.requiresCredentials())
@@ -220,11 +215,6 @@ ICatalog::CredentialsRefreshCallback S3TablesCatalog::getCredentialsConfiguratio
 
 void S3TablesCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
-    if (!allowed_namespaces.isNamespaceAllowed(namespace_name, /*nested*/ false))
-        throw DB::Exception(DB::ErrorCodes::CATALOG_NAMESPACE_DISABLED,
-            "Failed to drop table {}, namespace {} is filtered by `namespaces` database parameter",
-            table_name, namespace_name);
-
     const std::string endpoint
         = (base_url / config.prefix / "namespaces" / namespace_name / "tables" / table_name).string()
         + "?purgeRequested=True";

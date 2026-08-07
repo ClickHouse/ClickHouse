@@ -1503,13 +1503,6 @@ The server successfully detected this situation and will download merged part fr
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
-<<<<<<< HEAD
-=======
-    M(ObjectStorageListObjectsCacheHits, "Number of times object storage list objects operation hit the cache.", ValueType::Number) \
-    M(ObjectStorageListObjectsCacheMisses, "Number of times object storage list objects operation miss the cache.", ValueType::Number) \
-    M(ObjectStorageListObjectsCacheExactMatchHits, "Number of times object storage list objects operation hit the cache with an exact match.", ValueType::Number) \
-    M(ObjectStorageListObjectsCachePrefixMatchHits, "Number of times object storage list objects operation miss the cache using prefix matching.", ValueType::Number) \
-    \
     M(DataLakeRestCatalogLoadConfig, "Number of 'load config' requests to Iceberg REST catalog.", ValueType::Number) \
     M(DataLakeRestCatalogLoadConfigMicroseconds, "Total time of 'load config' requests to Iceberg REST catalog.", ValueType::Microseconds) \
     M(DataLakeRestCatalogGetNamespaces, "Number of 'get namespaces' requests to Iceberg REST catalog.", ValueType::Number) \
@@ -1555,7 +1548,6 @@ The server successfully detected this situation and will download merged part fr
     M(DataLakeUnityCatalogGetCredentials, "Number of 'get credentials' requests to Iceberg Unity catalog.", ValueType::Number) \
     M(DataLakeUnityCatalogGetCredentialsMicroseconds, "Total time of 'get credentials' requests to Iceberg Unity catalog.", ValueType::Microseconds) \
 
->>>>>>> 383c8d11e60 (Merge pull request #1868 from Altinity/fix/datalake-rest-catalog-profile-events)
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)
