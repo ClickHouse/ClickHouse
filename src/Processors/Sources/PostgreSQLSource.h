@@ -50,6 +50,8 @@ protected:
 private:
     void init(const Block & sample_block);
 
+    void finalize(const std::shared_ptr<T> & tx_to_cancel, pqxx::stream_from * stream_to_close) noexcept;
+
     const UInt64 max_block_size;
     bool auto_commit = true;
     ExternalResultDescription description;
@@ -57,13 +59,7 @@ private:
     std::atomic<bool> started{false};
     std::atomic<bool> is_completed{false};
 
-    /// Serializes publication of `tx` in onStart() against the read in onCancel(), which runs on the
-    /// cancelling thread while onStart() is still in flight. Must not be held across pqxx calls.
     std::mutex tx_mutex;
-
-    /// libpq forbids two threads from manipulating one connection at a time, and onStart() and
-    /// onCancel() can both cancel on the same one. Only ever held across cancel_query(), and only
-    /// ever taken with tx_mutex released.
     std::mutex cancel_mutex;
 
     postgres::ConnectionHolderPtr connection_holder;

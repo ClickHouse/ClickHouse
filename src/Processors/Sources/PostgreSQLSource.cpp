@@ -74,6 +74,35 @@ void PostgreSQLSource<T>::init(const Block & sample_block)
 }
 
 
+/// Finalizes the state of the source: cancels the query still running on the connection, closes the
+/// COPY stream and marks the connection broken. A null argument means there is nothing of that kind
+/// to finalize. Must be called with tx_mutex released, since the calls below block.
+template<typename T>
+void PostgreSQLSource<T>::finalize(const std::shared_ptr<T> & tx_to_cancel, pqxx::stream_from * stream_to_close) noexcept
+{
+    try
+    {
+        if (tx_to_cancel)
+        {
+            /// libpq forbids two threads from manipulating one connection at a time.
+            std::lock_guard lock(cancel_mutex);
+            tx_to_cancel->conn().cancel_query();
+        }
+
+        /// Closing it here keeps the exception out of the transaction's pending error, where it
+        /// would hide the message.
+        if (stream_to_close)
+            stream_to_close->close();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    if (connection_holder)
+        connection_holder->setBroken();
+}
+
 template<typename T>
 void PostgreSQLSource<T>::onStart()
 {
@@ -101,11 +130,11 @@ void PostgreSQLSource<T>::onStart()
 
     /// A cancel arriving while the transaction was being constructed saw `tx` still null, so it
     /// consumed `is_completed` and skipped its own teardown. Do that teardown here, otherwise the
-    /// connection is returned to the pool with the transaction left open.
+    /// connection is returned to the pool with the transaction left open. No statement was issued
+    /// on it yet, so there is nothing to cancel.
     if (is_completed.load())
     {
-        if (connection_holder)
-            connection_holder->setBroken();
+        finalize(nullptr, nullptr);
         return;
     }
 
@@ -116,24 +145,7 @@ void PostgreSQLSource<T>::onStart()
     /// interrupted nothing, and it consumed `is_completed`, so the destructor returns early and
     /// does not cancel it either. Cancel it here, where it exists.
     if (is_completed.load())
-    {
-        try
-        {
-            {
-                /// That cancel may still be inside cancel_query() on this same connection.
-                std::lock_guard lock(cancel_mutex);
-                tx->conn().cancel_query();
-            }
-            stream->close();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
-        if (connection_holder)
-            connection_holder->setBroken();
-    }
+        finalize(tx, stream.get());
 }
 
 template<typename T>
@@ -248,18 +260,8 @@ void PostgreSQLSource<T>::onCancel() noexcept
         /// The code is executed only if onStart() was not finished mainly due to freezing on pqxx::from_query
         if (!started.load() && tx_snapshot && tx_snapshot->conn().is_open())
         {
-            try
-            {
-                std::lock_guard lock(cancel_mutex);
-                tx_snapshot->conn().cancel_query();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-
-            if (connection_holder)
-                connection_holder->setBroken();
+            /// `stream` belongs to onStart(), which is still running, so it is not touched here.
+            finalize(tx_snapshot, nullptr);
         }
     }
     catch (...)
@@ -275,32 +277,11 @@ PostgreSQLSource<T>::~PostgreSQLSource()
     if (is_completed.exchange(true))
         return;
 
-    try
-    {
-        if (stream)
-        {
-            /** Internally libpqxx::stream_from runs PostgreSQL copy query `COPY query TO STDOUT`.
-                 * During transaction abort we try to execute PostgreSQL `ROLLBACK` command and if
-                 * copy query is not cancelled, we wait until it finishes.
-                 */
-            tx->conn().cancel_query();
-
-            /** If stream is not closed, libpqxx::stream_from closes stream in destructor, but that way
-                 * exception is added into transaction pending error and we can potentially ignore exception message.
-                 */
-            stream->close();
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    /// Without cancelling the COPY the ROLLBACK issued during transaction abort waits for it.
+    finalize(stream ? tx : nullptr, stream.get());
 
     stream.reset();
     tx.reset();
-
-    if (connection_holder)
-        connection_holder->setBroken();
 }
 
 template
