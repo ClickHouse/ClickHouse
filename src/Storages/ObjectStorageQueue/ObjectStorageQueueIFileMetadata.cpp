@@ -353,8 +353,9 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
 
-    auto [success, file_state] = setProcessingImpl();
-    afterSetProcessing(success, file_state);
+    std::optional<FileTerminalState> terminal_state;
+    auto [success, file_state] = setProcessingImpl(terminal_state);
+    afterSetProcessing(success, file_state, std::move(terminal_state));
 
     LOG_TEST(log, "File {} has state `{}`: will {}process", path, file_state, success ? "" : "not ");
     return success;
@@ -399,7 +400,10 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     return prepareProcessingRequestsImpl(requests, processing_id);
 }
 
-void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::optional<FileStatus::State> file_state)
+void ObjectStorageQueueIFileMetadata::afterSetProcessing(
+    bool success,
+    std::optional<FileStatus::State> file_state,
+    std::optional<FileTerminalState> terminal_state)
 {
     if (success)
     {
@@ -434,7 +438,26 @@ void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::opti
                     file_status->onProcessingByAnotherProcessor();
             }
             else
-                file_status->updateState(file_state.value());
+            {
+                /// A terminal node committed by another processor: refresh the whole cached
+                /// record, with the same guards as the listing pre-filter (see
+                /// `FileIterator::filterProcessableFiles`).
+                const auto cached_state = file_status->state.load();
+                if (cached_state == file_state.value())
+                {
+                    /// The cached record already describes this terminal state (a local attempt).
+                }
+                else if (cached_state == FileStatus::State::Processing && !file_status->isProcessingByAnotherProcessor())
+                {
+                    /// A locally owned `Processing` state is updated by its owner on commit.
+                }
+                else
+                {
+                    const auto terminal = terminal_state.value_or(FileTerminalState{.state = file_state.value()});
+                    chassert(terminal.state == file_state.value());
+                    file_status->onTerminalStateByAnotherProcessor(terminal.state, terminal.exception, terminal.retries);
+                }
+            }
         }
     }
 }

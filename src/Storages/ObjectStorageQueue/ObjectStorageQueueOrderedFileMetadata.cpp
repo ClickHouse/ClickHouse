@@ -570,7 +570,11 @@ ObjectStorageQueueOrderedFileMetadata::getProcessingStateFromKeeper(
     {
         ProcessingStateFromKeeper state(is_failed);
         if (is_failed && !responses[1].data.empty())
-            state.failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
+        {
+            auto failed_node_metadata = NodeMetadata::fromString(responses[1].data);
+            state.failure_message = std::move(failed_node_metadata.last_exception);
+            state.failed_retries = failed_node_metadata.retries;
+        }
         return state;
     }
 
@@ -584,7 +588,11 @@ ObjectStorageQueueOrderedFileMetadata::getProcessingStateFromKeeper(
     ProcessingStateFromKeeper state(file_path, last_processed_path, is_failed);
     state.processed_bucket_version = responses[0].stat.version;
     if (is_failed && !responses[1].data.empty())
-        state.failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
+    {
+        auto failed_node_metadata = NodeMetadata::fromString(responses[1].data);
+        state.failure_message = std::move(failed_node_metadata.last_exception);
+        state.failed_retries = failed_node_metadata.retries;
+    }
     return state;
 }
 
@@ -724,7 +732,8 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to set file processing, error: {}", code);
 }
 
-std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueOrderedFileMetadata::setProcessingImpl()
+std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueOrderedFileMetadata::setProcessingImpl(
+    std::optional<FileTerminalState> & terminal_state)
 {
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
@@ -741,6 +750,10 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         if (state.is_failed)
         {
             LOG_TEST(log, "File {} is Failed, path {}", path, failed_node_path);
+            terminal_state = FileTerminalState{
+                .state = FileStatus::State::Failed,
+                .exception = std::move(state.failure_message),
+                .retries = state.failed_retries};
             return {false, FileStatus::State::Failed};
         }
 
@@ -749,7 +762,10 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
                  processed_node_path);
 
         if (state.is_processed)
+        {
+            terminal_state = FileTerminalState{.state = FileStatus::State::Processed};
             return {false, FileStatus::State::Processed};
+        }
 
         Coordination::Requests requests;
 

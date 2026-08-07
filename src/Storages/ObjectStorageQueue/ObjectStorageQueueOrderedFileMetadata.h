@@ -94,6 +94,8 @@ public:
         bool is_processed = false;
         /// Populated from the failed node data when `is_failed` is true.
         std::string failure_message;
+        /// The retries recorded in the failed node data; populated together with `failure_message`.
+        size_t failed_retries = 0;
         /// Version of the bucket-level processed pointer node (`processed_bucket_path`).
         std::optional<int32_t> processed_bucket_version;
     };
@@ -124,7 +126,7 @@ private:
     /// global version-pinning and for writes via doPrepareProcessedRequests.
     const std::string processed_bucket_path;
 
-    std::pair<bool, FileStatus::State> setProcessingImpl() override;
+    std::pair<bool, FileStatus::State> setProcessingImpl(std::optional<FileTerminalState> & terminal_state) override;
 
     void prepareProcessedRequestsImpl(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes) override;

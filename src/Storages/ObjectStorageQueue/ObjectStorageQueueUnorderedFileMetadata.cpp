@@ -70,7 +70,8 @@ ObjectStorageQueueUnorderedFileMetadata::prepareProcessingRequestsImpl(
     return result;
 }
 
-std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl()
+std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueUnorderedFileMetadata::setProcessingImpl(
+    std::optional<FileTerminalState> & terminal_state)
 {
     Coordination::Requests requests;
     auto result = prepareProcessingRequestsImpl(requests, generateProcessingID());
@@ -109,10 +110,34 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     };
 
     if (has_request_failed(result.processed_path_doesnt_exist_idx))
+    {
+        terminal_state = FileTerminalState{.state = FileStatus::State::Processed};
         return {false, FileStatus::State::Processed};
+    }
 
     if (has_request_failed(result.failed_path_doesnt_exist_idx))
+    {
+        terminal_state = FileTerminalState{.state = FileStatus::State::Failed};
+
+        /// The `failed` node carries the exception and the retries of the processor
+        /// which failed the file; the node may be gone by now if the failure is retriable.
+        std::string failed_node_data;
+        zk_retry.resetFailures();
+        zk_retry.retryLoop([&]
+        {
+            auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+            if (!zk_client->tryGet(failed_node_path, failed_node_data))
+                failed_node_data.clear();
+        });
+        if (!failed_node_data.empty())
+        {
+            auto failed_node_metadata = NodeMetadata::fromString(failed_node_data);
+            terminal_state->exception = std::move(failed_node_metadata.last_exception);
+            terminal_state->retries = failed_node_metadata.retries;
+        }
+
         return {false, FileStatus::State::Failed};
+    }
 
     if (has_request_failed(result.create_processing_node_idx))
         return {false, FileStatus::State::Processing};

@@ -46,6 +46,8 @@ public:
         void onTerminalStateByAnotherProcessor(State state_, const std::string & exception, size_t retries_);
         /// Whether the `Processing` state is only a cached observation of a foreign node.
         bool isProcessingByAnotherProcessor() const { return processing_by_another_processor_since.load() != 0; }
+        /// When the foreign `processing` node was observed; zero if the state is not foreign.
+        time_t processingByAnotherProcessorSince() const { return processing_by_another_processor_since.load(); }
         /// Whether a file in `Processing` state may be attempted again: only if the state is a
         /// cached observation of a foreign node and the observation is older than `ttl_sec`.
         bool shouldRetryProcessing(time_t ttl_sec) const;
@@ -215,7 +217,11 @@ public:
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
-    void afterSetProcessing(bool success, std::optional<FileStatus::State> file_state);
+    /// `terminal_state` carries the `failed` node metadata when `file_state` is terminal.
+    void afterSetProcessing(
+        bool success,
+        std::optional<FileStatus::State> file_state,
+        std::optional<FileTerminalState> terminal_state = std::nullopt);
 
     void setUncertainCommit() { uncertain_commit = true; }
 
@@ -237,7 +243,9 @@ protected:
     /// so SipHash64 of the path is used instead.
     static std::string getNodeName(const std::string & path);
 
-    virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
+    /// `terminal_state` is filled with the discovered node metadata
+    /// when the returned state is `Processed` or `Failed`.
+    virtual std::pair<bool, FileStatus::State> setProcessingImpl(std::optional<FileTerminalState> & terminal_state) = 0;
     virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests,
         LastProcessedFileInfoMapPtr created_nodes) = 0;
 
