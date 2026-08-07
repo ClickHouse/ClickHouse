@@ -1365,7 +1365,7 @@ void registerStorageBuffer(StorageFactory & factory)
         {
             args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
             auto destination = DatabaseCatalog::instance().getTable(destination_id, args.getLocalContext());
-            auto destination_metadata = destination->getInMemoryMetadataPtr(args.getLocalContext(), false);
+            auto destination_metadata = destination->getInMemoryMetadataPtr();
             columns = destination_metadata->getColumns();
         }
 
