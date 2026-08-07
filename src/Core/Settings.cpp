@@ -7867,6 +7867,20 @@ Possible values:
 - 0 - `FINAL` applies only to the table it is specified on.
 - 1 - `FINAL` on the left-most table of a JOIN is applied to all joined tables.
 )", 0) \
+    DECLARE(Bool, analyzer_compatibility_multiple_joins_qualify_column_names, false, R"(
+When enabled and the `FROM` clause of a query contains two or more `JOIN`s (comma-separated tables count; `ARRAY JOIN` does not), the analyzer names result columns the way the old analyzer's multiple-joins rewrite did:
+- columns produced by expanding `*`, `<table>.*` or `COLUMNS('<regexp>')` get names of the form `<alias-or-table>.<column>` (the qualifier is the table expression's alias if it has one, otherwise the table name without the database, otherwise the CTE name; columns of a joined subquery without an alias are left unqualified). Two kinds of column keep their bare name because they belong to the join rather than to a single table expression: a column produced by `ARRAY JOIN`, and a key merged by `JOIN ... USING`. Outer references such as `SELECT ll.arr` or `SELECT ll.k` therefore do not resolve in those two shapes;
+- the identifier-list form `COLUMNS(col1, col2)` is not a matcher expansion: each column keeps the name exactly as its identifier was written, so `COLUMNS(x)` produces `x` and `COLUMNS(a.x)` produces `a.x`;
+- an unaliased column reference in the `SELECT` list keeps its name exactly as written (e.g. `SELECT a.x` produces a column named `a.x` even when `x` is unambiguous).
+
+This makes outer queries that reference such columns by their qualified names work, for example:
+
+```sql
+SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
+```
+
+Takes effect only when the analyzer is enabled (`enable_analyzer = 1`).
+)", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
 )", 0) \
