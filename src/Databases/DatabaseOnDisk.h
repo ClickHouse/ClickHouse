@@ -19,8 +19,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    LoadingStrictnessLevel mode,
-    bool set_attach_flag = true);
+    LoadingStrictnessLevel mode);
 
 /** Get the string with the table definition based on the CREATE query.
   * It is an ATTACH query that you can execute to create a table from the correspondent database.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
@@ -35,7 +36,6 @@ struct AlterCommand
         DROP_INDEX,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
-        MODIFY_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
         ADD_STATISTICS,
@@ -112,10 +112,10 @@ struct AlterCommand
     /// For ADD/DROP INDEX
     String index_name;
 
-    // For ADD/MODIFY CONSTRAINT
+    // For ADD CONSTRAINT
     ASTPtr constraint_decl = nullptr;
 
-    // For ADD/DROP/MODIFY CONSTRAINT
+    // For ADD/DROP CONSTRAINT
     String constraint_name;
 
     /// For ADD PROJECTION
@@ -156,8 +156,6 @@ struct AlterCommand
     /// For MODIFY_REFRESH
     ASTPtr refresh = nullptr;
 
-    ASTPtr add_enum_values = nullptr;
-
     /// Target column name
     String rename_to;
 
@@ -169,9 +167,7 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
-    /// share_nested_offsets mirrors prepare()/validate(): when true, `n` and `n.*` are treated as
-    /// the same logical column for IF NOT EXISTS existence checks; when false they are independent.
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// Check that alter command require data modification (mutation) to be
     /// executed. For example, cast from Date to UInt16 type can be executed
@@ -197,9 +193,7 @@ struct AlterCommand
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
-    /// share_nested_offsets is forwarded to the internal apply() so mutation-planning replay
-    /// treats IF NOT EXISTS nested existence the same way as the real commands.apply().
-    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 };
 
 class Context;
@@ -219,13 +213,11 @@ public:
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default)
-    void prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets = true);
+    void prepare(const StorageInMemoryMetadata & metadata);
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
-    /// share_nested_offsets is threaded to AlterCommand::apply so IF NOT EXISTS existence checks
-    /// stay consistent with prepare()/validate() for nested columns (see AlterCommand::apply).
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true) const;
+    void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// At least one command modify settings or comments.
     bool hasNonReplicatedAlterCommand() const;
@@ -243,10 +235,7 @@ public:
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
-    /// share_nested_offsets is threaded to tryConvertToMutationCommand -> AlterCommand::apply so the
-    /// intermediate metadata built while planning mutations matches the real commands.apply() for
-    /// IF NOT EXISTS nested adds (see AlterCommand::apply).
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false, bool share_nested_offsets = true) const;
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);

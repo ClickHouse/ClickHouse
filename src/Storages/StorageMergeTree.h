@@ -61,10 +61,6 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsStreaming() const override { return true; }
-
-    CursorPromotersMap buildPromoters() override;
-
     bool supportsTransactions() const override { return support_transaction; }
 
     void read(
@@ -290,7 +286,7 @@ private:
     void dropPartNoWaitNoThrow(const String & part_name) override;
     void dropPart(const String & part_name, bool detach, ContextPtr context) override;
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr context) override;
-    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr context);
+    void dropPartsImpl(DataPartsVector && parts_to_remove, bool detach);
     PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context) override;
 
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr context) override;
@@ -327,7 +323,6 @@ private:
 
     PreparedSetsCachePtr getPreparedSetsCache(Int64 mutation_id);
 
-    bool isTableReadonly() const;
     void assertNotReadonly() const;
 
     friend class MergeTreeSink;
@@ -390,7 +385,7 @@ private:
                             : retry_count(0ull)
                             , latest_fail_time_us(static_cast<size_t>(Poco::Timestamp().epochMicroseconds()))
                             , max_postpone_time_ms(max_postpone_time_ms_)
-                            , max_postpone_power(max_postpone_time_ms_ ? static_cast<size_t>(std::log2(max_postpone_time_ms_)) : 0ull)
+                            , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
             {}
 
 

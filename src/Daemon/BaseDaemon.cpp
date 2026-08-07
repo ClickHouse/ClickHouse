@@ -2,7 +2,6 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
@@ -191,7 +190,7 @@ void BaseDaemon::closeFDs()
     {
         /// in /proc/self/fd directory filenames are numeric file descriptors.
         /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
-        VectorWithMemoryTracking<int> fds;
+        std::vector<int> fds;
         for (const auto & path : fs::directory_iterator(proc_path))
             fds.push_back(parse<int>(path.path().filename()));
 
@@ -284,7 +283,7 @@ void BaseDaemon::initialize(Application & self)
     /// (query profiler creates lots of timers - timer_create(), and this requires slot in pending signals)
     if (auto pending_signals = config().getUInt64("pending_signals", 0); pending_signals > 0)
     {
-        struct rlimit rlim{};
+        struct rlimit rlim;
         if (getrlimit(RLIMIT_SIGPENDING, &rlim))
             throw Poco::Exception("Cannot getrlimit");
 
@@ -353,7 +352,7 @@ void BaseDaemon::initialize(Application & self)
         ///     }
         if (access(stderr_path.c_str(), W_OK))
         {
-            int fd = 0;
+            int fd;
             if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
@@ -363,26 +362,18 @@ void BaseDaemon::initialize(Application & self)
             }
         }
 
-        /// musl defines `stderr` and `stdout` as recursive macros `(stderr)` / `(stdout)`,
-        /// which trigger `-Wdisabled-macro-expansion` when used as function arguments.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
         /// Disable buffering for stderr
         setbuf(stderr, nullptr); // NOLINT(cert-msc24-c,cert-msc33-c, bugprone-unsafe-functions)
-#pragma clang diagnostic pop
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
     {
         std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout.log");
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         if (!freopen(stdout_path.c_str(), "a+", stdout))
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
-#pragma clang diagnostic pop
     }
 
     /// Change path for logging.
@@ -479,7 +470,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"), [this](int, bool) { onTerminateRequestSignal(); });
+    signal_listener = std::make_unique<SignalListener>(this, getLogger("BaseDaemon"));
 
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     build_id = SymbolIndex::instance().getBuildIDHex();
@@ -537,15 +528,36 @@ void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
     Poco::Util::ServerApplication::defineOptions(new_options);
 }
 
-void BaseDaemon::onTerminateRequestSignal()
+void BaseDaemon::handleSignal(int signal_id)
 {
+    if (!(signal_id == SIGINT ||
+        signal_id == SIGQUIT ||
+        signal_id == SIGTERM))
+        throw Exception::createDeprecated(std::string("Unsupported signal: ") + strsignal(signal_id), 0); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+
+    std::lock_guard lock(signal_handler_mutex);
+    {
+        ++terminate_signals_counter;
+        signal_event.notify_all();
+    }
+
     is_cancelled = true;
+    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+
+    if (terminate_signals_counter >= 2)
+    {
+        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
+        call_default_signal_handler(signal_id);
+        /// If the above did not help.
+        _exit(128 + signal_id);
+    }
 }
 
 void BaseDaemon::waitForTerminationRequest()
 {
     /// NOTE: as we already process signals via pipe, we don't have to block them with sigprocmask in threads
-    signal_listener->waitForTerminationRequest();
+    std::unique_lock<std::mutex> lock(signal_handler_mutex);
+    signal_event.wait(lock, [this](){ return terminate_signals_counter > 0; });
 }
 
 
@@ -728,7 +740,7 @@ void BaseDaemon::setupWatchdog()
             _exit(WEXITSTATUS(status));
         }
 
-        int exit_code = 0;
+        int exit_code;
 
         if (WIFSIGNALED(status))
         {
@@ -791,7 +803,7 @@ void systemdNotify(const std::string_view & command)
 
     const size_t len = strlen(path);
 
-    struct sockaddr_un addr{};
+    struct sockaddr_un addr;
 
     addr.sun_family = AF_UNIX;
 

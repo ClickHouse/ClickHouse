@@ -14,7 +14,7 @@ REGISTER_FUNCTION(ToStartOfFifteenMinutes)
 Rounds down the date with time to the start of the fifteen-minute interval.
 
 :::note
-The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
+The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/operations/settings/settings#enable_extended_results_for_datetime_functions).
 :::
     )";
     FunctionDocumentation::Syntax syntax = R"(
@@ -24,7 +24,7 @@ toStartOfFifteenMinutes(datetime)
     {
         {"datetime", "A date or date with time to round.", {"DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the date with time rounded to the start of the nearest fifteen-minute interval.", {"DateTime", "DateTime64"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the date with time rounded to the start of the nearest fifteen-minute interval", {"DateTime", "DateTime64"}};
     FunctionDocumentation::Examples examples =
     {
         {"Example", R"(

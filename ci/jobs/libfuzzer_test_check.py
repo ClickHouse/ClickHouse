@@ -29,8 +29,7 @@ from ci.praktika.s3 import S3
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell, Utils
 
-TIMEOUT_MASTER = 60 * 60  # 60 minutes for nightly/master runs
-TIMEOUT_PR = 30 * 60  # 30 minutes for PR runs
+TIMEOUT = 60 * 60  # 60 minutes
 NO_CHANGES_MSG = "Nothing to run"
 RUNNER_OUTPUT = "/test_output"
 
@@ -105,37 +104,6 @@ def get_run_command(
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image} "
         "python3 /usr/share/clickhouse-test/fuzz/runner.py"
     )
-
-
-def generate_dictionary(
-    fuzzers_path: Path, repo_path: Path, image: DockerImage
-) -> None:
-    # The libFuzzer dictionary (all.dict) lists every function, data type and
-    # keyword known to the server. It is generated here from the release binary,
-    # so it never drifts from the actual SQL grammar (see tests/fuzz/update_dict.sh).
-    clickhouse_bin = fuzzers_path / "clickhouse"
-    assert clickhouse_bin.exists(), "ClickHouse release binary not found"
-    clickhouse_bin.chmod(clickhouse_bin.stat().st_mode | 0o111)
-
-    uid = os.getuid()
-    gid = os.getgid()
-    # The whole repository is mounted (read-only), not just tests/: update_dict.sh
-    # verifies that the source-derived dictionary covers the binary-derived one,
-    # and derives the source root from its own location, so it must run from a
-    # full checkout.
-    cmd = (
-        f"docker run --rm "
-        f"--user {uid}:{gid} "
-        f"--workdir=/fuzzers "
-        f"--volume={fuzzers_path}:/fuzzers "
-        f"--volume={repo_path}:/repo:ro "
-        f'-e CLICKHOUSE_BIN="/fuzzers/clickhouse" '
-        f'-e OUTPUT_DIR="/fuzzers" '
-        f"{image} "
-        f"bash /repo/tests/fuzz/update_dict.sh"
-    )
-    logging.info("Generating fuzzer dictionary: %s", cmd)
-    subprocess.check_call(cmd, shell=True)
 
 
 def parse_args():
@@ -229,27 +197,6 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
     with open(output_log, "r", encoding="utf-8", errors="replace") as file:
         for line in file:
             line = line.rstrip("\n")
-
-            match = re.search(TEST_UNIT_LINE, line)
-            if match:
-                test_unit = os.path.basename(match.group(1))
-                trace_file = f"{test_unit}.trace"
-                trace_path = f"{fuzzer_result_dir}/{trace_file}"
-
-                if not is_error and len(stack_trace) > 0:
-                    with open(trace_path, "w", encoding="utf-8") as tracef:
-                        tracef.write("\n".join(stack_trace))
-                    error_info.append(
-                        (error_source, error_reason, test_unit, trace_file)
-                    )
-                    # reset for next error
-                    error_source = ""
-                    error_reason = ""
-                    test_unit = ""
-                    trace_file = ""
-                    stack_trace = []
-                continue
-
             if is_error:
                 match = re.search(ERROR_END, line)
                 if match:
@@ -277,6 +224,25 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
                 error_source = match.group(1)
                 error_reason = match.group(2)
                 is_error = True
+                continue
+
+            match = re.search(TEST_UNIT_LINE, line)
+            if match:
+                test_unit = os.path.basename(match.group(1))
+                trace_file = f"{test_unit}.trace"
+                trace_path = f"{fuzzer_result_dir}/{trace_file}"
+                if len(stack_trace) > 0:
+                    with open(trace_path, "w", encoding="utf-8") as tracef:
+                        tracef.write("\n".join(stack_trace))
+                    error_info.append(
+                        (error_source, error_reason, test_unit, trace_file)
+                    )
+                    # reset for next error
+                    error_source = ""
+                    error_reason = ""
+                    test_unit = ""
+                    trace_file = ""
+                    stack_trace = []
 
     return error_info
 
@@ -366,7 +332,7 @@ def process_results(result_path: Path):
             oks += 1
         elif status[0] == "ERROR":
             errors += 1
-            raw_logs.append("Fuzzing FAILED.")
+            raw_logs.append(f"Fuzzing FAILED.")
             if file_path_out.exists():
                 log_files.append(str(file_path_out))
             if file_path_stdout.exists():
@@ -388,14 +354,12 @@ def process_results(result_path: Path):
                 if file_path_stdout.exists():
                     log_files.append(str(file_path_stdout))
 
-        # Collect all crash-, timeout-, slow-unit-, oom- and .trace files
+        # Collect all crash, timeout and trace files
         for file in list(fuzzer_result_dir.glob("crash-*")):
             log_files.append(str(file))
         for file in list(fuzzer_result_dir.glob("timeout-*")):
             log_files.append(str(file))
         for file in list(fuzzer_result_dir.glob("slow-unit-*")):
-            log_files.append(str(file))
-        for file in list(fuzzer_result_dir.glob("oom-*")):
             log_files.append(str(file))
 
         result.set_info("\n".join(raw_logs))
@@ -431,8 +395,6 @@ def main():
         "clickhouse/stateless-test"
     ).pull_image()
 
-    is_master = info.pr_number == 0 and info.git_branch == "master"
-
     fuzzers_path = temp_path
     download_corpus(fuzzers_path)
 
@@ -446,8 +408,6 @@ def main():
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
                 zfd.extractall(seed_corpus_path)
 
-    generate_dictionary(fuzzers_path, repo_path, docker_image)
-
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)
 
@@ -455,11 +415,7 @@ def main():
         check_name, run_by_hash_num, run_by_hash_total
     )
 
-    timeout = TIMEOUT_MASTER if is_master else TIMEOUT_PR
-    additional_envs.append(f"TIMEOUT={timeout}")
-
-    if not is_master:
-        additional_envs.append("SKIP_MERGE=1")
+    additional_envs.append(f"TIMEOUT={TIMEOUT}")
 
     run_command = get_run_command(
         fuzzers_path,
@@ -472,7 +428,7 @@ def main():
 
     if Shell.run(run_command) == 0:
         logging.info("Run successfully")
-        if is_master:
+        if info.pr_number == 0 and info.git_branch == "master":
             logging.info("Uploading corpus - running in master")
             upload_corpus(fuzzers_path)
         else:
