@@ -1,15 +1,11 @@
 -- Tags: no-parallel-replicas
 -- A query plan can be optimized more than once, and `ReadFromMerge` does exactly that for its child
--- plans. The parallel replicas rewrite was not idempotent: after the first run the inlined local plan
--- already carries a coordinated read, and a second run distributed it again, so the query got two
--- coordinators for one read. Only the first ever registered a stream, and a follower announcing to
--- the second was rejected and then aborted the initiator with
--- `LOGICAL_ERROR: Got read request from replica N for unknown stream <table>`.
--- The witnesses below therefore killed the server before the fix.
--- The controls read the same data by paths that never had the duplicate, so they pass with and
--- without the fix on purpose: they fail only if the guard skips the rewrite too broadly and costs a
--- first-time plan its distribution or its index analysis.
--- See issue #110518.
+-- plans. The parallel replicas rewrite was not idempotent, so a second run distributed an already
+-- coordinated read again: the query got two coordinators for one read, which aborted the server.
+-- The witnesses below therefore killed the server before the fix, except the plan-shape one, which
+-- asserts instead that the merged child read is still distributed after the guard.
+-- The controls read the same data by paths that never had the duplicate, so they pass either way and
+-- fail only if the guard skips the rewrite too broadly. See issue #110518.
 
 DROP TABLE IF EXISTS t_pr_ro;
 DROP TABLE IF EXISTS t2_pr_ro;
@@ -73,12 +69,23 @@ SELECT count() FROM merge(currentDatabase(), '^t_pr_ro$')
 WHERE timestamp >= toDateTime('2026-06-02 00:00:00')
 SETTINGS force_index_by_date = 1, force_primary_key = 1;
 
--- Witness: index analysis is reported for the child read, independent of granule counts.
+-- Control: index analysis is reported for the child read, independent of granule counts. It runs
+-- through EXPLAIN, which never builds a pipeline, so it is unaffected by the duplicate and passes
+-- either way.
 SELECT 'merge index analysis';
 SELECT countIf(explain LIKE '%Min-Max%') > 0, countIf(explain LIKE '%Partition%') > 0,
        countIf(explain LIKE '%PrimaryKey%') > 0
 FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM merge(currentDatabase(), '^t_pr_ro$')
       WHERE timestamp >= toDateTime('2026-06-02 00:00:00'));
+
+-- Witness: the merged child read must STILL be distributed after the guard. A result alone cannot
+-- show that, since parallel replicas is an optimization and a skipped one returns the same number,
+-- so assert the plan shape for the merge() child directly. The guard must fire only on the second
+-- rewrite of this plan, never on the first.
+SELECT 'merge plan shape';
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0,
+       countIf(explain LIKE '%ReadFromMerge%') > 0
+FROM (EXPLAIN SELECT sum(value) FROM merge(currentDatabase(), '^t_pr_ro$'));
 
 -- Negative: a predicate that uses neither key must still be rejected, so the arm above passes because
 -- the index is used and not because forcing it became a no-op.

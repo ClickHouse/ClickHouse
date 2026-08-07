@@ -12,6 +12,8 @@ merge with forced index
 13600
 merge index analysis
 1	1	1
+merge plan shape
+1	1
 merge forced index not used
 base table
 4999950000
