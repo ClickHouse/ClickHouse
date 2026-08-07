@@ -56,6 +56,15 @@ void writeOutLine(DB::WriteBuffer & wb, T && val, TArgs &&... args)
     writeOutLine(wb, std::forward<TArgs>(args)...);
 }
 
+template <typename T>
+void writeMetricLine(DB::WriteBuffer & wb, const std::string & key, const std::string & labels_suffix, T && value)
+{
+    DB::writeText(key, wb);
+    DB::writeText(labels_suffix, wb);
+    DB::writeChar(' ', wb);
+    writeOutLine(wb, std::forward<T>(value));
+}
+
 /// Returns false if name is not valid
 bool replaceInvalidChars(std::string & metric_name)
 {
@@ -95,7 +104,7 @@ void writeEvent(DB::WriteBuffer & wb, ProfileEvents::Event event, const std::str
 
     writeOutLine(wb, "# HELP", key, metric_doc);
     writeOutLine(wb, "# TYPE", key, "counter");
-    writeOutLine(wb, key + labels_suffix, counter);
+    writeMetricLine(wb, key, labels_suffix, counter);
 }
 
 void writeMetric(DB::WriteBuffer & wb, size_t metric, const std::string & labels_suffix)
@@ -114,7 +123,7 @@ void writeMetric(DB::WriteBuffer & wb, size_t metric, const std::string & labels
 
     writeOutLine(wb, "# HELP", key, metric_doc);
     writeOutLine(wb, "# TYPE", key, "gauge");
-    writeOutLine(wb, key + labels_suffix, value);
+    writeMetricLine(wb, key, labels_suffix, value);
 }
 
 void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues & values, const std::string & labels_suffix)
@@ -133,7 +142,7 @@ void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues 
 
         writeOutLine(wb, "# HELP", key, metric_doc);
         writeOutLine(wb, "# TYPE", key, "gauge");
-        writeOutLine(wb, key + labels_suffix, value.value);
+        writeMetricLine(wb, key, labels_suffix, value.value);
     }
 }
 
@@ -197,7 +206,7 @@ void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
         writeOutLine(wb, "# HELP", key, help);
         writeOutLine(wb, "# TYPE", key, "counter");
         /// We are interested in errors which are happened only on this server.
-        writeOutLine(wb, key + constant_labels_suffix, error.local.count);
+        writeMetricLine(wb, key, constant_labels_suffix, error.local.count);
 
         total_count += error.local.count;
     }
@@ -206,7 +215,7 @@ void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
     std::string key{error_metrics_prefix + toString("ALL")};
     writeOutLine(wb, "# HELP", key, "The total number of errors since last server restart");
     writeOutLine(wb, "# TYPE", key, "counter");
-    writeOutLine(wb, key + constant_labels_suffix, total_count);
+    writeMetricLine(wb, key, constant_labels_suffix, total_count);
 }
 
 void PrometheusMetricsWriter::writeHistogramMetric(WriteBuffer & wb, const HistogramMetrics::MetricFamily & family, const std::string & extra_labels)
