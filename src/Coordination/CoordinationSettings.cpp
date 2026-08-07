@@ -27,6 +27,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, dead_session_check_period_ms, 500, "How often leader will check sessions to consider them dead and remove", 0) \
     DECLARE(Milliseconds, ttl_gc_period_ms, 250, "How often leader scans TTL nodes and enqueues TryRemove for expired nodes", 0) \
     DECLARE(NonZeroUInt64, ttl_gc_batch_size, 256, "The size of the batch of nodes to be removed by the garbage collector", 0) \
+    DECLARE(Milliseconds, container_gc_period_ms, 60000, "How often leader scans container nodes and enqueues TryRemove for childless ones", 0) \
+    DECLARE(NonZeroUInt64, container_gc_batch_size, 256, "The size of the batch of container nodes to be removed by the garbage collector", 0) \
+    DECLARE(Milliseconds, container_gc_max_never_used_interval_ms, 0, "How long an empty container node that never had any children is kept before GC deletes it. 0 = disabled (default, container is kept indefinitely).", 0) \
     DECLARE(Milliseconds, heart_beat_interval_ms, 500, "Heartbeat interval between quorum nodes", 0) \
     DECLARE(Milliseconds, election_timeout_lower_bound_ms, 1000, "Lower bound of election timer (avoid too often leader elections)", 0) \
     DECLARE(Milliseconds, election_timeout_upper_bound_ms, 2000, "Upper bound of election timer (avoid too often leader elections)", 0) \
@@ -44,7 +47,7 @@ namespace ErrorCodes
     DECLARE(UInt64, stale_log_gap, 10000, "When node became stale and should receive snapshots from leader", 0) \
     DECLARE(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     DECLARE(UInt64, max_request_queue_size, 100000, "Maximum number of request that can be in queue for processing", 0) \
-    DECLARE(UInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", HOT_RELOAD) \
+    DECLARE(NonZeroUInt64, max_requests_batch_size, 100, "Max size of batch of requests that can be sent to RAFT", HOT_RELOAD) \
     DECLARE(UInt64, max_requests_batch_bytes_size, 100*1024, "Max size in bytes of batch of requests that can be sent to RAFT", HOT_RELOAD) \
     DECLARE(UInt64, max_read_batch_size, 100000, "Max size of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
     DECLARE(UInt64, max_read_batch_bytes_size, 10000000, "Max size in bytes of batch of consecutive read requests that can be executed at once, possibly in parallel", HOT_RELOAD) \
@@ -52,7 +55,7 @@ namespace ErrorCodes
     DECLARE(UInt64, parallel_read_chunk_size, 16, "Number of read requests each worker picks up atomically when parallel reads are enabled.", HOT_RELOAD) \
     DECLARE(UInt64, parallel_read_min_batch, 128, "Minimum batch size to trigger parallel read processing. Smaller batches are processed sequentially.", HOT_RELOAD) \
     DECLARE(UInt64, max_request_size, 0, "Max request size (in bytes). Zero means unlimited.", HOT_RELOAD) \
-    DECLARE(UInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
+    DECLARE(NonZeroUInt64, max_requests_append_size, 100, "Max size of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_requests_append_bytes_size, 10*1024*1024, "Max size in bytes of batch of requests that can be sent to replica in append request", 0) \
     DECLARE(UInt64, max_flush_batch_size, 1000, "Max size of batch of requests that can be flushed together", 0) \
     DECLARE(UInt64, max_requests_quick_batch_size, 100, "Obsolete setting, does nothing." , SettingsTierType::OBSOLETE) \
@@ -67,6 +70,21 @@ namespace ErrorCodes
     DECLARE(UInt64, raft_limits_reconnect_limit, 50, "If connection to a peer is silent longer than this limit * (multiplied by heartbeat interval), we re-establish the connection.", 0) \
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
     DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
+    DECLARE(UInt64, committed_memtable_size, 64 * 1024 * 1024, "LSMT: rotate the memtable when it exceeds this many bytes.", HOT_RELOAD) \
+    DECLARE(UInt64, uncommitted_memtable_size, 16 * 1024 * 1024, "LSMT: rotate the uncommitted-state memtable when it exceeds this many bytes.", HOT_RELOAD) \
+    DECLARE(UInt64, memtable_block_size, 32 * 1024, "LSMT: target size of memtable blocks, in bytes.", HOT_RELOAD) \
+    DECLARE(UInt64, file_block_size, 32 * 1024, "LSMT: target size of blocks in files, in bytes.", HOT_RELOAD) \
+    DECLARE(UInt64, sorted_file_uncompressed_size, 32 * 1024 * 1024, "LSMT: target uncompressed size of a single file within a sorted run, in bytes.", HOT_RELOAD) \
+    DECLARE(UInt64, flush_threads, 2, "LSMT: number of background threads flushing memtables to files.", 0) \
+    DECLARE(UInt64, merge_threads, 3, "LSMT: number of background threads merging files.", 0) \
+    DECLARE(UInt64, min_files_to_merge, 3, "LSMT: background merge will merge at least this many sorted runs at once.", HOT_RELOAD) \
+    DECLARE(UInt64, max_files_to_merge, 20, "LSMT: background merge will merge at most this many sorted runs at once.", HOT_RELOAD) \
+    DECLARE(Float, max_size_ratio, 0.7f, "LSMT: background merge will merge a range of sorted runs if the ratio [bytes in the lowest-numbered selected sorted run] / [bytes in all selected sorted runs] is less than this. Smaller values reduce write amplification, bigger values reduce the number of sorted runs.", HOT_RELOAD) \
+    DECLARE(UInt64, unflushed_memtables_soft_limit, 4, "LSMT: throttle writes if there are at least this many memtables waiting for flush.", HOT_RELOAD) \
+    DECLARE(UInt64, sorted_runs_soft_limit, 100, "LSMT: throttle writes if there are at least this many active sorted runs, implying merges are not keeping up or are misconfigured.", HOT_RELOAD) \
+    DECLARE(UInt64, write_throttling_min_delay_us, 10000, "LSMT: when write throttling kicks in, this is the smallest delay added to a write, in microseconds. The delay grows exponentially (by write_throttling_factor) the further background work falls behind, up to write_throttling_max_delay_ms.", HOT_RELOAD) \
+    DECLARE(UInt64, write_throttling_max_delay_us, 1000000, "LSMT: the maximum delay added to a write by write throttling, in microseconds.", HOT_RELOAD) \
+    DECLARE(Float, write_throttling_factor, 32.0f, "LSMT: write throttling delay is multiplied by this factor if soft limit is exceeded by 2x. Should be greater than 1. Delay = write_throttling_min_delay_us * pow(write_throttling_factor, value / soft_limit - 1).", HOT_RELOAD) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Maximum total size of in-memory cache of log entries needed next for commit.", 0) \
@@ -79,7 +97,7 @@ namespace ErrorCodes
     DECLARE(Bool, use_xid_64, false, "Enable 64-bit XID. It is disabled by default because of backward compatibility", 0) \
     DECLARE(Bool, check_node_acl_on_remove, false, "When trying to remove a node, check ACLs from both the node itself and the parent node. If disabled, default behaviour will be used where only ACL from the parent node is checked", 0) \
     DECLARE(UInt64, snapshot_transfer_chunk_size, 0, "Chunk size in bytes for snapshot transfer between Keeper nodes. Larger values reduce round-trips but increase per-message memory usage. 0 means disabled: the whole snapshot is sent as a single NuRaft object (compatibility behaviour).", 0) \
-    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write (supported: 8 and above). Increase only after all nodes in the cluster are upgraded to a version that supports the new format", 0) \
+    DECLARE(UInt64, write_snapshot_version, 6, "Snapshot format version to write. Increase only after all nodes in the cluster are upgraded to a version that supports the new format", HOT_RELOAD) \
     DECLARE(Bool, nuraft_test_mode, false, "Nuraft test mode. not enabled for production use", 0) \
     DECLARE(Bool, use_new_dispatcher, true, "Use new request dispatcher implementation (KeeperRequestDispatcher)", 0) \
     DECLARE(UInt64, max_in_flight_request_batches, 20, "Maximum number of request batches in flight in the new dispatcher pipeline", 0) \

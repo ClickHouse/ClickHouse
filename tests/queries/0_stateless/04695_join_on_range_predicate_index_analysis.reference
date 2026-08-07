@@ -1,0 +1,74 @@
+-- bounds supplied through JOIN ON must reach index analysis
+1
+10
+-- granules, not only parts
+1
+1
+10
+-- Nullable bounds
+1
+10
+-- LowCardinality bounds
+1
+10
+-- single-sided range prunes partially (9 of 14 parts, not 1)
+1
+249
+-- strict inequalities
+1
+8
+-- an expression over the key prunes through the partition key
+1
+30
+-- the same bounds on the left of the join
+1
+10
+-- a user-written name shared by both sides still answers correctly
+9
+9
+219
+219
+-- an equality against a constant must remain a join key, not become a filter
+1
+1
+1
+1
+-- results are unchanged where the value is not a plan-time constant
+1
+1
+10
+0
+468
+-- every join algorithm now answers a relocatable inequality-only ON against a constant side
+10
+10
+10
+10
+10
+-- a disjunction of equalities stays a join key, so non-hash algorithms still reject it
+-- outer and non-ALL strictness keep rejecting an inequality-only ON
+-- rows, not only counts
+2025-06-01
+2025-06-02
+2025-06-03
+2025-06-04
+2025-06-05
+-- a stateful or non-deterministic ON predicate is not moved below the join
+1
+1
+249
+249
+-- a row-count-changing ON predicate is not moved below the join
+1
+1
+1
+2
+2
+1
+2
+-- a throwing ON predicate is not moved below the join
+1
+1
+2
+1
+1

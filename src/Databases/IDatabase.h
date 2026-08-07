@@ -423,10 +423,10 @@ public:
         return getCreateTableQueryImpl(name, context, /*throw_on_error=*/ false);
     }
 
-    ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const
-    {
-        return getCreateTableQueryImpl(name, context, /*throw_on_error=*/ true);
-    }
+    /// Throws if the table does not exist. If a similarly-named table exists (in this or
+    /// another database), the exception message contains a "Maybe you meant ...?" hint,
+    /// like the one produced for `SELECT` queries.
+    ASTPtr getCreateTableQuery(const String & name, ContextPtr context) const;
 
     /// Get the CREATE DATABASE query for current database.
     ASTPtr getCreateDatabaseQuery() const

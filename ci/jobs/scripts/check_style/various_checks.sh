@@ -113,6 +113,7 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /FunctionJoinGet.cpp
     -e /generateSerialID.cpp
     -e /evalMLMethod.cpp
+    -e /FunctionNaiveBayesClassifier.cpp
     -e /FunctionBinaryArithmetic.h
     -e /FunctionUnaryArithmetic.h
     -e /ITupleFunction.h
@@ -154,6 +155,10 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     # Diagnostic helper, the file is disabled via `#if 0` in production builds;
     # `WithContext` is required so `trap('access context')` exercises runtime context access.
     -e /trap.cpp
+    # Holds the context weakly and only touches it from getReturnTypeImpl (type analysis, while the
+    # context is alive); executeImpl uses builders precomputed at construction time and never reaches
+    # getContext(), so a stored expression stays evaluable after its query context is gone. See #54890.
+    -e /FunctionBinaryArithmetic.h
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'WithContext(' | grep -v "${FUNCTIONS_WITH_CONTEXT_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid using WithContext in Functions"
 
@@ -185,12 +190,23 @@ done
 
 find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e 'system\s*flush\s*logs\s*(;|$|")' && echo "Please use SYSTEM FLUSH LOGS log_name over global SYSTEM FLUSH LOGS"
 
+# Global SYSTEM FLUSH ASYNC INSERT QUEUE drains buffered async inserts of every
+# table on the server, so it corrupts parallel tests that keep entries buffered
+# (e.g. to flush after an ALTER). Always scope it to a table.
+# Skip comment lines and EXPLAIN SYNTAX (the parser grammar test uses the bare form).
+find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e "system\s*flush\s*async\s*insert\s*queue\s*(;|\$|\"|')" | grep -vE ':[[:space:]]*(--|#)' | grep -vi 'EXPLAIN' && echo "Please use SYSTEM FLUSH ASYNC INSERT QUEUE table over global SYSTEM FLUSH ASYNC INSERT QUEUE"
+
 # Tests with SYSTEM DROP should have no-parallel tag, because SYSTEM DROP commands
 # (like SYSTEM DROP ... CACHE, SYSTEM DROP REPLICA, etc.) affect server-wide shared state
 # and interfere with other tests running concurrently.
+#
+# Known exceptions where the command is not actually executed:
+# - 04307, 04339, 04350: the SYSTEM DROP text appears only inside SQL string literals passed to
+#   parseQueryToJSON/formatQueryFromJSON for AST round-trip and validation testing; nothing is executed.
 tests_with_system_drop=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         xargs grep -liP 'system\s+drop' |
+        grep -vP '04307_ast_json_roundtrip_lossless|04339_ast_json_review_followup_hardening|04350_ast_json_parser_impossible_field_combinations' |
         sort -u
 ) )
 for test_case in "${tests_with_system_drop[@]}"; do
@@ -246,6 +262,7 @@ LARGE_FILE_WHITELIST=(
     -e string_int_list_inconsistent_offset_multiple_batches.parquet
     -e known_failures.txt
     -e keeper-java-client-test.jar
+    -e docs/gt-lock.json
 )
 # GNU stat (Linux) uses -c, BSD stat (macOS) uses -f — detect once instead of failing per file.
 if stat -c '%s %n' /dev/null >/dev/null 2>&1; then

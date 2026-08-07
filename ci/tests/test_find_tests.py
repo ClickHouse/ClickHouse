@@ -35,9 +35,9 @@ def test_orphan_data_file_is_skipped():
 def test_test_source_files_keep_base_name():
     assert (
         Targeting._derive_test_name(
-            "tests/queries/0_stateless/02995_new_settings_history.sh"
+            "tests/queries/0_stateless/03999_stateless_settings_history.sh"
         )
-        == "02995_new_settings_history"
+        == "03999_stateless_settings_history"
     )
     assert (
         Targeting._derive_test_name(
@@ -57,9 +57,9 @@ def test_reference_file_maps_to_sibling_test():
     # `.reference` for a sibling `.sh`.
     assert (
         Targeting._derive_test_name(
-            "tests/queries/0_stateless/02995_new_settings_history.reference"
+            "tests/queries/0_stateless/03999_stateless_settings_history.reference"
         )
-        == "02995_new_settings_history"
+        == "03999_stateless_settings_history"
     )
     # `.reference.j2` for a sibling `.sql.j2`.
     assert (
@@ -90,14 +90,48 @@ def test_subdirectory_data_fixture_maps_to_owning_test():
     assert owning == ["02716_parquet_invalid_date32"]
 
 
-def test_orphan_data_file_maps_to_owning_test_by_prefix():
-    # PR #104097 reproducer: `_derive_test_name` returns None for this `.tsv`,
-    # so it used to be skipped. It carries the `02995` prefix of the test that
-    # consumes it, so the flaky check now reruns that test instead of skipping.
+def test_format_schema_maps_to_owning_test_by_extensionless_stem():
+    # Format schemas are conventionally referenced without the extension
+    # (`format_schema = '00825_protobuf_format_persons:Person'`), so the literal
+    # filename never appears in any test body. The stem fallback still maps the
+    # fixture to exactly its owning test instead of every `00825_*` sibling.
     owning = Targeting._tests_owning_data_file(
-        "tests/queries/0_stateless/02995_settings_26_4_1.tsv"
+        "tests/queries/0_stateless/format_schemas/00825_protobuf_format_persons.proto"
     )
-    assert "02995_new_settings_history" in owning
+    assert owning == ["00825_protobuf_format_persons"]
+
+
+def test_literal_filename_match_beats_short_stem():
+    # `03250.proto` is referenced by filename in exactly one test, but its bare
+    # stem `03250` also appears in an unrelated sibling's body (tests routinely
+    # embed their own numeric prefix in table names). The literal match must
+    # take precedence, or the short stem would broaden a mapping that was
+    # already precise.
+    owning = Targeting._tests_owning_data_file(
+        "tests/queries/0_stateless/format_schemas/03250.proto"
+    )
+    assert owning == ["03250_SYSTEM_DROP_FORMAT_SCHEMA_CACHE_FOR_Protobuf"]
+
+
+def test_literal_filename_match_beats_cross_extension_stem():
+    # `03036_archive1.tar` is read by one test, while a sibling reads only
+    # `03036_archive1.zip`. The shared stem `03036_archive1` must not pull the
+    # `.zip`-only sibling into the `.tar` fixture's mapping.
+    owning = Targeting._tests_owning_data_file(
+        "tests/queries/0_stateless/data_minio/03036_archive1.tar"
+    )
+    assert owning == ["03036_reading_s3_archives"]
+
+
+def test_orphan_data_file_maps_to_owning_test_by_prefix():
+    # PR #104097 reproducer: `_derive_test_name` returns None for a `.tsv`, so it
+    # used to be skipped. The frozen baseline consumed by the settings history test
+    # carries that test's `03999` prefix and is referenced by its literal filename,
+    # so the flaky check reruns exactly that test.
+    owning = Targeting._tests_owning_data_file(
+        "tests/queries/0_stateless/03999_settings_history_baseline.tsv"
+    )
+    assert owning == ["03999_stateless_settings_history"]
 
 
 def test_data_file_with_no_matching_test_is_skipped():

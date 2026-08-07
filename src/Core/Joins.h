@@ -128,6 +128,7 @@ enum class JoinAlgorithm : uint8_t
     GRACE_HASH,
     DIRECT,
     FULL_SORTING_MERGE,
+    PARALLEL_FULL_SORTING_MERGE,
 };
 
 const char * toString(JoinAlgorithm join_algorithm);

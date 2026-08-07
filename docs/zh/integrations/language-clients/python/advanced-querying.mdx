@@ -468,12 +468,12 @@ ClickHouse 查询可以接受任何 ClickHouse 格式的外部数据。这些二
 | file&#95;path | str               | 用于读取外部数据的本地系统文件路径。必须提供 `file_path` 或 `data` 之一                 |
 | file&#95;name | str               | 外部数据“文件”的名称。如果未提供，则将根据 `file_path` 确定 (不含扩展名)                  |
 | data          | bytes             | 二进制形式的外部数据 (而不是从文件读取) 。必须提供 `data` 或 `file_path` 之一            |
-| fmt           | str               | 数据的 ClickHouse [输入格式](/zh/reference/formats/index)。默认为 `TSV`      |
+| fmt           | str               | 数据的 ClickHouse [输入格式](/zh/reference/formats)。默认为 `TSV`            |
 | types         | str or seq of str | 外部数据中的列数据类型列表。如果是字符串，各类型之间应以逗号分隔。必须提供 `types` 或 `structure` 之一 |
 | structure     | str or seq of str | 数据中的“列名 + 数据类型”列表 (参见示例) 。必须提供 `structure` 或 `types` 之一        |
 | mime&#95;type | str               | 文件数据的可选 MIME 类型。目前 ClickHouse 会忽略这个 HTTP 子请求头                  |
 
-要发送包含“movie”数据的外部 CSV 文件查询，并将这些数据与 ClickHouse 服务器上已存在的 `directors` 表结合使用：
+要发送一个查询，其中包含带有“movie”数据的外部 CSV file，并将该数据与 ClickHouse 服务器 上已存在的 `directors` 表结合使用：
 
 ```python
 import clickhouse_connect

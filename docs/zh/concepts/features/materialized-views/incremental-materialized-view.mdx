@@ -21,7 +21,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在 ClickHouse 中，materialized view 会随着数据流入其所基于的表而实时更新，作用更像是持续更新的索引。这与其他数据库不同，在那些数据库中，Materialized Views 通常是查询结果的静态快照，必须刷新 (类似于 ClickHouse 的 [可刷新materialized view](/zh/reference/statements/create/view#refreshable-materialized-view)) 。
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view 图示" />
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Materialized view diagram" />
 
 <div id="example">
   ## 示例
@@ -1319,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-在这种情况下，每次向 posts 插入数据时，users CTE 都会重新求值；而插入新的 users 时，materialized view 并不会更新——只有在 posts 插入时才会更新。
+在这种情况下，每次向 posts 插入数据时，users CTE 都会重新求值；而插入新的 users 时，materialized view 不会更新——只有在向 posts 插入数据时才会更新。
 
-通常，应将 CTE 用于处理与 materialized view 所附加的同一个源表相关的逻辑，或者确保所引用的表较小，不太可能成为性能瓶颈。或者，也可以考虑采用[与 Materialized Views 中 JOIN 相同的优化方式](/zh/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)。
+通常，CTE 应用于针对 materialized view 所关联的同一个源表的逻辑，或者应确保所引用的表较小且不太可能造成性能瓶颈。或者，也可以考虑采用[与 materialized view 中 JOIN 相同的优化方式](/zh/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)。

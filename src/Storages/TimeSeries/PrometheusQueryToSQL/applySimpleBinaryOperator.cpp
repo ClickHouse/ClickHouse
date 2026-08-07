@@ -20,7 +20,7 @@ namespace
     /// Applies a simple binary operator to operands if at least one of them is scalar.
     /// Other operand can be either scalar or instant vector.
     SQLQueryPiece applyOperatorToScalarsOrVectorAndScalar(
-        const PQT::BinaryOperator * operator_node,
+        const PrometheusQueryTree::BinaryOperator * operator_node,
         SQLQueryPiece && left_argument,
         SQLQueryPiece && right_argument,
         ConverterContext & context,
@@ -43,7 +43,7 @@ namespace
 
     /// Applies a simple operator if both operands are instant vectors.
     SQLQueryPiece applyOperatorToVectors(
-        const PQT::BinaryOperator * operator_node,
+        const PrometheusQueryTree::BinaryOperator * operator_node,
         SQLQueryPiece && left_argument,
         SQLQueryPiece && right_argument,
         ConverterContext & context,
@@ -370,7 +370,7 @@ namespace
 
 
 SQLQueryPiece applySimpleBinaryOperator(
-    const PQT::BinaryOperator * operator_node,
+    const PrometheusQueryTree::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
     SQLQueryPiece && right_argument,
     ConverterContext & context,

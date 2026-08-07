@@ -487,7 +487,7 @@ struct HashMethodSerialized
     /// `Aggregator::executeImpl`'s `prefetch` gate.
     template <typename Data>
     NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
-        requires(prealloc)
+        requires prealloc
     {
         precomputed_hashes_initialized = true;
         calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
@@ -521,7 +521,7 @@ struct HashMethodSerialized
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
 
     ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool) const
-    requires(prealloc)
+    requires prealloc
     {
         if (use_batch_serialize)
             return ArenaKeyHolder{serialized_keys[row], pool};

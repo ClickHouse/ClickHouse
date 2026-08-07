@@ -24,7 +24,7 @@ picture-in-picture"
 语法：
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -39,22 +39,23 @@ EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM nu
 ```
 
 ```sql
+Output: sum(number)
+
 Union
-  Expression (Projection)
-    Expression (Before ORDER BY and SELECT)
-      Aggregating
-        Expression (Before GROUP BY)
-          SettingQuotaAndLimits (Set limits and quota after reading from storage)
-            ReadFromStorage (SystemNumbers)
-  Expression (Projection)
-    MergingSorted (Merge sorted streams for ORDER BY)
-      MergeSorting (Merge sorted blocks for ORDER BY)
-        PartialSorting (Sort each block for ORDER BY)
-          Expression (Before ORDER BY and SELECT)
-            Aggregating
-              Expression (Before GROUP BY)
-                SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                  ReadFromStorage (SystemNumbers)
+├──Aggregating
+│  │  Keys:
+│  │  Aggregates: sum(number)
+│  │  Skip merging: 0
+│  └──ReadFromSystemNumbers
+│        Output: number
+└──Sorting (Sorting for ORDER BY)
+   │  Sort description: sum(number) ASC
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sum(number)
+      │  Skip merging: 0
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 <div id="explain-types">
@@ -66,6 +67,9 @@ Union
 * `QUERY TREE` — 经查询树层级优化后的查询树。
 * `PLAN` — 查询执行计划。
 * `PIPELINE` — 查询执行流水线。
+* `ANALYZE` — 执行查询，并用测得的运行时指标为执行计划添加注释。
+* `ESTIMATE` — 处理查询时，将从表中读取的预估行数、标记数和 parts 数量。
+* `TABLE OVERRIDE` — 表函数 schema 上表覆盖的已验证结果。
 
 <div id="explain-ast">
   ### EXPLAIN AST
@@ -193,39 +197,49 @@ QUERY id: 0
 * `description` — 打印步骤说明。默认值：1。
 * `indexes` — 显示使用到的索引、每个已应用索引过滤掉的 parts 数量，以及过滤掉的粒度数量。默认值：0。支持 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表。从 ClickHouse &gt;= v25.9 开始，此语句只有在配合 `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0` 使用时，才会显示合理的输出。
 * `projections` — 显示所有已分析的投影，以及它们基于投影主键条件对 part 级过滤的影响。对于每个投影，此部分都会包含统计信息，例如通过投影主键评估的 parts、行、标记和范围数量。它还会显示由于这种过滤而跳过了多少 data parts，而无需实际从投影本身读取数据。某个投影是否实际用于读取，还是仅用于过滤分析，可通过 `description` 字段判断。默认值：0。支持 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表。
-* `actions` — 打印步骤操作的详细信息。默认值：0。
+* `actions` — 打印步骤操作的详细信息。默认值：1。
 * `sorting` — 为每个生成有序输出的计划步骤打印排序说明。默认值：0。
 * `keep_logical_steps` — 对 joins 保留逻辑计划步骤，而不是将其转换为物理 join 实现。默认值：0。
 * `json` — 以 [JSON](/zh/reference/formats/JSON/JSON) 格式将查询计划步骤打印为一行。默认值：0。建议使用 [TabSeparatedRaw (TSVRaw)](/zh/reference/formats/TabSeparated/TabSeparatedRaw) 格式，以避免不必要的转义。
 * `input_headers` — 打印步骤的输入请求头。默认值：0。通常仅对开发者调试输入输出请求头不匹配相关问题时有用。
 * `column_structure` — 除列名和类型外，还会打印请求头中列的结构。默认值：0。通常仅对开发者调试输入输出请求头不匹配相关问题时有用。
-* `distributed` — 显示在远程节点上为分布式表或并行副本执行的查询计划。默认值：0。
-* `compact` — 启用后，会在计划中隐藏表达式步骤以及详细操作信息 (输入、函数、别名和输出位置) 。仅在 actions = 1 时生效。默认值：0。
-* `pretty` — 使用线框字符 (├──、└──、│) 而不是缩进来打印计划树，以便更直观地展示层级结构。还会以内联方式格式化 join 步骤属性。默认值：0。
+* `distributed` — 显示在远程节点上为分布式表或并行副本执行的查询计划。不支持与 `json` 一起使用。默认值：0。
+* `compact` — 启用后，会在计划中隐藏表达式步骤以及详细操作信息 (输入、函数、别名和输出位置) 。仅在 `actions = 1` 时生效。默认值：1。
+* `pretty` — 使用线框字符 (├──、└──、│) 而不是缩进来打印计划树，以便更直观地展示层级结构。还会以内联方式格式化 join 步骤属性。默认值：1。
 
-当 `json=1` 时，步骤名称会包含一个额外后缀，其中带有唯一的步骤标识符。
+<Note>
+  默认情况下，`explain_query_plan_default = 'pretty'`，因此 `actions`、`compact` 和 `pretty` 都会初始化为 `1`，并且计划会以紧凑、美观且带操作注释的形式呈现。在 `EXPLAIN` 语句中显式指定这些选项中的任意一个 (例如 `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) 始终会覆盖默认值。
+
+  在 ClickHouse 26.7 之前，`actions`、`compact` 和 `pretty` 的默认值为 `0`。你仍然可以通过将 `explain_query_plan_default = 'legacy'` (全局设置或在每个查询的 `SETTINGS` 中设置) ，或将 `compatibility` 设置为任何早于 `26.7` 的版本，来获得该输出。
+
+  即使设置了 `explain_query_plan_default = 'pretty'`，`json` 和 `distributed` 选项也不会启用 `pretty` 的默认值 (`actions`、`compact` 和 `pretty`) 。若要在其输出中包含操作详情，请手动设置 `actions = 1`。
+</Note>
 
 示例：
 
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4  LIMIT 1;
 ```
 
 ```sql
-Union
-  Expression (Projection)
-  Expression (Before ORDER BY and SELECT)
-    Aggregating
-      Expression (Before GROUP BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromStorage (SystemNumbers)
+Output: sum(number)
+
+Limit (preliminary LIMIT)
+│  Limit 1
+│  Offset 0
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──ReadFromSystemNumbers
+         Output: number
 ```
 
 <Note>
   不支持步骤和查询成本估算。
 </Note>
 
-当 `json = 1` 时，查询计划将以 JSON 格式表示。每个节点都是一个字典，并且始终包含 `Node Type` 和 `Plans` 这两个键。`Node Type` 是一个表示步骤名称的字符串。`Plans` 是一个包含子步骤描述的数组。根据节点类型和设置，节点中还可能包含其他可选键。
+当 `json = 1` 时，查询计划会以 JSON 格式表示。每个节点都是一个字典，并且始终包含 `Node Type`、`Node Id` 和 `Plans` 键。`Node Type` 是表示步骤名称的字符串，`Node Id` 是唯一的步骤标识符 (步骤名称加上数字后缀，例如 `Union_10`) 。`Plans` 是一个包含子步骤描述的数组。根据节点类型和设置，还可能会添加其他可选键。
 
 示例：
 
@@ -266,7 +280,7 @@ EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
 ]
 ```
 
-当 `description` = 1 时，会在该步骤中添加 `Description` 键：
+当 `description` = 1 时，`Description` 键会添加到该步骤中：
 
 ```json
 {
@@ -370,15 +384,15 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 ]
 ```
 
-当 `projections` = 1 时，会新增 `Projections` 键。它包含一个由已分析投影组成的数组。每个投影都以 JSON 形式描述，包含以下键：
+当 `projections` = 1 时，将添加 `Projections` 键。它包含一个已分析的 projections 数组。每个 projection 以 JSON 格式描述，包含以下键：
 
 * `Name` — 投影名称。
-* `Condition` — 所使用的投影主键条件。
-* `Description` — 该投影使用方式的描述 (例如 part 级过滤) 。
+* `Condition` — 使用的投影主键条件。
+* `Description` — 关于投影如何使用的描述 (例如 part 级过滤) 。
 * `Selected Parts` — 该投影选中的 parts 数量。
 * `Selected Marks` — 选中的标记数量。
 * `Selected Ranges` — 选中的范围数量。
-* `Selected Rows` — 选中的行数。
+* `Selected Rows` — 选中行数。
 * `Filtered Parts` — 由于 part 级过滤而跳过的 parts 数量。
 
 示例：
@@ -470,24 +484,39 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-设置 `compact = 1` 后，每个 `Expression` 步骤将被移除。此外，若同时设置 `actions = 1`，则 `Actions` 和 `Positions` 行将被隐藏，仅保留步骤描述：
+当 `compact = 0` 且 `actions = 1` 时，可以看到 `Expression` 步骤以及表达式的详细信息：
 
 ```sql
-EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+EXPLAIN actions = 1, compact = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
 ```
 
 ```text
-Aggregating
-Keys: modulo(__table1.number, 4_UInt8)
-Aggregates:
-    sum(__table1.number)
-      Function: sum(UInt64) → UInt64
-      Arguments: __table1.number
-Skip merging: 0
-  ReadFromSystemNumbers
+Output: sum(number)
+
+Expression ((Project names + Projection))
+│  Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
+│           INPUT :: 1 -> modulo(__table1.number, 4_UInt8) UInt8 : 1
+│           ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
+│  Positions: 2
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  Actions: INPUT : 0 -> number UInt64 : 0
+      │           COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
+      │           ALIAS number :: 0 -> __table1.number UInt64 : 2
+      │           FUNCTION modulo(__table1.number : 2, 4_UInt8 :: 1) -> modulo(__table1.number, 4_UInt8) UInt8 : 0
+      │  Positions: 0 2
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 当 `distributed` = 1 时，输出不仅包含本地查询计划，还包含将在远程节点上执行的查询计划。这对于分析和调试分布式查询非常有用。
+
+<Note>
+  `distributed` 仅以 legacy (非 `pretty`) 格式呈现，因为 `pretty` 输出不会将远程分片的计划整合到计划树中。因此，启用 `distributed` 会自动禁用 `pretty` 的默认选项 (`actions`、`compact` 和 `pretty`) ，无论 `explain_query_plan_default` 如何设置。你仍然可以手动设置 `actions=1`。`distributed` 选项也不支持与 `json` 一起使用。
+</Note>
 
 分布式表示例：
 
@@ -533,15 +562,15 @@ Expression ((Project names + Projection))
 
 当 `pretty` = 1 时，计划树将以线条字符代替缩进的方式展示，并为关键步骤显示额外信息：
 
-* **查询输出列** 显示在执行计划顶部。
-* 过滤器、聚合键、排序说明和窗口函数中的 **表达式** 会以便于阅读的类 SQL 记法显示 (例如，显示为 `a + 1 > 5`，而不是 `greater(plus(a, 1), 5)`) 。为提高清晰度，内部列标识符前缀 (如 `__table1.`) 会被移除。
-* **Source 步骤** (例如 `ReadFromMergeTree`) 会显示其输出列。
-* **Filter 步骤** 会以 SQL 记法显示过滤条件。如果存在运行时 join 过滤器，则会单独显示。
-* **Aggregation 步骤** 会显示键以及聚合函数及其参数 (例如 `sum(c)`、`count()`) 。
-* 来自元组字面量的 **IN 集合** 会显示其值 (大型集合会被截断) ；基于子查询的集合会标记为 `subquery1`、`subquery2` 等；来自 `Set` engine 表的集合会显示表名。
-* **Join 步骤** 会用数学符号显示 join 关系、预估结果行数，
-  以及输出列分别来自左侧还是右侧。以下符号用于
-  表示不同的 join 类型：
+* **查询输出列** 会显示在计划顶部。
+* 过滤器、聚合键、排序描述和窗口函数中的 **表达式** 会以人类可读的类 SQL 记法显示 (例如，使用 `a + 1 > 5` 而不是 `greater(plus(a, 1), 5)`) 。为便于理解，内部列标识符前缀 (例如 `__table1.`) 会被移除。
+* **源步骤** (例如 `ReadFromMergeTree`) 会显示其输出列。
+* **过滤步骤** 会以 SQL 记法显示过滤条件。存在运行时 join 过滤器时，它们会单独显示。
+* **聚合步骤** 会显示键以及聚合函数及其参数 (例如 `sum(c)`、`count()`) 。
+* 来自元组字面量的 **IN 集合** 会显示其值 (大型集合会被截断) ，基于子查询的集合会标记为 `subquery1`、`subquery2` 等，而来自 `Set` engine 表的集合会显示表名。
+* **Join 步骤** 会使用数学记法显示 join 关系、预估结果行数，
+  以及哪些输出列来自左侧或右侧。以下符号用于
+  表示不同的 JOIN types：
 
 | 符号                     | Join 类型 |
 | ---------------------- | ------- |
@@ -561,18 +590,7 @@ Expression ((Project names + Projection))
 
 `pretty` 选项与 `compact = 1` 搭配使用效果很好，它会隐藏 `Expression` 步骤和详细的动作信息，使执行计划更易于阅读。
 
-```sql
-EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
-```
-
-```text
-Expression ((Project names + Projection))
-└──Aggregating
-   └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      └──ReadFromSystemNumbers
-```
-
-一个更详细的 JOIN 示例：
+一个详细的 JOIN 示例：
 
 ```sql
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
@@ -585,24 +603,28 @@ SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
 ```
 
 ```text
-Output: id, value, t2.id, t2.value
+Output: id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
 │  Result rows: 100
+│  Join conditions: id = id
 │  Output:
 │    Left:  id, value
 │    Right: id, value
-│  Join conditions: id = id
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
 │     Output: id, value
-└──ReadFromMergeTree (default.t2)
-      Read type: Default
-      Parts: 1 | Granules: 1
-      Output: id, value
+│     Runtime filters: RF1(id, id from default.t2)
+└──BuildRuntimeFilter (Build runtime join filter on id)
+   │  Filter id: RF1
+   │  Source table: default.t2
+   └──ReadFromMergeTree (default.t2)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: id, value
 ```
 
 <div id="explain-pipeline">
@@ -647,6 +669,124 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
+<div id="explain-analyze">
+  ### EXPLAIN ANALYZE
+</div>
+
+`EXPLAIN ANALYZE` 会实际执行查询，丢弃结果行，并输出与 `EXPLAIN PLAN` 相同的计划树，同时为每个步骤标注其在运行时的实际执行情况。
+
+设置：
+
+`EXPLAIN ANALYZE` 接受与 `EXPLAIN PLAN` 相同的显示选项 (见 [EXPLAIN PLAN](#explain-plan) 小节) 。
+
+* `header` — 见 [EXPLAIN PLAN](#explain-plan) 小节。
+* `description` — 见 [EXPLAIN PLAN](#explain-plan) 小节。
+* `projections` — 见 [EXPLAIN PLAN](#explain-plan) 小节。
+* `sorting` — 见 [EXPLAIN PLAN](#explain-plan) 小节。
+* `input_headers` — 见 [EXPLAIN PLAN](#explain-plan) 小节。
+* `column_structure` — 见 [EXPLAIN PLAN](#explain-plan) 小节。
+* `actions` — 见 [EXPLAIN PLAN](#explain-plan) 小节。默认值：1。
+* `indexes` — 见 [EXPLAIN PLAN](#explain-plan) 小节。默认值：1。
+* `compact` — 见 [EXPLAIN PLAN](#explain-plan) 小节。默认值：1。
+* `pretty` — 见 [EXPLAIN PLAN](#explain-plan) 小节。默认值：1。
+* `processors` — 对于 `EXPLAIN ANALYZE`，会为每个阶段额外输出一行，显示各处理器耗时的分布：`min`、`median`、`max` 和 `sum`。这有助于发现并行处理器之间的负载不均。默认值：0。
+
+<Note>
+  由于 `EXPLAIN ANALYZE` 会实际执行被包装的查询，因此它在多个方面的行为都与该
+  查询本身一致 —— 而不同于不会执行查询的 `EXPLAIN` 形式：
+
+  * **Quotas and limits.** 它会计入相同的 [quotas](/zh/concepts/features/configuration/server-config/quotas)
+    ，并受相同的 [limits](/zh/concepts/features/configuration/settings/query-complexity)
+    约束 (例如 `query_selects`、`read_rows`) ，就像直接运行该查询一样。在规划期间免于配额计费的数据源
+    (例如 `system.one`) 不会被计费。
+  * **Failed transactions.** 在已经失败 (`ROLLED_BACK`) 的 [transaction](/zh/concepts/features/operations/insert/transactions)
+    内部，它会像普通 `SELECT` 一样因 `INVALID_TRANSACTION` 被拒绝 —— 请先执行 `ROLLBACK`。
+  * **Streaming reads.** 对于流式 (`FROM ... STREAM`) 读取，它会因
+    `NOT_IMPLEMENTED` 被拒绝，因为这类读取永远不会完成。
+  * **Distributed queries.** 对于在
+    [distributed](/zh/reference/engines/table-engines/special/distributed) 模式下执行的查询，不支持使用它。
+</Note>
+
+示例：
+
+```sql
+EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k;
+```
+
+```text
+Query summary:
+  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
+  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
+  Peak memory: 28.98 KiB
+
+Output: number MOD 10, count()
+
+Expression ((Project names + Projection))
+│  I/O: rows 10 → 10 · 90 B → 90 B
+│    time 21.82 us (0.5%) · parallelism 0.98/1
+└──Aggregating
+   │  Keys: number MOD 10
+   │  Aggregates: count()
+   │  Skip merging: 0
+   │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
+   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
+   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
+      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      └──ReadFromSystemNumbers
+            Output: number
+            I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
+              time 993.94 us (23.3%) · parallelism 7.52/15
+```
+
+我们来看看输出。首先看一下请求头。
+
+```txt
+   Query summary:
+     Time:        <total> (planning <planning> · execution <execution>)
+     Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
+     Peak memory: <peak>
+```
+
+* `Time` — 总时间，分为规划阶段 (即创建计划 + 优化计划 + 构建管道) 和执行阶段 (运行管道) 。
+* `Read` — 从表中读取的行数和未压缩字节数，以及吞吐量 —— 与普通查询 footer 中显示为 &quot;Processed&quot; 的数字相同。
+* `Peak memory` — 查询使用的峰值内存占用。
+
+现在我们来看看查询计划中新出现的这些行。
+
+```txt
+I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
+  [Stage (<stage>): ]time <t> (<share>%) · parallelism <avg>/<max>
+```
+
+行数和字节数会在整个步骤范围内统一报告一次 (`I/O` 行) 。时间和并行度则会按步骤的各个阶段，在后续缩进行中分别报告。
+
+* `rows <in> → <out>` — 进入和离开该步骤的行数； (`<selectivity>`%) 表示该步骤对数据的过滤 (`out/in`) 或扩张程度；当输入行数等于输出行数，或输入行数为 `0` 时会隐藏。
+* `<bytes_in> → <bytes_out>` — 流经该步骤的内存中未压缩字节数 (当两者都为零时省略) 。
+* `time <t> (<share>%)` — 该阶段处于活跃状态的挂钟时间，以及其占查询执行时间的比例 (即不包含 build 时间) 。请注意，由于阶段和步骤会并发运行，这些占比相加可能超过 100%。
+* `parallelism <avg>/<max>` — 该阶段内同时工作的 CPU 线程平均数量，以及它可使用的最大数量。数值接近最大值表示该阶段并行化良好；接近 1 则表示它大多是串行运行的。
+* `Stage (<stage>)` — 阶段名称。只有单个阶段的步骤会直接打印时间行，而不带 `Stage (...)` 标签。包含多个阶段的步骤则会为每个阶段分别打印一行带标签的内容，例如 `Aggregating` 会显示 `Stage (partial aggregation)` 和 `Stage (final aggregation)`，而 hash 连接 会显示 `Stage (build)` 和 `Stage (probe)`。
+
+<Note>
+  ClickHouse 不仅会并行执行计划步骤内的任务，也会并行执行各个计划步骤。`parallelism` 指标仅反映此步骤本身的工作情况。其他步骤也可能同时运行，因此这个数值并不能体现该步骤的并行度相对于整个查询的情况。
+</Note>
+
+<Note>
+  `parallelism` 中的最大值取以下两者的较小值：
+
+  1. 计划步骤中的任务总数；
+  2. `max_threads` 中设置的最大查询处理线程数。
+</Note>
+
+当 `processors = 1` 时，会在每个阶段下方额外打印一行，显示该阶段各处理器的耗时分布：
+
+```txt
+Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
+```
+
+`<n>` 是该阶段中的处理器数量。`median` 和 `max` 之间差距较大，说明并行处理器之间存在负载不均。
+
 <div id="explain-estimate">
   ### EXPLAIN ESTIMATE
 </div>
@@ -672,6 +812,128 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
+
+<div id="explain-whatif">
+  ### EXPLAIN WHATIF
+</div>
+
+在*不*将索引物化到磁盘上的情况下，估算假设性跳过索引对 `SELECT` 查询的潜在收益。使用 [`CREATE HYPOTHETICAL INDEX`](/zh/reference/statements/hypothetical-index#create-hypothetical-index) 定义一个或多个候选项，然后运行 `EXPLAIN WHATIF SELECT ...`，即可查看每个候选项的以下信息：是否适用、预估读取的标记数、预估字节数以及跳过比率。
+
+**语法**
+
+```sql
+EXPLAIN WHATIF [empirical = 0] SELECT ...
+```
+
+**设置**
+
+* `empirical` — `1` (默认值) 会在内存中对经过基线剪枝的粒度运行索引，以测量跳过比例 (上限) 。`0` 则会跳过该路径。无论哪种情况，如果 empirical 未产生结果 (已禁用，或索引无法在内存中求值) ，估算器都会回退到列[统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)；如果两者都不可用，则最终回退到仅包含适用性的摘要。
+
+**输出**
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       db.t
+  parts:       1
+  marks:       100
+  est_bytes:   1.50 MiB             (only when the query reads rows)
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    15.00 KiB           (only when baseline bytes are known)
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical | statistical | applicability_only
+  empirical_status: ok | unsupported | disabled
+  sampled_parts:    50 / 100        (only when source = empirical)
+  sampled_marks:    50 / 100        (only when source = empirical)
+  elapsed_us:       631             (only when source = empirical)
+```
+
+* `source` — 估算的来源。
+  * `empirical`：在内存中基于经过基线剪枝后的粒度构建索引，并统计该索引原本可以跳过的粒度数。这是一个上界——请参阅 [`CREATE HYPOTHETICAL INDEX`](/zh/reference/statements/hypothetical-index#limitations) 中的限制。
+  * `statistical`：根据列统计信息推导得出。当经验估算被禁用 (`empirical = 0`) ，或经验估算无法得出结果，且相关列已定义列统计信息时使用。
+  * `applicability_only`：该索引适用于该谓词，但经验估算和统计估算都未得出结果 (例如 `empirical = 0` 且未定义列统计信息) 。作为保守上界，会报告 `skip_ratio: 0.0%`。
+* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`。显示在经过 PK、分区和现有索引剪枝后，表中有多少比例的数据被保留下来，即假设索引的输入。
+* `est_bytes` — 读取字节数的估算值，由表的平均行大小推导而来，因此只是近似值，并会随存储和压缩情况而变化。只有当查询读取行时才会显示 baseline 行；只有在已知 baseline 字节估算值时，才会显示各候选项对应的行。
+
+该设置以内联方式写在 `WHATIF` 与 `SELECT` 之间——没有 `SETTINGS` 关键字 (这与其他 `EXPLAIN` 变体接受选项的方式一致) 。
+
+如果该表没有定义任何假设索引，`EXPLAIN WHATIF` 会报告 `status: not_applicable`，并提示你创建一个。
+
+**组合行 (多个候选项)&#x20;**
+
+当以经验方式评估两个或更多候选项时，`EXPLAIN WHATIF` 会在各候选项对应的行后追加一个名为 `(combined: idx_a, idx_b, ...)` 的额外块。它报告的是同时拥有*所有*这些索引时的联合收益：实际读取只有在某个粒度通过了*每个*跳过索引时才会保留该粒度，因此组合估算就是各候选项保留下来的粒度的交集。因此，它的 `skip_ratio` 至少与表现最佳的单个候选项一样高——互补的索引一起会剪枝掉更多数据，而冗余的索引则不会带来变化。
+
+只有 `source: empirical` 的候选项会参与计算，因为组合行是通过对它们各自按粒度划分的存活集合求交集构建出来的。估算为 `statistical` 或 `applicability_only` 的候选项没有按粒度划分的数据，因此会被排除；因此，只有当至少两个候选项生成了经验估算时，组合块才会出现，否则将被省略 (例如在 `empirical = 0` 时) 。它的估算字段与单个候选项的经验块相同，但 `elapsed_us` 为 `0`——组合估算是根据各候选项的扫描结果推导得出的，而不是一次新的扫描。合成的 `(combined: ...)` 名称仅用作报告标签，不能与 `force_data_skipping_indices` 一起使用。
+
+**经验示例**
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+```
+
+假设使用 `minmax`，可将 100 个标记裁减到只剩 1 个——`skip_ratio: 99.0%`。 (`est_bytes` 是根据平均行大小估算得出的，因此具体数值会有所不同。)
+
+**统计示例**
+
+列[统计信息](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)默认处于关闭状态。要触发 `statistical` 路径，请先在相关列上定义统计信息，然后等待物化变更完成：
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+```
+
+然后禁用经验路径，这样估算器就会退回到使用列统计信息：
+
+```sql
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+该数值来自 `b < 10` 的列统计信息选择性 (10000 行中约 10 行) ，并以 `skip_ratio` 上界的形式给出。不存在 `sampled_parts` / `sampled_marks`——未读取任何数据。
+
+如果这两种路径都不可用 (例如 `empirical = 0` 且未定义列统计信息) ，估算器会报告 `source: applicability_only`，以及保守的 `skip_ratio: 0.0%`。
 
 <div id="explain-table-override">
   ### EXPLAIN TABLE OVERRIDE
