@@ -38,7 +38,7 @@ NAMESPACE_PREFIX = "ch_e2e_bl_"
 # object, never the token baked into the catalog. Retrying any catalog call after
 # the token expires just resends the same stale token until the deadline.
 # Rebuilding self.catalog mid-retry is unsafe because callers share it
-# concurrently (test_many_tables_pagination fans catalog calls across a 10-thread
+# concurrently (test_list_tables_pagination fans catalog calls across a 10-thread
 # pool), so auth expiry is always left to propagate. These mirror pyiceberg's own
 # retry-then-reraise set for its REST client (AuthorizationExpiredError,
 # UnauthorizedError; OAuthError covers the token-endpoint path).
@@ -51,10 +51,13 @@ _AUTH_EXPIRY_ERRORS = (
 # REST/network errors that create_table retries; pyiceberg's REST client
 # retries only auth errors (stop_after_attempt(2)), so these otherwise escape.
 # Auth-expiry errors are deliberately excluded (see _AUTH_EXPIRY_ERRORS).
+# NoSuchNamespaceError included: BigLake indexes a just-created namespace
+# asynchronously, so the session namespace can 404 for a few seconds.
 _TRANSIENT_CREATE_ERRORS = (
     ServerError,
     ServiceUnavailableError,
     CommitStateUnknownException,
+    NoSuchNamespaceError,
     requests.exceptions.RequestException,
 )
 
@@ -340,7 +343,7 @@ class BigLakeCatalogManager(CatalogManager):
         # uses a fresh unique name, so a partial prior attempt (table created,
         # append failed) cannot resurface as TableAlreadyExistsError nor
         # duplicate rows -- creation stays exactly-once. When a caller supplies
-        # a fixed table_name (test_many_tables_pagination asserts the exact
+        # a fixed table_name (test_list_tables_pagination asserts the exact
         # short names it passed appear in SHOW TABLES, so we cannot substitute a
         # UUID), a fresh name is not an option, so that path makes a single
         # attempt and lets a transient error propagate as before.
