@@ -109,6 +109,13 @@ def run_soft_timeout_failpoint_test(query, fault_name, query_id=None, hold_secon
     cleanly (no exception) when the deadline passes while the DISTINCT transform is paused at a
     failpoint inside a single `transform` call. The transform is held past the deadline, then the
     failpoint is released; the soft-timeout latch stops the inner loop and the query finishes.
+
+    `interactive_delay` is passed as a client connection setting (`--interactive_delay=0`), not in
+    the query `SETTINGS` clause: it is applied in `TCPHandler` before the query settings are parsed.
+    Zeroing it makes the pull loop block so that neither its `checkTimeLimitSoft()` polling (every
+    `interactive_delay` ms) nor the `CancellationChecker` (a no-op in 'break' mode) can stop the
+    query — the transform's own soft-timeout latch becomes the only stopper, which is the behavior
+    under test.
     """
     if query_id is None:
         query_id = str(uuid.uuid4())
@@ -122,6 +129,7 @@ def run_soft_timeout_failpoint_test(query, fault_name, query_id=None, hold_secon
         try:
             _, error = node1.query_and_get_answer_with_error(
                 query,
+                settings={"interactive_delay": 0},
                 query_id=query_id,
             )
             query_error[0] = error
@@ -193,3 +201,112 @@ SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
         query,
         LC_FAULT_NAME,
     )
+
+
+def test_lc_soft_timeout_then_kill(started_cluster):
+    """A `KILL QUERY` sent after the soft timeout has latched during the LowCardinality scan must
+    stop `buildFilter` without hashing the already-committed processed prefix.
+
+    The LC scan is paused at row 8192 (a deterministic two-hop pause; `SYSTEM NOTIFY FAILPOINT`
+    keeps the wait channel alive between hops, and re-`ENABLE` re-arms the one-shot failpoint).
+    Holding it past `max_execution_time` makes the scan return a partial mask with
+    `processed_rows = 8192`, so `buildFilter` runs with `processed_prefix = 8192`. `buildFilter` is
+    then paused at row 4096, strictly below the processed prefix, and the query is killed. Because
+    `isCancelled()` is checked unconditionally, `buildFilter` returns right there. A regression that
+    lets the processed prefix suppress the cancellation check would keep hashing rows [4096, 8192)
+    and pause again at row 8192, which the second `SYSTEM WAIT FAILPOINT ... PAUSE` observes.
+
+    The query must run with `--interactive_delay=0` (client connection setting): otherwise the pull
+    loop's `checkTimeLimitSoft()` polling cancels the pipeline at the deadline during the hold and
+    `buildFilter` never runs, so the scenario is not exercised.
+    """
+    query_id = str(uuid.uuid4())
+
+    node1.query("CREATE TABLE IF NOT EXISTS lc_test (key LowCardinality(String)) ENGINE = Memory")
+    node1.query("TRUNCATE TABLE IF EXISTS lc_test")
+    node1.query("INSERT INTO lc_test SELECT toString(number % 1000) FROM numbers(10000)")
+
+    query = """SELECT DISTINCT key FROM lc_test
+FORMAT Null
+SETTINGS max_block_size=10000, max_threads=1, max_execution_time=5,
+    timeout_overflow_mode='break', max_rows_to_read=0"""
+
+    node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+
+    thread_error = [None]
+    query_error = [None]
+
+    def execute_query():
+        try:
+            _, error = node1.query_and_get_answer_with_error(
+                query, settings={"interactive_delay": 0}, query_id=query_id
+            )
+            query_error[0] = error
+        except Exception as e:
+            thread_error[0] = e
+
+    query_thread = threading.Thread(target=execute_query)
+    query_thread.start()
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    def wait_failpoint(fault_name, timeout=60):
+        wait_future = pool.submit(node1.query, f"SYSTEM WAIT FAILPOINT {fault_name} PAUSE")
+        done, _ = concurrent.futures.wait([wait_future], timeout=timeout)
+        if not done:
+            assert False, f"Failpoint {fault_name} not triggered within {timeout} s"
+        wait_future.result()
+
+    try:
+        ## First LC hop: the scan pauses at row 4096. Re-arm the one-shot failpoint and resume;
+        ## the scan then pauses again at row 8192.
+        wait_failpoint(LC_FAULT_NAME)
+        node1.query(f"SYSTEM ENABLE FAILPOINT {LC_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
+        wait_failpoint(LC_FAULT_NAME)
+
+        ## Hold past max_execution_time so the soft timeout latches, then let the LC scan resume:
+        ## it returns at row 8192, so buildFilter runs with processed_prefix = 8192. Arm the
+        ## buildFilter failpoint in the same step.
+        time.sleep(30)
+        node1.query(f"SYSTEM ENABLE FAILPOINT {HASHMAP_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {LC_FAULT_NAME}")
+
+        ## buildFilter pauses at row 4096, below the processed prefix.
+        wait_failpoint(HASHMAP_FAULT_NAME)
+
+        ## Kill while buildFilter is hashing rows below the processed prefix.
+        node1.http_query(f"KILL QUERY WHERE query_id='{query_id}'")
+
+        ## Re-arm the buildFilter failpoint and resume. With the fix buildFilter returns at
+        ## row 4096 because isCancelled() is set, so the second WAIT below times out. If the
+        ## processed prefix suppressed the cancellation check, buildFilter would keep hashing
+        ## and pause again at row 8192, making the second WAIT return.
+        node1.query(f"SYSTEM ENABLE FAILPOINT {HASHMAP_FAULT_NAME}")
+        node1.query(f"SYSTEM NOTIFY FAILPOINT {HASHMAP_FAULT_NAME}")
+
+        second_pause_future = pool.submit(
+            node1.query,
+            f"SYSTEM WAIT FAILPOINT {HASHMAP_FAULT_NAME} PAUSE",
+        )
+        done, _ = concurrent.futures.wait([second_pause_future], timeout=10)
+        if done:
+            second_pause_future.result()
+            assert False, "buildFilter kept hashing the processed prefix after the kill"
+    finally:
+        ## DISABLE both failpoints: this also unblocks any still-running WAIT ... PAUSE query.
+        node1.query(f"SYSTEM DISABLE FAILPOINT {LC_FAULT_NAME}")
+        node1.query(f"SYSTEM DISABLE FAILPOINT {HASHMAP_FAULT_NAME}")
+        pool.shutdown(wait=False, cancel_futures=True)
+
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "query did not terminate after the kill"
+    if thread_error[0] is not None:
+        raise thread_error[0]
+
+    assert "Query was cancelled" in query_error[0], f"expected cancellation, got: {query_error[0]}"
+
+    result = node1.query(
+        f"SELECT count(*) FROM system.processes WHERE query_id='{query_id}'"
+    )
+    assert int(result.strip()) == 0

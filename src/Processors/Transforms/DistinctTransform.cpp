@@ -82,7 +82,10 @@ void DistinctTransform::buildFilter(
                 /// Rows in [0, processed_prefix) are already committed work of a preceding
                 /// `buildLowCardinalityMask` call and must be hashed even if the soft timeout
                 /// already fired, so the processed prefix is preserved instead of dropped.
-                if (i >= processed_prefix && (isCancelled() || isSoftTimeout()))
+                /// A hard cancellation is checked unconditionally: it must not be suppressed by
+                /// the processed prefix, otherwise `KILL QUERY` after a soft timeout would keep
+                /// hashing every committed row before it is noticed.
+                if (isCancelled() || (i >= processed_prefix && isSoftTimeout()))
                 {
                     std::fill(filter.begin() + i, filter.end(), 0);
                     return;
@@ -108,7 +111,7 @@ void DistinctTransform::buildFilter(
             {
                 if (i > 0) [[unlikely]]
                     FailPointInjection::pauseFailPoint("distinct_transform_pause");
-                if (i >= processed_prefix && (isCancelled() || isSoftTimeout()))
+                if (isCancelled() || (i >= processed_prefix && isSoftTimeout()))
                 {
                     std::fill(filter.begin() + i, filter.end(), 0);
                     return;
