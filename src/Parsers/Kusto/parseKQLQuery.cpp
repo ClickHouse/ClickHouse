@@ -86,7 +86,14 @@ ASTPtr parseKQLQuery(
     pos = tokens.front().begin;
 
     if (looksLikeSetStatement(tokens))
-        return parseSetStatement(pos, end, max_query_size, max_parser_depth, max_parser_backtracks);
+    {
+        ASTPtr set_query = parseSetStatement(pos, end, max_query_size, max_parser_depth, max_parser_backtracks);
+        /// `parseSetStatement` already consumed the statement separator, so anything left is
+        /// a second statement, which this fast path must reject the same way the main path does.
+        if (!allow_multi_statements && pos != end)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "Multi-statements are not allowed: unexpected text after the SET statement");
+        return set_query;
+    }
 
     KQLParser parser(pos, std::move(tokens), max_parser_depth);
     KQLTabularExpressionPtr query = parser.parseQuery();
@@ -123,8 +130,16 @@ ASTPtr tryParseKQLSetStatement(
     if (!looksLikeSetStatement(tokens))
         return nullptr;
 
-    pos = tokens.front().begin;
-    return parseSetStatement(pos, end, max_query_size, max_parser_depth, max_parser_backtracks);
+    const char * probe = tokens.front().begin;
+    ASTPtr node = parseSetStatement(probe, end, max_query_size, max_parser_depth, max_parser_backtracks);
+
+    /// The escape hatch fires only when the whole query is that one SET statement; anything
+    /// after it would be dropped silently. Leave such a query to the caller's disabled-KQL error.
+    if (probe != end)
+        return nullptr;
+
+    pos = probe;
+    return node;
 }
 
 }
