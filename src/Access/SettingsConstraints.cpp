@@ -75,12 +75,6 @@ SettingsConstraints & SettingsConstraints::operator=(SettingsConstraints && src)
 SettingsConstraints::~SettingsConstraints() = default;
 
 
-void SettingsConstraints::clear()
-{
-    constraints.clear();
-    settings_alias_cache.clear();
-}
-
 void SettingsConstraints::set(const String & full_name, const Field & min_value, const Field & max_value, const std::vector<Field> & disallowed_values, SettingConstraintWritability writability)
 {
     std::string resolved_name{resolveSettingName(full_name)};
@@ -123,6 +117,8 @@ void SettingsConstraints::get(const MergeTreeSettings &, std::string_view short_
 
 void SettingsConstraints::merge(const SettingsConstraints & other)
 {
+    [[maybe_unused]] const size_t num_constraints_before = constraints.size();
+
     if (access_control->doesSettingsConstraintsReplacePrevious())
     {
         for (const auto & [other_name, other_constraint] : other.constraints)
@@ -148,6 +144,11 @@ void SettingsConstraints::merge(const SettingsConstraints & other)
 
     for (const auto & [other_alias, other_resolved_name] : other.settings_alias_cache)
         settings_alias_cache.try_emplace(other_alias, other_resolved_name);
+
+    /// `merge` layers a profile chosen by the user on top of the constraints which are already in
+    /// effect, so it must never drop a constrained setting - that is what makes `SET profile` unable
+    /// to escape a constraint. Replacing a whole set of constraints is `operator=`, not `merge`.
+    chassert(constraints.size() >= num_constraints_before);
 }
 
 

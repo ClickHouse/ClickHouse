@@ -29,6 +29,30 @@ struct SettingsProfilesInfo
     /// Names of all the profiles in `profiles`.
     std::unordered_map<UUID, String> names_of_profiles;
 
+    /// How this info composes with the profiles which are already in effect on a `Context`.
+    ///
+    /// `Layer` - a single profile applied on top of whatever is already in effect, i.e.
+    ///     `SET profile = ...`. Any user can do that with any profile, there is no access check
+    ///     (see `Context::setSettingWithLock`), so composition must be key-monotonic: it may add
+    ///     or override a constraint, but never drop one. That is what stops `SET profile` from
+    ///     being used to escape a constraint. Produced by `SettingsProfilesCache::getSettingsProfileInfo`.
+    ///
+    /// `Complete` - the whole set of profiles which applies to a principal: the default profile,
+    ///     the profiles targeting the user and its roles, the settings of the roles and the settings
+    ///     of the user. Produced only by `SettingsProfilesCache::mergeSettingsAndConstraintsFor` and
+    ///     applied only by `Context::setUser`. Composition replaces the previous constraints, so a
+    ///     constraint which was deleted from the configuration actually goes away.
+    ///
+    /// This is deliberately a property of the object rather than an argument of
+    /// `getConstraintsAndProfileIDs`: whether replacing is safe depends on how the info was produced,
+    /// not on what a caller passes. `Layer` is the default so that a new producer fails closed.
+    enum class Composition
+    {
+        Layer,
+        Complete,
+    };
+    Composition composition = Composition::Layer;
+
     explicit SettingsProfilesInfo(const AccessControl & access_control_)
         : constraints(access_control_), access_control(access_control_)
     {

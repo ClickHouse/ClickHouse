@@ -514,6 +514,46 @@ def test_set_profile():
     )
 
 
+def test_set_profile_cannot_drop_constraint():
+    # `SET profile` is not access-checked: any user can apply any profile. Applying a profile which
+    # says nothing about a setting must therefore not drop a constraint already in effect on it.
+    instance.query(
+        "CREATE SETTINGS PROFILE P1 SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin"
+    )
+    instance.query("CREATE SETTINGS PROFILE P2 SETTINGS max_threads = 4")
+
+    session_id = new_session_id()
+    instance.http_query(
+        "SET profile='P2'", user="robin", params={"session_id": session_id}
+    )
+
+    expected_error = "max_memory_usage shouldn't be greater than 110000000"
+    assert expected_error in instance.http_query_and_get_error(
+        "SET max_memory_usage=120000000",
+        user="robin",
+        params={"session_id": session_id},
+    )
+
+
+def test_set_profile_cannot_drop_const():
+    instance.query(
+        "CREATE SETTINGS PROFILE P1 SETTINGS max_memory_usage = 100000001 CONST TO robin"
+    )
+    instance.query("CREATE SETTINGS PROFILE P2 SETTINGS max_threads = 4")
+
+    session_id = new_session_id()
+    instance.http_query(
+        "SET profile='P2'", user="robin", params={"session_id": session_id}
+    )
+
+    expected_error = "Setting max_memory_usage should not be changed"
+    assert expected_error in instance.http_query_and_get_error(
+        "SET max_memory_usage=120000000",
+        user="robin",
+        params={"session_id": session_id},
+    )
+
+
 def test_changing_default_profiles_affects_new_sessions_only():
     instance.query("CREATE SETTINGS PROFILE P1 SETTINGS max_memory_usage=10000000001")
     instance.query("CREATE SETTINGS PROFILE P2 SETTINGS max_memory_usage=10000000002")

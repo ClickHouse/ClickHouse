@@ -2101,6 +2101,8 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
 
     /// A profile can specify a value and a readonly constraint for same setting at the same time,
     /// so we shouldn't check constraints here.
+    /// `enabled_profiles` is a `Complete` info, so applying it drops the constraints inherited from
+    /// the context this one was copied from - see `SettingsProfilesInfo::Composition`.
     setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
     setCurrentRolesWithLock(default_roles, lock);

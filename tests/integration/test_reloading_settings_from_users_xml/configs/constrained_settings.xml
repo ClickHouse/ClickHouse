@@ -1,0 +1,35 @@
+<clickhouse>
+    <profiles replace="replace">
+        <default>
+            <max_memory_usage>10000000000</max_memory_usage>
+            <load_balancing>first_or_random</load_balancing>
+            <replication_alter_partitions_sync>2</replication_alter_partitions_sync>
+            <constraints>
+                <replication_alter_partitions_sync>
+                    <readonly/>
+                </replication_alter_partitions_sync>
+                <max_memory_usage>
+                    <min>5000000000</min>
+                    <max>20000000000</max>
+                </max_memory_usage>
+            </constraints>
+        </default>
+        <profile_with_constraint>
+            <constraints>
+                <max_threads>
+                    <readonly/>
+                </max_threads>
+            </constraints>
+        </profile_with_constraint>
+    </profiles>
+    <users>
+        <user_with_own_profile>
+            <password></password>
+            <profile>profile_with_constraint</profile>
+            <quota>default</quota>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </user_with_own_profile>
+    </users>
+</clickhouse>

@@ -16,8 +16,8 @@ namespace ErrorCodes
 
 bool operator==(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & rhs)
 {
-    return std::tie(lhs.settings, lhs.constraints, lhs.profiles, lhs.profiles_with_implicit, lhs.names_of_profiles)
-        == std::tie(rhs.settings, rhs.constraints, rhs.profiles, rhs.profiles_with_implicit, rhs.names_of_profiles);
+    return std::tie(lhs.settings, lhs.constraints, lhs.profiles, lhs.profiles_with_implicit, lhs.names_of_profiles, lhs.composition)
+        == std::tie(rhs.settings, rhs.constraints, rhs.profiles, rhs.profiles_with_implicit, rhs.names_of_profiles, rhs.composition);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs>
@@ -26,7 +26,15 @@ SettingsProfilesInfo::getConstraintsAndProfileIDs(const std::shared_ptr<const Se
     auto res = std::make_shared<SettingsConstraintsAndProfileIDs>(access_control);
     res->current_profiles = profiles;
 
-    if (previous)
+    /// A `Complete` info already describes every profile which applies to the principal, so the
+    /// constraints inherited from the context this one was copied from must not be kept. That
+    /// inherited snapshot is taken from the global context once, by `Context::setDefaultProfiles` at
+    /// server startup, and is never recomputed; keeping it made a constraint which was removed from
+    /// `users.xml` survive `SYSTEM RELOAD USERS` until the server was restarted, because
+    /// `SettingsConstraints::merge` can only add or override constraints, never drop one.
+    /// A `Layer` info is a single profile applied on top of an already established identity
+    /// (`SET profile = ...`), so there the previous constraints are inherited on purpose.
+    if (previous && composition == Composition::Layer)
     {
         res->constraints = previous->constraints;
         res->constraints.merge(constraints);
