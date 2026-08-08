@@ -918,7 +918,11 @@ getColumnsForNewDataPart(
             /// a default value for projection rebuild) yet still be removed from the
             /// part by CLEAR COLUMN. In that case we must drop it from the column list
             /// so that the part does not claim to contain data it no longer has.
-            if (removed_columns.contains(it->name))
+            /// When another column is renamed into this name, the removal refers to the old
+            /// occupant of the name (DROP xxx + RENAME yyy TO xxx), while the updated_header
+            /// entry describes the renamed column the interpreter rewrites (e.g. an automatic
+            /// `MATERIALIZE COLUMN` of the same mutation) - it stays in the part.
+            if (removed_columns.contains(it->name) && !renamed_columns_to_from.contains(it->name))
             {
                 it = storage_columns.erase(it);
                 continue;
@@ -1257,6 +1261,7 @@ static NameToNameVector collectFilesForRenames(
     StorageMetadataPtr metadata_snapshot,
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::DataPartPtr new_part,
+    const Block & updated_header,
     const MutationCommands & commands_for_renames,
     const NameSet & updated_columns_in_patches,
     const String & mrk_extension)
@@ -1377,6 +1382,34 @@ static NameToNameVector collectFilesForRenames(
                 /// Columns updated in patches should be rewritten by mutation.
                 if (updated_columns_in_patches.contains(command.rename_to))
                     continue;
+
+                /// The mutation rewrites the rename target itself, e.g. an automatic
+                /// `MATERIALIZE COLUMN` of a `MATERIALIZED` column whose renamed name (possibly
+                /// freed by a `DROP COLUMN` of the same mutation) must hold recomputed values.
+                /// The interpreter writes fresh files for the new name, so the files of the
+                /// renamed-from column must not become the new name's files: renaming would
+                /// hardlink them over the target and the subsequent write of the recomputed
+                /// column would go through the shared inode, overwriting the still-active
+                /// source part's data in place. Remove them like on a drop instead.
+                if (updated_header.has(command.rename_to))
+                {
+                    ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+                    {
+                        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
+
+                        /// Delete files if they are no longer shared with another column.
+                        if (stream_name && --stream_counts[*stream_name] == 0)
+                        {
+                            add_rename(*stream_name + ".bin", "");
+                            add_rename(*stream_name + mrk_extension, "");
+                        }
+                    };
+
+                    if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                        serialization->enumerateStreams(callback);
+
+                    continue;
+                }
 
                 String escaped_name_from = escapeForFileName(command.column_name);
                 String escaped_name_to = escapeForFileName(command.rename_to);
@@ -4072,6 +4105,7 @@ bool MutateTask::prepare()
             ctx->metadata_snapshot,
             ctx->source_part,
             ctx->new_data_part,
+            ctx->updated_header,
             ctx->for_file_renames,
             updated_columns_in_patches,
             ctx->mrk_extension);
