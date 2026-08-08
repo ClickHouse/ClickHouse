@@ -47,8 +47,8 @@ bool isTransientConnectionError(std::string_view message)
         "Network is unreachable",
         "Connection reset by peer",
         "could not connect to server",
-        "could not translate host name",
-        "Name or service not known",
+        /// `EAI_AGAIN` only: the resolver was unreachable. `EAI_NONAME` (`Name or service not known`)
+        /// means the host does not exist, which is a permanent misconfiguration.
         "Temporary failure in name resolution",
     };
 

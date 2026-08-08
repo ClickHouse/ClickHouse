@@ -20,7 +20,16 @@ TEST(PostgresTransientConnectionError, TransportFailuresAreTransient)
     EXPECT_TRUE(isTransientConnectionError("... failed: No route to host"));
     EXPECT_TRUE(isTransientConnectionError("... failed: Network is unreachable"));
     EXPECT_TRUE(isTransientConnectionError("... failed: Connection reset by peer"));
-    EXPECT_TRUE(isTransientConnectionError("could not translate host name \"nosuchhost\" to address: Name or service not known"));
+    EXPECT_TRUE(isTransientConnectionError(
+        "could not translate host name \"host\" to address: Temporary failure in name resolution"));
+}
+
+/// A host that does not resolve is a permanent misconfiguration, unlike a resolver that is
+/// temporarily unreachable, so it must not be silenced from Error.
+TEST(PostgresTransientConnectionError, UnknownHostIsNotTransient)
+{
+    EXPECT_FALSE(isTransientConnectionError(
+        "could not translate host name \"nosuchhost\" to address: Name or service not known"));
 }
 
 TEST(PostgresTransientConnectionError, ServerRejectionsAreNotTransient)
