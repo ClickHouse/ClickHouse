@@ -54,8 +54,15 @@ void executeQuery(
     QueryFlags flags = {},
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
-    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
-                                                   /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
+    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log.
+                                                   /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing).
+                                                   /// NOTE: For a framed response (`framing_output_format`) it is instead called after the QueryFinish
+                                                   /// entry: the stream must include the trailing `log` / `profile_events` packets emitted by the
+                                                   /// query-finish logging and end with the final `progress` packet, and closing the response stream
+                                                   /// must come after that. Consequently the network-send counters of the response tail (and, when the
+                                                   /// response is buffered, of the delayed-results push) are not part of the QueryFinish snapshot -
+                                                   /// the same semantics as the native protocol, which sends its trailing logs and profile events
+                                                   /// after the query log entry too.
     HTTPContinueCallback http_continue_callback = {} /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
 );
 
@@ -67,8 +74,15 @@ void executeQuery(
     QueryFlags flags = {},
     const std::optional<FormatSettings> & output_format_settings = std::nullopt, /// Format settings for output format, will be calculated from the context if not set.
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format = {}, /// If a non-empty callback is passed, it will be called on exception with created output format.
-    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log
-                                                    /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing)
+    QueryFinishCallback query_finish_callback = {}, /// Use it to do everything you need to before the QueryFinish entry will be dumped to query_log.
+                                                    /// NOTE: It will not be called in case of exception (i.e. ExceptionWhileProcessing).
+                                                    /// NOTE: For a framed response (`framing_output_format`) it is instead called after the QueryFinish
+                                                    /// entry: the stream must include the trailing `log` / `profile_events` packets emitted by the
+                                                    /// query-finish logging and end with the final `progress` packet, and closing the response stream
+                                                    /// must come after that. Consequently the network-send counters of the response tail (and, when the
+                                                    /// response is buffered, of the delayed-results push) are not part of the QueryFinish snapshot -
+                                                    /// the same semantics as the native protocol, which sends its trailing logs and profile events
+                                                    /// after the query log entry too.
     HTTPContinueCallback http_continue_callback = {} /// If a non-empty callback is passed, it will be called after quota checks to send HTTP 100 Continue.
 );
 
