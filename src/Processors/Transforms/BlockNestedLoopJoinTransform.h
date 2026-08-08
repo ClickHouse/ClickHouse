@@ -101,12 +101,16 @@ private:
     void addBuildRun(size_t length);
     /// Removes the probe rows that have matched from the walk over the rest of the build side.
     void dropMatchedProbeRows();
+    /// How many accumulated pairs are still waiting to be emitted.
+    size_t numPendingPairs() const { return matched_probe_rows.size() - matched_rows_offset; }
     /// Whether the accumulated pairs already fill an output chunk.
     bool hasFullOutputChunk() const;
     /// How many rows one output chunk may hold under both limits, for rows of `row_bytes` each.
     size_t maxOutputChunkRows(size_t row_bytes) const;
     /// Materializes that many accumulated pairs, keeping the rest for the next call.
     Chunk takeMatchedRows();
+    /// Reclaims the space the already emitted pairs take, once they are the larger part of it.
+    void dropEmittedPairs();
     /// Emits the next window of probe rows that stayed unmatched, padded with build-side defaults.
     Chunk takeUnmatchedProbeRows();
     /// Drops everything the walk over the build side holds. Called when nothing more will be
@@ -167,6 +171,10 @@ private:
     /// chunk, and a row index within the stored block named by the matching entry of `build_runs`.
     PaddedPODArray<UInt64> matched_probe_rows;
     PaddedPODArray<UInt64> matched_build_rows;
+    /// Where the pairs still to be emitted start. One tile accumulates far more pairs than one
+    /// output chunk may hold, and dropping the emitted prefix on every chunk would move the rest of
+    /// them each time; the prefix is dropped in one go instead, once it is the larger part.
+    size_t matched_rows_offset = 0;
     std::deque<BuildRun> build_runs;
     /// What the blocks held by `build_runs` cost on top of the store, i.e. the sum over the runs
     /// whose block the reader had to decompress or read back from disk.
@@ -201,6 +209,8 @@ public:
         size_t num_streams_);
 
     String getName() const override { return "BlockNestedLoopUnmatchedBuildRows"; }
+
+    Status prepare() override;
 
 protected:
     Chunk generate() override;

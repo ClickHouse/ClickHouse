@@ -74,10 +74,17 @@ static std::vector<BlockNestedLoopPredicate::Source> resolvePredicateInputs(
         if (in_left == in_right)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join condition input {} must come from exactly one input, found in {}",
                 required_column.name, in_left ? "both" : "neither");
-        if (in_left)
-            inputs.push_back({.side = 0, .position = resolvePredicateInputPosition(left_header, required_column.name)});
-        else
-            inputs.push_back({.side = 1, .position = resolvePredicateInputPosition(right_header, required_column.name)});
+
+        const Block & header = in_left ? left_header : right_header;
+        const size_t position = resolvePredicateInputPosition(header, required_column.name);
+        /// The column is handed to the condition under the type the condition declares for it, so a
+        /// column of another type would be read as one it is not.
+        const auto & input_type = header.getByPosition(position).type;
+        if (!input_type->equals(*required_column.type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join condition input {} has type {}, expected {}",
+                required_column.name, input_type->getName(), required_column.type->getName());
+
+        inputs.push_back({.side = in_left ? 0UL : 1UL, .position = position});
     }
     return inputs;
 }

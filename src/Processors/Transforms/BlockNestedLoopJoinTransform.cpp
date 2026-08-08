@@ -258,6 +258,7 @@ void BlockNestedLoopProbeTransform::startProbeChunk(Chunk chunk)
     unmatched_probe_cursor = 0;
     matched_probe_rows.clear();
     matched_build_rows.clear();
+    matched_rows_offset = 0;
     build_runs.clear();
     retained_build_bytes = 0;
     probe_row_matched.clear();
@@ -306,7 +307,7 @@ void BlockNestedLoopProbeTransform::work()
                     continue;
                 }
 
-                if (!matched_probe_rows.empty())
+                if (numPendingPairs() != 0)
                 {
                     output_chunk = takeMatchedRows();
                     continue;
@@ -576,9 +577,9 @@ void BlockNestedLoopProbeTransform::dropMatchedProbeRows()
 
 bool BlockNestedLoopProbeTransform::hasFullOutputChunk() const
 {
-    if (max_block_size != 0 && matched_probe_rows.size() >= max_block_size)
+    if (max_block_size != 0 && numPendingPairs() >= max_block_size)
         return true;
-    if (max_block_bytes != 0 && matched_probe_rows.size() * (probe_row_bytes + build_row_bytes) >= max_block_bytes)
+    if (max_block_bytes != 0 && numPendingPairs() * (probe_row_bytes + build_row_bytes) >= max_block_bytes)
         return true;
     /// The pending pairs keep alive every build block they came from. A condition selective enough to
     /// match a few rows in each of them would otherwise pin the whole build side, decompressed and
@@ -596,16 +597,19 @@ size_t BlockNestedLoopProbeTransform::maxOutputChunkRows(size_t row_bytes) const
 
 Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
 {
-    const size_t total_rows = matched_probe_rows.size();
+    const size_t total_rows = numPendingPairs();
     const size_t num_rows = std::min(total_rows, maxOutputChunkRows(probe_row_bytes + build_row_bytes));
     chassert(num_rows != 0);
+
+    const auto pending_probe_begin = matched_probe_rows.begin() + matched_rows_offset;
+    const auto pending_build_begin = matched_build_rows.begin() + matched_rows_offset;
 
     Columns result;
     result.reserve(output_header->columns());
 
     {
         auto indexes = ColumnUInt64::create();
-        indexes->getData().insert(matched_probe_rows.begin(), matched_probe_rows.begin() + num_rows);
+        indexes->getData().insert(pending_probe_begin, pending_probe_begin + num_rows);
         for (const auto & column : probe_columns)
             result.push_back(column->index(*indexes, 0));
     }
@@ -622,8 +626,7 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
         const size_t length = std::min(rest, run.length);
 
         auto indexes = ColumnUInt64::create();
-        indexes->getData().insert(
-            matched_build_rows.begin() + offset, matched_build_rows.begin() + offset + length);
+        indexes->getData().insert(pending_build_begin + offset, pending_build_begin + offset + length);
         emitted_run_indexes.push_back(std::move(indexes));
 
         emitted_runs.push_back({run.block_index, length, run.block});
@@ -658,8 +661,8 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
             result.push_back(std::move(target));
     }
 
-    matched_probe_rows.erase(matched_probe_rows.begin(), matched_probe_rows.begin() + num_rows);
-    matched_build_rows.erase(matched_build_rows.begin(), matched_build_rows.begin() + num_rows);
+    matched_rows_offset += num_rows;
+    dropEmittedPairs();
     for (const auto & run : emitted_runs)
     {
         if (build_runs.front().length == run.length)
@@ -676,6 +679,28 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
     Chunk chunk;
     chunk.setColumns(std::move(result), num_rows);
     return chunk;
+}
+
+void BlockNestedLoopProbeTransform::dropEmittedPairs()
+{
+    /// Moving the pairs still pending costs what they are, so the prefix is only dropped once it is
+    /// at least as large as they are: over the drain of one tile that amounts to moving each pair a
+    /// constant number of times, rather than once per output chunk cut from the tile.
+    if (matched_rows_offset < numPendingPairs())
+        return;
+
+    if (matched_rows_offset == matched_probe_rows.size())
+    {
+        matched_probe_rows.clear();
+        matched_build_rows.clear();
+    }
+    else
+    {
+        matched_probe_rows.erase(matched_probe_rows.begin(), matched_probe_rows.begin() + matched_rows_offset);
+        matched_build_rows.erase(matched_build_rows.begin(), matched_build_rows.begin() + matched_rows_offset);
+    }
+
+    matched_rows_offset = 0;
 }
 
 Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
@@ -729,6 +754,7 @@ void BlockNestedLoopProbeTransform::releaseProbeState()
     probe_columns.clear();
     matched_probe_rows = {};
     matched_build_rows = {};
+    matched_rows_offset = 0;
     active_probe_rows = {};
     probe_row_matched = {};
     pending_probe_chunk.reset();
@@ -771,6 +797,18 @@ BlockNestedLoopUnmatchedBuildRowsTransform::BlockNestedLoopUnmatchedBuildRowsTra
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Block nested loop join keeps no build-side match flags for {} {} JOIN",
             toString(data->getStrictness()), toString(data->getKind()));
+}
+
+IProcessor::Status BlockNestedLoopUnmatchedBuildRowsTransform::prepare()
+{
+    auto status = ISource::prepare();
+    /// The scan does not always reach the last block - a `LIMIT` above the join finishes the output
+    /// port first - and a finished processor is only destroyed with the pipeline. The block the
+    /// reader materialized and its handle on the temporary file must not stay charged to the query
+    /// until then, so they go here rather than only where the scan runs out of blocks.
+    if (status == Status::Finished)
+        build_reader.release();
+    return status;
 }
 
 Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
@@ -848,7 +886,6 @@ Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
         return chunk;
     }
 
-    build_reader.release();
     return {};
 }
 
