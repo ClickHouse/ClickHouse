@@ -21,7 +21,12 @@ SELECT exponentialTimeDecayingFloat64(10)(1, toFloat64(0)); -- { serverError UNK
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
 -- The decay length is encoded in the type; values store only value and anchor time.
-SELECT toTypeName(CAST((toFloat64(1), toFloat64(0)), 'ExponentialTimeDecayingFloat64(10)'));
+SELECT toTypeName(CAST((toFloat64(1), toFloat64(0), toFloat64(10)), 'ExponentialTimeDecayingFloat64(10)'));
+
+-- The stored marker is validated against the type parameter, including after explicit casts.
+SELECT exponentialTimeDecayingValueAt(
+    CAST((toFloat64(1), toFloat64(0), toFloat64(20)), 'ExponentialTimeDecayingFloat64(10)'),
+    toFloat64(0)); -- { serverError BAD_ARGUMENTS }
 
 -- Addition preserves the input category: scalars remain scalar and decaying
 -- values remain ExponentialTimeDecayingFloat64.
@@ -311,7 +316,8 @@ WITH
         number -> CAST(
             (
                 toFloat64((sipHash64(number, 11) % 100000) + 1) / 1000,
-                toFloat64(sipHash64(number, 22) % 100000) / 100
+                toFloat64(sipHash64(number, 22) % 100000) / 100,
+                toFloat64(17)
             ),
             'ExponentialTimeDecayingFloat64(17)'),
         range(64)) AS values,
