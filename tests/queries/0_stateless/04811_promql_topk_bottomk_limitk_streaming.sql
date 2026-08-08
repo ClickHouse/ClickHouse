@@ -6,8 +6,6 @@
 
 DROP TABLE IF EXISTS topk_input;
 DROP TABLE IF EXISTS topk_states;
-DROP TABLE IF EXISTS tags_table;
-DROP TABLE IF EXISTS samples_table;
 DROP TABLE IF EXISTS prometheus;
 
 SET session_timezone = 'UTC';
@@ -85,38 +83,15 @@ SELECT '-- PromQL topk/bottomk/limitk end to end';
 
 SET allow_experimental_time_series_table = 1;
 
-CREATE TABLE tags_table
-(
-    id UInt64,
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String),
-    min_time DateTime64(3),
-    max_time DateTime64(3)
-) ENGINE = MergeTree() ORDER BY id;
-
-CREATE TABLE samples_table
-(
-    id UInt64,
-    timestamp DateTime64(3),
-    value Float64
-) ENGINE = MergeTree() ORDER BY (id, timestamp);
-
-CREATE TABLE prometheus ENGINE = TimeSeries
-SAMPLES samples_table TAGS tags_table;
+CREATE TABLE prometheus ENGINE = TimeSeries;
 
 -- 4 series of the metric `m`: hosts h1, h2 in dc=a and hosts h3, h4 in dc=b.
-INSERT INTO tags_table (id, metric_name, tags, min_time, max_time) VALUES
-    (1, 'm', map('host', 'h1', 'dc', 'a'), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (2, 'm', map('host', 'h2', 'dc', 'a'), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (3, 'm', map('host', 'h3', 'dc', 'b'), toDateTime64(0, 3), toDateTime64(1000, 3)),
-    (4, 'm', map('host', 'h4', 'dc', 'b'), toDateTime64(0, 3), toDateTime64(1000, 3));
-
 -- Series h4 has a gap at timestamps 110 and 120, and series h1 ends with a NaN sample at timestamp 140.
-INSERT INTO samples_table (id, timestamp, value) VALUES
-    (1, toDateTime64(100, 3), 1), (1, toDateTime64(110, 3), 10), (1, toDateTime64(120, 3), 4), (1, toDateTime64(130, 3), 1), (1, toDateTime64(140, 3), nan),
-    (2, toDateTime64(100, 3), 2), (2, toDateTime64(110, 3), 20), (2, toDateTime64(120, 3), 3), (2, toDateTime64(130, 3), 2),
-    (3, toDateTime64(100, 3), 3), (3, toDateTime64(110, 3), 5), (3, toDateTime64(120, 3), 2), (3, toDateTime64(130, 3), 3),
-    (4, toDateTime64(100, 3), 4), (4, toDateTime64(130, 3), 4);
+INSERT INTO prometheus (metric_name, tags, time_series) VALUES
+    ('m', map('host', 'h1', 'dc', 'a'), [(toDateTime64(100, 3), 1), (toDateTime64(110, 3), 10), (toDateTime64(120, 3), 4), (toDateTime64(130, 3), 1), (toDateTime64(140, 3), nan)]),
+    ('m', map('host', 'h2', 'dc', 'a'), [(toDateTime64(100, 3), 2), (toDateTime64(110, 3), 20), (toDateTime64(120, 3), 3), (toDateTime64(130, 3), 2)]),
+    ('m', map('host', 'h3', 'dc', 'b'), [(toDateTime64(100, 3), 3), (toDateTime64(110, 3), 5), (toDateTime64(120, 3), 2), (toDateTime64(130, 3), 3)]),
+    ('m', map('host', 'h4', 'dc', 'b'), [(toDateTime64(100, 3), 4), (toDateTime64(130, 3), 4)]);
 
 SELECT '-- topk(2), range';
 SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_over_time(m[10]))', 100, 130, 10) ORDER BY tags;
@@ -156,44 +131,22 @@ SELECT * FROM prometheusQuery('prometheus', 'topk(+Inf, m)', 130); -- { serverEr
 SELECT * FROM prometheusQuery('prometheus', 'topk(1 / 0, m)', 130); -- { serverError CANNOT_CONVERT_TYPE }
 
 DROP TABLE prometheus;
-DROP TABLE tags_table;
-DROP TABLE samples_table;
 
 SELECT '-- topk over many series runs in bounded memory';
 
 -- Regression test: with N = 3000 series and T = 200 steps the old plan needed T * N^2 * 8 bytes = 14.4 GB (per-step arrayTopK lambda capture replication), far over the 2 GB limit used here, while the streaming plan keeps about T * k * 16 bytes = 32 KB of selection state.
 
-CREATE TABLE tags_table
-(
-    id UInt64,
-    metric_name LowCardinality(String),
-    tags Map(LowCardinality(String), String),
-    min_time DateTime64(3),
-    max_time DateTime64(3)
-) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE prometheus ENGINE = TimeSeries;
 
-CREATE TABLE samples_table
-(
-    id UInt64,
-    timestamp DateTime64(3),
-    value Float64
-) ENGINE = MergeTree() ORDER BY (id, timestamp);
-
-CREATE TABLE prometheus ENGINE = TimeSeries
-SAMPLES samples_table TAGS tags_table;
-
-INSERT INTO tags_table (id, metric_name, tags, min_time, max_time)
-SELECT number + 1, 'big', map('inst', toString(number)), toDateTime64(0, 3), toDateTime64(10000, 3)
+INSERT INTO prometheus (metric_name, tags, time_series)
+SELECT
+    'big',
+    map('inst', toString(number)),
+    arrayMap(step -> (toDateTime64(100 + step * 10, 3), toFloat64(number + 1)), range(200))
 FROM numbers(3000);
-
-INSERT INTO samples_table (id, timestamp, value)
-SELECT (number % 3000) + 1, toDateTime64(100 + intDiv(number, 3000) * 10, 3), (number % 3000) + 1
-FROM numbers(3000 * 200);
 
 SELECT count(), sum(length(time_series))
 FROM prometheusQueryRange('prometheus', 'topk(10, last_over_time(big[10]))', 100, 2090, 10)
 SETTINGS max_memory_usage = 2000000000;
 
 DROP TABLE prometheus;
-DROP TABLE tags_table;
-DROP TABLE samples_table;

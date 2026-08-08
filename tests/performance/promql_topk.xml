@@ -7,47 +7,17 @@
     <!-- Benchmarks PromQL topk/bottomk/limitk over a TimeSeries table: the timeSeriesSelect{TopK,BottomK,LimitK}Groups aggregation plus the join applying the selection back to the per-series grid rows. -->
 
     <create_query>
-        CREATE TABLE promql_topk_tags
-        (
-            id UInt64,
-            metric_name LowCardinality(String),
-            tags Map(LowCardinality(String), String),
-            min_time DateTime64(3),
-            max_time DateTime64(3)
-        ) ENGINE = MergeTree ORDER BY id
-    </create_query>
-    <create_query>
-        CREATE TABLE promql_topk_samples
-        (
-            id UInt64,
-            timestamp DateTime64(3),
-            value Float64
-        ) ENGINE = MergeTree ORDER BY (id, timestamp)
-    </create_query>
-    <create_query>
         CREATE TABLE promql_topk_ts ENGINE = TimeSeries
-        SAMPLES promql_topk_samples TAGS promql_topk_tags
     </create_query>
 
+    <!-- 4000 series, one sample every 10s over [100, 3090] -> a 300-point grid, 1.2M samples; the per-(series, step) hash values keep the bounded heaps churning at every step. -->
     <fill_query>
-        INSERT INTO promql_topk_tags (id, metric_name, tags, min_time, max_time)
+        INSERT INTO promql_topk_ts (metric_name, tags, time_series)
         SELECT
-            number + 1,
             'load',
             map('instance', toString(number), 'dc', toString(number % 10)),
-            toDateTime64(0, 3),
-            toDateTime64(10000, 3)
-        FROM numbers(4000)
-    </fill_query>
-
-    <!-- 4000 series, one sample every 10s over [100, 3090] -> a 300-point grid, 1.2M rows; the per-(series, step) hash values keep the bounded heaps churning at every step. -->
-    <fill_query>
-        INSERT INTO promql_topk_samples (id, timestamp, value)
-        SELECT
-            (number % 4000) + 1,
-            toDateTime64(100 + intDiv(number, 4000) * 10, 3),
-            (sipHash64(number) % 1000000) / 1000
-        FROM numbers_mt(4000 * 300)
+            arrayMap(step -> (toDateTime64(100 + step * 10, 3), (sipHash64(number, step) % 1000000) / 1000), range(300))
+        FROM numbers_mt(4000)
     </fill_query>
 
     <query>SELECT * FROM prometheusQueryRange('promql_topk_ts', 'topk(5, last_over_time(load[10]))', 100, 3090, 10) FORMAT Null</query>
@@ -56,6 +26,4 @@
     <query>SELECT * FROM prometheusQueryRange('promql_topk_ts', 'limitk(5, last_over_time(load[10]))', 100, 3090, 10) FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS promql_topk_ts</drop_query>
-    <drop_query>DROP TABLE IF EXISTS promql_topk_samples</drop_query>
-    <drop_query>DROP TABLE IF EXISTS promql_topk_tags</drop_query>
 </test>
