@@ -58,6 +58,10 @@ void validateSetsForDistributedPlan(QueryPlan::Node & root)
 
         for (auto * child : node->children)
             stack.push_back(child);
+
+        for (auto * child_plan : node->step->getChildPlans())
+            if (child_plan && child_plan->getRootNode())
+                stack.push_back(child_plan->getRootNode());
     }
 }
 
@@ -89,6 +93,22 @@ PreparedSets::Subqueries extractSetsForDistributedPlan(QueryPlan::Node *& root)
         {
             take_sets_and_splice_out(child);
             stack.push_back(child);
+        }
+
+        /// Some steps own whole subplans (e.g. `ReadFromMerge` children). The root node of such
+        /// a subplan cannot be removed from here, so only its sets are taken out; an emptied
+        /// `DelayedCreatingSetsStep` does nothing and the serializer skips it.
+        for (auto * child_plan : node->step->getChildPlans())
+        {
+            auto * child_root = child_plan ? child_plan->getRootNode() : nullptr;
+            if (!child_root)
+                continue;
+            if (auto * delayed = typeid_cast<DelayedCreatingSetsStep *>(child_root->step.get()))
+            {
+                auto step_sets = delayed->detachSets();
+                std::move(step_sets.begin(), step_sets.end(), std::back_inserter(sets));
+            }
+            stack.push_back(child_root);
         }
     }
 
