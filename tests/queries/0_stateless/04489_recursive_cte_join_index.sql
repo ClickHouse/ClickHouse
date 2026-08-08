@@ -1067,9 +1067,10 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
 
 DROP TABLE edges_merge_mixed;
 
--- An ordinary `VIEW` over a local table cannot engage parallel replicas (with the default
--- `parallel_replicas_for_non_replicated_merge_tree = 0` at the CREATE below, the inner
--- `MergeTree` is not eligible either way), so it must keep running under the forcing mode.
+-- An ordinary `VIEW` over a local table cannot engage parallel replicas (with
+-- `parallel_replicas_for_non_replicated_merge_tree = 0` — pinned, the harness may randomize
+-- it — the inner `MergeTree` is not eligible either way), so it must keep running under the
+-- forcing mode.
 DROP VIEW IF EXISTS edges_view_local;
 CREATE VIEW edges_view_local AS SELECT * FROM edges;
 
@@ -1082,7 +1083,7 @@ WITH RECURSIVE view_local_pr AS
 )
 SELECT sum(n) FROM view_local_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
-    automatic_parallel_replicas_mode = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 0, automatic_parallel_replicas_mode = 0;
 
 DROP VIEW edges_view_local;
 
@@ -1121,9 +1122,10 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
 
 -- A delegating wrapper whose target is an ordinary `VIEW` must be judged with the view rule:
 -- `StorageView` is not remote, so an `isRemote` gate on the unwrapped target would silently
--- miss it. A `Merge` over a view over a local table cannot engage parallel replicas (with the
--- default `parallel_replicas_for_non_replicated_merge_tree = 0` the inner `MergeTree` is not
--- eligible either way), so it must keep running under the forcing mode.
+-- miss it. A `Merge` over a view over a local table cannot engage parallel replicas (with
+-- `parallel_replicas_for_non_replicated_merge_tree = 0` — pinned, the harness may randomize
+-- it — the inner `MergeTree` is not eligible either way), so it must keep running under the
+-- forcing mode.
 DROP VIEW IF EXISTS edges_view_wrapped;
 DROP TABLE IF EXISTS edges_merge_view_local;
 CREATE VIEW edges_view_wrapped AS SELECT * FROM edges;
@@ -1138,7 +1140,7 @@ WITH RECURSIVE merge_view_local_pr AS
 )
 SELECT sum(n) FROM merge_view_local_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
-    automatic_parallel_replicas_mode = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 0, automatic_parallel_replicas_mode = 0;
 
 DROP TABLE edges_merge_view_local;
 DROP VIEW edges_view_wrapped;
