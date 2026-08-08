@@ -266,8 +266,6 @@ public:
             assertValidRow(input, row, getName());
             if (!std::isfinite(target_time_column->getFloat64(row)))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Target time of function {} must be finite", getName());
-            if (target_time_column->getFloat64(row) < input.time.getData()[row])
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Target time of function {} must not precede the anchor time", getName());
             result_data[row] = valueAt(input, row, target_time_column->getFloat64(row));
         }
         return result;
@@ -323,13 +321,13 @@ sensitive inputs when stronger numerical reproducibility is required.
 
     factory.registerFunction<FunctionExponentialTimeDecayingValueAt>(FunctionDocumentation{
         .description = R"(
-Evaluates an exponentially time-decaying value at its anchor time or a later target time.
+Evaluates an exponentially time-decaying value at any target time by extrapolating the exponential curve from its anchor.
 Numeric, DateTime, and DateTime64 targets are converted to seconds, so `now()` and `now64()` can be used.
 )",
         .syntax = "exponentialTimeDecayingValueAt(value, target_time)",
         .arguments = {
             {"value", "Decaying value.", {"ExponentialTimeDecayingFloat64"}},
-            {"target_time", "Evaluation time at or after the anchor.",
+            {"target_time", "Evaluation time; it may be before, at, or after the anchor.",
                 {"Number", "DateTime", "DateTime64"}}},
         .returned_value = {"Returns the decayed value at the target time.", {"Float64"}},
         .examples = {{
