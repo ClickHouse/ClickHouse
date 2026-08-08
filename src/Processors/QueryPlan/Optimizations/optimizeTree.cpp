@@ -1,6 +1,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -385,7 +386,16 @@ void optimizeTreeSecondPass(
     {
         traverseQueryPlan(stack, root,
             [&](auto &) {},
-            [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
+            [&](auto & frame_node)
+            {
+                /// `applyParallelReplicas` may have replaced a join input with a distributed read; the
+                /// join-key-order eligibility memoized before it (by `tryAddJoinRuntimeFilter`) is stale
+                /// then, so recompute it on the final plan - a sorted-merge algorithm must fall through
+                /// to the next one of `join_algorithm` when its input is no longer readable in order.
+                if (auto * join_logical = typeid_cast<JoinStepLogical *>(frame_node.step.get()))
+                    join_logical->resetInputsCanBeReadInJoinKeyOrder();
+                convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
+            });
 
         /// The joins are physical only now, so this is the first point where lazy column indexing can be
         /// applied to the joins left in the outer plan. Joins inside a shipped fragment get it from the

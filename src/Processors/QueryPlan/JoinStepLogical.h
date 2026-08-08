@@ -195,6 +195,14 @@ public:
     /// holding this step.
     bool inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node);
 
+    /// `applyParallelReplicas` may replace a join input with a distributed read after
+    /// `tryAddJoinRuntimeFilter` memoized the eligibility on the pre-rewrite plan. The stale `true`
+    /// would keep selecting a merge join whose input is no longer readable in order, so drop the
+    /// memoized value and let `buildPhysicalJoin` decide on the final plan (falling through to the
+    /// next algorithm of `join_algorithm`). The runtime filter suppressed by the stale answer is not
+    /// restored - that pass has already run - which only costs the filter, not correctness.
+    void resetInputsCanBeReadInJoinKeyOrder() { inputs_can_be_read_in_join_key_order.reset(); }
+
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
