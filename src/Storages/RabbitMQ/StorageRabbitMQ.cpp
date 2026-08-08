@@ -956,6 +956,7 @@ void StorageRabbitMQ::startup()
 {
     if (getContext()->getMessageQueueDisableInsertion())
     {
+        StreamingStorageRegistry::instance().registerTable(getStorageID());
         LOG_INFO(log, "Streaming to views is disabled");
         return;
     }

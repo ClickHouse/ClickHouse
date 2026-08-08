@@ -1355,7 +1355,7 @@ def test_message_queue_disable_insertion_does_not_affect_s3queue(started_cluster
             "0",
             "1",
         )
-        node.query("SYSTEM RELOAD CONFIG")
+        node.restart_clickhouse()
 
         assert (
             "true"
@@ -1394,4 +1394,4 @@ def test_message_queue_disable_insertion_does_not_affect_s3queue(started_cluster
             "1",
             "0",
         )
-        node.query("SYSTEM RELOAD CONFIG")
+        node.restart_clickhouse()

@@ -3707,6 +3707,8 @@ def test_disable_message_queue_insertion(rabbitmq_cluster, db, unique, setting_n
                 SELECT * FROM {db}.rabbitmq;
         """
         )
+        instance.query(f"RENAME TABLE {db}.rabbitmq TO {db}.rabbitmq_renamed")
+        instance.query(f"RENAME TABLE {db}.rabbitmq_renamed TO {db}.rabbitmq")
 
         # Produce messages while insertion is disabled
         credentials = pika.PlainCredentials("root", "clickhouse")

@@ -296,6 +296,7 @@ void StorageKafka::startup()
 {
     if (getContext()->getMessageQueueDisableInsertion())
     {
+        StreamingStorageRegistry::instance().registerTable(getStorageID());
         LOG_INFO(log, "Streaming to views is disabled");
         return;
     }
@@ -612,7 +613,6 @@ void StorageKafka::threadFunc(size_t idx)
 {
     chassert(idx < tasks.size());
     auto task = tasks[idx];
-
     std::string exception_str;
 
     try

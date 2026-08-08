@@ -640,7 +640,7 @@ def test_disable_streaming(started_cluster):
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
     assert node.contains_in_log(
-        f"StorageS3Queue (default.{table_name}): Streaming to views is disabled, rescheduling next check in 5000 ms"
+        f"StorageS3Queue (default.{table_name}): Streaming is disabled, rescheduling next check in 5000 ms"
     )
     assert 0 == get_count()
 
@@ -718,7 +718,7 @@ def test_disable_insertion_and_mutation(started_cluster):
             return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
         assert node.contains_in_log(
-            f"StorageS3Queue (default.{table_name}): Streaming to views is disabled, rescheduling next check in 5000 ms"
+            f"StorageS3Queue (default.{table_name}): Streaming is disabled, rescheduling next check in 5000 ms"
         )
         assert 0 == get_count()
         for pattern, count in error_counts.items():

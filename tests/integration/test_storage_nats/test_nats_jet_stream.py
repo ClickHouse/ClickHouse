@@ -30,6 +30,7 @@ instance = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_nats=True,
     clickhouse_path_dir="clickhouse_path",
+    stay_alive=True,
 )
 
 # Helpers
