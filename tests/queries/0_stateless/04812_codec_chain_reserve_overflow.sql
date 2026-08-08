@@ -19,6 +19,7 @@ SET max_memory_usage = 0;
 DROP TABLE IF EXISTS t_codec_chain_overflow;
 DROP TABLE IF EXISTS t_codec_chain_fpc_max;
 DROP TABLE IF EXISTS t_codec_chain_fpc_over;
+DROP TABLE IF EXISTS t_codec_chain_gorilla_wide;
 DROP TABLE IF EXISTS t_codec_chain_gorilla_max;
 DROP TABLE IF EXISTS t_codec_chain_gorilla_over;
 DROP TABLE IF EXISTS t_codec_chain_dd_max;
@@ -50,6 +51,12 @@ CREATE TABLE t_codec_chain_fpc_over (i UInt32, x Float32 CODEC(FPC,FPC,FPC,FPC,F
              min_compress_block_size = 20000, max_compress_block_size = 20000;
 INSERT INTO t_codec_chain_fpc_over SELECT number, number / 7 FROM numbers(5000); -- { serverError CANNOT_COMPRESS }
 SELECT count() FROM t_codec_chain_fpc_over;
+
+-- Gorilla's reserve is a function of the column's width, so compress a wider Gorilla column first:
+-- the two arms below must reach the same verdict whatever ran before them.
+CREATE TABLE t_codec_chain_gorilla_wide (d Float64 CODEC(Gorilla)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_codec_chain_gorilla_wide SELECT number / 7 FROM numbers(4);
+SELECT count() FROM t_codec_chain_gorilla_wide;
 
 -- Gorilla reserves far more per stage than FPC, so its chains are much shorter. 29 stages is the
 -- longest that still fits; it must keep working too.
@@ -116,6 +123,7 @@ SELECT count(), countIf(x != toFloat32(i / 7)) FROM t_codec_chain_short;
 DROP TABLE t_codec_chain_overflow;
 DROP TABLE t_codec_chain_fpc_max;
 DROP TABLE t_codec_chain_fpc_over;
+DROP TABLE t_codec_chain_gorilla_wide;
 DROP TABLE t_codec_chain_gorilla_max;
 DROP TABLE t_codec_chain_gorilla_over;
 DROP TABLE t_codec_chain_dd_max;
