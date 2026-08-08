@@ -402,10 +402,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertNumericType<Int32>(src, type, strict, convert_inexact_floats);
         }
 
-        if (which_type.isDate32() && src.getType() == Field::Types::Int64)
+        if (which_type.isDate32() && (src.getType() == Field::Types::Int64 || src.getType() == Field::Types::UInt64))
         {
-            /// We don't need any conversion Int64 is under type of Date32
-            return src;
+            /// `Date32` stores an `Int32` day number under the hood (the canonical `Field` type is `Int64`),
+            /// but only `[DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM]` = `[0000-01-01, 9999-12-31]`
+            /// is representable. Reject day numbers outside that window so exact `IN` constants and the
+            /// `VALUES` expression fallback cannot materialize impossible `Date32` values.
+            Field converted = convertNumericType<Int64>(src, type, strict, convert_inexact_floats);
+            if (!converted.isNull())
+            {
+                const Int64 day_num = converted.safeGet<Int64>();
+                if (day_num < DATE_LUT_MIN_EXTEND_DAY_NUM || day_num > DATE_LUT_MAX_EXTEND_DAY_NUM)
+                    return {};
+            }
+            return converted;
         }
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
@@ -465,13 +475,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isDate() && src.getType() == Field::Types::Int64)
         {
             return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
-        }
-
-        /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
-        /// produce wrong result in some special cases.
-        if (which_type.isDate32() && src.getType() == Field::Types::UInt64)
-        {
-            return convertNumericType<Int64>(src, type, strict, convert_inexact_floats);
         }
 
         if (which_type.isDateTime64()

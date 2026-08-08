@@ -203,6 +203,63 @@ INSTANTIATE_TEST_SUITE_P(
     })
 );
 
+/// An exact numeric constant converted to `Date32` must respect the representable window
+/// `[0000-01-01, 9999-12-31]` = day numbers `[-719528, 2932896]`. Out-of-window day numbers
+/// convert to Null (the constant matches nothing) instead of materializing an impossible
+/// `Date32` value that raw numeric consumers would see while formatting clamps it.
+INSTANTIATE_TEST_SUITE_P(
+    NumericToDate32,
+    ConvertFieldToTypeTest,
+    ::testing::ValuesIn(std::initializer_list<ConvertFieldToTypeTestParams>{
+        // An ordinary positive day number (as unsigned and signed literal).
+        {
+            "UInt64",
+            Field(UInt64(19'723)),
+            "Date32",
+            Field(Int64(19'723))
+        },
+        {
+            "Int64",
+            Field(Int64(-25'568)),
+            "Date32",
+            Field(Int64(-25'568))
+        },
+        // The exact boundaries stay valid.
+        {
+            "Int64",
+            Field(Int64(-719'528)),
+            "Date32",
+            Field(Int64(-719'528))
+        },
+        {
+            "UInt64",
+            Field(UInt64(2'932'896)),
+            "Date32",
+            Field(Int64(2'932'896))
+        },
+        // One step outside either boundary converts to Null instead of passing through.
+        {
+            "Int64",
+            Field(Int64(-719'529)),
+            "Date32",
+            Field()
+        },
+        {
+            "UInt64",
+            Field(UInt64(2'932'897)),
+            "Date32",
+            Field()
+        },
+        // A value that does not even fit into the underlying Int32.
+        {
+            "UInt64",
+            Field(std::numeric_limits<UInt64>::max()),
+            "Date32",
+            Field()
+        },
+    })
+);
+
 INSTANTIATE_TEST_SUITE_P(
     DateTimeToDateTime64,
     ConvertFieldToTypeTest,
