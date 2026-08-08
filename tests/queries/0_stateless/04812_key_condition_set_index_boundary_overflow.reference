@@ -7,6 +7,15 @@
 
 SET enable_analyzer = 1;
 SET use_lightweight_primary_key_index_analysis = 1;
+-- The query-condition cache prunes granules before primary-key analysis, and the predicate below
+-- runs more than once, so a warm entry would satisfy the row cap without the set index being right.
+SET use_query_condition_cache = 0;
+-- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
+SET parallel_replicas_index_analysis_only_on_coordinator = 0;
+-- Without the implicit count() projection the exact-range path is never requested, so every witness
+-- below passes whether or not the set index is right.
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
 -- Witness: UInt8 key at the type maximum, 1-element set whose element is absent.
 DROP TABLE IF EXISTS t_setidx_u8;
 CREATE TABLE t_setidx_u8 (a UInt64, b UInt8, c String) ENGINE = MergeTree ORDER BY (a, b, c)
@@ -131,6 +140,10 @@ SELECT count() FROM t_setidx_f32 WHERE a = 1 AND b IN (toFloat32(3.4e38));
 -- the set atom read 5 granules here and exceeded a cap of 4.
 SELECT * FROM t_setidx_u8 WHERE a = 1 AND b IN (0) SETTINGS max_rows_to_read = 4;
 SELECT * FROM t_setidx_u8 WHERE a = 1 AND b = 0 SETTINGS max_rows_to_read = 4;
+-- The same observable difference for the right-bound mirror, whose count() witnesses are correct
+-- either way and so cannot redden where the exactness check is compiled out.
+SELECT * FROM t_setidx_i8_min WHERE a = 1 AND b IN (127) SETTINGS max_rows_to_read = 4;
+SELECT * FROM t_setidx_i8_min WHERE a = 1 AND b = 127 SETTINGS max_rows_to_read = 4;
 DROP TABLE t_setidx_u8;
 DROP TABLE t_setidx_u8_254;
 DROP TABLE t_setidx_u16;
