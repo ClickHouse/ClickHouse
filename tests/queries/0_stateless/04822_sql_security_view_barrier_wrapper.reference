@@ -1,0 +1,8 @@
+===== the view exposes no row =====
+0
+===== an exception oracle over a hidden value cannot fire =====
+not disclosed
+not disclosed
+===== reading the view costs the same whether or not the hidden row matches =====
+same
+same
