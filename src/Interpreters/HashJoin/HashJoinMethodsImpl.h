@@ -800,11 +800,30 @@ static ColumnPtr buildAdditionalFilter(
                 required_columns.emplace_back(nullptr, req_col.type, req_col.name);
 
                 auto col = req_col.type->createColumn();
+                /// The saved right block may wrap this column into Nullable while the ON expression
+                /// requires the plain input type: when a prepared join storage (a dictionary lookup)
+                /// with `join_use_nulls` falls back from a direct join to a hash join, the plan
+                /// converts the right columns of the outer join to Nullable in place, without keeping
+                /// the raw input column the mixed condition was built against. The stored rows are
+                /// real right-side rows, never NULL-extended, so unwrapping the Nullable is exact.
+                const bool col_is_nullable = col->isNullable();
                 for (const UInt64 selected_row : selected_rows)
                 {
                     const auto * block = added_columns.lazy_output.stored_columns[refWordBlockNo(selected_row)];
                     const auto [src_col, row_pos] = getBlockColumnAndRow(block, refWordRowNo(selected_row), rhs_pos_it->second);
-                    col->insertFrom(*src_col, row_pos);
+                    if (!col_is_nullable && src_col->isNullable())
+                    {
+                        const auto & src_nullable = assert_cast<const ColumnNullable &>(*src_col);
+                        if (src_nullable.isNullAt(row_pos))
+                            throw Exception(
+                                ErrorCodes::LOGICAL_ERROR,
+                                "Stored right column {} contains a NULL, but the additional join filter requires the non-Nullable type {}",
+                                req_col.name,
+                                req_col.type->getName());
+                        col->insertFrom(src_nullable.getNestedColumn(), row_pos);
+                    }
+                    else
+                        col->insertFrom(*src_col, row_pos);
                 }
                 required_columns[pos].column = std::move(col);
                 ++rhs_pos_it;

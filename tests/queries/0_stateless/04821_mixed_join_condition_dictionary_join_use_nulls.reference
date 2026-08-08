@@ -1,0 +1,10 @@
+LEFT ANY hash	4	60
+LEFT ANY parallel_hash	4	60
+LEFT ALL hash	4	60
+INNER hash	2	60
+LEFT SEMI hash	2
+LEFT ANTI hash	2
+1	1	30
+1	2	30
+2	3	\N
+3	4	\N
