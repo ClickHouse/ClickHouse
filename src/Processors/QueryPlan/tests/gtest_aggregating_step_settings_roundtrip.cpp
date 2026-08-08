@@ -42,9 +42,7 @@ bool roundTripSerializeStringWithZeroByte(const IQueryPlanStep & step, UInt64 ve
     return read[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte];
 }
 
-/// The name as it appears in the binary settings stream written by `writeChangedBinary`. A peer that predates the
-/// setting rejects any plan carrying it (`readBinary` throws on an unknown name), so a plan must only carry it when
-/// the value cannot be left at the receiver's default.
+/// Whether the name appears in the binary settings stream written by `writeChangedBinary`.
 bool wireCarriesSerializeStringWithZeroByte(const IQueryPlanStep & step, UInt64 version)
 {
     QueryPlanSerializationSettings written;
@@ -114,14 +112,10 @@ std::unique_ptr<MergingAggregatedStep> makeMergingAggregatedStep(bool serialize_
 
 }
 
-/// Regression tests for `serialize_string_in_memory_with_zero_byte` being dropped from the
-/// serialized query plan (https://github.com/ClickHouse/ClickHouse/issues/112079).
-///
-/// Only settings that `serializeSettings` assigns are put on the wire: `writeChangedBinary`
-/// emits the changed subset, and `readBinary` leaves an absent name at its declared default,
-/// which for this setting is `true`. So a step that reads the setting on deserialization but
-/// never writes it on serialization silently forces the executing node to `true` whatever the
-/// initiator ran with. The `false` direction is therefore the one that diverges.
+/// Regression tests for `serialize_string_in_memory_with_zero_byte` being dropped from the serialized
+/// query plan (https://github.com/ClickHouse/ClickHouse/issues/112079). A step that reads the setting
+/// on deserialization but never writes it on serialization leaves the executing node at the declared
+/// default `true` whatever the initiator ran with, so `false` is the direction that diverges.
 
 TEST(AggregatingStepSettingsRoundTrip, SerializeStringWithZeroByteFalseSurvives)
 {
@@ -155,10 +149,9 @@ TEST(MergingAggregatedStepSettingsRoundTrip, SerializeStringWithZeroByteTrueSurv
     EXPECT_TRUE(roundTripSerializeStringWithZeroByte(*makeMergingAggregatedStep(true)));
 }
 
-/// Both directions must reach the wire, at every version. A receiver that predates the name serializes String keys
-/// with no trailing zero byte, which is what `false` means, so leaving `true` off the wire would silently give such
-/// a peer the other layout instead of the value the initiator ran with. The version cannot select those receivers
-/// either: `v25.8.12.129-lts` does not declare the name and `v25.8.13.73-lts` does, yet both advertise version 0.
+/// A receiver predating the name serializes String keys the way `false` does, so both values must reach
+/// the wire, and at every version: `v25.8.12.129-lts` lacks the name while `v25.8.13.73-lts` has it, yet
+/// both advertise version 0.
 TEST(AggregatingStepSettingsRoundTrip, BothDirectionsReachTheWireAtEveryVersion)
 {
     tryRegisterFunctions();
