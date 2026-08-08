@@ -1667,8 +1667,59 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                 }
                 else
                 {
-                    LOG_WARNING(log, "Batch remove of failed nodes returned: {}", magic_enum::enum_name(code));
-                    failed_batches.emplace_back(i, code);
+                    /// Partial success: reconcile individual responses.
+                    /// Some operations may have succeeded even if the multi request returned non-ZOK.
+                    size_t batch_succeeded = 0;
+                    size_t batch_start_idx = batch_file_paths.size() - remove_requests.size();
+
+                    for (size_t k = 0; k < remove_requests.size(); ++k)
+                    {
+                        if (remove_responses[k]->error == Coordination::Error::ZOK)
+                        {
+                            /// This specific remove succeeded - update cache
+                            auto cache_key = getMetadataCacheKey(batch_file_paths[batch_start_idx + k]);
+                            local_file_statuses.remove(cache_key);
+                            file_paths.push_back(batch_file_paths[batch_start_idx + k]);
+                            ++batch_succeeded;
+                        }
+                        else if (remove_responses[k]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY)
+                        {
+                            /// Request was not processed because multi was aborted - retry individually
+                            zk_retries.resetFailures();
+                            Coordination::Error retry_code = {};
+                            zk_retries.retryLoop([&]
+                            {
+                                retry_code = getZooKeeper()->tryRemove(remove_requests[k]->getPath());
+                            });
+
+                            if (retry_code == Coordination::Error::ZOK)
+                            {
+                                auto cache_key = getMetadataCacheKey(batch_file_paths[batch_start_idx + k]);
+                                local_file_statuses.remove(cache_key);
+                                file_paths.push_back(batch_file_paths[batch_start_idx + k]);
+                                ++batch_succeeded;
+                            }
+                            else
+                            {
+                                LOG_ERROR(log, "Failed to remove node `{}` after retry (code: {})",
+                                    remove_requests[k]->getPath(), magic_enum::enum_name(retry_code));
+                            }
+                        }
+                        else
+                        {
+                            LOG_ERROR(log, "Failed to remove node `{}` (code: {})",
+                                remove_requests[k]->getPath(), magic_enum::enum_name(remove_responses[k]->error));
+                        }
+                    }
+
+                    total_deleted += batch_succeeded;
+
+                    if (batch_succeeded < remove_requests.size())
+                    {
+                        LOG_WARNING(log, "Batch remove of failed nodes: {}/{} succeeded, overall status: {}",
+                            batch_succeeded, remove_requests.size(), magic_enum::enum_name(code));
+                        failed_batches.emplace_back(i, code);
+                    }
                 }
 
                 remove_requests.clear();
@@ -1698,8 +1749,59 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
             }
             else
             {
-                LOG_WARNING(log, "Final batch remove of failed nodes returned: {}", magic_enum::enum_name(code));
-                failed_batches.emplace_back(i, code);
+                /// Partial success: reconcile individual responses.
+                /// Some operations may have succeeded even if the multi request returned non-ZOK.
+                size_t batch_succeeded = 0;
+                size_t batch_start_idx = batch_file_paths.size() - remove_requests.size();
+
+                for (size_t k = 0; k < remove_requests.size(); ++k)
+                {
+                    if (remove_responses[k]->error == Coordination::Error::ZOK)
+                    {
+                        /// This specific remove succeeded - update cache
+                        auto cache_key = getMetadataCacheKey(batch_file_paths[batch_start_idx + k]);
+                        local_file_statuses.remove(cache_key);
+                        file_paths.push_back(batch_file_paths[batch_start_idx + k]);
+                        ++batch_succeeded;
+                    }
+                    else if (remove_responses[k]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY)
+                    {
+                        /// Request was not processed because multi was aborted - retry individually
+                        zk_retries.resetFailures();
+                        Coordination::Error retry_code = {};
+                        zk_retries.retryLoop([&]
+                        {
+                            retry_code = getZooKeeper()->tryRemove(remove_requests[k]->getPath());
+                        });
+
+                        if (retry_code == Coordination::Error::ZOK)
+                        {
+                            auto cache_key = getMetadataCacheKey(batch_file_paths[batch_start_idx + k]);
+                            local_file_statuses.remove(cache_key);
+                            file_paths.push_back(batch_file_paths[batch_start_idx + k]);
+                            ++batch_succeeded;
+                        }
+                        else
+                        {
+                            LOG_ERROR(log, "Failed to remove node `{}` after retry (code: {})",
+                                remove_requests[k]->getPath(), magic_enum::enum_name(retry_code));
+                        }
+                    }
+                    else
+                    {
+                        LOG_ERROR(log, "Failed to remove node `{}` (code: {})",
+                            remove_requests[k]->getPath(), magic_enum::enum_name(remove_responses[k]->error));
+                    }
+                }
+
+                total_deleted += batch_succeeded;
+
+                if (batch_succeeded < remove_requests.size())
+                {
+                    LOG_WARNING(log, "Final batch remove of failed nodes: {}/{} succeeded, overall status: {}",
+                        batch_succeeded, remove_requests.size(), magic_enum::enum_name(code));
+                    failed_batches.emplace_back(i, code);
+                }
             }
         }
     }
