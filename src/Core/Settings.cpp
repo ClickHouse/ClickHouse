@@ -456,9 +456,10 @@ The wait applies per replica, because there is one connection pool per replica. 
 attempt fails with `NO_FREE_CONNECTION`. On the failover path used by distributed `SELECT`s that is
 treated like any other unusable replica: the query tries the remaining replicas, and only fails with
 `ALL_CONNECTION_TRIES_FAILED` once every one of them has been tried. So this setting does not bound the
-whole query; with `N` replicas and
-[connections_with_failover_max_tries](#connections_with_failover_max_tries) tries each, the total wait
-can reach `connection_pool_max_wait_ms` times `N` times that number of tries. Use
+whole query; with `N` replicas and `T` tries each, the total wait can reach
+`connection_pool_max_wait_ms` times `N` times `T`, where `T` is
+[connections_with_failover_max_tries](#connections_with_failover_max_tries) but never less than one,
+because a replica is always tried once before it is written off. Use
 [max_execution_time](/reference/settings/session-settings/max-execution#max_execution_time) to bound
 the query itself.
 

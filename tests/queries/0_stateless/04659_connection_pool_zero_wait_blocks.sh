@@ -154,8 +154,11 @@ ${CLICKHOUSE_CLIENT} --query "
 # The arms above cancel the holder, so the waiter is released by the notification the handover sends.
 # Cancelling the waiter instead is what exercises the cancellation path: here the holder keeps the
 # connection for the whole arm, so nothing is ever released and the wait can only end by the waiter
-# noticing that its own query is over. Both arms run at the default connection_pool_max_wait_ms = 0,
-# which is the branch a default deployment uses.
+# noticing that its own query is over.
+#
+# The pool timeout is an argument because the two branches handle their deadline separately, so a
+# cancellation that reaches one is no evidence about the other: the first two arms run at the default
+# 0, the branch a default deployment uses, and the third at a positive timeout.
 #
 # Each arm asserts the holder is still running once the waiter is gone. That check is what makes the
 # arm measure cancellation rather than the handover: a waiter freed by the holder releasing the
@@ -163,14 +166,16 @@ ${CLICKHOUSE_CLIENT} --query "
 # reaching the pool takes about a twentieth of a second, so a loaded runner delays the start rather
 # than eating the margin: the hold is a wall clock sleep, not work that can be slowed down.
 function cancel_waiter() {
-    local mode=$1 label=$2
+    local mode=$1 label=$2 pool_wait_ms=${3:-0}
     local holder="${QUERY_PREFIX}_${label}_holder" waiter="${QUERY_PREFIX}_${label}_waiter"
     local holder_pid waiter_pid contended=0 rc=0 limit=""
 
+    # The holder does not wait, so the value is inert for it; it is kept identical to the waiter's so
+    # the pair is queueing under one configuration.
     timeout 60 ${CLICKHOUSE_CLIENT} --query_id "${holder}" --query "
         SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(30)) WHERE sleepEachRow(1)
         SETTINGS prefer_localhost_replica = 0, distributed_connections_pool_size = 1,
-                 connection_pool_max_wait_ms = 0, function_sleep_max_microseconds_per_block = 60000000
+                 connection_pool_max_wait_ms = ${pool_wait_ms}, function_sleep_max_microseconds_per_block = 60000000
     " < /dev/null > /dev/null 2>&1 &
     holder_pid=$!
 
@@ -186,7 +191,7 @@ function cancel_waiter() {
     timeout 12 ${CLICKHOUSE_CLIENT} --query_id "${waiter}" --query "
         SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(1))
         SETTINGS prefer_localhost_replica = 0, distributed_connections_pool_size = 1,
-                 connection_pool_max_wait_ms = 0${limit}
+                 connection_pool_max_wait_ms = ${pool_wait_ms}${limit}
     " < /dev/null > /dev/null 2>&1 &
     waiter_pid=$!
 
@@ -218,16 +223,25 @@ function cancel_waiter() {
 cancel_waiter kill cancelled
 cancel_waiter soft softlimit
 
+# A positive timeout keeps its deadline in a branch of its own, so the two arms above say nothing
+# about it: a wait that consulted the deadline once and then slept straight to it would pass both.
+# Five minutes is far past this arm's own twelve second bound, so only the kill can end the wait
+# within it, and an unsliced wait to that deadline shows up as the bound firing.
+cancel_waiter kill cancelledfinite 300000
+
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
 # The codes are pinned as well as the timing, so an arm that stopped reporting the cancellation and
-# started reporting something else (a pool error of its own, say) is not silently accepted.
+# started reporting something else (a pool error of its own, say) is not silently accepted. One column
+# per arm, so a single arm regressing stays legible.
 ${CLICKHOUSE_CLIENT} --query "
     SELECT
         countIf(query_id = '${QUERY_PREFIX}_cancelled_waiter' AND exception_code = 394) AS cancelled_by_kill,
-        countIf(query_id = '${QUERY_PREFIX}_softlimit_waiter' AND exception_code = 159) AS stopped_by_time_limit
+        countIf(query_id = '${QUERY_PREFIX}_softlimit_waiter' AND exception_code = 159) AS stopped_by_time_limit,
+        countIf(query_id = '${QUERY_PREFIX}_cancelledfinite_waiter' AND exception_code = 394) AS finite_cancelled_by_kill
     FROM system.query_log
     WHERE event_date >= yesterday() AND current_database = currentDatabase()
-      AND query_id IN ('${QUERY_PREFIX}_cancelled_waiter', '${QUERY_PREFIX}_softlimit_waiter')
+      AND query_id IN ('${QUERY_PREFIX}_cancelled_waiter', '${QUERY_PREFIX}_softlimit_waiter',
+                       '${QUERY_PREFIX}_cancelledfinite_waiter')
       AND type != 'QueryStart'
 "
