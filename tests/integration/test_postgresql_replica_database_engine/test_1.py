@@ -715,7 +715,9 @@ def test_drop_of_individual_table_is_rejected(started_cluster):
     # DETACH TABLE ... PERMANENTLY is the supported path: it removes the table from the tables list and
     # the publication and drops the local nested table, while the other table keeps replicating.
     instance.query(f"DETACH TABLE test_database.{table_name} PERMANENTLY")
-    assert table_name not in instance.query("SHOW TABLES FROM test_database")
+    # Compare whole names: `table_name` is a prefix of `other_table_name`, so a substring
+    # check against the raw SHOW TABLES output would match the remaining table.
+    assert table_name not in instance.query("SHOW TABLES FROM test_database").split()
     instance.query(
         f"INSERT INTO postgres_database.{other_table_name} SELECT number, number FROM numbers(50, 50)"
     )
