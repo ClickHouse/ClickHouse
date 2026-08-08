@@ -3293,9 +3293,9 @@ determined by the 'timeout_overflow_mode', which by default is set to `throw`.
 
 :::note
 The timeout is checked and the query can stop only in designated places during data processing.
-It currently cannot stop during merging of aggregation states, and during query analysis it can stop
-only at a few designated checkpoints, so the actual run time will be higher than the value of this
-setting.
+It currently cannot stop during merging of aggregation states, nor during most of query analysis
+(establishing a connection to a remote replica and collecting typo correction hints are two places
+where it can), and the actual run time will be higher than the value of this setting.
 :::
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode, OverflowMode::THROW, R"(
