@@ -326,7 +326,7 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
         persistent_components.data_source_description,
         persistent_components.metadata_compression_method,
         force_fetch_latest_metadata);
-    return getState(context, metadata_file_path, metadata_version);
+    return getState(context, metadata_file_path, metadata_version, compression_method);
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -705,14 +705,14 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot>
-IcebergMetadata::getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const
+IcebergMetadata::getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version, CompressionMethod compression_method) const
 {
     const auto effective_cache = local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
         ? persistent_components.metadata_cache : nullptr;
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, effective_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid, persistent_components.data_source_description);
+        metadata_path, object_storage, effective_cache, local_context, log, compression_method, persistent_components.table_uuid, persistent_components.data_source_description);
 
     insertRowToLogTable(
         local_context,
@@ -983,7 +983,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
         effective_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
+        getCompressionMethodFromMetadataFile(table_state_snapshot.metadata_file_path),
         persistent_components.table_uuid,
         persistent_components.data_source_description);
     if (!table_state_snapshot.snapshot_id.has_value())
@@ -1620,7 +1620,7 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         effective_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method,
+        getCompressionMethodFromMetadataFile(actual_table_state_snapshot.metadata_file_path),
         persistent_components.table_uuid,
         persistent_components.data_source_description);
 
