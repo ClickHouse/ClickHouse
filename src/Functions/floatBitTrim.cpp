@@ -237,7 +237,10 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        return !arguments[1].is_const;
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -254,6 +257,22 @@ public:
                 getName(),
                 arguments[1]->getName());
         return arguments[0];
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        auto result_type = getReturnTypeImpl(DataTypes{arguments[0].type, arguments[1].type});
+
+        const auto & bits_column = arguments[1].column;
+        if (bits_column && isColumnConst(*bits_column) && !WhichDataType(arguments[1].type).isNativeUInt()
+            && bits_column->getInt(0) < 0)
+            throw Exception(
+                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Number of bits to trim in {} must be non-negative, got {}",
+                getName(),
+                bits_column->getInt(0));
+
+        return result_type;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -294,14 +313,17 @@ private:
         auto result = ColumnVector<Float>::create(input_rows_count);
         auto & result_data = result->getData();
 
+        WhichDataType bits_which(arguments[1].type);
+
         if (isColumnConst(*bits_col_ptr))
         {
-            const auto mask = getMask<MaskType, MantissaBits>(bits_col_ptr->getInt(0));
+            /// `getInt` wraps a `UInt64` above 2^63 into a negative value, which would be rejected as negative.
+            const auto mask = bits_which.isNativeUInt() ? getMask<MaskType, MantissaBits>(bits_col_ptr->getUInt(0))
+                                                        : getMask<MaskType, MantissaBits>(bits_col_ptr->getInt(0));
             processRange(values.data(), result_data.data(), mask, input_rows_count);
             return result;
         }
 
-        WhichDataType bits_which(arguments[1].type);
         if (bits_which.isUInt8())
             runVariable<Float, MaskType, MantissaBits, UInt8>(values, *bits_col_ptr, result_data, input_rows_count);
         else if (bits_which.isUInt16())
@@ -346,15 +368,24 @@ Zeroes the lowest `n` bits of the IEEE 754 mantissa of a floating-point value.
 This is a lossy precision reduction useful for improving compression of float columns.
 The exponent and sign are preserved; `n` is clamped to the mantissa width
 (7 for `BFloat16`, 23 for `Float32`, 52 for `Float64`).
+
+Special values:
+- `NaN` is returned unchanged, including its sign and its full payload. It never collapses into infinity, and a signaling `NaN` stays signaling.
+- Infinity is returned unchanged.
+- Subnormal values may become zero, because their significant bits live in the low mantissa bits that are zeroed.
+
+A negative `n` throws `ARGUMENT_OUT_OF_BOUND`.
 )";
     FunctionDocumentation::Syntax syntax = "floatBitTrim(value, n)";
     FunctionDocumentation::Arguments arguments
         = {{"value", "Floating-point value to trim.", {"BFloat16", "Float32", "Float64"}},
-           {"n", "Number of low mantissa bits to zero.", {"(U)Int*"}}};
+           {"n",
+            "Number of low mantissa bits to zero.",
+            {"UInt8", "UInt16", "UInt32", "UInt64", "Int8", "Int16", "Int32", "Int64"}}};
     FunctionDocumentation::ReturnedValue returned_value
         = {"Returns `value` with the lowest `n` mantissa bits zeroed, of the same type as `value`.", {"BFloat16", "Float32", "Float64"}};
     FunctionDocumentation::Examples examples = {{"Trim 20 mantissa bits", "SELECT floatBitTrim(1.234::Float64, 20)", "1.2339999999385327"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

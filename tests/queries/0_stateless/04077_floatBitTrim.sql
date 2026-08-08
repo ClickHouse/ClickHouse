@@ -73,6 +73,32 @@ SELECT isInfinite(floatBitTrim(inf::Float64, 52));
 SELECT isInfinite(floatBitTrim(-inf::Float32, 23));
 SELECT hex(reinterpretAsUInt16(floatBitTrim(inf::BFloat16, 7)));
 
+SELECT 'Large UInt64 n is clamped, not treated as negative, on both paths.';
+SELECT floatBitTrim(materialize(1.0::Float64), 18446744073709551615) = floatBitTrim(1.0::Float64, 18446744073709551615);
+SELECT floatBitTrim(materialize(1.0::Float64), 18446744073709551615) = floatBitTrim(1.0::Float64, 52);
+SELECT floatBitTrim(materialize(1.234::Float32), 9223372036854775808) = floatBitTrim(1.234::Float32, 23);
+SELECT floatBitTrim(materialize(1.5::BFloat16), 18446744073709551615) = floatBitTrim(1.5::BFloat16, 7);
+
+SELECT 'Constant n of every native integer type agrees with the per-row path.';
+SELECT floatBitTrim(materialize(1.234::Float64), 20::UInt8) = floatBitTrim(1.234::Float64, materialize(20::UInt8));
+SELECT floatBitTrim(materialize(1.234::Float64), 20::UInt16) = floatBitTrim(1.234::Float64, materialize(20::UInt16));
+SELECT floatBitTrim(materialize(1.234::Float64), 20::UInt32) = floatBitTrim(1.234::Float64, materialize(20::UInt32));
+SELECT floatBitTrim(materialize(1.234::Float64), 20::UInt64) = floatBitTrim(1.234::Float64, materialize(20::UInt64));
+SELECT floatBitTrim(materialize(1.234::Float64), 20::Int8) = floatBitTrim(1.234::Float64, materialize(20::Int8));
+SELECT floatBitTrim(materialize(1.234::Float64), 20::Int16) = floatBitTrim(1.234::Float64, materialize(20::Int16));
+SELECT floatBitTrim(materialize(1.234::Float64), 20::Int32) = floatBitTrim(1.234::Float64, materialize(20::Int32));
+SELECT floatBitTrim(materialize(1.234::Float64), 20::Int64) = floatBitTrim(1.234::Float64, materialize(20::Int64));
+
+SELECT 'Negative constant n is rejected during analysis.';
+SELECT floatBitTrim(materialize(1.0::Float64), -1); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT floatBitTrim(materialize(1.0::Float64), -1::Int64); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- Rejected even in a branch that is never taken, unlike the per-row case below.
+SELECT if(0, floatBitTrim(materialize(1.0::Float64), -1), 1.0::Float64); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+SELECT 'Short-circuit guards a negative per-row n.';
+SELECT sum(if(n >= 0, floatBitTrim(v, n), v)) FROM (SELECT 1.0::Float64 AS v, arrayJoin([20, -1]) AS n)
+SETTINGS short_circuit_function_evaluation = 'enable';
+
 SELECT 'materialize(): per-row path equals const path.';
 SELECT floatBitTrim(1.234::Float64, materialize(20)) = floatBitTrim(1.234::Float64, 20);
 SELECT floatBitTrim(1.234::Float32, materialize(10)) = floatBitTrim(1.234::Float32, 10);
