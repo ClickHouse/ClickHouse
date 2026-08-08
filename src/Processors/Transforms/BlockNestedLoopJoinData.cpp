@@ -4,6 +4,8 @@
 #include <Processors/Transforms/BlockNestedLoopJoinData.h>
 #include <Common/ProfileEvents.h>
 
+#include <optional>
+
 namespace ProfileEvents
 {
     extern const Event JoinBuildTableRowCount;
@@ -57,6 +59,32 @@ BuildBlockPtr decompressBuildBlock(const StoredBlock & stored_block)
     return result;
 }
 
+/// The same rows with every column that shrinks replaced by its compressed form, or `nullopt` when
+/// none of them shrinks. A column that did not shrink comes back wrapped in a `ColumnCompressed`
+/// that decompresses to that very column; keeping the wrapper would make every read materialize the
+/// block anew - and charge the reader for memory it does not retain, cutting its output chunks
+/// short - for no saving at all.
+std::optional<StoredBlock> compressBuildBlock(const StoredBlock & stored_block)
+{
+    Columns columns;
+    columns.reserve(stored_block.columns.size());
+    bool any_compressed = false;
+    for (const auto & column : stored_block.columns)
+    {
+        auto compressed_column = column->compress(/*force_compression=*/ false);
+        if (compressed_column->byteSize() >= column->byteSize())
+            compressed_column = column;
+        else
+            any_compressed = true;
+        columns.push_back(std::move(compressed_column));
+    }
+
+    if (!any_compressed)
+        return {};
+
+    return StoredBlock(std::move(columns), ScatteredBlock::Selector(stored_block.selector.size()));
+}
+
 }
 
 BlockNestedLoopJoinData::BlockNestedLoopJoinData(
@@ -104,15 +132,24 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
         column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
 
     StoredBlock stored_block(std::move(columns), ScatteredBlock::Selector(num_rows));
-    size_t block_bytes = stored_block.allocatedBytes();
+    const size_t block_bytes = stored_block.allocatedBytes();
 
-    size_t rows_in_join = 0;
-    size_t bytes_in_join = 0;
+    const size_t rows_in_join = total_rows.fetch_add(num_rows, std::memory_order_relaxed) + num_rows;
+    const size_t bytes_in_join = total_bytes.fetch_add(block_bytes, std::memory_order_relaxed) + block_bytes;
+
+    /// Compressing a block is per-block work with nothing shared in it, and under the store lock it
+    /// would serialize the build streams. It has to happen before the lock decides whether the block
+    /// stays in memory or is spilled, so it is speculative: a block that turns out to be spilled is
+    /// written out uncompressed and the compressed copy is dropped. A store that has already started
+    /// spilling never compresses again, since every later block goes to disk as well.
+    std::optional<StoredBlock> compressed_block;
+    if (getNumSpilledBlocks() == 0
+        && ((store_settings.min_rows_to_compress != 0 && rows_in_join >= store_settings.min_rows_to_compress)
+            || (store_settings.min_bytes_to_compress != 0 && bytes_in_join >= store_settings.min_bytes_to_compress)))
+        compressed_block = compressBuildBlock(stored_block);
+
     {
         std::lock_guard lock(mutex);
-
-        rows_in_join = total_rows.fetch_add(num_rows, std::memory_order_relaxed) + num_rows;
-        bytes_in_join = total_bytes.fetch_add(block_bytes, std::memory_order_relaxed) + block_bytes;
 
         const size_t index = blocks.size();
         auto & entry = blocks.emplace_back();
@@ -130,8 +167,10 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
                 spillInMemoryBlocksLocked();
             spillBlock(entry, stored_block);
         }
+        else if (compressed_block)
+            storeBlock(entry, index, std::move(*compressed_block), /*compressed=*/ true, block_bytes);
         else
-            storeBlock(entry, index, std::move(stored_block), rows_in_join, bytes_in_join);
+            storeBlock(entry, index, std::move(stored_block), /*compressed=*/ false, block_bytes);
     }
 
     ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
@@ -140,32 +179,10 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
 }
 
 void BlockNestedLoopJoinData::storeBlock(
-    BuildBlockEntry & entry, size_t index, StoredBlock stored_block, size_t rows_in_join, size_t bytes_in_join)
+    BuildBlockEntry & entry, size_t index, StoredBlock stored_block, bool compressed, size_t uncompressed_bytes)
 {
     stored_block.block_no = static_cast<UInt32>(index);
-    /// What the block takes once it is decompressed, which is the shape the spill writes it out in.
-    const size_t uncompressed_bytes = stored_block.allocatedBytes();
-
-    const bool compress = !stored_block.columns.empty()
-        && ((store_settings.min_rows_to_compress != 0 && rows_in_join >= store_settings.min_rows_to_compress)
-            || (store_settings.min_bytes_to_compress != 0 && bytes_in_join >= store_settings.min_bytes_to_compress));
-    if (compress)
-    {
-        for (auto & column : stored_block.columns)
-        {
-            auto compressed_column = column->compress(/*force_compression=*/ false);
-            /// A column that did not shrink comes back wrapped in a `ColumnCompressed` that
-            /// decompresses to that very column. Keeping the wrapper would make every read
-            /// materialize the block anew - and charge the reader for memory it does not retain,
-            /// cutting its output chunks short - for no saving at all.
-            if (compressed_column->byteSize() >= column->byteSize())
-                continue;
-
-            column = std::move(compressed_column);
-            entry.compressed = true;
-        }
-        stored_block.rebuildReplicatedColumns();
-    }
+    entry.compressed = compressed;
 
     const size_t stored_bytes = stored_block.allocatedBytes();
     entry.block = std::make_shared<const StoredBlock>(std::move(stored_block));

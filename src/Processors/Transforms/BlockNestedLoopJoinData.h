@@ -148,8 +148,9 @@ private:
 
     void assertFinished(const char * what) const;
 
-    /// Keeps the block in memory, compressing it if the build side has grown past the thresholds.
-    void storeBlock(BuildBlockEntry & entry, size_t index, StoredBlock stored_block, size_t rows_in_join, size_t bytes_in_join)
+    /// Keeps the block in memory. `uncompressed_bytes` is what it takes once decompressed, which is
+    /// the shape the spill writes it out in.
+    void storeBlock(BuildBlockEntry & entry, size_t index, StoredBlock stored_block, bool compressed, size_t uncompressed_bytes)
         TSA_REQUIRES(mutex);
     /// Writes the block out and leaves `entry` pointing at it by its position in the file. Blocks
     /// are written in increasing index order, which is what makes one forward pass enough to read

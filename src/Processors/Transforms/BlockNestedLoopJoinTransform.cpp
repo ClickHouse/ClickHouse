@@ -684,6 +684,16 @@ Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
     return chunk;
 }
 
+/// How many of the output columns come from the probe side, which is what this stage pads.
+static size_t probeColumnCount(const Block & output_header, const Block & build_header)
+{
+    if (output_header.columns() < build_header.columns())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Block nested loop join output header [{}] does not end with its build side [{}]",
+            output_header.dumpStructure(), build_header.dumpStructure());
+    return output_header.columns() - build_header.columns();
+}
+
 BlockNestedLoopUnmatchedBuildRowsTransform::BlockNestedLoopUnmatchedBuildRowsTransform(
     SharedHeader output_header_,
     BlockNestedLoopJoinDataPtr data_,
@@ -691,10 +701,12 @@ BlockNestedLoopUnmatchedBuildRowsTransform::BlockNestedLoopUnmatchedBuildRowsTra
     size_t max_block_bytes_,
     size_t stream_index_,
     size_t num_streams_)
-    : ISource(std::move(output_header_))
+    /// The rows this stage emits were read by the build side and are only handed out again here,
+    /// so counting them as read would double them in the query's read progress and quotas.
+    : ISource(std::move(output_header_), /*enable_auto_progress=*/ false)
     , data(std::move(data_))
     , build_reader(data)
-    , num_probe_columns(getPort().getHeader().columns() - data->getHeader()->columns())
+    , num_probe_columns(probeColumnCount(getPort().getHeader(), *data->getHeader()))
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
     , num_streams(num_streams_)
