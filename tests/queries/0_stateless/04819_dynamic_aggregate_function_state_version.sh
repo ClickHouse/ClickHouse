@@ -82,11 +82,13 @@ echo "flattened: $(announced_version "$blob"), round trip $(roundtrip < "$blob")
 rm -f "$blob"
 
 # A distributed query moves the whole Dynamic column over the Native wire before the subcolumn is
-# extracted on the initiator; both sides spell the nested type the same way.
+# extracted on the initiator; both sides spell the nested type the same way. Only the new analyzer
+# can read a Dynamic subcolumn out of a subquery result, and the subquery is what keeps the
+# extraction on the initiator, so the query pins the analyzer instead of dropping the coverage.
 $CLICKHOUSE_CLIENT -m -q "
 SELECT 'remote: ' || toString(medianDeterministicMerge(d.\`AggregateFunction(quantileDeterministic, UInt64, UInt64)\`))
 FROM (SELECT d FROM remote('127.0.0.2', currentDatabase(), dynamic_qd))
-SETTINGS prefer_localhost_replica = 0;
+SETTINGS prefer_localhost_replica = 0, enable_analyzer = 1;
 "
 
 # The cost of all of the above, pinned so it does not change silently: a state inside a `Dynamic`
