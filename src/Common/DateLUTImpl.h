@@ -530,11 +530,11 @@ public:
     static constexpr auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
 
     /// The boundaries of the representable calendar, [0000-01-01, 9999-12-31], as day numbers counted from the
-    /// Unix epoch and as Unix timestamps. The calendar arithmetic (addYears etc.) clamps its results to this window.
+    /// Unix epoch. The calendar arithmetic (addYears etc.) clamps its results to this window. (The same window
+    /// expressed as Unix timestamps depends on the time zone - the clamp happens in the local civil calendar -
+    /// so its timestamp boundaries have to be obtained from an instance via makeDateTime.)
     static constexpr Int64 getMinRepresentableDayNum() { return min_representable_day_index - daynum_offset_epoch; }
     static constexpr Int64 getMaxRepresentableDayNum() { return max_representable_day_index - daynum_offset_epoch; }
-    static constexpr Time getMinRepresentableTime() { return min_representable_time; }
-    static constexpr Time getMaxRepresentableTime() { return max_representable_time; }
 
     /// All functions below are thread-safe; arguments are not checked.
 

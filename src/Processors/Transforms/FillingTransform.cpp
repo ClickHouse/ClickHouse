@@ -245,12 +245,13 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
   * then wraps around 1990 and cycles through the UInt16 domain forever, all of it below TO = 70000.
   *
   * On top of that, the calendar arithmetic clamps at the boundaries of the representable calendar - the window
-  * [0000-01-01, 9999-12-31] of DateLUTImpl - and for Date32 and DateTime64 that window is strictly narrower than
-  * the range of the storage type. A TO bound beyond the calendar boundary in the fill direction passes the
-  * storage-range check and is still unreachable: the filling keeps generating the boundary value forever. Such
-  * bounds are checked separately in checkFillBoundsFitColumnType against the calendar limits, not just the
-  * storage limits. (For Date the calendar clamp coincides with the UInt16 storage boundary, and DateTime wraps
-  * within UInt32 where any in-range TO stays reachable from some anchor, so the storage check suffices there.)
+  * [0000-01-01, 9999-12-31] of DateLUTImpl, taken in the local civil calendar of the column's time zone - and
+  * for Date32 and DateTime64 that window is strictly narrower than the range of the storage type. A TO bound
+  * beyond the calendar boundary in the fill direction passes the storage-range check and is still unreachable:
+  * the filling keeps generating the boundary value forever. Such bounds are checked separately in
+  * checkFillBoundsFitColumnType against the calendar limits, not just the storage limits. (For Date the
+  * calendar clamp coincides with the UInt16 storage boundary, and DateTime wraps within UInt32 where any
+  * in-range TO stays reachable from some anchor, so the storage check suffices there.)
   *
   * STALENESS is the exception: it terminates the filling in-domain, see below.
   *
@@ -318,10 +319,11 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
     WhichDataType which(type);
 
     /// The calendar arithmetic of an INTERVAL step clamps at the boundaries of the representable calendar
-    /// ([0000-01-01, 9999-12-31], see DateLUTImpl), and for Date32 and DateTime64 those boundaries lie strictly
-    /// inside the range of the storage type: a TO bound beyond the calendar boundary in the fill direction can
-    /// never be reached even when it fits the storage type, and the filling would keep generating the clamped
-    /// boundary value forever. STALENESS terminates the filling in-domain (see below), so it lifts the check.
+    /// ([0000-01-01, 9999-12-31] in the local civil calendar of the column's time zone, see DateLUTImpl), and
+    /// for Date32 and DateTime64 those boundaries lie strictly inside the range of the storage type: a TO bound
+    /// beyond the calendar boundary in the fill direction can never be reached even when it fits the storage
+    /// type, and the filling would keep generating the clamped boundary value forever. STALENESS terminates the
+    /// filling in-domain (see below), so it lifts the check.
     if (descr.step_kind && !descr.fill_to.isNull() && descr.fill_staleness.isNull())
     {
         std::optional<bool> is_reachable;
@@ -335,11 +337,18 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
         }
         else if (which.isDateTime64() && descr.fill_to.getType() == Field::Types::Decimal64)
         {
+            /// The calendar arithmetic clamps in the local civil calendar of the column's time zone (the local
+            /// year is clamped to [0000, 9999], see e.g. DateLUTImpl::addYearsOutOfRange), so the boundary
+            /// expressed in raw ticks is shifted by the UTC offset of the time zone: the last reachable second
+            /// is the raw value of local 9999-12-31 23:59:59, not of the same instant in UTC.
+            const auto & time_zone = static_cast<const DataTypeDateTime64 &>(*type).getTimeZone();
+            const Int64 max_seconds = time_zone.makeDateTime(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59);
+            const Int64 min_seconds = time_zone.makeDateTime(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0);
             const auto & to_decimal = descr.fill_to.safeGet<DecimalField<Decimal64>>();
             const Int128 scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(to_decimal.getScale());
             /// The last representable time point of the calendar has all its sub-second digits set.
-            const Int128 max_ticks = static_cast<Int128>(DateLUTImpl::getMaxRepresentableTime()) * scale_multiplier + (scale_multiplier - 1);
-            const Int128 min_ticks = static_cast<Int128>(DateLUTImpl::getMinRepresentableTime()) * scale_multiplier;
+            const Int128 max_ticks = static_cast<Int128>(max_seconds) * scale_multiplier + (scale_multiplier - 1);
+            const Int128 min_ticks = static_cast<Int128>(min_seconds) * scale_multiplier;
             const Int128 to = to_decimal.getValue().value;
             is_reachable = direction > 0 ? to <= max_ticks : to >= min_ticks;
         }

@@ -70,6 +70,17 @@ SELECT * FROM (SELECT toDate32('0001-06-01') AS d ORDER BY d DESC WITH FILL TO -
 SELECT * FROM (SELECT toDateTime64('9999-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300800 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toDateTime64('9999-06-01 00:00:00.123', 3, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300800 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT * FROM (SELECT toDateTime64('0001-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t DESC WITH FILL TO -70000000000 STEP INTERVAL -100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- The calendar clamp happens in the local civil calendar of the column's time zone, so the boundary expressed
+-- in raw ticks is shifted by the UTC offset: local 9999-12-31 23:59:59 is 253402250399 in Etc/GMT-14 (UTC+14)
+-- and 253402343999 in Etc/GMT+12 (UTC-12), while local 0000-01-01 00:00:00 in Etc/GMT+12 is -62167176000.
+-- A TO within the UTC calendar window but beyond the local one can never be reached.
+SELECT * FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'Etc/GMT-14') AS t ORDER BY t ASC WITH FILL TO 253402250400 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDateTime64('2000-01-01 00:00:00.123', 3, 'Etc/GMT-14') AS t ORDER BY t ASC WITH FILL TO 253402250400000 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDateTime64('0001-06-01 00:00:00', 0, 'Etc/GMT+12') AS t ORDER BY t DESC WITH FILL TO -62167219200 STEP INTERVAL -100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT * FROM (SELECT toDateTime64('9998-06-01 00:00:00', 0, 'Etc/GMT+12') AS t ORDER BY t ASC WITH FILL TO 253402344000 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+-- A TO beyond the UTC calendar window but within the local one is accepted (the anchor steps exactly onto the
+-- exclusive bound, so the fill terminates with the anchor row alone).
+SELECT count() FROM (SELECT toDateTime64('9998-12-31 23:59:59', 0, 'Etc/GMT+12') AS t ORDER BY t ASC WITH FILL TO 253402343999 STEP INTERVAL 1 YEAR);
 -- The exclusive TO bound at exactly the calendar boundary is reachable and terminates. Only acceptance and
 -- termination are asserted: an anchor beyond the DateLUT table takes the out-of-range calendar path, whose
 -- clamped values are a pre-existing data-dependent artifact (see the pull request description).
