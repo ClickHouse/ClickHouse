@@ -6,9 +6,9 @@
 namespace DB
 {
 
-void IKafkaExceptionInfoSink::setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace)
+void IKafkaExceptionInfoSink::setExceptionInfo(const cppkafka::Error & err)
 {
-    setExceptionInfo(err.to_string(), with_stacktrace);
+    setExceptionInfo(err.to_string(), /* with_stacktrace = */ false);
 }
 
 void IKafkaExceptionInfoSink::setExceptionInfo(const std::string & text, bool with_stacktrace)

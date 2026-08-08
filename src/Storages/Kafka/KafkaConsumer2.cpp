@@ -99,7 +99,7 @@ CppKafkaConsumerPtr && KafkaConsumer2::moveConsumer()
         *consumer,
         DRAIN_TIMEOUT_MS,
         log,
-        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
+        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err); });
     return std::move(consumer);
 }
 
@@ -393,7 +393,7 @@ void KafkaConsumer2::filterMessageErrors()
     StorageKafkaUtils::eraseMessageErrors(
         messages,
         log,
-        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err, /* with_stacktrace = */ true); });
+        [this](const cppkafka::Error & err) { IKafkaExceptionInfoSink::setExceptionInfo(err); });
     current = messages.begin();
 }
 

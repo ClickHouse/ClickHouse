@@ -511,9 +511,8 @@ void updateConfigurationFromConfig(
                 if (auto sink_shared_ptr = sink.lock())
                 {
                     ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
-                    // librdkafka-originated errors (auth failures, broker disconnects) have no
-                    // useful ClickHouse stack trace - the trace only shows poll->log_callback.
-                    // Skip stack trace to reduce noise in system.kafka_consumers.exceptions.
+                    // Broker-originated, so no ClickHouse stack trace - same policy the
+                    // `cppkafka::Error` overload applies.
                     sink_shared_ptr->setExceptionInfo(message, /* with_stacktrace = */ false);
                 }
             }
