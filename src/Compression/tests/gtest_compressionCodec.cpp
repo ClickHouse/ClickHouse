@@ -2887,8 +2887,8 @@ std::vector<UInt8> wallabyGoldenXorVectors()
 
 std::vector<Float64> wallabyGoldenXorValues()
 {
-    constexpr Float64 pi = 0x1.921fb54442d18p+1;
-    constexpr Float64 e = 0x1.5bf0a8b145769p+1;
+    constexpr Float64 pi = std::numbers::pi;
+    constexpr Float64 e = std::numbers::e;
 
     std::vector<Float64> values;
     for (size_t i = 0; i < 8; ++i)
