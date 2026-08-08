@@ -49,9 +49,6 @@ const auto DRAIN_TIMEOUT_MS = 5000ms;
 /// at all reaches it.
 const auto COMMIT_TIMEOUT_MS = 30000ms;
 
-namespace
-{
-
 /// cppkafka's no-argument `commit` is `rd_kafka_commit(handle, nullptr, 0)`, which takes no timeout and
 /// waits on its reply queue forever. `offsets.commit.timeout.ms` bounds a broker's response, not the
 /// case where no broker is reachable to send the request to - so a consumer whose brokers all fail
@@ -91,8 +88,6 @@ void commitCurrentAssignmentWithTimeout(cppkafka::Consumer & consumer, std::chro
     err = rd_kafka_event_error(event);
     if (err != RD_KAFKA_RESP_ERR_NO_ERROR)
         throw cppkafka::HandleException(cppkafka::Error(err));
-}
-
 }
 
 
