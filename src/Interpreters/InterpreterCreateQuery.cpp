@@ -3011,7 +3011,13 @@ BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create, b
         /// Resolving the engine's target evaluates user expressions and may contact remote shards,
         /// so authorize first. `executeDDLQueryOnCluster` checks `CLUSTER` only after this point.
         getContext()->checkAccess(AccessType::CLUSTER);
-        getContext()->checkAccess(getRequiredAccess());
+
+        /// An element naming no database would be resolved here against the initiator's current
+        /// database, while `executeDDLQueryOnCluster` resolves it against each host's configured
+        /// `default_database`. Only that translated check can decide it, so it is left to it.
+        AccessRightsElements required_access = getRequiredAccess();
+        std::erase_if(required_access, [](const AccessRightsElement & element) { return element.isEmptyDatabase(); });
+        getContext()->checkAccess(required_access);
 
         /// Normalization materializes an empty `columns_list`, so its presence says nothing about
         /// whether the user supplied a structure; only its contents do.
