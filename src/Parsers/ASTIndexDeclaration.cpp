@@ -119,6 +119,8 @@ void ASTIndexDeclaration::writeJSON(WriteBuffer & out) const
     w.writeUInt("granularity", granularity);
     if (part_of_create_index_query)
         w.writeBool("part_of_create_index_query", true);
+    if (is_lookup_index)
+        w.writeBool("is_lookup_index", true);
     w.writeChild("expression", getExpression());
     w.writeChild("index_type", getType());
 }
@@ -130,6 +132,7 @@ void ASTIndexDeclaration::readJSON(const Poco::JSON::Object & json)
     name = r.getString("name");
     granularity = r.getUInt("granularity");
     part_of_create_index_query = r.getBool("part_of_create_index_query");
+    is_lookup_index = r.getBool("is_lookup_index");
 
     auto expression = r.readChild("expression");
     if (!expression)

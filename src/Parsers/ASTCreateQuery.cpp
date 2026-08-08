@@ -65,6 +65,7 @@ void ASTColumns::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "Columns definition");
     w.writeChild("columns", columns);
     w.writeChild("indices", indices);
+    w.writeChild("lookup_indices", lookup_indices);
     w.writeChild("constraints", constraints);
     w.writeChild("projections", projections);
     /// `primary_key`/`primary_key_from_columns` are parser-intermediate slots that are always cleared
@@ -97,6 +98,7 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
 
     readDeclarationList.operator()<ASTColumnDeclaration>("columns", columns);
     readDeclarationList.operator()<ASTIndexDeclaration>("indices", indices);
+    readDeclarationList.operator()<ASTIndexDeclaration>("lookup_indices", lookup_indices);
     readDeclarationList.operator()<ASTConstraintDeclaration>("constraints", constraints);
     readDeclarationList.operator()<ASTProjectionDeclaration>("projections", projections);
 
