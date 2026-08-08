@@ -959,7 +959,8 @@ void PrometheusHTTPProtocolAPI::getLabels(
 
 /// Implements /api/v1/label/<name>/values: returns all distinct values for a given label name.
 /// For "__name__", queries the metric_name column directly; for tags moved into dedicated columns by
-/// `tags_to_columns`, reads that column; otherwise extracts values from the tags Map.
+/// `tags_to_columns`, reads that column, falling back to the residual tags Map when the column is
+/// empty/NULL; otherwise extracts values from the tags Map.
 void PrometheusHTTPProtocolAPI::getLabelValues(
     WriteBuffer & response,
     const String & label_name_param,
@@ -1010,7 +1011,18 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
 
         if (!column_name.empty())
         {
-            String value_expr = fmt::format("coalesce(toString({}), '')", backQuoteIfNeed(column_name));
+            /// The dedicated column is the primary carrier, but a supported external `tags` table can
+            /// still hold the configured tag only in the residual `tags` Map with the dedicated column
+            /// empty/NULL (e.g. rows preloaded before the `tags_to_columns` layout was adopted).
+            /// `/api/v1/series` emits such labels straight from the Map (`writeTags`) and `/api/v1/labels`
+            /// reports them via `mapKeys`, so fall back to the Map here as well to keep the endpoints
+            /// consistent with each other.
+            String column_expr = fmt::format("coalesce(toString({}), '')", backQuoteIfNeed(column_name));
+            String value_expr = fmt::format(
+                "if({0} != '', {0}, {1}[{2}])",
+                column_expr,
+                TimeSeriesColumnNames::Tags,
+                quoteString(label_name));
             query = fmt::format("SELECT DISTINCT {} AS label_value FROM {}", value_expr, tags_table_id.getFullTableName());
             conditions.push_back(fmt::format("{} != ''", value_expr));
         }
