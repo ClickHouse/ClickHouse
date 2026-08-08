@@ -51,6 +51,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/FieldFromAST.h>
 #include <Parsers/ASTShowFunctionsQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowSettingQuery.h>
@@ -553,17 +554,18 @@ namespace
                     query.rule_name, *alias);
 
         /// A placeholder inside an AST member kept outside `children` — the `LIMIT` / `WHERE` of a
-        /// `SHOW`, a `BACKUP` setting, a `CREATE ROW POLICY` filter, etc. — is neither bound nor
-        /// substituted by the matcher (which walks only `children`), even though the matcher's tree
-        /// hash now folds those members in. The rule would be stored but silently never work, so
-        /// reject it up front.
+        /// `SHOW`, a `BACKUP` setting, a `CREATE ROW POLICY` filter, a `SETTINGS` clause value
+        /// (`SETTINGS max_threads = {n:Int}`, kept as a `Field` inside `ASTSetQuery::changes`), etc.
+        /// — is neither bound nor substituted by the matcher (which walks only `children`), even
+        /// though the matcher's tree hash now folds those members in. The rule would be stored but
+        /// silently never work, so reject it up front.
         for (const auto & template_query : {query.source_query, query.resulting_query})
             if (auto non_child = findQueryParameterInNonChildMember(template_query, false))
                 throw Exception(
                     ErrorCodes::REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE,
                     "Rewrite rule `{}` uses query parameter `{}` inside an AST member that the "
                     "matcher does not traverse (for example a SHOW LIMIT / WHERE, a BACKUP setting, "
-                    "or a ROW POLICY filter); such placeholders are not supported",
+                    "a SETTINGS clause value, or a ROW POLICY filter); such placeholders are not supported",
                     query.rule_name, *non_child);
 
         std::unordered_set<String> source_parameters;
@@ -676,6 +678,20 @@ void forEachRewriteRuleNonChildAST(const IAST & node, const std::function<void(c
     {
         visit_if(masking_policy->update_assignments);
         visit_if(masking_policy->where_condition);
+    }
+    else if (const auto * set_query = node.as<ASTSetQuery>())
+    {
+        /// A setting value in a `SETTINGS` clause can itself be an AST — for example the
+        /// `{n:Int}` in `SETTINGS max_threads = {n:Int}`. The parser stores it as a `Field`
+        /// wrapping the AST (`FieldFromASTImpl`, see `ParserSetQuery`), not as a child of the
+        /// `ASTSetQuery`, so the generic `children` walks never see it (compare
+        /// `QueryParameterVisitor::visitSetQuery` / `ReplaceQueryParameterVisitor::visitSettingsChanges`).
+        for (const auto & change : set_query->changes)
+        {
+            CustomType custom;
+            if (change.value.tryGet<CustomType>(custom) && std::string_view(custom.getTypeName()) == FieldFromASTImpl::name)
+                visit_if(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast);
+        }
     }
 }
 
