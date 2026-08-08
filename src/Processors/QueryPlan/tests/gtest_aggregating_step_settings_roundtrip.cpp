@@ -27,10 +27,10 @@ namespace
 /// Drive the real production path: `serializeSettings` -> `writeChangedBinary` -> a FRESH
 /// settings object -> `readBinary`, exactly as `QueryPlan::serialize` and
 /// `QueryPlan::deserialize` do per step. Returns the value the executing node would see.
-bool roundTripSerializeStringWithZeroByte(const IQueryPlanStep & step)
+bool roundTripSerializeStringWithZeroByte(const IQueryPlanStep & step, UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
 {
     QueryPlanSerializationSettings written;
-    step.serializeSettings(written, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    step.serializeSettings(written, version);
 
     WriteBufferFromOwnString out;
     written.writeChangedBinary(out);
@@ -45,10 +45,10 @@ bool roundTripSerializeStringWithZeroByte(const IQueryPlanStep & step)
 /// The name as it appears in the binary settings stream written by `writeChangedBinary`. A peer that predates the
 /// setting rejects any plan carrying it (`readBinary` throws on an unknown name), so a plan must only carry it when
 /// the value cannot be left at the receiver's default.
-bool wireCarriesSerializeStringWithZeroByte(const IQueryPlanStep & step)
+bool wireCarriesSerializeStringWithZeroByte(const IQueryPlanStep & step, UInt64 version)
 {
     QueryPlanSerializationSettings written;
-    step.serializeSettings(written, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    step.serializeSettings(written, version);
 
     WriteBufferFromOwnString out;
     written.writeChangedBinary(out);
@@ -156,16 +156,23 @@ TEST(MergingAggregatedStepSettingsRoundTrip, SerializeStringWithZeroByteTrueSurv
 }
 
 /// Patch releases inside one query-plan serialization version disagree on whether they know this name
-/// (`v25.8.12.129-lts` does not, `v25.8.13.73-lts` does, both at version 0), so the version cannot gate it and the
-/// default value must stay off the wire for every receiver.
-TEST(AggregatingStepSettingsRoundTrip, DefaultValueStaysOffTheWire)
+/// (`v25.8.12.129-lts` does not, `v25.8.13.73-lts` does, both at version 0), so the version cannot gate it: the
+/// default must stay off the wire and `false` must reach the wire at EVERY version, including 0.
+TEST(AggregatingStepSettingsRoundTrip, DefaultValueStaysOffTheWireAtEveryVersion)
 {
     tryRegisterFunctions();
     tryRegisterAggregateFunctions();
 
-    EXPECT_FALSE(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(true)));
-    EXPECT_FALSE(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(true)));
+    for (UInt64 version : {UInt64{0}, UInt64{DBMS_QUERY_PLAN_SERIALIZATION_VERSION}})
+    {
+        EXPECT_FALSE(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(true), version)) << "version " << version;
+        EXPECT_FALSE(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(true), version)) << "version " << version;
 
-    EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(false)));
-    EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(false)));
+        EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeAggregatingStep(false), version)) << "version " << version;
+        EXPECT_TRUE(wireCarriesSerializeStringWithZeroByte(*makeMergingAggregatedStep(false), version)) << "version " << version;
+
+        /// The value must also survive the full write -> read round trip, not merely appear on the wire.
+        EXPECT_FALSE(roundTripSerializeStringWithZeroByte(*makeAggregatingStep(false), version)) << "version " << version;
+        EXPECT_FALSE(roundTripSerializeStringWithZeroByte(*makeMergingAggregatedStep(false), version)) << "version " << version;
+    }
 }
