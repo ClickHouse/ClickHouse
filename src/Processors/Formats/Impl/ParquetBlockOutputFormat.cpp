@@ -61,9 +61,16 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
     if (format_filter_info_ && format_filter_info_->column_mapper)
-        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding());
+    {
+        /// The mapper outlives this format (and the encoder threads) via format_filter_info.
+        /// It has to be consulted identically here and on the data paths below: the reader takes its
+        /// max definition level from the schema, while the writer takes the level bit width from the
+        /// state the data path builds, so the two would desynchronize.
+        iceberg_optionality.mapper = format_filter_info_->column_mapper.get();
+        schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding(), iceberg_optionality);
+    }
     else
-        schema = convertSchema(*header_, options, std::nullopt);
+        schema = convertSchema(*header_, options, std::nullopt, iceberg_optionality);
 }
 
 ParquetBlockOutputFormat::~ParquetBlockOutputFormat()
@@ -254,7 +261,7 @@ void ParquetBlockOutputFormat::writeRowGroupInOneThread(Chunk chunk)
     for (size_t i = 0; i < header.columns(); ++i)
         prepareColumnForWrite(
             chunk.getColumns()[i], header.getByPosition(i).type, header.getByPosition(i).name,
-            options, &columns_to_write);
+            options, &columns_to_write, /*out_schema*/ nullptr, /*column_field_ids*/ std::nullopt, iceberg_optionality);
 
     if (file_state.offset == 0)
     {
@@ -376,6 +383,7 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
             /// otherwise it may deadlock.
             if (!pool->trySchedule(job))
                 break;
+            ++threads_running;
         }
     }
 }
@@ -412,7 +420,8 @@ void ParquetBlockOutputFormat::threadFunction()
 
             std::vector<ColumnChunkWriteState> subcolumns;
             prepareColumnForWrite(
-                std::move(concatenated), task.column_type, task.column_name, options, &subcolumns);
+                std::move(concatenated), task.column_type, task.column_name, options, &subcolumns,
+                /*out_schema*/ nullptr, /*column_field_ids*/ std::nullopt, iceberg_optionality);
 
             lock.lock();
 
