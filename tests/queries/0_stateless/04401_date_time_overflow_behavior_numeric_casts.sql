@@ -21,15 +21,20 @@ SELECT CAST(99999999999.0::Float64, 'Date'); -- { serverError VALUE_IS_OUT_OF_RA
 SELECT CAST(-1::Int64, 'Date'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(999999999999::Int64, 'Date32'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(999999999999.0::Float64, 'Date32'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+-- Date32 checks its lower bound in a branch of its own, so a value below the first representable day
+-- number has to raise here too. The boundary value itself is the control: it must still convert.
+SELECT CAST(-999999999999::Int64, 'Date32'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(-999999999999.0::Float64, 'Date32'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT CAST(-25567::Int64, 'Date32');
 SELECT CAST(999999999999::Int64, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(999999999999::UInt64, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
--- Narrow signed sources (Int8 / Int16 / Int32) went through a separate transform that stored the raw
--- value and ignored the setting, so an out-of-range Int32 stayed verbatim while the 64-bit path threw.
+-- Narrow signed sources (Int8 / Int16 / Int32) reach Time through a transform of their own, so assert
+-- the bound handling there as well as on the 64-bit path.
 SELECT CAST(4000000::Int32, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(-4000000::Int32, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
--- UInt32 and the wide integer types (Int128 / UInt128 / Int256 / UInt256 / BFloat16) used to miss every
--- branch of the DateTime/Time dispatch and fall through to convertNumericGeneral, which ignores the
--- setting and truncates. UInt32 4000000 fits DateTime (max UInt32) but overflows Time (max 3599999).
+-- The wide integer types (Int128 / UInt128 / Int256 / UInt256) used to miss every branch of the DateTime
+-- dispatch and fall through to convertNumericGeneral, which ignores the setting and truncates. UInt32
+-- 4000000 fits DateTime (max UInt32) but overflows Time (max 3599999).
 SELECT CAST(4000000::UInt32, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(340282366920938463463374607431768211455::UInt128, 'DateTime'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(340282366920938463463374607431768211455::UInt128, 'Time'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }

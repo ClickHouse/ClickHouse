@@ -218,8 +218,9 @@ SELECT toInt32(t), count() OVER (ORDER BY t RANGE BETWEEN 4000000 PRECEDING AND 
 -- 150000 is above DATE_LUT_MAX_EXTEND_DAY_NUM, so reading it as a unix timestamp instead would turn it
 -- into ~1 day and shrink the frame to 1 row on every row; verbatim it reaches every earlier row (1/2/3).
 SELECT toInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 150000 PRECEDING AND CURRENT ROW) FROM t_win_date32 ORDER BY d;
--- A DateTime offset of 2147483646 seconds is a legitimate distance inside both Int32 and UInt32, so it is
--- taken verbatim and reaches the 0 and 100 rows from the 4294967295 row is not (2147483646 < 4294967195).
+-- DateTime is a CONTROL rather than a witness here: its storage range [0, 4294967295] is the same as the
+-- coerce helper's, and WindowFrame::checkValid rejects any offset at or above INT_MAX before the coercion
+-- runs, so no reachable offset distinguishes the two arms. Date32 above is the witness for this change.
 SELECT toUInt32(d), count() OVER (ORDER BY d RANGE BETWEEN 2147483646 PRECEDING AND CURRENT ROW) FROM t_win_datetime ORDER BY d;
 -- In-range controls, so the rows above cannot pass by rejecting or shrinking everything.
 SELECT d, count() OVER (ORDER BY d RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM t_win_date ORDER BY d;

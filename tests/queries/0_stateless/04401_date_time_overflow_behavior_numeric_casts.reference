@@ -1,4 +1,5 @@
 -- throw: out-of-range numeric casts must raise VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+1900-01-01
 -- throw: huge finite floats must raise a clean error, not narrow to garbage
 -- non-finite floats are rejected as unconvertible, whatever the overflow mode is
 -- throw: in-range numeric casts must still succeed
