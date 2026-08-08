@@ -1,0 +1,13 @@
+plain limit	10
+limit one	1
+limit above result size	1000
+limit with offset	10
+residual filter	3	3	3
+residual filter exhausted	4
+residual filter with offset	2
+intersection limit	7	7	7
+intersection residual filter	3
+after delete, limit	10
+after delete, all	500
+after delete, residual filter	2	2
+limit is a subset	25	25

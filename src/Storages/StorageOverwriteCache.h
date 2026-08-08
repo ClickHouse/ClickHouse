@@ -171,10 +171,17 @@ public:
         UInt64 snapshot_generation = 0;
     };
     using ReadGuardPtr = std::shared_ptr<ReadGuard>;
+    /// Produces the identifiers a lookup matches in ascending slices rather than all at once, so a read
+    /// that stops after a few rows does not first materialize every identifier a hot key ever received.
+    class LookupCursor;
+    using LookupCursorPtr = std::shared_ptr<LookupCursor>;
     struct ReadResult
     {
         ReadGuardPtr guard;
         std::vector<EntryId> entry_ids;
+        /// Set when the read was planned lazily. `entry_ids` is then empty and every identifier comes
+        /// from the cursor, which never truncates: it keeps producing for as long as it is asked.
+        LookupCursorPtr cursor;
     };
     struct LookupIndex;
     using LookupIndexPtr = std::shared_ptr<LookupIndex>;
@@ -268,7 +275,12 @@ public:
     std::vector<LookupIndexSnapshot> getLookupIndexSnapshot() const;
 
     ReadResult getRowsForPrimaryKeys(const std::vector<String> & serialized_keys) const;
-    ReadResult getRowsForLookupRequests(const std::vector<LookupRequest> & requests) const;
+    /// `row_limit` is the number of rows the query is known to want. It only decides whether the
+    /// identifiers are produced eagerly, in parallel, or lazily through a cursor - never which
+    /// identifiers belong to the result. A step above the read may filter rows the storage cannot
+    /// evaluate, so a read that stopped at `row_limit` matches would return too few.
+    ReadResult getRowsForLookupRequests(
+        const std::vector<LookupRequest> & requests, std::optional<size_t> row_limit = {}, size_t max_threads = 1) const;
     RowDataPtr resolveEntry(EntryId entry_id, UInt64 snapshot_generation) const;
     /// Resolves a sorted range of entry identifiers against one snapshot, appending to `result`.
     /// Identifiers that share a row-lock stripe are contiguous once sorted, so the whole run is
@@ -642,13 +654,32 @@ public:
                     result.insert(result.end(), wide.begin(), wide.end());
             }
 
-            /// Calls `mark` with the position of every element of the sorted, duplicate-free `entry_ids`
-            /// that this posting contains. Galloping over the posting costs one interleaved pass when the
-            /// two sequences are comparable in length, and stays logarithmic when one dwarfs the other,
-            /// where a binary search restarted from scratch for every element would pay the full
-            /// logarithm every time.
+            /// Appends at most `max_count` identifiers that are not below `first_id`. A read that needs
+            /// only a prefix of its matches takes the posting in such slices instead of copying all of it.
+            void appendRangeFrom(std::vector<EntryId> & result, EntryId first_id, size_t max_count) const
+            {
+                const auto append = [&](const auto & values)
+                {
+                    const auto less = [](auto value, EntryId bound) { return static_cast<EntryId>(value) < bound; };
+                    const auto begin = std::lower_bound(values.begin(), values.end(), first_id, less);
+                    const auto count = std::min(static_cast<size_t>(values.end() - begin), max_count);
+                    result.insert(result.end(), begin, begin + count);
+                };
+
+                if (wide.empty())
+                    append(narrow);
+                else
+                    append(wide);
+            }
+
+            /// Calls `mark` with the position, relative to `entry_ids`, of every element of that sorted
+            /// and duplicate-free range this posting contains. Galloping over the posting costs one
+            /// interleaved pass when the two sequences are comparable in length, and stays logarithmic
+            /// when one dwarfs the other, where a binary search restarted from scratch for every element
+            /// would pay the full logarithm every time. Taking a range rather than the whole array lets
+            /// disjoint slices of one intersection run on separate threads.
             template <typename Marker>
-            void intersectSorted(const std::vector<EntryId> & entry_ids, Marker && mark) const
+            void intersectSorted(const EntryId * entry_ids, size_t count, Marker && mark) const
             {
                 const auto scan = [&](const auto & values)
                 {
@@ -656,7 +687,7 @@ public:
                         return;
                     const auto less = [](auto value, EntryId bound) { return static_cast<EntryId>(value) < bound; };
                     size_t position = 0;
-                    for (size_t probe = 0; probe < entry_ids.size(); ++probe)
+                    for (size_t probe = 0; probe < count; ++probe)
                     {
                         const EntryId target = entry_ids[probe];
                         size_t step = 1;
@@ -767,10 +798,23 @@ private:
     };
     /// The views point into `serialized_keys`, which must outlive the result.
     static std::vector<LookupKey> deduplicateLookupKeys(const std::vector<String> & serialized_keys);
+    /// Collapses the sorted runs `values` is divided into by `run_ends` into one sorted run, dropping
+    /// the identifiers two runs share. Both arguments are left describing that single run.
+    static void mergeSortedRuns(std::vector<EntryId> & values, std::vector<size_t> & run_ends);
+    /// A read is served lazily only when it wants at most this many rows, so that a read large enough
+    /// to occupy several streams keeps the eager path that can split its identifiers across them.
+    static constexpr size_t max_lazy_read_rows = 16384;
+    /// and only when the driver index holds this many times more identifiers than the read wants,
+    /// which is what makes collecting all of them the dominant cost.
+    static constexpr size_t lazy_read_cardinality_ratio = 8;
     std::vector<EntryId>
     getPostingIds(const LookupIndexPtr & index, const std::vector<LookupKey> & keys, UInt64 expected_cardinality) const;
     UInt64 getPostingCardinality(const LookupIndexPtr & index, const std::vector<LookupKey> & keys) const;
-    void intersectPostingIds(std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<LookupKey> & keys) const;
+    void intersectPostingIds(
+        std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<LookupKey> & keys, size_t max_threads) const;
+    /// An intersection is split across threads only once each of them gets at least this many
+    /// candidates, below which the pool costs more than the pass it replaces.
+    static constexpr size_t min_rows_per_intersection_thread = 262144;
     void clearData();
     /// Runs under `writer_mutex`. Posting membership cannot disappear while an older snapshot may still
     /// need it to reach the row version preceding a tombstone.

@@ -97,6 +97,87 @@ extern const char overwrite_cache_throw_during_index_build[];
 extern const char overwrite_cache_throw_during_publish[];
 }
 
+/// Walks the identifiers a lookup matches in ascending slices. Each slice takes the driver index's
+/// postings from where the previous one stopped and intersects it with the other indexes, so a read
+/// that stops early never touches the rest of a posting.
+class StorageOverwriteCache::LookupCursor
+{
+public:
+    LookupCursor(const StorageOverwriteCache & storage_, std::vector<LookupRequest> requests_, size_t driver_)
+        : storage(storage_)
+        , requests(std::move(requests_))
+        , driver(driver_)
+    {
+        /// The views must point into this cursor's own copy of the requests, which outlives it.
+        keys.reserve(requests.size());
+        for (const auto & request : requests)
+            keys.push_back(deduplicateLookupKeys(request.serialized_keys));
+    }
+
+    /// Replaces `out` with the next identifiers, ascending. Returns false once the driver index has no
+    /// identifier left; an empty `out` with a true result only means this slice lost everything to the
+    /// intersection, and the caller should ask again.
+    bool next(size_t count, std::vector<EntryId> & out)
+    {
+        out.clear();
+        if (exhausted)
+            return false;
+
+        std::vector<size_t> run_ends;
+        run_ends.reserve(keys[driver].size());
+        for (const auto & key : keys[driver])
+        {
+            if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while reading an `OverwriteCache` posting");
+            const auto & shard = requests[driver].index->shards[shardIndex(key.hash)];
+            std::shared_lock lock(shard.mutex);
+            /// Seeking by identifier rather than by a remembered position, because a concurrent
+            /// publication can insert into a posting ahead of one. An identifier visible to this
+            /// snapshot cannot be removed from a posting, so nothing this cursor still owes can appear
+            /// behind the seek.
+            if (const auto * posting = shard.find(key.key, key.hash))
+                posting->appendRangeFrom(out, next_id, count);
+            const size_t previous_end = run_ends.empty() ? 0 : run_ends.back();
+            if (out.size() != previous_end)
+                run_ends.push_back(out.size());
+        }
+
+        mergeSortedRuns(out, run_ends);
+        if (out.empty())
+        {
+            exhausted = true;
+            return false;
+        }
+
+        /// Only the identifiers kept here are consumed. The rest of every posting stays for the next
+        /// slice, which is what makes stopping early cheap.
+        if (out.size() > count)
+            out.resize(count);
+        const EntryId highest = out.back();
+
+        for (size_t index = 0; index < requests.size() && !out.empty(); ++index)
+        {
+            if (index != driver)
+                storage.intersectPostingIds(out, requests[index].index, keys[index], /*max_threads=*/1);
+        }
+
+        if (highest == std::numeric_limits<EntryId>::max())
+            exhausted = true;
+        else
+            next_id = highest + 1;
+        return true;
+    }
+
+private:
+    const StorageOverwriteCache & storage;
+    std::vector<LookupRequest> requests;
+    std::vector<std::vector<LookupKey>> keys;
+    size_t driver = 0;
+    EntryId next_id = 1;
+    bool exhausted = false;
+};
+
+
 namespace
 {
 
@@ -430,14 +511,18 @@ public:
         const StorageOverwriteCache & storage_,
         StorageOverwriteCache::ReadGuardPtr read_guard_,
         std::vector<StorageOverwriteCache::EntryId> entry_ids_,
+        StorageOverwriteCache::LookupCursorPtr cursor_,
         std::vector<size_t> positions_,
-        size_t max_block_size_)
+        size_t max_block_size_,
+        size_t first_refill_rows_)
         : ISource(std::move(header_))
         , storage(storage_)
         , read_guard(std::move(read_guard_))
         , entry_ids(std::move(entry_ids_))
+        , cursor(std::move(cursor_))
         , positions(std::move(positions_))
         , max_block_size(std::max<size_t>(1, max_block_size_))
+        , refill_rows(std::clamp<size_t>(first_refill_rows_, 1, max_block_size))
     {
     }
 
@@ -455,10 +540,28 @@ protected:
         /// values below have been copied out of the segments they address.
         rows.clear();
         /// A batch resolves to nothing when every identifier in it was tombstoned by a `DELETE` whose
-        /// posting entries are not pruned yet. An empty chunk ends the source, so keep taking batches
-        /// until one of them holds a row or the identifiers run out.
-        while (rows.empty() && offset < entry_ids.size())
+        /// posting entries are not pruned yet, and a cursor slice can lose everything to an
+        /// intersection. An empty chunk ends the source, so keep taking until something is resolved or
+        /// there is genuinely nothing left.
+        while (rows.empty())
         {
+            if (offset == entry_ids.size())
+            {
+                if (!cursor)
+                    break;
+                if (!cursor->next(refill_rows, entry_ids))
+                {
+                    cursor.reset();
+                    break;
+                }
+                /// A read whose rows are filtered above this source keeps asking, so later slices grow:
+                /// the first one is sized for the rows the query said it wanted, and paying one lookup
+                /// round trip per row after that would be worse than having collected everything.
+                refill_rows = std::min(max_block_size, refill_rows * refill_growth);
+                offset = 0;
+                continue;
+            }
+
             const size_t take = std::min(max_block_size, entry_ids.size() - offset);
             storage.resolveEntries(entry_ids.data() + offset, take, read_guard->generation(), rows);
             offset += take;
@@ -504,14 +607,17 @@ protected:
 
 private:
     static constexpr size_t min_range_copy_rows = 32;
+    static constexpr size_t refill_growth = 4;
 
     const StorageOverwriteCache & storage;
     StorageOverwriteCache::ReadGuardPtr read_guard;
     std::vector<StorageOverwriteCache::EntryId> entry_ids;
+    StorageOverwriteCache::LookupCursorPtr cursor;
     StorageOverwriteCache::ResolvedRows rows;
     StorageOverwriteCache::SegmentColumnCache segment_columns;
     std::vector<size_t> positions;
     size_t max_block_size;
+    size_t refill_rows;
     size_t offset = 0;
 };
 
@@ -617,7 +723,7 @@ public:
                 }
                 requests.push_back({lookup_filter.index.guard, lookup_filter.index.index, std::move(serialized_keys)});
             }
-            result = storage.getRowsForLookupRequests(requests);
+            result = storage.getRowsForLookupRequests(requests, limit, num_streams);
         }
 
         std::vector<size_t> positions;
@@ -627,8 +733,13 @@ public:
 
         constexpr size_t min_rows_per_stream = 8192;
         const size_t rows_per_stream = std::max(max_block_size, min_rows_per_stream);
-        const size_t stream_count
-            = std::max<size_t>(1, std::min(num_streams, (result.entry_ids.size() + rows_per_stream - 1) / rows_per_stream));
+        /// A cursor produces its identifiers in order and cannot be divided ahead of time, so a read
+        /// planned lazily runs in one stream. It was planned that way only because it wants far fewer
+        /// rows than several streams would need to be worth their setup.
+        const size_t stream_count = result.cursor
+            ? 1
+            : std::max<size_t>(1, std::min(num_streams, (result.entry_ids.size() + rows_per_stream - 1) / rows_per_stream));
+        const size_t first_refill_rows = limit.value_or(max_block_size);
 
         Pipes pipes;
         pipes.reserve(stream_count);
@@ -638,7 +749,14 @@ public:
             const size_t end = result.entry_ids.size() * (stream + 1) / stream_count;
             std::vector<StorageOverwriteCache::EntryId> entry_ids(result.entry_ids.begin() + begin, result.entry_ids.begin() + end);
             auto source = std::make_shared<OverwriteCacheSource>(
-                getOutputHeader(), storage, result.guard, std::move(entry_ids), positions, max_block_size);
+                getOutputHeader(),
+                storage,
+                result.guard,
+                std::move(entry_ids),
+                result.cursor,
+                positions,
+                max_block_size,
+                first_refill_rows);
             source->setStorageLimits(query_info.storage_limits);
             pipes.emplace_back(std::move(source));
         }
@@ -2697,26 +2815,62 @@ UInt64 StorageOverwriteCache::getPostingCardinality(const LookupIndexPtr & index
     return result;
 }
 
+void StorageOverwriteCache::mergeSortedRuns(std::vector<EntryId> & values, std::vector<size_t> & run_ends)
+{
+    /// Merging pairwise leaves one sorted run after a number of passes logarithmic in the number of
+    /// runs. `std::set_union` also removes the identifiers two runs share, which every indexed column
+    /// belonging to the immutable `KEYS` tuple currently rules out, and costs no more than the plain
+    /// merge that would rely on that.
+    std::vector<EntryId> merged;
+    std::vector<size_t> merged_run_ends;
+    while (run_ends.size() > 1)
+    {
+        merged.clear();
+        merged.reserve(values.size());
+        merged_run_ends.clear();
+        merged_run_ends.reserve((run_ends.size() + 1) / 2);
+        size_t begin = 0;
+        for (size_t run = 0; run < run_ends.size(); run += 2)
+        {
+            if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while merging `OverwriteCache` postings");
+            if (run + 1 < run_ends.size())
+            {
+                std::set_union(
+                    values.begin() + begin,
+                    values.begin() + run_ends[run],
+                    values.begin() + run_ends[run],
+                    values.begin() + run_ends[run + 1],
+                    std::back_inserter(merged));
+                begin = run_ends[run + 1];
+            }
+            else
+            {
+                merged.insert(merged.end(), values.begin() + begin, values.begin() + run_ends[run]);
+                begin = run_ends[run];
+            }
+            merged_run_ends.push_back(merged.size());
+        }
+        values.swap(merged);
+        run_ends.swap(merged_run_ends);
+    }
+}
+
 std::vector<StorageOverwriteCache::EntryId> StorageOverwriteCache::getPostingIds(
     const LookupIndexPtr & index, const std::vector<LookupKey> & keys, UInt64 expected_cardinality) const
 {
-    const auto check_cancellation = []
-    {
-        if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while reading an `OverwriteCache` posting");
-    };
-
     /// A posting is already sorted and free of duplicates, so each key contributes one such run and the
-    /// runs are merged pairwise below. One key - the shape of an equality predicate, and the common case
-    /// by far - then leaves nothing to merge at all, where sorting the collected identifiers would cost
-    /// a full `n log n` pass over a posting that can hold every row a hot key ever received.
+    /// runs are merged below. One key - the shape of an equality predicate, and the common case by far -
+    /// then leaves nothing to merge at all, where sorting the collected identifiers would cost a full
+    /// `n log n` pass over a posting that can hold every row a hot key ever received.
     std::vector<EntryId> result;
     result.reserve(expected_cardinality);
     std::vector<size_t> run_ends;
     run_ends.reserve(keys.size());
     for (const auto & key : keys)
     {
-        check_cancellation();
+        if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while reading an `OverwriteCache` posting");
         const auto & shard = index->shards[shardIndex(key.hash)];
         std::shared_lock lock(shard.mutex);
         if (const auto * posting = shard.find(key.key, key.hash))
@@ -2726,64 +2880,57 @@ std::vector<StorageOverwriteCache::EntryId> StorageOverwriteCache::getPostingIds
             run_ends.push_back(result.size());
     }
 
-    /// Merging pairwise leaves one sorted run after a number of passes logarithmic in the number of
-    /// keys. `std::set_union` also removes the identifiers two runs share, which every indexed column
-    /// belonging to the immutable `KEYS` tuple currently rules out, and costs no more than the plain
-    /// merge that would rely on that.
-    std::vector<EntryId> merged;
-    std::vector<size_t> merged_run_ends;
-    while (run_ends.size() > 1)
-    {
-        merged.clear();
-        merged.reserve(result.size());
-        merged_run_ends.clear();
-        merged_run_ends.reserve((run_ends.size() + 1) / 2);
-        size_t begin = 0;
-        for (size_t run = 0; run < run_ends.size(); run += 2)
-        {
-            check_cancellation();
-            if (run + 1 < run_ends.size())
-            {
-                std::set_union(
-                    result.begin() + begin,
-                    result.begin() + run_ends[run],
-                    result.begin() + run_ends[run],
-                    result.begin() + run_ends[run + 1],
-                    std::back_inserter(merged));
-                begin = run_ends[run + 1];
-            }
-            else
-            {
-                merged.insert(merged.end(), result.begin() + begin, result.begin() + run_ends[run]);
-                begin = run_ends[run];
-            }
-            merged_run_ends.push_back(merged.size());
-        }
-        result.swap(merged);
-        run_ends.swap(merged_run_ends);
-    }
+    mergeSortedRuns(result, run_ends);
     return result;
 }
 
 void StorageOverwriteCache::intersectPostingIds(
-    std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<LookupKey> & keys) const
+    std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<LookupKey> & keys, size_t max_threads) const
 {
     if (entry_ids.empty())
         return;
 
     std::vector<UInt8> matched(entry_ids.size(), 0);
-    for (const auto & key : keys)
+    /// Each slice of the candidates is intersected against every key independently and writes only its
+    /// own bytes of `matched`, so slices need no coordination beyond the barrier that ends them.
+    const auto intersect_range = [&](size_t begin, size_t end)
     {
-        if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while intersecting `OverwriteCache` postings");
-        const auto & shard = index->shards[shardIndex(key.hash)];
-        std::shared_lock lock(shard.mutex);
-        const auto * posting = shard.find(key.key, key.hash);
-        if (!posting)
-            continue;
-        /// Both sequences are sorted, so the identifiers this key keeps are found in one pass over them
-        /// instead of a membership test per identifier.
-        posting->intersectSorted(entry_ids, [&](size_t position) { matched[position] = 1; });
+        for (const auto & key : keys)
+        {
+            if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while intersecting `OverwriteCache` postings");
+            const auto & shard = index->shards[shardIndex(key.hash)];
+            std::shared_lock lock(shard.mutex);
+            const auto * posting = shard.find(key.key, key.hash);
+            if (!posting)
+                continue;
+            /// Both sequences are sorted, so the identifiers this key keeps are found in one pass over
+            /// them instead of a membership test per identifier.
+            posting->intersectSorted(
+                entry_ids.data() + begin, end - begin, [&](size_t position) { matched[begin + position] = 1; });
+        }
+    };
+
+    const size_t thread_count = std::min<size_t>(
+        std::max<size_t>(max_threads, 1), (entry_ids.size() + min_rows_per_intersection_thread - 1) / min_rows_per_intersection_thread);
+
+    if (thread_count <= 1)
+    {
+        intersect_range(0, entry_ids.size());
+    }
+    else
+    {
+        ThreadPool pool(
+            CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, thread_count);
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DEFAULT_THREAD_POOL);
+        for (size_t thread = 0; thread < thread_count; ++thread)
+        {
+            const size_t begin = entry_ids.size() * thread / thread_count;
+            const size_t end = entry_ids.size() * (thread + 1) / thread_count;
+            if (begin != end)
+                runner.enqueueAndKeepTrack([&intersect_range, begin, end] { intersect_range(begin, end); });
+        }
+        runner.waitForAllToFinishAndRethrowFirstError();
     }
 
     size_t output = 0;
@@ -2795,7 +2942,9 @@ void StorageOverwriteCache::intersectPostingIds(
     entry_ids.resize(output);
 }
 
-StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForLookupRequests(const std::vector<LookupRequest> & requests) const
+StorageOverwriteCache::ReadResult
+StorageOverwriteCache::getRowsForLookupRequests(
+    const std::vector<LookupRequest> & requests, std::optional<size_t> row_limit, size_t max_threads) const
 {
     if (requests.empty())
         return {};
@@ -2827,13 +2976,22 @@ StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForLookupRequest
         }
     }
 
+    /// A read that wants far fewer rows than the driver index holds is served from a cursor instead:
+    /// collecting every identifier first would dominate such a read entirely. The threshold keeps reads
+    /// that would use several streams on the eager path, where the identifiers are split across them.
+    if (row_limit && *row_limit <= max_lazy_read_rows && *row_limit * lazy_read_cardinality_ratio < driver_cardinality)
+    {
+        result.cursor = std::make_shared<LookupCursor>(*this, requests, driver);
+        return result;
+    }
+
     /// The cardinality is only a reservation hint: a concurrent publication may have grown a posting
     /// since it was taken.
     auto entry_ids = getPostingIds(requests[driver].index, keys[driver], driver_cardinality);
     for (size_t index = 0; index < requests.size() && !entry_ids.empty(); ++index)
     {
         if (index != driver)
-            intersectPostingIds(entry_ids, requests[index].index, keys[index]);
+            intersectPostingIds(entry_ids, requests[index].index, keys[index], max_threads);
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_after_lookup_ids);
