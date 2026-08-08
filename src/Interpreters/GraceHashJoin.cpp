@@ -355,7 +355,7 @@ size_t GraceHashJoin::getInitialNumBuckets(
     }
 
     const size_t rounded_num_buckets = roundUpToPowerOfTwoOrZero(std::clamp(initial_num_buckets, 1uz, max_num_buckets));
-    if (rounded_num_buckets <= max_num_buckets)
+    if (isPowerOf2(rounded_num_buckets) && rounded_num_buckets <= max_num_buckets)
         return rounded_num_buckets;
 
     /// The maximum may not be a power of two. Keep the result both valid and within the limit.

@@ -261,6 +261,7 @@ TEST(GraceHashJoinBuckets, CombinesPlannerAndRuntimeInformation)
 TEST(GraceHashJoinBuckets, ClampsAutoValueWithoutOverflow)
 {
     using Params = GraceHashJoin::InitialBucketsParams;
+    constexpr size_t highest_power_of_two = 1uz << (std::numeric_limits<size_t>::digits - 1);
 
     EXPECT_EQ(
         GraceHashJoin::getInitialNumBuckets(
@@ -270,6 +271,22 @@ TEST(GraceHashJoinBuckets, ClampsAutoValueWithoutOverflow)
             1,
             0),
         8);
+    EXPECT_EQ(
+        GraceHashJoin::getInitialNumBuckets(
+            0,
+            std::numeric_limits<size_t>::max(),
+            Params{.total_rows_estimation = std::numeric_limits<size_t>::max()},
+            1,
+            0),
+        highest_power_of_two);
+    EXPECT_EQ(
+        GraceHashJoin::getInitialNumBuckets(
+            std::numeric_limits<size_t>::max(),
+            std::numeric_limits<size_t>::max(),
+            Params{},
+            0,
+            0),
+        highest_power_of_two);
 }
 
 TEST(GraceHashJoinBuckets, LimitsAutomaticTemporaryFileBufferMemory)
