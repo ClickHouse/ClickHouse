@@ -40,7 +40,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 74
+    version: int = 75
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -224,13 +224,35 @@ class Runner:
             self.collect_logs("configure")
             raise Exception(f"Too many errors ({self.total_errors})")
 
-        # macOS runners run continuously without lifetime limits
+        # macOS runners run continuously without lifetime limits, so they exit
+        # to pick up a newer init script instead of ageing out like Linux.
         if config.init_environment == Environment.MACOS:
+            self._exit_if_init_script_upgraded()
             return
 
         runner_age = int(time.time()) - self.runner_start_time
         if config.max_life < runner_age:
             raise Exception(f"Runner lifetime exceeded: {runner_age}")
+
+    def _exit_if_init_script_upgraded(self) -> None:
+        """Exit when a newer runner-init script has been published to S3.
+
+        Called between jobs, so the runner is idle here. Raising unwinds through
+        `run`, which drops the provisioning marker; `user_data` then reboots and
+        re-provisions from the new script. A failure to read the remote version
+        is a safe skip, not an exit.
+        """
+        try:
+            remote_version = EC2.get_remote_init_version()
+        except Exception as e:
+            log(f"Cannot get remote init version: {e}, skipping upgrade check")
+            return
+        if remote_version <= config.version:
+            return
+        raise Exception(
+            f"Remote init version {remote_version} > running {config.version}, "
+            "exiting to re-provision"
+        )
 
     def _cleanup_workspace(self) -> None:
         """Remove _work directory to clean up workspace."""
