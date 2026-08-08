@@ -24,3 +24,9 @@ SELECT min(3 IN (if(rand64() % 2 = 0, [1, 3], [3, 1]))), max(3 IN (if(rand64() %
 -- A single evaluation returns `NULL` or `1` per row, never `0`.
 SELECT min(if(rand64() % 2 = 0, NULL, toNullable(3)) IN (materialize(1), materialize(3))), max(if(rand64() % 2 = 0, NULL, toNullable(3)) IN (materialize(1), materialize(3))) FROM numbers(100000) SETTINGS enable_analyzer = 0;
 SELECT min(if(rand64() % 2 = 0, NULL, toNullable(3)) IN (materialize(1), materialize(3))), max(if(rand64() % 2 = 0, NULL, toNullable(3)) IN (materialize(1), materialize(3))) FROM numbers(100000) SETTINGS enable_analyzer = 1;
+
+-- `min`/`max` ignore NULL, so they alone cannot detect a regression that rewrites the NULL
+-- rows to a non-NULL value. Assert explicitly that both NULL and `1` results are present
+-- and that no row produced `0`.
+SELECT countIf(isNull(if(rand64() % 2 = 0, NULL, toNullable(3)) IN (materialize(1), materialize(3)))) > 0, countIf(if(rand64() % 2 = 0, NULL, toNullable(3)) IN (materialize(1), materialize(3)) = 1) > 0, countIf(if(rand64() % 2 = 0, NULL, toNullable(3)) IN (materialize(1), materialize(3)) = 0) FROM numbers(100000) SETTINGS enable_analyzer = 0;
+SELECT countIf(isNull(if(rand64() % 2 = 0, NULL, toNullable(3)) IN (materialize(1), materialize(3)))) > 0, countIf(if(rand64() % 2 = 0, NULL, toNullable(3)) IN (materialize(1), materialize(3)) = 1) > 0, countIf(if(rand64() % 2 = 0, NULL, toNullable(3)) IN (materialize(1), materialize(3)) = 0) FROM numbers(100000) SETTINGS enable_analyzer = 1;
