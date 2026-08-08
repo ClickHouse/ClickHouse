@@ -32,14 +32,15 @@ struct PersistentTableComponents
     const String data_source_description;
 
     /// Invalidate cached metadata for this table under both keys we may have used to cache it
-    /// (`table_path` and `table_uuid`).
+    /// (`table_path` and `table_uuid`, each namespaced by `data_source_description` via
+    /// `IcebergMetadataFilesCache::getLatestVersionKey`).
     void invalidateMetadataCache() const
     {
         if (!metadata_cache)
             return;
-        metadata_cache->remove(table_path);
+        metadata_cache->remove(IcebergMetadataFilesCache::getLatestVersionKey(data_source_description, table_path));
         if (table_uuid.has_value())
-            metadata_cache->remove(*table_uuid);
+            metadata_cache->remove(IcebergMetadataFilesCache::getLatestVersionKey(data_source_description, *table_uuid));
     }
 };
 

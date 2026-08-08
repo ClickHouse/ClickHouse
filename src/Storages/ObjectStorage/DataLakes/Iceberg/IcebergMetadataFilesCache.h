@@ -144,6 +144,14 @@ public:
         return data_source_description + '\0' + table_uuid + '\0' + data_path;
     }
 
+    /// Key for the latest-metadata-version cell (see `getOrSetLatestMetadataVersion`), which is
+    /// referenced by `table_path` or `table_uuid` alone rather than the uuid+path pair `getKey`
+    /// composes. Still needs `data_source_description` mixed in for the same reason as `getKey`.
+    static String getLatestVersionKey(const String & data_source_description, const String & table_path_or_uuid)
+    {
+        return data_source_description + '\0' + table_path_or_uuid;
+    }
+
     /// Probe the cache without insert-on-miss. Returns the cached JSON or empty string on miss.
     /// Caller must verify the returned JSON's `table-uuid` matches the expected UUID before use,
     /// and is responsible for recording `IcebergMetadataFilesCacheHits` / `Misses` once the
@@ -214,7 +222,8 @@ public:
     }
 
     template <typename LoadFunc>
-    LatestMetadataVersionPtr getOrSetLatestMetadataVersion(const String & table_path, const std::optional<String> & table_uuid, LoadFunc && load_fn, time_t tolerated_staleness_ms)
+    LatestMetadataVersionPtr getOrSetLatestMetadataVersion(
+        const String & data_source_description, const String & table_path, const std::optional<String> & table_uuid, LoadFunc && load_fn, time_t tolerated_staleness_ms)
     {
         /// This caching method for latest metadata version:
         /// 1.    Takes two keys to reference a table - path and [optional] uuid
@@ -235,7 +244,7 @@ public:
         /// tolerated_staleness_ms=0 would mean that a non-cached value is required
         if (tolerated_staleness_ms > 0)
         {
-            const String & data_path = table_uuid ? *table_uuid : table_path;
+            const String data_path = getLatestVersionKey(data_source_description, table_uuid ? *table_uuid : table_path);
             auto found = Base::get(data_path);
 
             if (found)
@@ -262,9 +271,9 @@ public:
         cell->latest_metadata = load_fn();
         cell->cached_at = std::chrono::system_clock::now();
 
-        Base::set(table_path, std::make_shared<IcebergMetadataFilesCacheCell>(cell));
+        Base::set(getLatestVersionKey(data_source_description, table_path), std::make_shared<IcebergMetadataFilesCacheCell>(cell));
         if (table_uuid)
-            Base::set(*table_uuid, std::make_shared<IcebergMetadataFilesCacheCell>(cell));
+            Base::set(getLatestVersionKey(data_source_description, *table_uuid), std::make_shared<IcebergMetadataFilesCacheCell>(cell));
 
         return cell;
     }
