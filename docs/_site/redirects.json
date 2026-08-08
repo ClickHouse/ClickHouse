@@ -1,5 +1,69 @@
 [
   {
+    "source": "/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
+  },
+  {
+    "source": "/docs/products/bring-your-own-cloud",
+    "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+  },
+  {
+    "source": "/products/bring-your-own-cloud/overview/overview",
+    "destination": "/products/cloud/guides/infrastructure/deployment-options/byoc/overview"
+  },
+  {
+    "source": "/products/managed-postgres/migrations/clickhouse-cloud",
+    "destination": "/products/managed-postgres/migrations/clickpipes"
+  },
+  {
+    "source": "/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+    "destination": "/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker"
+  },
+  {
+    "source": "/concepts/features/operations/update/on-fly-mutations",
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+  },
+  {
+    "source": "/guides/developer/on-the-fly-mutations",
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+  },
+  {
+    "source": "/guides/developer/on-fly-mutations",
+    "destination": "/concepts/features/operations/update/overview#on-the-fly-mutations"
+  },
+  {
+    "source": "/products/managed-postgres/benchmarks",
+    "destination": "https://clickhouse.com/blog/postgresbench"
+  },
+  {
+    "source": "/cloud/managed-postgres/benchmarks",
+    "destination": "https://clickhouse.com/blog/postgresbench"
+  },
+  {
+    "source": "/products/bring-your-own-cloud/onboarding/aws",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/cloud/reference/byoc/onboarding/aws",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/products/bring-your-own-cloud/onboarding/azure-private-preview",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/cloud/reference/byoc/onboarding/azure-private-preview",
+    "destination": "/products/bring-your-own-cloud/onboarding/standard"
+  },
+  {
+    "source": "/products/bring-your-own-cloud/reference/faq-aws",
+    "destination": "/products/bring-your-own-cloud/reference/faq"
+  },
+  {
+    "source": "/concepts/features/operations/delete/delete-mutations",
+    "destination": "/reference/statements/alter/delete"
+  },
+  {
     "source": "/guides/oss/deployment-and-scaling",
     "destination": "/guides/oss/deployment-and-scaling/terminology"
   },
@@ -1184,12 +1248,32 @@
     "source": "/changelogs/25.8"
   },
   {
+    "destination": "/resources/changelogs/oss/2026#261",
+    "source": "/changelogs/26.1"
+  },
+  {
     "destination": "/resources/changelogs/cloud/release-notes/26_02",
     "source": "/changelogs/26.2"
   },
   {
+    "destination": "/resources/changelogs/oss/2026#263",
+    "source": "/changelogs/26.3"
+  },
+  {
     "destination": "/resources/changelogs/cloud/release-notes/26_4",
     "source": "/changelogs/26.4"
+  },
+  {
+    "destination": "/resources/changelogs/oss/2026#265",
+    "source": "/changelogs/26.5"
+  },
+  {
+    "destination": "/resources/changelogs/oss/2026#266",
+    "source": "/changelogs/26.6"
+  },
+  {
+    "destination": "/resources/changelogs/oss/2026#267",
+    "source": "/changelogs/26.7"
   },
   {
     "destination": "/chdb/reference/data-formats",
@@ -1636,6 +1720,10 @@
     "source": "/cloud/manage/billing/overview#clickpipes-for-streaming-object-storage"
   },
   {
+    "destination": "/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
+    "source": "/cloud/manage/billing/overview#clickpipes-for-postgres-cdc"
+  },
+  {
     "destination": "/products/cloud/reference/billing/spend-alerts",
     "source": "/cloud/manage/billing/spend-alerts"
   },
@@ -1896,7 +1984,7 @@
     "source": "/cloud/migration/etl-tool-to-clickhouse"
   },
   {
-    "destination": "/products/cloud/guides/migration/oss-to-cloud-backup-restore",
+    "destination": "/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore",
     "source": "/cloud/migration/oss-to-cloud-backup-restore"
   },
   {
@@ -1936,8 +2024,16 @@
     "source": "/cloud/reference/billing/clickpipes"
   },
   {
+    "destination": "/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc#pricing-dimensions-oltp",
+    "source": "/cloud/reference/billing/clickpipes/postgres-cdc#pricing-dimensions"
+  },
+  {
     "destination": "/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
     "source": "/cloud/reference/billing/clickpipes/postgres-cdc"
+  },
+  {
+    "destination": "/products/cloud/reference/billing/clickpipes/clickpipes-for-cdc",
+    "source": "/cloud/reference/billing/clickpipes/postgresql-cdc"
   },
   {
     "destination": "/products/cloud/reference/billing/clickpipes/clickpipes-for-streaming-and-object-storage",
@@ -2198,6 +2294,10 @@
   {
     "destination": "/products/cloud/guides/security/cloud-access-management/scim-setup",
     "source": "/cloud/security/scim-setup"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
+    "source": "/cloud/security/scim-setup-entra"
   },
   {
     "destination": "/products/cloud/guides/data-sources/accessing-s3-data-securely",
@@ -5024,7 +5124,7 @@
     "source": "/integrations/sql-clients/"
   },
   {
-    "destination": "/concepts/features/interfaces/cli",
+    "destination": "/concepts/features/interfaces/client",
     "source": "/integrations/sql-clients/cli"
   },
   {
@@ -5632,7 +5732,7 @@
     "source": "/interfaces/third-party/integrations"
   },
   {
-    "destination": "/integrations/language-clients/third-party/moose-olap",
+    "destination": "/integrations/language-clients/third-party/client-libraries",
     "source": "/interfaces/third-party/moose-olap"
   },
   {
@@ -15974,10 +16074,6 @@
   {
     "destination": "/ja/resources/changelogs/security-changelog",
     "source": "/jp/whats_new/security_changelog"
-  },
-  {
-    "destination": "/ja/reference/functions/table-functions/gcs",
-    "source": "/jpgines/table-engines/integrations/google-cloud-storage"
   },
   {
     "destination": "/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
@@ -26732,10 +26828,6 @@
     "source": "/ko/whats_new/security_changelog"
   },
   {
-    "destination": "/ko/reference/functions/table-functions/gcs",
-    "source": "/kogines/table-engines/integrations/google-cloud-storage"
-  },
-  {
     "destination": "/concepts/features/security/access-rights",
     "source": "/manage"
   },
@@ -26828,7 +26920,7 @@
     "source": "/managing-data/core-concepts"
   },
   {
-    "destination": "/concepts/features/operations/delete/delete-mutations",
+    "destination": "/reference/statements/alter/delete",
     "source": "/managing-data/delete_mutations"
   },
   {
@@ -38844,10 +38936,6 @@
     "source": "/ru/whats_new/security_changelog"
   },
   {
-    "destination": "/ru/reference/functions/table-functions/gcs",
-    "source": "/rugines/table-engines/integrations/google-cloud-storage"
-  },
-  {
     "destination": "/concepts/features/security",
     "source": "/security-and-authentication"
   },
@@ -39864,8 +39952,12 @@
     "source": "/sql-reference/functions/random-functions"
   },
   {
-    "destination": "/reference/functions/regular-functions/regular-functions-index",
+    "destination": "/reference/functions/regular-functions/overview",
     "source": "/sql-reference/functions/regular-functions"
+  },
+  {
+    "destination": "/reference/functions/regular-functions/overview",
+    "source": "/reference/functions/regular-functions/regular-functions-index"
   },
   {
     "destination": "/reference/functions/regular-functions/rounding-functions",
@@ -52404,14 +52496,6 @@
     "source": "/zh/whats_new/security_changelog"
   },
   {
-    "destination": "/zh/reference/functions/table-functions/gcs",
-    "source": "/zhgines/table-engines/integrations/google-cloud-storage"
-  },
-  {
-    "destination": "/reference/functions/table-functions/gcs",
-    "source": "gines/table-engines/integrations/google-cloud-storage"
-  },
-  {
     "destination": "https://clickhouse.com/company/our-story",
     "source": "/ja/resources/about/history"
   },
@@ -52546,5 +52630,1729 @@
   {
     "destination": "/reference/statements/create/dictionary/layouts/naive-bayes",
     "source": "/sql-reference/statements/create/dictionary/layouts/naive-bayes"
+  },
+  {
+    "destination": "/products/cloud/features/sql-console-features/clickstack",
+    "source": "/cloud/manage/clickstack"
+  },
+  {
+    "destination": "/integrations/connectors/data-ingestion/community-integrations/estuary-clickpipes",
+    "source": "/integrations/estuary/clickpipes"
+  },
+  {
+    "destination": "/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+    "source": "/knowledgebase/aws-privatelink-vpc-endpoint-service-for-msk-cluster"
+  },
+  {
+    "destination": "/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+    "source": "/knowledgebase/confluent-cloud-private-connectivity-for-clickpipes"
+  },
+  {
+    "destination": "/reference/functions/table-functions",
+    "source": "/sql-reference/table-functions/mergeTreeCodecBlockCounts"
+  },
+  {
+    "destination": "/guides/use-cases/data-warehousing/getting-started/best-practices",
+    "source": "/use-cases/data-lake/best-practices"
+  },
+  {
+    "destination": "https://clickhouse.com/company/our-story",
+    "source": "/jp/about-us/history"
+  },
+  {
+    "destination": "/ja/resources/changelogs/oss/2026",
+    "source": "/jp/category/changelog"
+  },
+  {
+    "destination": "/ja/chdb/api/python",
+    "source": "/jp/chdb/guides/python-udf"
+  },
+  {
+    "destination": "/ja/products/cloud/guides/best-practices",
+    "source": "/jp/cloud/bestpractices"
+  },
+  {
+    "destination": "/ja/get-started/use-cases/agentic-analytics",
+    "source": "/jp/cloud/get-started/cloud/use-cases/AI_ML"
+  },
+  {
+    "destination": "/ja/get-started/use-cases/agentic-analytics",
+    "source": "/jp/cloud/get-started/cloud/use-cases/AI_ML/agent_facing_analytics"
+  },
+  {
+    "destination": "/ja/products/cloud/api-reference/organization/get-list-of-available-organizations",
+    "source": "/jp/cloud/manage/api/swagger"
+  },
+  {
+    "destination": "/ja/products/cloud/features/sql-console-features/clickstack",
+    "source": "/jp/cloud/manage/clickstack"
+  },
+  {
+    "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
+    "source": "/jp/concepts/olap"
+  },
+  {
+    "destination": "/ja/concepts/features/materialized-views",
+    "source": "/jp/engines/table-engines/special/materializedview"
+  },
+  {
+    "destination": "/ja/reference/engines/table-engines/special/query-runner",
+    "source": "/jp/engines/table-engines/special/query-runner"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/general-faqs/columnar-database",
+    "source": "/jp/faq/general/columnar-database"
+  },
+  {
+    "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
+    "source": "/jp/get-started/about/olap"
+  },
+  {
+    "destination": "https://clickhouse.com/blog/ai-redrawing-database-market",
+    "source": "/jp/get-started/use-cases/machine-learning-and-genai/agent-facing-analytics"
+  },
+  {
+    "destination": "https://clickhouse.com/blog/ai-redrawing-database-market",
+    "source": "/jp/get-started/use-cases/machine-learning-and-genai/machine-learning"
+  },
+  {
+    "destination": "/ja/get-started/sample-datasets/job",
+    "source": "/jp/getting-started/example-datasets/job"
+  },
+  {
+    "destination": "/ja/get-started/sample-datasets",
+    "source": "/jp/getting-started/example-datasets/opensky"
+  },
+  {
+    "destination": "/ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
+    "source": "/jp/integrations/airflow"
+  },
+  {
+    "destination": "/ja/integrations/connectors/data-ingestion/community-integrations/estuary",
+    "source": "/jp/integrations/estuary/clickpipes"
+  },
+  {
+    "destination": "/ja/products/cloud/features/data-catalogs",
+    "source": "/jp/integrations/data-catalogs"
+  },
+  {
+    "destination": "/ja/integrations/language-clients/js/index",
+    "source": "/jp/integrations/language-clients/nodejs"
+  },
+  {
+    "destination": "/ja/concepts/features/interfaces/documentation-search",
+    "source": "/jp/interfaces/documentation-search"
+  },
+  {
+    "destination": "/ja/concepts/features/interfaces/web-sql",
+    "source": "/jp/interfaces/web-sql"
+  },
+  {
+    "destination": "/ja/concepts/features/interfaces/web-ui-color-coding",
+    "source": "/jp/interfaces/web-ui-color-coding"
+  },
+  {
+    "destination": "/ja/concepts/features/interfaces/web-ui-pinned-columns",
+    "source": "/jp/interfaces/web-ui-pinned-columns"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
+    "source": "/jp/knowledgebase/Insert_select_settings_tuning"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
+    "source": "/jp/knowledgebase/are_materialized_views_inserted_asynchronously"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
+    "source": "/jp/knowledgebase/async_vs_optimize_read_in_order"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+    "source": "/jp/knowledgebase/aws-privatelink-vpc-endpoint-service-for-msk-cluster"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
+    "source": "/jp/knowledgebase/backing_up_a_specific_partition"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
+    "source": "/jp/knowledgebase/calculate_ratio_of_zero_sparse_serialization"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
+    "source": "/jp/knowledgebase/certificate_verify_failed_error"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/performance-optimization/check-query-processing-time-only",
+    "source": "/jp/knowledgebase/check_query_processing_time_only"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/security/check-users-roles",
+    "source": "/jp/knowledgebase/check_users_roles"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/cloud-services/clickhouse-cloud-api-usage",
+    "source": "/jp/knowledgebase/clickhouse_cloud_api_usage"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
+    "source": "/jp/knowledgebase/collect-and-draw-traces"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
+    "source": "/jp/knowledgebase/compare_resultsets"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+    "source": "/jp/knowledgebase/configure_cap_ipc_lock_and_cap_sys_nice_in_docker"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+    "source": "/jp/knowledgebase/confluent-cloud-private-connectivity-for-clickpipes"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
+    "source": "/jp/knowledgebase/connection_timeout_remote_remoteSecure"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/data-management/dictionary-using-strings",
+    "source": "/jp/knowledgebase/dictionary_using_strings"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
+    "source": "/jp/knowledgebase/difference_between_official_builds_and_3rd_party"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
+    "source": "/jp/knowledgebase/finding_expensive_queries_by_memory_usage"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
+    "source": "/jp/knowledgebase/how_to_display_queries_using_MV"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
+    "source": "/jp/knowledgebase/how_to_use_parametrised_views"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/data-import-export/importing-and-working-with-json-array-objects",
+    "source": "/jp/knowledgebase/importing_and_working_with_JSON_array_objects"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/data-import-export/json-extract-example",
+    "source": "/jp/knowledgebase/json_extract_example"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/data-import-export/json-simple-example",
+    "source": "/jp/knowledgebase/json_simple_example"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases",
+    "source": "/jp/knowledgebase/maximum_number_of_tables_and_databases"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/cloud-services/opt-out-core-dump-collection",
+    "source": "/jp/knowledgebase/opt-out-core-dump-collection"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/performance-optimization/optimize-final-vs-final",
+    "source": "/jp/knowledgebase/optimize_final_vs_final"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part",
+    "source": "/jp/knowledgebase/part_intersects_previous_part"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/materialized-views/projection-example",
+    "source": "/jp/knowledgebase/projection_example"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/integrations/python-http-requests",
+    "source": "/jp/knowledgebase/python_http_requests"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/performance-optimization/query-max-execution-time",
+    "source": "/jp/knowledgebase/query_max_execution_time"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/data-management/read-consistency",
+    "source": "/jp/knowledgebase/read_consistency"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
+    "source": "/jp/knowledgebase/recovering-from-corrupt-keeper-snapshot"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/tables-schema/recreate-table-across-terminals",
+    "source": "/jp/knowledgebase/recreate_table_across_terminals"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure",
+    "source": "/jp/knowledgebase/restore-replica-after-storage-failure"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/tables-schema/runbook-json",
+    "source": "/jp/knowledgebase/runbook-json"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/data-import-export/s3-export-data-year-month-folders",
+    "source": "/jp/knowledgebase/s3_export_data_year_month_folders"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+    "source": "/jp/knowledgebase/schema_migration_tools"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/monitoring-debugging/send-logs-level",
+    "source": "/jp/knowledgebase/send_logs_level"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/integrations/terraform-example",
+    "source": "/jp/knowledgebase/terraform_example"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/data-management/understanding-part-types-and-storage-formats",
+    "source": "/jp/knowledgebase/understanding-part-types-and-storage-formats"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/monitoring-debugging/view-number-of-active-mutations",
+    "source": "/jp/knowledgebase/view_number_of_active_mutations"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/data-management/when-is-ttl-applied",
+    "source": "/jp/knowledgebase/when_is_ttl_applied"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/monitoring-debugging/why-default-logging-verbose",
+    "source": "/jp/knowledgebase/why_default_logging_verbose"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/performance-optimization/why-is-my-primary-key-not-used",
+    "source": "/jp/knowledgebase/why_is_my_primary_key_not_used"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper",
+    "source": "/jp/knowledgebase/why_recommend_clickhouse_keeper_over_zookeeper"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles",
+    "source": "/jp/knowledgebase/windows_active_directory_to_ch_roles"
+  },
+  {
+    "destination": "/ja/products/cloud/reference/security/compliance-overview",
+    "source": "/jp/manage/security/compliance-and-certification"
+  },
+  {
+    "destination": "/ja/clickstack/overview",
+    "source": "/jp/observability/clickstack"
+  },
+  {
+    "destination": "/ja/concepts/features/performance/troubleshoot/oom-canary",
+    "source": "/jp/operations/settings/oom-canary"
+  },
+  {
+    "destination": "/ja/reference/system-tables/hypothetical_indexes",
+    "source": "/jp/operations/system-tables/hypothetical_indexes"
+  },
+  {
+    "destination": "/ja/reference/system-tables/stemmers",
+    "source": "/jp/operations/system-tables/stemmers"
+  },
+  {
+    "destination": "/ja/products/cloud/getting-started/intro",
+    "source": "/jp/resources/about/cloud"
+  },
+  {
+    "destination": "https://clickhouse.com/company/our-story",
+    "source": "/jp/resources/about/history"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/groupFormat",
+    "source": "/jp/sql-reference/aggregate-functions/reference/groupformat"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesBFloat16",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesBFloat16"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesBFloat16Weighted",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesBFloat16Weighted"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesDD",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesDD"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesDeterministic",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesDeterministic"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesExact",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesExact"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesExactHigh",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesExactHigh"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesExactLow",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesExactLow"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesExactWeighted",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesExactWeighted"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesExactWeightedInterpolated",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesExactWeightedInterpolated"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesInterpolatedWeighted",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesInterpolatedWeighted"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesPrometheusHistogram",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesPrometheusHistogram"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesTDigest",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesTDigest"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesTDigestWeighted",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesTDigestWeighted"
+  },
+  {
+    "destination": "/ja/reference/functions/aggregate-functions/quantilesTiming",
+    "source": "/jp/sql-reference/aggregate-functions/reference/quantilesTiming"
+  },
+  {
+    "destination": "/ja/reference/statements/alter/statistics",
+    "source": "/jp/sql-reference/statements/alter/statistic"
+  },
+  {
+    "destination": "/ja/reference/statements/check-database",
+    "source": "/jp/sql-reference/statements/check-database"
+  },
+  {
+    "destination": "/ja/reference/statements/create/dictionary/layouts/naive-bayes",
+    "source": "/jp/sql-reference/statements/create/dictionary/layouts/naive-bayes"
+  },
+  {
+    "destination": "/ja/reference/statements/hypothetical-index",
+    "source": "/jp/sql-reference/statements/hypothetical-index"
+  },
+  {
+    "destination": "/ja/reference/functions/table-functions/eval",
+    "source": "/jp/sql-reference/table-functions/eval"
+  },
+  {
+    "destination": "/ja/reference/functions/table-functions",
+    "source": "/jp/sql-reference/table-functions/mergeTreeCodecBlockCounts"
+  },
+  {
+    "destination": "/ja/reference/functions/window-functions/ntile",
+    "source": "/jp/sql-reference/window-functions/ntile"
+  },
+  {
+    "destination": "/ja/guides/use-cases/data-warehousing/getting-started/best-practices",
+    "source": "/jp/use-cases/data-lake/best-practices"
+  },
+  {
+    "destination": "/ja/clickstack/demo-days/2026/2026-06-12",
+    "source": "/jp/use-cases/observability/clickstack/demo-days/2026/2026-06-12"
+  },
+  {
+    "destination": "https://clickhouse.com/company/our-story",
+    "source": "/ja/about-us/history"
+  },
+  {
+    "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
+    "source": "/ja/concepts/olap"
+  },
+  {
+    "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
+    "source": "/ja/get-started/about/olap"
+  },
+  {
+    "destination": "https://clickhouse.com/blog/ai-redrawing-database-market",
+    "source": "/ja/get-started/use-cases/machine-learning-and-genai/agent-facing-analytics"
+  },
+  {
+    "destination": "https://clickhouse.com/blog/ai-redrawing-database-market",
+    "source": "/ja/get-started/use-cases/machine-learning-and-genai/machine-learning"
+  },
+  {
+    "destination": "https://clickhouse.com/company/our-story",
+    "source": "/ko/about-us/history"
+  },
+  {
+    "destination": "/ko/resources/changelogs/oss/2026",
+    "source": "/ko/category/changelog"
+  },
+  {
+    "destination": "/chdb/api/python",
+    "source": "/ko/chdb/guides/python-udf"
+  },
+  {
+    "destination": "/ko/products/cloud/guides/best-practices",
+    "source": "/ko/cloud/bestpractices"
+  },
+  {
+    "destination": "/ko/get-started/use-cases/agentic-analytics",
+    "source": "/ko/cloud/get-started/cloud/use-cases/AI_ML"
+  },
+  {
+    "destination": "/ko/get-started/use-cases/agentic-analytics",
+    "source": "/ko/cloud/get-started/cloud/use-cases/AI_ML/agent_facing_analytics"
+  },
+  {
+    "destination": "/ko/products/cloud/api-reference/organization/get-list-of-available-organizations",
+    "source": "/ko/cloud/manage/api/swagger"
+  },
+  {
+    "destination": "/ko/products/cloud/features/sql-console-features/clickstack",
+    "source": "/ko/cloud/manage/clickstack"
+  },
+  {
+    "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
+    "source": "/ko/concepts/olap"
+  },
+  {
+    "destination": "/ko/concepts/features/materialized-views",
+    "source": "/ko/engines/table-engines/special/materializedview"
+  },
+  {
+    "destination": "/ko/reference/engines/table-engines/special/query-runner",
+    "source": "/ko/engines/table-engines/special/query-runner"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/general-faqs/columnar-database",
+    "source": "/ko/faq/general/columnar-database"
+  },
+  {
+    "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
+    "source": "/ko/get-started/about/olap"
+  },
+  {
+    "destination": "https://clickhouse.com/blog/ai-redrawing-database-market",
+    "source": "/ko/get-started/use-cases/machine-learning-and-genai/agent-facing-analytics"
+  },
+  {
+    "destination": "https://clickhouse.com/blog/ai-redrawing-database-market",
+    "source": "/ko/get-started/use-cases/machine-learning-and-genai/machine-learning"
+  },
+  {
+    "destination": "/ko/get-started/sample-datasets/job",
+    "source": "/ko/getting-started/example-datasets/job"
+  },
+  {
+    "destination": "/ko/get-started/sample-datasets",
+    "source": "/ko/getting-started/example-datasets/opensky"
+  },
+  {
+    "destination": "/ko/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
+    "source": "/ko/integrations/airflow"
+  },
+  {
+    "destination": "/ko/integrations/connectors/data-ingestion/community-integrations/estuary",
+    "source": "/ko/integrations/estuary/clickpipes"
+  },
+  {
+    "destination": "/ko/products/cloud/features/data-catalogs",
+    "source": "/ko/integrations/data-catalogs"
+  },
+  {
+    "destination": "/ko/integrations/language-clients/js/index",
+    "source": "/ko/integrations/language-clients/nodejs"
+  },
+  {
+    "destination": "/ko/concepts/features/interfaces/documentation-search",
+    "source": "/ko/interfaces/documentation-search"
+  },
+  {
+    "destination": "/ko/concepts/features/interfaces/web-sql",
+    "source": "/ko/interfaces/web-sql"
+  },
+  {
+    "destination": "/ko/concepts/features/interfaces/web-ui-color-coding",
+    "source": "/ko/interfaces/web-ui-color-coding"
+  },
+  {
+    "destination": "/ko/concepts/features/interfaces/web-ui-pinned-columns",
+    "source": "/ko/interfaces/web-ui-pinned-columns"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
+    "source": "/ko/knowledgebase/Insert_select_settings_tuning"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
+    "source": "/ko/knowledgebase/are_materialized_views_inserted_asynchronously"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
+    "source": "/ko/knowledgebase/async_vs_optimize_read_in_order"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+    "source": "/ko/knowledgebase/aws-privatelink-vpc-endpoint-service-for-msk-cluster"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
+    "source": "/ko/knowledgebase/backing_up_a_specific_partition"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
+    "source": "/ko/knowledgebase/calculate_ratio_of_zero_sparse_serialization"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
+    "source": "/ko/knowledgebase/certificate_verify_failed_error"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/performance-optimization/check-query-processing-time-only",
+    "source": "/ko/knowledgebase/check_query_processing_time_only"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/security/check-users-roles",
+    "source": "/ko/knowledgebase/check_users_roles"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/cloud-services/clickhouse-cloud-api-usage",
+    "source": "/ko/knowledgebase/clickhouse_cloud_api_usage"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
+    "source": "/ko/knowledgebase/collect-and-draw-traces"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
+    "source": "/ko/knowledgebase/compare_resultsets"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+    "source": "/ko/knowledgebase/configure_cap_ipc_lock_and_cap_sys_nice_in_docker"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+    "source": "/ko/knowledgebase/confluent-cloud-private-connectivity-for-clickpipes"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
+    "source": "/ko/knowledgebase/connection_timeout_remote_remoteSecure"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/data-management/dictionary-using-strings",
+    "source": "/ko/knowledgebase/dictionary_using_strings"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
+    "source": "/ko/knowledgebase/difference_between_official_builds_and_3rd_party"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
+    "source": "/ko/knowledgebase/finding_expensive_queries_by_memory_usage"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
+    "source": "/ko/knowledgebase/how_to_display_queries_using_MV"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
+    "source": "/ko/knowledgebase/how_to_use_parametrised_views"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/data-import-export/importing-and-working-with-json-array-objects",
+    "source": "/ko/knowledgebase/importing_and_working_with_JSON_array_objects"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/data-import-export/json-extract-example",
+    "source": "/ko/knowledgebase/json_extract_example"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/data-import-export/json-simple-example",
+    "source": "/ko/knowledgebase/json_simple_example"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases",
+    "source": "/ko/knowledgebase/maximum_number_of_tables_and_databases"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/cloud-services/opt-out-core-dump-collection",
+    "source": "/ko/knowledgebase/opt-out-core-dump-collection"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/performance-optimization/optimize-final-vs-final",
+    "source": "/ko/knowledgebase/optimize_final_vs_final"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part",
+    "source": "/ko/knowledgebase/part_intersects_previous_part"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/materialized-views/projection-example",
+    "source": "/ko/knowledgebase/projection_example"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/integrations/python-http-requests",
+    "source": "/ko/knowledgebase/python_http_requests"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/performance-optimization/query-max-execution-time",
+    "source": "/ko/knowledgebase/query_max_execution_time"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/data-management/read-consistency",
+    "source": "/ko/knowledgebase/read_consistency"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
+    "source": "/ko/knowledgebase/recovering-from-corrupt-keeper-snapshot"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/tables-schema/recreate-table-across-terminals",
+    "source": "/ko/knowledgebase/recreate_table_across_terminals"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure",
+    "source": "/ko/knowledgebase/restore-replica-after-storage-failure"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/tables-schema/runbook-json",
+    "source": "/ko/knowledgebase/runbook-json"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/data-import-export/s3-export-data-year-month-folders",
+    "source": "/ko/knowledgebase/s3_export_data_year_month_folders"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+    "source": "/ko/knowledgebase/schema_migration_tools"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/monitoring-debugging/send-logs-level",
+    "source": "/ko/knowledgebase/send_logs_level"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/integrations/terraform-example",
+    "source": "/ko/knowledgebase/terraform_example"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/data-management/understanding-part-types-and-storage-formats",
+    "source": "/ko/knowledgebase/understanding-part-types-and-storage-formats"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/monitoring-debugging/view-number-of-active-mutations",
+    "source": "/ko/knowledgebase/view_number_of_active_mutations"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/data-management/when-is-ttl-applied",
+    "source": "/ko/knowledgebase/when_is_ttl_applied"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/monitoring-debugging/why-default-logging-verbose",
+    "source": "/ko/knowledgebase/why_default_logging_verbose"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/performance-optimization/why-is-my-primary-key-not-used",
+    "source": "/ko/knowledgebase/why_is_my_primary_key_not_used"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper",
+    "source": "/ko/knowledgebase/why_recommend_clickhouse_keeper_over_zookeeper"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles",
+    "source": "/ko/knowledgebase/windows_active_directory_to_ch_roles"
+  },
+  {
+    "destination": "/ko/products/cloud/reference/security/compliance-overview",
+    "source": "/ko/manage/security/compliance-and-certification"
+  },
+  {
+    "destination": "/ko/clickstack/overview",
+    "source": "/ko/observability/clickstack"
+  },
+  {
+    "destination": "/ko/concepts/features/performance/troubleshoot/oom-canary",
+    "source": "/ko/operations/settings/oom-canary"
+  },
+  {
+    "destination": "/ko/reference/system-tables/hypothetical_indexes",
+    "source": "/ko/operations/system-tables/hypothetical_indexes"
+  },
+  {
+    "destination": "/ko/reference/system-tables/stemmers",
+    "source": "/ko/operations/system-tables/stemmers"
+  },
+  {
+    "destination": "/ko/products/cloud/getting-started/intro",
+    "source": "/ko/resources/about/cloud"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/groupFormat",
+    "source": "/ko/sql-reference/aggregate-functions/reference/groupformat"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesBFloat16",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesBFloat16"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesBFloat16Weighted",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesBFloat16Weighted"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesDD",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesDD"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesDeterministic",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesDeterministic"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesExact",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesExact"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesExactHigh",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesExactHigh"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesExactLow",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesExactLow"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesExactWeighted",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesExactWeighted"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesExactWeightedInterpolated",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesExactWeightedInterpolated"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesInterpolatedWeighted",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesInterpolatedWeighted"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesPrometheusHistogram",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesPrometheusHistogram"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesTDigest",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesTDigest"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesTDigestWeighted",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesTDigestWeighted"
+  },
+  {
+    "destination": "/ko/reference/functions/aggregate-functions/quantilesTiming",
+    "source": "/ko/sql-reference/aggregate-functions/reference/quantilesTiming"
+  },
+  {
+    "destination": "/ko/reference/statements/alter/statistics",
+    "source": "/ko/sql-reference/statements/alter/statistic"
+  },
+  {
+    "destination": "/ko/reference/statements/check-database",
+    "source": "/ko/sql-reference/statements/check-database"
+  },
+  {
+    "destination": "/ko/reference/statements/create/dictionary/layouts/naive-bayes",
+    "source": "/ko/sql-reference/statements/create/dictionary/layouts/naive-bayes"
+  },
+  {
+    "destination": "/ko/reference/statements/hypothetical-index",
+    "source": "/ko/sql-reference/statements/hypothetical-index"
+  },
+  {
+    "destination": "/ko/reference/functions/table-functions/eval",
+    "source": "/ko/sql-reference/table-functions/eval"
+  },
+  {
+    "destination": "/ko/reference/functions/table-functions",
+    "source": "/ko/sql-reference/table-functions/mergeTreeCodecBlockCounts"
+  },
+  {
+    "destination": "/ko/reference/functions/window-functions/ntile",
+    "source": "/ko/sql-reference/window-functions/ntile"
+  },
+  {
+    "destination": "/ko/guides/use-cases/data-warehousing/getting-started/best-practices",
+    "source": "/ko/use-cases/data-lake/best-practices"
+  },
+  {
+    "destination": "/ko/clickstack/demo-days/2026/2026-06-12",
+    "source": "/ko/use-cases/observability/clickstack/demo-days/2026/2026-06-12"
+  },
+  {
+    "destination": "https://clickhouse.com/company/our-story",
+    "source": "/ru/about-us/history"
+  },
+  {
+    "destination": "/ru/resources/changelogs/oss/2026",
+    "source": "/ru/category/changelog"
+  },
+  {
+    "destination": "/chdb/api/python",
+    "source": "/ru/chdb/guides/python-udf"
+  },
+  {
+    "destination": "/ru/products/cloud/guides/best-practices",
+    "source": "/ru/cloud/bestpractices"
+  },
+  {
+    "destination": "/ru/get-started/use-cases/agentic-analytics",
+    "source": "/ru/cloud/get-started/cloud/use-cases/AI_ML"
+  },
+  {
+    "destination": "/ru/get-started/use-cases/agentic-analytics",
+    "source": "/ru/cloud/get-started/cloud/use-cases/AI_ML/agent_facing_analytics"
+  },
+  {
+    "destination": "/ru/products/cloud/api-reference/organization/get-list-of-available-organizations",
+    "source": "/ru/cloud/manage/api/swagger"
+  },
+  {
+    "destination": "/ru/products/cloud/features/sql-console-features/clickstack",
+    "source": "/ru/cloud/manage/clickstack"
+  },
+  {
+    "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
+    "source": "/ru/concepts/olap"
+  },
+  {
+    "destination": "/ru/concepts/features/materialized-views",
+    "source": "/ru/engines/table-engines/special/materializedview"
+  },
+  {
+    "destination": "/ru/reference/engines/table-engines/special/query-runner",
+    "source": "/ru/engines/table-engines/special/query-runner"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/general-faqs/columnar-database",
+    "source": "/ru/faq/general/columnar-database"
+  },
+  {
+    "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
+    "source": "/ru/get-started/about/olap"
+  },
+  {
+    "destination": "https://clickhouse.com/blog/ai-redrawing-database-market",
+    "source": "/ru/get-started/use-cases/machine-learning-and-genai/agent-facing-analytics"
+  },
+  {
+    "destination": "https://clickhouse.com/blog/ai-redrawing-database-market",
+    "source": "/ru/get-started/use-cases/machine-learning-and-genai/machine-learning"
+  },
+  {
+    "destination": "/ru/get-started/sample-datasets/job",
+    "source": "/ru/getting-started/example-datasets/job"
+  },
+  {
+    "destination": "/ru/get-started/sample-datasets",
+    "source": "/ru/getting-started/example-datasets/opensky"
+  },
+  {
+    "destination": "/ru/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
+    "source": "/ru/integrations/airflow"
+  },
+  {
+    "destination": "/ru/integrations/connectors/data-ingestion/community-integrations/estuary",
+    "source": "/ru/integrations/estuary/clickpipes"
+  },
+  {
+    "destination": "/ru/products/cloud/features/data-catalogs",
+    "source": "/ru/integrations/data-catalogs"
+  },
+  {
+    "destination": "/ru/integrations/language-clients/js/index",
+    "source": "/ru/integrations/language-clients/nodejs"
+  },
+  {
+    "destination": "/ru/concepts/features/interfaces/documentation-search",
+    "source": "/ru/interfaces/documentation-search"
+  },
+  {
+    "destination": "/ru/concepts/features/interfaces/web-sql",
+    "source": "/ru/interfaces/web-sql"
+  },
+  {
+    "destination": "/ru/concepts/features/interfaces/web-ui-color-coding",
+    "source": "/ru/interfaces/web-ui-color-coding"
+  },
+  {
+    "destination": "/ru/concepts/features/interfaces/web-ui-pinned-columns",
+    "source": "/ru/interfaces/web-ui-pinned-columns"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
+    "source": "/ru/knowledgebase/Insert_select_settings_tuning"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
+    "source": "/ru/knowledgebase/are_materialized_views_inserted_asynchronously"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
+    "source": "/ru/knowledgebase/async_vs_optimize_read_in_order"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+    "source": "/ru/knowledgebase/aws-privatelink-vpc-endpoint-service-for-msk-cluster"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
+    "source": "/ru/knowledgebase/backing_up_a_specific_partition"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
+    "source": "/ru/knowledgebase/calculate_ratio_of_zero_sparse_serialization"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
+    "source": "/ru/knowledgebase/certificate_verify_failed_error"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/performance-optimization/check-query-processing-time-only",
+    "source": "/ru/knowledgebase/check_query_processing_time_only"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/security/check-users-roles",
+    "source": "/ru/knowledgebase/check_users_roles"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/cloud-services/clickhouse-cloud-api-usage",
+    "source": "/ru/knowledgebase/clickhouse_cloud_api_usage"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
+    "source": "/ru/knowledgebase/collect-and-draw-traces"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
+    "source": "/ru/knowledgebase/compare_resultsets"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+    "source": "/ru/knowledgebase/configure_cap_ipc_lock_and_cap_sys_nice_in_docker"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+    "source": "/ru/knowledgebase/confluent-cloud-private-connectivity-for-clickpipes"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
+    "source": "/ru/knowledgebase/connection_timeout_remote_remoteSecure"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/data-management/dictionary-using-strings",
+    "source": "/ru/knowledgebase/dictionary_using_strings"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
+    "source": "/ru/knowledgebase/difference_between_official_builds_and_3rd_party"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
+    "source": "/ru/knowledgebase/finding_expensive_queries_by_memory_usage"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
+    "source": "/ru/knowledgebase/how_to_display_queries_using_MV"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
+    "source": "/ru/knowledgebase/how_to_use_parametrised_views"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/data-import-export/importing-and-working-with-json-array-objects",
+    "source": "/ru/knowledgebase/importing_and_working_with_JSON_array_objects"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/data-import-export/json-extract-example",
+    "source": "/ru/knowledgebase/json_extract_example"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/data-import-export/json-simple-example",
+    "source": "/ru/knowledgebase/json_simple_example"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases",
+    "source": "/ru/knowledgebase/maximum_number_of_tables_and_databases"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/cloud-services/opt-out-core-dump-collection",
+    "source": "/ru/knowledgebase/opt-out-core-dump-collection"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/performance-optimization/optimize-final-vs-final",
+    "source": "/ru/knowledgebase/optimize_final_vs_final"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part",
+    "source": "/ru/knowledgebase/part_intersects_previous_part"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/materialized-views/projection-example",
+    "source": "/ru/knowledgebase/projection_example"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/integrations/python-http-requests",
+    "source": "/ru/knowledgebase/python_http_requests"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/performance-optimization/query-max-execution-time",
+    "source": "/ru/knowledgebase/query_max_execution_time"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/data-management/read-consistency",
+    "source": "/ru/knowledgebase/read_consistency"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
+    "source": "/ru/knowledgebase/recovering-from-corrupt-keeper-snapshot"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/tables-schema/recreate-table-across-terminals",
+    "source": "/ru/knowledgebase/recreate_table_across_terminals"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure",
+    "source": "/ru/knowledgebase/restore-replica-after-storage-failure"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/tables-schema/runbook-json",
+    "source": "/ru/knowledgebase/runbook-json"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/data-import-export/s3-export-data-year-month-folders",
+    "source": "/ru/knowledgebase/s3_export_data_year_month_folders"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+    "source": "/ru/knowledgebase/schema_migration_tools"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/monitoring-debugging/send-logs-level",
+    "source": "/ru/knowledgebase/send_logs_level"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/integrations/terraform-example",
+    "source": "/ru/knowledgebase/terraform_example"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/data-management/understanding-part-types-and-storage-formats",
+    "source": "/ru/knowledgebase/understanding-part-types-and-storage-formats"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/monitoring-debugging/view-number-of-active-mutations",
+    "source": "/ru/knowledgebase/view_number_of_active_mutations"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/data-management/when-is-ttl-applied",
+    "source": "/ru/knowledgebase/when_is_ttl_applied"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/monitoring-debugging/why-default-logging-verbose",
+    "source": "/ru/knowledgebase/why_default_logging_verbose"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/performance-optimization/why-is-my-primary-key-not-used",
+    "source": "/ru/knowledgebase/why_is_my_primary_key_not_used"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper",
+    "source": "/ru/knowledgebase/why_recommend_clickhouse_keeper_over_zookeeper"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles",
+    "source": "/ru/knowledgebase/windows_active_directory_to_ch_roles"
+  },
+  {
+    "destination": "/ru/products/cloud/reference/security/compliance-overview",
+    "source": "/ru/manage/security/compliance-and-certification"
+  },
+  {
+    "destination": "/ru/clickstack/overview",
+    "source": "/ru/observability/clickstack"
+  },
+  {
+    "destination": "/ru/concepts/features/performance/troubleshoot/oom-canary",
+    "source": "/ru/operations/settings/oom-canary"
+  },
+  {
+    "destination": "/ru/reference/system-tables/hypothetical_indexes",
+    "source": "/ru/operations/system-tables/hypothetical_indexes"
+  },
+  {
+    "destination": "/ru/reference/system-tables/stemmers",
+    "source": "/ru/operations/system-tables/stemmers"
+  },
+  {
+    "destination": "/ru/products/cloud/getting-started/intro",
+    "source": "/ru/resources/about/cloud"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/groupFormat",
+    "source": "/ru/sql-reference/aggregate-functions/reference/groupformat"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesBFloat16",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesBFloat16"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesBFloat16Weighted",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesBFloat16Weighted"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesDD",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesDD"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesDeterministic",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesDeterministic"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesExact",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesExact"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesExactHigh",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesExactHigh"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesExactLow",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesExactLow"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesExactWeighted",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesExactWeighted"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesExactWeightedInterpolated",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesExactWeightedInterpolated"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesInterpolatedWeighted",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesInterpolatedWeighted"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesPrometheusHistogram",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesPrometheusHistogram"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesTDigest",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesTDigest"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesTDigestWeighted",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesTDigestWeighted"
+  },
+  {
+    "destination": "/ru/reference/functions/aggregate-functions/quantilesTiming",
+    "source": "/ru/sql-reference/aggregate-functions/reference/quantilesTiming"
+  },
+  {
+    "destination": "/ru/reference/statements/alter/statistics",
+    "source": "/ru/sql-reference/statements/alter/statistic"
+  },
+  {
+    "destination": "/ru/reference/statements/check-database",
+    "source": "/ru/sql-reference/statements/check-database"
+  },
+  {
+    "destination": "/ru/reference/statements/create/dictionary/layouts/naive-bayes",
+    "source": "/ru/sql-reference/statements/create/dictionary/layouts/naive-bayes"
+  },
+  {
+    "destination": "/ru/reference/statements/hypothetical-index",
+    "source": "/ru/sql-reference/statements/hypothetical-index"
+  },
+  {
+    "destination": "/ru/reference/functions/table-functions/eval",
+    "source": "/ru/sql-reference/table-functions/eval"
+  },
+  {
+    "destination": "/ru/reference/functions/table-functions",
+    "source": "/ru/sql-reference/table-functions/mergeTreeCodecBlockCounts"
+  },
+  {
+    "destination": "/ru/reference/functions/window-functions/ntile",
+    "source": "/ru/sql-reference/window-functions/ntile"
+  },
+  {
+    "destination": "/ru/guides/use-cases/data-warehousing/getting-started/best-practices",
+    "source": "/ru/use-cases/data-lake/best-practices"
+  },
+  {
+    "destination": "/ru/clickstack/demo-days/2026/2026-06-12",
+    "source": "/ru/use-cases/observability/clickstack/demo-days/2026/2026-06-12"
+  },
+  {
+    "destination": "https://clickhouse.com/company/our-story",
+    "source": "/zh/about-us/history"
+  },
+  {
+    "destination": "/zh/resources/changelogs/oss/2026",
+    "source": "/zh/category/changelog"
+  },
+  {
+    "destination": "/chdb/api/python",
+    "source": "/zh/chdb/guides/python-udf"
+  },
+  {
+    "destination": "/zh/products/cloud/guides/best-practices",
+    "source": "/zh/cloud/bestpractices"
+  },
+  {
+    "destination": "/zh/get-started/use-cases/agentic-analytics",
+    "source": "/zh/cloud/get-started/cloud/use-cases/AI_ML"
+  },
+  {
+    "destination": "/zh/get-started/use-cases/agentic-analytics",
+    "source": "/zh/cloud/get-started/cloud/use-cases/AI_ML/agent_facing_analytics"
+  },
+  {
+    "destination": "/zh/products/cloud/api-reference/organization/get-list-of-available-organizations",
+    "source": "/zh/cloud/manage/api/swagger"
+  },
+  {
+    "destination": "/zh/products/cloud/features/sql-console-features/clickstack",
+    "source": "/zh/cloud/manage/clickstack"
+  },
+  {
+    "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
+    "source": "/zh/concepts/olap"
+  },
+  {
+    "destination": "/zh/concepts/features/materialized-views",
+    "source": "/zh/engines/table-engines/special/materializedview"
+  },
+  {
+    "destination": "/zh/reference/engines/table-engines/special/query-runner",
+    "source": "/zh/engines/table-engines/special/query-runner"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/general-faqs/columnar-database",
+    "source": "/zh/faq/general/columnar-database"
+  },
+  {
+    "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
+    "source": "/zh/get-started/about/olap"
+  },
+  {
+    "destination": "https://clickhouse.com/blog/ai-redrawing-database-market",
+    "source": "/zh/get-started/use-cases/machine-learning-and-genai/agent-facing-analytics"
+  },
+  {
+    "destination": "https://clickhouse.com/blog/ai-redrawing-database-market",
+    "source": "/zh/get-started/use-cases/machine-learning-and-genai/machine-learning"
+  },
+  {
+    "destination": "/zh/get-started/sample-datasets/job",
+    "source": "/zh/getting-started/example-datasets/job"
+  },
+  {
+    "destination": "/zh/get-started/sample-datasets",
+    "source": "/zh/getting-started/example-datasets/opensky"
+  },
+  {
+    "destination": "/zh/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
+    "source": "/zh/integrations/airflow"
+  },
+  {
+    "destination": "/zh/integrations/connectors/data-ingestion/community-integrations/estuary",
+    "source": "/zh/integrations/estuary/clickpipes"
+  },
+  {
+    "destination": "/zh/products/cloud/features/data-catalogs",
+    "source": "/zh/integrations/data-catalogs"
+  },
+  {
+    "destination": "/zh/integrations/language-clients/js/index",
+    "source": "/zh/integrations/language-clients/nodejs"
+  },
+  {
+    "destination": "/zh/concepts/features/interfaces/documentation-search",
+    "source": "/zh/interfaces/documentation-search"
+  },
+  {
+    "destination": "/zh/concepts/features/interfaces/web-sql",
+    "source": "/zh/interfaces/web-sql"
+  },
+  {
+    "destination": "/zh/concepts/features/interfaces/web-ui-color-coding",
+    "source": "/zh/interfaces/web-ui-color-coding"
+  },
+  {
+    "destination": "/zh/concepts/features/interfaces/web-ui-pinned-columns",
+    "source": "/zh/interfaces/web-ui-pinned-columns"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
+    "source": "/zh/knowledgebase/Insert_select_settings_tuning"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
+    "source": "/zh/knowledgebase/are_materialized_views_inserted_asynchronously"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
+    "source": "/zh/knowledgebase/async_vs_optimize_read_in_order"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+    "source": "/zh/knowledgebase/aws-privatelink-vpc-endpoint-service-for-msk-cluster"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
+    "source": "/zh/knowledgebase/backing_up_a_specific_partition"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
+    "source": "/zh/knowledgebase/calculate_ratio_of_zero_sparse_serialization"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
+    "source": "/zh/knowledgebase/certificate_verify_failed_error"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/performance-optimization/check-query-processing-time-only",
+    "source": "/zh/knowledgebase/check_query_processing_time_only"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/security/check-users-roles",
+    "source": "/zh/knowledgebase/check_users_roles"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/cloud-services/clickhouse-cloud-api-usage",
+    "source": "/zh/knowledgebase/clickhouse_cloud_api_usage"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
+    "source": "/zh/knowledgebase/collect-and-draw-traces"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
+    "source": "/zh/knowledgebase/compare_resultsets"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
+    "source": "/zh/knowledgebase/configure_cap_ipc_lock_and_cap_sys_nice_in_docker"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+    "source": "/zh/knowledgebase/confluent-cloud-private-connectivity-for-clickpipes"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
+    "source": "/zh/knowledgebase/connection_timeout_remote_remoteSecure"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/data-management/dictionary-using-strings",
+    "source": "/zh/knowledgebase/dictionary_using_strings"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
+    "source": "/zh/knowledgebase/difference_between_official_builds_and_3rd_party"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/performance-optimization/finding-expensive-queries-by-memory-usage",
+    "source": "/zh/knowledgebase/finding_expensive_queries_by_memory_usage"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
+    "source": "/zh/knowledgebase/how_to_display_queries_using_MV"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/materialized-views/how-to-use-parametrised-views",
+    "source": "/zh/knowledgebase/how_to_use_parametrised_views"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/data-import-export/importing-and-working-with-json-array-objects",
+    "source": "/zh/knowledgebase/importing_and_working_with_JSON_array_objects"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/data-import-export/json-extract-example",
+    "source": "/zh/knowledgebase/json_extract_example"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/data-import-export/json-simple-example",
+    "source": "/zh/knowledgebase/json_simple_example"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases",
+    "source": "/zh/knowledgebase/maximum_number_of_tables_and_databases"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/cloud-services/opt-out-core-dump-collection",
+    "source": "/zh/knowledgebase/opt-out-core-dump-collection"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/performance-optimization/optimize-final-vs-final",
+    "source": "/zh/knowledgebase/optimize_final_vs_final"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part",
+    "source": "/zh/knowledgebase/part_intersects_previous_part"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/materialized-views/projection-example",
+    "source": "/zh/knowledgebase/projection_example"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/integrations/python-http-requests",
+    "source": "/zh/knowledgebase/python_http_requests"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/performance-optimization/query-max-execution-time",
+    "source": "/zh/knowledgebase/query_max_execution_time"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/data-management/read-consistency",
+    "source": "/zh/knowledgebase/read_consistency"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
+    "source": "/zh/knowledgebase/recovering-from-corrupt-keeper-snapshot"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/tables-schema/recreate-table-across-terminals",
+    "source": "/zh/knowledgebase/recreate_table_across_terminals"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure",
+    "source": "/zh/knowledgebase/restore-replica-after-storage-failure"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/tables-schema/runbook-json",
+    "source": "/zh/knowledgebase/runbook-json"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/data-import-export/s3-export-data-year-month-folders",
+    "source": "/zh/knowledgebase/s3_export_data_year_month_folders"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/tables-schema/schema-migration-tools",
+    "source": "/zh/knowledgebase/schema_migration_tools"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/monitoring-debugging/send-logs-level",
+    "source": "/zh/knowledgebase/send_logs_level"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/integrations/terraform-example",
+    "source": "/zh/knowledgebase/terraform_example"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/data-management/understanding-part-types-and-storage-formats",
+    "source": "/zh/knowledgebase/understanding-part-types-and-storage-formats"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/monitoring-debugging/view-number-of-active-mutations",
+    "source": "/zh/knowledgebase/view_number_of_active_mutations"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/data-management/when-is-ttl-applied",
+    "source": "/zh/knowledgebase/when_is_ttl_applied"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/monitoring-debugging/why-default-logging-verbose",
+    "source": "/zh/knowledgebase/why_default_logging_verbose"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/performance-optimization/why-is-my-primary-key-not-used",
+    "source": "/zh/knowledgebase/why_is_my_primary_key_not_used"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper",
+    "source": "/zh/knowledgebase/why_recommend_clickhouse_keeper_over_zookeeper"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles",
+    "source": "/zh/knowledgebase/windows_active_directory_to_ch_roles"
+  },
+  {
+    "destination": "/zh/products/cloud/reference/security/compliance-overview",
+    "source": "/zh/manage/security/compliance-and-certification"
+  },
+  {
+    "destination": "/zh/clickstack/overview",
+    "source": "/zh/observability/clickstack"
+  },
+  {
+    "destination": "/zh/concepts/features/performance/troubleshoot/oom-canary",
+    "source": "/zh/operations/settings/oom-canary"
+  },
+  {
+    "destination": "/zh/reference/system-tables/hypothetical_indexes",
+    "source": "/zh/operations/system-tables/hypothetical_indexes"
+  },
+  {
+    "destination": "/zh/reference/system-tables/stemmers",
+    "source": "/zh/operations/system-tables/stemmers"
+  },
+  {
+    "destination": "/zh/products/cloud/getting-started/intro",
+    "source": "/zh/resources/about/cloud"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/groupFormat",
+    "source": "/zh/sql-reference/aggregate-functions/reference/groupformat"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesBFloat16",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesBFloat16"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesBFloat16Weighted",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesBFloat16Weighted"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesDD",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesDD"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesDeterministic",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesDeterministic"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesExact",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesExact"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesExactHigh",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesExactHigh"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesExactLow",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesExactLow"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesExactWeighted",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesExactWeighted"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesExactWeightedInterpolated",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesExactWeightedInterpolated"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesInterpolatedWeighted",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesInterpolatedWeighted"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesPrometheusHistogram",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesPrometheusHistogram"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesTDigest",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesTDigest"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesTDigestWeighted",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesTDigestWeighted"
+  },
+  {
+    "destination": "/zh/reference/functions/aggregate-functions/quantilesTiming",
+    "source": "/zh/sql-reference/aggregate-functions/reference/quantilesTiming"
+  },
+  {
+    "destination": "/zh/reference/statements/alter/statistics",
+    "source": "/zh/sql-reference/statements/alter/statistic"
+  },
+  {
+    "destination": "/zh/reference/statements/check-database",
+    "source": "/zh/sql-reference/statements/check-database"
+  },
+  {
+    "destination": "/zh/reference/statements/create/dictionary/layouts/naive-bayes",
+    "source": "/zh/sql-reference/statements/create/dictionary/layouts/naive-bayes"
+  },
+  {
+    "destination": "/zh/reference/statements/hypothetical-index",
+    "source": "/zh/sql-reference/statements/hypothetical-index"
+  },
+  {
+    "destination": "/zh/reference/functions/table-functions/eval",
+    "source": "/zh/sql-reference/table-functions/eval"
+  },
+  {
+    "destination": "/zh/reference/functions/table-functions",
+    "source": "/zh/sql-reference/table-functions/mergeTreeCodecBlockCounts"
+  },
+  {
+    "destination": "/zh/reference/functions/window-functions/ntile",
+    "source": "/zh/sql-reference/window-functions/ntile"
+  },
+  {
+    "destination": "/zh/guides/use-cases/data-warehousing/getting-started/best-practices",
+    "source": "/zh/use-cases/data-lake/best-practices"
+  },
+  {
+    "destination": "/zh/clickstack/demo-days/2026/2026-06-12",
+    "source": "/zh/use-cases/observability/clickstack/demo-days/2026/2026-06-12"
+  },
+  {
+    "destination": "/integrations/language-clients/third-party/client-libraries",
+    "source": "/integrations/language-clients/third-party/moose-olap"
+  },
+  {
+    "destination": "/concepts/features/interfaces/client",
+    "source": "/integrations/connectors/sql-clients/cli"
+  },
+  {
+    "destination": "/concepts/features/interfaces/client",
+    "source": "/docs/integrations/sql-clients/cli"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/static-ips",
+    "source": "/integrations/clickpipes/static-ips"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/aws-privatelink",
+    "source": "/integrations/clickpipes/aws-privatelink"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/gcp-psc",
+    "source": "/integrations/clickpipes/gcp-psc"
+  },
+  {
+    "destination": "/integrations/clickpipes/networking/azure-privatelink",
+    "source": "/integrations/clickpipes/azure-privatelink"
+  },
+  {
+    "destination": "/clickstack/demo-days/2026/2026-06-18",
+    "source": "/use-cases/observability/clickstack/demo-days/2026/2026-06-18"
+  },
+  {
+    "destination": "/clickstack/demo-days/2026/2026-06-26",
+    "source": "/use-cases/observability/clickstack/demo-days/2026/2026-06-26"
+  },
+  {
+    "destination": "/clickstack/demo-days/2026/2026-07-02",
+    "source": "/use-cases/observability/clickstack/demo-days/2026/2026-07-02"
+  },
+  {
+    "destination": "/clickstack/demo-days/2026/2026-07-10",
+    "source": "/use-cases/observability/clickstack/demo-days/2026/2026-07-10"
+  },
+  {
+    "destination": "/integrations/connectors/data-ingestion/community-integrations/estuary-native",
+    "source": "/integrations/estuary/native"
+  },
+  {
+    "destination": "/integrations/connectors/data-ingestion/s3-tigris",
+    "source": "/integrations/tigris"
+  },
+  {
+    "destination": "/products/bring-your-own-cloud/reference/security-shared-responsibility",
+    "source": "/cloud/reference/byoc/reference/security-shared-responsibility"
+  },
+  {
+    "destination": "/products/cloud/guides/security/cloud-access-management/migrating-rbac-custom-roles",
+    "source": "/cloud/guides/security/migrating-rbac-custom-roles"
   }
 ]

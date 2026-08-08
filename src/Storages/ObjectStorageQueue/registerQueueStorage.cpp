@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <Core/FormatFactorySettings.h>
+#include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Common/Macros.h>
@@ -63,7 +64,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 
     if (!is_attach && args.storage_def->settings)
     {
-        if (auto * path_setting = args.storage_def->settings->changes.tryGet("keeper_path"))
+        if (auto * path_setting = args.storage_def->settings->changes.tryGetChange("keeper_path"))
         {
             auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
             const String database_engine = database ? database->getEngineName() : "";
@@ -76,7 +77,13 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
             bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach || args.query.has_uuid;
 
-            String path = path_setting->safeGet<String>();
+            /// This value is read before the settings are applied to `ObjectStorageQueueSettings`, so the
+            /// value-less form `SETTINGS keeper_path` has not been rejected yet, and `safeGet` would report
+            /// it as a `Bool` where a `String` was requested.
+            if (path_setting->shorthand)
+                BaseSettingsHelpers::throwValuelessSettingIsNotBool(path_setting->name);
+
+            String path = path_setting->value.safeGet<String>();
 
             Macros::MacroExpansionInfo info;
             info.table_id = args.table_id;
