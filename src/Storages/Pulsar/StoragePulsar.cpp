@@ -686,6 +686,11 @@ void registerStoragePulsar(StorageFactory & factory)
         if (!(*pulsar_settings)[PulsarSetting::pulsar_topic_list].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_topic_list` setting");
 
+        /// A table with zero consumers could never consume anything, and `num_consumers`
+        /// is used as a divisor in `getMaxBlockSize`.
+        if ((*pulsar_settings)[PulsarSetting::pulsar_num_consumers].value < 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting `pulsar_num_consumers` must be at least 1");
+
         /// The mode is accepted by the generic `StreamingHandleErrorMode` parser but not implemented
         /// by this engine, so reject it up front instead of failing on the first broken message.
         if (args.mode <= LoadingStrictnessLevel::CREATE

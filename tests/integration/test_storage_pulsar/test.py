@@ -442,6 +442,22 @@ def test_consume_compressed_messages(pulsar_cluster):
     wait_query_result(expected, "SELECT DISTINCT key, value FROM test.view ORDER BY key")
 
 
+def test_num_consumers_zero_rejected(pulsar_cluster):
+    # `pulsar_num_consumers = 0` would create a table with no consumers at all
+    # (and `num_consumers` is a divisor in the block size calculation), so it
+    # must be rejected up front at CREATE TABLE time.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    error = instance.query_and_get_error(
+        pulsar_table(
+            "test.pulsar_reader",
+            "zero_consumers_topic",
+            "zero_consumers_group",
+            extra_settings=", pulsar_num_consumers = 0",
+        )
+    )
+    assert "BAD_ARGUMENTS" in error
+
+
 def test_macros_expansion(pulsar_cluster):
     # The broker-facing string settings support macro substitution the same way
     # the other message-broker engines do: server-defined macros in the service
