@@ -530,6 +530,22 @@ public:
             /// percent-encoded label name in ".../label/<name>/values" is read correctly.
             const String uri_path = Poco::URI(uri).getPath();
 
+            /// Reads the optional `start`/`end` timestamp of a metadata endpoint. An absent parameter
+            /// means "no bound", but a present-and-empty one (e.g. "start=") is malformed: downstream
+            /// the empty string is indistinguishable from an omitted parameter and would silently widen
+            /// the selected series instead of failing, so reject it here - Prometheus answers such
+            /// requests with a `bad_data` error as well.
+            auto get_optional_time_param = [&](const String & name) -> String
+            {
+                if (!params->has(name))
+                    return "";
+                String value = params->get(name);
+                if (value.empty())
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS, "Invalid parameter '{}': cannot parse an empty value as a timestamp", name);
+                return value;
+            };
+
             if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
@@ -581,8 +597,8 @@ public:
             else if (uri_path.ends_with("/series"))
             {
                 Strings match = params->getAll("match[]");
-                String start = params->get("start", "");
-                String end = params->get("end", "");
+                String start = get_optional_time_param("start");
+                String end = get_optional_time_param("end");
                 UInt64 limit = getLimitParam();
 
                 protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
@@ -590,8 +606,8 @@ public:
             else if (uri_path.ends_with("/labels"))
             {
                 Strings match = params->getAll("match[]");
-                String start = params->get("start", "");
-                String end = params->get("end", "");
+                String start = get_optional_time_param("start");
+                String end = get_optional_time_param("end");
                 UInt64 limit = getLimitParam();
 
                 protocol.getLabels(getOutputStream(response), match, start, end, limit, query_finish_callback);
@@ -599,8 +615,8 @@ public:
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
                 Strings match = params->getAll("match[]");
-                String start = params->get("start", "");
-                String end = params->get("end", "");
+                String start = get_optional_time_param("start");
+                String end = get_optional_time_param("end");
                 UInt64 limit = getLimitParam();
 
                 protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end, limit, query_finish_callback);
