@@ -59,7 +59,7 @@ echo "mutation stopped: $gone"
 # happened to produce. That distinction is what covers the throwing half of the cancellation
 # predicate: `Client::HeadObject` reports a killed read through `CurrentThread::checkIfNotCancelled`,
 # and with only the boolean half installed the mutation ends in a misleading `S3_ERROR` instead.
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS part_log"
 echo "cancelled, not S3 error: $($CLICKHOUSE_CLIENT -q "
     SELECT countIf(error = 236) > 0 AND countIf(error = 499) = 0
     FROM system.part_log
