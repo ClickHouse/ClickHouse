@@ -46,6 +46,19 @@ bool BlockNestedLoopJoinStep::isSupportedJoinType(JoinKind kind, JoinStrictness 
     }
 }
 
+/// The position of a condition input in the header it comes from. Two columns of one header may
+/// carry the same name, and then the name does not say which of them the condition reads, so the
+/// name has to name exactly one column rather than merely the first of several.
+static size_t resolvePredicateInputPosition(const Block & header, const String & name)
+{
+    const size_t position = header.getPositionByName(name);
+    for (size_t i = position + 1; i < header.columns(); ++i)
+        if (header.getByPosition(i).name == name)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Block nested loop join condition input {} occurs more than once in [{}]", name, header.dumpNames());
+    return position;
+}
+
 /// Where every required column of the condition comes from, by name: the side and its position in
 /// that side's header. Resolved against the headers the columns are actually read from rather than
 /// once and for all, because a position taken from the plan's header says nothing about the header
@@ -62,9 +75,9 @@ static std::vector<BlockNestedLoopPredicate::Source> resolvePredicateInputs(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join condition input {} must come from exactly one input, found in {}",
                 required_column.name, in_left ? "both" : "neither");
         if (in_left)
-            inputs.push_back({.side = 0, .position = left_header.getPositionByName(required_column.name)});
+            inputs.push_back({.side = 0, .position = resolvePredicateInputPosition(left_header, required_column.name)});
         else
-            inputs.push_back({.side = 1, .position = right_header.getPositionByName(required_column.name)});
+            inputs.push_back({.side = 1, .position = resolvePredicateInputPosition(right_header, required_column.name)});
     }
     return inputs;
 }
@@ -186,11 +199,10 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
     build_pipeline->dropExtremes();
 
     /// The build side's totals row only lends its columns to the joined totals row, so the probe
-    /// side needs a totals row to attach them to even when it has none of its own.
+    /// side needs a totals row to attach them to even when it has none of its own. The row is added
+    /// under the probe collector below, so that the source that carries it belongs to this step.
     const bool build_has_totals = build_pipeline->hasTotals();
     const bool probe_totals_are_default = build_has_totals && !probe_pipeline->hasTotals();
-    if (probe_totals_are_default)
-        probe_pipeline->addDefaultTotals();
 
     auto data = std::make_shared<BlockNestedLoopJoinData>(
         build_pipeline->getSharedHeader(), kind, strictness, size_limits, store_settings);
@@ -250,6 +262,9 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
 
     {
         QueryPipelineProcessorsCollector collector(*probe_pipeline, this);
+
+        if (probe_totals_are_default)
+            probe_pipeline->addDefaultTotals();
 
         probe_pipeline->resize(max_streams);
         /// No probe stream, the totals stream included, may pull a row before the store is closed.

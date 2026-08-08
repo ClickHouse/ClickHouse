@@ -174,6 +174,8 @@ private:
     /// Rough size of one output row, used only to decide when `max_block_bytes` is reached.
     size_t probe_row_bytes = 0;
     size_t build_row_bytes = 0;
+    /// What the build side of an unmatched probe row costs, the same for every such row.
+    size_t padded_build_row_bytes = 0;
 
     /// Set for every probe row that matched at least one build row. Empty for the kinds whose
     /// result does not depend on it.
@@ -208,12 +210,17 @@ private:
     BuildSideBlockReader build_reader;
     /// The columns of the output header that belong to the probe side and are padded here.
     const size_t num_probe_columns;
+    /// What the probe side of an emitted row costs, the same for every row this stage emits.
+    const size_t padded_probe_row_bytes;
     const size_t max_block_size;
     const size_t max_block_bytes;
-    /// This stream owns the blocks `stream_index, stream_index + num_streams, ...`.
-    const size_t num_streams;
+    /// This stream owns the blocks `stream_index, stream_index + num_streams, ...`, unless the build
+    /// side spilled - then stream 0 walks all of them and the others have nothing to do.
+    const size_t stream_index;
+    size_t num_streams;
     size_t block_cursor;
     size_t row_cursor = 0;
+    bool scan_partitioned = false;
 };
 
 /// Produces the joined `WITH TOTALS` row: the probe side's totals row extended with the build

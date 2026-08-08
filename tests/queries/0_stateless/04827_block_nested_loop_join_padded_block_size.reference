@@ -4,3 +4,5 @@ unmatched build rows, unlimited	500
 unmatched build rows, bytes	1
 result	1000	500	500
 result	1000	500	500
+wide padded build side	1
+wide padded probe side	1

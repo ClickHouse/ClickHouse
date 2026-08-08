@@ -10,10 +10,12 @@
 
 #include <limits>
 #include <numeric>
+#include <utility>
 
 namespace ProfileEvents
 {
     extern const Event JoinProbeTableRowCount;
+    extern const Event JoinResultRowCount;
 }
 
 namespace DB
@@ -99,6 +101,25 @@ size_t estimateRowBytes(const Columns & columns, size_t num_rows)
     return (bytes + num_rows - 1) / num_rows;
 }
 
+/// What one row of the padded half of an outer join's output costs. A type's default value is not
+/// always cheap - a `FixedString(N)` default is as wide as a matched one - and nothing but the
+/// column itself says what it costs, so the cost is measured on a sample of defaults.
+size_t estimateDefaultRowBytes(const Block & header, size_t begin, size_t end)
+{
+    /// Enough rows for the per-row cost to outweigh a column's fixed overhead.
+    constexpr size_t SAMPLE_ROWS = 128;
+
+    Columns columns;
+    columns.reserve(end - begin);
+    for (size_t i = begin; i < end; ++i)
+    {
+        auto column = header.getByPosition(i).type->createColumn();
+        column->insertManyDefaults(SAMPLE_ROWS);
+        columns.push_back(std::move(column));
+    }
+    return estimateRowBytes(columns, SAMPLE_ROWS);
+}
+
 /// How many rows one output chunk may hold under both limits, for rows of about `row_bytes` each.
 size_t outputChunkRowLimit(size_t max_block_size, size_t max_block_bytes, size_t row_bytes)
 {
@@ -167,6 +188,9 @@ BlockNestedLoopProbeTransform::BlockNestedLoopProbeTransform(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Block nested loop join output header [{}] is not the concatenation of its inputs [{}] and [{}]",
             output_header->dumpStructure(), probe_header->dumpStructure(), data->getHeader()->dumpStructure());
+
+    if (keep_unmatched_probe_rows)
+        padded_build_row_bytes = estimateDefaultRowBytes(*data->getHeader(), 0, data->getHeader()->columns());
 
     for (const auto & required_column : predicate.actions->getRequiredColumnsWithTypes())
         predicate_input_header.insert(ColumnWithTypeAndName(nullptr, required_column.type, required_column.name));
@@ -322,6 +346,10 @@ void BlockNestedLoopProbeTransform::work()
 /// evaluating the condition on it at all.
 size_t BlockNestedLoopProbeTransform::matchNextTile()
 {
+    /// Every path that empties the walk also puts the build cursor past the last block, so a tile is
+    /// never asked for once there is no probe row left to build one from.
+    chassert(!active_probe_rows.empty());
+
     if (!current_build_block)
     {
         current_build_block = build_reader.read(build_block_cursor);
@@ -643,6 +671,8 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
             build_runs.front().length -= run.length;
     }
 
+    ProfileEvents::increment(ProfileEvents::JoinResultRowCount, num_rows);
+
     Chunk chunk;
     chunk.setColumns(std::move(result), num_rows);
     return chunk;
@@ -652,9 +682,9 @@ Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
 {
     auto indexes = ColumnUInt64::create();
     auto & unmatched = indexes->getData();
-    /// The build side of these rows is padded with the type defaults, which cost next to nothing, so
-    /// the probe row alone stands for the output row's size here.
-    const size_t limit = maxOutputChunkRows(probe_row_bytes);
+    /// The build side of these rows is padded with the type defaults, whose cost is the same for
+    /// every row of the chunk but is not always negligible.
+    const size_t limit = maxOutputChunkRows(probe_row_bytes + padded_build_row_bytes);
     while (unmatched_probe_cursor < probe_num_rows && unmatched.size() < limit)
     {
         if (!probe_row_matched[unmatched_probe_cursor])
@@ -678,6 +708,8 @@ Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
         padded->insertManyDefaults(unmatched.size());
         result.push_back(std::move(padded));
     }
+
+    ProfileEvents::increment(ProfileEvents::JoinResultRowCount, unmatched.size());
 
     Chunk chunk;
     chunk.setColumns(std::move(result), unmatched.size());
@@ -728,8 +760,10 @@ BlockNestedLoopUnmatchedBuildRowsTransform::BlockNestedLoopUnmatchedBuildRowsTra
     , data(std::move(data_))
     , build_reader(data)
     , num_probe_columns(probeColumnCount(getPort().getHeader(), *data->getHeader()))
+    , padded_probe_row_bytes(estimateDefaultRowBytes(getPort().getHeader(), 0, num_probe_columns))
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
+    , stream_index(stream_index_)
     , num_streams(num_streams_)
     , block_cursor(stream_index_)
 {
@@ -743,6 +777,15 @@ Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
 {
     const auto & header = getPort().getHeader();
     const auto & row_offsets = data->getRowOffsets();
+
+    /// A spilled block is only reachable by a forward pass over the temporary file, so a strided
+    /// scan would make every stream decode the whole of it. One stream walks them all instead.
+    if (!std::exchange(scan_partitioned, true) && data->getNumSpilledBlocks() != 0)
+    {
+        if (stream_index != 0)
+            return {};
+        num_streams = 1;
+    }
 
     /// One chunk comes from one stored block, so that its build columns are gathered in one go.
     /// A block in which every row matched contributes nothing and the scan moves on to the next.
@@ -768,7 +811,8 @@ Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
 
         auto block = build_reader.read(block_index);
         const size_t limit = outputChunkRowLimit(
-            max_block_size, max_block_bytes, estimateRowBytes(block->columns, block_rows));
+            max_block_size, max_block_bytes,
+            padded_probe_row_bytes + estimateRowBytes(block->columns, block_rows));
 
         auto indexes = ColumnUInt64::create();
         auto & unmatched = indexes->getData();
@@ -796,6 +840,8 @@ Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
         }
         for (const auto & column : block->columns)
             result.push_back(column->index(*indexes, 0));
+
+        ProfileEvents::increment(ProfileEvents::JoinResultRowCount, unmatched.size());
 
         Chunk chunk;
         chunk.setColumns(std::move(result), unmatched.size());
