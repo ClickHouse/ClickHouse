@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <Storages/MemorySettings.h>
+#include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -520,4 +522,69 @@ TEST(TransformQueryForExternalDatabase, ArrayLiteral)
     check(state, 1, {"a", "arr"},
           "SELECT a, arr FROM table WHERE (a, arr) IN ((1, [1, 2])) AND a > 0",
           R"(SELECT "a", "arr" FROM "test"."table" WHERE "a" > 0)");
+}
+
+/// Parse a user-provided `(SELECT ...)` table argument of an external database engine / table
+/// function and re-serialize it for the external database, the way `StorageMySQL`,
+/// `StoragePostgreSQL` and `StorageSQLite` do for a query-backed source.
+static String formatQueryTableArgument(
+    const State & state,
+    const std::string & argument,
+    IdentifierQuotingStyle identifier_quoting_style,
+    LiteralEscapingStyle literal_escaping_style)
+{
+    ParserSubquery parser;
+    ASTPtr ast = parseQuery(parser, argument, 1000, 1000, 1000000);
+    auto query = tryGetExternalDatabaseQuery(ast, state.context, identifier_quoting_style, literal_escaping_style);
+    EXPECT_TRUE(query.has_value()) << argument;
+    return query.value_or("");
+}
+
+TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
+{
+    const State & state = State::instance();
+
+    /// The `(SELECT ...)` table argument is re-serialized from the parsed AST and sent to the
+    /// external database as is, so ClickHouse-only syntax must not leak into it for MySQL
+    /// (`Regular` escaping) either: an explicit `tuple(a, b)` call becomes the row value `(a, b)`,
+    /// and a single-row multi-column `IN` set keeps its outer parentheses, exactly as for
+    /// PostgreSQL / SQLite.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field, value FROM test.table WHERE tuple(field, value) IN (tuple('foo', 'bar')))",
+            IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular),
+        "SELECT field, value FROM test.`table` WHERE (field, value) IN (('foo', 'bar'))");
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field, value FROM test.table WHERE tuple(field, value) IN (('foo', 'bar')))",
+            IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular),
+        "SELECT field, value FROM test.`table` WHERE (field, value) IN (('foo', 'bar'))");
+    /// The same normalization for PostgreSQL, for parity.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field, value FROM test.table WHERE tuple(field, value) IN (tuple('foo', 'bar')))",
+            IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL),
+        R"(SELECT field, value FROM test."table" WHERE (field, value) IN (('foo', 'bar')))");
+
+    /// Expressions with no MySQL text form are rejected instead of being sent as broken SQL:
+    /// `array` / `map` calls and `tuple` with fewer than two arguments ...
+    EXPECT_ANY_THROW(formatQueryTableArgument(state,
+        "(SELECT field FROM test.table WHERE field IN array('foo', 'bar'))",
+        IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular));
+    EXPECT_ANY_THROW(formatQueryTableArgument(state,
+        "(SELECT field FROM test.table WHERE map('k', 'v') = map('k', 'v'))",
+        IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular));
+    EXPECT_ANY_THROW(formatQueryTableArgument(state,
+        "(SELECT field FROM test.table WHERE tuple(field) IN (('foo', 'bar')))",
+        IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular));
+    /// ... as well as the equivalent literals, which the parser folds into `Array` / `Tuple`
+    /// fields of a single `ASTLiteral` (for PostgreSQL / SQLite these are rejected at format
+    /// time by the dialect field visitors, but the `Regular` style formats them in ClickHouse
+    /// syntax without complaint).
+    EXPECT_ANY_THROW(formatQueryTableArgument(state,
+        "(SELECT field FROM test.table WHERE field IN ['foo', 'bar'])",
+        IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular));
+    EXPECT_ANY_THROW(formatQueryTableArgument(state,
+        "(SELECT a, arr FROM test.table WHERE (a, arr) IN ((1, [1, 2])))",
+        IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular));
 }

@@ -54,12 +54,13 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo
   * normalization done by `transformQueryForExternalDatabase`:
   * - single-row multi-column `IN`/`NOT IN` sets (e.g. `(a, b) IN ((1, 'x'))`) keep their outer parentheses
   *   instead of collapsing to a flat scalar list (`IN (1, 'x')`);
-  * - for non-`Regular` escaping styles, the `tuple` function with at least two arguments is marked to be
-  *   formatted in the parenthesized operator form `(a, b)` (a row value in PostgreSQL / SQLite) instead of
-  *   the ClickHouse-only call form `tuple(a, b)`;
-  * - for non-`Regular` escaping styles, expressions that only have a ClickHouse-specific text form (`tuple`
-  *   with fewer than two arguments, `array`, `map`) throw `BAD_ARGUMENTS` instead of being sent to the
-  *   external database as SQL it cannot parse.
+  * - the `tuple` function with at least two arguments is marked to be formatted in the parenthesized
+  *   operator form `(a, b)` (a row value in MySQL / PostgreSQL / SQLite) instead of the ClickHouse-only
+  *   call form `tuple(a, b)`;
+  * - expressions that only have a ClickHouse-specific text form (`tuple` with fewer than two arguments,
+  *   `array`, `map`, and - for the `Regular` escaping style, where no dialect field visitor rejects them
+  *   at format time - literals containing an `Array` / `Map` or a tuple with fewer than two elements)
+  *   throw `BAD_ARGUMENTS` instead of being sent to the external database as SQL it cannot parse.
   */
 void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle literal_escaping_style);
 

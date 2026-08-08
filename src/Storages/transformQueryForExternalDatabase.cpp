@@ -205,6 +205,35 @@ bool fieldContainsArrayOrMap(const Field & field)
     }
 }
 
+/// Returns true if the field can only be written back in ClickHouse-specific syntax that an
+/// external database cannot parse: an `Array` / `Map` at any depth, or a tuple with fewer than
+/// two elements (which has no plain parenthesized form and can only be written as `tuple(...)`).
+/// Mirrors what `FieldVisitorToStringForDialect` rejects at format time for the PostgreSQL /
+/// SQLite escaping styles, for use where the `Regular` style (MySQL) is formatted instead.
+bool fieldRequiresClickHouseOnlySyntax(const Field & field)
+{
+    checkStackSize();
+
+    switch (field.getType())
+    {
+        case Field::Types::Array:
+        case Field::Types::Map:
+            return true;
+        case Field::Types::Tuple:
+        {
+            const auto & tuple = field.safeGet<Tuple>();
+            if (tuple.size() < 2)
+                return true;
+            for (const auto & element : tuple)
+                if (fieldRequiresClickHouseOnlySyntax(element))
+                    return true;
+            return false;
+        }
+        default:
+            return false;
+    }
+}
+
 /// Returns true if `node` references a column of UUID type, including when that reference
 /// is nested inside a tuple or another expression (e.g. the row comparison
 /// `(uuid_col, x) < (...)`). ClickHouse and external databases (e.g. PostgreSQL) sort UUIDs
@@ -677,32 +706,43 @@ void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle li
     {
         wrapSingleRowTupleSetForINNode(*function);
 
-        if (literal_escaping_style != LiteralEscapingStyle::Regular)
+        /// `tuple` with at least two arguments has the plain parenthesized form `(a, b)` that
+        /// MySQL / PostgreSQL / SQLite understand as a row value, but only when formatted as an
+        /// operator; the function-call form `tuple(a, b)` is ClickHouse syntax. With fewer
+        /// than two arguments (and for `array` / `map`) there is no such form at all, so the
+        /// re-serialized subquery would not be parseable by the external database - reject it
+        /// instead of sending broken SQL.
+        if (function->name == "tuple")
         {
-            /// `tuple` with at least two arguments has the plain parenthesized form `(a, b)` that
-            /// PostgreSQL / SQLite understand as a row value, but only when formatted as an
-            /// operator; the function-call form `tuple(a, b)` is ClickHouse syntax. With fewer
-            /// than two arguments (and for `array` / `map`) there is no such form at all, so the
-            /// re-serialized subquery would not be parseable by the external database - reject it
-            /// instead of sending broken SQL.
-            if (function->name == "tuple")
-            {
-                if (function->arguments && function->arguments->children.size() >= 2)
-                    function->setIsOperator(true);
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot format a tuple with fewer than two elements for the external database: "
-                        "it can only be written in ClickHouse-specific syntax. Rewrite the query passed "
-                        "to the external database without it");
-            }
-            else if (function->name == "array" || function->name == "map")
-            {
+            if (function->arguments && function->arguments->children.size() >= 2)
+                function->setIsOperator(true);
+            else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot format {} for the external database: it has no syntax for such values. "
-                    "Rewrite the query passed to the external database without it",
-                    function->name == "array" ? "an array" : "a map");
-            }
+                    "Cannot format a tuple with fewer than two elements for the external database: "
+                    "it can only be written in ClickHouse-specific syntax. Rewrite the query passed "
+                    "to the external database without it");
         }
+        else if (function->name == "array" || function->name == "map")
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot format {} for the external database: it has no syntax for such values. "
+                "Rewrite the query passed to the external database without it",
+                function->name == "array" ? "an array" : "a map");
+        }
+    }
+    else if (const auto * literal = node->as<ASTLiteral>())
+    {
+        /// For PostgreSQL / SQLite the dialect field visitors reject such literals at format time
+        /// (see `FieldVisitorToStringForDialect`); the `Regular` style - used for MySQL, whose
+        /// string literals interpret backslash escapes the same way as ClickHouse - formats them
+        /// in ClickHouse-only syntax (`[...]`, `tuple(x)`) without complaint, so reject them here.
+        if (literal_escaping_style == LiteralEscapingStyle::Regular
+            && fieldRequiresClickHouseOnlySyntax(literal->value))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot format a literal of type {} for the external database: it can only be "
+                "written in ClickHouse-specific syntax. Rewrite the query passed to the external "
+                "database without it",
+                literal->value.getTypeName());
     }
     for (auto & child : node->children)
         normalizeSubqueryForExternalDatabase(child, literal_escaping_style);
