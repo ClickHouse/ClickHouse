@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 
 #include <fmt/format.h>
 
@@ -1384,6 +1385,13 @@ TEST(PromQLParser, OctalTimestampOverflow)
 
     EXPECT_EQ(error_pos, 5);
     EXPECT_NE(error_message.find("Overflow"), String::npos);
+}
+
+
+TEST(PromQLParser, TimeSeriesNumberFormatsRemainDecimal)
+{
+    EXPECT_EQ(parseTimeSeriesTimestamp("0755", 3).value, 755000);
+    EXPECT_EQ(parseTimeSeriesDuration("0755", 3).value, 755000);
 }
 
 
