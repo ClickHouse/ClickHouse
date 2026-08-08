@@ -4,7 +4,7 @@
 /// `Common/MemoryTracker.cpp` and friends. They are deliberately NOT built here:
 ///
 ///   * stack traces need libunwind, DWARF parsing and a patched libc++
-///     (`Common/Exception.cpp` static_asserts on `STD_EXCEPTION_HAS_STACK_TRACE`),
+///     (`STD_EXCEPTION_HAS_STACK_TRACE`, which is 0 here),
 ///   * memory tracking and thread status need thread-local server bookkeeping,
 ///   * logging needs Poco's channel/formatter machinery.
 ///

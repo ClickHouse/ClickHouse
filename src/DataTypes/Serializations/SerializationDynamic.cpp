@@ -816,8 +816,15 @@ static ReturnType deserializeVariant(
     auto & variant = variant_column.getVariantByGlobalDiscriminator(global_discr);
     if constexpr (std::is_same_v<ReturnType, bool>)
     {
+        /// The caller tries each variant in turn, so a failed attempt must leave the variant
+        /// untouched: a row kept here would have no discriminator and no offset pointing at it.
+        size_t prev_size = variant.size();
         if (!deserialize(*variant_serialization, variant, istr))
+        {
+            if (variant.size() > prev_size)
+                variant.popBack(variant.size() - prev_size);
             return ReturnType(false);
+        }
     }
     else
     {
