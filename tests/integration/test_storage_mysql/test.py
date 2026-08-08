@@ -1555,6 +1555,31 @@ def test_mysql_ssl_empty_override_is_rejected(started_cluster):
             node1.query(f"SELECT count() FROM mysql(mysql_with_ssl, {key} = '')")
         assert "cannot be overridden with an empty" in str(exception.value)
 
+    # The rejection must not depend on the form the collection stores the credential in: a
+    # collection carrying the contents (`ssl_ca_pem`) rather than a path is stripped of its CA by
+    # an empty override just the same. This used to slip through the empty-path fast path, which
+    # returned before the query-override check ran.
+    node1.query("DROP NAMED COLLECTION IF EXISTS mysql_ssl_contents_nc")
+    node1.query(
+        f"""
+        CREATE NAMED COLLECTION mysql_ssl_contents_nc AS
+            user = 'ssl_user', password = '', host = 'mysql80', port = 3306,
+            database = 'clickhouse', table = 'test_table',
+            ssl_ca_pem = {quote_certificate("ca.pem")},
+            ssl_cert_pem = {quote_certificate("client-cert.pem")},
+            ssl_key_pem = {quote_certificate("client-key.pem")}
+        """
+    )
+    try:
+        for key in ["ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"]:
+            with pytest.raises(QueryRuntimeException) as exception:
+                node1.query(
+                    f"SELECT count() FROM mysql(mysql_ssl_contents_nc, {key} = '')"
+                )
+            assert "cannot be overridden with an empty" in str(exception.value)
+    finally:
+        node1.query("DROP NAMED COLLECTION mysql_ssl_contents_nc")
+
     # The table and database engines share `getSSLParams` with the table function; the engine form
     # is rejected when the storage is created. (The database engine cannot be exercised with
     # `mysql_with_ssl` because it refuses the collection's `table` key before reading the TLS keys.)
