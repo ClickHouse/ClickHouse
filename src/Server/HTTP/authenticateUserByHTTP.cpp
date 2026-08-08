@@ -177,13 +177,10 @@ bool authenticateUserByHTTP(
     if (has_ssl_certificate_auth)
     {
 #if USE_SSL
-        /// For SSL certificate authentication we extract the user name from the "X-ClickHouse-User" HTTP header.
-        /// If the header is not set (or empty), the certificate must authenticate the default session user.
-        if (user.empty())
-            user = default_session_user;
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, request.clientAddress());
-
-        /// It is prohibited to mix different authorization schemes.
+        /// It is prohibited to mix different authorization schemes. The mix is rejected before
+        /// the empty user name is resolved through the default session user: a handler with
+        /// fixed credentials ignores the setting, so a stray incomplete authentication header
+        /// must produce the mixed-authentication error, not an anonymous-login reject.
         if (has_config_credentials)
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication set in config");
         if (!password.empty())
@@ -192,6 +189,12 @@ bool authenticateUserByHTTP(
             throwMultipleAuthenticationMethods("SSL certificate authentication", "Authorization HTTP header");
         if (has_credentials_in_query_params)
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via parameters");
+
+        /// For SSL certificate authentication we extract the user name from the "X-ClickHouse-User" HTTP header.
+        /// If the header is not set (or empty), the certificate must authenticate the default session user.
+        if (user.empty())
+            user = default_session_user;
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, request.clientAddress());
 
         if (peer_certificate)
             certificate_subjects = peer_certificate->extractAllSubjects();
@@ -207,19 +210,20 @@ bool authenticateUserByHTTP(
     }
     else if (has_auth_headers)
     {
-        /// The client passed "X-ClickHouse-Key" without "X-ClickHouse-User" (or with an empty one):
-        /// the password is checked against the default session user.
-        if (user.empty())
-            user = default_session_user;
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, request.clientAddress());
-
-        /// It is prohibited to mix different authorization schemes.
+        /// It is prohibited to mix different authorization schemes. The mix is rejected before
+        /// the empty user name is resolved through the default session user (see above).
         if (has_config_credentials)
             throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication set in config");
         if (has_http_credentials)
             throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "Authorization HTTP header");
         if (has_credentials_in_query_params)
             throwMultipleAuthenticationMethods("X-ClickHouse HTTP headers", "authentication via parameters");
+
+        /// The client passed "X-ClickHouse-Key" without "X-ClickHouse-User" (or with an empty one):
+        /// the password is checked against the default session user.
+        if (user.empty())
+            user = default_session_user;
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context, session, request.clientAddress());
     }
     else if (has_http_credentials)
     {

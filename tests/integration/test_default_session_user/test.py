@@ -214,6 +214,23 @@ def test_fixed_user_handler_with_anonymous_logins_disabled():
         assert exc_info.value.code == 403
 
 
+def test_fixed_user_handler_with_stray_auth_header():
+    # A fixed-user handler ignores `default_session_user`, so a request that also
+    # carries an (incomplete) `X-ClickHouse-Key` header without a user name must be
+    # rejected with the mixed-authentication error, not resolved through the (empty)
+    # default session user and rejected as a prohibited anonymous login.
+    url = f"http://{node1.ip_address}:8129/fixed"
+    request = urllib.request.Request(url, headers={"X-ClickHouse-Key": "irrelevant"})
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(request, timeout=10)
+    body = exc_info.value.read().decode("utf-8")
+    assert (
+        "it is not allowed to use X-ClickHouse HTTP headers"
+        " and authentication set in config simultaneously" in body
+    )
+    assert "empty user name" not in body
+
+
 def grpc_execute(query, node=node1, user_name=None):
     """Run a query over gRPC and return the raw result, which may carry an exception."""
     channel = grpc.insecure_channel(f"{node.ip_address}:9100")
