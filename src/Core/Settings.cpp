@@ -119,7 +119,7 @@ Supported values:
 - `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
-- `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `allow_experimental_json_ast_dialect`.
+- `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
 )", 0)\
     DECLARE(UInt64, min_compress_block_size, 65536, R"(
 For [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
@@ -3296,8 +3296,9 @@ determined by the 'timeout_overflow_mode', which by default is set to `throw`.
 
 :::note
 The timeout is checked and the query can stop only in designated places during data processing.
-It currently cannot stop during merging of aggregation states or during query analysis,
-and the actual run time will be higher than the value of this setting.
+It currently cannot stop during merging of aggregation states, nor during most of query analysis
+(establishing a connection to a remote replica is one place where it can), and the actual run time
+will be higher than the value of this setting.
 :::
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode, OverflowMode::THROW, R"(
@@ -6896,6 +6897,9 @@ Limit on size of a single batch of file segments that a read buffer can request 
     DECLARE(UInt64, filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, 1000, R"(
 Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
+    DECLARE(UInt64, filesystem_cache_wait_for_concurrent_download_timeout_milliseconds, 1000, R"(
+Maximum time to wait for a file segment which is being downloaded to the filesystem cache by a concurrent query. When the timeout is reached, the read bypasses the filesystem cache for that range and reads directly from remote storage, while the concurrent download continues to fill the cache. Value `0` means do not wait at all: bypass the cache immediately if the needed range is not downloaded yet. Lowering this value bounds the tail latency of cache-hit reads which would otherwise wait for another query's download pace at the cost of additional requests to remote storage.
+)", 0) \
     DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
 Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
 )", 0) \
@@ -8539,7 +8543,7 @@ Enable PRQL - an alternative to SQL.
     DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_json_ast_dialect, false, R"(
+    DECLARE(Bool, enable_json_ast_dialect, false, R"(
 Enable the `clickhouse_json` value of the `dialect` setting.
 
 When `dialect` is set to `clickhouse_json`, queries are interpreted as JSON ASTs
@@ -8548,7 +8552,7 @@ parsed as plain SQL so that the dialect can be switched back.
 
 Example:
 ```sql
-SET allow_experimental_json_ast_dialect = 1;
+SET enable_json_ast_dialect = 1;
 SET dialect = 'clickhouse_json';
 
 -- Subsequent queries are parsed as JSON ASTs:
