@@ -325,7 +325,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
         /// Keep only the tokens whose own rows landed in this partition, so a coalesced async
         /// insert does not register a token in partitions it never wrote to.
-        auto current_deduplication_info = deduplication_info->filterToPartition(partition_selector, part_index);
+        auto current_deduplication_info = deduplication_info->filterToPartition(partition_selector, part_index, deduplicate);
 
         {
             ProfileEventTimeIncrement<Microseconds> duplication_elapsed(ProfileEvents::DuplicationElapsedMicroseconds);
@@ -451,6 +451,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
             while (true)
             {
                 partition.temp_part->finalize();
+                partition.temp_part->part->getDataPartStorage().commitTransaction();
                 auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(partition.block_with_partition.partition_id, deduplicate);
                 auto deduplication_blocks_ids = getDeduplicationBlockIds(deduplication_hashes);
 

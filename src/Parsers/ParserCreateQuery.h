@@ -171,7 +171,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserCollation collation_parser;
     ParserStatisticsType stat_type_parser;
     ParserExpression expression_parser;
-    ParserSetQuery settings_parser(true);
+    /// Column-level settings are consumed as a raw `SettingsChanges` (see
+    /// `MergeTreeColumnSettings::validate`), so nothing there knows the settings schema and could
+    /// reject a valueless setting. There is nothing to allow anyway: every setting permitted at
+    /// column level is a number, and `name` with no value only ever means `name = true`.
+    ParserSetQuery settings_parser(/* parse_only_internals_ = */ true, /* shorthand_syntax_ = */ false);
 
     /// mandatory column name
     ASTPtr name;
@@ -213,6 +217,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr collation_expression;
     ASTPtr settings;
     bool primary_key_specifier = false;
+    /// The type as written in the query - what `astText` needs when there is no formatter.
+    std::string_view type_text;
 
     auto null_check_without_moving = [&]() -> bool
     {
@@ -243,8 +249,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         if (check_type_keyword && !s_type.ignore(pos, expected))
             return false;
+        Pos type_begin = pos;
         if (!type_parser.parse(pos, type, expected))
             return false;
+        type_text = textBetween(type_begin, pos);
         if (s_collate.ignore(pos, expected)
             && !collation_parser.parse(pos, collation_expression, expected))
             return false;
@@ -305,10 +313,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = make_intrusive<ASTExpressionList>();
             default_function->children.push_back(default_function->arguments);
-            /// Not `formatForLogging`: that hides secrets, which a data type does not have, and
-            /// runs the server's `query_masking_rules` over the result, which it must not - this
-            /// string is the type, and `defaultValueOfTypeName` has to parse it back.
-            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatWithSecretsOneLine()));
+            /// Not formatted at all: the type is taken from the query text as written, so
+            /// `defaultValueOfTypeName` parses back exactly what the user wrote. This also subsumes
+            /// master's move away from `formatForLogging`, which hid secrets a data type does not
+            /// have and ran the server's `query_masking_rules` over the result.
+            /// Reached only when a type was parsed above, which is what fills in `type_text`.
+            chassert(!type_text.empty());
+            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(astText(*type, type_text)));
             default_expression = default_function;
         }
 

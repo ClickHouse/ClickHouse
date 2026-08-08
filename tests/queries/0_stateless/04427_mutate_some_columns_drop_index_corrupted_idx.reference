@@ -1,0 +1,17 @@
+A_corrupted_orphan_on_disk:
+1
+A_orphan_after_update:
+0
+A_check_table:
+1
+1
+B_corrupted_orphan_on_disk:
+1
+B_orphan_after_drop_index:
+0
+B_check_table:
+1
+C_healthy_prunes_after_update:
+1
+C_check_table:
+1
