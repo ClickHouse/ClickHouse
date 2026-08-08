@@ -118,6 +118,7 @@ void registerInputFormatOne(FormatFactory & factory);
 #if USE_HIVE
 void registerInputFormatHiveText(FormatFactory & factory);
 #endif
+void registerOutputFormatHiveText(FormatFactory & factory);
 
 /// Non trivial prefix and suffix checkers for disabling parallel parsing.
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
@@ -276,6 +277,7 @@ void registerFormats()
 #if USE_HIVE
     registerInputFormatHiveText(factory);
 #endif
+    registerOutputFormatHiveText(factory);
 
     registerInputFormatCapnProto(factory);
     registerInputFormatMySQLDump(factory);
