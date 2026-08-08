@@ -106,7 +106,10 @@ void SetOrJoinSink::consume(Chunk & chunk)
 {
     Block block = getHeader().cloneWithColumns(chunk.getColumns());
 
-    table.insertBlock(block, getContext());
+    /// Stage the block in the temporary backup file before mutating the in-memory state: if the
+    /// disk rejects the write (for example, a `borrow_from_cache` disk whose cache is not
+    /// registered is read-only), the failed `INSERT` must not leave the rows visible in memory.
+    /// The temporary file itself is discarded unless the whole insert finishes successfully.
     if (persistent)
     {
         if (!backup_buf)
@@ -117,6 +120,8 @@ void SetOrJoinSink::consume(Chunk & chunk)
         }
         backup_stream->write(block);
     }
+
+    table.insertBlock(block, getContext());
 }
 
 void SetOrJoinSink::onFinish()
