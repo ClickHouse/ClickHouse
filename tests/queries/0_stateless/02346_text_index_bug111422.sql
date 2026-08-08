@@ -44,3 +44,36 @@ ORDER BY ALL
 LIMIT 681;
 
 DROP TABLE tab;
+
+SELECT '-- the lazy materialization pass is reached (plan oracle)';
+
+-- The two queries above assert results only, so a refactor that stops routing their shape
+-- into the lazy materialization pass would unarm them silently. This group asserts the plan
+-- shape instead. It needs a deferrable non-key column, which `tab` does not have.
+DROP TABLE IF EXISTS tab_lazy;
+
+CREATE TABLE tab_lazy
+(
+    id UInt32,
+    pad String,
+    map Map(String, String),
+    INDEX idx_mv mapValues(map) TYPE text(tokenizer = 'array') GRANULARITY 100000000,
+    INDEX idx_mk mapKeys(map)   TYPE text(tokenizer = 'array') GRANULARITY 100000000
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_lazy VALUES (1, 'p', {'127.0.0.1':'a', '::1':'b'}), (2, 'q', {'x':'y'});
+
+SELECT countIf(explain LIKE '%LazilyReadFromMergeTree%') > 0,
+       countIf(explain LIKE '%__text_index_%') > 0
+FROM (
+    EXPLAIN actions = 1
+    SELECT id, pad FROM tab_lazy
+    PREWHERE 'a' IN (map['127.0.0.1'])
+    WHERE map['::1'] IN 'b'
+    ORDER BY id
+    LIMIT 681
+);
+
+DROP TABLE tab_lazy;
