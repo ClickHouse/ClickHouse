@@ -185,7 +185,6 @@ target_include_directories (parser SYSTEM PRIVATE
     "${CH}/contrib/wyhash"
     "${CH}/contrib/xxHash"
     "${CH}/contrib/double-conversion"
-    "${CH}/contrib/dragonbox/include"
     "${CH}/contrib/fast_float/include"
     "${CH}/contrib/re2"
     "${CH}/contrib/sparsehash-c11"

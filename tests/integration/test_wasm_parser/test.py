@@ -37,9 +37,50 @@ CONFIGURATIONS = [
     ),
 ]
 
+# Every contrib submodule the CMake project reaches (the rest of contrib it names is vendored
+# in-tree). The CI workspace is checked out without submodules - only the build jobs fetch
+# them - so the tree handed to the builder would otherwise be missing these sources.
+SUBMODULES = [
+    "contrib/abseil-cpp",
+    "contrib/boost",
+    "contrib/cctz",
+    "contrib/croaring",
+    "contrib/double-conversion",
+    "contrib/fast_float",
+    "contrib/fmtlib",
+    "contrib/libdivide",
+    "contrib/magic_enum",
+    "contrib/miniselect",
+    "contrib/re2",
+    "contrib/sparsehash-c11",
+    "contrib/wyhash",
+    "contrib/xxHash",
+    "contrib/zmij",
+]
+
 
 @pytest.fixture(scope="module")
 def builder():
+    # A no-op when the submodules are already there (a local run).
+    run_and_check(
+        [
+            "git",
+            "-C",
+            CLICKHOUSE_DIR,
+            "submodule",
+            "update",
+            "--init",
+            "--depth",
+            "1",
+            "--single-branch",
+            "--jobs",
+            "10",
+            "--",
+        ]
+        + SUBMODULES,
+        timeout=600,
+    )
+
     compose = os.path.join(DOCKER_COMPOSE_PATH, "docker_compose_wasm_builder.yml")
     os.environ["WASM_BUILDER_SOURCE_DIR"] = CLICKHOUSE_DIR
     run_and_check(
