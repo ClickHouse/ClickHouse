@@ -21,9 +21,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #
 # Both `http_wait_end_of_query` and `http_response_buffer_size` are pinned because the test
 # harness randomizes them and each nonzero value routes the output through a cascade buffer,
-# which is a different path (tested below).
+# which is a different path (tested below). `interactive_delay` is pinned to one hour because
+# framed `progress` packets are throttled by it: with the default 100 ms, a slow run of the
+# failing query emits a `progress` packet before the fault fires, and it is flushed straight to
+# the client (the response buffer is zero), so the aborted response would not be empty.
 
-URL_STREAMING="${CLICKHOUSE_URL}&framing_output_format=JSONEachPacketString&http_wait_end_of_query=0&http_response_buffer_size=0&max_threads=1&output_format_parallel_formatting=0&send_profile_events=1"
+URL_STREAMING="${CLICKHOUSE_URL}&framing_output_format=JSONEachPacketString&http_wait_end_of_query=0&http_response_buffer_size=0&max_threads=1&output_format_parallel_formatting=0&send_profile_events=1&interactive_delay=3600000000"
 
 echo '--- a failure while delivering the framed exception aborts a buffered, not yet started response'
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT framing_exception_packet_throw"
