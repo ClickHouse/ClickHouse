@@ -82,7 +82,7 @@ Rows are joined if the whole complex condition is met. If the conditions are not
 The `OR` operator inside the `ON` clause works using the hash join algorithm — for each `OR` argument with join keys for `JOIN`, a separate hash table is created, so memory consumption and query execution time grow linearly with an increase in the number of expressions `OR` of the `ON` clause.
 
 <Note>
-A condition that references columns from different tables may use any operator. Only conditions that use the equality operator (`=`) become join keys; the rest are evaluated on the joined rows. An `ON` section that contains no equality between the two tables at all is executed as a [block nested loop join](#join-with-an-arbitrary-on-condition), unless another algorithm can claim the condition: an `ALL INNER JOIN` becomes a `CROSS JOIN` with the condition as a filter on top of it, and a condition made of two inequalities goes to `ie_join` when that algorithm is enabled.
+A condition that references columns from different tables may use any operator. Only conditions that use the equality operator (`=`) become join keys; the rest are evaluated on the joined rows. An `ON` section that contains no equality between the two tables at all is offered to three paths in turn, as described in [JOIN with an arbitrary ON condition](#join-with-an-arbitrary-on-condition): an eligible pair of inequalities goes to `ie_join` when that algorithm is enabled; an `ALL INNER JOIN` that `ie_join` did not claim becomes a `CROSS JOIN` with the condition as a filter on top of it, as long as `hash` is enabled; everything left is executed as a block nested loop join.
 </Note>
 
 **Example**
@@ -176,7 +176,7 @@ Clickhouse supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequali
 
 When the `ON` section contains an equality between the two tables next to the inequality, the equality is the join key and the inequality is checked on the rows it matched. Such a mixed condition is executed only by the `hash` and `grace_hash` join algorithms.
 
-When the `ON` section contains no equality between the two tables, there is no join key to match on. Two inequalities over the same pair of tables are executed by [`ie_join`](/reference/settings/session-settings/join#join_algorithm) when that algorithm is enabled; otherwise, and for any other shape of the condition, the join is executed as a [block nested loop join](#join-with-an-arbitrary-on-condition).
+When the `ON` section contains no equality between the two tables, there is no join key to match on. An eligible pair of inequalities over the same pair of tables is executed by [`ie_join`](/reference/settings/session-settings/join#join_algorithm) when that algorithm is enabled and the join type is one it supports. A condition `ie_join` does not claim goes to the next path: an `ALL INNER` join becomes a `CROSS JOIN` with the condition as a filter on top of it, as long as `hash` is enabled; every other join is executed as a [block nested loop join](#join-with-an-arbitrary-on-condition), where the whole routing — including what makes a pair of inequalities eligible — is described.
 
 **Example**
 
@@ -226,11 +226,21 @@ key4    f    2    3    4            0    0    \N
 
 ## JOIN with an arbitrary ON condition {#join-with-an-arbitrary-on-condition}
 
-The `ON` section may be an arbitrary boolean expression over the columns of both tables: a range check, an arithmetic comparison, or a call to any function. When such an expression contains no equality between the two tables, there is no join key to match rows on, and ClickHouse executes the join as a [block nested loop join](https://en.wikipedia.org/wiki/Nested_loop_join) — it materializes the right table and evaluates the condition on pairs of rows.
+The `ON` section may be an arbitrary boolean expression over the columns of both tables: a range check, an arithmetic comparison, or a call to any scalar function. When such an expression contains no equality between the two tables, there is no join key to match rows on, and ClickHouse can still execute the join, as a [block nested loop join](https://en.wikipedia.org/wiki/Nested_loop_join) — it materializes the right table and evaluates the condition on pairs of rows.
 
 Every join type and strictness is supported this way, except `ASOF JOIN` and `PASTE JOIN`, which prescribe the shape of their own condition, and `ANY FULL JOIN`, which is not implemented for any join. The block nested loop join is not one of the [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) values: it is the last resort, used only when no other algorithm can execute the condition. In `EXPLAIN` output it appears as a `BlockNestedLoopJoin` step.
 
-An `ON` section of this shape was rejected with `INVALID_JOIN_ON_EXPRESSION` before this operator existed; with the analyzer enabled (`enable_analyzer = 1`, the default) such a query now runs instead of failing. There is no setting that turns the operator off, so a condition that determines no join key is executed however expensive it turns out to be, bounded only by the general limits described below.
+Two other paths are tried before it, in this order. Each one either claims the condition or leaves it to the path below, so which of the three executes the join depends on the shape of the condition and on `join_algorithm`:
+
+1. `ie_join` claims an eligible pair of inequalities between the two tables when it is listed in `join_algorithm` — it is not listed by default — and the join type is one it supports: the `ALL` strictness of `INNER`, `LEFT`, `RIGHT` and `FULL`, and `SEMI` and `ANTI` of `LEFT` and `RIGHT`. An inequality is eligible when the algorithm orders its operands the way SQL compares them: it sorts by the column's internal total order, so an operand of type `Tuple`, `Dynamic` or `Variant`, at the top level or nested inside another type, is not eligible, because that order also orders values whose SQL comparison is `NULL` or an error. A join whose right side is a prepared lookup storage — a table with `ENGINE = Join`, a dictionary, or a key-value engine such as `EmbeddedRocksDB` — is never claimed either. A single inequality, an ineligible pair, a join type it does not support, or a `join_algorithm` that does not list it, goes to the next path.
+2. An `ALL INNER` join whose condition was not claimed above is rewritten to a `CROSS JOIN` with the whole condition applied afterwards, as long as `hash` is listed in `join_algorithm`, as it is by default. Any other kind or strictness, and an `ALL INNER` join under a `join_algorithm` that excludes `hash`, goes to the next path.
+3. The block nested loop join executes every condition that reaches it.
+
+So, with the default `join_algorithm`, `INNER JOIN t2 ON t1.a < t2.b` is executed as a `CROSS JOIN` with a filter, while the same condition under `LEFT JOIN`, or under `INNER JOIN` with `join_algorithm` set to a list without `hash`, is executed as a block nested loop join.
+
+A condition that reaches the block nested loop join was rejected with `INVALID_JOIN_ON_EXPRESSION` before this operator existed; with the analyzer enabled (`enable_analyzer = 1`, the default) such a query now runs instead of failing, unless it calls `arrayJoin`, as described below. The two paths above already ran their share of keyless conditions before the operator existed, and still do: an `ALL INNER` join ran as a `CROSS JOIN` with a filter, and `ie_join`, when enabled, ran the pairs of inequalities it claimed. No `join_algorithm` value turns the operator off — the paths above only divert particular shapes of condition to another algorithm — so a condition that determines no join key is executed however expensive it turns out to be, bounded only by the general limits described below.
+
+`arrayJoin` is the one function the operator cannot execute. It evaluates the condition over a batch of candidate row pairs and uses the result as a filter over that batch, so a condition that changes the row count answers for no pair; a condition routed to this operator that calls `arrayJoin` keeps failing with `INVALID_JOIN_ON_EXPRESSION`. The same condition may still run when an earlier path handles the join instead: the `CROSS JOIN` rewrite of an `ALL INNER` join applies the condition after the join, which places the `arrayJoin` outside the join itself.
 
 **Example**
 
