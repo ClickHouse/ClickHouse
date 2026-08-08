@@ -1,6 +1,9 @@
 SET enable_analyzer = 1;
--- Both settings are randomized by the test runner and are load-bearing here.
+-- Both settings are randomized by the test runner and are load-bearing here: with
+-- either off, `'lit' IN map[...]` keeps no text-index virtual column, so the
+-- heterogeneous-child header mismatch is never constructed.
 SET query_plan_direct_read_from_text_index = 1;
+SET query_plan_text_index_add_hint = 1;
 
 DROP TABLE IF EXISTS t_idx;
 DROP TABLE IF EXISTS t_plain;
@@ -26,8 +29,6 @@ SELECT id FROM merge(currentDatabase(), '^t_') WHERE 'prod' IN map['env'] ORDER 
 SELECT sum(id) FROM merge(currentDatabase(), '^t_') WHERE 'prod' IN map['env'];
 
 SELECT '-- only the virtual column used by the filter is read (mapKeys used, mapValues absent)';
--- Without the hint the predicate keeps no virtual column, so the assertion would hold vacuously.
-SET query_plan_text_index_add_hint = 1;
 SELECT countIf(explain LIKE '%__text_index_idx_map_keys_%') > 0, countIf(explain LIKE '%__text_index_idx_map_values_%')
 FROM (EXPLAIN header = 1 SELECT count() FROM merge(currentDatabase(), '^t_') WHERE 'prod' IN map['env']);
 
