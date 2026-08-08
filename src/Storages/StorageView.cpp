@@ -501,8 +501,15 @@ void StorageView::readImpl(
         /// view's projections and sit right on top of them. Marking the converting step on top as
         /// well seals the view: even if a later optimization rebuilds one of the inner steps and
         /// drops its flag, nothing from outside can enter the subplan.
-        if (markSecurityBarriers(root))
-            root->step->setSecurityBarrier();
+        markSecurityBarriers(root);
+        /// The converting step is sealed unconditionally, not only when the local walk marked a
+        /// step. `hides_rows` already means `canHideRows` could not prove the view row-preserving,
+        /// which is the case for a wrapper source — `Merge`, a remote table, a table function, or a
+        /// nested view — whose row-dropping happens below the source interface or inside its child
+        /// plans, where `markSecurityBarriers` (it walks only `node->children`) sees nothing to
+        /// mark. Without this seal such a wrapper would execute as an ordinary subplan and later
+        /// passes could move invoker-controlled work into it, undoing the fail-closed decision.
+        root->step->setSecurityBarrier();
     }
 }
 
