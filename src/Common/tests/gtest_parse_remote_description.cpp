@@ -1,5 +1,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>
+#include <Common/Stopwatch.h>
 
 #include <gtest/gtest.h>
 
@@ -50,9 +51,15 @@ TEST(ParseRemoteDescription, LongDescription)
     /// Parsing used to rebuild the accumulated strings once per character,
     /// which made it quadratic in the description length: a fuzzed 1 MiB
     /// zero-padded FixedString address hung the hung check in the stress test.
+    /// The time bound is what catches the regression: at 1 MiB the quadratic
+    /// version needs minutes (263 s under ASan) while the linear one needs
+    /// well under a second, so the bound has an order-of-magnitude margin
+    /// on both sides even under sanitizers.
     String long_host = "127.0.0.1:9004";
     long_host.resize(1 << 20, '\0');
+    Stopwatch watch;
     const auto res = parse(long_host, '|');
+    EXPECT_LT(watch.elapsedSeconds(), 30);
     ASSERT_EQ(res.size(), 1);
     EXPECT_EQ(res[0], long_host);
 }
