@@ -39,16 +39,26 @@ do
     sleep 0.1
 done
 
-$CLICKHOUSE_CLIENT -q "system flush logs text_log"
+$CLICKHOUSE_CLIENT -q "system flush logs text_log, query_log"
 
 # 1: the cancellation must not be reported as a failure to drop the temporary table.
-# 2: the temporary table must really be gone, so that 1 cannot pass by merely silencing the message.
+# 2: the drop itself must not be cancelled, so that 1 cannot pass by merely silencing the message.
+#    The type restricts this to the drop; the refresh query is cancelled too and also logs code 394.
+# 3: the temporary table must really be gone.
 $CLICKHOUSE_CLIENT -q "
     select 'no spurious error', count() from system.text_log
         where event_date >= yesterday() and event_time >= now() - interval 10 minute
             and logger_name = 'StorageMaterializedView'
             and message like '%Failed to drop temporary table after refresh%'
             and message like '%' || currentDatabase() || '.v:%'
+        settings max_rows_to_read = 0;
+    select 'no cancelled temp drop', count() from system.query_log
+        where event_date >= yesterday() and event_time >= now() - interval 10 minute
+            and is_internal = 1
+            and current_database = currentDatabase()
+            and query like 'DROP TABLE IF EXISTS%.tmp.inner_id.%'
+            and type = 'ExceptionBeforeStart'
+            and exception_code = 394
         settings max_rows_to_read = 0;
     select 'temp table dropped', count() from system.tables
         where database = currentDatabase() and name like '.tmp.inner_id.%';
