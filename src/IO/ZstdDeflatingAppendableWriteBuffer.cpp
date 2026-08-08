@@ -28,9 +28,14 @@ ZstdDeflatingAppendableWriteBuffer::ZstdDeflatingAppendableWriteBuffer(
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD stream encoder init failed: ZSTD version: {}", ZSTD_VERSION_STRING);
     size_t ret = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, compression_level);
     if (ZSTD_isError(ret))
+    {
+        /// The destructor is not called if the constructor throws - free the just created context here.
+        ZSTD_freeCCtx(cctx);
+        cctx = nullptr;
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED,
                         "ZSTD stream encoder option setting failed: error code: {}; zstd version: {}",
                         ret, ZSTD_VERSION_STRING);
+    }
 
     input = {nullptr, 0, 0};
     output = {nullptr, 0, 0};
