@@ -31,17 +31,30 @@ ValueType avgResultToValue(Float64 v, UInt32 scale = 0)
     if (std::isnan(v))
         return ValueType(0);
 
+    using ResultNativeType = NativeType<ValueType>;
+
+    /// The exact average always lies within the range of the inputs, but the Float64 computation
+    /// is inexact: for inputs near the bounds of the native type it can land on a value the type
+    /// cannot represent (2^63 exactly for Int64 at the upper bound), and the cast would be
+    /// undefined behavior. Clamp to the representable range instead.
+    const auto saturating_cast = [](Float64 rounded)
+    {
+        if (rounded >= static_cast<Float64>(std::numeric_limits<ResultNativeType>::max()))
+            return std::numeric_limits<ResultNativeType>::max();
+        if (rounded <= static_cast<Float64>(std::numeric_limits<ResultNativeType>::lowest()))
+            return std::numeric_limits<ResultNativeType>::lowest();
+        return static_cast<ResultNativeType>(rounded);
+    };
+
     if constexpr (is_decimal<ValueType>)
     {
         const auto mult = DecimalUtils::scaleMultiplier<ValueType>(scale);
         const Float64 scaled = v * static_cast<Float64>(mult);
-        const auto rounded = roundWithMode(scaled, RoundingMode::Round);
-        return ValueType(static_cast<typename ValueType::NativeType>(rounded));
+        return ValueType(saturating_cast(roundWithMode(scaled, RoundingMode::Round)));
     }
     else
     {
-        const auto rounded = roundWithMode(v, RoundingMode::Round);
-        return static_cast<ValueType>(rounded);
+        return ValueType(saturating_cast(roundWithMode(v, RoundingMode::Round)));
     }
 }
 
