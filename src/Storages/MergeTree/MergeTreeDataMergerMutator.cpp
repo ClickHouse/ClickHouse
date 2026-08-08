@@ -503,7 +503,18 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     const String partition_id = future_part->part_info.getPartitionId();
     auto is_cancelled = [&blocker = merges_blocker, merge_entry, partition_id]()
     {
-        return blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled;
+        /// Persist a detected cancellation: the IO layer and the interactive-cancel callback poll this
+        /// independently, so a blocker released in between must not resurrect the read.
+        if ((*merge_entry)->is_cancelled.load(std::memory_order_relaxed))
+            return true;
+
+        if (blocker.isCancelledForPartition(partition_id))
+        {
+            (*merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+            return true;
+        }
+
+        return false;
     };
     context->setInteractiveCancelCallback(is_cancelled);
 

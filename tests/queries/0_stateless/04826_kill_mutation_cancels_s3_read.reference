@@ -4,3 +4,5 @@ cancelled, not S3 error: 1
 dropped: 0
 stop merges: mutation started: 1
 stop merges cancels the read: 1
+toggle: mutation started: 1
+toggle stop/start cancels the read: 1
