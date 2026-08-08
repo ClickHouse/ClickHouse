@@ -164,5 +164,24 @@ $CLICKHOUSE_CLIENT $POLY_CH -q "INSERT INTO t SELECT * FROM input('x Int32') FOR
 echo "--- no insert from an input() query without data (expect: 112 7) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# A polyglot INSERT that the server rejects before parsing (the bundled dialects cannot transpile
+# INSERT ... FORMAT) must not leak its inline data into the logs either. On the exception-before-start
+# path no AST exists to tell the INSERT header apart from the data, so the server logs only the prefix
+# that cannot contain a literal value. 987654321 is a sentinel that only appears in the data section,
+# so it must be absent from the query recorded for the ExceptionBeforeStart entry.
+leak_id="${CLICKHOUSE_DATABASE}_04512_exc_leak"
+${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query_id=${leak_id}" -d 'INSERT INTO t FORMAT CSV
+987654321' 2>&1 | grep -om1 "SYNTAX_ERROR"
+exc_leak_check=""
+for _ in {1..100}
+do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    exc_leak_check=$($CLICKHOUSE_CLIENT -q "SELECT query NOT LIKE '%987654321%' AND query ILIKE 'INSERT INTO%' FROM system.query_log WHERE query_id = '$leak_id' AND type = 'ExceptionBeforeStart' AND current_database = currentDatabase()")
+    [ -n "$exc_leak_check" ] && break
+    sleep 0.3
+done
+echo "--- exception-before-start log omits the inline INSERT data (expect: 1) ---"
+echo "$exc_leak_check"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"

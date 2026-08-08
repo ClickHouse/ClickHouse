@@ -39,3 +39,6 @@ NOT_IMPLEMENTED
 NO_DATA_TO_INSERT
 --- no insert from an input() query without data (expect: 112 7) ---
 112	7
+SYNTAX_ERROR
+--- exception-before-start log omits the inline INSERT data (expect: 1) ---
+1

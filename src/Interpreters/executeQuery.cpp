@@ -277,6 +277,65 @@ static bool hasTranspiledInlineData(const ASTInsertQuery & insert, const Context
     return insert.data >= transpiled.data() && insert.data <= transpiled.data() + transpiled.size();
 }
 
+/// When a polyglot query fails before an AST exists (e.g. the transpiler rejects it), there is
+/// no way to tell the INSERT header apart from the inline data: the boundary is only known after
+/// transpiling and parsing, and the foreign-dialect text cannot be parsed here. Fail close so that
+/// inline row values are never written to `system.query_log` and friends: if the statement looks
+/// like a data-carrying INSERT, keep only the prefix that cannot contain a literal value — cut at
+/// the first character that may start one (an opening parenthesis, a quote, or a number).
+static String redactPolyglotQueryForLogging(const char * begin, const char * end)
+{
+    const char * pos = begin;
+
+    /// Skip leading whitespace and comments to find the first keyword.
+    while (pos < end)
+    {
+        if (isWhitespaceASCII(*pos))
+        {
+            ++pos;
+        }
+        else if (pos + 1 < end && pos[0] == '-' && pos[1] == '-')
+        {
+            while (pos < end && *pos != '\n')
+                ++pos;
+        }
+        else if (pos + 1 < end && pos[0] == '/' && pos[1] == '*')
+        {
+            pos += 2;
+            while (pos + 1 < end && !(pos[0] == '*' && pos[1] == '/'))
+                ++pos;
+            pos = std::min(pos + 2, end);
+        }
+        else
+            break;
+    }
+
+    const auto starts_with_keyword = [&](std::string_view keyword)
+    {
+        if (static_cast<size_t>(end - pos) <= keyword.size())
+            return false;
+        return strncasecmp(pos, keyword.data(), keyword.size()) == 0 && !isWordCharASCII(pos[keyword.size()]);
+    };
+
+    /// Only INSERT-like statements carry inline data; log any other failed query as-is.
+    if (!starts_with_keyword("INSERT") && !starts_with_keyword("REPLACE"))
+        return String(begin, end);
+
+    const char * cut = pos;
+    while (cut < end)
+    {
+        char c = *cut;
+        if (c == '(' || c == '\'' || c == '"' || c == '`')
+            break;
+        /// A digit starts a literal unless it continues an identifier such as `t2`.
+        if (isNumericASCII(c) && (cut == pos || !isWordCharASCII(cut[-1])))
+            break;
+        ++cut;
+    }
+
+    return String(begin, cut);
+}
+
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 {
     if (settings[Setting::max_ast_depth])
@@ -1578,7 +1637,15 @@ static BlockIO executeQueryImpl(
     {
         /// Anyway log the query.
         if (query.empty())
-            query.assign(begin, std::min(static_cast<size_t>(end - begin), max_query_size));
+        {
+            const char * log_end = begin + std::min(static_cast<size_t>(end - begin), max_query_size);
+            /// A polyglot query that failed this early may be an INSERT whose inline data cannot be
+            /// separated from the header (no AST exists) — do not leak it into the logs (see above).
+            if (!internal && settings[Setting::dialect] == Dialect::polyglot)
+                query = redactPolyglotQueryForLogging(begin, log_end);
+            else
+                query.assign(begin, log_end);
+        }
 
         query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         logQuery(query_for_logging, context, internal, stage);
