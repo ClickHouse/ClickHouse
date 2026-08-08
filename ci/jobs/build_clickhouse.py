@@ -380,10 +380,12 @@ def main():
             targets = "fuzzers"
         elif build_type == BuildTypes.WASM64:
             # The multicall `clickhouse` binary builds and links for WebAssembly, and
-            # `clickhouse local` runs under Node.js >= 24 and in browsers (with the
-            # cross-origin isolation that pthreads-on-Workers require). Pinning the
-            # binary target keeps the whole tree - dbms, functions, programs and the
-            # `OS_WASM` platform arms - building for this target.
+            # `clickhouse local` executes queries under Node.js >= 24 - the smoke test
+            # below pins exactly that surface. The same module also runs in browsers
+            # (with the cross-origin isolation that pthreads-on-Workers require), but
+            # nothing in this job verifies the browser path yet. Pinning the binary
+            # target keeps the whole tree - dbms, functions, programs and the `OS_WASM`
+            # platform arms - building for this target.
             targets = "clickhouse"
         elif args.build_examples:
             targets = "clickhouse-bundle clickhouse-examples"
@@ -522,8 +524,9 @@ def main():
         # (since Emscripten 3.1.58 the pthread worker code is embedded in the main JS
         # file, so there is no `.worker.js` sidecar). Known upstream wart: after `exit(0)`
         # one Web Worker survives the runtime teardown and keeps the Node.js process
-        # alive, so the query runs under `timeout` and success is judged by the produced
-        # output, not the exit status.
+        # alive, so the query runs under `timeout` and an exit status of 124 counts as
+        # success alongside 0 - any other status (a trap, an uncaught exception, an
+        # engine crash) fails the job even when the expected output was produced.
         if res and build_type == BuildTypes.WASM64:
             smoke_dir = f"{temp_dir}/wasm_smoke"
             smoke_query = (
@@ -538,8 +541,8 @@ def main():
                         f"rm -rf {smoke_dir} && mkdir -p {smoke_dir}",
                         f"cp {build_dir}/programs/clickhouse.js {build_dir}/programs/clickhouse.wasm {smoke_dir}/",
                         "node --version",
-                        f'cd {smoke_dir} && (timeout 300 node clickhouse.js local --multiquery "{smoke_query}" > smoke.out 2> smoke.err || true)',
-                        f"cat {smoke_dir}/smoke.err",
+                        f'cd {smoke_dir} && timeout 300 node clickhouse.js local --multiquery "{smoke_query}" > smoke.out 2> smoke.err; '
+                        'status=$?; echo "exit status: $status"; cat smoke.err; [ "$status" -eq 0 ] || [ "$status" -eq 124 ]',
                         f"grep -x 1000-499500-999 {smoke_dir}/smoke.out",
                     ],
                 )
