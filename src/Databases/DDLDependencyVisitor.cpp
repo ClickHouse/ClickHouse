@@ -20,7 +20,11 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Common/isLocalAddress.h>
+#include <Common/parseAddress.h>
+#include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
+#include <Poco/Net/IPAddress.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Poco/String.h>
@@ -33,6 +37,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 table_function_remote_max_addresses;
 }
 
 namespace
@@ -450,9 +455,14 @@ namespace
             }
             else
             {
-                /// remote() and remoteSecure() are not fully supported. To properly support them we would need to check the first
-                /// argument to decide whether the host & port pattern specified in the first argument contains the local host or not
-                /// which is not trivial. For now we just always assume that the host & port pattern doesn't contain the local host.
+                /// For remote() / remoteSecure() the addresses are given inline. Whether such an address is
+                /// this server cannot be decided in full generality here (see
+                /// remoteFunctionAddressesContainLocalHost), but the decidable spellings - an IP literal or
+                /// `localhost` on the server's own port, e.g. the loop-back form `remote('127.0.0.1', ...)` -
+                /// are recognized, so a persisted target that reads a local table through them records a
+                /// referential dependency on it. Any other pattern keeps the long-standing assumption that
+                /// it does not contain the local host.
+                has_local_replicas = remoteFunctionAddressesContainLocalHost(function, function.name == "remoteSecure");
             }
 
             if (!function.arguments)
@@ -703,6 +713,58 @@ namespace
                 return cluster_name;
 
             return tryGetStringFromArgument(function, arg_idx);
+        }
+
+        /// Best-effort check whether the address pattern of a `remote()` / `remoteSecure()` call names this
+        /// server. At read time the function builds its cluster from the pattern and marks an address local
+        /// exactly when `isLocalAddress` accepts its IP and its port is the server's own TCP port. Resolving
+        /// an arbitrary host name the same way would require a DNS lookup, which this analysis cannot afford:
+        /// it is re-run from metadata at server startup, where a slow or unavailable resolver would block
+        /// loading the tables. So only the spellings that need no resolution are recognized - an IP literal
+        /// and `localhost` - and any other host is assumed non-local, as this analysis has always assumed
+        /// for the whole pattern.
+        bool remoteFunctionAddressesContainLocalHost(const ASTFunction & function, bool secure) const
+        {
+            auto addresses_expr = tryGetStringFromArgument(function, 0);
+            if (!addresses_expr)
+                return false;
+
+            UInt16 clickhouse_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
+            if (!clickhouse_port)
+                return false;
+
+            try
+            {
+                size_t max_addresses = global_context->getSettingsRef()[Setting::table_function_remote_max_addresses];
+                for (const auto & shard : parseRemoteDescription(*addresses_expr, 0, addresses_expr->size(), ',', max_addresses))
+                {
+                    for (const auto & replica : parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses))
+                    {
+                        auto [host, port] = parseAddress(replica, clickhouse_port);
+                        if (port != clickhouse_port)
+                            continue;
+
+                        /// parseAddress keeps the square brackets of a bracketed IPv6 host.
+                        if (host.size() >= 2 && host.front() == '[' && host.back() == ']')
+                            host = host.substr(1, host.size() - 2);
+
+                        if (host == "localhost")
+                            return true;
+
+                        Poco::Net::IPAddress ip;
+                        if (Poco::Net::IPAddress::tryParse(host, ip) && isLocalAddress(ip))
+                            return true;
+                    }
+                }
+            }
+            catch (...)
+            {
+                /// A pattern this parsing rejects cannot be attributed to this server; the function itself
+                /// reports such a pattern when it is executed.
+                return false;
+            }
+
+            return false;
         }
     };
 
