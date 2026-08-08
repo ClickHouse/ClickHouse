@@ -375,6 +375,54 @@ ASTPtr makeNonConstantInReplacement(
     const auto & left_operand = arguments.at(0);
     const auto & right_operand = arguments.at(1);
 
+    /// The constant `Set` path decides `NULL IN (...)` under compare-nulls semantics purely
+    /// by `NULL` presence among the set elements, without requiring a common element type.
+    /// Mirror it row-wise as `or(isNull(e1), ..., isNull(en))` instead of building an
+    /// `array(...)` of the elements, which could fail with `NO_COMMON_TYPE` for a
+    /// heterogeneous RHS. An array RHS keeps the `has` rewrite: `has(arr, NULL)` already
+    /// tests `NULL` presence and the array has a common element type by construction.
+    const auto * left_literal = left_operand->as<ASTLiteral>();
+    if (left_literal && left_literal->value.isNull() && inFunctionComparesNulls(node.name) && !right_operand_is_array)
+    {
+        ASTPtr null_presence;
+        auto add_element_is_null = [&](ASTPtr element)
+        {
+            ASTPtr element_is_null = makeASTFunction("isNull", std::move(element));
+            if (null_presence)
+                null_presence = makeASTFunction("or", std::move(null_presence), std::move(element_is_null));
+            else
+                null_presence = std::move(element_is_null);
+        };
+
+        const auto * right_operand_function = right_operand->as<ASTFunction>();
+        const auto * right_operand_tuple_type = right_operand_type
+            ? typeid_cast<const DataTypeTuple *>(removeNullable(right_operand_type).get())
+            : nullptr;
+        if (right_operand_function && right_operand_function->name == "tuple" && right_operand_tuple_function_is_set)
+        {
+            for (const auto & child : right_operand_function->arguments->children)
+                add_element_is_null(child->clone());
+        }
+        else if (right_operand_tuple_type && !left_operand_is_tuple)
+        {
+            for (size_t i = 0; i != right_operand_tuple_type->getElements().size(); ++i)
+                add_element_is_null(
+                    makeASTFunction("tupleElement", right_operand->clone(), make_intrusive<ASTLiteral>(static_cast<UInt64>(i + 1))));
+        }
+        else
+        {
+            add_element_is_null(right_operand->clone());
+        }
+
+        if (!null_presence)
+            null_presence = make_intrusive<ASTLiteral>(0u);
+
+        if (isNegativeInFunctionName(node.name))
+            null_presence = makeASTFunction("not", std::move(null_presence));
+
+        return null_presence;
+    }
+
     ASTPtr right_operand_array = makeArrayForNonConstantInRightOperand(
         right_operand,
         right_operand_is_array,

@@ -1635,6 +1635,53 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         return ProjectionNames{proj};
                     }
 
+                    /// The constant `Set` path decides `NULL IN (...)` under compare-nulls semantics
+                    /// purely by `NULL` presence among the set elements, without requiring a common
+                    /// element type. Mirror it row-wise as `or(isNull(e1), ..., isNull(en))` instead
+                    /// of building an `array(...)` of the elements, which could fail with
+                    /// `NO_COMMON_TYPE` for a heterogeneous RHS.
+                    if (left_is_null && compare_nulls)
+                    {
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+
+                        QueryTreeNodes set_elements = getArrayElementsForInTupleArguments(tuple_args, in_first_argument, scope, expand_single_tuple_value);
+
+                        if (set_elements.empty())
+                        {
+                            node = std::make_shared<ConstantNode>(is_not_in ? Field{1u} : Field{0u}, std::make_shared<DataTypeUInt8>());
+                            return ProjectionNames{proj};
+                        }
+
+                        QueryTreeNodePtr null_presence;
+                        for (auto & element : set_elements)
+                        {
+                            auto is_null_fn = std::make_shared<FunctionNode>("isNull");
+                            is_null_fn->getArguments().getNodes().push_back(element);
+
+                            if (null_presence)
+                            {
+                                auto or_fn = std::make_shared<FunctionNode>("or");
+                                or_fn->getArguments().getNodes() = {std::move(null_presence), std::move(is_null_fn)};
+                                null_presence = std::move(or_fn);
+                            }
+                            else
+                            {
+                                null_presence = std::move(is_null_fn);
+                            }
+                        }
+
+                        if (is_not_in)
+                        {
+                            auto not_fn = std::make_shared<FunctionNode>("not");
+                            not_fn->getArguments().getNodes().push_back(std::move(null_presence));
+                            null_presence = std::move(not_fn);
+                        }
+
+                        node = std::move(null_presence);
+                        resolveFunction(node, scope);
+                        return ProjectionNames{proj};
+                    }
+
                     /// convert tuple to array and rewrite to has()
                     QueryTreeNodePtr array_arg = convertTupleToArray(tuple_args, in_first_argument, scope, expand_single_tuple_value);
                     return buildHasExpression(
