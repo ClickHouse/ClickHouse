@@ -278,12 +278,20 @@ Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedStat
             NullWriteBuffer null_buf;
             CompressedWriteBuffer compressed_buf(null_buf);
 
-            /// A hundred samples should be enough to get a good estimate, but they have to span the whole
-            /// table: iteration over the fixed-key hash tables goes in key order, so sampling only a prefix
-            /// would be biased whenever the state size correlates with the key. In single-level case
-            /// (bucket == -1) we have only one hash table, so we aim at ~100 samples from it. In two-level
-            /// case we sample across 256 buckets, so we take at most one sample per 100 states.
-            const auto period = std::max<size_t>((table.size() + 99) / 100, bucket == -1 ? 1 : 100);
+            /// The total is extrapolated from the sample mean, so the sample must be large enough for
+            /// skewed distributions - e.g. `uniqExact` or `groupArray` states where a few giant states
+            /// hold most of the bytes: whether the giants land on the sampled positions swings the
+            /// extrapolation several-fold, and the layout of a hash table depends on the insertion order,
+            /// so with a small sample the estimate is also unstable from run to run. In the single-level
+            /// case (bucket == -1) there is one hash table, and we aim at ~1000 samples from it, measuring
+            /// tables of up to a thousand states exactly. In the two-level case we sample across 256
+            /// buckets, taking at most one sample per 100 states, which also yields at least ~1000 samples
+            /// for any table large enough to have been converted. The samples have to span the whole
+            /// table: iteration over the fixed-key hash tables goes in key order, so sampling only a
+            /// prefix would be biased whenever the state size correlates with the key.
+            const auto period = bucket == -1
+                ? std::max<size_t>((table.size() + 999) / 1000, 1)
+                : std::max<size_t>((table.size() + 99) / 100, 100);
 
             size_t it = 0;
             table.forEachMapped(

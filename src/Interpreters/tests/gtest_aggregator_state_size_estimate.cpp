@@ -215,10 +215,74 @@ TEST(AggregatorStateSizeEstimate, SampleSpansTheWholeHashTable)
     aggregator.mergeOnBlock(columns, keys, /*is_overflows=*/false, *variants, no_more_keys, is_cancelled);
 
     const auto estimate = aggregator.estimateSizeOfCompressedState(*variants, /*bucket=*/-1);
-    /// A periodic sample of the whole table sees the large states in their real proportion; the sampling
-    /// error of ~86 samples is far below the >100x underestimation of a prefix-only sample.
+    /// A periodic sample of the whole table sees the large states in their real proportion (with 256
+    /// states the single-level sampling period is 1, so the sample is in fact exact), far from the
+    /// >100x underestimation of a prefix-only sample.
     EXPECT_GE(estimate.bytes * 2, total_serialized_bytes);
     EXPECT_LE(estimate.bytes, total_serialized_bytes * 2);
+}
+
+TEST(AggregatorStateSizeEstimate, SkewedStatesAreMeasuredExactly)
+{
+    tryRegisterAggregateFunctions();
+
+    /// A distribution where one giant state holds almost all of the bytes - the shape of e.g.
+    /// `uniqExact(UserID) GROUP BY MobilePhoneModel`, where the top group dominates. With a sparse
+    /// periodic sample the extrapolation from the sample mean would swing several-fold on whether the
+    /// giant lands on a sampled position (and the position depends on the hash table layout, i.e. on
+    /// the insertion order): a period of 6 would report either ~6x the real size or a few percent of
+    /// it. The single-level sampler aims at ~1000 samples, so a table of 512 states is measured exactly.
+    constexpr size_t keys = 512;
+    constexpr size_t large_state_values = 100000;
+
+    DataTypes argument_types = {std::make_shared<DataTypeUInt64>()};
+    AggregateFunctionProperties properties;
+    AggregateFunctionPtr function
+        = AggregateFunctionFactory::instance().get("groupArray", NullsAction::EMPTY, argument_types, {}, properties);
+    auto state_type = std::make_shared<DataTypeAggregateFunction>(function, argument_types, Array{});
+
+    auto values = ColumnUInt64::create();
+    for (size_t i = 0; i < large_state_values; ++i)
+        values->insert(UInt64(i));
+    const IColumn * arguments[1] = {values.get()};
+
+    auto states = state_type->createColumn();
+    auto & state_column = assert_cast<ColumnAggregateFunction &>(*states);
+    for (size_t key = 0; key < keys; ++key)
+    {
+        state_column.insertDefault();
+        const size_t state_values = key == 0 ? large_state_values : 1;
+        for (size_t i = 0; i < state_values; ++i)
+            function->add(state_column.getData()[key], arguments, i, &state_column.createOrGetArena());
+    }
+
+    size_t total_serialized_bytes = 0;
+    for (size_t key = 0; key < keys; ++key)
+        total_serialized_bytes += serializedStateSize(*function, state_column.getData()[key], std::nullopt);
+
+    AggregateDescription description;
+    description.function = function;
+    description.column_name = "st";
+
+    Block header;
+    header.insert({std::make_shared<DataTypeUInt64>()->createColumn(), std::make_shared<DataTypeUInt64>(), "k"});
+    header.insert({state_type->createColumn(), state_type, "st"});
+
+    Aggregator aggregator(header, makeMergeParams({"k"}, {description}));
+
+    auto key_column = ColumnUInt64::create();
+    for (size_t key = 0; key < keys; ++key)
+        key_column->insert(UInt64(key));
+
+    auto variants = std::make_shared<AggregatedDataVariants>();
+    bool no_more_keys = false;
+    std::atomic<bool> is_cancelled{false};
+    Columns columns = {std::move(key_column), states->getPtr()};
+    aggregator.mergeOnBlock(columns, keys, /*is_overflows=*/false, *variants, no_more_keys, is_cancelled);
+
+    const auto estimate = aggregator.estimateSizeOfCompressedState(*variants, /*bucket=*/-1);
+    EXPECT_EQ(estimate.bytes, total_serialized_bytes);
+    EXPECT_EQ(estimate.sample_bytes, total_serialized_bytes);
 }
 
 TEST(AggregatorStateSizeEstimate, WithoutKeyUsesExplicitStateVersion)
