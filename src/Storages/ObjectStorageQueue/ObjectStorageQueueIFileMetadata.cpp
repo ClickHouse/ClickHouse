@@ -326,7 +326,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
         {
             /// The failed node was cleaned up - reset cache and allow processing.
             LOG_TRACE(log, "File {} failed node was cleaned up externally, resetting cache state", path);
-            file_status->reset();
+            (*file_status).reset();
         }
         else if (path_state == PathState::Processed)
         {
@@ -398,7 +398,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         {
             /// The failed node was cleaned up - reset cache and allow processing.
             LOG_TRACE(log, "File {} failed node was cleaned up externally, resetting cache state", path);
-            file_status->reset();
+            (*file_status).reset();
         }
         else if (path_state == PathState::Processed)
         {
