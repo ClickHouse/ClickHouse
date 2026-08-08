@@ -17,6 +17,8 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/MergeTree/BoolMask.h>
 
+#include <numeric>
+
 #include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
 
@@ -550,7 +552,7 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     /// bulk path is never taken, so building the DAG would be wasted query-analysis work; skip
     /// it entirely and leave `minmax_actions` null, making the disabled setting a true no-op.
     ///
-    if (context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering])
+    if (context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering] && !alwaysUnknownOrTrue())
     {
         try
         {
@@ -1133,71 +1135,48 @@ MergeTreeIndexBulkGranulesPtr MergeTreeIndexMinMax::createIndexBulkGranules() co
     return std::make_shared<MergeTreeIndexBulkGranulesMinMaxFast>(index.sample_block, /*size_hint=*/1024);
 }
 
+Block MergeTreeIndexConditionMinMax::executeBulkActions(const MergeTreeIndexBulkGranulesMinMaxFast & bulk) const
+{
+    chassert(minmax_actions);
+    chassert(minmax_input_names.size() == bulk.cols.size());
+
+    Block block;
+    for (size_t i = 0; i < minmax_input_names.size(); ++i)
+    {
+        const auto & type = index_data_types[i];
+        const IColumn & min_ref = *bulk.cols[i].min_col;
+        const IColumn & max_ref = *bulk.cols[i].max_col;
+        block.insert(ColumnWithTypeAndName(min_ref.getPtr(), type, minmax_input_names[i].first));
+        block.insert(ColumnWithTypeAndName(max_ref.getPtr(), type, minmax_input_names[i].second));
+    }
+
+    size_t num_rows = bulk.size;
+    minmax_actions->execute(block, num_rows);
+    return block;
+}
+
 IMergeTreeIndexCondition::FilteredGranules MergeTreeIndexConditionMinMax::getPossibleGranules(
     const MergeTreeIndexBulkGranulesPtr & idx_granules) const
 {
     const auto & bulk = assert_cast<const MergeTreeIndexBulkGranulesMinMaxFast &>(*idx_granules);
-    const size_t n = bulk.size;
 
-    FilteredGranules all_granules;
-    all_granules.resize(n);
-    for (size_t i = 0; i < n; ++i)
-        all_granules[i] = i;
+    FilteredGranules all_granules(bulk.size);
+    std::iota(all_granules.begin(), all_granules.end(), 0);
+    if (!minmax_actions || minmax_input_names.size() != bulk.cols.size() || bulk.size == 0)
+        return all_granules;
 
-    if (n == 0)
-    {
-        FilteredGranules empty;
-        return empty;
-    }
+    Block block = executeBulkActions(bulk);
+    const auto & can_be_true = block.getByName(OUTPUT_CAN_BE_TRUE).column;
+    if (const auto * constant = typeid_cast<const ColumnConst *>(can_be_true.get()))
+        return constant->getUInt(0) == 0 ? FilteredGranules{} : all_granules;
 
-    /// Preferred path: delegate the RPN evaluation to the column engine. `minmax_actions` was
-    /// built at condition-construction time by lowering the RPN into operations over paired
-    /// (min, max) columns. We just assemble a Block with those columns and execute.
-    if (minmax_actions && minmax_input_names.size() == bulk.cols.size())
-    {
-        /// Build a block with the (min_c, max_c) columns for each index column. The bulk
-        /// container holds these as MutableColumnPtr; we hand the Block a shared ColumnPtr
-        /// view via getPtr() so the bulk container's ownership isn't disturbed.
-        Block block;
-        for (size_t i = 0; i < minmax_input_names.size(); ++i)
-        {
-            const auto & type = index_data_types[i];
-            const IColumn & min_ref = *bulk.cols[i].min_col;
-            const IColumn & max_ref = *bulk.cols[i].max_col;
-            block.insert(ColumnWithTypeAndName(min_ref.getPtr(), type, minmax_input_names[i].first));
-            block.insert(ColumnWithTypeAndName(max_ref.getPtr(), type, minmax_input_names[i].second));
-        }
-
-        size_t num_rows = n;
-        minmax_actions->execute(block, num_rows);
-
-        const auto & ctr_col_ref = block.getByName(OUTPUT_CAN_BE_TRUE).column;
-
-        /// Tautologically-true / tautologically-false conditions collapse the output to a
-        /// `ColumnConst`. Short-circuit those: skip materializing an n-row mask we already
-        /// know the value of.
-        if (const auto * const_col = typeid_cast<const ColumnConst *>(ctr_col_ref.get()))
-        {
-            if (const_col->getUInt(0) == 0)
-                return {};
-            return all_granules;
-        }
-
-        const auto & ctr_col = assert_cast<const ColumnUInt8 &>(*ctr_col_ref).getData();
-
-        FilteredGranules out;
-        out.reserve(ctr_col.size());
-        for (size_t i = 0; i < ctr_col.size(); ++i)
-            if (ctr_col[i])
-                out.push_back(i);
-        return out;
-    }
-
-    /// No DAG available and no other bulk path. Return `all_granules` to indicate "no pruning
-    /// from this index" (the caller then treats the index as a pass-through). The caller should
-    /// have filtered out this case via `hasBulkFastPath()` and skipped bulk entirely, so this
-    /// branch is mostly defensive.
-    return all_granules;
+    const auto & data = assert_cast<const ColumnUInt8 &>(*can_be_true).getData();
+    FilteredGranules out;
+    out.reserve(data.size());
+    for (size_t i = 0; i < data.size(); ++i)
+        if (data[i])
+            out.push_back(i);
+    return out;
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(

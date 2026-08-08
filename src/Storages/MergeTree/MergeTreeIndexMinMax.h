@@ -54,6 +54,9 @@ struct MergeTreeIndexAggregatorMinMax final : IMergeTreeIndexAggregator
 };
 
 
+struct MergeTreeIndexBulkGranulesMinMaxFast;
+struct MergeTreeIndexConditionMinMaxTestAccess;
+
 class MergeTreeIndexConditionMinMax final : public IMergeTreeIndexCondition
 {
 public:
@@ -96,6 +99,10 @@ public:
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
+    friend struct MergeTreeIndexConditionMinMaxTestAccess;
+
+    Block executeBulkActions(const MergeTreeIndexBulkGranulesMinMaxFast & bulk) const;
+
     /// Pre-built ExpressionActions that evaluates the KeyCondition against paired
     /// (min_c, max_c) columns per index column, producing two UInt8 output columns
     /// `__minmax_can_be_true` and `__minmax_can_be_false`. Non-null when every RPN

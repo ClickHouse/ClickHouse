@@ -18,7 +18,8 @@ SETTINGS index_granularity = 1;
 
 INSERT INTO t_minmax_typed_decimal VALUES (33.3), (33.4);
 
--- The scale-2 bound must not be narrowed to Decimal64(1): 33.3 < 33.33.
+-- Cross-scale Decimal comparisons require a transformed KeyCondition atom, so bulk
+-- evaluation must fall back rather than narrowing the bound to Decimal64(1).
 SELECT 'decimal cross-scale parity',
     (SELECT count() FROM t_minmax_typed_decimal WHERE x < toDecimal64('33.33', 2)
          SETTINGS use_minmax_index_bulk_filtering = 0) =
@@ -63,7 +64,7 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'decimal used bulk', ProfileEvents['IndexBulkFilteringEvaluatedGranules'] > 0
+SELECT 'decimal fell back', ProfileEvents['IndexBulkFilteringEvaluatedGranules'] = 0
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND log_comment = '04771_decimal_typed_bound'
