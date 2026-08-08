@@ -1,0 +1,4 @@
+decimal cross-scale parity	1	1
+datetime64 cross-scale parity	1	1
+decimal used bulk	1
+datetime64 used bulk	1

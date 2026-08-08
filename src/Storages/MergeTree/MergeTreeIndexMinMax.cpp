@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Analyzer/ConstantValue.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -14,7 +15,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/BoolMask.h>
 
 #include <Common/FieldAccurateComparison.h>
@@ -224,7 +224,15 @@ namespace
 
 KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
-    return KeyCondition{filter_dag, context, index.column_names, index.expression};
+    const bool preserve_typed_range_bounds = context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering];
+    return KeyCondition{
+        filter_dag,
+        context,
+        index.column_names,
+        index.expression,
+        /* single_point_ = */ false,
+        /* skip_analysis_ = */ false,
+        preserve_typed_range_bounds};
 }
 
 /// ============================================================================
@@ -258,20 +266,9 @@ const ActionsDAG::Node & addConstUInt8(ActionsDAG & dag, UInt8 value, const Stri
     return dag.addColumn(std::move(column), std::move(type), std::move(name));
 }
 
-/// Add a literal (constant) column with the given DataType and value. The KeyCondition's range
-/// bounds carry Fields whose underlying type does not always match the index column's
-/// `DataType` - e.g. an `event_time DateTime64` index against `event_time >= now() - 600` ends
-/// up with a `UInt64`-tagged Field bound while the column expects `Decimal64`. Run
-/// `convertFieldToType` so the Field is reshaped to what `createColumnConst` requires;
-/// returns `nullptr` (and the caller bails out of the bulk path) if no representable value
-/// exists in the target type.
-const ActionsDAG::Node * addLiteral(ActionsDAG & dag, const DataTypePtr & type, const Field & value, const String & name_hint)
+const ActionsDAG::Node & addLiteral(ActionsDAG & dag, const ConstantValue & value, const String & name_hint)
 {
-    Field converted = convertFieldToType(value, *type);
-    if (converted.isNull() && !value.isNull())
-        return nullptr;
-    auto column = type->createColumnConst(1, converted);
-    return &dag.addColumn(std::move(column), type, name_hint);
+    return dag.addColumn(value.getColumn(), value.getType(), name_hint);
 }
 
 const ActionsDAG::Node & addNamedFunction(ActionsDAG & dag, const String & fn_name, ActionsDAG::NodeRawConstPtrs children, ContextPtr context)
@@ -299,7 +296,7 @@ buildIntersectsAndContains(
         return {nullptr, nullptr};
     if (element.argument_num_of_space_filling_curve.has_value())
         return {nullptr, nullptr};
-    if (element.key_columns.size() != 1)
+    if (element.key_columns.size() != 1 || !element.typed_range_bounds)
         return {nullptr, nullptr};
 
     const size_t key_column = element.getKeyColumn();
@@ -309,13 +306,7 @@ buildIntersectsAndContains(
     const auto & min_node = *minmax_input_nodes[key_column].first;
     const auto & max_node = *minmax_input_nodes[key_column].second;
     const auto & column_type = index_data_types[key_column];
-
-    const Range & range = element.range;
-    const bool left_is_neg_inf = range.left.isNegativeInfinity();
-    const bool right_is_pos_inf = range.right.isPositiveInfinity();
-    /// "Inverted" infinities (left = +inf or right = -inf) shouldn't occur here; bail to be safe.
-    if (range.left.isPositiveInfinity() || range.right.isNegativeInfinity())
-        return {nullptr, nullptr};
+    const auto & bounds = *element.typed_range_bounds;
 
     /// intersects: the element's range overlaps the granule's range.
     /// contains:   the granule's range is fully inside the element's range.
@@ -324,32 +315,28 @@ buildIntersectsAndContains(
     const ActionsDAG::Node * contains_upper = nullptr;
     const ActionsDAG::Node * contains_lower = nullptr;
 
-    if (right_is_pos_inf)
+    if (!bounds.right)
     {
         intersects_upper = &addConstUInt8(dag, 1, "const_true");
         contains_upper = &addConstUInt8(dag, 1, "const_true");
     }
     else
     {
-        const auto * right_lit = addLiteral(dag, column_type, range.right, fmt::format("__minmax_lit_right_{}", key_column));
-        if (!right_lit)
-            return {nullptr, nullptr};
-        intersects_upper = &addNamedFunction(dag, range.right_included ? "lessOrEquals" : "less", {&min_node, right_lit}, context);
-        contains_upper = &addNamedFunction(dag, range.right_included ? "lessOrEquals" : "less", {&max_node, right_lit}, context);
+        const auto & right_lit = addLiteral(dag, *bounds.right, fmt::format("__minmax_lit_right_{}", key_column));
+        intersects_upper = &addNamedFunction(dag, bounds.right_included ? "lessOrEquals" : "less", {&min_node, &right_lit}, context);
+        contains_upper = &addNamedFunction(dag, bounds.right_included ? "lessOrEquals" : "less", {&max_node, &right_lit}, context);
     }
 
-    if (left_is_neg_inf)
+    if (!bounds.left)
     {
         intersects_lower = &addConstUInt8(dag, 1, "const_true");
         contains_lower = &addConstUInt8(dag, 1, "const_true");
     }
     else
     {
-        const auto * left_lit = addLiteral(dag, column_type, range.left, fmt::format("__minmax_lit_left_{}", key_column));
-        if (!left_lit)
-            return {nullptr, nullptr};
-        intersects_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&max_node, left_lit}, context);
-        contains_lower = &addNamedFunction(dag, range.left_included ? "greaterOrEquals" : "greater", {&min_node, left_lit}, context);
+        const auto & left_lit = addLiteral(dag, *bounds.left, fmt::format("__minmax_lit_left_{}", key_column));
+        intersects_lower = &addNamedFunction(dag, bounds.left_included ? "greaterOrEquals" : "greater", {&max_node, &left_lit}, context);
+        contains_lower = &addNamedFunction(dag, bounds.left_included ? "greaterOrEquals" : "greater", {&min_node, &left_lit}, context);
 
         /// Mirror the `NaN` semantics of `KeyCondition::checkInHyperrectangle`. A Float granule that
         /// mixes finite values with `NaN` is stored as `[finite_min, NaN]`, because `NaN` sorts last.
@@ -378,16 +365,13 @@ bool isRecoverableMinMaxBulkLoweringException(int code)
 {
     /// Bulk lowering is optional: unsupported RPN/type shapes should fall back to the
     /// per-granule scalar path. Most unsupported shapes return nullptr explicitly; this
-    /// allowlist is only for recoverable literal/type materialization failures that can still
-    /// escape while constructing the ActionsDAG (for example a bound Field whose tag cannot be
-    /// represented in the exact index column type).
+    /// allowlist is only for recoverable type-resolution failures while constructing mixed-type
+    /// comparisons in the ActionsDAG.
     ///
     /// Do not catch resource limits, cancellation, timeouts, LOGICAL_ERROR, or unknown
     /// exception types: those are not "bulk unsupported" signals and must fail closed rather
-    /// than being silently converted into a scalar fallback. The longer-term direction is to
-    /// harden the preconditions and non-throwing conversions enough that this try/catch can be
-    /// removed entirely, but ClickHouse's Field/DataType conversion surface is broad enough that
-    /// keeping this narrow safety net is less risky for the first version.
+    /// than being silently converted into a scalar fallback. Once the typed-bound eligibility
+    /// checks cover every comparison pair, this catch can be removed.
     return code == ErrorCodes::BAD_GET
         || code == ErrorCodes::CANNOT_CONVERT_TYPE
         || code == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE

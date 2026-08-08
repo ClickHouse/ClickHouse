@@ -39,6 +39,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
+#include <Analyzer/ConstantValue.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
@@ -494,6 +495,45 @@ static std::string_view reverseComparisonOperator(std::string_view op)
     return {};
 }
 
+
+static void setTypedRangeBounds(
+    KeyCondition::RPNElement & element,
+    std::string_view comparison,
+    const Field & value,
+    const DataTypePtr & type)
+{
+    if (!type)
+        return;
+
+    /// A non-NULL constant does not need Nullable or LowCardinality wrappers. Removing them
+    /// keeps comparison masks non-nullable while preserving the value's SQL type (including
+    /// Decimal/DateTime64 scale and Enum definition).
+    const auto constant_type = value.isNull() ? type : removeLowCardinalityAndNullable(type);
+    auto constant = std::make_shared<ConstantValue>(value, constant_type);
+    KeyCondition::RPNElement::TypedRangeBounds bounds;
+
+    if (comparison == "equals" || comparison == "notEquals" || comparison == "isNotDistinctFrom")
+    {
+        bounds.left = constant;
+        bounds.right = std::move(constant);
+        bounds.left_included = true;
+        bounds.right_included = true;
+    }
+    else if (comparison == "less" || comparison == "lessOrEquals")
+    {
+        bounds.right = std::move(constant);
+        bounds.right_included = comparison == "lessOrEquals";
+    }
+    else if (comparison == "greater" || comparison == "greaterOrEquals")
+    {
+        bounds.left = std::move(constant);
+        bounds.left_included = comparison == "greaterOrEquals";
+    }
+    else
+        return;
+
+    element.typed_range_bounds = std::make_shared<KeyCondition::RPNElement::TypedRangeBounds>(std::move(bounds));
+}
 
 static bool isLogicalOperator(const String & func_name)
 {
@@ -1429,9 +1469,11 @@ KeyCondition::KeyCondition(
     const Names & key_column_names_,
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
-    bool skip_analysis_)
+    bool skip_analysis_,
+    bool preserve_typed_range_bounds_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
+    , preserve_typed_range_bounds(preserve_typed_range_bounds_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
@@ -3986,6 +4028,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                         if (const_value.isNull())
                             return false;
+                        const_type = key_expr_type_not_null;
                         /// No need to set condition_is_relaxed because we're doing exact conversion
                     }
                 }
@@ -4018,6 +4061,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 return false;
 
                             const_value = converted;
+                            const_type = common_type;
 
                             /// Need to set condition_is_relaxed unless we're doing exact conversion
                             if (!key_expr_type_not_null->equals(*common_type))
@@ -4077,7 +4121,10 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         out.monotonic_functions_chain = std::move(chain);
         out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
-        return atom_it->second(out, const_value);
+        const bool atom_created = atom_it->second(out, const_value);
+        if (atom_created && preserve_typed_range_bounds)
+            setTypedRangeBounds(out, func_name, const_value, const_type);
+        return atom_created;
     }
     if (node.tryGetConstant(const_value, const_type))
     {

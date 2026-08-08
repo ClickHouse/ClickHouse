@@ -20,6 +20,7 @@ namespace DB
 {
 
 class ASTFunction;
+class ConstantValue;
 class Context;
 using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
@@ -79,7 +80,8 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
-        bool skip_analysis_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+        bool skip_analysis_ = false,
+        bool preserve_typed_range_bounds_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
 
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
@@ -354,6 +356,20 @@ public:
 
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range = Range::createWholeUniverse();
+
+        /// Typed bounds for direct comparison atoms. These preserve the effective bound type
+        /// after KeyCondition's exact rewrites; nullptr means the corresponding side is unbounded.
+        /// The scalar Range remains the reference representation for existing callers. Atoms
+        /// whose bounds are synthesized or transformed without an exact typed equivalent leave
+        /// this empty, and column-native consumers fall back to scalar evaluation.
+        struct TypedRangeBounds
+        {
+            std::shared_ptr<const ConstantValue> left;
+            std::shared_ptr<const ConstantValue> right;
+            bool left_included = false;
+            bool right_included = false;
+        };
+        std::shared_ptr<const TypedRangeBounds> typed_range_bounds;
 
         /// Which columns are involved. E.g.:
         ///  * if FUNCTION[_NOT]_IN_RANGE: exactly one element,
@@ -687,6 +703,7 @@ private:
     /// transformed by any deterministic functions. It is used by
     /// PartitionPruner.
     bool single_point;
+    bool preserve_typed_range_bounds = false;
 
     /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
     /// Used to check toDateTime monotonicity.
