@@ -101,6 +101,7 @@ add_contrib (zxc-cmake zxc)
 add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
+add_contrib (FastPFOR-cmake FastPFOR)
 add_contrib (thrift-cmake thrift)
 add_contrib (StringZilla-cmake StringZilla)
 # parquet/arrow/orc

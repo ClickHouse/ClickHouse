@@ -534,7 +534,8 @@ DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 enum class TextIndexPostingListCodec : uint8_t
 {
     None,
-    Bitpacking
+    Bitpacking,
+    FastPFOR
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)

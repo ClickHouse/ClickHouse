@@ -474,7 +474,8 @@ IMPLEMENT_SETTING_ENUM(
     TextIndexPostingListCodec,
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", TextIndexPostingListCodec::None},
-     {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
+     {"bitpacking", TextIndexPostingListCodec::Bitpacking},
+     {"fastpfor", TextIndexPostingListCodec::FastPFOR}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreePartMinMaxIndexColumns,
