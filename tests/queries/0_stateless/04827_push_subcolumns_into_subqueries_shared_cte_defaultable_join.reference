@@ -1,0 +1,8 @@
+shared CTE on the default-filled side of a LEFT JOIN, not rewritten
+FUNCTION id: 4, function_name: getSubcolumn, function_type: ordinary, result_type: UInt8
+1	1
+2	0
+subcolumns on both sides, the default-filled side is not rewritten
+FUNCTION id: 4, function_name: getSubcolumn, function_type: ordinary, result_type: UInt8
+0	1
+1	0

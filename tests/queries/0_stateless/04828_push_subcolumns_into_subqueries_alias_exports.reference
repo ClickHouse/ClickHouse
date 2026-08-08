@@ -1,0 +1,25 @@
+whole column alive under its own name next to a projection alias, not pushed
+Output: getSubcolumn(tup, \'a\'), tup
+Output: tup
+1	(1,'one')
+2	(2,'two')
+whole column alive next to an exported trivial ALIAS storage column, not pushed
+Output: getSubcolumn(tup, \'a\'), tup
+Output: tup
+1	(1,'one')
+2	(2,'two')
+whole column alive under the alias name, subcolumn read under the base name, not pushed
+Output: getSubcolumn(tup, \'a\'), tup
+Output: tup
+1	(1,'one')
+2	(2,'two')
+both exports used only through subcolumns, pushed
+Output: tup.a, tup.b
+Output: tup.a, tup.b
+1	one
+2	two
+ALIAS export and base export used only through subcolumns, pushed
+Output: tup.a, tup.b
+Output: tup.a, tup.b
+1	one
+2	two

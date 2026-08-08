@@ -80,6 +80,11 @@ struct QueryProcessingState
     /// filled with default values for non-matched rows).
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> eligible_targets;
 
+    /// Query nodes found on a side of a JOIN that can be filled with default values. An ordinary
+    /// CTE referenced several times is a single shared query node, so the same node can also
+    /// appear in an otherwise eligible position; such a node must stay ineligible everywhere.
+    std::unordered_set<const IQueryTreeNode *> defaultable_targets;
+
     std::vector<PushdownGroup> groups;
 
     /// Number of references to each column of every query or union source, including the column
@@ -185,8 +190,22 @@ void collectEligibleTargets(const QueryTreeNodePtr & join_tree_node, bool can_be
         return;
     }
 
-    if (join_tree_node->getNodeType() == QueryTreeNodeType::QUERY && !can_be_filled_with_defaults)
-        state.eligible_targets.emplace(join_tree_node.get(), join_tree_node);
+    if (join_tree_node->getNodeType() == QueryTreeNodeType::QUERY)
+    {
+        /// The same query node can occur several times in the JOIN TREE when it is a shared
+        /// ordinary CTE. Eligibility is tracked per node, not per occurrence, so one occurrence
+        /// in a defaultable position makes the node ineligible even for its other occurrences:
+        /// the projection column added for an eligible occurrence would also be exported by the
+        /// defaultable occurrence, where the JOIN fills it with default values of the subcolumn
+        /// type for non-matched rows instead of `getSubcolumn` of the filled parent column.
+        if (can_be_filled_with_defaults)
+        {
+            state.defaultable_targets.insert(join_tree_node.get());
+            state.eligible_targets.erase(join_tree_node.get());
+        }
+        else if (!state.defaultable_targets.contains(join_tree_node.get()))
+            state.eligible_targets.emplace(join_tree_node.get(), join_tree_node);
+    }
 }
 
 /// A projection column can be added to the subquery without changing its result:
@@ -483,6 +502,38 @@ bool applyGroup(PushdownGroup & group)
     return true;
 }
 
+/// Identity of the underlying column of a trivial projection expression: the source
+/// table expression and the column name in it.
+using CanonicalColumn = std::pair<const IQueryTreeNode *, String>;
+
+/// Map each exported column name of the subquery to the underlying column its projection
+/// expression trivially resolves to. The same physical column can be exported under several
+/// names: `SELECT tup AS x, tup FROM t`, or a trivial ALIAS storage column next to its base
+/// column. Names whose projection expression is not a column (or is a non-trivial ALIAS)
+/// are not mapped.
+std::unordered_map<String, CanonicalColumn> collectCanonicalExports(const QueryNode & subquery)
+{
+    std::unordered_map<String, CanonicalColumn> result;
+
+    const auto & projection_columns = subquery.getProjectionColumns();
+    const auto & projection_nodes = subquery.getProjection().getNodes();
+
+    for (size_t i = 0; i < projection_nodes.size() && i < projection_columns.size(); ++i)
+    {
+        auto * column = projection_nodes[i]->as<ColumnNode>();
+        if (column && column->hasExpression())
+            column = resolveTrivialAliasChain(column);
+        if (!column)
+            continue;
+
+        auto column_source = column->getColumnSourceOrNull();
+        if (column_source)
+            result.emplace(projection_columns[i].name, CanonicalColumn{column_source.get(), column->getColumnName()});
+    }
+
+    return result;
+}
+
 void replaceCandidates(QueryTreeNodePtr & node, QueryProcessingState & state)
 {
     if (!node || isQueryOrUnionNode(node))
@@ -595,6 +646,8 @@ void processQuery(
     });
 
     bool any_group_applied = false;
+    std::unordered_map<const IQueryTreeNode *, std::unordered_map<String, CanonicalColumn>> canonical_exports_by_source;
+
     for (auto & group : state.groups)
     {
         if (!group.viable)
@@ -604,14 +657,40 @@ void processQuery(
         /// directly or by an occurrence of a non-viable group), the parent projection column
         /// stays, and the subquery would read both the whole column and the subcolumn from the
         /// table. Extracting the subcolumn from the already read column is cheaper, so the
-        /// group is not applied.
-        size_t references = state.column_references[group.source.get()][group.column_name];
+        /// group is not applied. The reference counts are keyed by exported names, but the same
+        /// physical column can be exported under several names, so the counts of every name
+        /// resolving to the same underlying column as the group's column are combined: while any
+        /// of them stays alive, the whole column is read from the table anyway.
+        auto [exports_it, exports_inserted] = canonical_exports_by_source.try_emplace(group.source.get());
+        if (exports_inserted)
+            exports_it->second = collectCanonicalExports(group.source->as<const QueryNode &>());
+        const auto & canonical_exports = exports_it->second;
+
+        auto group_canonical_it = canonical_exports.find(group.column_name);
+        auto is_same_underlying_column = [&](const String & column_name)
+        {
+            if (column_name == group.column_name)
+                return true;
+            if (group_canonical_it == canonical_exports.end())
+                return false;
+            auto other_it = canonical_exports.find(column_name);
+            return other_it != canonical_exports.end() && other_it->second == group_canonical_it->second;
+        };
+
+        size_t references = 0;
+        for (const auto & [column_name, count] : state.column_references[group.source.get()])
+        {
+            if (is_same_underlying_column(column_name))
+                references += count;
+        }
+
         size_t replaced_references = 0;
         for (const auto & other_group : state.groups)
         {
-            if (other_group.viable && other_group.source == group.source && other_group.column_name == group.column_name)
+            if (other_group.viable && other_group.source == group.source && is_same_underlying_column(other_group.column_name))
                 replaced_references += other_group.occurrences;
         }
+
         if (references > replaced_references)
             continue;
 
