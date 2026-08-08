@@ -82,6 +82,8 @@ is not compatible with the output format RowBinary
 RawBLOB payload round-trips
 --- JSONEachPacketString is still rejected for text-labeled raw output formats (TSVRaw)
 is not compatible with the output format TSVRaw
+--- JSONEachPacketString is still rejected for text-labeled raw output formats (HiveText)
+is not compatible with the output format HiveText
 --- JSONEachPacketBase64 carries binary output formats (Native)
 1
 --- JSONEachPacketBase64 carries raw output formats (RawBLOB)

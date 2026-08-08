@@ -182,6 +182,11 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d "SELECT number FROM numbers(3) FORMAT TSVRaw" \
     | grep -o -m1 'is not compatible with the output format TSVRaw'
 
+echo '--- JSONEachPacketString is still rejected for text-labeled raw output formats (HiveText)'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT number FROM numbers(3) FORMAT HiveText" \
+    | grep -o -m1 'is not compatible with the output format HiveText'
+
 echo '--- JSONEachPacketBase64 carries binary output formats (Native)'
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketBase64${SINGLE_BLOCK}" \
     -d "SELECT number FROM numbers(3) FORMAT Native" \
