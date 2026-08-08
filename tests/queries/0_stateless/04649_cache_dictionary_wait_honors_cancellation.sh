@@ -148,6 +148,4 @@ rm -f "${CLICKHOUSE_TMP}/04649_kill_err.txt"
 # inside the read the cancelled query abandoned. With the listener gone that read fails at once.
 kill $LISTENER_PID 2>/dev/null ||:
 wait $LISTENER_PID 2>/dev/null ||:
-# ignore_drop_queries_probability = 0: under the stress runner the ignore branch rewrites this
-# DROP into a TRUNCATE, which a dictionary rejects with SYNTAX_ERROR on stderr.
-${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY dict_04649 SETTINGS ignore_drop_queries_probability = 0"
+${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY dict_04649"
