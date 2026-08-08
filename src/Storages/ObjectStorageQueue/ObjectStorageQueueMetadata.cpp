@@ -117,8 +117,6 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_name(zookeeper_name_)
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
-    , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_failed_files(isUnordered(mode) && table_metadata.failed_files_ttl_sec)
     , cleanup_processing_files(use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
@@ -157,11 +155,10 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
 
     LOG_TRACE(
         log, "Mode: {}, buckets: {}, processing threads: {}, "
-        "result buckets num: {}, use persistent processing nodes: {}, "
-        "cleanup processing files: {}, cleanup processed files: {}, cleanup failed files: {}",
+        "result buckets num: {}, use persistent processing nodes: {}, cleanup processing files: {}",
         table_metadata.mode, table_metadata.buckets.load(),
         table_metadata.processing_threads_num.load(), buckets_num,
-        use_persistent_processing_nodes.load(), cleanup_processing_files, cleanup_processed_files, cleanup_failed_files);
+        use_persistent_processing_nodes.load(), cleanup_processing_files);
 }
 
 ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
@@ -205,7 +202,7 @@ void ObjectStorageQueueMetadata::startup()
          return;
 
     if (!cleanup_task
-        && (cleanup_processed_files || cleanup_failed_files || cleanup_processing_files))
+        && (isUnordered(mode) || cleanup_processing_files))
     {
         cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
             StorageID::createEmpty(), "ObjectStorageQueueCleanupFunc",
@@ -1257,7 +1254,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
         cleanupPersistentProcessingNodes();
 
-    if (table_metadata.hasTrackedFilesLimit() || cleanup_failed_files)
+    const bool cleanup_processed_files = isUnordered(mode) && table_metadata.hasTrackedFilesLimit();
+    const bool cleanup_failed_files = isUnordered(mode) && table_metadata.failed_files_ttl_sec;
+
+    if (cleanup_processed_files || cleanup_failed_files)
     {
         if (cleanup_processed_files)
             cleanupTrackedNodes(zookeeper_path / "processed", "processed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);

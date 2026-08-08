@@ -372,7 +372,7 @@ def test_max_set_age(started_cluster, mode):
 
     expected_rows = files_to_generate
 
-    node.wait_for_log_line("Checking failed nodes for tracking limits")
+    node.wait_for_log_line("Checking processed nodes for tracking limits")
     node.wait_for_log_line("Node limits check finished")
 
     def get_count():

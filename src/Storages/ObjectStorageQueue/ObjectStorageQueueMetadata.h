@@ -223,9 +223,6 @@ private:
     const std::string zookeeper_name;
     const fs::path zookeeper_path;
     const size_t keeper_multiread_batch_size;
-
-    const bool cleanup_processed_files = false;
-    const bool cleanup_failed_files = false;
     const bool cleanup_processing_files = false;
 
     std::unique_ptr<ObjectStorageQueueFilenameParser> filename_parser;

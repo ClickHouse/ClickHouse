@@ -298,15 +298,43 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing
-        || state == FileStatus::State::Processed
-        || (state == FileStatus::State::Failed
-            && file_status->retries
-            && file_status->retries >= max_loading_retries))
+    if (state == FileStatus::State::Processing || state == FileStatus::State::Processed)
     {
-        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                 path, state, file_status->retries.load(), max_loading_retries);
+        LOG_TEST(log, "File {} has non-processable state `{}`",
+                 path, state);
         return false;
+    }
+
+    if (state == FileStatus::State::Failed
+        && file_status->retries
+        && file_status->retries >= max_loading_retries)
+    {
+        /// The cached state shows this file has permanently failed.
+        /// However, another replica may have cleaned it up (via TTL or SYSTEM DROP).
+        /// Re-check Keeper to see if the failed node still exists.
+        std::string failure_message;
+        auto path_state = getPathState(failure_message);
+
+        if (path_state == PathState::Failed)
+        {
+            /// Failure is confirmed in Keeper - stay failed.
+            LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
+                     path, file_status->retries.load(), max_loading_retries);
+            return false;
+        }
+        else if (path_state == PathState::Unknown)
+        {
+            /// The failed node was cleaned up - reset cache and allow processing.
+            LOG_TRACE(log, "File {} failed node was cleaned up externally, resetting cache state", path);
+            file_status->reset();
+        }
+        else if (path_state == PathState::Processed)
+        {
+            /// File is already processed - update cache and skip.
+            LOG_TEST(log, "File {} is already processed in Keeper, updating cache", path);
+            file_status->updateState(FileStatus::State::Processed);
+            return false;
+        }
     }
 
     /// An optimization for local parallel processing.
@@ -343,19 +371,42 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing
-        || state == FileStatus::State::Processed
-        || (state == FileStatus::State::Failed
-            && file_status->retries
-            && file_status->retries >= max_loading_retries))
+    if (state == FileStatus::State::Processing || state == FileStatus::State::Processed)
     {
-        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                path, state, file_status->retries.load(), max_loading_retries);
-
-        /// This is possible in case on the same server
-        /// there are more than one S3(Azure)Queue table processing the same keeper path.
-        LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+        LOG_TEST(log, "File {} has non-processable state `{}`", path, state);
         return std::nullopt;
+    }
+
+    if (state == FileStatus::State::Failed
+        && file_status->retries
+        && file_status->retries >= max_loading_retries)
+    {
+        /// The cached state shows this file has permanently failed.
+        /// However, another replica may have cleaned it up (via TTL or SYSTEM DROP).
+        /// Re-check Keeper to see if the failed node still exists.
+        std::string failure_message;
+        auto path_state = getPathState(failure_message);
+
+        if (path_state == PathState::Failed)
+        {
+            /// Failure is confirmed in Keeper - stay failed.
+            LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
+                     path, file_status->retries.load(), max_loading_retries);
+            return std::nullopt;
+        }
+        else if (path_state == PathState::Unknown)
+        {
+            /// The failed node was cleaned up - reset cache and allow processing.
+            LOG_TRACE(log, "File {} failed node was cleaned up externally, resetting cache state", path);
+            file_status->reset();
+        }
+        else if (path_state == PathState::Processed)
+        {
+            /// File is already processed - update cache and skip.
+            LOG_TEST(log, "File {} is already processed in Keeper, updating cache", path);
+            file_status->updateState(FileStatus::State::Processed);
+            return std::nullopt;
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);

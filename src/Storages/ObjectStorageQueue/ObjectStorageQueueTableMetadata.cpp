@@ -297,29 +297,32 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
             from_zk.partition_component,
             partition_component);
 
-    if (tracked_files_limit != from_zk.tracked_files_limit)
-        throw Exception(
-            ErrorCodes::METADATA_MISMATCH,
-            "Existing table metadata in ZooKeeper differs in `tracked_files_limit`. "
-            "Stored in ZooKeeper: {}, local: {}",
-            from_zk.tracked_files_limit.load(),
-            tracked_files_limit.load());
+    if (modeFromString(mode) == ObjectStorageQueueMode::UNORDERED)
+    {
+        if (tracked_files_limit != from_zk.tracked_files_limit)
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Existing table metadata in ZooKeeper differs in `tracked_files_limit`. "
+                "Stored in ZooKeeper: {}, local: {}",
+                from_zk.tracked_files_limit.load(),
+                tracked_files_limit.load());
 
-    if (tracked_files_ttl_sec != from_zk.tracked_files_ttl_sec)
-        throw Exception(
-            ErrorCodes::METADATA_MISMATCH,
-            "Existing table metadata in ZooKeeper differs in `tracked_files_ttl_sec`. "
-            "Stored in ZooKeeper: {}, local: {}",
-            from_zk.tracked_files_ttl_sec.load(),
-            tracked_files_ttl_sec.load());
+        if (tracked_files_ttl_sec != from_zk.tracked_files_ttl_sec)
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Existing table metadata in ZooKeeper differs in `tracked_files_ttl_sec`. "
+                "Stored in ZooKeeper: {}, local: {}",
+                from_zk.tracked_files_ttl_sec.load(),
+                tracked_files_ttl_sec.load());
 
-    if (failed_files_ttl_sec != from_zk.failed_files_ttl_sec)
-        throw Exception(
-            ErrorCodes::METADATA_MISMATCH,
-            "Existing table metadata in ZooKeeper differs in `failed_files_ttl_sec`. "
-            "Stored in ZooKeeper: {}, local: {}",
-            from_zk.failed_files_ttl_sec.load(),
-            failed_files_ttl_sec.load());
+        if (failed_files_ttl_sec != from_zk.failed_files_ttl_sec)
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Existing table metadata in ZooKeeper differs in `failed_files_ttl_sec`. "
+                "Stored in ZooKeeper: {}, local: {}",
+                from_zk.failed_files_ttl_sec.load(),
+                failed_files_ttl_sec.load());
+    }
 
     if (format_name != from_zk.format_name)
         throw Exception(
