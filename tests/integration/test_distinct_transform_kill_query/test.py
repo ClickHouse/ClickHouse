@@ -95,7 +95,10 @@ def run_kill_query_failpoint_test(query, fault_name, query_id=None):
     finally:
         node1.query(f"SYSTEM DISABLE FAILPOINT {fault_name}")
 
-    query_thread.join()
+    ## Bound the join so a regression that keeps the query running fails cleanly here instead of
+    ## hanging the integration shard (same pattern as the soft-timeout helper).
+    query_thread.join(timeout=60)
+    assert not query_thread.is_alive(), "killed query did not terminate within 60 s"
     if thread_error[0] is not None:
         raise thread_error[0]
 
