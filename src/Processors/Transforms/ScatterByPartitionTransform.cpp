@@ -57,10 +57,20 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
     {
         auto output_it = outputs.begin();
         bool can_push = false;
+        /// A finished output never becomes pushable again, so waiting for one would wedge the
+        /// pipeline forever. `work` already skips them; `prepare` must agree.
+        bool has_pending_output = false;
         for (size_t i = 0; i < output_size; ++i, ++output_it)
-            if (!was_output_processed[i] && output_it->canPush())
+        {
+            if (was_output_processed[i] || output_it->isFinished())
+                continue;
+
+            if (output_it->canPush())
                 can_push = true;
-        if (!can_push)
+            else
+                has_pending_output = true;
+        }
+        if (!can_push && has_pending_output)
             return Status::PortFull;
         return Status::Ready;
     }

@@ -99,7 +99,7 @@ void NodeEvaluationRangeGetter::visitChildren(const Node * node, const NodeEvalu
     {
         case NodeType::Offset:
         {
-            const auto * offset_node = static_cast<const PQT::Offset *>(node);
+            const auto * offset_node = static_cast<const PrometheusQueryTree::Offset *>(node);
             const auto * expression = offset_node->getExpression();
             NodeEvaluationRange expression_range = range;
             if (auto timestamp = offset_node->at_timestamp)
@@ -118,7 +118,7 @@ void NodeEvaluationRangeGetter::visitChildren(const Node * node, const NodeEvalu
 
         case NodeType::Subquery:
         {
-            const auto * subquery_node = static_cast<const PQT::Subquery *>(node);
+            const auto * subquery_node = static_cast<const PrometheusQueryTree::Subquery *>(node);
             auto subquery_range = subquery_node->range;
 
             DurationType step;
@@ -171,7 +171,7 @@ void NodeEvaluationRangeGetter::setWindows()
     {
         if (node->node_type == NodeType::RangeSelector)
         {
-            const auto * range_selector_node = static_cast<const PQT::RangeSelector *>(node);
+            const auto * range_selector_node = static_cast<const PrometheusQueryTree::RangeSelector *>(node);
             auto range = range_selector_node->range;
             node_range.window = range;
             const auto * instant_selector_node = range_selector_node->getInstantSelector();
@@ -184,7 +184,7 @@ void NodeEvaluationRangeGetter::setWindows()
         {
             /// We propagate the range of a subquery up to its parents until we meet a range-vector function
             /// (e.g. avg_over_time) if any, so such function could user a proper window.
-            const auto * subquery_node = static_cast<const PQT::Subquery *>(node);
+            const auto * subquery_node = static_cast<const PrometheusQueryTree::Subquery *>(node);
             auto range = subquery_node->range;
             node_range.window = range;
             propagateRangeToParents(node, range);
@@ -193,7 +193,7 @@ void NodeEvaluationRangeGetter::setWindows()
 }
 
 
-void NodeEvaluationRangeGetter::propagateRangeToParents(const PQT::Node * node, Decimal64 range)
+void NodeEvaluationRangeGetter::propagateRangeToParents(const PrometheusQueryTree::Node * node, Decimal64 range)
 {
     chassert(node->result_type == ResultType::RANGE_VECTOR);
     const auto * parent = node->parent;
