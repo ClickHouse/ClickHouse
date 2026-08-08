@@ -3842,6 +3842,48 @@ void analyzeVariantColumnForWrite(
         analyzeVariantColumnarValue(*full_column_ptr, type, row, false, context, 1, &out_analysis.analysis, nullptr);
 }
 
+bool isSupportedVariantShreddedScalarLeafType(const IDataType & type)
+{
+    /// Keep in sync with `tryConvertVariantScalarToShreddedField` (the value conversion) and
+    /// `preparePrimitiveColumn` (the `Parquet` leaf mapping): a type is a valid shredded leaf
+    /// only if both support it. `Bool` is covered by `TypeIndex::UInt8`.
+    switch (type.getTypeId())
+    {
+        case TypeIndex::Int8:
+        case TypeIndex::Int16:
+        case TypeIndex::Int32:
+        case TypeIndex::Int64:
+        case TypeIndex::Int128:
+        case TypeIndex::Int256:
+        case TypeIndex::UInt8:
+        case TypeIndex::UInt16:
+        case TypeIndex::UInt32:
+        case TypeIndex::UInt64:
+        case TypeIndex::UInt128:
+        case TypeIndex::UInt256:
+        case TypeIndex::Enum8:
+        case TypeIndex::Enum16:
+        case TypeIndex::Date:
+        case TypeIndex::Date32:
+        case TypeIndex::DateTime:
+        case TypeIndex::DateTime64:
+        case TypeIndex::Float32:
+        case TypeIndex::Float64:
+        case TypeIndex::String:
+        case TypeIndex::FixedString:
+        case TypeIndex::UUID:
+        case TypeIndex::IPv4:
+        case TypeIndex::IPv6:
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+            return true;
+        default:
+            return false;
+    }
+}
+
 DataTypePtr inferVariantShreddedTypeForWrite(const VariantWriteAnalysisEntry & analysis)
 {
     if (!analysis.source_type)

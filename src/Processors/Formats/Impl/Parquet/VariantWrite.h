@@ -61,4 +61,11 @@ void analyzeVariantColumnForWrite(
 
 DataTypePtr inferVariantShreddedTypeForWrite(const VariantWriteAnalysisEntry & analysis);
 
+/// True if a scalar type can serve as a shredded `typed_value` leaf: it must be convertible by
+/// `tryConvertVariantScalarToShreddedField` and have a `Parquet` leaf mapping in
+/// `preparePrimitiveColumn`. Declared shredded paths of other types (e.g. `Time`/`Time64`, which
+/// have no shredded leaf mapping) must be rejected up front so their values go through the
+/// residual `value` encoding instead of failing on the synthetic `typed_value` column.
+bool isSupportedVariantShreddedScalarLeafType(const IDataType & type);
+
 }

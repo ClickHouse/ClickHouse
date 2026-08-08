@@ -195,6 +195,11 @@ DataTypePtr getDeclaredVariantShreddedTypeForParquetWriteImpl(const DataTypePtr 
     if (typeid_cast<const DataTypeMap *>(normalized_type.get()))
         return nullptr;
 
+    /// Only scalar leaves the shredded `typed_value` writer can actually emit are accepted;
+    /// anything else (e.g. `Time`/`Time64`) is written through the residual `value` encoding.
+    if (!isSupportedVariantShreddedScalarLeafType(*normalized_type))
+        return nullptr;
+
     return normalized_type;
 }
 
