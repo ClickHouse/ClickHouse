@@ -931,3 +931,59 @@ echo '--- JSONEachPacketString is rejected for CustomSeparated with the JSON esc
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_custom_escaping_rule=JSON" \
     -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT CustomSeparated' \
     | grep -o -m1 'is not compatible with the output format CustomSeparated'
+
+# `Pretty` (and its variants) renders a named `Tuple` through the pretty JSON serialization
+# (`output_format_pretty_named_tuples_as_json`, on by default, together with
+# `output_format_json_named_tuples_as_objects`), which writes the element names as JSON object
+# keys - verbatim, and `Pretty` installs no UTF-8 validating buffer at all. The element names are
+# knowable from the header (recursively: a nested `Tuple` reaches the same serialization through
+# the plain text kind), so the text framings reject accordingly.
+echo '--- JSONEachPacketString is rejected for Pretty with a non-UTF-8 named Tuple element'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT Pretty' \
+    | grep -o -m1 'is not compatible with the output format Pretty'
+
+echo '--- JSONEachPacketString is rejected for PrettyCompact with a non-UTF-8 named Tuple element nested in an Array'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST([(1, 2)] AS Array(Tuple(`a\xFFb` UInt8, c UInt8))) AS t FORMAT PrettyCompact' \
+    | grep -o -m1 'is not compatible with the output format PrettyCompact'
+
+# Only `output_format_pretty_named_tuples_as_json = 0` turns the JSON-object rendering off
+# (`SerializationTuple::serializeText` requires it), making the serialization fall back to the plain
+# text form that carries no element names.
+echo '--- JSONEachPacketString accepts Pretty with a non-UTF-8 named Tuple element when pretty named tuples as JSON are off'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_pretty_named_tuples_as_json=0" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT Pretty' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'Pretty (named tuples in the plain text form) accepted: OK'
+
+# `Pretty` resets the JSON sub-settings to their defaults in its constructor, so
+# `output_format_json_named_tuples_as_objects = 0` does NOT turn the element names off there - the
+# query must still be rejected (the checker mirrors that reset).
+echo '--- JSONEachPacketString still rejects Pretty with a non-UTF-8 named Tuple element when named tuples are not written as objects'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_json_named_tuples_as_objects=0" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT Pretty' \
+    | grep -o -m1 'is not compatible with the output format Pretty'
+
+echo '--- JSONEachPacketString accepts Pretty with a valid UTF-8 (multi-byte) named Tuple element'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`e\xE2\x9C\x93` UInt8, c UInt8)) AS t FORMAT Pretty' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'Pretty (valid UTF-8 element name) accepted: OK'
+
+# The full-document JSON formats (`JSON`, `JSONCompact`, `JSONColumnsWithMetadata`) reject a
+# non-UTF-8 named `Tuple` element name through their `meta.type` check: the type name embeds the
+# backquoted element name verbatim (see `metadataTypeNamesMayProduceRawBytesInJSON`). When some
+# value type may itself emit invalid UTF-8, these formats install the whole-output validating
+# buffer instead (they always request UTF-8 validation), which sanitizes the synthesized keys
+# together with the `meta.type` strings, so such a header stays accepted.
+for format in JSON JSONCompact JSONColumnsWithMetadata
+do
+    echo "--- JSONEachPacketString is rejected for ${format} with a non-UTF-8 named Tuple element"
+    ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+        -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT '"${format}" \
+        | grep -o -m1 "is not compatible with the output format ${format}"
+done
+
+echo '--- JSONEachPacketString accepts JSON with a non-UTF-8 named Tuple element and a String element'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d $'SELECT CAST((1, \'s\') AS Tuple(`a\\xFFb` UInt8, c String)) AS t FORMAT JSON' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSON (validating buffer installed) accepted: OK'

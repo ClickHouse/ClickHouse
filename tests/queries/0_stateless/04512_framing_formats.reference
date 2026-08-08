@@ -316,3 +316,21 @@ is not compatible with the output format GeoJSON
 GeoJSON array-mode tuple property accepted: OK
 --- JSONEachPacketString is rejected for CustomSeparated with the JSON escaping rule and a non-UTF-8 named Tuple element
 is not compatible with the output format CustomSeparated
+--- JSONEachPacketString is rejected for Pretty with a non-UTF-8 named Tuple element
+is not compatible with the output format Pretty
+--- JSONEachPacketString is rejected for PrettyCompact with a non-UTF-8 named Tuple element nested in an Array
+is not compatible with the output format PrettyCompact
+--- JSONEachPacketString accepts Pretty with a non-UTF-8 named Tuple element when pretty named tuples as JSON are off
+Pretty (named tuples in the plain text form) accepted: OK
+--- JSONEachPacketString still rejects Pretty with a non-UTF-8 named Tuple element when named tuples are not written as objects
+is not compatible with the output format Pretty
+--- JSONEachPacketString accepts Pretty with a valid UTF-8 (multi-byte) named Tuple element
+Pretty (valid UTF-8 element name) accepted: OK
+--- JSONEachPacketString is rejected for JSON with a non-UTF-8 named Tuple element
+is not compatible with the output format JSON
+--- JSONEachPacketString is rejected for JSONCompact with a non-UTF-8 named Tuple element
+is not compatible with the output format JSONCompact
+--- JSONEachPacketString is rejected for JSONColumnsWithMetadata with a non-UTF-8 named Tuple element
+is not compatible with the output format JSONColumnsWithMetadata
+--- JSONEachPacketString accepts JSON with a non-UTF-8 named Tuple element and a String element
+JSON (validating buffer installed) accepted: OK
