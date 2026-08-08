@@ -52,9 +52,7 @@ public:
     void rename(
         std::string new_root_path,
         std::string new_part_dir,
-        LoggerPtr log,
-        bool remove_new_dir_if_exists,
-        bool fsync_part_dir) override;
+        const RenameParams & params) override;
 
     void createProjection(const std::string & name) override;
 

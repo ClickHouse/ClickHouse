@@ -869,7 +869,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             if (result_statistics.empty())
                 continue;
 
-            auto part_statistics = part->loadStatistics();
+            auto part_statistics = part->getStatisticsStorage().load();
 
             for (const auto & [column_name, column_stats] : result_statistics)
             {
@@ -2191,7 +2191,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         projection_future_part->assign(std::move(projection_parts), /*patch_parts_=*/ {}, projection);
         projection_future_part->name = projection->name;
-        projection_future_part->path = global_ctx->future_part->path + "/" + projection->name + ".proj/";
+        projection_future_part->path = global_ctx->future_part->path + "/" + IDataPartProjectionStorage::getDirectoryName(projection->name) + "/";
         projection_future_part->part_info = MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION;
 
         MergeTreeData::MergingParams projection_merging_params;
@@ -2219,7 +2219,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             projection,
             global_ctx->new_data_part.get(),
             projection->with_parent_part_offset ? global_ctx->merged_part_offsets : nullptr,
-            ".proj",
+            String(IDataPartProjectionStorage::PROJECTION_DIRECTORY_SUFFIX),
             NO_TRANSACTION_PTR,
             global_ctx->data,
             global_ctx->mutator,

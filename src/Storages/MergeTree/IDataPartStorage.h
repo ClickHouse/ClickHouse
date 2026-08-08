@@ -10,6 +10,7 @@
 #include <Common/TransactionID.h>
 
 #include <memory>
+#include <mutex>
 #include <optional>
 
 #include <boost/core/noncopyable.hpp>
@@ -176,15 +177,20 @@ public:
         const MergeTreeDataPartChecksums & checksums;
     };
 
+    /// Everything the removal of a data part depends on, gathered in one place.
+    /// can_remove_callback answers whether shared data may be removed (specific for DiskObjectStorage).
+    /// projections and checksums are needed to avoid recursive listing.
+    struct RemoveParams
+    {
+        CanRemoveCallback can_remove_callback;
+        const MergeTreeDataPartChecksums & checksums;
+        std::list<ProjectionChecksums> projections = {};
+        bool is_temp = false;
+        LoggerPtr log = nullptr;
+    };
+
     /// Remove data part.
-    /// can_remove_shared_data, names_not_to_remove are specific for DiskObjectStorage.
-    /// projections, checksums are needed to avoid recursive listing
-    virtual void remove(
-        CanRemoveCallback && can_remove_callback,
-        const MergeTreeDataPartChecksums & checksums,
-        std::list<ProjectionChecksums> projections,
-        bool is_temp,
-        LoggerPtr log) = 0;
+    virtual void remove(RemoveParams params) = 0;
 
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
@@ -240,20 +246,27 @@ public:
     virtual ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const = 0;
     virtual ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const = 0;
 
-    /// Create a backup of a data part.
-    /// This method adds a new entry to backup_entries.
-    /// Also creates a new tmp_dir for internal disk (if disk is mentioned the first time).
     using TemporaryFilesOnDisks = std::map<DiskPtr, std::shared_ptr<TemporaryFileOnDisk>>;
-    virtual void backup(
-        const MergeTreeDataPartChecksums & checksums,
-        const NameSet & files_without_checksums,
-        const String & path_in_backup,
-        const BackupSettings & backup_settings,
-        bool make_temporary_hard_links,
-        BackupEntries & backup_entries,
-        TemporaryFilesOnDisks * temp_dirs,
-        bool is_projection_part,
-        bool allow_backup_broken_projection) const = 0;
+
+    /// Everything the backup of a data part depends on, gathered in one place.
+    struct BackupParams
+    {
+        const MergeTreeDataPartChecksums & checksums;
+        NameSet files_without_checksums;
+        String path_in_backup;
+        const BackupSettings & backup_settings;
+        bool make_temporary_hard_links = false;
+        /// Output: new entries are added here.
+        BackupEntries & backup_entries;
+        TemporaryFilesOnDisks * temp_dirs = nullptr;
+        bool is_projection_part = false;
+        bool allow_backup_broken_projection = false;
+    };
+
+    /// Create a backup of a data part.
+    /// This method adds a new entry to params.backup_entries.
+    /// Also creates a new tmp_dir for internal disk (if disk is mentioned the first time).
+    virtual void backup(const BackupParams & params) const = 0;
 
     /// Creates hardlinks into 'to/dir_path' for every file in data part.
     /// Some files can be copied instead of hardlinks. It's because of details of zero copy replication
@@ -362,6 +375,14 @@ public:
     virtual void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
     virtual void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) = 0;
 
+    /// Options of the rename operation which do not describe the destination itself.
+    struct RenameParams
+    {
+        LoggerPtr log = nullptr;
+        bool remove_new_dir_if_exists = false;
+        bool fsync_part_dir = false;
+    };
+
     /// Rename part.
     /// Ideally, new_root_path should be the same as current root (but it is not true).
     /// Examples are: 'all_1_2_1' -> 'detached/all_1_2_1'
@@ -369,9 +390,7 @@ public:
     virtual void rename(
         std::string new_root_path,
         std::string new_part_dir,
-        LoggerPtr log,
-        bool remove_new_dir_if_exists,
-        bool fsync_part_dir) = 0;
+        const RenameParams & params) = 0;
 
     /// Starts a transaction of mutable operations.
     virtual void beginTransaction() = 0;
@@ -389,6 +408,195 @@ public:
 
 using DataPartStoragePtr = std::shared_ptr<const IDataPartStorage>;
 using MutableDataPartStoragePtr = std::shared_ptr<IDataPartStorage>;
+
+class IMergeTreeDataPart;
+struct IMergeTreeIndex;
+class ColumnsStatistics;
+class PackedFilesReader;
+
+/// ===== Facets of the data part composition =====
+///
+/// A data part is composed of an immutable main part (column data, marks, primary index)
+/// plus optional sub-blocks stored inside the part directory but logically separate:
+/// projections, secondary indexes and statistics - all re-materializable from the main part.
+/// Each facet below owns the on-disk structure of one sub-block; IMergeTreeDataPart composes
+/// them and stays the logical representation.
+
+/// Projection sub-block of a data part.
+///
+/// Defines the placement and naming of a projection directory ("<name>.proj",
+/// or "<name>.tmp_proj" while the projection is being materialized) inside its
+/// parent part, and gives access to the physical layout of both sides.
+class IDataPartProjectionStorage
+{
+public:
+    virtual ~IDataPartProjectionStorage() = default;
+
+    static constexpr std::string_view PROJECTION_DIRECTORY_SUFFIX = ".proj";
+    static constexpr std::string_view TEMPORARY_PROJECTION_DIRECTORY_SUFFIX = ".tmp_proj";
+
+    /// "proj_a" -> "proj_a.proj" (or "proj_a.tmp_proj" for a temporary projection).
+    static String getDirectoryName(const String & projection_name, bool is_temporary = false)
+    {
+        return projection_name + String(is_temporary ? TEMPORARY_PROJECTION_DIRECTORY_SUFFIX : PROJECTION_DIRECTORY_SUFFIX);
+    }
+
+    static bool isProjectionDirectoryName(std::string_view directory_name)
+    {
+        return directory_name.ends_with(PROJECTION_DIRECTORY_SUFFIX);
+    }
+
+    static bool isTemporaryProjectionDirectoryName(std::string_view directory_name)
+    {
+        return directory_name.ends_with(TEMPORARY_PROJECTION_DIRECTORY_SUFFIX);
+    }
+
+    /// Name of the projection this storage belongs to.
+    virtual String getProjectionName() const = 0;
+
+    /// True for a projection which is being materialized ("<name>.tmp_proj").
+    virtual bool isTemporary() const = 0;
+
+    /// Physical layout of the projection itself.
+    virtual IDataPartStorage & getStorage() = 0;
+    virtual const IDataPartStorage & getStorage() const = 0;
+
+    /// Physical layout of the parent part the projection is placed in.
+    virtual const IDataPartStorage & getParentStorage() const = 0;
+};
+
+using DataPartProjectionStoragePtr = std::unique_ptr<IDataPartProjectionStorage>;
+
+/// On-disk implementation of the projection sub-block: the projection's own storage
+/// (rooted at "<parent>/<name>.proj") together with the parent part storage it is placed in.
+class DataPartProjectionStorage final : public IDataPartProjectionStorage
+{
+public:
+    DataPartProjectionStorage(
+        String projection_name_,
+        MutableDataPartStoragePtr storage_,
+        DataPartStoragePtr parent_storage_);
+
+    String getProjectionName() const override { return projection_name; }
+    bool isTemporary() const override;
+
+    IDataPartStorage & getStorage() override { return *storage; }
+    const IDataPartStorage & getStorage() const override { return *storage; }
+
+    const IDataPartStorage & getParentStorage() const override { return *parent_storage; }
+
+private:
+    String projection_name;
+    MutableDataPartStoragePtr storage;
+    DataPartStoragePtr parent_storage;
+};
+
+/// Secondary (skip) indexes sub-block of a data part.
+///
+/// Knows how index substreams are laid out on disk - standalone "skp_idx_*" files or
+/// members of the per-part "skp_idx.packed" archive - and answers structural questions
+/// about them. A single index can mix both layouts (small substreams stay in the archive,
+/// large ones spill into standalone files), so the layout is a per-file property answered
+/// by probing, not a per-part implementation split.
+class IDataPartIndexStorage
+{
+public:
+    virtual ~IDataPartIndexStorage() = default;
+
+    /// True iff any substream of the index is stored inside the part's
+    /// "skp_idx.packed" archive. Probes what the part actually holds, not the
+    /// writer's current substream set, so a legacy member inside the archive
+    /// on an upgraded part is found.
+    virtual bool isInPackedArchive(const IMergeTreeIndex & index) const = 0;
+
+    /// True iff the part physically stores the index. Probes both the current
+    /// and the legacy data file extensions (".idx2" and ".idx").
+    virtual bool exists(const String & index_name, bool escape_index_filenames) const = 0;
+};
+
+using DataPartIndexStoragePtr = std::unique_ptr<IDataPartIndexStorage>;
+
+/// On-disk implementation of the secondary indexes sub-block. Answers structural questions
+/// from the part's checksums and its physical storage (including the "skp_idx.packed"
+/// archive overlay that lives in DataPartStorageOnDiskBase).
+class DataPartIndexStorage final : public IDataPartIndexStorage
+{
+public:
+    explicit DataPartIndexStorage(const IMergeTreeDataPart & part_) : part(part_) {}
+
+    bool isInPackedArchive(const IMergeTreeIndex & index) const override;
+    bool exists(const String & index_name, bool escape_index_filenames) const override;
+
+private:
+    const IMergeTreeDataPart & part;
+};
+
+/// Statistics sub-block of a data part.
+///
+/// Loads column statistics from their on-disk representation. The representation is a
+/// per-part property decided by the part's contents (see createDataPartStatisticsStorage),
+/// so each representation gets its own implementation of load.
+class IDataPartStatisticsStorage
+{
+public:
+    virtual ~IDataPartStatisticsStorage() = default;
+
+    /// Load statistics for all columns of the part.
+    virtual ColumnsStatistics load() const = 0;
+
+    /// Load statistics only for the given columns. Statistics of a parent column are
+    /// kept when its ".null" subcolumn is requested (optimize_functions_to_subcolumns).
+    virtual ColumnsStatistics load(const Names & required_columns) const = 0;
+};
+
+using DataPartStatisticsStoragePtr = std::unique_ptr<IDataPartStatisticsStorage>;
+
+/// Statistics stored as a single "statistics.packed" archive with one virtual
+/// "statistics_<col>.stats" member per column (parts written with the packed
+/// statistics format on full/regular part storage).
+class DataPartStatisticsStoragePacked final : public IDataPartStatisticsStorage
+{
+public:
+    /// Out-of-line: the members require the complete PackedFilesReader type.
+    explicit DataPartStatisticsStoragePacked(const IMergeTreeDataPart & part_);
+    ~DataPartStatisticsStoragePacked() override;
+
+    ColumnsStatistics load() const override;
+    ColumnsStatistics load(const Names & required_columns) const override;
+
+private:
+    ColumnsStatistics loadImpl(const NameSet & required_columns) const;
+
+    /// Reader for the archive index, lazily created on first load.
+    const PackedFilesReader & getReader() const;
+
+    const IMergeTreeDataPart & part;
+
+    mutable std::mutex reader_mutex;
+    mutable std::unique_ptr<PackedFilesReader> reader;
+};
+
+/// Statistics stored as one standalone compressed "statistics_<col>.stats" file per
+/// column (legacy parts, and packed part storage where the files live inside data.packed).
+class DataPartStatisticsStorageWide final : public IDataPartStatisticsStorage
+{
+public:
+    explicit DataPartStatisticsStorageWide(const IMergeTreeDataPart & part_) : part(part_) {}
+
+    ColumnsStatistics load() const override;
+    ColumnsStatistics load(const Names & required_columns) const override;
+
+private:
+    ColumnsStatistics loadImpl(const NameSet & required_columns) const;
+
+    const IMergeTreeDataPart & part;
+};
+
+/// Picks the statistics representation of the part: "statistics.packed" archive when the
+/// part's checksums list one (and the part is on on-disk storage), per-column files
+/// otherwise. Must be called after the part's checksums are loaded - the decision is
+/// made once per part object.
+DataPartStatisticsStoragePtr createDataPartStatisticsStorage(const IMergeTreeDataPart & part);
 
 /// A holder that encapsulates data part storage and
 /// gives access to const storage from const methods

@@ -173,11 +173,14 @@ public:
     /// Returns true if there is materialized index with specified name in part.
     bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
 
-    /// True iff any of @index's substreams (base plus side streams like .dct/.pst for text indices)
-    /// is stored inside this part's skp_idx.packed archive. Probing every substream, not just
-    /// .idx/.idx2, keeps a mixed-layout index from looking absent and losing its packed side
-    /// streams. Returns false on storages without a packed archive.
-    bool isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const;
+    /// Facets of the part composition. The part itself is the logical representation;
+    /// each facet owns the on-disk structure of one of its sub-blocks.
+    const IDataPartIndexStorage & getIndexStorage() const { return *index_storage; }
+    /// Lazily picks the statistics representation (packed archive vs per-column files)
+    /// from the loaded checksums on first access.
+    const IDataPartStatisticsStorage & getStatisticsStorage() const;
+    /// Placement of this projection inside the parent part. Only for projection parts.
+    const IDataPartProjectionStorage & getProjectionStorage() const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const;
@@ -237,8 +240,6 @@ public:
 
     void remove();
 
-    ColumnsStatistics loadStatistics() const;
-    ColumnsStatistics loadStatistics(const Names & required_columns) const;
     Estimates getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
 
@@ -804,11 +805,6 @@ private:
     /// The number of subcolumns can be infinite due to dynamic subcolumns in JSON, so we use LRU cache here.
     mutable Poco::LRUCache<String, ColumnSize> subcolumns_sizes_cache = Poco::LRUCache<String, ColumnSize>(1024);
 
-    /// PackedFilesReader for statistics archive.
-    /// Lazily loaded on first access to loadStatistics when packed format is used.
-    mutable std::mutex statistics_reader_mutex;
-    mutable std::unique_ptr<PackedFilesReader> statistics_reader TSA_GUARDED_BY(statistics_reader_mutex);
-
 protected:
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
@@ -822,6 +818,18 @@ protected:
     String parent_part_name;
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
+
+    /// On-disk structure facets of the part sub-blocks (secondary indexes, statistics).
+    /// The part composes them; each facet answers structural questions about its sub-block.
+    DataPartIndexStoragePtr index_storage;
+
+    /// The statistics representation depends on the part's checksums, which are loaded after
+    /// construction, so the facet is created lazily by getStatisticsStorage.
+    mutable std::mutex statistics_storage_mutex;
+    mutable DataPartStatisticsStoragePtr statistics_storage TSA_GUARDED_BY(statistics_storage_mutex);
+
+    /// Placement of this projection inside the parent part. Not null only for projection parts.
+    DataPartProjectionStoragePtr projection_storage;
 
     /// Set of source parts for patch parts. Empty for regular parts.
     SourcePartsSetForPatch source_parts_set;
@@ -923,10 +931,6 @@ private:
     /// any specifial compression.
     void loadDefaultCompressionCodec();
     void loadSourcePartsSet();
-
-    ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
-    ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
-    PackedFilesReader * getStatisticsPackedReader() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);
 

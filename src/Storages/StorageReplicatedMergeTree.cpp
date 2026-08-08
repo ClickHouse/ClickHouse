@@ -5834,7 +5834,10 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} fetched on wrong disk {}", part->name, part->getDataPartStorage().getDiskName());
 
         auto replaced_path = fs::path(replaced_part_path);
-        part->getDataPartStorage().rename(replaced_path.parent_path(), replaced_path.filename(), nullptr, true, false);
+        part->getDataPartStorage().rename(
+            replaced_path.parent_path(),
+            replaced_path.filename(),
+            IDataPartStorage::RenameParams{.remove_new_dir_if_exists = true});
     }
     catch (const Exception & e)
     {

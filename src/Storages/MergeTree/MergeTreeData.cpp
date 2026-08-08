@@ -920,7 +920,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     for (const auto & part : parts)
     {
         auto parts_lock = readLockParts();
-        auto stats = part.data_part->loadStatistics(required_columns);
+        auto stats = part.data_part->getStatisticsStorage().load(required_columns);
         estimator_builder.markDataPart(part.data_part);
         for (const auto & [column_name, stat] : stats)
             estimator_builder.addStatistics(column_name, stat);
@@ -3308,7 +3308,7 @@ try
     for (const DataPartPtr & data_part : data_parts)
     {
         auto parts_lock = readLockParts();
-        auto stats = data_part->loadStatistics();
+        auto stats = data_part->getStatisticsStorage().load();
         estimator_builder.markDataPart(data_part);
         for (const auto & [column_name, stat] : stats)
             estimator_builder.addStatistics(column_name, stat);
@@ -8151,32 +8151,35 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
         }
 
         BackupEntries backup_entries_from_part;
-        part->getDataPartStorage().backup(
-            part->checksums,
-            part->getFileNamesWithoutChecksums(),
-            data_path_in_backup,
-            backup_settings,
-            make_temporary_hard_links,
-            backup_entries_from_part,
-            &temp_dirs,
-            false, false);
+        part->getDataPartStorage().backup(IDataPartStorage::BackupParams
+        {
+            .checksums = part->checksums,
+            .files_without_checksums = part->getFileNamesWithoutChecksums(),
+            .path_in_backup = data_path_in_backup,
+            .backup_settings = backup_settings,
+            .make_temporary_hard_links = make_temporary_hard_links,
+            .backup_entries = backup_entries_from_part,
+            .temp_dirs = &temp_dirs,
+        });
 
         auto backup_projection = [&](IDataPartStorage & storage, IMergeTreeDataPart & projection_part)
         {
-            storage.backup(
-                projection_part.checksums,
-                projection_part.getFileNamesWithoutChecksums(),
-                fs::path{data_path_in_backup} / part->name,
-                backup_settings,
-                make_temporary_hard_links,
-                backup_entries_from_part,
-                &temp_dirs,
-                projection_part.is_broken,
-                backup_settings.allow_backup_broken_projections);
+            storage.backup(IDataPartStorage::BackupParams
+            {
+                .checksums = projection_part.checksums,
+                .files_without_checksums = projection_part.getFileNamesWithoutChecksums(),
+                .path_in_backup = fs::path{data_path_in_backup} / part->name,
+                .backup_settings = backup_settings,
+                .make_temporary_hard_links = make_temporary_hard_links,
+                .backup_entries = backup_entries_from_part,
+                .temp_dirs = &temp_dirs,
+                .is_projection_part = projection_part.is_broken,
+                .allow_backup_broken_projection = backup_settings.allow_backup_broken_projections,
+            });
         };
 
         auto projection_parts = part->getProjectionParts();
-        std::string proj_suffix = ".proj";
+        std::string proj_suffix{IDataPartProjectionStorage::PROJECTION_DIRECTORY_SUFFIX};
         std::unordered_set<String> defined_projections;
 
         for (const auto & [projection_name, projection_part] : projection_parts)

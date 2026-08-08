@@ -111,16 +111,7 @@ public:
     ReplicatedFilesDescription getReplicatedFilesDescription(const NameSet & file_names) const override;
     ReplicatedFilesDescription getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const override;
 
-    void backup(
-        const MergeTreeDataPartChecksums & checksums,
-        const NameSet & files_without_checksums,
-        const String & path_in_backup,
-        const BackupSettings & backup_settings,
-        bool make_temporary_hard_links,
-        BackupEntries & backup_entries,
-        TemporaryFilesOnDisks * temp_dirs,
-        bool is_projection_part,
-        bool allow_backup_broken_projection) const override;
+    void backup(const BackupParams & params) const override;
 
     MutableDataPartStoragePtr freeze(
         const std::string & to,
@@ -152,16 +143,9 @@ public:
     void rename(
         std::string new_root_path,
         std::string new_part_dir,
-        LoggerPtr log,
-        bool remove_new_dir_if_exists,
-        bool fsync_part_dir) override;
+        const RenameParams & params) override;
 
-    void remove(
-        CanRemoveCallback && can_remove_callback,
-        const MergeTreeDataPartChecksums & checksums,
-        std::list<ProjectionChecksums> projections,
-        bool is_temp,
-        LoggerPtr log) override;
+    void remove(RemoveParams params) override;
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
     void createDirectories() override;

@@ -325,7 +325,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         auto file_name = it->name();
 
         /// We will check projections later.
-        if (data_part_storage.existsDirectory(file_name) && file_name.ends_with(".proj"))
+        if (data_part_storage.existsDirectory(file_name) && IDataPartProjectionStorage::isProjectionDirectoryName(file_name))
         {
             projections_on_disk.insert(file_name);
             continue;
@@ -359,7 +359,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         if (is_cancelled())
             return {};
 
-        auto projection_file = name + ".proj";
+        auto projection_file = IDataPartProjectionStorage::getDirectoryName(name);
 
         IMergeTreeDataPart::Checksums projection_checksums;
         try
@@ -449,7 +449,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         Names removed_projection_files;
         for (const auto & [name, _] : checksums_txt.files)
-            if (name.ends_with(".proj") && !checksums_data.files.contains(name))
+            if (IDataPartProjectionStorage::isProjectionDirectoryName(name) && !checksums_data.files.contains(name))
                 removed_projection_files.push_back(name);
 
         if (!removed_projection_files.empty())

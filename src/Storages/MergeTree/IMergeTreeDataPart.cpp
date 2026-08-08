@@ -536,10 +536,15 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::IMergeTreeDataPart");
     version = std::make_unique<VersionMetadataOnDisk>(this, intent);
 
+    index_storage = std::make_unique<DataPartIndexStorage>(*this);
+
     if (parent_part)
     {
         chassert(parent_part_name.starts_with(parent_part->info.getPartitionId()));     /// Make sure there's no prefix
         state = MergeTreeDataPartState::Active;
+
+        projection_storage = std::make_unique<DataPartProjectionStorage>(
+            name, getDataPartStoragePtr(), parent_part->getDataPartStoragePtr());
     }
 
     incrementStateMetric(state);
@@ -561,6 +566,26 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 
     /// By default set the order of common metadata files. Later on it can be changed by the part itself.
     getDataPartStorage().setPreferredFileOrder(COMMON_METADATA_FILES);
+}
+
+const IDataPartProjectionStorage & IMergeTreeDataPart::getProjectionStorage() const
+{
+    if (!projection_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} is not a projection part and has no projection storage", name);
+    return *projection_storage;
+}
+
+const IDataPartStatisticsStorage & IMergeTreeDataPart::getStatisticsStorage() const
+{
+    std::lock_guard lock(statistics_storage_mutex);
+    if (!statistics_storage)
+    {
+        /// The representation is picked from the checksums; a premature call would latch
+        /// the wrong implementation.
+        chassert(areChecksumsLoaded());
+        statistics_storage = createDataPartStatisticsStorage(*this);
+    }
+    return *statistics_storage;
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
@@ -1043,7 +1068,7 @@ void IMergeTreeDataPart::removeIfNeeded()
                                 getDataPartStorage().getPartDirectory(), name);
 
             bool is_moving_part = isMovingPart();
-            if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj") && !is_moving_part)
+            if (!startsWith(file_name, "tmp") && !IDataPartProjectionStorage::isTemporaryProjectionDirectoryName(file_name) && !is_moving_part)
             {
                 LOG_ERROR(
                     storage.log,
@@ -1192,163 +1217,6 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAnd
     return *minimum_size_column;
 }
 
-PackedFilesReader * IMergeTreeDataPart::getStatisticsPackedReader() const
-{
-    std::lock_guard lock(statistics_reader_mutex);
-    if (statistics_reader)
-        return statistics_reader.get();
-
-    const String filename = String(ColumnsStatistics::FILENAME);
-    if (!checksums.has(filename))
-        return nullptr;
-
-    const auto & storage_path = getDataPartStorage().getRelativePath();
-    const String packed_file = fs::path(storage_path) / filename;
-    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
-
-    if (!disk_storage)
-        return nullptr;
-
-    statistics_reader = std::make_unique<PackedFilesReader>(
-        disk_storage->getDisk(),
-        packed_file,
-        storage.getContext()->getReadSettings());
-
-    return statistics_reader.get();
-}
-
-static const ColumnDescription * getColumnForStatisticsFile(const String & filename, const ColumnsDescription & all_columns, const NameSet & required_columns)
-{
-    chassert(filename.starts_with(STATS_FILE_PREFIX));
-    chassert(filename.ends_with(STATS_FILE_SUFFIX));
-
-    size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
-    String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
-
-    /// `<col>.null` subcolumn may appear in required_columns when
-    /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
-    if (!required_columns.empty()
-        && !required_columns.contains(column_name)
-        && !required_columns.contains(column_name + ".null"))
-    {
-        return nullptr;
-    }
-
-    return all_columns.tryGet(column_name);
-}
-
-ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const
-{
-    ColumnsStatistics result;
-    auto read_settings = storage.getContext()->getReadSettings();
-
-    /// The reader holds only the index; resolve the archive's current location here so a part
-    /// that has since been renamed or moved still reads from the right place.
-    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
-    if (!disk_storage)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics packed reader requires on-disk part storage");
-    const auto disk = disk_storage->getDisk();
-    const String packed_file = fs::path(getDataPartStorage().getRelativePath()) / String(ColumnsStatistics::FILENAME);
-
-    for (const auto & filename : reader.getFileNames())
-    {
-        if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "File {} is not a statistics file", filename);
-
-        const auto * column_desc = getColumnForStatisticsFile(filename, getColumnsDescription(), required_columns);
-        if (!column_desc)
-            continue;
-
-        size_t file_size = reader.getFileSize(filename);
-        auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
-        CompressedReadBuffer compressed_buf(*file_buf);
-        try
-        {
-            fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
-            {
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
-            });
-
-            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-            if (column_stat)
-                result.emplace(column_desc->name, std::move(column_stat));
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(
-                "(while loading statistics for column {} from file {} in packed file {} of part {})",
-                column_desc->name,
-                filename,
-                ColumnsStatistics::FILENAME,
-                name);
-            throw;
-        }
-    }
-
-    return result;
-}
-
-ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & required_columns) const
-{
-    ColumnsStatistics result;
-    auto read_settings = storage.getContext()->getReadSettings();
-
-    for (const auto & [filename, checksum] : checksums.files)
-    {
-        if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
-            continue;
-
-        const auto * column_desc = getColumnForStatisticsFile(filename, getColumnsDescription(), required_columns);
-        if (!column_desc)
-            continue;
-
-        auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
-        CompressedReadBuffer compressed_buf(*file_buf);
-        try
-        {
-            fiu_do_on(FailPoints::merge_tree_load_statistics_throw,
-            {
-                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in loadStatistics");
-            });
-
-            auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-            if (column_stat)
-                result.emplace(column_desc->name, std::move(column_stat));
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(
-                "(while loading statistics for column {} from file {} in part {})",
-                column_desc->name,
-                filename,
-                name);
-            throw;
-        }
-    }
-
-    return result;
-}
-
-ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
-{
-    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
-
-    if (auto * reader = getStatisticsPackedReader())
-        return loadStatisticsPacked(*reader, {});
-
-    return loadStatisticsWide({});
-}
-
-ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_columns) const
-{
-    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
-    NameSet required_columns_set(required_columns.begin(), required_columns.end());
-
-    if (auto * reader = getStatisticsPackedReader())
-        return loadStatisticsPacked(*reader, required_columns_set);
-
-    return loadStatisticsWide(required_columns_set);
-}
 
 Estimates IMergeTreeDataPart::getEstimates() const
 {
@@ -1360,7 +1228,7 @@ Estimates IMergeTreeDataPart::getEstimates() const
     /// The raw statistics are transient, so load them in the default arena; only the cached
     /// estimates map is long-lived (kept on the part until reload), so build it in the dedicated
     /// arena, like the rest of the part's metadata.
-    auto statistics = loadStatistics();
+    auto statistics = getStatisticsStorage().load();
 
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -1489,18 +1357,18 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     const String & projection_name, ProjectionDescriptionRawPtr projection, PartDirIntent intent, bool is_temp_projection)
 {
-    const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
     /// The projection storage is stored on the resulting projection part for its lifetime, so create
     /// it in the dedicated arena (this is the part-lifetime projection-storage creation site).
     /// `CreateFresh` takes the non-initializing variant, so nothing is seeded from a nested leftover.
-    MutableDataPartStoragePtr projection_storage;
+    const auto projection_dir_name = IDataPartProjectionStorage::getDirectoryName(projection_name, is_temp_projection);
+    MutableDataPartStoragePtr projection_part_storage;
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        projection_storage = intent == PartDirIntent::CreateFresh
-            ? getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection)
-            : getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+        projection_part_storage = intent == PartDirIntent::CreateFresh
+            ? getDataPartStorage().getProjectionNoInitialize(projection_dir_name, !is_temp_projection)
+            : getDataPartStorage().getProjection(projection_dir_name, !is_temp_projection);
     }
-    if (intent == PartDirIntent::CreateFresh && projection_storage->exists())
+    if (intent == PartDirIntent::CreateFresh && projection_part_storage->exists())
     {
         /// Nested projection directories have no claim (the cleaner cannot see inside part directories),
         /// so a retried materialization reclaims the leftover of an interrupted attempt here.
@@ -1511,12 +1379,12 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Cannot reclaim projection directory {}: it belongs to a committed part",
-                projection_storage->getFullPath());
+                projection_part_storage->getFullPath());
 
-        LOG_WARNING(storage.log, "Removing stale temporary projection directory {}", projection_storage->getFullPath());
-        projection_storage->removeRecursive();
+        LOG_WARNING(storage.log, "Removing stale temporary projection directory {}", projection_part_storage->getFullPath());
+        projection_part_storage->removeRecursive();
     }
-    MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings(), intent);
+    MergeTreeDataPartBuilder builder(storage, projection_name, projection_part_storage, getReadSettings(), intent);
     return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this).withProjection(projection);
 }
 
@@ -1553,7 +1421,7 @@ void IMergeTreeDataPart::loadProjections(
         if (projection.with_block_offset && isSystemColumnInvalidated(BlockOffsetColumn::name))
             continue;
 
-        auto path = projection.name + ".proj";
+        auto path = IDataPartProjectionStorage::getDirectoryName(projection.name);
         if (getDataPartStorage().existsDirectory(path))
         {
             if (hasProjection(projection.name))
@@ -2575,7 +2443,15 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     auto old_projection_root_path = getDataPartStorage().getRelativePath();
     auto to = fs::path(relative_path) / new_relative_path;
 
-    getDataPartStorage().rename(to.parent_path(), to.filename(), storage.log.load(), remove_new_dir_if_exists, fsync_dir);
+    getDataPartStorage().rename(
+        to.parent_path(),
+        to.filename(),
+        IDataPartStorage::RenameParams
+        {
+            .log = storage.log.load(),
+            .remove_new_dir_if_exists = remove_new_dir_if_exists,
+            .fsync_part_dir = fsync_dir,
+        });
 
     auto new_projection_root_path = to.string();
 
@@ -2634,7 +2510,14 @@ void IMergeTreeDataPart::remove()
     }
 
     bool is_temporary_part = is_temp || state == MergeTreeDataPartState::Temporary;
-    getDataPartStorage().remove(std::move(can_remove_callback), checksums, projection_checksums, is_temporary_part, storage.log.load());
+    getDataPartStorage().remove(IDataPartStorage::RemoveParams
+    {
+        .can_remove_callback = std::move(can_remove_callback),
+        .checksums = checksums,
+        .projections = std::move(projection_checksums),
+        .is_temp = is_temporary_part,
+        .log = storage.log.load(),
+    });
 }
 
 std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const
@@ -2831,7 +2714,7 @@ void IMergeTreeDataPart::checkConsistencyBase() const
             catch (const Exception & ex)
             {
                 /// For projection parts check will mark them broken in loadProjections
-                if (!parent_part && filename.ends_with(".proj"))
+                if (!parent_part && IDataPartProjectionStorage::isProjectionDirectoryName(filename))
                 {
                     std::string projection_name = fs::path(filename).stem();
                     LOG_INFO(storage.log, "Projection {} doesn't exist on start for part {}, marking it as broken", projection_name, name);
@@ -3126,25 +3009,7 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
 
 bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
 {
-    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::hasSecondaryIndex");
-
-    auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
-    return getStreamNameOrHashResolved(file_name, ".idx").has_value()
-        || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
-}
-
-bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const
-{
-    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
-    if (!disk_storage)
-        return false;
-    const String file_name = skip_index.getFileName();
-    /// Probe what the part actually holds, not the writer's current `getSubstreams`, so a legacy
-    /// member inside `skp_idx.packed` on an upgraded part is found.
-    for (const auto & substream : skip_index.getAllSubstreamsInPart(checksums, file_name, &getDataPartStorage()))
-        if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + substream.suffix + substream.extension))
-            return true;
-    return false;
+    return getIndexStorage().exists(index_name, metadata->escape_index_filenames);
 }
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const

@@ -1350,8 +1350,8 @@ static NameToNameVector collectFilesForRenames(
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)
         {
-            if (source_part->checksums.has(command.column_name + ".proj"))
-                add_rename(command.column_name + ".proj", "");
+            if (source_part->checksums.has(IDataPartProjectionStorage::getDirectoryName(command.column_name)))
+                add_rename(IDataPartProjectionStorage::getDirectoryName(command.column_name), "");
         }
         else if (isWidePart(source_part))
         {
@@ -2271,7 +2271,7 @@ static bool isIndexResolvableFromOwnFiles(
     const MergeTreeSettings & data_settings,
     const String & index_name)
 {
-    if (source_part->isSkipIndexInPackedArchive(index))
+    if (source_part->getIndexStorage().isInPackedArchive(index))
         return true;
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
@@ -2459,7 +2459,7 @@ private:
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
                 || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
-                || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr)
+                || ctx->source_part->getIndexStorage().isInPackedArchive(*index_ptr)
                 || index_checksums_missing;
 
             if (need_recalculate)
@@ -2766,7 +2766,7 @@ public:
 private:
     void prepare()
     {
-        ctx->all_gathered_data.statistics = ctx->source_part->loadStatistics();
+        ctx->all_gathered_data.statistics = ctx->source_part->getStatisticsStorage().load();
 
         MutationHelpers::processStatisticsChanges(
             ctx->files_to_skip,
@@ -3094,7 +3094,7 @@ private:
                 if (projection_part->checksums.empty())
                     continue;
                 ctx->new_data_part->checksums.addFile(
-                    projection_name + ".proj",
+                    IDataPartProjectionStorage::getDirectoryName(projection_name),
                     projection_part->checksums.getTotalSizeOnDisk(),
                     projection_part->checksums.getTotalChecksumUInt128());
             }
@@ -3572,7 +3572,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 continue;
 
             auto surviving_index = index_factory.get(ctx->metadata_snapshot, index, *ctx->data->getSettings());
-            if (!source_part->isSkipIndexInPackedArchive(*surviving_index))
+            if (!source_part->getIndexStorage().isInPackedArchive(*surviving_index))
                 continue;
 
             const String surviving_file_name = surviving_index->getFileName();
@@ -3626,7 +3626,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             || (source_has_archive && writer_can_open_archive);
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
-                if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
+                if (source_part->getIndexStorage().isInPackedArchive(*idx)) { archive_dirty = true; break; }
 
         if (archive_dirty)
         {
