@@ -774,6 +774,12 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
         modified_select.setExpression(ASTSelectQuery::Expression::HAVING, {});
         modified_select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
         modified_select.group_by_all = false;
+        /// Same for the GROUP BY modifiers: a leftover WITH TOTALS/ROLLUP/CUBE/GROUPING SETS
+        /// flag makes the interpreter reject the rewritten aggregation-free query.
+        modified_select.group_by_with_totals = false;
+        modified_select.group_by_with_rollup = false;
+        modified_select.group_by_with_cube = false;
+        modified_select.group_by_with_grouping_sets = false;
     }
 
     auto select_list = make_intrusive<ASTExpressionList>();

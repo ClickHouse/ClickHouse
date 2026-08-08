@@ -62,6 +62,13 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
     /// ORDER BY clause is removed below.
     select.setExpression(ASTSelectQuery::Expression::GROUP_BY, {});
     select.group_by_all = false;
+    /// The GROUP BY modifiers must not survive the removal of the clause either: with no
+    /// GROUP BY and no aggregates a leftover WITH TOTALS/ROLLUP/CUBE/GROUPING SETS flag makes
+    /// the interpreter reject the rewritten query as aggregation-free.
+    select.group_by_with_totals = false;
+    select.group_by_with_rollup = false;
+    select.group_by_with_cube = false;
+    select.group_by_with_grouping_sets = false;
     rewriter_result.aggregates.clear();
 
     /// Replace select list to remove joined columns
