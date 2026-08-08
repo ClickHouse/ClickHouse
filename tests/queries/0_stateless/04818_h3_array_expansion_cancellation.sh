@@ -68,7 +68,8 @@ run_throw() {
 # a wrong value rather than a shorter one, so the call stops and the pipeline absorbs it into a clean
 # finish - which leaves no message and therefore no elapsed time to read. The query log's duration is
 # used instead: it was measured equal to the reported elapsed within 1ms over 39 throw-mode
-# observations here, at peaks up to 4.66GiB, so the two are interchangeable for these arrays.
+# observations here, including an arm deliberately forced to hold 4.66GiB live, so the two are
+# interchangeable for these arrays.
 run_break() {
     local label="$1" expr="$2" rows="$3"
     local query_id="04818_${label}_break_${CLICKHOUSE_DATABASE}"

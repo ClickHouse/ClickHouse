@@ -13,7 +13,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
-#include <base/scope_guard.h>
 
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
@@ -25,9 +24,17 @@ namespace DB::ErrorCodes
 extern const int TIMEOUT_EXCEEDED;
 }
 
-/// Every row counts as at least one work unit, so a block of rows that produce nothing still reaches a
-/// cancellation checkpoint. Removing that floor leaves a 120 million row block running 1.86 seconds,
-/// inside the smallest bound 04818 allows, hence a throw on an expired deadline rather than a latency.
+/// Two properties of the checkpoint counter, neither of which admits a latency oracle.
+///
+/// The per-row floor: a row that produces nothing still counts as one work unit. Removing it leaves a
+/// 120 million row block running 1.86 seconds, inside the smallest bound 04818 allows. `h3Line` has two
+/// loops and this pins their floors jointly, since its sizing pass reaches the threshold one pass
+/// before the fill pass and so removing either alone still stops the block.
+///
+/// The item weighting: a row is worth its output size, because one row can hold 300030001 items for
+/// `h3kRing` and 1073741824 for `h3ToChildren`. Removing it leaves a counter that advances once per
+/// row, which every 04818 shape still reaches - they have millions of rows - so those pass on a binary
+/// with no weighting at all. These cases use fewer rows than the threshold and more items than it.
 namespace
 {
 
@@ -65,21 +72,19 @@ struct ExpiredDeadlineQuery
     }
 };
 
-/// One block of `rows` rows whose first argument is an invalid cell index, so every row produces an
-/// empty array and only the per-row floor can advance the checkpoint counter.
-void assertDegenerateBlockIsCancelled(const String & function_name, const DataTypePtr & second_type, UInt64 second_value)
+/// One block of `rows` rows, both arguments constant, run against an already expired deadline.
+void assertBlockIsCancelled(
+    const String & function_name, UInt64 cell, const DataTypePtr & second_type, UInt64 second_value, size_t rows)
 {
-    static constexpr size_t rows = 100'000;  /// exactly one throttle unit
-
     ExpiredDeadlineQuery query;
 
-    auto invalid_cells = ColumnUInt64::create(rows, 1);
+    auto cells = ColumnUInt64::create(rows, cell);
     auto second = second_type->createColumn();
     for (size_t i = 0; i < rows; ++i)
         second->insert(second_value);
 
     ColumnsWithTypeAndName arguments{
-        {std::move(invalid_cells), std::make_shared<DataTypeUInt64>(), "cell"},
+        {std::move(cells), std::make_shared<DataTypeUInt64>(), "cell"},
         {std::move(second), second_type, "arg"}};
 
     auto function = FunctionFactory::instance().get(function_name, query.context)->build(arguments);
@@ -95,30 +100,99 @@ void assertDegenerateBlockIsCancelled(const String & function_name, const DataTy
     }
 }
 
+/// Every row's cell index is invalid, so every row produces an empty array and only the per-row floor
+/// can advance the counter. One throttle unit of rows, so the floor reaches it on the last row.
+void assertDegenerateBlockIsCancelled(const String & function_name, const DataTypePtr & second_type, UInt64 second_value)
+{
+    assertBlockIsCancelled(function_name, /*cell=*/1, second_type, second_value, /*rows=*/100'000);
 }
 
-TEST(H3ArrayExpansionCancellation, KRingHonorsDeadlineOnZeroOutputRows)
+}
+
+class H3ArrayExpansionCancellation : public ::testing::Test
+{
+public:
+    H3ArrayExpansionCancellation()
+    {
+        /// Another test in this binary may have initialized the process-lifetime `MainThreadStatus`,
+        /// which leaves `current_thread` set on this thread; the `ThreadStatus` these cases create
+        /// asserts that it is null.
+        previous_thread_status = current_thread;
+        current_thread = nullptr;
+    }
+
+    ~H3ArrayExpansionCancellation() override { current_thread = previous_thread_status; }
+
+private:
+    ThreadStatus * previous_thread_status = nullptr;
+};
+
+TEST_F(H3ArrayExpansionCancellation, KRingHonorsDeadlineOnZeroOutputRows)
 {
     tryRegisterFunctions();
     assertDegenerateBlockIsCancelled("h3kRing", std::make_shared<DataTypeUInt16>(), 100);
 }
 
-TEST(H3ArrayExpansionCancellation, HexRingHonorsDeadlineOnZeroOutputRows)
+TEST_F(H3ArrayExpansionCancellation, HexRingHonorsDeadlineOnZeroOutputRows)
 {
     tryRegisterFunctions();
     assertDegenerateBlockIsCancelled("h3HexRing", std::make_shared<DataTypeUInt16>(), 100);
 }
 
-TEST(H3ArrayExpansionCancellation, LineHonorsDeadlineOnZeroOutputRows)
+TEST_F(H3ArrayExpansionCancellation, LineHonorsDeadlineOnZeroOutputRows)
 {
     tryRegisterFunctions();
     assertDegenerateBlockIsCancelled("h3Line", std::make_shared<DataTypeUInt64>(), 1);
 }
 
-TEST(H3ArrayExpansionCancellation, ToChildrenHonorsDeadlineOnZeroOutputRows)
+TEST_F(H3ArrayExpansionCancellation, ToChildrenHonorsDeadlineOnZeroOutputRows)
 {
     tryRegisterFunctions();
     assertDegenerateBlockIsCancelled("h3ToChildren", std::make_shared<DataTypeUInt8>(), 9);
+}
+
+/// Valid cells, fewer rows than the 100000 threshold but more items than it, so the counter can only
+/// reach the threshold by weighting each row with its output size. Row counts are a third or more
+/// clear of where the weighted counter fires, and every block stays under 2 MB.
+TEST_F(H3ArrayExpansionCancellation, KRingWeightsRowsByItemCount)
+{
+    tryRegisterFunctions();
+    /// k = 20 is 3k^2+3k+1 = 1261 cells per row; 100 rows fire at row 80.
+    assertBlockIsCancelled("h3kRing", 644325529233966508, std::make_shared<DataTypeUInt16>(), 20, /*rows=*/100);
+}
+
+TEST_F(H3ArrayExpansionCancellation, HexRingWeightsRowsByItemCount)
+{
+    tryRegisterFunctions();
+    /// k = 20 is 6k = 120 cells per row; 1000 rows fire at row 833.
+    assertBlockIsCancelled("h3HexRing", 644325529233966508, std::make_shared<DataTypeUInt16>(), 20, /*rows=*/1000);
+}
+
+TEST_F(H3ArrayExpansionCancellation, LineWeightsRowsByItemCountInTheSizingPass)
+{
+    tryRegisterFunctions();
+    /// A cell to itself is one item per row, so the weighted sizing counter advances by two a row and
+    /// fires at row 50000 while the fill pass, whose weighting this case does not test, stays at 66667
+    /// of the threshold's 100000. A longer line would reach the threshold in the fill pass instead and
+    /// the case would pass whether or not the sizing pass weights its rows.
+    assertBlockIsCancelled("h3Line", 621807531097128959, std::make_shared<DataTypeUInt64>(), 621807531097128959, /*rows=*/66'667);
+}
+
+TEST_F(H3ArrayExpansionCancellation, LineWeightsRowsByItemCountInTheFillPass)
+{
+    tryRegisterFunctions();
+    /// The sizing pass counts one per row plus the line length of every row but the row it is on, so
+    /// with two rows of a measured 66411 items it peaks at 66413 and stops short of the threshold's
+    /// 100000, while the fill pass counts both rows in full and reaches 132822. So only the fill pass
+    /// can fire, and only if it weights its rows. Both margins are a third of the threshold.
+    assertBlockIsCancelled("h3Line", 646078419604526808, std::make_shared<DataTypeUInt64>(), 646078038512502154, /*rows=*/2);
+}
+
+TEST_F(H3ArrayExpansionCancellation, ToChildrenWeightsRowsByItemCount)
+{
+    tryRegisterFunctions();
+    /// A resolution 9 parent has 7^4 = 2401 children at resolution 13; 100 rows fire at row 42.
+    assertBlockIsCancelled("h3ToChildren", 617303931469955071, std::make_shared<DataTypeUInt8>(), 13, /*rows=*/100);
 }
 
 #endif
