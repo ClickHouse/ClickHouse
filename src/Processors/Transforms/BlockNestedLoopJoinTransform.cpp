@@ -181,6 +181,7 @@ IProcessor::Status BlockNestedLoopProbeTransform::prepare()
     if (output.isFinished())
     {
         input.close();
+        build_reader.release();
         return Status::Finished;
     }
 
@@ -203,6 +204,7 @@ IProcessor::Status BlockNestedLoopProbeTransform::prepare()
     if (input.isFinished())
     {
         output.finish();
+        build_reader.release();
         return Status::Finished;
     }
 
@@ -252,7 +254,7 @@ void BlockNestedLoopProbeTransform::startProbeChunk(Chunk chunk)
         probe_row_matched.resize_fill(probe_num_rows, 0);
 
     active_probe_rows.resize_exact(probe_num_rows);
-    std::iota(active_probe_rows.begin(), active_probe_rows.end(), 0);
+    std::iota(active_probe_rows.begin(), active_probe_rows.end(), UInt64(0));
 }
 
 void BlockNestedLoopProbeTransform::work()
@@ -767,6 +769,7 @@ Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
         return chunk;
     }
 
+    build_reader.release();
     return {};
 }
 

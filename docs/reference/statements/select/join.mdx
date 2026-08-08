@@ -269,7 +269,7 @@ The row that matched nothing is padded according to [`join_use_nulls`](/referenc
 
 **Strictness**
 
-`ANY` and `SEMI` normally keep one row per group of rows that share a join key. There is no such group here, so they keep one row per row of the table that drives the join: `LEFT ANY` and `LEFT SEMI` emit each left row at most once, `RIGHT ANY` and `RIGHT SEMI` each right row at most once. `ANY INNER` limits both sides at once — each row of either table is used at most once, so the result has at most as many rows as the smaller table. Which pairs make up such a result is arbitrary, exactly as `ANY` implies, and it may differ between two runs of the same query.
+`ANY` and `SEMI` normally keep one row per group of rows that share a join key. There is no such group here, so they keep one row per row of the table that drives the join: `LEFT ANY` and `LEFT SEMI` emit each left row at most once, `RIGHT ANY` and `RIGHT SEMI` each right row at most once. `ANY INNER` limits both sides at once — each row of either table is used at most once, so the result has at most as many rows as the smaller table. Which pairs make up such a result is arbitrary, exactly as `ANY` implies, and it may differ between two runs of the same query. For `ANY INNER` this extends to the number of rows: pairing each row of both sides greedily, in whatever order the rows are examined, may leave a different number of rows unpaired, so the result of `count()` over an `ANY INNER` join with no join key is not reproducible and depends on the number of threads and on the physical order of the right table.
 
 **Performance**
 

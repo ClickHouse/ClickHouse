@@ -353,6 +353,13 @@ BuildBlockPtr BuildSideBlockReader::read(size_t index)
     return current;
 }
 
+void BuildSideBlockReader::release()
+{
+    current.reset();
+    spill_stream.reset();
+    next_spill_ordinal = 0;
+}
+
 BuildBlockPtr BuildSideBlockReader::readSpilledBlock(size_t index, size_t spill_ordinal)
 {
     /// The file holds the spilled blocks in index order and cannot be seeked, so a block behind the

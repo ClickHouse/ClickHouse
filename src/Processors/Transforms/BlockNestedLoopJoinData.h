@@ -217,6 +217,11 @@ public:
     /// a block the walk has already moved past.
     BuildBlockPtr read(size_t index);
 
+    /// Drops the cached block and the temporary-file reader. A block that was decompressed or read
+    /// back from disk is a copy the store does not account for, so a reader that has nothing left
+    /// to read must not keep it alive for as long as its processor sits in the finished pipeline.
+    void release();
+
 private:
     BuildBlockPtr readSpilledBlock(size_t index, size_t spill_ordinal);
 
