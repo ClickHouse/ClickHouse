@@ -419,7 +419,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
         /// storage failed to materialize during `drop()`), mirror `DatabaseCatalog::dropTableFinally`:
         /// still clean up node-local disks (so an ordinary table does not leak its data directory
         /// on a transient load failure), but skip disks whose metadata is shared across nodes
-        /// (`plain_rewritable` / `keeper` — the backends `leader_election` requires), where
+        /// (`plain_rewritable` — the layout `leader_election` requires — or `keeper`), where
         /// `removeRecursive` could destroy data a live leader still owns.
         const bool data_ownership_unknown = table && table->dropDataOwnershipUnknown();
 

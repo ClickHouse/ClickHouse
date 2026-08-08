@@ -284,15 +284,20 @@ StorageMergeTree::StorageMergeTree(
                     disk->getName());
             }
 
-            if (description.metadata_type != MetadataStorageType::PlainRewritable
-                && description.metadata_type != MetadataStorageType::Keeper)
+            /// `Keeper` metadata is shared across nodes too and would satisfy the invariant,
+            /// but the leader-election flows (follower part-list refresh, takeover reload,
+            /// shared dedup-log rotation) are currently only covered by `plain_rewritable`
+            /// integration tests. Restrict to `plain_rewritable` until a keeper-backed
+            /// failover test exists; re-enabling `Keeper` here is a one-line change.
+            if (description.metadata_type != MetadataStorageType::PlainRewritable)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "The `leader_election` setting requires every disk in the storage policy to use"
                     " shared metadata so that the next leader after a failover sees the parts"
-                    " written by the previous leader. Disk '{}' uses node-local metadata, where"
-                    " each replica's part list is invisible to its peers. Use a disk with"
-                    " `metadata_type = plain_rewritable` (recommended) or `metadata_type = keeper`.",
+                    " written by the previous leader. Disk '{}' uses a different metadata layout:"
+                    " with node-local metadata each replica's part list is invisible to its peers,"
+                    " and `metadata_type = keeper` is implemented but not yet covered by tests, so"
+                    " it is rejected for now. Use a disk with `metadata_type = plain_rewritable`.",
                     disk->getName());
             }
         }
