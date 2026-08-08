@@ -3758,7 +3758,8 @@ should normalize magnitudes or use a numerically stable method to pre-aggregate 
 The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
 The window-function form is not affected by this setting.
     )";
-    FunctionDocumentation::Syntax exponentialTimeDecayedSum_syntax = "exponentialTimeDecayedSum(decay_length)(v, t)";
+    FunctionDocumentation::Syntax exponentialTimeDecayedSum_syntax
+        = "exponentialTimeDecayedSum(decay_length)(v, t) or exponentialTimeDecayedSum(decaying_value)";
     FunctionDocumentation::Arguments exponentialTimeDecayedSum_arguments = {
         {"v", "Value.", {"(U)Int*", "Float*", "Decimal"}},
         {"t", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}
@@ -3877,7 +3878,7 @@ Rows are evaluated at their greatest timestamp. The result can be combined again
             .examples = {{
                 "Construct a decaying value",
                 "SELECT exponentialTimeDecayingFloat64(10)(8, toFloat64(0))",
-                "(8,0)"}},
+                "(8,0,10)"}},
             .introduced_in = {26, 8},
             .category = FunctionDocumentation::Category::AggregateFunction},
         {}});
