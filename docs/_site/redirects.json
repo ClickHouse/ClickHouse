@@ -6000,187 +6000,187 @@
     "source": "/jp/changelogs/26.4"
   },
   {
-    "destination": "/ja/chdb",
+    "destination": "/chdb",
     "source": "/jp/chdb"
   },
   {
-    "destination": "/ja/chdb/api/python",
+    "destination": "/chdb/api/python",
     "source": "/jp/chdb/api/python"
   },
   {
-    "destination": "/ja/chdb/configuration",
+    "destination": "/chdb/configuration",
     "source": "/jp/chdb/configuration"
   },
   {
-    "destination": "/ja/chdb/configuration/execution-engine",
+    "destination": "/chdb/configuration/execution-engine",
     "source": "/jp/chdb/configuration/execution-engine"
   },
   {
-    "destination": "/ja/chdb/configuration/function-config",
+    "destination": "/chdb/configuration/function-config",
     "source": "/jp/chdb/configuration/function-config"
   },
   {
-    "destination": "/ja/chdb/configuration/performance-mode",
+    "destination": "/chdb/configuration/performance-mode",
     "source": "/jp/chdb/configuration/performance-mode"
   },
   {
-    "destination": "/ja/chdb/reference/data-formats",
+    "destination": "/chdb/reference/data-formats",
     "source": "/jp/chdb/data-formats"
   },
   {
-    "destination": "/ja/chdb/datastore",
+    "destination": "/chdb/datastore",
     "source": "/jp/chdb/datastore"
   },
   {
-    "destination": "/ja/chdb/datastore/accessors",
+    "destination": "/chdb/datastore/accessors",
     "source": "/jp/chdb/datastore/accessors"
   },
   {
-    "destination": "/ja/chdb/datastore/aggregation",
+    "destination": "/chdb/datastore/aggregation",
     "source": "/jp/chdb/datastore/aggregation"
   },
   {
-    "destination": "/ja/chdb/datastore/class-reference",
+    "destination": "/chdb/datastore/class-reference",
     "source": "/jp/chdb/datastore/class-reference"
   },
   {
-    "destination": "/ja/chdb/datastore/execution-model",
+    "destination": "/chdb/datastore/execution-model",
     "source": "/jp/chdb/datastore/execution-model"
   },
   {
-    "destination": "/ja/chdb/datastore/factory-methods",
+    "destination": "/chdb/datastore/factory-methods",
     "source": "/jp/chdb/datastore/factory-methods"
   },
   {
-    "destination": "/ja/chdb/datastore/io",
+    "destination": "/chdb/datastore/io",
     "source": "/jp/chdb/datastore/io"
   },
   {
-    "destination": "/ja/chdb/datastore/pandas-compat",
+    "destination": "/chdb/datastore/pandas-compat",
     "source": "/jp/chdb/datastore/pandas-compat"
   },
   {
-    "destination": "/ja/chdb/datastore/query-building",
+    "destination": "/chdb/datastore/query-building",
     "source": "/jp/chdb/datastore/query-building"
   },
   {
-    "destination": "/ja/chdb/datastore/quickstart",
+    "destination": "/chdb/datastore/quickstart",
     "source": "/jp/chdb/datastore/quickstart"
   },
   {
-    "destination": "/ja/chdb/debugging",
+    "destination": "/chdb/debugging",
     "source": "/jp/chdb/debugging"
   },
   {
-    "destination": "/ja/chdb/debugging/explain",
+    "destination": "/chdb/debugging/explain",
     "source": "/jp/chdb/debugging/explain"
   },
   {
-    "destination": "/ja/chdb/debugging/logging",
+    "destination": "/chdb/debugging/logging",
     "source": "/jp/chdb/debugging/logging"
   },
   {
-    "destination": "/ja/chdb/debugging/profiling",
+    "destination": "/chdb/debugging/profiling",
     "source": "/jp/chdb/debugging/profiling"
   },
   {
-    "destination": "/ja/chdb/getting-started",
+    "destination": "/chdb/getting-started",
     "source": "/jp/chdb/getting-started"
   },
   {
-    "destination": "/ja/chdb/guides",
+    "destination": "/chdb/guides",
     "source": "/jp/chdb/guides"
   },
   {
-    "destination": "/ja/chdb/guides/querying-apache-arrow",
+    "destination": "/chdb/guides/querying-apache-arrow",
     "source": "/jp/chdb/guides/apache-arrow"
   },
   {
-    "destination": "/ja/chdb/guides/clickhouse-local",
+    "destination": "/chdb/guides/clickhouse-local",
     "source": "/jp/chdb/guides/clickhouse-local"
   },
   {
-    "destination": "/ja/chdb/guides/jupysql",
+    "destination": "/chdb/guides/jupysql",
     "source": "/jp/chdb/guides/jupysql"
   },
   {
-    "destination": "/ja/chdb/guides/migration-from-pandas",
+    "destination": "/chdb/guides/migration-from-pandas",
     "source": "/jp/chdb/guides/migration-from-pandas"
   },
   {
-    "destination": "/ja/chdb/guides/querying-pandas",
+    "destination": "/chdb/guides/querying-pandas",
     "source": "/jp/chdb/guides/pandas"
   },
   {
-    "destination": "/ja/chdb/guides/pandas-cookbook",
+    "destination": "/chdb/guides/pandas-cookbook",
     "source": "/jp/chdb/guides/pandas-cookbook"
   },
   {
-    "destination": "/ja/chdb/guides/pandas-differences",
+    "destination": "/chdb/guides/pandas-differences",
     "source": "/jp/chdb/guides/pandas-differences"
   },
   {
-    "destination": "/ja/chdb/guides/pandas-performance",
+    "destination": "/chdb/guides/pandas-performance",
     "source": "/jp/chdb/guides/pandas-performance"
   },
   {
-    "destination": "/ja/chdb/guides/pandas-to-sql",
+    "destination": "/chdb/guides/pandas-to-sql",
     "source": "/jp/chdb/guides/pandas-to-sql"
   },
   {
-    "destination": "/ja/chdb/guides/query-remote-clickhouse",
+    "destination": "/chdb/guides/query-remote-clickhouse",
     "source": "/jp/chdb/guides/query-remote-clickhouse"
   },
   {
-    "destination": "/ja/chdb/guides/querying-parquet",
+    "destination": "/chdb/guides/querying-parquet",
     "source": "/jp/chdb/guides/querying-parquet"
   },
   {
-    "destination": "/ja/chdb/guides/querying-s3-bucket",
+    "destination": "/chdb/guides/querying-s3-bucket",
     "source": "/jp/chdb/guides/querying-s3"
   },
   {
-    "destination": "/ja/chdb/install",
+    "destination": "/chdb/install",
     "source": "/jp/chdb/install"
   },
   {
-    "destination": "/ja/chdb/install/bun",
+    "destination": "/chdb/install/bun",
     "source": "/jp/chdb/install/bun"
   },
   {
-    "destination": "/ja/chdb/install/c",
+    "destination": "/chdb/install/c",
     "source": "/jp/chdb/install/c"
   },
   {
-    "destination": "/ja/chdb/install/go",
+    "destination": "/chdb/install/go",
     "source": "/jp/chdb/install/go"
   },
   {
-    "destination": "/ja/chdb/install/nodejs",
+    "destination": "/chdb/install/nodejs",
     "source": "/jp/chdb/install/nodejs"
   },
   {
-    "destination": "/ja/chdb/install/python",
+    "destination": "/chdb/install/python",
     "source": "/jp/chdb/install/python"
   },
   {
-    "destination": "/ja/chdb/install/rust",
+    "destination": "/chdb/install/rust",
     "source": "/jp/chdb/install/rust"
   },
   {
-    "destination": "/ja/chdb/reference",
+    "destination": "/chdb/reference",
     "source": "/jp/chdb/reference"
   },
   {
-    "destination": "/ja/chdb/reference/data-formats",
+    "destination": "/chdb/reference/data-formats",
     "source": "/jp/chdb/reference/data-formats"
   },
   {
-    "destination": "/ja/chdb/reference/sql-reference",
+    "destination": "/chdb/reference/sql-reference",
     "source": "/jp/chdb/reference/sql-reference"
   },
   {
-    "destination": "/ja/chdb/reference/sql-reference",
+    "destination": "/chdb/reference/sql-reference",
     "source": "/jp/chdb/sql-reference"
   },
   {
@@ -16756,187 +16756,187 @@
     "source": "/ko/changelogs/26.4"
   },
   {
-    "destination": "/ko/chdb",
+    "destination": "/chdb",
     "source": "/ko/chdb"
   },
   {
-    "destination": "/ko/chdb/api/python",
+    "destination": "/chdb/api/python",
     "source": "/ko/chdb/api/python"
   },
   {
-    "destination": "/ko/chdb/configuration",
+    "destination": "/chdb/configuration",
     "source": "/ko/chdb/configuration"
   },
   {
-    "destination": "/ko/chdb/configuration/execution-engine",
+    "destination": "/chdb/configuration/execution-engine",
     "source": "/ko/chdb/configuration/execution-engine"
   },
   {
-    "destination": "/ko/chdb/configuration/function-config",
+    "destination": "/chdb/configuration/function-config",
     "source": "/ko/chdb/configuration/function-config"
   },
   {
-    "destination": "/ko/chdb/configuration/performance-mode",
+    "destination": "/chdb/configuration/performance-mode",
     "source": "/ko/chdb/configuration/performance-mode"
   },
   {
-    "destination": "/ko/chdb/reference/data-formats",
+    "destination": "/chdb/reference/data-formats",
     "source": "/ko/chdb/data-formats"
   },
   {
-    "destination": "/ko/chdb/datastore",
+    "destination": "/chdb/datastore",
     "source": "/ko/chdb/datastore"
   },
   {
-    "destination": "/ko/chdb/datastore/accessors",
+    "destination": "/chdb/datastore/accessors",
     "source": "/ko/chdb/datastore/accessors"
   },
   {
-    "destination": "/ko/chdb/datastore/aggregation",
+    "destination": "/chdb/datastore/aggregation",
     "source": "/ko/chdb/datastore/aggregation"
   },
   {
-    "destination": "/ko/chdb/datastore/class-reference",
+    "destination": "/chdb/datastore/class-reference",
     "source": "/ko/chdb/datastore/class-reference"
   },
   {
-    "destination": "/ko/chdb/datastore/execution-model",
+    "destination": "/chdb/datastore/execution-model",
     "source": "/ko/chdb/datastore/execution-model"
   },
   {
-    "destination": "/ko/chdb/datastore/factory-methods",
+    "destination": "/chdb/datastore/factory-methods",
     "source": "/ko/chdb/datastore/factory-methods"
   },
   {
-    "destination": "/ko/chdb/datastore/io",
+    "destination": "/chdb/datastore/io",
     "source": "/ko/chdb/datastore/io"
   },
   {
-    "destination": "/ko/chdb/datastore/pandas-compat",
+    "destination": "/chdb/datastore/pandas-compat",
     "source": "/ko/chdb/datastore/pandas-compat"
   },
   {
-    "destination": "/ko/chdb/datastore/query-building",
+    "destination": "/chdb/datastore/query-building",
     "source": "/ko/chdb/datastore/query-building"
   },
   {
-    "destination": "/ko/chdb/datastore/quickstart",
+    "destination": "/chdb/datastore/quickstart",
     "source": "/ko/chdb/datastore/quickstart"
   },
   {
-    "destination": "/ko/chdb/debugging",
+    "destination": "/chdb/debugging",
     "source": "/ko/chdb/debugging"
   },
   {
-    "destination": "/ko/chdb/debugging/explain",
+    "destination": "/chdb/debugging/explain",
     "source": "/ko/chdb/debugging/explain"
   },
   {
-    "destination": "/ko/chdb/debugging/logging",
+    "destination": "/chdb/debugging/logging",
     "source": "/ko/chdb/debugging/logging"
   },
   {
-    "destination": "/ko/chdb/debugging/profiling",
+    "destination": "/chdb/debugging/profiling",
     "source": "/ko/chdb/debugging/profiling"
   },
   {
-    "destination": "/ko/chdb/getting-started",
+    "destination": "/chdb/getting-started",
     "source": "/ko/chdb/getting-started"
   },
   {
-    "destination": "/ko/chdb/guides",
+    "destination": "/chdb/guides",
     "source": "/ko/chdb/guides"
   },
   {
-    "destination": "/ko/chdb/guides/querying-apache-arrow",
+    "destination": "/chdb/guides/querying-apache-arrow",
     "source": "/ko/chdb/guides/apache-arrow"
   },
   {
-    "destination": "/ko/chdb/guides/clickhouse-local",
+    "destination": "/chdb/guides/clickhouse-local",
     "source": "/ko/chdb/guides/clickhouse-local"
   },
   {
-    "destination": "/ko/chdb/guides/jupysql",
+    "destination": "/chdb/guides/jupysql",
     "source": "/ko/chdb/guides/jupysql"
   },
   {
-    "destination": "/ko/chdb/guides/migration-from-pandas",
+    "destination": "/chdb/guides/migration-from-pandas",
     "source": "/ko/chdb/guides/migration-from-pandas"
   },
   {
-    "destination": "/ko/chdb/guides/querying-pandas",
+    "destination": "/chdb/guides/querying-pandas",
     "source": "/ko/chdb/guides/pandas"
   },
   {
-    "destination": "/ko/chdb/guides/pandas-cookbook",
+    "destination": "/chdb/guides/pandas-cookbook",
     "source": "/ko/chdb/guides/pandas-cookbook"
   },
   {
-    "destination": "/ko/chdb/guides/pandas-differences",
+    "destination": "/chdb/guides/pandas-differences",
     "source": "/ko/chdb/guides/pandas-differences"
   },
   {
-    "destination": "/ko/chdb/guides/pandas-performance",
+    "destination": "/chdb/guides/pandas-performance",
     "source": "/ko/chdb/guides/pandas-performance"
   },
   {
-    "destination": "/ko/chdb/guides/pandas-to-sql",
+    "destination": "/chdb/guides/pandas-to-sql",
     "source": "/ko/chdb/guides/pandas-to-sql"
   },
   {
-    "destination": "/ko/chdb/guides/query-remote-clickhouse",
+    "destination": "/chdb/guides/query-remote-clickhouse",
     "source": "/ko/chdb/guides/query-remote-clickhouse"
   },
   {
-    "destination": "/ko/chdb/guides/querying-parquet",
+    "destination": "/chdb/guides/querying-parquet",
     "source": "/ko/chdb/guides/querying-parquet"
   },
   {
-    "destination": "/ko/chdb/guides/querying-s3-bucket",
+    "destination": "/chdb/guides/querying-s3-bucket",
     "source": "/ko/chdb/guides/querying-s3"
   },
   {
-    "destination": "/ko/chdb/install",
+    "destination": "/chdb/install",
     "source": "/ko/chdb/install"
   },
   {
-    "destination": "/ko/chdb/install/bun",
+    "destination": "/chdb/install/bun",
     "source": "/ko/chdb/install/bun"
   },
   {
-    "destination": "/ko/chdb/install/c",
+    "destination": "/chdb/install/c",
     "source": "/ko/chdb/install/c"
   },
   {
-    "destination": "/ko/chdb/install/go",
+    "destination": "/chdb/install/go",
     "source": "/ko/chdb/install/go"
   },
   {
-    "destination": "/ko/chdb/install/nodejs",
+    "destination": "/chdb/install/nodejs",
     "source": "/ko/chdb/install/nodejs"
   },
   {
-    "destination": "/ko/chdb/install/python",
+    "destination": "/chdb/install/python",
     "source": "/ko/chdb/install/python"
   },
   {
-    "destination": "/ko/chdb/install/rust",
+    "destination": "/chdb/install/rust",
     "source": "/ko/chdb/install/rust"
   },
   {
-    "destination": "/ko/chdb/reference",
+    "destination": "/chdb/reference",
     "source": "/ko/chdb/reference"
   },
   {
-    "destination": "/ko/chdb/reference/data-formats",
+    "destination": "/chdb/reference/data-formats",
     "source": "/ko/chdb/reference/data-formats"
   },
   {
-    "destination": "/ko/chdb/reference/sql-reference",
+    "destination": "/chdb/reference/sql-reference",
     "source": "/ko/chdb/reference/sql-reference"
   },
   {
-    "destination": "/ko/chdb/reference/sql-reference",
+    "destination": "/chdb/reference/sql-reference",
     "source": "/ko/chdb/sql-reference"
   },
   {
@@ -28864,187 +28864,187 @@
     "source": "/ru/changelogs/26.4"
   },
   {
-    "destination": "/ru/chdb",
+    "destination": "/chdb",
     "source": "/ru/chdb"
   },
   {
-    "destination": "/ru/chdb/api/python",
+    "destination": "/chdb/api/python",
     "source": "/ru/chdb/api/python"
   },
   {
-    "destination": "/ru/chdb/configuration",
+    "destination": "/chdb/configuration",
     "source": "/ru/chdb/configuration"
   },
   {
-    "destination": "/ru/chdb/configuration/execution-engine",
+    "destination": "/chdb/configuration/execution-engine",
     "source": "/ru/chdb/configuration/execution-engine"
   },
   {
-    "destination": "/ru/chdb/configuration/function-config",
+    "destination": "/chdb/configuration/function-config",
     "source": "/ru/chdb/configuration/function-config"
   },
   {
-    "destination": "/ru/chdb/configuration/performance-mode",
+    "destination": "/chdb/configuration/performance-mode",
     "source": "/ru/chdb/configuration/performance-mode"
   },
   {
-    "destination": "/ru/chdb/reference/data-formats",
+    "destination": "/chdb/reference/data-formats",
     "source": "/ru/chdb/data-formats"
   },
   {
-    "destination": "/ru/chdb/datastore",
+    "destination": "/chdb/datastore",
     "source": "/ru/chdb/datastore"
   },
   {
-    "destination": "/ru/chdb/datastore/accessors",
+    "destination": "/chdb/datastore/accessors",
     "source": "/ru/chdb/datastore/accessors"
   },
   {
-    "destination": "/ru/chdb/datastore/aggregation",
+    "destination": "/chdb/datastore/aggregation",
     "source": "/ru/chdb/datastore/aggregation"
   },
   {
-    "destination": "/ru/chdb/datastore/class-reference",
+    "destination": "/chdb/datastore/class-reference",
     "source": "/ru/chdb/datastore/class-reference"
   },
   {
-    "destination": "/ru/chdb/datastore/execution-model",
+    "destination": "/chdb/datastore/execution-model",
     "source": "/ru/chdb/datastore/execution-model"
   },
   {
-    "destination": "/ru/chdb/datastore/factory-methods",
+    "destination": "/chdb/datastore/factory-methods",
     "source": "/ru/chdb/datastore/factory-methods"
   },
   {
-    "destination": "/ru/chdb/datastore/io",
+    "destination": "/chdb/datastore/io",
     "source": "/ru/chdb/datastore/io"
   },
   {
-    "destination": "/ru/chdb/datastore/pandas-compat",
+    "destination": "/chdb/datastore/pandas-compat",
     "source": "/ru/chdb/datastore/pandas-compat"
   },
   {
-    "destination": "/ru/chdb/datastore/query-building",
+    "destination": "/chdb/datastore/query-building",
     "source": "/ru/chdb/datastore/query-building"
   },
   {
-    "destination": "/ru/chdb/datastore/quickstart",
+    "destination": "/chdb/datastore/quickstart",
     "source": "/ru/chdb/datastore/quickstart"
   },
   {
-    "destination": "/ru/chdb/debugging",
+    "destination": "/chdb/debugging",
     "source": "/ru/chdb/debugging"
   },
   {
-    "destination": "/ru/chdb/debugging/explain",
+    "destination": "/chdb/debugging/explain",
     "source": "/ru/chdb/debugging/explain"
   },
   {
-    "destination": "/ru/chdb/debugging/logging",
+    "destination": "/chdb/debugging/logging",
     "source": "/ru/chdb/debugging/logging"
   },
   {
-    "destination": "/ru/chdb/debugging/profiling",
+    "destination": "/chdb/debugging/profiling",
     "source": "/ru/chdb/debugging/profiling"
   },
   {
-    "destination": "/ru/chdb/getting-started",
+    "destination": "/chdb/getting-started",
     "source": "/ru/chdb/getting-started"
   },
   {
-    "destination": "/ru/chdb/guides",
+    "destination": "/chdb/guides",
     "source": "/ru/chdb/guides"
   },
   {
-    "destination": "/ru/chdb/guides/querying-apache-arrow",
+    "destination": "/chdb/guides/querying-apache-arrow",
     "source": "/ru/chdb/guides/apache-arrow"
   },
   {
-    "destination": "/ru/chdb/guides/clickhouse-local",
+    "destination": "/chdb/guides/clickhouse-local",
     "source": "/ru/chdb/guides/clickhouse-local"
   },
   {
-    "destination": "/ru/chdb/guides/jupysql",
+    "destination": "/chdb/guides/jupysql",
     "source": "/ru/chdb/guides/jupysql"
   },
   {
-    "destination": "/ru/chdb/guides/migration-from-pandas",
+    "destination": "/chdb/guides/migration-from-pandas",
     "source": "/ru/chdb/guides/migration-from-pandas"
   },
   {
-    "destination": "/ru/chdb/guides/querying-pandas",
+    "destination": "/chdb/guides/querying-pandas",
     "source": "/ru/chdb/guides/pandas"
   },
   {
-    "destination": "/ru/chdb/guides/pandas-cookbook",
+    "destination": "/chdb/guides/pandas-cookbook",
     "source": "/ru/chdb/guides/pandas-cookbook"
   },
   {
-    "destination": "/ru/chdb/guides/pandas-differences",
+    "destination": "/chdb/guides/pandas-differences",
     "source": "/ru/chdb/guides/pandas-differences"
   },
   {
-    "destination": "/ru/chdb/guides/pandas-performance",
+    "destination": "/chdb/guides/pandas-performance",
     "source": "/ru/chdb/guides/pandas-performance"
   },
   {
-    "destination": "/ru/chdb/guides/pandas-to-sql",
+    "destination": "/chdb/guides/pandas-to-sql",
     "source": "/ru/chdb/guides/pandas-to-sql"
   },
   {
-    "destination": "/ru/chdb/guides/query-remote-clickhouse",
+    "destination": "/chdb/guides/query-remote-clickhouse",
     "source": "/ru/chdb/guides/query-remote-clickhouse"
   },
   {
-    "destination": "/ru/chdb/guides/querying-parquet",
+    "destination": "/chdb/guides/querying-parquet",
     "source": "/ru/chdb/guides/querying-parquet"
   },
   {
-    "destination": "/ru/chdb/guides/querying-s3-bucket",
+    "destination": "/chdb/guides/querying-s3-bucket",
     "source": "/ru/chdb/guides/querying-s3"
   },
   {
-    "destination": "/ru/chdb/install",
+    "destination": "/chdb/install",
     "source": "/ru/chdb/install"
   },
   {
-    "destination": "/ru/chdb/install/bun",
+    "destination": "/chdb/install/bun",
     "source": "/ru/chdb/install/bun"
   },
   {
-    "destination": "/ru/chdb/install/c",
+    "destination": "/chdb/install/c",
     "source": "/ru/chdb/install/c"
   },
   {
-    "destination": "/ru/chdb/install/go",
+    "destination": "/chdb/install/go",
     "source": "/ru/chdb/install/go"
   },
   {
-    "destination": "/ru/chdb/install/nodejs",
+    "destination": "/chdb/install/nodejs",
     "source": "/ru/chdb/install/nodejs"
   },
   {
-    "destination": "/ru/chdb/install/python",
+    "destination": "/chdb/install/python",
     "source": "/ru/chdb/install/python"
   },
   {
-    "destination": "/ru/chdb/install/rust",
+    "destination": "/chdb/install/rust",
     "source": "/ru/chdb/install/rust"
   },
   {
-    "destination": "/ru/chdb/reference",
+    "destination": "/chdb/reference",
     "source": "/ru/chdb/reference"
   },
   {
-    "destination": "/ru/chdb/reference/data-formats",
+    "destination": "/chdb/reference/data-formats",
     "source": "/ru/chdb/reference/data-formats"
   },
   {
-    "destination": "/ru/chdb/reference/sql-reference",
+    "destination": "/chdb/reference/sql-reference",
     "source": "/ru/chdb/reference/sql-reference"
   },
   {
-    "destination": "/ru/chdb/reference/sql-reference",
+    "destination": "/chdb/reference/sql-reference",
     "source": "/ru/chdb/sql-reference"
   },
   {
@@ -42424,187 +42424,187 @@
     "source": "/zh/changelogs/26.4"
   },
   {
-    "destination": "/zh/chdb",
+    "destination": "/chdb",
     "source": "/zh/chdb"
   },
   {
-    "destination": "/zh/chdb/api/python",
+    "destination": "/chdb/api/python",
     "source": "/zh/chdb/api/python"
   },
   {
-    "destination": "/zh/chdb/configuration",
+    "destination": "/chdb/configuration",
     "source": "/zh/chdb/configuration"
   },
   {
-    "destination": "/zh/chdb/configuration/execution-engine",
+    "destination": "/chdb/configuration/execution-engine",
     "source": "/zh/chdb/configuration/execution-engine"
   },
   {
-    "destination": "/zh/chdb/configuration/function-config",
+    "destination": "/chdb/configuration/function-config",
     "source": "/zh/chdb/configuration/function-config"
   },
   {
-    "destination": "/zh/chdb/configuration/performance-mode",
+    "destination": "/chdb/configuration/performance-mode",
     "source": "/zh/chdb/configuration/performance-mode"
   },
   {
-    "destination": "/zh/chdb/reference/data-formats",
+    "destination": "/chdb/reference/data-formats",
     "source": "/zh/chdb/data-formats"
   },
   {
-    "destination": "/zh/chdb/datastore",
+    "destination": "/chdb/datastore",
     "source": "/zh/chdb/datastore"
   },
   {
-    "destination": "/zh/chdb/datastore/accessors",
+    "destination": "/chdb/datastore/accessors",
     "source": "/zh/chdb/datastore/accessors"
   },
   {
-    "destination": "/zh/chdb/datastore/aggregation",
+    "destination": "/chdb/datastore/aggregation",
     "source": "/zh/chdb/datastore/aggregation"
   },
   {
-    "destination": "/zh/chdb/datastore/class-reference",
+    "destination": "/chdb/datastore/class-reference",
     "source": "/zh/chdb/datastore/class-reference"
   },
   {
-    "destination": "/zh/chdb/datastore/execution-model",
+    "destination": "/chdb/datastore/execution-model",
     "source": "/zh/chdb/datastore/execution-model"
   },
   {
-    "destination": "/zh/chdb/datastore/factory-methods",
+    "destination": "/chdb/datastore/factory-methods",
     "source": "/zh/chdb/datastore/factory-methods"
   },
   {
-    "destination": "/zh/chdb/datastore/io",
+    "destination": "/chdb/datastore/io",
     "source": "/zh/chdb/datastore/io"
   },
   {
-    "destination": "/zh/chdb/datastore/pandas-compat",
+    "destination": "/chdb/datastore/pandas-compat",
     "source": "/zh/chdb/datastore/pandas-compat"
   },
   {
-    "destination": "/zh/chdb/datastore/query-building",
+    "destination": "/chdb/datastore/query-building",
     "source": "/zh/chdb/datastore/query-building"
   },
   {
-    "destination": "/zh/chdb/datastore/quickstart",
+    "destination": "/chdb/datastore/quickstart",
     "source": "/zh/chdb/datastore/quickstart"
   },
   {
-    "destination": "/zh/chdb/debugging",
+    "destination": "/chdb/debugging",
     "source": "/zh/chdb/debugging"
   },
   {
-    "destination": "/zh/chdb/debugging/explain",
+    "destination": "/chdb/debugging/explain",
     "source": "/zh/chdb/debugging/explain"
   },
   {
-    "destination": "/zh/chdb/debugging/logging",
+    "destination": "/chdb/debugging/logging",
     "source": "/zh/chdb/debugging/logging"
   },
   {
-    "destination": "/zh/chdb/debugging/profiling",
+    "destination": "/chdb/debugging/profiling",
     "source": "/zh/chdb/debugging/profiling"
   },
   {
-    "destination": "/zh/chdb/getting-started",
+    "destination": "/chdb/getting-started",
     "source": "/zh/chdb/getting-started"
   },
   {
-    "destination": "/zh/chdb/guides",
+    "destination": "/chdb/guides",
     "source": "/zh/chdb/guides"
   },
   {
-    "destination": "/zh/chdb/guides/querying-apache-arrow",
+    "destination": "/chdb/guides/querying-apache-arrow",
     "source": "/zh/chdb/guides/apache-arrow"
   },
   {
-    "destination": "/zh/chdb/guides/clickhouse-local",
+    "destination": "/chdb/guides/clickhouse-local",
     "source": "/zh/chdb/guides/clickhouse-local"
   },
   {
-    "destination": "/zh/chdb/guides/jupysql",
+    "destination": "/chdb/guides/jupysql",
     "source": "/zh/chdb/guides/jupysql"
   },
   {
-    "destination": "/zh/chdb/guides/migration-from-pandas",
+    "destination": "/chdb/guides/migration-from-pandas",
     "source": "/zh/chdb/guides/migration-from-pandas"
   },
   {
-    "destination": "/zh/chdb/guides/querying-pandas",
+    "destination": "/chdb/guides/querying-pandas",
     "source": "/zh/chdb/guides/pandas"
   },
   {
-    "destination": "/zh/chdb/guides/pandas-cookbook",
+    "destination": "/chdb/guides/pandas-cookbook",
     "source": "/zh/chdb/guides/pandas-cookbook"
   },
   {
-    "destination": "/zh/chdb/guides/pandas-differences",
+    "destination": "/chdb/guides/pandas-differences",
     "source": "/zh/chdb/guides/pandas-differences"
   },
   {
-    "destination": "/zh/chdb/guides/pandas-performance",
+    "destination": "/chdb/guides/pandas-performance",
     "source": "/zh/chdb/guides/pandas-performance"
   },
   {
-    "destination": "/zh/chdb/guides/pandas-to-sql",
+    "destination": "/chdb/guides/pandas-to-sql",
     "source": "/zh/chdb/guides/pandas-to-sql"
   },
   {
-    "destination": "/zh/chdb/guides/query-remote-clickhouse",
+    "destination": "/chdb/guides/query-remote-clickhouse",
     "source": "/zh/chdb/guides/query-remote-clickhouse"
   },
   {
-    "destination": "/zh/chdb/guides/querying-parquet",
+    "destination": "/chdb/guides/querying-parquet",
     "source": "/zh/chdb/guides/querying-parquet"
   },
   {
-    "destination": "/zh/chdb/guides/querying-s3-bucket",
+    "destination": "/chdb/guides/querying-s3-bucket",
     "source": "/zh/chdb/guides/querying-s3"
   },
   {
-    "destination": "/zh/chdb/install",
+    "destination": "/chdb/install",
     "source": "/zh/chdb/install"
   },
   {
-    "destination": "/zh/chdb/install/bun",
+    "destination": "/chdb/install/bun",
     "source": "/zh/chdb/install/bun"
   },
   {
-    "destination": "/zh/chdb/install/c",
+    "destination": "/chdb/install/c",
     "source": "/zh/chdb/install/c"
   },
   {
-    "destination": "/zh/chdb/install/go",
+    "destination": "/chdb/install/go",
     "source": "/zh/chdb/install/go"
   },
   {
-    "destination": "/zh/chdb/install/nodejs",
+    "destination": "/chdb/install/nodejs",
     "source": "/zh/chdb/install/nodejs"
   },
   {
-    "destination": "/zh/chdb/install/python",
+    "destination": "/chdb/install/python",
     "source": "/zh/chdb/install/python"
   },
   {
-    "destination": "/zh/chdb/install/rust",
+    "destination": "/chdb/install/rust",
     "source": "/zh/chdb/install/rust"
   },
   {
-    "destination": "/zh/chdb/reference",
+    "destination": "/chdb/reference",
     "source": "/zh/chdb/reference"
   },
   {
-    "destination": "/zh/chdb/reference/data-formats",
+    "destination": "/chdb/reference/data-formats",
     "source": "/zh/chdb/reference/data-formats"
   },
   {
-    "destination": "/zh/chdb/reference/sql-reference",
+    "destination": "/chdb/reference/sql-reference",
     "source": "/zh/chdb/reference/sql-reference"
   },
   {
-    "destination": "/zh/chdb/reference/sql-reference",
+    "destination": "/chdb/reference/sql-reference",
     "source": "/zh/chdb/sql-reference"
   },
   {
@@ -52664,7 +52664,7 @@
     "source": "/jp/category/changelog"
   },
   {
-    "destination": "/ja/chdb/api/python",
+    "destination": "/chdb/api/python",
     "source": "/jp/chdb/guides/python-udf"
   },
   {
