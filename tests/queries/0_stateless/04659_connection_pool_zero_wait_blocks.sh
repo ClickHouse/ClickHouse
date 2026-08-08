@@ -76,16 +76,22 @@ function contend() {
     # shellcheck disable=SC2086
     timeout 30 ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '${holder}' ASYNC" > /dev/null
 
-    # The killed holder is expected to fail, but the waiter has to be handed the connection the kill
-    # released and run to completion. Without this a waiter that logged the line and then blocked
-    # for good, because it was never woken, would still satisfy the log assertions below.
+    # The killed holder is expected to fail. What the waiter is expected to do depends on the arm and
+    # is asserted by the caller through $3: on the blocking arm it has to be handed the connection the
+    # kill released and run to completion, because a waiter that logged the line and then blocked for
+    # good, never woken, would still satisfy the log assertions below; on a finite wait it is expected
+    # to give up first, so the same check has to be inverted rather than dropped.
     wait "$holder_pid" || true
-    wait "$waiter_pid" || echo "the waiter did not get the connection back"
+    if wait "$waiter_pid"; then
+        [[ $3 == succeeds ]] || echo "the waiter succeeded, so its timeout never expired"
+    else
+        [[ $3 == fails ]] || echo "the waiter did not get the connection back"
+    fi
 
     [[ ${contended} == 1 ]] || echo "the queries never ran at the same time, so the pool was never full"
 }
 
-contend 0 zero
+contend 0 zero succeeds
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
 
@@ -103,15 +109,18 @@ ${CLICKHOUSE_CLIENT} --query "
       AND logger_name LIKE 'ConnectionPool%'
 "
 
-# A positive timeout keeps the finite branch, which re-enters the retry loop as soon as it expires.
-# The frequency limiter is what keeps that from emitting a line per retry. Only an upper bound is
-# asserted: the limiter is keyed on logger and format string with a ten second interval, so a run
-# shortly after another one can legitimately see the line suppressed entirely. Without the limiter
-# this reads in the thousands, so the bound still separates the two behaviours.
-#
-# The bound alone would also hold if a positive timeout were translated to the infinite branch,
-# because that emits no line of this shape at all, so the branch is named as well.
-contend 1 finite
+# A positive timeout is a deadline, so the waiter gives up rather than queueing until the holder
+# releases: the `fails` argument above asserts that. The line is still logged once per wait, and only
+# an upper bound is asserted on it, because the frequency limiter is keyed on logger and format string
+# with a ten second interval, so a run shortly after another one can legitimately see it suppressed
+# entirely. The bound alone would also hold if a positive timeout were translated to the infinite
+# branch, which emits no line of this shape at all, so the branch is named as well.
+# The deadline has to expire before the kill below frees the connection, or the waiter is handed it
+# and succeeds, which measures the handover rather than the timeout. The kill is two seconds after
+# contention is seen, and contention is seen within about a twentieth of a second, so 500 ms leaves a
+# wide margin either way: the waiter gives up after three attempts of 500 ms, still well before the
+# kill.
+contend 500 finite fails
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
 
@@ -123,4 +132,21 @@ ${CLICKHOUSE_CLIENT} --query "
     WHERE event_date >= yesterday() AND event_time_microseconds >= toDateTime64('${CONTEND_START}', 6)
       AND query_id LIKE '${QUERY_PREFIX}_finite_%'
       AND logger_name LIKE 'ConnectionPool%'
+"
+
+# The user-visible failure is not the raw pool error. Once an exhausted pool is a soft per-replica
+# failure (ConnectionEstablisher's allowlist), it is retried per replica and the query reports
+# ALL_CONNECTION_TRIES_FAILED, with the pool error as the accumulated reason. Asserting both halves is
+# what separates "the timeout expired" from "the timeout expired and killed the whole query".
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+
+${CLICKHOUSE_CLIENT} --query "
+    SELECT
+        exception_code = 279 AS all_connection_tries_failed,
+        position(exception, 'NO_FREE_CONNECTION') > 0 AS reason_is_the_pool_timeout,
+        ProfileEvents['ConnectionPoolIsFullMicroseconds'] > 0 AS waited_on_a_full_pool
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+      AND query_id = '${QUERY_PREFIX}_finite_waiter' AND type != 'QueryStart'
+    ORDER BY event_time_microseconds DESC LIMIT 1
 "

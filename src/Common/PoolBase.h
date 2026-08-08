@@ -1,11 +1,14 @@
 #pragma once
 
+#include <algorithm>
 #include <mutex>
 #include <condition_variable>
 #include <Poco/Timespan.h>
 #include <boost/noncopyable.hpp>
 
 #include <Common/logger_useful.h>
+#include <Common/CurrentThread.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -20,6 +23,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int LOGICAL_ERROR;
+        extern const int NO_FREE_CONNECTION;
     }
 }
 
@@ -124,6 +128,12 @@ public:
     {
         std::unique_lock lock(mutex);
 
+        /// One absolute deadline for the whole call, so a caller that goes round the loop again
+        /// cannot restart its timeout. Clamped because the sum would otherwise wrap into the past.
+        const bool has_deadline = timeout >= 0;
+        const auto deadline = std::chrono::steady_clock::now()
+            + std::chrono::milliseconds(std::clamp<Poco::Timespan::TimeDiff>(timeout, 0, max_wait_ms));
+
         while (true)
         {
             for (auto & item : items)
@@ -148,21 +158,42 @@ public:
                 return Entry(*items.back());
             }
 
-            Stopwatch blocked;
-            if (timeout < 0)
-            {
-                LOG_INFO(log, "No free connections in pool. Waiting indefinitely.");
-                available.wait(lock);
-            }
+            /// Accounted by an RAII guard, so the time spent blocked is still reported when this
+            /// scope is left by the deadline throw or by a cancellation.
+            DB::ProfileEventTimeIncrement<DB::Time::Microseconds> blocked(ProfileEvents::ConnectionPoolIsFullMicroseconds);
+
+            /// Waiting in slices is what makes cancellation observable: `available` is only notified
+            /// when an object is returned, so a caller holding one would otherwise pin this thread
+            /// for the whole wait. checkIfNotCancelled() is a no-op off-query.
+            auto object_available = [this] { return hasAvailableObjectUnlocked(); };
+
+            if (has_deadline)
+                /// A finite wait wakes once per slice, so an unlimited log here floods.
+                LOG_INFO(LogFrequencyLimiter(log, 10), "No free connections in pool. Waiting {} ms.", timeout);
             else
+                LOG_INFO(log, "No free connections in pool. Waiting indefinitely.");
+
+            while (true)
             {
-                auto timeout_ms = std::chrono::milliseconds(timeout);
-                /// A finite wait re-enters this loop as soon as it expires, so an unlimited log here
-                /// floods once per timeout per waiter.
-                LOG_INFO(LogFrequencyLimiter(log, 10), "No free connections in pool. Waiting {} ms.", timeout_ms.count());
-                available.wait_for(lock, timeout_ms);
+                DB::CurrentThread::checkIfNotCancelled();
+
+                const auto now = std::chrono::steady_clock::now();
+                auto slice = std::chrono::duration_cast<std::chrono::steady_clock::duration>(wait_slice);
+                if (has_deadline)
+                {
+                    if (now >= deadline)
+                        throw DB::Exception(
+                            DB::ErrorCodes::NO_FREE_CONNECTION,
+                            "No free connection in pool of size {} after waiting {} ms",
+                            max_items,
+                            timeout);
+                    /// Clamped, so the total wait cannot overrun the deadline by up to a slice.
+                    slice = std::min(slice, deadline - now);
+                }
+
+                if (available.wait_for(lock, slice, object_available))
+                    break;
             }
-            ProfileEvents::increment(ProfileEvents::ConnectionPoolIsFullMicroseconds, blocked.elapsedMicroseconds());
         }
     }
 
@@ -181,6 +212,23 @@ public:
     }
 
 private:
+    /** Length of one wait slice. Bounds how long a queued caller can stay unaware of its own
+      * cancellation; short enough to be prompt, long enough that an idle pool barely wakes.
+      */
+    static constexpr auto wait_slice = std::chrono::seconds(1);
+
+    /** Largest wait a steady_clock::time_point can represent, so `now() + timeout` cannot wrap. */
+    static constexpr Poco::Timespan::TimeDiff max_wait_ms
+        = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::duration::max()).count() / 2;
+
+    /** Whether get() could return without waiting. Called under `mutex`. */
+    bool hasAvailableObjectUnlocked() const
+    {
+        if (items.size() < max_items)
+            return true;
+        return std::any_of(items.begin(), items.end(), [](const auto & item) { return !item->in_use; });
+    }
+
     /** The maximum size of the pool. */
     unsigned max_items;
 
