@@ -337,6 +337,14 @@ public:
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
 
+    /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
+    /// the query condition cache and without caching the analysis on the step. Used for the automatic
+    /// parallel-replicas sizing of a query which may still become a TopK read: that estimate runs before
+    /// `tryOptimizeTopK`, so it cannot know whether the `use_query_condition_cache_for_top_k` gate
+    /// applies, and the read that actually executes analyzes again with the gate that matches its final
+    /// shape.
+    AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache() const;
+
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// Returns `false` if requested reading cannot be performed.
@@ -383,7 +391,6 @@ public:
 
     bool isParallelReadingFromReplicas() const { return is_parallel_reading_from_replicas; }
     void disableQueryConditionCache() { allow_query_condition_cache = false; }
-    void disableMergeTreePartsSnapshotRemoval() { enable_remove_parts_from_snapshot_optimization = false; }
 
     /// After projection optimization, ReadFromMergeTree may be replaced with a new reading step, and the ParallelReadingExtension must be forwarded to the new step.
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
@@ -449,6 +456,18 @@ public:
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
+
+    /// Carries the TopK stamp and the query condition cache gate over from a read step that this
+    /// step replaces (e.g. the projection read built by `optimizeUseNormalProjections`; `clone` and
+    /// `createLocalParallelReplicasReadingStep` do the same for the steps they rebuild internally).
+    /// `condition_hash` already has the part-set salt folded in by `setTopKColumn`, and the gate has
+    /// already been derived from the settings there, so both are copied as is; calling
+    /// `setTopKColumn` again would fold the part-set salt in twice.
+    void copyTopKFilterInfoAndQueryConditionCacheGate(const ReadFromMergeTree & replaced_step)
+    {
+        top_k_filter_info = replaced_step.top_k_filter_info;
+        allow_query_condition_cache = replaced_step.allow_query_condition_cache;
+    }
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
@@ -649,7 +668,6 @@ private:
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
-    bool enable_remove_parts_from_snapshot_optimization = true;
     bool allow_query_condition_cache = true;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;

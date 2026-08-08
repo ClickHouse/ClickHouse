@@ -100,7 +100,9 @@
         "./en/**/*.md",
         "./en/**/*.mdx",
         "./products/cloud/api-reference/**/*.md",
-        "./products/cloud/api-reference/**/*.mdx"
+        "./products/cloud/api-reference/**/*.mdx",
+        "./products/clickhouse-private/**/*.md",
+        "./products/clickhouse-private/**/*.mdx"
       ]
     }
   },
