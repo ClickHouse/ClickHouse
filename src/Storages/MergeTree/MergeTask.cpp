@@ -164,7 +164,6 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
@@ -546,13 +545,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ProfileEvents::increment(ProfileEvents::Merge);
     ProfileEvents::increment(ProfileEvents::MergeSourceParts, global_ctx->future_part->parts.size());
 
-    String local_tmp_prefix;
-    if (global_ctx->need_prefix)
-    {
-        // projection parts have different prefix and suffix compared to normal parts.
-        // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
-        local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
-    }
+    // projection parts have different prefix and suffix compared to normal parts.
+    // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
+    String local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
 
     const String local_tmp_suffix = global_ctx->parent_part ? global_ctx->suffix : "";
 
@@ -586,20 +581,26 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// dedicated arena (same as `MergeTreeData::loadDataPart` / `DataPartsExchange`). The rest of
     /// `prepare` (storage snapshot, column extraction, pipeline/transform setup) is merge-lifetime
     /// scratch and is deliberately left in the default per-CPU arenas.
+    /// The name is deterministic (`tmp_merge_<part>`), so claim it and reclaim a leftover of an
+    /// interrupted merge. Projection merges write nested inside the parent's directory, which has no claim.
+    if (!global_ctx->parent_part)
+        global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
+
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
         std::optional<MergeTreeDataPartBuilder> builder;
         if (global_ctx->parent_part)
         {
-            auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjection(local_tmp_part_basename,  /* use parent transaction */ false);
-            builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings());
+            /// Non-initializing, so nothing is seeded from an existing directory.
+            auto data_part_storage = global_ctx->parent_part->getDataPartStorage().getProjectionNoInitialize(local_tmp_part_basename,  /* use parent transaction */ false);
+            builder.emplace(*global_ctx->data, global_ctx->future_part->name, data_part_storage, getReadSettings(), PartDirIntent::CreateFresh);
             builder->withParentPart(global_ctx->parent_part);
         }
         else
         {
             auto local_single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + global_ctx->future_part->name, global_ctx->disk, 0);
-            builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename, getReadSettings()));
+            builder.emplace(global_ctx->data->getDataPartBuilder(global_ctx->future_part->name, local_single_disk_volume, local_tmp_part_basename, getReadSettings(), PartDirIntent::CreateFresh));
             builder->withPartStorageType(global_ctx->future_part->part_format.storage_type);
         }
 
@@ -610,15 +611,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
     auto data_part_storage = global_ctx->new_data_part->getDataPartStoragePtr();
 
-    if (data_part_storage->exists())
-        throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
+    /// Top-level merges are covered by the claim above. A projection merge writes into a directory this
+    /// same operation just created, so finding one means a logic bug.
+    if (global_ctx->parent_part && data_part_storage->exists())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection merge directory {} already exists", data_part_storage->getFullPath());
 
     data_part_storage->beginTransaction();
-
-    /// Background temp dirs cleaner will not touch tmp projection directory because
-    /// it's located inside part's directory
-    if (!global_ctx->parent_part)
-        global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
@@ -950,10 +948,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
-    global_ctx->compression_codec = global_ctx->data->getCompressionCodecForPart(
+    auto part_compression_codec = global_ctx->data->getCompressionCodecForPart(
+        global_ctx->metadata_snapshot,
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
         global_ctx->new_data_part->ttl_infos,
         global_ctx->time_of_merge);
+    global_ctx->compression_codec = std::move(part_compression_codec.codec);
+    global_ctx->is_explicit_recompression = part_compression_codec.is_explicit_recompression;
 
     switch (global_ctx->chosen_merge_algorithm)
     {
@@ -1023,8 +1024,77 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && !use_const_adaptive_granularity
         && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical;
 
-    /// Merged stream will be created and available as merged_stream variable
-    createMergedStream();
+    /// For TTLDrop merges, all source parts are fully expired.
+    /// Skip creating the read pipeline to avoid opening source parts
+    /// and allocating read/prefetch buffers.
+    ///
+    /// We restrict this to tables that have only an unconditional rows TTL
+    /// (no column TTL, moves, recompression, GROUP BY, or WHERE-clause TTL).
+    /// When other TTL families are present, TTLTransform::finalize rebuilds
+    /// their maps from scratch, and replicating that logic here would be
+    /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
+    const bool can_short_circuit_ttl_drop =
+        global_ctx->future_part->merge_type == MergeType::TTLDrop
+        && global_ctx->metadata_snapshot->hasOnlyRowsTTL();
+
+    if (can_short_circuit_ttl_drop)
+    {
+        LOG_DEBUG(ctx->log, "TTLDrop merge: skipping data pipeline, "
+            "all {} source parts are fully expired", global_ctx->future_part->parts.size());
+
+        global_ctx->ttl_drop_short_circuit = true;
+
+        /// Reset all ttl_infos and mark table TTL as finished, matching what
+        /// TTLTransform::finalize produces in the normal all_data_dropped path:
+        /// it clears everything with `data_part->ttl_infos = {}`, then
+        /// TTLDeleteAlgorithm::finalize sets table_ttl = {0, 0, finished}.
+        global_ctx->new_data_part->ttl_infos = {};
+        global_ctx->new_data_part->ttl_infos.table_ttl = {0, 0, true};
+
+        /// Clear projections — no rows means no projection data to merge or rebuild.
+        global_ctx->projections_to_rebuild.clear();
+        global_ctx->projections_to_merge.clear();
+        global_ctx->projections_to_merge_parts.clear();
+
+        /// Force Horizontal algorithm. This prevents the Vertical stage from trying
+        /// to finalize an empty rows_sources file, and ensures finalizePart takes
+        /// the correct code path. Reinitialize the column/index state to match the
+        /// Horizontal branch of the switch above — if chooseMergeAlgorithm picked
+        /// Vertical, merging_columns would be key-only and gathering_columns non-empty,
+        /// which would leave MergedBlockOutputStream with incomplete column metadata.
+        global_ctx->chosen_merge_algorithm = MergeAlgorithm::Horizontal;
+        global_ctx->merge_list_element_ptr->merge_algorithm.store(global_ctx->chosen_merge_algorithm, std::memory_order_relaxed);
+
+        global_ctx->merging_columns = global_ctx->storage_columns;
+        global_ctx->merging_columns_expired_by_ttl = global_ctx->storage_columns_expired_by_ttl;
+        global_ctx->gathering_columns.clear();
+
+        /// Reinitialize skip indexes to match the Horizontal branch setup.
+        /// We must NOT simply clear them: MergedBlockOutputStream writes empty
+        /// skip-index files (with checksums) even for 0-row parts. Clearing
+        /// would produce different checksums than the normal TTLDrop path,
+        /// causing divergence during rolling upgrades on replicated tables.
+        global_ctx->merging_skip_indexes.clear();
+        global_ctx->skip_indexes_by_column.clear();
+        global_ctx->text_indexes_to_merge.clear();
+
+        auto all_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
+        for (const auto & index : all_skip_indexes)
+        {
+            if (!exclude_index_names.contains(index.name))
+            {
+                if (index.type == "text")
+                    global_ctx->text_indexes_to_merge.push_back(index);
+                else
+                    global_ctx->merging_skip_indexes.push_back(index);
+            }
+        }
+    }
+    else
+    {
+        /// Merged stream will be created and available as merged_stream variable
+        createMergedStream();
+    }
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         ctx->sum_input_rows_upper_bound,
@@ -1046,7 +1116,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /*reset_columns=*/true,
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
-        &global_ctx->written_offset_substreams);
+        &global_ctx->written_offset_substreams,
+        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression);
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -1446,7 +1517,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1488,7 +1559,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();
@@ -1608,6 +1679,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeMergeProjections() cons
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 {
+    /// TTLDrop short-circuit: no pipeline was created, skip directly to finalize.
+    if (global_ctx->ttl_drop_short_circuit)
+    {
+        finalize();
+        return false;
+    }
+
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     UInt64 step_time_ms
         = (*global_ctx->data_settings)[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds();
@@ -1978,6 +2056,7 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->to->getIndexGranularity(),
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
         &global_ctx->written_offset_substreams,
+        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
         global_ctx->to->getSkipIndicesPackedWriter());
 
     ctx->column_elems_written = 0;
@@ -2137,7 +2216,6 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             global_ctx->deduplicate_by_columns,
             global_ctx->cleanup,
             projection_merging_params,
-            global_ctx->need_prefix,
             projection,
             global_ctx->new_data_part.get(),
             projection->with_parent_part_offset ? global_ctx->merged_part_offsets : nullptr,
@@ -3008,7 +3086,8 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         /*rewrite_primary_key=*/ false,
         /*save_marks_in_cache=*/ false,
         /*save_primary_index_in_memory=*/ false,
-        /*blocks_are_granules_size=*/ false);
+        /*blocks_are_granules_size=*/ false,
+        /*try_adaptive_codec=*/ false); /// Writes text index files, not column data.
 
     auto transform = std::make_shared<BuildTextIndexTransform>(
         plan.getCurrentHeader(),

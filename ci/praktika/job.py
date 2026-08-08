@@ -68,6 +68,14 @@ class Job:
 
         run_unless_cancelled: bool = False
 
+        # Run even when an upstream job failed, but still honour the cache and
+        # the job filter. `run_unless_cancelled` above drops the whole run
+        # condition down to `!cancelled()`, which also means "ignore a cache
+        # hit and ignore `should_skip_job`" - wrong for a job that is merely
+        # expected to report on a red head (see the "Build profile diff" job in
+        # ci/defs/job_configs.py).
+        run_on_upstream_failure: bool = False
+
         # If True, the job failure does not block PR merge, but the job
         # is still shown as failed in the CI report.
         allow_failure: bool = False
@@ -252,11 +260,6 @@ class Job:
         def set_post_hooks(self, post_hooks):
             res = copy.deepcopy(self)
             res.post_hooks = post_hooks
-            return res
-
-        def set_digest_config(self, digest_config):
-            res = copy.deepcopy(self)
-            res.digest_config = digest_config
             return res
 
         def set_timeout(self, timeout):

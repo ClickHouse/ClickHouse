@@ -1,0 +1,38 @@
+TIMEOUT_EXCEEDED
+control_partition: stopped promptly
+TIMEOUT_EXCEEDED
+geohash_partition: stopped promptly
+TIMEOUT_EXCEEDED
+arrayfold_partition: stopped promptly
+TIMEOUT_EXCEEDED
+sleep_partition: stopped promptly
+TIMEOUT_EXCEEDED
+base58_partition: stopped promptly
+TIMEOUT_EXCEEDED
+geohash_orderby: stopped promptly
+TIMEOUT_EXCEEDED
+arrayfold_orderby: stopped promptly
+TIMEOUT_EXCEEDED
+sleep_orderby: stopped promptly
+TIMEOUT_EXCEEDED
+base58_orderby: stopped promptly
+TIMEOUT_EXCEEDED
+geohash_skipindex: stopped promptly
+TIMEOUT_EXCEEDED
+h3cells_orderby_deadline: stopped promptly
+TIMEOUT_EXCEEDED
+h3containment_orderby_deadline: stopped promptly
+TIMEOUT_EXCEEDED
+TIMEOUT_EXCEEDED
+TIMEOUT_EXCEEDED
+h3cells_orderby: killed promptly
+h3containment_orderby: killed promptly
+kill_geohash: killed promptly
+stored expression leak: no query state retained
+['sx1q','sx1r','sx32','sx1w','sx1x','sx38']
+55
+hello
+0
+8
+8
+4	6

@@ -196,8 +196,6 @@ struct FormatSettings
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
         bool output_unsupported_types_as_binary = true;
-        bool input_use_native_reader = true;
-        bool output_use_native_writer = true;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts
@@ -270,7 +268,11 @@ struct FormatSettings
         char collection_items_delimiter = '\x02';
         char map_keys_delimiter = '\x03';
         bool allow_variable_number_of_columns = true;
+        char rows_delimiter = '\n';
         Names input_field_names;
+        /// Transient state used only by the HiveText output serialization to track the current
+        /// Hive separator nesting level (see getHiveTextDelimiter). Not a user-facing setting.
+        size_t nesting_level = 1;
     } hive_text{};
 
     struct Custom
@@ -399,6 +401,7 @@ struct FormatSettings
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
+        bool spatial_filter_push_down = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
     } parquet{};

@@ -8,7 +8,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -20,17 +19,18 @@ namespace DB
 class KeeperStorage;
 struct KeeperSnapshotReader;
 
-/// Iterator over nodes in KeeperStorage, frozen at the moment in time when
-/// KeeperNodeStreamForSnapshot was created. Creation locks storage_mutex but is relatively fast,
-/// then the long-running iteration can proceed after the mutex is unlocked.
-struct KeeperNodeStreamForSnapshot
+/// Iterator over nodes in KeeperStorage, frozen at the moment in time when the view was issued.
+/// Issuing locks storage_mutex but is relatively fast, then the long-running iteration can
+/// proceed after the mutex is unlocked. Keeps the storage alive. The destructor releases the
+/// view.
+struct KeeperNodesReadView
 {
-    /// Total number of nodes that `next` will report. Storage must provide it in advance.
-    size_t node_count = 0;
+    std::shared_ptr<KeeperStorage> storage_holder;
 
+    virtual size_t getNodeCount() const = 0;
     virtual bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) = 0;
 
-    virtual ~KeeperNodeStreamForSnapshot() { chassert(node_count == 0); }
+    virtual ~KeeperNodesReadView() = default;
 };
 
 struct KeeperStorageStats
@@ -94,13 +94,10 @@ struct KeeperNodesStorage
     virtual void updateCommittedNode(std::string_view path, std::optional<const KeeperNodeStats *> new_stats, std::optional<std::string_view> new_data, uint64_t * out_digest) = 0;
     virtual void removeCommittedNode(std::string_view path) = 0;
 
-    /// Caller must hold storage mutex.
-    /// At most one stream can exist at any given time.
-    /// Stream must be destroyed using finishWritingSnapshot (with storage mutex held), otherwise
-    /// destructor fails assert.
-    virtual std::unique_ptr<KeeperNodeStreamForSnapshot> beginWritingSnapshot() = 0;
-    /// Should set stream->node_count = 0 to tell destructor to be chill.
-    virtual void finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream) = 0;
+    /// Issue a consistent lock-free read view of committed nodes. Locks the storage mutex
+    /// internally; caller must not hold it. The returned view doesn't pin the storage yet;
+    /// issue views through KeeperStorage::issueReadView, which attaches the pin.
+    virtual std::unique_ptr<KeeperNodesReadView> issueReadView() = 0;
 
     /// Does only createStreams-finishStreams on `reader`, the caller does everything before and after that.
     virtual void loadNodesFromSnapshot(KeeperSnapshotReader & reader, KeeperStorage * storage, uint64_t * out_digest) = 0;

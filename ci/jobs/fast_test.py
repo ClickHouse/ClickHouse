@@ -337,6 +337,10 @@ def main():
         ch_config_dir=f"{temp_dir}/etc/clickhouse-server",
         ch_var_lib_dir=f"{temp_dir}/var/lib/clickhouse",
     )
+    # `fast_test_command` below prefixes `cd {temp_dir}`, so clients spawned by
+    # tests inherit that directory rather than the repository root this job runs
+    # from, and dump their cores there.
+    CH.client_core_path = str(temp_dir)
     CH.install_configs()
 
     attach_debug = False
