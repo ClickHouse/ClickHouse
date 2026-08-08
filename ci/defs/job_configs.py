@@ -530,28 +530,6 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
-    # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
-    # stages the .options files, a source-derived fallback all.dict, and seed
-    # corpora repacked from tests/queries/0_stateless/*.sql into the build
-    # output (see ArtifactConfigs.fuzzers), so the produced artifact also
-    # depends on the inputs under tests/fuzz and on the stateless test queries,
-    # which the shared build digest does not cover. Extend the digest of the
-    # fuzzers build only, so that a dictionary generation or corpus change
-    # cannot cache-hit a stale artifact while the other builds are unaffected.
-    special_build_jobs = [
-        (
-            job.set_digest_config(
-                Job.CacheDigestConfig(
-                    include_paths=build_digest_config.include_paths
-                    + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
-                    with_git_submodules=True,
-                )
-            )
-            if job.parameter == BuildTypes.ARM_FUZZERS
-            else job
-        )
-        for job in special_build_jobs
-    ]
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,
         runs_on=[],  # from parametrize()
@@ -560,9 +538,14 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
+        # Unpacking the packages needs ~4.4 GB, so reclaim another job's leftover
+        # images before installing, not just afterwards. Best-effort: praktika does
+        # not propagate a hook's exit code to the job status.
+        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
@@ -594,9 +577,12 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
+        # See install_check_jobs above.
+        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
@@ -1290,6 +1276,9 @@ class JobConfigs:
                 "./ci/jobs/compatibility_check.py",
             ],
         ),
+        # Shares the style-checker runners with Install packages and leaves ~4 GB of docker
+        # residue per run, which is what the next job on that runner inherits.
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
@@ -1651,19 +1640,9 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
-        # The release binary is used to generate the fuzzer dictionary (all.dict)
-        # from the actual set of functions, data types and keywords.
-        requires=[
-            ArtifactNames.ARM_FUZZERS,
-            ArtifactNames.FUZZERS_CORPUS,
-            ArtifactNames.CH_ARM_RELEASE,
-        ],
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/libfuzzer_test_check.py",
-                "./tests/fuzz/update_dict.sh",
-                "./tests/fuzz/dictionaries/old.dict",
-            ],
+            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(
