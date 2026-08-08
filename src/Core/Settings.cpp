@@ -467,7 +467,8 @@ Possible values:
 - Positive integer.
 - 0 — Infinite timeout. The wait is still interrupted by `KILL QUERY`, and by `max_execution_time` at
   the default [timeout_overflow_mode](/reference/settings/session-settings/timeout-overflow-mode#timeout_overflow_mode) `throw`.
-  Under `break` the query is not cancelled, so the wait continues until a connection is released.
+  Under `break` the time limit does not cancel the query, so the wait continues until a connection is
+  released; `KILL QUERY` still interrupts it.
 )", 0) \
     DECLARE(Milliseconds, replace_running_query_max_wait_ms, 5000, R"(
 The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace_running_query) setting is active.
