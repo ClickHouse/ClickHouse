@@ -1,5 +1,7 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -40,6 +42,27 @@ void readOffsets(ColumnPtr & offsets_column, const String & data, size_t limit, 
 ColumnPtr emptyOffsets()
 {
     return ColumnArray::ColumnOffsets::create();
+}
+
+/// Read a whole `Array(UInt8)` column: offsets from `offsets_data`, elements from `elements_data`.
+/// Both buffers are references so that temporaries passed by the caller outlive the non-owning readers.
+ColumnPtr readArrayColumn(const String & offsets_data, const String & elements_data, size_t limit, bool position_independent_encoding)
+{
+    ReadBufferFromString offsets_in(offsets_data);
+    ReadBufferFromString elements_in(elements_data);
+
+    ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.position_independent_encoding = position_independent_encoding;
+    settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
+    {
+        return path.back().type == ISerialization::Substream::ArraySizes ? &offsets_in : &elements_in;
+    };
+
+    auto serialization = SerializationArray::create(SerializationNumber<UInt8>::create());
+    ColumnPtr column = ColumnArray::create(ColumnUInt8::create());
+    ISerialization::DeserializeBinaryBulkStatePtr state;
+    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, limit, settings, state, nullptr);
+    return column;
 }
 
 const ColumnArray::Offsets & offsetValues(const ColumnPtr & column)
@@ -106,6 +129,32 @@ TEST(SerializationArrayOffsets, SizesEncodingIsMonotonicByConstruction)
     auto offsets_column = emptyOffsets();
     readOffsets(offsets_column, absoluteOffsets({2, 1, 3}), 3, /*position_independent_encoding=*/true);
     ASSERT_EQ(offsetValues(offsets_column), (ColumnArray::Offsets{2, 3, 6}));
+}
+
+/// A monotonic absolute-offsets stream whose elements stream is empty declares elements that were never
+/// read: the offsets pass the monotonicity check, the elements reader appends nothing without throwing,
+/// and consumers of the resulting column would index the empty elements column out of bounds.
+TEST(SerializationArrayOffsets, RejectsEmptyElementsWithNonZeroLastAbsoluteOffset)
+{
+    try
+    {
+        readArrayColumn(absoluteOffsets({1}), /*elements_data=*/"", 1, /*position_independent_encoding=*/false);
+        FAIL() << "Expected INCORRECT_DATA for an empty elements stream with a non-zero last offset";
+    }
+    catch (const Exception & e)
+    {
+        ASSERT_EQ(ErrorCodes::INCORRECT_DATA, e.code());
+    }
+}
+
+/// The sizes encoding keeps accepting an empty elements column: that is how a column of a Nested type
+/// that was added by ALTER reads the parts written before that ALTER.
+TEST(SerializationArrayOffsets, SizesEncodingAcceptsEmptyElements)
+{
+    auto column = readArrayColumn(absoluteOffsets({1}), /*elements_data=*/"", 1, /*position_independent_encoding=*/true);
+    const auto & column_array = assert_cast<const ColumnArray &>(*column);
+    ASSERT_EQ(column_array.getOffsets(), (ColumnArray::Offsets{1}));
+    ASSERT_TRUE(column_array.getData().empty());
 }
 
 /// Repeated reads into one accumulating column keep appending, so a column filled over many calls ends

@@ -531,10 +531,20 @@ void SerializationArray::deserializeBinaryBulkWithMultipleStreams(
     settings.path.pop_back();
 
     /// Check consistency between offsets and elements subcolumns.
-    /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.
-    if (!nested_column->empty() && nested_column->size() != last_offset)
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
-            toString(nested_column->size()), toString(last_offset));
+    if (nested_column->size() != last_offset)
+    {
+        if (!nested_column->empty())
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all array values: read just {} of {}",
+                toString(nested_column->size()), toString(last_offset));
+
+        /// An empty elements column is ok for the sizes encoding: it is how a column of a Nested type
+        /// that was added by ALTER reads the parts written before that ALTER. The absolute-offsets
+        /// encoding always writes the elements next to the offsets, so there an empty elements column
+        /// means the data is corrupted and the offsets would index past the end of the elements.
+        if (!settings.position_independent_encoding)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Cannot read array values: elements column is empty while the last offset is {}", toString(last_offset));
+    }
 
     column = std::move(mutable_column);
 }
