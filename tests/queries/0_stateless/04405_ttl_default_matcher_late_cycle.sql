@@ -7,7 +7,7 @@ SET asterisk_include_alias_columns = 0;
 
 CREATE TABLE ttl_default_matcher
 (
-    ts DateTime,
+    ts DateTime('UTC'),
     a UInt8,
     b String DEFAULT toJSONString(tuple(* EXCEPT b)) TTL ts,
     x String ALIAS b
@@ -16,7 +16,7 @@ ENGINE = MergeTree
 ORDER BY tuple()
 SETTINGS min_bytes_for_wide_part = 0;
 
-INSERT INTO ttl_default_matcher VALUES (toDateTime('2000-01-01 00:00:00'), 1, 'old');
+INSERT INTO ttl_default_matcher VALUES (toDateTime('2000-01-01 00:00:00', 'UTC'), 1, 'old');
 
 -- TTL materialization during the merge recomputes the expired `b` from its DEFAULT;
 -- `*` never includes the alias `x`, so no cycle can form.
