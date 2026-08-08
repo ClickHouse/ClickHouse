@@ -92,6 +92,7 @@ namespace FailPoints
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char kill_mutation_pause_after_transaction_resolve[];
 }
 
 namespace Setting
@@ -1444,6 +1445,10 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
             return CancellationCode::NotFound;
         txn = tryGetTransactionForMutation(it->second, log.load());
     }
+
+    /// Test-only park point: lets a regression test interleave the claim below against a
+    /// concurrent commit.
+    FailPointInjection::pauseFailPoint(FailPoints::kill_mutation_pause_after_transaction_resolve);
 
     bool cancelled_transaction = false;
     if (txn && txn->getCSN() != Tx::RolledBackCSN)

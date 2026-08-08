@@ -10,3 +10,8 @@ commit_rejected	INVALID_TRANSACTION
 data_after_kill	1	1
 mutation_entry_removed	0
 server_alive_after_arm2	1
+--- arm 3: kill resolves the transaction, then the commit passes its commit point
+kill_status	cant_cancel
+mutation_entry_kept_after_stale_read	1
+data_after_commit_arm3	1	101
+server_alive_after_arm3	1
