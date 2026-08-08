@@ -6,9 +6,10 @@
 # `StorageURLSource` discards the error of the read it interrupts. A `KILL QUERY` after that
 # upgrades the cancellation (see `ExecutingGraph::cancel`), the query fails, and the source must
 # fail with the real cancellation error instead of discarding it - the killed query must never end
-# its stream as if it completed. The kill lands while the source is blocked in a request that the
-# cancellation cannot interrupt (a slowly served empty file), so the upgraded, no longer soft
-# cancellation is what the source finds when the request completes.
+# its stream as if it completed. Both cancellations land while the source is blocked in a request
+# that the cancellation cannot interrupt (an empty file whose response the server withholds until
+# the test releases it), so the upgraded, no longer soft cancellation is what the source finds when
+# the request completes.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,18 +21,19 @@ PORT_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.port")
 # made after the cancellation. It binds to the port 0 and reports the port the kernel gave it, so
 # that it cannot collide with anything else running in parallel.
 #
-# - /empty_slow serves an empty file after a delay, long enough for both cancellations to arrive
-#   while it is being served.
+# - /empty_slow serves an empty file, withholding the response until the test requests /release -
+#   after both cancellations have been delivered - so that no timing can release the source early.
 # - /data serves the data at once.
-# The server must serve requests in parallel: the test polls /stats while /empty_slow is being
-# served, and a single-threaded server would block the poll until the delay is over - after the
-# query has already finished, too late to cancel it.
+# The server must serve requests in parallel: the test polls /stats and requests /release while
+# /empty_slow is being served, and a single-threaded server would block them until the query has
+# already finished, too late to cancel it.
 python3 -u -c "
 import json
-import time
+import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 counts = {}
+release = threading.Event()
 
 class Handler(BaseHTTPRequestHandler):
     def respond(self, head):
@@ -49,8 +51,12 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             if not head:
                 self.wfile.write(body)
+        elif self.path == '/release':
+            release.set()
+            self.send_response(200)
+            self.end_headers()
         elif self.path == '/empty_slow':
-            time.sleep(5)
+            release.wait(60)
             self.send_response(200)
             self.send_header('Content-Type', 'text/csv')
             self.send_header('Content-Length', '0')
@@ -125,8 +131,14 @@ done
 kill -SIGINT $CLIENT_PID
 sleep 0.5
 
-# The second, hard cancellation: the query is killed and must fail.
+# The second, hard cancellation: the query is killed and must fail. ASYNC does not wait for the
+# query to finish, but the cancellation itself - including its delivery to the processors, where it
+# upgrades the soft one - is done by the time KILL returns.
 $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$QUERY_ID' ASYNC" >/dev/null
+
+# Only now, with both cancellations delivered, let the server answer the request the source is
+# blocked in.
+curl -sS "http://127.0.0.1:$HTTP_PORT/release" -o /dev/null
 
 wait $CLIENT_PID
 CLIENT_STATUS=$?
