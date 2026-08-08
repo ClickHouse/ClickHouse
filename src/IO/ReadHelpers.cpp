@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
     extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_NUMBER;
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_UUID;
@@ -204,6 +205,11 @@ void assertNotEOF(ReadBuffer & buf)
 {
     if (buf.eof())
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after EOF");
+}
+
+void throwNumberWithoutDigits()
+{
+    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
 }
 
 

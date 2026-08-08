@@ -1,0 +1,140 @@
+group 1: TSV
+7
+0
+3242
+100
+9
+1
+0
+group 1: TSKV
+7
+0
+3242
+100
+9
+1
+0
+group 1: TSVRaw
+7
+0
+3242
+100
+9
+1
+0
+group 1: CustomSeparated
+7
+0
+3242
+100
+9
+1
+0
+group 2: signed padded
+-7
+0
+-3242
+-100
+group 3: plus sign
+7
+7
+0
+group 4: a lone minus is documented to read as zero
+0
+0
+0
+0	1
+group 4: a sign followed by no digit -- the plus is rejected by the reader
+group 4: a minus followed by no digit -- rejected by the format layer
+group 4: two signs are rejected even when a digit follows
+group 4: CSV rejects every one of them too
+group 5: inference and the reader agree
+c1	Nullable(Int64)					
+-7
+c1	Nullable(Int64)					
+7
+group 6: padded integers now infer an integer type
+c1	Nullable(Int64)					
+7
+c1	Nullable(Int64)					
+1
+c1	Nullable(Int64)					
+0
+c1	Nullable(Int64)					
+0
+c1	Nullable(Int64)					
+123
+c1	Nullable(UInt64)					
+18446744073709551615
+group 7: CSV oracle
+c1	Nullable(Int64)					
+7
+c1	Nullable(Int64)					
+1
+c1	Nullable(Int64)					
+0
+c1	Nullable(Int64)					
+0
+c1	Nullable(Int64)					
+123
+c1	Nullable(UInt64)					
+18446744073709551615
+7
+-7
+7
+group 7: JSONEachRow control
+7
+-7
+group 8: UInt64 target
+7
+7
+7
+group 8: wide integer targets take the same reader
+7
+-7
+7
+7
+-7
+7
+7
+7
+group 9: overflow parity with CSV
+-1
+-1
+-1
+-1
+group 10: floats unchanged
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+group 10: and they read back as before
+0.5
+-0.5
+0.5
+-0.5
+0.5
+0.5
+-0.5
+-0
+7
+-7
+7
+0
+group 11: zero run edges
+0
+0
+0
+7
+9	0
+0	9
+group 12: no row is lost
+3
+3
+3
+3
+3

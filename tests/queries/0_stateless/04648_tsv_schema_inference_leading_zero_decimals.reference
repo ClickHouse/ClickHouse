@@ -18,15 +18,15 @@ c1	Nullable(Float64)
 c1	Nullable(Float64)					
 c1	Nullable(Float64)					
 c1	Nullable(Float64)					
-group 3: zero-padded integers stay String
-c1	Nullable(String)					
-c1	Nullable(String)					
-c1	Nullable(String)					
-c1	Nullable(String)					
-c1	Nullable(String)					
-c1	Nullable(String)					
-c1	Nullable(String)					
-c1	Nullable(String)					
+group 3: zero-padded integers infer an integer type
+c1	Nullable(Int64)					
+c1	Nullable(Int64)					
+c1	Nullable(Int64)					
+c1	Nullable(Int64)					
+c1	Nullable(Int64)					
+c1	Nullable(Int64)					
+c1	Nullable(Int64)					
+c1	Nullable(UInt64)					
 group 4: non-numbers stay String
 c1	Nullable(String)					
 c1	Nullable(String)					
@@ -108,10 +108,10 @@ c1	Nullable(String)
 0.5e+
 group 11: try_infer_integers = 1 (the default)
 c1	Nullable(Float64)					
-c1	Nullable(String)					
-c1	Nullable(String)					
-c1	Nullable(String)					
-c1	Nullable(String)					
+c1	Nullable(Int64)					
+c1	Nullable(Int64)					
+c1	Nullable(Int64)					
+c1	Nullable(UInt64)					
 group 11: try_infer_integers = 0
 c1	Nullable(Float64)					
 c1	Nullable(Float64)					
@@ -133,9 +133,9 @@ group 11: try_infer_integers = 0, the admitted type is readable
 18446744073709552000
 group 12: TSV-family siblings
 c1	Nullable(Float64)					
-c1	Nullable(String)					
+c1	Nullable(Int64)					
 c1	Nullable(Float64)					
-c1	Nullable(String)					
+c1	Nullable(Int64)					
 group 13: multiple leading zeros with a fractional part
 c1	Nullable(Float64)					
 c1	Nullable(Float64)					
@@ -143,13 +143,13 @@ c1	Nullable(Float64)
 c1	Nullable(Float64)					
 group 14: Dynamic runtime path
 0	Float64
-007	String
+7	Int64
 0	Float64
 group 15: TSKV plain values
 x	Nullable(Float64)					
 0.5
-x	Nullable(String)					
-007
+x	Nullable(Int64)					
+7
 group 15: TSKV null representation and escapes
 x	Nullable(String)					
 y	Nullable(Int64)					
