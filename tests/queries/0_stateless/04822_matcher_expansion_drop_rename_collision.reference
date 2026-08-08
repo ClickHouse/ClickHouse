@@ -1,0 +1,13 @@
+-- a column renamed into a name freed by DROP is still rematerialized
+0	0
+1	1
+2	2
+1
+0	1000	1000
+1	1001	1001
+2	1002	1002
+-- dropping a matcher-dependent MATERIALIZED column queues no rematerialization for it
+0
+0	1000
+1	1001
+2	1002

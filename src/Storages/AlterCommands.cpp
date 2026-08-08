@@ -2440,18 +2440,21 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
             renames.emplace_back(command.column_name, command.rename_to);
     }
 
-    /// The columns this ALTER changes explicitly, keyed on their post-ALTER names. `AlterCommands::validate` rejects renaming and
-    /// modifying the same column in a single ALTER, so this currently only maps the names of
-    /// columns renamed by another command of the same ALTER, but keying the exclusions below on
-    /// the post-ALTER name keeps them correct regardless of that restriction and of the order of
-    /// the commands. A dropped column is deliberately not mapped: an ALTER may drop a column and
-    /// rename another one into the freed name, and that renamed column is not the dropped one.
+    /// The columns this ALTER changes explicitly. `MODIFY COLUMN` targets are keyed on their
+    /// post-ALTER names: `AlterCommands::validate` rejects renaming and modifying the same column
+    /// in a single ALTER, so this currently only maps the names of columns renamed by another
+    /// command of the same ALTER, but keying the exclusion below on the post-ALTER name keeps it
+    /// correct regardless of that restriction and of the order of the commands. Dropped columns
+    /// are deliberately kept separate and keyed on their pre-ALTER names: an ALTER may drop a
+    /// column and rename another one into the freed name, and that renamed column is not the
+    /// dropped one — it must not be suppressed by the dropped column's name.
     /// Only a `MODIFY COLUMN` that states a *different* `MATERIALIZED` expression counts as an
     /// explicit change of the expression - that is the form the metadata-only semantics are about.
     /// A `MODIFY COLUMN` that only changes the type or the position of the column keeps the stored
     /// expression (`AlterCommands::prepare` copies it into the command), so it must not suppress
     /// the rematerialization that a change of the effective expression requires.
-    NameSet modified_or_dropped_new_names;
+    NameSet modified_new_names;
+    NameSet dropped_old_names;
     for (const auto & command : *this)
     {
         if (command.ignore)
@@ -2459,7 +2462,7 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
 
         if (command.type == AlterCommand::DROP_COLUMN)
         {
-            modified_or_dropped_new_names.insert(command.column_name);
+            dropped_old_names.insert(command.column_name);
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -2480,7 +2483,7 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
                 if (name == from)
                     name = to;
             }
-            modified_or_dropped_new_names.insert(name);
+            modified_new_names.insert(name);
         }
     }
 
@@ -2488,6 +2491,12 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
     for (const auto & old_column : old_metadata.columns)
     {
         if (old_column.default_desc.kind != ColumnDefaultKind::Materialized || !old_column.default_desc.expression)
+            continue;
+
+        /// A column dropped by this ALTER no longer exists and cannot need rematerialization.
+        /// Checked against the pre-ALTER name, before the rename mapping: a column renamed into
+        /// the freed name is a different, live column.
+        if (dropped_old_names.contains(old_column.name))
             continue;
 
         String new_name = old_column.name;
@@ -2499,7 +2508,7 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
 
         /// Explicit changes of the column itself keep the ordinary `MATERIALIZED` semantics:
         /// the ALTER is metadata-only and existing parts keep the previously computed values.
-        if (modified_or_dropped_new_names.contains(new_name))
+        if (modified_new_names.contains(new_name))
             continue;
 
         if (!new_metadata.columns.has(new_name))
@@ -2535,10 +2544,11 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
     /// Rematerializing a column changes its values, so `MATERIALIZED` columns that read it
     /// (directly or through an `ALIAS`) must be rematerialized as well. Close the set over
     /// such dependents; the loop terminates because the set only grows. Columns explicitly
-    /// modified or dropped by this ALTER are excluded for the same reason as above: an
-    /// explicit `MODIFY COLUMN ... MATERIALIZED` keeps the ordinary metadata-only semantics
-    /// even when its expression reads a rematerialized column. The closure runs over the new
-    /// metadata, so it uses the same post-ALTER names as the exclusion above.
+    /// modified by this ALTER are excluded for the same reason as above: an explicit
+    /// `MODIFY COLUMN ... MATERIALIZED` keeps the ordinary metadata-only semantics even when
+    /// its expression reads a rematerialized column. The closure runs over the new metadata,
+    /// so it uses the same post-ALTER names as the exclusion above; dropped columns do not
+    /// exist in the new metadata, and a column renamed into a freed name must participate.
     NameSet changed(res.begin(), res.end());
     bool progress = true;
     while (progress)
@@ -2547,7 +2557,7 @@ Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
         for (const auto & column : new_metadata.columns)
         {
             if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression
-                || changed.contains(column.name) || modified_or_dropped_new_names.contains(column.name))
+                || changed.contains(column.name) || modified_new_names.contains(column.name))
                 continue;
 
             ASTPtr expanded = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, new_metadata.columns, context);
