@@ -731,3 +731,166 @@ def test_retriable_node_cleanup_on_success(started_cluster):
     # Cleanup
     node.query(f"DROP TABLE {table_name}")
     node.query(f"DROP TABLE {dst_table_name}")
+
+
+def test_retriable_cleanup_on_loading_retries_reduced_to_zero(started_cluster):
+    """Test that .retriable nodes are cleaned up when loading_retries is reduced to 0.
+
+    This test verifies the fix for the bug where reducing s3queue_loading_retries
+    to 0 via ALTER TABLE while a .retriable node already exists (from prior failures
+    with retries enabled) would leave a stale .retriable node when the file reaches
+    terminal failure. The stale node survives TTL/SYSTEM DROP cleanup (which
+    intentionally skip .retriable nodes) and can interfere with future processing.
+
+    Test scenario:
+    1. Create table with s3queue_loading_retries=3 (retries enabled)
+    2. Upload a file that will fail, wait for .retriable node to be created
+    3. Verify .retriable exists with retries > 0
+    4. ALTER TABLE to set s3queue_loading_retries=0 (disable retries)
+    5. Force/wait for the file to reach terminal failure
+    6. Verify no .retriable node remains (core regression check)
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_retriable_alter_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    test_file = "alter_test.csv"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 3,  # Start with retries enabled
+            "polling_min_timeout_ms": 2000,  # Poll every 2 seconds
+            "polling_max_timeout_ms": 2000,
+        },
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def has_retriable_node_for_file(filename):
+        """Check if a .retriable node exists for the given file."""
+        failed_path = f"{keeper_path}/failed"
+        result = node.query(
+            f"SELECT name, value FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        if not result:
+            return False
+
+        import re
+        for line in result.split("\n"):
+            parts = line.split("\t")
+            if len(parts) != 2:
+                continue
+            node_name, node_value = parts
+            if not node_name.endswith(".retriable"):
+                continue
+            file_path_match = re.search(r'"file_path"\s*:\s*"([^"]*)"', node_value)
+            if file_path_match and filename in file_path_match.group(1):
+                return True
+        return False
+
+    def get_retry_count_for_file(filename):
+        """Get the retry count from the .retriable node for the given file."""
+        failed_path = f"{keeper_path}/failed"
+        result = node.query(
+            f"SELECT name, value FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        if not result:
+            return None
+
+        import re
+        for line in result.split("\n"):
+            parts = line.split("\t")
+            if len(parts) != 2:
+                continue
+            node_name, node_value = parts
+            if not node_name.endswith(".retriable"):
+                continue
+            file_path_match = re.search(r'"file_path"\s*:\s*"([^"]*)"', node_value)
+            if file_path_match and filename in file_path_match.group(1):
+                retries_match = re.search(r'"retries"\s*:\s*(\d+)', node_value)
+                if retries_match:
+                    return int(retries_match.group(1))
+        return None
+
+    def has_terminal_failed_node_for_file(filename):
+        """Check if a terminal failed node (without .retriable suffix) exists."""
+        failed_path = f"{keeper_path}/failed"
+        result = node.query(
+            f"SELECT name, value FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        if not result:
+            return False
+
+        import re
+        for line in result.split("\n"):
+            parts = line.split("\t")
+            if len(parts) != 2:
+                continue
+            node_name, node_value = parts
+            if node_name.endswith(".retriable"):
+                continue  # Skip .retriable nodes
+            file_path_match = re.search(r'"file_path"\s*:\s*"([^"]*)"', node_value)
+            if file_path_match and filename in file_path_match.group(1):
+                return True
+        return False
+
+    # Step 1: Upload invalid file
+    logging.info(f"Step 1: Uploading invalid CSV to {test_file}")
+    invalid_csv = b"not,valid,numbers\n"
+    put_s3_file_content(started_cluster, f"{files_path}/{test_file}", invalid_csv)
+
+    # Step 2: Wait for .retriable node to be created with retries > 0
+    logging.info("Step 2: Waiting for .retriable node to be created...")
+    retriable_created = False
+    for attempt in range(30):
+        time.sleep(1)
+        retry_count = get_retry_count_for_file(test_file)
+        if retry_count is not None and retry_count > 0:
+            logging.info(f"✓ .retriable node created with retries={retry_count} after {attempt + 1} seconds")
+            retriable_created = True
+            break
+
+    assert retriable_created, \
+        f"File {test_file} should have created a .retriable node with retries > 0"
+
+    # Step 3: ALTER to disable retries
+    logging.info("Step 3: Setting s3queue_loading_retries=0 via ALTER TABLE")
+    node.query(
+        f"ALTER TABLE {table_name} MODIFY SETTING s3queue_loading_retries = 0"
+    )
+    logging.info("✓ s3queue_loading_retries set to 0")
+
+    # Step 4: Wait for terminal failure
+    # With loading_retries=0, the next failure attempt should immediately finalize as terminal
+    logging.info("Step 4: Waiting for file to reach terminal failure...")
+    terminal_reached = False
+    for attempt in range(30):
+        time.sleep(1)
+        if has_terminal_failed_node_for_file(test_file):
+            logging.info(f"✓ Terminal failed node created after {attempt + 1} seconds")
+            terminal_reached = True
+            break
+
+    assert terminal_reached, \
+        f"File {test_file} should have reached terminal failure after loading_retries was set to 0"
+
+    # Step 5: Verify no .retriable node remains
+    logging.info("Step 5: Verifying .retriable node was cleaned up...")
+    time.sleep(2)  # Small buffer to ensure Keeper state is settled
+
+    assert not has_retriable_node_for_file(test_file), \
+        f"No .retriable node should remain for {test_file} after terminal failure with loading_retries=0"
+
+    logging.info("✓ Test passed: .retriable node was cleaned up when transitioning to terminal failure")
+
+    # Cleanup
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")

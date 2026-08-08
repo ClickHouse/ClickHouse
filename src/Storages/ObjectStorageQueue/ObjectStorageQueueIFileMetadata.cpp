@@ -647,6 +647,26 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+
+        /// Remove stale .retriable node if it exists from prior failures when loading_retries > 0.
+        /// This can happen if loading_retries was reduced to 0 via ALTER after a .retriable node
+        /// was already created. Without this cleanup, the stale .retriable survives TTL/SYSTEM DROP
+        /// (which skip .retriable nodes) and interferes with future processing.
+        auto retriable_failed_node_path = failed_node_path + ".retriable";
+        Coordination::Stat retriable_stat;
+        std::string retriable_data;
+        bool has_retriable_node = false;
+        ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+        {
+            auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+            has_retriable_node = zk_client->tryGet(retriable_failed_node_path, retriable_data, &retriable_stat);
+        });
+        if (has_retriable_node)
+        {
+            LOG_TEST(log, "Removing stale .retriable node for terminally failed file {}", path);
+            requests.push_back(zkutil::makeRemoveRequest(retriable_failed_node_path, retriable_stat.version));
+        }
+
         /// Create Failed node.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
         return;
