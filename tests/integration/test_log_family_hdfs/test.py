@@ -39,6 +39,10 @@ def count_hdfs_directories(fs, path="/clickhouse"):
     return sum(len(dirs) for _, dirs, _ in fs.walk(path))
 
 
+def count_empty_hdfs_directories(fs, path="/clickhouse"):
+    return sum(1 for _, dirs, files in fs.walk(path) if not dirs and not files)
+
+
 def assert_objects_count(started_cluster, objects_count, num_tries=30):
     # Removal of blobs is asynchronous, so wait until the count converges.
     fs = HdfsClient(hosts=started_cluster.hdfs_ip, user_name="root")
@@ -143,6 +147,12 @@ def test_no_leftover_directories_after_canceled_write(started_cluster):
         "CREATE TABLE hdfs_canceled_write (id UInt64) ENGINE=TinyLog SETTINGS disk = 'hdfs'"
     )
     try:
+        # Establish a baseline: `id.bin` and `sizes.json`. The count cannot be
+        # zero even after a canceled insert, because the sink saves the file
+        # sizes (`sizes.json`) upfront to be able to roll back on error.
+        node.query("INSERT INTO hdfs_canceled_write SELECT number FROM numbers(5)")
+        assert_objects_count(started_cluster, 2)
+
         # Stream small blocks so that the write buffers (and with them the HDFS
         # files and their prefix directories) are created before the exception
         # cancels the insert.
@@ -153,7 +163,20 @@ def test_no_leftover_directories_after_canceled_write(started_cluster):
         )
         assert "canceled write" in error
 
-        assert_objects_count(started_cluster, 0)
-        assert count_hdfs_directories(fs) == 0
+        # The canceled insert must roll back to the baseline without leaking
+        # objects (the keys may differ - the sink rewrites `sizes.json`) ...
+        assert_objects_count(started_cluster, 2)
+        assert (
+            node.query("SELECT * FROM hdfs_canceled_write ORDER BY id")
+            == "0\n1\n2\n3\n4\n"
+        )
+
+        # ... and without leaking the prefix directories of the removed files:
+        # every remaining directory must still lead to a live object.
+        num_tries = 30
+        while num_tries > 0 and count_empty_hdfs_directories(fs) != 0:
+            num_tries -= 1
+            time.sleep(1)
+        assert count_empty_hdfs_directories(fs) == 0
     finally:
         node.query("DROP TABLE hdfs_canceled_write SYNC")
