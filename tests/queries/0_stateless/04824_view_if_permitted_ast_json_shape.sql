@@ -7,7 +7,7 @@
 -- format to unparseable text. Note that in an expression context `viewIfPermitted` parses as an
 -- ordinary function (e.g. `viewIfPermitted(1, 2)`), so shapes without a bare select stay accepted.
 
-SET allow_experimental_json_ast_dialect = 1;
+SET enable_json_ast_dialect = 1;
 
 -- Positives: both parser-produced forms round-trip.
 
