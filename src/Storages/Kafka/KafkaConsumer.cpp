@@ -4,11 +4,13 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <Storages/Kafka/StorageKafkaUtils.h>
 #include <base/defines.h>
+#include <base/scope_guard.h>
 #include <boost/algorithm/string/join.hpp>
 #include <cppkafka/cppkafka.h>
 #include <fmt/ranges.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DateLUT.h>
+#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
@@ -36,12 +38,62 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_COMMIT_OFFSET;
+    extern const int LOGICAL_ERROR;
 }
 
 using namespace std::chrono_literals;
 const auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
 const std::size_t POLL_TIMEOUT_WO_ASSIGNMENT_MS = 50;
 const auto DRAIN_TIMEOUT_MS = 5000ms;
+/// Far above `offsets.commit.timeout.ms` (5000ms default), so only a commit librdkafka cannot deliver
+/// at all reaches it.
+const auto COMMIT_TIMEOUT_MS = 30000ms;
+
+namespace
+{
+
+/// cppkafka's no-argument `commit` is `rd_kafka_commit(handle, nullptr, 0)`, which takes no timeout and
+/// waits on its reply queue forever. `offsets.commit.timeout.ms` bounds a broker's response, not the
+/// case where no broker is reachable to send the request to - so a consumer whose brokers all fail
+/// authentication blocks here indefinitely, holding the streaming task, and its table stops consuming
+/// until the server restarts. `rd_kafka_commit_queue` is the same commit with a deadline; a null
+/// partition list commits the current assignment, as the cppkafka call does.
+void commitCurrentAssignmentWithTimeout(cppkafka::Consumer & consumer, std::chrono::milliseconds timeout)
+{
+    rd_kafka_t * handle = consumer.get_handle();
+
+    rd_kafka_queue_t * queue = rd_kafka_queue_new(handle);
+    if (queue == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create a librdkafka queue to commit offsets on");
+
+    SCOPE_EXIT({ rd_kafka_queue_destroy(queue); });
+
+    rd_kafka_resp_err_t err = rd_kafka_commit_queue(handle, nullptr, queue, nullptr, nullptr);
+    if (err != RD_KAFKA_RESP_ERR_NO_ERROR)
+        throw cppkafka::HandleException(cppkafka::Error(err));
+
+    /// Retrying after a timeout is safe: destroying the queue drops the pending result without
+    /// cancelling the commit, and an offset commit is idempotent.
+    rd_kafka_event_t * event = rd_kafka_queue_poll(queue, static_cast<int>(timeout.count()));
+    if (event == nullptr)
+        throw cppkafka::HandleException(cppkafka::Error(RD_KAFKA_RESP_ERR__TIMED_OUT));
+
+    SCOPE_EXIT({ rd_kafka_event_destroy(event); });
+
+    /// Private queue, so a commit result is the only event it can carry. Anything else would read as a
+    /// success the commit never reported.
+    if (rd_kafka_event_type(event) != RD_KAFKA_EVENT_OFFSET_COMMIT)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected librdkafka event {} on the offset commit queue",
+            rd_kafka_event_name(event));
+
+    err = rd_kafka_event_error(event);
+    if (err != RD_KAFKA_RESP_ERR_NO_ERROR)
+        throw cppkafka::HandleException(cppkafka::Error(err));
+}
+
+}
 
 
 KafkaConsumer::KafkaConsumer(
@@ -238,7 +290,7 @@ void KafkaConsumer::commit()
                 // broker may reject commit if during offsets.commit.timeout.ms (5000 by default),
                 // there were not enough replicas available for the __consumer_offsets topic.
                 // also some other temporary issues like client-server connectivity problems are possible
-                consumer->commit();
+                commitCurrentAssignmentWithTimeout(*consumer, COMMIT_TIMEOUT_MS);
                 committed = true;
                 print_offsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
                 last_commit_timestamp = timeInSeconds(std::chrono::system_clock::now());
