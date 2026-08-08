@@ -3570,16 +3570,18 @@ NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
     return res;
 }
 
-MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params) const
+MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params_) const
 {
     DataPartsVector patch_parts;
     MutationCounters mutations_snapshot_counters;
     MutationsSnapshot::MutationsByVersion mutations_snapshot;
 
-    if (params.need_patch_parts)
+    if (params_.need_patch_parts)
         patch_parts = getPatchPartsVectorForInternalUsage();
 
     std::lock_guard lock(currently_processing_in_background_mutex);
+    auto params = MergeTreeData::IMutationsSnapshot::resolveParams(params_, mutation_counters);
+
     if (!params.need_data_mutations && !params.need_alter_mutations && mutation_counters.num_metadata <= 0)
         return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 

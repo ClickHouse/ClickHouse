@@ -2386,16 +2386,18 @@ NameSet ReplicatedMergeTreeQueue::MutationsSnapshot::getAllUpdatedColumns() cons
     return res;
 }
 
-MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapshot(const MutationsSnapshot::Params & params) const
+MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapshot(const MutationsSnapshot::Params & params_) const
 {
     DataPartsVector patch_parts;
     MutationCounters mutations_snapshot_counters;
     MutationsSnapshot::MutationsByPartititon mutations_snapshot;
 
-    if (params.need_patch_parts)
+    if (params_.need_patch_parts)
         patch_parts = storage.getPatchPartsVectorForInternalUsage();
 
     std::shared_lock lock(state_mutex);
+    auto params = MergeTreeData::IMutationsSnapshot::resolveParams(params_, mutation_counters);
+
     if (!params.need_data_mutations && !params.need_alter_mutations && params.min_part_metadata_version >= params.metadata_version)
         return std::make_shared<MutationsSnapshot>(params, std::move(mutations_snapshot_counters), std::move(mutations_snapshot), std::move(patch_parts));
 

@@ -600,6 +600,9 @@ public:
             PartitionIdToMaxBlockPtr max_mutation_versions = nullptr;
             bool need_data_mutations = false;
             bool need_alter_mutations = false;
+            /// Requests alter mutations only if any is pending, resolved into `need_alter_mutations`
+            /// by getMutationsSnapshot while it holds the lock guarding the counters.
+            bool need_alter_mutations_if_pending = false;
             bool need_patch_parts = false;
             bool has_lightweight_delete_parts = false;
         };
@@ -608,6 +611,9 @@ public:
         static Int64 getMaxMutationVersionForPartition(const Params & params, const String & partition_id);
 
         static bool needIncludeMutationToSnapshot(const Params & params, const MutationCommands & commands);
+
+        /// Must be called under the lock that guards `counters`.
+        static Params resolveParams(const Params & params, const MutationCounters & counters);
 
         virtual ~IMutationsSnapshot() = default;
         virtual void addPatches(DataPartsVector patches_) = 0;
