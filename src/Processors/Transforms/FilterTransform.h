@@ -17,14 +17,13 @@ class QueryConditionCache;
   * The expression is evaluated and result chunks contain only the filtered rows.
   * If remove_filter_column is true, remove filter column from block.
   */
-class FilterTransform final : public ISimpleTransform
+class FilterTransform : public ISimpleTransform
 {
 public:
     FilterTransform(
         SharedHeader header_, ExpressionActionsPtr expression_, String filter_column_name_,
         bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
-        std::optional<std::pair<UInt64, String>> condition_ = std::nullopt,
-        bool update_row_numbers_info_ = false);
+        std::optional<std::pair<UInt64, String>> condition_ = std::nullopt);
 
     static Block
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
@@ -42,11 +41,6 @@ private:
     String filter_column_name;
     bool remove_filter_column;
     bool on_totals;
-    /// When set, compose the applied filter into the chunk's `ChunkInfoRowNumbers` (if present) so
-    /// downstream `_row_number` / positional-delete consumers keep correct physical row numbers.
-    /// Opt-in because only callers whose upstream transforms all maintain the info may enable it
-    /// (the data lake read filters: every transform above them preserves or updates it).
-    bool update_row_numbers_info;
     bool always_false = false;
     size_t filter_column_position = 0;
 

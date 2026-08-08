@@ -17,8 +17,8 @@ REGISTER_FUNCTION(LessOrEquals)
     // Documentation for lessOrEquals
     FunctionDocumentation::Description description = "Compares two values for less-than-or-equal-to relation.";
     FunctionDocumentation::Syntax syntax = R"(
-lessOrEquals(a, b)
--- a <= b
+    lessOrEquals(a, b)
+    -- a <= b
 )";
     FunctionDocumentation::Arguments arguments = {
         {"a", "First value.<sup>[*](#comparison-rules)</sup>"},
@@ -34,7 +34,7 @@ lessOrEquals(a, b)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionLessOrEquals>(documentation);
 }
 
@@ -64,25 +64,6 @@ ColumnPtr FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeTupleImpl
         func_builder_or,
         func_builder_equals,
         x, y, tuple_size, input_rows_count);
-}
-
-template <>
-ColumnPtr FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeArrayLexicographic(
-    const ColumnWithTypeAndName & column_type_name0,
-    const ColumnWithTypeAndName & column_type_name1,
-    size_t input_rows_count) const
-{
-    FunctionOverloadResolverPtr equals_resolver
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
-    FunctionOverloadResolverPtr order_resolver
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionLess>(params));
-
-    return executeArrayLexicographicLessGreaterImpl(
-        equals_resolver,
-        order_resolver,
-        column_type_name0,
-        column_type_name1,
-        input_rows_count);
 }
 
 }

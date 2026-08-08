@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemQuotaLimits.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -23,9 +22,7 @@ namespace
     {
         out_column_null_map.push_back(false);
         if (type_info.output_as_float)
-            static_cast<ColumnFloat64 &>(out_column)
-                .getData()
-                .push_back(static_cast<double>(value) / static_cast<double>(type_info.output_denominator));
+            static_cast<ColumnFloat64 &>(out_column).getData().push_back(double(value) / type_info.output_denominator);
         else
             static_cast<ColumnUInt64 &>(out_column).getData().push_back(value / type_info.output_denominator);
     }
@@ -132,6 +129,3 @@ void StorageSystemQuotaLimits::fillData(MutableColumns & res_columns, ContextPtr
     }
 }
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQuotaLimits) }

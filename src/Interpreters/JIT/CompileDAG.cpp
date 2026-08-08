@@ -18,7 +18,7 @@ namespace DB
 
 ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWithType & input_nodes_values) const
 {
-    chassert(input_nodes_values.size() == getInputNodesCount());
+    assert(input_nodes_values.size() == getInputNodesCount());
 
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -38,7 +38,7 @@ ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWit
         {
             case CompileType::CONSTANT:
             {
-                auto * native_value = node.skip_compile ? nullptr : getColumnNativeValue(b, node.result_type, *node.column, 0);
+                auto * native_value = getColumnNativeValue(b, node.result_type, *node.column, 0);
                 compiled_values[compiled_values_index] = {native_value, node.result_type};
                 break;
             }
@@ -46,15 +46,14 @@ ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWit
             {
                 ValuesWithType temporary_values;
                 temporary_values.reserve(node.arguments.size());
+
                 for (auto argument_index : node.arguments)
+                {
+                    assert(compiled_values[argument_index].value != nullptr);
                     temporary_values.emplace_back(compiled_values[argument_index]);
+                }
 
-                ValueWithType compiled_value{node.function->compile(builder, temporary_values), node.function->getResultType()};
-                if (!node.result_type->equals(*node.function->getResultType()))
-                    compiled_values[compiled_values_index] = {nativeCast(b, compiled_value, node.result_type), node.result_type};
-                else
-                    compiled_values[compiled_values_index] = std::move(compiled_value);
-
+                compiled_values[compiled_values_index] = {node.function->compile(builder, temporary_values), node.result_type};
                 break;
             }
             case CompileType::INPUT:
@@ -85,7 +84,8 @@ std::string CompileDAG::dump() const
         {
             case CompileType::CONSTANT:
             {
-                const auto & data = node.column->getDataColumn();
+                const auto * column = typeid_cast<const ColumnConst *>(node.column.get());
+                const auto & data = column->getDataColumn();
 
                 dumped_values[i] = applyVisitor(FieldVisitorToString(), data[0]) + " : " + node.result_type->getName();
                 break;
@@ -138,7 +138,7 @@ UInt128 CompileDAG::hash() const
         {
             case CompileType::CONSTANT:
             {
-                node.column->getDataColumn().updateHashWithValue(0, hash);
+                assert_cast<const ColumnConst *>(node.column.get())->getDataColumn().updateHashWithValue(0, hash);
                 break;
             }
             case CompileType::FUNCTION:

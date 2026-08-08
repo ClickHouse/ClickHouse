@@ -1,19 +1,17 @@
 #pragma once
-
 #include <Interpreters/Context_fwd.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+
 
 namespace DB
 {
 
-class StorageObjectStorageConfiguration;
-using StorageObjectStorageConfigurationPtr = std::shared_ptr<StorageObjectStorageConfiguration>;
-
 class ReadBufferIterator : public IReadBufferIterator, WithContext
 {
 public:
+    using ObjectInfos = StorageObjectStorage::ObjectInfos;
+
     ReadBufferIterator(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,

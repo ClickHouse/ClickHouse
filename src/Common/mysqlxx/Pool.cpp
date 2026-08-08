@@ -78,27 +78,21 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         socket = cfg.has(config_name + ".socket")
             ? cfg.getString(config_name + ".socket")
             : cfg.getString(parent_config_name + ".socket", "");
-        auto get_ssl_param = [&](const std::string & key)
-        {
-            return cfg.has(config_name + "." + key)
-                ? cfg.getString(config_name + "." + key)
-                : cfg.getString(parent_config_name + "." + key, "");
-        };
-        ssl_params.ca_path = get_ssl_param("ssl_ca");
-        ssl_params.cert_path = get_ssl_param("ssl_cert");
-        ssl_params.key_path = get_ssl_param("ssl_key");
-        ssl_params.ca_pem = get_ssl_param("ssl_ca_pem");
-        ssl_params.cert_pem = get_ssl_param("ssl_cert_pem");
-        ssl_params.key_pem = get_ssl_param("ssl_key_pem");
+        ssl_ca = cfg.has(config_name + ".ssl_ca")
+            ? cfg.getString(config_name + ".ssl_ca")
+            : cfg.getString(parent_config_name + ".ssl_ca", "");
+        ssl_cert = cfg.has(config_name + ".ssl_cert")
+            ? cfg.getString(config_name + ".ssl_cert")
+            : cfg.getString(parent_config_name + ".ssl_cert", "");
+        ssl_key = cfg.has(config_name + ".ssl_key")
+            ? cfg.getString(config_name + ".ssl_key")
+            : cfg.getString(parent_config_name + ".ssl_key", "");
 
         enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
             cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
 
         opt_reconnect = cfg.getBool(config_name + ".opt_reconnect",
             cfg.getBool(parent_config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT));
-
-        enable_compression = cfg.getBool(config_name + ".enable_compression",
-            cfg.getBool(parent_config_name + ".enable_compression", false));
     }
     else
     {
@@ -111,19 +105,14 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
 
         port = cfg.getInt(config_name + ".port", 0);
         socket = cfg.getString(config_name + ".socket", "");
-        ssl_params.ca_path = cfg.getString(config_name + ".ssl_ca", "");
-        ssl_params.cert_path = cfg.getString(config_name + ".ssl_cert", "");
-        ssl_params.key_path = cfg.getString(config_name + ".ssl_key", "");
-        ssl_params.ca_pem = cfg.getString(config_name + ".ssl_ca_pem", "");
-        ssl_params.cert_pem = cfg.getString(config_name + ".ssl_cert_pem", "");
-        ssl_params.key_pem = cfg.getString(config_name + ".ssl_key_pem", "");
+        ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
+        ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
+        ssl_key = cfg.getString(config_name + ".ssl_key", "");
 
         enable_local_infile = cfg.getBool(
             config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
 
         opt_reconnect = cfg.getBool(config_name + ".opt_reconnect", MYSQLXX_DEFAULT_MYSQL_OPT_RECONNECT);
-
-        enable_compression = cfg.getBool(config_name + ".enable_compression", false);
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -134,8 +123,6 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         cfg.getInt(config_name + ".rw_timeout",
             cfg.getInt("mysql_rw_timeout",
                 MYSQLXX_DEFAULT_RW_TIMEOUT));
-
-    resolved_ssl_paths = ResolvedSSLPaths(ssl_params);
 }
 
 
@@ -145,15 +132,16 @@ Pool::Pool(
      const std::string & user_,
      const std::string & password_,
      unsigned port_,
-     const SSLParams & ssl_params_,
+     const std::string & ssl_ca_,
+     const std::string & ssl_cert_,
+     const std::string & ssl_key_,
      const std::string & socket_,
      unsigned connect_timeout_,
      unsigned rw_timeout_,
      unsigned default_connections_,
      unsigned max_connections_,
      unsigned enable_local_infile_,
-     bool opt_reconnect_,
-     bool enable_compression_)
+     bool opt_reconnect_)
     : default_connections(default_connections_)
     , max_connections(max_connections_)
     , db(db_)
@@ -164,11 +152,11 @@ Pool::Pool(
     , socket(socket_)
     , connect_timeout(connect_timeout_)
     , rw_timeout(rw_timeout_)
-    , ssl_params(ssl_params_)
-    , resolved_ssl_paths(ssl_params_)
+    , ssl_ca(ssl_ca_)
+    , ssl_cert(ssl_cert_)
+    , ssl_key(ssl_key_)
     , enable_local_infile(enable_local_infile_)
     , opt_reconnect(opt_reconnect_)
-    , enable_compression(enable_compression_)
 {
     LOG_DEBUG(log,
         "Created MySQL Pool with settings: connect_timeout={}, read_write_timeout={}, default_connections_number={}, max_connections_number={}",
@@ -320,14 +308,13 @@ void Pool::Entry::forceConnected() const
                 pool->password.c_str(),
                 pool->port,
                 pool->socket.c_str(),
-                pool->resolved_ssl_paths.getCA().c_str(),
-                pool->resolved_ssl_paths.getCert().c_str(),
-                pool->resolved_ssl_paths.getKey().c_str(),
+                pool->ssl_ca.c_str(),
+                pool->ssl_cert.c_str(),
+                pool->ssl_key.c_str(),
                 pool->connect_timeout,
                 pool->rw_timeout,
                 pool->enable_local_infile,
-                pool->opt_reconnect,
-                pool->enable_compression);
+                pool->opt_reconnect);
         }
         catch (mysqlxx::ConnectionFailed &)
         {
@@ -397,14 +384,13 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             password.c_str(),
             port,
             socket.c_str(),
-            resolved_ssl_paths.getCA().c_str(),
-            resolved_ssl_paths.getCert().c_str(),
-            resolved_ssl_paths.getKey().c_str(),
+            ssl_ca.c_str(),
+            ssl_cert.c_str(),
+            ssl_key.c_str(),
             connect_timeout,
             rw_timeout,
             enable_local_infile,
-            opt_reconnect,
-            enable_compression);
+            opt_reconnect);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {

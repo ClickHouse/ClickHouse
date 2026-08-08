@@ -1,14 +1,6 @@
 <clickhouse>
     <nats>
-        <user>clickhouse</user>
-        <password>ClickHouse_NATS_P@ssw0rd</password>
+        <user>click</user>
+        <password>house</password>
     </nats>
-    <openSSL>
-        <client>
-            <verificationMode>none</verificationMode>
-            <invalidCertificateHandler>
-                <name>AcceptCertificateHandler</name>
-            </invalidCertificateHandler>
-        </client>
-    </openSSL>
 </clickhouse>

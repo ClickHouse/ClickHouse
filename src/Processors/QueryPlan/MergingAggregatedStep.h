@@ -42,10 +42,10 @@ public:
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
 
-    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override;

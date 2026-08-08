@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Core/Block.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -21,29 +20,19 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
     if (!union_step)
         return 0;
 
-    /// Both rewrites below assume the union forwards each branch unchanged. Skip them when
-    /// the union normalizes a branch (output differs from some input header), e.g. it drops
-    /// a Const that diverged across branches.
-    const auto & union_output = *union_step->getOutputHeader();
-    for (const auto & input_header : union_step->getInputHeaders())
-        if (!blocksHaveEqualStructure(*input_header, union_output))
-            return 0;
-
     if (auto * expression = typeid_cast<ExpressionStep *>(parent.get()))
     {
         /// Union does not change header.
         /// We can push down expression and update header.
         auto union_input_headers = child->getInputHeaders();
-        auto expected_output = expression->getOutputHeader();
-
         for (auto & input_header : union_input_headers)
-            input_header = expected_output;
+            input_header = expression->getOutputHeader();
 
         ///                    - Something
         /// Expression - Union - Something
         ///                    - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isNarrowingAllowed());
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads());
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);
@@ -62,7 +51,7 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
             expr_node.step = std::make_unique<ExpressionStep>(
                 expr_node.children.front()->step->getOutputHeader(),
                 expression->getExpression().clone());
-            expr_node.step->setStepDescription(*expression);
+            expr_node.step->setStepDescription(expression->getStepDescription());
         }
 
         ///       - Expression - Something
@@ -101,7 +90,7 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
                 distinct->getColumnNames(),
                 distinct->isPreliminary());
 
-            distinct_node.step->setStepDescription(*distinct);
+            distinct_node.step->setStepDescription(distinct->getStepDescription());
         }
 
         ///       - Distinct - Something

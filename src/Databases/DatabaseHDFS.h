@@ -40,18 +40,17 @@ public:
 
     bool isReadOnly() const override { return true; }
 
+    ASTPtr getCreateDatabaseQuery() const override;
+
     void shutdown() override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override;
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const override;
 
 protected:
-    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     StoragePtr getTableImpl(const String & name, ContextPtr context) const;
 
-    /// Returns the storage that ended up in the cache: `table_storage`, or the one a concurrent call
-    /// for the same name inserted first.
-    StoragePtr addTable(const std::string & table_name, StoragePtr table_storage) const;
+    void addTable(const std::string & table_name, StoragePtr table_storage) const;
 
     bool checkUrl(const std::string & url, ContextPtr context_, bool throw_on_error) const;
 
