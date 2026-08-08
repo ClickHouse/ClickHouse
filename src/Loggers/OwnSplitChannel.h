@@ -181,6 +181,13 @@ private:
     /// served. Sampling after the load makes the boundary exact: the acquire load of the request counter
     /// synchronizes with every requester's increment (an RMW extends the release sequence), so every record
     /// enqueued before a served request is covered by the sampled position (read-write coherence).
+    /// This covers records pushed by threads other than the requester too. The only observable sense in
+    /// which such a push precedes the request is a happens-before chain from the completed tryPush to the
+    /// requester's increment (the requester learned of the record through some synchronization — a query
+    /// response, a mutex, a pipe); prepending that chain to the edge above orders the push's enqueue_pos
+    /// update before the sample, so coherence still applies. A push with no such chain is concurrent with
+    /// the request, and no data-race-free program can tell whether it "was accepted first" — a mutex-based
+    /// boundary would make no stronger observable promise.
     /// Distinct request numbers also keep concurrent flushers exact: a flush that starts during another
     /// flush gets a higher number and is not released by the earlier drain, whose boundary was sampled
     /// before its records were pushed.
