@@ -93,6 +93,21 @@ size_t estimateRowBytes(const Columns & columns, size_t num_rows)
     return (bytes + num_rows - 1) / num_rows;
 }
 
+/// How many rows one output chunk may hold under both limits, for rows of about `row_bytes` each.
+size_t outputChunkRowLimit(size_t max_block_size, size_t max_block_bytes, size_t row_bytes)
+{
+    size_t limit = max_block_size != 0 ? max_block_size : std::numeric_limits<size_t>::max();
+    if (max_block_bytes != 0 && row_bytes != 0)
+        limit = std::min(limit, std::max<size_t>(1, max_block_bytes / row_bytes));
+    return limit;
+}
+
+/// How many bytes of build blocks a probe stream may keep alive for pairs it has not emitted yet.
+/// The bound is the operator's own, deliberately not `max_joined_block_size_bytes`: what it limits
+/// is not the output chunk but the store's working set, and it has to stay small however large the
+/// chunks the query asks for.
+constexpr size_t MAX_RETAINED_BUILD_BYTES = 4 * 1024 * 1024;
+
 }
 
 BlockNestedLoopProbeTransform::BlockNestedLoopProbeTransform(
@@ -198,6 +213,7 @@ void BlockNestedLoopProbeTransform::startProbeChunk(Chunk chunk)
     matched_probe_rows.clear();
     matched_build_rows.clear();
     build_runs.clear();
+    retained_build_bytes = 0;
     probe_row_matched.clear();
     active_probe_rows.clear();
 
@@ -465,9 +481,17 @@ void BlockNestedLoopProbeTransform::appendMatchedPairs(
 void BlockNestedLoopProbeTransform::addBuildRun(size_t length)
 {
     if (!build_runs.empty() && build_runs.back().block_index == build_block_cursor)
+    {
         build_runs.back().length += length;
-    else
-        build_runs.push_back({build_block_cursor, length, current_build_block});
+        return;
+    }
+
+    /// A block the store hands out as it is costs the run nothing; one it had to decompress or read
+    /// back from disk lives only as long as the run holds it.
+    const size_t retained_bytes
+        = data->isBlockSharedInMemory(build_block_cursor) ? 0 : current_build_block->allocatedBytes();
+    retained_build_bytes += retained_bytes;
+    build_runs.push_back({build_block_cursor, length, current_build_block, retained_bytes});
 }
 
 void BlockNestedLoopProbeTransform::dropMatchedProbeRows()
@@ -483,24 +507,26 @@ bool BlockNestedLoopProbeTransform::hasFullOutputChunk() const
 {
     if (max_block_size != 0 && matched_probe_rows.size() >= max_block_size)
         return true;
-    return max_block_bytes != 0 && matched_probe_rows.size() * (probe_row_bytes + build_row_bytes) >= max_block_bytes;
+    if (max_block_bytes != 0 && matched_probe_rows.size() * (probe_row_bytes + build_row_bytes) >= max_block_bytes)
+        return true;
+    /// The pending pairs keep alive every build block they came from. A condition selective enough to
+    /// match a few rows in each of them would otherwise pin the whole build side, decompressed and
+    /// read back from disk, which is what compressing and spilling it exist to avoid. Cutting the
+    /// chunk here releases the blocks its pairs were gathered from.
+    return retained_build_bytes >= MAX_RETAINED_BUILD_BYTES;
 }
 
-size_t BlockNestedLoopProbeTransform::maxOutputChunkRows() const
+size_t BlockNestedLoopProbeTransform::maxOutputChunkRows(size_t row_bytes) const
 {
-    size_t limit = max_block_size != 0 ? max_block_size : std::numeric_limits<size_t>::max();
     /// One tile's worth of pairs is accumulated before the size of the pending output is looked at
     /// again, so the byte limit has to cut the chunk here as well, not only stop the accumulation.
-    const size_t row_bytes = probe_row_bytes + build_row_bytes;
-    if (max_block_bytes != 0 && row_bytes != 0)
-        limit = std::min(limit, std::max<size_t>(1, max_block_bytes / row_bytes));
-    return limit;
+    return outputChunkRowLimit(max_block_size, max_block_bytes, row_bytes);
 }
 
 Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
 {
     const size_t total_rows = matched_probe_rows.size();
-    const size_t num_rows = std::min(total_rows, maxOutputChunkRows());
+    const size_t num_rows = std::min(total_rows, maxOutputChunkRows(probe_row_bytes + build_row_bytes));
     chassert(num_rows != 0);
 
     Columns result;
@@ -562,7 +588,10 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
     for (const auto & run : emitted_runs)
     {
         if (build_runs.front().length == run.length)
+        {
+            retained_build_bytes -= build_runs.front().retained_bytes;
             build_runs.pop_front();
+        }
         else
             build_runs.front().length -= run.length;
     }
@@ -576,7 +605,9 @@ Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
 {
     auto indexes = ColumnUInt64::create();
     auto & unmatched = indexes->getData();
-    const size_t limit = max_block_size != 0 ? max_block_size : probe_num_rows;
+    /// The build side of these rows is padded with the type defaults, which cost next to nothing, so
+    /// the probe row alone stands for the output row's size here.
+    const size_t limit = maxOutputChunkRows(probe_row_bytes);
     while (unmatched_probe_cursor < probe_num_rows && unmatched.size() < limit)
     {
         if (!probe_row_matched[unmatched_probe_cursor])
@@ -610,6 +641,7 @@ BlockNestedLoopUnmatchedBuildRowsTransform::BlockNestedLoopUnmatchedBuildRowsTra
     SharedHeader output_header_,
     BlockNestedLoopJoinDataPtr data_,
     size_t max_block_size_,
+    size_t max_block_bytes_,
     size_t stream_index_,
     size_t num_streams_)
     : ISource(std::move(output_header_))
@@ -617,6 +649,7 @@ BlockNestedLoopUnmatchedBuildRowsTransform::BlockNestedLoopUnmatchedBuildRowsTra
     , build_reader(data)
     , num_probe_columns(getPort().getHeader().columns() - data->getHeader()->columns())
     , max_block_size(max_block_size_)
+    , max_block_bytes(max_block_bytes_)
     , num_streams(num_streams_)
     , block_cursor(stream_index_)
 {
@@ -630,7 +663,6 @@ Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
 {
     const auto & header = getPort().getHeader();
     const auto & row_offsets = data->getRowOffsets();
-    const size_t limit = max_block_size != 0 ? max_block_size : std::numeric_limits<size_t>::max();
 
     /// One chunk comes from one stored block, so that its build columns are gathered in one go.
     /// A block in which every row matched contributes nothing and the scan moves on to the next.
@@ -640,13 +672,30 @@ Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
         const size_t block_rows = data->getBlockNumRows(block_index);
         const size_t block_row_offset = row_offsets[block_index];
 
+        /// The flags alone say whether the rest of the block contributes anything, so one in which
+        /// every row matched is never read back - and the block has to be at hand before the byte
+        /// limit can be turned into a row count.
+        size_t first_unmatched = row_cursor;
+        while (first_unmatched < block_rows && data->isBuildRowMatched(block_row_offset + first_unmatched))
+            ++first_unmatched;
+
+        if (first_unmatched >= block_rows)
+        {
+            row_cursor = 0;
+            block_cursor += num_streams;
+            continue;
+        }
+
+        auto block = build_reader.read(block_index);
+        const size_t limit = outputChunkRowLimit(
+            max_block_size, max_block_bytes, estimateRowBytes(block->columns, block_rows));
+
         auto indexes = ColumnUInt64::create();
         auto & unmatched = indexes->getData();
-        while (row_cursor < block_rows && unmatched.size() < limit)
+        for (row_cursor = first_unmatched; row_cursor < block_rows && unmatched.size() < limit; ++row_cursor)
         {
             if (!data->isBuildRowMatched(block_row_offset + row_cursor))
                 unmatched.push_back(row_cursor);
-            ++row_cursor;
         }
 
         if (row_cursor >= block_rows)
@@ -654,13 +703,6 @@ Chunk BlockNestedLoopUnmatchedBuildRowsTransform::generate()
             row_cursor = 0;
             block_cursor += num_streams;
         }
-
-        /// The flags alone say whether a block contributes anything, so one in which every row
-        /// matched is never read back.
-        if (unmatched.empty())
-            continue;
-
-        auto block = build_reader.read(block_index);
 
         Columns result;
         result.reserve(header.columns());

@@ -95,6 +95,12 @@ public:
     /// stays stable when a block is moved out of memory. Valid only after `finish`.
     const std::vector<size_t> & getRowOffsets() const;
 
+    /// Whether `BuildSideBlockReader::read` hands out the stored block itself rather than a copy of
+    /// it. A compressed or spilled block is materialized anew on every read, so a consumer that
+    /// keeps one alive holds memory neither the store nor its spilling accounts for.
+    /// Valid only after `finish`.
+    bool isBlockSharedInMemory(size_t index) const;
+
     /// Whether the build side can be moved out of memory at all. A build side of columnless rows
     /// cannot: the `Native` format has no way to persist a bare row count.
     bool canSpill() const;

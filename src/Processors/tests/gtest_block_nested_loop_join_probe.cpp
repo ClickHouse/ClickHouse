@@ -240,7 +240,7 @@ ProbeResult runProbe(
         delayed_ports.push_back(1);
         auto delayed = std::make_shared<DelayedPortsProcessor>(output_header, 2, delayed_ports);
         auto unmatched = std::make_shared<BlockNestedLoopUnmatchedBuildRowsTransform>(
-            output_header, data, max_block_size, 0, 1);
+            output_header, data, max_block_size, /*max_block_bytes=*/ 0, 0, 1);
 
         auto next_input = delayed->getInputs().begin();
         connect(*output_port, *next_input++);
@@ -290,7 +290,7 @@ std::vector<std::vector<UInt64>> runUnmatchedScan(
     for (size_t stream_index = 0; stream_index < num_streams; ++stream_index)
     {
         auto unmatched = std::make_shared<BlockNestedLoopUnmatchedBuildRowsTransform>(
-            output_header, data, /*max_block_size=*/ 0, stream_index, num_streams);
+            output_header, data, /*max_block_size=*/ 0, /*max_block_bytes=*/ 0, stream_index, num_streams);
         auto * output_port = &unmatched->getPort();
         auto processors = std::make_shared<Processors>();
         processors->emplace_back(std::move(unmatched));

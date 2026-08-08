@@ -1573,13 +1573,20 @@ static QueryPlanNode buildPhysicalJoinImpl(
     /// expression, while the residual filter still drops rows from the result.
     JoinActionRef on_clause_condition = concatConditions(join_expression);
     JoinActionRef residual_filter_condition = concatConditions(join_operator.residual_filter);
+
+    /// Only a physical join that performs the lookup itself emits the right columns already
+    /// converted to `Nullable`. The block nested loop operator reads the prepared storage as an
+    /// ordinary stream and pads unmatched rows with the type's default, so for it the conversion
+    /// has to stay where every other right input has it: in the right pre-join actions.
+    const bool storage_lookup_adds_nullable = bool(prepared_join_storage) && !use_block_nested_loop;
+
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> actions_after_join_fold;
     for (const auto * action : actions_after_join)
     {
         if (action->type == ActionsDAG::ActionType::ALIAS)
         {
             //bool remove_right_nullable = prepared_join_storage && use_nulls && isLeftOrFull(join_operator.kind);
-            if (prepared_join_storage && JoinActionRef(action, expression_actions).fromRight())
+            if (storage_lookup_adds_nullable && JoinActionRef(action, expression_actions).fromRight())
             {
                 /// StorageJoin should convert to nullable by itself.
             }
@@ -1653,7 +1660,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         if (action->type == ActionsDAG::ActionType::ALIAS)
         {
-            if (prepared_join_storage && JoinActionRef(action, expression_actions).fromRight())
+            if (storage_lookup_adds_nullable && JoinActionRef(action, expression_actions).fromRight())
             {
                 /// x (Alias) -> toNullable(x) -> x (Input)
                 action = action->children.at(0)->children.at(0);
@@ -1705,7 +1712,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     ActionsDAG left_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromLeft() || node.fromNone(); }));
     ActionsDAG right_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromRight(); }));
 
-    if (logical_lookup && prepared_join_storage.storage_key_value)
+    if (storage_lookup_adds_nullable && prepared_join_storage.storage_key_value)
     {
         right_dag.mergeInplace(
             JoinExpressionActions::getSubDAG(

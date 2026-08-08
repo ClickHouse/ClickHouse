@@ -28,8 +28,13 @@ bool BlockNestedLoopJoinStep::isSupportedJoinType(JoinKind kind, JoinStrictness 
 
     switch (strictness)
     {
-        case JoinStrictness::All:
+        /// `ANY FULL` is left out on purpose: nothing in ClickHouse implements it (the query tree
+        /// rejects it with NOT_IMPLEMENTED), so the operator has no reference semantics to answer
+        /// with. `RightAny` is the old `any_join_distinct_right_table_keys` form, which does have
+        /// them - one build row joined to every probe row, whatever the kind.
         case JoinStrictness::Any:
+            return isInner(kind) || isLeftOrRight(kind) || isCrossOrComma(kind);
+        case JoinStrictness::All:
         case JoinStrictness::RightAny:
             return isInner(kind) || isLeftOrRight(kind) || isFull(kind) || isCrossOrComma(kind);
         case JoinStrictness::Semi:
@@ -126,7 +131,7 @@ void BlockNestedLoopJoinStep::addUnmatchedBuildRowsStage(
             connect(*probe_ports[i], *next_input++);
 
             auto unmatched = std::make_shared<BlockNestedLoopUnmatchedBuildRowsTransform>(
-                output_header, data, max_block_size, i, num_streams);
+                output_header, data, max_block_size, max_block_bytes, i, num_streams);
             connect(unmatched->getPort(), *next_input++);
             new_processors.push_back(std::move(unmatched));
         }

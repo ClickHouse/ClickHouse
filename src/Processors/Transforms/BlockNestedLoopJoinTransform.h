@@ -86,6 +86,8 @@ private:
         size_t block_index;
         size_t length;
         BuildBlockPtr block;
+        /// What holding the block costs, counted only for a block the reader had to materialize.
+        size_t retained_bytes = 0;
     };
 
     void startProbeChunk(Chunk chunk);
@@ -101,8 +103,8 @@ private:
     void dropMatchedProbeRows();
     /// Whether the accumulated pairs already fill an output chunk.
     bool hasFullOutputChunk() const;
-    /// How many accumulated pairs one output chunk may hold, under both limits.
-    size_t maxOutputChunkRows() const;
+    /// How many rows one output chunk may hold under both limits, for rows of `row_bytes` each.
+    size_t maxOutputChunkRows(size_t row_bytes) const;
     /// Materializes that many accumulated pairs, keeping the rest for the next call.
     Chunk takeMatchedRows();
     /// Emits the next window of probe rows that stayed unmatched, padded with build-side defaults.
@@ -154,6 +156,9 @@ private:
     PaddedPODArray<UInt64> matched_probe_rows;
     PaddedPODArray<UInt64> matched_build_rows;
     std::deque<BuildRun> build_runs;
+    /// What the blocks held by `build_runs` cost on top of the store, i.e. the sum over the runs
+    /// whose block the reader had to decompress or read back from disk.
+    size_t retained_build_bytes = 0;
     /// Rough size of one output row, used only to decide when `max_block_bytes` is reached.
     size_t probe_row_bytes = 0;
     size_t build_row_bytes = 0;
@@ -177,6 +182,7 @@ public:
         SharedHeader output_header_,
         BlockNestedLoopJoinDataPtr data_,
         size_t max_block_size_,
+        size_t max_block_bytes_,
         size_t stream_index_,
         size_t num_streams_);
 
@@ -191,6 +197,7 @@ private:
     /// The columns of the output header that belong to the probe side and are padded here.
     const size_t num_probe_columns;
     const size_t max_block_size;
+    const size_t max_block_bytes;
     /// This stream owns the blocks `stream_index, stream_index + num_streams, ...`.
     const size_t num_streams;
     size_t block_cursor;

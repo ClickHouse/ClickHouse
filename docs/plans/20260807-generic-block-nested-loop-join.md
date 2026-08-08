@@ -187,6 +187,17 @@ this repository has (see the decisions in task 11):
   join, so a disjunction with a keyless disjunct (`ON a = b OR c < d` for an outer kind) routes to
   BNL instead of throwing. A disjunction whose every disjunct has keys is still claimed as hash
   clauses, unchanged.
+- A right side that a physical join would look up in place — a `Join` engine table, a dictionary or
+  another key-value storage reached through `JoinStepLogicalLookup` — is an ordinary stream to BNL,
+  which performs no lookup and pads unmatched rows with the column type's default. The three places
+  in `buildPhysicalJoinImpl` that leave the `join_use_nulls` conversion to the storage are therefore
+  gated on `storage_lookup_adds_nullable` (`prepared_join_storage && !use_block_nested_loop`), so on
+  the BNL path the `toNullable` aliases stay in the right pre-join actions as they do for any other
+  right input. Without the gate the operator emitted the raw non-nullable column into a header
+  declaring it `Nullable` (silently wrong padding, and a `LOGICAL_ERROR` from any expression over it),
+  and the key-value `right_dag.mergeInplace` left the predicate's own input resolved to the
+  `Nullable` alias. `IEJoinStep` needs no such gate: `tryExtractIEJoinDescription` declines a
+  prepared storage outright.
 - ⚠️ Existing tests that asserted `INVALID_JOIN_ON_EXPRESSION` for a now-routed shape were changed
   to expect `NOT_IMPLEMENTED` (the operator's own error) and carry a comment saying so:
   `00800_low_cardinality_join`, `00800_low_cardinality_merge_join`, `01478_not_equi-join_on`,
@@ -801,7 +812,12 @@ Per probe chunk, per stored build block:
    estimate reaches `max_block_bytes` (`max_joined_block_size_bytes`), materialise one output chunk
    and yield; the cursor state resumes the walk on the next `work()`. An output chunk may span several
    stored blocks, so the pairs carry a `BuildRun` per block, which keeps that block alive — the walk
-   may have passed it, and a compressed or spilled block would otherwise be read back twice.
+   may have passed it, and a compressed or spilled block would otherwise be read back twice. A third
+   trigger bounds what those runs hold: a run over a block the reader had to materialise (compressed
+   or spilled, as opposed to handed out as it is) counts its bytes towards
+   `MAX_RETAINED_BUILD_BYTES`, and reaching that cuts the chunk as well. Without it a condition
+   selective enough to match a few rows in every block accumulated one materialised block per stored
+   block, which brought the whole build side back into memory and undid both compression and spilling.
    `work` also yields with no output every `8 * max(DEFAULT_BLOCK_SIZE, max_block_size)` evaluated
    pairs, so a walk that matches nothing stays cancellable.
 5. For a left-driven `ANY`/`SEMI`/`ANTI`, a probe row that has matched is excluded from subsequent

@@ -257,6 +257,10 @@ ORDER BY o.id;
 
 The row that matched nothing is padded according to [`join_use_nulls`](/reference/settings/session-settings/join#join_use_nulls), as in any other join: with a default value above, and with `NULL` when the setting is enabled.
 
+**Strictness**
+
+`ANY` and `SEMI` normally keep one row per group of rows that share a join key. There is no such group here, so they keep one row per row of the table that drives the join: `LEFT ANY` and `LEFT SEMI` emit each left row at most once, `RIGHT ANY` and `RIGHT SEMI` each right row at most once. `ANY INNER` limits both sides at once — each row of either table is used at most once, so the result has at most as many rows as the smaller table. Which pairs make up such a result is arbitrary, exactly as `ANY` implies, and it may differ between two runs of the same query.
+
 **Performance**
 
 Every pair of rows is examined, so the work grows with the *product* of the two tables' row counts rather than with their sum. A block nested loop join is therefore orders of magnitude more expensive than a hash join on the same data, and the gap widens as the tables grow. If a query can be written with at least one equality in its `ON` section, write it that way.

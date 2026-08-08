@@ -313,6 +313,12 @@ const std::vector<size_t> & BlockNestedLoopJoinData::getRowOffsets() const
     return TSA_SUPPRESS_WARNING_FOR_READ(row_offsets);
 }
 
+bool BlockNestedLoopJoinData::isBlockSharedInMemory(size_t index) const
+{
+    const auto & entry = getBlockEntry(index);
+    return entry.block != nullptr && !entry.compressed;
+}
+
 BuildSideBlockReader::BuildSideBlockReader(BlockNestedLoopJoinDataPtr data_)
     : data(std::move(data_))
 {
