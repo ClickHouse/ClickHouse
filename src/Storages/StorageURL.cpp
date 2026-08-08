@@ -1838,7 +1838,7 @@ static bool urlHasUserInfo(const String & url)
     return authority_end == String::npos || at_pos < authority_end;
 }
 
-String StorageURL::resolveURLBase(const String & url, const String & base)
+String StorageURL::resolveURLBase(const String & url, const String & base, const String & base_setting_name)
 {
     if (base.empty())
         return url;
@@ -1854,6 +1854,11 @@ String StorageURL::resolveURLBase(const String & url, const String & base)
     /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
     /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
     /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
+    /// The scheme must be followed by "//": a name whose first path segment contains a colon
+    /// (e.g. `report:2026.csv`) technically parses as a URI with the scheme `report`, but every
+    /// scheme supported here uses the `scheme://` form, so such a name is not a usable absolute
+    /// URL. Per RFC 3986 it would have to be written as `./report:2026.csv` to be a relative
+    /// reference; instead of demanding that, it is resolved against the base as a relative path.
     if (!url.empty() && std::isalpha(static_cast<unsigned char>(url[0])))
     {
         auto colon_pos = url.find(':');
@@ -1871,14 +1876,14 @@ String StorageURL::resolveURLBase(const String & url, const String & base)
                     break;
                 }
             }
-            if (valid_scheme)
+            if (valid_scheme && url.compare(colon_pos + 1, 2, "//") == 0)
                 return url;
         }
     }
 
     auto scheme_end = base.find("://");
     if (scheme_end == String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `url_base` setting must contain a scheme (e.g. https://), got: {}", base);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `{}` setting must contain a scheme (e.g. https://), got: {}", base_setting_name, base);
 
     /// Find the boundary of the path component in the base URL (before '?' or '#').
     auto authority_start = scheme_end + 3; /// skip "://"
@@ -1890,6 +1895,21 @@ String StorageURL::resolveURLBase(const String & url, const String & base)
     /// Dot segments in the path are normalized per RFC 3986.
     if (url.starts_with("//"))
     {
+        /// A `file://` base has no meaningful authority, and a reference like `//tmp/data.csv` is
+        /// a POSIX absolute path with redundant leading slashes rather than a scheme-relative
+        /// reference. Taking the scheme-relative branch would produce `file://tmp/data.csv` -- a
+        /// path relative to the user files directory -- silently reading the wrong file. Collapse
+        /// the leading slashes and resolve to an absolute local path, preserving the semantics
+        /// that the `Filesystem` database had for absolute paths.
+        String scheme = base.substr(0, scheme_end);
+        boost::to_lower(scheme);
+        if (scheme == "file")
+        {
+            auto non_slash = url.find_first_not_of('/');
+            String path = "/" + (non_slash == String::npos ? String{} : url.substr(non_slash));
+            return normalizeDotSegmentsInURL(base.substr(0, scheme_end + 3) + path, scheme_end + 3);
+        }
+
         String merged = base.substr(0, scheme_end + 1) + url;
         return normalizeDotSegmentsInURL(merged, scheme_end + 3);
     }
@@ -1917,6 +1937,16 @@ String StorageURL::resolveURLBase(const String & url, const String & base)
         auto base_without_fragment = (existing_fragment == String::npos) ? base : base.substr(0, existing_fragment);
         return base_without_fragment + url;
     }
+
+    /// An authority-less base like `file://` resolves a path-relative reference by simple
+    /// concatenation: `file://` + `data.csv` = `file://data.csv`, which the `file://` scheme
+    /// treats as a path relative to the user_files directory (the current directory in
+    /// clickhouse-local). Dot segments are kept as-is (`file://` + `../a.csv` = `file://../a.csv`),
+    /// the target engine resolves them against its own base directory. Strict RFC 3986 merging
+    /// would produce `file:///data.csv` -- an absolute path -- making relative references
+    /// useless with such a base.
+    if (authority_start == base_before_query.size())
+        return base_before_query + url;
 
     /// Path-relative URL: merge with the base path per RFC 3986.
     /// Replace everything after the last '/' in the path portion of the base URL,
@@ -2127,11 +2157,12 @@ void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_ur
     }
 
     /// Named-collection or key-value form: `URL(nc)`, `URL(nc, url='...')`, or `URL(url='...', ...)`.
+    /// Read the `url` key directly instead of going through `processNamedCollectionResult`:
+    /// this function is also called for collections of other engines (e.g. `S3`), whose keys
+    /// would not pass the `URL` engine validation.
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/false))
     {
-        Configuration unresolved;
-        StorageURL::processNamedCollectionResult(unresolved, *named_collection);
-        if (unresolved.url == resolved_url)
+        if (named_collection->getOrDefault<String>("url", "") == resolved_url)
             return;
     }
 
@@ -2258,14 +2289,15 @@ public:
     /// `SHOW CREATE TABLE` and `system.tables`, even though reads/writes go to the delegate.
     String getName() const override { return "URL"; }
 
-    /// Forward the delegate's subcolumn-optimization contract. `StorageProxy` forwards
-    /// `supportsSubcolumns` to the delegate (true for `File`/object storage), but not
-    /// `supportsOptimizationToSubcolumns`. Without this override the wrapper would fall back to
-    /// `IStorage::supportsOptimizationToSubcolumns`, which defaults to `supportsSubcolumns` and would
-    /// therefore report `true`, while the direct `StorageFile` and plain `StorageURL` deliberately
-    /// return `false`. `FunctionToSubcolumnsPass` reads this bit, so `ENGINE = URL('file://...')`
-    /// would otherwise receive subcolumn rewrites the backend explicitly disables.
-    bool supportsOptimizationToSubcolumns() const override { return nested->supportsOptimizationToSubcolumns(); }
+    /// Engine classification is used by policy checks (e.g. the `disable_insertion_and_mutation`
+    /// guard in `InterpreterInsertQuery`, which exempts external engines), so report the class of
+    /// the delegate instead of the `IStorage` default of a local engine. Deliberately not done in
+    /// `StorageProxy`: the lazy proxies (`StorageTableProxy`, `StorageTableFunctionProxy`) would
+    /// have to materialize and start up the nested storage just to answer a classification query.
+    bool isDataLake() const override { return nested->isDataLake(); }
+    bool isExternalDatabase() const override { return nested->isExternalDatabase(); }
+    bool isObjectStorage() const override { return nested->isObjectStorage(); }
+    bool isMessageQueue() const override { return nested->isMessageQueue(); }
 
     /// Forward the delegate's narrower PREWHERE contract. `StorageProxy` forwards `supportsPrewhere`,
     /// but not `supportedPrewhereColumns`/`canMoveConditionsToPrewhere`. Without these overrides the
@@ -2567,12 +2599,24 @@ void registerStorageURL(StorageFactory & factory)
             /// still holds the raw user-provided URL. Without this override, e.g.
             /// `SET url_base = 'http://host'; ENGINE = URL('/data/**/part*.tsv', 'TSV')`
             /// would build the object storage from an unresolved relative URL.
-            /// `skip_userinfo=false`: the object storage stays in memory and credentials are
-            /// not persisted to the AST.
-            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ false);
+            ///
+            /// `args.engine_args` is a reference to the arguments of the `CREATE` AST, so materialize
+            /// the resolved URL there with the same `skip_userinfo=true` policy as the other
+            /// `url_base` materialization paths: a resolved URL may carry `user:pass@` coming from
+            /// `url_base`, and persisting it would expose the credentials through `SHOW CREATE TABLE`
+            /// and the table metadata. The object storage itself has to be built from the fully
+            /// resolved URL including userinfo, so it is initialized from a scratch copy of the
+            /// arguments that never reaches the AST.
+            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ true);
+
+            ASTs object_storage_args;
+            object_storage_args.reserve(engine_args.size());
+            for (const auto & engine_arg : engine_args)
+                object_storage_args.push_back(engine_arg->clone());
+            StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false);
 
             auto configuration = std::make_shared<StorageWebConfiguration>();
-            StorageObjectStorageConfiguration::initialize(*configuration, engine_args, context, /* with_table_structure */ false);
+            StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the
             /// `file_like_engine_default_partition_strategy` default; ATTACH / startup / RESTORE must
