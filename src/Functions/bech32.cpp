@@ -666,9 +666,9 @@ REGISTER_FUNCTION(Bech32Repr)
 Encodes a binary data string, along with a human-readable part (HRP), using the [Bech32 or Bech32m](https://en.bitcoin.it/wiki/Bech32) algorithms.
 
 :::note
-When using the [`FixedString`](../data-types/fixedstring.md) data type, if a value does not fully fill the row it is padded with null characters.
+When using the [`FixedString`](/reference/data-types/fixedstring) data type, if a value does not fully fill the row it is padded with null characters.
 While the `bech32Encode` function will handle this automatically for the hrp argument, for the data argument the values must not be padded.
-For this reason it is not recommended to use the [`FixedString`](../data-types/fixedstring.md) data type for your data values unless you are
+For this reason it is not recommended to use the [`FixedString`](/reference/data-types/fixedstring) data type for your data values unless you are
 certain that they are all the same length and ensure that your `FixedString` column is set to that length as well.
 :::
     )";

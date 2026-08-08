@@ -2,14 +2,62 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'سجل تغييرات Cloud - 2026'
-description: 'سجل تغييرات ClickHouse Cloud يوفّر وصفًا لما هو جديد في كل إصدار من إصدارات ClickHouse Cloud'
+description: 'سجل تغييرات ClickHouse Cloud الذي يقدّم وصفًا لما هو جديد في كل إصدار من إصدارات ClickHouse Cloud'
 doc_type: 'changelog'
 keywords: ['سجل التغييرات', 'ملاحظات الإصدار', 'التحديثات', 'الميزات الجديدة', 'تغييرات Cloud']
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-إلى جانب سجل تغييرات ClickHouse Cloud هذا، يُرجى أيضًا مراجعة صفحة [توافق Cloud](/ar/products/cloud/guides/cloud-compatibility).
+بالإضافة إلى Cloud changelog الخاص بـ ClickHouse Cloud، يُرجى أيضًا الاطلاع على صفحة [Cloud Compatibility](/ar/products/cloud/guides/cloud-compatibility).
+
+<Update label="13 يوليو 2026">
+  تتضمن تحديثات هذا الأسبوع توجيهًا مثبتًا للنسخ المتماثلة عبر HTTPS العادي، وتواريخ بدء مخصّصة لفترة الفوترة، وعناصر تحكم جديدة في initial load لـ Object Storage ClickPipes.
+
+  ### توجيه مثبت للنسخ المتماثلة عبر HTTPS (معاينة خاصة)
+
+  يمكنك الآن تثبيت queries على replica محددة عبر HTTPS القياسي من خلال إضافة المعامل `?session_id=` إلى عنوان URL العادي الخاص بالخدمة، من دون الحاجة إلى أسماء مضيفين خاصة أو أي تغييرات في DNS. يضمن ذلك بقاء الكائنات المحصورة ضمن session، مثل الجداول المؤقتة، متاحة عبر queries، كما يساعد queries المتكررة على الاستفادة من ذاكرات التخزين المؤقت المحلية الدافئة على مستوى replica. ويجري طرح هذه الميزة في private preview لجميع عملاء Enterprise، ولعملاء Scale عند الطلب. وسيستمر التوجيه الحالي المستند إلى النطاقات الفرعية في العمل، لكنه سينتقل في نهاية المطاف إلى هذا النهج. راجع وثائق [replica-aware routing](/manage/replica-aware-routing).
+
+  ### تواريخ بدء مخصّصة لفترة الفوترة
+
+  يمكنك الآن طلب تغيير تاريخ الفوترة الخاص بمؤسستك، أي اليوم من الشهر الذي تبدأ فيه كل billing period، على سبيل المثال لمواءمة invoices مع الشهر التقويمي. افتح تذكرة دعم تتضمن التاريخ المطلوب. تُطبَّق تواريخ الفوترة وفق UTC، وتغطي كل invoice الاستخدام من تاريخ الفوترة حتى التاريخ نفسه من الشهر التالي (من دون تضمينه).
+
+  ### تخطي initial load لـ Object Storage ClickPipes
+
+  يوفّر Object storage [ClickPipes](/ar/integrations/clickpipes) ‏(S3 وGCS وAzure Blob Storage) الآن طريقتين للتحكم في initial load عند إنشاء pipe: **Start after**، التي تتخطى الملفات حتى مفتاح object معيّن وبما يشمله، و**Skip initial load**، التي تتخطى الملفات الموجودة مسبقًا بالكامل وتعالج فقط إشعارات object الجديدة. في السابق، كان pipe جديد يُجري دائمًا backfill لكل ملف في المسار. والخياران متنافيان ودائمان بالنسبة إلى pipe معيّن: لا يمكن تشغيل backfill الذي تم تخطيه لاحقًا. الميزة متاحة في UI وCloud API وTerraform v3.18.0 والإصدارات الأحدث.
+</Update>
+
+<Update label="30 يونيو 2026">
+  تتضمن تحديثات هذا الأسبوع ميزات observability جديدة لـ Postgres ولبنية ClickHouse الداخلية، وعناصر تحكم موسّعة في ClickPipes، بما في ذلك تسليم exactly-once لـ Kafka، إلى جانب عدة إضافات على مستوى المنصة: Azure Marketplace BYOC، وموفّر Airflow الرسمي، وتحديثات ClickHouse Agents.
+
+  ### تسليم exactly-once لـ Kafka في ClickPipes
+
+  يمكنك الآن تمكين تسليم exactly-once لواردات Kafka مباشرةً من خلال مسار الاستيراد [ClickPipes](/ar/integrations/clickpipes/kafka/index)، مع إتاحة الخيار نفسه أيضًا عبر واجهة برمجة تطبيقات عامة للإعداد البرمجي.
+
+  ### عناصر تحكم TLS موحّدة لمصادر CDC
+
+  أصبحت مستويات تفعيل TLS والتحقق منه متسقة الآن عبر جميع مصادر CDC. كما تنقل نقاط نهاية الإنشاء والتحديث في OpenAPI الحقول `postgres_skip_cert_verification` و`postgres_disable_tls` و`mongo_skip_cert_verification`، بحيث يمكنك إدارة التعامل مع الشهادات عبر واجهة برمجة تطبيقات.
+
+  ### عودة قواعد بيانات Replicated إلى منتقي ClickPipes
+
+  أصبحت قواعد بيانات Replicated قابلة للاختيار مرةً أخرى في منتقي الوجهة ضمن ClickPipes.
+
+  ### تحديثات ClickHouse Agents (بيتا عامة)
+
+  تدعم [ClickHouse Agents](/ar/products/cloud/features/ai-ml/agents/index) الآن Chat Projects لتنظيم المحادثات، ومؤشرًا لاستخدام السياق يعرض استخدام الرموز ونافذة السياق، وSkills ينشئها الوكيل، وSkills مضمّنة لأفضل ممارسات ClickHouse. ويتضمن هذا الإصدار أيضًا تحسينات في الإعدادات والتنقل والاختصارات والتثبيت.
+
+  ### ClickHouse BYOC على Azure Marketplace
+
+  أصبحت خدمة ClickHouse [Bring Your Own Cloud](/ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview) مُدرجة الآن على Azure Marketplace، ما يتيح للعملاء الشراء عبر Private Offer ونشر BYOC مع احتساب الرسوم من خلال حساب Azure الخاص بهم. كما أُضيف دعم الفوترة لإدراجات Azure BYOC في Marketplace ولمعرّفات المنتجات على مستوى المنصة.
+
+  ### موفّر ClickHouse Airflow الرسمي
+
+  أصبح موفّر Apache Airflow الرسمي لـ ClickHouse متاحًا الآن على PyPI ومدرجًا في سجل Airflow، ليحل محل الاعتماد على المكوّن الإضافي المجتمعي القديم لنقل البيانات إلى ClickHouse ومنه.
+
+  ### تحسينات على وضوح الفوترة وMarketplace
+
+  تتضمن الفوترة الآن جدول سجل أرصدة ذاتي الخدمة، وملخصًا للدفع المسبق يوضح المبالغ المستخدمة والمنتهية الصلاحية، ودعم البريد الإلكتروني لـ GCP MPPO.
+</Update>
 
 <Update label="3 يونيو 2026">
   جاء أسبوع Open House 2026 بموجة من الإطلاقات تمحورت حول تشغيل ClickHouse في البيئة التي تعيش فيها بياناتك، وإدراج سير العمل الوكيلية المدعومة بالذكاء الاصطناعي في المنصة.
@@ -137,12 +185,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
   وتستند هذه الميزة إلى [pg&#95;stat&#95;ch](https://github.com/ClickHouse/pg_stat_ch)، وهي إضافة Postgres مفتوحة المصدر.
 
-  ### توسيع تكامل Data Catalog
+  ### توسيع تكامل كتالوج البيانات
 
-  وسّعنا دعم [تكاملات Data Catalog](/ar/products/cloud/features/data-catalogs) عبر واجهة Data Sources UI بإضافة المزيد من أساليب المصادقة، وتنسيقات الجداول، وأنواع كتالوجات البيانات:
+  وسّعنا دعم [تكاملات كتالوج البيانات](/ar/products/cloud/features/data-catalogs) عبر واجهة Data Sources UI بإضافة المزيد من أساليب المصادقة، وتنسيقات الجداول، وأنواع كتالوجات البيانات:
 
   * دعم IAM لـ [AWS Glue Catalog](/ar/guides/use-cases/data-warehousing/glue-catalog)
-  * دعم [BigLake Metastore](/ar/guides/use-cases/data-warehousing/biglake-catalog) لتكامل Data Catalog
+  * دعم [BigLake Metastore](/ar/guides/use-cases/data-warehousing/biglake-catalog) لتكامل كتالوج البيانات
   * دعم Delta Tables على [Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog)
 </Update>
 
@@ -159,7 +207,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
   ### Terraform وOpenAPI لـ ClickPipes (إتاحة عامة)
 
-  أصبحت موارد ClickPipes في [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) الخاص بـ ClickHouse متاحةً للاستخدام العام الآن كجزء من الإصدارات المستقرة، ولم تعد [نقاط نهاية OpenAPI](/ar/api-reference/organization/get-list-of-available-organizations) مصنّفة على أنها تجريبية. ويشمل ذلك تغطية كاملة لموصلات CDC ‏(Postgres وMySQL وMongoDB). اطّلع على [توثيق Terraform](/ar/integrations/clickpipes/programmatic-access/terraform) و[توثيق OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[مقالة المدونة](https://clickhouse.com/blog/terraform-ga) لمزيد من التفاصيل.
+  أصبحت موارد ClickPipes في [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) الخاص بـ ClickHouse متاحةً للاستخدام العام الآن كجزء من الإصدارات المستقرة، ولم تعد [نقاط نهاية OpenAPI](/ar/products/cloud/api-reference/organization/get-list-of-available-organizations) مصنّفة على أنها تجريبية. ويشمل ذلك تغطية كاملة لموصلات CDC ‏(Postgres وMySQL وMongoDB). اطّلع على [توثيق Terraform](/ar/integrations/clickpipes/programmatic-access/terraform) و[توثيق OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[مقالة المدونة](https://clickhouse.com/blog/terraform-ga) لمزيد من التفاصيل.
 </Update>
 
 <Update label="17 أبريل 2026">

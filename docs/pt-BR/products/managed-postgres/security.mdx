@@ -7,7 +7,7 @@ keywords: ['segurança do Postgres', 'lista de permissões de IP', 'criptografia
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
@@ -148,7 +148,7 @@ O Managed Postgres faz backup automático dos seus dados para protegê-los contr
 * **Granularidade de recuperação**: recuperação pontual para qualquer momento dentro da janela de retenção
 
 <div id="backup-security">
-  ### Segurança dos backups
+  ### Segurança de backup
 </div>
 
 Os backups são armazenados com as mesmas garantias de segurança dos seus dados principais:

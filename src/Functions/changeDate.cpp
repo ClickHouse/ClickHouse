@@ -217,6 +217,11 @@ public:
         Int64 max_date = 0;
         Int16 min_year = 0;
         Int16 max_year = 0;
+        /// For DateTime64 the boundary years are only partially representable at high precision (ticks are stored in an
+        /// Int64), so a candidate that passes the [min_year, max_year] check can still have whole seconds outside the
+        /// representable window. These hold that window in whole seconds and are only consulted on the DateTime64 path.
+        Int64 min_whole_seconds = std::numeric_limits<Int64>::min();
+        Int64 max_whole_seconds = std::numeric_limits<Int64>::max();
         if (isDate(result_type))
         {
             min_date = date_lut.makeDayNum(1970, 1, 1);
@@ -240,26 +245,45 @@ public:
         }
         else
         {
-            min_date = DecimalUtils::dateTimeFromComponents(
-                date_lut.makeDateTime(1900, 1, 1, 0, 0, 0),
-                static_cast<Int64>(0),
-                static_cast<UInt32>(scale));
             Int64 deg = 1;
             for (Int64 j = 0; j < scale; ++j)
                 deg *= 10;
-            DateTime64 max_date_val;
-            if (DecimalUtils::tryGetDateTimeFromComponents(
-                    date_lut.makeDateTime(2299, 12, 31, 23, 59, 59),
-                    static_cast<Int64>(deg - 1),
-                    static_cast<UInt32>(scale),
-                    max_date_val))
-                max_date = max_date_val;
+
+            /// DateTime64 spans [0000-01-01, 9999-12-31], further limited by what fits in Int64 ticks at this scale
+            /// (precision 8 and 9 cannot reach 9999). Saturate the clamp bounds to the representable window; the
+            /// whole-second calendar boundaries are obtained from makeDateTime so we do not depend on extra constants.
+            const Int64 max_seconds = date_lut.makeDateTime(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59);
+            const Int64 min_seconds = date_lut.makeDateTime(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0);
+
+            /// The bound ticks are computed directly (`seconds * 10^scale (+ 10^scale - 1)`) rather than via
+            /// DecimalUtils::dateTimeFromComponents to avoid a clang-analyzer false positive on `% scale_multiplier`.
+            if (max_seconds <= (std::numeric_limits<Int64>::max() - (deg - 1)) / deg)
+            {
+                max_date = max_seconds * deg + (deg - 1);   /// last tick of 9999-12-31 at this scale
+                max_year = DATE_LUT_MAX_REPRESENTABLE_YEAR;
+                max_whole_seconds = max_seconds;
+            }
             else
-                /// At scale 9 the year-2299 boundary does not fit into Int64; clamp to the
-                /// maximum representable DateTime64 value (2262-04-11 23:47:16.854775807).
+            {
                 max_date = std::numeric_limits<Int64>::max();
-            min_year = 1900;
-            max_year = 2299;
+                max_year = date_lut.toYear(static_cast<time_t>(std::numeric_limits<Int64>::max() / deg));
+                /// Largest whole second whose last tick (`whole * deg + deg - 1`) still fits in the Int64.
+                max_whole_seconds = (std::numeric_limits<Int64>::max() - (deg - 1)) / deg;
+            }
+
+            if (min_seconds >= std::numeric_limits<Int64>::min() / deg)
+            {
+                min_date = min_seconds * deg;               /// first tick of 0000-01-01 at this scale
+                min_year = DATE_LUT_MIN_REPRESENTABLE_YEAR;
+                min_whole_seconds = min_seconds;
+            }
+            else
+            {
+                min_date = std::numeric_limits<Int64>::min();
+                min_year = date_lut.toYear(static_cast<time_t>(std::numeric_limits<Int64>::min() / deg));
+                /// Smallest whole second whose first tick (`whole * deg`) still fits in the Int64.
+                min_whole_seconds = std::numeric_limits<Int64>::min() / deg;
+            }
         }
 
         switch (component)
@@ -305,22 +329,22 @@ public:
             result = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
         else
         {
-            const Int64 whole_seconds = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
+            /// DateTime64: saturate before constructing the value. A candidate that passed the [min_year, max_year]
+            /// check can still have whole seconds outside the representable window at high precision (e.g. only up to
+            /// 2262-04-11 at scale 9), and multiplying such a value by 10^scale inside 'dateTimeFromComponents' would
+            /// overflow the Int64 and raise DECIMAL_OVERFLOW instead of clamping.
+            const Int64 whole = date_lut.makeDateTime(year, month, day, hours, minutes, seconds);
+            if (whole > max_whole_seconds)
+                return max_date;
+            if (whole < min_whole_seconds)
+                return min_date;
 #ifndef __clang_analyzer__
             /// ^^ This looks funny. It is the least terrible suppression of a false positive reported by clang-analyzer (a sub-class
             /// of clang-tidy checks) deep down in 'decimalFromComponents'. Usual suppressions of the form NOLINT* don't work here (they
             /// would only affect code in _this_ file), and suppressing the issue in 'decimalFromComponents' may suppress true positives.
-            DateTime64 result_val;
-            if (DecimalUtils::tryGetDateTimeFromComponents(whole_seconds, fraction, static_cast<UInt32>(scale), result_val))
-                result = result_val;
-            else
-                /// The requested components do not fit into DateTime64 at this scale (for example, a year close to 2299 at
-                /// scale 9, where seconds * 10^9 overflows Int64). Clamp to the nearest representable boundary; the min/max
-                /// checks below finish the clamp. Overflow direction follows the sign of the whole-seconds value.
-                result = whole_seconds < 0 ? min_date : max_date;
+            result = DecimalUtils::dateTimeFromComponents(whole, fraction, static_cast<UInt32>(scale));
 #else
             UNUSED(fraction);
-            UNUSED(whole_seconds);
             result = 0;
 #endif
         }

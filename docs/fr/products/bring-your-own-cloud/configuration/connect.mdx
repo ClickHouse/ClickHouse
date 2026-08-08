@@ -11,6 +11,24 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 Cette page décrit les différentes façons de vous connecter à vos services ClickHouse en BYOC. Vous pouvez choisir entre des load balancers publics, des load balancers privés ou des points de terminaison PrivateLink/Private Service Connect, selon vos exigences en matière de sécurité et de réseau.
 
+<div id="connection-via">
+  ## Sélectionner un chemin de connexion dans la console
+</div>
+
+Les informations de connexion de chaque service BYOC sont disponibles dans la console ClickHouse Cloud : ouvrez le service et cliquez sur **Connect**.
+
+Pour les services BYOC, la boîte de dialogue **Connect** comprend une liste déroulante **Connection via**. Utilisez-la pour choisir comment vous accédez au service :
+
+* **load balancer public** — le point de terminaison exposé à Internet.
+* **load balancer privé** — le point de terminaison interne, accessible via le peering VPC ou des réseaux connectés. Il n&#39;est affiché que lorsqu&#39;un [load balancer privé](#private-load-balancer) est activé pour votre infrastructure.
+* **PrivateLink** (AWS) / **Private Service Connect** (GCP) — le nom d&#39;hôte du point de terminaison privé du fournisseur de cloud. Il n&#39;est affiché que lorsque [PrivateLink ou Private Service Connect](#privatelink-or-private-service-connect) est activé.
+
+La sélection d&#39;un chemin met à jour le nom d&#39;hôte dans chaque exemple de connexion de la boîte de dialogue — la commande HTTPS (`curl`), le client natif, JDBC, MySQL et les extraits des clients de langage (Python, Node.js, Java, Go et C#) — afin que vous puissiez copier une commande prête à l&#39;emploi pour le chemin exact dont vous avez besoin, sans modifier le nom d&#39;hôte manuellement.
+
+La liste déroulante n&#39;affiche que les chemins activés pour votre infrastructure, et son contenu est actualisé chaque fois que la boîte de dialogue s&#39;ouvre — un load balancer privé ou un point de terminaison PrivateLink nouvellement activé apparaît la prochaine fois que vous ouvrez **Connect**, sans délai de propagation. Lorsqu&#39;un seul chemin est disponible, la liste déroulante s&#39;affiche comme désactivée, avec ce point de terminaison sélectionné.
+
+<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="Boîte de dialogue Connect avec la liste déroulante Connection via développée, affichant les chemins load balancer public, load balancer privé et PrivateLink" background="black" />
+
 <div id="public-load-balancer">
   ## Public Load Balancer
 </div>
@@ -26,7 +44,7 @@ Un load balancer public permet d’accéder à vos services ClickHouse via Inter
 * **Sécurité** : Protégé par le chiffrement TLS et le filtrage IP (recommandé)
 
 <div id="connecting-via-public-load-balancer">
-  ### Connexion via Public Load Balancer
+  ### Connexion via load balancer public
 </div>
 
 Pour vous connecter à votre service ClickHouse à l’aide du point de terminaison public :
@@ -75,8 +93,11 @@ Pour vous connecter via le point de terminaison privé :
    * Pour les autres réseaux privés : assurez-vous que le routage est configuré pour atteindre le VPC BYOC
 3. **Obtenez votre point de terminaison privé** :
    Le point de terminaison privé est disponible dans la console ClickHouse Cloud, dans la section « Connect » de votre service. Il suit le même format que le point de terminaison public, avec le suffixe `-private` ajouté à la partie correspondant à l’ID du service. Par exemple :
+
    * **Point de terminaison public** : `sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
    * **Point de terminaison privé** : `sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+
+   Plutôt que de reconstituer manuellement le nom d’hôte avec le suffixe `-private`, sélectionnez **Private load balancer** dans le menu déroulant **Connection via** de la boîte de dialogue **Connect** pour copier directement le point de terminaison ainsi que les commandes de connexion prêtes à l’emploi.
 
 <div id="public-ip-filtering">
   ### Filtrage IP
@@ -120,6 +141,8 @@ Le format du point de terminaison PrivateLink est similaire à celui du point de
 
 * **Point de terminaison public** : `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
 * **Point de terminaison PrivateLink** : `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+Une fois le point de terminaison configuré et ajouté à l’allowlist, sélectionnez **PrivateLink** (ou **Private Service Connect** sur GCP) dans la liste déroulante **Connection via** de la boîte de dialogue **Connect** pour copier directement les informations de connexion du point de terminaison privé.
 
 <div id="endpoint-id-allowlist">
   ### Liste d’autorisation des ID de point de terminaison

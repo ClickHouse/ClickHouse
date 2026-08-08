@@ -12,7 +12,6 @@ from ci.defs.defs import (
     JobNames,
     RunnerLabels,
 )
-
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 # Keeper stress spins nested Docker inside the integration-tests-runner container.
 # Using nearly all host RAM for the outer container can starve the host runner
@@ -45,6 +44,11 @@ build_digest_config = Job.CacheDigestConfig(
         "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        "./ci/jobs/scripts/log_cluster.py",
+        "./utils/prepare-time-trace/prepare-time-trace.sh",
+        # The build job also assembles the deb, rpm and tgz packages, so changes to
+        # their definitions and to the packaging script have to schedule a rebuild.
+        "./packages",
         "./utils/list-licenses",
         "./utils/self-extracting-executable",
     ],
@@ -55,6 +59,7 @@ fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./ci/jobs/fast_test.py",
         "./ci/jobs/scripts/clickhouse_proc.py",
+        "./ci/jobs/scripts/server_cleanup.py",
         "./tests/queries/0_stateless/",
         "./tests/config/",
         "./tests/clickhouse-test",
@@ -103,6 +108,7 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/praktika/cidb.py",
@@ -188,17 +194,26 @@ class JobConfigs:
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
+        enable_gh_auth=True,
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
         ],
     )
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
-        runs_on=RunnerLabels.ARM_LARGE,
+        runs_on=RunnerLabels.ARM_SMALL,
         command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
-        digest_config=Job.CacheDigestConfig(include_paths=["./ci"]),
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci",
+                # The ci/tests/ guards for the expect-trace / bash-xtrace separation read these
+                # two files, so a change to either must run this job.
+                "./tests/clickhouse-test",
+                "./tests/queries/shell_config.sh",
+            ]
+        ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     )
     fast_test = Job.Config(
@@ -233,7 +248,7 @@ class JobConfigs:
             # cannot fail the job, and a timed-out job already fails).
             'for i in $(seq 2 16); do sudo ifconfig lo0 -alias 127.0.0.$i 2>/dev/null || true; done',
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
-            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
+            "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data /System/Volumes/Data/private/var/db/diagnostics/*",
         ],
     ).parametrize(
         Job.ParamSet(
@@ -375,23 +390,70 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    release_build_jobs_with_examples = [
+        job.set_command(f"{job.command} --build-examples").set_provides(
+            ArtifactNames.CLICKHOUSE_EXAMPLES
+        )
+        if f"({BuildTypes.ARM_RELEASE})" in job.name
+        else job
+        for job in release_build_jobs
+    ]
+    cfi_build_job = common_build_job_config.parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_CFI,
+            provides=[ArtifactNames.CH_AMD_CFI, ArtifactNames.DEB_AMD_CFI],
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=4 * 3600,
+        ),
+    )
+    cfi_integration_jobs = common_integration_test_job_config.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"amd_cfi, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_CFI],
+            )
+            for total_batches in (4,)
+            for batch in range(1, total_batches + 1)
+        ]
+    )
+    cfi_stress_job = common_stress_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_cfi",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_CFI],
+        ),
+    )
     # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
     # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
     # in build_clickhouse.py) while keeping the shared sccache read-write. This
     # populates the cache so that read-only PR release builds get cache hits.
-    # They provide no artifacts and run no profile/master-head post hooks - the
-    # only purpose is to warm sccache.
-    sccache_warmup_build_jobs = common_build_job_config.parametrize(
-        Job.ParamSet(
-            parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
-            runs_on=RunnerLabels.ARM_LARGE,
-            timeout=3 * 3600,
-        ),
-        Job.ParamSet(
-            parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
-    )
+    # They provide no artifacts. The build profile hook runs so that the
+    # "Build profile diff" check gets a master baseline built with the PR
+    # flags - the arm warmup's object sizes and compile traces are the only
+    # master data directly comparable to a PR build (official master builds
+    # keep debug symbols, PR builds strip them). The hook uploads only for the
+    # arm variant (see _PROFILED_BUILDS in build_profile_hook.py).
+    sccache_warmup_build_jobs = [
+        job.set_command(f"{job.command} --build-examples")
+        if f"({BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP})" in job.name
+        else job
+        for job in common_build_job_config.set_post_hooks(
+            post_hooks=[
+                "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+            ],
+        ).parametrize(
+            Job.ParamSet(
+                parameter=BuildTypes.AMD_RELEASE_PR_CACHE_WARMUP,
+                runs_on=RunnerLabels.ARM_LARGE,
+                timeout=3 * 3600,
+            ),
+            Job.ParamSet(
+                parameter=BuildTypes.ARM_RELEASE_PR_CACHE_WARMUP,
+                runs_on=RunnerLabels.ARM_LARGE,
+            ),
+        )
+    ]
     extra_validation_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -476,9 +538,14 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
+        # Unpacking the packages needs ~4.4 GB, so reclaim another job's leftover
+        # images before installing, not just afterwards. Best-effort: praktika does
+        # not propagate a hook's exit code to the job status.
+        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
@@ -510,9 +577,12 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
+                "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
         timeout=900,
+        # See install_check_jobs above.
+        pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
@@ -556,6 +626,21 @@ class JobConfigs:
             parameter="amd_debug, flaky check",
             runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_DEBUG],
+        ),
+    )
+    # Merge-queue drift guard: reruns the PR's new/changed stateless tests on
+    # the merge group state (the PR merged with the current `master`), so a PR
+    # whose last CI run predates test-infrastructure changes on `master` (e.g.
+    # a new randomized setting in `tests/clickhouse-test`) is bounced from the
+    # queue instead of breaking `master`. Runs on the `amd_binary` build the
+    # merge queue produces anyway; merge-queue runs use a reduced iteration
+    # count and time budget (see `ci/jobs/functional_tests.py`) to keep queue
+    # latency bounded.
+    stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_binary, flaky check",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_BINARY],
         ),
     )
     stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
@@ -627,6 +712,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/clickhouse_light.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/queries",
             ],
         ),
@@ -636,7 +722,15 @@ class JobConfigs:
     functional_tests_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_asan_ubsan, distributed plan, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            # `--distributed-plan` fans each query across local parallel replicas,
+            # multiplying the server-side memory of every in-flight query, so the
+            # aggregate RSS of the parallel suite's co-scheduled queries is heavier
+            # than a normal ASan run and overruns the sanitizer memory cap on the
+            # default 64 GiB runner. Use a LARGE runner (same 32 vCPU as MEDIUM_CPU,
+            # but 128 GiB instead of 64 GiB RAM) so the suite keeps full concurrency
+            # and the default timeout instead of cutting workers - which barely
+            # moved peak RSS and only made the job slower.
+            runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
         ),
         *[
@@ -728,7 +822,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_LARGE,
                 requires=[ArtifactNames.CH_AMD_MSAN],
             )
-            for total_batches in (2,)
+            for total_batches in (3,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -836,6 +930,50 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_SMALL_MEM,
         ),
     )
+    # Builds the "before" unit_tests_dbms (merge-base + only the PR's unit-test file
+    # changes) in-job, so it needs the binary-builder image and submodules. It does NOT
+    # require the PR's UNITTEST_AMD_ASAN_UBSAN artifact: the "touched tests pass on the
+    # PR binary" side is delegated to the regular `Unit tests (asan_ubsan)` job (see the
+    # module docstring), so this job is not gated behind `build_amd_asan_ubsan` and
+    # builds the "before" binary in parallel with the build matrix — matching the early
+    # start of the functional/integration bugfix validators.
+    bugfix_validation_ut_job = Job.Config(
+        name=JobNames.BUGFIX_VALIDATE_UT,
+        runs_on=RunnerLabels.AMD_LARGE,
+        command="python3 ./ci/jobs/unit_tests_bugfix_validation_job.py",
+        # The job both builds and RUNS the before-binary in this container. Running
+        # `unit_tests_dbms` needs `io_uring` (the `silk` fiber runtime calls
+        # `io_uring_queue_init_params` at startup), which Docker's default seccomp
+        # profile blocks — without this the before-binary aborts before any test runs.
+        # `--privileged` mirrors how the regular unit-test job runs the same binary
+        # (`clickhouse/test-base+--privileged`).
+        run_in_docker=BINARY_DOCKER_COMMAND + "+--privileged",
+        needs_submodules=True,
+        timeout=3600 * 4,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/unit_tests_bugfix_validation_job.py",
+                "./ci/jobs/build_clickhouse.py",
+                "./src",
+                "./contrib/",
+                "./.gitmodules",
+                "./CMakeLists.txt",
+                "./PreLoad.cmake",
+                "./cmake",
+                "./base",
+                "./programs",
+                "./rust",
+            ],
+            with_git_submodules=True,
+        ),
+        result_name_for_cidb="Tests",
+    ).set_allow_failure(True)
+    # allow_failure: an inconclusive ERROR (e.g. the before-binary could not be compiled,
+    # or crashed before any test ran) must NOT hard-block merge — "we couldn't determine"
+    # is not a reason to block. Only a definitive FAIL (the added test passes on the
+    # merge-base too, so it doesn't catch the bug) should block. Like the FT/IT bugfix
+    # jobs, the merge decision is centralized in new_tests_check.py, which blocks the unit
+    # case iff this job reported FAIL.
     _fuzzer_command = (
         "python3 ./ci/jobs/unit_tests_job.py --gtest_filter=FunctionsStress.*"
     )
@@ -1138,6 +1276,9 @@ class JobConfigs:
                 "./ci/jobs/compatibility_check.py",
             ],
         ),
+        # Shares the style-checker runners with Install packages and leaves ~4 GB of docker
+        # residue per run, which is what the next job on that runner inherits.
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_release",
@@ -1315,15 +1456,23 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ]
     )
-    clickbench_master_jobs = Job.Config(
+    clickbench_jobs = Job.Config(
         name=JobNames.CLICKBENCH,
         runs_on=RunnerLabels.FUNC_TESTER_AMD,
         command="python3 ./ci/jobs/clickbench.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/clickbench.py",
+                # ClickBench starts the server via `ClickHouseService`, which
+                # clears leftover processes through `server_cleanup.py`. Track
+                # both so changes to the shared start path reschedule the job.
+                "./ci/jobs/scripts/clickhouse_proc.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./ci/jobs/scripts/clickbench/",
+                "./ci/jobs/scripts/clickhouse_service.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/praktika/result.py",
+                "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
         run_in_docker="clickhouse/stateless-test+--shm-size=16g+--network=host",
@@ -1339,26 +1488,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
     )
-    docs_job = Job.Config(
-        name=JobNames.DOCS,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="python3 ./ci/jobs/docs_job.py",
-        digest_config=Job.CacheDigestConfig(
-            # Restrict to the legacy Docusaurus content tree so that PRs which
-            # only touch the new Mintlify site (./docs/docs.json, ./docs/*.mdx,
-            # etc.) do not trigger this job.
-            include_paths=[
-                "./docs/en/",
-                "./docs/changelogs/",
-                "./ci/jobs/docs_job.py",
-                "CHANGELOG.md",
-                "./src/Functions",
-            ],
-        ),
-        run_in_docker="clickhouse/docs-builder",
-        requires=[ArtifactNames.CH_ARM_BINARY],
-        run_after=[JobNames.STYLE_CHECK],
-    )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -1368,27 +1497,27 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job_mintlify.py",
                 "./ci/jobs/scripts/docs",
+                "./utils/generate-async-metrics-docs",
+                "./utils/generate-system-tables-docs",
             ],
-            # Exclude everything currently in ./docs so that this job runs only
-            # on files that are NOT part of the legacy docs tree (i.e. the new
-            # Mintlify site files such as ./docs/docs.json and any new Mintlify
-            # content). Add new excludes here if more non-Mintlify content is
-            # introduced under ./docs.
+            # These files are internal inputs or contributor documentation, not
+            # pages published by Mintlify.
             exclude_paths=[
                 "./docs/README.md",
-                "./docs/_description_templates/",
+                "./docs/_templates/",
                 "./docs/_includes/",
                 "./docs/changelog_entry_guidelines.md",
                 "./docs/changelogs/",
-                "./docs/en/",
             ],
         ),
-        run_in_docker="clickhouse/docs-builder"
+        run_in_docker="clickhouse/docs-builder",
     )
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
+        # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
+        # runners are in us-east-1, where Canonical's mirrors are often unreachable.
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
@@ -1402,7 +1531,9 @@ class JobConfigs:
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
+        # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
+        # runners are in us-east-1, where Canonical's mirrors are often unreachable.
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
@@ -1456,6 +1587,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqltest_job.py",
+                "./ci/jobs/scripts/server_cleanup.py",
             ],
         ),
         requires=[ArtifactNames.CH_ARM_RELEASE],
@@ -1469,6 +1601,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqllogic_test.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./tests/sqllogic/",
             ],
         ),
@@ -1483,6 +1616,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/sqlstorm_test.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./tests/sqlstorm/",
             ],
         ),
@@ -1497,7 +1631,7 @@ class JobConfigs:
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
-        name=JobNames.JEPSEN_KEEPER,
+        name=JobNames.JEPSEN_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
@@ -1520,6 +1654,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/collect_clickhouse_profiles.py",
+                "./ci/jobs/scripts/server_cleanup.py",
                 "./cmake/profile_optimization.cmake",
                 "./tests/performance/",
             ],
@@ -1576,6 +1711,42 @@ class JobConfigs:
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
         timeout=6 * 3600,
     )
+    # Compares the PR's arm_release build profile (binary and per-object sizes,
+    # per-symbol sizes, compile and link time down to individual functions and
+    # template instantiations) against the latest master build, and posts a PR
+    # comment when the change is significant. The data comes from the CI logs
+    # cluster: the PR side is uploaded by the arm_release build post-hook
+    # (build_profile_hook.py), the master side by master workflow builds.
+    # No digest_config, i.e. not cacheable: the job's output is a PR comment
+    # about one concrete commit (it embeds the head sha and links this run's
+    # report). Reusing a cached result would leave that comment describing an
+    # older commit of the PR - including a change that the head has already
+    # reverted - so the comparison is redone for every head. The job is cheap:
+    # it only queries the CI logs cluster.
+    build_profile_diff_job = Job.Config(
+        name=JobNames.BUILD_PROFILE_DIFF,
+        runs_on=RunnerLabels.ARM_SMALL,
+        # stateless-test rather than test-base: the job reads the CI logs
+        # cluster credentials from AWS SSM, and stateless-test is the test
+        # image that ships the aws CLI.
+        run_in_docker="clickhouse/stateless-test",
+        requires=["Build (arm_release)"],
+        command="python3 ./ci/jobs/build_profile_diff_job.py",
+        timeout=1800,
+        enable_gh_auth=True,
+        # Run on a red head too. This job is the only writer of the
+        # `build-profile-diff` PR comment, so skipping it leaves the comment
+        # posted for an older commit pinned to the PR, reading as if it
+        # described the head. `Build (arm_release)` runs after every regular
+        # build (`set_run_after(REGULAR_BUILD_NAMES)` in ci/workflows/pull_request.py)
+        # and inherits the default "no upstream failure" gate, so an unrelated
+        # build failure skips it and would skip this job with it. With no
+        # profile data for the head the job posts the "no data" text over the
+        # stale comparison (see main()) instead of leaving it. Not
+        # `run_unless_cancelled`: that would also ignore the job filter and run
+        # this on a `release` or `do not test` PR.
+        run_on_upstream_failure=True,
+    )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
         runs_on=RunnerLabels.AMD_SMALL,
@@ -1591,7 +1762,19 @@ class JobConfigs:
         command="python3 ./ci/jobs/llvm_coverage_job.py",
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py"],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/llvm_coverage_job.py"],
+            # llvm_coverage_job.py shells out to all of these; a change to any of
+            # them must mark this job (and, transitively via `requires`, the
+            # coverage build and every FT/IT/UT coverage shard) as affected -
+            # otherwise praktika's changed-files filter drops the job even when
+            # filter_job.py's should_skip_job says it should run.
+            include_paths=[
+                "./ci/jobs/llvm_coverage_job.py",
+                "./ci/jobs/scripts/merge_llvm_coverage.sh",
+                "./ci/jobs/scripts/generate_diff_coverage_report.sh",
+                "./ci/jobs/scripts/print_uncovered_code.py",
+                "./ci/jobs/scripts/dedup_lcov_instantiations.py",
+                "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
+            ],
         ),
         timeout=3600,
         enable_gh_auth=True,

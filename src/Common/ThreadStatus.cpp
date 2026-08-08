@@ -28,7 +28,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
-#if !defined(SANITIZER)
+#if !defined(SANITIZER) && defined(OS_HAS_SIGNAL_HANDLERS)
 namespace
 {
 
@@ -135,7 +135,8 @@ ThreadStatus::ThreadStatus()
     /// Will set alternative signal stack to provide diagnostics for stack overflow errors.
     /// If not already installed for current thread.
     /// Sanitizer makes larger stack usage and also it's incompatible with alternative stack by default (it sets up and relies on its own).
-#if !defined(SANITIZER)
+    /// A target without signal delivery (`OS_HAS_SIGNAL_HANDLERS` undefined) has nothing for the alternative stack to serve.
+#if !defined(SANITIZER) && defined(OS_HAS_SIGNAL_HANDLERS)
     if (!has_alt_stack)
     {
         /// Don't repeat tries even if not installed successfully.
@@ -253,12 +254,12 @@ void ThreadStatus::flushUntrackedMemory()
     /// The deferred bytes our contribution accounted for are about to be tracked, so remove it.
     per_cpu_memory.release(per_cpu_untracked_memory);
 
-    if (untracked_memory == 0)
+    Int64 current_untracked_memory = untracked_memory.load();
+    if (current_untracked_memory == 0)
         return;
 
     MemoryTrackerBlockerInThread blocker(untracked_memory_blocker_level);
-    Int64 current_untracked_memory = untracked_memory;
-    untracked_memory = 0;
+    untracked_memory.store(0);
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 

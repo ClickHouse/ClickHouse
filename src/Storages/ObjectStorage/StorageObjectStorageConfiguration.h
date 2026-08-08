@@ -333,12 +333,25 @@ public:
     /// startup (see `getClient` and the `s3_load_table_anonymously_if_credentials_restricted` server setting).
     bool is_loading_from_existing_metadata = false;
 
+    /// False when the storage is instantiated from anything other than a user-issued `CREATE`
+    /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not
+    /// apply the `file_like_engine_default_partition_strategy` default to such tables: a pre-26.6
+    /// table with a `{_partition_id}` path was created under the implicit wildcard strategy, and
+    /// re-deriving `hive` from the current default on ATTACH would refuse to load it and abort
+    /// server startup/upgrade. Defaults to true so table functions keep strict validation.
+    bool is_create_query = true;
+
     /// Set for server-internal tables (e.g. the system log-pipeline S3Queue tables) so their S3 client build
     /// always downgrades restricted server-managed credentials to anonymous instead of aborting, even when the
     /// operator disabled `s3_load_table_anonymously_if_credentials_restricted`. Not user-controllable: user
     /// tables never set it, so it does not weaken the operator's hard-fail choice for user queries. The internal
     /// table's bootstrap re-credentials the client afterwards.
     bool force_anonymous_load_fallback = false;
+
+    /// Set when a base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from a named
+    /// collection. `initialize` materializes it back into the engine args so that the persisted
+    /// DDL does not depend on the setting at attach time.
+    String url_overridden_by_base_setting;
 
 protected:
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);

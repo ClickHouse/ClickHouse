@@ -54,7 +54,8 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        const StatsCollectingParams & stats_collecting_params_ = {},
+        bool any_take_last_row_ = false);
 
     /// Concurrent mode: wraps a ConcurrentHashJoin.
     SpillingHashJoin(
@@ -65,12 +66,14 @@ public:
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         size_t concurrent_slots_,
-        const StatsCollectingParams & stats_collecting_params_);
+        const StatsCollectingParams & stats_collecting_params_ = {},
+        bool any_take_last_row_ = false);
 
     ~SpillingHashJoin() override;
 
     std::string getName() const override;
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
@@ -123,6 +126,7 @@ private:
     TemporaryDataOnDiskScopePtr tmp_data;
     size_t initial_num_buckets;
     size_t max_num_buckets;
+    bool any_take_last_row;
     size_t max_bytes_before_external_join;
 
     SharedMutex switch_mutex;

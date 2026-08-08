@@ -1,0 +1,79 @@
+---
+date: 2025-11-19
+title: Como restaurar uma réplica após uma falha de armazenamento
+tags: ['Implantações e escalabilidade']
+keywords: ['restaurar', 'réplica', 'falha de armazenamento', 'banco de dados Atomic']
+description: 'Este artigo explica como recuperar dados ao usar tabelas replicadas em bancos de dados Atomic no ClickHouse quando os discos/o armazenamento de uma das réplicas é perdido/corrompido.'
+---
+
+<Note>
+  Este guia pressupõe que o parâmetro `<path>` no arquivo `config.xml` esteja definido como:
+
+  ```text
+  <path>/var/lib/clickhouse/</path>
+  ```
+
+  Se você tiver configurado um caminho de dados diferente, substitua todas as ocorrências de `/var/lib/clickhouse` nos comandos abaixo pelo valor real da sua configuração `<path>`.
+</Note>
+
+<Steps>
+  <Step title="Copie a configuração de acesso da réplica íntegra" id="copy-access-config">
+    Copie o conteúdo da pasta `access`, que contém os usuários locais, da réplica íntegra:
+
+    ```text
+    /var/lib/clickhouse/access
+    ```
+  </Step>
+
+  <Step title="Faça backup da pasta de metadados da réplica íntegra" id="back-up-the-metadata-folder-from-the-healthy-replica">
+    1. Navegue até o diretório de dados do ClickHouse:
+
+    ```text
+    cd /var/lib/clickhouse
+    ```
+
+    2. Crie um backup da pasta de metadados (incluindo links simbólicos): o diretório de metadados contém os DDLs dos bancos de dados e das tabelas.
+       O diretório do banco de dados tem links simbólicos para `/var/lib/clickhouse/store/..`, que contém todos os DDLs das tabelas.
+
+    ```bash
+    { find metadata -type f; find metadata -type l; find metadata -type l | xargs readlink -f; } | tar -cPf backup.tar --files-from=-
+    ```
+
+    <Note>
+      Este comando garante que tanto os **arquivos de metadados** quanto a estrutura dos links simbólicos sejam preservados no backup.
+    </Note>
+  </Step>
+
+  <Step title="Restaure os metadados na réplica com falha" id="restore-the-metadata-on-the-faulty-replica">
+    1. Copie o arquivo `backup.tar` gerado para a réplica com falha.
+    2. Extraia-o no diretório de dados do ClickHouse:
+
+    ```text
+    cd /var/lib/clickhouse/
+    tar -xvPf backup.tar
+    ```
+  </Step>
+
+  <Step title="Crie a flag de restauração forçada" id="create-force-restore-flag">
+    Para acionar a sincronização automática de dados a partir de outras réplicas, crie a seguinte flag:
+
+    ```text
+    sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+    ```
+  </Step>
+
+  <Step title="Reinicie a réplica com falha" id="restart-faulty-replica">
+    1. Reinicie o servidor ClickHouse no nó com falha.
+    2. Verifique os logs do servidor. Você deverá observar partes sendo baixadas das réplicas íntegras:
+
+    ```bash
+    2025.11.02 00:00:04.047097 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Downloading files 23
+    2025.11.02 00:00:04.055542 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Download of part 202511_0_0_0 onto disk disk2 finished.
+    2025.11.02 00:00:04.101888 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2025_0_0_1 onto disk default.
+    2025.11.02 00:00:04.102005 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    2025.11.02 00:00:04.102210 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2022_0_0_1 onto disk disk1.
+    2025.11.02 00:00:04.102247 [ 688 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2021_0_0_1 onto disk disk2.
+    2025.11.02 00:00:04.102331 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    ```
+  </Step>
+</Steps>

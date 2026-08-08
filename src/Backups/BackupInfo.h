@@ -16,6 +16,7 @@ struct BackupInfo
     std::vector<Field> args;
     ASTPtr function_arg;
     ASTs kv_args;
+    NamedCollectionPtr frozen_named_collection;
 
     String toString() const;
     static BackupInfo fromString(const String & str);
@@ -45,6 +46,10 @@ struct BackupInfo
     /// and applies any key-value overrides from kv_args.
     /// Returns nullptr if id_arg is empty (i.e., no named collection is used).
     NamedCollectionPtr getNamedCollection(ContextPtr context) const;
+
+    /// Stores a private copy of the resolved named collection so later identity generation
+    /// and backup creation use the same collection state.
+    BackupInfo freezeNamedCollection(ContextPtr context) const;
 };
 
 }

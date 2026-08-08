@@ -51,6 +51,10 @@ public:
     /// Returns UUID of the backup.
     virtual UUID getUUID() const = 0;
 
+    /// The backup's operation id (the `id` setting, else the UUID), as recorded in the manifest.
+    /// Empty for backups written before this field existed.
+    virtual const String & getBackupId() const = 0;
+
     /// Returns the base backup or null if there is no base backup.
     virtual std::shared_ptr<const IBackup> getBaseBackup() const = 0;
 
@@ -125,6 +129,8 @@ public:
 
     /// Puts a new entry to the backup.
     virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;
+
+    virtual void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept = 0;
 
     /// Whether it's possible to add new entries to the backup in multiple threads.
     virtual bool supportsWritingInMultipleThreads() const = 0;
