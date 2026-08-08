@@ -420,8 +420,9 @@ void WriteBufferFromS3::createMultipartUpload()
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    if (object_metadata.has_value())
-        req.SetMetadata(object_metadata.value());
+    /// Metadata set here lands on the completed object, so a HEAD after completion sees the token.
+    if (auto metadata = metadataWithWriteToken())
+        req.SetMetadata(*metadata);
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
@@ -692,6 +693,16 @@ bool WriteBufferFromS3::completeMultipartUpload()
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);
 
         const auto & error = outcome.GetError();
+
+        /// A 412 on our own object means this completion was replayed after it had succeeded.
+        /// Anything we cannot prove we wrote is a pre-existing object and must still throw.
+        if (error.GetExceptionName() == "PreconditionFailed" && isObjectWrittenByThisBuffer())
+        {
+            LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this write. {}, Parts: {}",
+                     getShortLogDetails(), multipart_tags.size());
+            return true;
+        }
+
         if (isTransientCompleteMultipartUploadError(error))
         {
             last_error_type = error.GetErrorType();
@@ -724,14 +735,8 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
-    if (!write_token.empty())
-    {
-        auto metadata = object_metadata.value_or(ObjectAttributes{});
-        metadata[WRITE_TOKEN_METADATA_KEY] = write_token;
-        req.SetMetadata(metadata);
-    }
-    else if (object_metadata.has_value())
-        req.SetMetadata(object_metadata.value());
+    if (auto metadata = metadataWithWriteToken())
+        req.SetMetadata(*metadata);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
 
@@ -747,6 +752,16 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     client_ptr->setKMSHeaders(req);
 
     return req;
+}
+
+std::optional<ObjectAttributes> WriteBufferFromS3::metadataWithWriteToken() const
+{
+    if (write_token.empty())
+        return object_metadata;
+
+    auto metadata = object_metadata.value_or(ObjectAttributes{});
+    metadata[WRITE_TOKEN_METADATA_KEY] = write_token;
+    return metadata;
 }
 
 bool WriteBufferFromS3::isObjectWrittenByThisBuffer() const

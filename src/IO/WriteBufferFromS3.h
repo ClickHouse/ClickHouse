@@ -79,6 +79,9 @@ private:
     S3::PutObjectRequest getPutRequest(PartData & data);
     void makeSinglepartUpload(PartData && data);
 
+    /// `object_metadata` with `write_token` merged in when the write is conditional.
+    std::optional<ObjectAttributes> metadataWithWriteToken() const;
+
     /// True only if the object stored under `key` carries this buffer's `write_token`, i.e. this
     /// buffer wrote it. Absent object, absent or foreign token, or a failed HEAD all give false.
     bool isObjectWrittenByThisBuffer() const;
