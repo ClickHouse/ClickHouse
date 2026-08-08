@@ -350,14 +350,20 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     /// read and write the rows: the first schema of the search path that contains a relation of this
     /// name wins (`current_schemas(false)` lists the existing schemas of the search path in order,
     /// and `array_position` both filters to them - it is `NULL`, and so not `> 0`, for any other
-    /// schema - and ranks them). For PostgreSQL with the default search path that is `public`, and a
+    /// schema - and ranks them). PostgreSQL additionally searches `pg_catalog` implicitly *before* the
+    /// explicit path (unless the path lists it explicitly, which fixes its position), so an unqualified
+    /// `pg_type` or `pg_class` resolves to the system catalog: the `nspname = 'pg_catalog'` disjunct
+    /// admits it and the `coalesce(..., 0)` ranks it ahead of the explicit schemas (when `pg_catalog`
+    /// is listed explicitly, its `array_position` is not `NULL` and its listed position wins, as in
+    /// PostgreSQL). For PostgreSQL with the default search path the explicit part is `public`, and a
     /// ClickHouse server (which exposes its databases as schemas) lists just the connected database,
     /// so schema discovery and the data path always agree on the same relation.
     const String relnamespace_expr = postgres_schema.empty()
         ? fmt::format(
             "(SELECT ns.oid FROM pg_namespace AS ns JOIN pg_class AS tbl ON tbl.relnamespace = ns.oid"
-            " WHERE tbl.relname = {0} AND array_position(current_schemas(false), ns.nspname::text) > 0"
-            " ORDER BY array_position(current_schemas(false), ns.nspname::text) LIMIT 1)",
+            " WHERE tbl.relname = {0} AND (ns.nspname = 'pg_catalog'"
+            " OR array_position(current_schemas(false), ns.nspname::text) > 0)"
+            " ORDER BY coalesce(array_position(current_schemas(false), ns.nspname::text), 0) LIMIT 1)",
             quoteStringPostgreSQL(postgres_table))
         : fmt::format("(SELECT oid FROM pg_namespace WHERE nspname = {})", quoteStringPostgreSQL(postgres_schema));
 

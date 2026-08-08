@@ -1156,6 +1156,44 @@ def test_postgres_unqualified_name_follows_search_path(started_cluster):
         started_cluster.postgres_conn.commit()
 
 
+def test_postgres_unqualified_pg_catalog_relation(started_cluster):
+    """An unqualified system catalog name resolves through PostgreSQL's implicit `pg_catalog`.
+
+    PostgreSQL searches `pg_catalog` ahead of the explicit `search_path` (unless the path lists it
+    explicitly), so an unqualified `pg_type` denotes the system catalog even when a `public` table of
+    the same name exists. Schema discovery must follow that rule: pinning the lookup to the explicit
+    path alone would report `UNKNOWN_TABLE` for a name the server itself resolves.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS public.pg_type")
+    started_cluster.postgres_conn.commit()
+
+    table_function = (
+        f"postgresql('postgres1:5432', 'postgres', 'pg_type', 'postgres', '{pg_pass}')"
+    )
+    assert (
+        node1.query(f"SELECT count() FROM {table_function} WHERE typname = 'bool'")
+        == "1\n"
+    )
+
+    # A `public` table of the same name does not shadow the catalog: `pg_catalog` is searched first.
+    cursor.execute("CREATE TABLE public.pg_type (typname text)")
+    cursor.execute("INSERT INTO public.pg_type VALUES ('decoy')")
+    started_cluster.postgres_conn.commit()
+    try:
+        assert (
+            node1.query(f"SELECT count() FROM {table_function} WHERE typname = 'bool'")
+            == "1\n"
+        )
+        assert (
+            node1.query(f"SELECT count() FROM {table_function} WHERE typname = 'decoy'")
+            == "0\n"
+        )
+    finally:
+        cursor.execute("DROP TABLE public.pg_type")
+        started_cluster.postgres_conn.commit()
+
+
 def test_postgres_date32_array(started_cluster):
     """Test that PostgreSQL DATE[] arrays with large dates are correctly read as Array(Date32)."""
     cursor = started_cluster.postgres_conn.cursor()
