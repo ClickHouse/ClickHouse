@@ -16,6 +16,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageValues.h>
 
 #include <DataTypes/DataTypeEnum.h>
@@ -1067,6 +1068,107 @@ bool InsertDependenciesBuilder::isSequentialQuorumInsert(const Settings & settin
         && (settings[Setting::insert_quorum].is_auto || settings[Setting::insert_quorum].valueOr(0) >= 2);
 }
 
+
+bool InsertDependenciesBuilder::storageMayWriteToReplicatedTable(const StoragePtr & storage, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    if (dynamic_cast<const StorageReplicatedMergeTree *>(storage.get()))
+        return true;
+
+    /// A `MaterializedView` and proxies pass the write through to their target within this pipeline:
+    /// follow the chain, failing closed when the target cannot be resolved.
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || storageMayWriteToReplicatedTable(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return storageMayWriteToReplicatedTable(proxy->getNested(), depth + 1);
+
+    /// A forwarding storage runs a nested `INSERT` whose destination graph is not visible here: an
+    /// `Alias` hides its target's dependent views behind the nested `INSERT` each `AliasSink` runs, a
+    /// `Distributed` writes to remote shards whose tables are not cheaply known here, a `Buffer`
+    /// flushes to a destination that can forward further, and a `WindowView` opens fresh sinks of its
+    /// inner table inside `writeIntoWindowView`. Any of them may end on a `ReplicatedMergeTree`, so
+    /// fail closed.
+    if (storageHidesWriteTarget(storage, depth))
+        return true;
+
+    /// A concrete local non-replicated target: its writes are not quorum writes.
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::storageHidesWriteTarget(const StoragePtr & storage, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    if (dynamic_cast<const StorageAlias *>(storage.get())
+        || dynamic_cast<const StorageDistributed *>(storage.get())
+        || dynamic_cast<const StorageBuffer *>(storage.get())
+        || dynamic_cast<const StorageWindowView *>(storage.get()))
+        return true;
+
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || storageHidesWriteTarget(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return storageHidesWriteTarget(proxy->getNested(), depth + 1);
+
+    return false;
+}
+
+
+void InsertDependenciesBuilder::computeQuorumStreamRequirements()
+{
+    if (!sequential_quorum_insert)
+        return;
+
+    /// Every branch of the collected graph - the destination and each dependent view - owns one sink
+    /// writing into its physical target table (`inner_tables` maps the branch to that target). Count
+    /// the writers that may produce a quorum part, per target.
+    std::unordered_map<StorageIDMaybeEmpty, size_t, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual>
+        replicated_writers_per_target;
+    size_t replicated_writers = 0;
+    bool any_hidden_writer = false;
+    bool converging_replicated_writers = false;
+
+    for (const auto & [branch_id, target_id] : inner_tables)
+    {
+        if (skip_destination_table && branch_id == root_view)
+            continue;
+
+        auto it = storages.find(target_id);
+        const StoragePtr target_storage = it == storages.end() ? nullptr : it->second;
+
+        if (target_storage && !storageMayWriteToReplicatedTable(target_storage))
+            continue;
+
+        ++replicated_writers;
+        if (!target_storage || storageHidesWriteTarget(target_storage))
+            any_hidden_writer = true;
+        else if (++replicated_writers_per_target[target_id] >= 2)
+            converging_replicated_writers = true;
+    }
+
+    /// The `max_insert_threads` fan-out duplicates every branch's sink into one sink per stream, all
+    /// writing the same table concurrently - so a single (possibly hidden) replicated writer already
+    /// makes the fan-out unsafe.
+    quorum_single_stream = replicated_writers > 0;
+
+    /// The dependent-view branches of a single stream write to distinct targets: two of them conflict
+    /// only when they produce quorum parts of the same table. Fail closed when a hidden writer makes
+    /// such a convergence impossible to rule out - unless it is the only writer that may reach a
+    /// replicated table at all (whatever its nested `INSERT` runs is serialized by that nested query
+    /// itself, which observes the same settings and derives the same requirements).
+    quorum_sequential_views = converging_replicated_writers || (any_hidden_writer && replicated_writers >= 2);
+}
+
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
@@ -1103,6 +1205,8 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     ignore_materialized_views_with_dropped_target_table = settings[Setting::ignore_materialized_views_with_dropped_target_table];
 
     collectAllDependencies();
+
+    computeQuorumStreamRequirements();
 
     auto all_sinks_support_parallel_insert = std::ranges::all_of(storages, [&] (auto storage)
         { return isView(storage.first) || storage.second->supportsParallelInsert();});
@@ -1174,13 +1278,14 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
             || any_dependent_target_forwards_to_separate_context);
 
     /// A non-parallel quorum insert permits a single in-flight quorum part per table, so it must not
-    /// write through several sinks running concurrently (see `isSequentialQuorumInsert`). For the plain
-    /// `INSERT` pipeline `InterpreterInsertQuery` already passes `max_insert_threads = 1` here; this
-    /// also keeps the `INSERT SELECT` fan-out single-stream.
+    /// produce quorum parts through several sinks running concurrently. Whether this insert can do so
+    /// is derived from the collected sink graph (see `computeQuorumStreamRequirements`): the fan-out
+    /// stays available when no branch of the write may reach a `ReplicatedMergeTree` table. This
+    /// keeps both the plain `INSERT` and the `INSERT SELECT` fan-out single-stream when needed.
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
         && !mv_dedup_single_stream
-        && !sequential_quorum_insert)
+        && !quorum_single_stream)
         sink_stream_size = max_insert_threads;
 }
 
@@ -2121,8 +2226,10 @@ size_t InsertDependenciesBuilder::getViewProcessingNumThreads() const
     /// so two views converging on one `ReplicatedMergeTree` target would still race two in-flight
     /// quorum parts of one query against each other. Push the views of such an insert sequentially:
     /// each branch's sink blocks in `commitPart` until the quorum of its part is satisfied, so the
-    /// next branch starts with the quorum node already gone (see `isSequentialQuorumInsert`).
-    if (sequential_quorum_insert && isViewsInvolved())
+    /// next branch starts with the quorum node already gone. Branches that write to distinct
+    /// replicated tables do not conflict and keep running concurrently (see
+    /// `computeQuorumStreamRequirements`).
+    if (quorum_sequential_views && isViewsInvolved())
         return 1;
     if (settings[Setting::parallel_view_processing] || !isViewsInvolved())
         return static_cast<size_t>(settings[Setting::max_threads]);

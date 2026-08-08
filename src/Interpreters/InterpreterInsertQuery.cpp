@@ -894,12 +894,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     /// and throws `UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE` otherwise. With a write fan-out every branch
     /// runs its own sink - including branches that receive no data - so sibling sinks of the same
     /// `INSERT` race against the not-yet-satisfied quorum node of the part committed by the branch that
-    /// got the data. Keep such inserts single-stream. (The dependent-view fan-out of such an insert is
-    /// serialized separately, by the single-thread pipeline cap below.)
-    const bool sequential_quorum_insert = InsertDependenciesBuilder::isSequentialQuorumInsert(settings);
-
+    /// got the data. `InsertDependenciesBuilder` keeps such inserts single-stream when a branch of the
+    /// write may actually reach a `ReplicatedMergeTree` table - the fan-out passed here stays available
+    /// otherwise (see `computeQuorumStreamRequirements`). The dependent-view fan-out of such an insert
+    /// is serialized separately, by the single-thread pipeline cap below.
     const size_t insert_threads
-        = (async_insert || dedup_single_stream || serial_hidden_views || sequential_quorum_insert) ? 1 : max_insert_threads;
+        = (async_insert || dedup_single_stream || serial_hidden_views) ? 1 : max_insert_threads;
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table,
         query_ptr,
@@ -1034,10 +1034,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     /// of one query against each other, violating the single-in-flight-part contract the single-stream
     /// fan-out above preserves. Push the views of such an insert sequentially: each branch's sink
     /// blocks in `commitPart` until the quorum of its part is satisfied, so the next branch starts
-    /// with the quorum node already gone. An `Alias` destination hides its target's dependent views
-    /// behind the nested `INSERT` its sink runs; that nested `INSERT` observes the same settings and
-    /// serializes them the same way.
-    const bool serial_views = (!settings[Setting::parallel_view_processing] || sequential_quorum_insert)
+    /// with the quorum node already gone. Branches writing to distinct replicated tables keep running
+    /// concurrently (see `computeQuorumStreamRequirements`). An `Alias` destination hides its target's
+    /// dependent views behind the nested `INSERT` its sink runs; that nested `INSERT` observes the
+    /// same settings and derives the same requirements.
+    const bool serial_views = (!settings[Setting::parallel_view_processing] || insert_dependencies->quorumRequiresSequentialViews())
         && insert_dependencies->isViewsInvolved();
     pipeline.setNumThreads(serial_views ? 1 : max_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
