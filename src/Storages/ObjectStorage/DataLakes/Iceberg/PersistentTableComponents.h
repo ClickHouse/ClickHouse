@@ -38,9 +38,9 @@ struct PersistentTableComponents
     {
         if (!metadata_cache)
             return;
-        metadata_cache->remove(IcebergMetadataFilesCache::getLatestVersionKey(data_source_description, table_path));
+        metadata_cache->remove(IcebergMetadataFilesCache::getLatestVersionKey(data_source_description, table_path, /*is_uuid=*/false));
         if (table_uuid.has_value())
-            metadata_cache->remove(IcebergMetadataFilesCache::getLatestVersionKey(data_source_description, *table_uuid));
+            metadata_cache->remove(IcebergMetadataFilesCache::getLatestVersionKey(data_source_description, *table_uuid, /*is_uuid=*/true));
     }
 };
 
