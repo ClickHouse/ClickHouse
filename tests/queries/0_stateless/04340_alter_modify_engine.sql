@@ -522,6 +522,24 @@ OPTIMIZE TABLE t_graphite_path FINAL;
 SELECT 'graphite lowcardinality path rollup', Path, toString(Time), Value, Version FROM t_graphite_path ORDER BY Time;
 DROP TABLE t_graphite_path;
 
+-- `Time` is ColumnVector<Int32>-backed so the rollup reads it, unlike Decimal-backed `Time64`.
+CREATE TABLE t_graphite_path (key UInt32, Path String, Time Time, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, 'max_a', '01:00:00', 5, 1);
+INSERT INTO t_graphite_path VALUES (1, 'max_a', '01:00:10', 6, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite_path;
+ATTACH TABLE t_graphite_path;
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite time Time rollup', Path, toString(Time), Value, Version FROM t_graphite_path ORDER BY Time;
+DROP TABLE t_graphite_path;
+
+CREATE TABLE t_graphite_path (key UInt32, Path String, Time Time64(3), Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, 'max_a', '01:00:10', 5, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+SELECT 'graphite time Time64 rejected', engine FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_path';
+DROP TABLE t_graphite_path;
+
 -- The time column has a separate `isEnum` branch, so an `Enum` time needs its own case. The rollup
 -- rounds the numeric value down to the retention precision, so the enum must be able to name the
 -- rounded result.
@@ -544,6 +562,17 @@ CREATE TABLE t_source_versioned (k UInt32, sign Int8, ver UInt32, m AggregateFun
 ALTER TABLE t_source_versioned MODIFY ENGINE = AggregatingMergeTree; -- { serverError BAD_ARGUMENTS }
 SELECT 'source versioned dimension rejected', engine FROM system.tables
     WHERE database = currentDatabase() AND name = 't_source_versioned';
+-- The rebuild must apply at BOTH validation sites: a target that names the source's implicit key
+-- column as a measure is legal (CREATE TABLE accepts it) and must not be rejected as an overlap.
+CREATE TABLE t_source_versioned_sum (k UInt32, sign Int8, ver UInt32)
+    ENGINE = VersionedCollapsingMergeTree(sign, ver) ORDER BY (k, sign);
+ALTER TABLE t_source_versioned_sum MODIFY ENGINE = SummingMergeTree(ver);
+DETACH TABLE t_source_versioned_sum;
+ATTACH TABLE t_source_versioned_sum;
+SELECT 'source versioned to summing', engine, sorting_key FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_source_versioned_sum';
+DROP TABLE t_source_versioned_sum;
+
 -- The same source engine still converts to a target that needs the version column in the key.
 ALTER TABLE t_source_versioned MODIFY ENGINE = ReplacingMergeTree(ver);
 DETACH TABLE t_source_versioned;

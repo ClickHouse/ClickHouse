@@ -21,17 +21,19 @@ $CLICKHOUSE_CLIENT --query="
 "
 
 set +e
-$CLICKHOUSE_CLIENT --query="
+alter_error=$($CLICKHOUSE_CLIENT --query="
     SET allow_experimental_alter_modify_engine = 1;
     ALTER TABLE t_modify_engine_rollback ADD COLUMN w UInt32, MODIFY ENGINE = ReplacingMergeTree(v);
-" 2>/dev/null
+" 2>&1)
 alter_status=$?
 set -e
 
 $CLICKHOUSE_CLIENT --query="SYSTEM DISABLE FAILPOINT mt_alter_throw_after_mutation_registered"
 
-if [ "$alter_status" -eq 0 ]; then
-    echo "FAIL: ALTER unexpectedly succeeded; the failpoint did not fire"
+# The ALTER must fail through the injected POST-COMMIT path. Accepting any failure would let an
+# unrelated pre-commit rejection satisfy the whole reference without ever rolling back.
+if [ "$alter_status" -eq 0 ] || ! echo "$alter_error" | grep -q "FAULT_INJECTED"; then
+    echo "FAIL: expected the injected post-commit failure, got status $alter_status: $alter_error"
     $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS t_modify_engine_rollback"
     exit 1
 fi

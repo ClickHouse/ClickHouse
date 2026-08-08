@@ -1849,11 +1849,13 @@ static void checkGraphiteSchema(const Graphite::Params & params, const StorageIn
     /// The rollup reads the time column with `IColumn::getUInt`, which only the integer-backed columns
     /// implement.
     WhichDataType which_time(recursiveRemoveLowCardinality(time_type));
-    if (!which_time.isNativeInteger() && !which_time.isEnum() && !which_time.isDateOrDate32() && !which_time.isDateTime())
+    /// `Time` is backed by ColumnVector<Int32> and reads fine; `Time64` is Decimal-backed and throws.
+    if (!which_time.isNativeInteger() && !which_time.isEnum() && !which_time.isDateOrDate32() && !which_time.isDateTime()
+        && !which_time.isTime())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The time column '{}' of GraphiteMergeTree must be an integer, `Enum`, `Date`, `Date32` or "
-            "`DateTime` column, got {}.",
+            "The time column '{}' of GraphiteMergeTree must be an integer, `Enum`, `Date`, `Date32`, "
+            "`DateTime` or `Time` column, got {}.",
             params.time_column_name, time_type->getName());
 
     if (!WhichDataType(value_type).isFloat64())
@@ -2301,6 +2303,29 @@ MergeTreeData::MergingParams MergeTreeData::MergingParams::parseFromEngineAST(
     return params;
 }
 
+/// The next load rebuilds the sorting key from the declared ORDER BY plus only the target engine's own
+/// additional column (VersionedCollapsingMergeTree is the only one that has any), so validating a target
+/// against the live key would both credit a source-only column and reject it as an overlap.
+static StorageInMemoryMetadata metadataWithTargetSortingKey(
+    const StorageInMemoryMetadata & metadata, const MergeTreeData::MergingParams & params, ContextPtr local_context)
+{
+    StorageInMemoryMetadata result = metadata;
+    if (!metadata.sorting_key.definition_ast)
+        return result;
+
+    NamesAndTypesList additional_columns;
+    if (params.mode == MergeTreeData::MergingParams::VersionedCollapsing
+        && metadata.columns.hasPhysical(params.version_column))
+        additional_columns.emplace_back(params.version_column, metadata.columns.getPhysical(params.version_column).type);
+
+    /// `KeyDescription::operator=` refuses to assign a key without additional_columns over one that has
+    /// them, which is exactly this case when the source engine contributed one.
+    result.sorting_key.additional_columns.clear();
+    result.sorting_key = KeyDescription::getKeyFromAST(
+        metadata.sorting_key.definition_ast, metadata.columns, metadata.virtuals, local_context, additional_columns);
+    return result;
+}
+
 void MergeTreeData::applyEngineModification(const ASTPtr & new_engine_ast, const StorageInMemoryMetadata & new_metadata, ContextPtr local_context)
 {
     const auto * engine_func = new_engine_ast->as<ASTFunction>();
@@ -2315,11 +2340,12 @@ void MergeTreeData::applyEngineModification(const ASTPtr & new_engine_ast, const
     new_params.setAllowTupleElementAggregationFromSettings(*getSettings());
     /// sanity_checks=true: MODIFY ENGINE picks an engine now, so this is create-time metadata rather than
     /// the grandfathering of legacy on-disk metadata that ATTACH does.
-    new_params.check(*getSettings(), new_metadata, /*sanity_checks=*/true);
+    auto metadata_for_engine = metadataWithTargetSortingKey(new_metadata, new_params, local_context);
+    new_params.check(*getSettings(), metadata_for_engine, /*sanity_checks=*/true);
 
     /// MergingParams::check has no Graphite branch; the rollup algorithm needs these columns at merge time.
     if (new_params.mode == MergingParams::Graphite)
-        checkGraphiteSchema(new_params.graphite_params, new_metadata);
+        checkGraphiteSchema(new_params.graphite_params, metadata_for_engine);
 
     LOG_INFO(log, "MODIFY ENGINE: merge semantics will change from {} to {} on next table load",
         merging_params.getModeName().empty() ? "MergeTree" : merging_params.getModeName(),
@@ -5208,28 +5234,8 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             MergingParams new_merging_params = MergingParams::parseFromEngineAST(engine_ast->name, engine_ast->arguments, local_context);
             /// parseFromEngineAST takes no settings, so derive the flag from the post-ALTER ones.
             new_merging_params.setAllowTupleElementAggregationFromSettings(*settings_for_check);
-            /// The next load rebuilds the sorting key from the declared ORDER BY plus only the TARGET's
-            /// own additional column, so validating against the live key would credit the source engine's
-            /// implicit one (only VersionedCollapsing has one) and miss a dimension it stops covering.
-            StorageInMemoryMetadata metadata_for_engine = metadata_for_check;
-            if (metadata_for_check.sorting_key.definition_ast)
-            {
-                NamesAndTypesList additional_columns;
-                if (new_merging_params.mode == MergingParams::VersionedCollapsing
-                    && metadata_for_check.columns.hasPhysical(new_merging_params.version_column))
-                    additional_columns.emplace_back(
-                        new_merging_params.version_column,
-                        metadata_for_check.columns.getPhysical(new_merging_params.version_column).type);
-                /// `KeyDescription::operator=` refuses to assign a key without additional_columns over one
-                /// that has them, which is exactly this case when the source engine contributed one.
-                metadata_for_engine.sorting_key.additional_columns.clear();
-                metadata_for_engine.sorting_key = KeyDescription::getKeyFromAST(
-                    metadata_for_check.sorting_key.definition_ast,
-                    metadata_for_check.columns,
-                    metadata_for_check.virtuals,
-                    local_context,
-                    additional_columns);
-            }
+            auto metadata_for_engine
+                = metadataWithTargetSortingKey(metadata_for_check, new_merging_params, local_context);
 
             /// sanity_checks=true: MODIFY ENGINE picks an engine now, so this is create-time metadata rather
             /// than the grandfathering of legacy on-disk metadata that ATTACH does.

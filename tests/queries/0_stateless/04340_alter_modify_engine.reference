@@ -44,8 +44,11 @@ graphite lc array path rejected	MergeTree	1
 graphite fixed array path rollup	[1,2]	2020-01-01 00:00:00	6	2
 graphite fixedstring path rollup	max_a	2020-01-01 00:00:00	6	2
 graphite lowcardinality path rollup	max_a	2020-01-01 00:00:00	6	2
+graphite time Time rollup	max_a	00:00:00	6	2
+graphite time Time64 rejected	MergeTree
 graphite enum time rollup	max_a	rounded	6	2
 source versioned dimension rejected	VersionedCollapsingMergeTree
+source versioned to summing	SummingMergeTree	k, sign
 source versioned to replacing	ReplacingMergeTree	k, sign
 temporary rejected	ENGINE = MergeTree
 graphite nullable version accepted	max_a	2020-01-01 00:00:00	1	\N
