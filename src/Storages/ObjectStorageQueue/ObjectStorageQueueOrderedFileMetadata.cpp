@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/Parser.h>
@@ -24,6 +25,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNEXPECTED_ZOOKEEPER_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char object_storage_queue_ordered_pause_before_set_processing_multi[];
 }
 
 namespace
@@ -767,6 +773,11 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             return {false, FileStatus::State::Processed};
         }
 
+        /// Test-only: park between the initial state read and the multi request, so a test can
+        /// create the `failed` node in this window and exercise the reread of a node which
+        /// appeared after the initial read.
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_ordered_pause_before_set_processing_multi);
+
         Coordination::Requests requests;
 
         /// 1. check failed node does not exist
@@ -825,7 +836,12 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         LOG_DEBUG(log, "Code: {}, failed idx: {}, failed path: {}", code, failed_idx, failed_path);
 
         if (has_request_failed(failed_path_doesnt_exist_idx))
-            return {false, FileStatus::State::Failed};
+        {
+            /// The `failed` node appeared after the initial read: reread the state so the
+            /// exception and retries of that node reach the cached record via `terminal_state`.
+            LOG_TEST(log, "Failed node for {} appeared during set-processing, rereading it", path);
+            continue;
+        }
 
         if (has_request_failed(create_processing_path_idx))
             return {false, FileStatus::State::Processing};

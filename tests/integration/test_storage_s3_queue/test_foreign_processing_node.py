@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import logging
 import time
@@ -560,6 +561,114 @@ def test_ttl_bounds_retry_latency_on_idle_queue(started_cluster):
         # well before the two-minute polling backoff.
         run_with_retry(lambda x: x == 1, get_count, retries=45)
     finally:
+        node.query(
+            f"""
+        DROP TABLE IF EXISTS {dst_table_name};
+        DROP TABLE IF EXISTS {table_name};
+        """
+        )
+
+
+SET_PROCESSING_PAUSE_FAILPOINT = (
+    "object_storage_queue_ordered_pause_before_set_processing_multi"
+)
+
+
+def wait_failpoint_paused(node, failpoint, timeout=60):
+    """Block until a background thread parks at `failpoint`.
+
+    `SYSTEM WAIT FAILPOINT ... PAUSE` blocks, so it runs on a worker thread: a failpoint
+    that is never reached must fail the test rather than hang it."""
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+    done, _ = concurrent.futures.wait([future], timeout=timeout)
+    if not done:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise AssertionError(f"failpoint {failpoint} was not reached within {timeout}s")
+    pool.shutdown(wait=False)
+    future.result()
+
+
+def test_failed_node_appearing_during_set_processing_in_ordered_mode(started_cluster):
+    """The payload of a `failed` node which appears in the set-processing race window is kept.
+
+    `ObjectStorageQueueOrderedFileMetadata::setProcessingImpl` reads the file state first,
+    and then submits a multi request which includes a check that the `failed` node does not
+    exist. When another processor fails the file between the two, the multi fails on that
+    check and the state must be reread: returning a bare `Failed` would write a record with
+    no exception and zero retries into the file status cache, and the write-back guards
+    would then keep the wrong record forever, because the cached state already matches the
+    state of the node in keeper.
+
+    The window cannot be hit deterministically from outside, so a failpoint parks the
+    set-processing attempt between the initial read and the multi request.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_ordered_set_processing_race_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    generate_random_files(started_cluster, files_path, 1, start_ind=0, row_num=1)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_loading_retries": 3,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 0,
+        },
+    )
+
+    conflict_file = f"{files_path}/test_0.csv"
+    conflict_node = node.query(f"SELECT sipHash64('{conflict_file}')").strip()
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {SET_PROCESSING_PAUSE_FAILPOINT}")
+    try:
+        create_mv(node, table_name, dst_table_name)
+
+        # The only file of the queue parks at the failpoint: the initial state read saw
+        # neither a `processed` nor a `failed` node.
+        wait_failpoint_paused(node, SET_PROCESSING_PAUSE_FAILPOINT)
+
+        # Another processor fails the file inside the race window. The retries have been
+        # exhausted (`s3queue_loading_retries` is 3), so the state is terminal.
+        zk.ensure_path(f"{keeper_path}/failed")
+        zk.create(
+            f"{keeper_path}/failed/{conflict_node}",
+            json.dumps(
+                {
+                    "file_path": conflict_file,
+                    "last_processed_timestamp": int(time.time()),
+                    "last_exception": "Cannot parse the file",
+                    "retries": 3,
+                    "processor_id": "0",
+                }
+            ).encode(),
+        )
+
+        node.query(f"SYSTEM DISABLE FAILPOINT {SET_PROCESSING_PAUSE_FAILPOINT}")
+
+        # The cached record follows the `failed` node, including its payload.
+        def get_cached_record():
+            return node.query(
+                f"SELECT status, exception FROM system.s3queue_metadata_cache "
+                f"WHERE file_path LIKE '%{conflict_file}'"
+            ).strip()
+
+        run_with_retry(lambda x: x == "Failed\tCannot parse the file", get_cached_record)
+
+        # The file failed by the other processor was not ingested.
+        assert node.query(f"SELECT count() FROM {dst_table_name}").strip() == "0"
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {SET_PROCESSING_PAUSE_FAILPOINT}")
         node.query(
             f"""
         DROP TABLE IF EXISTS {dst_table_name};
