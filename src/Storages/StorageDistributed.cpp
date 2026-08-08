@@ -2520,9 +2520,13 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
         /// of the CREATE - the same freezing rule `bindLeadingDatabaseNameArgument` applies. With the
         /// argument omitted entirely the parsed target is the fixed `system.one` placeholder, which does
         /// not depend on the session. A table function in this position is bound by the recursive walk
-        /// instead, and a `key = value` override of the named-collection form of `remote` is not a
-        /// database argument at all, so both are left as is - as is any argument that does not evaluate
-        /// to a string, for the function's own `parseArguments` to reject.
+        /// instead, and any argument that does not evaluate to a string is left as is, for the function's
+        /// own `parseArguments` to reject. In the named-collection form of `remote` (a `key = value`
+        /// second argument) the database is named by a `database = ...` / `db = ...` override instead:
+        /// `parseRemoteFunctionArguments` resolves such an override through
+        /// `evaluateConstantExpressionForDatabaseName` at read time too, so a persisted
+        /// `remote(nc, database = '', table = 'src')` is just as session-dependent as the positional
+        /// spelling and its override value is folded and frozen by the same rule.
         std::optional<size_t> database_arg_index;
         for (size_t i = 0, positional_index = 0; i < args.size(); ++i)
         {
@@ -2540,10 +2544,44 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
 
         ASTPtr & database_arg = args.at(*database_arg_index);
         if (const auto * argument_function = database_arg->as<ASTFunction>();
-            argument_function
-            && (argument_function->name == "equals"
-                || TableFunctionFactory::instance().isTableFunctionName(argument_function->name)))
+            argument_function && TableFunctionFactory::instance().isTableFunctionName(argument_function->name))
             return;
+
+        if (const auto * argument_function = database_arg->as<ASTFunction>();
+            argument_function && argument_function->name == "equals")
+        {
+            /// Named-collection form: every argument after the collection name is a `key = value`
+            /// override. Bind the `database` / `db` override the same way as the positional database
+            /// argument. A table function as the override value is the named-collection spelling of
+            /// `remote('addr', table_function())` and is bound by the recursive walk instead.
+            for (ASTPtr & override_arg : args)
+            {
+                const auto * override_function = override_arg->as<ASTFunction>();
+                if (!override_function || override_function->name != "equals" || !override_function->arguments
+                    || override_function->arguments->children.size() != 2)
+                    continue;
+
+                const auto * key_identifier = override_function->arguments->children[0]->as<ASTIdentifier>();
+                if (!key_identifier || (key_identifier->name() != "database" && key_identifier->name() != "db"))
+                    continue;
+
+                ASTPtr & override_value = override_function->arguments->children[1];
+                if (const auto * value_function = override_value->as<ASTFunction>();
+                    value_function && TableFunctionFactory::instance().isTableFunctionName(value_function->name))
+                    continue;
+
+                ASTPtr evaluated_value = evaluateConstantExpressionOrIdentifierAsLiteral(override_value, local_context);
+                const auto * value_literal = evaluated_value->as<ASTLiteral>();
+                if (!value_literal || value_literal->value.getType() != Field::Types::String)
+                    continue;
+
+                if (value_literal->value.safeGet<String>().empty())
+                    override_value = make_intrusive<ASTLiteral>(local_context->getCurrentDatabase());
+                else
+                    override_value = evaluated_value;
+            }
+            return;
+        }
 
         ASTPtr evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(database_arg, local_context);
         const auto * literal = evaluated->as<ASTLiteral>();
@@ -2928,7 +2966,7 @@ CREATE TABLE distributed_numbers ENGINE = Distributed(logs, numbers(100));
 
 The second argument is treated as a table function only when it is a call to a registered table function (such as `numbers`, `remote`, or `merge`); any other expression is interpreted as a database name, so the existing `Distributed(cluster, database, table, ...)` form is unaffected.
 
-The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` is replaced with its value, and an omitted database of a table function that would otherwise resolve it at query time (`dictionary`, the single-argument `merge`, `loop`, `timeSeriesSamples`/`timeSeriesData`/`timeSeriesTags`/`timeSeriesMetrics`, `timeSeriesSelector`, `prometheusQuery`, `prometheusQueryRange`, and an empty database argument of `remote`/`remoteSecure`/`cluster`/`clusterAllReplicas`, e.g. `remote('127.0.0.1', '', 'table')`) is filled in with the current database. The qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
+The table function is bound to the current database at `CREATE` time: unqualified table identifiers and the table name argument of `dictGet` and `joinGet` inside it are qualified with the current database, `currentDatabase()` is replaced with its value, and an omitted database of a table function that would otherwise resolve it at query time (`dictionary`, the single-argument `merge`, `loop`, `timeSeriesSamples`/`timeSeriesData`/`timeSeriesTags`/`timeSeriesMetrics`, `timeSeriesSelector`, `prometheusQuery`, `prometheusQueryRange`, and an empty database argument of `remote`/`remoteSecure`/`cluster`/`clusterAllReplicas`, positional or a named-collection `database`/`db` override, e.g. `remote('127.0.0.1', '', 'table')` or `remote(collection, database = '', table = 'table')`) is filled in with the current database. The qualified form is stored in the table metadata. Queries therefore read the same target regardless of the current database of the querying session, in the same way as the `database` argument of the classic form is evaluated once at `CREATE` time.
 
 :::note Read-only
 A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key` and the `INSERT`-related settings and behaviour described below therefore do not apply to it, and the `policy_name` parameter is not accepted for this form (it would only be used to store temporary files for background `INSERT`s).

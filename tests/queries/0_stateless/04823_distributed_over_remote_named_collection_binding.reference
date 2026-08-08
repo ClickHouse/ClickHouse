@@ -1,0 +1,10 @@
+CREATE TABLE default.dist_nc_database\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', remote(nc_04823_binding, database = \'default\', `table` = \'bind_src\'))
+CREATE TABLE default.dist_nc_db\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', remote(nc_04823_binding, db = \'default\', `table` = \'bind_src\'))
+CREATE TABLE default.dist_nc_expression\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', remote(nc_04823_binding, database = \'default\', `table` = \'bind_src\'))
+6
+6
+6
+6
+6
+6
+6
