@@ -1394,6 +1394,11 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     remove_requests.reserve(keeper_multi_batch_size);
     remove_responses.reserve(keeper_multi_batch_size);
 
+    /// Track file paths corresponding to remove requests for success-based cache invalidation.
+    /// Parallel to remove_requests: batch_file_paths[i] is the file_path for remove_requests[i].
+    std::vector<std::string> batch_file_paths;
+    batch_file_paths.reserve(keeper_multi_batch_size);
+
     size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded
         ? nodes.size() - nodes_limit
         : 0;
@@ -1407,15 +1412,25 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
 
         if (code == Coordination::Error::ZOK)
         {
+            /// Full batch succeeded - clear cache for all requests in this batch
+            for (const auto & file_path : batch_file_paths)
+            {
+                local_file_statuses.remove(getMetadataCacheKey(file_path));
+            }
+
             if (node_limit)
                 nodes_to_remove -= remove_requests.size();
         }
         else
         {
+            /// Partial success: reconcile individual responses.
+            /// Clear cache only for nodes that were successfully deleted.
             for (size_t i = 0; i < remove_requests.size(); ++i)
             {
                 if (remove_responses[i]->error == Coordination::Error::ZOK)
                 {
+                    local_file_statuses.remove(getMetadataCacheKey(batch_file_paths[i]));
+
                     if (node_limit)
                         --nodes_to_remove;
                 }
@@ -1430,6 +1445,8 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
                     });
                     if (code == Coordination::Error::ZOK)
                     {
+                        local_file_statuses.remove(getMetadataCacheKey(batch_file_paths[i]));
+
                         if (node_limit)
                             --nodes_to_remove;
                     }
@@ -1446,6 +1463,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         }
 
         remove_requests.clear();
+        batch_file_paths.clear();
     };
 
     for (const auto & node : sorted_nodes)
@@ -1455,7 +1473,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
             LOG_TRACE(log, "Removing node at path {} ({}) because max files limit is reached",
                      node.metadata.file_path, node.zk_path);
 
-            local_file_statuses.remove(getMetadataCacheKey(node.metadata.file_path));
+            batch_file_paths.push_back(node.metadata.file_path);
             remove_requests.push_back(zkutil::makeRemoveRequest(node.zk_path, -1));
             /// we either reach max multi batch size OR we already added maximum amount of nodes we want to delete based on the node limit
             if (remove_requests.size() == keeper_multi_batch_size || remove_requests.size() == nodes_to_remove)
@@ -1469,7 +1487,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
                 LOG_TRACE(log, "Removing node at path {} ({}) because file ttl is reached",
                         node.metadata.file_path, node.zk_path);
 
-                local_file_statuses.remove(getMetadataCacheKey(node.metadata.file_path));
+                batch_file_paths.push_back(node.metadata.file_path);
                 remove_requests.push_back(zkutil::makeRemoveRequest(node.zk_path, -1));
                 if (remove_requests.size() == keeper_multi_batch_size)
                     remove_nodes(/*node_limit=*/false);
