@@ -3891,13 +3891,13 @@ void MergeTreeData::reclaimStaleTemporaryPartDirectory(const DiskPtr & disk, con
     fiu_do_on(FailPoints::claim_inject_stale_part_dir,
     {
         auto injected_part_dir = fs::path(relative_data_path) / part_dir_name;
-        disk->createDirectories(injected_part_dir);
-        auto out = disk->writeFile(injected_part_dir / "stale_dummy_file.txt");
+        disk->createDirectories(pathToGenericString(injected_part_dir));
+        auto out = disk->writeFile(pathToGenericString(injected_part_dir / "stale_dummy_file.txt"));
         writeString("stale", *out);
         out->finalize();
     });
 
-    String relative_part_dir = fs::path(relative_data_path) / part_dir_name;
+    String relative_part_dir = pathToGenericString(fs::path(relative_data_path) / part_dir_name);
     if (!disk->existsDirectory(relative_part_dir))
         return;
 
