@@ -70,6 +70,26 @@ def get_lcov_summary(
     )
 
 
+COVERAGE_DROP_TOLERANCE = 0.3
+
+
+def coverage_drop(baseline_cov: float, current_cov: float) -> float:
+    """Return the line coverage drop in pp, rounded to two decimals.
+
+    In practice lcov reports these percentages with one decimal, so subtracting
+    two of them can land just above the tolerance:
+    `84.4 - 84.1 == 0.30000000000001137`, which made a drop exactly equal to the
+    tolerance fail the check below. Rounding to two decimals is finer than the
+    reported precision, so a drop lcov can actually express is never masked.
+    """
+    return round(baseline_cov - current_cov, 2)
+
+
+def coverage_degraded(drop: float) -> bool:
+    """A drop equal to the tolerance is allowed, as the gate's message states."""
+    return drop > COVERAGE_DROP_TOLERANCE
+
+
 def collect_html_report_files(
     folder_path: str, entry_point: str = "index.html"
 ) -> tuple[list[str], list[str]]:
@@ -240,11 +260,11 @@ if __name__ == "__main__":
             print(f"Current coverage  : {c_line_cov:.2f}%")
             print(f"Delta             : {delta:+.2f}%")
 
-            TOLERANCE = 0.3
-            if b_line_cov - c_line_cov > TOLERANCE:
+            _drop = coverage_drop(b_line_cov, c_line_cov)
+            if coverage_degraded(_drop):
                 _failure_msg = (
                     f"Coverage degraded: master {b_line_cov:.2f}% → PR {c_line_cov:.2f}%"
-                    f" (dropped {b_line_cov - c_line_cov:.2f} pp, tolerance {TOLERANCE} pp)"
+                    f" (dropped {_drop:.2f} pp, tolerance {COVERAGE_DROP_TOLERANCE} pp)"
                 )
                 print(_failure_msg)
                 diff_res.info = _failure_msg

@@ -1439,6 +1439,14 @@
             display: none;
         }
 
+        /* The two run buttons form a pair, so the space between them matches the space to the
+           left of the first one (#main's 0.5rem padding) rather than the 1rem gap that separates
+           the unrelated controls in #run_div. The margin adds to the flex gap, hence -0.5rem. */
+        #run + #run-all
+        {
+            margin-left: -0.5rem;
+        }
+
         #run:hover, #run:focus, #run-all:hover, #run-all:focus, #copy-div:hover, #copy-div:focus, #download-div:hover, #download-div:focus
         {
             color: var(--button-active-text-color);
@@ -5775,7 +5783,9 @@ function showImagePreview(url, owner) {
 /// following the cursor while it moves, and hide it when the cursor leaves. `owner` is the
 /// result element the link belongs to, so the preview can be torn down with that result.
 function attachImagePreview(link, url, owner) {
-    link.title = 'Ctrl+hover (Cmd+hover on Mac) to preview this image';
+    /// The gesture is opt-in, so it has to be discoverable: the tooltip shown while the
+    /// cursor rests on the link is what tells the user the modifier reveals a preview.
+    link.title = 'Ctrl/Cmd for preview';
     link.addEventListener('mouseenter', (event) => {
         image_preview_x = event.clientX;
         image_preview_y = event.clientY;

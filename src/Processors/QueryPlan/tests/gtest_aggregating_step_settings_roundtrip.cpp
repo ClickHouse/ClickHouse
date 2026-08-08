@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -29,7 +30,7 @@ namespace
 bool roundTripSerializeStringWithZeroByte(const IQueryPlanStep & step)
 {
     QueryPlanSerializationSettings written;
-    step.serializeSettings(written);
+    step.serializeSettings(written, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
     WriteBufferFromOwnString out;
     written.writeChangedBinary(out);
@@ -49,7 +50,7 @@ SharedHeader makeHeader()
 
 Aggregator::Params makeParams(bool serialize_string_with_zero_byte)
 {
-    /// Merge-only constructor; the last argument is the field under test.
+    /// Merge-only constructor.
     return Aggregator::Params(
         Names{"k"},
         AggregateDescriptions{},
@@ -57,7 +58,8 @@ Aggregator::Params makeParams(bool serialize_string_with_zero_byte)
         /*max_threads=*/1,
         /*max_block_size=*/65536,
         /*min_hit_rate_to_use_consecutive_keys_optimization=*/0.5f,
-        serialize_string_with_zero_byte);
+        serialize_string_with_zero_byte,
+        /*enable_packed_string_keys=*/true);
 }
 
 std::unique_ptr<AggregatingStep> makeAggregatingStep(bool serialize_string_with_zero_byte)

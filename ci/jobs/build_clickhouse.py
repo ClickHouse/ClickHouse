@@ -2,7 +2,7 @@ import argparse
 import os
 import shutil
 
-from ci.defs.defs import BuildTypes, ToolSet, chcache_secret
+from ci.defs.defs import BuildTypes, ToolSet
 from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -149,13 +149,6 @@ def setup_build_caches_env(info):
         # master/release builds (pr_number == 0) are allowed to write entries.
         if info.pr_number > 0:
             os.environ["CTCACHE_S3_READ_ONLY"] = "true"
-
-        os.environ["CH_HOSTNAME"] = (
-            "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        )
-        os.environ["CH_USER"] = "ci_builder"
-        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
-        os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
 
 def main():
