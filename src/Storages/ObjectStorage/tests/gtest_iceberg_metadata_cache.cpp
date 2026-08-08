@@ -287,22 +287,17 @@ TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentHdfsAuthorityWithSamePat
     EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://nn1:8020/warehouse/table", table_namespace, "warehouse/table", "hdfs"));
 }
 
-TEST(IcebergMetadataCache, LocationDoesNotMatchSchemelessDefaultWriteWhenNamespaceIsUnverifiable)
+TEST(IcebergMetadataCache, LocationMatchesSchemelessDefaultWriteRegardlessOfNamespace)
 {
     // With `write_full_path_in_iceberg_metadata = 0` (the default), ClickHouse writes a schemeless
-    // `location` regardless of backend. Two different tables in different buckets/containers with
-    // the same key path would then produce the *same* schemeless location, so a stale
-    // `catalog_uuid_hint` colliding with another table's UUID must not be accepted just because
-    // the key path matches: a schemeless location carries no authority to check `table_namespace`
-    // against, so it must miss (fall back to a cold read) whenever there is a namespace to verify.
-    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("warehouse/table", "bucket", "warehouse/table", "s3"));
-    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/table", "container", "warehouse/table", "azure"));
-}
-
-TEST(IcebergMetadataCache, LocationMatchesSchemelessDefaultWriteWhenNamespaceIsEmpty)
-{
-    // When there is genuinely nothing to validate (e.g. HDFS with no derivable raw-URI authority,
-    // or Local), a schemeless location is still accepted.
+    // `location` regardless of backend, so it carries no authority to check `table_namespace`
+    // against. That is fine: the only caller of `cachedLocationMatchesTableRoot` probes the cache
+    // with a key that already includes the physical backend identity
+    // (`IObjectStorageConfiguration::getDataSourceDescription`, encoding the bucket/container), so
+    // a cache hit can only come from a write made by a table on the exact same backend -- the
+    // `table_namespace` argument no longer needs to be re-validated here.
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("warehouse/table", "bucket", "warehouse/table", "s3"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/table", "container", "warehouse/table", "azure"));
     EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/table", "", "warehouse/table", "hdfs"));
 }
 
