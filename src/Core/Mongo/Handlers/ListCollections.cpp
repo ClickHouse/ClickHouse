@@ -13,6 +13,7 @@
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LIMIT_EXCEEDED;
 }
 
 namespace DB::MongoProtocol
@@ -77,6 +78,19 @@ std::vector<Document> ListCollectionsHandler::handle(
             ++index;
             bson_append_document(&first_batch, key_str.c_str(), static_cast<int>(key_str.size()), &collection_doc);
             bson_destroy(&collection_doc);
+
+            /// The reply is one BSON document, and a reply larger than the `maxBsonObjectSize`
+            /// advertised by `isMaster` must be rejected rather than sent: there is no `getMore`
+            /// to split it over. The length of the batch under construction is live while its
+            /// writer is open; the envelope around it is checked below, once the reply is whole.
+            if (first_batch.len > MAX_BSON_OBJECT_SIZE)
+            {
+                bson_destroy(&cursor);
+                throw Exception(
+                    ErrorCodes::LIMIT_EXCEEDED,
+                    "The list of collections is larger than the largest reply that can be sent ({} bytes)",
+                    MAX_BSON_OBJECT_SIZE);
+            }
         }
 
         bson_append_array_end(&cursor, &first_batch);
@@ -89,6 +103,15 @@ std::vector<Document> ListCollectionsHandler::handle(
     BSON_APPEND_DOCUMENT(result_doc, "cursor", &cursor);
     BSON_APPEND_DOUBLE(result_doc, "ok", 1.0);
     bson_destroy(&cursor);
+
+    if (result_doc->len > MAX_BSON_OBJECT_SIZE)
+    {
+        bson_destroy(result_doc);
+        throw Exception(
+            ErrorCodes::LIMIT_EXCEEDED,
+            "The list of collections is larger than the largest reply that can be sent ({} bytes)",
+            MAX_BSON_OBJECT_SIZE);
+    }
 
     std::vector<Document> result;
     result.emplace_back(result_doc);
