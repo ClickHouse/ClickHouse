@@ -41,12 +41,12 @@ CROSS JOIN merged;
 
 -- The value type represents signed decay curves and addition preserves cancellation.
 WITH
-    exponentialTimeDecayingFloat64(-8, toFloat64(0), 10) AS a,
-    exponentialTimeDecayingFloat64(4, toFloat64(10), 10) AS b,
+    exponentialTimeDecayingFloat64(10)(-8, toFloat64(0)) AS a,
+    exponentialTimeDecayingFloat64(10)(4, toFloat64(10)) AS b,
     a + b AS c
 SELECT
     toTypeName(c),
     round(tupleElement(c, 'value'), 6),
     tupleElement(c, 'time'),
-    round(tupleElement(c, 'decay_length'), 6),
+    round(exponentialTimeDecayingDecayLength(c), 6),
     round(exponentialTimeDecayingValueAt(c, toFloat64(20)), 6);
