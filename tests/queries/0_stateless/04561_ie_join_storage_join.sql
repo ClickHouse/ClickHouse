@@ -7,6 +7,8 @@ DROP TABLE IF EXISTS ie_sj_left;
 DROP TABLE IF EXISTS ie_sj_inner;
 DROP TABLE IF EXISTS ie_sj_left_eng;
 SET join_algorithm = 'ie_join,hash';
+-- Parallel replicas plan these joins without the storage-join path, so the expected errors below do not fire
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS ie_sj_left;
 DROP TABLE IF EXISTS ie_sj_inner;
