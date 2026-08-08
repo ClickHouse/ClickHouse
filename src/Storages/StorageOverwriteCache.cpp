@@ -451,15 +451,17 @@ protected:
         for (size_t i = 0; i < columns.size(); ++i)
             columns[i] = header.getByPosition(i).type->createColumn();
 
-        StorageOverwriteCache::RowDataPtrs rows;
-        rows.reserve(std::min(max_block_size, entry_ids.size() - offset));
-        while (offset < entry_ids.size() && rows.size() < max_block_size)
+        /// The pins this batch takes stay owned until the next batch clears them, which is after the
+        /// values below have been copied out of the segments they address.
+        rows.clear();
+        /// A batch resolves to nothing when every identifier in it was tombstoned by a `DELETE` whose
+        /// posting entries are not pruned yet. An empty chunk ends the source, so keep taking batches
+        /// until one of them holds a row or the identifiers run out.
+        while (rows.empty() && offset < entry_ids.size())
         {
-            if ((offset & 4095) == 0 && CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while resolving `OverwriteCache` rows");
-            if (auto row = storage.resolveEntry(entry_ids[offset], read_guard->generation()))
-                rows.push_back(std::move(*row));
-            ++offset;
+            const size_t take = std::min(max_block_size, entry_ids.size() - offset);
+            storage.resolveEntries(entry_ids.data() + offset, take, read_guard->generation(), rows);
+            offset += take;
         }
 
         if (rows.empty())
@@ -478,7 +480,7 @@ protected:
             while (begin < rows.size())
             {
                 size_t end = begin + 1;
-                while (end < rows.size() && rows[end].segment.get() == rows[begin].segment.get()
+                while (end < rows.size() && rows[end].segment == rows[begin].segment
                        && rows[end].segment_row == rows[end - 1].segment_row + 1)
                     ++end;
 
@@ -506,6 +508,7 @@ private:
     const StorageOverwriteCache & storage;
     StorageOverwriteCache::ReadGuardPtr read_guard;
     std::vector<StorageOverwriteCache::EntryId> entry_ids;
+    StorageOverwriteCache::ResolvedRows rows;
     StorageOverwriteCache::SegmentColumnCache segment_columns;
     std::vector<size_t> positions;
     size_t max_block_size;
@@ -1413,7 +1416,7 @@ void StorageOverwriteCache::drainReaders()
 
 size_t StorageOverwriteCache::rowLockIndex(EntryId entry_id) const
 {
-    return std::hash<EntryId>{}(entry_id) % row_lock_count;
+    return (entry_id / row_lock_stripe) % row_lock_count;
 }
 
 std::optional<StorageOverwriteCache::EntryId> StorageOverwriteCache::findEntry(std::string_view key, size_t hash) const
@@ -1441,6 +1444,54 @@ StorageOverwriteCache::RowDataPtr StorageOverwriteCache::resolveEntry(EntryId en
         return version->row;
     }
     return {};
+}
+
+void StorageOverwriteCache::resolveEntries(
+    const EntryId * entry_ids, size_t count, UInt64 snapshot_generation, ResolvedRows & result) const
+{
+    size_t position = 0;
+    /// Asking whether the query was cancelled takes a shared owner of the thread group, which every
+    /// reading thread contends for, so it is asked once per this many rows rather than once per run.
+    constexpr size_t rows_per_cancellation_check = 4096;
+    size_t next_cancellation_check = 0;
+    while (position < count)
+    {
+        if (position >= next_cancellation_check)
+        {
+            if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while resolving `OverwriteCache` rows");
+            next_cancellation_check = position + rows_per_cancellation_check;
+        }
+
+        /// The identifiers are sorted and the stripe is a function of the identifier's range, so the
+        /// entries guarded by one lock form a contiguous run that a single acquisition covers.
+        const size_t stripe = rowLockIndex(entry_ids[position]);
+        size_t end = position + 1;
+        while (end < count && rowLockIndex(entry_ids[end]) == stripe)
+            ++end;
+
+        std::shared_lock row_lock(row_mutexes[stripe]);
+        for (size_t index = position; index < end; ++index)
+        {
+            const EntryId entry_id = entry_ids[index];
+            if (entry_id == 0 || entry_id > entries.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted `OverwriteCache` entry identifier");
+            for (const auto * version = entries.at(entry_id).head.get(); version; version = version->older.get())
+            {
+                if (version->generation > snapshot_generation)
+                    continue;
+                /// A version without a segment is the tombstone left by `DELETE`. The key is gone as of
+                /// this snapshot, so older versions must not be consulted.
+                if (!version->row.segment)
+                    break;
+                /// The owning reference is taken while this lock still holds, so the segment cannot be
+                /// released between being read here and being pinned.
+                result.add(version->row.segment, version->row.segment_row);
+                break;
+            }
+        }
+        position = end;
+    }
 }
 
 void StorageOverwriteCache::insertBlock(const Block & input_block)

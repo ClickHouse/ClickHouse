@@ -107,6 +107,55 @@ public:
 
     using RowDataPtr = std::optional<RowData>;
     using RowDataPtrs = std::vector<RowData>;
+
+    /// A resolved row addressed by a borrowed segment pointer. The batch it belongs to owns one
+    /// reference per distinct segment, so reaching the row itself costs no reference count.
+    struct ResolvedRow
+    {
+        const RowSegment * segment = nullptr;
+        UInt32 segment_row = 0;
+    };
+
+    /// The rows one batch of entry identifiers resolved to, with the segments they live in kept alive
+    /// for as long as the batch. A reference count per row would make every reading thread write to the
+    /// same segment control block, and a batch normally spans a handful of segments.
+    class ResolvedRows
+    {
+    public:
+        void clear()
+        {
+            rows.clear();
+            pins.clear();
+            pinned.clear();
+            last_pinned = nullptr;
+        }
+
+        bool empty() const { return rows.empty(); }
+        size_t size() const { return rows.size(); }
+        const ResolvedRow & operator[](size_t position) const { return rows[position]; }
+
+        /// Records one resolved row, taking an owning reference to its segment the first time the batch
+        /// reaches it. Must be called while the row lock that produced `segment` is still held.
+        void add(const std::shared_ptr<RowSegment> & segment, UInt32 segment_row)
+        {
+            const auto * raw = segment.get();
+            if (raw != last_pinned)
+            {
+                if (pinned.insert(raw).second)
+                    pins.push_back(segment);
+                last_pinned = raw;
+            }
+            rows.push_back({raw, segment_row});
+        }
+
+    private:
+        std::vector<ResolvedRow> rows;
+        std::vector<std::shared_ptr<RowSegment>> pins;
+        std::unordered_set<const RowSegment *> pinned;
+        /// Rows of one batch arrive clustered by segment, so the set is consulted once per segment.
+        const RowSegment * last_pinned = nullptr;
+    };
+
     class ReadGuard
     {
     public:
@@ -221,6 +270,10 @@ public:
     ReadResult getRowsForPrimaryKeys(const std::vector<String> & serialized_keys) const;
     ReadResult getRowsForLookupRequests(const std::vector<LookupRequest> & requests) const;
     RowDataPtr resolveEntry(EntryId entry_id, UInt64 snapshot_generation) const;
+    /// Resolves a sorted range of entry identifiers against one snapshot, appending to `result`.
+    /// Identifiers that share a row-lock stripe are contiguous once sorted, so the whole run is
+    /// resolved under one acquisition instead of one per row.
+    void resolveEntries(const EntryId * entry_ids, size_t count, UInt64 snapshot_generation, ResolvedRows & result) const;
     size_t getColumnPosition(const String & column_name) const;
     void insertValueIntoColumn(const RowData & row, size_t position, IColumn & column, SegmentColumnCache & cache) const;
 
@@ -337,6 +390,11 @@ private:
     static constexpr size_t primary_shard_count = 256;
     static constexpr size_t posting_shard_count = 256;
     static constexpr size_t row_lock_count = 4096;
+    /// Entries a publication allocates are consecutive and a read walks identifiers in that order, so
+    /// striping the row locks by range lets one acquisition cover a run of rows where hashing the
+    /// identifier scattered every neighbour onto a different lock. No path holds two row locks at the
+    /// same time, so letting distinct entries share one cannot introduce a deadlock.
+    static constexpr size_t row_lock_stripe = 64;
     static constexpr size_t snapshot_shard_count = 64;
     static_assert(primary_shard_count == 256 && posting_shard_count == 256, "shardIndex takes the top eight hash bits");
 
