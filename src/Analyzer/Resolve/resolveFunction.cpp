@@ -1615,7 +1615,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     }
                     else
                         tuple_args = {fn_args[1]};
-                    const bool left_is_null = isNullConstant(in_first_argument);
+                    /// A left-hand side of type `Nullable(Nothing)`, such as `materialize(NULL)`,
+                    /// is `NULL` in every row, so it follows the same rewrites as a literal `NULL`.
+                    const bool left_is_null = isNullConstant(in_first_argument) || in_first_argument->getResultType()->onlyNull();
 
                     /// Preserve NULL result for NULL IN (tuple) when NULLs are not compared.
                     /// When NULLs are compared, fall through to the regular `has` rewrite

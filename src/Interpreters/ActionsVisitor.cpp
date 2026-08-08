@@ -396,7 +396,8 @@ ASTPtr makeNonConstantInReplacement(
     bool include_right_operand_tuple_value,
     const DataTypePtr & right_operand_type,
     bool left_operand_is_tuple,
-    size_t left_operand_tuple_size)
+    size_t left_operand_tuple_size,
+    bool left_operand_is_always_null)
 {
     const auto & arguments = node.arguments->children;
     const auto & left_operand = arguments.at(0);
@@ -408,8 +409,11 @@ ASTPtr makeNonConstantInReplacement(
     /// `array(...)` of the elements, which could fail with `NO_COMMON_TYPE` for a
     /// heterogeneous RHS. An array RHS keeps the `has` rewrite: `has(arr, NULL)` already
     /// tests `NULL` presence and the array has a common element type by construction.
+    /// A left-hand side of type `Nullable(Nothing)`, such as `materialize(NULL)`, is `NULL`
+    /// in every row and follows the same rewrite as a literal `NULL`.
     const auto * left_literal = left_operand->as<ASTLiteral>();
-    if (left_literal && left_literal->value.isNull() && inFunctionComparesNulls(node.name) && !right_operand_is_array)
+    const bool left_operand_is_null = (left_literal && left_literal->value.isNull()) || left_operand_is_always_null;
+    if (left_operand_is_null && inFunctionComparesNulls(node.name) && !right_operand_is_array)
     {
         ASTPtr null_presence;
         auto add_element_is_null = [&](ASTPtr element)
@@ -1162,7 +1166,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         include_right_argument_tuple_value,
                         right_argument_type,
                         left_argument_is_tuple,
-                        getTupleElementCount(left_argument_type, node.arguments->children.at(0)));
+                        getTupleElementCount(left_argument_type, node.arguments->children.at(0)),
+                        left_argument_type && left_argument_type->onlyNull());
                 }
 
                 visit(replacement, data);
