@@ -4,6 +4,7 @@ replacing final	2
 summing	1	30
 summing	2	100
 collapsing	CollapsingMergeTree
+required column existing parts	1	20	20
 tuple-key replacing	ReplacingMergeTree
 dimension escape hatch	AggregatingMergeTree
 dimension in sorting key	AggregatingMergeTree
@@ -44,6 +45,7 @@ graphite lc array path rejected	MergeTree	1
 graphite fixed array path rollup	[1,2]	2020-01-01 00:00:00	6	2
 graphite fixedstring path rollup	max_a	2020-01-01 00:00:00	6	2
 graphite lowcardinality path rollup	max_a	2020-01-01 00:00:00	6	2
+graphite lowcardinality time rollup	max_a	2020-01-01 00:00:00	6	2
 graphite time Time rollup	max_a	00:00:00	6	2
 graphite time Time64 rejected	MergeTree
 graphite enum time rollup	max_a	rounded	6	2

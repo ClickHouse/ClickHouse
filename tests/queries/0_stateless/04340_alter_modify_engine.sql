@@ -50,6 +50,19 @@ ATTACH TABLE t_collapse;
 SELECT 'collapsing', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_collapse';
 DROP TABLE t_collapse;
 
+-- The rows must exist BEFORE the ALTER, so this also proves parts written under the old engine can
+-- materialize the newly added column and take part in a merge under the new semantics. Asserting only
+-- the engine name on an empty table would pass even if they could not.
+CREATE TABLE t_required_existing (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_required_existing VALUES (1, 10);
+INSERT INTO t_required_existing VALUES (1, 20);
+ALTER TABLE t_required_existing ADD COLUMN ver UInt32 DEFAULT v, MODIFY ENGINE = ReplacingMergeTree(ver);
+DETACH TABLE t_required_existing;
+ATTACH TABLE t_required_existing;
+OPTIMIZE TABLE t_required_existing FINAL;
+SELECT 'required column existing parts', k, v, ver FROM t_required_existing;
+DROP TABLE t_required_existing;
+
 -- Validation: the target must be a MergeTree-family engine and its required columns must exist.
 CREATE TABLE t_bad (a UInt32) ENGINE = MergeTree ORDER BY a;
 ALTER TABLE t_bad MODIFY ENGINE = Log; -- { serverError UNKNOWN_STORAGE }
@@ -490,9 +503,9 @@ SET allow_suspicious_low_cardinality_types = 0;
 
 -- A fixed-width `Array` stays allowed: `ColumnArray::getDataAt` reads it, so the rollup works and
 -- rejecting it would make MODIFY ENGINE stricter than CREATE TABLE.
-CREATE TABLE t_graphite_path (key UInt32, Path Array(UInt32), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
-INSERT INTO t_graphite_path VALUES (1, [1, 2], '2020-01-01 00:00:00', 5, 1);
-INSERT INTO t_graphite_path VALUES (1, [1, 2], '2020-01-01 00:00:10', 6, 2);
+CREATE TABLE t_graphite_path (key UInt32, Path Array(UInt32), Time DateTime('UTC'), Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, [1, 2], toDateTime('2020-01-01 00:00:00', 'UTC'), 5, 1);
+INSERT INTO t_graphite_path VALUES (1, [1, 2], toDateTime('2020-01-01 00:00:10', 'UTC'), 6, 2);
 ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
 DETACH TABLE t_graphite_path;
 ATTACH TABLE t_graphite_path;
@@ -502,9 +515,9 @@ DROP TABLE t_graphite_path;
 
 -- A `FixedString`, `LowCardinality(String)` or `Enum` path stays allowed: all three implement
 -- `getDataAt`, so the rollup reads them and the merge collapses the two versions.
-CREATE TABLE t_graphite_path (key UInt32, Path FixedString(5), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
-INSERT INTO t_graphite_path VALUES (1, 'max_a', '2020-01-01 00:00:00', 5, 1);
-INSERT INTO t_graphite_path VALUES (1, 'max_a', '2020-01-01 00:00:10', 6, 2);
+CREATE TABLE t_graphite_path (key UInt32, Path FixedString(5), Time DateTime('UTC'), Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, 'max_a', toDateTime('2020-01-01 00:00:00', 'UTC'), 5, 1);
+INSERT INTO t_graphite_path VALUES (1, 'max_a', toDateTime('2020-01-01 00:00:10', 'UTC'), 6, 2);
 ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
 DETACH TABLE t_graphite_path;
 ATTACH TABLE t_graphite_path;
@@ -512,15 +525,28 @@ OPTIMIZE TABLE t_graphite_path FINAL;
 SELECT 'graphite fixedstring path rollup', Path, toString(Time), Value, Version FROM t_graphite_path ORDER BY Time;
 DROP TABLE t_graphite_path;
 
-CREATE TABLE t_graphite_path (key UInt32, Path LowCardinality(String), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
-INSERT INTO t_graphite_path VALUES (1, 'max_a', '2020-01-01 00:00:00', 5, 1);
-INSERT INTO t_graphite_path VALUES (1, 'max_a', '2020-01-01 00:00:10', 6, 2);
+CREATE TABLE t_graphite_path (key UInt32, Path LowCardinality(String), Time DateTime('UTC'), Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, 'max_a', toDateTime('2020-01-01 00:00:00', 'UTC'), 5, 1);
+INSERT INTO t_graphite_path VALUES (1, 'max_a', toDateTime('2020-01-01 00:00:10', 'UTC'), 6, 2);
 ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
 DETACH TABLE t_graphite_path;
 ATTACH TABLE t_graphite_path;
 OPTIMIZE TABLE t_graphite_path FINAL;
 SELECT 'graphite lowcardinality path rollup', Path, toString(Time), Value, Version FROM t_graphite_path ORDER BY Time;
 DROP TABLE t_graphite_path;
+
+-- The time classification strips `LowCardinality`, so a wrapped time must still roll up.
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_graphite_path (key UInt32, Path String, Time LowCardinality(DateTime('UTC')), Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, 'max_a', toDateTime('2020-01-01 00:00:00', 'UTC'), 5, 1);
+INSERT INTO t_graphite_path VALUES (1, 'max_a', toDateTime('2020-01-01 00:00:10', 'UTC'), 6, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite_path;
+ATTACH TABLE t_graphite_path;
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite lowcardinality time rollup', Path, toString(Time), Value, Version FROM t_graphite_path ORDER BY Time;
+DROP TABLE t_graphite_path;
+SET allow_suspicious_low_cardinality_types = 0;
 
 -- `Time` is ColumnVector<Int32>-backed so the rollup reads it, unlike Decimal-backed `Time64`.
 CREATE TABLE t_graphite_path (key UInt32, Path String, Time Time, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;

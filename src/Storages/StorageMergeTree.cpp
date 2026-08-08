@@ -705,7 +705,10 @@ void StorageMergeTree::alter(
                     /// durably succeeds. See #80648.
                     try
                     {
-                        setProperties(old_metadata, new_metadata, false, local_context);
+                        /// `*metadata_snapshot`, not `old_metadata`: the latter carries the pre-ALTER
+                        /// engine for the durable rewrite below, and a live `new_engine` would read as
+                        /// an engine change still pending.
+                        setProperties(*metadata_snapshot, new_metadata, false, local_context);
                     }
                     catch (...)
                     {
