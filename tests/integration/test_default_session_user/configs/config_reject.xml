@@ -15,4 +15,32 @@
         <table>session_log</table>
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
     </session_log>
+
+    <!-- A global `prometheus.handlers` section (no `keeper_metrics_only`, so composable
+         `prometheus` endpoints go through the regular factory and serve these handlers)
+         with an anonymous time-series `write` handler. The reload test switches the
+         handler to a fixed `user` and changes the endpoint's `default_session_user` in a
+         single reload, which must restart the listener even though the *new* handler set
+         no longer consumes the setting. -->
+    <prometheus>
+        <handlers>
+            <write_rule>
+                <url>/write</url>
+                <handler>
+                    <type>write</type>
+                    <table>default.prometheus_ts</table>
+                </handler>
+            </write_rule>
+        </handlers>
+    </prometheus>
+
+    <protocols>
+        <prometheus_write_reload>
+            <type>prometheus</type>
+            <host>0.0.0.0</host>
+            <port>9116</port>
+            <default_session_user>proto_prometheus_user</default_session_user>
+            <description>prometheus-write-reload</description>
+        </prometheus_write_reload>
+    </protocols>
 </clickhouse>

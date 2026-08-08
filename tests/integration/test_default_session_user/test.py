@@ -603,12 +603,12 @@ def scrape_prometheus_status(port):
         return e.code
 
 
-def prometheus_write(port, headers=None):
+def prometheus_write(port, headers=None, node=node1):
     """POST to a prometheus `remote_write` handler at /write and return the HTTP
     status code. The body is left empty on purpose: authentication happens before
     the request body is parsed, so the authenticated user is recorded in
     `system.session_log` regardless of whether the (empty) payload is accepted."""
-    url = f"http://{node1.ip_address}:{port}/write"
+    url = f"http://{node.ip_address}:{port}/write"
     request = urllib.request.Request(url, data=b"", method="POST", headers=headers or {})
     try:
         return urllib.request.urlopen(request, timeout=10).getcode()
@@ -727,3 +727,51 @@ def test_config_reload_default_session_user():
     # ... but the shadow endpoint was not reloaded for `default_session_user`,
     # because only a shadowed base changed and its effective value is the same.
     assert not node1.contains_in_log("<default_session_user> had been changed, will reload http-reload-shadow-endpoint")
+
+
+def test_config_reload_prometheus_handlers_switch_to_fixed_user():
+    # A composable `type = prometheus` listener (`node_reject`, port 9116) serves the
+    # global `prometheus.handlers` section, and — unlike `http` endpoints — is not
+    # restarted when that section changes. A single reload that both switches the live
+    # anonymous `write` handler to a fixed `user` and changes the endpoint's
+    # `default_session_user` must still restart the listener: the restart decision has
+    # to consider the *old* handler set (which consumed the setting), otherwise the old
+    # factory would keep serving anonymous writes on the port.
+    config_path = "/etc/clickhouse-server/config.d/config_reject.xml"
+
+    # The live listener authenticates an anonymous write as the endpoint's default
+    # session user (the per-endpoint override also beats the node's global reject mode).
+    with assert_login_success("proto_prometheus_user", "Prometheus", node=node_reject):
+        prometheus_write(9116, node=node_reject)
+
+    node_reject.replace_in_config(
+        config_path,
+        "<type>write</type>",
+        "<type>write</type><user>fixed_write_user</user>",
+    )
+    node_reject.replace_in_config(
+        config_path,
+        "<default_session_user>proto_prometheus_user</default_session_user>",
+        "<default_session_user></default_session_user>",
+    )
+    node_reject.query("SYSTEM RELOAD CONFIG")
+
+    # `updateServers` runs within `SYSTEM RELOAD CONFIG`, so by now the decision to
+    # restart has been made and logged.
+    assert node_reject.contains_in_log(
+        "<default_session_user> had been changed, will reload prometheus-write-reload"
+    )
+
+    # The restarted listener serves the new handler set: an anonymous write now
+    # authenticates as the fixed user instead of the removed anonymous path. The
+    # listener comes back asynchronously after the reload, so poll.
+    count_before = session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus")
+    for _ in range(30):
+        try:
+            prometheus_write(9116, node=node_reject)
+        except Exception:
+            pass
+        if session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before:
+            break
+        time.sleep(1)
+    assert session_log_count(node_reject, "LoginSuccess", "fixed_write_user", "Prometheus") > count_before

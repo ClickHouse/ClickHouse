@@ -4463,8 +4463,16 @@ void Server::updateServers(
                         }
                         if (type == "tcp" || type == "mysql" || type == "postgres")
                             consumes_default_session_user = true;
+                        /// Unlike `http` endpoints, composable `prometheus` listeners are not restarted
+                        /// when their handler set (the global `prometheus.handlers` section) changes, so
+                        /// the running listener may still serve the *previous* handler set. Consider the
+                        /// setting consumed when either the old or the new set consumes it: otherwise a
+                        /// reload that both switches a live anonymous time-series handler to a fixed user
+                        /// and changes `default_session_user` would skip the restart and leave the old
+                        /// anonymous-authentication behavior on the port.
                         if (type == "prometheus" && !server_settings[ServerSetting::prometheus_keeper_metrics_only])
                             consumes_default_session_user = consumes_default_session_user
+                                || prometheusHandlersConsumeDefaultSessionUser(previous_config)
                                 || prometheusHandlersConsumeDefaultSessionUser(config);
                     }
 
