@@ -66,6 +66,7 @@ namespace Setting
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
 }
@@ -973,6 +974,33 @@ public:
                 ctx = it->second;
                 return;
             }
+
+            /// The stale cache guarded here is specific to the legacy SQL-shipping
+            /// construction: `rewriteJoinToGlobalJoin` + `buildQueryTreeForShard`
+            /// materialize the working table into an external `_data_<tree hash>`
+            /// table and reuse it whenever the hash matches — and across recursive
+            /// steps the tree is identical, only the working table's data changes.
+            /// With `parallel_replicas_plan_based` that construction never runs for
+            /// a recursive step: both places that invoke it under the analyzer
+            /// (`Planner::buildPlanForQueryNode` and the read-step replacement in
+            /// `PlannerJoinTree`) skip it in favor of building a plain local plan
+            /// and distributing a serialized plan fragment later
+            /// (`QueryPlanOptimizations::applyParallelReplicas`), whose remote
+            /// executor ships the *current* external tables with every fragment
+            /// instead of consulting a hash-keyed cache. The remaining legacy
+            /// callers (`StorageMergeTree::read`,
+            /// `StorageReplicatedMergeTree::read`) run only without the analyzer,
+            /// which recursive CTEs require. The custom-key and sampling/offset
+            /// modes never perform the `GLOBAL JOIN` rewrite in the first place
+            /// (`executeQueryWithParallelReplicasCustomKey`), and keep their own
+            /// planner-level forced-mode rejections (e.g. "JOINs are not supported
+            /// with parallel replicas"). So under the plan-based mode the hazard is
+            /// absent for every algorithm: leave the recursive-step contexts
+            /// untouched, preserving both plan-based parallelism (mode `1`) and the
+            /// force-or-throw contract (mode `2`) exactly as for a non-recursive
+            /// query.
+            if (ctx->getSettingsRef()[Setting::parallel_replicas_plan_based])
+                return;
 
             /// `allow_experimental_parallel_reading_from_replicas = 2` is the
             /// forcing mode, documented as "enabled, throw an exception in case

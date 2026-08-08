@@ -1335,3 +1335,55 @@ ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
 DROP TABLE float_chain;
+
+-- With `parallel_replicas_plan_based = 1` the recursive-step parallel-replica
+-- disable does not apply: the stale cached `GLOBAL JOIN` table it guards
+-- against is built only by the legacy SQL-shipping construction
+-- (`rewriteJoinToGlobalJoin` + `buildQueryTreeForShard`, which reuses the
+-- materialized working table by tree hash across steps), and the plan-based
+-- mode never runs that construction — it distributes a serialized plan
+-- fragment that ships the current external tables with every step instead.
+-- So a recursive join under the forcing mode must *run* (with correct
+-- multi-step results), not fail closed: the walk below only reaches 10 if
+-- every step joins against the fresh working table rather than a stale one.
+DROP TABLE IF EXISTS edges_pb;
+CREATE TABLE edges_pb
+(
+    from_id UInt64,
+    to_id UInt64
+) ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 128;
+
+INSERT INTO edges_pb SELECT number, number + 1 FROM numbers(10);
+INSERT INTO edges_pb SELECT number + 1000, number + 1000000 FROM numbers(5000);
+
+OPTIMIZE TABLE edges_pb FINAL;
+
+WITH RECURSIVE plan_based_traverse_pr AS
+(
+    SELECT to_id AS current_id
+    FROM edges_pb
+    WHERE from_id = 0
+  UNION ALL
+    SELECT e.to_id AS current_id
+    FROM edges_pb AS e
+    INNER JOIN plan_based_traverse_pr AS t ON e.from_id = t.current_id
+)
+SELECT current_id FROM plan_based_traverse_pr ORDER BY current_id
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_plan_based = 1, cluster_for_parallel_replicas = 'parallel_replicas',
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+-- The best-effort mode (`= 1`) must likewise keep plan-based parallelism
+-- enabled for the recursive steps instead of downgrading them to plain runs.
+WITH RECURSIVE plan_based_joined_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM plan_based_joined_pr AS t INNER JOIN edges_pb AS e ON e.from_id = t.n WHERE n < 10
+)
+SELECT sum(n) FROM plan_based_joined_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 2,
+    parallel_replicas_plan_based = 1, cluster_for_parallel_replicas = 'parallel_replicas',
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+DROP TABLE edges_pb;
