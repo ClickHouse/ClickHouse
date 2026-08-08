@@ -42,6 +42,25 @@ node3 = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
 )
+# The feature contract is active/standby failover WITHOUT ClickHouse Keeper, so at
+# least one multi-node scenario must run on nodes that have no Keeper configured at
+# all — otherwise a hidden dependency on Keeper-backed startup or cleanup paths would
+# go unnoticed (every node above starts with `with_zookeeper=True`). No
+# `transactions.xml` here either: the experimental transaction log requires Keeper.
+node4_no_keeper = cluster.add_instance(
+    "node4_no_keeper",
+    main_configs=["configs/config.d/storage_conf.xml"],
+    with_minio=True,
+    with_zookeeper=False,
+    stay_alive=True,
+)
+node5_no_keeper = cluster.add_instance(
+    "node5_no_keeper",
+    main_configs=["configs/config.d/storage_conf.xml"],
+    with_minio=True,
+    with_zookeeper=False,
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -2433,7 +2452,7 @@ def test_clear_empty_parts_stops_when_lease_goes_stale_mid_loop(started_cluster)
             f"""
             CREATE TABLE {table} UUID '{SHARED_UUID_CLEAR_EMPTY_MID_LOOP}' (x UInt64)
             ENGINE = MergeTree ORDER BY x
-            SETTINGS {TABLE_SETTINGS}, old_parts_lifetime = 1,
+            SETTINGS {TABLE_SETTINGS}, old_parts_lifetime = 0,
                      merge_tree_clear_old_parts_interval_seconds = 60,
                      cleanup_delay_period = 60, cleanup_delay_period_random_add = 0
             """
@@ -2743,3 +2762,238 @@ def test_dedup_log_reconciled_when_lease_goes_stale_during_drop_records(started_
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_CLEAR_EMPTY_COVERED = "12345678-abcd-abcd-abcd-12345678ab30"
+
+
+def test_clear_empty_parts_keeps_tombstones_while_covered_parts_remain(started_cluster):
+    """
+    Regression for the covered-outdated re-check inside `clearEmptyParts`: an active empty
+    covering part is the only durable tombstone for the outdated parts it covers, so it must
+    not be retired while any covered part is still present (a part still held by a long-running
+    reader, or a delete that rolled back after an I/O failure). `clearEmptyParts` used to
+    snapshot all active empty parts and drop them unconditionally; after a restart or failover
+    the surviving old parts would be loaded again, undoing the `TRUNCATE` that produced the
+    empty parts.
+
+    The `merge_tree_grab_old_parts_skip` failpoint simulates the cleanup round that cannot
+    remove any covered outdated part yet (`TRUNCATE` marks them for immediate removal, so
+    without the failpoint the synchronous post-DDL cleanup deletes them before
+    `clearEmptyParts` runs and the covering parts legitimately stop covering).
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_grab_old_parts_skip"
+    table = "test_clear_empty_covered"
+    try:
+        # Long background-cleanup intervals: only the synchronous post-DDL cleanup runs
+        # while the failpoint is enabled, so the state checked below is deterministic.
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_CLEAR_EMPTY_COVERED}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS},
+                     merge_tree_clear_old_parts_interval_seconds = 60,
+                     cleanup_delay_period = 60, cleanup_delay_period_random_add = 0
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1)")
+        node1.query(f"INSERT INTO {table} VALUES (2)")
+
+        # A background merge of the empty covering parts would change the active-part count
+        # this test asserts on; the tombstone invariant itself does not depend on merges.
+        node1.query(f"SYSTEM STOP MERGES {table}")
+
+        # One covering empty part is committed per active part (the leader probe above may
+        # have added parts of its own, so count them instead of hardcoding).
+        parts_before = int(
+            node1.query(
+                f"SELECT count() FROM system.parts WHERE database = currentDatabase()"
+                f" AND table = '{table}' AND active"
+            ).strip()
+        )
+        assert parts_before >= 2
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        node1.query(f"TRUNCATE TABLE {table}")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
+
+        # Every empty covering part must survive the synchronous post-DDL `clearEmptyParts`:
+        # the covered outdated parts are still on disk, so retiring the tombstones now would
+        # let the covered parts resurrect on the next reload.
+        active_empty = int(
+            node1.query(
+                f"SELECT count() FROM system.parts WHERE database = currentDatabase()"
+                f" AND table = '{table}' AND active AND rows = 0"
+            ).strip()
+        )
+        assert active_empty == parts_before, (
+            "clearEmptyParts retired an empty covering part while its covered outdated "
+            "parts were still present"
+        )
+        assert node1.contains_in_log(
+            "Not dropping empty part"
+        ), "The covered-outdated re-check never fired inside clearEmptyParts"
+
+        node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The tombstones are intact, so a full reload must still see the table truncated
+        # (with the bug, the covered parts of a retired tombstone would be loaded again).
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0, (
+            "TRUNCATE was undone after a reload: covered outdated parts were resurrected"
+        )
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
+SHARED_UUID_NO_KEEPER = "12345678-abcd-abcd-abcd-12345678ab31"
+
+
+def test_leader_election_without_keeper(started_cluster):
+    """
+    The headline contract is active/standby failover WITHOUT ClickHouse Keeper: coordination
+    happens through conditional writes on the S3 lease file only. Every other multi-node test
+    in this suite runs on nodes that also have Keeper configured, so a hidden dependency on a
+    Keeper-backed startup or cleanup path would go unnoticed there. This scenario runs the
+    happy path and a failover on two nodes with no Keeper configured at all.
+    """
+    ensure_node_up(node4_no_keeper)
+    ensure_node_up(node5_no_keeper)
+    table = "test_no_keeper"
+    try:
+        create_table_on_first_node(node4_no_keeper, table, SHARED_UUID_NO_KEEPER)
+        attach_table_on_second_node(node5_no_keeper, table, SHARED_UUID_NO_KEEPER)
+
+        leader, followers = wait_for_leader(
+            [node4_no_keeper, node5_no_keeper], table_name=table
+        )
+        follower = followers[0]
+
+        leader.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+
+        # The follower refreshes the parts list from shared storage (no Keeper involved).
+        deadline = time.monotonic() + 60
+        rows = ""
+        while time.monotonic() < deadline:
+            rows = follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+            if rows == "1\n2\n3":
+                break
+            time.sleep(1)
+        assert rows == "1\n2\n3", (
+            f"Follower without Keeper did not observe the leader's writes, got: {rows!r}"
+        )
+
+        # Failover: stop the leader, the follower must take over on its own.
+        leader.stop_clickhouse()
+        deadline = time.monotonic() + 60
+        took_over = False
+        while time.monotonic() < deadline:
+            try:
+                follower.query(f"INSERT INTO {table} VALUES (10)")
+                took_over = True
+                break
+            except Exception as e:
+                if "TABLE_IS_READ_ONLY" in str(e):
+                    time.sleep(2)
+                    continue
+                raise
+        assert took_over, "Follower without Keeper did not take over leadership"
+
+        rows = follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+        assert rows == "1\n2\n3\n10", (
+            f"New leader without Keeper lost rows across the failover, got: {rows!r}"
+        )
+
+        leader.start_clickhouse()
+    finally:
+        ensure_node_up(node4_no_keeper)
+        for node in (node4_no_keeper, node5_no_keeper):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+
+
+SHARED_UUID_FOLLOWER_DROP = "12345678-abcd-abcd-abcd-12345678ab32"
+
+
+def test_follower_drop_table_keeps_shared_data(started_cluster):
+    """
+    The documented contract is that `DROP TABLE` on a follower is a local-metadata-only
+    operation: it must never touch the shared object-storage prefix, because the follower
+    cannot prove the data is not owned by a live leader. This exercises the destructive
+    path directly: the follower drops the table, then the leader must still be able to read
+    and write the data, the part objects must still be present in S3, and a re-attached
+    follower must see the same rows.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    table = "test_follower_drop"
+    try:
+        create_table_on_first_node(node1, table, SHARED_UUID_FOLLOWER_DROP)
+        attach_table_on_second_node(node2, table, SHARED_UUID_FOLLOWER_DROP)
+
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        follower = followers[0]
+
+        leader.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+
+        # Pick a real committed part and locate its S3 prefix so the check below is
+        # anchored to the shared data, not only to query results served from caches.
+        part_name = leader.query(
+            f"SELECT name FROM system.parts WHERE database = currentDatabase()"
+            f" AND table = '{table}' AND active AND rows > 1 LIMIT 1"
+        ).strip()
+        assert part_name
+        part_prefix = find_part_object_key_prefix(SHARED_UUID_FOLLOWER_DROP, part_name)
+        assert part_prefix, "Could not locate the part's S3 prefix before the drop"
+
+        follower.query(f"DROP TABLE {table} SYNC")
+
+        # The shared part objects must still be in the bucket after the follower's drop.
+        objects_after_drop = list(
+            cluster.minio_client.list_objects(
+                cluster.minio_bucket, part_prefix, recursive=True
+            )
+        )
+        assert objects_after_drop, (
+            "DROP TABLE on the follower removed shared S3 data owned by the leader"
+        )
+
+        # The leader is untouched: it still reads the data and accepts writes.
+        rows = leader.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+        assert rows == "1\n2\n3", (
+            f"Leader lost data after a follower-side DROP TABLE, got: {rows!r}"
+        )
+        leader.query(f"INSERT INTO {table} VALUES (10)")
+
+        # A re-attached follower sees the same (and the new) rows.
+        attach_table_on_second_node(follower, table, SHARED_UUID_FOLLOWER_DROP)
+        expected = "1\n2\n3\n10"
+        deadline = time.monotonic() + 60
+        rows = ""
+        while time.monotonic() < deadline:
+            rows = follower.query(f"SELECT x FROM {table} WHERE x > 0 ORDER BY x").strip()
+            if rows == expected:
+                break
+            time.sleep(1)
+        assert rows == expected, (
+            f"Re-attached follower does not see the shared data, got: {rows!r}"
+        )
+    finally:
+        for node in (node1, node2):
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
