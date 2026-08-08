@@ -832,6 +832,12 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         /// `curl -X POST` sends neither a body nor `Content-Length`, and a handler that never reads the body must
         /// accept it. For the other handlers `POST` keeps the historical unconditional requirement: their body may
         /// be the rest of the query text or the data of an `INSERT`, so they have to assume that it is consumed.
+        ///
+        /// Accepting a lengthless non-chunked `POST`/`PUT` here is framing-safe even if the client does send
+        /// bytes: the request stream stays unbounded (EOF-delimited), so `HTTPServerRequest::canKeepAlive`
+        /// returns false, `HTTPServerResponse::writeHeaders` advertises `Connection: close`, and
+        /// `HTTPServerConnection` closes the socket after the response - the unread bytes can never be
+        /// misread as the next request on the connection (pinned by 04826_handler_lengthless_body_keep_alive).
         const auto & method = request.getMethod();
         const bool is_body_carrying_method
             = method == HTTPRequest::HTTP_POST || method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE;
