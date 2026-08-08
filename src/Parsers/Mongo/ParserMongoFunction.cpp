@@ -52,6 +52,22 @@ bool isOnlyRegularExpression(const rapidjson::Value & value)
     return true;
 }
 
+/** The condition of `{<field>: <constant>}` and `{<field>: {"$eq": <constant>}}`. Mongo's
+  * equality is also its canonical array membership test: both forms match a document whose
+  * field is the constant and one whose field is an array holding it. The type of the column
+  * is not known when this is lowered, so one expression has to fit both shapes, the same way
+  * `$in` handles it: wrapping the field into an array and flattening turns a scalar field
+  * into the one element array of itself and leaves an array field as its elements, and `has`
+  * is the membership test over them. The whole-array match - `{tags: ["red", "blue"]}` - is
+  * not covered, because an array is not a constant here; and a field of nested arrays is
+  * flattened through every level rather than one.
+  */
+ASTPtr makeEqualityCondition(const std::string & field, ASTPtr constant)
+{
+    auto field_elements = makeASTFunction("flatten", makeASTFunction("array", make_intrusive<ASTIdentifier>(field)));
+    return makeASTFunction("has", std::move(field_elements), std::move(constant));
+}
+
 /** One `<field>: {<operator>: <argument>}` condition of a filter.
   *
   * `document` is the whole operator document, which `$regex` needs because its `$options` are a
@@ -80,6 +96,11 @@ ASTPtr parseFieldOperator(
         auto constant = tryParseMongoConstant(argument);
         if (!constant)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '{}' must be a constant", name);
+        /// Mongo's equality is also its array membership test (see `makeEqualityCondition`).
+        if (name == "$eq")
+            return makeEqualityCondition(field, constant);
+        if (name == "$ne")
+            return makeASTFunction("not", makeEqualityCondition(field, constant));
         return makeASTFunction(it->second, identifier(), constant);
     }
 
@@ -259,12 +280,13 @@ bool MongoIdentityFunction::parseImpl(ASTPtr & node)
         }
     }
 
-    /// A constant compares the field for equality. It covers every scalar the insert path can
-    /// create a column from, and the Extended JSON wrappers a Mongo driver sends for the types
-    /// JSON cannot represent.
+    /// A constant compares the field for equality - which in Mongo is also the array membership
+    /// test, see `makeEqualityCondition`. It covers every scalar the insert path can create a
+    /// column from, and the Extended JSON wrappers a Mongo driver sends for the types JSON
+    /// cannot represent.
     if (auto constant = tryParseMongoConstant(data))
     {
-        node = makeASTFunction("equals", make_intrusive<ASTIdentifier>(edge_name), constant);
+        node = makeEqualityCondition(edge_name, constant);
         return true;
     }
 
