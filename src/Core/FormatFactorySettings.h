@@ -53,6 +53,8 @@ Note: a flattened header is not read back into a Tuple by name when `input_forma
 If it set to true, then separate columns written in CSV format can be deserialized to Tuple column.
 
 This applies only to bare `Tuple`. A `Nullable(Tuple)` is always written as a single CSV field (see [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns)) and is likewise read back from a single field, never from separate columns, regardless of this setting. Separate-columns parsing is not supported for `Nullable(Tuple)` because a leading `\N` field is ambiguous (it may be the outer NULL of the tuple or the NULL of its first element).
+
+Because a bare `Tuple` then occupies one field per element, a `\N` in the field of a direct top-level element is that element and not the whole column, so [input_format_null_as_default](#input_format_null_as_default) applies to that element. A row that supplies a single field for the whole tuple is short by the remaining elements and is rejected instead of taking the column default. Set this setting to `0` to read such a field as the whole column again. A `\N` in the field of an element of a nested `Tuple` is still read as that whole nested element.
 )", 0) \
     DECLARE(Bool, output_format_csv_crlf_end_of_line, false, R"(
 If it is set true, end of line in CSV format will be \\r\\n instead of \\n.
