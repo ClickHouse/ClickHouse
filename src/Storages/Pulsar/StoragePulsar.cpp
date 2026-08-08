@@ -678,6 +678,9 @@ void registerStoragePulsar(StorageFactory & factory)
         if (!(*pulsar_settings)[PulsarSetting::pulsar_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_format` setting");
 
+        if (!(*pulsar_settings)[PulsarSetting::pulsar_topic_list].changed)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `pulsar_topic_list` setting");
+
         /// The mode is accepted by the generic `StreamingHandleErrorMode` parser but not implemented
         /// by this engine, so reject it up front instead of failing on the first broken message.
         if (args.mode <= LoadingStrictnessLevel::CREATE
@@ -737,10 +740,10 @@ Required parameters:
 - `pulsar_service_url` – The Pulsar broker URL, for example, `pulsar://localhost:6650`.
 - `pulsar_group_name` – The subscription name. All consumers sharing the same group name belong to the same subscription.
 - `pulsar_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
+- `pulsar_topic_list` – A comma-separated list of Pulsar topics to consume from. Writing via `INSERT` is supported only when the list contains exactly one topic; an `INSERT` into a table with multiple topics throws `NOT_IMPLEMENTED`.
 
 Optional parameters:
 
-- `pulsar_topic_list` – A comma-separated list of Pulsar topics to consume from. Writing via `INSERT` is supported only when the list contains exactly one topic; an `INSERT` into a table with multiple topics throws `NOT_IMPLEMENTED`.
 - `pulsar_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `pulsar_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient.
 - `pulsar_max_block_size` – The maximum batch size (in messages) for a poll. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
