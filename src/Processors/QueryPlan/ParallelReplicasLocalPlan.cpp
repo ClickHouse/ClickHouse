@@ -212,6 +212,13 @@ ContextPtr getShippedFragmentContext(const QueryTreeNodePtr & query_tree, Contex
 /// read the per-part split streams are a coordinator contract: only the snapshot replica may introduce
 /// stream ids, so streams the initiator did not build are dropped as unknown.
 ///
+/// The `merge_tree_min_*_for_concurrent_read` family (with the `_for_remote_filesystem` variants) and
+/// `merge_tree_min_read_task_size` are on the list for the same reason: together they derive
+/// `PartRangesReadInfo::min_marks_for_concurrent_read`, which `spreadMarkRangesAmongStreamsWithOrder` uses both
+/// to shrink the global stream count and to cap the per-part split count. A branch-scoped override of any of
+/// them would make the initiator-local rebuild and the remote replicas choose different `#split_i` topologies
+/// for the same shipped fragment.
+///
 /// `fragment_context` is taken per reading step, not once for the whole fragment: with
 /// `parallel_replicas_allow_view_over_mergetree` a view can expand into a `UNION ALL` whose branches carry their
 /// own `SETTINGS`, and the analyzer gives each branch its own `QueryNode` context. Each branch is planned by its
@@ -227,6 +234,11 @@ static ContextPtr makeShippedFragmentReadingContext(const ContextPtr & context, 
         "read_in_order_two_level_merge_threshold",
         "max_streams_for_merge_tree_reading",
         "allow_asynchronous_read_from_io_pool_for_merge_tree",
+        "merge_tree_min_rows_for_concurrent_read",
+        "merge_tree_min_bytes_for_concurrent_read",
+        "merge_tree_min_rows_for_concurrent_read_for_remote_filesystem",
+        "merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem",
+        "merge_tree_min_read_task_size",
     };
 
     if (!fragment_context || fragment_context.get() == context.get())
