@@ -4,6 +4,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
@@ -20,22 +21,27 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -96,6 +102,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 extern const int UNKNOWN_DATABASE;
 extern const int UNKNOWN_TABLE;
@@ -104,20 +111,17 @@ extern const int UNKNOWN_TABLE;
 namespace
 {
 
-bool columnIsPhysical(ColumnDefaultKind kind)
+/// The storage a database enumerates is not always the storage a read must go through: a
+/// `MaterializedPostgreSQL` database exposes the physical nested `ReplacingMergeTree` tables to
+/// generic enumerators and hands out the `StorageMaterializedPostgreSQL` wrapper for reads. Reading
+/// the nested table directly would bypass the wrapper's `_sign = 1` filter and forced `FINAL` and
+/// return stale and deleted rows. See `IDatabase::getTableForRead`.
+StoragePtr tableForRead(const DatabasePtr & database, const String & table_name, const StoragePtr & table, const ContextPtr & local_context)
 {
-    return kind == ColumnDefaultKind::Default || kind == ColumnDefaultKind::Materialized;
-}
+    if (!database)
+        return table;
 
-bool columnDefaultKindHasSameType(ColumnDefaultKind lhs, ColumnDefaultKind rhs)
-{
-    if (lhs == rhs)
-        return true;
-
-    if (columnIsPhysical(lhs) == columnIsPhysical(rhs))
-        return true;
-
-    return false;
+    return database->getTableForRead(table_name, table, local_context);
 }
 
 }
@@ -272,11 +276,16 @@ StoragePtr StorageMerge::traverseTablesUntilImpl(const ContextPtr & query_contex
 
     for (auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
+
         while (iterator->isValid())
         {
-            const auto & table = iterator->table();
-            if (table.get() != ignore_self && predicate(table))
-                return table;
+            const auto & nested = iterator->table();
+            if (nested.get() != ignore_self)
+            {
+                if (auto table = tableForRead(database, iterator->name(), nested, query_context); table && predicate(table))
+                    return table;
+            }
 
             iterator->next();
         }
@@ -373,9 +382,36 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
                 supported_columns.erase(column.name);
             }
         }
+
+        /// A column the child does not declare at all fails the same way: it is stripped from the
+        /// child's read list and filled with defaults only after the read, so a filter pushed into
+        /// that read has no input for it.
+        std::erase_if(supported_columns, [&](const auto & name) { return !table_columns.has(name); });
+
+        /// The loop above compares the root type against the child's *declared* columns. When the
+        /// child aggregates other tables itself (a nested `Merge`, a `MaterializedView`, ...), its
+        /// declared type can match while a leaf's differs. PREWHERE would then be built against the
+        /// root type and re-derived against the leaf's, so `ActionsDAG` sees a return type that
+        /// disagrees with the node it stored and throws `Unexpected return type from ...`.
+        /// Intersect with what the child itself allows, so the constraint holds transitively.
+        /// `supportsPrewhere` above is already transitive - it recurses through virtual dispatch.
+        if (const auto nested_supported_columns = table->supportedPrewhereColumns())
+            std::erase_if(supported_columns, [&](const auto & name) { return !nested_supported_columns->contains(name); });
     });
 
     return supported_columns;
+}
+
+bool StorageMerge::supportedPrewhereColumnsIncludeSubcolumns() const
+{
+    /// The filter is re-derived against every child, so a subcolumn rides its origin column
+    /// only if all of them resolve it.
+    bool include_subcolumns = true;
+    forEachTable([&](const StoragePtr & table)
+    {
+        include_subcolumns = include_subcolumns && table->supportedPrewhereColumnsIncludeSubcolumns();
+    });
+    return include_subcolumns;
 }
 
 QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
@@ -408,9 +444,12 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
     for (const auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
+
         while (iterator->isValid())
         {
-            const auto & table = iterator->table();
+            const auto & nested = iterator->table();
+            auto table = nested.get() == this ? nested : tableForRead(database, iterator->name(), nested, local_context);
             if (table && table.get() != this)
             {
                 ++selected_table_size;
@@ -485,7 +524,13 @@ StorageMetadataHandle StorageMerge::getInMemoryMetadataPtr(ContextPtr query_cont
     }
     catch (const Exception & e)
     {
-        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+        /// The source database may have been dropped (`UNKNOWN_DATABASE`), or it may be the internal
+        /// database of temporary tables, which `getDatabaseIterator` refuses to enumerate
+        /// (`DATABASE_ACCESS_DENIED`). Neither should prevent resolving the table's own metadata:
+        /// the virtual columns of the source tables are a best-effort enrichment, and an actual read
+        /// still throws in `getDatabaseIterators`. In particular, loading a stored table definition
+        /// (`ATTACH`, backup `RESTORE`, replicated-database replay) validates the storage through here.
+        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::DATABASE_ACCESS_DENIED)
             throw;
     }
 
@@ -707,9 +752,16 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
     };
     std::unordered_map<String, CachedModifiedQueryInfo> query_info_cache;
 
+    QueryStatusPtr query_status = context->getProcessListElementSafe();
+
     /// Settings will be modified when planning children tables.
     for (const auto & table : selected_tables)
     {
+        /// Building a plan (including query analysis) for every child table can take a long time when
+        /// the Merge table matches many tables, so honor `KILL QUERY` and `max_execution_time` between tables.
+        if (query_status)
+            query_status->checkTimeLimit();
+
         const auto & storage = std::get<1>(table);
 
         LOG_TRACE(logger, "Building plan for child table {}", storage->getStorageID().getNameForLogs());
@@ -855,6 +907,20 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
                 }
             }
 
+            /// Filter DAGs can be modified by optimizations, so each child must own its own copy:
+            /// otherwise optimizing one child's plan invalidates the sibling headers that were
+            /// derived from the shared object.
+            if (modified_query_info.prewhere_info)
+                modified_query_info.prewhere_info = std::make_shared<PrewhereInfo>(modified_query_info.prewhere_info->clone());
+            if (modified_query_info.row_level_filter)
+            {
+                auto row_level_filter_copy = std::make_shared<FilterDAGInfo>();
+                row_level_filter_copy->actions = modified_query_info.row_level_filter->actions.clone();
+                row_level_filter_copy->column_name = modified_query_info.row_level_filter->column_name;
+                row_level_filter_copy->do_remove_column = modified_query_info.row_level_filter->do_remove_column;
+                modified_query_info.row_level_filter = std::move(row_level_filter_copy);
+            }
+
             if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 auto storage_columns = storage_metadata_snapshot->getColumns();
@@ -967,7 +1033,7 @@ namespace
 class ApplyAliasColumnExpressionsVisitor : public InDepthQueryTreeVisitor<ApplyAliasColumnExpressionsVisitor>
 {
 public:
-    explicit ApplyAliasColumnExpressionsVisitor(QueryTreeNodePtr replacement_table_expression_)
+    explicit ApplyAliasColumnExpressionsVisitor(TableExpressionNodePtr replacement_table_expression_)
         : replacement_table_expression(replacement_table_expression_)
     {}
 
@@ -984,12 +1050,12 @@ public:
             else
             {
                 /// Do not replace column source for lambda arguments.
-                /// Lambda argument columns reference the LambdaNode as their source,
+                /// Lambda argument columns reference the lambda arguments node as their source,
                 /// and replacing it with the table expression would cause toAST()
                 /// to qualify them with the table alias (e.g. `__table1.x` instead of `x`),
                 /// which is invalid for lambda argument identifiers.
                 auto column_source = column->getColumnSourceOrNull();
-                if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+                if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
                     return;
 
                 column->setColumnSource(replacement_table_expression);
@@ -997,18 +1063,18 @@ public:
         }
     }
 private:
-    QueryTreeNodePtr replacement_table_expression;
+    TableExpressionNodePtr replacement_table_expression;
 };
 
 QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     QueryTreeNodePtr query,
-    QueryTreeNodePtr original_table_expression,
-    QueryTreeNodePtr replacement_table_expression,
+    TableExpressionNodePtr original_table_expression,
+    TableExpressionNodePtr replacement_table_expression,
     const ContextPtr & context,
     const Names & required_column_names)
 {
     auto * query_node = query->as<QueryNode>();
-    auto join_tree_type = query_node->getJoinTree()->getNodeType();
+    auto join_tree_type = query_node->getJoinTreeNode()->getNodeType();
     auto modified_query = query_node->cloneAndReplace(original_table_expression, replacement_table_expression);
 
     // For the case when join tree is just a table or a table function we don't need to do anything more.
@@ -1021,7 +1087,7 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
     auto * modified_query_node = modified_query->as<QueryNode>();
 
     // Remove the JOIN statement. As a result query will have a form like: SELECT * FROM <table> ...
-    modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTree(), replacement_table_expression);
+    modified_query = modified_query->cloneAndReplace(modified_query_node->getJoinTreeNodeTyped(), replacement_table_expression);
     modified_query_node = modified_query->as<QueryNode>();
 
     query_node = modified_query->as<QueryNode>();
@@ -1180,6 +1246,10 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                     column_node = std::make_shared<ColumnNode>(*resolved_pair, modified_query_info.table_expression);
                 }
 
+                /// The set registry of the freshly derived planner context is empty, and
+                /// `PlannerActionsVisitor` resolves `IN` through it.
+                collectSets(column_node, *modified_query_info.planner_context);
+
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
                 PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
                 actions_visitor.visit(*filter_actions_dag, column_node);
@@ -1335,6 +1405,11 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
+        /// The child plan is united into this pipeline in the same process, where nothing
+        /// unmarshalls its blocks, so `BlocksMarshallingStep` must not be added to it.
+        auto child_select_query_options = SelectQueryOptions(processed_stage);
+        child_select_query_options.is_local_plan_for_distributed_query = true;
+
         if (use_analyzer)
         {
             /// Converting query to AST because types might be different in the source table.
@@ -1342,7 +1417,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             auto ast = modified_query_info.query_tree->toAST();
             InterpreterSelectQueryAnalyzer interpreter(ast,
                 modified_context,
-                SelectQueryOptions(processed_stage));
+                child_select_query_options);
 
             auto & planner = interpreter.getPlanner();
             planner.buildQueryPlanIfNeeded();
@@ -1354,7 +1429,7 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
             /// TODO: Find a way to support projections for StorageMerge
             InterpreterSelectQuery interpreter{modified_query_info.query,
                 modified_context,
-                SelectQueryOptions(processed_stage)};
+                child_select_query_options};
 
             interpreter.buildQueryPlan(plan);
         }
@@ -1378,21 +1453,38 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
+
+    /// The filter column is dropped from the stream after filtering, so it must be a dedicated
+    /// column that does not coincide with a data column. Wrap the policy predicate in a
+    /// uniquely-named alias and make the post-filter outputs exactly the source columns plus that
+    /// alias. Dropping the alias then leaves the data columns intact, and no synthetic predicate
+    /// output (e.g. greater(a, 1) for "USING a > 1") leaks downstream. See commit message.
+    const auto & filter_node = actions_dag.findInOutputs(expr->getColumnName());
+
+    /// The alias name must be unique against the current DAG outputs and against the child table's
+    /// real columns: a source table may legitimately have a column named __row_policy_filter, and
+    /// on SELECT * it flows into the same block as the alias, so a clash makes Block::insert throw.
+    NameSet reserved_names;
+    for (const auto & column : needed_columns)
+        reserved_names.insert(column.name);
+
+    filter_column_name = "__row_policy_filter";
+    for (size_t i = 0; actions_dag.tryFindInOutputs(filter_column_name) != nullptr || reserved_names.contains(filter_column_name); ++i)
+        filter_column_name = "__row_policy_filter_" + std::to_string(i);
+
+    const auto & alias_node = actions_dag.addAlias(filter_node, filter_column_name);
+
+    /// Keep only the source (input) columns and the alias as outputs. This drops the raw predicate
+    /// output regardless of query_plan_enable_optimizations, so a single table does not leak it and
+    /// a Merge over children with different policies keeps matching headers in Pipe::unitePipes.
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    for (const auto * output : actions_dag.getOutputs())
+        if (output->type == ActionsDAG::ActionType::INPUT)
+            new_outputs.push_back(output);
+    new_outputs.push_back(&alias_node);
+    actions_dag.getOutputs() = std::move(new_outputs);
+
     filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(), ExpressionActionsSettings(local_context, CompileExpressions::yes));
-    const auto & required_columns = filter_actions->getRequiredColumnsWithTypes();
-    const auto & sample_block_columns = filter_actions->getSampleBlock().getNamesAndTypesList();
-
-    NamesAndTypesList added;
-    NamesAndTypesList deleted;
-    sample_block_columns.getDifference(required_columns, added, deleted);
-    if (!deleted.empty() || added.size() != 1)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Cannot determine row level filter; {} columns deleted, {} columns added",
-            deleted.size(), added.size());
-    }
-
-    filter_column_name = added.getNames().front();
 }
 
 void ReadFromMerge::RowPolicyData::extendNames(Names & names) const
@@ -1466,13 +1558,18 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
     auto access = query_context->getAccess();
     for (const auto & iterator : database_table_iterators)
     {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(iterator->databaseName());
         auto granted_show_on_all_tables = access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName());
         auto granted_select_on_all_tables = access->isGranted(AccessType::SELECT, iterator->databaseName());
         while (iterator->isValid())
         {
-            StoragePtr storage = iterator->table();
+            StoragePtr storage = tableForRead(database, iterator->name(), iterator->table(), query_context);
             if (!storage)
+            {
+                /// `next` must be called on every path, otherwise the loop never terminates.
+                iterator->next();
                 continue;
+            }
 
             if (storage.get() != storage_merge.get())
                 if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
@@ -1496,6 +1593,12 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
 
 DatabaseTablesIteratorPtr StorageMerge::DatabaseNameOrRegexp::getDatabaseIterator(const String & database_name, ContextPtr local_context) const
 {
+    /// The internal database of temporary tables holds the temporary tables of all sessions and all users,
+    /// and it is not covered by access control, so direct access to it is denied, see `DatabaseCatalog::tryGetDatabaseAndTable`.
+    if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        throw Exception(
+            ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
+
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     auto table_name_match = [this, database_name](const String & table_name_) -> bool
@@ -1538,6 +1641,10 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
 
         for (const auto & db : databases)
         {
+            /// A regexp is not an explicit request for the internal database of temporary tables, so it is skipped silently.
+            if (db.first == DatabaseCatalog::TEMPORARY_DATABASE)
+                continue;
+
             if (source_database_regexp->match(db.first))
                 database_table_iterators.emplace_back(getDatabaseIterator(db.first, local_context));
         }
@@ -1611,6 +1718,9 @@ void ReadFromMerge::convertAndFilterSourceStream(
 
             QueryAnalysisPass query_analysis_pass(modified_query_info.table_expression);
             query_analysis_pass.run(query_tree, local_context);
+
+            /// On the query info cache path nothing registered this expression's sets.
+            collectSets(query_tree, *modified_query_info.planner_context);
 
             ColumnNodePtrWithHashSet empty_correlated_columns_set;
             PlannerActionsVisitor actions_visitor(modified_query_info.planner_context, empty_correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
@@ -1823,7 +1933,12 @@ std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() cons
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::UNKNOWN_DATABASE)
+        /// The column sizes are a best-effort introspection (`system.columns`). The source database
+        /// may have been dropped (`UNKNOWN_DATABASE`), or it may be the internal database of temporary
+        /// tables, which `getDatabaseIterator` refuses to enumerate (`DATABASE_ACCESS_DENIED`) - such a
+        /// table can no longer be created, but a pre-existing definition still loads (`ATTACH`, backup
+        /// `RESTORE`, replicated-database replay) and must not break `system.columns`.
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::DATABASE_ACCESS_DENIED)
             return std::nullopt;
         throw;
     }
@@ -1904,6 +2019,21 @@ void registerStorageMerge(StorageFactory & factory)
             engine_args[0] = database_ast;
 
         String source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
+
+        /// With an explicit column list, `CREATE` (or a full-definition `ATTACH`, which is CREATE-like user input)
+        /// does not need schema inference and would not read the source tables, so the unusable table definition
+        /// would be stored; deny it right away, the same way as reading does, see `DatabaseNameOrRegexp::getDatabaseIterator`.
+        /// Only fresh user-supplied definitions are denied. Loads of previously stored metadata (server startup,
+        /// short-syntax `ATTACH`) and replays of definitions that already exist elsewhere (`SECONDARY_CREATE`:
+        /// replicated-database DDL replay, backup `RESTORE`) stay loadable, so a table created before this check
+        /// existed can still be restored or materialized on a new replica. Reading from such a table is denied
+        /// anyway, so unlike `StorageDistributed` there is nothing a restoring user could reach through it.
+        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        if (!is_regexp && source_database_name_or_regexp == DatabaseCatalog::TEMPORARY_DATABASE
+            && fresh_user_definition)
+            throw Exception(
+                ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
 
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
@@ -2004,16 +2134,16 @@ SELECT * FROM WatchLog;
 
 ## Virtual columns {#virtual-columns}
 
-- `_table` — The name of the table from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
+- `_table` — The name of the table from which data was read. Type: [String](/reference/data-types/string).
 
     If you filter on `_table`, (for example `WHERE _table='xyz'`) only tables which satisfy the filter condition are read.
 
-- `_database` — Contains the name of the database from which data was read. Type: [String](../../../sql-reference/data-types/string.md).
+- `_database` — Contains the name of the database from which data was read. Type: [String](/reference/data-types/string).
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
-- [merge](../../../sql-reference/table-functions/merge.md) table function
+- [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
+- [merge](/reference/functions/table-functions/merge) table function
 )DOCS_MD",
         .syntax = "ENGINE = Merge(db_name, tables_regexp)",
         .related = {"Distributed"}});

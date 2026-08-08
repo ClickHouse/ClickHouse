@@ -27,7 +27,7 @@ MultipleFileWriter::MultipleFileWriter(
     , max_data_file_num_bytes(max_data_file_num_bytes_)
     , schema(schema_)
     , stats(schema_)
-    , column_mapper(std::make_shared<ColumnMapper>())
+    , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -36,8 +36,6 @@ MultipleFileWriter::MultipleFileWriter(
     , write_format(std::move(write_format_))
     , sample_block(sample_block_)
 {
-    column_mapper->setStorageColumnEncoding(Iceberg::IcebergSchemaProcessor::traverseSchema(schema_));
-    column_mapper->setIcebergStringPaths(Iceberg::IcebergSchemaProcessor::collectIcebergStringPaths(schema_));
 }
 
 void MultipleFileWriter::startNewFile()

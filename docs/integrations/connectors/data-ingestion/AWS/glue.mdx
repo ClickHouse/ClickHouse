@@ -27,18 +27,22 @@ To integrate your Glue code with ClickHouse, you can use our official Spark conn
 <Tabs>
 <Tab title="AWS Marketplace">
 
-1. <h3 id="subscribe-to-the-connector">Subscribe to the Connector</h3>
+<Steps titleSize="h3">
+<Step title="Subscribe to the Connector" id="subscribe-to-the-connector">
 To access the connector in your account, subscribe to the ClickHouse AWS Glue Connector from AWS Marketplace.
+</Step>
 
-2. <h3 id="grant-required-permissions">Grant Required Permissions</h3>
+<Step title="Grant Required Permissions" id="grant-required-permissions">
 Ensure your Glue job’s IAM role has the necessary permissions, as described in the minimum privileges [guide](https://docs.aws.amazon.com/glue/latest/dg/getting-started-min-privs-job.html#getting-started-min-privs-connectors).
+</Step>
 
-3. <h3 id="activate-the-connector">Activate the Connector & Create a Connection</h3>
+<Step title="Activate the Connector & Create a Connection" id="activate-the-connector">
 After subscribing, select the Glue version that matches your job requirements. In the **Additional details** section, under **Usage instructions**, click the link to **Open Glue Studio - Add ClickHouse connector**. This opens the Glue connection creation page with key fields pre-filled. Give the connection a name and press create (no need to provide the ClickHouse connection details at this stage).
 
 <Image img="/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png" size='md' alt='AWS Marketplace usage instructions for ClickHouse Glue connector' />
+</Step>
 
-4. <h3 id="use-in-glue-job">Use in Glue Job</h3>
+<Step title="Use in Glue Job" id="use-in-glue-job">
 In your Glue job, select the `Job details` tab, and expend the `Advanced properties` window. Under the `Connections` section, select the connection you just created. The connector automatically injects the required JARs into the job runtime.
 
 <Image img="/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp" size='md' alt='Glue Notebook connections config' force='true' />
@@ -48,15 +52,28 @@ Make sure to select the connector version that matches your Glue job configurati
 - **Glue 4**: Spark 3.3, Scala 2, Python 3
 - **Glue 5**: Spark 3.5, Scala 2, Python 3
 </Note>
+</Step>
+</Steps>
 
 </Tab>
 <Tab title="Manual Installation">
 To add the required jars manually, please follow the following:
-1. Upload the latest Spark connector JAR (`clickhouse-spark-runtime-3.X_2.X-0.10.X.jar`) to an S3 bucket.
-2. Make sure the Glue job has access to this bucket.
-3. Under the `Job details` tab, scroll down and expend the `Advanced properties` drop down, and fill the jars path in `Dependent JARs path`:
+
+<Steps titleSize="h3">
+<Step title="Upload the connector JAR">
+Upload the latest Spark connector JAR (`clickhouse-spark-runtime-3.X_2.X-0.10.X.jar`) to an S3 bucket.
+</Step>
+
+<Step title="Grant access to the S3 bucket">
+Make sure the Glue job has access to this bucket.
+</Step>
+
+<Step title="Configure the dependent JAR path">
+Under the `Job details` tab, scroll down and expend the `Advanced properties` drop down, and fill the jars path in `Dependent JARs path`:
 
 <Image img="/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp" size='md' alt='Glue Notebook JAR path options' force='true' />
+</Step>
+</Steps>
 
 </Tab>
 </Tabs>

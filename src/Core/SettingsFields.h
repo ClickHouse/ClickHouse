@@ -253,17 +253,19 @@ struct SettingFieldTimespan final
     Int64 microseconds = 0;
     bool changed = false;
 
+    static Int64 microsecondsFromUnits(UInt64 units);
+
     explicit SettingFieldTimespan() = default;
     explicit SettingFieldTimespan(const Poco::Timespan & x) : microseconds(x.totalMicroseconds()) {}
     SettingFieldTimespan(const SettingFieldTimespan &) = default;
     SettingFieldTimespan & operator=(const SettingFieldTimespan &) = default;
 
-    explicit SettingFieldTimespan(UInt64 x) : microseconds(static_cast<Int64>(x * microseconds_per_unit)) {}
+    explicit SettingFieldTimespan(UInt64 x) : microseconds(microsecondsFromUnits(x)) {}
     explicit SettingFieldTimespan(const Field & f);
 
     SettingFieldTimespan & operator =(const Poco::Timespan & x) { microseconds = x.totalMicroseconds(); changed = true; return *this; }
 
-    SettingFieldTimespan & operator =(UInt64 x) { microseconds = static_cast<Int64>(x * microseconds_per_unit); changed = true; return *this; }
+    SettingFieldTimespan & operator =(UInt64 x) { microseconds = microsecondsFromUnits(x); changed = true; return *this; }
     SettingFieldTimespan & operator =(const Field & f);
 
     bool isChanged() const { return changed; }

@@ -34,6 +34,7 @@ pk_below_threshold_ordered_ids
 [9,10,11]
 pk_below_threshold_index_path_postfilters
 []
+-- Out-of-range vector_search_min_surviving_pk_fraction values throw an exception
 time_filtered_vector_search
 1
 time_filtered_vector_search_with_additional_filter_linux

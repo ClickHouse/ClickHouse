@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
@@ -93,7 +94,6 @@ class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
 class AsynchronousMetrics;
-class BackgroundSchedulePool;
 class MergeList;
 class MovesList;
 class ReplicatedFetchList;
@@ -148,6 +148,8 @@ class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
 class FilesystemCacheLog;
+class DistributedCacheLog;
+class DistributedCacheServerLog;
 class FilesystemReadPrefetchesLog;
 class ObjectStorageQueueLog;
 class AsynchronousInsertLog;
@@ -590,8 +592,9 @@ protected:
     /// so view-inner queries on the same node are unaffected.
     bool positional_arguments_already_resolved = false;
 
-    inline static ContextPtr global_context_instance;
-    inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static ContextPtr global_context_instance;
+    static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
 
     /// Temporary data for query execution accounting.
     TemporaryDataOnDiskScopePtr temp_data_on_disk;
@@ -754,7 +757,6 @@ public:
     String getPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
-    String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
     String getDynamicUserDefinedExecutableFunctionsPath() const;
     String getFilesystemCachesPath() const;
@@ -838,7 +840,6 @@ public:
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
-    void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
     void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
 
@@ -1610,12 +1611,24 @@ public:
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundStreamingTaskSchedulingSettings() const;
 
-    BackgroundSchedulePool & getBufferFlushSchedulePool() const;
-    BackgroundSchedulePool & getSchedulePool() const;
-    BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
-    BackgroundSchedulePool & getDistributedSchedulePool() const;
-    BackgroundSchedulePool & getIcebergSchedulePool() const;
-    BackgroundSchedulePool & getStreamingSchedulePool() const;
+    /// Create the pool if needed and return it. Returns a `shared_ptr` (not a reference) so a
+    /// caller keeping the pool around cannot outlive it: `shutdown` clears the members while
+    /// background tasks may still hold their pool.
+    BackgroundSchedulePoolPtr getBufferFlushSchedulePool() const;
+    BackgroundSchedulePoolPtr getSchedulePool() const;
+    BackgroundSchedulePoolPtr getMessageBrokerSchedulePool() const;
+    BackgroundSchedulePoolPtr getDistributedSchedulePool() const;
+    BackgroundSchedulePoolPtr getIcebergSchedulePool() const;
+    BackgroundSchedulePoolPtr getStreamingSchedulePool() const;
+
+    /// Return the pool only if it has already been created, null otherwise, so that reading
+    /// `system.background_schedule_pool` does not instantiate one.
+    BackgroundSchedulePoolPtr getBufferFlushSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getMessageBrokerSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getDistributedSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getIcebergSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getStreamingSchedulePoolIfExists() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -1633,6 +1646,9 @@ public:
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
     void reloadClusterConfig() const;
+
+    bool isDistributedCacheServer() const;
+    void setDistributedCacheServer();
 
     Compiler & getCompiler();
 
@@ -1666,6 +1682,10 @@ public:
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getS3QueueLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getAzureQueueLog() const;
+#if ENABLE_DISTRIBUTED_CACHE
+    std::shared_ptr<DistributedCacheLog> getDistributedCacheLog() const;
+    std::shared_ptr<DistributedCacheServerLog> getDistributedCacheServerLog() const;
+#endif
     std::shared_ptr<FilesystemReadPrefetchesLog> getFilesystemReadPrefetchesLog() const;
     std::shared_ptr<AsynchronousInsertLog> getAsynchronousInsertLog() const;
     std::shared_ptr<BackupLog> getBackupLog() const;
@@ -1776,6 +1796,7 @@ public:
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
         DISKS,          /// clickhouse-disks
+        DISTRIBUTED_CACHE, /// clickhouse-distributed-cache
     };
 
     ApplicationType getApplicationType() const;

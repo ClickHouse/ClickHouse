@@ -67,7 +67,7 @@ public:
 REGISTER_FUNCTION(RowNumberInBlock)
 {
     FunctionDocumentation::Description description = R"(
-For each [block](../../development/architecture.md#block) processed by `rowNumberInBlock`, returns the number of the current row.
+For each [block](/resources/develop-contribute/introduction/architecture#block) processed by `rowNumberInBlock`, returns the number of the current row.
 
 The returned number starts from 0 for each block.
     )";

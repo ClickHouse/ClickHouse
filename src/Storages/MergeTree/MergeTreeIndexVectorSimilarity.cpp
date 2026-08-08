@@ -52,6 +52,7 @@ namespace Setting
 {
     extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
     extern const SettingsFloat vector_search_index_fetch_multiplier;
+    extern const SettingsFloat vector_search_min_surviving_pk_fraction;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsBool vector_search_with_rescoring;
 }
@@ -345,9 +346,9 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
 namespace
 {
 
-/// Check two things to prevent undefined behavior further down in Usearch
+/// Check a few things to prevent undefined behavior further down in Usearch
 /// - No vector element is +inf, -inf or nan.
-/// - In the case of i8 quantization (which is obscure): additionally, the vector magnitude must not be zero.
+/// - In the case of i8 quantization (which is obscure): additionally, the squared vector magnitude must be non-zero and finite.
 template <typename T>
 void checkVectorIsSane(
     const T * vector,
@@ -380,9 +381,9 @@ void checkVectorIsSane(
         }
     }
 
-    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && magnitude_squared == 0.0)
+    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && (magnitude_squared == 0.0 || !std::isfinite(magnitude_squared)))
         throw Exception(error_code,
-            "Zero-magnitude vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
+            "Zero-magnitude or non-finite vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
 }
 
 template <typename Column>
@@ -541,6 +542,8 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
 {
     static constexpr auto MIN_INDEX_FETCH_MULTIPLIER = 1.0f;
     static constexpr auto MAX_INDEX_FETCH_MULTIPLIER = 1000.0f;
+    static constexpr auto MIN_SURVIVING_PK_FRACTION = 0.0f;
+    static constexpr auto MAX_SURVIVING_PK_FRACTION = 1.0f;
 
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
@@ -549,6 +552,15 @@ MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity
         || index_fetch_multiplier < MIN_INDEX_FETCH_MULTIPLIER || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
         || (parameters && !std::isfinite(static_cast<double>(index_fetch_multiplier) * static_cast<double>(parameters->limit))))
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'vector_search_index_fetch_multiplier' must be greater or equal to {} and less or equal to {}", MIN_INDEX_FETCH_MULTIPLIER, MAX_INDEX_FETCH_MULTIPLIER);
+
+    const float min_surviving_pk_fraction = context->getSettingsRef()[Setting::vector_search_min_surviving_pk_fraction];
+    if (!std::isfinite(min_surviving_pk_fraction)
+        || min_surviving_pk_fraction < MIN_SURVIVING_PK_FRACTION || min_surviving_pk_fraction > MAX_SURVIVING_PK_FRACTION)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting 'vector_search_min_surviving_pk_fraction' must be greater or equal to {} and less or equal to {}",
+            MIN_SURVIVING_PK_FRACTION,
+            MAX_SURVIVING_PK_FRACTION);
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr, const UpdatePartialDisjunctionResultFn & /*update_partial_disjunction_result_fn*/) const

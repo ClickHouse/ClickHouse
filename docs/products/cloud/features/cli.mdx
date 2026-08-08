@@ -76,14 +76,14 @@ clickhousectl cloud postgres list
 clickhousectl cloud postgres create \
   --name my-pg \
   --region us-east-1 \
-  --size c6gd.xlarge \
+  --size m6gd.xlarge \
   --pg-version 18
 
 # Get service details
 clickhousectl cloud postgres get <pg-id>
 
 # Update a service
-clickhousectl cloud postgres update <pg-id> --size c6gd.2xlarge --add-tag env=prod
+clickhousectl cloud postgres update <pg-id> --size m6gd.2xlarge --add-tag env=prod
 
 # Reset the password
 clickhousectl cloud postgres reset-password <pg-id> --generate

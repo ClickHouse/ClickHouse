@@ -385,6 +385,23 @@ FROM
     SETTINGS use_skip_indexes = 1, vector_search_min_surviving_pk_fraction = 0
 );
 
+SELECT '-- Out-of-range vector_search_min_surviving_pk_fraction values throw an exception';
+WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
+SELECT id
+FROM tab_pk_partial
+WHERE id >= 6
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 3
+SETTINGS vector_search_min_surviving_pk_fraction = -0.1; -- { serverError INVALID_SETTING_VALUE }
+
+WITH [toFloat32(0.), toFloat32(2.)] AS reference_vec
+SELECT id
+FROM tab_pk_partial
+WHERE id >= 6
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 3
+SETTINGS vector_search_min_surviving_pk_fraction = 1.1; -- { serverError INVALID_SETTING_VALUE }
+
 DROP TABLE tab_pk_partial;
 
 -- Case C: composite PK (`ORDER BY (created_date, id)`), Date-range filters, and vector ORDER BY LIMIT.
