@@ -1527,7 +1527,7 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
                 return;
             }
         }
-        catch (...)
+        catch (const Exception &)
         {
             /// If we can't read the lock (node disappeared, connection issues, etc.),
             /// treat it as a transient error and ask the user to retry.
