@@ -8,6 +8,8 @@
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/Utils.h>
 
+#include <Common/StringUtils.h>
+
 namespace DB
 {
 
@@ -139,6 +141,15 @@ ASTPtr parseMongoQuery(
         ASTPtr set_query;
         if (ParserSetQuery().parse(set_iterator, set_query, set_expected))
             return set_query;
+    }
+
+    /// This path carries a single statement: a trailing `;` is tolerated, a second statement
+    /// after it is not - it would be silently dropped rather than executed.
+    {
+        const char * statement_end = findStatementEnd(begin, end);
+        for (const char * pos = statement_end == end ? end : statement_end + 1; pos != end; ++pos)
+            if (!isWhitespaceASCII(*pos))
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Only a single Mongo statement is expected, but there is text after it");
     }
 
     Expected expected;

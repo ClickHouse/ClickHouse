@@ -45,6 +45,11 @@ std::pair<const char *, const char *> getMetadataSubstring(const char * begin, c
 
 std::pair<const char *, const char *> getSettingsSubstring(const char * begin, const char * end);
 
+/** Finds the parenthesis that closes the one at `begin`, skipping string literals and nested
+  * parentheses, and throws when the input ends before it. `begin` must point at a `(`.
+  */
+const char * findMatchingParenthesis(const char * begin, const char * end);
+
 /** Finds the `;` that terminates the statement starting at `begin`, skipping string literals: a
   * `;` inside a value such as `{"name": "a;b"}` is data, not a terminator. Returns `end` when the
   * statement is the last one of the input and carries no terminator, which is how a single query

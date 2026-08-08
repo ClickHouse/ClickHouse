@@ -26,21 +26,15 @@ std::pair<const char *, const char *> getMetadataSubstring(const char * begin, c
     return {begin, position};
 }
 
-std::pair<const char *, const char *> getSettingsSubstring(const char * begin, const char * end)
+const char * findMatchingParenthesis(const char * begin, const char * end)
 {
-    const char * position_start = findKth<'('>(begin, end, 1);
-    if (position_start == end)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find settings in query");
-    }
-
-    /// The parenthesis that closes the argument list, and not the first one in the text: a
+    /// The parenthesis that closes the one at `begin`, and not the first one in the text: a
     /// parenthesis inside a string literal - a regular expression such as `(?:www\.)?` for
     /// instance - is part of the argument, and so is a parenthesis of a nested call.
     size_t depth = 0;
     bool inside_string = false;
     char quote = 0;
-    for (const char * position = position_start; position != end; ++position)
+    for (const char * position = begin; position != end; ++position)
     {
         if (inside_string)
         {
@@ -62,11 +56,23 @@ std::pair<const char *, const char *> getSettingsSubstring(const char * begin, c
         {
             --depth;
             if (depth == 0)
-                return {position_start + 1, position};
+                return position;
         }
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find settings in your query ");
+}
+
+std::pair<const char *, const char *> getSettingsSubstring(const char * begin, const char * end)
+{
+    const char * position_start = findKth<'('>(begin, end, 1);
+    if (position_start == end)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: can not find settings in query");
+    }
+
+    const char * position_end = findMatchingParenthesis(position_start, end);
+    return {position_start + 1, position_end};
 }
 
 const char * findStatementEnd(const char * begin, const char * end)
