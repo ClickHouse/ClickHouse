@@ -123,9 +123,10 @@ public:
     /// restarts from 1 in a table that an external DROP + re-CREATE laid out at the same path, so a
     /// watermark from an older generation must be discarded (read the new table from its beginning)
     /// rather than trusted (skip the new table's first snapshots).
-    /// `current_table_identity` of 0 means the identity was not latched at create time, and an
-    /// absent `committed_table_identity` means the watermark predates identity tracking; in both
-    /// cases there is nothing to compare and the watermark is used.
+    /// `current_table_identity` of 0 means the identity was not latched at create time: there is
+    /// nothing to compare, so the watermark is used.  An absent `committed_table_identity` means
+    /// the watermark predates identity tracking, so its generation is unknown and it is discarded
+    /// once, reading the current table from its first snapshot.
     /// Public and static so the decision is unit-testable without Keeper.
     static bool isCommittedWatermarkFromSameTable(std::optional<Int64> committed_table_identity, Int64 current_table_identity);
 
