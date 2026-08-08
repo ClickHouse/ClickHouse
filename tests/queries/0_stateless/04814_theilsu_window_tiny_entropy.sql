@@ -32,12 +32,12 @@ WITH
 SELECT round(direct_raw, 4) AS direct, round(over_merged_raw, 4) AS merged_over;
 
 -- A genuinely non-constant first argument must not be mistaken for a constant one.
--- With counts {N - 1, 1} and N = 30 million, the true H(A) ≈ 6.1e-7 is below the
--- rounding-noise bound of the cached incremental sums, so the window state falls back
--- to the exact recomputation from the count maps. Here B = A, so H(A|B) = 0 and the
--- true theilsU is 1, not 0. The states are pre-aggregated per group and merged in the
--- window, which keeps the test cheap: the first frame holds only the constant group
--- (theilsU = 0), the second adds the single-row group (theilsU = 1).
+-- With counts {N - 1, 1} and N = 30 million, the true H(A) ≈ 6.1e-7 used to be below
+-- the rounding-noise bound of the plain (uncompensated) cached incremental sums; with
+-- the compensated sums it is handled by the ordinary window formula. Here B = A, so
+-- H(A|B) = 0 and the true theilsU is 1, not 0. The states are pre-aggregated per group
+-- and merged in the window, which keeps the test cheap: the first frame holds only the
+-- constant group (theilsU = 0), the second adds the single-row group (theilsU = 1).
 SET max_rows_to_read = 0; -- the test config limits reads to 20 million rows
 SELECT round(u, 4) AS u
 FROM
@@ -51,3 +51,21 @@ FROM
     )
 )
 ORDER BY u;
+
+-- The same near-noise-level H(A), but with a second argument that is not a function of
+-- the first, so the true theilsU is strictly between 0 and 1. The window result must
+-- stay on the amortized O(1) path (the exact-recomputation shortcut is only for frames
+-- with a constant first argument, because it rescans the count maps) and must agree
+-- with the exact aggregate code path.
+WITH
+    (SELECT theilsU(toUInt8(number = 0), toUInt16(number % 1000)) FROM numbers(30000000)) AS direct_raw,
+    (SELECT theilsUMerge(st) OVER (ORDER BY g ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+     FROM
+     (
+        SELECT number = 0 AS g, theilsUState(toUInt8(number = 0), toUInt16(number % 1000)) AS st
+        FROM numbers(30000000)
+        GROUP BY g
+     )
+     ORDER BY g DESC
+     LIMIT 1) AS window_raw
+SELECT round(direct_raw, 4) AS direct, round(window_raw, 4) AS windowed, abs(direct_raw - window_raw) < 1e-6;

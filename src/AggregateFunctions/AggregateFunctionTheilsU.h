@@ -70,7 +70,7 @@ struct TheilsUData : CrossTabAggregateData
 
 /// add() - O(1) with high constant factor because of maintaining cached sums
 /// getResult() - amortized O(1), independent of row/column degree
-///               (except for frames whose H(A) is at the rounding-noise level, which fall back to the exact recomputation)
+///               (except for frames with a constant first argument, which take an O(|count_a|) = O(1) shortcut)
 /// Suitable to be used in window functions (SELECT ... OVER(...) FROM ...)
 
 /// Unlike others (e.g. cramersV, contingency), this class does not inherit from CrossTabPhiSquaredWindowData
@@ -179,27 +179,32 @@ struct TheilsUWindowData : CrossTabCountsState
         const Float64 count_f = static_cast<Float64>(count);
 
         /// H(A) = log(N) - (Σ n_a log n_a) / N
-        const Float64 h_a = std::log(count_f) - sum_a_nlogn / count_f;
+        const Float64 h_a = std::log(count_f) - sum_a_nlogn.get() / count_f;
 
-        /// The cached Σ n·log n sums accumulate rounding error from the incremental
-        /// updates, so the derived entropies are only accurate to about
-        /// N · ε · log N in absolute terms. When the true H(A) is at or below that
-        /// noise level — either zero (the first argument is constant within the
-        /// frame) or genuinely tiny (a huge frame with an almost-constant first
-        /// argument) — the computed `h_a` is dominated by rounding noise, and
-        /// `1 - H(A|B) / H(A)` amplifies that noise without bound. Fall back to
-        /// the exact recomputation from the count maps in that case: it is free of
-        /// cancellation (a constant column gives H(A) = 0 exactly), at the cost of
-        /// giving up the amortized O(1) complexity for such degenerate frames.
-        /// Widen the sanity-check tolerance on the fast path by the same relative
-        /// error bound.
-        const Float64 entropy_error = 8 * std::numeric_limits<Float64>::epsilon() * count_f * std::log(count_f);
+        /// The cached Σ n·log n sums are kept in compensated form, so their error
+        /// does not accumulate over the incremental updates: the per-key `n log n`
+        /// evaluations telescope exactly (the same rounded value enters the sum with
+        /// `+` and later leaves it with `-`), and the compensation captures the
+        /// rounding residual of every addition to the running sum. What remains is
+        /// O(ε · log N) absolute noise in the derived entropies (the rounding of the
+        /// per-update deltas, the final `sum + compensation`, and the division).
+        /// When the computed H(A) is at or below that noise level, the true H(A)
+        /// is zero for every attainable frame size (a genuinely non-constant first
+        /// argument gives H(A) ≥ log(N) / N, which stays above the bound until
+        /// N · ε ≈ 32): the first argument is constant within the frame, and
+        /// `1 - H(A|B) / H(A)` would divide noise by noise. Take the exact
+        /// recomputation shortcut in that case: with a constant first argument it
+        /// returns 0 after scanning only the single-entry `count_a` map (every term
+        /// is `1 · log 1`), without touching `count_ab`, so the amortized O(1)
+        /// complexity is preserved. Widen the sanity-check tolerance on the fast
+        /// path by the same relative error bound.
+        const Float64 entropy_error = 32 * std::numeric_limits<Float64>::epsilon() * std::log(count_f);
 
         if (h_a <= entropy_error)
             return TheilsUData::computeExact(*this);
 
         /// H(A|B) = (Σ n_b log n_b - Σ n_ab log n_ab) / N
-        const Float64 h_a_given_b = (sum_b_nlogn - sum_ab_nlogn) / count_f;
+        const Float64 h_a_given_b = (sum_b_nlogn.get() - sum_ab_nlogn.get()) / count_f;
 
         /// U(A|B) = 1 - H(A|B) / H(A)
         Float64 res = 1.0 - h_a_given_b / h_a;
@@ -221,14 +226,41 @@ struct TheilsUWindowData : CrossTabCountsState
     }
 
 private:
+    /// Neumaier-compensated running sum: `add` captures the exact rounding residual
+    /// of every addition, so the error of the accumulated value does not grow with
+    /// the number of additions. Without the compensation, the plain running sums
+    /// accumulate O(ε · N · log N) error over N incremental updates, which swamps
+    /// the O(log N / N) entropy of an almost-constant column already at N ≈ 2.4e7
+    /// and makes `getResult` unable to distinguish it from an exactly constant one.
+    struct CompensatedSum
+    {
+        Float64 sum = 0.0;
+        Float64 compensation = 0.0;
+
+        void add(Float64 value)
+        {
+            const Float64 t = sum + value;
+            if (std::abs(sum) >= std::abs(value))
+                compensation += (sum - t) + value;
+            else
+                compensation += (value - t) + sum;
+            sum = t;
+        }
+
+        Float64 get() const
+        {
+            return sum + compensation;
+        }
+    };
+
     /// Σ n_a log n_a
-    Float64 sum_a_nlogn = 0.0;
+    CompensatedSum sum_a_nlogn;
 
     /// Σ n_b log n_b
-    Float64 sum_b_nlogn = 0.0;
+    CompensatedSum sum_b_nlogn;
 
     /// Σ n_ab log n_ab
-    Float64 sum_ab_nlogn = 0.0;
+    CompensatedSum sum_ab_nlogn;
 
     static Float64 nlogn(UInt64 x)
     {
@@ -239,30 +271,20 @@ private:
     }
 
     template <typename Map, typename Key>
-    static void addToCountAndSum(Map & map, const Key & key, UInt64 add_value, Float64 & sum_xlogx)
+    static void addToCountAndSum(Map & map, const Key & key, UInt64 add_value, CompensatedSum & sum_xlogx)
     {
         UInt64 & cur = map[key];
         const Float64 before = nlogn(cur);
         cur += add_value;
-        sum_xlogx += nlogn(cur) - before;
+        sum_xlogx.add(nlogn(cur) - before);
     }
 
     template <typename Map>
-    static Float64 recomputeNLogNSum(const Map & map)
+    static CompensatedSum recomputeNLogNSum(const Map & map)
     {
-        /// Kahan summation to reduce numerical error
-        Float64 sum = 0.0;
-        Float64 c = 0.0;
-
+        CompensatedSum sum;
         for (const auto & [_, value] : map)
-        {
-            const Float64 term = nlogn(value);
-            const Float64 y = term - c;
-            const Float64 t = sum + y;
-            c = (t - sum) - y;
-            sum = t;
-        }
-
+            sum.add(nlogn(value));
         return sum;
     }
 };
