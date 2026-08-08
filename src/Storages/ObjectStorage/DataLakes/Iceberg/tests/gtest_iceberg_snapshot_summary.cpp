@@ -474,14 +474,14 @@ TEST(IcebergSnapshotSummary, AppendPreservesInheritedEqualityDeletes)
 #if !CLICKHOUSE_CLOUD
 TEST(IcebergCompactionOverwriteClassification, PositionDeleteOnlyPredicate)
 {
-    /// Compaction may skip an `overwrite` snapshot only when it adds position delete files and
-    /// nothing else, because it collects only data and position delete files: any other delta
-    /// would be dropped from the rewritten table. Every refused row satisfies each conjunct
-    /// except the one it names, so dropping any single term admits a named row: the accounting
-    /// proof is bounded above by the two count-exceeds rows and below by the three unaccounted
-    /// ones. The shapes are constructed because ClickHouse's own writer cannot emit them (it
-    /// never writes an equality delete or any removal counter), which is why this lives here
-    /// and not in a stateless test.
+    /// Compaction may skip an `overwrite` snapshot only when it adds position delete files and nothing
+    /// else, because it collects only data and position delete files: any other delta would be dropped from
+    /// the rewritten table. Each conjunct has at least one row isolating it, satisfying every other
+    /// conjunct, so dropping any single term admits a named row; some rows fail more than one term besides.
+    /// The accounting proof is bounded above by the two rows declaring more position delete files than
+    /// delete files and below by the three unaccounted ones. The refused shapes are constructed because
+    /// ClickHouse's own writer cannot emit them (it never writes an equality delete or a removal counter),
+    /// which is why they live here and not in a stateless test.
     struct Case
     {
         const char * name;
@@ -498,6 +498,10 @@ TEST(IcebergCompactionOverwriteClassification, PositionDeleteOnlyPredicate)
         /// The reported defect: one delete file marking many rows.
         {"clickhouse_multi_row",
          {.added_delete_files = 1, .added_position_delete_files = 1, .added_position_deletes = 10}, true},
+        /// A partitioned delete writes one position delete file per touched partition, so the accepted
+        /// shape is not limited to a single delete file.
+        {"clickhouse_multi_partition",
+         {.added_delete_files = 2, .added_position_delete_files = 2, .added_position_deletes = 10}, true},
         {"clickhouse_single_row",
          {.added_delete_files = 1, .added_position_delete_files = 1, .added_position_deletes = 1}, true},
         /// A delete file marking no rows is still only a position delete file.
