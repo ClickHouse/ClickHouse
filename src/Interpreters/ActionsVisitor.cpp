@@ -362,6 +362,33 @@ ASTPtr makeFunctionCall(const String & function_name, ASTs arguments)
     return function;
 }
 
+ASTPtr makeScalarNonConstantInReplacement(const ASTFunction & node, bool left_operand_can_be_null)
+{
+    const auto & left_operand = node.arguments->children.at(0);
+    const auto & right_operand = node.arguments->children.at(1);
+    const bool is_negative = isNegativeInFunctionName(node.name);
+
+    if (inFunctionComparesNulls(node.name))
+        return makeASTFunction(
+            is_negative ? "isDistinctFrom" : "isNotDistinctFrom",
+            left_operand->clone(),
+            right_operand->clone());
+
+    ASTPtr result = makeASTFunction(
+        "ifNull",
+        makeASTFunction(is_negative ? "notEquals" : "equals", left_operand->clone(), right_operand->clone()),
+        make_intrusive<ASTLiteral>(is_negative ? 1u : 0u));
+
+    if (left_operand_can_be_null)
+        result = makeASTFunction(
+            "if",
+            makeASTFunction("isNull", left_operand->clone()),
+            make_intrusive<ASTLiteral>(Field{}),
+            std::move(result));
+
+    return result;
+}
+
 ASTPtr makeNonConstantInReplacement(
     const ASTFunction & node,
     bool right_operand_is_array,
@@ -1117,11 +1144,18 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                     }
                 }
 
-                const bool should_rewrite = !left_argument_is_tuple || right_argument_is_array
-                    || right_argument_tuple_function_is_set || isTupleType(right_argument_type);
-                if (should_rewrite)
+                ASTPtr replacement;
+                const bool right_argument_is_scalar = !right_argument_is_array
+                    && !right_argument_tuple_function_is_set && !isTupleType(right_argument_type);
+                if (left_argument_is_tuple && right_argument_is_scalar)
                 {
-                    auto replacement = makeNonConstantInReplacement(
+                    replacement = makeScalarNonConstantInReplacement(
+                        node,
+                        isNullableOrLowCardinalityNullable(left_argument_type));
+                }
+                else
+                {
+                    replacement = makeNonConstantInReplacement(
                         node,
                         right_argument_is_array,
                         right_argument_tuple_function_is_set,
@@ -1129,13 +1163,14 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                         right_argument_type,
                         left_argument_is_tuple,
                         getTupleElementCount(left_argument_type, node.arguments->children.at(0)));
-                    visit(replacement, data);
-
-                    auto replacement_name = replacement->getColumnName();
-                    if (replacement_name != column_name)
-                        data.addAlias(replacement_name, column_name);
-                    return;
                 }
+
+                visit(replacement, data);
+
+                auto replacement_name = replacement->getColumnName();
+                if (replacement_name != column_name)
+                    data.addAlias(replacement_name, column_name);
+                return;
             }
             else
             {
