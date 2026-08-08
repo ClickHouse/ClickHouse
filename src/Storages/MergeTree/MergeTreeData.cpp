@@ -5650,13 +5650,43 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
     /// the stored column that holds it, and reading a subcolumn reads the very stream that the
     /// recompression rewrites. Map every required column back to its owning stored column before
     /// comparing - the same normalization `MutateTask` applies to these lists.
+    ///
+    /// Structural subcolumns (`arr.size0`, `x.null`, ...) are the exception: a specialized codec
+    /// is only ever applied to the substreams where `ISerialization::isSpecialCompressionAllowed`
+    /// holds - for array sizes, null maps and the other structural substreams the part writers and
+    /// the raw-block recompression fall back to the generic codecs of the chain, so a lossy
+    /// recompression cannot change their values (`codecResolvesToLossyCompression` skips them for
+    /// the same reason). A dependent that reads the recompressed column only through such
+    /// subcolumns stays valid and must not block the recompression.
+    auto is_structural_subcolumn = [&](std::string_view subcolumn_name)
+    {
+        bool found = false;
+        bool structural = true;
+        auto substream_data = ISerialization::SubstreamData(column_desc->type->getDefaultSerialization()).withType(column_desc->type);
+        IDataType::forEachSubcolumn([&](const auto & substream_path, const auto & name, const auto &)
+        {
+            if (name != subcolumn_name)
+                return;
+            found = true;
+            /// Every substream of a subcolumn anchored under a structural path element contains
+            /// that element in its own path, so none of its streams can take the specialized codec.
+            structural = structural && !ISerialization::isSpecialCompressionAllowed(substream_path);
+        }, substream_data);
+        return found && structural;
+    };
+
     const auto storage_columns = columns.getAllPhysical().getNameSet();
     auto depends_on_recompressed_column = [&](const Names & required_columns)
     {
         return std::ranges::any_of(required_columns, [&](const String & required_column)
         {
             auto column_in_storage = Nested::tryGetColumnNameInStorage(required_column, storage_columns);
-            return column_in_storage && *column_in_storage == column_name;
+            if (!column_in_storage || *column_in_storage != column_name)
+                return false;
+            if (required_column.size() > column_name.size()
+                && is_structural_subcolumn(std::string_view(required_column).substr(column_name.size() + 1)))
+                return false;
+            return true;
         });
     };
 
@@ -5724,6 +5754,20 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
     for (const auto & ephemeral_column : columns.getEphemeral())
         all_columns_with_ephemeral.push_back(ephemeral_column);
 
+    /// Resolve enumerable subcolumns (`arr.size0`, `val.x`, ...) as first-class columns, so the
+    /// required-columns list keeps the subcolumn names and the structural-subcolumn exception
+    /// above can apply to them. Dynamic subcolumns (`JSON` paths) cannot be enumerated, so
+    /// `replaceSubcolumnsToGetSubcolumnFunctionInQuery` below still collapses them to the owning
+    /// column, which conservatively counts as reading its values.
+    NamesAndTypesList analysis_columns = all_columns_with_ephemeral;
+    NameSet physical_and_ephemeral_names;
+    for (const auto & column : all_columns_with_ephemeral)
+    {
+        physical_and_ephemeral_names.insert(column.name);
+        for (const auto & subcolumn_name : column.type->getSubcolumnNames())
+            analysis_columns.emplace_back(column.name, subcolumn_name, column.type, column.type->getSubcolumnType(subcolumn_name));
+    }
+
     /// `requiredSourceColumns` of an expression may name an `EPHEMERAL` column rather than the
     /// stored columns its default expression reads (`m MATERIALIZED e + 1` with `e EPHEMERAL
     /// x * 2` requires `e`, not `x`), so expand every `EPHEMERAL` dependency through its default
@@ -5737,13 +5781,15 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
         {
             auto expression_query = expressions_to_analyze.back()->clone();
             expressions_to_analyze.pop_back();
-            replaceSubcolumnsToGetSubcolumnFunctionInQuery(expression_query, all_columns_with_ephemeral);
-            auto syntax_result = TreeRewriter(getContext()).analyze(expression_query, all_columns_with_ephemeral);
+            replaceSubcolumnsToGetSubcolumnFunctionInQuery(expression_query, analysis_columns);
+            auto syntax_result = TreeRewriter(getContext()).analyze(expression_query, analysis_columns);
             for (const auto & required_column : syntax_result->requiredSourceColumns())
             {
                 if (!visited_columns.emplace(required_column).second)
                     continue;
-                const auto * required_column_desc = columns.tryGet(required_column);
+                /// The required name may be an `EPHEMERAL` column or one of its subcolumns.
+                auto owning_column = Nested::tryGetColumnNameInStorage(required_column, physical_and_ephemeral_names);
+                const auto * required_column_desc = owning_column ? columns.tryGet(*owning_column) : nullptr;
                 if (required_column_desc && required_column_desc->default_desc.kind == ColumnDefaultKind::Ephemeral
                     && required_column_desc->default_desc.expression)
                     expressions_to_analyze.push_back(required_column_desc->default_desc.expression);
