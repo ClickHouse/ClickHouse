@@ -207,8 +207,7 @@
               "expanded": false,
               "group": "Migration",
               "pages": [
-                "products/cloud/guides/migration/upload-a-csv-file",
-                "products/cloud/guides/migration/oss-to-cloud-backup-restore"
+                "products/cloud/guides/migration/upload-a-csv-file"
               ]
             },
             {
