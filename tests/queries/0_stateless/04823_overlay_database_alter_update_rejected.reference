@@ -1,0 +1,15 @@
+-- ALTER of an existing source table through the facade: rejected
+TABLE_IS_PERMANENTLY_READ_ONLY
+-- ALTER of a missing source table through the facade: the same error (no existence oracle)
+TABLE_IS_PERMANENTLY_READ_ONLY
+-- ALTER through a facade over an unreachable source: still the same error, not the connection error
+TABLE_IS_PERMANENTLY_READ_ONLY
+-- UPDATE of an existing source table through the facade: rejected
+TABLE_IS_PERMANENTLY_READ_ONLY
+-- UPDATE of a missing source table through the facade: the same error (no existence oracle)
+TABLE_IS_PERMANENTLY_READ_ONLY
+-- UPDATE through a facade over an unreachable source: still the same error, not the connection error
+TABLE_IS_PERMANENTLY_READ_ONLY
+-- ALTER and UPDATE in the underlying database keep working
+1	11	7
+2	20	7

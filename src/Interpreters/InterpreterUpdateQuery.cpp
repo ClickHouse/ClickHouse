@@ -93,7 +93,22 @@ BlockIO InterpreterUpdateQuery::execute()
     /// update. Resolve the table best-effort (null for a non-local ON CLUSTER target) and fail closed.
     StoragePtr table_for_access;
     if (auto table_id_for_access = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary))
+    {
+        /// Reject UPDATE through a read-only Overlay facade by the database name alone, before the
+        /// best-effort table lookup of the `_row_exists` prepass: resolving the table through the
+        /// facade would load the underlying source table, so a lookup-first order would surface the
+        /// source's own startup or connection error - or answer differently for a missing name vs.
+        /// an existing one - turning the facade into a source-table existence oracle (the same
+        /// ordering rule as in InterpreterDropQuery).
+        if (DatabaseOverlay::tryGetReadonlyFacade(table_id_for_access.database_name))
+            throw Exception(
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                "Database {} is an Overlay facade (read-only). "
+                "Run UPDATE in an underlying database",
+                backQuote(table_id_for_access.database_name));
+
         table_for_access = DatabaseCatalog::instance().tryGetTable(table_id_for_access, getContext());
+    }
     const bool row_exists_is_marker = InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(table_for_access, getContext());
 
     bool deletes_via_row_exists = false;
@@ -127,13 +142,6 @@ BlockIO InterpreterUpdateQuery::execute()
     update_query.setDatabase(table_id.database_name);
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-
-    if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
-        throw Exception(
-            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
-            "Database {} is an Overlay facade (read-only). "
-            "Run UPDATE in an underlying database",
-            backQuote(table_id.database_name));
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());

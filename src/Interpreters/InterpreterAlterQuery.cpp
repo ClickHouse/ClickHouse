@@ -425,6 +425,20 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table_id)
     {
         query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+
+        /// Reject ALTER through a read-only Overlay facade by the database name alone, before the
+        /// table lookup: resolving the table through the facade would load the underlying source
+        /// table, so a lookup-first order would surface the source's own startup or connection
+        /// error - or answer UNKNOWN_TABLE for a missing name vs. the rejection for an existing
+        /// one - turning the facade into a source-table existence oracle (the same ordering rule
+        /// as in InterpreterDropQuery).
+        if (DatabaseOverlay::tryGetReadonlyFacade(table_id.database_name))
+            throw Exception(
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                "Database {} is an Overlay facade (read-only). "
+                "Run ALTER TABLE in an underlying database",
+                backQuote(table_id.database_name));
+
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 
@@ -462,13 +476,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
     }
-
-    if (const auto * overlay = dynamic_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
-        throw Exception(
-            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
-            "Database {} is an Overlay facade (read-only). "
-            "Run ALTER TABLE in an underlying database",
-            backQuote(table_id.database_name));
 
 #if CLICKHOUSE_CLOUD
     if (SharedDatabaseCatalog::shouldReplicateQuery(getContext(), query_ptr))
