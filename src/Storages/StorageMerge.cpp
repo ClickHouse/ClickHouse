@@ -28,6 +28,7 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -82,6 +83,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+extern const int DATABASE_ACCESS_DENIED;
 extern const int STORAGE_REQUIRES_PARAMETER;
 }
 
@@ -1400,6 +1402,12 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
 
 DatabaseTablesIteratorPtr StorageMerge::DatabaseNameOrRegexp::getDatabaseIterator(const String & database_name, ContextPtr local_context) const
 {
+    /// The internal database of temporary tables holds the temporary tables of all sessions and all users,
+    /// and it is not covered by access control, so direct access to it is denied, see `DatabaseCatalog::tryGetDatabaseAndTable`.
+    if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        throw Exception(
+            ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
+
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
     auto table_name_match = [this, database_name](const String & table_name_) -> bool
@@ -1442,6 +1450,10 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
 
         for (const auto & db : databases)
         {
+            /// A regexp is not an explicit request for the internal database of temporary tables, so it is skipped silently.
+            if (db.first == DatabaseCatalog::TEMPORARY_DATABASE)
+                continue;
+
             if (source_database_regexp->match(db.first))
                 database_table_iterators.emplace_back(getDatabaseIterator(db.first, local_context));
         }
@@ -1752,6 +1764,21 @@ void registerStorageMerge(StorageFactory & factory)
             engine_args[0] = database_ast;
 
         String source_database_name_or_regexp = checkAndGetLiteralArgument<String>(database_ast, "database_name");
+
+        /// With an explicit column list, `CREATE` (or a full-definition `ATTACH`, which is CREATE-like user input)
+        /// does not need schema inference and would not read the source tables, so the unusable table definition
+        /// would be stored; deny it right away, the same way as reading does, see `DatabaseNameOrRegexp::getDatabaseIterator`.
+        /// Only fresh user-supplied definitions are denied. Loads of previously stored metadata (server startup,
+        /// short-syntax `ATTACH`) and replays of definitions that already exist elsewhere (`SECONDARY_CREATE`:
+        /// replicated-database DDL replay, backup `RESTORE`) stay loadable, so a table created before this check
+        /// existed can still be restored or materialized on a new replica. Reading from such a table is denied
+        /// anyway, so unlike `StorageDistributed` there is nothing a restoring user could reach through it.
+        bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        if (!is_regexp && source_database_name_or_regexp == DatabaseCatalog::TEMPORARY_DATABASE
+            && fresh_user_definition)
+            throw Exception(
+                ErrorCodes::DATABASE_ACCESS_DENIED, "Direct access to `{}` database is not allowed", DatabaseCatalog::TEMPORARY_DATABASE);
 
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");

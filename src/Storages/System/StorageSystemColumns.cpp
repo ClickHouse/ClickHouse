@@ -30,6 +30,7 @@ namespace Setting
 }
 namespace ErrorCodes
 {
+    extern const int DATABASE_ACCESS_DENIED;
     extern const int UNKNOWN_DATABASE;
 }
 
@@ -153,14 +154,18 @@ protected:
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
                 {
-                    /// Can throw UNKNOWN_DATABASE in case of Merge table
+                    /// The column sizes are a best-effort introspection. In case of a `Merge` table, the source
+                    /// database may have been dropped (`UNKNOWN_DATABASE`), or it may be the internal database of
+                    /// temporary tables, which `getDatabaseIterator` refuses to enumerate (`DATABASE_ACCESS_DENIED`) -
+                    /// such a table can no longer be created, but a pre-existing definition still loads (`ATTACH`,
+                    /// backup `RESTORE`, replicated-database replay) and must not break `system.columns`.
                     try
                     {
                         column_sizes = storage->getColumnSizes();
                     }
                     catch (const Exception & e)
                     {
-                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::DATABASE_ACCESS_DENIED)
                             throw;
                         tryLogCurrentException(getLogger("SystemColumns"), fmt::format("While obtaining columns sizes for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
                     }
