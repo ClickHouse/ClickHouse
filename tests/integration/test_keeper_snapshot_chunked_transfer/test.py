@@ -106,6 +106,16 @@ COMPAT_PARAMS = [
 ]
 
 
+def get_coordination_setting(node, name):
+    """Read an effective coordination setting from a running server via the 'conf' 4LW command."""
+    data = keeper_utils.send_4lw_cmd(cluster, node, cmd="conf")
+    settings = dict(
+        line.split("=", 1) for line in data.split("\n") if "=" in line
+    )
+    assert name in settings, f"'{name}' absent from 'conf' output of {node.name}: {data}"
+    return settings[name]
+
+
 @pytest.mark.parametrize("nodes", CHUNKED_TRANSFER_PARAMS)
 def test_recover_from_snapshot_with_chunked_transfer(started_cluster, nodes):
     node_leader = nodes["leader"]
@@ -371,6 +381,14 @@ def test_recover_from_snapshot_sent_by_old_leader(started_cluster, nodes):
     node_lagging.start_clickhouse(RESTART_TIMEOUT_SECONDS)
     keeper_utils.wait_until_connected(cluster, node_lagging)
     received = get_received_snapshot_info(node_lagging, kill_time)
+
+    # The reads below only terminate because the pinned leader serves them through Raft, so
+    # assert that on the server: losing configs/quorum_reads.xml must fail here rather than
+    # silently reintroduce a 900 s hang.
+    assert get_coordination_setting(node_old_leader, "quorum_reads") == "true", \
+        f"{node_old_leader.name} runs a pinned image and must serve reads through Raft"
+    assert get_coordination_setting(node_lagging, "quorum_reads") == "false", \
+        f"{node_lagging.name} is the node under test and must keep local reads"
 
     leader_zk = keeper_utils.get_fake_zk(cluster, node_old_leader.name)
     lagging_zk = keeper_utils.get_fake_zk(cluster, node_lagging.name)
