@@ -64,6 +64,45 @@ SELECT 'attached';
 
 DROP TABLE test_ttl_variant_attach;
 
+-- The `Dynamic` adaptor consults `dynamic_throw_on_type_mismatch` only while *executing*: unlike the
+-- `Variant` adaptor it enumerates no alternatives while building (its result type falls back to `Dynamic`),
+-- so the build itself cannot throw and the startup failure above was specific to `Variant`. What loading
+-- must still guarantee for `Dynamic` is the same contract: a stored TTL that only an escape-hatch session
+-- could create (the strict DDL-time probe rejects `length` over a `Dynamic`, whatever the session policy)
+-- is loaded back without re-validation, under any session settings.
+SET dynamic_throw_on_type_mismatch = 0;
+
+CREATE TABLE test_ttl_dynamic_attach
+(
+    key UInt64,
+    v Dynamic,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNull(length(v)); -- { serverError BAD_TTL_EXPRESSION }
+
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_dynamic_attach
+(
+    key UInt64,
+    v Dynamic,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNull(length(v));
+
+SET dynamic_throw_on_type_mismatch = 1;
+SET allow_suspicious_ttl_expressions = 0;
+
+DETACH TABLE test_ttl_dynamic_attach;
+ATTACH TABLE test_ttl_dynamic_attach;
+SELECT 'attached dynamic';
+
+DROP TABLE test_ttl_dynamic_attach;
+
 SELECT '-- the escape hatch keeps the session strictness --';
 
 -- `allow_suspicious_ttl_expressions` only skips the TTL validator; the build itself still follows the
