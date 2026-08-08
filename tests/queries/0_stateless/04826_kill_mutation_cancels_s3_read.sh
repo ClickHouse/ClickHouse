@@ -138,8 +138,11 @@ echo "toggle: mutation started: $([[ "$started" -ge 1 ]] && echo 1 || echo 0)"
 # read's own checks -- with a fresh attempt the read rechecks within milliseconds and the window
 # never opens.
 sleep 12
-# Released immediately, so the blocker is un-cancelled again well before the read's next check.
+# The blocker must stay cancelled long enough for a poller to see it -- back to back the window is
+# shorter than any poll interval, so nothing observes it and there is nothing to latch. It is then
+# released while the read is still between attempts, which is the ordering under test.
 $CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_toggle"
+sleep 0.5
 $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t_toggle"
 cancelled=0
 for _ in {1..300}; do
