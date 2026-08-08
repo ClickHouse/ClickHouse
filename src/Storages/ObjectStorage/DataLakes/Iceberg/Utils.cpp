@@ -54,6 +54,8 @@
 namespace ProfileEvents
 {
     extern const Event IcebergMetadataFilesCacheSkipped;
+    extern const Event IcebergMetadataFilesCacheHits;
+    extern const Event IcebergMetadataFilesCacheMisses;
 }
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
@@ -1337,7 +1339,11 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                 /// just misses); inserting under it before validating would poison the shared cache
                 /// entry for the real table that UUID belongs to. So probe under the supplied UUID,
                 /// validate the parsed `table-uuid` matches, and only insert under the *parsed* UUID.
+                /// `IcebergMetadataFilesCacheHits` / `Misses` are recorded once below, after the hit
+                /// is validated, mirroring the `catalog_uuid_hint` pattern in IcebergMetadata.cpp; a
+                /// probed-and-known UUID must never also count as `Skipped`.
                 Poco::JSON::Object::Ptr metadata_file_object;
+                bool content_cache_hit = false;
                 if (metadata_cache && table_uuid.has_value())
                 {
                     String cached = metadata_cache->tryGetTableMetadata(
@@ -1348,14 +1354,26 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                         auto candidate = parser.parse(cached).extract<Poco::JSON::Object::Ptr>();
                         if (candidate->has(Iceberg::f_table_uuid)
                             && normalizeUuid(candidate->getValue<String>(Iceberg::f_table_uuid)) == normalizeUuid(*table_uuid))
+                        {
+                            content_cache_hit = true;
                             metadata_file_object = candidate;
+                        }
                     }
+                    ProfileEvents::increment(content_cache_hit
+                        ? ProfileEvents::IcebergMetadataFilesCacheHits
+                        : ProfileEvents::IcebergMetadataFilesCacheMisses);
                 }
                 if (!metadata_file_object)
                 {
                     String raw_metadata_json;
+                    /// Pass `nullptr` as the cache here (rather than `metadata_cache`) when a probe
+                    /// already happened above: it suppresses getMetadataJSONObject's own
+                    /// `IcebergMetadataFilesCacheSkipped` accounting, which would otherwise
+                    /// double-count this fetch as a skip on top of the miss already recorded.
+                    /// When there was no `table_uuid` to probe with in the first place, pass the
+                    /// real cache through so the normal `Skipped` accounting applies.
                     metadata_file_object = getMetadataJSONObject(
-                        metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, /*table_uuid=*/std::nullopt, data_source_description, raw_metadata_json);
+                        metadata_file_path, object_storage, table_uuid.has_value() ? nullptr : metadata_cache, local_context, log, compression_method, /*table_uuid=*/std::nullopt, data_source_description, raw_metadata_json);
                     if (metadata_cache && metadata_file_object->has(Iceberg::f_table_uuid))
                         metadata_cache->setTableMetadata(
                             IcebergMetadataFilesCache::getKey(
