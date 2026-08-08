@@ -313,6 +313,24 @@ done
 grep -q "the directory /missing does not exist" /root/install.log
 [ ! -e /missing ]
 [ -L /etc/clickhouse-client/config.xml ]""",
+        f"Install tgz over a symlink loop in {image}": r"""#!/bin/bash -ex
+# A chain of symlinks that never reaches a real path cannot be installed. Writing through
+# the destination used to fail with `ELOOP`; following the chain has to fail just as
+# loudly instead of spinning forever, and it has to leave the links as they were.
+mkdir -p /etc/clickhouse-client /shared
+ln -s /shared/config.xml /etc/clickhouse-client/config.xml
+ln -s /etc/clickhouse-client/config.xml /shared/config.xml
+# Not /tmp: the test image boots systemd, which runs `systemd-tmpfiles` with `D /tmp`
+# concurrently with this script and can wipe the log between writing and reading it.
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    ! "/$package/install/doinst.sh" > /root/install.log 2>&1
+done
+grep -q "Too many levels of symbolic links" /root/install.log
+[ "$(readlink /etc/clickhouse-client/config.xml)" = "/shared/config.xml" ]
+[ "$(readlink /shared/config.xml)" = "/etc/clickhouse-client/config.xml" ]""",
     }
     return test_install(image, tests)
 
