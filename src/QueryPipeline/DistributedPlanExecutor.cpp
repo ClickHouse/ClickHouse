@@ -212,8 +212,8 @@ public:
     {
     }
 
-    /// Appends a data chunk. Throws once the exchange is cancelled, so the producer stops
-    /// instead of filling a queue nobody reads.
+    /// Appends a data chunk. Throws if the exchange is cancelled, so the producer stops early.
+    /// Drops the chunk if the reader is detached.
     void appendChunk(Chunk chunk)
     {
         LOG_TEST(log, "Appending chunk to exchange '{}', rows {}", name, chunk.getNumRows());
@@ -221,6 +221,8 @@ public:
         std::lock_guard lock(mutex);
         if (cancelled)
             throwCancelled();
+        if (reader_detached)
+            return;
         chunks.emplace_back(std::move(chunk));
         has_data.notify_one();
     }
@@ -247,6 +249,16 @@ public:
         has_data.notify_all();
     }
 
+    /// The reader stopped and does not need more data, e.g. its pipeline finished early.
+    /// Wakes a blocked `getChunk`; chunks appended after this are dropped. Unlike `cancel`,
+    /// this is not a failure: the producer continues.
+    void detachReader()
+    {
+        std::lock_guard lock(mutex);
+        reader_detached = true;
+        has_data.notify_all();
+    }
+
     /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
     /// An empty chunk is the producer's end-of-data marker. Chunks queued before a cancel are
     /// still handed out; once a cancelled queue is empty, throws the cancellation reason.
@@ -257,7 +269,10 @@ public:
         Chunk chunk;
         {
             std::unique_lock lock(mutex);
-            if (!has_data.wait_for(lock, timeout, [this] { return !chunks.empty() || cancelled; }))
+            if (!has_data.wait_for(lock, timeout, [this] { return !chunks.empty() || cancelled || reader_detached; }))
+                return std::nullopt;
+            /// The reader is stopping and does not need more data.
+            if (reader_detached)
                 return std::nullopt;
             /// The wait ended with an empty queue only when cancelled.
             if (chunks.empty())
@@ -286,6 +301,7 @@ private:
     std::condition_variable has_data;
     DequeWithMemoryTracking<Chunk> chunks;
     bool cancelled = false;
+    bool reader_detached = false;
     /// The first failure passed to `cancel`.
     std::exception_ptr reason;
 };
@@ -438,7 +454,7 @@ private:
         /// Wake the timed wait so the source stops right away instead of on its next poll.
         void onCancel() noexcept override
         {
-            exchange->cancel(nullptr);
+            exchange->detachReader();
         }
 
     private:
