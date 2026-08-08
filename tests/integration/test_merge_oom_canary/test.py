@@ -52,8 +52,10 @@ NUM_QUERY_WORKERS = 24
 # threads would otherwise be non-daemon, the pytest process would then wait for them at exit and hang the
 # manual run for minutes, in exactly the wedged/OOMed case this module is meant to inspect.
 # `connect_timeout`/`receive_timeout` bound the query server-side; the client-side `timeout` is a hard
-# backstop that kills a stuck `clickhouse client`. A timeout is expected under OOM, so swallow it and let
-# the caller re-check `stop` on the next iteration. Mirrors the fix in manual_cgroup_oom_repro.py.
+# backstop that kills a stuck `clickhouse client`. A timeout is expected under OOM once the workload has
+# made progress, and is then swallowed so the caller re-checks `stop` on the next iteration; before the
+# first successful worker query it is treated as a workload failure (see `run_worker_query`). Mirrors
+# manual_cgroup_oom_repro.py.
 WORKER_QUERY_TIMEOUT = 20
 WORKER_QUERY_SETTINGS = {"connect_timeout": 5, "receive_timeout": 10}
 
@@ -61,10 +63,10 @@ WORKER_QUERY_SETTINGS = {"connect_timeout": 5, "receive_timeout": 10}
 # only raises on the timeout backstop and otherwise returns an `(answer, error)` tuple even when the
 # client exits non-zero, so a workload broken from the start (connection refused, a SQL error, an early
 # `MEMORY_LIMIT_EXCEEDED`) would otherwise loop on failed queries for the whole wait window and be
-# reported as a generic timeout. A worker that sees an error before any worker query has succeeded
-# records the real error and aborts the run; once `workload_ok` is set, errors are expected and
-# tolerated - queries start dying with memory errors and lost connections as the cgroup fills and the
-# canary is killed.
+# reported as a generic timeout. A worker that sees an error - or a query timeout - before any worker
+# query has succeeded records the real failure and aborts the run; once `workload_ok` is set, errors
+# and timeouts are expected and tolerated - queries start dying with memory errors, timeouts and lost
+# connections as the cgroup fills and the canary is killed.
 stop = threading.Event()
 workload_ok = threading.Event()  # set on the first fully successful worker query
 workload_failures = []  # pre-success failures as (sql, error); append is atomic, only [0] is read
@@ -81,7 +83,15 @@ def run_worker_query(sql, settings=None):
             sql, timeout=WORKER_QUERY_TIMEOUT, settings=merged
         )
     except QueryTimeoutExceedException:
-        # Expected under memory pressure or after the OOM kill; the caller re-checks `stop`.
+        # Expected under memory pressure or after the OOM kill - but only once the workload has made
+        # progress. Before any worker query has succeeded, a timeout is just another way the workload
+        # never got off the ground (a wedged or half-started server), and swallowing it would let
+        # every worker time out for the whole wait window and hide behind the generic
+        # `wait_for_log_line` timeout - so it follows the same fail-closed rule as the error path
+        # below. After `workload_ok`, the caller re-checks `stop`.
+        if not workload_ok.is_set():
+            workload_failures.append((sql, f"timed out after {WORKER_QUERY_TIMEOUT}s"))
+            stop.set()
         return
     if not error:
         workload_ok.set()

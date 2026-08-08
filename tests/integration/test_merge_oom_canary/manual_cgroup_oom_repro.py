@@ -37,9 +37,9 @@ is on a memory-backed filesystem (`tmpfs`/`ramfs`): there the part bytes written
 charged to the cgroup, so an OOM would prove the filesystem choice rather than the merge-memory
 mechanism. The scratch root defaults to the repo `tmp` directory (disk-backed) and can be overridden
 with BASE_DIR. The pre-OOM churn fails closed as well: until at least one churn cycle has completed
-successfully (and no cgroup OOM has fired yet), a failed `INSERT`/`OPTIMIZE` aborts the run with the
-client's error instead of letting every worker spin uselessly and misreport the broken workload as
-"OOM did not fire". After that first successful cycle, failures are the expected way the workload dies
+successfully (and no cgroup OOM has fired yet), a failed or timed-out `INSERT`/`OPTIMIZE` aborts the
+run with the client's error instead of letting every worker spin uselessly and misreport the broken
+workload as "OOM did not fire". After that first successful cycle, failures are the expected way the workload dies
 as the cgroup fills - with one exception: a `Memory limit (total) exceeded` rejection at any point
 before the OOM aborts the run, because it means tracked memory reached `max_server_memory_usage`, and
 a subsequent kernel kill would then demonstrate ordinary tracked-memory exhaustion rather than the
@@ -396,8 +396,8 @@ def main():
         #    allocator retention they leave behind, drive resident memory past the cgroup).
         stop = threading.Event()
         # Set once any worker has completed one full successful INSERT+OPTIMIZE cycle. Until then a
-        # failed query is a failure of the reproducer itself (connection refused, SQL error), not a
-        # symptom of the cgroup OOM, and it must abort the run: with every worker silently spinning on
+        # failed or timed-out query is a failure of the reproducer itself (connection refused, SQL
+        # error, a wedged server), not a symptom of the cgroup OOM, and it must abort the run: with every worker silently spinning on
         # a broken workload the script would burn the whole churn window doing nothing and misreport
         # "OOM did not fire". Once a cycle has succeeded - or once `oom_kill_count` has started
         # incrementing - failures are the expected way the workload dies and the workers keep churning
@@ -405,7 +405,9 @@ def main():
         # (see below).
         churn_ok = threading.Event()
         # First pre-success failure, recorded for the abort message (`list.append` is atomic, and only
-        # the first element is ever read).
+        # the first element is ever read). Holds either a failed `CompletedProcess` or a
+        # `subprocess.TimeoutExpired` - a call that timed out before anything ever succeeded is the
+        # same "the reproducer is broken" signal as a non-zero exit.
         churn_failures = []
         # First `Memory limit (total) exceeded` rejection observed before the OOM. The server's own
         # tracked-memory limit firing means tracked memory reached `max_server_memory_usage`, so a
@@ -418,9 +420,14 @@ def main():
             while not stop.is_set():
                 # `bounded_client` caps every call (see CLIENT_TIMEOUT_* above), so after `stop` is
                 # set - or once the server is OOM-killed or otherwise wedged - a call cannot block
-                # forever and the worker still observes `stop`. A `TimeoutExpired` here is expected
-                # under OOM (the server stalls before it dies), so swallow it and re-check `stop` on
-                # the next iteration.
+                # forever and the worker still observes `stop`. A `TimeoutExpired` is expected under
+                # OOM (the server stalls before it dies), so once a cycle has succeeded - or once the
+                # kill has landed - it is swallowed and the worker re-checks `stop`. Before that,
+                # a timeout is just another way the workload never got off the ground: a server
+                # wedged from the start would time out every call for the whole churn window and
+                # misreport "OOM did not fire", so it follows the same fail-closed rule as the
+                # non-timeout failures below (and the same `oom_kill_count` check, re-checked in
+                # `main` via `oom_after`, excuses a timeout that raced with the kill).
                 try:
                     insert = bounded_client(
                         "-q",
@@ -428,7 +435,11 @@ def main():
                         "arrayMap(x -> repeat('x', 400000), range(500))) FROM numbers(1)",
                     )
                     optimize = bounded_client("-q", "OPTIMIZE TABLE m FINAL")
-                except subprocess.TimeoutExpired:
+                except subprocess.TimeoutExpired as timeout_error:
+                    if not churn_ok.is_set() and oom_kill_count() == oom_before:
+                        churn_failures.append(timeout_error)
+                        stop.set()
+                        return
                     continue
                 if insert.returncode == 0 and optimize.returncode == 0:
                     churn_ok.set()
@@ -495,6 +506,12 @@ def main():
         # OOM did land in between, the failure was the expected death of the workload, not a bug.
         if churn_failures and not churn_ok.is_set() and oom_after == oom_before:
             failed = churn_failures[0]
+            if isinstance(failed, subprocess.TimeoutExpired):
+                die(
+                    "churn workload timed out before completing a single successful cycle and no "
+                    "cgroup OOM fired; the server is wedged (or the client cannot reach it) - the "
+                    f"reproducer is broken, not the workload too small:\n{failed}"
+                )
             die(
                 "churn workload failed before completing a single successful cycle "
                 f"(exit code {failed.returncode}) and no cgroup OOM fired; the reproducer is "
