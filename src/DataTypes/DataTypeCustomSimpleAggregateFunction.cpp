@@ -40,6 +40,7 @@ void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const Aggreg
         "max",
         "sum",
         "sumWithOverflow",
+        "exponentialTimeDecayedSum",
         "groupBitAnd",
         "groupBitOr",
         "groupBitXor",
@@ -231,6 +232,7 @@ The following aggregate functions are supported:
 - [`max`](/reference/functions/aggregate-functions/max)
 - [`sum`](/reference/functions/aggregate-functions/sum)
 - [`sumWithOverflow`](/reference/functions/aggregate-functions/sumWithOverflow)
+- `exponentialTimeDecayedSum` for `ExponentialTimeDecayingFloat64(decay_length)`
 - [`groupBitAnd`](/reference/functions/aggregate-functions/groupBitAnd)
 - [`groupBitOr`](/reference/functions/aggregate-functions/groupBitOr)
 - [`groupBitXor`](/reference/functions/aggregate-functions/groupBitXor)
