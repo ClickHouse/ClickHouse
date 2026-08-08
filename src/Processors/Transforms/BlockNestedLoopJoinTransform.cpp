@@ -181,7 +181,7 @@ IProcessor::Status BlockNestedLoopProbeTransform::prepare()
     if (output.isFinished())
     {
         input.close();
-        build_reader.release();
+        releaseProbeState();
         return Status::Finished;
     }
 
@@ -204,7 +204,7 @@ IProcessor::Status BlockNestedLoopProbeTransform::prepare()
     if (input.isFinished())
     {
         output.finish();
-        build_reader.release();
+        releaseProbeState();
         return Status::Finished;
     }
 
@@ -682,6 +682,27 @@ Chunk BlockNestedLoopProbeTransform::takeUnmatchedProbeRows()
     Chunk chunk;
     chunk.setColumns(std::move(result), unmatched.size());
     return chunk;
+}
+
+void BlockNestedLoopProbeTransform::releaseProbeState()
+{
+    /// A finished processor is only destroyed with the pipeline, and the stage that emits the
+    /// unmatched build rows runs after this one: the pairs accumulated for a chunk that will not be
+    /// emitted, and above all the stored blocks they pinned, must not stay charged to the query
+    /// until then.
+    build_reader.release();
+    build_runs.clear();
+    retained_build_bytes = 0;
+    current_build_block.reset();
+    probe_columns.clear();
+    matched_probe_rows = {};
+    matched_build_rows = {};
+    active_probe_rows = {};
+    probe_row_matched = {};
+    pending_probe_chunk.reset();
+    output_chunk.reset();
+    has_probe_chunk = false;
+    stage = Stage::Done;
 }
 
 /// How many of the output columns come from the probe side, which is what this stage pads.

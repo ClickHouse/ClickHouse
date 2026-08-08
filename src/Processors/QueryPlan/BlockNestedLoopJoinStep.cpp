@@ -46,6 +46,29 @@ bool BlockNestedLoopJoinStep::isSupportedJoinType(JoinKind kind, JoinStrictness 
     }
 }
 
+/// Where every required column of the condition comes from, by name: the side and its position in
+/// that side's header. Resolved against the headers the columns are actually read from rather than
+/// once and for all, because a position taken from the plan's header says nothing about the header
+/// the pipeline is eventually built on.
+static std::vector<BlockNestedLoopPredicate::Source> resolvePredicateInputs(
+    const ExpressionActions & actions, const Block & left_header, const Block & right_header)
+{
+    std::vector<BlockNestedLoopPredicate::Source> inputs;
+    for (const auto & required_column : actions.getRequiredColumnsWithTypes())
+    {
+        const bool in_left = left_header.has(required_column.name);
+        const bool in_right = right_header.has(required_column.name);
+        if (in_left == in_right)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join condition input {} must come from exactly one input, found in {}",
+                required_column.name, in_left ? "both" : "neither");
+        if (in_left)
+            inputs.push_back({.side = 0, .position = left_header.getPositionByName(required_column.name)});
+        else
+            inputs.push_back({.side = 1, .position = right_header.getPositionByName(required_column.name)});
+    }
+    return inputs;
+}
+
 BlockNestedLoopJoinStep::BlockNestedLoopJoinStep(
     const SharedHeader & left_header_,
     const SharedHeader & right_header_,
@@ -86,18 +109,9 @@ BlockNestedLoopJoinStep::BlockNestedLoopJoinStep(
             "arrayJoin is not supported in a JOIN ON expression that determines no join key");
 
     predicate.actions = std::move(predicate_);
-    for (const auto & required_column : predicate.actions->getRequiredColumnsWithTypes())
-    {
-        bool in_left = left_header_->has(required_column.name);
-        bool in_right = right_header_->has(required_column.name);
-        if (in_left == in_right)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join condition input {} must come from exactly one input, found in {}",
-                required_column.name, in_left ? "both" : "neither");
-        if (in_left)
-            predicate.inputs.push_back({.side = 0, .position = left_header_->getPositionByName(required_column.name)});
-        else
-            predicate.inputs.push_back({.side = 1, .position = right_header_->getPositionByName(required_column.name)});
-    }
+    /// Only to reject a condition the operator cannot evaluate while the plan is still being built;
+    /// what the probe transform reads is resolved again in `updatePipeline`.
+    predicate.inputs = resolvePredicateInputs(*predicate.actions, *left_header_, *right_header_);
 
     updateInputHeaders({left_header_, right_header_});
 }
@@ -181,6 +195,13 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
     auto data = std::make_shared<BlockNestedLoopJoinData>(
         build_pipeline->getSharedHeader(), kind, strictness, size_limits, store_settings);
 
+    /// The condition is evaluated on the columns of these two headers, so this is what its input
+    /// positions have to name - not the plan's input headers, which an equivalent header may have
+    /// replaced since the step was constructed.
+    BlockNestedLoopPredicate probe_predicate = predicate;
+    probe_predicate.inputs = resolvePredicateInputs(
+        *predicate.actions, *probe_pipeline->getSharedHeader(), *data->getHeader());
+
     const size_t max_streams = std::max<size_t>(1, settings.max_threads);
 
     {
@@ -239,7 +260,7 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
             if (stream_type == QueryPipelineBuilder::StreamType::Totals)
                 return std::make_shared<BlockNestedLoopTotalsTransform>(header, output_header, data, probe_totals_are_default);
             return std::make_shared<BlockNestedLoopProbeTransform>(
-                header, output_header, data, predicate, max_block_size, max_block_bytes);
+                header, output_header, data, probe_predicate, max_block_size, max_block_bytes);
         });
 
         if (keepsUnmatchedBuildRows(kind, strictness))

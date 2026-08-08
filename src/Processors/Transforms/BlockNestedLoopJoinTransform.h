@@ -109,6 +109,9 @@ private:
     Chunk takeMatchedRows();
     /// Emits the next window of probe rows that stayed unmatched, padded with build-side defaults.
     Chunk takeUnmatchedProbeRows();
+    /// Drops everything the walk over the build side holds. Called when nothing more will be
+    /// matched or emitted, which is not the same point as this processor's destruction.
+    void releaseProbeState();
 
     const SharedHeader probe_header;
     const SharedHeader output_header;
