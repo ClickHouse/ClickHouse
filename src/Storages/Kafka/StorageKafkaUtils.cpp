@@ -26,6 +26,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/getFQDNOrHostName.h>
+#include <base/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -93,6 +94,7 @@ using namespace std::chrono_literals;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -1168,6 +1170,44 @@ PayloadSplit splitPayloadColumns(const Block & header, bool map_virtual_columns_
     }
 
     return split;
+}
+
+void commitWithTimeout(
+    cppkafka::Consumer & consumer, const cppkafka::TopicPartitionList * offsets, std::chrono::milliseconds timeout)
+{
+    rd_kafka_t * handle = consumer.get_handle();
+
+    cppkafka::TopicPartitionsListPtr c_offsets;
+    if (offsets != nullptr)
+        c_offsets = cppkafka::convert(*offsets);
+
+    rd_kafka_queue_t * queue = rd_kafka_queue_new(handle);
+    if (queue == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create a librdkafka queue to commit offsets on");
+
+    SCOPE_EXIT({ rd_kafka_queue_destroy(queue); });
+
+    rd_kafka_resp_err_t err = rd_kafka_commit_queue(handle, c_offsets.get(), queue, nullptr, nullptr);
+    if (err != RD_KAFKA_RESP_ERR_NO_ERROR)
+        throw cppkafka::HandleException(cppkafka::Error(err));
+
+    /// Retry-safe: destroying the queue drops the result, and an offset commit is idempotent.
+    rd_kafka_event_t * event = rd_kafka_queue_poll(queue, static_cast<int>(timeout.count()));
+    if (event == nullptr)
+        throw cppkafka::HandleException(cppkafka::Error(RD_KAFKA_RESP_ERR__TIMED_OUT));
+
+    SCOPE_EXIT({ rd_kafka_event_destroy(event); });
+
+    /// Private queue: only a commit result can arrive.
+    if (rd_kafka_event_type(event) != RD_KAFKA_EVENT_OFFSET_COMMIT)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected librdkafka event {} on the offset commit queue",
+            rd_kafka_event_name(event));
+
+    err = rd_kafka_event_error(event);
+    if (err != RD_KAFKA_RESP_ERR_NO_ERROR)
+        throw cppkafka::HandleException(cppkafka::Error(err));
 }
 }
 }

@@ -106,6 +106,16 @@ struct PayloadSplit
     std::vector<size_t> format_column_indices;
 };
 PayloadSplit splitPayloadColumns(const Block & header, bool map_virtual_columns_on_write);
+
+/// Far above `offsets.commit.timeout.ms` (5000ms default), so only an undeliverable commit reaches it.
+inline constexpr auto COMMIT_TIMEOUT_MS = std::chrono::milliseconds{30000};
+
+/// Commits `offsets`, or the current assignment when null, giving up after `timeout` with
+/// `RD_KAFKA_RESP_ERR__TIMED_OUT`. cppkafka's `commit` has no timeout and waits on its reply queue
+/// forever: `offsets.commit.timeout.ms` bounds a broker's response, not an unreachable broker, so a
+/// consumer whose brokers all fail authentication blocks there until the server restarts.
+void commitWithTimeout(
+    cppkafka::Consumer & consumer, const cppkafka::TopicPartitionList * offsets, std::chrono::milliseconds timeout);
 }
 }
 

@@ -3,7 +3,7 @@
 
 #if USE_RDKAFKA
 
-#include <Storages/Kafka/KafkaConsumer.h>
+#include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Common/Stopwatch.h>
 #include <cppkafka/configuration.h>
 #include <cppkafka/consumer.h>
@@ -13,30 +13,55 @@
 using namespace DB;
 using namespace std::chrono_literals;
 
-/// Pins the deadline itself. cppkafka's `commit` waits on librdkafka's reply queue with no timeout, and
-/// against unreachable brokers no reply op ever arrives, so the call never returns and the streaming
-/// task holding the consumer stops the table until the server restarts.
-TEST(KafkaConsumerCommit, RespectsItsDeadlineAgainstUnreachableBrokers)
+namespace
+{
+
+cppkafka::Consumer makeConsumerAgainstUnreachableBroker()
 {
     cppkafka::Configuration config;
     config.set("metadata.broker.list", "127.0.0.1:1");
     config.set("group.id", "gtest_kafka_consumer_commit");
     config.set("enable.auto.commit", "false");
     config.set("socket.timeout.ms", "1000");
+    return cppkafka::Consumer(config);
+}
 
-    cppkafka::Consumer consumer(config);
+}
 
-    /// A `DB::Exception` escaping here fails the test, which is what pins the event wiring: a wrong
-    /// event type check reports `LOGICAL_ERROR` rather than a Kafka error.
+/// Pins the deadline. cppkafka's own `commit` waits on librdkafka's reply queue with no timeout, and
+/// against unreachable brokers no reply op arrives, so the call never returns and the streaming task
+/// holding the consumer stops its table until the server restarts. A `DB::Exception` escaping here
+/// fails the test too, which is what pins the event wiring.
+TEST(KafkaCommitWithTimeout, CurrentAssignmentRespectsTheDeadline)
+{
+    auto consumer = makeConsumerAgainstUnreachableBroker();
+
     Stopwatch watch;
     try
     {
-        commitCurrentAssignmentWithTimeout(consumer, 3000ms);
+        StorageKafkaUtils::commitWithTimeout(consumer, nullptr, 3000ms);
     }
     catch (const cppkafka::HandleException &)
     {
-        /// Expected: with no assignment librdkafka answers locally, and an unreachable broker cannot
-        /// answer at all. Either way the outcome is an error, not a hang.
+    }
+
+    EXPECT_LT(watch.elapsedMilliseconds(), 15000);
+}
+
+/// Same, for the explicit-offsets form the Keeper-backed consumer uses, which also exercises the
+/// `cppkafka::TopicPartitionList` conversion.
+TEST(KafkaCommitWithTimeout, ExplicitOffsetsRespectTheDeadline)
+{
+    auto consumer = makeConsumerAgainstUnreachableBroker();
+    const cppkafka::TopicPartitionList offsets{cppkafka::TopicPartition{"gtest_kafka_commit_topic", 0, 42}};
+
+    Stopwatch watch;
+    try
+    {
+        StorageKafkaUtils::commitWithTimeout(consumer, &offsets, 3000ms);
+    }
+    catch (const cppkafka::HandleException &)
+    {
     }
 
     EXPECT_LT(watch.elapsedMilliseconds(), 15000);
