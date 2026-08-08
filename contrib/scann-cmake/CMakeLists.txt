@@ -137,7 +137,6 @@ file(GLOB_RECURSE SCANN_EXCLUDE_SOURCES
 list(REMOVE_ITEM SCANN_SOURCES ${SCANN_EXCLUDE_SOURCES})
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/scann_platform_patches.cmake")
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/scann_residual_sampling_patches.cmake")
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/scann_memory_patches.cmake")
 
 # ---------------------------------------------------------------------------
