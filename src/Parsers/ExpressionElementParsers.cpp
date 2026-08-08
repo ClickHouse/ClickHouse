@@ -887,6 +887,7 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     // We can have a parent window name specified before all other things. No
     // easy way to distinguish identifier from keywords, so just try to parse it
     // both ways.
+    const auto pos_before_parts = pos;
     if (parseWindowDefinitionParts(pos, *result, expected))
     {
         // Successfully parsed without parent window specifier. It can be empty,
@@ -898,6 +899,11 @@ bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return true;
         }
     }
+
+    // The attempt above may have consumed tokens and populated `result` before
+    // failing, so both have to be restored before retrying.
+    pos = pos_before_parts;
+    result = make_intrusive<ASTWindowDefinition>();
 
     // Try to parse with parent window specifier.
     ParserIdentifier parser_parent_window;

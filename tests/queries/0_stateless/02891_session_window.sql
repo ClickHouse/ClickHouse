@@ -82,6 +82,11 @@ select n, groupArray(n) over (order by n session 100) from 02891_session_window_
 set make_distributed_plan = 0, serialize_query_plan = 0, distributed_plan_execute_locally = 0;
 drop table 02891_session_window_mt;
 
+-- A window may be named after a frame keyword, including in the parenthesized form.
+select number, count() over (session) c from numbers(3) window session as (order by number) order by number;
+select number, count() over (session order by number) c from numbers(3) window session as (partition by number % 2) order by number;
+select number, count() over (rows) c from numbers(3) window rows as (order by number) order by number;
+
 -- Test some wrong things
 select 1 n, count() over (order by n session 0.5); -- { serverError 69 }
 select 1 n, count() over (order by n session -1); -- { serverError 69 }
