@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- - no-parallel - the query result cache is shared
+
 -- Regression test for `Method serialize is not implemented for StreamInQueryResultCache`.
 --
 -- With `query_cache_for_subqueries = 1` the Planner wraps an `IN` subquery plan with
@@ -8,6 +11,8 @@
 -- it to the replicas, so planting the cache steps there failed the whole query in
 -- `QueryPlan::ensureSerialized`. The cache is populated by the plan the initiator executes itself, so
 -- the query result cache must still work for the subquery.
+
+SYSTEM DROP QUERY CACHE;
 
 DROP TABLE IF EXISTS t_qrc_pr;
 CREATE TABLE t_qrc_pr (k UInt64) ENGINE = MergeTree ORDER BY k;
@@ -35,6 +40,7 @@ SELECT sum(k) FROM t_qrc_pr WHERE k IN (SELECT k FROM t_qrc_pr WHERE k < 10);
 
 -- The subquery result is cached by the plan the initiator runs, not by the plan shipped to replicas.
 SET use_query_cache = 0;
-SELECT count() FROM system.query_cache WHERE query LIKE '%' || currentDatabase() || '.t_qrc_pr WHERE k < 10%';
+SELECT count() FROM system.query_cache WHERE is_subquery = 1 AND query LIKE '%' || currentDatabase() || '.t_qrc_pr WHERE k < 10%';
 
 DROP TABLE t_qrc_pr;
+SYSTEM DROP QUERY CACHE;
