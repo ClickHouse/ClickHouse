@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <Core/Field.h>
+#include <Common/PODArray.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/PreparedSets.h>
@@ -54,6 +55,24 @@ std::vector<std::string> serializeKeysToRawString(
 
 std::vector<std::string> serializeKeysToRawString(
     FieldVector::const_iterator & it, FieldVector::const_iterator end, const DataTypes & key_column_types, size_t max_block_size);
+
+/// Serializes every key in `[it, end)` into one packed buffer instead of returning one heap-allocated
+/// `std::string` per key. Meant for a caller that immediately concatenates every batch the iterator
+/// overload above would have returned into a single collection anyway - a large `IN (...)` list costs one
+/// allocation per key there for no benefit, since nothing is done with the batches individually.
+///
+/// `data` and `offsets` are appended to rather than reset, so several key ranges can be packed into one
+/// buffer by calling this repeatedly. `offsets` is cumulative over the whole of `data`: `offsets[i]` is
+/// the end of the key at position `i` measured from the start of `data`, so the key occupies
+/// `[i ? offsets[i - 1] : 0, offsets[i])` and `offsets.back() == data.size()`. The two must therefore be
+/// grown together - passing a `data` that already holds bytes no `offsets` entry accounts for would
+/// leave those bytes glued to the front of the first key.
+void serializeKeysToPackedBuffer(
+    FieldVector::const_iterator it,
+    FieldVector::const_iterator end,
+    const DataTypes & key_column_types,
+    PODArray<char> & data,
+    PODArray<UInt64> & offsets);
 
 std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & keys);
 

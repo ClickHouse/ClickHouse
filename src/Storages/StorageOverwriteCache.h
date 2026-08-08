@@ -192,11 +192,57 @@ public:
         DataTypes types;
         LookupIndexPtr index;
     };
+    /// Serialized keys of one input block for one column tuple, packed into a single buffer. A `String`
+    /// per key, as `KVStorageUtils::serializeKeysToRawString` returns, costs one heap allocation per key;
+    /// a large `IN (...)` list pays that for no benefit, since every caller here concatenates the result
+    /// into one collection regardless.
+    struct SerializedKeys
+    {
+        PODArray<char> data;
+        PODArray<UInt64> offsets;
+        /// Empty unless the producer had a reason to hash every key: `serializeKeys` fills it for the
+        /// insert path, and `getByKeys` fills it before grouping, but the read path that only feeds
+        /// `deduplicateLookupKeys` leaves it so. Ask `hashed` before indexing it - `PODArray` does not
+        /// check bounds, so reading it while empty is not diagnosed.
+        PODArray<UInt64> hashes;
+
+        bool hashed() const { return hashes.size() == offsets.size(); }
+
+        SerializedKeys() = default;
+        SerializedKeys(SerializedKeys &&) = default;
+        SerializedKeys & operator=(SerializedKeys &&) = default;
+        /// `PODArray` is move-only, so this duplicates its bytes explicitly. A lazily-read cursor is the
+        /// one caller that needs it: it must own the key bytes its views point into for as long as the
+        /// cursor lives, which outlasts the request that built them.
+        SerializedKeys(const SerializedKeys & other)
+        {
+            data.assign(other.data);
+            offsets.assign(other.offsets);
+            hashes.assign(other.hashes);
+        }
+        SerializedKeys & operator=(const SerializedKeys & other)
+        {
+            if (this != &other)
+            {
+                data.assign(other.data);
+                offsets.assign(other.offsets);
+                hashes.assign(other.hashes);
+            }
+            return *this;
+        }
+
+        std::string_view at(size_t row) const
+        {
+            const UInt64 begin = row ? offsets[row - 1] : 0;
+            return {data.data() + begin, offsets[row] - begin};
+        }
+        size_t size() const { return offsets.size(); }
+    };
     struct LookupRequest
     {
         ReadGuardPtr guard;
         LookupIndexPtr index;
-        std::vector<String> serialized_keys;
+        SerializedKeys serialized_keys;
     };
 
     StorageOverwriteCache(
@@ -274,7 +320,7 @@ public:
     const DataTypes & getKeyColumnTypes() const { return key_column_types; }
     std::vector<LookupIndexSnapshot> getLookupIndexSnapshot() const;
 
-    ReadResult getRowsForPrimaryKeys(const std::vector<String> & serialized_keys) const;
+    ReadResult getRowsForPrimaryKeys(const SerializedKeys & serialized_keys) const;
     /// `row_limit` is the number of rows the query is known to want. It only decides whether the
     /// identifiers are produced eagerly, in parallel, or lazily through a cursor - never which
     /// identifiers belong to the result. A step above the read may filter rows the storage cannot
@@ -385,22 +431,12 @@ private:
         std::atomic<size_t> entry_count = 0;
     };
 
-    /// Serialized keys of one input block for one column tuple, packed into a single buffer.
-    struct SerializedKeys
-    {
-        PODArray<char> data;
-        PODArray<UInt64> offsets;
-        PODArray<UInt64> hashes;
-
-        std::string_view at(size_t row) const
-        {
-            const UInt64 begin = row ? offsets[row - 1] : 0;
-            return {data.data() + begin, offsets[row] - begin};
-        }
-    };
-
-    static constexpr size_t primary_shard_count = 256;
-    static constexpr size_t posting_shard_count = 256;
+    /// The number of distinct values `shardIndex` can return, which is what bounds any array indexed by
+    /// it - `groupPositionsByShard` buckets by it without knowing which of the two shard arrays below its
+    /// caller is about to walk.
+    static constexpr size_t shard_index_count = 256;
+    static constexpr size_t primary_shard_count = shard_index_count;
+    static constexpr size_t posting_shard_count = shard_index_count;
     static constexpr size_t row_lock_count = 4096;
     /// Entries a publication allocates are consecutive and a read walks identifiers in that order, so
     /// striping the row locks by range lets one acquisition cover a run of rows where hashing the
@@ -408,7 +444,7 @@ private:
     /// same time, so letting distinct entries share one cannot introduce a deadlock.
     static constexpr size_t row_lock_stripe = 64;
     static constexpr size_t snapshot_shard_count = 64;
-    static_assert(primary_shard_count == 256 && posting_shard_count == 256, "shardIndex takes the top eight hash bits");
+    static_assert(shard_index_count == 256, "shardIndex takes the top eight hash bits");
 
     /// A small initial capacity keeps the fixed cost of a nearly empty shard low.
     using PrimaryMap = HashMapWithSavedHash<std::string_view, EntryId, StringViewHash, HashTableGrowerWithPrecalculation<3>>;
@@ -783,6 +819,72 @@ private:
 
     /// The hash tables index themselves by the low bits, so the shard is chosen from the high ones.
     static size_t shardIndex(size_t hash) { return hash >> 56; }
+    /// The positions of `order` that belong to one shard, which are contiguous by construction.
+    struct ShardRun
+    {
+        UInt32 shard_index = 0;
+        UInt32 begin = 0;
+        UInt32 end = 0;
+    };
+    /// Below this many positions, ordering them directly beats bucketing them into a histogram: the
+    /// histogram is two passes over `shard_index_count` counters however few positions there are, and a
+    /// point lookup would pay all of it to place its single key.
+    static constexpr size_t max_directly_ordered_shard_group = 64;
+    /// Groups `count` positions by `shardIndex(get_hash(position))`, so that a caller which must lock
+    /// every shard a batch of keys touches takes each lock once for the whole batch instead of once per
+    /// key - the same grouping `insertBlock` already does before publishing new keys.
+    ///
+    /// `order` lists the positions with those of one shard adjacent, and `runs` names only the shards
+    /// that actually got a position, so a consumer iterates the shards it will really lock rather than
+    /// all `shard_index_count` of them. That matters for the small batches that dominate this storage:
+    /// a single-key lookup produces one run, and walking 256 mostly empty slots to find it would cost
+    /// more than the probe it is preparing. Neither the order within a run nor the order of the runs is
+    /// meaningful, and every consumer is indifferent to both: a sum, a union of independently sorted
+    /// runs, or a match mark keyed by the candidate's own position rather than by key order.
+    template <typename GetHash>
+    static void groupPositionsByShard(size_t count, GetHash get_hash, std::vector<UInt32> & order, std::vector<ShardRun> & runs)
+    {
+        order.resize(count);
+        runs.clear();
+        if (count == 0)
+            return;
+
+        if (count <= max_directly_ordered_shard_group)
+        {
+            for (size_t position = 0; position < count; ++position)
+                order[position] = static_cast<UInt32>(position);
+            std::ranges::sort(order, {}, [&](UInt32 position) { return shardIndex(get_hash(position)); });
+            for (UInt32 begin = 0; begin < count;)
+            {
+                const auto shard = static_cast<UInt32>(shardIndex(get_hash(order[begin])));
+                UInt32 end = begin + 1;
+                while (end < count && shardIndex(get_hash(order[end])) == shard)
+                    ++end;
+                runs.push_back({shard, begin, end});
+                begin = end;
+            }
+            return;
+        }
+
+        /// Kept on the stack, because the histogram is only reached for a batch large enough that two
+        /// heap allocations per call would be the smaller of the two costs anyway.
+        std::array<UInt32, shard_index_count + 1> offsets{};
+        for (size_t position = 0; position < count; ++position)
+            ++offsets[shardIndex(get_hash(position)) + 1];
+        for (size_t shard = 0; shard < shard_index_count; ++shard)
+            offsets[shard + 1] += offsets[shard];
+        auto cursor = offsets;
+        for (size_t position = 0; position < count; ++position)
+            order[cursor[shardIndex(get_hash(position))]++] = static_cast<UInt32>(position);
+        for (size_t shard = 0; shard < shard_index_count; ++shard)
+        {
+            if (offsets[shard] != offsets[shard + 1])
+                runs.push_back({static_cast<UInt32>(shard), offsets[shard], offsets[shard + 1]});
+        }
+    }
+    /// Batched shard probes prefetch this many positions ahead of the one they are resolving, hiding the
+    /// latency of the cache miss a scattered hash-table probe usually takes.
+    static constexpr size_t shard_probe_prefetch_distance = 4;
     size_t rowLockIndex(EntryId entry_id) const;
     /// The oldest snapshot any live reader can still observe. Versions below it are unreachable.
     UInt64 oldestLiveGeneration() const;
@@ -797,21 +899,51 @@ private:
         size_t hash = 0;
     };
     /// The views point into `serialized_keys`, which must outlive the result.
-    static std::vector<LookupKey> deduplicateLookupKeys(const std::vector<String> & serialized_keys);
+    static std::vector<LookupKey> deduplicateLookupKeys(const SerializedKeys & serialized_keys);
+    /// The shard grouping of a key list, computed once and reused by every posting-shard lookup that key
+    /// list drives. Cardinality estimation, collection and intersection touch the same shards for the
+    /// same keys, and a lazily-read cursor repeats the intersection once per slice against keys that
+    /// never change between slices, so the grouping is worth keeping rather than rebuilding per call.
+    struct GroupedLookupKeys
+    {
+        std::vector<UInt32> order;
+        std::vector<ShardRun> runs;
+    };
+    static GroupedLookupKeys groupLookupKeys(const std::vector<LookupKey> & keys)
+    {
+        GroupedLookupKeys grouped;
+        groupPositionsByShard(keys.size(), [&](size_t position) { return keys[position].hash; }, grouped.order, grouped.runs);
+        return grouped;
+    }
     /// Collapses the sorted runs `values` is divided into by `run_ends` into one sorted run, dropping
     /// the identifiers two runs share. Both arguments are left describing that single run.
     static void mergeSortedRuns(std::vector<EntryId> & values, std::vector<size_t> & run_ends);
+    /// Below this average run length, `mergeSortedRuns` sorts `values` in one pass instead of merging its
+    /// runs pairwise. A large `IN (...)` list of keys that each hold a handful of rows - the shape of a
+    /// point-lookup workload - divides `values` into as many runs as there are keys, and merging them
+    /// pairwise then costs a number of passes logarithmic in the key count, each copying nearly all of
+    /// `values` into a fresh buffer. Once the run count is close to the element count, that no longer
+    /// beats a single in-place sort, whose comparisons the branch predictor handles far better than a
+    /// merge that keeps switching between one- and two-element runs.
+    static constexpr size_t adaptive_merge_min_avg_run_length = 4;
     /// A read is served lazily only when it wants at most this many rows, so that a read large enough
     /// to occupy several streams keeps the eager path that can split its identifiers across them.
     static constexpr size_t max_lazy_read_rows = 16384;
     /// and only when the driver index holds this many times more identifiers than the read wants,
     /// which is what makes collecting all of them the dominant cost.
     static constexpr size_t lazy_read_cardinality_ratio = 8;
-    std::vector<EntryId>
-    getPostingIds(const LookupIndexPtr & index, const std::vector<LookupKey> & keys, UInt64 expected_cardinality) const;
-    UInt64 getPostingCardinality(const LookupIndexPtr & index, const std::vector<LookupKey> & keys) const;
+    std::vector<EntryId> getPostingIds(
+        const LookupIndexPtr & index,
+        const std::vector<LookupKey> & keys,
+        const GroupedLookupKeys & grouped,
+        UInt64 expected_cardinality) const;
+    UInt64 getPostingCardinality(const LookupIndexPtr & index, const std::vector<LookupKey> & keys, const GroupedLookupKeys & grouped) const;
     void intersectPostingIds(
-        std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<LookupKey> & keys, size_t max_threads) const;
+        std::vector<EntryId> & entry_ids,
+        const LookupIndexPtr & index,
+        const std::vector<LookupKey> & keys,
+        const GroupedLookupKeys & grouped,
+        size_t max_threads) const;
     /// An intersection is split across threads only once each of them gets at least this many
     /// candidates, below which the pool costs more than the pass it replaces.
     static constexpr size_t min_rows_per_intersection_thread = 262144;

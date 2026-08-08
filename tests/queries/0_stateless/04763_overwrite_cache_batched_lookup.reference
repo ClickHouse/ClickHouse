@@ -1,0 +1,8 @@
+-- live, tombstoned and never-inserted keys resolve independently within one batched lookup
+4000	2000	2000
+-- resolved payloads still match what was inserted
+0
+-- a batched `WHERE key IN (...)` read over the same mix behaves the same way
+4000
+-- every returned row still carries the payload of its own key
+0	1	5999

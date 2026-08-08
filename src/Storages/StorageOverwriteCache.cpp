@@ -108,10 +108,16 @@ public:
         , requests(std::move(requests_))
         , driver(driver_)
     {
-        /// The views must point into this cursor's own copy of the requests, which outlives it.
+        /// The views must point into this cursor's own copy of the requests, which outlives it. Every
+        /// index's shard grouping is computed once here rather than once per `next`, since the keys it
+        /// is grouping never change between slices.
         keys.reserve(requests.size());
+        grouped.reserve(requests.size());
         for (const auto & request : requests)
+        {
             keys.push_back(deduplicateLookupKeys(request.serialized_keys));
+            grouped.push_back(groupLookupKeys(keys.back()));
+        }
     }
 
     /// Replaces `out` with the next identifiers, ascending. Returns false once the driver index has no
@@ -123,23 +129,31 @@ public:
         if (exhausted)
             return false;
 
+        const auto & driver_keys = keys[driver];
+        const auto & driver_grouped = grouped[driver];
         std::vector<size_t> run_ends;
-        run_ends.reserve(keys[driver].size());
-        for (const auto & key : keys[driver])
+        run_ends.reserve(driver_keys.size());
+        for (const auto & shard_run : driver_grouped.runs)
         {
             if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while reading an `OverwriteCache` posting");
-            const auto & shard = requests[driver].index->shards[shardIndex(key.hash)];
+            const auto & shard = requests[driver].index->shards[shard_run.shard_index];
             std::shared_lock lock(shard.mutex);
-            /// Seeking by identifier rather than by a remembered position, because a concurrent
-            /// publication can insert into a posting ahead of one. An identifier visible to this
-            /// snapshot cannot be removed from a posting, so nothing this cursor still owes can appear
-            /// behind the seek.
-            if (const auto * posting = shard.find(key.key, key.hash))
-                posting->appendRangeFrom(out, next_id, count);
-            const size_t previous_end = run_ends.empty() ? 0 : run_ends.back();
-            if (out.size() != previous_end)
-                run_ends.push_back(out.size());
+            for (UInt32 position = shard_run.begin; position < shard_run.end; ++position)
+            {
+                if (position + shard_probe_prefetch_distance < shard_run.end)
+                    shard.index.prefetchByHash(driver_keys[driver_grouped.order[position + shard_probe_prefetch_distance]].hash);
+                const auto & key = driver_keys[driver_grouped.order[position]];
+                /// Seeking by identifier rather than by a remembered position, because a concurrent
+                /// publication can insert into a posting ahead of one. An identifier visible to this
+                /// snapshot cannot be removed from a posting, so nothing this cursor still owes can
+                /// appear behind the seek.
+                if (const auto * posting = shard.find(key.key, key.hash))
+                    posting->appendRangeFrom(out, next_id, count);
+                const size_t previous_end = run_ends.empty() ? 0 : run_ends.back();
+                if (out.size() != previous_end)
+                    run_ends.push_back(out.size());
+            }
         }
 
         mergeSortedRuns(out, run_ends);
@@ -158,7 +172,7 @@ public:
         for (size_t index = 0; index < requests.size() && !out.empty(); ++index)
         {
             if (index != driver)
-                storage.intersectPostingIds(out, requests[index].index, keys[index], /*max_threads=*/1);
+                storage.intersectPostingIds(out, requests[index].index, keys[index], grouped[index], /*max_threads=*/1);
         }
 
         if (highest == std::numeric_limits<EntryId>::max())
@@ -172,6 +186,7 @@ private:
     const StorageOverwriteCache & storage;
     std::vector<LookupRequest> requests;
     std::vector<std::vector<LookupKey>> keys;
+    std::vector<GroupedLookupKeys> grouped;
     size_t driver = 0;
     EntryId next_id = 1;
     bool exhausted = false;
@@ -698,13 +713,12 @@ public:
         StorageOverwriteCache::ReadResult result;
         if (read_kind == ReadKind::Primary)
         {
-            auto iterator = filter_keys->cbegin();
-            std::vector<String> serialized_keys;
-            while (iterator != filter_keys->cend())
-            {
-                auto batch = serializeKeysToRawString(iterator, filter_keys->cend(), storage.getKeyColumnTypes(), max_block_size);
-                serialized_keys.insert(serialized_keys.end(), std::make_move_iterator(batch.begin()), std::make_move_iterator(batch.end()));
-            }
+            /// Packed into one buffer instead of the one-`std::string`-per-key `serializeKeysToRawString`
+            /// returns: every batch it would have produced ends up concatenated into a single collection
+            /// here regardless, so there is no use for `max_block_size` chunking on this path.
+            StorageOverwriteCache::SerializedKeys serialized_keys;
+            serializeKeysToPackedBuffer(
+                filter_keys->cbegin(), filter_keys->cend(), storage.getKeyColumnTypes(), serialized_keys.data, serialized_keys.offsets);
             result = storage.getRowsForPrimaryKeys(serialized_keys);
         }
         else
@@ -713,14 +727,13 @@ public:
             requests.reserve(lookup_filters.size());
             for (const auto & lookup_filter : lookup_filters)
             {
-                auto iterator = lookup_filter.keys->cbegin();
-                std::vector<String> serialized_keys;
-                while (iterator != lookup_filter.keys->cend())
-                {
-                    auto batch = serializeKeysToRawString(iterator, lookup_filter.keys->cend(), lookup_filter.index.types, max_block_size);
-                    serialized_keys.insert(
-                        serialized_keys.end(), std::make_move_iterator(batch.begin()), std::make_move_iterator(batch.end()));
-                }
+                StorageOverwriteCache::SerializedKeys serialized_keys;
+                serializeKeysToPackedBuffer(
+                    lookup_filter.keys->cbegin(),
+                    lookup_filter.keys->cend(),
+                    lookup_filter.index.types,
+                    serialized_keys.data,
+                    serialized_keys.offsets);
                 requests.push_back({lookup_filter.index.guard, lookup_filter.index.index, std::move(serialized_keys)});
             }
             result = storage.getRowsForLookupRequests(requests, limit, num_streams);
@@ -2768,15 +2781,35 @@ void StorageOverwriteCache::mutate(const MutationCommands & commands, ContextPtr
         deleteBlock(block);
 }
 
-StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForPrimaryKeys(const std::vector<String> & serialized_keys) const
+StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForPrimaryKeys(const SerializedKeys & serialized_keys) const
 {
     ReadResult result;
     result.guard = std::make_shared<ReadGuard>(*this);
-    result.entry_ids.reserve(serialized_keys.size());
-    for (const auto & key : serialized_keys)
+    const size_t key_count = serialized_keys.size();
+
+    /// Hashed once and grouped by shard, so a batch of keys locks each `PrimaryShard` it touches once
+    /// instead of once per key - the way `findEntry` alone would. The final sort makes the probe order
+    /// irrelevant to the result.
+    std::vector<size_t> hashes(key_count);
+    for (size_t position = 0; position < key_count; ++position)
+        hashes[position] = StringViewHash{}(serialized_keys.at(position));
+    std::vector<UInt32> order;
+    std::vector<ShardRun> runs;
+    groupPositionsByShard(key_count, [&](size_t position) { return hashes[position]; }, order, runs);
+
+    result.entry_ids.reserve(key_count);
+    for (const auto & shard_run : runs)
     {
-        if (const auto entry = findEntry(key, StringViewHash{}(key)))
-            result.entry_ids.push_back(*entry);
+        const auto & shard = primary_shards[shard_run.shard_index];
+        std::shared_lock lock(shard.mutex);
+        for (UInt32 position = shard_run.begin; position < shard_run.end; ++position)
+        {
+            if (position + shard_probe_prefetch_distance < shard_run.end)
+                shard.entries.prefetchByHash(hashes[order[position + shard_probe_prefetch_distance]]);
+            const size_t key_position = order[position];
+            if (const auto * it = shard.entries.find(serialized_keys.at(key_position), hashes[key_position]))
+                result.entry_ids.push_back(it->getMapped());
+        }
     }
     /// The identifiers are sorted for the read to walk entries in allocation order, and two keys of the
     /// request can name one entry only if the request repeats a key, so the sort doubles as the
@@ -2786,15 +2819,15 @@ StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForPrimaryKeys(c
     return result;
 }
 
-std::vector<StorageOverwriteCache::LookupKey> StorageOverwriteCache::deduplicateLookupKeys(const std::vector<String> & serialized_keys)
+std::vector<StorageOverwriteCache::LookupKey> StorageOverwriteCache::deduplicateLookupKeys(const SerializedKeys & serialized_keys)
 {
     std::vector<LookupKey> result;
     result.reserve(serialized_keys.size());
     std::unordered_set<std::string_view, StringViewHash> seen;
     seen.reserve(serialized_keys.size());
-    for (const auto & key : serialized_keys)
+    for (size_t row = 0; row < serialized_keys.size(); ++row)
     {
-        const std::string_view view = key;
+        const std::string_view view = serialized_keys.at(row);
         if (!seen.emplace(view).second)
             continue;
         result.push_back({view, StringViewHash{}(view)});
@@ -2802,21 +2835,43 @@ std::vector<StorageOverwriteCache::LookupKey> StorageOverwriteCache::deduplicate
     return result;
 }
 
-UInt64 StorageOverwriteCache::getPostingCardinality(const LookupIndexPtr & index, const std::vector<LookupKey> & keys) const
+UInt64 StorageOverwriteCache::getPostingCardinality(
+    const LookupIndexPtr & index, const std::vector<LookupKey> & keys, const GroupedLookupKeys & grouped) const
 {
     UInt64 result = 0;
-    for (const auto & key : keys)
+    for (const auto & shard_run : grouped.runs)
     {
-        const auto & shard = index->shards[shardIndex(key.hash)];
+        const auto & shard = index->shards[shard_run.shard_index];
         std::shared_lock lock(shard.mutex);
-        if (const auto * posting = shard.find(key.key, key.hash))
-            result += posting->size();
+        for (UInt32 position = shard_run.begin; position < shard_run.end; ++position)
+        {
+            if (position + shard_probe_prefetch_distance < shard_run.end)
+                shard.index.prefetchByHash(keys[grouped.order[position + shard_probe_prefetch_distance]].hash);
+            const auto & key = keys[grouped.order[position]];
+            if (const auto * posting = shard.find(key.key, key.hash))
+                result += posting->size();
+        }
     }
     return result;
 }
 
 void StorageOverwriteCache::mergeSortedRuns(std::vector<EntryId> & values, std::vector<size_t> & run_ends)
 {
+    if (run_ends.size() <= 1)
+        return;
+
+    /// A large key list against postings that hold few rows each leaves almost as many runs as there are
+    /// elements, and the pairwise merge below would then move nearly all of `values` on every one of its
+    /// `log2(run_ends.size())` passes. Sorting once in place is cheaper there, and `std::unique` keeps
+    /// the same deduplication the merge provides.
+    if (values.size() / run_ends.size() < adaptive_merge_min_avg_run_length)
+    {
+        std::ranges::sort(values);
+        values.erase(std::unique(values.begin(), values.end()), values.end());
+        run_ends.assign(1, values.size());
+        return;
+    }
+
     /// Merging pairwise leaves one sorted run after a number of passes logarithmic in the number of
     /// runs. `std::set_union` also removes the identifiers two runs share, which every indexed column
     /// belonging to the immutable `KEYS` tuple currently rules out, and costs no more than the plain
@@ -2857,27 +2912,38 @@ void StorageOverwriteCache::mergeSortedRuns(std::vector<EntryId> & values, std::
 }
 
 std::vector<StorageOverwriteCache::EntryId> StorageOverwriteCache::getPostingIds(
-    const LookupIndexPtr & index, const std::vector<LookupKey> & keys, UInt64 expected_cardinality) const
+    const LookupIndexPtr & index, const std::vector<LookupKey> & keys, const GroupedLookupKeys & grouped, UInt64 expected_cardinality) const
 {
     /// A posting is already sorted and free of duplicates, so each key contributes one such run and the
     /// runs are merged below. One key - the shape of an equality predicate, and the common case by far -
     /// then leaves nothing to merge at all, where sorting the collected identifiers would cost a full
     /// `n log n` pass over a posting that can hold every row a hot key ever received.
+    ///
+    /// Keys are visited by shard rather than in their own order, so that every shard a batch touches is
+    /// locked once instead of once per key. The runs this produces are still independent sorted runs,
+    /// which is all `mergeSortedRuns` requires - it merges a union of sets, not a sequence, so the order
+    /// the runs arrive in does not affect the result.
     std::vector<EntryId> result;
     result.reserve(expected_cardinality);
     std::vector<size_t> run_ends;
     run_ends.reserve(keys.size());
-    for (const auto & key : keys)
+    for (const auto & shard_run : grouped.runs)
     {
         if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
             throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while reading an `OverwriteCache` posting");
-        const auto & shard = index->shards[shardIndex(key.hash)];
+        const auto & shard = index->shards[shard_run.shard_index];
         std::shared_lock lock(shard.mutex);
-        if (const auto * posting = shard.find(key.key, key.hash))
-            posting->appendTo(result);
-        const size_t previous_end = run_ends.empty() ? 0 : run_ends.back();
-        if (result.size() != previous_end)
-            run_ends.push_back(result.size());
+        for (UInt32 position = shard_run.begin; position < shard_run.end; ++position)
+        {
+            if (position + shard_probe_prefetch_distance < shard_run.end)
+                shard.index.prefetchByHash(keys[grouped.order[position + shard_probe_prefetch_distance]].hash);
+            const auto & key = keys[grouped.order[position]];
+            if (const auto * posting = shard.find(key.key, key.hash))
+                posting->appendTo(result);
+            const size_t previous_end = run_ends.empty() ? 0 : run_ends.back();
+            if (result.size() != previous_end)
+                run_ends.push_back(result.size());
+        }
     }
 
     mergeSortedRuns(result, run_ends);
@@ -2885,29 +2951,41 @@ std::vector<StorageOverwriteCache::EntryId> StorageOverwriteCache::getPostingIds
 }
 
 void StorageOverwriteCache::intersectPostingIds(
-    std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<LookupKey> & keys, size_t max_threads) const
+    std::vector<EntryId> & entry_ids,
+    const LookupIndexPtr & index,
+    const std::vector<LookupKey> & keys,
+    const GroupedLookupKeys & grouped,
+    size_t max_threads) const
 {
     if (entry_ids.empty())
         return;
 
     std::vector<UInt8> matched(entry_ids.size(), 0);
     /// Each slice of the candidates is intersected against every key independently and writes only its
-    /// own bytes of `matched`, so slices need no coordination beyond the barrier that ends them.
+    /// own bytes of `matched`, so slices need no coordination beyond the barrier that ends them. Keys are
+    /// grouped by shard so that each thread locks a shard once for however many of its keys fall in its
+    /// slice's range, instead of once per key.
     const auto intersect_range = [&](size_t begin, size_t end)
     {
-        for (const auto & key : keys)
+        for (const auto & shard_run : grouped.runs)
         {
             if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while intersecting `OverwriteCache` postings");
-            const auto & shard = index->shards[shardIndex(key.hash)];
+            const auto & shard = index->shards[shard_run.shard_index];
             std::shared_lock lock(shard.mutex);
-            const auto * posting = shard.find(key.key, key.hash);
-            if (!posting)
-                continue;
-            /// Both sequences are sorted, so the identifiers this key keeps are found in one pass over
-            /// them instead of a membership test per identifier.
-            posting->intersectSorted(
-                entry_ids.data() + begin, end - begin, [&](size_t position) { matched[begin + position] = 1; });
+            for (UInt32 position = shard_run.begin; position < shard_run.end; ++position)
+            {
+                if (position + shard_probe_prefetch_distance < shard_run.end)
+                    shard.index.prefetchByHash(keys[grouped.order[position + shard_probe_prefetch_distance]].hash);
+                const auto & key = keys[grouped.order[position]];
+                const auto * posting = shard.find(key.key, key.hash);
+                if (!posting)
+                    continue;
+                /// Both sequences are sorted, so the identifiers this key keeps are found in one pass
+                /// over them instead of a membership test per identifier.
+                posting->intersectSorted(
+                    entry_ids.data() + begin, end - begin, [&](size_t candidate) { matched[begin + candidate] = 1; });
+            }
         }
     };
 
@@ -2958,40 +3036,56 @@ StorageOverwriteCache::getRowsForLookupRequests(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Mismatched `OverwriteCache` lookup snapshot guards");
     }
     FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_during_lookup);
-    /// The views point into the requests, which outlive this call.
+    /// The views point into the requests, which outlive this call. Every index's keys are grouped by
+    /// shard once here, so cardinality estimation, collection and intersection below each lock a shard
+    /// once for the whole batch of keys that touch it, instead of once per key.
     std::vector<std::vector<LookupKey>> keys;
+    std::vector<GroupedLookupKeys> grouped;
     keys.reserve(requests.size());
+    grouped.reserve(requests.size());
     for (const auto & request : requests)
-        keys.push_back(deduplicateLookupKeys(request.serialized_keys));
-
-    size_t driver = 0;
-    UInt64 driver_cardinality = getPostingCardinality(requests[0].index, keys[0]);
-    for (size_t index = 1; index < requests.size(); ++index)
     {
-        const UInt64 cardinality = getPostingCardinality(requests[index].index, keys[index]);
-        if (cardinality < driver_cardinality)
+        keys.push_back(deduplicateLookupKeys(request.serialized_keys));
+        grouped.push_back(groupLookupKeys(keys.back()));
+    }
+
+    /// With a single index there is no driver to choose between, and `getPostingIds` below finds every
+    /// key again regardless - the cardinality pass would exist only to size its reservation, at the cost
+    /// of one `PostingShard::find` per key that is thrown away immediately. It is skipped unless
+    /// `row_limit` also needs it to decide between the eager and the lazy cursor path.
+    size_t driver = 0;
+    std::optional<UInt64> driver_cardinality;
+    if (requests.size() > 1 || row_limit)
+    {
+        driver_cardinality = getPostingCardinality(requests[0].index, keys[0], grouped[0]);
+        for (size_t index = 1; index < requests.size(); ++index)
         {
-            driver = index;
-            driver_cardinality = cardinality;
+            const UInt64 cardinality = getPostingCardinality(requests[index].index, keys[index], grouped[index]);
+            if (cardinality < *driver_cardinality)
+            {
+                driver = index;
+                driver_cardinality = cardinality;
+            }
         }
     }
 
     /// A read that wants far fewer rows than the driver index holds is served from a cursor instead:
     /// collecting every identifier first would dominate such a read entirely. The threshold keeps reads
     /// that would use several streams on the eager path, where the identifiers are split across them.
-    if (row_limit && *row_limit <= max_lazy_read_rows && *row_limit * lazy_read_cardinality_ratio < driver_cardinality)
+    if (row_limit && *row_limit <= max_lazy_read_rows && *row_limit * lazy_read_cardinality_ratio < *driver_cardinality)
     {
         result.cursor = std::make_shared<LookupCursor>(*this, requests, driver);
         return result;
     }
 
     /// The cardinality is only a reservation hint: a concurrent publication may have grown a posting
-    /// since it was taken.
-    auto entry_ids = getPostingIds(requests[driver].index, keys[driver], driver_cardinality);
+    /// since it was taken. Without one, the key count is the best cheap estimate - a posting holds at
+    /// least one entry per key in the common case, so under-reserving costs at most one more growth.
+    auto entry_ids = getPostingIds(requests[driver].index, keys[driver], grouped[driver], driver_cardinality.value_or(keys[driver].size()));
     for (size_t index = 0; index < requests.size() && !entry_ids.empty(); ++index)
     {
         if (index != driver)
-            intersectPostingIds(entry_ids, requests[index].index, keys[index], max_threads);
+            intersectPostingIds(entry_ids, requests[index].index, keys[index], grouped[index], max_threads);
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_after_lookup_ids);
@@ -3065,14 +3159,75 @@ Chunk StorageOverwriteCache::getByKeys(
         }
         out.finalize();
     }
+    /// Hashed once here rather than once per shard probe below and once more inside it, the way
+    /// `findEntry` alone would hash it fresh for every row.
+    serialized_keys.hashes.resize(rows);
+    for (size_t row = 0; row < rows; ++row)
+        serialized_keys.hashes[row] = StringViewHash{}(serialized_keys.at(row));
 
     ReadGuard read_guard(*this);
-    std::vector<RowDataPtr> resolved_rows(rows);
-    for (size_t row = 0; row < rows; ++row)
+
+    /// Keys are grouped by primary shard, so this batch locks each shard it touches once instead of once
+    /// per row.
+    std::vector<UInt32> shard_order;
+    std::vector<ShardRun> runs;
+    groupPositionsByShard(rows, [&](size_t row) { return serialized_keys.hashes[row]; }, shard_order, runs);
+
+    std::vector<EntryId> row_entry_ids(rows, 0);
+    for (const auto & shard_run : runs)
     {
-        const std::string_view key = serialized_keys.at(row);
-        if (const auto entry = findEntry(key, StringViewHash{}(key)))
-            resolved_rows[row] = resolveEntry(*entry, read_guard.generation());
+        const auto & shard = primary_shards[shard_run.shard_index];
+        std::shared_lock lock(shard.mutex);
+        for (UInt32 position = shard_run.begin; position < shard_run.end; ++position)
+        {
+            if (position + shard_probe_prefetch_distance < shard_run.end)
+                shard.entries.prefetchByHash(serialized_keys.hashes[shard_order[position + shard_probe_prefetch_distance]]);
+            const UInt32 row = shard_order[position];
+            if (const auto * it = shard.entries.find(serialized_keys.at(row), serialized_keys.hashes[row]))
+                row_entry_ids[row] = it->getMapped();
+        }
+    }
+
+    /// Resolved a row-lock stripe at a time like `resolveEntries`, but keeping a placeholder per row for
+    /// one case it does not need to: a key deleted after being inserted keeps its primary-index entry,
+    /// whose head version is a tombstone, so `getByKeys` must still report that row as absent instead of
+    /// just dropping it, which is what `resolveEntries` does for identifiers that came from a lookup
+    /// where a miss cannot happen at all.
+    std::vector<UInt32> rows_with_entries;
+    rows_with_entries.reserve(rows);
+    for (UInt32 row = 0; row < rows; ++row)
+        if (row_entry_ids[row] != 0)
+            rows_with_entries.push_back(row);
+    std::ranges::sort(rows_with_entries, {}, [&](UInt32 row) { return row_entry_ids[row]; });
+
+    std::vector<RowDataPtr> resolved_rows(rows);
+    {
+        size_t position = 0;
+        while (position < rows_with_entries.size())
+        {
+            const size_t stripe = rowLockIndex(row_entry_ids[rows_with_entries[position]]);
+            size_t end = position + 1;
+            while (end < rows_with_entries.size() && rowLockIndex(row_entry_ids[rows_with_entries[end]]) == stripe)
+                ++end;
+
+            std::shared_lock row_lock(row_mutexes[stripe]);
+            for (size_t index = position; index < end; ++index)
+            {
+                const UInt32 row = rows_with_entries[index];
+                const EntryId entry_id = row_entry_ids[row];
+                if (entry_id == 0 || entry_id > entries.size())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted `OverwriteCache` entry identifier");
+                for (const auto * version = entries.at(entry_id).head.get(); version; version = version->older.get())
+                {
+                    if (version->generation > read_guard.generation())
+                        continue;
+                    if (version->row.segment)
+                        resolved_rows[row] = version->row;
+                    break;
+                }
+            }
+            position = end;
+        }
     }
 
     SegmentColumnCache segment_columns;

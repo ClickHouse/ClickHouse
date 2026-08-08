@@ -6,6 +6,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <DataTypes/Utils.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Common/assert_cast.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -571,6 +572,54 @@ std::vector<std::string> serializeKeysToRawString(
         ++rows_processed;
     }
     return result;
+}
+
+void serializeKeysToPackedBuffer(
+    FieldVector::const_iterator it,
+    FieldVector::const_iterator end,
+    const DataTypes & key_column_types,
+    PODArray<char> & data,
+    PODArray<UInt64> & offsets)
+{
+    if (key_column_types.empty())
+        return;
+
+    /// `offsets` is cumulative over the whole of `data`, so a partially described buffer would put bytes
+    /// no entry accounts for in front of the first key this call writes.
+    if (!offsets.empty() && offsets.back() != data.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "serializeKeysToPackedBuffer: key buffer holds {} bytes but its offsets end at {}",
+            data.size(),
+            offsets.back());
+    if (offsets.empty() && !data.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "serializeKeysToPackedBuffer: key buffer holds {} bytes with no offsets", data.size());
+
+    /// `out.count()` is relative to where this call started appending, not to the start of `data`, so it
+    /// is offset by what `data` already held to keep `offsets` a cumulative array over the whole buffer.
+    const size_t base_offset = data.size();
+    WriteBufferFromVector<PODArray<char>> out(data, AppendModeTag{});
+    for (; it != end; ++it)
+    {
+        if (key_column_types.size() == 1)
+        {
+            key_column_types[0]->getDefaultSerialization()->serializeBinary(*it, out, {});
+        }
+        else if (it->getType() == Field::Types::Tuple)
+        {
+            const auto & tuple = it->safeGet<Tuple>();
+            const size_t num_elements = std::min(tuple.size(), key_column_types.size());
+            for (size_t i = 0; i < num_elements; ++i)
+                key_column_types[i]->getDefaultSerialization()->serializeBinary(tuple[i], out, {});
+        }
+        /// A field that is not a `Tuple` when multiple key columns are expected should not occur with
+        /// correct `getFilterKeys` usage; the iterator overload above drops such a key outright, which a
+        /// positional offset array cannot do without shifting every key after it. It serializes to
+        /// nothing instead, which the empty string an unmatchable key already amounts to.
+        offsets.push_back(base_offset + out.count());
+    }
+    out.finalize();
 }
 
 std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & keys)

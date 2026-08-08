@@ -1,0 +1,8 @@
+-- every key resolves through the singleton-posting path
+5000	5000
+-- a repeated key in the list is not double-counted
+2500
+-- a list mixing present and absent keys keeps only the matches
+2500
+-- deleting half the keys leaves the other half reachable the same way
+2500
