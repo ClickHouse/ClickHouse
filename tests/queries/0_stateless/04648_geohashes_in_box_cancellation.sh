@@ -90,12 +90,17 @@ run_kill_case() {
     # cancellation and the test would pass without exercising the fix.
     # The poll runs over HTTP rather than through the client: a fresh client process costs ~70ms per
     # iteration against ~10ms for a request, and that overhead lands inside the measured kill latency.
+    # The window is sixty seconds on every build: it is not part of the oracle - it only waits for the
+    # query to start, and on busy runners (`arm_binary` and `amd_debug` in the report) the start alone
+    # outlasted the previous ten-second window. A query that dies at startup is caught by the liveness
+    # check on the client process instead of outwaiting the window.
     local waited=0 ready_ok=0
-    while [ "$waited" -lt 500 ]; do
+    while [ "$waited" -lt 3000 ]; do
         if [ "$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT $ready FROM system.processes WHERE query_id = '$query_id'")" = "1" ]; then
             ready_ok=1
             break
         fi
+        kill -0 "$query_pid" 2>/dev/null || break
         waited=$((waited + 1))
         sleep 0.02
     done
