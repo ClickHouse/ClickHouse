@@ -58,8 +58,10 @@ SELECT count(*) OVER () FROM t04812_dist_num;
 SELECT 'distributed over distributed, whose middle rank is neither the first nor the second stage';
 SELECT count(*) OVER () FROM t04812_dist_of_dist;
 
+-- ORDER BY because this is the one witness whose rows are not all equal, so shard arrival order
+-- would otherwise decide the output.
 SELECT 'row_number';
-SELECT row_number() OVER () FROM t04812_dist;
+SELECT row_number() OVER () FROM t04812_dist ORDER BY 1;
 
 SELECT 'with ORDER BY';
 SELECT count(*) OVER () FROM t04812_dist ORDER BY 1;
