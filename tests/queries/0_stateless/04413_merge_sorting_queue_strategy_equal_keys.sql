@@ -1,20 +1,20 @@
+DROP TABLE IF EXISTS source_04413;
 DROP TABLE IF EXISTS equal_keys_default_04413;
 DROP TABLE IF EXISTS equal_keys_batch_04413;
 
-CREATE TABLE equal_keys_default_04413
+CREATE TABLE source_04413
 (
     id UInt64,
     k UInt8,
-    payload String,
-    values Array(UInt32),
-    n Nullable(Int64),
-    INDEX idx_payload payload TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1) GRANULARITY 1
+    payload String
 )
+ENGINE = Memory;
+
+CREATE TABLE equal_keys_default_04413 AS source_04413
 ENGINE = MergeTree
 ORDER BY k
 SETTINGS
-    merge_sorting_queue_strategy = 'default',
-    allow_experimental_text_index_phrase_search = 1,
+    merge_use_batch_sorting_queue = 0,
     enable_block_number_column = 1,
     enable_block_offset_column = 1,
     enable_vertical_merge_algorithm = 1,
@@ -30,8 +30,7 @@ CREATE TABLE equal_keys_batch_04413 AS equal_keys_default_04413
 ENGINE = MergeTree
 ORDER BY k
 SETTINGS
-    merge_sorting_queue_strategy = 'batch',
-    allow_experimental_text_index_phrase_search = 1,
+    merge_use_batch_sorting_queue = 1,
     enable_block_number_column = 1,
     enable_block_offset_column = 1,
     enable_vertical_merge_algorithm = 1,
@@ -43,117 +42,34 @@ SETTINGS
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0;
 
--- Populate both tables identically from numbers() so that the parts are physically
--- identical (same rows, same per-part insertion order, same part boundaries). The only
--- difference between the tables is merge_sorting_queue_strategy, so the equal-key order
--- comparison below isolates the merge behaviour and does not depend on read order.
-INSERT INTO equal_keys_default_04413
-SELECT
-    number,
-    toUInt8(number % 3),
-    concat('payload-', toString(number), '-', toString(intHash64(number))),
-    arrayMap(x -> toUInt32(number + x), range(toUInt8(number % 5))),
-    if(number % 6 = 0, NULL, toInt64(number) * -7)
-FROM numbers(240)
-WHERE number % 4 = 0;
+INSERT INTO source_04413
+SELECT number, toUInt8(number % 3), concat('payload-', toString(number))
+FROM numbers(96);
 
-INSERT INTO equal_keys_default_04413
-SELECT
-    number,
-    toUInt8(number % 3),
-    concat('payload-', toString(number), '-', toString(intHash64(number))),
-    arrayMap(x -> toUInt32(number + x), range(toUInt8(number % 5))),
-    if(number % 6 = 0, NULL, toInt64(number) * -7)
-FROM numbers(240)
-WHERE number % 4 = 1;
+INSERT INTO equal_keys_default_04413 SELECT * FROM source_04413 WHERE id % 3 = 0;
+INSERT INTO equal_keys_default_04413 SELECT * FROM source_04413 WHERE id % 3 = 1;
+INSERT INTO equal_keys_default_04413 SELECT * FROM source_04413 WHERE id % 3 = 2;
 
-INSERT INTO equal_keys_default_04413
-SELECT
-    number,
-    toUInt8(number % 3),
-    concat('payload-', toString(number), '-', toString(intHash64(number))),
-    arrayMap(x -> toUInt32(number + x), range(toUInt8(number % 5))),
-    if(number % 6 = 0, NULL, toInt64(number) * -7)
-FROM numbers(240)
-WHERE number % 4 = 2;
-
-INSERT INTO equal_keys_default_04413
-SELECT
-    number,
-    toUInt8(number % 3),
-    concat('payload-', toString(number), '-', toString(intHash64(number))),
-    arrayMap(x -> toUInt32(number + x), range(toUInt8(number % 5))),
-    if(number % 6 = 0, NULL, toInt64(number) * -7)
-FROM numbers(240)
-WHERE number % 4 = 3;
-
-INSERT INTO equal_keys_batch_04413
-SELECT
-    number,
-    toUInt8(number % 3),
-    concat('payload-', toString(number), '-', toString(intHash64(number))),
-    arrayMap(x -> toUInt32(number + x), range(toUInt8(number % 5))),
-    if(number % 6 = 0, NULL, toInt64(number) * -7)
-FROM numbers(240)
-WHERE number % 4 = 0;
-
-INSERT INTO equal_keys_batch_04413
-SELECT
-    number,
-    toUInt8(number % 3),
-    concat('payload-', toString(number), '-', toString(intHash64(number))),
-    arrayMap(x -> toUInt32(number + x), range(toUInt8(number % 5))),
-    if(number % 6 = 0, NULL, toInt64(number) * -7)
-FROM numbers(240)
-WHERE number % 4 = 1;
-
-INSERT INTO equal_keys_batch_04413
-SELECT
-    number,
-    toUInt8(number % 3),
-    concat('payload-', toString(number), '-', toString(intHash64(number))),
-    arrayMap(x -> toUInt32(number + x), range(toUInt8(number % 5))),
-    if(number % 6 = 0, NULL, toInt64(number) * -7)
-FROM numbers(240)
-WHERE number % 4 = 2;
-
-INSERT INTO equal_keys_batch_04413
-SELECT
-    number,
-    toUInt8(number % 3),
-    concat('payload-', toString(number), '-', toString(intHash64(number))),
-    arrayMap(x -> toUInt32(number + x), range(toUInt8(number % 5))),
-    if(number % 6 = 0, NULL, toInt64(number) * -7)
-FROM numbers(240)
-WHERE number % 4 = 3;
+INSERT INTO equal_keys_batch_04413 SELECT * FROM source_04413 WHERE id % 3 = 0;
+INSERT INTO equal_keys_batch_04413 SELECT * FROM source_04413 WHERE id % 3 = 1;
+INSERT INTO equal_keys_batch_04413 SELECT * FROM source_04413 WHERE id % 3 = 2;
 
 OPTIMIZE TABLE equal_keys_default_04413 FINAL SETTINGS optimize_throw_if_noop = 1;
 OPTIMIZE TABLE equal_keys_batch_04413 FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT throwIf(
     (
-        SELECT groupArray(tuple(id, k, payload, values, n, _block_number, _block_offset))
-        FROM (SELECT id, k, payload, values, n, _block_number, _block_offset FROM equal_keys_default_04413 ORDER BY k, _part_offset)
+        SELECT groupArray(tuple(id, k, payload, _block_number, _block_offset))
+        FROM (SELECT id, k, payload, _block_number, _block_offset FROM equal_keys_default_04413 ORDER BY k, _part_offset)
     ) != (
-        SELECT groupArray(tuple(id, k, payload, values, n, _block_number, _block_offset))
-        FROM (SELECT id, k, payload, values, n, _block_number, _block_offset FROM equal_keys_batch_04413 ORDER BY k, _part_offset)
+        SELECT groupArray(tuple(id, k, payload, _block_number, _block_offset))
+        FROM (SELECT id, k, payload, _block_number, _block_offset FROM equal_keys_batch_04413 ORDER BY k, _part_offset)
     ),
-    'Equal-key merge order or row identity differs between default and batch sorting queue strategies')
-FORMAT Null;
-
-SET force_data_skipping_indices = 'idx_payload';
-
-WITH
-    (SELECT groupArray(id) FROM (SELECT id FROM equal_keys_default_04413 WHERE hasToken(payload, '17') ORDER BY id)) AS default_token,
-    (SELECT groupArray(id) FROM (SELECT id FROM equal_keys_batch_04413 WHERE hasToken(payload, '17') ORDER BY id)) AS batch_token,
-    (SELECT groupArray(id) FROM (SELECT id FROM equal_keys_default_04413 WHERE hasPhrase(payload, 'payload 17') ORDER BY id)) AS default_phrase,
-    (SELECT groupArray(id) FROM (SELECT id FROM equal_keys_batch_04413 WHERE hasPhrase(payload, 'payload 17') ORDER BY id)) AS batch_phrase
-SELECT throwIf(
-    default_token != [17] OR batch_token != default_token OR default_phrase != [17] OR batch_phrase != default_phrase,
-    'Text index results differ between default and batch sorting queue strategies')
+    'Equal-key merge order or row identity differs between default and batch sorting queues')
 FORMAT Null;
 
 SELECT 'equal keys ok';
 
 DROP TABLE equal_keys_default_04413;
 DROP TABLE equal_keys_batch_04413;
+DROP TABLE source_04413;

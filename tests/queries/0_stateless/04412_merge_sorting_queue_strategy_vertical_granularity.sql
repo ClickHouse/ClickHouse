@@ -13,7 +13,7 @@ CREATE TABLE vertical_granularity_default_04412
 ENGINE = MergeTree
 ORDER BY (k, id)
 SETTINGS
-    merge_sorting_queue_strategy = 'default',
+    merge_use_batch_sorting_queue = 0,
     enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0,
@@ -29,7 +29,7 @@ CREATE TABLE vertical_granularity_batch_04412 AS vertical_granularity_default_04
 ENGINE = MergeTree
 ORDER BY (k, id)
 SETTINGS
-    merge_sorting_queue_strategy = 'batch',
+    merge_use_batch_sorting_queue = 1,
     enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0,

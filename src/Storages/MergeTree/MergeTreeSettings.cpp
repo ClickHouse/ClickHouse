@@ -834,17 +834,15 @@ server setting `mutation_workload` is used instead.
 Target time to execution of one step of merge or mutation. Can be exceeded if
 one step takes longer time
 )", 0) \
-    DECLARE(MergeSortingQueueStrategy, merge_sorting_queue_strategy, MergeSortingQueueStrategy::Default, R"(
-Sorting queue strategy used when merging sorted streams during a merge.
-Possible values: `default` uses the original row-at-a-time sorting queue,
-`batch` uses the batch sorting queue to reduce per-row queue overhead.
+    DECLARE(Bool, merge_use_batch_sorting_queue, false, R"(
+Use the batch sorting queue to reduce per-row queue overhead when merging sorted streams.
 
 Only applies to merges that do not change rows, i.e. plain `MergeTree`
 (`Ordinary` merge mode). It has no effect on engines with merge-time
 semantics such as `ReplacingMergeTree`, `CollapsingMergeTree`,
 `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
 `GraphiteMergeTree` and `VersionedCollapsingMergeTree`, which keep using the
-`default` strategy regardless of this setting.
+default queue regardless of this setting.
 )", 0) \
     DECLARE(Bool, enforce_index_structure_match_on_partition_manipulation, false, R"(
 If this setting is enabled for destination table of a partition manipulation

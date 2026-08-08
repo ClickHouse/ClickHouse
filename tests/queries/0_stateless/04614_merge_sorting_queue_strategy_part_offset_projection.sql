@@ -24,7 +24,7 @@ CREATE TABLE projection_default_04614
 ENGINE = MergeTree
 ORDER BY k
 SETTINGS
-    merge_sorting_queue_strategy = 'default',
+    merge_use_batch_sorting_queue = 0,
     enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0,
@@ -36,21 +36,11 @@ SETTINGS
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0;
 
-CREATE TABLE projection_batch_04614
-(
-    id UInt64,
-    k UInt8,
-    payload String,
-    PROJECTION p
-    (
-        SELECT id, payload, _part_offset
-        ORDER BY payload
-    )
-)
+CREATE TABLE projection_batch_04614 AS projection_default_04614
 ENGINE = MergeTree
 ORDER BY k
 SETTINGS
-    merge_sorting_queue_strategy = 'batch',
+    merge_use_batch_sorting_queue = 1,
     enable_vertical_merge_algorithm = 1,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0,

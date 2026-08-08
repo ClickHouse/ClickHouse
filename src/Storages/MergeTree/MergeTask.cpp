@@ -136,7 +136,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
-    extern const MergeTreeSettingsMergeSortingQueueStrategy merge_sorting_queue_strategy;
+    extern const MergeTreeSettingsBool merge_use_batch_sorting_queue;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
     extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
@@ -170,19 +170,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
-}
-
-static SortingQueueStrategy getSortingQueueStrategy(MergeSortingQueueStrategy merge_sorting_queue_strategy)
-{
-    switch (merge_sorting_queue_strategy)
-    {
-        case MergeSortingQueueStrategy::Default:
-            return SortingQueueStrategy::Default;
-        case MergeSortingQueueStrategy::Batch:
-            return SortingQueueStrategy::Batch;
-    }
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected merge sorting queue strategy: {}", static_cast<int>(merge_sorting_queue_strategy));
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -3363,9 +3350,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
-        const auto sorting_queue_strategy = global_ctx->merge_may_reduce_rows || global_ctx->projection
-            ? SortingQueueStrategy::Default
-            : getSortingQueueStrategy((*merge_tree_settings)[MergeTreeSetting::merge_sorting_queue_strategy]);
+        const auto sorting_queue_strategy
+            = !global_ctx->merge_may_reduce_rows
+                && !global_ctx->projection
+                && (*merge_tree_settings)[MergeTreeSetting::merge_use_batch_sorting_queue]
+            ? SortingQueueStrategy::Batch
+            : SortingQueueStrategy::Default;
 
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),

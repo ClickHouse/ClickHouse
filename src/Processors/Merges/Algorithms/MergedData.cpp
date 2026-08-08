@@ -274,41 +274,23 @@ size_t MergedData::rowsToInsertBeforeFlush(
 
     chassert(columns.size() == raw_columns.size());
 
-    size_t merged_bytes = 0;
-    /// `byteSizeAt` is not additive to destination `byteSize` for dictionary/index-backed columns.
-    /// Apply the real insertion to probes for those column trees so repeated values and index bytes
-    /// produce the same flush boundary as row-wise merging.
-    MutableColumns byte_size_probes(columns.size());
-    std::vector<size_t> probe_byte_sizes(columns.size());
+    /// `byteSizeAt` is not additive for dictionary/index-backed columns, so let
+    /// `hasEnoughRows` measure the actual size after inserting one row.
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        merged_bytes += columns[i]->byteSize();
         if (hasNonAdditiveByteSizeAt(*columns[i]) || hasNonAdditiveByteSizeAt(*raw_columns[i]))
-        {
-            byte_size_probes[i] = columns[i]->cloneResized(columns[i]->size());
-            probe_byte_sizes[i] = columns[i]->byteSize();
-        }
+            return 1;
     }
+
+    size_t merged_bytes = 0;
+    for (const auto & column : columns)
+        merged_bytes += column->byteSize();
 
     for (size_t length = 1; length <= rows_to_insert; ++length)
     {
         const size_t row = start_index + length - 1;
-        for (size_t i = 0; i < raw_columns.size(); ++i)
-        {
-            if (!byte_size_probes[i])
-            {
-                merged_bytes += raw_columns[i]->byteSizeAt(row);
-                continue;
-            }
-
-            if (raw_columns[i]->isReplicated() && !byte_size_probes[i]->isReplicated())
-                byte_size_probes[i] = ColumnReplicated::create(std::move(byte_size_probes[i]));
-
-            byte_size_probes[i]->insertFrom(*raw_columns[i], row);
-            const size_t byte_size = byte_size_probes[i]->byteSize();
-            merged_bytes += byte_size - probe_byte_sizes[i];
-            probe_byte_sizes[i] = byte_size;
-        }
+        for (const auto * column : raw_columns)
+            merged_bytes += column->byteSizeAt(row);
 
         if (merged_bytes >= max_block_size_bytes)
             return length;

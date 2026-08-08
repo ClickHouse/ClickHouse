@@ -53,7 +53,11 @@ Chunk makeLowCardinalityChunk(UInt64 first_key, size_t rows = 100)
     return Chunk(Columns{std::move(key), std::move(payload)}, rows);
 }
 
-size_t getFirstChunkSize(SortingQueueStrategy strategy, size_t max_block_size_bytes, bool use_average_block_size)
+size_t getFirstChunkSize(
+    SortingQueueStrategy strategy,
+    size_t max_block_size_bytes,
+    bool use_average_block_size,
+    UInt64 second_first_key = 50)
 {
     auto header = std::make_shared<const Block>(Block{
         {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "key"},
@@ -91,7 +95,7 @@ size_t getFirstChunkSize(SortingQueueStrategy strategy, size_t max_block_size_by
     else
     {
         inputs[0].chunk = makeChunk(0);
-        inputs[1].chunk = makeChunk(50);
+        inputs[1].chunk = makeChunk(second_first_key);
     }
     algorithm.initialize(std::move(inputs));
 
@@ -141,6 +145,12 @@ TEST(MergingSortedBatchLimits, MaxBlockSizeBytes)
     EXPECT_EQ(
         getFirstChunkSize(SortingQueueStrategy::Default, 100, false),
         getFirstChunkSize(SortingQueueStrategy::Batch, 100, false));
+}
+
+TEST(MergingSortedBatchLimits, MaxBlockSizeBytesFastForward)
+{
+    EXPECT_EQ(100, getFirstChunkSize(SortingQueueStrategy::Default, 100, false, 200));
+    EXPECT_EQ(100, getFirstChunkSize(SortingQueueStrategy::Batch, 100, false, 200));
 }
 
 TEST(MergingSortedBatchLimits, AverageBlockSize)
