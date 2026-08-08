@@ -51,6 +51,8 @@
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
 
+#include <magic_enum.hpp>
+
 #include <TableFunctions/TableFunctionURL.h>
 
 #include <Formats/SchemaInferenceUtils.h>
@@ -419,6 +421,12 @@ StorageURLSource::StorageURLSource(
                 current_uri_options.size() == 1,
                 cancellation);
 
+            /// A hard teardown of the pipeline noticed between the failover options returns no
+            /// buffer instead of an error, see getFirstAvailableURIAndReadBuffer. No one needs the
+            /// data anymore: end the stream.
+            if (!uri_and_buf.second)
+                return false;
+
             /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
         }
         while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
@@ -655,6 +663,11 @@ void StorageURLSource::cancel(CancelReason reason) noexcept
     const bool soft = reason == CancelReason::CancelledByTimeout || reason == CancelReason::PartialResult;
     cancellation->cancel(soft);
 
+    /// The behavior above depends on which of the sometimes repeated cancellations have arrived so
+    /// far, so leave a trace of each - also for the tests which arrange a particular order and need
+    /// to see the delivery.
+    LOG_DEBUG(getLogger("StorageURLSource"), "The read has been cancelled, reason: {}", magic_enum::enum_name(reason));
+
     ISource::cancel(reason);
 }
 
@@ -682,20 +695,29 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         /// Do not go on probing the failover options if the query has been killed meanwhile.
         CurrentThread::checkIfNotCancelled();
 
-        /// The check above is a no-op for the cancellations which do not kill the query. For the soft
-        /// ones - the `max_execution_time` timeout with the `break` overflow mode, or a consumer which
-        /// has enough data - the query must still succeed with what it has already read, and such a
-        /// cancellation landing between the options - after an empty file has been skipped, or after a
-        /// failed probe - finds no request in flight to interrupt. So check the flag itself before
-        /// starting the next option; the source discards this error, see generate.
+        /// The check above is a no-op for the cancellations which do not kill the query, and such a
+        /// cancellation landing between the options - after an empty file has been skipped, or after
+        /// a failed probe - finds no request in flight to interrupt. So check the flag itself before
+        /// starting the next option, in both of its kinds:
         ///
-        /// A hard teardown which does not kill the query - the pipeline has already failed elsewhere,
-        /// or the client has disconnected - must not be reported with a synthesized error like this:
-        /// generate would not discard it, and it could reach the user in place of the failure that
-        /// really happened. It does not need one either: the next attempt notices the flag as soon as
-        /// it fails and its real error propagates through the catch below, see doWithRetries.
-        if (cancellation && cancellation->isCancelledSoftly())
-            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The URL read has been cancelled while choosing the URI to read from");
+        /// - After a soft cancellation - the `max_execution_time` timeout with the `break` overflow
+        ///   mode, or a consumer which has enough data - the query must still succeed with what it
+        ///   has already read, so report the interruption with a cancellation error, which the
+        ///   source discards, see generate.
+        ///
+        /// - A hard teardown which does not kill the query - the pipeline has already failed
+        ///   elsewhere, or the client has disconnected - must not be reported with a synthesized
+        ///   error like that: generate would not discard it, and it could reach the user in place of
+        ///   the failure that really happened. Return no buffer instead: no one is left who needs
+        ///   the data, so the caller ends the stream without starting the next option, see
+        ///   initialize.
+        if (cancellation && cancellation->isCancelled())
+        {
+            if (cancellation->isCancelledSoftly())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "The URL read has been cancelled while choosing the URI to read from");
+
+            return {};
+        }
 
         bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
         auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);

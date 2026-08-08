@@ -251,6 +251,8 @@ public:
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
+    /// Returns no buffer when a hard teardown of the pipeline is noticed between the options while
+    /// nothing else reports the interruption - the caller must end the stream then, see initialize.
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
         const std::vector<String>::const_iterator & end,
