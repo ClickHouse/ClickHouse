@@ -50,6 +50,13 @@ struct MergeMutateSelectedEntry
     MutationCommandsConstPtr commands;
     MergeTreeTransactionPtr txn;
     Strings mutation_ids; /// List of mutation version strings being applied
+    /// For a merge entry: the timestamp the merge was selected at. MergePlainMergeTreeTask passes it into
+    /// MergeTask as time_of_merge (as the replicated path passes entry.create_time), so the merge evaluates
+    /// its TTL boundaries against the same clock the up-front memory reservation was estimated with
+    /// (see CompactionStatistics::estimateNeededMemoryForMerge) - a merge that waits in the background
+    /// queue while a TTL boundary passes must not turn into a row-reducing TTL merge its reservation did
+    /// not price. Unused (0) for a mutation entry.
+    time_t time_of_merge{0};
     bool finalized{false};
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
                              MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,

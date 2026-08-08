@@ -1779,9 +1779,17 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             auto merge_context = Context::createCopy(getContext()->getBackgroundContext());
             merge_context->makeQueryContextForMerge(*getSettings());
 
+            /// The timestamp the merge runs with (MergeTask's time_of_merge): captured once here and
+            /// carried to the task through the selected entry, so the merge evaluates its TTL boundaries
+            /// against the same clock this estimate priced them with. Taking a fresh time at task start
+            /// would let a merge that waits in the background queue while a TTL boundary passes execute
+            /// as a row-reducing TTL merge its reservation did not price. The replicated path pins the
+            /// clock the same way, via entry.create_time.
+            const time_t time_of_merge = std::time(nullptr);
+
             const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
-                *future_part, metadata_snapshot, merge_context, *getSettings(), output_may_be_on_remote_disk,
-                admission_write_buffer_memory, deduplicate, cleanup);
+                *future_part, metadata_snapshot, merge_context, *getSettings(), time_of_merge,
+                output_may_be_on_remote_disk, admission_write_buffer_memory, deduplicate, cleanup);
 
             std::optional<MergeMemoryReservation> memory_reservation;
             if (user_initiated)
@@ -1830,13 +1838,16 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             {
                 memory_reservation = MergeMemoryReservation::reserve(
                     CompactionStatistics::estimateNeededMemoryForMerge(
-                        *future_part, metadata_snapshot, merge_context, *getSettings(), actual_output_on_remote_disk,
-                        CompactionStatistics::getDiskWriteBufferMemory(actual_disk), deduplicate, cleanup));
+                        *future_part, metadata_snapshot, merge_context, *getSettings(), time_of_merge,
+                        actual_output_on_remote_disk, CompactionStatistics::getDiskWriteBufferMemory(actual_disk),
+                        deduplicate, cleanup));
             }
 
             tagger->memory_reservation = std::move(*memory_reservation);
 
-            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+            auto selected_entry = std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+            selected_entry->time_of_merge = time_of_merge;
+            return selected_entry;
         }
         catch (...)
         {

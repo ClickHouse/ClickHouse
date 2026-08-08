@@ -939,6 +939,7 @@ UInt64 estimateNeededMemoryForMerge(
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context,
     const MergeTreeSettings & settings,
+    time_t time_of_merge,
     bool output_on_remote_disk,
     std::optional<DiskWriteBufferMemory> remote_write_buffer_memory,
     bool deduplicate,
@@ -1231,9 +1232,13 @@ UInt64 estimateNeededMemoryForMerge(
     /// parts, or a non-Ordinary merging mode. All of these are knowable at selection time: deduplicate
     /// and cleanup come from the caller (an OPTIMIZE query or a replication log entry - background
     /// selection never sets them), the TTL state and delete masks from the source parts themselves.
-    /// The merge evaluates the TTL threshold slightly later than this estimate and skips TTL removal
-    /// while a ttl_merges_blocker is held; both can only make the merge rebuild fewer projections than
-    /// priced here, which is the safe direction for a reservation.
+    /// The TTL trigger compares the parts' part_min_ttl against the SAME time_of_merge the merge itself
+    /// runs with (the selection time for a non-replicated merge, entry.create_time for a replicated one
+    /// - see MergeMutateSelectedEntry::time_of_merge), not against the wall clock of this estimate: a
+    /// merge that sits in the background queue while a TTL boundary passes must not execute as a
+    /// row-reducing TTL merge that its reservation priced as an ordinary one. The one remaining
+    /// deviation - the merge skips TTL removal while a ttl_merges_blocker is held - can only make the
+    /// merge rebuild fewer projections than priced here, which is the safe direction for a reservation.
     bool need_remove_expired_values = false;
     if (metadata_snapshot->hasAnyTTL())
     {
@@ -1244,7 +1249,7 @@ UInt64 estimateNeededMemoryForMerge(
             if (!part->checkAllTTLCalculated(metadata_snapshot))
                 need_remove_expired_values = true;
         }
-        if (merged_ttl_infos.part_min_ttl && merged_ttl_infos.part_min_ttl <= std::time(nullptr))
+        if (merged_ttl_infos.part_min_ttl && merged_ttl_infos.part_min_ttl <= time_of_merge)
             need_remove_expired_values = true;
     }
 
@@ -1760,6 +1765,7 @@ UInt64 estimateNeededMemoryForMerge(
                     projection.metadata,
                     context,
                     projection_settings,
+                    time_of_merge,
                     output_on_remote_disk,
                     remote_write_buffer_memory);
             }

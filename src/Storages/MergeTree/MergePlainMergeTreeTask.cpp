@@ -12,6 +12,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ThreadStatus.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 
 
@@ -21,6 +22,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char plain_merge_task_pause_before_prepare[];
 }
 
 
@@ -134,13 +140,24 @@ void MergePlainMergeTreeTask::prepare()
         }
     };
 
+    /// Test hook: hold a selected merge here, between selection and execution, so tests can
+    /// deterministically let a TTL boundary pass in that window.
+    FailPointInjection::pauseFailPoint(FailPoints::plain_merge_task_pause_before_prepare);
+
+    /// The merge runs with the timestamp it was SELECTED at, not with a fresh one: its up-front memory
+    /// reservation priced the TTL trigger of merge_may_reduce_rows against that clock
+    /// (CompactionStatistics::estimateNeededMemoryForMerge), and a merge that waits in the background
+    /// queue while a TTL boundary passes must not execute as a row-reducing TTL merge that the
+    /// reservation priced as an ordinary one. The replicated path pins the clock the same way, via
+    /// entry.create_time (see MergeFromLogEntryTask); rows whose TTL expires while the merge is queued
+    /// are removed by a later TTL merge.
     merge_task = storage.merger_mutator.mergePartsToTemporaryPart(
         future_part,
         metadata_snapshot,
         merge_list_entry.get(),
         {} /* projection_merge_list_element */,
         table_lock_holder,
-        time(nullptr),
+        merge_mutate_entry->time_of_merge,
         task_context,
         merge_mutate_entry->tagger->reserved_space,
         deduplicate,
