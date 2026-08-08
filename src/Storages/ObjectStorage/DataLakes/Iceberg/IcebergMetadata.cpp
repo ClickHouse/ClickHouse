@@ -1039,7 +1039,11 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
 
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, effective_cache, local_context, log, compression_method, persistent_components.table_uuid, persistent_components.data_source_description);
-    chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
+    /// Not asserting `persistent_components.format_version == metadata_object's format-version` here:
+    /// that field is captured once at `IcebergMetadata` construction, but this reused instance can
+    /// outlive an external writer's format-version upgrade (e.g. Spark bumping v1 -> v2 between
+    /// queries), which would trip the assertion in debug/ASan builds on a perfectly valid table.
+    /// `metadata_object`, freshly fetched above, is the source of truth for the current call.
 
     /// History
     std::vector<Iceberg::IcebergHistoryRecord> iceberg_history;
