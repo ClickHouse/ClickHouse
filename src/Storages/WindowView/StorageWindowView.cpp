@@ -804,6 +804,12 @@ ASTPtr StorageWindowView::getSourceTableSelectQuery()
     else
         modified_select.setExpression(ASTSelectQuery::Expression::ORDER_BY, {});
 
+    /// INTERPOLATE belongs to the replaced (or removed) ORDER BY ... WITH FILL clause, and it may
+    /// reference aliases of the original select list, which was rewritten to raw source columns above.
+    /// `RequiredSourceColumnsVisitor` traverses INTERPOLATE independently of ORDER BY, so a stale
+    /// clause would pull unknown identifiers into the source query.
+    modified_select.setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
+
     const auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
     select_with_union_query->list_of_selects = make_intrusive<ASTExpressionList>();
     select_with_union_query->list_of_selects->children.push_back(query);
