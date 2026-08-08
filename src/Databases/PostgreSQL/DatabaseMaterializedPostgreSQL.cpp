@@ -374,7 +374,15 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
             if (!nested)
                 return StoragePtr{};
 
-            return std::make_shared<StorageMaterializedPostgreSQL>(nested, getContext(), remote_database_name, name);
+            auto wrapper = std::make_shared<StorageMaterializedPostgreSQL>(nested, getContext(), remote_database_name, name);
+            /// Carry the coordinated flag exactly like the published wrappers do, so the storage-level
+            /// DDL guards (`checkTableCanBeDetached`, `checkTableCanBeDropped`) refuse a name-based
+            /// DETACH / DROP / TRUNCATE of an individual table before `InterpreterDropQuery` calls
+            /// `flushAndShutdown` even in this window. Otherwise a DETACH right after a restart would
+            /// shut the local nested replicated table down before the database-level method rejects
+            /// the statement, and the promised no-op rejection would be lost.
+            wrapper->setCoordinated(isCoordinated());
+            return wrapper;
         }
     }
 
@@ -926,7 +934,21 @@ void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop()
         synchronization_started = false;
     }
     if (!shutdown_called)
+    {
+        /// If the refused drop had already run through `stopReplication` (the generic drop path), it set
+        /// `replication_stopped` when it emptied the wrapper map. Control is handed back to the startup
+        /// task now, so restore the startup-window semantics as well: until `startSynchronization`
+        /// republishes the wrappers - indefinitely, if startup keeps failing and retrying - user-facing
+        /// reads must wrap the nested tables on the fly again (see `tryGetTable` / `getTableForRead`)
+        /// instead of falling back to the raw nested tables, which would expose stale and deleted row
+        /// versions. `handler_mutex` is held by the caller; taking `tables_mutex` inside it is the
+        /// documented lock order.
+        {
+            std::lock_guard tables_lock(tables_mutex);
+            replication_stopped = false;
+        }
         startup_task->activateAndSchedule();
+    }
 }
 
 
@@ -1019,8 +1041,11 @@ StoragePtr DatabaseMaterializedPostgreSQL::getTableForRead(const String & table_
 
     /// Startup window: the map is empty because `startSynchronization` has not published the wrappers
     /// yet (see tryGetTable), so wrap the nested table on the fly. If `startSynchronization` publishes
-    /// the wrappers concurrently, the wrapper built here is equivalent to the published one.
-    return std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
+    /// the wrappers concurrently, the wrapper built here is equivalent to the published one - including
+    /// the coordinated flag, which the storage-level DDL guards check (see tryGetTable).
+    auto wrapper = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
+    wrapper->setCoordinated(isCoordinated());
+    return wrapper;
 }
 
 

@@ -2102,6 +2102,72 @@ def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
         )
 
 
+def test_coordinated_detach_in_startup_window_is_a_no_op_rejection(started_cluster):
+    # In the attach/restart window `tryGetTable` wraps the nested tables on the fly. That wrapper must
+    # carry the coordinated flag exactly like the published wrappers do: otherwise a name-based
+    # DETACH TABLE ... PERMANENTLY (or DROP TABLE) in that window passes the storage-level
+    # `checkTableCanBeDetached` / `checkTableCanBeDropped` guard, and `InterpreterDropQuery` calls
+    # `flushAndShutdown` on the table - shutting the local nested replicated table down - before the
+    # database-level method rejects the statement on the settings. The statement still fails, but the
+    # promised no-op rejection is lost and replication of the table is silently broken.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50)"
+    )
+
+    settings = [
+        "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+        # An own keeper path so this setup cannot cross-contaminate the tests sharing KEEPER_PATH.
+        "materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{shard}/startup_window_ddl'",
+        "materialized_postgresql_replica_name = '{replica}'",
+        "materialized_postgresql_tables_list = 'test_table'",
+    ]
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+    )
+    check_tables_are_synchronized(instance, "test_table")
+
+    failpoint_config_path = (
+        "/etc/clickhouse-server/config.d/matpg_startup_failpoint.xml"
+    )
+    try:
+        # Re-enter the startup window: restart the server with the failpoint enabled from the
+        # configuration, so the re-attached database keeps retrying its background startup and the
+        # wrapper map stays unpublished.
+        instance.replace_config(
+            failpoint_config_path,
+            "<clickhouse><fail_points_active>"
+            "<materialized_postgresql_fail_database_startup>1"
+            "</materialized_postgresql_fail_database_startup>"
+            "</fail_points_active></clickhouse>",
+        )
+        instance.restart_clickhouse()
+
+        for query in [
+            "DETACH TABLE test_database.test_table PERMANENTLY",
+            "DROP TABLE test_database.test_table",
+        ]:
+            error = instance.query_and_get_error(query)
+            assert "not supported for a coordinated MaterializedPostgreSQL" in error, error
+    finally:
+        instance.exec_in_container(["rm", "-f", failpoint_config_path])
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
+        )
+
+    # The rejections above must have been true no-ops: once the startup window closes, the nested
+    # table must still accept the consumer's writes. Without the coordinated flag on the on-the-fly
+    # wrapper, the refused DETACH has already shut the nested replicated table down, and this
+    # convergence never happens.
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 100
+
+    pg_manager.drop_materialized_db()
+
+
 def test_plain_drop_database_quiesces_retrying_startup_task(started_cluster):
     # A plain (non-coordinated) DROP DATABASE must not race the background startup task.
     # `InterpreterDropQuery::executeToDatabaseImpl` calls `stopReplication` (which clears
@@ -2218,6 +2284,77 @@ def test_plain_refused_drop_rearms_startup_task(started_cluster):
         )
 
     # The recovered database must be droppable for real, removing the shared PostgreSQL objects.
+    instance.query("DROP DATABASE test_database SYNC")
+    assert not replication_slot_exists()
+    assert not publication_exists()
+
+
+def test_refused_drop_recovery_window_keeps_wrapped_reads(started_cluster):
+    # `stopReplication` in the generic drop path sets `replication_stopped` when it empties the wrapper
+    # map, redirecting user-facing reads to the raw nested tables. When the drop is then refused,
+    # `recoverAfterRefusedDrop` hands control back to the startup task, so it must also restore the
+    # startup-window semantics by clearing `replication_stopped`: until `startSynchronization`
+    # republishes the wrappers - indefinitely, if startup keeps failing and retrying - reads must wrap
+    # the nested tables on the fly again. Otherwise the recovery window exposes stale and deleted row
+    # versions (a PostgreSQL DELETE is a durable `_sign = -1` row in the nested table, hidden only by
+    # the wrapper's forced FINAL and `_sign = 1` filter).
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(50)"
+    )
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        settings=["materialized_postgresql_tables_list = 'test_table'"],
+    )
+    check_tables_are_synchronized(instance, "test_table")
+
+    # Leave durable tombstones in the nested table: the raw nested table keeps both the 25 live rows
+    # and the 25 `_sign = -1` rows (ReplacingMergeTree keeps the newest version per key even across
+    # merges), while a wrapped read sees exactly 25 rows.
+    pg_query("DELETE FROM test_table WHERE key >= 25")
+    check_tables_are_synchronized(instance, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 25
+
+    startup_fail_line = "Injected failure of the MaterializedPostgreSQL database startup"
+    startup_fail_baseline = count_in_all_logs(instance, startup_fail_line)
+    success_line = "Successfully loaded tables from PostgreSQL and started replication"
+    success_baseline = count_in_all_logs(instance, success_line)
+    try:
+        # Keep the re-armed startup failing after the refused drop, so the recovery window stays open
+        # deterministically instead of closing within milliseconds when the wrappers are republished.
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_database_startup"
+        )
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+        error = instance.query_and_get_error("DROP DATABASE test_database SYNC")
+        assert "Injected failure while dropping a nested table" in error, error
+
+        # The drop already ran through `stopReplication`; recovery has re-armed the startup task,
+        # which is now failing and retrying on the injected startup failure.
+        wait_for_new_log_occurrence(instance, startup_fail_line, startup_fail_baseline)
+
+        # A user-facing read in the recovery window must not expose the deleted row versions.
+        assert (
+            int(instance.query("SELECT count() FROM test_database.test_table")) == 25
+        )
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_database_startup"
+        )
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_nested_table_drop"
+        )
+
+    # Replication must come back once the injected failures are gone, and the database must be
+    # droppable for real.
+    wait_for_new_log_occurrence(instance, success_line, success_baseline)
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 50)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
     instance.query("DROP DATABASE test_database SYNC")
     assert not replication_slot_exists()
     assert not publication_exists()
