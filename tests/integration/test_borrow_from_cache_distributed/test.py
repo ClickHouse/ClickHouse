@@ -104,3 +104,54 @@ def test_distributed_on_plain_s3_disk_is_rejected(started_cluster):
     assert "does not have a real filesystem path" in error
 
     assert node.query("EXISTS TABLE dist_plain_s3").strip() == "0"
+
+
+def test_distributed_on_borrow_from_cache_disk_still_attaches(started_cluster):
+    # Only a new `CREATE` is rejected (tests above). A `Distributed` table already recorded in
+    # metadata -- e.g. created before an upgrade introduced the guard -- must still attach:
+    # rejecting it during table loading would invalidate pre-existing metadata and stop the
+    # server from bringing the table up at all. Such a table works without its local async-insert
+    # queue: SELECTs and foreground INSERTs are unaffected, and only a background INSERT (which
+    # has to spool the block on the disk with raw filesystem calls) is rejected.
+    node.query("DROP DATABASE IF EXISTS ordinary_borrow SYNC")
+    # A full-definition ATTACH (which takes the same non-CREATE loading path as server startup)
+    # needs an `Ordinary` database; `Atomic` requires an explicit UUID for it.
+    node.query(
+        "CREATE DATABASE ordinary_borrow ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    node.query(
+        "CREATE TABLE ordinary_borrow.underlying (key UInt64) ENGINE = MergeTree ORDER BY key"
+    )
+    node.query(
+        """
+        ATTACH TABLE ordinary_borrow.dist_attached (key UInt64)
+        ENGINE = Distributed(test_cluster_local, 'ordinary_borrow', 'underlying', rand(), 'borrowed_policy')
+        """
+    )
+
+    # The attached table is fully readable and foreground-writable through the local shard.
+    node.query(
+        "INSERT INTO ordinary_borrow.dist_attached SETTINGS distributed_foreground_insert = 1 VALUES (1)"
+    )
+    assert node.query("SELECT count() FROM ordinary_borrow.dist_attached").strip() == "1"
+
+    # A background INSERT to a *local* shard bypasses the on-disk queue entirely (the block goes
+    # straight into the local underlying table), so it works too. Only a background INSERT that has
+    # to spool a block for a remote shard needs the queue: attach the same table over a cluster with
+    # a remote shard and check it is rejected with a clear error instead of touching the container's
+    # real filesystem root through the placeholder disk path. The block never leaves the node -- the
+    # guard throws before anything is written or sent.
+    node.query(
+        """
+        ATTACH TABLE ordinary_borrow.dist_attached_remote (key UInt64)
+        ENGINE = Distributed(test_cluster, 'ordinary_borrow', 'underlying', rand(), 'borrowed_policy')
+        """
+    )
+    error = node.query_and_get_error(
+        "INSERT INTO ordinary_borrow.dist_attached_remote SETTINGS distributed_foreground_insert = 0 VALUES (2)"
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "cannot store pending blocks" in error
+
+    node.query("DROP DATABASE ordinary_borrow SYNC")

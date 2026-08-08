@@ -98,5 +98,15 @@
                 </replica>
             </shard>
         </test_cluster>
+        <!-- A cluster whose only shard is the node itself, so that an attached `Distributed`
+             table can actually be read from and written to (the shard is recognized as local). -->
+        <test_cluster_local>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_local>
     </remote_servers>
 </clickhouse>

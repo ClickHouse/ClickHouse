@@ -502,6 +502,22 @@ StorageDistributed::StorageDistributed(
     /// Sanity check. Skip check if the table is already created to allow the server to start.
     if (mode <= LoadingStrictnessLevel::CREATE)
     {
+        /// `Distributed` manages the local queue of pending async INSERTs with raw `std::filesystem`
+        /// calls on `disk->getPath() + relative_data_path`, bypassing the `IDisk` API, so a disk
+        /// whose path is not a real host filesystem path (e.g. `web`, a remote `plain` disk, or
+        /// `borrow_from_cache`) cannot back it. Reject such a storage policy on `CREATE`; a table
+        /// already recorded in metadata is still attached (without the queue) so that an upgrade
+        /// does not invalidate pre-existing tables.
+        if (storage_policy)
+        {
+            for (const DiskPtr & disk : data_volume->getDisks())
+                if (!disk->isPathOnLocalFilesystem())
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "Disk '{}' does not have a real filesystem path and cannot back a `Distributed` table's local insert queue",
+                        disk->getName());
+        }
+
         if (remote_database.empty() && !remote_table_function_ptr && !getCluster()->maybeCrossReplication())
             LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
 
@@ -1534,7 +1550,14 @@ void StorageDistributed::initializeFromDisk()
 
     const auto & disks = data_volume->getDisks();
 
-    const auto & paths = getDataPaths();
+    /// Skip disks without a real filesystem path: the queue directories and the increment scan
+    /// below operate on the raw host filesystem. Such tables are attached without a local insert
+    /// queue (`initializeDirectoryQueuesForDisk` logs a warning); async INSERTs into them are
+    /// rejected by `DistributedSink` when they try to enqueue.
+    Strings paths;
+    for (const DiskPtr & disk : disks)
+        if (disk->isPathOnLocalFilesystem())
+            paths.push_back(disk->getPath() + relative_data_path);
     std::vector<UInt64> last_increment(paths.size());
 
     /// Make initialization for large number of disks parallel.
@@ -1646,11 +1669,19 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 
 void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
 {
+    /// A `CREATE` of such a table is rejected in the constructor; an existing table is attached
+    /// without the local insert queue so that an upgrade does not invalidate its metadata.
+    /// SELECTs and foreground INSERTs do not need the queue; async INSERTs are rejected by
+    /// `DistributedSink` when they try to enqueue.
     if (!disk->isPathOnLocalFilesystem())
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Disk '{}' does not have a real filesystem path and cannot back a `Distributed` table's local insert queue",
+    {
+        LOG_WARNING(
+            log,
+            "Disk '{}' does not have a real filesystem path and cannot back a `Distributed` table's local insert queue. "
+            "The table works without it, but INSERTs with distributed_foreground_insert = 0 will be rejected",
             disk->getName());
+        return;
+    }
 
     const std::string path(disk->getPath() + relative_data_path);
     fs::create_directories(path);
