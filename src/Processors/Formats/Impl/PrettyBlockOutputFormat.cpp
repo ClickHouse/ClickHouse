@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/JSONUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -892,15 +893,27 @@ void registerOutputFormatPretty(FormatFactory & factory)
                 /// The header (and, for many rows, the footer) column names are written verbatim, so a
                 /// name that is not valid UTF-8 makes the output not valid UTF-8 either. The values are
                 /// written through the plain `serializeText` kind, which writes the `Bool`
-                /// representations verbatim (see `settingsLiteralsMayProduceRawBytes`). The text
-                /// framings reject or base64-encode the output in these cases (see
+                /// representations verbatim (see `settingsLiteralsMayProduceRawBytes`). With
+                /// `output_format_pretty_named_tuples_as_json` (on by default), that kind renders a
+                /// named `Tuple` through `SerializationTuple::serializeTextJSONPretty` (the format sets
+                /// `FormatSettings::pretty_format`), which synthesizes JSON object keys from the element
+                /// names - verbatim, and `Pretty` installs no UTF-8 validating buffer at all (see
+                /// `tupleElementNamesMayProduceRawBytesInJSON`). The check mirrors the constructor's
+                /// reset of the JSON sub-settings to their defaults: the user's JSON settings (such as
+                /// `output_format_json_named_tuples_as_objects = 0`) do not turn the element names off
+                /// here, only `output_format_pretty_named_tuples_as_json` does.
+                /// The text framings reject or base64-encode the output in these cases (see
                 /// `checkIfOutputFormatMayProduceRawBytes`). `Pretty` does not write the data type names.
                 factory.registerOutputFormatMayProduceRawBytesChecker(
                     name,
                     [](const FormatSettings & settings, const Block & header)
                     {
+                        FormatSettings tuple_settings = settings;
+                        tuple_settings.json = FormatSettings::JSON{};
                         return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
-                            || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None);
+                            || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None)
+                            || (settings.pretty.named_tuples_as_json
+                                && JSONUtils::tupleElementNamesMayProduceRawBytesInJSON(header, tuple_settings, /*validate_utf8=*/ false));
                     });
             }
         }

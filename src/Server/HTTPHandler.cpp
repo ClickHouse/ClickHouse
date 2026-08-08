@@ -728,15 +728,31 @@ try
         return wb.cancelWithException(request, exception_code, message, nullptr);
     }
 
-    /// A framed response fails closed once its finalization has started. `Output::finalize` pushes
-    /// the delayed results, finalizes the compression and closes the response stream, so a failure
-    /// in the middle of it has already put some (or all) of the framed success stream on the wire.
+    /// A framed response fails closed once its transmission has started. That covers a failure in
+    /// the middle of `Output::finalize` (which pushes the delayed results, finalizes the
+    /// compression and closes the response stream - `isFinalized` is set at its start) and a
+    /// failure of the framed exception delivery itself: when `handle_exception_in_output_format`
+    /// throws while writing the terminal `exception` packet (for example while draining the `log`
+    /// / `profile_events` queues) after `data` packets were already streamed, the escaped
+    /// exception lands here with the packet stream unterminated and `exception_is_written` still
+    /// false. In both cases some (or all) of the framed stream is already on the wire. The same
+    /// applies when framed packets are merely buffered: even before `response.sent()`, bytes
+    /// written into `out_maybe_compressed` / `out_holder` are not discarded by
+    /// `cancelWithException` (it keeps non-empty buffers and appends the error message after
+    /// them), so the client would receive a partial packet stream followed by a plain error body.
     /// Appending anything at that point - whether a fresh framed `exception` stream or the generic
-    /// `__exception__` block that `cancelWithException` writes into an already-sent response -
-    /// would follow a partial success response, breaking the "always a stream of packets" contract.
+    /// `__exception__` block that `cancelWithException` writes -
+    /// would follow a partial packet stream, breaking the "always a stream of packets" contract.
     /// The client observes a truncated response and an aborted connection instead - the same
-    /// fail-close rule as for a half-written packet (see `IFramingFormat`).
-    if (used_output.framed && used_output.isFinalized() && !used_output.exception_is_written)
+    /// fail-close rule as for a half-written packet (see `IFramingFormat`). A framed response
+    /// that has not produced any output yet takes the paths below instead: the `exception_writer`
+    /// set up for `wait_end_of_query` discards the stream buffered in the cascade (which does not
+    /// pass through `out_maybe_compressed` until `pushDelayedResults`) and writes a fresh framed
+    /// exception response, and the generic path produces a proper HTTP error response.
+    bool framed_bytes_produced = (used_output.out_maybe_compressed && used_output.out_maybe_compressed->count() > 0)
+        || (used_output.out_holder && used_output.out_holder->count() > 0);
+    if (used_output.framed && !used_output.exception_is_written
+        && (used_output.isFinalized() || response.sent() || framed_bytes_produced))
     {
         used_output.cancel();
         return false;
