@@ -5771,6 +5771,41 @@ void MergeTreeData::checkLossyRecompressionIsPossible(const String & column_name
                 "with ALTER TABLE ... MATERIALIZE COLUMN.",
                 column_name, column_desc->codec->formatForErrorMessage(), dependent_column.name);
     }
+
+    /// The part stores the min/max of every TTL expression (`ttl.txt`), and the background
+    /// processing uses them to decide when rows or the whole part are expired, when the part has
+    /// to move to another disk or volume, and when a recompression TTL has to rewrite it. The
+    /// mutation copies `ttl_infos` from the source part unchanged (`RECOMPRESS COLUMN` only reads
+    /// the column, so `MutationsInterpreter` schedules no TTL recalculation), so after a lossy
+    /// recompression data would keep being expired, kept, moved, or recompressed according to the
+    /// values as they were before the recompression.
+    auto check_ttl_dependency = [&](const TTLDescription & ttl_description, const String & ttl_kind, const String & removal_hint)
+    {
+        if (depends_on_recompressed_column(ttl_description.expression_columns.getNames()))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot RECOMPRESS COLUMN `{}` with the lossy codec {}: the {} `{}` reads this column, "
+                "and the TTL bounds stored in the parts are not recalculated by the recompression, so "
+                "they would keep describing the values as they were before the recompression and data "
+                "could be expired, kept, moved, or recompressed incorrectly. Remove the TTL first ({}); "
+                "it can be re-added afterwards and the parts rebuilt with ALTER TABLE ... MATERIALIZE TTL.",
+                column_name, column_desc->codec->formatForErrorMessage(), ttl_kind,
+                ttl_description.expression_ast->formatForErrorMessage(), removal_hint);
+    };
+
+    static constexpr auto table_ttl_removal_hint = "ALTER TABLE ... REMOVE TTL, or ALTER TABLE ... MODIFY TTL without it";
+    if (metadata_snapshot->hasRowsTTL())
+        check_ttl_dependency(metadata_snapshot->getRowsTTL(), "table (DELETE) TTL expression", table_ttl_removal_hint);
+    for (const auto & ttl_description : metadata_snapshot->getRowsWhereTTLs())
+        check_ttl_dependency(ttl_description, "table (DELETE WHERE) TTL expression", table_ttl_removal_hint);
+    for (const auto & ttl_description : metadata_snapshot->getGroupByTTLs())
+        check_ttl_dependency(ttl_description, "table (GROUP BY) TTL expression", table_ttl_removal_hint);
+    for (const auto & ttl_description : metadata_snapshot->getMoveTTLs())
+        check_ttl_dependency(ttl_description, "table (move) TTL expression", table_ttl_removal_hint);
+    for (const auto & ttl_description : metadata_snapshot->getRecompressionTTLs())
+        check_ttl_dependency(ttl_description, "table (RECOMPRESS) TTL expression", table_ttl_removal_hint);
+    for (const auto & [ttl_column_name, ttl_description] : metadata_snapshot->getColumnTTLs())
+        check_ttl_dependency(ttl_description, fmt::format("TTL expression of column `{}`", ttl_column_name),
+            "ALTER TABLE ... MODIFY COLUMN ... REMOVE TTL");
 }
 
 void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
