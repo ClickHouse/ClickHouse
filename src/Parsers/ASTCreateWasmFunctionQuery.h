@@ -22,23 +22,18 @@ public:
         String module_hash;
         String source_function_name;
         WasmAbiVersion abi_version = WasmAbiVersion::RowDirect;
-        bool is_deterministic = false;
 
         WebAssemblyFunctionSettings settings;
     };
 
     bool or_replace = false;
     bool if_not_exists = false;
-    bool is_deterministic = false;
 
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
 
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateWasmFunctionQuery>(clone()); }
 

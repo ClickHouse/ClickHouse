@@ -16,7 +16,7 @@ extern const int LOGICAL_ERROR;
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
-    std::vector<VectorWithMemoryTracking<ColumnPtr>> source_columns(columns.size());
+    std::vector<Columns> source_columns(columns.size());
     std::vector<bool> is_replicated(columns.size());
     for (const auto & input : inputs)
     {
@@ -203,7 +203,7 @@ bool MergedData::hasEnoughRows() const
         return true;
 
     /// Never return more than max_block_size_bytes
-    if (merged_rows && max_block_size_bytes)
+    if (max_block_size_bytes)
     {
         size_t merged_bytes = 0;
         for (const auto & column : columns)

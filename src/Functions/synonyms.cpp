@@ -31,7 +31,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-class FunctionSynonyms final : public IFunction
+class FunctionSynonyms : public IFunction
 {
 public:
     static constexpr auto name = "synonyms";
@@ -127,14 +127,6 @@ public:
 REGISTER_FUNCTION(Synonyms)
 {
     FunctionDocumentation::Description description = R"(
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
-
-:::warning
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
-
 Finds synonyms of a given word.
 
 There are two types of synonym extensions:

@@ -17,8 +17,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -183,14 +181,11 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
                     "Please specify `DEFAULT` expression in ALTER MODIFY COLUMN statement",
                     required_column.name, column_in_block.type->getName(), required_column.type->getName());
 
-            /// _CAST(if(isNull(col), _CAST(default, 'T'), _CAST(assumeNotNull(col), 'T')), 'T')
-            auto is_null = makeASTFunction("isNull", make_intrusive<ASTIdentifier>(required_column.name));
-            auto cast_default = makeASTFunction("_CAST", default_value, make_intrusive<ASTLiteral>(required_column.type->getName()));
-            auto cast_value = makeASTFunction("_CAST", makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>(required_column.name)), make_intrusive<ASTLiteral>(required_column.type->getName()));
-            auto filled = makeASTFunction("if", std::move(is_null), std::move(cast_default), std::move(cast_value));
-            auto convert_func = makeASTFunction("_CAST", std::move(filled), make_intrusive<ASTLiteral>(required_column.type->getName()));
-            conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
+            auto convert_func = makeASTFunction("_CAST",
+                makeASTFunction("ifNull", make_intrusive<ASTIdentifier>(required_column.name), default_value),
+                make_intrusive<ASTLiteral>(required_column.type->getName()));
 
+            conversion_expr_list->children.emplace_back(setAlias(convert_func, required_column.name));
             continue;
         }
 
@@ -236,12 +231,12 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     for (const auto & column : header.getIndexByName())
         fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type), /*after_column=*/ "", /*first=*/false, /*add_subcolumns=*/false);
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
-    auto fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
     QueryAnalyzer analyzer(false);
     analyzer.resolve(expression, fake_table_expression, execution_context);
 
-    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
     collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
@@ -289,7 +284,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     }
 }
 
-static bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
+bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
 {
     for (const auto & required_column : required_columns)
     {
@@ -318,12 +313,9 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
 }
 
 static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
-    const NamesAndTypesList & available_columns, const Columns & res_columns, bool share_nested_offsets)
+    const NamesAndTypesList & available_columns, const Columns & res_columns)
 {
     std::unordered_map<String, ColumnPtr> offsets_columns;
-
-    ISerialization::StreamFileNameSettings stream_settings;
-    stream_settings.share_nested_offsets = share_nested_offsets;
 
     auto available_column = available_columns.begin();
     for (size_t i = 0; i < available_columns.size(); ++i, ++available_column)
@@ -341,7 +333,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, stream_settings);
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, {});
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
@@ -377,31 +369,19 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
 
 static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const String & subcolumn_name, size_t num_rows)
 {
-    auto const_column = data_type.createColumnConstWithDefaultValue(num_rows);
+    auto column = data_type.createColumnConstWithDefaultValue(num_rows);
 
     /// We must turn a constant column into a full column because the interpreter could infer
     /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
 
     if (subcolumn_name.empty())
-        return const_column->convertToFullColumnIfConst();
+        return column->convertToFullColumnIfConst();
 
     /// Firstly get subcolumn from const column and then replicate.
-    ColumnPtr data_column = const_column->getDataColumnPtr();
-    data_column = data_type.getSubcolumn(subcolumn_name, data_column);
+    column = assert_cast<const ColumnConst &>(*column).getDataColumnPtr();
+    column = data_type.getSubcolumn(subcolumn_name, column);
 
-    return ColumnConst::create(std::move(data_column), num_rows)->convertToFullColumnIfConst();
-}
-
-/// `column` may have come from `Nested::convertToSubcolumns`, which moves the subcolumn delimiter,
-/// so only its full `name` still describes the metadata shape. Returns nothing without a snapshot.
-static std::optional<NameAndTypePair> tryGetColumnInStorage(
-    const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
-{
-    if (!storage_snapshot)
-        return {};
-
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-    return storage_snapshot->tryGetColumn(options, column.name);
+    return ColumnConst::create(std::move(column), num_rows)->convertToFullColumnIfConst();
 }
 
 static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
@@ -412,29 +392,8 @@ static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAn
     if (storage_snapshot->getDefault(column.name).has_value())
         return true;
 
-    auto column_in_storage = tryGetColumnInStorage(storage_snapshot, column);
-    auto name_in_storage = column_in_storage ? column_in_storage->getNameInStorage() : column.getNameInStorage();
+    auto name_in_storage = column.getNameInStorage();
     return storage_snapshot->getDefault(name_in_storage).has_value();
-}
-
-static bool isSubcolumnOfAvailableColumn(
-    const StorageSnapshotPtr & storage_snapshot,
-    const NameAndTypePair & column,
-    const NamesAndTypesList & available_columns,
-    const NameSet & additional_available_columns)
-{
-    if (!column.isSubcolumn())
-        return false;
-
-    auto column_in_storage = tryGetColumnInStorage(storage_snapshot, column);
-
-    /// Not a subcolumn according to the metadata: a plain column missing from the part,
-    /// which the offsets branch below legitimately owns.
-    if (!column_in_storage || !column_in_storage->isSubcolumn())
-        return false;
-
-    auto parent_name = column_in_storage->getNameInStorage();
-    return available_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
 }
 
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
@@ -460,9 +419,7 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageSnapshotPtr storage_snapshot,
-    bool share_nested_offsets,
-    const NameSet & additional_available_columns)
+    StorageSnapshotPtr storage_snapshot)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -475,10 +432,7 @@ void fillMissingColumns(
     /// but a column of arrays of correct length.
 
     /// First, collect offset columns for all arrays in the block.
-    auto offsets_columns = collectOffsetsColumns(available_columns, res_columns, share_nested_offsets);
-
-    ISerialization::StreamFileNameSettings stream_settings;
-    stream_settings.share_nested_offsets = share_nested_offsets;
+    auto offsets_columns = collectOffsetsColumns(available_columns, res_columns);
 
     /// Insert default values only for columns without default expressions.
     auto requested_column = requested_columns.begin();
@@ -489,12 +443,6 @@ void fillMissingColumns(
 
         /// Nothing to fill or default should be filled in evaluateMissingDefaults.
         if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
-            continue;
-
-        /// Subcolumn missing from the part's (older) type but whose parent is available (read here
-        /// or produced by an earlier step): defer to evaluateMissingDefaults instead of default-
-        /// filling. Needs a storage_snapshot, i.e. a caller that runs that pass (not Memory engine).
-        if (isSubcolumnOfAvailableColumn(storage_snapshot, *requested_column, available_columns, additional_available_columns))
             continue;
 
         std::vector<ColumnPtr> current_offsets;
@@ -517,7 +465,7 @@ void fillMissingColumns(
                 if (level >= num_dimensions)
                     return;
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, stream_settings);
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, {});
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
                     current_offsets[level] = it->second;
@@ -535,26 +483,13 @@ void fillMissingColumns(
 
         if (!current_offsets.empty())
         {
-            /// The subcolumn path and the storage type must come from the metadata shape, not from
-            /// the possibly remapped pair: `getBaseTypeOfArray` silently stops descending when a
-            /// name does not resolve, so a mismatched pair yields a column of the wrong type.
-            auto column_in_storage = tryGetColumnInStorage(storage_snapshot, *requested_column);
-            const auto & column_for_type = column_in_storage ? *column_in_storage : *requested_column;
-
             Names tuple_elements;
-            SerializationPtr serialization = IDataType::getSerialization(column_for_type);
+            SerializationPtr serialization = IDataType::getSerialization(*requested_column);
 
-            /// Collect names of tuple elements on the path to the requested subcolumn, so they are skipped while
-            /// getting the base type of array. Elements below the requested subcolumn belong to its own value type
-            /// and must be kept, otherwise the Tuple wrapper is lost.
-            const auto & requested_subcolumn_name = column_for_type.getSubcolumnName();
-            IDataType::forEachSubcolumn([&](const auto & path, const auto & subcolumn_name, const auto &)
+            /// For Nested columns collect names of tuple elements and skip them while getting the base type of array.
+            IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)
             {
-                if (path.back().type != ISerialization::Substream::TupleElement)
-                    return;
-
-                if (subcolumn_name == requested_subcolumn_name
-                    || requested_subcolumn_name.starts_with(subcolumn_name + "."))
+                if (path.back().type == ISerialization::Substream::TupleElement)
                     tuple_elements.push_back(path.back().name_of_substream);
             }, ISerialization::SubstreamData(serialization));
 
@@ -562,12 +497,12 @@ void fillMissingColumns(
             /// For example for column "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.
             size_t num_empty_dimensions = num_dimensions - current_offsets.size();
 
-            auto base_type = getBaseTypeOfArray(column_for_type.getTypeInStorage(), tuple_elements);
+            auto base_type = getBaseTypeOfArray(requested_column->getTypeInStorage(), tuple_elements);
             auto scalar_type = createArrayOfType(base_type, num_empty_dimensions);
             size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
 
             /// Remove names of tuple elements because they are already processed by 'getBaseTypeOfArray'.
-            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_subcolumn_name, tuple_elements);
+            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_column->getSubcolumnName(), tuple_elements);
             res_columns[i] = createColumnWithDefaultValue(*scalar_type, subcolumn_name, data_size);
 
             for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)

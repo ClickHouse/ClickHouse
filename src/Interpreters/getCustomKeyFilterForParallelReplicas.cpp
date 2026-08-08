@@ -1,5 +1,4 @@
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Settings.h>
 
@@ -26,7 +25,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int INVALID_SETTING_VALUE;
 }
@@ -54,7 +52,8 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
     chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
 
-    KeyDescription custom_key_description = KeyDescription::getKeyFromAST(custom_key_ast, columns, {}, context);
+    KeyDescription custom_key_description
+        = KeyDescription::getKeyFromAST(custom_key_ast, columns, context);
 
     using RelativeSize = boost::rational<ASTSampleRatio::BigNum>;
 
@@ -173,16 +172,6 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 
 ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context)
 {
-    /// The callers get here only when the custom key filtering is requested. Every replica reads only the part of
-    /// the data its filter selects, so without the key every replica would read everything and the result would be
-    /// multiplied by the number of the replicas. Fail instead, the same way for every caller.
-    if (custom_key.empty())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Parallel replicas processing with custom_key has been requested "
-            "(setting 'max_parallel_replicas'), but the table does not have custom_key defined for it "
-            "or it's invalid (setting 'parallel_replicas_custom_key')");
-
     /// Try to parse expression
     ParserExpression parser;
     const auto & settings = context.getSettingsRef();
