@@ -5,6 +5,10 @@ The query returns `nan` instead of `NULL` when `stddev_samp` is called on a sing
 ## Q35
 Memory Limit Exceeded with reasonable amount of memory.
 
+## Q69
+Memory Limit Exceeded with reasonable amount of memory - same root cause as Q35, see
+https://github.com/ClickHouse/ClickHouse/issues/113407.
+
 ## Q47
 The query doesn't work out-of-the-box due to https://github.com/ClickHouse/ClickHouse/issues/94858. The alternative formulation with a minor fix works.
 
