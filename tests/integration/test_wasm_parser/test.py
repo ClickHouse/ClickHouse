@@ -61,10 +61,14 @@ SUBMODULES = [
 
 @pytest.fixture(scope="module")
 def builder():
-    # A no-op when the submodules are already there (a local run).
+    # A no-op when the submodules are already there (a local run). The CI checkout is owned
+    # by another user, and `safe.directory` also guards every submodule worktree, so trust
+    # them all - for this command only; `-c` reaches the spawned per-submodule processes.
     run_and_check(
         [
             "git",
+            "-c",
+            "safe.directory=*",
             "-C",
             CLICKHOUSE_DIR,
             "submodule",
