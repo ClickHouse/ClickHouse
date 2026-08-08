@@ -480,6 +480,13 @@ public:
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
+    bool isSpatialPredicate() const override
+    {
+        auto val = user_defined_function->getSettings().getValue("is_spatial_predicate");
+        if (val.getType() == Field::Types::Bool)
+            return val.safeGet<bool>();
+        return val.safeGet<UInt64>() != 0;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 
@@ -825,6 +832,8 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         /// Serialization format for input/output data for ABI what uses serialization
         {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary", "Buffers"}}.withDefault("MsgPack")},
         {"webassembly_udf_enable_fuel", SettingBool{}.withDefault(true)},
+        /// Whether bbox-disjoint pruning is safe for this function (see IFunctionBase::isSpatialPredicate).
+        {"is_spatial_predicate", SettingBool{}.withDefault(false)},
     };
 
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override
