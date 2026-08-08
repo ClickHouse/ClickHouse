@@ -285,6 +285,68 @@ SELECT 'rows_large_limit_equal' AS label, (SELECT groupArray((k, src, v)) FROM (
              enable_parallel_replicas = 0
 ));
 
+-- A Merge table over ReplacingMergeTree children behind a join. `topKThroughJoin` never defers for
+-- a Merge table, because it looks for a MergeTree read on the preserved input and a Merge table
+-- reads through its own step, so it wins the plan and injects its Sort + Limit. With it disabled,
+-- the second pass reads the children of the Merge table in reverse order through the join.
+CREATE TABLE t_merge (k Int64, src Int64) ENGINE = Merge(currentDatabase(), '^t_replacing$');
+
+SELECT 'plan_merge_topk_on' AS label,
+       countIf(explain LIKE '%Sorting%') AS sort_count,
+       countIf(explain LIKE '%InReverseOrder%') AS reverse_reads
+FROM ( EXPLAIN actions = 1
+    SELECT l.k, r.v FROM t_merge AS l FINAL LEFT JOIN t_right AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS query_plan_top_k_through_join = 1,
+             optimize_read_in_order = 1, optimize_read_in_reverse_order_final = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
+             enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
+             query_plan_optimize_lazy_materialization = 0, enable_parallel_replicas = 0,
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
+SELECT 'plan_merge_topk_off' AS label,
+       countIf(explain LIKE '%Sorting%') AS sort_count,
+       countIf(explain LIKE '%InReverseOrder%') AS reverse_reads
+FROM ( EXPLAIN actions = 1
+    SELECT l.k, r.v FROM t_merge AS l FINAL LEFT JOIN t_right AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS query_plan_top_k_through_join = 0,
+             optimize_read_in_order = 1, optimize_read_in_reverse_order_final = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
+             enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
+             query_plan_optimize_lazy_materialization = 0, enable_parallel_replicas = 0,
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
+SELECT 'rows_merge_reverse_on' AS label, groupArray((k, src, v)) FROM (
+    SELECT l.k AS k, l.src AS src, r.v AS v FROM t_merge AS l FINAL LEFT JOIN t_right AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS query_plan_top_k_through_join = 0,
+             optimize_read_in_reverse_order_final = 1, optimize_read_in_order = 1,
+             enable_parallel_replicas = 0,
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
+SELECT 'rows_merge_topk' AS label, groupArray((k, src, v)) FROM (
+    SELECT l.k AS k, l.src AS src, r.v AS v FROM t_merge AS l FINAL LEFT JOIN t_right AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS query_plan_top_k_through_join = 1,
+             optimize_read_in_reverse_order_final = 1, optimize_read_in_order = 1,
+             enable_parallel_replicas = 0,
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
+SELECT 'rows_merge_plain' AS label, groupArray((k, src, v)) FROM (
+    SELECT l.k AS k, l.src AS src, r.v AS v FROM t_merge AS l FINAL LEFT JOIN t_right AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS optimize_read_in_order = 0, query_plan_top_k_through_join = 0,
+             enable_parallel_replicas = 0
+);
+
+DROP TABLE t_merge;
 DROP TABLE t_replacing;
 DROP TABLE t_aggregating;
 DROP TABLE t_version;
