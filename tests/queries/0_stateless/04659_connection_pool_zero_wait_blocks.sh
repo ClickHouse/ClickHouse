@@ -150,3 +150,84 @@ ${CLICKHOUSE_CLIENT} --query "
       AND query_id = '${QUERY_PREFIX}_finite_waiter' AND type != 'QueryStart'
     ORDER BY event_time_microseconds DESC LIMIT 1
 "
+
+# The arms above cancel the holder, so the waiter is released by the notification the handover sends.
+# Cancelling the waiter instead is what exercises the cancellation path: here the holder keeps the
+# connection for the whole arm, so nothing is ever released and the wait can only end by the waiter
+# noticing that its own query is over. Both arms run at the default connection_pool_max_wait_ms = 0,
+# which is the branch a default deployment uses.
+#
+# Each arm asserts the holder is still running once the waiter is gone. That check is what makes the
+# arm measure cancellation rather than the handover: a waiter freed by the holder releasing the
+# connection would leave no holder to find. Every bound is 12 seconds against a 30 second hold, and
+# reaching the pool takes about a twentieth of a second, so a loaded runner delays the start rather
+# than eating the margin: the hold is a wall clock sleep, not work that can be slowed down.
+function cancel_waiter() {
+    local mode=$1 label=$2
+    local holder="${QUERY_PREFIX}_${label}_holder" waiter="${QUERY_PREFIX}_${label}_waiter"
+    local holder_pid waiter_pid contended=0 rc=0 limit=""
+
+    timeout 60 ${CLICKHOUSE_CLIENT} --query_id "${holder}" --query "
+        SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(30)) WHERE sleepEachRow(1)
+        SETTINGS prefer_localhost_replica = 0, distributed_connections_pool_size = 1,
+                 connection_pool_max_wait_ms = 0, function_sleep_max_microseconds_per_block = 60000000
+    " < /dev/null > /dev/null 2>&1 &
+    holder_pid=$!
+
+    for _ in {1..600}; do
+        [[ $(running "'${holder}'") != 0 ]] && break
+        sleep 0.1
+    done
+
+    # A soft deadline the pool wait has to observe by itself. A wait that does not only reports the
+    # timeout once the connection comes back, which is the regression this arm pins.
+    [[ ${mode} == soft ]] && limit=", max_execution_time = 5"
+
+    timeout 12 ${CLICKHOUSE_CLIENT} --query_id "${waiter}" --query "
+        SELECT count() FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', numbers(1))
+        SETTINGS prefer_localhost_replica = 0, distributed_connections_pool_size = 1,
+                 connection_pool_max_wait_ms = 0${limit}
+    " < /dev/null > /dev/null 2>&1 &
+    waiter_pid=$!
+
+    for _ in {1..600}; do
+        [[ $(running "'${holder}', '${waiter}'") == 2 ]] && { contended=1; break; }
+        sleep 0.05
+    done
+
+    # Being in system.processes only means the waiter has started, so give it time to reach the pool.
+    sleep 2
+
+    if [[ ${mode} == kill ]]; then
+        timeout 12 ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '${waiter}' SYNC" > /dev/null 2>&1 || rc=$?
+        [[ ${rc} == 0 ]] || echo "the waiter did not stop when it was killed"
+    fi
+
+    wait "$waiter_pid" || rc=$?
+    # 124 is the bound above firing, i.e. the waiter was still in the pool wait when it was taken out.
+    [[ ${rc} != 124 ]] || echo "the waiter stayed in the pool wait past its own end"
+
+    [[ $(running "'${holder}'") != 0 ]] || echo "the holder finished first, so the waiter was freed by the handover"
+    [[ ${contended} == 1 ]] || echo "the queries never ran at the same time, so the pool was never full"
+
+    # shellcheck disable=SC2086
+    timeout 30 ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id = '${holder}' ASYNC" > /dev/null
+    wait "$holder_pid" || true
+}
+
+cancel_waiter kill cancelled
+cancel_waiter soft softlimit
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+
+# The codes are pinned as well as the timing, so an arm that stopped reporting the cancellation and
+# started reporting something else (a pool error of its own, say) is not silently accepted.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT
+        countIf(query_id = '${QUERY_PREFIX}_cancelled_waiter' AND exception_code = 394) AS cancelled_by_kill,
+        countIf(query_id = '${QUERY_PREFIX}_softlimit_waiter' AND exception_code = 159) AS stopped_by_time_limit
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND current_database = currentDatabase()
+      AND query_id IN ('${QUERY_PREFIX}_cancelled_waiter', '${QUERY_PREFIX}_softlimit_waiter')
+      AND type != 'QueryStart'
+"

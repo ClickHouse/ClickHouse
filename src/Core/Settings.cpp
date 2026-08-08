@@ -453,17 +453,21 @@ The wait time in the request queue, if the number of concurrent requests exceeds
 The wait time in milliseconds for a connection when the connection pool is full.
 
 The wait applies per replica, because there is one connection pool per replica. When it expires the
-attempt fails with `NO_FREE_CONNECTION`, which is treated like any other unusable replica: the query
-tries the remaining replicas, and only fails with `ALL_CONNECTION_TRIES_FAILED` once every one of them
-has been tried. So this setting does not bound the whole query; with `N` replicas and
+attempt fails with `NO_FREE_CONNECTION`. On the failover path used by distributed `SELECT`s that is
+treated like any other unusable replica: the query tries the remaining replicas, and only fails with
+`ALL_CONNECTION_TRIES_FAILED` once every one of them has been tried. So this setting does not bound the
+whole query; with `N` replicas and
 [connections_with_failover_max_tries](#connections_with_failover_max_tries) tries each, the total wait
 can reach `connection_pool_max_wait_ms` times `N` times that number of tries. Use
-[max_execution_time](#max_execution_time) to bound the query itself.
+[max_execution_time](/reference/settings/session-settings/max-execution#max_execution_time) to bound
+the query itself.
 
 Possible values:
 
 - Positive integer.
-- 0 — Infinite timeout. The wait is still interrupted by `KILL QUERY` and by `max_execution_time`.
+- 0 — Infinite timeout. The wait is still interrupted by `KILL QUERY`, and by `max_execution_time` at
+  the default [timeout_overflow_mode](/reference/settings/session-settings/timeout-overflow-mode#timeout_overflow_mode) `throw`.
+  Under `break` the query is not cancelled, so the wait continues until a connection is released.
 )", 0) \
     DECLARE(Milliseconds, replace_running_query_max_wait_ms, 5000, R"(
 The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace_running_query) setting is active.
