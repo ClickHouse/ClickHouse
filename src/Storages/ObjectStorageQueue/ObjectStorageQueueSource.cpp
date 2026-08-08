@@ -588,12 +588,12 @@ std::optional<time_t> ObjectStorageQueueSource::FileIterator::earliestForeignPro
     for (const auto & object : foreign_processing_files_to_recheck)
     {
         const auto status = metadata->tryGetFileStatus(object->getPath());
-        if (!status)
-            continue;
+        const time_t since = status ? status->processingByAnotherProcessorSince() : 0;
 
-        const time_t since = status->processingByAnotherProcessorSince();
+        /// An evicted or non-foreign status does not defer the recheck
+        /// (see `takeDueForeignProcessingRechecks`): wake up immediately.
         if (!since)
-            continue;
+            return std::time(nullptr);
 
         if (!earliest.has_value() || since + ttl_sec < *earliest)
             earliest = since + ttl_sec;
