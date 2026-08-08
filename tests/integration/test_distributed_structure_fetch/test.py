@@ -60,6 +60,33 @@ def test_structure_inference_respects_show_columns_access(started_cluster):
         node1.query("DROP TABLE default.local_data SYNC")
 
 
+def test_structure_less_distributed_loaded_from_legacy_metadata(started_cluster):
+    """A `CREATE` persists the inferred structure into the stored definition nowadays, but
+    servers upgraded from older versions still carry column-less `Distributed` metadata,
+    which `DatabaseOnDisk::createTableFromAST` deliberately loads with empty columns. On
+    such a load `StorageDistributed`'s constructor re-infers the structure under the
+    storage's global context, which carries no client version, so the `DESC TABLE` service
+    query used to be sent with a zero initiator version and the table failed to attach."""
+    node1.query("CREATE TABLE default.dist_legacy ENGINE = Distributed('remote_only_cluster', default, remote_data)")
+    try:
+        node1.query("DETACH TABLE default.dist_legacy")
+        # Strip the persisted column list to obtain the metadata an older server would have written.
+        node1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                r"sed -i '/^($/,/^)$/d' /var/lib/clickhouse/metadata/default/dist_legacy.sql"
+                r" && ! grep -q UInt64 /var/lib/clickhouse/metadata/default/dist_legacy.sql",
+            ],
+            user="root",
+        )
+        node1.query("ATTACH TABLE default.dist_legacy")
+        assert node1.query("DESC TABLE default.dist_legacy") == ("key\tUInt64\t\t\t\t\t\nvalue\tString\t\t\t\t\t\n")
+        assert node1.query("SELECT sum(key) FROM default.dist_legacy") == "3\n"
+    finally:
+        node1.query("DROP TABLE IF EXISTS default.dist_legacy SYNC")
+
+
 def test_structure_less_distributed_in_replicated_database(started_cluster):
     """The variant BuzzHouse found: the `CREATE` is replayed by the `DDLWorker` of a
     `Replicated` database, whose query context also carried no client version."""
