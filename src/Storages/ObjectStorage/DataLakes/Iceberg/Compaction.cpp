@@ -1358,7 +1358,7 @@ void compactIcebergManifests(
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-        const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+        const auto [metadata_version, metadata_file_path, resolved_compression_method] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage_,
             persistent_table_components.table_path,
             data_lake_settings,
@@ -1371,13 +1371,17 @@ void compactIcebergManifests(
             /* force_fetch_latest_metadata */ true,
             /* ignore_explicit_metadata_file_path */ true);
 
+        /// Use `resolved_compression_method` (derived from the actual selected metadata file),
+        /// not the stale `persistent_table_components.metadata_compression_method` captured at
+        /// construction time -- an external writer may have changed the metadata compression
+        /// between queries on this reused `IcebergMetadata` instance.
         auto metadata_object = getMetadataJSONObject(
             metadata_file_path,
             object_storage_,
             effective_cache,
             context_,
             log,
-            persistent_table_components.metadata_compression_method,
+            resolved_compression_method,
             persistent_table_components.table_uuid,
             persistent_table_components.data_source_description);
 
