@@ -1,7 +1,9 @@
 -- { echoOn }
 
--- The SESSION frame is experimental and disabled by default.
+-- The SESSION frame is experimental and disabled by default. Both analyzers gate it.
 select 1 n, count() over (order by n session 1); -- { serverError SUPPORT_IS_DISABLED }
+select 1 n, count() over (order by n session 1) settings enable_analyzer = 1; -- { serverError SUPPORT_IS_DISABLED }
+select 1 n, count() over (order by n session 1) settings enable_analyzer = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 set allow_experimental_session_window_frame = 1;
 
@@ -10,6 +12,7 @@ select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n se
 select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n session 100);
 select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n desc session 2);
 select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n desc session 100);
+select arrayJoin([1, 20, 22, 24, 100, 101]) n, groupArray(n) over (order by n session 2) settings enable_analyzer = 0;
 
 -- Fractional session window thresholds are also useful, e.g. to process bursts of events occurring less than 0.5 second apart.
 select arrayJoin([1, 2.0, 2.1, 2.2, 10.0, 10.1])::float n, groupArray(n) over (order by n session 0.5);
