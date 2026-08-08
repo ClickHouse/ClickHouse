@@ -31,8 +31,10 @@ and OOM the whole host. The cgroup name is unique per run and `cleanup` tears it
 `cgroup.kill` only when this run created it (a pre-existing cgroup - a recycled PID - aborts the run
 and is left untouched), so the teardown can only ever kill this run's own processes; the port is one the run binds and
 HOLDS from before any setup until the moment the server is started (an explicit PORT is bound the same
-way, so a collision fails fast instead of burning the startup loop), so concurrent invocations cannot
-claim the same port and do not interfere with each other. It also refuses to run when the scratch data directory
+way, so a collision fails fast instead of burning the startup loop). That reservation is best-effort
+race reduction, not a guarantee: it has to be released for `clickhouse-server` to bind the port, so in
+the brief gap between the release and the server's own `bind` another process can still claim it -
+which then surfaces as the bounded startup probe failing, not as silent misbehavior. It also refuses to run when the scratch data directory
 is on a memory-backed filesystem (`tmpfs`/`ramfs`): there the part bytes written by the churn would be
 charged to the cgroup, so an OOM would prove the filesystem choice rather than the merge-memory
 mechanism. The scratch root defaults to the repo `tmp` directory (disk-backed) and can be overridden
@@ -94,6 +96,12 @@ def reserve_port(port):
     per run" requires: any function of the PID (e.g. `19001 + pid % 10000`) aliases as soon as two live
     PIDs are congruent modulo the range. An explicit PORT goes through the same bind, so a collision
     fails fast with a clear message instead of silently claiming uniqueness.
+
+    This is best-effort race reduction, NOT an airtight handoff: the reservation must be closed for
+    `clickhouse-server` to bind the port, and a plain reservation socket cannot be handed over to the
+    server, so the gap between `release_port_reservation` and the server's own `bind` stays open. A
+    process that grabs the port in that gap makes the bounded startup probe below fail ("server did
+    not start"), which is a loud, immediate error rather than a corrupted result.
     """
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -139,7 +147,8 @@ def die(message, code=1):
 
 # The port is taken (and held) right away, before anything is set up: a port that is not free would
 # otherwise only surface as 40 failed startup probes, and the reservation is what keeps a concurrent
-# run from picking the same port. It is released just before the server binds it.
+# run from picking the same port during setup. It is released just before the server binds it, so a
+# brief unreserved gap remains (best effort - see `reserve_port`).
 PORT_RESERVATION, PORT = reserve_port(int(os.environ.get("PORT", "0")))
 
 
@@ -328,7 +337,9 @@ def main():
         config_file = os.path.join(base, "cfg", "config.xml")
         # Hand the port over: the reservation socket is closed only here, one statement before the
         # server is spawned, so the port stayed held for the whole setup and the window in which
-        # another process could steal it is as small as it can be made.
+        # another process could steal it is as small as a plain socket allows - but it still exists
+        # (the socket cannot be handed over to the server). A theft in this gap is caught loudly by
+        # the bounded startup probe below, not silently.
         release_port_reservation()
         server = subprocess.Popen(
             ["runuser", "-u", RUN_USER, "--", BIN, "server", "--config-file", config_file],
