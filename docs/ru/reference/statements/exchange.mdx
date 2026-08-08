@@ -1,0 +1,110 @@
+---
+description: 'Документация по оператору EXCHANGE'
+sidebarTitle: 'EXCHANGE'
+slug: /sql-reference/statements/exchange
+title: 'Оператор EXCHANGE'
+doc_type: 'reference'
+---
+
+Атомарно меняет имена двух таблиц или словарей местами.
+Эту задачу также можно выполнить с помощью запроса [`RENAME`](/ru/reference/statements/rename), используя временное имя, однако в этом случае операция не будет атомарной.
+
+<Note>
+  Запрос `EXCHANGE` поддерживается только движками баз данных [`Atomic`](/ru/reference/engines/database-engines/atomic) и [`Shared`](/ru/products/cloud/features/infrastructure/shared-catalog#shared-database-engine).
+</Note>
+
+**Синтаксис**
+
+```sql
+EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
+```
+
+<div id="exchange-tables">
+  ## EXCHANGE TABLES
+</div>
+
+Меняет местами имена двух таблиц.
+
+**Синтаксис**
+
+```sql
+EXCHANGE TABLES [db0.]table_A AND [db1.]table_B [ON CLUSTER cluster]
+```
+
+<div id="exchange-multiple-tables">
+  ### EXCHANGE НЕСКОЛЬКИХ ТАБЛИЦ
+</div>
+
+Вы можете обменять несколько пар таблиц в рамках одного запроса, разделив их запятыми.
+
+<Note>
+  При обмене нескольких пар таблиц операции выполняются **последовательно, а не атомарно**. Если во время выполнения произойдёт ошибка, некоторые пары таблиц могут быть уже обменены, а другие — нет.
+</Note>
+
+**Пример**
+
+```sql title="Query"
+-- Создать таблицы
+CREATE TABLE a (a UInt8) ENGINE=Memory;
+CREATE TABLE b (b UInt8) ENGINE=Memory;
+CREATE TABLE c (c UInt8) ENGINE=Memory;
+CREATE TABLE d (d UInt8) ENGINE=Memory;
+
+-- Обменять две пары таблиц в одном запросе
+EXCHANGE TABLES a AND b, c AND d;
+
+SHOW TABLE a;
+SHOW TABLE b;
+SHOW TABLE c;
+SHOW TABLE d;
+```
+
+```sql title="Response"
+-- Теперь таблица 'a' имеет структуру 'b', а таблица 'b' имеет структуру 'a'
+┌─statement──────────────┐
+│ CREATE TABLE default.a↴│
+│↳(                     ↴│
+│↳    `b` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+┌─statement──────────────┐
+│ CREATE TABLE default.b↴│
+│↳(                     ↴│
+│↳    `a` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+
+-- Теперь таблица 'c' имеет структуру 'd', а таблица 'd' имеет структуру 'c'
+┌─statement──────────────┐
+│ CREATE TABLE default.c↴│
+│↳(                     ↴│
+│↳    `d` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+┌─statement──────────────┐
+│ CREATE TABLE default.d↴│
+│↳(                     ↴│
+│↳    `c` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+```
+
+<div id="exchange-dictionaries">
+  ## EXCHANGE СЛОВАРЕЙ
+</div>
+
+Меняет имена двух словарей местами.
+
+**Синтаксис**
+
+```sql
+EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
+```
+
+**См. также**
+
+* [Словари](/ru/reference/statements/create/dictionary)

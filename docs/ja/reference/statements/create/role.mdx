@@ -1,0 +1,53 @@
+---
+description: 'ロールのドキュメント'
+sidebarTitle: 'ROLE'
+slug: /sql-reference/statements/create/role
+title: 'CREATE ROLE'
+doc_type: 'reference'
+---
+
+新しい[ロール](/ja/concepts/features/security/access-rights#role-management)を作成します。ロールは、[権限](/ja/reference/statements/grant#granting-privilege-syntax)の集合です。ロールを割り当てられた[ユーザー](/ja/reference/statements/create/user)は、そのロールに含まれるすべての権限を取得します。
+
+構文:
+
+```sql
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+```
+
+<div id="managing-roles">
+  ## ロールの管理
+</div>
+
+1人のユーザーに複数のロールを割り当てることができます。ユーザーは [SET ROLE](/ja/reference/statements/set-role) ステートメントを使って、割り当てられたロールを任意の組み合わせで適用できます。最終的な権限の範囲は、適用されたすべてのロールに付与された権限を組み合わせたものになります。ユーザーアカウントに直接付与された権限がある場合は、それらもロールによって付与された権限に加わります。
+
+ユーザーには、ログイン時に適用されるデフォルトロールを設定できます。デフォルトロールを設定するには、[SET DEFAULT ROLE](/ja/reference/statements/set-role#set-default-role) ステートメントまたは [ALTER USER](/ja/reference/statements/alter/user) ステートメントを使用します。
+
+ロールを取り消すには、[REVOKE](/ja/reference/statements/revoke) ステートメントを使用します。
+
+ロールを削除するには、[DROP ROLE](/ja/reference/statements/drop#drop-role) ステートメントを使用します。削除されたロールは、割り当てられていたすべてのユーザーおよびロールから自動的に取り消されます。
+
+<div id="examples">
+  ## 例
+</div>
+
+```sql
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+```
+
+この一連のクエリは、`db` データベースのデータを読み取る権限を持つロール `accountant` を作成します。
+
+ユーザー `mira` へのロールの割り当て:
+
+```sql
+GRANT accountant TO mira;
+```
+
+ロールを割り当てると、ユーザーはそのロールを有効にして、許可されたクエリを実行できます。例えば:
+
+```sql
+SET ROLE accountant;
+SELECT * FROM db.*;
+```

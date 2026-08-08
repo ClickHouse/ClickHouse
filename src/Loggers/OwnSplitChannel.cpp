@@ -108,8 +108,8 @@ void logToSystemTextLogQueue(
     ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
-    TextLogElement elem;
-
+    text_log_locked->add([&](TextLogElement & elem)
+    {
     elem.event_time = msg_ext.time_seconds;
     elem.event_time_microseconds = msg_ext.time_in_microseconds;
 
@@ -142,8 +142,7 @@ void logToSystemTextLogQueue(
     SET_VALUE_IF_EXISTS(10);
 
 #undef SET_VALUE_IF_EXISTS
-
-    text_log_locked->push(std::move(elem));
+    });
 }
 }
 
@@ -358,7 +357,8 @@ void AsyncLogMessageQueue::enqueueMessage(AsyncLogMessagePtr message)
     /// Request the thread to flush as fast as possible (without acquiring the mutex every time)
     if (current_size > max_size / 2)
         request_flush = true;
-    condition.notify_one();
+    if (unlikely(current_size == 0))
+        condition.notify_all();
 }
 
 AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()

@@ -12,6 +12,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+# Always disable the failpoints on exit. Under `set -e` an early exit would otherwise leave the
+# merge selecting task paused at rmt_merge_selecting_task_pause_when_scheduled, which blocks the
+# table's shutdown/DROP (deactivate() waits on the paused task holding exec_mutex).
+trap '$CLICKHOUSE_CLIENT --query "
+    SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
+    SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
+    SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_max_part_size;
+" 2>/dev/null || true' EXIT
+
 # disable fault injection; part ids are non-deterministic in case of insert retries
 $CLICKHOUSE_CLIENT --query "
     SET insert_keeper_fault_injection_probability = 0;

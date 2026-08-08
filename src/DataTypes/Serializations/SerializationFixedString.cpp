@@ -5,6 +5,7 @@
 #include <Columns/ColumnConst.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ParseError.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -206,11 +207,17 @@ static inline bool tryRead(const SerializationFixedString & self, IColumn & colu
     size_t prev_size = data.size();
     try
     {
-        return reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size);
+        if (reader(data) && SerializationFixedString::tryAlignStringLength(self.getN(), data, prev_size))
+            return true;
+        /// A failed parse must leave the column byte-identical (reader may append partial bytes before returning false).
+        data.resize_assume_reserved(prev_size);
+        return false;
     }
     catch (...) // Ok: tryRead is a try-pattern
     {
         data.resize_assume_reserved(prev_size);
+        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
+        rethrowIfNotParseError();
         return false;
     }
 }

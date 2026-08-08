@@ -3,13 +3,32 @@ Tests for `ci.jobs.functional_tests.invert_bugfix_validation_status`.
 
 The bugfix-validation inverter flips per-test `FAIL`/`OK` so that a regression
 test for a bug, which is expected to `FAIL` on master HEAD, is reported as
-"bug reproduced". When the run itself failed catastrophically (status
-`ERROR`, e.g. runner killed mid-flight or server crashed without a
-synthetic `Server died` leaf reaching `test_result.results`), the inverter
-must preserve `ERROR` rather than overwrite it with the misleading
-"Failed to reproduce the bug" `FAIL`.
+"bug reproduced". When the test instead passes on master HEAD, the bug did
+not reproduce on this arch (no-repro): the inverter reports `SKIPPED` and
+returns True, so the caller propagates `SKIPPED` to the top-level result and
+the per-arch job exits 0 without being counted as a validation - another
+arch can still validate the bug (the per-arch contract, PR #103541).
 
-See ClickHouse/ClickHouse#105789.
+When the run itself failed catastrophically (status `ERROR`, e.g. runner
+killed mid-flight or server crashed without a synthetic `Server died` leaf
+reaching `test_result.results`), the inverter must preserve `ERROR` rather
+than overwrite it with a validation verdict.
+
+This module also tests `reconcile_bugfix_crash_repro`, which runs BEFORE the
+inverter and folds a build type's fatal-log rows into its per-test result. A
+`BLOCKER` fatal on the master-HEAD binary is the bug crashing the server (with
+`-fno-sanitize-recover=all` a reproduced UBSan bug aborts the runner, poisoning
+the per-test rows with `ERROR`), so it downgrades those `ERROR` rows to `FAIL`
+for the inverter to flip into a reproduction; a run that ends in `ERROR` with
+no `BLOCKER` fatal (genuine infra failure) is preserved as inconclusive. The
+same reconciliation now runs on every build type (`build_types[0]` and each of
+`build_types[1:]`); the tests below pin the helper's behaviour on the
+crash-repro input that the later build types depend on. They call the helper
+directly (not through `main`'s build-type loop, which swaps binaries and reads
+real server logs), so they guard the reconciliation logic itself rather than
+the caller wiring.
+
+See ClickHouse/ClickHouse#105789, #103541 and #110158.
 """
 
 import os
@@ -19,12 +38,38 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-from ci.jobs.functional_tests import invert_bugfix_validation_status
+from ci.jobs.functional_tests import (
+    invert_bugfix_validation_status,
+    reconcile_bugfix_crash_repro,
+)
 from ci.praktika.result import Result
 
 
 def _make_leaf(name, status, info=""):
     return Result(name=name, status=status, info=info)
+
+
+def _make_log_check(name, status):
+    """A server-log / runner health-check row, as produced by
+    `check_fatal_messages_in_logs` and labelled `LOG_CHECK`."""
+    leaf = Result(name=name, status=status)
+    leaf.set_label(Result.Label.LOG_CHECK)
+    return leaf
+
+
+def _make_fatal(name="Sanitizer assert or Fatal messages in server logs"):
+    """A `BLOCKER` sanitizer/fatal row, as produced by the fatal branches of
+    `check_fatal_messages_in_logs` (clickhouse_proc.py): FAIL + BLOCKER."""
+    leaf = Result(name=name, status=Result.Status.FAIL)
+    leaf.set_label(Result.Label.BLOCKER)
+    return leaf
+
+
+def _labels(leaf):
+    return [
+        lbl.get("name") if isinstance(lbl, dict) else lbl
+        for lbl in leaf.ext.get("labels", [])
+    ]
 
 
 def _make_outer(status, results=None, info=""):
@@ -48,16 +93,21 @@ def test_single_fail_is_flipped_to_ok_and_outer_becomes_success():
     assert outer.status == Result.Status.OK
 
 
-def test_single_ok_is_flipped_to_fail_and_outer_becomes_failed_to_reproduce():
-    """Regression test PASSed on master -> bug not reproduced -> overall FAIL."""
+def test_single_ok_is_no_repro_and_outer_becomes_skipped():
+    """Regression test PASSed on master -> bug did not reproduce on this arch
+    -> overall SKIPPED (not FAIL), and the inverter signals no-repro so the
+    caller propagates SKIPPED to the top-level result. This is the per-arch
+    contract: another arch can still validate the bug.
+    """
     leaf = _make_leaf("01234_regression_test", Result.Status.OK)
     outer = _make_outer(Result.Status.OK, [leaf])
 
-    invert_bugfix_validation_status(outer)
+    no_repro = invert_bugfix_validation_status(outer)
 
+    assert no_repro is True
     assert leaf.status == Result.Status.FAIL
-    assert outer.status == Result.Status.FAIL
-    assert "Failed to reproduce the bug" in outer.info
+    assert outer.status == Result.Status.SKIPPED
+    assert "bugfix validation N/A" in outer.info
 
 
 def test_mixed_fail_and_ok_treats_any_fail_as_bug_reproduced():
@@ -157,17 +207,166 @@ def test_xfail_label_is_applied_to_each_leaf_on_inversion():
         )
 
 
-def test_empty_results_with_ok_outer_still_reports_failed_to_reproduce():
-    """If the outer status is OK and there are no per-test results, the
-    existing semantics still apply: no bug was reproduced. (Realistic
-    scenario: the bug-fix PR runs but no test was selected.)
+def test_empty_results_with_ok_outer_is_no_repro_skipped():
+    """If the outer status is OK and there are no per-test results, no bug was
+    reproduced on this arch -> SKIPPED + no-repro signal. (Realistic scenario:
+    the bug-fix PR runs but the test passes on master HEAD on this arch.)
     """
     outer = _make_outer(Result.Status.OK, results=[], info="")
 
+    no_repro = invert_bugfix_validation_status(outer)
+
+    assert no_repro is True
+    assert outer.status == Result.Status.SKIPPED
+    assert "bugfix validation N/A" in outer.info
+
+
+def test_clean_log_checks_are_not_flipped_to_failures():
+    """Clean health checks ("Lost s3 keys", "OOM in dmesg", ...) are OK and
+    must stay OK: they are not test cases and must not become spurious xfail
+    failures when the bug is not reproduced.
+    """
+    test_ok = _make_leaf("01234_regression_test", Result.Status.OK)
+    log_checks = [
+        _make_log_check("Exception in test runner", Result.Status.OK),
+        _make_log_check("Lost s3 keys", Result.Status.OK),
+        _make_log_check("OOM in dmesg", Result.Status.OK),
+    ]
+    outer = _make_outer(Result.Status.OK, [test_ok, *log_checks])
+
     invert_bugfix_validation_status(outer)
 
-    assert outer.status == Result.Status.FAIL
-    assert "Failed to reproduce the bug" in outer.info
+    # The real test row is flipped (bug not reproduced).
+    assert test_ok.status == Result.Status.FAIL
+    # The health checks stay OK and are not labelled XFAIL.
+    for leaf in log_checks:
+        assert leaf.status == Result.Status.OK
+        assert Result.Label.XFAIL not in _labels(leaf)
+    # Per-arch contract: no test row reproduced the bug here, so the outer
+    # status is SKIPPED (not FAIL); another arch can still validate.
+    assert outer.status == Result.Status.SKIPPED
+    assert "bugfix validation N/A" in outer.info
+
+
+def test_clean_log_checks_do_not_mask_a_reproduced_bug():
+    """A reproduced bug (test FAIL on master) is still reported even when
+    health-check rows are present and clean.
+    """
+    test_fail = _make_leaf("01234_regression_test", Result.Status.FAIL)
+    log_check = _make_log_check("Lost s3 keys", Result.Status.OK)
+    outer = _make_outer(Result.Status.FAIL, [test_fail, log_check])
+
+    invert_bugfix_validation_status(outer)
+
+    assert test_fail.status == Result.Status.OK
+    assert log_check.status == Result.Status.OK
+    assert outer.status == Result.Status.OK
+
+
+def test_log_check_failure_counts_as_reproduced_bug():
+    """A fatal / sanitizer assert / lost key on the validated binary is the
+    bug reproducing, so it is flipped to OK and the job passes, even when no
+    plain test row failed.
+    """
+    test_ok = _make_leaf("01234_regression_test", Result.Status.OK)
+    log_fail = _make_log_check(
+        "Sanitizer assert or Fatal messages in server logs", Result.Status.FAIL
+    )
+    outer = _make_outer(Result.Status.FAIL, [test_ok, log_fail])
+
+    invert_bugfix_validation_status(outer)
+
+    # The fatal is treated as a reproduction: flipped to OK and labelled XFAIL.
+    assert log_fail.status == Result.Status.OK
+    assert Result.Label.XFAIL in _labels(log_fail)
+    assert outer.status == Result.Status.OK
+    assert "Failed to reproduce" not in outer.info
+
+
+# ---------------------------------------------------------------------------
+# reconcile_bugfix_crash_repro (PR #110158): runs on every build type, before
+# the inverter. Its crash-repro downgrade is what the later-build-type
+# (`build_types[1:]`) flow relies on - the PR's own WITH FILL overflow
+# reproduces on `build_types[0]` and short-circuits before the later loop, so
+# no bugfix-validation run exercises that helper call there. These tests pin
+# the helper's behaviour directly on the runner_level_error + per-test ERROR +
+# BLOCKER fatal input that flow feeds it.
+# ---------------------------------------------------------------------------
+
+
+def test_reconcile_crash_repro_downgrades_runner_error_to_fail():
+    """The later-build-type scenario that PR #110158 repairs: a sanitizer crash
+    on the master-HEAD binary aborts the runner, so the build type's result is
+    `ERROR` with per-test `ERROR` rows, and a `BLOCKER` fatal is present. The
+    reconciler must downgrade the per-test `ERROR`s to `FAIL` and recompute the
+    aggregate to `FAIL` (not `ERROR`), so the inverter counts a reproduction.
+    """
+    poisoned = _make_leaf("01234_regression_test", Result.Status.ERROR)
+    bt_result = _make_outer(Result.Status.ERROR, [poisoned])
+    fatals = [_make_fatal()]
+
+    crash_repro = reconcile_bugfix_crash_repro(bt_result, fatals)
+
+    assert crash_repro is True
+    # Per-test ERROR downgraded to FAIL.
+    assert poisoned.status == Result.Status.FAIL
+    # Aggregate is FAIL, not ERROR: the runner-level ERROR is NOT restored
+    # because a crash reproduction was detected.
+    assert bt_result.status == Result.Status.FAIL
+    # The fatal row is folded in for the report.
+    assert any(r.has_label(Result.Label.BLOCKER) for r in bt_result.results)
+
+
+def test_reconcile_crash_repro_then_inverter_flips_to_ok():
+    """End-to-end for the later build type: after the reconciler turns the
+    poisoned `ERROR` run into `FAIL`, the inverter flips it to a successful
+    reproduction (`OK`) instead of preserving it as inconclusive `ERROR`.
+    """
+    poisoned = _make_leaf("01234_regression_test", Result.Status.ERROR)
+    bt_result = _make_outer(Result.Status.ERROR, [poisoned])
+
+    reconcile_bugfix_crash_repro(bt_result, [_make_fatal()])
+    no_repro = invert_bugfix_validation_status(bt_result)
+
+    assert no_repro is not True
+    assert bt_result.status == Result.Status.OK
+
+
+def test_reconcile_infra_error_without_blocker_is_preserved():
+    """#105789 contract: a run that ends in `ERROR` with no `BLOCKER` fatal is
+    a genuine infra failure, not a reproduction. The reconciler must NOT
+    downgrade its `ERROR` rows and must restore the runner-level `ERROR`.
+    """
+    err_row = _make_leaf("01234_regression_test", Result.Status.ERROR)
+    bt_result = _make_outer(Result.Status.ERROR, [err_row])
+    # A clean (OK) health-check row - no BLOCKER fatal.
+    clean = [_make_log_check("Lost s3 keys", Result.Status.OK)]
+
+    crash_repro = reconcile_bugfix_crash_repro(bt_result, clean)
+
+    assert crash_repro is False
+    # ERROR row untouched.
+    assert err_row.status == Result.Status.ERROR
+    # Runner-level ERROR restored (not left as OK/FAIL by extend_sub_results).
+    assert bt_result.status == Result.Status.ERROR
+
+
+def test_reconcile_ok_run_with_blocker_fatal_still_flips_to_fail():
+    """A clean per-test run (OK) that nevertheless produced a `BLOCKER` fatal in
+    the server log is the bug reproducing via a crash: the reconciler folds the
+    fatal in and the aggregate becomes FAIL, which the inverter later flips to
+    a reproduction. (No runner-level ERROR to restore here.)
+    """
+    ok_row = _make_leaf("01234_regression_test", Result.Status.OK)
+    bt_result = _make_outer(Result.Status.OK, [ok_row])
+
+    crash_repro = reconcile_bugfix_crash_repro(bt_result, [_make_fatal()])
+
+    assert crash_repro is True
+    # No per-test ERROR to downgrade; the OK row stays OK.
+    assert ok_row.status == Result.Status.OK
+    # The BLOCKER fatal makes the aggregate FAIL.
+    assert bt_result.status == Result.Status.FAIL
 
 
 if __name__ == "__main__":

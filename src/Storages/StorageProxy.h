@@ -24,15 +24,22 @@ public:
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
     bool supportsFinal() const override { return getNested()->supportsFinal(); }
     bool supportsPrewhere() const override { return getNested()->supportsPrewhere(); }
+    bool canMoveConditionsToPrewhere() const override { return getNested()->canMoveConditionsToPrewhere(); }
+    std::optional<NameSet> supportedPrewhereColumns() const override { return getNested()->supportedPrewhereColumns(); }
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override { return getNested()->supportedPrewhereColumnsIncludeSubcolumns(); }
     bool supportsReplication() const override { return getNested()->supportsReplication(); }
     bool supportsParallelInsert() const override { return getNested()->supportsParallelInsert(); }
     bool supportsDeduplication() const override { return getNested()->supportsDeduplication(); }
     bool noPushingToViewsOnInserts() const override { return getNested()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
     bool supportsSubcolumns() const override { return getNested()->supportsSubcolumns(); }
+    /// The IStorage default ties this to supportsSubcolumns(); forward it so a proxy around a
+    /// storage that opts out of the rewrite (e.g. Distributed) does not re-advertise true.
+    bool supportsOptimizationToSubcolumns() const override { return getNested()->supportsOptimizationToSubcolumns(); }
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
+    ColumnSizeByName getColumnSizes(const Names & columns) const override { return getNested()->getColumnSizes(columns); }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
     {
@@ -80,6 +87,8 @@ public:
         return getNested()->write(query, metadata_snapshot, context, async_insert);
     }
 
+    void checkInsertIsAllowed(ContextPtr context) const override { getNested()->checkInsertIsAllowed(context); }
+
     void drop() override { getNested()->drop(); }
 
     void truncate(
@@ -106,7 +115,8 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
     {
         getNested()->alter(params, context, alter_lock_holder);
-        IStorage::setInMemoryMetadata(*getNested()->getInMemoryMetadataPtr(context, true));
+        auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, true);
+        IStorage::setInMemoryMetadata(*nested_metadata);
     }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override
@@ -161,6 +171,7 @@ public:
     }
 
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableCanBeDropped(query_context); }
+    void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableSizeBelowDropLimit(query_context); }
 
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }

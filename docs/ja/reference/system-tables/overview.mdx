@@ -1,0 +1,265 @@
+---
+description: 'システムテーブルの概要と、その有用性について。'
+keywords: ['システムテーブル', '概要']
+sidebarTitle: '概要'
+slug: /operations/system-tables/overview
+title: 'システムテーブルの概要'
+doc_type: 'reference'
+---
+
+<div id="system-tables-introduction">
+  ## システムテーブルの概要
+</div>
+
+システムテーブルは、次の情報を提供します。
+
+* サーバーの状態、プロセス、および環境
+* サーバーの内部プロセス
+* ClickHouseバイナリのビルド時に使用されたオプション
+
+システムテーブルは、次の特徴を持ちます。
+
+* `system` database に配置されている
+* データの読み取り専用である
+* DROP や ALTER はできないが、デタッチは可能である
+
+ほとんどのシステムテーブルは、データを RAM に保存します。ClickHouse server は起動時にこのようなシステムテーブルを作成します。
+
+ほかのシステムテーブルとは異なり、システムログテーブル [metric&#95;log](/ja/reference/system-tables/metric_log)、[query&#95;log](/ja/reference/system-tables/query_log)、[query&#95;thread&#95;log](/ja/reference/system-tables/query_thread_log)、[trace&#95;log](/ja/reference/system-tables/trace_log)、[part&#95;log](/ja/reference/system-tables/part_log)、[crash&#95;log](/ja/reference/system-tables/crash_log)、[text&#95;log](/ja/reference/system-tables/text_log)、および [backup&#95;log](/ja/reference/system-tables/backup_log) は [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルエンジンで管理され、デフォルトではデータを filesystem に保存します。filesystem からテーブルを削除すると、ClickHouse server は次回データが書き込まれる際に空のテーブルを再作成します。新しいリリースでシステムテーブルのスキーマが変更された場合、ClickHouse は現在のテーブルの名前を変更し、新しいテーブルを作成します。
+
+システムログテーブルは、`/etc/clickhouse-server/config.d/` 配下にテーブルと同名の設定ファイルを作成するか、`/etc/clickhouse-server/config.xml` で対応する要素を設定することでカスタマイズできます。カスタマイズ可能な要素は次のとおりです。
+
+* `database`: システムログテーブルが属する database。このオプションは現在 非推奨 です。すべてのシステムログテーブルは database `system` 配下にあります。
+* `table`: データを挿入するテーブル
+* `partition_by`: [PARTITION BY](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key) 式を指定します。
+* `ttl`: テーブルの [有効期限 (TTL)](/ja/reference/statements/alter/ttl) 式を指定します。
+* `flush_interval_milliseconds`: データをディスクに flush する間隔
+* `engine`: パラメーター付きの完全な engine 式 (`ENGINE =` で始まるもの) を指定します。このオプションは `partition_by` および `ttl` と 競合 します。同時に設定すると、サーバーは例外を発生させて終了します。
+
+例:
+
+```xml
+<clickhouse>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+        <!--
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
+        -->
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </query_log>
+</clickhouse>
+```
+
+デフォルトでは、テーブルの増大に制限はありません。テーブルのサイズを制御するには、古くなったログレコードを削除するための[有効期限 (TTL)](/ja/reference/statements/alter/ttl)設定を使用できます。また、`MergeTree`エンジンのテーブルのパーティション化機能も利用できます。
+
+<div id="system-tables-sources-of-system-metrics">
+  ## システムメトリクスの取得元
+</div>
+
+ClickHouse server は、システムメトリクスの収集に以下を使用します。
+
+* `CAP_NET_ADMIN` ケーパビリティ。
+* [procfs](https://en.wikipedia.org/wiki/Procfs) (Linux のみ) 。
+
+**procfs**
+
+ClickHouse server に `CAP_NET_ADMIN` ケーパビリティがない場合は、`ProcfsMetricsProvider` へのフォールバックを試みます。`ProcfsMetricsProvider` では、クエリごとのシステムメトリクス (CPU および I/O) を収集できます。
+
+システムで procfs がサポートされ、有効になっている場合、ClickHouse server は以下のメトリクスを収集します。
+
+* `OSCPUVirtualTimeMicroseconds`
+* `OSCPUWaitMicroseconds`
+* `OSIOWaitMicroseconds`
+* `OSReadChars`
+* `OSWriteChars`
+* `OSReadBytes`
+* `OSWriteBytes`
+
+<Note>
+  `OSIOWaitMicroseconds` は、Linux カーネル 5.14.x 以降ではデフォルトで無効になっています。
+  `sudo sysctl kernel.task_delayacct=1` を使用するか、`/etc/sysctl.d/` に `kernel.task_delayacct = 1` を含む `.conf` ファイルを作成すると有効にできます
+</Note>
+
+<div id="system-tables-in-clickhouse-cloud">
+  ## ClickHouse Cloud のシステムテーブル
+</div>
+
+ClickHouse Cloud では、セルフマネージド環境と同様に、システムテーブルからサービスの状態やパフォーマンスに関する重要な情報を得られます。システムテーブルの中には、特に分散メタデータを管理する Keeper ノードからデータを取得するものなど、クラスター全体のレベルで機能するものがあります。これらのテーブルはクラスター全体の状態を反映するため、個々のノードに対してクエリしても結果は一貫しているはずです。たとえば、[`parts`](/ja/reference/system-tables/parts) は、どのノードにクエリしても一貫している必要があります。
+
+```sql
+SELECT hostname(), count()
+FROM system.parts
+WHERE `table` = 'pypi'
+
+┌─hostname()────────────────────┬─count()─┐
+│ c-ecru-qn-34-server-vccsrty-0 │      26 │
+└───────────────────────────────┴─────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+
+SELECT
+ hostname(),
+    count()
+FROM system.parts
+WHERE `table` = 'pypi'
+
+┌─hostname()────────────────────┬─count()─┐
+│ c-ecru-qn-34-server-w59bfco-0 │      26 │
+└───────────────────────────────┴─────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+一方、他のシステムテーブルはノード固有です。たとえば、インメモリで保持されるものや、MergeTree テーブルエンジン を使用してデータを永続化するものが該当します。これは、logs やメトリクスのようなデータで一般的です。この永続化によって、履歴データを分析に利用できるようになります。ただし、これらのノード固有のテーブルは、その性質上、各ノードごとに固有です。
+
+一般に、システムテーブルがノード固有かどうかを判断する際には、次のルールを適用できます。
+
+* `_log` 接尾辞を持つシステムテーブル。
+* メトリクスを公開するシステムテーブル。たとえば `metrics`、`asynchronous_metrics`、`events`。
+* 実行中のプロセスを公開するシステムテーブル。たとえば `processes`、`merges`。
+
+さらに、システムテーブルの新しいバージョンが、アップグレードやスキーマ変更に伴って作成されることがあります。これらのバージョンには、数値の接尾辞を使って名前が付けられます。
+
+たとえば、`system.query_log` テーブルを考えてみましょう。これには、そのノードで実行された各クエリについて 1 行ずつ記録されます。
+
+```sql
+SHOW TABLES FROM system LIKE 'query_log%'
+
+┌─name─────────┐
+│ query_log    │
+│ query_log_1  │
+│ query_log_10 │
+│ query_log_2  │
+│ query_log_3  │
+│ query_log_4  │
+│ query_log_5  │
+│ query_log_6  │
+│ query_log_7  │
+│ query_log_8  │
+│ query_log_9  │
+└──────────────┘
+
+11 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="querying-multiple-versions">
+  ### 複数のバージョンをまたいだクエリ
+</div>
+
+[`merge`](/ja/reference/functions/table-functions/merge) 関数を使うと、これらのテーブルをまたいでクエリできます。たとえば、次のクエリは、各 `query_log` テーブルについて、対象ノードに対して発行された最新のクエリを特定します。
+
+```sql
+SELECT
+    _table,
+    max(event_time) AS most_recent
+FROM merge('system', '^query_log')
+GROUP BY _table
+ORDER BY most_recent DESC
+
+┌─_table───────┬─────────most_recent─┐
+│ query_log    │ 2025-04-13 10:59:29 │
+│ query_log_1  │ 2025-04-09 12:34:46 │
+│ query_log_2  │ 2025-04-09 12:33:45 │
+│ query_log_3  │ 2025-04-07 17:10:34 │
+│ query_log_5  │ 2025-03-24 09:39:39 │
+│ query_log_4  │ 2025-03-24 09:38:58 │
+│ query_log_6  │ 2025-03-19 16:07:41 │
+│ query_log_7  │ 2025-03-18 17:01:07 │
+│ query_log_8  │ 2025-03-18 14:36:07 │
+│ query_log_10 │ 2025-03-18 14:01:33 │
+│ query_log_9  │ 2025-03-18 14:01:32 │
+└──────────────┴─────────────────────┘
+
+11 rows in set. Elapsed: 0.373 sec. Processed 6.44 million rows, 25.77 MB (17.29 million rows/s., 69.17 MB/s.)
+Peak memory usage: 28.45 MiB.
+```
+
+<Info>
+  **並び順の判断に数値の接尾辞を使わないでください**
+
+  テーブル名の数値の接尾辞からデータの順序を推測できるように見えることがありますが、それを当てにしてはいけません。そのため、特定の日付範囲を対象にする場合は、常に `merge` テーブル関数を日付フィルタと組み合わせて使用してください。
+</Info>
+
+重要なのは、これらのテーブルが依然として **各ノードにローカル** であることです。
+
+<div id="querying-across-nodes">
+  ### ノードをまたいだクエリ
+</div>
+
+クラスター全体を包括的に把握するには、[`clusterAllReplicas`](/ja/reference/functions/table-functions/cluster) 関数を `merge` 関数と組み合わせて利用できます。`clusterAllReplicas` 関数を使うと、&quot;default&quot; クラスター内のすべてのレプリカにまたがってシステムテーブルをクエリし、ノード固有のデータを 1 つの結果に集約できます。これを `merge` 関数と組み合わせることで、クラスター内の特定のテーブルに関するすべてのシステムデータを対象にできます。
+
+この方法は、クラスター全体にわたる処理の監視やデバッグで特に有用で、ClickHouse Cloud デプロイメントの健全性やパフォーマンスを効果的に分析するのに役立ちます。
+
+<Note>
+  ClickHouse Cloud は、冗長性とフェイルオーバーのために複数のレプリカを持つクラスターを提供します。これにより、動的オートスケーリングやダウンタイムなしのアップグレードなどの機能が実現されます。特定の時点では、新しいノードがクラスターに追加されつつあったり、クラスターから削除されつつあったりする場合があります。こうしたノードをスキップするには、以下に示すように、`clusterAllReplicas` を使用するクエリに `SETTINGS skip_unavailable_shards = 1` を追加してください。
+</Note>
+
+たとえば、分析で重要になることが多い `query_log` テーブルをクエリした場合の違いを見てみましょう。
+
+```sql
+SELECT
+    hostname() AS host,
+    count()
+FROM system.query_log
+WHERE (event_time >= '2025-04-01 00:00:00') AND (event_time <= '2025-04-12 00:00:00')
+GROUP BY host
+
+┌─host──────────────────────────┬─count()─┐
+│ c-ecru-qn-34-server-s5bnysl-0 │  650543 │
+└───────────────────────────────┴─────────┘
+
+1 row in set. Elapsed: 0.010 sec. Processed 17.87 thousand rows, 71.51 KB (1.75 million rows/s., 7.01 MB/s.)
+
+SELECT
+    hostname() AS host,
+    count()
+FROM clusterAllReplicas('default', system.query_log)
+WHERE (event_time >= '2025-04-01 00:00:00') AND (event_time <= '2025-04-12 00:00:00')
+GROUP BY host SETTINGS skip_unavailable_shards = 1
+
+┌─host──────────────────────────┬─count()─┐
+│ c-ecru-qn-34-server-s5bnysl-0 │  650543 │
+│ c-ecru-qn-34-server-6em4y4t-0 │  656029 │
+│ c-ecru-qn-34-server-iejrkg0-0 │  641155 │
+└───────────────────────────────┴─────────┘
+
+3 rows in set. Elapsed: 0.026 sec. Processed 1.97 million rows, 7.88 MB (75.51 million rows/s., 302.05 MB/s.)
+```
+
+<div id="querying-across-nodes-and-versions">
+  ### ノードやバージョンをまたいだクエリ
+</div>
+
+システムテーブルにはバージョン差異があるため、これでもなおクラスター内の全データを完全には表せません。これを上記の内容と`merge`関数と組み合わせることで、対象の日付範囲に対して正確な結果が得られます。
+
+```sql
+SELECT
+    hostname() AS host,
+    count()
+FROM clusterAllReplicas('default', merge('system', '^query_log'))
+WHERE (event_time >= '2025-04-01 00:00:00') AND (event_time <= '2025-04-12 00:00:00')
+GROUP BY host SETTINGS skip_unavailable_shards = 1
+
+┌─host──────────────────────────┬─count()─┐
+│ c-ecru-qn-34-server-s5bnysl-0 │ 3008000 │
+│ c-ecru-qn-34-server-6em4y4t-0 │ 3659443 │
+│ c-ecru-qn-34-server-iejrkg0-0 │ 1078287 │
+└───────────────────────────────┴─────────┘
+
+3 rows in set. Elapsed: 0.462 sec. Processed 7.94 million rows, 31.75 MB (17.17 million rows/s., 68.67 MB/s.)
+```
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [システムテーブルで ClickHouse の内部を探る](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
+* ブログ: [監視に不可欠なクエリ - 第1部 - INSERT クエリ](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
+* ブログ: [監視に不可欠なクエリ - 第2部 - SELECT クエリ](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)

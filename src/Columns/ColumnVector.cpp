@@ -9,6 +9,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -19,7 +20,7 @@
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
 #include <Common/TargetSpecific.h>
-#include <Common/WeakHash.h>
+#include <Common/transformEndianness.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
@@ -27,6 +28,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <bit>
+#include <cmath>
 #include <cstring>
 
 #include "config.h"
@@ -78,24 +80,30 @@ void ColumnVector<T>::updateHashWithValueRange(size_t begin, size_t end, SipHash
     hash.update(reinterpret_cast<const char *>(&data[begin]), (end - begin) * sizeof(T));
 }
 
+/// Finalized per-row CRC32C hash of a value of type T (seeded with `WEAK_HASH32_INITIAL_VALUE`).
 template <typename T>
-WeakHash32 ColumnVector<T>::getWeakHash32() const
+static inline UInt32 weakHashValue32(T v) noexcept
 {
-    auto s = data.size();
-    WeakHash32 hash(s);
+    /// `BFloat16` is a 16-bit float but is NOT a `std::is_floating_point` type; hash its raw bits.
+    if constexpr (std::is_same_v<T, BFloat16>)
+        return static_cast<UInt32>(hashCRC32(v.raw(), WEAK_HASH32_INITIAL_VALUE));
+    else
+        return static_cast<UInt32>(hashCRC32(v, WEAK_HASH32_INITIAL_VALUE));
+}
 
-    const T * begin = data.data();
-    const T * end = begin + s;
-    UInt32 * hash_data = hash.getData().data();
-
-    while (begin < end)
-    {
-        *hash_data = static_cast<UInt32>(hashCRC32(*begin, *hash_data));
-        ++begin;
-        ++hash_data;
-    }
-
-    return hash;
+template <typename T>
+void ColumnVector<T>::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    /// CRC32C is a hardware dependency chain with no packed form, so SIMD multi-versioning
+    /// would not vectorise; keep a plain scalar loop. See IColumn::computeHashInto.
+    const T * src = data.data() + row_begin;
+    const size_t n = row_end - row_begin;
+    if (initial)
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = weakHashValue32(src[i]);
+    else
+        for (size_t i = 0; i < n; ++i)
+            hash_out[i] = combineWeakHash32(weakHashValue32(src[i]), hash_out[i]);
 }
 
 template <typename T>
@@ -338,6 +346,120 @@ void ColumnVector<T>::compareColumn(
     compareColumnImpl<T>(data, value, compare_results, direction, nan_direction_hint);
 }
 
+MULTITARGET_FUNCTION_X86_V4(
+MULTITARGET_FUNCTION_HEADER(
+template <typename T>
+size_t), findFirstNotEqualImpl, MULTITARGET_FUNCTION_BODY((
+    const T * data,
+    size_t begin,
+    size_t end,
+    T ref,
+    int nan_direction_hint)
+{
+    size_t i = begin;
+
+    /// Scan fixed-size blocks without an early exit so the comparison vectorizes; only when a block
+    /// contains the boundary do we locate it with a scalar pass (at most once, at the run end).
+    static constexpr size_t block = 16;
+    for (; i + block <= end; i += block)
+    {
+        UInt8 any_not_equal = 0;
+        for (size_t k = 0; k < block; ++k)
+            any_not_equal |= static_cast<UInt8>(!CompareHelper<T>::equals(data[i + k], ref, nan_direction_hint));
+        if (any_not_equal)
+        {
+            for (size_t k = 0; k < block; ++k)
+                if (!CompareHelper<T>::equals(data[i + k], ref, nan_direction_hint))
+                    return i + k;
+        }
+    }
+
+    /// The tail of the array that doesn't fit into a full block.
+    for (; i < end; ++i)
+        if (!CompareHelper<T>::equals(data[i], ref, nan_direction_hint))
+            return i;
+    return end;
+})
+)
+
+template <typename T>
+static size_t getEqualRangeEndAssumeSortedImpl(const T * d, size_t begin, size_t end, int nan_direction_hint)
+{
+    /// An empty range contains no run, so its end is `begin`.
+    if (begin >= end)
+        return begin;
+
+    const T ref = d[begin];
+
+    /// Resolve a run of length one with a single comparison. This is the common case for
+    /// high-cardinality keys, where it avoids the fixed cost of the vectorized block scan below.
+    if (begin + 1 < end && !CompareHelper<T>::equals(d[begin + 1], ref, nan_direction_hint))
+        return begin + 1;
+
+    /// First scan a window linearly, which resolves short runs cheaply. The scan compares whole blocks
+    /// without an early exit so it vectorizes, making the per-row cost so small that the window can be
+    /// much longer than the linear probes of the scalar overloads.
+    static constexpr size_t window = 256;
+    size_t window_end = std::min(begin + window, end);
+
+    size_t hit = 0;
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+        hit = findFirstNotEqualImpl_x86_64_v4<T>(d, begin, window_end, ref, nan_direction_hint);
+    else
+#endif
+        hit = findFirstNotEqualImpl<T>(d, begin, window_end, ref, nan_direction_hint);
+
+    if (hit < window_end)
+        return hit;
+    if (window_end == end)
+        return end;
+
+    /// Gallop forward with an exponentially growing step to bracket the run end between `lo` (still
+    /// equal, as established by the earlier linear scan) and `hi` (the first probe past it).
+    size_t lo = window_end; /// rows in [begin, lo) all equal the value at `begin`
+    size_t hi = end;
+    size_t step = window;
+    while (lo < end)
+    {
+        size_t probe = std::min(lo + step, end);
+        if (CompareHelper<T>::equals(d[probe - 1], ref, nan_direction_hint))
+        {
+            lo = probe;
+            if (probe == end)
+                return end;
+            step <<= 1;
+        }
+        else
+        {
+            hi = probe;
+            break;
+        }
+    }
+
+    /// Binary-search the bracketed range `[lo, hi)` for the first position that is not equal; that is the run end.
+    /// `lo` is known from the gallop to equal the value at `begin`.
+    while (lo < hi)
+    {
+        size_t mid = lo + (hi - lo) / 2;
+        if (CompareHelper<T>::equals(d[mid], ref, nan_direction_hint))
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
+template <typename T>
+size_t ColumnVector<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    const T * d = data.data();
+    const size_t run_end = getEqualRangeEndAssumeSortedImpl<T>(d, begin, end, nan_direction_hint);
+    checkEqualRangeEndAssumeSorted(
+        begin, end, run_end, [&](size_t i) { return CompareHelper<T>::equals(d[i], d[begin], nan_direction_hint); });
+    return run_end;
+}
+
 template <typename T>
 void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
@@ -353,7 +475,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_index_implementation<T>)
     {
         /// For floating point, findExtremeMinIndex/MaxIndex skip NaN (NaN is always last).
         /// This matches the standard nan_direction_hint convention: ASC with hint >= 0, DESC with hint <= 0.
@@ -1293,6 +1415,89 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
     size_t start = data.size();
     data.resize(start + count);
     return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
+}
+
+template <typename T>
+void ColumnVector<T>::serializeAsComparable(size_t n, String & out) const
+{
+    if constexpr (std::is_integral_v<T>)
+    {
+        auto value = data[n];
+        transformEndianness<std::endian::big>(value);
+        if constexpr (std::is_signed_v<T>)
+        {
+            char * bytes = reinterpret_cast<char *>(&value);
+            bytes[0] ^= 0x80;
+        }
+        out.append(reinterpret_cast<const char *>(&value), sizeof(T));
+    }
+    else if constexpr (is_big_int_v<T>)
+    {
+        auto value = data[n];
+        transformEndianness<std::endian::big>(value);
+        if constexpr (is_signed_v<T>)
+        {
+            char * bytes = reinterpret_cast<char *>(&value);
+            bytes[0] ^= 0x80;
+        }
+        out.append(reinterpret_cast<const char *>(&value), sizeof(T));
+    }
+    else if constexpr (std::is_same_v<T, Float32>)
+    {
+        UInt32 bits = std::bit_cast<UInt32>(data[n]);
+        if (std::isnan(data[n]))
+            bits = 0xFFFFFFFFU;
+        else
+        {
+            if (bits == 0x80000000U)
+                bits = 0;
+            if (bits & 0x80000000U)
+                bits = ~bits;
+            else
+                bits ^= 0x80000000U;
+        }
+        transformEndianness<std::endian::big>(bits);
+        out.append(reinterpret_cast<const char *>(&bits), sizeof(UInt32));
+    }
+    else if constexpr (std::is_same_v<T, Float64>)
+    {
+        UInt64 bits = std::bit_cast<UInt64>(data[n]);
+        if (std::isnan(data[n]))
+            bits = 0xFFFFFFFFFFFFFFFFULL;
+        else
+        {
+            if (bits == 0x8000000000000000ULL)
+                bits = 0;
+            if (bits & 0x8000000000000000ULL)
+                bits = ~bits;
+            else
+                bits ^= 0x8000000000000000ULL;
+        }
+        transformEndianness<std::endian::big>(bits);
+        out.append(reinterpret_cast<const char *>(&bits), sizeof(UInt64));
+    }
+    else if constexpr (std::is_same_v<T, UUID>)
+    {
+        auto value = data[n].toUnderType();
+        transformEndianness<std::endian::big>(value);
+        out.append(reinterpret_cast<const char *>(&value), sizeof(UInt128));
+    }
+    else
+    {
+        IColumn::serializeAsComparable(n, out);
+    }
+}
+
+template <typename T>
+void ColumnVector<T>::batchSerializeAsComparable(
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const IColumn::Permutation * permutation,
+    const UInt8 * null_map) const
+{
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, null_map,
+        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

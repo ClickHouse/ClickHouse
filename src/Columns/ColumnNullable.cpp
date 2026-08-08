@@ -1,13 +1,18 @@
+#include <algorithm>
+#include <iterator>
+
 #include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
-#include <Common/WeakHash.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/IColumnImpl.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/MaskOperations.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <IO/Operators.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -64,21 +69,32 @@ void ColumnNullable::updateHashWithValueRange(size_t begin, size_t end, SipHash 
     hash.update(reinterpret_cast<const char *>(&arr[begin]), (end - begin) * sizeof(arr[0]));
 }
 
-WeakHash32 ColumnNullable::getWeakHash32() const
+void ColumnNullable::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = size();
+    /// A NULL row must hash to a fixed value, independent of the bytes that happen to sit in the
+    /// nested column for that row, so two SQL-equal NULL keys route identically. The nested hash of
+    /// null rows is replaced with `WEAK_HASH32_INITIAL_VALUE`. See IColumn::computeHashInto.
+    const UInt8 * null_map_data = getNullMapData().data() + row_begin;
+    const size_t n = row_end - row_begin;
 
-    WeakHash32 hash = nested_column->getWeakHash32();
+    if (initial)
+    {
+        nested_column->computeHashInto(row_begin, row_end, hash_out, /*initial=*/true);
+        for (size_t i = 0; i < n; ++i)
+            if (null_map_data[i])
+                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
+        return;
+    }
 
-    const auto & null_map_data = getNullMapData();
-    auto & hash_data = hash.getData();
-
-    /// Use default for nulls.
-    for (size_t row = 0; row < s; ++row)
-        if (null_map_data[row])
-            hash_data[row] = WeakHash32::kDefaultInitialValue;
-
-    return hash;
+    /// Non-initial: `hash_out` holds the prior key columns' hash, so the nested hash is produced
+    /// into a transient scratch buffer, null-selected, then combined into `hash_out`.
+    PaddedPODArray<UInt32> nested_hash(n);
+    nested_column->computeHashInto(row_begin, row_end, nested_hash.data(), /*initial=*/true);
+    for (size_t i = 0; i < n; ++i)
+    {
+        const UInt32 base = null_map_data[i] ? WEAK_HASH32_INITIAL_VALUE : nested_hash[i];
+        hash_out[i] = combineWeakHash32(base, hash_out[i]);
+    }
 }
 
 void ColumnNullable::updateHashFast(SipHash & hash) const
@@ -471,6 +487,30 @@ int ColumnNullable::compareAtWithCollation(size_t n, size_t m, const IColumn & r
     return compareAtImpl(n, m, rhs_, null_direction_hint, &collator);
 }
 
+size_t ColumnNullable::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    if (begin >= end)
+        return begin;
+
+    /// In a sorted Nullable column the NULLs are grouped at one end, so null-ness forms a run within this
+    /// range. Rows must be compared by null-ness, not by the raw null map byte: any non-zero byte means
+    /// NULL, so the bytes within the NULL group may be arbitrary non-zero values in arbitrary order.
+    const UInt8 * null_bytes = getNullMapData().data();
+    const bool ref_is_null = null_bytes[begin] != 0;
+
+    /// A null-ness comparison is cheap, so use a longer linear probe (the default is 8).
+    static constexpr size_t linear_probe = 16;
+    size_t run_end = findEqualRangeEndAssumeSorted(
+        begin, end, linear_probe, [&](size_t i) { return (null_bytes[i] != 0) == ref_is_null; });
+
+    /// When the start row is non-NULL the run is additionally bounded by where the nested value changes.
+    /// That nested scan stays within `[begin, run_end)`, which is entirely non-NULL, so it never reads NULL slots.
+    if (!ref_is_null)
+        run_end = getNestedColumn().getEqualRangeEndAssumeSorted(begin, run_end, nan_direction_hint);
+
+    return run_end;
+}
+
 void ColumnNullable::getPermutationImpl(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
 {
@@ -685,16 +725,17 @@ void ColumnNullable::updatePermutationImpl(IColumn::PermutationSortDirection dir
             ::sort(std::ranges::next(res.begin(), null_range.from), std::ranges::next(res.begin(), null_range.to));
     }
 
-    if (is_nulls_last || null_ranges.empty())
-    {
-        equal_ranges = std::move(new_ranges);
-        std::move(null_ranges.begin(), null_ranges.end(), std::back_inserter(equal_ranges));
-    }
-    else
-    {
-        equal_ranges = std::move(null_ranges);
-        std::move(new_ranges.begin(), new_ranges.end(), std::back_inserter(equal_ranges));
-    }
+    /// `equal_ranges` must stay sorted by `from` (downstream limit handling relies on it). Both
+    /// `new_ranges` and `null_ranges` are individually sorted, but concatenating them is not, so
+    /// merge the two sorted lists instead.
+    EqualRanges merged;
+    merged.reserve(new_ranges.size() + null_ranges.size());
+    std::merge(
+        std::make_move_iterator(new_ranges.begin()), std::make_move_iterator(new_ranges.end()),
+        std::make_move_iterator(null_ranges.begin()), std::make_move_iterator(null_ranges.end()),
+        std::back_inserter(merged),
+        [](const EqualRange & lhs, const EqualRange & rhs) { return lhs.from < rhs.from; });
+    equal_ranges = std::move(merged);
 }
 
 void ColumnNullable::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -887,15 +928,18 @@ ColumnPtr ColumnNullable::replicate(const Offsets & offsets) const
 
 
 template <bool negative>
-void ColumnNullable::applyNullMapImpl(const NullMap & map)
+void ColumnNullable::applyNullMapImpl(const NullMap & map, size_t offset)
 {
     NullMap & arr = getNullMapData();
 
-    if (arr.size() != map.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent sizes of ColumnNullable objects");
+    if (offset + map.size() != arr.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Null map of size {} at offset {} does not match ColumnNullable of size {}",
+            map.size(), offset, arr.size());
 
-    for (size_t i = 0, size = arr.size(); i < size; ++i)
-        arr[i] |= negative ^ map[i];
+    for (size_t i = 0, size = map.size(); i < size; ++i)
+        arr[offset + i] |= negative ^ map[i];
 }
 
 void ColumnNullable::applyNullMap(const NullMap & map)
@@ -908,9 +952,9 @@ void ColumnNullable::applyNullMap(const ColumnUInt8 & map)
     applyNullMapImpl<false>(map.getData());
 }
 
-void ColumnNullable::applyNegatedNullMap(const NullMap & map)
+void ColumnNullable::applyNegatedNullMap(const NullMap & map, size_t offset)
 {
-    applyNullMapImpl<true>(map);
+    applyNullMapImpl<true>(map, offset);
 }
 
 void ColumnNullable::applyNegatedNullMap(const ColumnUInt8 & map)
@@ -1019,6 +1063,64 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
+}
+
+/// A NULL row emits only the flag byte and never touches the nested column, so an
+/// unsupported nested type (e.g. LowCardinality, Array) would slip through silently.
+/// Probe row 0 once so every row rejects the same types a non-NULL row would, even
+/// in an all-NULL block. Not on the hot path.
+void ColumnNullable::validateNestedComparable() const
+{
+    String probe;
+    nested_column->serializeAsComparable(0, probe);
+}
+
+/// Leading flag byte of a Nullable row's comparable encoding. `\x00` (non-NULL)
+/// sorts before `\x01` (NULL), so NULLs compare greater, matching compareAt with
+/// null_direction_hint = 1. A non-NULL row is `\x00` followed by the nested value's
+/// encoding; a NULL row is just `\x01`.
+void ColumnNullable::serializeAsComparable(size_t n, String & out) const
+{
+    const auto & null_map_data = getNullMapData();
+    if (null_map_data[n])
+    {
+        validateNestedComparable();
+        out.push_back('\x01');
+        return;
+    }
+    out.push_back('\x00');
+    nested_column->serializeAsComparable(n, out);
+}
+
+void ColumnNullable::batchSerializeAsComparable(
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const Permutation * permutation,
+    const UInt8 * outer_null_map) const
+{
+    if (num_rows == 0)
+        return;
+
+    validateNestedComparable();
+
+    /// Write the null flag for every row: NULL=0x01 (sorts after), non-NULL=0x00.
+    const auto & null_map_data = getNullMapData();
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, outer_null_map,
+        [&](size_t src, String & dst) { dst.push_back(null_map_data[src] ? '\x01' : '\x00'); });
+
+    /// Encode the nested values with one virtual dispatch; the merged null map
+    /// lets the nested loop skip NULL rows.
+    const UInt8 * effective_null_map = null_map_data.data();
+    PaddedPODArray<UInt8> merged_null_map;
+    if (outer_null_map)
+    {
+        merged_null_map.resize(null_map_data.size());
+        for (size_t i = 0; i < null_map_data.size(); ++i)
+            merged_null_map[i] = null_map_data[i] | outer_null_map[i];
+        effective_null_map = merged_null_map.data();
+    }
+    nested_column->batchSerializeAsComparable(num_rows, out, permutation, effective_null_map);
 }
 
 ColumnPtr makeNullable(const ColumnPtr & column)

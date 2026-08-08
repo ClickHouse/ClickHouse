@@ -3,12 +3,11 @@ import logging
 import os
 import shutil
 import uuid
-from email.errors import HeaderParseError
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import minio_secret_key
+from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.test_tools import TSV
 from helpers.utility import random_string
@@ -694,3 +693,74 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_par
     )
     cluster_optimized_traffic = int(cluster_optimized_traffic)
     assert cluster_optimized_traffic == optimized_traffic
+
+def test_iceberg_s3_cluster_read_task_failpoint(started_cluster):
+    """INSERT INTO <table> SELECT FROM icebergS3Cluster fails and does not hang.
+    Reproduces the scenario from https://github.com/ClickHouse/ClickHouse/issues/98165
+    """
+    node = started_cluster.instances["s0_0_0"]
+    run_id = uuid.uuid4().hex[:8]
+    iceberg_table = f"iceberg_src_{run_id}"
+    dst_table = f"local_dst_{run_id}"
+    iceberg_url = f"http://minio1:9001/root/{iceberg_table}/"
+
+    # Create and populate the source Iceberg table before enabling the failpoint.
+    node.query(
+        f"""
+        CREATE TABLE {iceberg_table} (id UInt64, data String)
+        ENGINE = IcebergS3('{iceberg_url}', '{minio_access_key}', '{minio_secret_key}')
+        """
+    )
+    node.query(
+        f"INSERT INTO {iceberg_table} SELECT number AS id, randomString(10) AS data FROM numbers(50)",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+
+    # Local destination table — we only care that the query fails, not the data.
+    node.query(
+        f"""
+        CREATE TABLE {dst_table} (id UInt64, data String)
+        ENGINE = MergeTree() ORDER BY id
+        """
+    )
+
+    all_node_names = ["s0_0_0", "s0_0_1", "s0_1_0"]
+    try:
+        for name in all_node_names:
+            started_cluster.instances[name].query(
+                "SYSTEM ENABLE FAILPOINT storage_cluster_read_sleep"
+            )
+
+        # The failpoint sleeps 10s uninterruptibly before max_execution_time can
+        # fire, so the server's legitimate abort lands well after 5s. The client
+        # timeout must outlast that abort (plus sanitizer/runner slowdown), not
+        # the 5s execution limit, otherwise a slow runner raises a false
+        # "Client timed out!".
+        _, error = node.query_and_get_answer_with_error(
+            f"""
+            INSERT INTO {dst_table}
+            SELECT * FROM icebergS3Cluster(
+                'cluster_simple',
+                '{iceberg_url}',
+                '{minio_access_key}', '{minio_secret_key}')
+            SETTINGS max_execution_time = 5
+            """,
+            timeout=120,
+        )
+
+        assert error, (
+            "Expected a timeout error but the query succeeded. "
+            "The `storage_cluster_read_sleep` failpoint should have caused the query "
+            "to hang inside ReadTaskIterator::next() on every worker, "
+            "and `max_execution_time` should have aborted it."
+        )
+        assert "Timeout" in error or "timeout" in error.lower(), (
+            f"Expected a timeout-related error, got: {error}"
+        )
+    finally:
+        for name in all_node_names:
+            started_cluster.instances[name].query(
+                "SYSTEM DISABLE FAILPOINT storage_cluster_read_sleep"
+            )
+        node.query(f"DROP TABLE IF EXISTS {dst_table}")
+        node.query(f"DROP TABLE IF EXISTS {iceberg_table}")

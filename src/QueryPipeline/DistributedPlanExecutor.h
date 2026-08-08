@@ -1,5 +1,9 @@
 #pragma once
 
+#include <atomic>
+#include <exception>
+#include <mutex>
+
 #include <Processors/Chunk.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
@@ -10,26 +14,45 @@
 #include <Common/SettingsChanges.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Core/ProtocolDefines.h>
 
 namespace DB
 {
+
+/// Network endpoint of a worker, resolved on the initiator from the cluster config (and
+/// server-level defaults). Both ports may differ per node so several workers can share a host.
+struct WorkerAddress
+{
+    String host;
+    UInt16 stateless_worker_port = 0;    /// interserver HTTP port the initiator dispatches tasks to
+    UInt16 streaming_exchange_port = 0;  /// port this node accepts streaming-exchange peer connections on
+};
+
+/// Producer endpoint of an exchange stream, shipped to consumers so they dial the producer's
+/// actual streaming-exchange port.
+struct StreamSourceAddress
+{
+    String host;
+    UInt16 port = 0;
+};
 
 class TaskToHostMap : public boost::noncopyable
 {
 public:
     TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_);
 
-    const Strings & getHostnames() const { return hostnames; }
-    const UnorderedMapWithMemoryTracking<String, String> & getTaskHosts() const { return task_hosts; }
-    const UnorderedMapWithMemoryTracking<String, String> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
+    const VectorWithMemoryTracking<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
+    const UnorderedMapWithMemoryTracking<String, WorkerAddress> & getTaskHosts() const { return task_hosts; }
+    const UnorderedMapWithMemoryTracking<String, StreamSourceAddress> & getExchangeStreamSourceHosts() const { return exchange_stream_source_hosts; }
 
 private:
-    void fillHostnames(ContextPtr context);
+    void fillWorkerAddresses(ContextPtr context);
     void assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan);
 
-    Strings hostnames;
-    UnorderedMapWithMemoryTracking<String, String> task_hosts;
-    UnorderedMapWithMemoryTracking<String, String> exchange_stream_source_hosts;
+    VectorWithMemoryTracking<WorkerAddress> worker_addresses;
+    UnorderedMapWithMemoryTracking<String, WorkerAddress> task_hosts;
+    UnorderedMapWithMemoryTracking<String, StreamSourceAddress> exchange_stream_source_hosts;
 };
 
 using TaskToHostMapPtr = std::shared_ptr<const TaskToHostMap>;
@@ -38,6 +61,37 @@ struct DistributedQueryPlan;
 
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+
+/// Cancellation state shared by the distributed plan executor, the threads tracking its tasks and
+/// the pipeline source driving them. Carries the first failure alongside the flag, so a waiter
+/// reports why the query stopped instead of a bare `Query was cancelled`.
+class DistributedQueryCancellation
+{
+public:
+    /// The pipeline cancelled the source: stop, with no failure to report. Deliberately lock-free,
+    /// so a cancelling thread never waits on a waiter that holds `mutex`.
+    void cancel() { cancelled = true; }
+
+    /// Store the in-flight exception as the query's first failure and cancel.
+    void recordCurrentException();
+
+    bool isCancelled() const { return cancelled; }
+
+    /// Rethrow the first recorded failure, if there is one.
+    void rethrowIfFailed() const;
+
+    /// Rethrow the first recorded failure. Without one, throw `QUERY_WAS_CANCELLED` if cancelled.
+    void throwIfCancelled() const;
+
+private:
+    void rethrowIfFailedLocked() const TSA_REQUIRES(mutex);
+
+    std::atomic<bool> cancelled = false;
+    mutable std::mutex mutex;
+    std::exception_ptr first_exception TSA_GUARDED_BY(mutex);
+};
+
+using DistributedQueryCancellationPtr = std::shared_ptr<DistributedQueryCancellation>;
 
 /// Implements distributed query plan execution logic by executing stages according to dependencies between them.
 class DistributedQueryPlanExecutor
@@ -54,7 +108,7 @@ private:
     void startStageWithDependencies(const String & stage_name, UnorderedSetWithMemoryTracking<String> & executed_stages);
 
 protected:
-    DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, std::shared_ptr<std::atomic<bool>> is_cancelled_);
+    DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_, DistributedQueryCancellationPtr cancellation_);
 
     virtual void startStage(const String & stage_name, const DistributedQueryStage & stage) = 0;
     virtual bool waitForStage(const String & stage_name, std::optional<UInt64> timeout_ms) = 0;
@@ -65,7 +119,7 @@ protected:
     const DistributedQueryPlan & distributed_query_plan;
     ContextPtr context;
     QueryStatusPtr query_status;
-    std::shared_ptr<std::atomic<bool>> is_cancelled;
+    DistributedQueryCancellationPtr cancellation;
     DequeWithMemoryTracking<String> running_stages;
     LoggerPtr logger;
 };
@@ -75,14 +129,22 @@ std::unique_ptr<DistributedQueryPlanExecutor> createDistributedQueryExecutor(
     const DistributedQueryPlan & distributed_query_plan,
     TaskToHostMapPtr task_to_host_map,
     ContextPtr context,
-    std::shared_ptr<std::atomic<bool>> is_cancelled);
+    DistributedQueryCancellationPtr cancellation);
+
+/// Wake every in-memory exchange waiter of the query. Idempotent and lock-free with respect to the
+/// executor lifecycle, so cancellation paths can call it without waiting for the executor mutex.
+void cancelDistributedQueryInMemoryExchanges(const UUID & unique_query_id);
 
 /// Contains info about hosts assigned to exchange buckets
 struct ExchangeStreamSources
 {
-    /// Exchange stream id -> source host
-    UnorderedMapWithMemoryTracking<String, String> stream_hosts;
+    /// Exchange stream id -> producer endpoint (host + that producer's streaming-exchange port)
+    UnorderedMapWithMemoryTracking<String, StreamSourceAddress> stream_hosts;
 };
+
+/// Minimal serialization version: v1 if every producer uses the server-level exchange port (a v1 worker
+/// derives it locally), else v2.
+UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port);
 
 /// Contains all info to send a task to remote worker
 struct DistributedQueryTaskDescription
@@ -95,6 +157,8 @@ struct DistributedQueryTaskDescription
     /// The initiator's changed settings, applied on the worker so query limits and execution-affecting
     /// settings (e.g. max_memory_usage) are honored remotely.
     SettingsChanges settings_changes;
+    /// Wire-format version to emit, lowered to v1 for legacy-port-only tasks (rolling-upgrade safe).
+    UInt64 serialization_version = DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION;
 };
 
 /// Executes a task locally. `distributed_query_id` is the node-independent identifier of the whole
@@ -125,6 +189,12 @@ ExchangeLookupPtr createExchangeLookup(
     const ExchangeStreamSources & exchange_stream_sources,
     TemporaryFileLookupPtr temporary_files_,
     ContextPtr context);
+
+class IProcessor;
+
+/// Transform that drops zero-row chunks emitted as scheduling ticks by in-memory exchange
+/// sources, so they do not escape the exchange path (e.g. to the client as empty `Data` packets).
+std::shared_ptr<IProcessor> makeSkipZeroRowChunksTransform(SharedHeader header);
 
 class ICustomResourceHolder;
 

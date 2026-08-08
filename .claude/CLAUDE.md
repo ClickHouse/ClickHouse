@@ -2,11 +2,15 @@ When working with a branch, do not use rebase or amend - add new commits instead
 
 Do not commit to the master branch. Create a new branch for every task.
 
+Do not create stacked pull requests. Every pull request must target `master` directly (or, in rare cases, a release branch), not another feature branch. CI only runs for pull requests whose base is `master` or a release branch, so a pull request stacked on another feature branch gets no checks. If a change depends on unmerged work, wait for that work to merge into `master` first, or include all the changes in a single pull request.
+
 When writing text such as documentation, comments, or commit messages, wrap literal names from ClickHouse SQL language, classes and functions, or literal excerpts from log messages inside inline code blocks, such as: `MergeTree`.
 
-When adding headers to documentation files under `docs/`, every header must include an explicit anchor in the form `{#kebab-case-anchor}` at the end of the header line, e.g. `## My Section {#my-section}`. This is mandatory for all heading levels. New documentation files must also include a frontmatter block at the top (before the first heading) with `description`, `sidebar_label`, `sidebar_position`, `slug`, `title`, and `doc_type` fields, modelled on existing files such as `docs/en/development/continuous-integration.md`.
+When adding headers to documentation files under `docs/`, every header must include an explicit anchor in the form `{#kebab-case-anchor}` at the end of the header line, e.g. `## My Section {#my-section}`. This is mandatory for all heading levels. New documentation files must also include a frontmatter block at the top (before the first heading) with `description`, `sidebarTitle`, `slug`, `title`, and `doc_type` fields, modelled on existing English `.mdx` files under `docs/`.
 
 When writing text such as documentation, comments, or commit messages, write names of functions and methods as `f` instead of `f()` - we prefer it for mathematical purity when it refers a function itself rather than its application.
+
+Whenever changes are added, modified, or deleted that relate to the `Native` format - its wire/serialization format, type encodings (e.g. `LowCardinality`, `Array`, `Map`, `Variant`, `Dynamic`, `JSON`), the block/column structure, the compression frame, the `NativeReader`/`NativeWriter`, or the user-facing doc `docs/reference/formats/Native.mdx` - also update the official specification `docs/reference/interfaces/specs/NativeFormat.mdx` (slug `/interfaces/specs/NativeFormat`) accordingly in the same change. The spec is the single source of truth for the format; if unsure whether the spec needs updating, flag it.
 
 When mentioning logical errors, say "exception" instead of "crash", because they don't crash the server in the release build.
 
@@ -140,6 +144,8 @@ When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly 
 
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
 
+When removing a feature, do not write tests asserting that the feature no longer exists (for example, a test checking that a removed function or setting now throws an error). Instead, delete the tests of the removed feature. Such tests only pin down the absence of something and become noise.
+
 When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.sql` tests or `./tests/queries/0_stateless/add-test <name>.sh` for `.sh` tests. It assigns the next available number prefix and creates both the test and reference files.
 
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
@@ -160,7 +166,7 @@ When running tests, always redirect output to a log file in the build directory 
 
 If I provided a URL with the CI report, logs, or examples, include it in the commit message. If the link has `PR=...`, also add a link to the corresponding PR.
 
-When creating or updating a pull request, use `.github/PULL_REQUEST_TEMPLATE.md` as the PR body template. The body should contain: a short description of the change and motivation, then the Changelog category (leave one from the list), then the Changelog entry, then the Documentation entry checkbox. Do not invent a custom "## Summary" or "## Test plan" structure — follow the template exactly. The "Bug Fix" category should be used only for real bug fixes, while for fixing CI reports you can use the "CI Fix or improvement" category. Include the URL to CI report I provided if any. If the PR is about a CI failure, search for the corresponding open issues and provide a link in the PR description.
+When creating or updating a pull request, use `.github/PULL_REQUEST_TEMPLATE.md` as the PR body template. The body should contain: a short description of the change and motivation, then the Changelog category (leave one from the list), then the Changelog entry. Do not invent a custom "## Summary" or "## Test plan" structure — follow the template exactly. The "Bug Fix" category should be used only for real bug fixes, while for fixing CI reports you can use the "CI Fix or improvement" category. Include the URL to CI report I provided if any. If the PR is about a CI failure, search for the corresponding open issues and provide a link in the PR description.
 
 Link related pull requests and issues explicitly, using full GitHub URLs, one relationship per line:
 - When a pull request fixes an issue, put `Closes: <full link to the issue>` on its own line in the pull request description. GitHub renders this as `Closes: #<number>` and closes the issue automatically when the pull request is merged into the default branch (auto-close only fires when targeting the default branch).
@@ -172,4 +178,3 @@ Use the keyword `Closes` (not `Fixes` or `Resolves`) for consistency, even thoug
 ARM machines in CI are not slow. They are similar to x86 in performance.
 
 Use `tmp` subdirectory in the current directory for temporary files (logs, downloads, scripts, etc.), do not use `/tmp`. Create the directory if needed.
-

@@ -215,6 +215,8 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
             "database_engines",
             "table_engines",
             "table_functions",
+            "disk_types",
+            "dictionary_layouts",
             "aggregate_function_combinators",
             "completions",
 
@@ -235,6 +237,13 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
         for (const auto * table_name : always_accessible_tables)
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, table_name);
 
+        /// `system.user_query_log` shows each user only their own query log records, so SELECT on it is
+        /// granted implicitly to everyone - but only while the feature is enabled and the name is actually
+        /// backed by `StorageSystemUserQueryLog`. When it is disabled, the name can back a regular table
+        /// (or the raw query log via `query_log.table = user_query_log`), which must not become world-readable.
+        if (access_control.isUserQueryLogEnabled())
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "user_query_log");
+
         if (max_flags.contains(AccessType::SHOW_USERS))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "users");
 
@@ -249,6 +258,9 @@ AccessRights ContextAccess::addImplicitAccessRights(const AccessRights & access,
 
         if (max_flags.contains(AccessType::SHOW_QUOTAS))
             res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "quotas");
+
+        if (max_flags.contains(AccessType::SHOW_MASKING_POLICIES))
+            res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "masking_policies");
     }
     else
     {
@@ -342,11 +354,13 @@ void ContextAccess::initialize()
 
     subscription_for_user_change = access_control->subscribeForChanges(
         *params.user_id,
-        [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr & entity)
+        [weak_ptr = weak_from_this()](const std::vector<AccessChangesNotifier::Change> & changes)
         {
             auto ptr = weak_ptr.lock();
             if (!ptr)
                 return;
+            /// All changes are for the same user id; the last one reflects its current state.
+            const auto & entity = changes.back().entity;
             UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
             std::lock_guard lock2{ptr->mutex};
             ptr->setUser(changed_user);
@@ -425,7 +439,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
     {
         subscription_for_initial_user_change = access_control->subscribeForChanges(
             *params.initial_user_id,
-            [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr &)
+            [weak_ptr = weak_from_this()](const std::vector<AccessChangesNotifier::Change> &)
             {
                 if (auto ptr = weak_ptr.lock())
                 {
@@ -550,6 +564,9 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
         }
     }
 
+    if (filter)
+        checkRowPolicyFilterExpression(filter->expression);
+
     if (filter && filter->policies.empty())
     {
         if (access_control->shouldThrowOnUnmatchedRowPolicies())
@@ -601,13 +618,12 @@ std::shared_ptr<const EnabledQuota> ContextAccess::getQuota() const
 }
 
 
-std::optional<QuotaUsage> ContextAccess::getQuotaUsage() const
+std::vector<QuotaUsage> ContextAccess::getQuotaUsages() const
 {
     auto quota = getQuota();
-    if (!quota) /// Detected by fuzzer
+    if (!quota)
         return {};
-    else
-        return quota->getUsage();
+    return quota->getAllUsage();
 }
 
 SettingsChanges ContextAccess::getDefaultSettings() const

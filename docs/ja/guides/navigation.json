@@ -1,0 +1,271 @@
+{
+  "groups": [
+    {
+      "group": "ClickHouseガイド",
+      "pages": [
+        {
+          "group": "データフォーマット",
+          "pages": [
+            "ja/guides/clickhouse/data-formats/csv-tsv",
+            "ja/guides/clickhouse/data-formats/parquet",
+            "ja/guides/clickhouse/data-formats/arrow-avro-orc",
+            "ja/guides/clickhouse/data-formats/binary",
+            "ja/guides/clickhouse/data-formats/sql",
+            "ja/guides/clickhouse/data-formats/templates-regex",
+            {
+              "group": "JSON",
+              "pages": [
+                "ja/guides/clickhouse/data-formats/json/loading",
+                "ja/guides/clickhouse/data-formats/json/inference",
+                "ja/guides/clickhouse/data-formats/json/schema",
+                "ja/guides/clickhouse/data-formats/json/formats",
+                "ja/guides/clickhouse/data-formats/json/exporting",
+                "ja/guides/clickhouse/data-formats/json/other"
+              ],
+              "root": "ja/guides/clickhouse/data-formats/json/intro"
+            }
+          ],
+          "root": "ja/guides/clickhouse/data-formats/intro"
+        },
+        {
+          "group": "データモデリング",
+          "pages": [
+            "ja/guides/clickhouse/data-modelling/schema-design",
+            "ja/guides/clickhouse/data-modelling/sparse-primary-indexes",
+            "ja/guides/clickhouse/data-modelling/denormalization",
+            "ja/guides/clickhouse/data-modelling/backfilling",
+            "ja/guides/clickhouse/data-modelling/merge-table-function",
+            "ja/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements",
+            "ja/guides/clickhouse/data-modelling/generating-test-data",
+            {
+              "expanded": false,
+              "group": "圧縮",
+              "pages": [
+                "ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse",
+                "ja/guides/clickhouse/data-modelling/compression/compression-modes"
+              ]
+            },
+            "ja/guides/clickhouse/working-with-arrays",
+            "ja/guides/clickhouse/working-with-joins"
+          ],
+          "root": "ja/guides/clickhouse/data-modelling/index"
+        },
+        {
+          "group": "パフォーマンスと監視",
+          "pages": [
+            "ja/guides/clickhouse/performance-and-monitoring/query-optimization",
+            "ja/guides/clickhouse/performance-and-monitoring/analyzer",
+            "ja/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer",
+            "ja/guides/clickhouse/performance-and-monitoring/dynamic-column-selection"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "集約コンビネータの例",
+          "pages": [
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/argMinIf",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/avgIf",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/avgMap",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/avgMerge",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/avgMergeState",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/avgResample",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/avgState",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/countIf",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/countResample",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/groupArrayDistinct",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/groupArrayResample",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/maxMap",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/maxSimpleState",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/minMap",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/minSimpleState",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/quantilesTimingArrayIf",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/quantilesTimingIf",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/sumArray",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/sumForEach",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/sumIf",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/sumMap",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/sumSimpleState",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/uniqArray",
+            "ja/guides/clickhouse/examples/aggregate-function-combinators/uniqArrayIf"
+          ]
+        },
+        "ja/guides/oss/update",
+        {
+          "group": "OSSベストプラクティス",
+          "pages": [
+            "ja/guides/oss/best-practices/sizing-and-hardware-recommendations",
+            "ja/guides/oss/best-practices/tips"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "デプロイメントとスケーリング",
+          "pages": [
+            "ja/guides/oss/deployment-and-scaling/terminology",
+            "ja/guides/oss/deployment-and-scaling/shards",
+            "ja/guides/oss/deployment-and-scaling/scaling-clusters",
+            "ja/guides/oss/deployment-and-scaling/separation-storage-compute",
+            "ja/guides/oss/deployment-and-scaling/cluster-discovery",
+            {
+              "expanded": false,
+              "group": "Keeper",
+              "pages": [
+                "ja/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper"
+              ],
+              "root": "ja/guides/oss/deployment-and-scaling/keeper/index"
+            },
+            {
+              "expanded": false,
+              "group": "監視",
+              "pages": [
+                "ja/guides/oss/deployment-and-scaling/monitoring/monitoring",
+                "ja/guides/oss/deployment-and-scaling/monitoring/opentelemetry"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "例",
+              "pages": [
+                "ja/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas",
+                "ja/guides/oss/deployment-and-scaling/examples/2-shards-1-replica",
+                "ja/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas"
+              ]
+            }
+          ],
+          "root": "ja/guides/oss/deployment-and-scaling/index"
+        }
+      ],
+      "root": "ja/guides/clickhouse/index"
+    },
+    {
+      "expanded": true,
+      "group": "ユースケースガイド",
+      "pages": [
+        {
+          "group": "リアルタイム分析",
+          "pages": [
+            {
+              "expanded": false,
+              "group": "時系列",
+              "pages": [
+                "ja/guides/use-cases/real-time-analytics/time-series/date-time-data-types",
+                "ja/guides/use-cases/real-time-analytics/time-series/basic-operations",
+                "ja/guides/use-cases/real-time-analytics/time-series/analysis-functions",
+                "ja/guides/use-cases/real-time-analytics/time-series/storage-efficiency",
+                "ja/guides/use-cases/real-time-analytics/time-series/query-performance",
+                "ja/guides/use-cases/real-time-analytics/time-series/materialized-view-rollup",
+                "ja/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps"
+              ],
+              "root": "ja/guides/use-cases/real-time-analytics/time-series/index"
+            }
+          ]
+        },
+        {
+          "group": "オブザーバビリティ",
+          "pages": [
+            "ja/guides/use-cases/observability/cloud-monitoring",
+            "ja/guides/use-cases/observability/self-managed-monitoring",
+            {
+              "group": "独自構築",
+              "pages": [
+                "ja/guides/use-cases/observability/build-your-own/introduction",
+                "ja/guides/use-cases/observability/build-your-own/schema-design",
+                "ja/guides/use-cases/observability/build-your-own/integrating-opentelemetry",
+                "ja/guides/use-cases/observability/build-your-own/managing-data",
+                "ja/guides/use-cases/observability/build-your-own/grafana",
+                "ja/guides/use-cases/observability/build-your-own/demo-application"
+              ],
+              "root": "ja/guides/use-cases/observability/build-your-own/index"
+            }
+          ],
+          "root": "ja/guides/use-cases/observability/index"
+        },
+        {
+          "group": "データウェアハウジング",
+          "pages": [
+            {
+              "group": "はじめに",
+              "pages": [
+                "ja/guides/use-cases/data-warehousing/getting-started/querying-directly",
+                "ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs",
+                "ja/guides/use-cases/data-warehousing/getting-started/accelerating-analytics",
+                "ja/guides/use-cases/data-warehousing/getting-started/writing-data",
+                "ja/guides/use-cases/data-warehousing/getting-started/best-practices"
+              ],
+              "root": "ja/guides/use-cases/data-warehousing/getting-started/overview"
+            },
+            {
+              "group": "カタログ",
+              "pages": [
+                "ja/guides/use-cases/data-warehousing/glue-catalog",
+                "ja/guides/use-cases/data-warehousing/lakekeeper-catalog",
+                "ja/guides/use-cases/data-warehousing/nessie-catalog",
+                "ja/guides/use-cases/data-warehousing/onelake-catalog",
+                "ja/guides/use-cases/data-warehousing/polaris-catalog",
+                "ja/guides/use-cases/data-warehousing/rest-catalog",
+                "ja/guides/use-cases/data-warehousing/unity-catalog",
+                "ja/guides/use-cases/data-warehousing/biglake-catalog"
+              ],
+              "root": "ja/guides/use-cases/data-warehousing/reference/index"
+            },
+            "ja/guides/use-cases/data-warehousing/support-matrix"
+          ],
+          "root": "ja/guides/use-cases/data-warehousing/index"
+        },
+        {
+          "group": "AI/ML",
+          "pages": [
+            "ja/guides/use-cases/ai-ml/vector-search",
+            "ja/guides/use-cases/ai-ml/ai-powered-sql-generation",
+            {
+              "group": "データ探索",
+              "pages": [
+                "ja/guides/use-cases/ai-ml/data-exploration/jupyter-notebook",
+                "ja/guides/use-cases/ai-ml/data-exploration/marimo-notebook"
+              ]
+            },
+            {
+              "group": "MCP",
+              "pages": [
+                "ja/guides/use-cases/ai-ml/MCP/claude-desktop",
+                "ja/guides/use-cases/ai-ml/MCP/librechat",
+                "ja/guides/use-cases/ai-ml/MCP/anythingllm",
+                "ja/guides/use-cases/ai-ml/MCP/open-webui",
+                "ja/guides/use-cases/ai-ml/MCP/ollama",
+                "ja/guides/use-cases/ai-ml/MCP/janai",
+                {
+                  "group": "AIエージェントライブラリ",
+                  "pages": [
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
+                    "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
+                  ],
+                  "root": "ja/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index"
+                }
+              ],
+              "root": "ja/guides/use-cases/ai-ml/MCP/index"
+            }
+          ],
+          "root": "ja/guides/use-cases/ai-ml/index"
+        }
+      ],
+      "root": "ja/guides/use-cases/index"
+    }
+  ],
+  "icon": "/images/icons/icon-guides.svg",
+  "item": "ガイド"
+}

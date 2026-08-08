@@ -5,6 +5,7 @@
 
 #include <compare>
 #include <optional>
+#include <unordered_set>
 
 #include <Interpreters/IcebergMetadataLog.h>
 
@@ -159,24 +160,21 @@ bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesSortedBySor
     return true;
 }
 
-std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
+std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
 {
-    Int64 result = 0;
+    UInt64 result = 0;
+    /// `record_count` is a required file-level field in all format versions, so the sum is
+    /// exact: no fallback to optional per-column statistics is needed. The field is parsed
+    /// as a raw Int64 though, so a corrupted manifest file may carry a negative value; it
+    /// is reported as "count unavailable" rather than summed (a negative contribution would
+    /// silently produce a wrong -- or, after the conversion to size_t, absurdly huge --
+    /// count) and rather than rejected (the count is only an optimization, a malformed
+    /// value must not make the table unreadable).
     for (const auto & file : getFilesWithoutDeleted(content))
     {
-        /// Have at least one column with rows count
-        bool found = false;
-        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-        {
-            if (column_info.rows_count.has_value())
-            {
-                result += *column_info.rows_count;
-                found = true;
-                break;
-            }
-        }
-        if (!found)
+        if (file->parsed_entry->record_count < 0)
             return std::nullopt;
+        result += static_cast<UInt64>(file->parsed_entry->record_count);
     }
     return result;
 }
@@ -224,7 +222,6 @@ ManifestFileIterator::~ManifestFileIterator() = default;
 std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     std::shared_ptr<AvroForIcebergDeserializer> manifest_file_deserializer_,
     const IcebergPathFromMetadata & path_to_manifest_file_,
-    Int32 format_version_,
     const IcebergPathResolver & path_resolver_,
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
@@ -242,16 +239,17 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         std::nullopt,
         std::nullopt);
 
+    /// The manifest file's own format version governs how it is parsed. A v2 table may
+    /// still reference v1 manifests produced before an external upgrade from v1 to v2,
+    /// and those must remain readable (the Iceberg spec assigns them sequence_number = 0).
+    const Int32 manifest_format_version = static_cast<Int32>(manifest_file_deserializer_->getFormatVersionFromManifestFileMetadata());
+
     for (const auto & column_name : {f_status, f_data_file})
     {
         if (!manifest_file_deserializer_->hasPath(column_name))
             throw Exception(
                 DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", column_name);
     }
-
-    if (format_version_ > 1 && !manifest_file_deserializer_->hasPath(f_sequence_number))
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: {}", f_sequence_number);
 
     Poco::JSON::Parser parser;
 
@@ -263,6 +261,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
     DB::NamesAndTypesList partition_columns_description;
+    std::unordered_set<String> partition_columns_seen;
     auto partition_key_ast = make_intrusive<ASTFunction>();
     partition_key_ast->name = "tuple";
     partition_key_ast->arguments = make_intrusive<DB::ASTExpressionList>();
@@ -304,7 +303,11 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             continue;
 
         partition_key_ast->as<ASTFunction>()->arguments->children.emplace_back(std::move(partition_ast));
-        partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
+        /// One source column may back several partition fields (e.g. hours(ts) and identity ts).
+        /// The tuple key AST keeps one child per field, but getKeyFromAST resolves identifiers
+        /// against these input columns, which must contain each source column at most once.
+        if (partition_columns_seen.insert(numeric_column_name).second)
+            partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics->type));
     }
 
     std::optional<DB::KeyDescription> partition_key_description;
@@ -317,7 +320,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     return std::shared_ptr<ManifestFileIterator>(new ManifestFileIterator(
         std::move(manifest_file_deserializer_),
         path_to_manifest_file_,
-        format_version_,
+        manifest_format_version,
         path_resolver_,
         schema_processor,
         inherited_sequence_number_,

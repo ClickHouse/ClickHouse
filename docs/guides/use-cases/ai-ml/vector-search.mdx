@@ -1,0 +1,634 @@
+---
+slug: /use-cases/AI/qbit-vector-search
+sidebarTitle: 'Vector search with QBit'
+title: 'An introduction to vector search and QBit'
+description: 'Learn how QBit enables runtime-adjustable precision tuning for vector search queries in ClickHouse.'
+keywords: ['QBit', 'vector search', 'AI', 'embeddings', 'ANN']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+<Info>
+**In this guide, you will:**
+
+- Get introduced briefly to vector search
+- Learn about Approximate Nearest Neighbours (ANN) and Hierarchical Navigable Small World (HNSW)
+- Learn about Quantised Bit (QBit)
+- Use QBit to perform vector search using the DBPedia dataset
+</Info>
+
+## Vector search primer {#vector-search-primer}
+
+In mathematics and physics, a vector is formally defined as an object that has both a magnitude and direction.
+This often takes the form of a line segment or an arrow through space and can be used to represent quantities such as velocity, force and acceleration.
+In computer science, a vector is a finite sequence of numbers.
+In other words, it’s a data structure that is used to store numeric values.
+
+In machine learning, vectors are the same data structures we talk about in computer science, but the numerical values stored in them have a special meaning.
+When we take a block of text or an image, and distill it down to the key concepts that it represents, this process is called encoding.
+The resulting output is a machine’s representation of those key concepts in numerical form.
+This is an embedding, and is stored in a vector.
+Said differently, when this contextual meaning is embedded in a vector, we can refer to it as an embedding.
+
+Vector search is everywhere now.
+It powers music recommendations, retrieval-augmented generation (RAG) for large language models where external knowledge is fetched to improve answers, and even googling is powered by vector search to some extent.
+
+Users often prefer regular databases with ad-hoc vector capabilities over fully specialized vector stores, despite specialized databases' advantages.
+ClickHouse supports [brute-force vector search](/reference/engines/table-engines/mergetree-family/annindexes#exact-nearest-neighbor-search) as well as [methods for approximate nearest neighbour (ANN) search](/reference/engines/table-engines/mergetree-family/annindexes#approximate-nearest-neighbor-search), including HNSW – the current standard for fast vector retrieval.
+
+### Understanding embeddings {#understanding-embeddings}
+
+Let's look at a simple example to understand how vector search works.
+Consider embeddings (vector representations) of words:
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_4.jpg" alt="Fruit and animal embeddings visualization"/>
+
+Create the table below with some sample embeddings:
+
+```sql
+CREATE TABLE fruit_animal
+ENGINE = MergeTree
+ORDER BY word
+AS SELECT *
+FROM VALUES(
+  'word String, vec Array(Float64)',
+  ('apple', [-0.99105519, 1.28887844, -0.43526649, -0.98520696, 0.66154391]),
+  ('banana', [-0.69372815, 0.25587061, -0.88226235, -2.54593015, 0.05300475]),
+  ('orange', [0.93338752, 2.06571317, -0.54612565, -1.51625717, 0.69775337]),
+  ('dog', [0.72138876, 1.55757105, 2.10953259, -0.33961248, -0.62217325]),
+  ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533])
+);
+```
+
+You can search for the most similar words to a given embedding:
+
+```sql
+SELECT word, L2Distance(
+  vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770]
+) AS distance
+FROM fruit_animal
+ORDER BY distance
+LIMIT 5;
+```
+
+```response
+┌─word───┬────────────distance─┐
+│ apple  │ 0.14639757188169716 │
+│ banana │  1.9989613690076786 │
+│ orange │   2.039041552613732 │
+│ horse  │  2.7555776805484813 │
+│ dog    │   3.382295083120104 │
+└────────┴─────────────────────┘
+```
+
+The query embedding is closest to "apple" (smallest distance), which makes sense if we look at the two embeddings side by side:
+
+```response
+apple:           [-0.99105519,1.28887844,-0.43526649,-0.98520696,0.66154391]
+query embedding: [-0.88693672,1.31532824,-0.51182908,-0.99652702,0.5990777]
+```
+
+## Approximate Nearest Neighbours (ANN) {#approximate-nearest-neighbours}
+
+For large datasets, brute-force search becomes too slow.
+This is where Approximate Nearest Neighbours methods come in.
+
+### Quantisation {#quantisation}
+
+Quantisation involves downcasting to smaller numeric types.
+Smaller numbers mean smaller data, and smaller data means faster distance calculations.
+ClickHouse's vectorized query execution engine can fit more values into processor registers per operation, increasing throughput directly.
+
+You have two options:
+
+1. **Keep the quantised copy alongside the original column** - This doubles storage, but it's safe as we can always fall back to full precision
+2. **Replace the original values entirely** (by downcasting on insertion) - This saves space and I/O, but it's a one-way door
+
+### Hierarchical Navigable Small World (HNSW) {#hnsw}
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_1.jpg" alt="HNSW layer structure"/>
+
+HNSW is built from multiple layers of nodes (vectors). Each node is randomly assigned to one or more layers, with the chance of appearing in higher layers decreasing exponentially.
+
+When performing a search, we start from a node at the top layer and move greedily towards the closest neighbours. Once no closer node can be found, we descend to the next, denser layer.
+
+Because of this layered design, HNSW achieves logarithmic search complexity with respect to the number of nodes.
+
+<Warning>
+**HNSW limitation**
+
+The main bottleneck is memory. ClickHouse uses the [usearch](https://github.com/unum-cloud/usearch) implementation of HNSW, which is an in-memory data structure that doesn't support splitting.
+As a result, larger datasets require proportionally more RAM.
+</Warning>
+
+### Comparison of approaches {#comparison-approaches}
+
+| Category | Brute-force | HNSW | QBit |
+|----------|-------------|------|------|
+| **Precision** | Perfect | Great | Flexible |
+| **Speed** | Slow | Fast | Flexible |
+| **Others** | Quantized: more space or irreversible precision | Index has to fit in memory and has to be built | Still O(#records) |
+
+## QBit deep dive {#qbit-deepdive}
+
+### Quantised Bit (QBit) {#quantised-bit}
+
+QBit is a new data structure that can store `BFloat16`, `Float32`, and `Float64` values by taking advantage of how floating-point numbers are represented – as bits.
+Instead of storing each number as a whole, QBit splits the values into **bit planes**: every first bit, every second bit, every third bit, and so on.
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_2.jpg" alt="QBit bit planes concept"/>
+
+This approach solves the main limitation of traditional quantisation. There's no need to store duplicated data or risk making values meaningless. It also avoids the RAM bottlenecks of HNSW, since QBit works directly with the stored data rather than maintaining an in-memory index.
+
+<Tip>
+**Benefit**
+
+**Most importantly, no upfront decisions are required.**
+Precision and performance can be adjusted dynamically at query time, allowing users to explore the balance between accuracy and speed with minimal friction.
+</Tip>
+
+<Info>
+**Limitation**
+
+Although QBit speeds up vector search, its computational complexity remains O(n). In other words: if your dataset is small enough for an HNSW index to fit comfortably in RAM, that is still the fastest choice.
+</Info>
+
+### The data type {#the-data-type}
+
+Here's how to create a QBit column:
+
+```sql
+SET allow_experimental_qbit_type = 1;
+CREATE TABLE fruit_animal
+(
+  word String,
+  vec QBit(Float64, 5)
+)
+ENGINE = MergeTree
+ORDER BY word;
+
+INSERT INTO fruit_animal VALUES
+('apple',  [-0.99105519, 1.28887844, -0.43526649, -0.98520696, 0.66154391]),
+('banana', [-0.69372815, 0.25587061, -0.88226235, -2.54593015, 0.05300475]),
+('orange', [0.93338752, 2.06571317, -0.54612565, -1.51625717, 0.69775337]),
+('dog',    [0.72138876, 1.55757105, 2.10953259, -0.33961248, -0.62217325]),
+('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
+```
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_5.jpg" alt="QBit data structure transposition"/>
+
+When data is inserted into a QBit column, it is transposed so that all first bits line up together, all second bits line up together, and so on. We call these **groups**.
+
+Each group is stored in a separate `FixedString(N)` column: fixed-length strings of N bytes stored consecutively in memory with no separators between them. All such groups are then bundled together into a single `Tuple`, which forms the underlying structure of QBit.
+
+**Example:** If we start with a vector of 8×Float64 elements, each group will contain 8 bits. Because a Float64 has 64 bits, we end up with 64 groups (one for each bit). Therefore, the internal layout of `QBit(Float64, 8)` looks like a Tuple of 64×FixedString(1) columns.
+
+<Tip>
+If the original vector length doesn't divide evenly by 8, the structure is padded with invisible elements to make it align to 8. This ensures compatibility with FixedString, which operates strictly on full bytes.
+</Tip>
+
+### The distance calculation {#the-distance-calculation}
+
+To query with QBit, use the [`L2DistanceTransposed`](/reference/functions/regular-functions/distance-functions#L2DistanceTransposed) function with a precision parameter:
+
+```sql
+SELECT
+  word,
+  L2DistanceTransposed(vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770], 16) AS distance
+FROM fruit_animal
+ORDER BY distance;
+```
+
+```response
+┌─word───┬────────────distance─┐
+│ apple  │ 0.15196434766705247 │
+│ banana │   1.966091150410285 │
+│ orange │  1.9864477714218596 │
+│ horse  │  2.7306267946594005 │
+│ dog    │  3.2849989362383165 │
+└────────┴─────────────────────┘
+```
+
+The third parameter (16) specifies the precision level in bits.
+
+### I/O Optimisation {#io-optimisation}
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_3.jpg" alt="QBit I/O optimization"/>
+
+Before we can calculate distances, the required data must be read from disk and then untransposed (converted back from the grouped bit representation into full vectors). Because QBit stores values bit-transposed by precision level, ClickHouse can read only the top bit planes needed to reconstruct numbers up to the desired precision.
+
+In the query above, we use a precision level of 16. Since a Float64 has 64 bits, we only read the first 16 bit planes, **skipping 75% of the data**.
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_6.jpg" alt="QBit reconstruction"/>
+
+After reading, we reconstruct only the top portion of each number from the loaded bit planes, leaving the unread bits zeroed out.
+
+### Calculation optimisation {#calculation-optimisation}
+
+<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_7.jpg" alt="Downcasting comparison"/>
+
+One might ask whether casting to a smaller type, such as Float32 or BFloat16, could eliminate this unused portion. It does work, but explicit casts are expensive when applied to every row.
+
+Instead, we can downcast only the reference vector and treat the QBit data as if it contained narrower values ("forgetting" the existence of some columns), since its layout often corresponds to a truncated version of those types.
+
+#### BFloat16 Optimization {#bfloat16-optimization}
+
+BFloat16 is a Float32 truncated by half. It keeps the same sign bit and 8-bit exponent, but only the upper 7 bits of the 23-bit mantissa. Because of this, reading the first 16 bit planes from a QBit column effectively reproduces the layout of BFloat16 values. So in this case, we can (and do) safely convert the reference vector to BFloat16.
+
+#### Float64 Complexity {#float64-complexity}
+
+Float64, however, is a different story. It uses an 11-bit exponent and a 52-bit mantissa, meaning it's not simply a Float32 with twice the bits. Its structure and exponent bias are completely different. Downcasting a Float64 to a smaller format like Float32 requires an actual IEEE-754 conversion, where each value is rounded to the nearest representable Float32. This rounding step is computationally expensive.
+
+<Tip>
+If you're interested in a deep-dive of performance elements of QBit, see ["Let’s vectorize"](https://clickhouse.com/blog/qbit-vector-search#lets-vectorise)
+</Tip>
+
+## Example with DBpedia {#example}
+
+Let's see QBit in action with a real-world example using the DBpedia dataset, which contains 1 million Wikipedia articles represented as Float32 embeddings.
+
+### Setup {#setup}
+
+First, create the table 
+
+```sql
+CREATE TABLE dbpedia
+(
+  id      String,
+  title   String,
+  text    String,
+  vector  Array(Float32) CODEC(NONE)
+) ENGINE = MergeTree ORDER BY (id);
+```
+
+Insert the data from your command line:
+
+```bash
+for i in $(seq 0 25); do
+  echo "Processing file ${i}..."
+  clickhouse client -q "INSERT INTO dbpedia SELECT _id, title, text, \"text-embedding-3-large-1536-embedding\" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/${i}.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;"
+  echo "File ${i} complete."
+done
+```
+
+<Tip>
+Inserting the data could take a while.
+Time for a coffee break!
+</Tip>
+
+Alternatively, individual SQL statements can be run as shown below to load each of the 25 Parquet files:
+
+```sql
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/0.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/1.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+...
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/25.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+```
+
+Verify that 1 million rows are seen in the dbpedia table:
+
+```sql
+SELECT count(*)
+FROM dbpedia
+```
+
+```response
+┌─count()─┐
+│ 1000000 │
+└─────────┘
+```
+
+Next, add a QBit column:
+
+```sql
+SET allow_experimental_qbit_type = 1;
+
+-- Assuming you have a table with Float32 embeddings
+ALTER TABLE dbpedia ADD COLUMN qbit QBit(Float32, 1536);
+ALTER TABLE dbpedia UPDATE qbit = vector WHERE 1;
+```
+
+### Search query {#search-query}
+
+We'll look for concepts most related to all space-related search terms: Moon, Apollo 11, Space Shuttle, Astronaut, Rocket:
+
+```sql
+SELECT
+    title,
+    text,
+    COUNT(DISTINCT concept) AS num_concepts_matched,
+    MIN(distance) AS min_distance,
+    AVG(distance) AS avg_distance
+FROM (
+         (
+             SELECT title, text, 'Moon' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Moon'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Moon'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Apollo 11' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Apollo 11'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Apollo 11'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Space Shuttle' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Space Shuttle'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Space Shuttle'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Astronaut' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Astronaut'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Astronaut'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+         UNION ALL
+         (
+             SELECT title, text, 'Rocket' AS concept,
+                    L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Rocket'), 5) AS distance
+             FROM dbpedia
+             WHERE title != 'Rocket'
+             ORDER BY distance ASC
+                 LIMIT 1000
+         )
+     )
+WHERE title NOT IN ('Moon', 'Apollo 11', 'Space Shuttle', 'Astronaut', 'Rocket')
+GROUP BY title, text
+HAVING num_concepts_matched >= 3
+ORDER BY num_concepts_matched DESC, min_distance ASC
+    LIMIT 10;
+```
+
+The query searches the top 1000 semantically similar entries to each of the five concepts.
+It returns entries that appear in at least three of those results, ranked by how many concepts they match and their minimum distance to any of them (excluding the originals).
+
+Using just 5 bits (1 sign + 4 exponent bits, zero mantissa):
+
+```response
+Row 1:
+──────
+title:                Aintree railway station
+text:                 For a guide to the various Aintree stations that have existed and their relationship to each other see Aintree Stations.Aintree railway station is a railway station in Aintree, Merseyside, England.  It is on the Ormskirk branch of the Merseyrail network's Northern Line.  Until 1968 it was known as Aintree Sefton Arms after a nearby public house. The station's design reflects the fact it is the closest station to Aintree Racecourse, where the annual Grand National horse race takes place.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 2:
+──────
+title:                AP German Language
+text:                 Advanced Placement German Language (also known as AP German Language or AP German) is a course and examination provided by the College Board through the Advanced Placement Program. This course  is designed to give high school students the opportunity to receive credit in a college-level German language course.Originally the College Board had offered two AP German exams, one with AP German Language and another with AP German Literature.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 3:
+──────
+title:                Adelospondyli
+text:                 Adelospondyli is an order of elongate, presumably aquatic, Carboniferous amphibians.  The skull is solidly roofed, and elongate, with the orbits located very far forward.  The limbs are well developed.  Most adelospondyls belong to the family Adelogyrinidae, although the adelospondyl Acherontiscus has been placed in its own family, Acherontiscidae. The group is restricted to the Mississippian (Serpukhovian Age) of Scotland.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 4:
+──────
+title:                Adrien-Henri de Jussieu
+text:                 Adrien-Henri de Jussieu (23 December 1797 – 29 June 1853) was a French botanist.Born in Paris as the son of botanist Antoine Laurent de Jussieu, he received the degree of Doctor of Medicine in 1824 with a treatise of the plant family Euphorbiaceae.  When his father retired in 1826, he succeeded him at the Jardin des Plantes; in 1845 he became professor of organography of plants.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 5:
+──────
+title:                Alan Taylor (footballer, born 1953)
+text:                 Alan Taylor (born 14 November 1953) is an English former professional footballer best known for his goalscoring exploits with West Ham United in their FA Cup success of 1975, culminating in two goals in that season's final.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 6:
+──────
+title:                Abstract algebraic logic
+text:                 In mathematical logic, abstract algebraic logic is the study of the algebraization of deductive systemsarising as an abstraction of the well-known Lindenbaum-Tarski algebra, and how the resulting algebras are related to logical systems.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 7:
+──────
+title:                Ahsan Saleem Hyat
+text:                 General Ahsan Saleem Hayat (Urdu: احسن سلیم حیات; born 10 January 1948), is a retired four-star general who served as the vice chief of army staff of the Pakistan Army from 2004 until his retirement in 2007. Prior to that, he served as the operational field commander of the V Corps in Sindh Province and was a full-tenured professor of war studies at the National Defence University. He was succeeded by General Ashfaq Parvez Kayani on 8 October 2007.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 8:
+──────
+title:                Al Wafa al Igatha al Islamia
+text:                 There is another organization named Al Wafa (Israel), a charity, in Israel, devoted to womenThere is another organization Jamaiat Al-Wafa LiRayat Al-Musenin which is proscribed by the Israeli government.Al Wafa is an Islamic charity listed in Executive Order 13224 as an entity that supports terrorism.United States intelligence officials state that it was founded in Afghanistan by Adil Zamil Abdull Mohssin Al Zamil,Abdul Aziz al-Matrafi and Samar Khand.According to Saad Madai Saad al-Azmi's Combatant Status Review Tribunal Al Wafa is located in the Wazir Akhbar Khan area ofAfghanistan.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 9:
+───────
+title:                Alex Baumann
+text:                 Alexander Baumann, OC OOnt (born April 21, 1964) is a Canadian former competitive swimmer who won two gold medals and set two world records at the 1984 Summer Olympics in Los Angeles.Born in Prague (former Czechoslovakia), Baumann was raised in Canada after his family moved there in 1969 following the Prague Spring.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+Row 10:
+───────
+title:                Alberni-Clayoquot Regional District
+text:                 The Alberni-Clayoquot Regional District (2006 population 30,664) of British Columbia is located on west central Vancouver Island.  Adjacent regional districts it shares borders with are the Strathcona and Comox Valley Regional Districts to the north, and the Nanaimo and Cowichan Valley Regional Districts to the east. The regional district offices are located in Port Alberni.
+num_concepts_matched: 5
+min_distance:         0.9971279086553189
+avg_distance:         0.9972260772085877
+
+10 rows in set. Elapsed: 0.542 sec. Processed 5.01 million rows, 1.86 GB (9.24 million rows/s., 3.43 GB/s.)
+Peak memory usage: 327.04 MiB.
+```
+
+**Performance:** 10 rows in set. Elapsed: 0.271 sec. Processed 8.46 million rows, 4.54 GB (31.19 million rows/s., 16.75 GB/s.) Peak memory usage: **739.82 MiB**.
+
+<Accordion title="Compare performance with brute-force search">
+```sql
+SELECT 
+    title,
+    text,
+    COUNT(DISTINCT concept) AS num_concepts_matched,
+    MIN(distance) AS min_distance,
+    AVG(distance) AS avg_distance
+FROM (
+    (
+        SELECT title, text, 'Moon' AS concept,
+               L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Moon'), 5) AS distance
+        FROM dbpedia
+        WHERE title != 'Moon'
+        ORDER BY distance ASC
+        LIMIT 1000
+    )
+    UNION ALL
+    (
+        SELECT title, text, 'Apollo 11' AS concept,
+               L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Apollo 11'), 5) AS distance
+        FROM dbpedia
+        WHERE title != 'Apollo 11'
+        ORDER BY distance ASC
+        LIMIT 1000
+    )
+    UNION ALL
+    (
+        SELECT title, text, 'Space Shuttle' AS concept,
+               L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Space Shuttle'), 5) AS distance
+        FROM dbpedia
+        WHERE title != 'Space Shuttle'
+        ORDER BY distance ASC
+        LIMIT 1000
+    )
+    UNION ALL
+    (
+        SELECT title, text, 'Astronaut' AS concept,
+               L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Astronaut'), 5) AS distance
+        FROM dbpedia
+        WHERE title != 'Astronaut'
+        ORDER BY distance ASC
+        LIMIT 1000
+    )
+    UNION ALL
+    (
+        SELECT title, text, 'Rocket' AS concept,
+               L2DistanceTransposed(qbit, (SELECT vector FROM dbpedia WHERE title = 'Rocket'), 5) AS distance
+        FROM dbpedia
+        WHERE title != 'Rocket'
+        ORDER BY distance ASC
+        LIMIT 1000
+    )
+)
+WHERE title NOT IN ('Moon', 'Apollo 11', 'Space Shuttle', 'Astronaut', 'Rocket')
+GROUP BY title, text
+HAVING num_concepts_matched >= 3
+ORDER BY num_concepts_matched DESC, min_distance ASC
+LIMIT 10;
+```
+
+```response
+Row 1:
+──────
+title:                Apollo program
+text:                 The Apollo program, also known as Project Apollo, was the third United States human spaceflight program carried out by the National Aeronautics and Space Administration (NASA), which accomplished landing the first humans on the Moon from 1969 to 1972. First conceived during Dwight D. Eisenhower's administration as a three-man spacecraft to follow the one-man Project Mercury which put the first Americans in space, Apollo was later dedicated to President John F.
+num_concepts_matched: 4
+min_distance:         0.82420665
+avg_distance:         1.0207901149988174
+
+Row 2:
+──────
+title:                Apollo 8
+text:                 Apollo 8, the second human spaceflight mission in the United States Apollo space program, was launched on December 21, 1968, and became the first manned spacecraft to leave Earth orbit, reach the Earth's Moon, orbit it and return safely to Earth.
+num_concepts_matched: 4
+min_distance:         0.8285278
+avg_distance:         1.0357224345207214
+
+Row 3:
+──────
+title:                Lunar Orbiter 1
+text:                 The Lunar Orbiter 1 robotic (unmanned) spacecraft, part of the Lunar Orbiter Program, was the first American spacecraft to orbit the Moon.  It was designed primarily to photograph smooth areas of the lunar surface for selection and verification of safe landing sites for the Surveyor and Apollo missions. It was also equipped to collect selenodetic, radiation intensity, and micrometeoroid impact data.The spacecraft was placed in an Earth parking orbit on August 10, 1966 at 19:31 (UTC).
+num_concepts_matched: 4
+min_distance:         0.94581836
+avg_distance:         1.0584313124418259
+
+Row 4:
+──────
+title:                Apollo (spacecraft)
+text:                 The Apollo spacecraft was composed of three parts designed to accomplish the American Apollo program's goal of landing astronauts on the Moon by the end of the 1960s and returning them safely to Earth.  The expendable (single-use) spacecraft consisted of a combined Command/Service Module (CSM) and a Lunar Module (LM).
+num_concepts_matched: 4
+min_distance:         0.9643517
+avg_distance:         1.0367188602685928
+
+Row 5:
+──────
+title:                Surveyor 1
+text:                 Surveyor 1 was the first lunar soft-lander in the unmanned  Surveyor program of the National Aeronautics and Space Administration (NASA, United States). This lunar soft-lander gathered data about the lunar surface that would be needed for the manned Apollo Moon landings that began in 1969.
+num_concepts_matched: 4
+min_distance:         0.9738264
+avg_distance:         1.0988530814647675
+
+Row 6:
+──────
+title:                Spaceflight
+text:                 Spaceflight (also written space flight) is ballistic flight into or through outer space. Spaceflight can occur with spacecraft with or without humans on board. Examples of human spaceflight include the Russian Soyuz program, the U.S. Space shuttle program, as well as the ongoing International Space Station. Examples of unmanned spaceflight include space probes that leave Earth orbit, as well as satellites in orbit around Earth, such as communications satellites.
+num_concepts_matched: 4
+min_distance:         0.9831049
+avg_distance:         1.060678943991661
+
+Row 7:
+──────
+title:                Skylab
+text:                 Skylab was a space station launched and operated by NASA and was the United States' first space station. Skylab orbited the Earth from 1973 to 1979, and included a workshop, a solar observatory, and other systems. It was launched unmanned by a modified Saturn V rocket, with a weight of 169,950 pounds (77 t).  Three manned missions to the station, conducted between 1973 and 1974 using the Apollo Command/Service Module (CSM) atop the smaller Saturn IB, each delivered a three-astronaut crew.
+num_concepts_matched: 4
+min_distance:         0.99155205
+avg_distance:         1.0769911855459213
+
+Row 8:
+──────
+title:                Orbital spaceflight
+text:                 An orbital spaceflight (or orbital flight) is a spaceflight in which a spacecraft is placed on a trajectory where it could remain in space for at least one orbit. To do this around the Earth, it must be on a free trajectory which has an altitude at perigee (altitude at closest approach) above 100 kilometers (62 mi) (this is, by at least one convention, the boundary of space).  To remain in orbit at this altitude requires an orbital speed of ~7.8 km/s.
+num_concepts_matched: 4
+min_distance:         1.0075209
+avg_distance:         1.085978478193283
+
+Row 9:
+───────
+title:                Dragon (spacecraft)
+text:                 Dragon is a partially reusable spacecraft developed by SpaceX, an American private space transportation company based in Hawthorne, California. Dragon is launched into space by the SpaceX Falcon 9 two-stage-to-orbit launch vehicle, and SpaceX is developing a crewed version called the Dragon V2.During its maiden flight in December 2010, Dragon became the first commercially built and operated spacecraft to be recovered successfully from orbit.
+num_concepts_matched: 4
+min_distance:         1.0222818
+avg_distance:         1.0942841172218323
+
+Row 10:
+───────
+title:                Space capsule
+text:                 A space capsule is an often manned spacecraft which has a simple shape for the main section, without any wings or other features to create lift during atmospheric reentry.Capsules have been used in most of the manned space programs to date, including the world's first manned spacecraft Vostok and Mercury, as well as in later Soviet Voskhod, Soyuz, Zond/L1, L3, TKS, US Gemini, Apollo Command Module, Chinese Shenzhou and US, Russian and Indian manned spacecraft currently being developed.
+num_concepts_matched: 4
+min_distance:         1.0262821
+avg_distance:         1.0882147550582886
+```
+
+**Performance:** 10 rows in set. Elapsed: 1.157 sec. Processed 10.00 million rows, 32.76 GB (8.64 million rows/s., 28.32 GB/s.) Peak memory usage: **6.05 GiB**.
+</Accordion>
+### Key Insight {#key-insight}
+
+The results? Not just good. Surprisingly good. It's not obvious that floating points stripped of their entire mantissa and half their exponent still hold meaningful information.
+
+**The key insight behind QBit is that vector search still works if we ignore insignificant bits.**
+
+Memory usage reduced from **6.05 GB to 740 MB** while maintaining excellent semantic search quality!
+
+## Conclusion {#result}
+
+QBit is a column type that stores floats as bit planes.
+It lets you choose how many bits to read during vector search, tuning recall and performance without changing the data.
+Each vector search method has its own parameters that decide trade-offs for recall, accuracy, and performance.
+Normally, these have to be chosen up-front.
+If you get them wrong, a lot of time and resources are wasted, and changing direction later becomes painful.
+With QBit, no early decisions are needed.
+You can adjust precision and speed trade-off directly at query time, exploring the right balance as you go.
+
+---
+
+*Adapted from the [blog post](https://clickhouse.com/blog/qbit-vector-search) by Raufs Dunamalijevs, published October 28, 2025*

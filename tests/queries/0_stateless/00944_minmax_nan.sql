@@ -1,13 +1,12 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+-- Test for issue #75523
 
 SET parallel_replicas_local_plan = 1;
 -- disable statistics-based part pruning to keep EXPLAIN output stable
 SET use_statistics_for_part_pruning = 0;
-
--- Test for issue #75523
-
+SET explain_query_plan_default = 'legacy';
 -- { echo }
 
 DROP TABLE IF EXISTS tab;

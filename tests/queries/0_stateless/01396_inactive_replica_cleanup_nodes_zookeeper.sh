@@ -28,15 +28,27 @@ $CLICKHOUSE_CLIENT --query "
 $CLICKHOUSE_CLIENT --max_execution_time 600 --insert_keeper_fault_injection_probability=0 --max_block_size 1 --min_insert_block_size_rows 1 --min_insert_block_size_bytes 1 --max_insert_threads 16 --query "INSERT INTO r1 SELECT * FROM numbers_mt(${SCALE})"
 
 
-# Now wait for cleanup thread to reduce ZK log entries
+# Now wait for cleanup thread to reduce ZK log entries.
+# Require count to be a number: [[ "" -lt N ]] is true in bash, so a transient
+# empty read would otherwise break the loop early before cleanup has run.
+# A successful query always returns one numeric row (root and /log are permanent
+# nodes), so an empty count means the read errored. Keep that error and report it
+# only if the assertion below also fails: the loop is a wait, not the check.
+poll_err="${CLICKHOUSE_TMP}/01396_poll_err_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 for _ in {1..120}; do
-    count=$($CLICKHOUSE_CLIENT --query "SELECT numChildren FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD' AND name = 'log'" 2>/dev/null)
-    [[ $count -lt $((SCALE / 4)) ]] && break
+    count=$($CLICKHOUSE_CLIENT --query "SELECT numChildren FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD' AND name = 'log'" 2>"$poll_err")
+    [[ $count =~ ^[0-9]+$ ]] && [[ $count -lt $((SCALE / 4)) ]] && break
     sleep 1
 done
 
-
-$CLICKHOUSE_CLIENT --query "SELECT numChildren < $((SCALE / 4)) FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD' AND name = 'log'";
+trimmed=$($CLICKHOUSE_CLIENT --query "SELECT numChildren < $((SCALE / 4)) FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD' AND name = 'log'")
+# Empty only if this query itself failed; keep stdout byte-identical to a direct run.
+if [[ -n $trimmed ]]; then echo "$trimmed"; fi
+if [[ $trimmed != 1 ]]; then
+    echo "cleanup wait did not converge: last count='$count', last poll error:" >&2
+    cat "$poll_err" >&2
+fi
+rm -f "$poll_err"
 echo -e '\n---\n';
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD/replicas/1$REPLICA' AND name = 'is_lost'";
 $CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$SHARD/replicas/2$REPLICA' AND name = 'is_lost'";

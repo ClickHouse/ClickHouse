@@ -1,0 +1,128 @@
+---
+slug: /about-us/distinctive-features
+sidebarTitle: 'Por que o ClickHouse é único?'
+description: 'Entenda o que diferencia o ClickHouse de outros sistemas de gerenciamento de banco de dados'
+title: 'Diferenciais do ClickHouse'
+keywords: ['compressão', 'índices-secundários','orientado a colunas']
+doc_type: 'guide'
+---
+
+<div id="true-column-oriented-database-management-system">
+  ## Sistema de gerenciamento de banco de dados verdadeiramente orientado a colunas
+</div>
+
+Em um SGBD verdadeiramente orientado a colunas, nenhum dado extra é armazenado junto com os valores. Isso significa que valores de tamanho constante precisam ser suportados para evitar armazenar o &quot;número&quot; do comprimento ao lado dos valores. Por exemplo, um bilhão de valores do tipo UInt8 deve consumir cerca de 1 GB sem compressão; caso contrário, isso afeta significativamente o uso da CPU. É essencial armazenar os dados de forma compacta (sem qualquer &quot;lixo&quot;) mesmo sem compressão, já que a velocidade de descompressão (uso de CPU) depende principalmente do volume de dados sem compressão.
+
+Isso contrasta com sistemas que conseguem armazenar separadamente os valores de diferentes colunas, mas que não conseguem processar consultas analíticas com eficiência devido à otimização para outros cenários, como HBase, Bigtable, Cassandra e Hypertable. Nesses sistemas, você obteria uma taxa de transferência de cerca de cem mil linhas por segundo, e não centenas de milhões de linhas por segundo.
+
+Por fim, o ClickHouse é um sistema de gerenciamento de banco de dados, não um único banco de dados. Ele permite criar tabelas e bancos de dados em tempo de execução, carregar dados e executar consultas sem reconfigurar nem reiniciar o servidor.
+
+<div id="data-compression">
+  ## Compressão de dados
+</div>
+
+Alguns SGBDs orientados a colunas não usam compressão de dados. No entanto, a compressão de dados é fundamental para alcançar um excelente desempenho.
+
+Além de codecs de compressão de uso geral eficientes, com diferentes compensações entre espaço em disco e consumo de CPU, ClickHouse fornece [codecs especializados](/pt-BR/reference/statements/create/table#specialized-codecs) para tipos específicos de dados, o que permite ao ClickHouse competir com bancos de dados mais especializados, como os de séries temporais, e superá-los.
+
+<div id="disk-storage-of-data">
+  ## Armazenamento de dados em disco
+</div>
+
+Manter os dados fisicamente ordenados pela chave primária permite extrair dados com base em valores específicos ou em intervalos de valores com baixa latência, em poucas dezenas de milissegundos. Alguns SGBDs orientados a colunas, como SAP HANA e Google PowerDrill, só conseguem operar na RAM. Essa abordagem exige um investimento em hardware maior do que o necessário para análises em tempo real.
+
+O ClickHouse foi projetado para funcionar em discos rígidos comuns, o que significa que o custo por GB de armazenamento de dados é baixo, mas SSDs e RAM adicional também são plenamente aproveitados, quando disponíveis.
+
+<div id="parallel-processing-on-multiple-cores">
+  ## Processamento paralelo em múltiplos núcleos
+</div>
+
+Consultas grandes são paralelizadas naturalmente, usando todos os recursos necessários disponíveis no servidor atual.
+
+<div id="distributed-processing-on-multiple-servers">
+  ## Processamento distribuído em vários servidores
+</div>
+
+Quase nenhum dos SGBDs colunares mencionados acima oferece suporte ao processamento distribuído de consultas.
+
+No ClickHouse, os dados podem estar armazenados em diferentes shards. Cada shard pode ser um grupo de réplicas usado para tolerância a falhas. Todos os shards são usados para executar uma consulta em paralelo, de forma transparente para o usuário.
+
+<div id="sql-support">
+  ## Suporte a SQL
+</div>
+
+O ClickHouse oferece suporte a [uma linguagem de consulta declarativa](/pt-BR/reference/home) baseada em SQL que é amplamente compatível com o padrão ANSI SQL.
+
+As consultas compatíveis incluem [GROUP BY](/pt-BR/reference/statements/select/group-by), [ORDER BY](/pt-BR/reference/statements/select/order-by), subconsultas em [FROM](/pt-BR/reference/statements/select/from), a cláusula [JOIN](/pt-BR/reference/statements/select/join), o operador [IN](/pt-BR/reference/statements/in), [funções de janela](/pt-BR/reference/functions/window-functions/index) e subconsultas escalares.
+
+Subconsultas correlacionadas (dependentes) não têm suporte no momento, mas podem vir a ser disponibilizadas no futuro.
+
+<div id="vector-engine">
+  ## Mecanismo de computação vetorial
+</div>
+
+Os dados não são armazenados apenas em colunas, mas processados em vetores (partes das colunas), o que permite alta eficiência da CPU.
+
+<div id="real-time-data-updates">
+  ## Inserções de dados em tempo real
+</div>
+
+O ClickHouse oferece suporte a tabelas com chave primária. Para executar consultas rapidamente em um intervalo da chave primária, os dados são ordenados de forma incremental usando a MergeTree. Com isso, os dados podem ser adicionados continuamente à tabela. Nenhum bloqueio é usado quando novos dados são inseridos.
+
+<div id="primary-index">
+  ## Índices primários
+</div>
+
+Ter os dados fisicamente ordenados pela chave primária permite extrair dados com base em valores específicos ou intervalos de valores com baixa latência, em menos de algumas dezenas de milissegundos.
+
+<div id="secondary-indexes">
+  ## Índices secundários
+</div>
+
+Diferentemente de outros sistemas de gerenciamento de banco de dados, os índices secundários no ClickHouse não apontam para linhas específicas nem para intervalos de linhas. Em vez disso, eles permitem que o banco de dados saiba de antemão que todas as linhas em determinadas partes de dados não corresponderão às condições de filtragem da consulta e, portanto, nem sequer sejam lidas; por isso, são chamados de [data skipping indexes](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes).
+
+<div id="suitable-for-online-queries">
+  ## Adequado para consultas online
+</div>
+
+A maioria dos sistemas de gerenciamento de bancos de dados OLAP não é voltada para consultas online com latência inferior a um segundo. Em sistemas alternativos, um tempo de geração de relatórios de dezenas de segundos ou até de minutos costuma ser considerado aceitável. Às vezes, isso leva ainda mais tempo, o que obriga os sistemas a preparar relatórios offline (com antecedência ou respondendo com &quot;volte mais tarde&quot;).
+
+No ClickHouse, &quot;baixa latência&quot; significa que as consultas podem ser processadas sem demora e sem tentar preparar uma resposta antecipadamente, exatamente no momento em que a página da interface do usuário está carregando — em outras palavras, *online*.
+
+<div id="support-for-approximated-calculations">
+  ## Suporte a cálculos aproximados
+</div>
+
+O ClickHouse oferece várias formas de sacrificar precisão em troca de desempenho:
+
+1. Funções de agregação para calcular aproximadamente o número de valores distintos, medianas e quantis.
+2. Executar uma consulta com base em uma parte ([SAMPLE](/pt-BR/reference/statements/select/sample)) dos dados e obter um resultado aproximado. Nesse caso, proporcionalmente menos dados são lidos do disco.
+3. Executar uma agregação para um número limitado de chaves escolhidas aleatoriamente, em vez de todas as chaves. Sob certas condições de distribuição das chaves nos dados, isso fornece um resultado razoavelmente preciso com menos uso de recursos.
+
+<div id="adaptive-join-algorithm">
+  ## Algoritmo de join adaptativo
+</div>
+
+O ClickHouse escolhe de forma adaptativa como [JOIN](/pt-BR/reference/statements/select/join) várias tabelas, priorizando hash join e recorrendo a merge join quando há mais de uma tabela grande.
+
+<div id="data-replication-and-data-integrity-support">
+  ## Suporte à replicação e à integridade dos dados
+</div>
+
+O ClickHouse usa replicação assíncrona multi-master. Após serem gravados em qualquer réplica disponível, todas as demais réplicas obtêm sua cópia em segundo plano. O sistema mantém dados idênticos em réplicas diferentes. A recuperação após a maioria das falhas é realizada automaticamente ou, em casos complexos, de forma semiautomática.
+
+Para mais informações, consulte a seção [Replicação de dados](/pt-BR/reference/engines/table-engines/mergetree-family/replication).
+
+<div id="role-based-access-control">
+  ## Controle de Acesso Baseado em Funções
+</div>
+
+O ClickHouse implementa o gerenciamento de contas de usuário por meio de consultas SQL e permite a [configuração de controle de acesso baseado em funções](/pt-BR/concepts/features/security/access-rights), semelhante ao disponível no padrão ANSI SQL e em sistemas populares de gerenciamento de bancos de dados relacionais.
+
+<div id="clickhouse-features-that-can-be-considered-disadvantages">
+  ## Recursos que podem ser considerados desvantagens
+</div>
+
+1. Não há suporte a transações completas.
+2. Não é possível modificar ou excluir dados já inseridos em alta taxa e com baixa latência. Há exclusões e atualizações em lote disponíveis para limpar ou modificar dados, por exemplo, para cumprir o [GDPR](https://gdpr-info.eu).
+3. O índice esparso faz com que o ClickHouse não seja tão eficiente para consultas pontuais que recuperam uma única linha por chave.

@@ -1,0 +1,85 @@
+---
+slug: /clickhouse-operator/install/helm
+title: 'Instalar ClickHouse Operator con Helm'
+keywords: ['kubernetes']
+description: 'Esta guía explica cómo instalar ClickHouse Operator con gráficos de Helm.'
+doc_type: 'guide'
+sidebarTitle: 'Helm'
+---
+
+Esta guía explica cómo instalar ClickHouse Operator con gráficos de Helm.
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Clúster de Kubernetes v1.28.0 o posterior
+* Helm v3.0 o posterior
+* kubectl configurado para comunicarse con su clúster
+
+<div id="install-helm">
+  ## Instalar Helm
+</div>
+
+Si no tiene instalado Helm:
+
+```bash
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+```
+
+Verifique la instalación:
+
+```bash
+helm version
+```
+
+<div id="install-the-operator">
+  ## Instalar el operador
+</div>
+
+<Note>
+  De forma predeterminada, el gráfico de Helm despliega ClickHouse Operator con webhooks habilitados y requiere que cert-manager esté instalado.
+</Note>
+
+```bash
+helm install cert-manager oci://quay.io/jetstack/charts/cert-manager -n cert-manager --create-namespace --set crds.enabled=true
+```
+
+<div id="from-oci-helm-repository">
+  ### Desde el repositorio OCI de Helm
+</div>
+
+Instala la versión más reciente
+
+```bash
+    helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+       --create-namespace \
+       -n clickhouse-operator-system
+```
+
+Instalar una versión específica del operador
+
+```bash
+    helm install clickhouse-operator oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+       --create-namespace \
+       -n clickhouse-operator-system \
+       --set manager.image.tag=<operator version>
+```
+
+<div id="from-local-chart">
+  ### Desde un chart local
+</div>
+
+Clona el repositorio e instala desde el chart local:
+
+```bash
+git clone https://github.com/ClickHouse/clickhouse-operator.git
+cd clickhouse-operator
+helm install clickhouse-operator ./dist/chart
+```
+
+<div id="configuration-options">
+  ### Opciones de configuración
+</div>
+
+Para conocer las opciones de configuración avanzadas, consulta el archivo [values.yaml](https://github.com/ClickHouse/clickhouse-operator/blob/main/dist/chart/values.yaml) del gráfico de Helm

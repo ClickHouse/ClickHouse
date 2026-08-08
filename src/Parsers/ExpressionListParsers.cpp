@@ -1,9 +1,11 @@
 #include <charconv>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <base/scope_guard.h>
 
@@ -35,7 +37,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <fmt/core.h>
 
 using namespace std::literals;
@@ -468,6 +469,8 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     ParserIdentifier id_parser;
     ParserLiteral literal_parser;
+
+    ParserAllCollectionsOfLiterals collections_parser(/* allow_map_= */ false);
     ParserFunction func_parser;
 
     ASTPtr identifier;
@@ -476,8 +479,10 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    /// If it's neither literal, nor identifier, nor function, than it's possible list of pairs
-    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected) && !id_parser.parse(pos, value, expected))
+    /// If it's neither literal (scalar or collection), nor identifier, nor function, then it's possibly a list of pairs
+    if (!func_parser.parse(pos, value, expected) && !literal_parser.parse(pos, value, expected)
+        && !(pos->type == TokenType::OpeningSquareBracket && collections_parser.parse(pos, value, expected))
+        && !id_parser.parse(pos, value, expected))
     {
         ParserKeyValuePairsList kv_pairs_list;
         ParserToken open(TokenType::OpeningRoundBracket);
@@ -692,6 +697,14 @@ public:
         return operators.back().type;
     }
 
+    const Operator * previousOperator() const
+    {
+        if (operators.empty())
+            return nullptr;
+
+        return &operators.back();
+    }
+
     /// True when any operator of the given type is pending anywhere on the
     /// operators stack of the current element. Used to detect a pending lambda
     /// in `SubstringLayer` / `PositionLayer` state-0 closing-bracket handling:
@@ -773,26 +786,6 @@ public:
             }
             else
             {
-                /// enable using subscript operator for kql_array_sort
-                if (cur_op.function_name == "arrayElement" && !operands.empty())
-                {
-                    auto* first_arg_as_node = operands.front()->as<ASTFunction>();
-                    if (first_arg_as_node)
-                    {
-                        if (first_arg_as_node->name == "kql_array_sort_asc" || first_arg_as_node->name == "kql_array_sort_desc")
-                        {
-                            cur_op.function_name = "tupleElement";
-                            cur_op.type = OperatorType::TupleElement;
-                        }
-                        else if (first_arg_as_node->name == "arrayElement" && !first_arg_as_node->arguments->children.empty())
-                        {
-                            auto *arg_inside = first_arg_as_node->arguments->children[0]->as<ASTFunction>();
-                            if (arg_inside && (arg_inside->name == "kql_array_sort_asc" || arg_inside->name == "kql_array_sort_desc"))
-                                first_arg_as_node->name = "tupleElement";
-                        }
-                    }
-                }
-
                 function = makeASTFunction(cur_op);
 
                 if (!popLastNOperands(function->children[0]->children, cur_op.arity))
@@ -966,14 +959,14 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!expected.literal_token_map)
         return;
 
-    auto it = expected.literal_token_map->find(literal);
-    if (it == expected.literal_token_map->end())
+    const auto * token_info = expected.literal_token_map->find(literal);
+    if (!token_info)
         return;
 
     chassert(is_like || is_regexp);
     expected.highlight({
-       .begin = it->second.begin,
-       .end = it->second.end,
+       .begin = token_info->begin,
+       .end = token_info->end,
        .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
 }
 
@@ -1526,7 +1519,7 @@ public:
         /// expr AS type
         if (state == 0)
         {
-            ASTPtr type_node;
+            std::optional<String> type_text;
 
             if (as_keyword_parser.ignore(pos, expected))
             {
@@ -1534,7 +1527,7 @@ public:
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
                     as_keyword_parser.ignore(pos, expected) &&
-                    ParserDataType().parse(pos, type_node, expected) &&
+                    (type_text = parseDataTypeAsText(pos, expected)) &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!insertAlias(alias))
@@ -1543,7 +1536,7 @@ public:
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], type_node)};
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1566,13 +1559,13 @@ public:
 
                 pos = old_pos;
 
-                if (ParserDataType().parse(pos, type_node, expected) &&
+                if ((type_text = parseDataTypeAsText(pos, expected)) &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], type_node)};
+                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1930,23 +1923,36 @@ protected:
 
 class SubstringLayer : public Layer
 {
+    bool comma_mode = false; /// true when the first separator was a comma
+    bool second_separator_was_comma = false; /// true when the second separator was a comma
 public:
     SubstringLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length)
+        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length, ...)
         ///
         /// 0: Parse first separator: FROM or comma (-> 1), or closing bracket
         ///    when a lambda is pending (round-trip for the merged-tuple lambda
         ///    sugar, see issue #104605)
         /// 1: Parse second separator: FOR or comma (-> 2)
+        /// 2: Parse further commas, but only when every separator so far was a
+        ///    comma, i.e. in the purely functional form (stays at 2)
         /// 1 or 2: Parse closing bracket (finished)
 
         if (state == 0)
         {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected) ||
-                ParserKeyword(Keyword::FROM).ignore(pos, expected))
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                comma_mode = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 1;
+            }
+            else if (ParserKeyword(Keyword::FROM).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1982,8 +1988,17 @@ public:
 
         if (state == 1)
         {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected) ||
-                ParserKeyword(Keyword::FOR).ignore(pos, expected))
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                second_separator_was_comma = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 2;
+            }
+            else if (ParserKeyword(Keyword::FOR).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1991,6 +2006,26 @@ public:
                     return false;
 
                 state = 2;
+            }
+        }
+        /// In the purely functional form, accept further arguments so that a too-long call is
+        /// reported by the function as `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` rather than as a
+        /// syntax error. `substr`/`mid`/`byteSlice` go through the generic `FunctionLayer` and
+        /// already accept any argument count, so a definition that was persisted after DDL
+        /// normalization rewrote one of them to `substring` (see `canonicalNameCanReparseShape`
+        /// in `FunctionNameNormalizer.cpp`, which now prevents that rewrite) would otherwise
+        /// not re-parse.
+        /// Both flags are required: a further comma is accepted only when EVERY separator so
+        /// far was a comma, so a form that used the SQL-standard FROM or FOR keyword anywhere
+        /// keeps its fixed shape and stays a syntax error, exactly as before this change.
+        else if (comma_mode && second_separator_was_comma && state == 2)
+        {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
             }
         }
 
@@ -2997,6 +3032,61 @@ private:
     bool if_permitted;
 };
 
+/// Layer for table function `eval`, which accepts either a usual expression argument
+/// or a bare `SELECT` query argument. The query argument is wrapped into a subquery,
+/// so `eval(SELECT ...)` is just syntactic sugar for `eval((SELECT ...))`.
+class EvalLayer : public Layer
+{
+public:
+    bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
+    {
+        if (state == 0)
+        {
+            state = 1;
+
+            ASTPtr query;
+            auto select_pos = pos;
+            auto select_expected = expected;
+
+            if (ParserSelectWithUnionQuery().parse(select_pos, query, select_expected)
+                && ParserToken(TokenType::ClosingRoundBracket).ignore(select_pos, select_expected))
+            {
+                pos = select_pos;
+                expected = select_expected;
+                elements = {make_intrusive<ASTSubquery>(std::move(query))};
+                finished = true;
+                return true;
+            }
+        }
+
+        if (ParserToken(TokenType::Comma).ignore(pos, expected))
+        {
+            action = Action::OPERAND;
+            return mergeElement();
+        }
+
+        if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+        {
+            action = Action::OPERATOR;
+
+            if (!isCurrentElementEmpty() || !elements.empty())
+                if (!mergeElement())
+                    return false;
+
+            finished = true;
+        }
+
+        return true;
+    }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        node = makeASTFunction("eval", std::move(elements));
+        return true;
+    }
+};
+
 /// We use Layers to parse elements consisting of other elements.
 /// In some cases, we are interested in the first element that is an identifier
 /// e.g. for a table function it would be the name of the function
@@ -3043,6 +3133,8 @@ static std::unique_ptr<Layer> getFunctionLayer(ASTPtr identifier, bool is_table_
             return std::make_unique<ViewLayer>(false);
         if (function_name_lowercase == "viewifpermitted")
             return std::make_unique<ViewLayer>(true);
+        if (function_name_lowercase == "eval")
+            return std::make_unique<EvalLayer>();
     }
 
     if (function_name == "tuple")
@@ -3254,6 +3346,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
     {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
+    {toStringView(Keyword::AT_TIME_ZONE),        Operator("toTimeZone",      13, 2)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
     {"−",             Operator("minus",           11, 2)},
@@ -3294,6 +3387,11 @@ std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(s
                 || op.type == OperatorType::Cast)
                 return;
             if (op.function_name == "match")
+                return;
+            /// AT TIME ZONE desugars to toTimeZone at parse time; do not register toTimeZone as a
+            /// pretty-printer infix symbol — any toTimezone() node in the ActionsDAG may have been
+            /// written directly by the user, not via AT TIME ZONE.
+            if (op.function_name == "toTimeZone")
                 return;
 
             result.insert_or_assign(op.function_name, ExpressionOperatorPrettyInfo{lexeme, op.priority});
@@ -3389,6 +3487,27 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
     }
 }
 
+/// Comparison and string-search predicates that are valid on the left of `SOME`/`ALL` for
+/// the array (non-subquery) right-hand side, but are not tagged `OperatorType::Comparison`
+/// in `operators_table` (the keyword and string-search forms have the default
+/// `OperatorType::None`). These are routed only through the `arrayExists`/`arrayAll` lambda
+/// form, never the subquery -> `IN` rewrite, which has no meaning for them.
+///
+/// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`) are
+/// included: `MatchImpl` supports a constant haystack with a non-constant needle, so
+/// `'abc' LIKE SOME(['a%', 'b%'])` rewrites to `arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%'])`
+/// and evaluates without throwing. Keep this in sync with the operator documentation for the
+/// array quantifier.
+static bool isArrayQuantifierPredicate(std::string_view function_name)
+{
+    static const std::unordered_set<std::string_view> predicates
+    {
+        "isDistinctFrom", "isNotDistinctFrom",
+        "like", "ilike", "notLike", "notILike", "match"
+    };
+    return predicates.contains(function_name);
+}
+
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
@@ -3434,21 +3553,73 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         return Action::OPERATOR;
     }
 
-    if (layers.back()->previousType() == OperatorType::Comparison)
+    const auto * prev_operator = layers.back()->previousOperator();
+    const bool prev_is_comparison = prev_operator && prev_operator->type == OperatorType::Comparison;
+    /// The keyword comparison predicates `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` and the
+    /// string-search predicates `LIKE` / `ILIKE` / `NOT LIKE` / `NOT ILIKE` / `REGEXP` are not
+    /// tagged `OperatorType::Comparison`. They are valid on the left of the array form of
+    /// `SOME`/`ALL`, but not of the subquery form (lowered to `IN`/`NOT IN`).
+    const bool prev_is_array_predicate
+        = prev_operator && !prev_is_comparison && isArrayQuantifierPredicate(prev_operator->function_name);
+
+    if (prev_is_comparison || prev_is_array_predicate)
     {
         auto old_pos = pos;
         SubqueryFunctionType subquery_function_type = SubqueryFunctionType::NONE;
+        bool is_subquery = true;
 
-        /// ANY and SOME are semantically identical
-        if ((any_parser.ignore(pos, expected) || some_parser.ignore(pos, expected)) && subquery_parser.parse(pos, tmp, expected))
-            subquery_function_type = SubqueryFunctionType::ANY;
-        else if (all_parser.ignore(pos, expected) && subquery_parser.parse(pos, tmp, expected))
-            subquery_function_type = SubqueryFunctionType::ALL;
+        /// `ANY`/`SOME`/`ALL` with a subquery right-hand side is the existing
+        /// quantifier syntax, rewritten to `IN`/`NOT IN` via `modifyAST`. This form is
+        /// only valid after a symbolic comparison operator (`=`, `<>`, `<`, ...).
+        ///
+        /// `SOME`/`ALL` (but deliberately not `ANY`) additionally accept a
+        /// non-subquery array expression (PostgreSQL-style), rewritten here to
+        /// `has`/`NOT has` for the `=`/`<>` special cases that have an optimized
+        /// implementation, or to `arrayExists`/`arrayAll` lambdas otherwise. The array
+        /// form also supports the keyword comparison predicates `IS DISTINCT FROM` and
+        /// `IS NOT DISTINCT FROM`, and the string-search predicates `LIKE`, `ILIKE`,
+        /// `NOT LIKE`, `NOT ILIKE`, and `REGEXP`, which only go through the lambda form.
+        /// `ANY` is excluded from the array form because `any` is also an aggregate
+        /// function, so `expr = any(x)` must keep its function-call meaning.
+        const bool any_kw = any_parser.ignore(pos, expected);
+        const bool some_kw = !any_kw && some_parser.ignore(pos, expected);
+        const bool all_kw = !any_kw && !some_kw && all_parser.ignore(pos, expected);
+
+        if (any_kw || some_kw || all_kw)
+        {
+            subquery_function_type = all_kw ? SubqueryFunctionType::ALL : SubqueryFunctionType::ANY;
+
+            if (prev_is_comparison && subquery_parser.parse(pos, tmp, expected))
+            {
+                /// Existing subquery path: leave `is_subquery = true`.
+            }
+            else if ((some_kw || all_kw) && pos->type == TokenType::OpeningRoundBracket)
+            {
+                auto pos_at_open = pos;
+                ++pos;
+                ParserExpression expr_parser;
+                if (expr_parser.parse(pos, tmp, expected) && pos->type == TokenType::ClosingRoundBracket)
+                {
+                    ++pos;
+                    is_subquery = false;
+                }
+                else
+                {
+                    pos = pos_at_open;
+                    subquery_function_type = SubqueryFunctionType::NONE;
+                }
+            }
+            else
+            {
+                /// `ANY(<non-subquery>)` is not a quantifier; rewind (below) so the
+                /// `any(...)` aggregate function call is parsed normally.
+                subquery_function_type = SubqueryFunctionType::NONE;
+            }
+        }
 
         if (subquery_function_type != SubqueryFunctionType::NONE)
         {
             Operator prev_op;
-            ASTPtr function;
             ASTPtr argument;
 
             if (!layers.back()->popOperator(prev_op))
@@ -3456,10 +3627,68 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
             if (!layers.back()->popOperand(argument))
                 return Action::NONE;
 
-            function = makeASTFunction(prev_op, argument, tmp);
+            ASTPtr function;
+            if (is_subquery)
+            {
+                function = makeASTFunction(prev_op, argument, tmp);
 
-            if (!modifyAST(function, subquery_function_type))
-                return Action::NONE;
+                if (!modifyAST(function, subquery_function_type))
+                    return Action::NONE;
+            }
+            else
+            {
+                /// `expr = SOME(arr)` and `expr <> ALL(arr)` map to the optimized
+                /// `has`/`NOT has` (this is what `IN`/`NOT IN` already lowers to
+                /// for non-subquery RHS, but spelled directly here so we don't
+                /// depend on the analyzer recognising the lambda form).
+                const bool is_equals = prev_op.function_name == "equals";
+                const bool is_not_equals = prev_op.function_name == "notEquals";
+
+                if (some_kw && is_equals)
+                {
+                    function = makeASTFunction("has", tmp, argument);
+                }
+                else if (all_kw && is_not_equals)
+                {
+                    function = makeASTOperator("not", makeASTFunction("has", tmp, argument));
+                }
+                else
+                {
+                    /// General form: lambda `_a -> argument OP _a` wrapped in
+                    /// `arrayExists` (for `SOME`) or `arrayAll` (for `ALL`). Walk
+                    /// `argument` to find a lambda variable name that does not
+                    /// collide with any identifier it references (otherwise the
+                    /// lambda parameter would shadow that identifier).
+                    std::unordered_set<String> used_identifiers;
+                    std::function<void(const IAST *)> collect_identifiers = [&](const IAST * node)
+                    {
+                        if (!node)
+                            return;
+                        if (const auto * ident = node->as<ASTIdentifier>())
+                        {
+                            /// Record the full name and every part. A compound identifier
+                            /// such as `_a.x` binds its first part (`_a`) during analysis,
+                            /// so the lambda variable must avoid colliding with `_a`, not
+                            /// just with the whole `_a.x`.
+                            used_identifiers.insert(ident->name());
+                            for (const auto & part : ident->name_parts)
+                                used_identifiers.insert(part);
+                        }
+                        for (const auto & child : node->children)
+                            collect_identifiers(child.get());
+                    };
+                    collect_identifiers(argument.get());
+
+                    String lambda_var = "_a";
+                    for (size_t suffix = 1; used_identifiers.contains(lambda_var); ++suffix)
+                        lambda_var = "_a" + std::to_string(suffix);
+
+                    auto body = makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
+                    auto lambda = makeASTLambda({lambda_var}, std::move(body));
+                    const char * fn_name = some_kw ? "arrayExists" : "arrayAll";
+                    function = makeASTFunction(fn_name, std::move(lambda), tmp);
+                }
+            }
 
             layers.back()->pushOperand(std::move(function));
             return Action::OPERATOR;
@@ -3643,6 +3872,40 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
             layers.back()->pushOperator(top_op);
     }
 
+    /// 'expr AT LOCAL' → toTimeZone(expr, timeZone()). Must be checked before the
+    /// operators_table loop so it takes precedence over any 'AT ...' entry there.
+    if (ParserKeyword(Keyword::AT).checkWithoutMoving(pos, stub))
+    {
+        auto at_local_pos = pos;
+        ParserKeyword(Keyword::AT).ignore(at_local_pos, expected);
+        if (ParserKeyword(Keyword::LOCAL).ignore(at_local_pos, expected))
+        {
+            /// Fold pending operators with priority >= 13 (AT TIME ZONE priority) so that
+            /// e.g. 'a * ts AT LOCAL' gives a * toTimeZone(ts, ...), matching PostgreSQL.
+            constexpr int at_local_priority = 13;
+            while (layers.back()->previousPriority() >= at_local_priority)
+            {
+                Operator prev_op;
+                layers.back()->popOperator(prev_op);
+                ASTPtr function = makeASTFunction(prev_op);
+                if (!layers.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
+                    return Action::NONE;
+                layers.back()->pushOperand(std::move(function));
+            }
+
+            ASTPtr operand;
+            if (layers.back()->popOperand(operand))
+            {
+                pos = at_local_pos;
+                auto tz_func = makeASTFunction("timeZone");
+                auto function = makeASTFunction("toTimeZone", std::move(operand), std::move(tz_func));
+                function->setIsOperator(true);
+                layers.back()->pushOperand(std::move(function));
+                return Action::OPERATOR;
+            }
+        }
+    }
+
     /// Try to find operators from 'operators_table'
     auto saved_pos = pos;
     auto cur_op = operators_table.begin();
@@ -3799,11 +4062,11 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 
     if (op.type == OperatorType::Cast)
     {
-        ASTPtr type_ast;
-        if (!ParserDataType().parse(pos, type_ast, expected))
+        std::optional<String> type_text = parseDataTypeAsText(pos, expected);
+        if (!type_text)
             return Action::NONE;
 
-        layers.back()->pushOperand(make_intrusive<ASTLiteral>(type_ast->formatWithSecretsOneLine()));
+        layers.back()->pushOperand(make_intrusive<ASTLiteral>(std::move(*type_text)));
         return Action::OPERATOR;
     }
 

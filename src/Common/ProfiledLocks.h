@@ -114,20 +114,19 @@ class TSA_SCOPED_LOCKABLE ProfiledSharedLock final : private boost::noncopyable
 {
 public:
     ProfiledSharedLock(SharedMutex & mutex, ProfileEvents::Event wait_event_) TSA_ACQUIRE_SHARED(mutex)
-        : wait_event(wait_event_)
+        : underlying_lock(mutex, std::try_to_lock), wait_event(wait_event_)
     {
-        if (mutex.try_lock_shared())
-        {
-            underlying_lock = std::shared_lock<SharedMutex>(mutex, std::adopt_lock);
-        }
-        else
+        if (!underlying_lock.owns_lock())
         {
             Stopwatch wait_watch;
-            std::shared_lock<SharedMutex> l(mutex);
+            underlying_lock.lock();
             ProfileEvents::increment(wait_event, wait_watch.elapsedMicroseconds());
-            underlying_lock = std::move(l);
         }
     }
+
+    ProfiledSharedLock(SharedMutex & mutex, ProfileEvents::Event wait_event_, std::defer_lock_t)
+        : underlying_lock(mutex, std::defer_lock), wait_event(wait_event_)
+    {}
 
     ~ProfiledSharedLock() TSA_RELEASE()
     {

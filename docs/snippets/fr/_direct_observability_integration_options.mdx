@@ -1,0 +1,47 @@
+---
+title: Options d’intégration directe pour l’observabilité
+---
+
+<div id="direct-grafana">
+  ### Intégration directe avec le plugin Grafana
+</div>
+
+Le plugin de source de données ClickHouse pour Grafana permet de visualiser et d’explorer les données directement dans ClickHouse à l’aide des tables système. Cette approche est bien adaptée à la surveillance des performances et à la création de tableaux de bord personnalisés pour une analyse détaillée du système.
+Pour en savoir plus sur l’installation et la configuration du plugin, consultez le [plugin de source de données](/fr/integrations/connectors/data-visualization/grafana/index) ClickHouse. Pour une configuration de supervision complète utilisant le mix-in Prometheus-Grafana avec des tableaux de bord préconfigurés et des règles d’alerte, consultez [Monitor ClickHouse with the new Prometheus-Grafana mix-in](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in).
+
+<div id="direct-datadog">
+  ### Intégration directe avec Datadog
+</div>
+
+Datadog propose pour son agent un plugin de monitoring ClickHouse qui interroge directement les tables système. Cette intégration offre une supervision complète de la base de données avec prise en charge du cluster grâce à la fonctionnalité clusterAllReplicas.
+
+<Note>
+  Cette intégration n&#39;est pas recommandée pour les déploiements ClickHouse Cloud en raison de son incompatibilité avec le comportement de mise en veille optimisé pour les coûts et des limitations opérationnelles de la couche proxy du cloud.
+</Note>
+
+<div id="system-tables">
+  ### Utiliser directement les tables système
+</div>
+
+Vous pouvez effectuer une analyse approfondie des performances des requêtes en vous connectant directement aux tables système de ClickHouse, en particulier à `system.query_log`. À l’aide de la Console SQL ou du clickhouse client, les équipes peuvent identifier les requêtes lentes, analyser l’utilisation des ressources et suivre les tendances d’utilisation à l’échelle de l’organisation.
+
+**Analyse des performances des requêtes**
+
+Vous pouvez utiliser les journaux de requêtes de la table système pour analyser les performances des requêtes.
+
+**Exemple de requête** : trouver les 5 requêtes dont l’exécution est la plus longue sur l’ensemble des répliques du cluster :
+
+```sql
+SELECT
+    type,
+    event_time, 
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```

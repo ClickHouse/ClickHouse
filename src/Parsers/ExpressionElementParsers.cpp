@@ -80,6 +80,21 @@ inline void recordLiteralTokens(const ASTLiteral * literal, IParser::Pos begin, 
     }
 }
 
+/// Forget the token positions of the literals in `ast`, which is about to be discarded - see
+/// `LiteralTokenMap::forget`. Recording positions and discarding subtrees are both ordinary things
+/// for a parser to do, so whoever does the second has to undo the first.
+void forgetLiteralTokens(const IAST & ast, Expected & expected)
+{
+    if (!expected.literal_token_map)
+        return;
+
+    if (const auto * literal = ast.as<ASTLiteral>())
+        expected.literal_token_map->forget(literal);
+
+    for (const auto & child : ast.children)
+        forgetLiteralTokens(*child, expected);
+}
+
 String ilikePatternToRegexp(const String & pattern)
 {
     return "(?i)" + likePatternToRegexp(pattern);
@@ -234,7 +249,9 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (!settings_ast->as<ASTSetQuery>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN settings must be a SET query");
-            settings_str = settings_ast->formatWithSecretsOneLine();
+            if (explain_query.getSettingsText().empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN settings have no source text");
+            settings_str = astText(*settings_ast, explain_query.getSettingsText());
         }
 
         const ASTPtr & explained_ast = explain_query.getExplainedQuery();
@@ -568,10 +585,30 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 }
 
 
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
+std::optional<String> parseDataTypeAsText(IParser::Pos & pos, Expected & expected)
+{
+    ASTPtr type_ast;
+    IParser::Pos type_begin = pos;
+    if (!ParserDataType().parse(pos, type_ast, expected))
+        return {};
+
+    String text = astText(*type_ast, textBetween(type_begin, pos));
+
+    /// The type AST does not outlive this function, and the literals in it - the arguments of the
+    /// type, such as the scale of a `Decimal32(3)` - are recorded in the literal token map. Their
+    /// addresses become available for reuse the moment the AST goes, and the very next literal the
+    /// caller creates is likely to land on one of them: `CAST` keeps its type as a string, so
+    /// `36610.111::Decimal32(3)` builds two literals right here. One inheriting the token range of
+    /// the scale would make `ValuesBlockInputFormat` build a template that replaces the `3`.
+    forgetLiteralTokens(*type_ast, expected);
+
+    return text;
+}
+
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, String type_text)
 {
     /// Convert to canonical representation in functional form: CAST(expr, 'type')
-    auto type_literal = make_intrusive<ASTLiteral>(type_ast->formatWithSecretsOneLine());
+    auto type_literal = make_intrusive<ASTLiteral>(std::move(type_text));
     return makeASTFunction("CAST", expr_ast, std::move(type_literal));
 }
 
@@ -900,6 +937,9 @@ bool ParserWindowList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             return false;
         }
+        /// The definition must be a child of the element, otherwise AST visitors
+        /// (e.g. the query parameter substitution) will not see it.
+        elem->children.push_back(elem->definition);
 
         result->children.push_back(elem);
 
@@ -1098,23 +1138,23 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     else
         return false;
 
-    ASTPtr type_ast;
-    if (ParserToken(DoubleColon).ignore(pos, expected)
-        && ParserDataType().parse(pos, type_ast, expected))
-    {
-        size_t data_size = data_end - data_begin;
-        if (string_literal)
-        {
-            node = createFunctionCast(string_literal, type_ast);
-            return true;
-        }
+    if (!ParserToken(DoubleColon).ignore(pos, expected))
+        return false;
 
-        auto literal = make_intrusive<ASTLiteral>(String(data_begin, data_size));
-        node = createFunctionCast(literal, type_ast);
+    std::optional<String> type_text = parseDataTypeAsText(pos, expected);
+    if (!type_text)
+        return false;
+
+    if (string_literal)
+    {
+        node = createFunctionCast(string_literal, std::move(*type_text));
         return true;
     }
 
-    return false;
+    size_t data_size = data_end - data_begin;
+    auto literal = make_intrusive<ASTLiteral>(String(data_begin, data_size));
+    node = createFunctionCast(literal, std::move(*type_text));
+    return true;
 }
 
 
@@ -1422,11 +1462,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
         ReadBufferFromMemory in(pos->begin, pos->size());
 
-        try
-        {
-            readQuotedStringWithSQLStyle(s, in);
-        }
-        catch (const Exception &)
+        if (!tryReadQuotedStringWithSQLStyle(s, in))
         {
             expected.add(pos, "string literal");
             return false;
@@ -1497,7 +1533,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
                     return true;
                 }
 
-                layers.back().arr.push_back(literal->value);
+                /// Move the just-finished nested collection into its parent instead of copying it.
+                /// `literal` is a local that is discarded right after (only the outermost layer is
+                /// kept as `node`), so moving its value out is safe. Copying here made parsing a
+                /// deeply nested literal such as `[[[ ... ]]]` quadratic in its depth.
+                layers.back().arr.push_back(std::move(literal->value));
                 continue;
             }
             if (pos->type == TokenType::Comma)
@@ -1793,6 +1833,25 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         for (const char ** keyword = restricted_keywords; *keyword != nullptr; ++keyword)
             if (0 == strcasecmp(name.data(), *keyword))
                 return false;
+
+        /// Special case: an implicit alias literally named COMMENT is only ambiguous
+        /// when it is immediately followed by a string literal at the very end of the
+        /// query (e.g. "... FROM t COMMENT 'x'"), which is the trailing view/table
+        /// comment syntax. In that specific situation, reject it as an alias so the
+        /// caller backtracks and the caller-level comment parser can consume it
+        /// instead. Everywhere else (e.g. "SELECT 1 comment", "FROM t comment,"),
+        /// COMMENT remains a perfectly valid implicit alias.
+        if (0 == strcasecmp(name.data(), "COMMENT"))
+        {
+            Pos peek = pos;
+            Expected peek_expected;
+            ASTPtr comment_literal;
+            if (ParserStringLiteral().parse(peek, comment_literal, peek_expected))
+            {
+                if (peek->type == TokenType::EndOfStream || peek->type == TokenType::Semicolon)
+                    return false;
+            }
+        }
     }
 
     return true;
@@ -2505,7 +2564,7 @@ bool ParserInterpolateElement::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         expr = ident;
 
     auto elem = make_intrusive<ASTInterpolateElement>();
-    elem->column = ident->getColumnName();
+    elem->column = getIdentifierName(ident);
     elem->expr = expr;
     elem->children.push_back(expr);
 

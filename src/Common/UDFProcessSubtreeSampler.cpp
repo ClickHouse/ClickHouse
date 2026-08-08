@@ -14,6 +14,7 @@
 #include <fstream>
 #include <limits>
 #include <string>
+#include <string_view>
 
 
 namespace DB
@@ -202,6 +203,38 @@ bool readStat(pid_t pid, UInt64 & utime_us, UInt64 & stime_us)
 }
 
 
+#if defined(OS_LINUX)
+namespace
+{
+    /// Parse a kB-valued line (e.g. "VmHWM:    123 kB") from /proc/<pid>/status.
+    bool readStatusFieldKiB(pid_t pid, std::string_view field, UInt64 & bytes)
+    {
+        const std::string path = "/proc/" + std::to_string(pid) + "/status";
+        std::ifstream in(path);
+        if (!in.is_open())
+            return false;
+
+        std::string line;
+        while (std::getline(in, line))
+        {
+            if (!line.starts_with(field))
+                continue;
+
+            const std::string value_str = line.substr(field.size());
+            ReadBufferFromString parser(value_str);
+            skipWhitespaceIfAny(parser);
+            UInt64 kib = 0;
+            if (!tryReadIntText(kib, parser))
+                return false;
+            bytes = kib * 1024ULL;
+            return true;
+        }
+        return false;
+    }
+}
+#endif
+
+
 bool readPeakRss(pid_t pid, UInt64 & bytes)
 {
     bytes = 0;
@@ -209,27 +242,45 @@ bool readPeakRss(pid_t pid, UInt64 & bytes)
         return false;
 
 #if defined(OS_LINUX)
-    const std::string path = "/proc/" + std::to_string(pid) + "/status";
-    std::ifstream in(path);
-    if (!in.is_open())
+    return readStatusFieldKiB(pid, "VmHWM:", bytes);
+#else
+    return false;
+#endif
+}
+
+
+bool readCurrentRss(pid_t pid, UInt64 & bytes)
+{
+    bytes = 0;
+    if (pid <= 0)
         return false;
 
-    std::string line;
-    while (std::getline(in, line))
-    {
-        if (!line.starts_with("VmHWM:"))
-            continue;
-
-        const std::string value_str = line.substr(6);
-        ReadBufferFromString parser(value_str);
-        skipWhitespaceIfAny(parser);
-        UInt64 kib = 0;
-        if (!tryReadIntText(kib, parser))
-            return false;
-        bytes = kib * 1024ULL;
-        return true;
-    }
+#if defined(OS_LINUX)
+    return readStatusFieldKiB(pid, "VmRSS:", bytes);
+#else
     return false;
+#endif
+}
+
+
+bool isZombie(pid_t pid)
+{
+    if (pid <= 0)
+        return false;
+
+#if defined(OS_LINUX)
+    std::ifstream in("/proc/" + std::to_string(pid) + "/stat");
+    std::string line;
+    if (!std::getline(in, line))
+        return false;
+
+    /// `/proc/<pid>/stat` is `pid (comm) S ...`; `comm` can contain spaces and
+    /// ')', so anchor on the last ") ".
+    const auto pos = line.rfind(") ");
+    if (pos == std::string::npos || pos + 2 >= line.size())
+        return false;
+
+    return line[pos + 2] == 'Z';
 #else
     return false;
 #endif

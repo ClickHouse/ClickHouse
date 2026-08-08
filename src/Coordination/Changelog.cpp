@@ -81,6 +81,7 @@ void moveChangelogBetweenDisks(
                     description->disk = disk_to;
                     description->path = path_to;
                 });
+            return true;
         },
         getLogger("Changelog"),
         keeper_context);
@@ -1539,6 +1540,7 @@ LogEntriesPtr LogEntryStorage::getLogEntriesBetween(uint64_t start, uint64_t end
     size_t next_position = 0;
     const auto set_new_file = [&](const auto & log_location)
     {
+        chassert(!read_info.has_value());
         read_info.emplace();
         read_info->file_description = log_location.file_description;
         read_info->position = log_location.position;
@@ -2744,6 +2746,8 @@ void Changelog::backgroundChangelogOperationsThread()
             chassert(false);
         }
         changelog_operation->done = true;
+        /// Wake up `waitAllAsyncOperations`; a bare store does not wake an `std::atomic::wait`.
+        changelog_operation->done.notify_all();
     }
 }
 

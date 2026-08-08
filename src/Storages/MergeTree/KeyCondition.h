@@ -12,6 +12,7 @@
 
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/BoolMask.h>
+#include <Storages/MergeTree/KeyOrder.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 
@@ -25,6 +26,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
 class MergeTreeSetIndex;
+struct KeyDescription;
 
 
 /// Canonize the predicate
@@ -36,7 +38,12 @@ struct ActionsDAGWithInversionPushDown
     std::optional<ActionsDAG> dag;
     const ActionsDAG::Node * predicate = nullptr;
 
-    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context);
+    /// `boolean_context`: Pass true only when the caller uses `predicate_` as a filter: it tests each row for truthiness
+    /// and discards the value (index analysis of a WHERE/PREWHERE). Then `cloneDAGWithInversionPushDown` may apply
+    /// truthiness-preserving but value-changing rewrites (`tryRewriteCoalesceCondition`, `tryRewriteCoalesceComparison`),
+    /// which can differ from the original (e.g. `NULL` vs `false`) on NULL rows but agree on truthiness.
+    /// There is no correctness cost to passing false, but it may miss some optimization opportunities.
+    explicit ActionsDAGWithInversionPushDown(const ActionsDAG::Node * predicate_, const ContextPtr & context, bool boolean_context);
 };
 
 
@@ -62,7 +69,10 @@ private:
     struct ThisIsPrivate {};
 
 public:
-    /// Construct key condition from ActionsDAG nodes
+    /// Construct key condition from ActionsDAG nodes.
+    /// This overload takes the key column names and expression without any direction information,
+    /// so the condition treats the key as ascending in every column. Use it only for keys that
+    /// cannot be reverse-sorted (e.g. skip index expressions, virtual row-offset columns).
     KeyCondition(
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
@@ -70,6 +80,17 @@ public:
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
         bool skip_analysis_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+
+    /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
+    /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
+    /// Any condition over a key that can be reverse-sorted (a MergeTree primary key) must be
+    /// constructed this way, otherwise a reverse key would be analyzed as ascending.
+    KeyCondition(
+        const ActionsDAGWithInversionPushDown & filter_dag,
+        ContextPtr context,
+        const KeyDescription & key_description,
+        bool single_point_ = false,
+        bool skip_analysis_ = false);
 
     struct BloomFilterData
     {
@@ -114,17 +135,56 @@ public:
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
         const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
 
+    /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
+    /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
+    /// If some key column >= `key_col_to_sparse_pos`.size(), it is considered as not tracked.
+    /// See the optimized overload of checkInRange for explanation of relevant parameters.
+    BoolMask checkInHyperrectangle(
+        const std::vector<int> & key_col_to_sparse_pos,
+        const Hyperrectangle & sparse_hyperrectangle,
+        const DataTypes & sparse_data_types) const;
+
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
     /// data_types - the types of the key columns.
     /// Argument initial_mask is used for early exiting the implementation when we do not care about
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
+    /// key_bounds - optional per-column bounds the key values are known to lie within (e.g. the part's
+    /// partition minmax). A key without a bound defaults to (-inf, +inf).
     BoolMask checkInRange(
-        size_t used_key_size,
+        size_t key_size,
         const FieldRef * left_keys,
         const FieldRef * right_keys,
         const DataTypes & data_types,
-        BoolMask initial_mask = BoolMask(false, false)) const;
+        BoolMask initial_mask = BoolMask(false, false),
+        const Hyperrectangle * key_bounds = nullptr) const;
+
+    /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
+    /// However, `equal_boundaries_mask` must have the information about all/prefix keys. `equal_boundaries_mask` specifies whether ith key's
+    /// left and right boundaries are equal or not.
+    /// For example, suppose, a table has 6 columns in primary key : (0, 1, 2, 3, 4, 5)
+    /// The caller wants to use only columns (1, 3, 4) for range check.
+    /// Then, `sparse_key_indices` = {1, 3, 4}
+    /// `equal_boundaries_mask` = {false, true, false, true, true, false}
+    ///      Information about the entire prefix covered by `equal_boundaries_mask` must be specified.
+    /// `sparse_left_keys` and `sparse_right_keys` contain only 3 fields each, corresponding to columns (1, 3, 4).
+    /// `sparse_data_types` contain only 3 data types each, corresponding to columns (1, 3, 4).
+    /// key_bounds - optional per-column bounds the key values are known to lie within (e.g. the part's
+    /// partition minmax), indexed by full key column position. A key without a bound defaults to (-inf, +inf).
+    /// `sparse_key_indices` may also contain indices >= `equal_boundaries_mask.size()` (e.g. key columns not
+    /// present in the in-memory index but bounded by the part's partition minmax). Such columns are constant
+    /// coordinates: their range is `(*key_bounds)[key_index]` for the whole call, they do not participate in
+    /// the hyperrectangle enumeration, and their entries in `sparse_left_keys`/`sparse_right_keys` are ignored.
+    BoolMask checkInRange(
+        const std::vector<size_t> & sparse_key_indices,
+        const FieldRef * sparse_left_keys,
+        const FieldRef * sparse_right_keys,
+        const DataTypes & sparse_data_types,
+        const std::vector<UInt8> & equal_boundaries_mask,
+        BoolMask initial_mask,
+        const Hyperrectangle * key_bounds = nullptr) const;
+
+    const KeyOrder & getKeyOrder() const { return key_order; }
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.
@@ -153,6 +213,11 @@ public:
     String toString() const;
 
     size_t getNumKeyColumns() const { return num_key_columns; }
+
+    /// Returns the size of the minimal prefix of key columns that contains all columns used in the RPN.
+    /// Suppose there are 5 keys columns: 0, 1, 2, 3, 4. If any RPNElement uses key columns 0, 3.
+    /// Then, it returns 4 (last used key column index + 1).
+    size_t getUsedKeyPrefixSize() const;
 
     /// Condition description for EXPLAIN query.
     struct Description
@@ -256,8 +321,10 @@ public:
             /// this expression will be analyzed and then represented by following:
             ///   args in hyperrectangle [10, 20] × [20, 30].
             FUNCTION_ARGS_IN_HYPERRECTANGLE,
-            /// Special for pointInPolygon to utilize minmax indices.
+            /// Special for pointInPolygon to utilize primary key and minmax indices.
             /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
+            /// where x, y are key columns, or pointInPolygon(coord, [...])
+            /// where coord is a key column of type Point (Tuple of two coordinates).
             FUNCTION_POINT_IN_POLYGON,
             /// Can take any value.
             FUNCTION_UNKNOWN,
@@ -293,7 +360,8 @@ public:
         ///  * if FUNCTION[_NOT]_IN_SET: one or more elements in nondecreasing order, same as
         ///    set_index->getIndexesMapping()[..].key_index,
         ///  * if FUNCTION_POINT_IN_POLYGON: two elements (x, y) describing the point,
-        ///    as in pointInPolygon((x, y), ...).
+        ///    as in pointInPolygon((x, y), ...), or one element if the point is a whole
+        ///    key column of type Tuple of two coordinates, as in pointInPolygon(coord, ...).
         std::vector<size_t> key_columns;
 
         /// If a key column is a space filling curve, e.g. mortonEncode(x, y),
@@ -314,7 +382,8 @@ public:
 
         /// For FUNCTION_POINT_IN_POLYGON.
         /// Function name (e.g. 'pointInPolygon') and the polygon.
-        /// Additionally, `key_columns` has two elements for point coordinates (x, y).
+        /// Additionally, `key_columns` has two elements for point coordinates (x, y),
+        /// or one element if the point is a whole key column of Tuple type.
         std::optional<String> point_in_polygon_function_name;
         std::shared_ptr<Polygon> polygon;
 
@@ -335,7 +404,59 @@ public:
     const RPN & getRPN() const { return rpn; }
     const ColumnIndices & getKeyColumns() const { return key_columns; }
 
-    bool isRelaxed() const { return relaxed; }
+    /// Whether this key condition is relaxed (computed from the RPN atoms). When a key
+    /// condition is relaxed, it is considered weakened. This is because keys may not
+    /// always align perfectly with the condition specified in the query, and the aim is
+    /// to enhance the usefulness of different types of key expressions across various
+    /// scenarios.
+    ///
+    /// For instance, in a scenario with one granule of key column toDate(a), where
+    /// the hyperrectangle is toDate(a) ∊ [x, y], the result of a ∊ [u, v] can be
+    /// deduced as toDate(a) ∊ [toDate(u), toDate(v)] due to the monotonic
+    /// non-decreasing nature of the toDate function. Similarly, for a ∊ (u, v), the
+    /// transformed outcome remains toDate(a) ∊ [toDate(u), toDate(v)] as toDate
+    /// does not strictly follow a monotonically increasing transformation. This is
+    /// one of the main use case about key condition relaxation.
+    ///
+    /// During the KeyCondition::checkInRange process, relaxing the key condition
+    /// can lead to a loosened result. For example, when transitioning from (u, v)
+    /// to [u, v], if a key is within the range [u, u], BoolMask::can_be_true will
+    /// be true instead of false, causing us to not skip this granule. This behavior
+    /// is acceptable as we can still filter it later on. Conversely, if the key is
+    /// within the range [u, v], BoolMask::can_be_false will be false instead of
+    /// true, indicating a stricter condition where all elements of the granule
+    /// satisfy the key condition. Hence, when the key condition is relaxed, we
+    /// cannot rely on BoolMask::can_be_false. One significant use case of
+    /// BoolMask::can_be_false is in trivial count optimization.
+    ///
+    /// Now let's review all the cases of key condition relaxation across different
+    /// atom types.
+    ///
+    /// 1. Not applicable: ALWAYS_FALSE, ALWAYS_TRUE, FUNCTION_NOT,
+    /// FUNCTION_AND, FUNCTION_OR.
+    ///
+    /// These atoms are either never relaxed or are relaxed by their children.
+    ///
+    /// 2. Constant transformed: FUNCTION_IN_RANGE, FUNCTION_NOT_IN_RANGE,
+    /// FUNCTION_IS_NULL. FUNCTION_IS_NOT_NULL, FUNCTION_IN_SET (1 element),
+    /// FUNCTION_NOT_IN_SET (1 element)
+    ///
+    /// These atoms are relaxed only when the associated constants undergo
+    /// transformation by monotonic functions, as illustrated in the example
+    /// mentioned earlier.
+    ///
+    /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
+    /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
+    ///
+    /// These atoms are always considered relaxed for the sake of implementation
+    /// simplicity, as there may be "gaps" within the atom's hyperrectangle that the
+    /// granule's hyperrectangle may or may not intersect.
+    ///
+    /// NOTE: we also need to examine special functions that generate atoms. For
+    /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
+    /// on a given regular expression. Such an atom is relaxed unless the regular
+    /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
+    bool isRelaxed() const;
 
     bool isSinglePoint() const { return single_point; }
 
@@ -373,14 +494,15 @@ public:
     /// List key columns that are actually used in the condition. E.g. condition `x AND y` doesn't use column `z`.
     std::unordered_set<size_t> getUsedColumns() const;
 
+    std::vector<size_t> getUsedColumnsInOrder() const;
+
     /// Private constructor.
     KeyCondition(
         ThisIsPrivate,
         ColumnIndices key_columns_,
         size_t num_key_columns_,
         bool single_point_,
-        bool date_time_overflow_behavior_ignore_,
-        bool relaxed_);
+        bool date_time_overflow_behavior_ignore_);
 
 private:
     /// Information used when building a KeyCondition out of ActionsDAG.
@@ -391,14 +513,6 @@ private:
         /// All intermediate columns are used to calculate key_expr.
         const NameSet key_subexpr_names;
     };
-
-    BoolMask checkInRange(
-        size_t used_key_size,
-        const FieldRef * left_key,
-        const FieldRef * right_key,
-        const DataTypes & data_types,
-        bool right_bounded,
-        BoolMask initial_mask) const;
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
 
@@ -435,6 +549,7 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         MonotonicFunctionsChain & out_functions_chain,
+        bool & out_chain_is_positive,
         std::function<bool(const IFunctionBase &, const IDataType &)> always_monotonic) const;
 
 
@@ -451,7 +566,8 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         Field & out_value,
-        DataTypePtr & out_type);
+        DataTypePtr & out_type,
+        bool & out_chain_is_positive);
 
     bool canConstantBeWrappedByDeterministicFunctions(
         const RPNBuilderTreeNode & node,
@@ -576,56 +692,7 @@ private:
     /// Used to check toDateTime monotonicity.
     bool date_time_overflow_behavior_ignore;
 
-    /// If true, this key condition is relaxed. When a key condition is relaxed, it
-    /// is considered weakened. This is because keys may not always align perfectly
-    /// with the condition specified in the query, and the aim is to enhance the
-    /// usefulness of different types of key expressions across various scenarios.
-    ///
-    /// For instance, in a scenario with one granule of key column toDate(a), where
-    /// the hyperrectangle is toDate(a) ∊ [x, y], the result of a ∊ [u, v] can be
-    /// deduced as toDate(a) ∊ [toDate(u), toDate(v)] due to the monotonic
-    /// non-decreasing nature of the toDate function. Similarly, for a ∊ (u, v), the
-    /// transformed outcome remains toDate(a) ∊ [toDate(u), toDate(v)] as toDate
-    /// does not strictly follow a monotonically increasing transformation. This is
-    /// one of the main use case about key condition relaxation.
-    ///
-    /// During the KeyCondition::checkInRange process, relaxing the key condition
-    /// can lead to a loosened result. For example, when transitioning from (u, v)
-    /// to [u, v], if a key is within the range [u, u], BoolMask::can_be_true will
-    /// be true instead of false, causing us to not skip this granule. This behavior
-    /// is acceptable as we can still filter it later on. Conversely, if the key is
-    /// within the range [u, v], BoolMask::can_be_false will be false instead of
-    /// true, indicating a stricter condition where all elements of the granule
-    /// satisfy the key condition. Hence, when the key condition is relaxed, we
-    /// cannot rely on BoolMask::can_be_false. One significant use case of
-    /// BoolMask::can_be_false is in trivial count optimization.
-    ///
-    /// Now let's review all the cases of key condition relaxation across different
-    /// atom types.
-    ///
-    /// 1. Not applicable: ALWAYS_FALSE, ALWAYS_TRUE, FUNCTION_NOT,
-    /// FUNCTION_AND, FUNCTION_OR.
-    ///
-    /// These atoms are either never relaxed or are relaxed by their children.
-    ///
-    /// 2. Constant transformed: FUNCTION_IN_RANGE, FUNCTION_NOT_IN_RANGE,
-    /// FUNCTION_IS_NULL. FUNCTION_IS_NOT_NULL, FUNCTION_IN_SET (1 element),
-    /// FUNCTION_NOT_IN_SET (1 element)
-    ///
-    /// These atoms are relaxed only when the associated constants undergo
-    /// transformation by monotonic functions, as illustrated in the example
-    /// mentioned earlier.
-    ///
-    /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
-    /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
-    ///
-    /// These atoms are always considered relaxed for the sake of implementation
-    /// simplicity, as there may be "gaps" within the atom's hyperrectangle that the
-    /// granule's hyperrectangle may or may not intersect.
-    ///
-    /// NOTE: we also need to examine special functions that generate atoms. For
-    /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
-    /// on a given regular expression, which is relaxed for simplicity.
-    bool relaxed = false;
+    /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.
+    KeyOrder key_order;
 };
 }

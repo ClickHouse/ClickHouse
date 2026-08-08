@@ -8,10 +8,14 @@
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/FileCache_fwd_internal.h>
+#include <Interpreters/FileCache/ShardedMap.h>
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
+#include <functional>
 
+#include <map>
 #include <memory>
+#include <optional>
 
 namespace DB
 {
@@ -101,11 +105,12 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     using Key = FileCacheKey;
     using iterator = iterator;
     using OriginInfo = FileCacheOriginInfo;
+    using OriginInfoPtr = std::shared_ptr<const OriginInfo>;
     using UserID = OriginInfo::UserID;
 
     KeyMetadata(
         const Key & key_,
-        const OriginInfo & origin_,
+        OriginInfoPtr origin_,
         const CacheMetadata * cache_metadata_,
         bool created_base_directory_ = false);
 
@@ -117,7 +122,9 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     };
 
     const Key key;
-    const OriginInfo origin;
+    /// Shared across all keys with the same origin, since OriginInfo is immutable
+    /// and distinct origins are very few. See CacheMetadata::getOrCreateSharedOrigin.
+    const OriginInfoPtr origin;
 
     LockedKeyPtr lock();
 
@@ -129,6 +136,11 @@ struct KeyMetadata : private std::map<size_t, FileSegmentMetadataPtr>,
     std::string getPath() const;
 
     std::string getFileSegmentPath(const FileSegment & file_segment) const;
+
+    /// Build the path for a segment file directly from its components.
+    /// When `size` is set, the size is encoded into the file name (`<offset>_<size>`),
+    /// which lets startup metadata loading avoid a `stat` per file.
+    std::string getFileSegmentPath(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size) const;
 
     bool checkAccess(const UserID & user_id_) const;
 
@@ -194,7 +206,8 @@ public:
         const Key & key,
         size_t offset,
         FileSegmentKind segment_kind,
-        const OriginInfo & origin) const;
+        const OriginInfo & origin,
+        std::optional<size_t> size = std::nullopt) const;
 
     void iterate(IterateFunc && func, const UserID & user_id);
 
@@ -223,7 +236,10 @@ public:
         bool is_initial_load = false);
 
     void removeKey(const Key & key, bool if_exists, const UserID & user_id);
-    void removeAllKeys(const UserID & user_id);
+
+    /// Returns true if the client was fully purged; false if any key kept
+    /// non-releasable (held) segments and survived — retry on a later sweep.
+    bool removeAllKeys(const UserID & user_id);
 
     void shutdown();
 
@@ -234,6 +250,8 @@ public:
 
     bool isBackgroundDownloadEnabled();
 
+    void setClientAccessCallback(std::function<void(const UserID &)> callback) { on_client_access = std::move(callback); }
+
 private:
     static constexpr size_t buckets_num = 1024;
 
@@ -241,18 +259,35 @@ private:
     const CleanupQueuePtr cleanup_queue;
     const DownloadQueuePtr download_queue;
     const bool write_cache_per_user_directory;
+    std::function<void(const UserID &)> on_client_access;
 
     LoggerPtr log;
     mutable SharedMutex key_prefix_directory_mutex;
 
+    using OriginInfoPtr = KeyMetadata::OriginInfoPtr;
+
     struct MetadataBucket : public std::unordered_map<FileCacheKey, KeyMetadataPtr>
     {
         CacheMetadataGuard::Lock lock() const;
+
     private:
         mutable CacheMetadataGuard guard;
     };
     using MetadataBuckets = std::vector<MetadataBucket>;
     MetadataBuckets metadata_buckets{buckets_num};
+
+    /// Return a deduplicated immutable origin, shared by all keys with the same OriginPoolKey.
+    /// The pool is sharded by a hash of the origin's identity (i.e. by client), not by the
+    /// cache key, so each distinct origin is stored exactly once instead of being duplicated
+    /// across the (much more numerous) key buckets.
+    OriginInfoPtr getOrCreateSharedOrigin(const OriginInfo & origin);
+
+    /// Drop every shared origin owned by this client from the dedup pool. Called once all of the
+    /// client's keys are removed (see removeAllKeys), so the pool does not leak entries for clients
+    /// that come and go, in particular under idle-client TTL eviction.
+    void removeSharedOrigins(const UserID & user_id);
+
+    mutable FileCacheUtils::ShardedMap<OriginPoolKey, OriginInfoPtr> origins;
 
     struct DownloadThread
     {
@@ -264,7 +299,7 @@ private:
     std::vector<std::shared_ptr<DownloadThread>> download_threads;
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;
 
-    static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind);
+    static String getFileNameForFileSegment(size_t offset, FileSegmentKind segment_kind, std::optional<size_t> size = std::nullopt);
 
     MetadataBucket & getMetadataBucket(const Key & key);
     void downloadImpl(FileSegment & file_segment, std::optional<Memory<>> & memory) const;

@@ -3,6 +3,7 @@
 
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
@@ -11,6 +12,10 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/Pipe.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 #include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
@@ -44,6 +49,7 @@ namespace MaterializedPostgreSQLSetting
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_tables_list_with_schema;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
+    extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_extended_date_and_time_types;
 }
 
 namespace Setting
@@ -95,11 +101,91 @@ namespace
     /// There can be several replication slots per publication, but one publication per table/database replication.
     /// Replication slot might be unique (contain uuid) to allow have multiple replicas for the same PostgreSQL table/database.
 
-    String getPublicationName(const String & postgres_database, const String & postgres_table)
+    /// A MaterializedPostgreSQL engine that targets PostgreSQL's default schema — either implicitly (the
+    /// `materialized_postgresql_schema` setting is left empty) or explicitly (set to `public`) — must keep
+    /// the legacy, schema-unaware publication and default replication-slot names, derived from the database
+    /// and (for the single-table engine) the bare table name only. Only a genuinely non-default schema is
+    /// included in the generated name. Otherwise the generated default object names would change for
+    /// tables/databases created before the identity became schema-aware, and their `ATTACH` would look for a
+    /// slot/publication that does not exist, run an initial sync, and reload a snapshot into the
+    /// already-existing nested table (duplicating data).
+    bool isDefaultPostgreSQLSchema(const String & postgres_schema)
     {
+        return postgres_schema.empty() || postgres_schema == "public";
+    }
+
+    /// A collision-resistant, fixed-length identity derived from the full (database, schema, table) triple.
+    /// It is used in place of a plain `database_schema_table` concatenation in the schema-aware
+    /// names below. A plain concatenation with `_` is not injective: `schema = a_b`,
+    /// `table = c` and `schema = a`, `table = b_c` both produce `..._a_b_c_...`. The replication slot name
+    /// is additionally folded by normalizeReplicationSlot() (lower-cased, `-` mapped to `_`), so even
+    /// names PostgreSQL keeps distinct — the schemas `"Foo"` and `"foo"`, or `"a-b"` and `"a_b"` — would
+    /// otherwise map to one slot. In either case two distinct source tables would share one publication or
+    /// one replication slot and their consumers would cross-talk, the very failure this schema-aware
+    /// identity is meant to remove. Hashing a length-prefixed (hence unambiguous) serialization of the
+    /// triple keeps the generated name injective in practice, of a fixed 16-character length independent
+    /// of the database, schema and table lengths, and inside the `[a-z0-9_]` slot character set.
+    String getSchemaAwareIdentityHash(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
+    {
+        SipHash hash;
+        hash.update(static_cast<UInt64>(postgres_database.size()));
+        hash.update(postgres_database.data(), postgres_database.size());
+        hash.update(static_cast<UInt64>(postgres_schema.size()));
+        hash.update(postgres_schema.data(), postgres_schema.size());
+        hash.update(static_cast<UInt64>(postgres_table.size()));
+        hash.update(postgres_table.data(), postgres_table.size());
+        return fmt::format("{:016x}", hash.get64());
+    }
+
+    /// The base name of the schema-aware publication and default replication slot — used by the single-table
+    /// engine, and by the database engine with a non-default common schema. It keeps a
+    /// short, human-readable prefix taken from the PostgreSQL database name purely for recognizability in
+    /// `pg_replication_slots`/`pg_publication`, followed by the fixed-length identity hash. Only the prefix
+    /// length is bounded here: the full (database, schema, table) identity is carried by the hash, so the
+    /// prefix is cosmetic and capping it cannot reintroduce a collision. Bounding the whole base name keeps
+    /// the generated publication and replication-slot names within PostgreSQL's identifier length limit
+    /// regardless of how long the database name is — otherwise a moderately long database name would push
+    /// the slot name over the limit and checkReplicationSlot() would reject the table before replication
+    /// starts. The longest fixed suffix appended to this base name is the replication slot's
+    /// `_ch_replication_slot` (20 bytes), to which a temporary slot adds `_tmp` (4 bytes); a 16-byte prefix
+    /// plus the `_` separator and 16-byte hash therefore yields at most 57 bytes, comfortably inside the
+    /// 63-byte limit. The publication's `_ch_publication` suffix is shorter, so it is covered too.
+    String getSchemaAwareIdentityName(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
+    {
+        static constexpr size_t schema_aware_database_prefix_max_size = 16;
         return fmt::format(
-            "{}_ch_publication",
-            postgres_table.empty() ? postgres_database : fmt::format("{}_{}", postgres_database, postgres_table));
+            "{}_{}",
+            postgres_database.substr(0, schema_aware_database_prefix_max_size),
+            getSchemaAwareIdentityHash(postgres_database, postgres_schema, postgres_table));
+    }
+
+    String getPublicationName(const String & postgres_database, const String & postgres_schema, const String & postgres_table)
+    {
+        /// The publication name preserves the case of the database/table name. It is created via
+        /// `CREATE PUBLICATION "<name>"` (case-preserving) and looked up by exact `pubname` match,
+        /// so it must not be folded to lower case here — otherwise two tables whose names differ
+        /// only by case would collide on a single publication. The consumer takes care to quote the
+        /// name when it hands it to the `pgoutput` plugin via the `publication_names` option (which
+        /// PostgreSQL parses with `SplitIdentifierString`, folding unquoted identifiers to lower
+        /// case), so both sides agree even for names with upper-case letters.
+        String name;
+        if (!isDefaultPostgreSQLSchema(postgres_schema))
+            /// A non-default `materialized_postgresql_schema` — either a single-table MaterializedPostgreSQL
+            /// engine, or a database engine replicating one common non-default schema. Include the schema so
+            /// that two engines replicating from different schemas of the same PostgreSQL database do not
+            /// collide on a single publication (which would make their consumers cross-talk, because in
+            /// single-schema mode the publication carries only the bare relation name). A plain
+            /// `database_schema_table` concatenation is not injective, so a collision-resistant hash of the
+            /// full identity is used instead, with a bounded database prefix (see getSchemaAwareIdentityName()).
+            /// For the database engine the remote table name is empty, so the identity is over
+            /// `(database, schema, "")`, which is still distinct from any single-table identity (non-empty table).
+            name = getSchemaAwareIdentityName(postgres_database, postgres_schema, postgres_table);
+        else if (postgres_table.empty())
+            /// MaterializedPostgreSQL database engine over the default schema: one publication per database.
+            name = postgres_database;
+        else
+            name = fmt::format("{}_{}", postgres_database, postgres_table);
+        return fmt::format("{}_ch_publication", name);
     }
 
     void checkReplicationSlot(String name)
@@ -131,6 +217,7 @@ namespace
 
     String getReplicationSlotName(
         const String & postgres_database,
+        const String & postgres_schema,
         const String & postgres_table,
         const String & clickhouse_uuid,
         const MaterializedPostgreSQLSettings & replication_settings)
@@ -140,8 +227,19 @@ namespace
         {
             if (replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
                 slot_name = clickhouse_uuid;
+            else if (!isDefaultPostgreSQLSchema(postgres_schema))
+                /// Include the schema for the same reason as in getPublicationName(), via the same
+                /// collision-resistant and length-bounded identity: otherwise two engines replicating from
+                /// different schemas of the same PostgreSQL database would share the default replication slot
+                /// (and normalizeReplicationSlot() would additionally fold case- or hyphen-distinct schema
+                /// names together). Covers both the single-table engine and the database engine (whose remote
+                /// table name is empty).
+                slot_name = fmt::format("{}_ch_replication_slot", getSchemaAwareIdentityName(postgres_database, postgres_schema, postgres_table));
+            else if (postgres_table.empty())
+                /// MaterializedPostgreSQL database engine over the default schema.
+                slot_name = postgres_database;
             else
-                slot_name = postgres_table.empty() ? postgres_database : fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
+                slot_name = fmt::format("{}_{}_ch_replication_slot", postgres_database, postgres_table);
 
             slot_name = normalizeReplicationSlot(slot_name);
         }
@@ -171,11 +269,14 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , tables_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list])
     , schema_list(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list])
     , schema_as_a_part_of_table_name(!schema_list.empty() || replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema])
+    , use_extended_date_and_time_types(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types])
     , user_managed_slot(!replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
     , user_provided_snapshot(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_snapshot])
-    , replication_slot(getReplicationSlotName(postgres_database_, postgres_table_, clickhouse_uuid_, replication_settings))
+    , replication_slot(getReplicationSlotName(postgres_database_, postgres_schema, postgres_table_, clickhouse_uuid_, replication_settings))
     , tmp_replication_slot(replication_slot + "_tmp")
-    , publication_name(getPublicationName(postgres_database_, postgres_table_))
+    , publication_name(getPublicationName(postgres_database_, postgres_schema, postgres_table_))
+    , legacy_replication_slot(getReplicationSlotName(postgres_database_, /* postgres_schema */ "", postgres_table_, clickhouse_uuid_, replication_settings))
+    , legacy_publication_name(getPublicationName(postgres_database_, /* postgres_schema */ "", postgres_table_))
     , reschedule_backoff_min_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_min_ms])
     , reschedule_backoff_max_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_max_ms])
     , reschedule_backoff_factor(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_factor])
@@ -264,12 +365,41 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
         LOG_ERROR(log, "Unable to set up connection. Reconnection attempt will continue. Error message: {}", pqxx_error.what());
         startup_task->scheduleAfter(milliseconds_to_wait);
     }
+    catch (const Exception & e)
+    {
+        tryLogCurrentException(log);
+
+        if (!is_attach)
+            throw;
+
+        /// On attach the startup task must keep retrying on any error so replication starts on its own once
+        /// a transient condition clears, instead of leaving the attached table permanently unsynchronized
+        /// until a server restart or a manual re-attach. Two examples: the attach-time legacy-identity
+        /// ownership conflict (see adoptLegacyReplicationIdentityIfNeeded) throws
+        /// POSTGRESQL_REPLICATION_INTERNAL_ERROR before anything destructive runs, and clears once an operator
+        /// resolves the replication-slot/publication conflict on the PostgreSQL side; a replication slot that
+        /// is momentarily still held active by a just-released connection throws instead, and clears as soon
+        /// as that connection goes away. Each retry re-checks ownership and refuses again while a conflict
+        /// persists, so no re-snapshot can happen in the meantime. This mirrors the database-engine path,
+        /// which retries via DatabaseMaterializedPostgreSQL::tryStartSynchronization.
+        if (e.code() == ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR)
+            LOG_ERROR(log, "Replication cannot start yet. Retry attempt will continue. Error message: {}", e.message());
+        else
+            LOG_ERROR(log, "Failed to start replication, retry attempt will continue. Error message: {}", e.message());
+        startup_task->scheduleAfter(milliseconds_to_wait);
+    }
     catch (...)
     {
         tryLogCurrentException(log);
 
         if (!is_attach)
             throw;
+
+        /// A non-Exception failure on attach (e.g. a pqxx::sql_error such as "replication slot is active for
+        /// PID N" when a just-released connection still holds the slot) is transient too - keep retrying so
+        /// replication resumes on its own, matching the Exception branch above and the database-engine path.
+        LOG_ERROR(log, "Failed to start replication, retry attempt will continue. Error message: {}", getCurrentExceptionMessage(false));
+        startup_task->scheduleAfter(milliseconds_to_wait);
     }
 }
 
@@ -303,10 +433,128 @@ void PostgreSQLReplicationHandler::assertInitialized() const
 }
 
 
+/// Deployments created before the generated publication and default replication-slot names became
+/// schema-aware own the legacy, schema-blind objects on the PostgreSQL side. On attach such a
+/// deployment must keep its legacy identity: looking for the schema-aware slot instead would miss the
+/// existing slot, run an initial sync and reload a snapshot into the already-existing nested tables,
+/// duplicating data. So, on attach, when the schema-aware objects do not exist but the legacy ones do,
+/// switch to the legacy names. The legacy names are schema-blind and therefore shared with a
+/// same-database deployment over the default schema (or another schema targeting the same bare table),
+/// so the existence of the legacy slot alone does not prove the legacy objects belong to this engine —
+/// only the legacy publication's table list carries the schema. The legacy identity is therefore only
+/// adopted when the legacy publication exists and every table it publishes belongs to this engine's
+/// schema. If the legacy publication is missing, empty, or publishes a table from another schema, the
+/// legacy slot is ambiguous or foreign, and adopting it (or returning to proceed under the schema-aware
+/// identity) would either hijack another engine's slot or, since the schema-aware slot is gone, run an
+/// initial sync and reload a snapshot into the already-existing nested tables (duplicating data on disk).
+/// In that case the attach fails closed with an exception instead of silently re-snapshotting a populated
+/// replica or hijacking another engine's replication slot.
+void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::nontransaction & tx)
+{
+    if (!is_attach)
+        return;
+
+    /// The generated names differ from the legacy ones only for a non-default schema (and, for the slot,
+    /// only when it is neither user-managed nor a unique replication consumer identifier). This also
+    /// makes the adoption idempotent: once adopted, the names compare equal.
+    if (replication_slot == legacy_replication_slot && publication_name == legacy_publication_name)
+        return;
+
+    auto slot_exists = [&](const String & name)
+    {
+        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_replication_slots WHERE slot_name = '{}'", name))};
+        return !result.empty();
+    };
+    auto publication_exists = [&](const String & name)
+    {
+        pqxx::result result{tx.exec(fmt::format("SELECT 1 FROM pg_publication WHERE pubname = '{}'", name))};
+        return !result.empty();
+    };
+
+    if (replication_slot != legacy_replication_slot)
+    {
+        /// The slot is the object whose loss triggers a destructive re-sync, so it carries the evidence:
+        /// adopt only if the schema-aware slot does not exist while the legacy one does.
+        if (slot_exists(replication_slot) || !slot_exists(legacy_replication_slot))
+            return;
+    }
+    else
+    {
+        /// The slot name does not depend on the schema, so the publication is the only renamed object
+        /// and carries the evidence instead.
+        if (publication_exists(publication_name) || !publication_exists(legacy_publication_name))
+            return;
+    }
+
+    /// The legacy slot and publication names are schema-blind, so the mere existence of the legacy slot
+    /// (Branch A above) does not prove the legacy objects belong to this engine — a same-database
+    /// deployment over the default schema (or another schema targeting the same bare table) owns
+    /// identically-named objects. The only schema-carrying evidence is the legacy publication's table list,
+    /// so the legacy identity is adopted only when the legacy publication exists and every table it
+    /// publishes belongs to this engine's schema. If it is missing, empty, or publishes a table from another
+    /// schema, ownership cannot be proven: the legacy slot is ambiguous or foreign and must be left
+    /// untouched. And since the schema-aware slot is gone, returning here to proceed under the schema-aware
+    /// identity would run an initial sync and reload a snapshot into the already-existing nested tables
+    /// (createNestedIfNeeded is a no-op once they exist), silently duplicating data on disk; while adopting
+    /// the legacy slot regardless would hijack another engine's slot. Fail closed instead: surface the
+    /// identity conflict and let an operator resolve it (createNestedIfNeeded, the initial sync, and any
+    /// re-snapshot never run).
+    String ownership_conflict;
+    if (!publication_exists(legacy_publication_name))
+        ownership_conflict = fmt::format(
+            "the legacy publication {} does not exist, so the schema-blind legacy replication slot cannot be "
+            "proven to belong to this engine's schema '{}'",
+            doubleQuoteString(legacy_publication_name), postgres_schema);
+    else
+    {
+        pqxx::result result{tx.exec(fmt::format(
+            "SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = '{}'", legacy_publication_name))};
+        if (result.empty())
+            ownership_conflict = fmt::format(
+                "the legacy publication {} publishes no tables, so the schema-blind legacy replication slot "
+                "cannot be proven to belong to this engine's schema '{}'",
+                doubleQuoteString(legacy_publication_name), postgres_schema);
+        for (const auto & row : result)
+        {
+            if (row[0].as<std::string>() != postgres_schema)
+            {
+                ownership_conflict = fmt::format(
+                    "the legacy publication {} publishes a table from schema '{}', not this engine's schema "
+                    "'{}', so it belongs to another engine",
+                    doubleQuoteString(legacy_publication_name), row[0].as<std::string>(), postgres_schema);
+                break;
+            }
+        }
+    }
+
+    if (!ownership_conflict.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot start MaterializedPostgreSQL replication on attach: {}, so the legacy replication identity "
+            "cannot be adopted. Proceeding would either reload the initial snapshot into the existing nested "
+            "tables and duplicate data, or consume another engine's replication slot and publication, so "
+            "replication is refused. Resolve the replication-slot/publication conflict on the PostgreSQL side "
+            "(or recreate this table): startup keeps retrying and replication starts automatically once the "
+            "conflict is resolved, without a server restart or a manual re-attach.",
+            ownership_conflict);
+
+    LOG_INFO(
+        log,
+        "Adopting the legacy replication identity of a deployment created before the generated names became "
+        "schema-aware: replication slot {} (instead of {}) and publication {} (instead of {})",
+        legacy_replication_slot, replication_slot, doubleQuoteString(legacy_publication_name), doubleQuoteString(publication_name));
+
+    replication_slot = legacy_replication_slot;
+    tmp_replication_slot = replication_slot + "_tmp";
+    publication_name = legacy_publication_name;
+}
+
+
 void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
 {
     postgres::Connection replication_connection(connection_info, /* replication */true);
     pqxx::nontransaction tx(replication_connection.getRef());
+    adoptLegacyReplicationIdentityIfNeeded(tx);
     createPublicationIfNeeded(tx);
 
     /// List of nested tables (table_name -> nested_storage), which is passed to replication consumer.
@@ -505,7 +753,8 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
         /* async_isnert */ false);
     auto block_io = interpreter.execute();
 
-    StorageInMemoryMetadata storage_metadata = *nested_storage->getInMemoryMetadataPtr(insert_context, false);
+    auto nested_metadata = nested_storage->getInMemoryMetadataPtr(insert_context, false);
+    const StorageInMemoryMetadata & storage_metadata = *nested_metadata;
     auto sample_block = std::make_shared<const Block>(storage_metadata.getSampleBlockNonMaterialized());
 
     auto input = std::make_unique<PostgreSQLTransactionSource<pqxx::ReplicationTransaction>>(tx, query_str, sample_block, DEFAULT_BLOCK_SIZE);
@@ -632,6 +881,15 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             tables_list = buf.str();
             tables_list.resize(tables_list.size() - 1);
         }
+        else if (!is_materialized_postgresql_database)
+        {
+            /// Single `MaterializedPostgreSQL` storage: `tables_list` is the raw remote table name
+            /// (see the `StorageMaterializedPostgreSQL` constructor) and is never passed through the
+            /// quoting pass that `fetchRequiredTables` applies for the database engine. Quote it here,
+            /// otherwise `CREATE PUBLICATION ... FOR TABLE ONLY <name>` folds an upper-case table name
+            /// to lower case and fails with `relation "..." does not exist`.
+            tables_list = doubleQuoteWithSchema(tables_list);
+        }
 
         if (tables_list.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No table found to be replicated");
@@ -670,6 +928,21 @@ bool PostgreSQLReplicationHandler::isReplicationSlotExist(pqxx::nontransaction &
     /// Replication slot does not exist
     if (result.empty())
         return false;
+
+    /// The LSN fields are NULL while the slot is still being created (PostgreSQL registers the slot
+    /// in pg_replication_slots before assigning it a consistent snapshot point), and are never set for
+    /// a physical slot of the same name. Converting the NULL would throw pqxx::conversion_error, which
+    /// is a std::logic_error and must not escape this function. Such a slot exists but cannot be
+    /// consumed from yet, so report a recoverable error: on the attach path the startup task retries,
+    /// and a slot caught mid-creation becomes ready by the next attempt.
+    if (result[0][1].is_null() || result[0][2].is_null())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Replication slot {} exists, but it is not ready: restart_lsn is {}, confirmed_flush_lsn is {}. "
+            "It is either still being created, or it is not a logical replication slot",
+            slot_name,
+            result[0][1].is_null() ? "NULL" : result[0][1].as<std::string>(),
+            result[0][2].is_null() ? "NULL" : result[0][2].as<std::string>());
 
     start_lsn = result[0][2].as<std::string>();
 
@@ -849,6 +1122,11 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 
     {
         pqxx::nontransaction tx(connection.getRef());
+        /// The database engine consults the publication before startSynchronization() runs, so a legacy
+        /// deployment must switch to its legacy identity already here — otherwise the schema-aware
+        /// publication name would (wrongly) look absent and the tables list would be refetched from the
+        /// schema instead of the existing publication.
+        adoptLegacyReplicationIdentityIfNeeded(tx);
         publication_exists_before_startup = isPublicationExist(tx);
     }
 
@@ -1058,6 +1336,37 @@ std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::
 }
 
 
+namespace
+{
+    /// Replace Date32 with Date and DateTime64 with DateTime (recursing into Nullable and Array),
+    /// used when `materialized_postgresql_use_extended_date_and_time_types` is disabled.
+    DataTypePtr narrowDateAndTimeType(const DataTypePtr & type)
+    {
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+            return std::make_shared<DataTypeNullable>(narrowDateAndTimeType(nullable->getNestedType()));
+        if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+            return std::make_shared<DataTypeArray>(narrowDateAndTimeType(array->getNestedType()));
+
+        WhichDataType which(type);
+        if (which.isDate32())
+            return std::make_shared<DataTypeDate>();
+        if (which.isDateTime64())
+            return std::make_shared<DataTypeDateTime>();
+        return type;
+    }
+
+    void narrowDateAndTimeTypes(const PostgreSQLTableStructure::ColumnsInfoPtr & columns_info)
+    {
+        if (!columns_info)
+            return;
+
+        NamesAndTypesList narrowed;
+        for (const auto & name_and_type : columns_info->columns)
+            narrowed.emplace_back(name_and_type.name, narrowDateAndTimeType(name_and_type.type));
+        columns_info->columns = std::move(narrowed);
+    }
+}
+
 template<typename T>
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
         T & tx, const std::string & table_name) const
@@ -1065,6 +1374,15 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     PostgreSQLTableStructure structure;
     auto [schema, table] = getSchemaAndTableName(table_name);
     structure = fetchPostgreSQLTableStructure(tx, table, schema, true, true, true, getTableAllowedColumns(table_name));
+
+    /// PostgreSQL `date`/`timestamp` are mapped to `Date32`/`DateTime64` by default to cover their
+    /// wider value range. The setting allows falling back to the narrower `Date`/`DateTime` types.
+    if (!use_extended_date_and_time_types)
+    {
+        narrowDateAndTimeTypes(structure.physical_columns);
+        narrowDateAndTimeTypes(structure.primary_key_columns);
+        narrowDateAndTimeTypes(structure.replica_identity_columns);
+    }
 
     return std::make_unique<PostgreSQLTableStructure>(std::move(structure));
 }

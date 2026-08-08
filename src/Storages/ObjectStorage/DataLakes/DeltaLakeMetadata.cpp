@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <set>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -197,7 +198,11 @@ struct DeltaLakeMetadataImpl
         }
         else
         {
-            const auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
+            /// Commits must be replayed in version order: `metaData` establishes the schema that
+            /// later `add` actions are resolved against, and a later `remove` supersedes an earlier
+            /// `add`. Object listing is unordered, so sort the zero-padded version file names.
+            auto keys = listFiles(*object_storage, table_path, deltalake_metadata_directory, metadata_file_suffix);
+            std::sort(keys.begin(), keys.end());
             for (const String & key : keys)
                 processMetadataFile(key, current_schema, current_partition_columns, result_files);
         }
@@ -335,7 +340,6 @@ struct DeltaLakeMetadataImpl
                             auto & current_partition_columns = file_partition_columns[full_path];
                             for (const auto & partition_name : partition_values->getNames())
                             {
-                                const auto value = partition_values->getValue<String>(partition_name);
                                 auto name_and_type = file_schema.tryGetByName(partition_name);
                                 if (!name_and_type)
                                 {
@@ -344,6 +348,16 @@ struct DeltaLakeMetadataImpl
                                         "No such column in schema: {} (schema: {})",
                                         partition_name, file_schema.toNamesAndTypesDescription());
                                 }
+
+                                /// A null-equivalent partition value is committed as a JSON null; read it
+                                /// back as NULL instead of throwing while extracting it as a String.
+                                if (partition_values->isNull(partition_name))
+                                {
+                                    current_partition_columns.emplace_back(*name_and_type, Field{});
+                                    continue;
+                                }
+
+                                const auto value = partition_values->getValue<String>(partition_name);
 
                                 LOG_TEST(log, "Partition {} value is {} (data type: {}, file: {})",
                                          partition_name, value, name_and_type->type->getName(), filename);
@@ -461,13 +475,6 @@ struct DeltaLakeMetadataImpl
      * We need to check only `add` column, `remove` column does not have intersections with `add` column.
      *  ...
      */
-    #define THROW_ARROW_NOT_OK(status)                                    \
-        do                                                                \
-        {                                                                 \
-            if (const ::arrow::Status & _s = (status); !_s.ok())          \
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Arrow error: {}", _s.ToString()); \
-        } while (false)
-
     size_t getCheckpointIfExists(
         std::set<String> & result,
         NamesAndTypesList & file_schema,
@@ -504,7 +511,8 @@ struct DeltaLakeMetadataImpl
 
         auto open_file_res = parquet::arrow::OpenFile(
             asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
-        THROW_ARROW_NOT_OK(open_file_res.status());
+        if (!open_file_res.ok())
+            throwFromArrowStatus(open_file_res.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open Parquet checkpoint file");
         auto reader = *std::move(open_file_res);
 
         ArrowColumnToCHColumn column_reader(
@@ -519,7 +527,8 @@ struct DeltaLakeMetadataImpl
             /* case_insensitive_column_matching */false);
 
         std::shared_ptr<arrow::Table> table;
-        THROW_ARROW_NOT_OK(reader->ReadTable(&table));
+        if (auto read_status = reader->ReadTable(&table); !read_status.ok())
+            throwFromArrowStatus(read_status, ErrorCodes::BAD_ARGUMENTS, "Failed to read Parquet checkpoint file");
 
         Chunk chunk = column_reader.arrowTableToCHChunk(table, reader->parquet_reader()->metadata()->num_rows(), reader->parquet_reader()->metadata()->key_value_metadata());
         auto res_block = header.cloneWithColumns(chunk.detachColumns());
@@ -589,6 +598,16 @@ struct DeltaLakeMetadataImpl
                                 "No such column in schema: {} (schema: {})",
                                 partition_name, file_schema.toString());
                         }
+
+                        /// A null-equivalent partition value is committed as a JSON null; read it
+                        /// back as NULL instead of throwing while extracting it as a String.
+                        if (tuple[1].isNull())
+                        {
+                            current_partition_columns.emplace_back(std::move(name_and_type.value()), Field{});
+                            LOG_TEST(log, "Partition {} value is NULL (for {})", partition_name, filename);
+                            continue;
+                        }
+
                         const auto value = tuple[1].safeGet<String>();
                         auto field = DB::DeltaLakeMetadata::getFieldValue(value, name_and_type->type);
                         current_partition_columns.emplace_back(std::move(name_and_type.value()), std::move(field));

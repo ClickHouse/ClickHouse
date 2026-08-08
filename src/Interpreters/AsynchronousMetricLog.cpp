@@ -80,7 +80,7 @@ void AsynchronousMetricLog::addValues(const AsynchronousMetricValues & values)
         element.metric_name = key;
         element.value = round(value.value * precision) / precision;
 
-        add(element);
+        add([&](AsynchronousMetricLogElement & log_element) { log_element = element; });
     }
 }
 

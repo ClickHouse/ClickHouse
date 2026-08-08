@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/SipHash.h>
 
@@ -12,8 +13,6 @@
 
 namespace DB
 {
-
-constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace ErrorCodes
 {
@@ -24,21 +23,35 @@ namespace ErrorCodes
 bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,
-    const std::string & extension)
+    const std::string & extension,
+    const IDataPartStorage * storage)
 {
     if (checksums.files.contains(path_prefix + extension))
         return true;
 
     /// Also check for hashed version of the filename
     auto hash = sipHash128String(path_prefix);
-    return checksums.files.contains(hash + extension);
+    if (checksums.files.contains(hash + extension))
+        return true;
+
+    /// Packed substreams: not listed in checksums.txt as individual entries, but the
+    /// storage overlay reports their existence via the skp_idx.packed index.
+    if (storage && checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME)))
+    {
+        if (storage->existsFile(path_prefix + extension))
+            return true;
+        if (storage->existsFile(hash + extension))
+            return true;
+    }
+
+    return false;
 }
 
 String getIndexFileName(const String & index_name, bool escape_filename)
 {
     if (escape_filename)
-        return escapeForFileName(INDEX_FILE_PREFIX + index_name);
-    return INDEX_FILE_PREFIX + index_name;
+        return escapeForFileName(String(SKIP_INDEX_FILE_PREFIX) + index_name);
+    return String(SKIP_INDEX_FILE_PREFIX) + index_name;
 }
 
 String IMergeTreeIndex::getFileName() const
@@ -51,12 +64,37 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
     return index.expression->getRequiredColumns();
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
+const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCalc() const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx"))
+    return index.expression->getRequiredColumnsWithTypes();
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+{
+    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
+        if (part.isSystemColumnInvalidated(column))
+            return {0 /*unknown*/, {}};
+
+    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /*unknown*/, {}};
+}
+
+MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
+{
+    /// Not routed through `getDeserializedFormat`: that answers the read-time question and
+    /// reports nothing once a required system column is invalidated, while a file left on disk
+    /// still has to be skipped/stripped here. (minmax overrides to add its legacy `.idx`.)
+    MergeTreeIndexSubstreams substreams;
+    for (const auto & substream : getSubstreams())
+        if (indexFileExistsInChecksums(checksums, relative_path_prefix + substream.suffix, substream.extension, storage))
+            substreams.push_back(substream);
+
+    return substreams;
 }
 
 void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
@@ -101,7 +139,7 @@ void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndex
 }
 
 MergeTreeIndexPtr MergeTreeIndexFactory::get(
-    const IndexDescription & index) const
+    StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const
 {
     auto it = creators.find(index.type);
     if (it == creators.end())
@@ -118,19 +156,18 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                 );
     }
 
-    return it->second(index);
+    return it->second(std::move(metadata_snapshot), index, settings);
 }
 
-
-MergeTreeIndices MergeTreeIndexFactory::getMany(const std::vector<IndexDescription> & indices) const
+MergeTreeIndices MergeTreeIndexFactory::getMany(StorageMetadataPtr metadata_snapshot, const std::vector<IndexDescription> & indices, const MergeTreeSettings & settings) const
 {
     MergeTreeIndices result;
     for (const auto & index : indices)
-        result.emplace_back(get(index));
+        result.emplace_back(get(metadata_snapshot, index, settings));
     return result;
 }
 
-void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach) const
+void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const
 {
     /// Do not allow constant and non-deterministic expressions.
     /// Do not throw on attach for compatibility.
@@ -172,7 +209,7 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
             );
     }
 
-    it->second(index, attach);
+    it->second(index, attach, settings);
 }
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()

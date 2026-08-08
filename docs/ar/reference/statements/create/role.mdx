@@ -1,0 +1,53 @@
+---
+description: 'توثيق الدور'
+sidebarTitle: 'ROLE'
+slug: /sql-reference/statements/create/role
+title: 'CREATE ROLE'
+doc_type: 'مرجع'
+---
+
+ينشئ [أدوارًا](/ar/concepts/features/security/access-rights#role-management) جديدة. والدور عبارة عن مجموعة من [الامتيازات](/ar/reference/statements/grant#granting-privilege-syntax). ويحصل [المستخدم](/ar/reference/statements/create/user) الذي يُسنَد إليه دور على جميع امتيازات هذا الدور.
+
+الصيغة:
+
+```sql
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+```
+
+<div id="managing-roles">
+  ## إدارة الأدوار
+</div>
+
+يمكن إسناد عدة أدوار إلى المستخدم. ويمكن للمستخدمين تفعيل الأدوار المُسندة إليهم بأي مجموعة يختارونها باستخدام عبارة [SET ROLE](/ar/reference/statements/set-role). ويكون النطاق النهائي للامتيازات عبارة عن مجموعة مجمّعة من جميع امتيازات كل الأدوار المفعّلة. وإذا كانت لدى المستخدم امتيازات ممنوحة مباشرةً إلى حساب المستخدم، فإنها تُجمع أيضًا مع الامتيازات الممنوحة عبر الأدوار.
+
+يمكن أن تكون للمستخدم أدوار افتراضية تُفعَّل عند تسجيل دخوله. لتعيين الأدوار الافتراضية، استخدم عبارة [SET DEFAULT ROLE](/ar/reference/statements/set-role#set-default-role) أو عبارة [ALTER USER](/ar/reference/statements/alter/user).
+
+لسحب دور، استخدم عبارة [REVOKE](/ar/reference/statements/revoke).
+
+لحذف دور، استخدم عبارة [DROP ROLE](/ar/reference/statements/drop#drop-role). ويُسحب الدور المحذوف تلقائيًا من جميع المستخدمين والأدوار التي كان مُسندًا إليها.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+```sql
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+```
+
+تنشئ مجموعة الاستعلامات هذه الدور `accountant` الذي يملك امتياز قراءة البيانات من قاعدة البيانات `db`.
+
+إسناد الدور إلى المستخدم `mira`:
+
+```sql
+GRANT accountant TO mira;
+```
+
+بعد تعيين الدور، يمكن للمستخدم استخدامه وتنفيذ الاستعلامات المسموح بها. على سبيل المثال:
+
+```sql
+SET ROLE accountant;
+SELECT * FROM db.*;
+```

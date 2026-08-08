@@ -645,6 +645,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "notEquals")
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -654,6 +656,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "equals")
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -681,6 +685,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "startsWith")
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -690,6 +696,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     }
     if (function_name == "endsWith")
     {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
@@ -846,7 +854,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
     return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, tokenizer.get());
 }
 
-MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index)
+MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     static std::set<ITokenizer::Type> allowed_tokenizers =
     {
@@ -880,10 +888,10 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index)
         args[first_bf_param_idx+1].safeGet<size_t>(),
         args[first_bf_param_idx+2].safeGet<size_t>());
 
-    return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+    return std::make_shared<MergeTreeIndexBloomFilterText>(std::move(metadata_snapshot), index, params, std::move(tokenizer));
 }
 
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach*/)
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)
 {
     for (const auto & index_data_type : index.data_types)
     {

@@ -1,0 +1,15 @@
+-- two indexes, both partially materialized
+AND, direct read off	1
+AND, direct read on 	1
+OR,  direct read off	1
+OR,  direct read on 	1
+-- two indexes fully materialized (defined in DDL) give the same results
+AND	1
+OR 	1
+-- three indexes, all partially materialized
+AND all three	1
+AND two	1
+OR all three	1
+-- two indexes with hasToken (splitByNonAlpha tokenizer), partially materialized
+AND	1
+OR 	2

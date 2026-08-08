@@ -95,7 +95,7 @@ def test_create_replicated_on_cluster_ignore(started_cluster, entity):
     node1.replace_config(
         "/etc/clickhouse-server/users.d/users.xml",
         inspect.cleandoc(
-            f"""
+            """
             <clickhouse>
                 <profiles>
                     <default>
@@ -123,7 +123,7 @@ def test_create_replicated_on_cluster_ignore(started_cluster, entity):
     node1.replace_config(
         "/etc/clickhouse-server/users.d/users.xml",
         inspect.cleandoc(
-            f"""
+            """
             <clickhouse>
                 <profiles>
                     <default/>
@@ -164,7 +164,7 @@ def test_grant_revoke_replicated(started_cluster, use_on_cluster: bool):
 
     assert node1.query(f"GRANT {on_cluster} SELECT ON *.* to theuser2") == ""
 
-    assert node2.query(f"SHOW GRANTS FOR theuser2") == "GRANT SELECT ON *.* TO theuser2\n"
+    assert node2.query("SHOW GRANTS FOR theuser2") == "GRANT SELECT ON *.* TO theuser2\n"
 
     assert node1.query(f"REVOKE {on_cluster} SELECT ON *.* from theuser2") == ""
     node1.query(f"DROP USER theuser2 {on_cluster}")
@@ -172,7 +172,7 @@ def test_grant_revoke_replicated(started_cluster, use_on_cluster: bool):
     node1.replace_config(
         "/etc/clickhouse-server/users.d/users.xml",
         inspect.cleandoc(
-            f"""
+            """
             <clickhouse>
                 <profiles>
                     <default/>
@@ -287,3 +287,186 @@ def test_reload_zookeeper(started_cluster):
     cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
     cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"])
     reset_zookeeper_config((node1, node2), default_zk_config)
+
+
+# Stress parameters for the UNKNOWN_ROLE race regression test below.
+RACE_SEED_ENTITIES = 1500
+RACE_CHURNERS = 6
+RACE_VICTIMS = 6
+RACE_DURATION_SECONDS = 45
+
+# In-container driver. Numeric parameters (SEED/CHURNERS/VICTIMS/DURATION) are
+# prepended as shell variable assignments by the test, so this body needs no
+# Python string substitution (keeps the literal shell braces intact).
+#
+# Why an in-container bash driver instead of Python threads or `xargs -P`:
+#
+#   * The race window is narrow, so reproduction reliability is a function of
+#     iterations-per-second. Each worker iteration spawns a `clickhouse-client`
+#     process; running the hot loop inside the container keeps that cost local.
+#     Driving it from the host with `node.query` would add a host<->container
+#     round trip to every iteration, lowering the iteration rate and forcing a
+#     longer DURATION to stay reliable -- trading proven reproduction (it hits
+#     UNKNOWN_ROLE in ~17s on a buggy build) for stylistic tidiness.
+#
+#   * `xargs -P` only replaces the `& ... wait` fan-out (two lines). The bulk
+#     here is the worker bodies (time-bounded loop + shared FOUND stop-flag),
+#     the multi-statement victim SQL and the seeding -- none of which `xargs`
+#     removes. Worse, `xargs` runs an external command, not a shell function,
+#     so each worker body would have to be re-nested inside another `bash -c`
+#     string (a third level of quoting). These are long-lived workers with
+#     shared state and early exit, not a command mapped over a list, so
+#     background jobs + `wait` are the idiomatic and more readable fit.
+_RACE_DRIVER_BODY = r"""
+set -u
+# The integration-test containers mount the server binary at
+# /usr/bin/clickhouse and have no `clickhouse-client` symlink, so the client
+# must be invoked as `clickhouse client` ($CLIENT is expanded unquoted).
+CLIENT="/usr/bin/clickhouse client"
+
+# Bloat the /uuid children list so the (previously lock-free) snapshot read in
+# refreshEntities is slow and the eviction window is wide.
+for i in $(seq 0 $((SEED - 1))); do
+    echo "CREATE SETTINGS PROFILE IF NOT EXISTS seed_$i SETTINGS max_execution_time=$((i % 100 + 1));"
+done | $CLIENT --multiquery || { echo "SEED_FAILED"; exit 1; }
+
+FOUND=/tmp/race_found
+UNEXPECTED=/tmp/race_unexpected
+rm -f "$FOUND" "$UNEXPECTED"
+END=$(( $(date +%s) + DURATION ))
+
+# Keep the /uuid children list volatile so a stale-snapshot watch refresh is
+# almost always in flight. The churn is part of the test's contract (it is
+# what widens the eviction window), so client failures here are not ignorable
+# noise: any nonzero exit fails the worker and the driver, like in `victim`.
+# No race detection is needed here: `IF NOT EXISTS`/`IF EXISTS` make the
+# statements no-ops instead of errors when the race hides the entity.
+churn() {
+    local w=$1
+    local i=0 n out
+    while [ "$(date +%s)" -lt "$END" ] && [ ! -e "$FOUND" ]; do
+        n="churn_${w}_$((i % 4))"
+        if ! out=$($CLIENT --multiquery -q "CREATE SETTINGS PROFILE IF NOT EXISTS $n SETTINGS max_execution_time=$((i % 50 + 1)); DROP SETTINGS PROFILE IF EXISTS $n;" 2>&1); then
+            echo "$out" > "$UNEXPECTED"
+            return 1
+        fi
+        i=$((i + 1))
+    done
+}
+
+# Create access entities and immediately reference them by name (CREATE ROLE
+# ... SETTINGS PROFILE, CREATE USER ... DEFAULT ROLE, CREATE QUOTA ... TO). On
+# the buggy build any of the freshly created entities can be evicted from the
+# local cache in between, so the referencing statement fails with the
+# type-specific not-found error (THERE_IS_NO_PROFILE, UNKNOWN_ROLE,
+# UNKNOWN_USER -- all "There is no ..." from IAccessStorage::throwNotFound).
+# The race is generic across entity types, so every such error is a detection;
+# matching only UNKNOWN_ROLE would silently retry iterations where the race hit
+# the profile or user lookup first. Within a victim each entity is created
+# before use, names are unique per worker and nothing drops them mid-chain, so
+# on a fixed build none of these errors can appear. Any other client failure is
+# not retryable either: it means the chain stopped exercising the intended
+# path, so the worker records it and exits nonzero to fail the driver.
+#
+# The `local` declarations are deliberately split: bash expands the whole
+# `local` command line before performing any of its assignments, so with
+# `set -u` a single `local w=$1 name="race_$w"` dies with "w: unbound
+# variable" before the loop even starts.
+victim() {
+    local w=$1
+    local name="race_$w" out
+    while [ "$(date +%s)" -lt "$END" ] && [ ! -e "$FOUND" ]; do
+        if out=$($CLIENT --multiquery -q "
+            DROP SETTINGS PROFILE IF EXISTS $name;
+            DROP QUOTA IF EXISTS $name;
+            DROP USER IF EXISTS $name;
+            DROP ROLE IF EXISTS $name;
+            CREATE SETTINGS PROFILE $name SETTINGS max_execution_time=60;
+            CREATE ROLE $name SETTINGS PROFILE $name;
+            CREATE USER $name IDENTIFIED BY 'p' DEFAULT ROLE $name;
+            CREATE QUOTA $name KEYED BY user_name FOR INTERVAL 1 hour NO LIMITS TO $name;
+        " 2>&1); then
+            continue
+        fi
+        case "$out" in
+            *UNKNOWN_ROLE* | *THERE_IS_NO_PROFILE* | *UNKNOWN_USER* | *"There is no"*)
+                echo "$out" > "$FOUND"
+                return 0 ;;
+            *)
+                echo "$out" > "$UNEXPECTED"
+                return 1 ;;
+        esac
+    done
+}
+
+# Collect worker PIDs and wait on each: a bare `wait` discards worker exit
+# statuses, so a worker that died without detecting the race (e.g. on an
+# unexpected client error) would silently turn into NO_RACE.
+pids=""
+for w in $(seq 1 $CHURNERS); do churn "$w" & pids="$pids $!"; done
+for w in $(seq 1 $VICTIMS); do victim "$w" & pids="$pids $!"; done
+rc=0
+for p in $pids; do wait "$p" || rc=1; done
+
+if [ -e "$FOUND" ]; then
+    echo "RACE_DETECTED"
+    cat "$FOUND"
+    exit 0
+fi
+if [ "$rc" -ne 0 ]; then
+    echo "WORKER_FAILED"
+    if [ -e "$UNEXPECTED" ]; then cat "$UNEXPECTED"; fi
+    exit 1
+fi
+echo "NO_RACE"
+"""
+
+
+def _race_cleanup(node):
+    # Drop everything the race regression test may have created.
+    stmts = [
+        f"DROP SETTINGS PROFILE IF EXISTS seed_{i}" for i in range(RACE_SEED_ENTITIES)
+    ]
+    for w in range(RACE_CHURNERS):
+        for s in range(4):
+            stmts.append(f"DROP SETTINGS PROFILE IF EXISTS churn_{w + 1}_{s}")
+    for w in range(RACE_VICTIMS):
+        stmts += [
+            f"DROP QUOTA IF EXISTS race_{w + 1}",
+            f"DROP USER IF EXISTS race_{w + 1}",
+            f"DROP ROLE IF EXISTS race_{w + 1}",
+            f"DROP SETTINGS PROFILE IF EXISTS race_{w + 1}",
+        ]
+    node.query(";\n".join(stmts))
+
+
+# Regression test for a TOCTOU race in ReplicatedAccessStorage: the background
+# watch thread used to read the /uuid children list without holding the mutex and
+# then evict everything not in that (stale) snapshot via removeAllExcept. A role
+# created and immediately referenced by name on the same connection could be
+# evicted from the local cache in between, so the next statement that resolves the
+# role failed with "There is no role ... (UNKNOWN_ROLE)" even though CREATE ROLE
+# had just succeeded. https://github.com/ClickHouse/ClickHouse/issues/106521
+#
+# This is a probabilistic stress test: it reliably fails on the buggy build and
+# never false-positives on the fixed build (within a victim the role is created
+# and used with nothing dropping it in between, so the only thing that could
+# remove it was the racing watch eviction).
+def test_create_role_then_reference_it_no_unknown_role(started_cluster):
+    node = node1
+    params = (
+        f"SEED={RACE_SEED_ENTITIES}\n"
+        f"CHURNERS={RACE_CHURNERS}\n"
+        f"VICTIMS={RACE_VICTIMS}\n"
+        f"DURATION={RACE_DURATION_SECONDS}\n"
+    )
+    driver = params + _RACE_DRIVER_BODY
+    try:
+        result = node.exec_in_container(["bash", "-c", driver])
+        assert "RACE_DETECTED" not in result, (
+            "ReplicatedAccessStorage evicted a freshly created role "
+            "(UNKNOWN_ROLE race):\n" + result
+        )
+        assert "NO_RACE" in result, result
+    finally:
+        _race_cleanup(node)

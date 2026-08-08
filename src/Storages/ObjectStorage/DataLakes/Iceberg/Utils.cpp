@@ -1,6 +1,6 @@
 
+#include <charconv>
 #include <memory>
-#include <sstream>
 #include <string>
 #include <unordered_set>
 #include <config.h>
@@ -9,8 +9,11 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
@@ -34,6 +37,7 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
@@ -49,7 +53,10 @@
 #include <filesystem>
 #include <regex>
 
+#include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
@@ -68,6 +75,7 @@ extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
+extern const int UNSUPPORTED_METHOD;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -99,6 +107,8 @@ namespace DB::Setting
 static constexpr size_t MAX_HINT_FILE_SIZE = 10 * 1024 * 1024;
 static constexpr auto MAX_TRANSACTION_RETRIES = 1000;
 
+static constexpr size_t MAX_LIST_RETRIES = 5;
+
 namespace DB::Iceberg
 {
 
@@ -110,13 +120,13 @@ using namespace DB;
 /// reporting metrics, not deletion safety.
 FileCategory inspectFileCategory(const String & relative_path)
 {
-    if (relative_path.find("/metadata/") != String::npos || relative_path.starts_with("metadata/"))
+    if (relative_path.contains("/metadata/") || relative_path.starts_with("metadata/"))
     {
-        if (relative_path.find(".metadata.json") != String::npos)
+        if (relative_path.contains(".metadata.json"))
             return FileCategory::METADATA_JSON;
         if (relative_path.ends_with(".avro"))
         {
-            if (relative_path.find("snap-") != String::npos)
+            if (relative_path.contains("snap-"))
                 return FileCategory::MANIFEST_LIST;
             return FileCategory::MANIFEST_FILE;
         }
@@ -124,10 +134,10 @@ FileCategory inspectFileCategory(const String & relative_path)
             return FileCategory::STATISTICS_FILE;
     }
 
-    if (relative_path.find("eq-del") != String::npos)
+    if (relative_path.contains("eq-del"))
         return FileCategory::EQUALITY_DELETE_FILE;
 
-    if (relative_path.find("-deletes.parquet") != String::npos || relative_path.find("-delete-") != String::npos)
+    if (relative_path.contains("-deletes.parquet") || relative_path.contains("-delete-"))
         return FileCategory::POSITION_DELETE_FILE;
 
     return FileCategory::DATA_FILE;
@@ -157,6 +167,23 @@ static bool isTemporaryMetadataFile(const String & file_name)
         return true;
     String substring = String(file_name.begin(), file_name.begin() + string_position);
     return Poco::UUID{}.tryParse(substring);
+}
+
+/// Parse an all-digit version string into Int32, mapping overflow/garbage to BAD_ARGUMENTS.
+/// std::stoi throws std::out_of_range for values above INT_MAX, which would surface as an
+/// opaque STD_EXCEPTION (see issue #109612) instead of a clean BAD_ARGUMENTS.
+static Int32 parseMetadataVersion(const String & version_str, const String & file_name)
+{
+    Int32 version = 0;
+    const char * begin = version_str.data();
+    const char * end = begin + version_str.size();
+    auto [ptr, ec] = std::from_chars(begin, end, version);
+    if (ec != std::errc{} || ptr != end)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Bad metadata file name: '{}'. Version number is not a valid 32-bit integer",
+            file_name);
+    return version;
 }
 
 static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
@@ -202,7 +229,9 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
             file_name);
 
     return MetadataFileWithInfo{
-        .version = std::stoi(version_str), .path = path, .compression_method = getCompressionMethodFromMetadataFile(path)};
+        .version = parseMetadataVersion(version_str, file_name),
+        .path = path,
+        .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
 /// Resolve metadata filename from version hint content.
@@ -240,11 +269,15 @@ static std::optional<String> resolveMetadataFilenameFromVersionHint(
     }
     if (compression_method != CompressionMethod::None)
     {
-        auto suffix = toContentEncodingName(compression_method);
-        String compressed_candidate = "v" + version_number + "." + suffix + ".metadata.json";
-        auto compressed_path = std::filesystem::path(table_path) / "metadata" / compressed_candidate;
-        if (object_storage->exists(StoredObject(compressed_path)))
-            return compressed_candidate;
+        /// Try the Iceberg spec extension first (gzip -> "gz"), then the legacy
+        /// Content-Encoding token ("gzip") that older ClickHouse versions wrote.
+        for (const auto & suffix : {toIcebergMetadataCompressionExtension(compression_method), toContentEncodingName(compression_method)})
+        {
+            String compressed_candidate = "v" + version_number + "." + suffix + ".metadata.json";
+            auto compressed_path = std::filesystem::path(table_path) / "metadata" / compressed_candidate;
+            if (object_storage->exists(StoredObject(compressed_path)))
+                return compressed_candidate;
+        }
     }
 
     /// Nothing found via direct checks.
@@ -269,7 +302,17 @@ void writeMessageToFile(
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
-        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+        /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`),
+        /// independent of the session `snappy_mode`. The wire format is not encoded in the
+        /// `.snappy.metadata.json` suffix, so it must be deterministic for the read path (which
+        /// always decodes basic, see `getMetadataJSONObject`) to round-trip its own metadata and
+        /// stay interoperable with other Iceberg engines.
+        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(
+            std::move(buffer_metadata),
+            compression_method,
+            static_cast<int>(settings[Setting::output_format_compression_level]),
+            /*zstd_window_log=*/ 0,
+            SnappyMode::Basic);
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }
@@ -304,6 +347,16 @@ bool writeMetadataFileAndVersionHint(
             /* write-if-none-match */ "*",
             "",
             metadata_file_info.compression_method);
+    }
+    catch (const Exception & e)
+    {
+        /// A backend that cannot express the commit's compare-and-swap will never be able to, so
+        /// reporting a lost race would make the caller retry an operation that can never succeed.
+        /// Propagate instead; every other failure (including a genuinely lost CAS) stays retryable.
+        if (e.code() == ErrorCodes::UNSUPPORTED_METHOD)
+            throw;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
     }
     catch (...)
     {
@@ -340,7 +393,7 @@ bool writeMetadataFileAndVersionHint(
         {
             if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
             {
-                old_version = std::stoi(version_hint_value);
+                old_version = parseMetadataVersion(version_hint_value, version_hint_value);
             }
             else
             {
@@ -480,7 +533,10 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
-            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method);
+            /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`); the
+            /// write path in `writeMessageToFile` pins the same mode. The wire format cannot be
+            /// inferred from the `.snappy.metadata.json` suffix, so both sides must agree statically.
+            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method, /*zstd_window_log_max=*/ 0, SnappyMode::Basic);
         else
             buf = std::move(source_buf);
 
@@ -542,7 +598,9 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
                 Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
                 field->set(Iceberg::f_id, ++iter_fields);
                 field->set(Iceberg::f_name, type_tuple->getNameByPosition(iter_names));
-                auto child_type = getIcebergType(element->getNormalizedType(), iter);
+                /// Recurse on the element itself: `getNormalizedType` would rename a nested
+                /// tuple's elements to "1", "2", ... (`DataTypeTuple::getNormalizedType`).
+                auto child_type = getIcebergType(element, iter);
                 field->set(Iceberg::f_required, child_type.second);
                 field->set(Iceberg::f_type, child_type.first);
                 fields->add(field);
@@ -612,8 +670,18 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
-        case TypeIndex::DateTime64:
             return "long";
+        case TypeIndex::DateTime64:
+        {
+            if (getDecimalScale(*type) != 6)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+
+            Poco::JSON::Object::Ptr timestamp_type = new Poco::JSON::Object;
+            timestamp_type->set("type", "long");
+            timestamp_type->set("logicalType", "timestamp-micros");
+            timestamp_type->set("adjust-to-utc", assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone());
+            return timestamp_type;
+        }
         case TypeIndex::Float32:
             return "float";
         case TypeIndex::Float64:
@@ -953,7 +1021,6 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
     new_metadata_file_content->set(Iceberg::f_last_updated_ms, ms.count());
-    new_metadata_file_content->set(Iceberg::f_last_column_id, columns.size());
     new_metadata_file_content->set(Iceberg::f_current_schema_id, 0);
 
     Poco::JSON::Object::Ptr schema_representation = new Poco::JSON::Object;
@@ -961,6 +1028,10 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     schema_representation->set(Iceberg::f_schema_id, 0);
 
     Poco::JSON::Array::Ptr schema_fields = new Poco::JSON::Array;
+    /// Top-level columns get ids 1..N; nested tuple/array/map children get ids
+    /// N+1.. via the shared `iter`. After the loop `iter` is the max assigned
+    /// field id, which is what last-column-id must record (not the top-level
+    /// column count) so a later ADD COLUMN does not reuse a nested field id.
     Int32 iter = static_cast<Int32>(columns.size());
     Int32 iter_for_initial_columns = 0;
     for (const auto & column : columns)
@@ -974,6 +1045,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         column_name_to_source_id[column.name] = iter_for_initial_columns;
         schema_fields->add(field);
     }
+    new_metadata_file_content->set(Iceberg::f_last_column_id, iter);
     schema_representation->set(Iceberg::f_fields, schema_fields);
     Poco::JSON::Array::Ptr schema_array = new Poco::JSON::Array;
     schema_array->add(schema_representation);
@@ -1046,9 +1118,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     sort_orders->add(sort_order);
     new_metadata_file_content->set(Iceberg::f_sort_orders, sort_orders);
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(new_metadata_file_content, oss, 4);
-    return {new_metadata_file_content, removeEscapedSlashes(oss.str())};
+    return {new_metadata_file_content, stringifyJSON(new_metadata_file_content, 4)};
 }
 
 /**
@@ -1079,7 +1149,21 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
             : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
         bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
             || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
-        const auto metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+
+        std::vector<String> metadata_files;
+        for (size_t attempt = 0; attempt < MAX_LIST_RETRIES; ++attempt)
+        {
+            metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
+            if (!metadata_files.empty())
+                break;
+            LOG_DEBUG(
+                log,
+                "Listing of metadata files for Iceberg table with path {} returned no usable metadata file "
+                "(attempt {} of {}), retrying",
+                table_path,
+                attempt + 1,
+                MAX_LIST_RETRIES);
+        }
         if (metadata_files.empty())
         {
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
@@ -1198,7 +1282,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].changed && !ignore_explicit_metadata_file_path)
     {
         auto explicit_metadata_path = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_file_path].value;
-        if (explicit_metadata_path.find('\0') != String::npos)
+        if (explicit_metadata_path.contains('\0'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata file path contains a null byte");
         LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
         std::filesystem::path p(explicit_metadata_path);
@@ -1255,6 +1339,61 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         return getLatestMetadataFileAndVersion(
             object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false, force_fetch_latest_metadata);
     }
+}
+
+MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
+    const ObjectStoragePtr & object_storage,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_identifier,
+    const String & table_path,
+    const DataLakeStorageSettings & data_lake_settings,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    Poco::Logger * log,
+    const std::optional<String> & table_uuid,
+    CompressionMethod known_compression_method,
+    bool ignore_explicit_metadata_file_path)
+{
+    if (!catalog)
+        return getLatestOrExplicitMetadataFileAndVersion(
+            object_storage,
+            table_path,
+            data_lake_settings,
+            metadata_cache,
+            local_context,
+            log,
+            table_uuid,
+            known_compression_method,
+            /* force_fetch_latest_metadata */ true,
+            ignore_explicit_metadata_file_path);
+
+    DataLake::TableMetadata table_metadata;
+    table_metadata.withDataLakeSpecificProperties().withLocation();
+    const auto & [namespace_name, table_name] = DataLake::parseTableName(table_identifier);
+    catalog->getTableMetadata(namespace_name, table_name, table_metadata);
+
+    auto specific_properties = table_metadata.getDataLakeSpecificProperties();
+    if (!specific_properties.has_value() || specific_properties->iceberg_metadata_file_location.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Catalog did not return a metadata file location for table '{}.{}'",
+            namespace_name, table_name);
+
+    DataLakeStorageSettings effective_settings = data_lake_settings;
+    effective_settings[DataLakeStorageSetting::iceberg_metadata_file_path]
+        = table_metadata.getMetadataLocation(specific_properties->iceberg_metadata_file_location);
+
+    return getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        table_path,
+        effective_settings,
+        metadata_cache,
+        local_context,
+        log,
+        table_uuid,
+        known_compression_method,
+        /* force_fetch_latest_metadata */ true,
+        /* ignore_explicit_metadata_file_path */ false);
 }
 
 
@@ -1340,6 +1479,9 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
             auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
+            /// produce a parseable ORDER BY clause.
+            auto quoted_column_name = backQuoteIfNeed(column_name);
             String full_argument;
             if (clickhouse_transform_name->transform_name != "identity")
             {
@@ -1348,11 +1490,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
                 {
                     full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
                 }
-                full_argument += column_name + ")";
+                full_argument += quoted_column_name + ")";
             }
             else
             {
-                full_argument = column_name;
+                full_argument = quoted_column_name;
             }
             if (direction == 1)
                 order_by_str += fmt::format("{} ASC,", full_argument);

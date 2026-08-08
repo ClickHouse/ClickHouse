@@ -1,0 +1,34 @@
+---
+description: 'Documentação que descreve o modificador APPLY, que permite invocar uma função para cada linha retornada por uma expressão de tabela externa de uma consulta.'
+sidebarTitle: 'REPLACE'
+slug: /sql-reference/statements/select/replace-modifier
+title: 'Modificador Replace'
+keywords: ['REPLACE', 'modificador']
+doc_type: 'reference'
+---
+
+> Permite especificar um ou mais [aliases de expressão](/pt-BR/reference/syntax#expression-aliases).
+
+Cada alias deve corresponder ao nome de uma coluna da instrução `SELECT *`. Na lista de colunas de saída, a coluna correspondente
+ao alias é substituída pela expressão nesse `REPLACE`.
+
+Esse modificador não altera os nomes nem a ordem das colunas. No entanto, pode alterar o valor e o tipo de valor.
+
+**Sintaxe:**
+
+```sql
+SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
+```
+
+**Exemplo:**
+
+```sql
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
+```
+
+```response
+┌───i─┬──j─┬───k─┐
+│ 101 │ 10 │ 324 │
+│ 121 │  8 │  23 │
+└─────┴────┴─────┘
+```

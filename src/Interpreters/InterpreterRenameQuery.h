@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/ASTRenameQuery.h>
+
+#include <functional>
 
 
 namespace DB
@@ -53,8 +56,20 @@ using TableGuards = std::map<UniqueTableName, std::unique_ptr<DDLGuard>>;
 class InterpreterRenameQuery : public IInterpreter, WithContext
 {
 public:
+    /// Invoked while holding the per-table `DDLGuard`s, immediately before the
+    /// non-replicated `database->renameTable` call. Receives the `to` `StorageID`
+    /// (the name whose contents are about to be exchanged-with or replaced). The
+    /// callback can throw to abort the rename atomically: the guards release via
+    /// RAII, no rename happens, and the exception propagates to the caller.
+    /// Used by `CREATE OR REPLACE TABLE` to enforce `max_table_size_to_drop` on
+    /// the storage as it is at exchange time, closing the `TOCTOU` window
+    /// between the upfront pre-flight check and the rename's guard acquisition.
+    using PreSwapCheck = std::function<void(const StorageID &)>;
+
     InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_);
     BlockIO execute() override;
+
+    void setPreSwapCheck(PreSwapCheck check) { pre_swap_check = std::move(check); }
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
@@ -74,6 +89,7 @@ private:
 
     ASTPtr query_ptr;
     bool renamed_instead_of_exchange{false};
+    PreSwapCheck pre_swap_check;
 };
 
 }

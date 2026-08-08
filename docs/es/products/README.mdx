@@ -1,0 +1,39 @@
+---
+title: README
+---
+
+<div id="products">
+  # Productos
+</div>
+
+**Qué va aquí:** Documentación específica de cada producto para las opciones de
+despliegue de ClickHouse y sus productos gestionados o complementarios. Cada subdirectorio es autosuficiente
+y cuenta con su propia descripción general, guía de inicio, guías y material de
+referencia para ese producto.
+
+**Público:** Usuarios que trabajan con un producto específico de ClickHouse. El contenido de aquí
+asume que el lector ya ha elegido el producto y quiere detalles que se aplican a este
+(facturación, topología de despliegue, funcionalidades específicas del producto, comportamiento
+de la consola/API). El contenido que se aplica a ClickHouse en general — conceptos, patrones de
+consulta, referencia de SQL — pertenece a `/core`, no aquí.
+
+**Subdirectorios:**
+
+* `cloud/` — ClickHouse Cloud (servicio gestionado sin servidor).
+* `clickstack/` — ClickStack, la pila de observabilidad impulsada por ClickHouse.
+* `bring-your-own-cloud/` — BYOC: ClickHouse Cloud ejecutándose en la
+  propia cuenta en la nube del cliente. (En realidad es un modo de despliegue de Cloud, pero se separa aquí por simplicidad)
+* `clickhouse-private/` — ClickHouse Private: despliegue aislado y autogestionado
+  en la infraestructura del cliente. (En realidad es un modo de despliegue de Cloud, pero se separa aquí por simplicidad)
+* `kubernetes-operator/` — el operador de Kubernetes de ClickHouse para desplegar
+  y gestionar clústeres en Kubernetes.
+* `managed-postgres/` — oferta de Postgres gestionado, integrada de forma nativa con
+  ClickHouse Cloud.
+* `agentic-data-stack/` — la pila de analítica agéntica (ClickHouse + LibreChat
+  * Langfuse).
+* `chdb/` — chDB, la compilación de ClickHouse en el mismo proceso.
+
+Si una página explica un motor, una función, una configuración o un concepto de ClickHouse que
+se aplica independientemente del producto, pertenece a `/core` (conceptos, guías o
+referencia). Solo incluye una página aquí si está claramente vinculada al producto —
+su consola, facturación, modelo de despliegue o funcionalidades exclusivas del producto.

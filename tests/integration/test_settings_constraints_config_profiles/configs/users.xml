@@ -1,0 +1,60 @@
+<clickhouse>
+    <!--
+        Minimal reproduction of the production cloud setup relevant to the `sql-console` user.
+
+        The `default` profile (applied as a base to every user) marks `cloud_mode` and
+        `database_replicated_allow_explicit_uuid` as `readonly` (CONST). The config-defined
+        `sql-console` profile sets `cloud_mode=0` and *relaxes* `database_replicated_allow_explicit_uuid`
+        from CONST to `MIN 1 MAX 1`. The config-defined `operator-internal` user (via the `operator`
+        profile) creates the `sql-console` SQL user referencing that config profile.
+
+        After settings-constraint enforcement is added, this must keep working:
+          - a config-defined actor (`operator-internal`) may create a user referencing a config profile
+            that relaxes a constraint the actor itself is bound by;
+          - the resulting SQL `sql-console` user, referencing only a config-defined profile, must be able
+            to log in and run queries.
+    -->
+    <profiles>
+        <default>
+            <cloud_mode>1</cloud_mode>
+            <database_replicated_allow_explicit_uuid>0</database_replicated_allow_explicit_uuid>
+            <constraints>
+                <cloud_mode>
+                    <readonly>1</readonly>
+                </cloud_mode>
+                <database_replicated_allow_explicit_uuid>
+                    <readonly>1</readonly>
+                </database_replicated_allow_explicit_uuid>
+            </constraints>
+        </default>
+
+        <operator>
+            <cloud_mode>0</cloud_mode>
+        </operator>
+
+        <sql-console>
+            <cloud_mode>0</cloud_mode>
+            <constraints>
+                <database_replicated_allow_explicit_uuid>
+                    <max>1</max>
+                    <min>1</min>
+                </database_replicated_allow_explicit_uuid>
+            </constraints>
+        </sql-console>
+    </profiles>
+
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+        </default>
+
+        <operator-internal>
+            <password>operator_pwd</password>
+            <profile>operator</profile>
+            <access_management>1</access_management>
+        </operator-internal>
+    </users>
+</clickhouse>

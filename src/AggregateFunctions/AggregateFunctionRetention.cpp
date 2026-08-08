@@ -106,7 +106,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }
@@ -162,7 +162,7 @@ AggregateFunctionPtr createAggregateFunctionRetention(const std::string & name, 
 void registerAggregateFunctionRetention(AggregateFunctionFactory & factory);
 void registerAggregateFunctionRetention(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("retention", {createAggregateFunctionRetention, {}});
+    factory.registerFunction("retention", {createAggregateFunctionRetention, {.description = R"DOC(Takes a list of conditions (from 1 to 32) and, for each row group, returns an array of 0/1 values indicating whether the first condition and each subsequent condition were satisfied.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

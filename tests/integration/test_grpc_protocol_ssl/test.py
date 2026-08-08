@@ -4,7 +4,7 @@ import sys
 import grpc
 import pytest
 
-from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.cluster import ClickHouseCluster
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")

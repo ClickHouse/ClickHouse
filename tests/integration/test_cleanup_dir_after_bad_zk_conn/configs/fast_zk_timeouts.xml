@@ -1,0 +1,22 @@
+<clickhouse>
+    <zookeeper>
+        <node index="1">
+            <host>zoo1</host>
+            <port>2181</port>
+        </node>
+        <node index="2">
+            <host>zoo2</host>
+            <port>2181</port>
+        </node>
+        <node index="3">
+            <host>zoo3</host>
+            <port>2181</port>
+        </node>
+        <!-- Lower timeouts so the ZK-failure path surfaces quickly instead of
+             waiting the default session (15s) / operation (10s) windows. Kept
+             with margin above a real round-trip to stay safe under sanitizers. -->
+        <session_timeout_ms>5000</session_timeout_ms>
+        <operation_timeout_ms>3000</operation_timeout_ms>
+        <connection_timeout_ms>1000</connection_timeout_ms>
+    </zookeeper>
+</clickhouse>

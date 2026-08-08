@@ -1,0 +1,101 @@
+---
+description: 'توثيق CREATE DATABASE'
+sidebarTitle: 'قاعدة البيانات'
+slug: /sql-reference/statements/create/database
+title: 'CREATE DATABASE'
+doc_type: 'reference'
+---
+
+ينشئ قاعدة بيانات جديدة.
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
+```
+
+<div id="clauses">
+  ## البنود
+</div>
+
+<div id="if-not-exists">
+  ### IF NOT EXISTS
+</div>
+
+إذا كانت قاعدة البيانات `db_name` موجودة بالفعل، فلن ينشئ ClickHouse قاعدة بيانات جديدة، ويحدث ما يلي:
+
+* لا يطرح استثناءً إذا كان هذا البند محددًا.
+* يطرح استثناءً إذا لم يكن هذا البند محددًا.
+
+<div id="on-cluster">
+  ### ON CLUSTER
+</div>
+
+ينشئ ClickHouse قاعدة البيانات `db_name` على جميع خوادم المجموعة المحددة. لمزيد من التفاصيل، راجع مقالة [Distributed DDL](/ar/reference/statements/distributed-ddl).
+
+<div id="engine">
+  ### المحرك
+</div>
+
+يستخدم ClickHouse افتراضيًا محرك قاعدة البيانات [Atomic](/ar/reference/engines/database-engines/atomic) الخاص به. كما تتوفر أيضًا محركات أخرى مثل [MySQL](/ar/reference/engines/database-engines/mysql)، و[PostgreSQL](/ar/reference/engines/database-engines/postgresql)، و[MaterializedPostgreSQL](/ar/reference/engines/database-engines/materialized-postgresql)، و[Replicated](/ar/reference/engines/database-engines/replicated)، و[SQLite](/ar/reference/engines/database-engines/sqlite).
+
+<div id="comment">
+  ### تعليق
+</div>
+
+يمكنك إضافة تعليق إلى قاعدة البيانات عند إنشائها.
+
+تدعم جميع محركات قواعد البيانات التعليقات.
+
+**الصياغة**
+
+```sql
+CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
+```
+
+**مثال**
+
+```sql title="Query"
+CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
+SELECT name, comment FROM system.databases WHERE name = 'db_comment';
+```
+
+```text title="Response"
+┌─name───────┬─comment────────────────┐
+│ db_comment │ The temporary database │
+└────────────┴────────────────────────┘
+```
+
+<div id="settings">
+  ### الإعدادات
+</div>
+
+<div id="lazy-load-tables">
+  #### lazy_load_tables
+</div>
+
+عند تمكينه، لا تُحمَّل الجداول بالكامل أثناء بدء تشغيل قاعدة البيانات. وبدلًا من ذلك، يُنشأ وكيل خفيف الوزن لكل جدول، ويُنشأ محرك الجدول الفعلي ماديًا عند أول وصول إليه. يقلّل ذلك من وقت بدء التشغيل واستهلاك الذاكرة في قواعد البيانات التي تحتوي على عدد كبير من الجداول ولا يُستعلَم فعليًا إلا عن مجموعة فرعية منها.
+
+```sql
+CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+```
+
+ينطبق على محركات قواعد البيانات التي تخزّن البيانات الوصفية للجدول على القرص (مثل `Atomic` و`Ordinary`). تُحمَّل العروض، والعروض المادية، والقواميس، والجداول المستندة إلى table functions دائمًا تحميلًا فوريًا بغضّ النظر عن هذا الإعداد.
+
+**متى يُستخدم:** يفيد هذا الإعداد في قواعد البيانات التي تحتوي على عدد كبير من الجداول (بالمئات أو الآلاف)، ولا يُستعلَم فعليًا إلا عن مجموعة فرعية منها. ويقلّل وقت بدء تشغيل الخادم واستهلاك الذاكرة عبر تأجيل إنشاء كائنات محرك الجدول، وفحص data parts، وتهيئة خيوط الخلفية إلى حين أول وصول.
+
+**التأثير على `system.tables`:**
+
+* قبل الوصول إلى الجدول، يعرض `system.tables` محركه على أنه `TableProxy`. وبعد أول وصول، يعرض اسم المحرك الحقيقي (مثل `MergeTree`).
+* تُرجِع الأعمدة مثل `total_rows` و`total_bytes` القيمة `NULL` للجداول غير المحمّلة، لأن التخزين الفعلي لم يُنشأ بعد.
+
+**التفاعل مع عمليات DDL:**
+
+* تؤدي عمليات `SELECT` و`INSERT` و`ALTER` و`DROP` تلقائيًا إلى تحميل محرك الجدول الحقيقي عند أول استخدام.
+* تعمل `RENAME TABLE` من دون التسبّب في التحميل.
+* بعد تحميل الجدول، يظلّ محمّلًا طوال عمر عملية الخادم.
+
+**القيود:**
+
+* قد تعرض أدوات المراقبة التي تعتمد على البيانات الوصفية في `system.tables` (مثل `total_rows` و`engine`) معلومات غير مكتملة للجداول غير المحمّلة.
+* يترتّب على أول query إلى جدول غير محمّل كلفة تحميل تُدفَع مرة واحدة (تحليل تعليمة `CREATE TABLE` المخزّنة وتهيئة المحرك).
+
+القيمة الافتراضية: `0` (معطّل).

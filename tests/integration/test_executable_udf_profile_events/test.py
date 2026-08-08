@@ -22,6 +22,16 @@ def _skip_msan():
         pytest.skip("Memory Sanitizer cannot work with vfork")
 
 
+def _skip_unreliable_peak_memory_sampling():
+    # PeakMemoryByteSeconds is sampled from /proc/<pid>/VmHWM on a ~5 ms throttle.
+    # Under Thread Sanitizer the scheduling skew makes that best-effort sampling
+    # miss the child's at-peak window or read an inflated value, so the tight
+    # implied-peak bounds below are not deterministic there. The metric itself is
+    # exercised on every other build.
+    if node.is_built_with_thread_sanitizer():
+        pytest.skip("/proc VmHWM peak sampling is not deterministic under Thread Sanitizer")
+
+
 def _copy_into_container(local_path, container_path):
     os.system(f"docker cp {local_path} {node.docker_id}:{container_path}")
 
@@ -146,6 +156,7 @@ def test_system_time_microseconds(started_cluster):
 
 def test_peak_memory_byte_seconds(started_cluster):
     _skip_msan()
+    _skip_unreliable_peak_memory_sampling()
     qid = "exec-mem-procfs-1"
     # udf_mem.py allocates ~32 MiB in the UDF process itself (no forked children),
     # so the VmHWM sampled from /proc/<pid>/status while the process writes output
@@ -278,6 +289,7 @@ def test_unwaited_child_cpu_excluded(started_cluster):
 
 def test_reaped_child_memory_rolls_up(started_cluster):
     _skip_msan()
+    _skip_unreliable_peak_memory_sampling()
     qid = "exec-child-mem-1"
     # One ~64 MiB child is forked before the input loop, signals readiness, and
     # stays blocked at its peak until the parent has emitted all output rows.
@@ -295,7 +307,7 @@ def test_reaped_child_memory_rolls_up(started_cluster):
     elapsed_us = _profile_event_value(qid, "ExecutableUserDefinedFunctionElapsedMicroseconds")
     invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
     assert invocations >= 1, f"UDF did not run (Invocations={invocations}); memory floor is meaningless"
-    assert elapsed_us > 0, f"ElapsedMicroseconds is 0; implied-peak calculation would divide by zero"
+    assert elapsed_us > 0, "ElapsedMicroseconds is 0; implied-peak calculation would divide by zero"
     implied_peak_mib = byte_seconds * 1e6 / elapsed_us / 1048576
     assert implied_peak_mib >= 40, (
         f"Implied peak {implied_peak_mib:.1f} MiB < 40 MiB floor; the child's ~64 MiB VmHWM "
@@ -311,6 +323,7 @@ def test_reaped_child_memory_rolls_up(started_cluster):
 
 def test_peak_memory_is_max_not_sum(started_cluster):
     _skip_msan()
+    _skip_unreliable_peak_memory_sampling()
     qid_concurrent = "exec-two-mem-concurrent-1"
     qid_sequential = "exec-two-mem-sequential-1"
     # concurrent: both ~100 MiB children are forked before the input loop, signal
@@ -369,10 +382,10 @@ def test_check_exit_code_false_succeeds_and_meters(started_cluster):
     _skip_msan()
     qid = "exec-nonzero-exit-1"
     # The UDF exits with code 3; check_exit_code=false means the source takes
-    # the tryReapWithoutStatusCheck path, so the query must succeed and rusage
+    # the tryWaitWithoutStatusCheck path, so the query must succeed and rusage
     # must still be populated.
     result = _run(
-        f"SELECT sum(test_udf_nonzero_exit(number)) FROM numbers(20)",
+        "SELECT sum(test_udf_nonzero_exit(number)) FROM numbers(20)",
         qid,
     )
     # If check_exit_code=false is not honoured the query raises; reaching here
@@ -414,6 +427,7 @@ def test_check_exit_code_false_no_spurious_log(started_cluster):
 
 def test_peak_memory_reflects_udf_not_server(started_cluster):
     _skip_msan()
+    _skip_unreliable_peak_memory_sampling()
     # The metric must reflect the UDF's own peak RSS, not the ClickHouse server's
     # footprint. The original bug reported the server RSS (~hundreds of MiB)
     # identically for every UDF regardless of its allocation; a lower-bound floor
@@ -464,16 +478,18 @@ def test_peak_memory_reflects_udf_not_server(started_cluster):
 def test_check_exit_code_false_lingering_child_is_bounded_and_flushes_bytes(started_cluster):
     _skip_msan()
     # Invariant: with check_exit_code=false a child that closes stdout and lingers
-    # does not block cleanup (teardown is bounded by command_termination_timeout,
-    # ~3 s, not by the child's 30 s sleep), and its already-observed stdin/stdout
-    # byte counters are still reported even though no wait4 rusage was captured.
+    # is torn down within ONE command_termination_timeout window (3 s here), not the
+    # child's 30 s sleep, and its already-observed stdin/stdout byte counters are still
+    # reported even though no wait4 rusage was captured. The 5 s bound also guards the
+    # cleanup+destructor double-wait: sharing one deadline keeps teardown near 3 s, while
+    # charging the window twice would push it to ~6 s.
     qid = "exec-stdout-linger-1"
     t0 = time.monotonic()
     _run("SELECT sum(test_udf_stdout_close_linger(number)) FROM numbers(50)", qid)
     elapsed = time.monotonic() - t0
-    assert elapsed < 25, (
-        f"Query took {elapsed:.1f}s — must be bounded by command_termination_timeout (~3s) "
-        f"+ teardown, not the child's 30s sleep"
+    assert elapsed < 5, (
+        f"Query took {elapsed:.1f}s — teardown must fit one command_termination_timeout "
+        f"window (~3s), not two (~6s) or the child's 30s sleep"
     )
 
     invocations = _profile_event_value(qid, "ExecutableUserDefinedFunctionInvocations")
