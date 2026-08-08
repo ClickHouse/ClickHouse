@@ -231,6 +231,10 @@ public:
     /// columns by (exact) name.
     bool mapsColumnsByName() const override { return true; }
 
+    /// `insertNumber` reads an Avro `int` / `long` / `float` / `double` / `bool` value straight
+    /// into the `UInt32`-backed `IPv4` column (see its `TypeIndex::IPv4` arm).
+    bool readsNumericValueIntoIPv4Column() const override { return true; }
+
     /// If `allow_nullable_tuple_type` is false, a union [null, record] is converted to a plain
     /// Tuple instead of Nullable(Tuple). Schema inference passes
     /// schema_inference_allow_nullable_tuple_type here, because otherwise it would return a type

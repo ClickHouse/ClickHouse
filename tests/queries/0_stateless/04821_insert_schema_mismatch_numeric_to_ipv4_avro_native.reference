@@ -1,0 +1,9 @@
+-- Avro: a numeric value for an IPv4 column is valid (no false positive)
+explanation missing
+-- Native: a numeric column is cast to IPv4 under input_format_native_allow_types_conversion (no false positive)
+explanation missing
+-- Native: a genuine structure mismatch is still explained
+explanation present
+-- Native: with the conversion disabled the type difference is rejected with a conversion error (not a parse error)
+insert failed as expected
+explanation missing

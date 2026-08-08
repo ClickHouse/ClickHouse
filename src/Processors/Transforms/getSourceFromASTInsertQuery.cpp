@@ -274,10 +274,11 @@ String getInsertDataSchemaMismatchDescription(
         /// and `IPv6` (e.g. `{"u": 1}` into `(u UUID)`). This is checked before the supertype rule below
         /// because `IPv4` is backed by a `UInt32` and does share a least supertype with a widened numeric
         /// type, so the supertype rule would otherwise wrongly treat it as compatible. The binary formats
-        /// that store typed values are an exception for `IPv4`: `BSONEachRow` reads a BSON `Int32` and
-        /// `MsgPack` reads an integer straight into the `UInt32`-backed `IPv4` column, and the columnar
-        /// formats (`Parquet`, `Arrow`, `ORC`) cast a decoded numeric column to the requested type, which
-        /// is valid for the `UInt32`-backed `IPv4` (`format_reads_numeric_into_ipv4`), so a numeric value
+        /// that store typed values are an exception for `IPv4`: `BSONEachRow` reads a BSON `Int32`,
+        /// `MsgPack` and `Avro` read an integer straight into the `UInt32`-backed `IPv4` column, and the
+        /// formats that cast a decoded source column to the requested type — the columnar `Parquet` /
+        /// `Arrow` / `ORC` always, `Native` under `input_format_native_allow_types_conversion` — accept
+        /// a numeric column there too (`format_reads_numeric_into_ipv4`), so a numeric value
         /// is valid there and flagging it would be a false positive (`UUID` and `IPv6` still require
         /// binary data of the exact size in those formats, so they stay a mismatch). `FixedString` also rejects a bare number, but only in the typed-token
         /// JSON formats (`SerializationFixedString::deserializeTextJSON` requires a quoted string,
