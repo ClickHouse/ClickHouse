@@ -122,7 +122,13 @@ a window function may be aliased to the internal name
 6
 6
 and the resulting column is that alias, not the internal literal
-__row_count_marker	UInt64					
+__row_count_marker
+6
+6
+6
+6
+6
+6
 plan steps naming the internal column, local then distributed
 0
 1
