@@ -1653,20 +1653,26 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             /// before the surviving rows are reached. The predicate mirrors the conditions under
             /// which `buildCustomKeyFilterIfNeeded` actually produces the filter.
             auto row_policy_filter = getEffectiveRowPolicyFilter(storage, query_context);
+            bool has_parallel_replicas_custom_key_filter = query_context->canUseParallelReplicasCustomKey()
+                && settings[Setting::parallel_replicas_count] > 1
+                && !settings[Setting::parallel_replicas_custom_key].value.empty();
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
                 || !!row_policy_filter
-                || (query_context->canUseParallelReplicasCustomKey()
-                    && settings[Setting::parallel_replicas_count] > 1
-                    && !settings[Setting::parallel_replicas_custom_key].value.empty());
+                || has_parallel_replicas_custom_key_filter;
             /// These filters run on the read side, so a stateful function inside one of them has the
             /// same single-deterministic-stream requirement as a stateful function in the projection.
-            /// (The parallel-replicas custom-key filter is generated from the key expression by the
-            /// server and is a plain range predicate, so it cannot hold a stateful call.)
+            /// The parallel-replicas custom-key filter is built by wrapping the user-provided key
+            /// expression in deterministic modulo / range comparisons
+            /// (`getCustomKeyFilterForParallelReplica`), but the key expression itself is arbitrary
+            /// and can hold a stateful call (e.g. `parallel_replicas_custom_key = 'neighbor(k, 1)'`),
+            /// so scan the parsed key expression like the other hidden filters.
             ASTs hidden_filter_asts;
             if (table_expression_query_info.additional_filter_ast)
                 hidden_filter_asts.push_back(table_expression_query_info.additional_filter_ast);
             if (row_policy_filter)
                 hidden_filter_asts.push_back(row_policy_filter->expression);
+            if (has_parallel_replicas_custom_key_filter)
+                hidden_filter_asts.push_back(parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *query_context));
             bool stateful_function_blocked_trivial_limit = false;
             max_block_size_limited = mainQueryNodeBlockSizeByLimit(
                 select_query_info, hidden_filter_asts, query_context, stateful_function_blocked_trivial_limit);
