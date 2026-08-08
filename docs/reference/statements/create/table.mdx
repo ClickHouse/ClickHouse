@@ -31,7 +31,7 @@ The structure of the table is a list of column descriptions, secondary indexes, 
 
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
 
-The modifiers that follow the type - `COMMENT`, `compression_codec`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY` and per-column `SETTINGS` - can be written in any order, and each of them at most once. For example, `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` and `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` are the same. Note that `SHOW CREATE TABLE` always prints them in the canonical order shown above.
+The modifiers that follow the type - `COMMENT`, `compression_codec`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY` and per-column `SETTINGS` - can be written in any order, and each of them at most once. For example, `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` and `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` are the same. Note that `SHOW CREATE TABLE` normalizes the column declaration: the modifiers that remain in it are always printed in the canonical order `COMMENT`, `CODEC`, `STATISTICS`, `TTL`, `COLLATE`, `SETTINGS`, while a per-column `PRIMARY KEY` is moved out of the column declaration into the table-level `PRIMARY KEY` clause.
 
 Expressions can also be defined for default values (see below).
 
