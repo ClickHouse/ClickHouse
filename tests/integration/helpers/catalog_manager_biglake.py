@@ -392,8 +392,10 @@ class BigLakeCatalogManager(CatalogManager):
                 # raise CommitStateUnknownException after committing). Reconcile
                 # the partial attempt FIRST -- for every exception, transient or
                 # not -- so nothing is leaked untracked, then decide retry vs
-                # re-raise.
-                self._drop_failed_attempt(candidate)
+                # re-raise. NoSuchNamespaceError is the exception: only the
+                # create call maps a 404 to it, so no table can exist yet.
+                if not isinstance(exc, NoSuchNamespaceError):
+                    self._drop_failed_attempt(candidate)
                 if not isinstance(exc, _TRANSIENT_CREATE_ERRORS):
                     raise
                 if time.monotonic() >= deadline:
