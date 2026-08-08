@@ -142,3 +142,47 @@ SELECT ${DB}.tbl.*, tbl.*
 FROM ${DB}.tbl, tbl
 SETTINGS enable_analyzer = 1;
 " 2>&1 | grep -o -m1 'AMBIGUOUS_IDENTIFIER'
+
+# The forced qualification of the multiple-joins compatibility mode
+# (analyzer_compatibility_multiple_joins_qualify_column_names, two or more JOINs) must also use the
+# visible CTE name for a materialized CTE, not the internal temporary table name it is stored under.
+$CLICKHOUSE_CLIENT --query "
+WITH cte AS MATERIALIZED (SELECT 1 AS k, 'D' AS Date)
+SELECT cte.Date
+FROM
+(
+    SELECT *
+    FROM cte
+    LEFT JOIN (SELECT 1 AS k) AS t1 ON cte.k = t1.k
+    LEFT JOIN (SELECT 1 AS k) AS t2 ON cte.k = t2.k
+)
+SETTINGS enable_materialized_cte = 1, enable_analyzer = 1,
+    analyzer_compatibility_multiple_joins_qualify_column_names = 1;
+"
+
+# The same shape with a regular CTE, which is the behavior the materialized CTE has to match.
+$CLICKHOUSE_CLIENT --query "
+WITH cte AS (SELECT 1 AS k, 'D' AS Date)
+SELECT cte.Date
+FROM
+(
+    SELECT *
+    FROM cte
+    LEFT JOIN (SELECT 1 AS k) AS t1 ON cte.k = t1.k
+    LEFT JOIN (SELECT 1 AS k) AS t2 ON cte.k = t2.k
+)
+SETTINGS enable_analyzer = 1,
+    analyzer_compatibility_multiple_joins_qualify_column_names = 1;
+"
+
+# The forced qualifier is directly visible in the header of the matcher expansion.
+$CLICKHOUSE_CLIENT --query "
+WITH cte AS MATERIALIZED (SELECT 1 AS k)
+SELECT cte.*
+FROM cte
+LEFT JOIN (SELECT 1 AS k) AS t1 ON cte.k = t1.k
+LEFT JOIN (SELECT 1 AS k) AS t2 ON cte.k = t2.k
+SETTINGS enable_materialized_cte = 1, enable_analyzer = 1,
+    analyzer_compatibility_multiple_joins_qualify_column_names = 1
+FORMAT TSVWithNames;
+"

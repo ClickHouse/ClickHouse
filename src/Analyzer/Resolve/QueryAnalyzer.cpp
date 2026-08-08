@@ -1680,7 +1680,11 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             forced_qualifier = table_expression_node->getAlias();
         else if (auto * table_node = table_expression_node->as<TableNode>())
         {
-            if (!table_node->getTemporaryTableName().empty())
+            /// Same as above: a materialized CTE must be qualified with its visible name,
+            /// not the internal temporary table name it is stored under.
+            if (table_node->isMaterializedCTE())
+                forced_qualifier = table_node->getMaterializedCTE()->cte_name;
+            else if (!table_node->getTemporaryTableName().empty())
                 forced_qualifier = table_node->getTemporaryTableName();
             else
                 forced_qualifier = table_node->getStorageID().getTableName();
