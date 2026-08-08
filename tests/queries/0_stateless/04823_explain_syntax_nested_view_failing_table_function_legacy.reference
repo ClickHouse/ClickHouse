@@ -1,0 +1,45 @@
+-- EXPLAIN SYNTAX dumps despite the failing table function in the nested subquery
+SELECT a
+FROM base_04823
+WHERE in(a, (
+    SELECT v.a
+    FROM v_04823 AS v
+    INNER JOIN paimonAzure(\'http://localhost:1/devstoreaccount1\', \'cont\', \'path\', \'devstoreaccount1\', \'not_a_base64_key\') AS p ON equals(v.a, p.x)
+) AS _subquery)
+-- EXPLAIN AST optimize = 1 dumps as well
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 3)
+   ExpressionList (children 1)
+    Identifier a
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 1)
+      TableIdentifier base_04823
+   Function in (children 1)
+    ExpressionList (children 2)
+     Identifier a
+     Subquery (alias _subquery) (children 1)
+      SelectWithUnionQuery (children 1)
+       ExpressionList (children 1)
+        SelectQuery (children 2)
+         ExpressionList (children 1)
+          Identifier v.a
+         TablesInSelectQuery (children 2)
+          TablesInSelectQueryElement (children 1)
+           TableExpression (children 1)
+            TableIdentifier v_04823 (alias v)
+          TablesInSelectQueryElement (children 2)
+           TableExpression (children 1)
+            Function paimonAzure (alias p) (children 1)
+             ExpressionList (children 5)
+              Literal \'http://localhost:1/devstoreaccount1\'
+              Literal \'cont\'
+              Literal \'path\'
+              Literal \'devstoreaccount1\'
+              Literal \'not_a_base64_key\'
+           TableJoin (children 1)
+            Function equals (children 1)
+             ExpressionList (children 2)
+              Identifier v.a
+              Identifier p.x
