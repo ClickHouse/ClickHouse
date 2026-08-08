@@ -1725,8 +1725,13 @@ class ResultTranslator:
                                             parts.append(str(message))
                                         if parts:
                                             traceback_str += "\n".join(parts)
+                                # A chained failure carries every exception in "chain" (oldest
+                                # first), while "reprtraceback" is only its last entry, so the
+                                # chain is authoritative whenever it holds more than one.
+                                _chain = data.get("chain") if isinstance(data, dict) else None
+                                _use_chain = isinstance(_chain, list) and len(_chain) > 1
                                 # reprtraceback: collect lines
-                                if data and isinstance(data, dict) and "reprtraceback" in data:
+                                if not _use_chain and data and isinstance(data, dict) and "reprtraceback" in data:
                                     rt = data.get("reprtraceback", {})
                                     if isinstance(rt, dict) and "reprentries" in rt:
                                         composed = []
@@ -1750,7 +1755,8 @@ class ResultTranslator:
                                             if traceback_str:
                                                 traceback_str += "\n"
                                             traceback_str += "\n".join(composed)
-                                # chain: fallback/additional entries (only if no reprtraceback)
+                                # chain: every exception of a chained failure, oldest first;
+                                # also the fallback when there is no top-level reprtraceback
                                 elif data and isinstance(data, dict) and "chain" in data:
                                     try:
                                         chain = data.get("chain", [])
@@ -1758,6 +1764,13 @@ class ResultTranslator:
                                             # pair typically is [reprtraceback, reprcrash, context]
                                             if not isinstance(pair, list):
                                                 continue
+                                            # mirror the reprcrash suppression above: a traceback
+                                            # already ends with the exception message
+                                            _pair_has_rt = (
+                                                len(pair) >= 1
+                                                and isinstance(pair[0], dict)
+                                                and "reprentries" in pair[0]
+                                            )
                                             if len(pair) >= 1 and isinstance(pair[0], dict):
                                                 rt = pair[0]
                                                 if "reprentries" in rt:
@@ -1780,7 +1793,7 @@ class ResultTranslator:
                                                             if traceback_str:
                                                                 traceback_str += "\n"
                                                             traceback_str += "\n".join(dd["lines"])
-                                            if len(pair) >= 2 and isinstance(pair[1], dict):
+                                            if len(pair) >= 2 and isinstance(pair[1], dict) and not _pair_has_rt:
                                                 crash = pair[1]
                                                 p = crash.get("path")
                                                 ln = crash.get("lineno")
@@ -1794,6 +1807,12 @@ class ResultTranslator:
                                                     if traceback_str:
                                                         traceback_str += "\n"
                                                     traceback_str += "\n".join(seg)
+                                            # pytest attaches the causal separator to the entry
+                                            # it follows, so emit it after that entry's text
+                                            if len(pair) >= 3 and pair[2]:
+                                                if traceback_str:
+                                                    traceback_str += "\n"
+                                                traceback_str += str(pair[2])
                                     except Exception:
                                         # Be resilient to unexpected shapes
                                         pass
