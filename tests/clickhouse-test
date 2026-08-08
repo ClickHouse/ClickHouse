@@ -1709,6 +1709,7 @@ class SettingsRandomizer:
         "use_async_executor_for_materialized_views": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
+        "use_minmax_index_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         "use_projection_index_in_read_pools": lambda: random.randint(0, 1),

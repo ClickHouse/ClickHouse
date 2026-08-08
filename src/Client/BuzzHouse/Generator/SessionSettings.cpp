@@ -608,6 +608,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_index_for_in_with_subqueries_max_values", trueOrFalseSetting},
        {"use_join_disjunctions_push_down", trueOrFalseSetting},
        {"use_lightweight_primary_key_index_analysis", trueOrFalseSetting},
+       {"use_minmax_index_bulk_filtering", trueOrFalseSetting},
        {"use_page_cache_with_distributed_cache", trueOrFalseSetting},
        {"use_paimon_partition_pruning", trueOrFalseSetting},
        {"use_partition_minmax_for_primary_key_pruning", trueOrFalseSetting},
