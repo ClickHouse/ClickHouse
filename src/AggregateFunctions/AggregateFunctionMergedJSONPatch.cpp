@@ -610,7 +610,7 @@ SELECT mergedJSONPatch(json, sort_key) FROM
         }
     };
 
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
 
     FunctionDocumentation documentation = {
