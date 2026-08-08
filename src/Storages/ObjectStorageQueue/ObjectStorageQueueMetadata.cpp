@@ -1241,9 +1241,9 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     /// Create a lock so that with distributed processing
     /// multiple nodes do not execute cleanup in parallel.
     /// Store "background_cleanup" in the lock value to distinguish from manual dropFailedFiles.
-    static constexpr std::string_view LOCK_OPERATION_BACKGROUND = "background_cleanup";
+    static constexpr const char * LOCK_OPERATION_BACKGROUND = "background_cleanup";
     auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
-        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), std::string(LOCK_OPERATION_BACKGROUND));
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), LOCK_OPERATION_BACKGROUND);
 
     if (!ephemeral_node)
     {
@@ -1507,9 +1507,9 @@ void ObjectStorageQueueMetadata::dropFailedFiles()
     /// to prevent concurrent modification of failed files.
     /// Store "manual_drop_failed" in the lock value so dropFailedFiles invocations
     /// can distinguish themselves from the generic background cleanup.
-    static constexpr std::string_view LOCK_OPERATION_DROP_FAILED = "manual_drop_failed";
+    static constexpr const char * LOCK_OPERATION_DROP_FAILED = "manual_drop_failed";
     auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
-        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), std::string(LOCK_OPERATION_DROP_FAILED));
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), LOCK_OPERATION_DROP_FAILED);
 
     if (!ephemeral_node)
     {
