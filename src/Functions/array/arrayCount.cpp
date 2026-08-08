@@ -114,6 +114,8 @@ If `func` is not specified, it returns the number of non-zero elements in the ar
 :::note Use setting `array_count_legacy_uint32_result` to return `UInt32`
 Version 26.8 introduced a backward-incompatible change: `arrayCount` returns `UInt64` instead of `UInt32`, so that the result is exact for arrays with more than `4294967295` matching elements.
 To retain the previous behavior, set setting `array_count_legacy_uint32_result` (default: `false`) to `true`.
+
+During a rolling upgrade of a cluster, a distributed query initiated by a not-yet-upgraded server does not forward this setting, so type-sensitive expressions evaluated locally on already-upgraded shards (for example, `byteSize(arrayCount(...))`) observe `UInt64` there. To keep such queries fully unchanged until the whole cluster is upgraded, set `array_count_legacy_uint32_result = 1` in the default user profile of the upgraded servers, and remove it after the upgrade is complete.
 :::
     )";
     FunctionDocumentation::Syntax syntax = "arrayCount([func, ] arr1, ...)";
