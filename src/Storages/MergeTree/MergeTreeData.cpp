@@ -1831,18 +1831,19 @@ static void checkGraphiteSchema(const Graphite::Params & params, const StorageIn
                 role, column_name, type->getName());
     }
 
-    /// The rollup reads the path column with `IColumn::getDataAt`, which the composite columns do not
-    /// implement: they throw, and the table can then neither merge nor answer a `FINAL` read.
-    /// An `Array` is readable exactly when its elements are fixed-width, which is the same condition
-    /// `ColumnArray::getDataAt` checks at merge time.
+    /// The rollup reads the path with `IColumn::getDataAt`. An `Array` implements it only for
+    /// fixed-width elements, and a `LowCardinality` inside stays non-contiguous despite reporting a
+    /// fixed size, hence the `equals` term.
     auto plain_path_type = recursiveRemoveLowCardinality(path_type);
     WhichDataType which_path(plain_path_type);
-    bool readable_array = which_path.isArray() && plain_path_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+    bool readable_array = which_path.isArray() && plain_path_type->equals(*path_type)
+        && path_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
     if ((which_path.isArray() && !readable_array) || which_path.isTuple() || which_path.isMap()
         || which_path.isVariant() || which_path.isDynamic() || which_path.isObject() || which_path.isQBit())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "The path column '{}' of GraphiteMergeTree must be a string, integer or `Enum` column, got {}.",
+            "The path column '{}' of GraphiteMergeTree must be a column the rollup can read as a "
+            "contiguous value, got {}.",
             params.path_column_name, path_type->getName());
 
     /// The rollup reads the time column with `IColumn::getUInt`, which only the integer-backed columns
@@ -5171,10 +5172,14 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         /// check agrees with what registerStorageMergeTree sees on the next load.
         auto current_metadata_handle = getInMemoryMetadataPtr(local_context, false);
         StorageInMemoryMetadata metadata_for_check = *current_metadata_handle;
+        /// Replay with the table's own setting, as alter() does: under the default `true` an
+        /// `IF NOT EXISTS n` would be skipped for a table holding only `n.*`, and the engine would then
+        /// be rejected for a column this ALTER does add.
+        bool share_nested_offsets = (*getSettings())[MergeTreeSetting::share_nested_offsets];
         for (const auto & c : commands)
         {
             if (c.type != AlterCommand::MODIFY_ENGINE)
-                c.apply(metadata_for_check, local_context);
+                c.apply(metadata_for_check, local_context, share_nested_offsets);
         }
         /// From defaults plus the final settings_changes, as changeSettings and the next load do. A delta on
         /// top of the current settings would keep the old value for RESET SETTING, which reload reverts.

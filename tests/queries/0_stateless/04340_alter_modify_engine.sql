@@ -476,6 +476,18 @@ SELECT 'graphite lc nullable path rejected', engine, count() FROM t_graphite_pat
 DROP TABLE t_graphite_path;
 SET allow_suspicious_low_cardinality_types = 0;
 
+-- A nested `LowCardinality` keeps the array unreadable, so asking the original type (not the
+-- low-cardinality-stripped one) is load-bearing: `CREATE TABLE` cannot even insert into this shape.
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_graphite_path (key UInt32, Path Array(LowCardinality(UInt32)), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
+INSERT INTO t_graphite_path VALUES (1, [1, 2], '2020-01-01 00:00:10', 5, 2);
+ALTER TABLE t_graphite_path MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+OPTIMIZE TABLE t_graphite_path FINAL;
+SELECT 'graphite lc array path rejected', engine, count() FROM t_graphite_path, system.tables
+    WHERE database = currentDatabase() AND name = 't_graphite_path' GROUP BY engine;
+DROP TABLE t_graphite_path;
+SET allow_suspicious_low_cardinality_types = 0;
+
 -- A fixed-width `Array` stays allowed: `ColumnArray::getDataAt` reads it, so the rollup works and
 -- rejecting it would make MODIFY ENGINE stricter than CREATE TABLE.
 CREATE TABLE t_graphite_path (key UInt32, Path Array(UInt32), Time DateTime, Value Float64, Version UInt32) ENGINE = MergeTree ORDER BY key;
@@ -518,6 +530,21 @@ SELECT 'graphite nullable version accepted', Path, toString(Time), Value, Versio
 SELECT 'graphite nullable version engine', engine FROM system.tables
     WHERE database = currentDatabase() AND name = 't_graphite_null';
 DROP TABLE t_graphite_null;
+
+-- The candidate-metadata replay must use the table's own `share_nested_offsets`, as `alter()` does.
+-- Under the default `true`, `IF NOT EXISTS n` counts the existing `n.a` as `n` and is skipped, so the
+-- engine is rejected for a version column this same ALTER does add.
+SET flatten_nested = 1;
+CREATE TABLE t_nested_offsets (key UInt32, n Nested(a UInt32)) ENGINE = MergeTree ORDER BY key
+    SETTINGS share_nested_offsets = 0;
+ALTER TABLE t_nested_offsets ADD COLUMN IF NOT EXISTS n UInt32, MODIFY ENGINE = ReplacingMergeTree(n);
+DETACH TABLE t_nested_offsets;
+ATTACH TABLE t_nested_offsets;
+SELECT 'nested offsets engine', engine FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_nested_offsets';
+SELECT 'nested offsets columns', groupArray(name) FROM system.columns
+    WHERE database = currentDatabase() AND table = 't_nested_offsets';
+DROP TABLE t_nested_offsets;
 
 -- (s) the engine clause survives a round trip through the `clickhouse_json` AST dialect.
 SET enable_json_ast_dialect = 1;

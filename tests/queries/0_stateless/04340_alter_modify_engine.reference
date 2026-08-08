@@ -40,10 +40,13 @@ graphite tuple path rejected	MergeTree	1
 graphite map path rejected	MergeTree	1
 graphite qbit path rejected	MergeTree	1
 graphite lc nullable path rejected	MergeTree	1
+graphite lc array path rejected	MergeTree	1
 graphite fixed array path rollup	[1,2]	2020-01-01 00:00:00	6	2
 graphite fixedstring path rollup	max_a	2020-01-01 00:00:00	6	2
 graphite nullable version accepted	max_a	2020-01-01 00:00:00	1	\N
 graphite nullable version engine	GraphiteMergeTree
+nested offsets engine	ReplacingMergeTree
+nested offsets columns	['key','n.a','n']
 ALTER TABLE t (MODIFY ENGINE ReplacingMergeTree)
 ALTER TABLE t (MODIFY ENGINE ReplacingMergeTree(v))
 ALTER TABLE t (MODIFY ENGINE SummingMergeTree((x, y)))
