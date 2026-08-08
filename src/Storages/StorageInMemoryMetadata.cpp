@@ -169,6 +169,13 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
     /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
     new_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
+    /// Share the outer query's consumed-object-set capture: the fresh query context created here becomes
+    /// the `getQueryContext()` of every read under the view, so without this the object-storage reads of a
+    /// `SQL SECURITY DEFINER` / `NONE` view would record nothing and the query result cache consistency
+    /// check would fall back to re-listing (reopening the listing `A -> B -> A` race the capture closes).
+    /// See `QueryConsumedObjectSets`. Not an invoker-identity leak: the capture only accumulates the
+    /// identities of objects the inner query actually reads.
+    new_context->setQueryConsumedObjectSets(context->getQueryConsumedObjectSets());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());
