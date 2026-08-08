@@ -1264,6 +1264,84 @@ TEST(ColumnDynamic, InsertContainerWrappedObjectRequiresExactStorage)
     ASSERT_EQ(column->getVariantColumn().getVariantByGlobalDiscriminator(inferred_discr).size(), 1);
 }
 
+namespace
+{
+
+/// A source Dynamic column whose only regular variant is `Int64` and whose second row is a
+/// `JSON(max_dynamic_paths=0)` value stored in the shared variant.
+ColumnDynamic::MutablePtr createColumnWithSharedVariantJSONRow(const DataTypePtr & json_type)
+{
+    auto src = ColumnDynamic::create(1);
+    src->insert(Field(Int64(42)));
+
+    auto json_column = json_type->createColumn();
+    Object object;
+    object["a"] = Field(UInt64(1));
+    json_column->insert(Field(object));
+    src->insertTypedValueFrom(*json_column, json_type, 0);
+    return src;
+}
+
+}
+
+TEST(ColumnDynamic, InsertFromSharedVariantObjectRequiresExactStorage)
+{
+    auto json_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=0)");
+    auto src = createColumnWithSharedVariantJSONRow(json_type);
+    ASSERT_EQ(src->getSharedVariant().size(), 1);
+
+    /// The destination already has a compatible-but-not-equal plain `JSON` variant and no free
+    /// variant slots. The copied row must not be routed into it: that would change `dynamicType`
+    /// and drop the exact type hint.
+    auto dst = ColumnDynamic::create(1);
+    auto plain_json_type = DataTypeFactory::instance().get("JSON");
+    ASSERT_TRUE(dst->addNewVariant(plain_json_type));
+
+    dst->insertFrom(*src, 1);
+
+    ASSERT_EQ(dst->getTypeNameAt(0), json_type->getName());
+    auto plain_json_discr = dst->getVariantInfo().variant_name_to_discriminator.at(plain_json_type->getName());
+    ASSERT_TRUE(dst->getVariantColumn().getVariantByGlobalDiscriminator(plain_json_discr).empty());
+    ASSERT_EQ(dst->getSharedVariant().size(), 1);
+}
+
+TEST(ColumnDynamic, InsertRangeFromSharedVariantObjectRequiresExactStorage)
+{
+    auto json_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=0)");
+    auto src = createColumnWithSharedVariantJSONRow(json_type);
+
+    /// Two free slots so the variants combine and the shared-variant row goes through
+    /// `try_insert_shared_variant_value_into_existing_variant`: it must not reuse the plain
+    /// `JSON` variant, only an exact new `JSON(max_dynamic_paths=0)` variant.
+    auto dst = ColumnDynamic::create(3);
+    auto plain_json_type = DataTypeFactory::instance().get("JSON");
+    ASSERT_TRUE(dst->addNewVariant(plain_json_type));
+
+    dst->insertRangeFrom(*src, 0, 2);
+
+    ASSERT_EQ(dst->getTypeNameAt(1), json_type->getName());
+    auto plain_json_discr = dst->getVariantInfo().variant_name_to_discriminator.at(plain_json_type->getName());
+    ASSERT_TRUE(dst->getVariantColumn().getVariantByGlobalDiscriminator(plain_json_discr).empty());
+}
+
+TEST(ColumnDynamic, InsertManyFromSharedVariantObjectRequiresExactStorage)
+{
+    auto json_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths=0)");
+    auto src = createColumnWithSharedVariantJSONRow(json_type);
+
+    auto dst = ColumnDynamic::create(1);
+    auto plain_json_type = DataTypeFactory::instance().get("JSON");
+    ASSERT_TRUE(dst->addNewVariant(plain_json_type));
+
+    dst->insertManyFrom(*src, 1, 3);
+
+    ASSERT_EQ(dst->size(), 3);
+    for (size_t i = 0; i < 3; ++i)
+        ASSERT_EQ(dst->getTypeNameAt(i), json_type->getName());
+    auto plain_json_discr = dst->getVariantInfo().variant_name_to_discriminator.at(plain_json_type->getName());
+    ASSERT_TRUE(dst->getVariantColumn().getVariantByGlobalDiscriminator(plain_json_discr).empty());
+}
+
 TEST(ColumnDynamic, InsertRangeFrom4)
 {
     auto column_to = ColumnDynamic::create(2);

@@ -554,7 +554,11 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
         /// Check if we have a compatible variant and deserialize value into it from shared variant data.
-        if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ false))
+        /// Types like `JSON(...)` must stay partitioned by exact storage type (see
+        /// `typeRequiresExactStorageMatch`), so for them only a storage-compatible variant is reused;
+        /// otherwise the value goes through the typed value path below and stays in the shared
+        /// variant or gets a new exact variant.
+        if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*type)))
         {
             if (variant_info.variant_names[*discr] == type_name)
             {
@@ -644,7 +648,9 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
 
-        auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ false);
+        /// Exact-storage types (e.g. `JSON(...)`) may only reuse a storage-compatible variant,
+        /// otherwise the caller keeps the value in the shared variant or adds a new exact variant.
+        auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*type));
         if (!discr)
             return false;
 
@@ -937,7 +943,9 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
         auto type = decodeDataType(buf);
         auto type_name = type->getName();
         /// Check if we have a compatible variant and deserialize value into it from shared variant data.
-        if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ false))
+        /// Exact-storage types (e.g. `JSON(...)`) may only reuse a storage-compatible variant, see
+        /// `typeRequiresExactStorageMatch`.
+        if (auto discr = findVariantDiscriminatorForType(type, /*require_storage_compatible=*/ typeRequiresExactStorageMatch(*type)))
         {
             /// Deserialize value into temporary column and use it in insertManyIntoVariantFrom.
             auto tmp_column = type->createColumn();
