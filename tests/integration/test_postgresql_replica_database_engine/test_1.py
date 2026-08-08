@@ -672,6 +672,58 @@ def test_database_wide_truncate_is_rejected(started_cluster):
     pg_manager.drop_materialized_db()
 
 
+def test_drop_of_individual_table_is_rejected(started_cluster):
+    # DROP TABLE of an individual table would remove only the local nested table, while the table stays in
+    # the persisted `materialized_postgresql_tables_list`, in the PostgreSQL publication and in the
+    # replication handler's state: the consumer would keep receiving its changes, mark it as skipped and
+    # silently advance the replication slot past them. It must be refused; DETACH TABLE ... PERMANENTLY is
+    # the supported way to remove one table from replication.
+    table_name = "postgresql_replica_drop"
+    other_table_name = "postgresql_replica_drop_other"
+    for name in (table_name, other_table_name):
+        pg_manager.create_postgres_table(name)
+        instance.query(
+            f"INSERT INTO postgres_database.{name} SELECT number, number FROM numbers(50)"
+        )
+
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table_name},{other_table_name}'"
+        ],
+    )
+    check_tables_are_synchronized(instance, table_name)
+    check_tables_are_synchronized(instance, other_table_name)
+
+    for query in [
+        f"DROP TABLE test_database.{table_name}",
+        f"DROP TABLE test_database.{table_name} SYNC",
+        # An individual-table TRUNCATE shares the same storage-level guard.
+        f"TRUNCATE TABLE test_database.{table_name}",
+    ]:
+        error = instance.query_and_get_error(query)
+        assert "Use DETACH TABLE ... PERMANENTLY" in error
+
+    # The refusal left the table intact and replicating.
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+    assert int(instance.query(f"SELECT count() FROM test_database.{table_name}")) == 100
+
+    # DETACH TABLE ... PERMANENTLY is the supported path: it removes the table from the tables list and
+    # the publication and drops the local nested table, while the other table keeps replicating.
+    instance.query(f"DETACH TABLE test_database.{table_name} PERMANENTLY")
+    assert table_name not in instance.query("SHOW TABLES FROM test_database")
+    instance.query(
+        f"INSERT INTO postgres_database.{other_table_name} SELECT number, number FROM numbers(50, 50)"
+    )
+    check_tables_are_synchronized(instance, other_table_name)
+
+    pg_manager.drop_materialized_db()
+
+
 def test_merge_table_over_materialized_postgresql_database(started_cluster):
     """
     Reading a MaterializedPostgreSQL database through Merge forces FINAL on the child read:

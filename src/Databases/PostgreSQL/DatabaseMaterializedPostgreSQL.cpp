@@ -745,17 +745,27 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
 
 void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
-    /// Defense-in-depth for the coordinated-mode guard in `StorageMaterializedPostgreSQL::checkTableCanBeDropped`:
-    /// a user-issued `DROP TABLE` of an individual table would remove the local nested replicated table
-    /// without updating the shared publication, silently diverging replicas. The storage-level check already
+    /// Defense-in-depth for the guards in `StorageMaterializedPostgreSQL::checkTableCanBeDropped`:
+    /// a user-issued `DROP TABLE` of an individual table would remove the local nested table without
+    /// updating the persisted tables list, the PostgreSQL publication or the replication handler's state
+    /// (and, in coordinated mode, would silently diverge the replicas). The storage-level check already
     /// rejects it before `flushAndShutdown`; reject here too in case the storage check is ever bypassed.
-    /// DROP DATABASE and internal cleanup run with an internal context and must still be able to drop the
-    /// nested tables, so only a genuine (non-internal) user query is refused.
-    if (isCoordinated() && !local_context->isInternalQuery())
+    /// DROP DATABASE and internal cleanup (including the nested-table drop of DETACH TABLE PERMANENTLY,
+    /// which goes through `DatabaseAtomic::dropTable` directly) run with an internal context and must
+    /// still be able to drop the nested tables, so only a genuine (non-internal) user query is refused.
+    if (!local_context->isInternalQuery())
+    {
+        if (isCoordinated())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DROP TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+                "(materialized_postgresql_keeper_path is set). "
+                "Recreate the database with an updated materialized_postgresql_tables_list instead");
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "DROP TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
-            "(materialized_postgresql_keeper_path is set). "
-            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+            "DROP TABLE is not supported for a MaterializedPostgreSQL database: it would remove only the "
+            "local nested table, while the table remains in materialized_postgresql_tables_list and in the "
+            "PostgreSQL publication, so its replication would silently stop. "
+            "Use DETACH TABLE ... PERMANENTLY to remove the table from replication");
+    }
 
     /// Simulates the nested-table drop of a DROP DATABASE failing (e.g. Keeper disappearing while a nested
     /// ReplicatedReplacingMergeTree deletes its own Keeper metadata, or a filesystem error for a plain nested
@@ -1260,6 +1270,8 @@ It is possible to remove specific tables from replication:
 ```sql
 DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
 ```
+
+`DROP TABLE` of an individual table is not supported for a `MaterializedPostgreSQL` database: it would remove only the local nested table, while the table remains in the persisted [`materialized_postgresql_tables_list`](#materialized-postgresql-tables-list) and in the PostgreSQL publication, so its replication would silently stop. Use `DETACH TABLE ... PERMANENTLY` as shown above, which also removes the table from the tables list and the publication.
 
 `RENAME TABLE` and `EXCHANGE TABLES` are not supported for a `MaterializedPostgreSQL` database: the name of a replicated table mirrors the name of the PostgreSQL table it replicates, and renaming only the local table would leave the replication state (including the persisted [`materialized_postgresql_tables_list`](#materialized-postgresql-tables-list)) pointing at the original name. A database-wide truncate (`TRUNCATE DATABASE` / `TRUNCATE ALL TABLES FROM`) is not supported either: it would delete the local copy of the replicated data while replication continues from the current position in PostgreSQL, so the deleted rows would never be reloaded. Recreate the database to reload it from a fresh snapshot instead.
 

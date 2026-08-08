@@ -322,13 +322,28 @@ void StorageMaterializedPostgreSQL::checkTableCanBeDropped(ContextPtr /* query_c
     /// that no longer exists. Refuse here, before `InterpreterDropQuery` calls `flushAndShutdown` on the
     /// table, so a rejected DROP stays a true no-op and does not stop replication of the nested table.
     /// This guard is reached only for a user-issued DROP/TRUNCATE of an individual table (the per-query
-    /// wrapper is built with the coordinated flag only for non-internal queries); DROP DATABASE runs with
-    /// an internal context and operates on the nested tables directly, so it is unaffected.
+    /// wrapper is built only for non-internal queries); DROP DATABASE runs with an internal context and
+    /// operates on the nested tables directly, so it is unaffected.
     if (is_coordinated)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Dropping or truncating an individual table is not supported for a coordinated MaterializedPostgreSQL "
             "setup (materialized_postgresql_keeper_path is set). "
             "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
+    /// The same applies to a plain (non-coordinated) MaterializedPostgreSQL database: dropping an individual
+    /// table would only remove the local nested table, while the table stays in the persisted
+    /// materialized_postgresql_tables_list, in the PostgreSQL publication and in the replication handler's
+    /// state, so the consumer would keep receiving its changes, mark it as skipped and silently advance the
+    /// replication slot past them. DETACH TABLE ... PERMANENTLY is the supported way to remove one table:
+    /// it updates the tables list, removes the table from the publication and drops the local nested table.
+    /// (This check does not affect the standalone MaterializedPostgreSQL table engine, for which DROP TABLE
+    /// is the regular way to remove the whole replication setup.)
+    if (is_materialized_postgresql_database)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Dropping or truncating an individual table is not supported for a MaterializedPostgreSQL database: "
+            "it would remove only the local nested table, while the table remains in "
+            "materialized_postgresql_tables_list and in the PostgreSQL publication, so its replication would "
+            "silently stop. Use DETACH TABLE ... PERMANENTLY to remove the table from replication");
 }
 
 
