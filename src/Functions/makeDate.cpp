@@ -894,9 +894,9 @@ YYYYMMDDToDate(YYYYMMDD)
 SELECT YYYYMMDDToDate(20230911);
         )",
         R"(
-┌─toYYYYMMDD(20230911)─┐
-│           2023-09-11 │
-└──────────────────────┘
+┌─YYYYMMDDToDate(20230911)─┐
+│               2023-09-11 │
+└──────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddtodate = {23, 9};
@@ -983,9 +983,9 @@ YYYYMMDDhhmmssToDateTime64(YYYYMMDDhhmmss[, precision[, timezone]])
 SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');
         )",
         R"(
-┌─YYYYMMDDhhmm⋯/Istanbul')─┐
-│  2023-09-11 13:14:15.000 │
-└──────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul')─┐
+│                                        2023-09-11 13:14:15.000 │
+└────────────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddhhmmsstodatetime64 = {23, 9};

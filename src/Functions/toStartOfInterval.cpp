@@ -585,17 +585,17 @@ toStartOfInterval(value, INTERVAL x unit[, origin[, time_zone]])
 SELECT toStartOfInterval(toDateTime('2023-01-15 14:30:00'), INTERVAL 1 MONTH)
             )",
             R"(
-┌─toStartOfInt⋯alMonth(1))─┐
-│               2023-01-01 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-15 14:30:00'), toIntervalMonth(1))─┐
+│                                                               2023-01-01 │
+└──────────────────────────────────────────────────────────────────────────┘
             )"},
             {"Using origin point", R"(
 SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'))
             )",
             R"(
-┌─toStartOfInt⋯14:35:30'))─┐
-│      2023-01-01 14:44:30 │
-└──────────────────────────┘
+┌─toStartOfInterval(toDateTime('2023-01-01 14:45:00'), toIntervalMinute(1), toDateTime('2023-01-01 14:35:30'))─┐
+│                                                                                          2023-01-01 14:44:30 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
             )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};

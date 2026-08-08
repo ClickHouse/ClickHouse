@@ -11,18 +11,15 @@ AggregateFunction/groupArraySample#2      unstable  # the output is not the same
 AggregateFunction/kolmogorovSmirnovTest#0 unstable  # the output is not the same on every run
 AggregateFunction/kolmogorovSmirnovTest#1 unstable  # the output is not the same on every run
 AggregateFunction/stddevPopStable#0       unstable  # the output is not the same on every run
-DatabaseEngine/URL#0                      error  # the example reads an illustrative URL that serves no data
 Function/FQDN#0                           output  # the response describes the server or the machine it runs on
 Function/UTCTimestamp#0                   unstable  # the output is not the same on every run
-Function/YYYYMMDDToDate#0                 output  # the documented response is out of date; it could not be rewritten automatically
-Function/YYYYMMDDhhmmssToDateTime64#0     output  # the documented response is out of date; it could not be rewritten automatically
 Function/addressToLine#0                  unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
 Function/addressToLine#1                  output  # the response carries a path or a database name of the machine this ran on
 Function/addressToLine#2                  unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
 Function/addressToLineWithInlines#0       output  # the response carries a path or a database name of the machine this ran on
 Function/addressToLineWithInlines#1       unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a source path of one build
 Function/addressToSymbol#0                unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
-Function/addressToSymbol#1                output  # the documented response is out of date; it could not be rewritten automatically
+Function/addressToSymbol#1                output  # the literal address and the symbol in the response belong to the build that recorded them
 Function/addressToSymbol#2                unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
 Function/aiClassify#0                     error  # the example calls an external model provider, which needs credentials
 Function/aiClassify#1                     error  # the example calls an external model provider, which needs credentials
@@ -53,7 +50,7 @@ Function/dateTimeToUUIDv7#1               unstable  # the output is not the same
 Function/dateTrunc#0                      unstable  # the output is not the same on every run
 Function/dateTrunc#1                      unstable  # the output is not the same on every run
 Function/demangle#0                       unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
-Function/demangle#1                       output  # the documented response is out of date; it could not be rewritten automatically
+Function/demangle#1                       output  # the literal address and the symbol in the response belong to the build that recorded them
 Function/demangle#2                       unstable  # reads `system.trace_log`, which a fresh server may not have created yet, and the response is a symbol of one build
 Function/displayName#0                    output  # the response describes the server or the machine it runs on
 Function/filesystemAvailable#0            output  # the response describes the server or the machine it runs on
@@ -114,7 +111,6 @@ Function/randomStringUTF8#0               unstable  # the output is not the same
 Function/regionToArea#0                   error  # the geobase of the test configuration does not have this hierarchy
 Function/regionToDistrict#0               error  # the geobase of the test configuration does not have this hierarchy
 Function/revision#0                       output  # the response describes the server or the machine it runs on
-Function/rowNumberInAllBlocks#0           output  # the documented response is out of date; it could not be rewritten automatically
 Function/serverUUID#0                     output  # the response describes the server or the machine it runs on
 Function/shardNum#0                       unstable  # the two shards answer in whichever order they finish
 Function/showCertificate#0                error  # the example needs a server configured with TLS
@@ -122,8 +118,6 @@ Function/structureToCapnProtoSchema#0     unstable  # the output is not the same
 Function/tid#0                            unstable  # the output is not the same on every run
 Function/timezone#0                       output  # the response describes the server or the machine it runs on
 Function/toInterval#1                     unstable  # the output is not the same on every run
-Function/toStartOfInterval#0              output  # the documented response is out of date; it could not be rewritten automatically
-Function/toStartOfInterval#1              output  # the documented response is out of date; it could not be rewritten automatically
 Function/toString#0                       unstable  # the output is not the same on every run
 Function/today#0                          unstable  # the output depends on the current date
 Function/today#1                          unstable  # the output depends on the current date
