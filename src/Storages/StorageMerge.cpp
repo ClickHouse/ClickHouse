@@ -45,6 +45,7 @@
 #include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/Utils.h>
+#include <Planner/findQueryForParallelReplicas.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -84,12 +85,15 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
     extern const SettingsBool parallel_replicas_allow_merge_tables;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsBool parallel_replicas_plan_based;
+    extern const SettingsString parallel_replicas_freshness_checked_tables;
 }
 
 namespace MergeTreeSetting
@@ -813,6 +817,24 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
     if (parallel_replicas_local_plan_info || context->canUseParallelReplicasOnFollower())
     {
         const auto & settings = context->getSettingsRef();
+
+        /// The initiator selected the replicas against the replicated tables enumerated at planning
+        /// time: a replicated table that started matching after that was never checked for
+        /// replication delay, so a replica already admitted to coordinated reading may be lagging
+        /// behind on it - fail closed.
+        const bool exclude_stale_replicas = !settings[Setting::fallback_to_stale_replicas_for_distributed_queries]
+            && settings[Setting::max_replica_delay_for_distributed_queries] > 0;
+        std::unordered_set<String> freshness_checked_tables;
+        if (exclude_stale_replicas)
+        {
+            /// The initiator sets the setting on the context it plans the local plan and the shipped
+            /// query with; the context this step was created with predates that.
+            const auto & initiator_settings = parallel_replicas_local_plan_info
+                ? parallel_replicas_local_plan_info->context->getSettingsRef()
+                : settings;
+            freshness_checked_tables = parseFreshnessCheckedTables(initiator_settings[Setting::parallel_replicas_freshness_checked_tables]);
+        }
+
         for (const auto & [database_name, table, _, table_name] : selected_tables)
         {
             if (!table->isMergeTree())
@@ -829,6 +851,17 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
                     "Cannot coordinate reading from table {} with parallel replicas because it is not replicated "
                     "and the setting `parallel_replicas_for_non_replicated_merge_tree` is disabled: "
                     "the set of tables matched by the table {} changed after the query was planned, or differs on this replica",
+                    table->getStorageID().getNameForLogs(),
+                    storage_merge->getStorageID().getNameForLogs());
+
+            if (exclude_stale_replicas && table->supportsReplication()
+                && !freshness_checked_tables.contains(freshnessCheckedTableName(table->getStorageID().getQualifiedName())))
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Cannot coordinate reading from table {} with parallel replicas because its replication delay "
+                    "was not checked when the replicas were selected (`max_replica_delay_for_distributed_queries` "
+                    "with falling back to stale replicas switched off): the set of tables matched by the table {} "
+                    "changed after the query was planned, or differs on this replica",
                     table->getStorageID().getNameForLogs(),
                     storage_merge->getStorageID().getNameForLogs());
         }

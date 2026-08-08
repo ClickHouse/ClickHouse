@@ -7897,6 +7897,9 @@ Allow parallel replicas to execute queries over `Merge` tables and the `merge` t
     DECLARE(String, parallel_replicas_designated_table, "", R"(
 This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server to the table expression it designated for coordinated reading. A replica that plans the same query and designates a different table expression - which can happen when the set of underlying tables of a `Merge` table differs on it - fails the query instead of reading a different table in full.
 )", BETA) \
+    DECLARE(String, parallel_replicas_freshness_checked_tables, "", R"(
+This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. When a replica lagging behind by more than `max_replica_delay_for_distributed_queries` must not participate in coordinated reading (falling back to stale replicas is switched off), the initiator sets it to the replicated tables whose replication delay it checked when it selected the replicas. The set of tables matched by a `Merge` table is enumerated again at reading time and may have grown since that check, so reading a replicated table absent from this snapshot fails the query instead of serving data whose freshness nobody verified.
+)", BETA) \
     DECLARE(Bool, distributed_index_analysis, false, R"(
 Index analysis will be distributed across replicas.
 Beneficial for shared storage and huge amount of data in cluster.

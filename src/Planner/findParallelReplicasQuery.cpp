@@ -6,6 +6,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Common/escapeForFileName.h>
 #include <Core/Settings.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -612,6 +613,39 @@ String parallelReplicasDesignatedTableName(const IQueryTreeNode * table_expressi
         name += " AS " + alias;
 
     return name;
+}
+
+String freshnessCheckedTableName(const QualifiedTableName & name)
+{
+    /// `escapeForFileName` leaves only alphanumeric characters and `_`, so the separators
+    /// cannot occur inside the escaped components and the encoding is unambiguous.
+    return escapeForFileName(name.database) + "." + escapeForFileName(name.table);
+}
+
+String serializeFreshnessCheckedTables(const std::vector<QualifiedTableName> & tables)
+{
+    String serialized;
+    for (const auto & table : tables)
+    {
+        if (!serialized.empty())
+            serialized += ',';
+        serialized += freshnessCheckedTableName(table);
+    }
+    return serialized;
+}
+
+std::unordered_set<String> parseFreshnessCheckedTables(const String & serialized)
+{
+    std::unordered_set<String> tables;
+    for (size_t pos = 0; pos < serialized.size();)
+    {
+        size_t comma = serialized.find(',', pos);
+        if (comma == String::npos)
+            comma = serialized.size();
+        tables.emplace(serialized.substr(pos, comma - pos));
+        pos = comma + 1;
+    }
+    return tables;
 }
 
 /// Walk the query tree looking for a UNION node whose every child query

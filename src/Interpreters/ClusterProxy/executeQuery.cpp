@@ -992,9 +992,16 @@ void executeQueryWithParallelReplicas(
         /// Enumerating the sources of a view requires resolving its stored query, so do it only
         /// when a lagging replica is actually excluded from reading.
         const auto & settings_ref = context->getSettingsRef();
-        const bool enumerate_view_sources = !settings_ref[Setting::fallback_to_stale_replicas_for_distributed_queries]
+        const bool exclude_stale_replicas = !settings_ref[Setting::fallback_to_stale_replicas_for_distributed_queries]
             && settings_ref[Setting::max_replica_delay_for_distributed_queries] > 0;
-        tables_to_check = ReplicatedTablesToCheckCollector(context, enumerate_view_sources).collect(query_tree);
+        tables_to_check = ReplicatedTablesToCheckCollector(context, /*enumerate_view_sources_=*/ exclude_stale_replicas).collect(query_tree);
+
+        /// The set of tables matched by a `Merge` table is enumerated again at reading time and may
+        /// have grown by then. Tell the replicas which replicated tables were actually checked when
+        /// the replicas were selected, so that reading a replicated table absent from this snapshot
+        /// fails closed instead of letting a replica that may be lagging behind on it serve it.
+        if (exclude_stale_replicas)
+            new_context->setSetting("parallel_replicas_freshness_checked_tables", serializeFreshnessCheckedTables(tables_to_check));
     }
 
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);

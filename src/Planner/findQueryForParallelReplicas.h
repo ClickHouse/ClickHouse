@@ -1,8 +1,12 @@
 #pragma once
 #include <base/types.h>
 
+#include <Core/QualifiedTableName.h>
+
 #include <list>
 #include <memory>
+#include <unordered_set>
+#include <vector>
 
 namespace DB
 {
@@ -35,6 +39,17 @@ const IQueryTreeNode * findTableDesignatedForParallelReplicas(const QueryTreeNod
 /// rewriting of the query that is sent to the replicas, and a designated table function can only be
 /// `merge(...)` anyway.
 String parallelReplicasDesignatedTableName(const IQueryTreeNode * table_expression);
+
+/// Serialization of the qualified names of the replicated tables whose replication delay the
+/// initiator checked when it selected the replicas (`max_replica_delay_for_distributed_queries`
+/// with falling back to stale replicas switched off), for the internal setting
+/// `parallel_replicas_freshness_checked_tables`. The set of tables matched by a `Merge` table is
+/// enumerated again at reading time and may have grown since that check: a replica reading a
+/// replicated table that is absent from this set fails closed instead of serving data nobody
+/// verified to be fresh.
+String freshnessCheckedTableName(const QualifiedTableName & name);
+String serializeFreshnessCheckedTables(const std::vector<QualifiedTableName> & tables);
+std::unordered_set<String> parseFreshnessCheckedTables(const String & serialized);
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
