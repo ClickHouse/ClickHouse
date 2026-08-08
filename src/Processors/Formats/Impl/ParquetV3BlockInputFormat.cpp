@@ -519,8 +519,9 @@ std::vector<FileBucketInfoPtr> computeBucketsByCount(size_t target_count, size_t
 /// Maps every leaf's raw dotted `path_in_schema` to the logical dotted name the native Parquet
 /// reader gives it. Mirrors `SchemaConverter`'s naming: an element contributes a name component
 /// only outside List / Map wrapper levels, so `a.list.element.x` (an `Array(Tuple(x ...))`
-/// element) becomes `a.x`, `a.list.element` (a plain array leaf) becomes `a`, and the Map
-/// `key_value` wrapper is dropped (`m.key_value.value` -> `m.value`). Returns false on a
+/// element) becomes `a.x` and `a.list.element` (a plain array leaf) becomes `a`; for a Map the
+/// `key_value` wrapper is dropped and the key / value elements take the `keys` / `values`
+/// subcolumn names `DataTypeMap` uses (`m.key_value.value` -> `m.values`). Returns false on a
 /// malformed schema tree; the caller then falls back to raw-path matching.
 bool collectLogicalPaths(
     const std::vector<parquet::format::SchemaElement> & schema,
@@ -558,13 +559,18 @@ bool collectLogicalPaths(
         const size_t rep_children = rep.__isset.num_children ? static_cast<size_t>(rep.num_children) : 0;
         if (is_map && rep_children == 2)
         {
-            /// Map: the repeated `key_value` group is a wrapper; `key` / `value` keep their names
-            /// (the reader renames them at the output-tuple level, and the whole-map name `m` is
-            /// still a dotted prefix of both, so whole-map requests match either way).
+            /// Map: the repeated `key_value` group is a wrapper, and the reader renames the
+            /// key / value elements (whatever the footer calls them) to the `keys` / `values`
+            /// subcolumn names `DataTypeMap` requires — `SchemaConverter` does this at the
+            /// output-tuple level — so a direct map-subcolumn read requests `m.keys` /
+            /// `m.values`. The whole-map name `m` is still a dotted prefix of both, so
+            /// whole-map requests keep matching.
             ++idx;
             String raw_rep = raw + "." + rep.name;
-            return collectLogicalPaths(schema, idx, raw_rep, logical, true, out)
-                && collectLogicalPaths(schema, idx, raw_rep, logical, true, out);
+            String logical_keys = logical.empty() ? "keys" : logical + ".keys";
+            String logical_values = logical.empty() ? "values" : logical + ".values";
+            return collectLogicalPaths(schema, idx, raw_rep, logical_keys, false, out)
+                && collectLogicalPaths(schema, idx, raw_rep, logical_values, false, out);
         }
         if (is_list)
         {
