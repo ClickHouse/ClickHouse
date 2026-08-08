@@ -484,6 +484,13 @@ TEST(IcebergCompactionOverwriteClassification, PositionDeleteOnlyPredicate)
     /// which is why they live here and not in a stateless test.
     struct Case
     {
+        /// Constructor rather than in-class initializers: a default `skippable` would let a row omit
+        /// its expected verdict and silently assert `false`.
+        Case(const char * name_, DB::Iceberg::SnapshotSummaryUpdateOverwrite update_, bool skippable_)
+            : name(name_), update(update_), skippable(skippable_)
+        {
+        }
+
         const char * name;
         DB::Iceberg::SnapshotSummaryUpdateOverwrite update;
         bool skippable;
