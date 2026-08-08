@@ -2788,4 +2788,324 @@ TEST_F(ALPTest, DecompressMalformedInputRDWithTrailingBytesAfterValidPayload)
     verifyDecompressExpectedException(source, "Cannot decompress ALP(RD)-encoded data, stream size mismatch");
 }
 
+class WallabyTest : public ::testing::Test
+{
+protected:
+    static std::vector<UInt8> constructSourceWithHeader(const std::vector<UInt8> & source, UInt32 dest_size)
+    {
+        UInt32 source_size = static_cast<UInt32>(source.size());
+
+        std::vector<UInt8> data = {
+            // General codec header
+            static_cast<UInt8>(CompressionMethodByte::Wallaby), // method byte
+            static_cast<UInt8>(source_size & 0xFF),             // compressed size (byte 0)
+            static_cast<UInt8>((source_size >> 8) & 0xFF),      // compressed size (byte 1)
+            static_cast<UInt8>((source_size >> 16) & 0xFF),     // compressed size (byte 2)
+            static_cast<UInt8>((source_size >> 24) & 0xFF),     // compressed size (byte 3)
+            static_cast<UInt8>(dest_size & 0xFF),               // decompressed size (byte 0)
+            static_cast<UInt8>((dest_size >> 8) & 0xFF),        // decompressed size (byte 1)
+            static_cast<UInt8>((dest_size >> 16) & 0xFF),       // decompressed size (byte 2)
+            static_cast<UInt8>((dest_size >> 24) & 0xFF),       // decompressed size (byte 3)
+        };
+        data.append_range(source);
+
+        return data;
+    }
+
+    /// Prepends the Wallaby codec header (version, float width, uncompressed byte size)
+    /// to a sequence of encoded vectors.
+    template <typename FloatType>
+    static std::vector<UInt8> constructCodecPayload(const std::vector<UInt8> & vectors, UInt32 values_count, UInt32 trailing_bytes = 0)
+    {
+        const UInt32 uncompressed_size = values_count * sizeof(FloatType) + trailing_bytes;
+        std::vector<UInt8> payload = {
+            0x01,                                                 // version
+            static_cast<UInt8>(sizeof(FloatType)),                // float width
+            static_cast<UInt8>(uncompressed_size & 0xFF),         // uncompressed size (byte 0)
+            static_cast<UInt8>((uncompressed_size >> 8) & 0xFF),  // uncompressed size (byte 1)
+            static_cast<UInt8>((uncompressed_size >> 16) & 0xFF), // uncompressed size (byte 2)
+            static_cast<UInt8>((uncompressed_size >> 24) & 0xFF), // uncompressed size (byte 3)
+        };
+        payload.append_range(vectors);
+
+        return payload;
+    }
+
+    template <typename FloatType>
+    static std::vector<FloatType> decompressAs(const std::vector<UInt8> & payload, UInt32 values_count)
+    {
+        using DataType = std::conditional_t<std::is_same_v<FloatType, Float64>, DataTypeFloat64, DataTypeFloat32>;
+
+        const UInt32 dest_size = values_count * sizeof(FloatType);
+        const std::vector<UInt8> data = constructSourceWithHeader(payload, dest_size);
+        const auto codec = makeCodec("Wallaby", std::make_shared<DataType>());
+
+        std::vector<FloatType> dest(values_count);
+        codec->decompress(reinterpret_cast<const char *>(data.data()), static_cast<UInt32>(data.size()), reinterpret_cast<char *>(dest.data()));
+        return dest;
+    }
+
+    template <typename T = DataTypeFloat64>
+    static void verifyDecompressExpectedException(const std::vector<UInt8> & payload, const std::string & expected_message, UInt32 dest_size)
+    {
+        try
+        {
+            const std::vector<UInt8> data = constructSourceWithHeader(payload, dest_size);
+            const auto codec = makeCodec("Wallaby", std::make_shared<T>());
+            std::vector<char> dest(dest_size);
+
+            codec->decompress(reinterpret_cast<const char *>(data.data()), static_cast<UInt32>(data.size()), dest.data());
+
+            FAIL() << "Expected Exception with message: " << expected_message;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(expected_message, e.message());
+        }
+    }
+};
+
+/** A fixed compressed vector produced by the version-1 encoder for the value sequence returned
+  * by wallabyGoldenXorValues. It exercises the XOR vector mode: the raw first value, the EQUAL
+  * branch, runs and the XOR branches. These bytes are part of the persisted on-disk format:
+  * they must stay decodable no matter how the encoder heuristics evolve, and an incompatible
+  * change of the format requires a version bump instead.
+  */
+std::vector<UInt8> wallabyGoldenXorVectors()
+{
+    return {
+        0x03,                                           // mode = XOR
+        0x2E, 0x00, 0x00, 0x00,                         // payload size = 46 bytes
+        0x01,                                           // flags: trailing-zero field omitted
+        0x40, 0x09, 0x21, 0xFB, 0x54, 0x44, 0x2D, 0x18, // first value: pi, stored raw
+        0x2B, 0x27, 0xBC, 0x77, 0xD4, 0x1E, 0x9C, 0x40, 0x00, 0x01, 0x00, 0x40,
+        0x0C, 0x02, 0x00, 0x50, 0x0C, 0x01, 0xC0, 0x40, 0x09, 0x01, 0x40, 0x2C,
+        0x06, 0x00, 0xD8, 0x0C, 0x48, 0xE4, 0xF7, 0x8E, 0xFA, 0x83, 0xD3, 0x88,
+        0x0E
+    };
+}
+
+std::vector<Float64> wallabyGoldenXorValues()
+{
+    constexpr Float64 pi = 0x1.921fb54442d18p+1;
+    constexpr Float64 e = 0x1.5bf0a8b145769p+1;
+
+    std::vector<Float64> values;
+    for (size_t i = 0; i < 8; ++i)
+    {
+        values.push_back(pi);
+        values.push_back(e);
+    }
+    for (size_t i = 0; i < 6; ++i)
+        values.push_back(e);
+    values.push_back(2 * pi);
+    values.push_back(pi);
+    return values;
+}
+
+TEST_F(WallabyTest, DecodesConstVector)
+{
+    const std::vector<UInt8> vectors = {
+        0x00,                                           // mode = CONST
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x3F  // 1.5 (little endian)
+    };
+    const auto decoded = decompressAs<Float64>(constructCodecPayload<Float64>(vectors, 3), 3);
+    EXPECT_EQ(decoded, (std::vector<Float64>{1.5, 1.5, 1.5}));
+}
+
+TEST_F(WallabyTest, DecodesConstVectorFloat32)
+{
+    const std::vector<UInt8> vectors = {
+        0x00,                  // mode = CONST
+        0x00, 0x00, 0xC0, 0x3F // 1.5f (little endian)
+    };
+    const auto decoded = decompressAs<Float32>(constructCodecPayload<Float32>(vectors, 2), 2);
+    EXPECT_EQ(decoded, (std::vector<Float32>{1.5f, 1.5f}));
+}
+
+TEST_F(WallabyTest, DecodesDecimalForVectorWithException)
+{
+    /// DECIMAL_FOR with bits = 0: every quantized value equals the base, so the packed part
+    /// is empty; the value at position 1 is patched from the exception list.
+    const std::vector<UInt8> vectors = {
+        0x01,                                           // mode = DECIMAL_FOR
+        0x01,                                           // alpha = 1 decimal place
+        0x00,                                           // bits = 0, no packed data
+        0x19, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 25 -> 2.5
+        0x01, 0x00,                                     // exception_count = 1
+        0x01, 0x00,                                     // exception position = 1
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A, 0x40  // raw exception value 3.25
+    };
+    const auto decoded = decompressAs<Float64>(constructCodecPayload<Float64>(vectors, 2), 2);
+    EXPECT_EQ(decoded, (std::vector<Float64>{2.5, 3.25}));
+}
+
+TEST_F(WallabyTest, DecodesDecimalDeltaVector)
+{
+    /// DECIMAL_DELTA with bits = 0: all zigzag deltas are zero, so every value equals first_q.
+    const std::vector<UInt8> vectors = {
+        0x02,                                           // mode = DECIMAL_DELTA
+        0x02,                                           // alpha = 2 decimal places
+        0x00,                                           // bits = 0, no packed data
+        0x7B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 123 -> 1.23
+        0x00, 0x00                                      // exception_count = 0
+    };
+    const auto decoded = decompressAs<Float64>(constructCodecPayload<Float64>(vectors, 4), 4);
+    EXPECT_EQ(decoded, (std::vector<Float64>{1.23, 1.23, 1.23, 1.23}));
+}
+
+TEST_F(WallabyTest, DecodesRawVectorAndTrailingBytes)
+{
+    const std::vector<UInt8> vectors = {
+        0x04,                                           // mode = RAW
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // 1.0
+        0x18, 0x2D, 0x44, 0x54, 0xFB, 0x21, 0x09, 0x40, // pi
+        0xAA, 0xBB, 0xCC                                // trailing bytes stored verbatim
+    };
+    const std::vector<UInt8> data = constructSourceWithHeader(constructCodecPayload<Float64>(vectors, 2, 3), 19);
+    const auto codec = makeCodec("Wallaby", std::make_shared<DataTypeFloat64>());
+
+    std::vector<char> dest(19);
+    codec->decompress(reinterpret_cast<const char *>(data.data()), static_cast<UInt32>(data.size()), dest.data());
+
+    Float64 values[2];
+    memcpy(values, dest.data(), sizeof(values));
+    EXPECT_EQ(values[0], 1.0);
+    EXPECT_EQ(values[1], 0x1.921fb54442d18p+1);
+    EXPECT_EQ(static_cast<UInt8>(dest[16]), 0xAA);
+    EXPECT_EQ(static_cast<UInt8>(dest[17]), 0xBB);
+    EXPECT_EQ(static_cast<UInt8>(dest[18]), 0xCC);
+}
+
+TEST_F(WallabyTest, DecodesXorVectorGoldenBytes)
+{
+    const auto decoded = decompressAs<Float64>(constructCodecPayload<Float64>(wallabyGoldenXorVectors(), 24), 24);
+    EXPECT_EQ(decoded, wallabyGoldenXorValues());
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputTooSmallHeader)
+{
+    verifyDecompressExpectedException({0x01, 0x08}, "Cannot decompress Wallaby-encoded data, source is too small", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputUnsupportedVersion)
+{
+    std::vector<UInt8> payload = constructCodecPayload<Float64>({}, 1);
+    payload[0] = 0x02; // version = 2
+    verifyDecompressExpectedException(payload, "Cannot decompress Wallaby-encoded data, unsupported version 2", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputSizeMismatch)
+{
+    /// The stored uncompressed size says 8 bytes while the generic header says 16.
+    const std::vector<UInt8> payload = constructCodecPayload<Float64>({}, 1);
+    verifyDecompressExpectedException(payload, "Cannot decompress Wallaby-encoded data, size mismatch", 16);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputUnsupportedFloatWidth)
+{
+    std::vector<UInt8> payload = constructCodecPayload<Float64>({}, 1);
+    payload[1] = 0x02; // float width = 2
+    verifyDecompressExpectedException(payload, "Cannot decompress Wallaby-encoded data, unsupported float width 2", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputUnknownVectorMode)
+{
+    const std::vector<UInt8> vectors = {0x05}; // mode = 5, one past RAW
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 1), "Cannot decompress Wallaby-encoded data, unknown vector mode 5", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputTruncatedVector)
+{
+    const std::vector<UInt8> vectors = {
+        0x00,                  // mode = CONST
+        0x00, 0x00, 0x00, 0x00 // only 4 of the 8 value bytes
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 1), "Cannot decompress Wallaby-encoded data, source is truncated", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputCorruptDecimalHeader)
+{
+    const std::vector<UInt8> vectors = {
+        0x01,                                           // mode = DECIMAL_FOR
+        0x13,                                           // alpha = 19, above the Float64 maximum of 18
+        0x00,                                           // bits = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 0
+        0x00, 0x00                                      // exception_count = 0
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 1), "Cannot decompress Wallaby-encoded data, corrupt decimal header", 8);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputCorruptExceptionPosition)
+{
+    const std::vector<UInt8> vectors = {
+        0x01,                                           // mode = DECIMAL_FOR
+        0x01,                                           // alpha = 1
+        0x00,                                           // bits = 0
+        0x19, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // base = 25
+        0x01, 0x00,                                     // exception_count = 1
+        0x05, 0x00,                                     // exception position = 5, beyond the 2 values
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0A, 0x40  // raw exception value
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 2), "Cannot decompress Wallaby-encoded data, corrupt exception position", 16);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputTruncatedXorPayload)
+{
+    /// The declared XOR payload size is cut below the 72 bits the flags byte and the raw first
+    /// value require, so the bit reader runs out inside the vector.
+    std::vector<UInt8> vectors = wallabyGoldenXorVectors();
+    vectors[1] = 0x08; // payload size = 8
+    vectors.resize(5 + 8);
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 24), "Cannot decompress Wallaby-encoded data, XOR payload is truncated", 192);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputTrailingGarbageInXorPayload)
+{
+    /// The payload size is inflated by one byte of garbage appended after the encoded values.
+    std::vector<UInt8> vectors = wallabyGoldenXorVectors();
+    vectors[1] = 0x2F; // payload size = 47
+    vectors.push_back(0xFF);
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 24), "Cannot decompress Wallaby-encoded data, trailing garbage in XOR payload", 192);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputCorruptRunLength)
+{
+    /// Bits after the raw first value: a run selector followed by run length 1023, which
+    /// exceeds the 3 values that remain in the vector.
+    const std::vector<UInt8> vectors = {
+        0x03,                                           // mode = XOR
+        0x0B, 0x00, 0x00, 0x00,                         // payload size = 11
+        0x00,                                           // flags: trailing-zero field present
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first value: 0.0, stored raw
+        0xFF, 0xE0                                      // run of length 1023
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 4), "Cannot decompress Wallaby-encoded data, corrupt run length", 32);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputCorruptCenterLength)
+{
+    /// Bits after the raw first value: a single value in the XOR_PREV branch with lead class 7
+    /// (44 leading zeros) and 63 trailing zeros, an impossible combination for 64-bit values.
+    const std::vector<UInt8> vectors = {
+        0x03,                                           // mode = XOR
+        0x0B, 0x00, 0x00, 0x00,                         // payload size = 11
+        0x00,                                           // flags: trailing-zero field present
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first value: 0.0, stored raw
+        0x3F, 0xF0                                      // XOR_PREV, lead class 7, 63 trailing zeros
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 2), "Cannot decompress Wallaby-encoded data, corrupt center length", 16);
+}
+
+TEST_F(WallabyTest, DecompressMalformedInputTrailingGarbageAfterStream)
+{
+    /// A byte appended after a complete stream must be rejected by the outer size check.
+    const std::vector<UInt8> vectors = {
+        0x00,                                            // mode = CONST
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF8, 0x3F, // 1.5
+        0xFF                                             // garbage
+    };
+    verifyDecompressExpectedException(constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, source size does not match the encoded stream", 24);
+}
+
 }
