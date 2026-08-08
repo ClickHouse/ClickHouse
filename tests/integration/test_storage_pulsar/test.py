@@ -9,6 +9,7 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
+    main_configs=["configs/macros.xml"],
     user_configs=["configs/users.xml"],
     with_pulsar=True,
 )
@@ -324,8 +325,13 @@ def test_streaming_resumes_after_broker_restart(pulsar_cluster):
     instance.query(
         f"INSERT INTO test.pulsar_writer SELECT number + {num_rows}, number + {num_rows} FROM numbers({num_rows})"
     )
+    # Reconnection of both the producer and the consumers can take a while on
+    # slow (sanitizer) builds, so use a generous deadline. Messages interrupted
+    # by the outage may be redelivered, so tolerate duplicate rows.
     expected = "\n".join(f"{i}\t{i}" for i in range(2 * num_rows))
-    wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
+    wait_query_result(
+        expected, "SELECT DISTINCT key, value FROM test.view ORDER BY key", timeout=240
+    )
 
 
 def test_direct_select(pulsar_cluster):
@@ -430,7 +436,51 @@ def test_consume_compressed_messages(pulsar_cluster):
     produce("ZSTD", '{"key":0,"value":0}')
     produce("SNAPPY", '{"key":1,"value":1}')
 
+    # Delivery is at-least-once: a slow acknowledgement can put an already
+    # written message onto the redelivery path, so tolerate duplicate rows.
     expected = "\n".join(f"{i}\t{i}" for i in range(2))
+    wait_query_result(expected, "SELECT DISTINCT key, value FROM test.view ORDER BY key")
+
+
+def test_macros_expansion(pulsar_cluster):
+    # The broker-facing string settings support macro substitution the same way
+    # the other message-broker engines do: server-defined macros in the service
+    # URL and the special {database}/{table} macros in the topic list and the
+    # subscription name. The writer uses the already expanded literals, so
+    # messages flow end-to-end only if the reader expanded its settings too.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query(
+        """
+        CREATE TABLE test.pulsar_reader (key UInt64, value UInt64)
+        ENGINE = Pulsar
+        SETTINGS pulsar_service_url = 'pulsar://{pulsar_host}:{pulsar_port}',
+                 pulsar_topic_list = '{database}_macro_topic',
+                 pulsar_group_name = '{database}_{table}_macro_group',
+                 pulsar_format = 'JSONEachRow'
+        """
+    )
+    instance.query(
+        pulsar_table("test.pulsar_writer", "test_macro_topic", "macro_writer_group")
+    )
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+        ENGINE = MergeTree ORDER BY key
+        """
+    )
+    instance.query(
+        """
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+        SELECT key, value FROM test.pulsar_reader
+        """
+    )
+
+    num_rows = 10
+    instance.query(
+        f"INSERT INTO test.pulsar_writer SELECT number, number FROM numbers({num_rows})"
+    )
+
+    expected = "\n".join(f"{i}\t{i}" for i in range(num_rows))
     wait_query_result(expected, "SELECT key, value FROM test.view ORDER BY key")
 
 

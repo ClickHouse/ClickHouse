@@ -173,12 +173,17 @@ StoragePulsar::StoragePulsar(
     : IStreamingStorage(table_id_)
     , WithContext(context_)
     , pulsar_settings(std::move(pulsar_settings_))
-    , format_name((*pulsar_settings)[PulsarSetting::pulsar_format].value)
+    , macros_info{.table_id = table_id_}
+    , format_name(getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_format].value))
     , num_consumers((*pulsar_settings)[PulsarSetting::pulsar_num_consumers].value)
     , max_rows_per_message((*pulsar_settings)[PulsarSetting::pulsar_max_rows_per_message].value)
+    , group_name(getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_group_name].value, macros_info))
+    , schema_name(getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_schema].value, macros_info))
     , log(getLogger("Storage Pulsar(" + table_id_.table_name + ")"))
-    , pulsar_client((*pulsar_settings)[PulsarSetting::pulsar_service_url].value, createClientConfiguration())
-    , topics(parseTopics((*pulsar_settings)[PulsarSetting::pulsar_topic_list].value))
+    , pulsar_client(
+          getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_service_url].value, macros_info),
+          createClientConfiguration())
+    , topics(parseTopics(getContext()->getMacros()->expand((*pulsar_settings)[PulsarSetting::pulsar_topic_list].value, macros_info)))
     , semaphore(0, static_cast<int>(num_consumers))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -357,7 +362,7 @@ ContextMutablePtr StoragePulsar::addSettings(ContextPtr local_context) const
     modified_context->setSetting("max_analyze_depth", Field{0});
 
     if ((*pulsar_settings)[PulsarSetting::pulsar_schema].changed)
-        modified_context->setSetting("format_schema", (*pulsar_settings)[PulsarSetting::pulsar_schema].value);
+        modified_context->setSetting("format_schema", schema_name);
 
     /// Apply all other settings from the table definition (non-pulsar-related, e.g. format settings).
     modified_context->applySettingsChanges(pulsar_settings->getFormatSettings());
@@ -400,7 +405,7 @@ void StoragePulsar::createConsumer(pulsar::Consumer & consumer)
     /// NOLINTNEXTLINE(google-runtime-int)
     config.setBatchReceivePolicy({static_cast<int>(getPollMaxBatchSize()), 0, static_cast<long>(getPollTimeoutMilliseconds())});
 
-    auto result = pulsar_client.subscribe(topics, (*pulsar_settings)[PulsarSetting::pulsar_group_name].value, config, consumer);
+    auto result = pulsar_client.subscribe(topics, group_name, config, consumer);
     if (result != pulsar::ResultOk)
         throw Exception(
             ErrorCodes::CANNOT_CONNECT_PULSAR,

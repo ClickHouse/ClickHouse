@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Macros.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStreamingStorage.h>
 #include <Storages/Pulsar/PulsarConsumer.h>
@@ -77,9 +78,13 @@ public:
 private:
     std::unique_ptr<PulsarSettings> pulsar_settings;
 
+    /// The broker-facing string settings support macro substitution, e.g. {database} and {table}.
+    Macros::MacroExpansionInfo macros_info;
     const String format_name;
     const size_t num_consumers;
     const size_t max_rows_per_message;
+    const String group_name;
+    const String schema_name;
     LoggerPtr log;
 
 

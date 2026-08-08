@@ -1,0 +1,6 @@
+<clickhouse>
+    <macros>
+        <pulsar_host>pulsar1</pulsar_host>
+        <pulsar_port>6650</pulsar_port>
+    </macros>
+</clickhouse>
