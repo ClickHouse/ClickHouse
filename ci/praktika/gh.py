@@ -14,6 +14,18 @@ from praktika.result import Result
 from praktika.settings import Settings
 from praktika.utils import Shell
 
+# `out` and `err` are API- or user-controlled and unbounded, while the fields identifying the
+# failure (command, exit code, attempt count) are short. Cap the unbounded ones so a caller
+# that bounds the whole message, or a log reader, still sees the cause.
+_GH_DIAGNOSTIC_FIELD_LIMIT = 300
+
+
+def _elide(text, limit=_GH_DIAGNOSTIC_FIELD_LIMIT):
+    """`text` capped at `limit`, with an explicit marker so a reader can tell it was cut."""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}...(+{len(text) - limit} chars elided)"
+
 
 class GH:
 
@@ -208,7 +220,7 @@ class GH:
         return res
 
     @classmethod
-    def get_output_with_retries(cls, command, verbose=False):
+    def get_output_with_retries(cls, command, verbose=False, strict=False):
         """Run a read-style ``gh`` command and return its stdout.
 
         Mirrors :meth:`do_command_with_retries` but returns the captured
@@ -220,10 +232,17 @@ class GH:
 
         Returns the trimmed stdout on success; an empty string if the
         command keeps failing after ``MAX_RETRIES_GH`` attempts.
+        ``strict=True`` raises instead, so a caller can report why the
+        read failed rather than be handed an empty string that is
+        indistinguishable from an empty result.
         """
         retry_count = 0
+        # Counted where the subprocess is invoked, so a non-retryable class that breaks out
+        # of the loop still reports the attempt it made. retry_count counts retries taken.
+        attempts = 0
         out, err, ret_code = "", "", -1
         while retry_count < Settings.MAX_RETRIES_GH:
+            attempts += 1
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=verbose)
             if ret_code == 0:
                 return out
@@ -241,9 +260,15 @@ class GH:
             delay = min(2 ** (retry_count + 1), 60)
             time.sleep(delay)
 
-        print(
-            f"ERROR: Failed to execute gh command [{command}] out:[{out}] err:[{err}] after [{retry_count}] attempts"
+        # Field order matters: a caller may bound this message (it can reach a public report
+        # page), so the fields naming the cause come before the API-controlled output.
+        message = (
+            f"Failed to execute gh command [{command}] exit_code:[{ret_code}] "
+            f"after [{attempts}] attempts err:[{_elide(err)}] out:[{_elide(out)}]"
         )
+        print(f"ERROR: {message}")
+        if strict:
+            raise RuntimeError(message)
         return ""
 
     @classmethod
