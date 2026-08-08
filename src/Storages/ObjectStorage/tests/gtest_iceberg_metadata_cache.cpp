@@ -25,7 +25,7 @@ IcebergMetadataFilesCache makeCache()
 TEST(IcebergMetadataCache, GetKeyComposesUuidAndPath)
 {
     auto key = IcebergMetadataFilesCache::getKey("backend1", "uuid-123", "path/to/metadata.json");
-    EXPECT_EQ(key, (std::string{"backend1\0uuid-123\0path/to/metadata.json", 40}));
+    EXPECT_EQ(key, (std::string{"backend1\0uuid-123\0path/to/metadata.json", 39}));
 }
 
 TEST(IcebergMetadataCache, GetKeyDifferentUuidsSamePathProduceDifferentKeys)
