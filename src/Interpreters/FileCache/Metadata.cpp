@@ -760,6 +760,9 @@ private:
     mutable std::mutex mutex;
     std::condition_variable cv;
     bool cancelled = false;
+    /// Unlike `cancelled`, stops the cleanup thread while keeping the queue usable,
+    /// so that a retried `CacheMetadata::startup` gets a functional cleanup thread.
+    bool stop_requested = false;
 };
 
 void CacheMetadata::cleanupThreadFunc()
@@ -769,14 +772,14 @@ void CacheMetadata::cleanupThreadFunc()
         Key key;
         {
             std::unique_lock lock(cleanup_queue->mutex);
-            if (cleanup_queue->cancelled)
+            if (cleanup_queue->cancelled || cleanup_queue->stop_requested)
                 return;
 
             auto & keys = cleanup_queue->keys;
             if (keys.empty())
             {
-                cleanup_queue->cv.wait(lock, [&](){ return cleanup_queue->cancelled || !keys.empty(); });
-                if (cleanup_queue->cancelled)
+                cleanup_queue->cv.wait(lock, [&](){ return cleanup_queue->cancelled || cleanup_queue->stop_requested || !keys.empty(); });
+                if (cleanup_queue->cancelled || cleanup_queue->stop_requested)
                     return;
             }
 
@@ -1067,23 +1070,45 @@ void CacheMetadata::startup()
     }
     catch (...)
     {
-        /// Stop and join the threads which were started, using their stop flags
-        /// rather than cancelling the queues, so that a subsequent shutdown()
-        /// (or a retried startup) still finds the queues in a usable state.
-        {
-            std::lock_guard lock(download_queue->mutex);
-            for (auto & download_thread : download_threads)
-                download_thread->stop_flag = true;
-        }
-        download_queue->cv.notify_all();
-
-        for (auto & download_thread : download_threads)
-        {
-            if (download_thread->thread && download_thread->thread->joinable())
-                download_thread->thread->join();
-        }
-        download_threads.clear();
+        stopThreads();
         throw;
+    }
+}
+
+void CacheMetadata::stopThreads()
+{
+    /// Stop and join the threads using their stop flags rather than cancelling
+    /// the queues, so that a subsequent shutdown() (or a retried startup) still
+    /// finds the queues in a usable state.
+    {
+        std::lock_guard lock(download_queue->mutex);
+        for (auto & download_thread : download_threads)
+            download_thread->stop_flag = true;
+    }
+    download_queue->cv.notify_all();
+
+    for (auto & download_thread : download_threads)
+    {
+        if (download_thread->thread && download_thread->thread->joinable())
+            download_thread->thread->join();
+    }
+    download_threads.clear();
+
+    {
+        std::lock_guard lock(cleanup_queue->mutex);
+        cleanup_queue->stop_requested = true;
+    }
+    cleanup_queue->cv.notify_all();
+
+    if (cleanup_thread && cleanup_thread->joinable())
+        cleanup_thread->join();
+    cleanup_thread.reset();
+
+    /// The cleanup thread is joined; lift the stop request so that a retried
+    /// startup() gets a functional cleanup thread.
+    {
+        std::lock_guard lock(cleanup_queue->mutex);
+        cleanup_queue->stop_requested = false;
     }
 }
 

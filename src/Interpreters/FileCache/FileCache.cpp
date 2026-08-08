@@ -536,7 +536,11 @@ void FileCache::initialize()
                                 "The total capacity of the disk containing cache path {} is less than the specified max_size {} bytes",
                                 getBasePath(), std::to_string(size_limit));
 
-            status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
+            /// A retried `initialize` (`callOnce` does not set the flag when the callable
+            /// throws) may still hold the status file from the previous attempt; creating
+            /// a new `StatusFile` would then conflict with our own `flock`.
+            if (!status_file)
+                status_file = make_unique<StatusFile>(fs::path(getBasePath()) / "status", StatusFile::write_full_info);
         }
         catch (const std::filesystem::filesystem_error & e)
         {
@@ -569,13 +573,27 @@ void FileCache::initialize()
             throw;
         }
 
-        if (load_metadata_asynchronously)
+        try
         {
-            load_metadata_main_thread = std::make_unique<ThreadFromGlobalPool>([this, need_to_load_metadata] { initializeImpl(need_to_load_metadata); });
+            if (load_metadata_asynchronously)
+            {
+                load_metadata_main_thread = std::make_unique<ThreadFromGlobalPool>([this, need_to_load_metadata] { initializeImpl(need_to_load_metadata); });
+            }
+            else
+            {
+                initializeImpl(need_to_load_metadata);
+            }
         }
-        else
+        catch (...)
         {
-            initializeImpl(need_to_load_metadata);
+            /// The cache is published in `FileCacheFactory` before `initialize` is called,
+            /// and `callOnce` does not set the flag when the callable throws, so a later
+            /// caller may retry `initialize`. Stop the permanent background threads started
+            /// above, otherwise the retried `metadata.startup()` would replace still-joinable
+            /// threads and abort the process.
+            init_exception = std::current_exception();
+            metadata.stopThreads();
+            throw;
         }
     });
 }

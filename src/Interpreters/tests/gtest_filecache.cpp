@@ -3923,3 +3923,54 @@ TEST_F(FileCacheTest, AsyncInitThreadStartFailureIsSynchronous)
         << "initialize() succeeded, but the cache came up broken: the thread allocation "
            "failure was deferred into the metadata loading thread";
 }
+
+TEST_F(FileCacheTest, InitializeRetryAfterLateFailure)
+{
+    /// Regression test: the cache is published in `FileCacheFactory` before `initialize`
+    /// is called and `initialize` may be retried after an exception, because `callOnce`
+    /// does not set the flag when the callable throws. The permanent background threads
+    /// of the cache are started before the metadata loading, so an exception thrown by
+    /// a later step of `initialize` must stop and join them; otherwise the retry would
+    /// re-enter `CacheMetadata::startup`, which replaces still-joinable threads and
+    /// aborts the process.
+
+    ServerUUID::setRandomForUnitTests();
+    DB::Context::getGlobalContextInstance()->getSchedulePool();
+
+    const fs::path cache_path = caches_dir / "cache_init_retry";
+    fs::remove_all(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    DB::FileCacheSettings settings;
+    settings[FileCacheSetting::path] = cache_path.string();
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 5;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[FileCacheSetting::background_download_threads] = 2;
+    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+    /// With per-user directories `loadMetadata` opens an `fs::directory_iterator` on
+    /// every entry of the base directory except the "status" file, so a plain file
+    /// planted there makes it throw ENOTDIR deterministically.
+    settings[FileCacheSetting::write_cache_per_user_id_directory] = true;
+
+    /// The failure happens after the permanent background threads have started.
+    const fs::path garbage_file = cache_path / "garbage";
+    fs::create_directories(cache_path);
+    {
+        WriteBufferFromFile garbage(garbage_file.string());
+        writeString("garbage", garbage);
+        garbage.finalize();
+    }
+
+    DB::FileCache cache("init_retry", settings);
+    EXPECT_ANY_THROW(cache.initialize());
+    EXPECT_FALSE(cache.isInitialized());
+
+    /// Remove the obstacle and retry: the retried `initialize` must start from a clean
+    /// state (in particular, re-enter `CacheMetadata::startup` with the previous
+    /// permanent threads stopped and joined) and bring the cache up.
+    fs::remove(garbage_file);
+    cache.initialize();
+    EXPECT_TRUE(cache.isInitialized());
+}
