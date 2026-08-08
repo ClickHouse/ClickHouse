@@ -430,9 +430,10 @@ void registerDatabaseURL(DatabaseFactory & factory)
         .examples = {{
             "Reading files of the user_files directory through a database with a `file://` base URL",
             R"(
-INSERT INTO FUNCTION file('web/daily.csv', 'CSVWithNames', 'day Date, visits UInt32') VALUES ('2024-01-01', 100), ('2024-01-02', 150);
+INSERT INTO FUNCTION file('web/daily.csv', 'CSVWithNames', 'day Date, visits UInt32') SETTINGS engine_file_truncate_on_insert = 1 VALUES ('2024-01-01', 100), ('2024-01-02', 150);
 CREATE DATABASE web ENGINE = URL('file://web/');
 SELECT * FROM web.`daily.csv`;
+DROP DATABASE web;
             )",
             R"(
 ┌────────day─┬─visits─┐
