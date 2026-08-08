@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <Storages/MergeTree/ColumnsCache.h>
 
 namespace DB
@@ -20,6 +22,7 @@ void ColumnsCache::compactIntervalIndex()
 {
     /// Caller must hold interval_index_mutex. Lock order: interval_index_mutex first,
     /// then briefly the CacheBase mutex inside Base::contains, matching set/removePart.
+    size_t surviving_entries = 0;
     for (auto part_it = interval_index.begin(); part_it != interval_index.end();)
     {
         auto & columns_map = part_it->second;
@@ -29,7 +32,10 @@ void ColumnsCache::compactIntervalIndex()
             for (auto it = intervals.begin(); it != intervals.end();)
             {
                 if (Base::contains(it->second))
+                {
+                    ++surviving_entries;
                     ++it;
+                }
                 else
                     it = intervals.erase(it);
             }
@@ -43,6 +49,11 @@ void ColumnsCache::compactIntervalIndex()
         else
             ++part_it;
     }
+
+    /// Scale the next sweep interval with the index size, so a sweep of N entries
+    /// runs at most once per max(MIN_SETS_BETWEEN_COMPACTIONS, N) inserts and the
+    /// amortized cost per set() stays O(1) (see compaction_threshold).
+    compaction_threshold = std::max(MIN_SETS_BETWEEN_COMPACTIONS, surviving_entries);
 }
 
 void ColumnsCache::removeStaleKeys(const std::vector<Key> & stale_keys)
@@ -304,7 +315,7 @@ bool ColumnsCache::set(const Key & key, const MappedPtr & mapped, UInt64 expecte
     /// so `interval_index` retains entries for evicted keys. Sweep periodically
     /// so that metadata memory cannot grow unboundedly when evicted entries are
     /// never queried again (which would skip the lazy cleanup in `getIntersecting`).
-    if (++sets_since_compaction >= COMPACT_INTERVAL_INDEX_EVERY_N_SETS)
+    if (++sets_since_compaction >= compaction_threshold)
     {
         compactIntervalIndex();
         sets_since_compaction = 0;

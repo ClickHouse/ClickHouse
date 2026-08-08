@@ -140,10 +140,17 @@ private:
     /// compactIntervalIndex() across many inserts.
     size_t sets_since_compaction = 0;
 
-    /// Run a full compaction sweep every this many set() calls. Tuned so that
-    /// the amortized cost per set() is O(1): a compaction is O(count), and we
-    /// sweep at most once per `count` inserts.
-    static constexpr size_t COMPACT_INTERVAL_INDEX_EVERY_N_SETS = 1024;
+    /// Lower bound on the number of set() calls between two compaction sweeps.
+    static constexpr size_t MIN_SETS_BETWEEN_COMPACTIONS = 1024;
+
+    /// Run the next compaction sweep after this many set() calls. Recomputed by
+    /// compactIntervalIndex as max(MIN_SETS_BETWEEN_COMPACTIONS, number of
+    /// surviving indexed ranges), so the sweep interval scales with the index
+    /// size: a sweep costs O(entries), the index grows by at most one entry per
+    /// set(), so at the next sweep the index holds at most 2 * threshold entries
+    /// and the amortized cost per set() stays O(1) no matter how many ranges the
+    /// cache holds. Guarded by interval_index_mutex.
+    size_t compaction_threshold = MIN_SETS_BETWEEN_COMPACTIONS;
 
 public:
     ColumnsCache(
@@ -230,6 +237,8 @@ public:
         ++global_generation;
         Base::clear();
         interval_index.clear();
+        sets_since_compaction = 0;
+        compaction_threshold = MIN_SETS_BETWEEN_COMPACTIONS;
     }
 
     /// Lower the maximum size in bytes and immediately compact the interval index
@@ -271,8 +280,9 @@ private:
 
     /// Walk the entire interval_index and erase any key that is no longer in Base
     /// (i.e., evicted by LRU). Must be called with interval_index_mutex held.
-    /// Cost is O(interval_index entries); amortized O(1) per set() because it runs
-    /// at most once per COMPACT_INTERVAL_INDEX_EVERY_N_SETS inserts.
+    /// Cost is O(interval_index entries). Also recomputes compaction_threshold
+    /// from the number of surviving entries, which keeps the periodic sweeps in
+    /// set() amortized O(1) per call (see compaction_threshold).
     void compactIntervalIndex();
 
     void onEntryRemoval(size_t weight_loss, const MappedPtr &) override
