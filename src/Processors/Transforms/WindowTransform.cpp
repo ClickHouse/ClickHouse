@@ -3749,6 +3749,7 @@ LIMIT 9
 
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 The aggregate-function form returns the sum of values weighted by exponential decay relative to the greatest time argument.
+It can also aggregate `ExponentialTimeDecayingFloat64(decay_length)` values directly, with the decay length inferred from the type.
 Its states can be combined independently of the input order, including in an `AggregatingMergeTree`.
 The window-function form preserves the existing behavior and evaluates relative to the time argument of the last row in the current frame.
 Aggregation uses `Float64` arithmetic. Large signed values that nearly cancel can produce different
@@ -3766,9 +3767,9 @@ The window-function form is not affected by this setting.
         {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedSum_returned_value = {
-        "The aggregate form returns ExponentialTimeDecayingFloat64; its decay_length field matches the `decay_length` parameter. "
+        "The aggregate form returns ExponentialTimeDecayingFloat64(decay_length). "
         "The window form returns Float64.",
-        {"ExponentialTimeDecayingFloat64", "Float64"}};
+        {"ExponentialTimeDecayingFloat64(*)", "Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedSum_examples = {
     {
         "Window function usage with visual representation",
@@ -3856,6 +3857,30 @@ FROM
             return std::make_shared<WindowFunctionExponentialTimeDecayedSum>(
                 name, argument_types, parameters);
         }});
+
+    factory.registerFunction("exponentialTimeDecayingFloat64", {
+        createAggregateFunctionExponentialTimeDecayingFloat64,
+        FunctionDocumentation{
+            .description = R"(
+Constructs an `ExponentialTimeDecayingFloat64(decay_length)` value from one or more `(value, time)` rows.
+Rows are evaluated at their greatest timestamp. The result can be combined again by
+`exponentialTimeDecayedSum`, including as a `SimpleAggregateFunction` column in an
+`AggregatingMergeTree`.
+)",
+            .syntax = "exponentialTimeDecayingFloat64(decay_length)(value, time)",
+            .arguments = {
+                {"value", "Value.", {"(U)Int*", "Float*", "Decimal"}},
+                {"time", "Time.", {"(U)Int*", "Float*", "Decimal", "DateTime", "DateTime64"}}},
+            .parameters = {
+                {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}},
+            .returned_value = {"Returns a parameterized exponentially time-decaying value.", {"ExponentialTimeDecayingFloat64(*)"}},
+            .examples = {{
+                "Construct a decaying value",
+                "SELECT exponentialTimeDecayingFloat64(10)(8, toFloat64(0))",
+                "(8,0)"}},
+            .introduced_in = {26, 8},
+            .category = FunctionDocumentation::Category::AggregateFunction},
+        {}});
 
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
@@ -3968,9 +3993,9 @@ The window-function form is not affected by this setting.
         {"decay_length", "Time difference required for a value's weight to decay to 1/e.", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue exponentialTimeDecayedCount_returned_value = {
-        "The aggregate form returns ExponentialTimeDecayingFloat64; its decay_length field matches the `decay_length` parameter. "
+        "The aggregate form returns ExponentialTimeDecayingFloat64(decay_length). "
         "The window form returns Float64.",
-        {"ExponentialTimeDecayingFloat64", "Float64"}};
+        {"ExponentialTimeDecayingFloat64(*)", "Float64"}};
     FunctionDocumentation::Examples exponentialTimeDecayedCount_examples = {
     {
         "Window function usage with visual representation",
