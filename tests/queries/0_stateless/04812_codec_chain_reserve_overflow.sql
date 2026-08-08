@@ -22,6 +22,8 @@ DROP TABLE IF EXISTS t_codec_chain_fpc_over;
 DROP TABLE IF EXISTS t_codec_chain_gorilla_wide;
 DROP TABLE IF EXISTS t_codec_chain_gorilla_max;
 DROP TABLE IF EXISTS t_codec_chain_gorilla_over;
+DROP TABLE IF EXISTS t_codec_chain_gorilla64_max;
+DROP TABLE IF EXISTS t_codec_chain_gorilla64_over;
 DROP TABLE IF EXISTS t_codec_chain_dd_max;
 DROP TABLE IF EXISTS t_codec_chain_dd_over;
 DROP TABLE IF EXISTS t_codec_chain_short;
@@ -52,8 +54,9 @@ CREATE TABLE t_codec_chain_fpc_over (i UInt32, x Float32 CODEC(FPC,FPC,FPC,FPC,F
 INSERT INTO t_codec_chain_fpc_over SELECT number, number / 7 FROM numbers(5000); -- { serverError CANNOT_COMPRESS }
 SELECT count() FROM t_codec_chain_fpc_over;
 
--- Gorilla's reserve is a function of the column's width, so compress a wider Gorilla column first:
--- the two arms below must reach the same verdict whatever ran before them.
+-- Gorilla's reserve per item is a function of the column's width, so a chain of it has a boundary
+-- per width. Both boundaries are pinned below, because whichever width a process compresses first
+-- is the one that used to fix the reserve for every other width, and a test cannot choose that.
 CREATE TABLE t_codec_chain_gorilla_wide (d Float64 CODEC(Gorilla)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_codec_chain_gorilla_wide SELECT number / 7 FROM numbers(4);
 SELECT count() FROM t_codec_chain_gorilla_wide;
@@ -74,6 +77,21 @@ CREATE TABLE t_codec_chain_gorilla_over (i UInt32, x Float32 CODEC(Gorilla,Goril
              min_compress_block_size = 20000, max_compress_block_size = 20000;
 INSERT INTO t_codec_chain_gorilla_over SELECT number, number / 7 FROM numbers(5000); -- { serverError CANNOT_COMPRESS }
 SELECT count() FROM t_codec_chain_gorilla_over;
+
+-- The same boundary for a Float64 Gorilla column: 48 stages fit, 49 do not. A chain of one width
+-- must be judged on its own width, so these two keep their verdicts however the Float32 arms above
+-- left the process.
+CREATE TABLE t_codec_chain_gorilla64_max (i UInt32, d Float64 CODEC(Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla)) ENGINE = MergeTree ORDER BY i
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
+             min_compress_block_size = 20000, max_compress_block_size = 20000;
+INSERT INTO t_codec_chain_gorilla64_max SELECT number, number / 7 FROM numbers(2500);
+SELECT count(), countIf(d != i / 7) FROM t_codec_chain_gorilla64_max;
+
+CREATE TABLE t_codec_chain_gorilla64_over (i UInt32, d Float64 CODEC(Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla,Gorilla)) ENGINE = MergeTree ORDER BY i
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0,
+             min_compress_block_size = 20000, max_compress_block_size = 20000;
+INSERT INTO t_codec_chain_gorilla64_over SELECT number, number / 7 FROM numbers(2500); -- { serverError CANNOT_COMPRESS }
+SELECT count() FROM t_codec_chain_gorilla64_over;
 
 -- DoubleDelta reserves more per stage still: 13 is the longest chain that fits, 14 is rejected.
 CREATE TABLE t_codec_chain_dd_max (i UInt32, x Float32 CODEC(DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta,DoubleDelta)) ENGINE = MergeTree ORDER BY i
@@ -126,6 +144,8 @@ DROP TABLE t_codec_chain_fpc_over;
 DROP TABLE t_codec_chain_gorilla_wide;
 DROP TABLE t_codec_chain_gorilla_max;
 DROP TABLE t_codec_chain_gorilla_over;
+DROP TABLE t_codec_chain_gorilla64_max;
+DROP TABLE t_codec_chain_gorilla64_over;
 DROP TABLE t_codec_chain_dd_max;
 DROP TABLE t_codec_chain_dd_over;
 DROP TABLE t_codec_chain_short;
