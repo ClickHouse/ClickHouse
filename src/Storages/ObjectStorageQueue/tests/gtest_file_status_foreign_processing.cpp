@@ -194,6 +194,7 @@ void expectSetProcessingTerminalDiscoveryRefreshesWholeRecord()
 
             file_status->onProcessing();
             file_status->processed_rows = 7;
+            file_status->setProcessingEndTime();
             file_status->onProcessed();
 
             metadata->afterSetProcessing(
