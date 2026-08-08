@@ -247,6 +247,29 @@ def test_collection_failure_with_null_file_location_still_renders():
     assert FINAL in info, f"exception missing from:\n{info}"
 
 
+def test_chained_collection_failure_keeps_the_original_cause():
+    """Collection-time chains (a module, class body, package or hook that
+    re-raises) use the same layout, so the cause must survive there too."""
+    info = _render_collect(CHAINED)
+    assert CAUSE in info, f"original cause erased from:\n{info}"
+    assert FINAL in info, f"final exception missing from:\n{info}"
+    assert info.index(CAUSE) < info.index(SEPARATOR) < info.index(FINAL)
+    assert info.count(CAUSE) == 1, f"cause rendered {info.count(CAUSE)}x:\n{info}"
+    assert info.count(FINAL) == 1, f"final rendered {info.count(FINAL)}x:\n{info}"
+
+
+def test_unchained_collection_failure_render_is_unchanged():
+    """A single-exception collection failure must render as it always has."""
+    info = _render_collect(UNCHAINED)
+    assert info == (
+        f"File: /abs/t.py:11\n{FINAL}\n"
+        "File: t.py:11 - AssertionError\n"
+        ">       assert False, 'postcondition'\n"
+        f"E       {FINAL}"
+    ), f"unchained collection rendering changed:\n{info}"
+    assert SEPARATOR not in info
+
+
 if __name__ == "__main__":
     for _name, _fn in sorted(list(globals().items())):
         if _name.startswith("test_"):

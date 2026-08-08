@@ -1439,6 +1439,71 @@ class ResultTranslator:
     GTEST_RESULT_FILE = Path("./ci/tmp/gtest.json").absolute()
     PYTEST_RESULT_FILE = Path("./ci/tmp/pytest.jsonl").absolute()
 
+    @staticmethod
+    def _render_chain(chain):
+        """Render a serialized pytest longrepr "chain": every exception, oldest first."""
+        out = ""
+        for pair in chain:
+            if not isinstance(pair, list):
+                continue
+            # a rendered traceback already ends with its own message, so the
+            # per-entry reprcrash would only repeat it
+            has_rt = len(pair) >= 1 and isinstance(pair[0], dict) and "reprentries" in pair[0]
+            if has_rt:
+                for re_entry in pair[0].get("reprentries", []):
+                    dd = re_entry.get("data", {})
+                    if not isinstance(dd, dict):
+                        continue
+                    # a frame with no source location serializes the key as
+                    # present-and-null, so a get() default never fires
+                    fileloc = dd.get("reprfileloc")
+                    if not isinstance(fileloc, dict):
+                        fileloc = {}
+                    fpath = fileloc.get("path")
+                    flineno = fileloc.get("lineno")
+                    fmsg = fileloc.get("message")
+                    header_parts = []
+                    if fpath is not None and flineno is not None:
+                        header_parts.append(f"File: {fpath}:{flineno}")
+                    if fmsg:
+                        header_parts.append(str(fmsg))
+                    if header_parts:
+                        if out:
+                            out += "\n"
+                        out += " - ".join(header_parts)
+                    if dd.get("lines"):
+                        if out:
+                            out += "\n"
+                        out += "\n".join(dd["lines"])
+            elif len(pair) >= 2 and isinstance(pair[1], dict):
+                crash = pair[1]
+                p = crash.get("path")
+                ln = crash.get("lineno")
+                msg = crash.get("message")
+                seg = []
+                if p is not None and ln is not None:
+                    seg.append(f"File: {p}:{ln}")
+                if msg:
+                    seg.append(str(msg))
+                if seg:
+                    if out:
+                        out += "\n"
+                    out += "\n".join(seg)
+            # pytest attaches the causal separator to the entry it follows
+            if len(pair) >= 3 and pair[2]:
+                if out:
+                    out += "\n"
+                out += str(pair[2])
+        return out
+
+    @staticmethod
+    def _chain_of(longrepr):
+        """The chain, only when it is authoritative: reprtraceback is just its last entry."""
+        if not isinstance(longrepr, dict):
+            return None
+        chain = longrepr.get("chain")
+        return chain if isinstance(chain, list) and len(chain) > 1 else None
+
     @classmethod
     def from_gtest(cls):
         """The json is described by the next proto3 scheme:
@@ -1636,7 +1701,10 @@ class ResultTranslator:
                                     # Best-effort: mirror traceback builder from TestReport for dict shape
                                     try:
                                         lr_txt = ""
-                                        crash = longrepr.get("reprcrash") if isinstance(longrepr, dict) else None
+                                        _chain = cls._chain_of(longrepr)
+                                        if _chain is not None:
+                                            lr_txt = cls._render_chain(_chain)
+                                        crash = longrepr.get("reprcrash") if _chain is None else None
                                         if isinstance(crash, dict):
                                             p = crash.get("path")
                                             ln = crash.get("lineno")
@@ -1648,7 +1716,7 @@ class ResultTranslator:
                                                 seg.append(str(msg))
                                             if seg:
                                                 lr_txt += "\n".join(seg)
-                                        rt = longrepr.get("reprtraceback") if isinstance(longrepr, dict) else None
+                                        rt = longrepr.get("reprtraceback") if _chain is None else None
                                         if isinstance(rt, dict) and "reprentries" in rt:
                                             composed = []
                                             for re_entry in rt.get("reprentries", []):
@@ -1732,8 +1800,7 @@ class ResultTranslator:
                                 # A chained failure carries every exception in "chain" (oldest
                                 # first), while "reprtraceback" is only its last entry, so the
                                 # chain is authoritative whenever it holds more than one.
-                                _chain = data.get("chain") if isinstance(data, dict) else None
-                                _use_chain = isinstance(_chain, list) and len(_chain) > 1
+                                _use_chain = cls._chain_of(data) is not None
                                 # reprtraceback: collect lines
                                 if not _use_chain and data and isinstance(data, dict) and "reprtraceback" in data:
                                     rt = data.get("reprtraceback", {})
@@ -1765,62 +1832,11 @@ class ResultTranslator:
                                 # also the fallback when there is no top-level reprtraceback
                                 elif data and isinstance(data, dict) and "chain" in data:
                                     try:
-                                        chain = data.get("chain", [])
-                                        for pair in chain:
-                                            # pair typically is [reprtraceback, reprcrash, context]
-                                            if not isinstance(pair, list):
-                                                continue
-                                            # mirror the reprcrash suppression above: a traceback
-                                            # already ends with the exception message
-                                            _pair_has_rt = (
-                                                len(pair) >= 1
-                                                and isinstance(pair[0], dict)
-                                                and "reprentries" in pair[0]
-                                            )
-                                            if len(pair) >= 1 and isinstance(pair[0], dict):
-                                                rt = pair[0]
-                                                if "reprentries" in rt:
-                                                    for re_entry in rt.get("reprentries", []):
-                                                        dd = re_entry.get("data", {})
-                                                        fileloc = dd.get("reprfileloc") if isinstance(dd, dict) else None
-                                                        if not isinstance(fileloc, dict):
-                                                            fileloc = {}
-                                                        fpath = fileloc.get("path")
-                                                        flineno = fileloc.get("lineno")
-                                                        fmsg = fileloc.get("message")
-                                                        header_parts = []
-                                                        if fpath is not None and flineno is not None:
-                                                            header_parts.append(f"File: {fpath}:{flineno}")
-                                                        if fmsg:
-                                                            header_parts.append(str(fmsg))
-                                                        if header_parts:
-                                                            if traceback_str:
-                                                                traceback_str += "\n"
-                                                            traceback_str += " - ".join(header_parts)
-                                                        if isinstance(dd, dict) and "lines" in dd and dd["lines"]:
-                                                            if traceback_str:
-                                                                traceback_str += "\n"
-                                                            traceback_str += "\n".join(dd["lines"])
-                                            if len(pair) >= 2 and isinstance(pair[1], dict) and not _pair_has_rt:
-                                                crash = pair[1]
-                                                p = crash.get("path")
-                                                ln = crash.get("lineno")
-                                                msg = crash.get("message")
-                                                seg = []
-                                                if p is not None and ln is not None:
-                                                    seg.append(f"File: {p}:{ln}")
-                                                if msg:
-                                                    seg.append(str(msg))
-                                                if seg:
-                                                    if traceback_str:
-                                                        traceback_str += "\n"
-                                                    traceback_str += "\n".join(seg)
-                                            # pytest attaches the causal separator to the entry
-                                            # it follows, so emit it after that entry's text
-                                            if len(pair) >= 3 and pair[2]:
-                                                if traceback_str:
-                                                    traceback_str += "\n"
-                                                traceback_str += str(pair[2])
+                                        rendered = cls._render_chain(data.get("chain") or [])
+                                        if rendered:
+                                            if traceback_str:
+                                                traceback_str += "\n"
+                                            traceback_str += rendered
                                     except Exception:
                                         # Be resilient to unexpected shapes
                                         pass
