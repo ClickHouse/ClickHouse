@@ -1,5 +1,6 @@
--- Tags: replica, no-shared-merge-tree
+-- Tags: replica, no-shared-merge-tree, no-replicated-database
 -- no-shared-merge-tree -- the on-fly alter snapshot differs; ReplicatedMergeTree is required here
+-- no-replicated-database -- profile events for mutations may differ because of additional replicas
 
 -- A part whose metadata_version is two rename generations behind the table collapses both
 -- generations into the swap {a.bin -> b.bin, b.bin -> a.bin}. DETACH PART spanning both renames
@@ -23,10 +24,15 @@ ALTER TABLE t_rename_swap ATTACH PART 'all_0_0_0';
 -- Materializes the swap. `c` is deliberately outside the rename map.
 ALTER TABLE t_rename_swap UPDATE c = c + 1 WHERE 1 SETTINGS mutations_sync = 2;
 
--- The remap under test runs only in the partial-rewrite mutation task, which needs a wide part in
--- full storage; a Compact or Packed part takes the full-rewrite path and never reaches the remap.
-SELECT part_type, part_storage_type FROM system.parts
-WHERE database = currentDatabase() AND table = 't_rename_swap' AND active;
+-- The remap under test runs only in the partial-rewrite mutation task. Assert the task itself: both
+-- tasks inherit the same part format, so part_type and part_storage_type cannot distinguish them.
+SYSTEM FLUSH LOGS part_log;
+
+SELECT ProfileEvents['MutationSomePartColumns'], ProfileEvents['MutationAllPartColumns']
+FROM system.part_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+  AND database = currentDatabase() AND table = 't_rename_swap' AND event_type = 'MutatePart'
+ORDER BY ALL;
 
 -- Reading the swapped columns: a missing checksum entry makes this throw LOGICAL_ERROR.
 SELECT a, b, c FROM t_rename_swap ORDER BY c;
