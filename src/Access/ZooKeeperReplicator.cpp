@@ -107,7 +107,18 @@ void ZooKeeperReplicator::startWatchingThread()
 {
     bool prev_watching_flag = watching.exchange(true);
     if (!prev_watching_flag)
-        watching_thread = std::make_unique<ThreadFromGlobalPool>(&ZooKeeperReplicator::runWatchingThread, this);
+    {
+        try
+        {
+            watching_thread = std::make_unique<ThreadFromGlobalPool>(&ZooKeeperReplicator::runWatchingThread, this);
+        }
+        catch (...)
+        {
+            /// Otherwise the next call would assume the thread is already running and skip starting it.
+            watching = false;
+            throw;
+        }
+    }
 }
 
 void ZooKeeperReplicator::stopWatchingThread()

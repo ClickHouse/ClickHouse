@@ -97,7 +97,16 @@ void UserDefinedSQLObjectsZooKeeperStorage::startWatchingThread()
 {
     if (!watching_flag.exchange(true))
     {
-        watching_thread = ThreadFromGlobalPool(&UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue, this);
+        try
+        {
+            watching_thread = ThreadFromGlobalPool(&UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue, this);
+        }
+        catch (...)
+        {
+            /// Otherwise the next call would assume the thread is already running and skip starting it.
+            watching_flag = false;
+            throw;
+        }
     }
 }
 

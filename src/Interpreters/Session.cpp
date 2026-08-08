@@ -125,12 +125,14 @@ public:
             if (throw_if_not_found)
                 throw Exception(ErrorCodes::SESSION_NOT_FOUND, "Session {} not found", session_id);
 
+            /// Start the cleanup thread before publishing the session: if the thread cannot be started,
+            /// the exception must not leave behind a session that will never be auto-closed.
+            if (!thread.joinable())
+                thread = ThreadFromGlobalPool{&NamedSessionsStorage::cleanThread, this};
+
             /// Create a new session from current context.
             it = sessions.insert(std::make_pair(key, std::make_shared<NamedSessionData>(key, global_context, timeout, *this))).first;
             const auto & session = it->second;
-
-            if (!thread.joinable())
-                thread = ThreadFromGlobalPool{&NamedSessionsStorage::cleanThread, this};
 
             LOG_TRACE(log, "Create new session with session_id: {}, user_id: {}", key.second, key.first);
 
