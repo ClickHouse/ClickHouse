@@ -656,6 +656,63 @@ def test_stop_server_wins_the_restart_gap_even_when_startup_discovery_failed(
         _cleanup(proc, ClickHouseProc._current_server_pid(pid_file) or startup_pid)
 
 
+def test_teardown_walk_recovers_from_a_failed_startup_discovery(
+    monkeypatch, tmp_path
+):
+    # The flip side of the restart-gap test above: the startup discovery was
+    # lost to a `ps` outage (snapshot None), but the server is still up when
+    # the teardown begins, so the walk from its live pid completes and finds
+    # the real watchdog chain. That completed walk is every bit the proof the
+    # startup snapshot would have been - the watchdog keeps its pid across the
+    # respawns it performs - so once the chain it found is dead, an empty pid
+    # file settles it. Deriving the "definitive" bit from the startup snapshot
+    # alone kept `_stop_respawned_server` in its last-resort
+    # `_wait_server_republished` after everything was already dead: one
+    # startup-time `ps` hiccup added a full `RESPAWN_GRACE_TIMEOUT` of dead
+    # time to every later stop of that replica.
+    pid_file = tmp_path / "clickhouse-server.pid"
+    proc, startup_pid = _start_fake_server(tmp_path)
+    watchdogs = ClickHouseProc._server_watchdog_pids(startup_pid)
+    try:
+        assert watchdogs, "the fake watchdog is not above the fake server"
+        ch = _make_proc(monkeypatch, tmp_path, proc, startup_pid)
+        # What `start` records when the watchdog discovery keeps failing.
+        real_checked = ClickHouseProc._server_watchdog_pids_checked.__func__
+        monkeypatch.setattr(
+            ClickHouseProc,
+            "_server_watchdog_pids_checked",
+            classmethod(lambda cls, pid: ([], False)),
+        )
+        ch.watchdogs_0 = ClickHouseProc._startup_watchdog_snapshot(startup_pid)
+        monkeypatch.setattr(
+            ClickHouseProc, "_server_watchdog_pids_checked", classmethod(real_checked)
+        )
+        assert ch.watchdogs_0 is None, (
+            "a failed startup discovery must be recorded as unknown"
+        )
+        started = time.monotonic()
+        ch.stop_server()
+        elapsed = time.monotonic() - started
+        assert not ClickHouseProc._current_server_pid(pid_file), (
+            f"a server ({pid_file.read_text().strip()}) was alive after "
+            "stop_server returned"
+        )
+        assert _status_lock_is_free(tmp_path), (
+            "the status lock was still held after stop_server returned; "
+            "`clickhouse local` cannot scrape this replica's system tables"
+        )
+        # The dead time under test is the whole grace period, far above the
+        # couple of seconds the TRAP teardown itself takes.
+        assert elapsed < ClickHouseProc.RESPAWN_GRACE_TIMEOUT / 2, (
+            f"stop_server took {elapsed:.1f}s: the successful teardown-time "
+            "watchdog walk did not spare it the wait for a republished server"
+        )
+    finally:
+        for watchdog in watchdogs:
+            _cleanup(proc, watchdog)
+        _cleanup(proc, ClickHouseProc._current_server_pid(pid_file) or startup_pid)
+
+
 def test_startup_snapshot_over_a_dead_server_is_not_proof_of_no_watchdog(
     monkeypatch, tmp_path
 ):

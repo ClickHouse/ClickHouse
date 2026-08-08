@@ -875,12 +875,35 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         # is the answer for that case: it was walked at startup from a pid known
         # to be alive then, and the watchdog keeps its pid across the respawns
         # it performs, so the startup snapshot still names the process that can
-        # bring a server back now. A snapshot of None means the startup walk
-        # itself could not be completed (see `_startup_watchdog_snapshot`), so
-        # an empty watchdog set is not proof that nothing is coming back -
-        # `_stop_respawned_server` then has to wait the respawn window out.
-        watchdogs = self._server_watchdog_pids(pid) or list(startup_watchdogs or ())
-        watchdogs_definitive = startup_watchdogs is not None
+        # bring a server back now.
+        watchdogs, fresh_definitive = self._server_watchdog_pids_checked(pid)
+        if fresh_definitive:
+            # A completed walk proves anything only while the walked pid is
+            # still a live server: a walk over a corpse has no parents to read,
+            # so its chain comes back empty and definitive-looking - the same
+            # trap `_startup_watchdog_snapshot` guards its own walk against.
+            try:
+                fresh_definitive = self._server_process_alive(
+                    pid, unknown_alive=None
+                )
+            except ProcessIdentityUnknown as e:
+                print(
+                    f"WARNING: cannot confirm that process {pid} is still "
+                    f"the server ({e})"
+                )
+                fresh_definitive = False
+        if not watchdogs:
+            watchdogs = list(startup_watchdogs or ())
+        # An empty watchdog set is proof that nothing can bring a server back
+        # only when some walk completed over a live server - this one, or the
+        # startup snapshot (None means that one could not be completed, see
+        # `_startup_watchdog_snapshot`). Either suffices, and asking both
+        # matters in each direction: the walk here recovers what a transient
+        # `ps` outage at startup lost, sparing `_stop_respawned_server` its
+        # last-resort wait for the whole respawn window, while a teardown that
+        # begins inside the restart gap has only a corpse to walk and leans on
+        # the startup snapshot as before.
+        watchdogs_definitive = fresh_definitive or startup_watchdogs is not None
         if force:
             # Use clickhouse stop --force when this issue is fixed
             # https://github.com/ClickHouse/ClickHouse/issues/99142
