@@ -16,6 +16,8 @@
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
+-- The query condition cache for TopK (`ORDER BY ... LIMIT n`) reads is off by default; enable it for this test.
+SET use_query_condition_cache_for_top_k = 1;
 SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;

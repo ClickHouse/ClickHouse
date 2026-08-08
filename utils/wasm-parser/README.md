@@ -99,9 +99,10 @@ measure.
 `wasm_runtime.cpp` replaces a handful of chokepoints rather than building the real ones. Each is
 something a browser has no use for, and each would otherwise dominate the bundle:
 
-* **Stack traces.** `Common/Exception.cpp` cannot even compile here - it `static_assert`s on
-  `STD_EXCEPTION_HAS_STACK_TRACE`, which comes from ClickHouse's patched libc++ in
-  `contrib/libcxx-cmake`. WebAssembly cannot walk its own call stack from user code anyway.
+* **Stack traces.** They need libunwind and DWARF parsing, and the trace recorded at the throw
+  needs ClickHouse's patched libc++ in `contrib/libcxx-cmake` (`STD_EXCEPTION_HAS_STACK_TRACE`),
+  which is not the libc++ a wasi-sdk build gets. WebAssembly cannot walk its own call stack from
+  user code anyway.
 * **Memory tracking and thread status.** Server bookkeeping; `malloc` is the only budget here.
 * **`Core/Settings.cpp`.** `ParserSetQuery` calls `Settings::castValueUtil` once, only to ask
   whether a bare `SET x` names a `Bool` setting. That single call pulls in the whole settings

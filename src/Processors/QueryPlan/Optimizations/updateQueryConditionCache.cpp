@@ -70,6 +70,15 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (!read_from_merge_tree)
         return;
 
+    /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
+    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, skip the
+    /// QCC write for the WHERE filter of a TopK read: such reads can drop granules during execution
+    /// depending on the running `__topKFilter` threshold, so the WHERE filter's "matches no rows"
+    /// result no longer holds for every granule of the part.
+    if (!optimization_settings.use_query_condition_cache_for_top_k
+        && read_from_merge_tree->isSelectedForTopKFilterOptimization())
+        return;
+
     const auto & query_info = read_from_merge_tree->getQueryInfo();
     const auto & filter_actions_dag = query_info.filter_actions_dag;
     if (!filter_actions_dag || query_info.isFinal())

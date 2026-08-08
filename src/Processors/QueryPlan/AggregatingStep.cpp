@@ -32,6 +32,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/SettingsEnums.h>
 
 namespace DB
@@ -61,6 +62,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const QueryPlanSerializationSettingsBool enable_parallel_single_level_merge;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
 
 namespace ErrorCodes
@@ -91,6 +93,33 @@ static ITransformingStep::Traits getTraits(bool should_produce_results_in_order_
             .preserves_number_of_rows = false,
         }
     };
+}
+
+static bool keysCanUsePackedStringMethod(const Block & header, const Names & keys)
+{
+    for (const auto & key : keys)
+    {
+        if (!header.has(key))
+            return true;
+    }
+
+    Sizes key_sizes;
+    return AggregatedDataVariants::chooseMethod(header, keys, key_sizes) == AggregatedDataVariants::Type::key_packed_string;
+}
+
+bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params)
+{
+    if (grouping_sets_params.empty())
+        return keysCanUsePackedStringMethod(header, keys);
+
+    /// Every grouping set gets its own `Aggregator` over its own subset of the keys, so the method is chosen per set.
+    for (const auto & grouping_set : grouping_sets_params)
+    {
+        if (keysCanUsePackedStringMethod(header, grouping_set.used_keys))
+            return true;
+    }
+
+    return false;
 }
 
 Block appendGroupingSetColumn(Block header)
@@ -963,7 +992,7 @@ QueryPipelineBuilderPtr AggregatingProjectionStep::updatePipeline(
 }
 
 
-void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::aggregation_in_order_max_block_bytes] = aggregation_in_order_max_block_bytes;
@@ -995,6 +1024,44 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
 
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
     settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge] = params.enable_parallel_single_level_merge;
+
+    /// A peer whose query-plan serialization version knows the name (this `version` is already the minimum of ours
+    /// and the peer's) receives the value whenever the legacy method is requested, so the setting always takes
+    /// effect on remote aggregation under `serialize_query_plan = 1`.
+    ///
+    /// Towards an older peer the name is written only when the legacy method is requested *and* this step can
+    /// actually choose the single-`String` method *and* the plan can go two-level.
+    /// `QueryPlanSerializationSettings` is a strict named schema: `writeChangedBinary` writes every touched
+    /// entry by name and `readBinary` throws on a name it does not know, so writing this one whenever the session
+    /// setting is off would make plans for `count()` or `GROUP BY UInt64` - where the setting cannot change anything -
+    /// unreadable by a peer that predates it. Leaving it out keeps the receiver at the default (the packed method),
+    /// and a peer too old to know the name fails closed on an explicit `false` instead of silently aggregating with
+    /// the other method.
+    ///
+    /// Failing closed is deliberate, and it is *not* made redundant by the two-level fence in
+    /// `MultiplexedConnections::sendQuery` / `HedgedConnections::sendQuery`. Those zero
+    /// `group_by_two_level_threshold` / `group_by_two_level_threshold_bytes` in the `Settings` sent alongside the
+    /// query, but a deserialized `AggregatingStep` takes both thresholds from the plan's own
+    /// `QueryPlanSerializationSettings` (see `deserialize` below), which were written here from the initiator's
+    /// unmodified `params`. So under `serialize_query_plan = 1` the fence does not reach the remote aggregation: a
+    /// peer that silently used the other method could still go two-level, and two-level bucket numbering differs
+    /// between the two methods, which corrupts memory-efficient distributed merging. The exception is the only safe
+    /// outcome for that combination.
+    ///
+    /// When both serialized two-level thresholds are `0`, however, the mismatch cannot be observed, so towards an
+    /// old peer the name is left off the wire and the peer may run the plan with its default method. The receiver
+    /// takes both thresholds from the very settings written above, and with both at `0` every path to a two-level
+    /// state is closed:
+    /// `worthConvertToTwoLevel` is false for any size (also in the size-hint path of `initDataVariantsWithSizeHint`),
+    /// the external-group-by spill in `Aggregator::executeOnBlock` additionally requires `worth_convert_to_two_level`,
+    /// and the conversion in `Aggregator::mergeVariants` fires only when some variant is two-level already. The step
+    /// then only ever produces single-level blocks (`bucket_num = -1`), whose rows and serialized aggregate states do
+    /// not depend on the hash-table method, and every consumer merges them as a plain set-union by key.
+    if (!params.enable_packed_string_keys
+        && (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING
+            || ((params.group_by_two_level_threshold != 0 || params.group_by_two_level_threshold_bytes != 0)
+                && aggregationCanUsePackedStringKeys(*input_headers.front(), params.keys, grouping_sets_params))))
+        settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = false;
 }
 
 void AggregatingStep::serialize(Serialization & ctx) const
@@ -1014,7 +1081,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
     /// Overall, the rule is not strict.
 
     UInt8 flags = 0;
-    if (final && !ctx.skip_final_flag)
+    if (final && !ctx.for_cache_key)
         flags |= 1;
     if (params.overflow_row)
         flags |= 2;
@@ -1050,7 +1117,7 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
-    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.skip_cache_key)
+    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
@@ -1135,7 +1202,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         stats_collecting_params,
         ctx.settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
-        ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge]};
+        ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
+        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation]};
 
     SortDescription sort_description_for_merging;
 

@@ -11,7 +11,7 @@ import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/Pr
 
 <PrivatePreviewBadge/>
 
-Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/sql-reference/statements/create/table#temporary-tables) or [named session state](/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, when you want related queries to reuse the same replica's local caches, or when you need [read-after-write consistency](#read-after-write-consistency) across a write and its follow-up reads.
+Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/reference/statements/create/table/temporary-table) or [named session state](/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, when you want related queries to reuse the same replica's local caches, or when you need [read-after-write consistency](#read-after-write-consistency) across a write and its follow-up reads.
 
 It's best-effort and doesn't guarantee isolation. Scaling, upgrades, and restarts can remap which replica a given `session_id` lands on.
 
