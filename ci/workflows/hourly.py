@@ -32,13 +32,16 @@ workflow = Workflow.Config(
             name="Revert CI regressions",
             command="python3 ./ci/jobs/revert_ci_regressions.py",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
-            enable_gh_auth=True,
             # The job runs an AI agent over CI output that a merged pull
-            # request can write, so the checkout must not carry the workflow
-            # token in its git config: the agent would hold a GitHub
-            # credential before any guard has run. The job fetches the public
-            # repository anonymously and mints its own App token in the
-            # revert path instead.
+            # request can write, so nothing may hand it a GitHub credential
+            # before any guard has run: the checkout must not carry the
+            # workflow token in its git config, and the runner must not
+            # pre-authenticate `gh` for the job -- that would write the App
+            # token into the default `gh` store on disk, where the agent can
+            # read it however its own environment is pointed. The job fetches
+            # the public repository anonymously and mints its own App token in
+            # the revert path instead, after the agent has run.
+            enable_gh_auth=False,
             checkout_persist_credentials=False,
             timeout=70 * 60,
         ),

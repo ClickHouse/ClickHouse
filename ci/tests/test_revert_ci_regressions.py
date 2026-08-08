@@ -307,6 +307,79 @@ def test_the_evidence_is_narrowed_to_the_dominant_failure_mode():
     assert failure.context == "boom at 0xcafe"
 
 
+def test_an_investigated_mode_does_not_mask_the_next_one():
+    """The persisted investigations record commits, not signatures, so a mixed
+    group has to hand the *next* failure mode over by peeling off the commits
+    the prior investigations already saw. Re-electing the biggest mode every
+    hour would hide the second one behind the first one's cooldown -- or its
+    revert, or it being already fixed -- for as long as both stay in the
+    window."""
+    mode_a = [
+        _occurrence(sha="a" * 40, context="boom at 0xbeef"),
+        _occurrence(sha="b" * 40, time="2026-07-31 14:00:00", context="boom at 0xcafe"),
+        _occurrence(sha="e" * 40, time="2026-07-31 15:00:00", context="boom at 0xdead"),
+    ]
+    mode_b = [
+        _occurrence(
+            sha="c" * 40,
+            time="2026-07-31 20:00:00",
+            url="https://example.invalid/r3",
+            context="Server is not responding",
+        ),
+        _occurrence(
+            sha="d" * 40,
+            time="2026-07-31 21:00:00",
+            url="https://example.invalid/r4",
+            context="Server is not responding",
+        ),
+    ]
+    # Nothing investigated yet: the bigger mode goes first.
+    failure = make_failure(occurrences=mode_a + mode_b)
+    assert job.narrow_to_dominant_signature(failure) == ""
+    assert failure.commit_shas == ["a" * 40, "b" * 40, "e" * 40]
+    # The first mode's commits were investigated: the second mode is what an
+    # investigation has not seen, and it goes next.
+    failure = make_failure(occurrences=mode_a + mode_b)
+    investigated = ["a" * 40, "b" * 40, "e" * 40]
+    assert (
+        job.narrow_to_dominant_signature(failure, investigated_shas=investigated)
+        == ""
+    )
+    assert failure.commit_shas == ["c" * 40, "d" * 40]
+    assert failure.context == "Server is not responding"
+    # And `skip_reason` then reads its commits as new evidence, so the first
+    # mode's cooldown does not sit on it.
+    prior = {failure.key: _prior(1, investigated_shas=investigated)}
+    assert job.skip_reason(failure, prior, NOW) == ""
+
+
+def test_a_mode_below_the_bar_does_not_unseat_the_investigated_one():
+    """A single fresh commit of another signature is below the bar a new
+    failure has to clear to be picked up at all. The investigated mode stays
+    dominant and the recorded reason stays the cooldown, instead of the group
+    being stood down as a coincidence of the name."""
+    mode_a = [
+        _occurrence(sha="a" * 40, context="boom at 0xbeef"),
+        _occurrence(sha="b" * 40, time="2026-07-31 14:00:00", context="boom at 0xcafe"),
+    ]
+    stray = [
+        _occurrence(
+            sha="c" * 40,
+            time="2026-07-31 21:00:00",
+            context="Server is not responding",
+        )
+    ]
+    failure = make_failure(occurrences=mode_a + stray)
+    investigated = ["a" * 40, "b" * 40]
+    assert (
+        job.narrow_to_dominant_signature(failure, investigated_shas=investigated)
+        == ""
+    )
+    assert failure.commit_shas == ["a" * 40, "b" * 40]
+    prior = {failure.key: _prior(1, investigated_shas=investigated)}
+    assert "cooldown" in job.skip_reason(failure, prior, NOW)
+
+
 def test_a_failure_without_occurrence_evidence_is_not_investigated():
     """No rows means the modes cannot be told apart, and that fails closed."""
     failure = make_failure(occurrences=[])
@@ -663,8 +736,17 @@ def _investigation_naming(pull_request_number=112345, commit_sha="b" * 40):
     )
 
 
+REPO = "ClickHouse/ClickHouse"
+
+
+def _guard(pull_request, investigation=None, now=NOW):
+    return job.culprit_guard(
+        pull_request, investigation or _investigation_naming(), now, REPO
+    )
+
+
 def test_a_recently_merged_pull_request_may_be_reverted():
-    assert job.culprit_guard(make_pull_request(), _investigation_naming(), NOW) == ""
+    assert _guard(make_pull_request()) == ""
 
 
 def test_a_pull_request_that_did_not_produce_the_named_commit_is_not_reverted():
@@ -672,9 +754,7 @@ def test_a_pull_request_that_did_not_produce_the_named_commit_is_not_reverted():
     half that carries no evidence with it: every value of it names some real
     pull request. They disagree exactly when one of them was not established,
     and which one to trust is then unknowable, so neither is acted on."""
-    guard = job.culprit_guard(
-        make_pull_request(), _investigation_naming(commit_sha="c" * 40), NOW
-    )
+    guard = _guard(make_pull_request(), _investigation_naming(commit_sha="c" * 40))
     assert "disagree" in guard
     assert "c" * 40 in guard
     assert "b" * 40 in guard
@@ -682,15 +762,12 @@ def test_a_pull_request_that_did_not_produce_the_named_commit_is_not_reverted():
 
 def test_an_abbreviated_commit_still_matches_the_merge_commit():
     """`git` prints abbreviated shas and abbreviations are prefixes."""
-    assert (
-        job.culprit_guard(make_pull_request(), _investigation_naming("b" * 12), NOW)
-        == ""
-    )
+    assert _guard(make_pull_request(), _investigation_naming("b" * 12)) == ""
 
 
 def test_a_verdict_with_no_commit_cannot_be_checked_and_is_not_reverted():
     """`is_actionable` stops this first; the guard does not depend on that."""
-    guard = job.culprit_guard(make_pull_request(), _investigation_naming(commit_sha=""), NOW)
+    guard = _guard(make_pull_request(), _investigation_naming(commit_sha=""))
     assert "no master commit" in guard
 
 
@@ -707,17 +784,134 @@ def test_a_verdict_with_no_commit_cannot_be_checked_and_is_not_reverted():
         ({"mergedAt": "2026-07-20T10:00:00Z"}, "days ago"),
         # Merged after the failure was last seen, so it cannot be the cause.
         ({"mergedAt": "2026-07-31T21:30:00Z"}, "after the last occurrence"),
-        # Reverting a revert restores the breakage the revert removed.
-        ({"title": 'Revert "Add a new setting"'}, "itself a revert"),
-        ({"body": "Reverts ClickHouse/ClickHouse#1\n"}, "itself a revert"),
-        ({"headRefName": "revert-112000"}, "revert branch"),
     ],
 )
 def test_pull_requests_that_must_not_be_reverted_automatically(overrides, expected):
-    guard = job.culprit_guard(
-        make_pull_request(**overrides), _investigation_naming(), NOW
-    )
+    guard = _guard(make_pull_request(**overrides))
     assert expected in guard
+
+
+def _reverted_pull_request(
+    number=112000, merged_at="2026-07-29T10:00:00Z", **overrides
+):
+    """GitHub's record of the pull request a revert claims to revert."""
+    claimed = make_pull_request(
+        number=number, mergedAt=merged_at, headRefName="the-original-change"
+    )
+    claimed.update(overrides)
+    return claimed
+
+
+def test_the_anchored_marker_line_exempts_a_verified_revert(monkeypatch):
+    """Reverting a revert restores the breakage the revert removed. The
+    `Reverts <repo>#<n>` marker the "Revert" button and this job write is
+    anchored to its own line, and the claim it makes is verified against
+    GitHub: #<n> has to be merged into the base branch before this one was."""
+    monkeypatch.setattr(
+        job, "get_pull_request", lambda number, repo: _reverted_pull_request(number)
+    )
+    guard = _guard(
+        make_pull_request(body="Reverts ClickHouse/ClickHouse#112000\n\nBecause.\n")
+    )
+    assert "itself a revert" in guard
+    assert "112000" in guard
+
+
+def test_a_prose_mention_of_a_revert_is_not_a_revert(monkeypatch):
+    """The body is author-controlled: a pull request that merely *mentions*
+    `Reverts ClickHouse/ClickHouse#<n>` mid-sentence must not opt out of the
+    automatic revert. Only the anchored marker line makes a checkable claim."""
+    monkeypatch.setattr(
+        job, "get_pull_request", _unexpected("read an unanchored claim from GitHub")
+    )
+    body = "This also Reverts ClickHouse/ClickHouse#112000 while at it.\n"
+    assert _guard(make_pull_request(body=body)) == ""
+
+
+def test_a_revert_named_branch_is_a_claim_to_verify(monkeypatch):
+    """`revert-<n>` and `revert-<n>-*` are what the automation and the button
+    push, and they name the pull request they claim to revert. The name is
+    secondary evidence: it exempts only when GitHub confirms #<n> was merged
+    into the base branch before this one."""
+    monkeypatch.setattr(
+        job, "get_pull_request", lambda number, repo: _reverted_pull_request(number)
+    )
+    guard = _guard(make_pull_request(headRefName="revert-112000-the-original-change"))
+    assert "itself a revert" in guard
+
+
+def test_a_branch_that_merely_starts_with_revert_is_not_a_revert(monkeypatch):
+    """The head branch is author-controlled, and a prefix match would let any
+    pull request opt out by its branch name alone."""
+    monkeypatch.setattr(
+        job, "get_pull_request", _unexpected("read a non-claim from GitHub")
+    )
+    assert _guard(make_pull_request(headRefName="revert-faster-hashjoin")) == ""
+
+
+def test_a_revert_claim_github_contradicts_earns_no_exemption(monkeypatch):
+    """A marker naming a pull request that was never merged into the base
+    branch reverts nothing: undoing this pull request restores no earlier
+    breakage, so it is reverted like any other."""
+    monkeypatch.setattr(
+        job,
+        "get_pull_request",
+        lambda number, repo: _reverted_pull_request(number, state="OPEN"),
+    )
+    guard = _guard(
+        make_pull_request(body="Reverts ClickHouse/ClickHouse#112000\n")
+    )
+    assert guard == ""
+
+
+def test_a_revert_claim_that_cannot_be_read_stands_the_revert_down(monkeypatch):
+    """Whether the claim holds decides whether a revert may be merged with
+    administrator privileges, so an unreadable answer stands the action down
+    rather than reading as either yes or no."""
+    monkeypatch.setattr(job, "get_pull_request", lambda number, repo: None)
+    guard = _guard(
+        make_pull_request(body="Reverts ClickHouse/ClickHouse#112000\n")
+    )
+    assert "could not be established" in guard
+
+
+def test_the_canonical_revert_title_exempts_without_a_claim(monkeypatch):
+    """A hand revert pushed from an arbitrary branch with an empty body has
+    nothing else to be recognized by, and reverting a genuine revert restores
+    the very breakage it removed -- the worse direction to fail in. The title
+    has to be the full canonical shape, not a prefix."""
+    monkeypatch.setattr(
+        job, "get_pull_request", _unexpected("read a title-only revert from GitHub")
+    )
+    guard = _guard(make_pull_request(title='Revert "Add a new setting"'))
+    assert "itself a revert" in guard
+
+
+def test_a_title_that_merely_starts_with_revert_is_not_a_revert(monkeypatch):
+    """`Reverting the bad defaults` is an ordinary pull request; the old
+    lowercase prefix match would have exempted it."""
+    monkeypatch.setattr(
+        job, "get_pull_request", _unexpected("read a non-claim from GitHub")
+    )
+    assert _guard(make_pull_request(title="Reverting the bad defaults")) == ""
+
+
+def test_a_canonical_title_next_to_a_refuted_claim_is_not_a_revert(monkeypatch):
+    """When the pull request does make a checkable claim, the claim decides:
+    a canonical title next to a marker GitHub contradicts is part of the same
+    forgery, not independent evidence."""
+    monkeypatch.setattr(
+        job,
+        "get_pull_request",
+        lambda number, repo: _reverted_pull_request(number, state="OPEN"),
+    )
+    guard = _guard(
+        make_pull_request(
+            title='Revert "Add a new setting"',
+            body="Reverts ClickHouse/ClickHouse#112000\n",
+        )
+    )
+    assert guard == ""
 
 
 @pytest.mark.parametrize(
@@ -735,10 +929,7 @@ def test_a_merged_reapply_is_an_ordinary_pull_request_again(overrides):
     the job exists to remove, and exempting it by the shape of its title or
     branch would leave the branch broken by design. Only a revert is exempt --
     reverting one restores the breakage it removed."""
-    assert (
-        job.culprit_guard(make_pull_request(**overrides), _investigation_naming(), NOW)
-        == ""
-    )
+    assert _guard(make_pull_request(**overrides)) == ""
 
 
 def test_a_change_reverted_twice_keeps_one_reapply_in_its_title():
@@ -1743,6 +1934,8 @@ def test_the_agent_gets_its_own_empty_gh_config_and_no_token_in_its_environment(
     monkeypatch.setattr(job.Secret, "Config", FakeSecret)
     monkeypatch.setattr(job.subprocess, "run", lambda *a, **k: None)
     monkeypatch.setattr(job.Shell, "check", fake_check)
+    # Keep `scrub_gh_credentials` away from the developer's real `gh` store.
+    monkeypatch.setenv("GH_CONFIG_DIR", str(tmp_path / "gh-config"))
 
     assert job.run_agent("investigate", str(verdict_file), str(tmp_path))
 
@@ -1756,6 +1949,61 @@ def test_the_agent_gets_its_own_empty_gh_config_and_no_token_in_its_environment(
     # The agent runs in the disposable clone it was given, not wherever the
     # job process happens to be.
     assert command.startswith(f"cd {shlex.quote(str(tmp_path))} && ")
+
+
+def test_the_agent_cannot_recover_a_token_from_the_default_gh_store(
+    monkeypatch, tmp_path
+):
+    """Pointing the child's `GH_CONFIG_DIR` at a scratch directory is not a
+    boundary: the agent executes arbitrary commands, so it can unset the
+    override and read the default store. The token an earlier revert of the
+    same run minted there -- or one anything else left behind -- has to be
+    gone before the agent starts, not merely out of the default path."""
+    config_dir = tmp_path / "gh"
+    config_dir.mkdir()
+    store = config_dir / "hosts.yml"
+    store.write_text("github.com:\n    oauth_token: gho_secret\n", encoding="utf-8")
+    monkeypatch.setenv("GH_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv("GH_TOKEN", "gho_ambient")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_ambient")
+    verdict_file = tmp_path / "verdict.json"
+
+    class FakeSecret:
+        def __init__(self, **_):
+            pass
+
+        def get_value(self):
+            return "openai-key"
+
+    def fake_check(command, **_):
+        # By the time the agent command runs, the store and the ambient
+        # tokens must already be gone.
+        assert not store.exists()
+        assert "GH_TOKEN" not in os.environ
+        assert "GITHUB_TOKEN" not in os.environ
+        verdict_file.write_text('{"verdict": "inconclusive"}', encoding="utf-8")
+        return True
+
+    monkeypatch.setattr(job, "TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr(job.Secret, "Config", FakeSecret)
+    monkeypatch.setattr(job.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(job.Shell, "check", fake_check)
+
+    assert job.run_agent("investigate", str(verdict_file), str(tmp_path))
+    assert not store.exists()
+
+
+def test_the_workflow_does_not_pre_authenticate_the_job():
+    """`enable_gh_auth` makes the runner mint the App token and store it in
+    the default `gh` config before the job's own process even starts -- on
+    disk, where the agent can read it however its environment is pointed. This
+    job authenticates itself in the revert path instead, after the agent has
+    run, so the workflow must not pre-authenticate it."""
+    from ci.workflows.hourly import workflow
+
+    revert_job = next(j for j in workflow.jobs if j.name == "Revert CI regressions")
+    assert revert_job.enable_gh_auth is False
+    assert revert_job.checkout_persist_credentials is False
 
 
 def test_the_agent_investigates_a_disposable_clone_and_not_the_checkout(monkeypatch):
@@ -1888,9 +2136,10 @@ class FakeDryRunCIDB:
     """The CI database as it is on the first dry run: the investigation table
     has not been created, because only a live run creates it."""
 
-    def __init__(self, failures=(), table=False):
+    def __init__(self, failures=(), table=False, prior=()):
         self.failures = list(failures)
         self.table = table
+        self.prior = list(prior)
         self.queries = []
         self.inserted = []
 
@@ -1901,7 +2150,7 @@ class FakeDryRunCIDB:
         if job.INVESTIGATION_TABLE in query and not self.table:
             raise RuntimeError(f"Table {job.INVESTIGATION_TABLE} does not exist")
         if job.INVESTIGATION_TABLE in query:
-            return ""
+            return "".join(json.dumps(row) + "\n" for row in self.prior)
         return "".join(json.dumps(row) + "\n" for row in self.failures)
 
     def insert_rows(self, *args, **kwargs):
@@ -1918,6 +2167,42 @@ def test_a_dry_run_reads_the_prior_investigations_once_the_table_exists():
     cidb = FakeDryRunCIDB(failures=[], table=True)
     job.select_failures(cidb, NOW, dry_run=True)
     assert any("investigation_time" in q for q in cidb.queries)
+
+
+def test_selection_hands_the_next_mode_of_a_mixed_group_over(monkeypatch):
+    """End to end through `select_failures`: a mixed group whose bigger mode
+    was already investigated is narrowed to the other mode, and the other
+    mode's fresh commits carry it past the cooldown -- instead of the group
+    being re-narrowed to the investigated mode every hour and the second
+    failure hiding behind the first one's cooldown for the whole window."""
+    row = _failure_row("mixed_test")
+    row["occurrences"] = [
+        ["a" * 40, "Stateless tests (amd_debug, parallel)",
+         "2026-07-31 13:28:40", "https://example.invalid/r1", "boom at 0xbeef"],
+        ["b" * 40, "Stateless tests (amd_debug, parallel)",
+         "2026-07-31 14:00:00", "https://example.invalid/r1", "boom at 0xcafe"],
+        ["e" * 40, "Stateless tests (amd_debug, parallel)",
+         "2026-07-31 15:00:00", "https://example.invalid/r1", "boom at 0xdead"],
+        ["c" * 40, "Stateless tests (amd_debug, parallel)",
+         "2026-07-31 20:00:00", "https://example.invalid/r2",
+         "Server is not responding"],
+        ["d" * 40, "Stateless tests (amd_debug, parallel)",
+         "2026-07-31 21:00:00", "https://example.invalid/r2",
+         "Server is not responding"],
+    ]
+    prior_row = {
+        "test_name": "mixed_test",
+        "last_investigation_time": (NOW - timedelta(hours=1)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        ),
+        "last_revert_time": NEVER_REVERTED,
+        "investigated_commit_shas": ["a" * 40, "b" * 40, "e" * 40],
+    }
+    cidb = FakeDryRunCIDB(failures=[row], table=True, prior=[prior_row])
+    selected = job.select_failures(cidb, NOW, dry_run=True)
+    assert [f.test_name for f in selected] == ["mixed_test"]
+    assert selected[0].commit_shas == ["c" * 40, "d" * 40]
+    assert selected[0].context == "Server is not responding"
 
 
 def _dry_run(monkeypatch, cidb, investigate=None):

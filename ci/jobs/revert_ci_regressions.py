@@ -390,7 +390,9 @@ class Failure:
         )
 
 
-def narrow_to_dominant_signature(failure: Failure, min_failures=MIN_FAILURES) -> str:
+def narrow_to_dominant_signature(
+    failure: Failure, min_failures=MIN_FAILURES, investigated_shas=()
+) -> str:
     """Why this failure's evidence does not support one repeated failure, or ""
     after narrowing the evidence to the failure mode that does.
 
@@ -405,11 +407,24 @@ def narrow_to_dominant_signature(failure: Failure, min_failures=MIN_FAILURES) ->
     When one mode does reach it, every piece of evidence handed on -- the
     commits, the checks, the times, the recorded output -- is narrowed to that
     mode's occurrences, so neither the agent nor the guards downstream reason
-    from the occurrences of another cause. Of two modes that both reach the
-    threshold, the one on more commits is investigated now (newest occurrence,
-    then signature, as deterministic tie-breaks); once it is dealt with, the
-    other one's commits are commits no investigation has seen, which is exactly
-    what lets a failure back past the cooldown.
+    from the occurrences of another cause.
+
+    Which of several qualifying modes goes first is decided by
+    `investigated_shas` -- the commits the prior investigations of this test
+    already saw. `checks_investigated` records commits, not signatures, so the
+    only stable way to hand the *next* mode over is to prefer a mode whose
+    commits no investigation has seen would clear the pick-up threshold on
+    their own (then most commits, newest occurrence and signature as
+    deterministic tie-breaks). Choosing by raw commit count would re-elect the
+    same already-investigated mode every hour, and its cooldown -- or its
+    revert, or it being already fixed -- would then mask the other mode for as
+    long as both stay in the window. With the already-seen commits peeled off
+    first, the second mode surfaces on the very next run: its commits are
+    commits no investigation has seen, which is exactly what lets a failure
+    past the cooldown in `skip_reason`. A mode whose fresh commits stay below
+    the bar changes nothing here: it could not be picked up as a failure of
+    its own either, and re-electing the investigated mode keeps the recorded
+    reason -- the cooldown -- honest.
 
     An empty or truncated occurrence list means the split cannot be trusted,
     and both fail closed: evidence that cannot be attributed to one failure
@@ -424,14 +439,18 @@ def narrow_to_dominant_signature(failure: Failure, min_failures=MIN_FAILURES) ->
     modes: Dict[str, List[Occurrence]] = {}
     for occurrence in failure.occurrences:
         modes.setdefault(context_signature(occurrence.context), []).append(occurrence)
-    dominant = max(
-        modes,
-        key=lambda signature: (
-            len({o.commit_sha for o in modes[signature]}),
+    investigated = set(investigated_shas)
+
+    def rank(signature: str):
+        commits = {o.commit_sha for o in modes[signature]}
+        return (
+            len(commits - investigated) >= min_failures,
+            len(commits),
             max(o.check_start_time for o in modes[signature]),
             signature,
-        ),
-    )
+        )
+
+    dominant = max(modes, key=rank)
     occurrences = sorted(modes[dominant], key=lambda o: o.check_start_time)
     commit_shas = sorted({o.commit_sha for o in occurrences})
     if len(commit_shas) < min_failures:
@@ -1019,8 +1038,77 @@ def parse_verdict(text: str) -> dict:
     }
 
 
+def genuine_revert(pull_request: dict, repo: str) -> str:
+    """The evidence that this merged pull request is itself a revert, or ""
+    when it carries none that holds up. Raises when the evidence names a pull
+    request whose record could not be read from GitHub.
+
+    `title`, `body` and `headRefName` are author-controlled, so nothing here
+    is a substring match: a pull request must not opt out of the automatic
+    revert by mentioning `Reverts ClickHouse/ClickHouse#123` in prose or by
+    calling its branch `revert-faster-hashjoin`. What counts is the canonical
+    shape, and where the shape names a pull request, the claim is verified
+    against GitHub's record rather than believed:
+
+    - The anchored `Reverts <repo>#<n>` marker line the "Revert" button and
+      this job both write into the body, and the `revert-<n>` / `revert-<n>-*`
+      branch names the automation and the button push. Both name the pull
+      request they claim to revert, so both are checked: #<n> has to be merged
+      into `{BASE_BRANCH}`, and merged before this one was -- a revert undoes
+      something that was already in. A claim that fails that check is not a
+      revert, whatever it says.
+    - The canonical `Revert "..."` title that `git revert` and the button
+      produce, when the pull request makes no checkable claim at all. A hand
+      revert pushed from an arbitrary branch with an empty body has nothing
+      else to be recognized by, and reverting a genuine revert restores the
+      very breakage it removed -- the worse direction to fail in.
+
+    A pull request that forges the full canonical shape can still exempt
+    itself, and stays exempt: that is a deliberate, visible lie in the pull
+    request record, and the cost of honoring it is a broken `{BASE_BRANCH}`
+    left to a human -- against merging a wrong revert with administrator
+    privileges on the strength of a substring."""
+    number = pull_request.get("number")
+    title = pull_request.get("title") or ""
+    body = pull_request.get("body") or ""
+    head = pull_request.get("headRefName") or ""
+    claims = [
+        int(match)
+        for match in re.findall(
+            rf"^Reverts {re.escape(repo)}#(\d+)\s*$", body, re.MULTILINE
+        )
+    ]
+    branch_claim = re.match(rf"^{re.escape(REVERT_BRANCH_PREFIX)}(\d+)(?:-|$)", head)
+    if branch_claim:
+        claims.append(int(branch_claim.group(1)))
+    for claim in dict.fromkeys(claims):
+        if claim == number:
+            continue
+        claimed = get_pull_request(claim, repo)
+        if claimed is None:
+            raise RuntimeError(
+                f"pull request #{claim}, which #{number} claims to revert, "
+                f"could not be read from GitHub"
+            )
+        if (
+            str(claimed.get("state", "")).lower() == "merged"
+            and claimed.get("baseRefName") == BASE_BRANCH
+            and (claimed.get("mergedAt") or "")
+            <= (pull_request.get("mergedAt") or "")
+        ):
+            return f"it reverts pull request #{claim}, which was merged before it"
+    if claims:
+        # Every named pull request verifiably was not merged into the base
+        # branch before this one: the revert-ish shape claims something GitHub
+        # contradicts, so it earns no exemption.
+        return ""
+    if re.fullmatch(r'Revert\s+".*"', title):
+        return f"it carries the canonical revert title {title!r}"
+    return ""
+
+
 def culprit_guard(
-    pull_request: dict, investigation: "Investigation", now: datetime
+    pull_request: dict, investigation: "Investigation", now: datetime, repo: str
 ) -> str:
     """Why the named pull request must not be reverted automatically, or "" if
     it may be. Everything here is checked against GitHub, not against what the
@@ -1082,7 +1170,10 @@ def culprit_guard(
 
     # Never revert a revert: undoing one restores the very breakage the other
     # automation, or a human, removed, and two bots can otherwise flip a change
-    # back and forth forever.
+    # back and forth forever. What counts as a revert is decided by
+    # `genuine_revert`: the canonical shapes, with the claims they make
+    # verified against GitHub -- never a substring of author-controlled
+    # metadata, which any pull request could use to opt out of being reverted.
     #
     # A reapply is not a revert and gets no such exemption. The draft this job
     # opens carries the change back through normal CI, and once it is fixed,
@@ -1091,15 +1182,15 @@ def culprit_guard(
     # here to remove, and exempting it would leave the branch broken by design.
     # What must not repeat is the *title*, and `reapply_title` takes care of
     # that on the way back out.
-    title = pull_request.get("title") or ""
-    body = pull_request.get("body") or ""
-    head = pull_request.get("headRefName") or ""
-    if title.lower().startswith("revert"):
-        return f"pull request #{number} is itself a revert ({title!r})"
-    if "Reverts ClickHouse/" in body:
-        return f"pull request #{number} is itself a revert of another one"
-    if head.startswith(REVERT_BRANCH_PREFIX):
-        return f"pull request #{number} comes from the revert branch {head!r}"
+    try:
+        revert_evidence = genuine_revert(pull_request, repo)
+    except Exception as e:  # noqa: BLE001 -- an unreadable claim stands the revert down
+        return (
+            f"whether pull request #{number} is itself a revert could not be "
+            f"established: {type(e).__name__}: {e}"
+        )
+    if revert_evidence:
+        return f"pull request #{number} is itself a revert: {revert_evidence}"
     return ""
 
 
@@ -1472,6 +1563,44 @@ Most recent report: {failure.report_url}
 """
 
 
+def gh_credential_store() -> str:
+    """The file `gh` keeps its tokens in, resolved the way `gh` resolves it:
+    `GH_CONFIG_DIR` when set, `XDG_CONFIG_HOME` next, `~/.config/gh` last."""
+    config_dir = os.environ.get("GH_CONFIG_DIR") or os.path.join(
+        os.environ.get("XDG_CONFIG_HOME")
+        or os.path.join(os.path.expanduser("~"), ".config"),
+        "gh",
+    )
+    return os.path.join(config_dir, "hosts.yml")
+
+
+def scrub_gh_credentials() -> None:
+    """Remove every GitHub credential the process has lying around, so the
+    agent that is about to run cannot pick one up.
+
+    Pointing the agent's `GH_CONFIG_DIR` at a scratch directory is not enough
+    on its own: the agent executes arbitrary commands, so it can unset the
+    override and read the default store -- the environment of a child process
+    is no boundary against the child. The token must not *exist* while the
+    agent runs, not merely be out of the default path. The job's workflow does
+    not pre-authenticate (`enable_gh_auth=False`), so on a fresh run the store
+    is empty; what this removes is the token a previous `act` of the same run
+    minted for its own revert, which would otherwise sit in the default store
+    while the next investigation's agent runs. `act` minting with
+    `force=True` is what makes the removal safe: the next revert never reuses
+    a stored token, it always mints its own.
+
+    `GH_TOKEN` and `GITHUB_TOKEN` are dropped from this process too. They
+    override the store for every `gh` this process starts, and the revert path
+    must run on the token it mints, never on an ambient one."""
+    os.environ.pop("GH_TOKEN", None)
+    os.environ.pop("GITHUB_TOKEN", None)
+    store = gh_credential_store()
+    if os.path.exists(store):
+        print(f"NOTE: removing the GitHub token store {store} before the agent runs")
+        os.unlink(store)
+
+
 def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
     """Run the codex agent once in `workdir` and return what it wrote to
     `verdict_file`.
@@ -1492,14 +1621,20 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
     process can reach and call the API itself. The boundaries that hold are the
     absence of the credential and the absence of the state, so:
 
-    - `GH_CONFIG_DIR` points at an empty scratch directory, which is where `gh`
-      keeps the App token this job authenticates for its own use. Nothing else
-      shares it, and it is thrown away with the directory.
-    - `GH_TOKEN` and `GITHUB_TOKEN` are unset in the child, because both
-      override `GH_CONFIG_DIR`. (`actions/checkout` also used to leave the
-      workflow token in the checkout's git config; this job's checkout is
-      generated with `persist-credentials: false`, so there is no credential
-      there to inherit either.)
+    - `scrub_gh_credentials` removes any token from the default `gh` store
+      before the agent starts. Overriding the child's `GH_CONFIG_DIR` is not a
+      boundary -- the agent can unset it and read the default store -- so the
+      token an earlier revert of this run minted must be gone, not merely out
+      of the default path. The workflow does not pre-authenticate the job
+      (`enable_gh_auth=False` next to `checkout_persist_credentials=False` in
+      `ci/workflows/hourly.py`), so nothing put a token there before the job
+      started either.
+    - `GH_CONFIG_DIR` still points at an empty scratch directory and
+      `GH_TOKEN`/`GITHUB_TOKEN` are still unset in the child, as the belt to
+      that: whatever `gh` the agent runs starts logged out. (`actions/checkout`
+      also used to leave the workflow token in the checkout's git config; this
+      job's checkout is generated with `persist-credentials: false`, so there
+      is no credential there to inherit either.)
     - `workdir` is the clone `investigation_clone` makes for this one run, and
       the agent's writable workspace is that clone: the checkout the
       privileged phase later fetches and pushes from is not it. Whatever the
@@ -1514,6 +1649,7 @@ def run_agent(prompt: str, verdict_file: str, workdir: str) -> str:
     show` has the diff, and the CI database is read over plain HTTP with no
     credentials. The write-capable token is minted in `act`, after the guards
     have run and this process -- not the agent -- has decided to revert."""
+    scrub_gh_credentials()
     if os.path.exists(verdict_file):
         os.unlink(verdict_file)
     openai_key = Secret.Config(
@@ -1835,7 +1971,7 @@ def act(investigation: Investigation, repo: str, now: datetime) -> None:
         investigation.note(f"Not reverted: pull request #{number} could not be read.")
         return
 
-    guard = culprit_guard(pull_request, investigation, now)
+    guard = culprit_guard(pull_request, investigation, now, repo)
     if guard:
         investigation.action = Action.SKIPPED_GUARD
         investigation.note(f"Not reverted: {guard}.")
@@ -1989,31 +2125,13 @@ def select_failures(cidb: CIDB, now: datetime, dry_run=False) -> List[Failure]:
     Both are rejected here, so what reaches the agent -- and what spends the
     per-run investigation budget -- is repeated test-case failures with the
     evidence narrowed to the one failure mode being investigated."""
-    failures = []
-    for row in parse_json_each_row(cidb.query(failures_query())):
-        failure = Failure.from_row(row)
-        if failure.test_name in SYNTHETIC_TEST_NAMES:
-            print(
-                f"  skipping {failure.title!r}: the harness wrote this row about "
-                f"the whole script, not about a test case"
-            )
-            continue
-        reason = narrow_to_dominant_signature(failure)
-        if reason:
-            print(f"  skipping {failure.title!r}: {reason}")
-            continue
-        failures.append(failure)
-    # The query orders by the mixed counters; the narrowed ones decide who gets
-    # an investigation slot.
-    failures.sort(key=lambda f: (-f.commit_count, -f.failure_count, f.test_name))
-    print(
-        f"{len(failures)} failures seen on at least {MIN_FAILURES} {BASE_BRANCH} "
-        f"commits in the last {FAILURE_WINDOW_HOURS} hours"
-    )
     # A live run creates the investigation table before it gets here, a dry run
     # deliberately does not, so on the first dry run -- the one that judges this
     # job before it is trusted to act -- the table does not exist yet, and
-    # reading it would fail the run before it selected anything.
+    # reading it would fail the run before it selected anything. The prior
+    # investigations are read before the narrowing, not after: which failure
+    # mode of a mixed group is investigated next depends on which commits the
+    # earlier investigations already saw.
     if dry_run and not table_exists(cidb, INVESTIGATION_TABLE):
         print(
             f"Dry run: {INVESTIGATION_TABLE} does not exist yet, so nothing has been "
@@ -2025,6 +2143,30 @@ def select_failures(cidb: CIDB, now: datetime, dry_run=False) -> List[Failure]:
             row["test_name"]: row
             for row in parse_json_each_row(cidb.query(recent_investigations_query()))
         }
+    failures = []
+    for row in parse_json_each_row(cidb.query(failures_query())):
+        failure = Failure.from_row(row)
+        if failure.test_name in SYNTHETIC_TEST_NAMES:
+            print(
+                f"  skipping {failure.title!r}: the harness wrote this row about "
+                f"the whole script, not about a test case"
+            )
+            continue
+        seen = prior.get(failure.key) or {}
+        reason = narrow_to_dominant_signature(
+            failure, investigated_shas=seen.get("investigated_commit_shas") or ()
+        )
+        if reason:
+            print(f"  skipping {failure.title!r}: {reason}")
+            continue
+        failures.append(failure)
+    # The query orders by the mixed counters; the narrowed ones decide who gets
+    # an investigation slot.
+    failures.sort(key=lambda f: (-f.commit_count, -f.failure_count, f.test_name))
+    print(
+        f"{len(failures)} failures seen on at least {MIN_FAILURES} {BASE_BRANCH} "
+        f"commits in the last {FAILURE_WINDOW_HOURS} hours"
+    )
     selected = []
     for failure in failures:
         reason = skip_reason(failure, prior, now)
@@ -2111,7 +2253,7 @@ def dry_run_action(investigation: Investigation, repo: str, now: datetime) -> No
         )
         return
 
-    guard = culprit_guard(pull_request, investigation, now)
+    guard = culprit_guard(pull_request, investigation, now, repo)
     if not guard:
         merge_commit = pull_request["mergeCommit"]["oid"]
         if not Shell.check(
