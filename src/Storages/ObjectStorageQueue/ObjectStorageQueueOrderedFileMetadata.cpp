@@ -932,6 +932,24 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(
     LastProcessedFileInfoMapPtr created_nodes)
 {
     chassert(created_processing_node);
+
+    /// Remove stale .retriable node if it exists from prior failures.
+    /// Most files succeed on first try (no .retriable node), so check before removing.
+    auto retriable_failed_node_path = failed_node_path + ".retriable";
+    Coordination::Stat retriable_stat;
+    std::string retriable_data;
+    bool has_retriable_node = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        has_retriable_node = zk_client->tryGet(retriable_failed_node_path, retriable_data, &retriable_stat);
+    });
+    if (has_retriable_node)
+    {
+        LOG_TEST(log, "Removing stale .retriable node for successfully processed file {}", path);
+        requests.push_back(zkutil::makeRemoveRequest(retriable_failed_node_path, retriable_stat.version));
+    }
+
     doPrepareProcessedRequests(requests, processed_bucket_path, /* ignore_if_exists */false, created_nodes);
 }
 

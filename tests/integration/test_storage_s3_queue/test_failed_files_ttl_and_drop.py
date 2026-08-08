@@ -598,3 +598,136 @@ def test_failed_file_ttl_does_not_reset_retry_counter(started_cluster):
     # Cleanup
     node.query(f"DROP TABLE {table_name}")
     node.query(f"DROP TABLE {dst_table_name}")
+
+
+def test_retriable_node_cleanup_on_success(started_cluster):
+    """Test that .retriable nodes are cleaned up when a file that failed then succeeds.
+
+    This test verifies the fix for the bug where .retriable nodes (which track
+    retry counts for files that failed but are still within their retry budget)
+    were not removed when a file eventually succeeded, leaving stale garbage in
+    Keeper that could interfere with future processing.
+
+    Test scenario:
+    1. Upload a file with invalid CSV content that will fail parsing
+    2. Wait for it to fail at least once, creating a .retriable node with retries > 0
+    3. Replace the S3 object with valid CSV content (same key)
+    4. On the next retry, S3Queue reads the new valid content and succeeds
+    5. Verify the file reaches 'Processed' status
+    6. Verify no .retriable node remains in Keeper for that file
+
+    This exercises the actual code path: prepareProcessedRequestsImpl() must remove
+    the .retriable node when transitioning a file to processed state.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_retriable_cleanup_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    test_file = "retry_test.csv"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 5,  # Allow plenty of retries
+            "polling_min_timeout_ms": 3000,  # 3 second retry interval (time to replace file)
+            "polling_max_timeout_ms": 3000,
+        },
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def has_retriable_node_for_file(filename):
+        """Check if a .retriable node exists for the given file."""
+        failed_path = f"{keeper_path}/failed"
+        # Query all nodes under /failed and parse their data to find ones matching our file
+        result = node.query(
+            f"SELECT name, value FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        if not result:
+            return False
+
+        import re
+        for line in result.split("\n"):
+            parts = line.split("\t")
+            if len(parts) != 2:
+                continue
+            node_name, node_value = parts
+            if not node_name.endswith(".retriable"):
+                continue
+            # Check if this .retriable node is for our file
+            file_path_match = re.search(r'"file_path"\s*:\s*"([^"]*)"', node_value)
+            if file_path_match and filename in file_path_match.group(1):
+                return True
+        return False
+
+    def get_file_status(filename):
+        """Get file status from metadata cache."""
+        result = node.query(
+            f"SELECT status FROM system.s3queue_metadata_cache "
+            f"WHERE zookeeper_path = '{keeper_path}' AND file_name = '{filename}'"
+        ).strip()
+        return result if result else None
+
+    # Step 1: Upload invalid CSV content (will fail parsing)
+    logging.info(f"Step 1: Uploading invalid CSV to {test_file}")
+    invalid_csv = b"not,valid,numbers,at,all\n"
+    put_s3_file_content(started_cluster, f"{files_path}/{test_file}", invalid_csv)
+
+    # Step 2: Wait for the file to fail and create a .retriable node
+    logging.info("Step 2: Waiting for file to fail and create .retriable node...")
+    retriable_node_created = False
+    for attempt in range(20):
+        time.sleep(1)
+        if has_retriable_node_for_file(test_file):
+            logging.info(f"✓ .retriable node created after {attempt + 1} seconds")
+            retriable_node_created = True
+            break
+
+    assert retriable_node_created, \
+        f"File {test_file} should have created a .retriable node after failing"
+
+    # Step 3: Replace the S3 object with valid CSV content
+    logging.info(f"Step 3: Replacing {test_file} with valid CSV content")
+    # The table expects UInt32 columns (default from helpers), so provide valid numbers
+    valid_csv = b"1,2,3\n4,5,6\n7,8,9\n"
+    put_s3_file_content(started_cluster, f"{files_path}/{test_file}", valid_csv)
+    logging.info("✓ File replaced with valid content")
+
+    # Step 4: Wait for the file to be retried and succeed
+    logging.info("Step 4: Waiting for retry to pick up valid content and succeed...")
+    file_succeeded = False
+    for attempt in range(30):
+        time.sleep(1)
+        status = get_file_status(test_file)
+        if status == "Processed":
+            logging.info(f"✓ File reached 'Processed' status after {attempt + 1} seconds")
+            file_succeeded = True
+            break
+
+    assert file_succeeded, \
+        f"File {test_file} should have succeeded after content was fixed (status: {get_file_status(test_file)})"
+
+    # Step 5: Verify no .retriable node remains
+    logging.info("Step 5: Verifying .retriable node was cleaned up...")
+    time.sleep(2)  # Small buffer to ensure Keeper state is settled
+
+    assert not has_retriable_node_for_file(test_file), \
+        f"No .retriable node should remain for {test_file} after successful processing"
+
+    logging.info("✓ Test passed: .retriable node was cleaned up on success")
+
+    # Verify the file actually processed data
+    result_count = int(node.query(f"SELECT count() FROM {dst_table_name}").strip())
+    assert result_count > 0, "Destination table should have rows from the processed file"
+    logging.info(f"✓ Destination table has {result_count} rows from the processed file")
+
+    # Cleanup
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
